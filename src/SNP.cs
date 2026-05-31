@@ -193,6 +193,23 @@ namespace RfCore
             Z0          = z0 ?? new Complex(50, 0);
         }
 
+        // ---- Factory methods -----------------------------------
+
+        /// <summary>
+        /// Build an S-parameter SNP from a Y-parameter sweep computed on a frequency grid.
+        /// Convenience entry point for the HB/MNA engine: extract port Y → wrap as SNP in one call.
+        /// </summary>
+        /// <param name="frequencies">Frequency grid in Hz.</param>
+        /// <param name="yMatrices">Y-parameter matrices, one per frequency point.</param>
+        /// <param name="z0">Reference impedance for the resulting S-parameters (default 50 Ω).</param>
+        public static SNP FromYSweep(double[] frequencies, Mat<Complex>[] yMatrices,
+                                     Complex? z0 = null)
+        {
+            var z0val  = z0 ?? new Complex(50, 0);
+            var ySweep = new SNP(frequencies, yMatrices, MatrixType.Y, MatrixFormat.MA, z0val);
+            return RFNetwork.YToS(ySweep);
+        }
+
         // ---- Indexer -------------------------------------------
 
         /// <summary>Return the matrix at the given frequency index (read-only).</summary>

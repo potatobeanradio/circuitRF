@@ -38,7 +38,7 @@ namespace RfCore
     /// S-parameter renormalization, T-matrix cascade, de-embedding,
     /// 2-port stability analysis, comparison utilities, and frequency interpolation.
     /// </summary>
-    public static class RFNetwork
+    public static partial class RFNetwork
     {
         // ============================================================
         //  Warning infrastructure
