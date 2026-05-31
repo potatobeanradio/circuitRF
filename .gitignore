@@ -1,0 +1,8 @@
+.DS_Store
+.claude/
+/src/bin
+/src/obj
+/tests/RfCore.Tests/bin
+/tests/RfCore.Tests/obj
+
+TestResults/
