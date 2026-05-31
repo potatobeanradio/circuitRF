@@ -1,0 +1,29 @@
+; circuitRF netlist (.cnl)
+; MyPiCell Pi-network — primary round-trip fixture (data-model §10)
+
+; global variables — C2 walks a valid multi-hop chain: C2 → gizmo → funtimes → 2
+L1 = 1.0
+C2 = gizmo
+gizmo = funtimes
+funtimes = 2
+
+; cell definition: Pi-network with two ports and an internal node
+define MyPiCell ( P1 P2 P3 )
+  parameters L1=5 C2=1
+  R:R1  P1 N1  R=50 Ohm
+  L:L1  P1 0   L=L1 nH
+  C:C1  N1 P2  C=C2 pF
+  C:C2  P3 N1  C=10 pF
+end MyPiCell
+
+; top level — two instances of MyPiCell with different parameter overrides
+Port:Term1   N3 0   Num=1 Z=50 Ohm
+Port:Term2   N7 0   Num=2 Z=50 Ohm
+Port:Term3   N0 0   Num=3 Z=50 Ohm
+MyPiCell:X1  N3 N0 N2  L1=5    C2=C2
+MyPiCell:X2  N7 N2 N0  L1=0.25 C2=10
+
+; analysis directive (grammar deferred — stored verbatim for round-trip)
+analysis SP   type=sparam  start=1 GHz stop=10 GHz step=1 GHz
+; measurement expression (grammar deferred — stored verbatim for round-trip)
+measure InsertionLoss = dB(S(2,1))

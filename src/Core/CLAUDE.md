@@ -1,0 +1,84 @@
+# Core — local conventions
+
+Standing instructions for `src/Core` (the design layer, the elaboration layer, the expression
+engine, and the `ComponentModel` types). Read with the root `CLAUDE.md`. Design notes:
+`docs/design/data-model.md`, `docs/design/expressions.md`. `Data/` and (numeric `ComponentModel`
+behavior) the engine have their own notes.
+
+## What lives here
+- **Design layer:** `Library`, `Cell`, `Instance`, `TestBench`, `ParameterDeclaration`,
+  `ParameterAssignment`, `Variable`, `Analysis` subtypes, `Measurement`. Editable, serializable
+  (`.cnl` + JSON), human-readable.
+- **Elaboration layer:** flatten hierarchy → `ElaboratedNetlist` (`ElaboratedComponent` list +
+  `NodeMap`), resolving parameters/variables and numbering nodes.
+- **Expression engine:** tokenizer → Pratt parser → AST → evaluator. Serves variables, cell
+  parameters, the SDD, and measurements.
+- **`ComponentModel`** base + `Devices/` (the numeric behaviors; their stamping/evaluation contract
+  is detailed in `data-model.md` §5 and exercised by the engine).
+
+## Key type distinctions — do not blur
+- **`Cell` vs `TestBench`.** A `Cell` is a **reusable** definition (ports, parameter interface,
+  contents) that gets instanced. A `TestBench` is the **one** thing you simulate (top cell +
+  globals + analyses + measurements). **Analyses and measurements attach to the `TestBench`, never
+  to a `Cell`.**
+- **`ComponentModel`, not "Device".** The single base for passive **and** active parts. "Device" is
+  reserved for its RF meaning (an active part). A resistor and a FET are both `ComponentModel`s.
+- **Three layers flow one way:** design → elaboration → numeric. Nothing in `src/Core` may depend
+  on `src/Engine` or `src/Ui`. The GUI edits the design layer; it never hands a design-layer object
+  to the engine — always elaborate first.
+
+## Expression engine — non-negotiables
+- **Never string substitution.** Real tokenize → Pratt-parse → AST → evaluate. (This replaces the
+  prototype's NSExpression/NSPredicate/regex path.)
+- **Parse once, evaluate many.** Cache the AST on the owning `Variable`/parameter/SDD/`Measurement`;
+  the SDD hot path (per time sample × Newton step × sweep point) must allocate no garbage.
+- **Kinded values: Real / Complex / Bool.** A resolved variable or parameter is Real **or** Complex
+  (not forced complex) — most component values are Real, impedances Complex. Ordering comparisons
+  are **real-only**; SDD equations are real-only time-domain (no `j`).
+- **Cycle detection is mandatory** and spans variables, cell-parameter defaults, and instance
+  overrides. Report the offending chain (e.g. `a → b → a`); never recurse without the in-progress
+  guard. Fixture `recursion.log` (a valid multi-hop chain → resolves to `2`) and a synthetic
+  cyclic fixture (`a=b, b=a` → must be reported) are the Phase-1 tests.
+- **Scope is structural,** not string-keyed: globals at the base; each cell instance pushes a scope
+  binding parameters. **Override expression evaluates in the PARENT scope; default in the cell's
+  own scope.** Resolution is local-then-global; no upward/sideways reach.
+
+## Elaboration
+- Flatten depth-first; primitives emitted, cells recursed with a fresh scope.
+- Resolve every expression to a kinded value (units applied here), with cycle detection.
+- Number nodes: ports map onto parent nets; internal nets uniquified by instance-path prefix;
+  **ground = 0**. Node names carry the instance path (`X1.drain`) — this is what measurement paths
+  resolve against, so keep it stable.
+- Compute `NonlinearComponents` / `NonlinearNodes` (the HB partition seed) here.
+- Numbering is stable + unique; the fill-reducing permutation for the solve is the **engine's** job,
+  not the elaborator's.
+
+## `.cnl` reader
+- Vendor-neutral hierarchical netlist; maps directly onto the design layer. JSON carries the same
+  logical model.
+- **Skip unknown header/comment lines** so real-world exports import cleanly; committed fixtures are
+  clean `.cnl`.
+- The legacy-dialect importer translates legacy `if…then…else…endif` → canonical `if(cond,then,else)`
+  at import time, so the engine grammar stays single-form.
+- Analysis/measurement **directive grammar is deliberately deferred** (data-model §10) — nail it
+  down before implementing those lines; the circuit/cell/variable lines are settled.
+
+## Phase 1 deliverable — COMPLETE (2026-05-30)
+Expression engine + elaboration + `.cnl` reader, validated by the cycle-detection fixtures.
+**Phase 1 does not need RfCore** — it is built and tested standalone.
+
+### Implementation notes (reality vs. design)
+- `if(...)` keyword is handled in the **Parser** (produces `ConditionalExpr`), not in `Evaluator.EvalCall`.
+- `Evaluator.InjectResolved(scopeDebugName, name, value)` lets the Elaborator inject
+  pre-resolved override values into the memo cache without round-tripping through `ToString()`
+  (avoids breakage on Complex values).
+- Left-assoc operators use `rbp = lbp + 1` in the Pratt table; right-assoc (`^`) uses `rbp = lbp - 1`.
+- Analysis/measure `.cnl` lines → `RawDirective { Kind; RawLine }` on `TestBench`. Typed `Analysis`
+  subclasses (`SParameterAnalysis`, etc.) are defined but not populated by the Phase-1 reader.
+- Top-level instances in a `.cnl` (outside any `define` block) are collected into a synthetic
+  `Cell("__top__")` that the elaborator uses as the top cell.
+- `ComponentModel.Stamp` uses `object` placeholders for `mna` and `c` — types resolved in Phase 2.
+
+## Ask before
+- Changing the `.cnl` or JSON format (round-trip + interop).
+- Changing the scope/binding rule or the kinded-value model (ripples into the engine and SDD).

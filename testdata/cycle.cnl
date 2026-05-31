@@ -1,0 +1,6 @@
+; circuitRF netlist (.cnl)
+; Synthetic cyclic fixture — a = b, b = a.
+; Must be reported as a cycle with the chain; must NOT hang.
+
+a = b
+b = a

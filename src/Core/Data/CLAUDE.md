@@ -1,0 +1,163 @@
+# Result model (DataSet / DataCube) — local conventions
+
+Standing instructions for `src/Core/Data`. Read with the root `CLAUDE.md`. The result model is the
+integration seam with splotRF — treat its contract as load-bearing.
+
+## What it is — two levels
+- **`DataCube`** — the storage primitive and the unit splotRF plots: a labeled, unit-bearing,
+  N-dimensional array with named axes and a single **`DataKind`** (`Complex` or `Real`).
+  One array, one element type. Backed by a flat buffer (`Complex[]` or `double[]`) with strides;
+  supports slicing and reduction along named axes.
+- **`DataSet`** — the container a run returns: many `DataCube`s keyed by name, coexisting regardless
+  of kind. An HB-with-measurements run returns one DataSet holding complex `"V"`/`"I"` spectra
+  *and* the real `"PAE"`/`"Gain"` measurements together.
+
+- An **S-parameter result** is the cube `S` → `{freq, i, j}`, where **`i` and `j` are the
+  user-assigned port numbers** (`i` = receiving/response port, `j` = driving/stimulus port, exactly
+  as in `S(i,j)`). They are **port numbers, never net names** — a user asks for `S(2,1)` and neither
+  knows nor cares about internal nets. Same convention for `Y`/`Z` cubes (`param(i,j)`). Identical
+  in shape to what Touchstone/splotRF already represent — this is *why* the cubes are the splotRF seam.
+- A **1-D slice of a cube is a plot trace.** See "Accessing data" below for the slice notation.
+- Conceptually: "xarray for RF." Axes are first-class, with names and units, not bare integers.
+
+## Accessing data
+Two layers: convenience accessors that speak the user's language, and a positional escape hatch.
+
+**Network parameters — by port number, the way RF engineers think:**
+```
+ds.S(2, 1)            // the S21 trace over frequency (a 1-D complex trace)
+ds.S(2, 1).dB20()     // |S21| in dB  (20·log10 — the conventional S-parameter dB; see transforms)
+ds.Y(1, 2) / ds.Z(...) // same i/j port-number convention
+```
+`ds.S(2,1)` resolves internally to the `S` cube at `i=2, j=1`, traced over `freq`. The user never
+spells out axis plumbing for the most common extraction in the tool. This matches `S(2,1)` in
+`measurements.md`, so the accessor and the measurement language agree.
+
+**HB node voltages / currents — by node *name* + positional slice of the remaining axes:**
+For a single-tone HB power sweep the `V` cube is `{node, harmonic, Pin}`. The node is addressed by
+its **user-defined name** (resolved against the elaborated node map, like `V(X1.drain)` in
+measurements); the bracket then indexes the *remaining* axes `(harmonic, Pin)` positionally.
+**Every bracket slot is an axis INDEX, never a physical value** — `1` is harmonic *index* 1, `0` is
+Pin *index* 0 (the first sweep point), not 0 W:
+```
+ds.V("X1.drain", 1, ..)      // harmonic=1 (fundamental), all Pin   -> 1-D trace vs Pin
+ds.V("X1.drain", 1, All)     // same; `All` is an alias for the `..` range
+ds.V("X1.drain", .., 0)      // all harmonics at Pin index 0         -> the spectrum at that node
+ds.V("X1.drain", 1, 2..4)    // harmonic=1, Pin indices 2,3 (end-exclusive) -> length-2 trace
+ds.V("X1.drain", 1, 3)       // harmonic=1, single Pin index 3        -> a single complex value
+```
+Harmonic is addressed **by index**: `0`=DC, `1`=fundamental, `2`=2nd, … (two-tone uses a tone pair
+`(k1,k2)`, see `measurements.md`). Currents are `ds.I("X1.M1:d", …)` — identified by component
+instance + port, which the user always knows from their own netlist.
+
+*(To select by physical value rather than index — e.g. "Pin = 0.01 W" — resolve the value to an
+index against the axis first; a value-based lookup helper may be added later, but the slice API
+itself is index-only to keep `3` from meaning both "index 3" and "3 W".)*
+
+**Slice-argument semantics (matches NumPy / Python, and C# `Range`):**
+- **Every slot is an axis INDEX, never a physical value** (see above). Resolve a value to an index
+  before slicing if needed.
+- A single **`int` pins and *removes* (collapses)** that axis: `ds.V("X1.drain", 1, 3)` drops `Pin`.
+- A **`Range` keeps** that axis, possibly narrowed: `..`/`All` = whole axis; `2..4` = a sub-range.
+- **Ranges are END-EXCLUSIVE.** `2..4` is indices 2,3 (4 not included); `2..3` is index 2 only.
+  > **Note — indexing convention.** End-exclusive ranges conform to **NumPy and C#** (`a[2:4]` /
+  > `a[2..4]` = indices 2,3). They do **not** match **MATLAB**, where `2:3` is inclusive (indices
+  > 2 *and* 3). This is the user-facing slice API; it is deliberately C#/NumPy-native. (The HB
+  > internals are transcribed from 1-based *inclusive* MATLAB pseudocode — a separate convention,
+  > flagged in `src/Engine/HarmonicBalance/CLAUDE.md`. Do not conflate the two.)
+- For "all of axis" support both **`..`** (idiomatic C#) and **`All`** (a readable alias that
+  evaluates to the same `Range`).
+
+**Positional escape hatch** — `ds["V"]` indexes *every* axis positionally (no name resolution).
+This requires knowing the cube's shape and axis order, which a viewer like splotRF surfaces; prefer
+the named accessors above for everyday use.
+
+## What a slice / transform returns
+Three distinct operation categories. Keep them straight — they affect rank and `DataKind` differently.
+
+**1. Slicing** (the bracket args above) — changes **rank**, never the values:
+- **Any `..`/range present → returns a `DataCube`** whose rank = number of free (non-pinned) axes,
+  with those axes' labels and units preserved. A rank-1 result *is* "a trace." `int` pins (drops)
+  an axis; `..`/range keeps it.
+- **All free axes pinned with `int` → returns the bare element** (`Complex` for a Complex cube,
+  `double` for a Real cube), **not** a rank-0 cube. (Matches NumPy: `a[1,3]` is a scalar, `a[1,:]`
+  is an array.)
+- Slicing a `DataCube` yields a `DataCube` (or the bare element) — a closed algebra, so results
+  re-slice freely. `ds["S"]` (whole cube) and `ds.S(2,1)` (sub-cube) are the **same type**.
+
+**2. Element-wise transforms** — preserve **rank and axes**, set the `DataKind`. A rank-2 cube stays
+rank-2; only the element type (and values) change. So `.real()` on a rank-2 Complex cube returns a
+rank-2 **Real** cube of the same shape — to get a rank-1 result you *slice first, then transform*
+(`ds.V("X1.drain", 1, ..).dB20()` → rank-1 Real).
+  - Complex → Real: `.real()`, `.imag()`, `.mag()`, `.phase(deg=true)`, `.dB()`, `.dB10()`, `.dB20()`.
+  - Complex → Complex: `.conj()`.
+  - On an already-Real cube, `.real()`/`.mag()` etc. are no-ops returning the cube (compose cleanly).
+
+  **dB variants — explicit, never context-dependent** (a function must not silently change its math):
+  - `.dB10()` = `10·log10(|z|)` — the **power** dB; use when the cube already holds a power.
+  - `.dB20()` = `20·log10(|z|)` — the **amplitude** dB; use for wave/voltage/ratio quantities.
+    This is the conventional S-parameter dB (`20·log10|S21|`).
+  - `.dB()` = `10·log10(|z|)`, i.e. an **alias for `.dB10()`**. Plain power-dB of whatever the cube
+    holds, no interpretation of quantity type.
+  > **Footgun:** `.dB()` on an amplitude quantity (S-parameter, voltage) gives **half** the
+  > conventional value (`10·log10` instead of `20·log10`). For S-parameters/voltages use **`.dB20()`**.
+  > `10` vs `20` is not arbitrary: power ∝ |amplitude|², so `20·log10(|v|) = 10·log10(|v|²)` — the
+  > same physical dB applied in the amplitude vs power domain.
+
+**3. Reductions** — collapse one **named** axis, dropping rank by one: `.max("Pin")`, `.min("Pin")`,
+`.peak("Pin")`, `.at("Pin", idx)`. (Ordering-based reductions like `max`/`min` need a Real cube —
+`.mag()` first if the cube is Complex.)
+
+**Down to the raw array:** `.Values` hands out the backing `Complex[]`/`double[]` for a plotting
+loop or interop, and `.Axis("Pin")` gives that axis's values/units. Use these when you genuinely want
+bare numbers; the default returns keep axes attached so splotRF and the transforms above never lose
+the x-axis.
+
+## DataKind — Real and Complex, both honest
+- A cube carries a `DataKind`: `Complex` (backed by `Complex[]`) or `Real` (backed by `double[]`).
+- **Primary results that carry phase are `Complex`** (S-parameters, harmonic spectra of node
+  voltages and branch currents). **Derived measurements take the kind their function returns** —
+  `PAE`, `DE`, `Pout_dBm` → `Real`; `Gamma_load`, `Zin` → `Complex`.
+- **Never** store a real quantity as complex-with-zero-imaginary. It doubles storage and makes
+  downstream code guess whether a zero imaginary part means "no phase" or "not yet computed."
+- A `Real` cube may be *promoted* to complex on request (for a consumer that only speaks complex),
+  but storage stays the honest kind.
+
+## Rules
+- **One result model.** No analysis (S-param, HB, loadpull, sweep) may invent its own result struct;
+  every run returns a `DataSet` of `DataCube`s. Measurements (Pout, PAE, IMn, …) are added to the
+  DataSet as named cubes (the `user_results` group); they are not a separate type.
+- A **sweep** wrapping an analysis adds a sweep axis across the cubes within the one DataSet.
+- Axes are **named and unit-bearing**; preserve labels and units through slicing/reduction.
+- All complex data is double precision (`System.Numerics.Complex`); all real data is `double`.
+
+## Export
+- **`.mat`** (MATLAB/Octave) maps naturally: each named cube → a named variable/struct field, so a
+  whole DataSet exports as one `.mat`.
+- **`.npy`** (NumPy): export the **whole DataSet as ONE packed structured (record) array** — a single
+  `.npy` file whose record fields carry the named cubes plus axis metadata. (Not one file per cube.)
+- Details in `docs/design/data-export.md`. The `.npy` "one packed structure" choice is fixed in
+  `docs/PRD.md` §11.
+
+## Memory
+A `Complex` is 16 bytes (`double` is 8). A dense 50×50 loadpull grid × 100 nodes × 20 spectral lines
+is tens of MB — fine in RAM — but large parametric sweeps can blow the budget. **Design the backing
+store so it can be swapped** to chunked or memory-mapped storage later without changing the public
+API. Don't build that now; just don't preclude it.
+
+**Node-retention policy (HB).** To save memory, an HB analysis records to the `V` cube **only nodes
+the user named** (a custom node name) **plus any node a measurement explicitly references** by path.
+Rationale: a user cannot query `V(net_417)` for a net they never named, so storing every internal
+net is dead weight; but a measurement that reaches a node by path must not silently fail, so its
+referenced nodes are retained even if unnamed. The solver still *computes* every node (the MNA
+solves the whole vector) — this is a *retention* policy, not a solve change. Branch currents are
+identified by component instance + port (`I(X1.M1:d)`), so they are not subject to the named-node
+filter — the instance name is the user's handle. Deep, hierarchy-reaching measurements
+(see `docs/design/measurements.md`) thus define the retained set together with the named nodes —
+the same set a future "retain only referenced nodes" optimization would prune to.
+
+## Change carefully
+The `DataSet`/`DataCube` contract is **owned by circuitRF and consumed by splotRF.** Any change to
+cube shape, `DataKind`, axis semantics, or serialization is a reviewed decision — flag it
+(root `CLAUDE.md` → "Ask before") because splotRF must be upgraded in lockstep, and it must handle
+both `DataKind`s when consuming a cube.

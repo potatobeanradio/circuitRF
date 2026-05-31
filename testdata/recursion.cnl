@@ -1,0 +1,7 @@
+; circuitRF netlist (.cnl)
+; Valid multi-hop variable chain — must resolve C2 to 2, not hang or error.
+; Corresponds to the "recursion.log" fixture concept from the prototype.
+
+C2 = gizmo
+gizmo = funtimes
+funtimes = 2
