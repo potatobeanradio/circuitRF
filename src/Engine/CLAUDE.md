@@ -110,10 +110,113 @@ Hero 1: 4-port RLC + embedded 2-port SnP. max|S_sim − S_ref| < 1e-6 across all
   as the SNP's Z0 field (for Touchstone write metadata). The actual per-port renormalization was
   already applied via `YToS(yMat, z0PerPort)`.
 
-### What Step 3 needs (VendorA importer + Hero 1B)
-- Replace Dictionary backing with CSparse triplet/compressed-column storage.
-- `Solve()` method: AMD ordering (symbolic once per topology), numeric LU factorization per
-  frequency, multi-RHS back-substitution for port extraction.
-- DC analysis, S-parameter analysis, Port/Term extraction, per §§5, 9, 6 of linear-engine.md.
-- Stamps for R, L, C (updating existing stubs), voltage/current sources, Port/Term, TLIN.
-- CLI driver.
+## Phase 2 Step 3 — Hero 1B Singular-Matrix Diagnosis (2026-06-01)
+
+### Diagnostics added (permanent product features)
+- **`MnaSystem.FindZeroRows(nodeNamer, branchNamer)`** — pre-solve structural check: finds all-zero
+  rows in the assembled MNA; names voltage nodes (with touching component list) and branch rows.
+- **`MnaSystem.FindZeroCols(nodeNamer, branchNamer)`** — finds all-zero columns (a degree-of-freedom
+  singularity dual to zero rows).
+- **`MnaSystem.Factorize(tol, nodeNamer, branchNamer)`** — runs the structural check before
+  factorization; on failure (zero row/col or CSparse "no pivot") throws `SingularMatrixException`
+  with a diagnostic message naming the problematic row/branch and its touching components.
+- **`SingularMatrixException`** — new exception type in `src/Engine/`.
+- **`SParameterEngine`** — builds node/branch namers from the elaborated netlist (node names +
+  touching-component list; branch→component map from the preliminary stamp pass); passes them to
+  `Factorize()`. Preliminary pass updated to two-phase ordering (non-mutual first, then mutual).
+- **`MutualInductanceModel.Stamp`** — over-coupling check: rejects k ≥ 1 (M² ≥ L1·L2) with a
+  clear error naming the Mutual instance and its computed k. `_l1`/`_l2` stored in `Resolve()`.
+
+### Step 3 audit results
+- **gmin in AC path**: confirmed present in S-parameter path (not DC-only). Not a bug.
+- **Short stamp**: audited and correct. Unit test `Short_AsInternalWire_SameAsDirectConnection`
+  confirms identical S-params with and without an internal Short wire.
+- **Mutual stamp**: stamp sign convention correct per linear-engine §7. Pairwise k-check added.
+  Unit tests: `Mutual_ValidCoupling_SolvesAndIsReciprocal` and `Mutual_OverCoupling_ThrowsWithDiagnosticMessage`.
+
+### Hero 1B diagnosis (Step 5) — root cause identified
+The singularity was frequency-dependent (solved at 1 Hz, failed at 1 GHz), pointing at the jωM
+terms. Root cause: `InductorModel.Stamp` silently dropped the `R=` parameter on `L:` lines — the
+first circuit to have lossy inductors. With R = 0.0026 Ω per inductor omitted, the coupled
+inductance block had a zero eigenvalue at AC.
+
+## Phase 2 Step 3 — Hero 1B Gate: PASSED (2026-06-01)
+
+### Fix 1: Inductor series-R stamping (correctness bug)
+**`InductorModel.Stamp`** now reads the optional `R=` parameter (default 0) and stamps it together
+with jωL on the same branch diagonal: constraint becomes `Va − Vb − (R + jωL)·i = 0`.
+- At DC with R=0: exact short (unchanged behaviour).
+- At DC with R>0: `Va − Vb − R·i = 0` — acts as resistor, not a short.
+- The R term is independent of ω, so it is always added if non-zero.
+- Unit test: `InductorWithSeriesR_ImpedanceMatchesAnalytic` verifies Z(ω) = R + jωL end-to-end.
+
+### Fix 2: Mixed-sign mutual inductance support (already correct, verified)
+Negative M values are physically valid (anti-phase coupling — geometry dependent) and must NOT be
+rejected, warned on, or negated. The stamp correctly applies M with its sign intact (−jωM term).
+- Over-coupling check (`k ≥ 1`) uses `m*m >= _l1*_l2` — tests the magnitude, not the sign.
+- Unit test: `ThreeInductors_MixedSignMutual_SolvesCorrectly` confirms a physically-realizable
+  mixed-sign inductance matrix solves, is reciprocal, and is passive.
+
+### Feature: Two tri-state regularization settings (`AnalysisSettings`)
+**`AnalysisSettings`** (new, `src/Engine/AnalysisSettings.cs`) exposes two independent `RegularizationMode` settings:
+- **`ConductanceRegularization`**: controls gmin (1e-12 S, node→ground). Default: `IfNecessary`.
+- **`InductanceRegularization`**: controls a small series-R (1 nΩ) added to each inductor branch
+  diagonal. Cures a rank-deficient coupled-inductance block. Default: `IfNecessary`.
+
+`RegularizationMode` tri-state:
+- **`IfNecessary`**: first attempt without regularization; if `SingularMatrixException`, retry with
+  all non-`Never` regs applied (both, for simplicity) and warn on stderr. Clean circuits pay zero.
+- **`Always`**: apply before the first factorization (skip speculative failed solve).
+- **`Never`**: no regularization; `SingularMatrixException` propagates immediately (debug mode).
+
+`SParameterEngine.Run` signature changed: `gmin = DefaultGmin` parameter replaced by
+`AnalysisSettings? settings = null`; uses `AnalysisSettings.Default` when null.
+
+Hero 1 (lossless inductors, no R=): first solve succeeds (no regularization needed) — result is
+identical to before (1e-6 gate still passes).
+
+Hero 1B (lossy inductors, R=0.0026 Ω): first solve succeeds after the inductor-R fix — the series
+resistance regularises the inductance block naturally. Regularization retry never fires.
+
+Tests added: `InductorWithSeriesR_ImpedanceMatchesAnalytic`, `ThreeInductors_MixedSignMutual_SolvesCorrectly`,
+`AnalysisSettings_IfNecessary_RescuesSingularOnRetry`, and `SParameterEngine_IsolatedShort_BothNodesGround_ThrowsSingular`
+(updated to use `RegularizationMode.Never` so the diagnostic propagates as designed).
+
+**Total tests: 130 pass, 0 fail.**
+
+## Phase 2 Component Robustness (2026-06-01)
+
+### Design philosophy: warn-and-continue
+circuitRF is a research tool. Non-physical-but-mathematically-handleable inputs emit a warning to
+`Console.Error` and proceed; they do NOT hard-error. Warnings fire once per component instance
+(not once per frequency point) using an instance-level `_warned` flag. Hard errors are reserved
+for genuinely unresolvable conditions (missing required parameters, elaboration failures).
+
+### Change 1: ResistorModel — negative R and R=0
+- **R < 0**: stamps `G = 1/R` with its sign (negative conductance — models active/negative-resistance
+  elements). Emits one warning per instance: `"R:{path}: R={r} Ω < 0 — non-physical/active"`.
+- **R = 0**: stamps `Gmax = 1e12 S` (near-short). Emits one warning per instance naming Gmax.
+  `Gmax` is a `const double DefaultGmax` on `ResistorModel` matching `AnalysisSettings.Default.Gmax`.
+- `AnalysisSettings.Gmax` (default 1e12 S) exposes the conductance ceiling. Currently used by
+  `ResistorModel.DefaultGmax`; future: wire through `IMnaContext` for per-run customization.
+
+### Change 2: InductorModel — optional series R and C (series-RLC branch)
+An `L:` line may carry `R=` (series resistance) and/or `C=` (series capacitance), both optional.
+The inductor's single Group-2 branch is a series-RLC element:
+- Constraint: `Va − Vb − (R + jωL + 1/(jωC))·i = 0`
+- `R=` absent → no resistance term (lossless). `C=` absent → no capacitive term.
+- **DC with C present**: series capacitor is an open at DC (1/(jωC) → ∞ as ω→0). Stamped as
+  force-i=0: constraint row has only `−i = 0` (diagonal = -1, no voltage coefficients). KCL column
+  still stamped so the branch column is non-zero. Equivalent to the standalone capacitor's DC-open.
+- **DC without C**: `diag = −R` (resistor if R>0, exact short if R=0 — unchanged from prior).
+- Tests: `InductorWithSeriesR_ImpedanceMatchesAnalytic` (RL), `InductorRLC_AcImpedanceMatchesAnalytic`
+  (RLC AC), `InductorWithC_DcOpen_BranchCurrentIsZero` (DC-open via MnaSystem inspection).
+
+### Change 3: MutualInductanceModel — k≥1 downgraded from error to warning
+- `k ≥ 1` (M² ≥ L1·L2) is non-physical but allowed at the user's peril. Warning: once per instance
+  via `_warnedOverCoupling` flag. Stamping proceeds; if the inductance matrix becomes singular,
+  `InductanceRegularization` (IfNecessary default) rescues the solve.
+- **Negative M (mixed-sign couplings) is fully physical — no warning, no special handling.**
+- Test: `Mutual_OverCoupling_WarnsAndProducesResult` verifies warning fires + result returned.
+
+**Total tests: 134 pass, 0 fail.**

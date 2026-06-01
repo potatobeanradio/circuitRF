@@ -25,6 +25,11 @@ public sealed class MutualInductanceModel : ComponentModel
 
     private InductorModel? _i1;
     private InductorModel? _i2;
+    private double _l1;
+    private double _l2;
+
+    // Deduplication: warn once per component instance, not once per frequency point.
+    private bool _warnedOverCoupling;
 
     public MutualInductanceModel(string inductor1InstanceName, string inductor2InstanceName)
     {
@@ -63,6 +68,10 @@ public sealed class MutualInductanceModel : ComponentModel
         _i2 = (ec2.Model as InductorModel)
               ?? throw new InvalidOperationException(
                   $"Mutual '{selfEc.InstancePath}': '{path2}' is not an InductorModel");
+
+        // Cache L1, L2 for the k ≥ 1 coupling check at stamp time.
+        _l1 = ec1.Parameters["L"].AsReal();
+        _l2 = ec2.Parameters["L"].AsReal();
     }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
@@ -72,6 +81,22 @@ public sealed class MutualInductanceModel : ComponentModel
                 $"MutualInductanceModel '{c.InstancePath}': Resolve() was not called");
 
         double m = c.Parameters["M"].AsReal();  // in Henry (unit already applied)
+
+        // Over-coupling diagnostic (warn-and-continue — circuitRF research-tool philosophy).
+        // Physical requirement: M² < L1·L2, equivalently |k| < 1.
+        // k ≥ 1 is non-physical (or an ideal transformer, not yet modelled), but the stamp
+        // proceeds. If the resulting inductance matrix is singular, InductanceRegularization
+        // (IfNecessary default) rescues the solve. Warn once per instance.
+        // NOTE: negative M (anti-phase coupling) is fully physical and is NOT warned on.
+        if (!_warnedOverCoupling && m * m >= _l1 * _l2)
+        {
+            double k = Math.Abs(m) / Math.Sqrt(_l1 * _l2);
+            Console.Error.WriteLine(
+                $"[circuitRF] Mutual:{c.InstancePath}: coupling coefficient k={k:G4} ≥ 1 — " +
+                $"non-physical (M²={m * m:G4}, L1·L2={_l1 * _l2:G4} H²); proceeding. " +
+                "If the matrix becomes singular, InductanceRegularization will rescue the solve.");
+            _warnedOverCoupling = true;
+        }
 
         // Adds −jωM to the off-diagonal branch cross-terms in the D block.
         // This extends the inductor constraint rows:

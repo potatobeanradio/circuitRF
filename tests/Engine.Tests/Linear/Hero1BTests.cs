@@ -26,6 +26,44 @@ public class Hero1BTests
         throw new DirectoryNotFoundException("testdata/Hero1B not found");
     }
 
+    /// <summary>
+    /// Diagnostic: try Hero 1B at a very low frequency (1 Hz) to see if the singularity
+    /// comes from the Mutual/jωM terms (only present at ω > 0).
+    /// At ω → 0: Mutual stamps −jωM ≈ 0, leaving just L constraint rows (V_a - V_b = 0 shorts).
+    /// If this PASSES but 1 GHz fails, the inductance D-block is rank-deficient at AC.
+    /// If this also fails, the issue is structural (Short topology or degenerate constraint rows).
+    /// </summary>
+    [Fact]
+    public void Hero1B_Diagnostic_AtNearDcFrequency_ReportsSingularityOrPasses()
+    {
+        var dir     = Hero1BDir();
+        var cnlPath = Path.Combine(dir, "hero1b.cnl");
+        var (lib, tb) = VendorAReader.ReadFile(cnlPath);
+        var nl = new Elaborator(lib).Elaborate(tb);
+
+        string result;
+        try
+        {
+            // 1 Hz is effectively DC for inductors: jωL = j * 2π * 1 * L ≈ 6.28e-9 H (sub-fH range)
+            // Mutual terms: -jωM ≈ 0 → Mutual stamp is near-zero → not contributing
+            SParameterEngine.Run(nl, [1.0]);
+            result = "PASSED at 1 Hz — singularity is frequency-dependent (AC/jωM terms are the cause)";
+        }
+        catch (SingularMatrixException ex)
+        {
+            result = $"FAILED at 1 Hz too — singularity is structural (not from jωM): {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            result = $"Other exception at 1 Hz: {ex.GetType().Name}: {ex.Message}";
+        }
+
+        // Report result as a Console write so it appears in verbose output.
+        // Always pass — this is a diagnostic probe, not a correctness gate.
+        Console.WriteLine($"[Hero1B DC probe] {result}");
+        Assert.True(true);
+    }
+
     [Fact]
     public void Hero1B_ImportElaborateAndSolve_WithinBudgetAndConsistent()
     {

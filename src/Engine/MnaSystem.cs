@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using CircuitRF.Core;
 using CSparse;
 using CSparse.Complex;
@@ -115,14 +116,125 @@ public sealed class MnaSystem : IMnaContext
     // ── Solve support ─────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Find all all-zero rows in the assembled matrix.
+    /// A zero row means the corresponding unknown has no constraints and will cause singularity.
+    /// <paramref name="nodeNamer"/> maps a 0-based voltage-node matrix index to a display name.
+    /// <paramref name="branchNamer"/> maps a branch-row matrix index to a display name.
+    /// </summary>
+    public IReadOnlyList<(int Row, string Description)> FindZeroRows(
+        Func<int, string>? nodeNamer   = null,
+        Func<int, string>? branchNamer = null)
+    {
+        var nonZeroRows = new HashSet<int>(_entries.Count);
+        foreach (var (row, _) in _entries.Keys)
+            nonZeroRows.Add(row);
+
+        var result = new List<(int, string)>();
+        for (int r = 0; r < Size; r++)
+        {
+            if (nonZeroRows.Contains(r)) continue;
+            string desc;
+            if (r < _nodeCount)
+                desc = $"voltage node: {nodeNamer?.Invoke(r) ?? $"node#{r + 1}"}";
+            else
+                desc = $"branch row: {branchNamer?.Invoke(r) ?? $"branch#{r - _nodeCount}"}";
+            result.Add((r, desc));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Find all all-zero columns in the assembled matrix.
+    /// A zero column means the corresponding unknown appears in no equation — a degree of freedom.
+    /// <paramref name="nodeNamer"/> maps a 0-based voltage-node matrix index to a display name.
+    /// <paramref name="branchNamer"/> maps a branch-column matrix index to a display name.
+    /// </summary>
+    public IReadOnlyList<(int Col, string Description)> FindZeroCols(
+        Func<int, string>? nodeNamer   = null,
+        Func<int, string>? branchNamer = null)
+    {
+        var nonZeroCols = new HashSet<int>(_entries.Count);
+        foreach (var (_, col) in _entries.Keys)
+            nonZeroCols.Add(col);
+
+        var result = new List<(int, string)>();
+        for (int c = 0; c < Size; c++)
+        {
+            if (nonZeroCols.Contains(c)) continue;
+            string desc;
+            if (c < _nodeCount)
+                desc = $"voltage node: {nodeNamer?.Invoke(c) ?? $"node#{c + 1}"}";
+            else
+                desc = $"branch col: {branchNamer?.Invoke(c) ?? $"branch#{c - _nodeCount}"}";
+            result.Add((c, desc));
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Build the CSC matrix, compute the AMD permutation on the first call,
     /// and return an LU factorization. Reuse the permutation on subsequent calls.
+    /// Throws <see cref="SingularMatrixException"/> with structural diagnostics if factorization fails.
     /// </summary>
-    public SparseLU Factorize(double pivotTolerance = 1.0)
+    public SparseLU Factorize(
+        double pivotTolerance          = 1.0,
+        Func<int, string>? nodeNamer   = null,
+        Func<int, string>? branchNamer = null)
     {
         var cs = BuildCscMatrix();
         _amdPerm ??= AMD.Generate(cs, ColumnOrdering.MinimumDegreeAtA);
-        return SparseLU.Create(cs, _amdPerm, pivotTolerance);
+
+        // Pre-solve: find structurally zero rows and columns.
+        var zeroRows = FindZeroRows(nodeNamer, branchNamer);
+        var zeroCols = FindZeroCols(nodeNamer, branchNamer);
+        if (zeroRows.Count > 0 || zeroCols.Count > 0)
+        {
+            var sb = new StringBuilder();
+            if (zeroRows.Count > 0)
+            {
+                sb.AppendLine($"Singular MNA matrix: {zeroRows.Count} all-zero row(s) found before factorization.");
+                foreach (var (_, desc) in zeroRows)
+                    sb.AppendLine($"  zero row  • {desc}");
+                sb.AppendLine("A zero row means that unknown has no constraints — check for floating nodes or malformed component stamps.");
+            }
+            if (zeroCols.Count > 0)
+            {
+                sb.AppendLine($"Singular MNA matrix: {zeroCols.Count} all-zero column(s) found before factorization.");
+                foreach (var (_, desc) in zeroCols)
+                    sb.AppendLine($"  zero col  • {desc}");
+                sb.Append("A zero column means the unknown appears in no equation — check for isolated branch-current unknowns.");
+            }
+            throw new SingularMatrixException(sb.ToString());
+        }
+
+        // Try factorization.
+        SparseLU? lu;
+        Exception? factEx = null;
+        try
+        {
+            lu = SparseLU.Create(cs, _amdPerm, pivotTolerance);
+        }
+        catch (Exception ex)
+        {
+            lu    = null;
+            factEx = ex;
+        }
+
+        if (lu is null)
+        {
+            string reason = factEx is not null
+                ? $"factorizer threw: {factEx.Message}"
+                : "SparseLU.Create returned null (no pivot found)";
+            throw new SingularMatrixException(
+                $"Singular MNA matrix ({reason}). " +
+                "No structurally zero rows or columns detected; likely cause: " +
+                "numerically exact rank deficiency — e.g. a KVL Short loop (three or more Shorts forming a closed loop " +
+                "where one constraint is a linear combination of the others), or an inductance sub-matrix with zero determinant " +
+                "(highly coupled network). Check for Short-loop topology or verify all mutual inductances are physically realizable.",
+                factEx);
+        }
+
+        return lu;
     }
 
     /// <summary>Build the dense RHS vector from accumulated source values.</summary>

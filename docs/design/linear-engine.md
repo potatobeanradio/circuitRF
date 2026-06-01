@@ -142,6 +142,21 @@ The factor of **8** (not 4) follows from the magnitude/peak convention with the 
 
 Though specified here, the RF power source is exercised by the **HB drive** (Phase 4), not by Hero 1; it is documented now while the formulation is fresh. The linear engine only needs the stamping; the `Pavl → |Vs|` mapping is shared with the HB drive setup.
 
+### 4.3 Non-physical inputs — warn and continue; regularization settings
+circuitRF is a research/experimentation tool: it lets users build deliberately non-physical circuits, **warns**, and keeps solving — it does **not** hard-error on a non-physical-but-mathematically-handleable input. (This is a deliberate reversal of an earlier "reject k≥1" rule.) The cases:
+
+- **Negative R** (active element): stamp `1/R` with its sign; **warn** (`R<0 on R1: non-physical/active; proceeding`). No singularity risk from the sign.
+- **R = 0**: a true short would be infinite admittance. Stamp **`Gmax`** (a near-short conductance, default **1e12 S**, exposed as an engine setting alongside gmin) and **warn**. Gmax is the conductance ceiling, the dual of gmin's conductance floor.
+- **Inductor optional series R / C**: an `L:` line may carry `R=` and/or `C=` (e.g. a VendorA or native series-RLC branch). Both optional, both stamped in series on the inductor's single branch: `Va − Vb − (R + jωL + 1/(jωC))·i = 0`. Absent term = omitted (no R → lossless; no C → no capacitive term). **DC care:** a present series `C` makes the branch an open at DC (the `1/(jωC)` term diverges as ω→0), so at DC such a branch carries no current — the opposite of a bare inductor's DC short. (A *physical* inductor's series R, when present, is also what keeps an otherwise purely-reactive coupled block non-singular — stamp it; do not drop it.)
+- **Mutual k ≥ 1** (over-coupling, `M² ≥ L1·L2`): non-physical but **allowed — warn**, do not reject. The coupled inductance matrix may be singular; the `InductanceRegularization` setting (below) rescues the solve.
+- **Mixed-sign mutuals** (both +M and −M in one circuit): fully physical (coupling sign is geometry), **supported, no warning**. Stamp M with its sign; never negate or reject it.
+
+**Two regularization settings** (each a tri-state `{ IfNecessary, Always, Never }`, default `IfNecessary`):
+- **`ConductanceRegularization`** — this is `gmin` (1e-12 S, every node→ground); cures floating-node singularities.
+- **`InductanceRegularization`** — the inductive dual (a tiny series resistance / diagonal loading on the inductor block); cures a near-singular or rank-deficient coupled-inductance matrix (e.g. a degenerate EM-extracted coupled-coil block, or k≥1).
+
+Semantics (identical for both): **`IfNecessary`** assembles *without* the regularization, attempts the factorization, and on failure adds it and retries (clean circuits pay nothing and get the unperturbed result; if a solve fails with both at `IfNecessary`, add **both** on retry — they're cheap and orthogonal). **`Always`** assembles *with* it from the start (skips the speculative failed solve — useful for large circuits known to need it; slightly perturbs all results). **`Never`** assembles without and, if singular, **fails with the singular-node diagnostic** (§6 / engine CLAUDE.md) — a validation mode for users who want to *know* a circuit is degenerate. **Warn only when a regularization actually engages**, never merely for a clean solve or for negative M.
+
 ---
 
 ## 5. DC formulation — no value fudges
