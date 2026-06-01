@@ -1,6 +1,7 @@
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Core.Elaboration;
 
@@ -37,6 +38,11 @@ public sealed class Elaborator
             currentScope:       globalScope,
             globalScope:        globalScope,
             netlist:            netlist);
+
+        // Post-flatten: resolve mutual inductance references now that all inductors exist.
+        foreach (var ec in netlist.Components)
+            if (ec.Model is MutualInductanceModel m)
+                m.Resolve(netlist, ec);
 
         return netlist;
     }

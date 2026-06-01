@@ -88,7 +88,29 @@ symbolic-once/numeric-per-frequency pattern.
 - Branch b (from `AddBranch()`) → internal index returned directly (= `_nodeCount + sequential counter`).
 - Matrix row/col layout: `[0 .. nodeCount−1]` = voltage unknowns; `[nodeCount ..]` = branch unknowns.
 
-### What Step 2 must add
+## Phase 2 Step 2 deliverable — GATE PASSED (2026-05-31)
+
+Hero 1: 4-port RLC + embedded 2-port SnP. max|S_sim − S_ref| < 1e-6 across all 16 S-params,
+1–3 GHz, from the CLI. 117/117 tests pass.
+
+### Implementation notes (reality vs. design)
+- **Sign in Y-matrix extraction:** branch current flows FROM signal TO ref (AddBranchCurrent
+  convention), so the port current (INTO the + terminal) = **−branch_current**. Y_kj = -x[br_k].
+- **Fixture bug found and fixed:** hero1.cnl had `C3 = 0.5 pF`; the external reference used 1.5 pF.
+  Also changed `InterpMode` to `"linear"` to match the external reference generation.
+- **AMD perm caching:** computed on first `Factorize()` call (first frequency), reused for all
+  subsequent frequencies. Both the Dictionary clearing and branch-count reset in `Reset()` are
+  required to make the symbolic-once / numeric-per-frequency pattern work.
+- **Gmin loop:** `for (int n = 1; n <= nonGroundNodes; n++) AddAdmittance(n, 0, gmin)` —
+  uses the circuit node indices (1-based), NOT the internal 0-based matrix indices.
+- **Port collection:** a preliminary stamp pass (omega=1.0) captures `PortModel.LastBranchIndex`
+  before the analysis loop. Indices are deterministic (same component order each pass), so the
+  captured values remain valid throughout the sweep.
+- **S-matrix Z0 metadata:** the SNP returned by `SParameterEngine.Run` stores `refZ0 = z0PerPort[0]`
+  as the SNP's Z0 field (for Touchstone write metadata). The actual per-port renormalization was
+  already applied via `YToS(yMat, z0PerPort)`.
+
+### What Step 3 needs (VendorA importer + Hero 1B)
 - Replace Dictionary backing with CSparse triplet/compressed-column storage.
 - `Solve()` method: AMD ordering (symbolic once per topology), numeric LU factorization per
   frequency, multi-RHS back-substitution for port extraction.

@@ -13,16 +13,17 @@ public static class ComponentModelFactory
     private static readonly Dictionary<string, Func<ComponentModel>> _registry =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            { "R",    () => new ResistorModel()  },
-            { "C",    () => new CapacitorModel() },
-            { "L",    () => new InductorModel()  },
-            { "Port", () => new PortModel()      },
-            { "Term", () => new TermModel()      },
+            { "R",     () => new ResistorModel()  },
+            { "C",     () => new CapacitorModel() },
+            { "L",     () => new InductorModel()  },
+            { "Port",  () => new PortModel()      },
+            { "Term",  () => new TermModel()      },
+            { "Short", () => new ShortModel()     },
         };
 
     // Types that require resolved parameters at construction time.
     private static readonly HashSet<string> _parameterizedTypes =
-        new(StringComparer.OrdinalIgnoreCase) { "SnP" };
+        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual" };
 
     /// <summary>
     /// Returns a new ComponentModel, using resolved parameters when needed.
@@ -31,8 +32,10 @@ public static class ComponentModelFactory
     public static ComponentModel? TryCreate(string typeName,
         IReadOnlyDictionary<string, Value> parameters)
     {
-        if (typeName.Equals("SnP", StringComparison.OrdinalIgnoreCase))
+        if (typeName.Equals("SnP",    StringComparison.OrdinalIgnoreCase))
             return CreateSnpModel(parameters);
+        if (typeName.Equals("Mutual", StringComparison.OrdinalIgnoreCase))
+            return CreateMutualModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -72,5 +75,14 @@ public static class ComponentModelFactory
                 : OutOfRangePolicy.WarnClamp;
 
         return new SnpModel(portCount, filePath, interpMethod, extrapPolicy);
+    }
+
+    private static MutualInductanceModel CreateMutualModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (!parameters.TryGetValue("Inductor1", out var i1) || i1.Kind != ValueKind.String)
+            throw new InvalidOperationException("Mutual: Inductor1 parameter is missing or not a string");
+        if (!parameters.TryGetValue("Inductor2", out var i2) || i2.Kind != ValueKind.String)
+            throw new InvalidOperationException("Mutual: Inductor2 parameter is missing or not a string");
+        return new MutualInductanceModel(i1.AsString(), i2.AsString());
     }
 }

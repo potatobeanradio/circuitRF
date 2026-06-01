@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Core\CircuitRF.Core.csproj" />
+    <ProjectReference Include="..\Engine\CircuitRF.Engine.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

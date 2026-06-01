@@ -13,4 +13,8 @@
     <ProjectReference Include="../../../RfCore/src/RfCore.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="CSparse" Version="4.3.0" />
+  </ItemGroup>
+
 </Project>
