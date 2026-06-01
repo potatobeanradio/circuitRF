@@ -58,10 +58,22 @@ behavior) the engine have their own notes.
   logical model.
 - **Skip unknown header/comment lines** so real-world exports import cleanly; committed fixtures are
   clean `.cnl`.
-- The legacy-dialect importer translates legacy `if…then…else…endif` → canonical `if(cond,then,else)`
-  at import time, so the engine grammar stays single-form.
+- The **VendorA importer** (a separate front-end, Phase 2) translates legacy `if…then…else…endif`
+  → canonical `if(cond,then,else)` at import time, so the engine grammar stays single-form. (Native
+  `.cnl` only ever uses the canonical form.)
 - Analysis/measurement **directive grammar is deliberately deferred** (data-model §10) — nail it
   down before implementing those lines; the circuit/cell/variable lines are settled.
+- **SnP / frequency-domain N-port reference node (N-or-N+1 rule).** A frequency-domain N-port
+  component (SnP block, impedance block, TLIN, user freq model) lists either **N nets** (each port
+  referenced to ground, node 0) **or N+1 nets**, in which case the **last net is the common
+  reference node** for all ports (the floating-block case). The reader validates node count against
+  `NumPorts`: `== NumPorts` or `== NumPorts + 1`, else error. The reference node is recorded on the
+  component (a `ReferenceNet`, ground when absent) and the model uses it in its own stamp
+  (linear-engine §4.1). This rule does **not** apply to 2-terminal R/L/C. SnP line fields:
+  `File` (relative paths resolved against the `.cnl` file's dir; absolute as-is), `Type`
+  (v1: `"touchstone"` only — **hard-error on any other value**; extensible, future `"datacube"`),
+  `InterpMode` (`"spline"` default | `"linear"`), `InterpDom`, `ExtrapMode` (`"clamp"` default |
+  `"extrapolate"`); `Temp` and passivity/noise flags are parsed and ignored.
 
 ## Phase 1 deliverable — COMPLETE (2026-05-30)
 Expression engine + elaboration + `.cnl` reader, validated by the cycle-detection fixtures.

@@ -1,6 +1,6 @@
 # circuitRF — Linear Engine Design (MNA, DC, S-parameters)
 
-**Status:** Draft (rev 2) for review · **Date:** 2026-05-29
+**Status:** Draft (rev 3) for review · **Date:** 2026-05-30
 **Reads with:** `docs/design/data-model.md` (§3 elaboration, §5 `ComponentModel`, §6 RfCore, §7 result model), `docs/PRD.md` (§4 Hero 1, §5 simulation scope, §14 NFRs).
 **Defers to:** `docs/design/harmonic-balance.md` (the nonlinear partition + conversion-matrix Jacobian, which builds on this), `docs/design/expressions.md` (parameter resolution).
 
@@ -51,6 +51,12 @@ Three points are easy to miss and worth stating outright:
 
 The **DC (k = 0) member of the HB harmonic set is formulated exactly like the standalone DC analysis** (inductor short, capacitor open, `gmin` — §5). There is one DC formulation, used both standalone and as the k = 0 slice of HB — which is why `Pdc`/PAE are read from the HB DC component rather than a separate DC run (measurements §5).
 
+### 2.2 Engine-wide conventions (fixed once)
+Two conventions are fixed across the whole engine and recorded in `src/Engine/CLAUDE.md` so they are never silently changed:
+
+- **Phasor amplitude = magnitude (= peak), not RMS.** A phasor `V = |V|·e^(jθ)` represents the time signal `|V|·cos(ωt + θ)`, whose peak is `|V|`. This sets the constant in every power relation — e.g. available power `Pavl = |Vs|^2 / (8·Re(Zs))` (§4.2) and `Pout = ½·Re(V·I*)`. A silent switch to RMS is a 3 dB error in every power number, so the convention is stated, not assumed.
+- **Current-direction / source-sign and the time↔frequency FFT sign** (the latter detailed in the HB note): a branch current flows from the element's first node to its second; a current source `J` injects into its first node.
+
 ---
 
 ## 3. `MnaSystem` and the stamping API
@@ -96,7 +102,7 @@ A model's `Stamp(mna, component, omega)` (data-model §5) calls these. The engin
 | Mutual inductance | 2 | couples two inductor branches (§7) |
 | Frequency-domain N-port (Touchstone/SNP, impedance block, TLIN, user freq model) | 2 default, 1 if native Y | **default**: `Z(ω)` branch-current expansion — one branch per port, constraint `V = Z·I`; **if the block is natively `Y(ω)`**: stamp the admittance block directly with `AddBlockAdmittance` (no extra unknowns). See §4.1 |
 | DC / AC voltage source | 2 | branch `i`; constraint `Va − Vb = E`; `AddSourceValue(i, E)` |
-| RF power source | 2 | an AC voltage source with a series internal impedance (split into the source branch + a Group-1 admittance), set up so the available-power sweep variable drives `Pin` |
+| RF power source | 2 | an AC voltage source behind a series internal impedance `Zs` (default 50 Ω) — see §4.2. The user specifies **available power** `Pavl`; the source back-solves its voltage. |
 | AC current source | 1-ish | `AddCurrentInjection(a, +J)`, `AddCurrentInjection(b, −J)` |
 | Port / Term | — | defines a port: records the port number and its reference impedance `Z0_k` for extraction (§9). Not stamped as a physical resistor for S-parameters (§9) |
 | Current probe | 2 | a 0 V branch whose current is the recorded quantity |
@@ -105,15 +111,36 @@ A model's `Stamp(mna, component, omega)` (data-model §5) calls these. The engin
 Touchstone/SNP blocks, the impedance block, the ideal transmission line, and user frequency-domain models all reduce to the same thing: at the swept frequency `ω`, the element produces an `n×n` network matrix that is stamped across its `n` nodes (referenced to its reference node). **Two stamping forms, and the choice is by how the block is naturally defined:**
 
 - **Default — `Z(ω)` branch-current expansion (Group 2).** Add one branch-current unknown per port and the constraint `V_port − V_ref − Σ_j Z[port,j]·i_j = 0`. This is **always well-defined**: every passive network has a finite `Z` (you can always write `V = Z·I`), so the Z-form never hits an infinity. It is also what the reference did (it stamped the block's `Z` matrix via nodal expansion, adding a port row per connection) and it is the form that naturally exposes the extra port HB needs (§2.1, §10). Cost: `n` extra unknowns per block.
+
+  **Reference node (the `V_ref` above) is not necessarily ground.** A frequency-domain N-port carries a **single shared reference node** against which all its port voltages are defined. By convention the `.cnl`/VendorA node list gives **N nets for an N-port** (each port referenced to **ground**, node 0) **or N+1 nets**, in which case the **last net is the common reference node** for all ports. So an N-port SnP line with N+1 nets is the floating-block case: `V_ref` in every port constraint is that reference net's voltage (an unknown), not zero, and the port return currents sum back into the reference node (its KCL row gains the `−` side of each port branch). When the list has exactly N nets, `V_ref = 0` and the reference terms vanish — identical to a ground-referenced block. This matches the reference Swift (`ReferenceNet`, with the cross-term `−1` entries emitted only when the reference is not ground) and the VendorA convention. The model receives the reference node as just another node index and stamps it itself (engine-owns-matrix / model-contributes-stamps) — the engine does not special-case it.
+
+  This N-or-(N+1) reference-node convention applies to **all frequency-domain N-port components** (SnP block, impedance block, TLIN, user freq model) — they share this stamp. It does **not** apply to the 2-terminal primitives (R, L, C), whose two nets are simply their terminals.
 - **Optimization — `Y(ω)` admittance stamp (Group 1), when the block is natively `Y`.** If a block's matrix is available as a finite `Y(ω)` (a user model that hands us `Y` directly, or a network whose `Y` is known well-conditioned), stamp the admittance block directly with `AddBlockAdmittance` and add **no** extra unknowns — the lighter, sparser form. This is the v1 opportunistic path: cheap when applicable, and only a little extra code.
 
 **Why not Y-by-default?** A `Y` block requires a *finite* admittance matrix, but a network with a series-through path or any open-circuit port has a **singular `Y`** (infinite entries) — and Touchstone files routinely contain such networks, including the embedded block Hero 1 exercises. Defaulting to `Y` would fail or lose accuracy on exactly those cases. So `Z`-expansion is the robust default and `Y` is taken only when the block is genuinely given as a finite `Y`.
 
 Sourcing of the matrix is unchanged by the choice of form:
-- **Touchstone/SNP** — interpolate the stored network to `ω` and obtain `Z(ω)` (or `Y(ω)`) via **RfCore** (which holds the `Network` and does S/Z/Y conversion and interpolation, data-model §6). The embedded-SNP case Hero 1 exercises.
+- **Touchstone/SNP** — interpolate the stored network to `ω` and obtain `Z(ω)` (or `Y(ω)`) via **RfCore** (which holds the `SNP` and does S/Z/Y conversion and interpolation, data-model §6). The embedded-SNP case Hero 1 exercises.
 - **Impedance block** — evaluate the `Z[i,j](ω)` expressions (the expression engine, with `freq` in scope) and assemble `Z(ω)` directly — the native-Z case, stamped by expansion.
 - **Transmission line (TLIN)** — closed-form 2-port from its characteristic impedance, electrical length, and reference frequency, in whichever of `Z`/`Y` is natural.
 - **User frequency model** — its evaluated `Z(ω)` or `Y(ω)`; a native-`Y` model takes the admittance stamp.
+
+### 4.2 RF power source — available power to source voltage
+An RF power source is an **AC voltage source `Vs` behind a series complex source impedance `Zs`** (default 50 Ω). The user specifies the **available power** `Pavl` (the maximum power the source delivers into a conjugate-matched load) rather than a raw voltage; the component back-solves `Vs`.
+
+With **magnitude (= peak) phasor amplitudes** (the engine-wide convention, §2.2), available power relates to source voltage by
+
+```
+Pavl = |Vs|^2 / (8 * Re(Zs))      =>      |Vs| = sqrt(8 * Pavl * Re(Zs))
+```
+
+The factor of **8** (not 4) follows from the magnitude/peak convention with the conjugate match dropping half the source voltage across `Zs`; under an RMS convention it would be 4. This is why the magnitude convention must be fixed engine-wide — a mismatch here is a silent 3 dB error in every power number.
+
+- **Phase** defaults to **0°**; advanced users may set it anywhere in **−360° .. +360°**.
+- An RF power source may carry an **arbitrary number of frequencies**; each frequency entry independently specifies its own `Zs`, `Pavl`, and phase. (This is exactly the per-tone drive the multi-tone HB analysis needs — one entry per tone.)
+- **Stamping:** the source is a Group-2 AC voltage source (branch `i`, constraint `Va − Vb = Vs`) in series with `Zs`. `Zs` enters as a series impedance on that branch (or, equivalently, a small two-node sub-stamp); the back-solved `|Vs|` and phase set the source RHS via `AddSourceValue`.
+
+Though specified here, the RF power source is exercised by the **HB drive** (Phase 4), not by Hero 1; it is documented now while the formulation is fresh. The linear engine only needs the stamping; the `Pavl → |Vs|` mapping is shared with the HB drive setup.
 
 ---
 
@@ -176,7 +203,7 @@ A parametric sweep wrapping the analysis (data-model §4) adds its sweep axis ac
 Ports are declared by `Port`/`Term` components, each carrying a port number and a reference impedance `Z0_k` (optionally complex). Extraction, at each frequency:
 
 1. **Identify the port nodes** from the `Port`/`Term` components.
-2. **Extract the port network matrix.** With the MNA factorized at this frequency (§6), excite each port in turn and read the response, giving the port **Y-matrix** (the prototype's `CalculateAdmittanceMatrix` approach) — or the **Z-matrix** by the dual excitation. The factorization is reused across the `N` port excitations. Default to whichever of Y/Z is better conditioned for the topology; both are supported because a series-open network has a finite Y while a shunt-short network has a finite Z.
+2. **Extract the port network matrix.** With the MNA factorized at this frequency (§6), excite each port in turn and read the response, giving the port **Y-matrix** — **Y is the default extraction** (the prototype's `CalculateAdmittanceMatrix` approach), chosen because the HB engine reuses the *same* extraction for its Newton-update admittance (§10); one routine serves both paths. The **Z-matrix** (dual excitation) is coded as the conditioning fallback for topologies where Y is singular/ill-conditioned (a series-open network has finite Y but a shunt-short network has finite Z). The factorization is reused across the `N` port excitations.
 3. **Convert and renormalize via RfCore.** Hand the port Y- (or Z-) matrix to RfCore, which converts to **S** and renormalizes to each port's reference impedance `Z0_k`, using the **power-wave formula for complex `Z0`** (data-model §6). circuitRF does not reimplement this; it is the splotRF/RfCore network math.
 
 The port reference impedance `Z0_k` is the **normalization impedance for the S-definition**, not a physical resistor stamped into the network — so the extracted S-parameters are the network's own, defined against `Z0_k`. (Terminated/loaded responses, when wanted, are obtained by including explicit termination components in the circuit.)
@@ -187,7 +214,7 @@ For Hero 1 this is the whole path: a 4-port RLC network with an embedded SNP blo
 
 ## 10. Reuse by harmonic balance
 
-The HB engine partitions the circuit into a linear subnetwork and nonlinear devices, and needs **two** things from this engine at each harmonic (§2.1): the linear subnetwork as a frequency-domain N-port at the nonlinear-facing nodes, **and** the excitation the independent sources (bias + drive) present at those nodes. This engine provides both: build the MNA of the linear partition, extract its interface **Y- or Z-matrix** at each harmonic frequency (the same extraction as §9, applied to the nonlinear-facing nodes rather than the user ports) and **wrap it as an RfCore `Network`** (the construct-from-computed-Y/Z path, data-model §6); and solve the source-driven response to get the interface excitation vector. So the linear engine is not S-parameter-only; it is the linear characterization machine the whole simulator leans on. Details of how that N-port and excitation feed the conversion-matrix Jacobian are in the harmonic-balance note.
+The HB engine partitions the circuit into a linear subnetwork and nonlinear devices, and needs **two** things from this engine at each harmonic (§2.1): the linear subnetwork as a frequency-domain N-port at the nonlinear-facing nodes, **and** the excitation the independent sources (bias + drive) present at those nodes. This engine provides both: build the MNA of the linear partition, extract its interface **Y- or Z-matrix** at each harmonic frequency (the same extraction as §9, applied to the nonlinear-facing nodes rather than the user ports) and **wrap it as an RfCore `SNP`** (the construct-from-computed-Y/Z path, data-model §6); and solve the source-driven response to get the interface excitation vector. So the linear engine is not S-parameter-only; it is the linear characterization machine the whole simulator leans on. Details of how that N-port and excitation feed the conversion-matrix Jacobian are in the harmonic-balance note.
 
 ---
 
@@ -201,13 +228,19 @@ The HB engine partitions the circuit into a linear subnetwork and nonlinear devi
 
 ---
 
-## 12. Open items
+## 12. Resolved decisions & remaining checks
 
-1. **N-port block stamping** (§4.1) — **decided:** `Z(ω)` branch-current expansion by default, direct `Y(ω)` admittance stamp when the block is natively a finite `Y`. (Distinct from the S-parameter *extraction* method below.)
-2. **Y- vs Z-*extraction* default** (§9) — for pulling the port matrix *out* of the solved MNA: pick the primary method and the conditioning test that switches to the dual; confirm on Hero 1 and a deliberately series-open / shunt-short fixture.
-3. **`gmin` default and exposure** (§5) — value and whether it is user-visible as an advanced setting; confirm it does not perturb Hero 1 beyond the `1e-6` tolerance.
-4. **RF power source formulation** (§4) — the exact source-plus-internal-impedance stamping and how `Pin` (available power) maps to the source value; finalize with the HB drive setup.
-5. **Branch-unknown count at scale** — making every inductor (and every Z-form N-port) Group-2 grows the matrix; confirm the 10k-component NFR holds with realistic counts, else lean harder on the native-`Y` stamp for `ω > 0` sweeps (DC still needs the branch form).
+The major formulation choices are **decided** (this section was “open items” in rev 2):
+
+1. **N-port block stamping** (§4.1) — **decided:** `Z(ω)` branch-current expansion by default; direct `Y(ω)` admittance stamp when the block is natively a finite `Y`.
+2. **Port-matrix extraction** (§9) — **decided:** **Y by default** (HB reuses the same extraction for its Newton updates, §10), Z coded as the conditioning fallback. Both are implemented; Y is the path the heroes exercise.
+3. **`gmin`** (§5) — **decided:** default **1e-12 S**, exposed as a user-visible **advanced setting** (tweakable). Verify it does not perturb Hero 1 beyond `1e-6`; if Hero 1 lands just over tolerance, `gmin` is the first suspect (drop it further).
+4. **RF power source** (§4.2) — **decided:** AC source behind series `Zs` (default 50 Ω), user gives available power `Pavl`, voltage back-solved as `|Vs| = sqrt(8·Pavl·Re(Zs))` under the magnitude convention; phase default 0° (range ±360°); arbitrary frequencies, each with its own `Zs`/`Pavl`/phase. (Exercised by the Phase-4 HB drive, not Hero 1.)
+
+**Remaining checks (validation, not open design):**
+
+5. **Scale / branch-unknown count** — making every inductor (and every Z-form N-port) Group-2 grows the matrix. **Hero 1B** (a ~10k-component mechanically-generated linear network — the performance/scale anchor, distinct from the correctness heroes) validates the 10k-component / few-hundred-frequency / < 10 s NFR in **Phase 2**. If it misses budget, lean harder on the native-`Y` stamp for `ω > 0` sweeps (DC still needs the branch form). Hero 1B's acceptance is **performance + internal consistency** (e.g. reciprocity), not a `1e-6` reference match.
+6. **Y-vs-Z extraction conditioning trigger** — the exact conditioning test that switches Y→Z is an implementation detail to tune against Hero 1 plus a deliberately series-open / shunt-short fixture.
 
 ---
 

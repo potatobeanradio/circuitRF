@@ -1,8 +1,10 @@
 # circuitRF — Project Requirements Document (PRD)
 
-**Status:** Approved — v1.1 baseline · **Owner:** (you) · **Date:** 2026-05-29
+**Status:** Approved — v1.2 baseline · **Owner:** (you) · **Date:** 2026-05-30
 **Scope of this document:** defines *what* circuitRF v1 must do and how we'll know it's done. It does **not** specify the data model or algorithms (those live in `docs/design/`).
 
+> **v1.1 → v1.2:** added **Hero 1B** — a ~10,000-component mechanically-generated linear network as a **performance/scale anchor** (validates the §14 10k-component / <10 s NFR), distinct from the correctness heroes; targeted at Phase 2 (§4). Recorded the engine-wide **magnitude (= peak) phasor convention** and the **RF-power-source available-power formulation** (both resolved in `linear-engine.md` rev 3). No scope change to the correctness heroes.
+>
 > **v1.0 → v1.1:** result model clarified during data-model design — a run returns a **`DataSet`** of named **`DataCube`s** (each a single-kind `Real` or `Complex` array), replacing "one DataCube" language (§11, §13); **`.npy` exports the whole `DataSet` as one packed structured array** (§11). No scope change.
 >
 > **v0.3 → v1.0:** approved as the v1 scope baseline; no content changes from draft v0.3.
@@ -43,7 +45,13 @@ These circuits define "done" for the v1 engine; every proposed feature is gated 
 ### Hero 1 — Linear / S-parameters
 **Circuit:** a 4-port RLC matching network that *embeds a Touchstone (SNP) block*, compared against a 4-port Touchstone reference.
 **Exercises:** complex sparse MNA, R/L/C stamps, SNP block with frequency interpolation, 4-port S-parameter extraction, renormalization, Touchstone I/O via the shared core.
-**Acceptance:** across the full sweep, `max |S_sim(i,j,f) − S_ref(i,j,f)| < 1e-6` (linear magnitude) for all 16 S-parameters. CLI: `circuitrf sparam hero1.crf --freq <sweep> -o out.s4p`.
+**Acceptance:** across the full sweep, `max |S_sim(i,j,f) − S_ref(i,j,f)| < 1e-6` (linear magnitude) for all 16 S-parameters. CLI: `circuitrf sparam hero1.cnl --freq <sweep> -o out.s4p`.
+
+### Hero 1B — Linear scale / performance anchor
+**Circuit:** a large, mechanically-generated linear network (~10,000 R/L/C components — e.g. a long ladder or mesh) over a few-hundred-point frequency sweep. **Owner-generated** by a script, not hand-drawn.
+**Why it exists:** none of the correctness heroes stress *scale* — they are small circuits chosen to pin numerical accuracy. The §14 NFR (10k components, few-hundred frequencies, < 10 s) has nothing else testing it, so a scale problem could hide until a user hits it. Hero 1B is the **performance/scale anchor**, deliberately separate from the correctness heroes.
+**Exercises:** the symbolic-once / numeric-per-frequency sparse pipeline, AMD ordering, factor-once/multi-RHS extraction, and the Group-2 branch-unknown count at scale.
+**Acceptance:** solves within the §14 budget (**< 10 s** for ~10k components × few-hundred frequencies on a typical laptop) **and** passes an internal-consistency check (e.g. reciprocity of the extracted S-matrix, or agreement with a coarser independent solve). **Acceptance is performance + consistency, NOT a `1e-6` reference match** — Hero 1B has no external golden reference; it is not a correctness anchor. Targeted at **Phase 2**, alongside Hero 1.
 
 ### Hero 2 — Single-tone harmonic balance, single-FET PA
 **Circuit:** a FET PA whose extrinsic network is a *linear RLC network including mutual inductance*, driven single-tone at 2 GHz, swept over available input power, reporting **Pout, gain, drain efficiency, PAE**.
@@ -213,4 +221,4 @@ Dominant risks: **HB convergence and two-tone frequency indexing** (now with a h
 
 ---
 
-*Next step: send the Swift model classes; we design `docs/design/data-model.md` (three-layer model + DataCube + the §13 parameter-resolution rules + the §6.1 device-interface requirements + the §7 expression engine) against this approved scope before any Phase 1 code.*
+*Next step: Phase 2 implementation (linear engine: MNA, DC, S-parameters) against `docs/design/linear-engine.md` (rev 3), consuming the extracted RfCore — validated by Hero 1 (`1e-6` vs the 4-port reference) and Hero 1B (the 10k-component scale anchor).*
