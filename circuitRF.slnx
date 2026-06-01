@@ -6,8 +6,14 @@
   <Folder Name="/src/Core/">
     <Project Path="src/Core/CircuitRF.Core.csproj" />
   </Folder>
+  <Folder Name="/src/Engine/">
+    <Project Path="src/Engine/CircuitRF.Engine.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Core.Tests/">
     <Project Path="tests/Core.Tests/CircuitRF.Core.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Engine.Tests/">
+    <Project Path="tests/Engine.Tests/CircuitRF.Engine.Tests.csproj" />
   </Folder>
 </Solution>

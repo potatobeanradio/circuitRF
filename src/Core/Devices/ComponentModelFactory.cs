@@ -1,9 +1,12 @@
+using CircuitRF.Core.Expressions;
+using RfCore;
+
 namespace CircuitRF.Core.Devices;
 
 /// <summary>
 /// Looks up a primitive type name and returns a ComponentModel instance.
-/// Only primitive type strings appear here; sub-cell instances are resolved
-/// by the Elaborator directly from the Library.
+/// Parameterless primitives (R, L, C, Port, Term) use the factory registry.
+/// Parameterized primitives (SnP) are created from resolved parameter values.
 /// </summary>
 public static class ComponentModelFactory
 {
@@ -17,17 +20,57 @@ public static class ComponentModelFactory
             { "Term", () => new TermModel()      },
         };
 
+    // Types that require resolved parameters at construction time.
+    private static readonly HashSet<string> _parameterizedTypes =
+        new(StringComparer.OrdinalIgnoreCase) { "SnP" };
+
     /// <summary>
-    /// Returns a new ComponentModel for the given primitive type name,
-    /// or null if the name is not a registered primitive (likely a sub-cell reference).
+    /// Returns a new ComponentModel, using resolved parameters when needed.
+    /// Returns null only if the type name is not a known primitive (i.e. it is a sub-cell).
+    /// </summary>
+    public static ComponentModel? TryCreate(string typeName,
+        IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (typeName.Equals("SnP", StringComparison.OrdinalIgnoreCase))
+            return CreateSnpModel(parameters);
+        return TryCreate(typeName);
+    }
+
+    /// <summary>
+    /// Returns a new parameterless ComponentModel, or null if not a known primitive.
     /// </summary>
     public static ComponentModel? TryCreate(string typeName)
         => _registry.TryGetValue(typeName, out var factory) ? factory() : null;
 
     public static bool IsPrimitive(string typeName)
-        => _registry.ContainsKey(typeName);
+        => _registry.ContainsKey(typeName) || _parameterizedTypes.Contains(typeName);
 
-    /// <summary>Register additional primitive types (used by tests and future phases).</summary>
+    /// <summary>Register additional parameterless primitive types.</summary>
     public static void Register(string typeName, Func<ComponentModel> factory)
         => _registry[typeName] = factory;
+
+    private static SnpModel CreateSnpModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (!parameters.TryGetValue("NumPorts", out var np) || np.Kind != ValueKind.Real)
+            throw new InvalidOperationException("SnP: NumPorts parameter is missing or not a number");
+        int portCount = (int)np.AsReal();
+
+        if (!parameters.TryGetValue("File", out var fileVal) || fileVal.Kind != ValueKind.String)
+            throw new InvalidOperationException("SnP: File parameter is missing or not a string");
+        string filePath = fileVal.AsString();
+
+        var interpMethod = InterpolationMethod.CubicSpline;
+        if (parameters.TryGetValue("InterpMode", out var im) && im.Kind == ValueKind.String)
+            interpMethod = im.AsString().Equals("linear", StringComparison.OrdinalIgnoreCase)
+                ? InterpolationMethod.Linear
+                : InterpolationMethod.CubicSpline;
+
+        var extrapPolicy = OutOfRangePolicy.WarnClamp;
+        if (parameters.TryGetValue("ExtrapMode", out var em) && em.Kind == ValueKind.String)
+            extrapPolicy = em.AsString().Equals("extrapolate", StringComparison.OrdinalIgnoreCase)
+                ? OutOfRangePolicy.WarnExtrapolate
+                : OutOfRangePolicy.WarnClamp;
+
+        return new SnpModel(portCount, filePath, interpMethod, extrapPolicy);
+    }
 }

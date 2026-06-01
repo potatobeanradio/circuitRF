@@ -85,6 +85,9 @@ public sealed class Parser
                 var inner = ParseExpr(0);
                 Expect(TokenKind.RParen, ")");
                 return inner;
+            case TokenKind.StringLiteral:
+                Advance();
+                return new StringLiteralExpr(t.Text);
             case TokenKind.Number:
                 Advance();
                 var numVal = double.Parse(t.Text, System.Globalization.CultureInfo.InvariantCulture);

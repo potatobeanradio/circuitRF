@@ -1,6 +1,6 @@
 # circuitRF — Expression Engine Design
 
-**Status:** Draft for review · **Date:** 2026-05-29
+**Status:** Draft (rev 2) for review · **Date:** 2026-05-30
 **Reads with:** `docs/design/data-model.md` (§2.2 parameters/scope, §5 SDD, §8 expression overview), `docs/design/measurements.md` (measurement operands), `docs/PRD.md` (§7).
 **Defers to:** `docs/design/harmonic-balance.md` (how `dg`/`dc` feed the Jacobian), `docs/design/measurements.md` (cube-operand accessors).
 
@@ -17,7 +17,7 @@ One expression engine serves four consumers. This note specifies its pipeline, g
 | **SDD device equations** | `i = f(v)`, `q = f(v)` over port voltages | Real (time-domain) | **yes** — `dg = di/dv`, `dc = dq/dv` |
 | **Measurements** | a performance expression over result cubes | Real or Complex | no |
 
-The first two are the elaboration-time use (resolve a circuit to numbers). The SDD use is the numeric-layer hot path (evaluated per time sample, per Newton step). The measurement use extends operands to cube quantities (§13). The grammar, operators, and functions are identical across all four; only the available *operands* and whether *derivatives* are taken differ. A resolved variable or parameter carries a **kind** — `Real` or `Complex` — the same `DataKind` distinction the result model uses (§6); most component values (`R`, `L`, `C`) are Real, impedances are Complex.
+The first two are the elaboration-time use (resolve a circuit to numbers). The SDD use is the numeric-layer hot path (evaluated per time sample, per Newton step). The measurement use extends operands to cube quantities (§13). The grammar, operators, and functions are identical across all four; only the available *operands* and whether *derivatives* are taken differ. A resolved variable or parameter carries a **kind** — `Real`, `Complex`, or (for a few component parameters like a file path or a mode selector) **`String`** — the numeric kinds matching the `DataKind` distinction the result model uses (§6); most component values (`R`, `L`, `C`) are Real, impedances are Complex, and a handful of parameters (`File`, `Type`, `InterpMode`, … on the SnP block) are String.
 
 ---
 
@@ -36,6 +36,7 @@ An expression is **parsed once** into an AST and cached; evaluation re-runs the 
 ## 3. Lexical grammar (tokens)
 
 - **Number** — decimal, optional exponent: `50`, `1.0`, `1e-9`, `2.5E3`.
+- **String literal** — a double-quoted run of characters: `"touchstone"`, `"path/to/file.s2p"`, `"spline"`. Lexes to a `String` value (§6); **storage only**, no string operators. Used for component parameters that are genuinely textual (the SnP block's `File`, `Type`, `InterpMode`, `InterpDom`, `ExtrapMode`).
 - **Identifier** — `[A-Za-z_][A-Za-z0-9_]*`, used for variable/parameter/argument names and function names. Hierarchical paths in measurements use `.` between identifiers (`X1.drain`) — see §13.
 - **Imaginary unit** — `j` is a reserved constant equal to `(0, 1)`; imaginary values are written `j*4`, `2 + j*3` (matching the prototype's `j*` convention). `pi` and `e` are reserved constants.
 - **Operators** — `+ - * / ^`, `< <= > >= == !=`, `&& || !`, `? :`, and `( ) ,`.
@@ -82,27 +83,32 @@ A **Pratt (precedence-climbing) parser** is the recommended implementation — i
 
 ## 6. Value model
 
-Evaluation produces a value of one of three kinds:
+Evaluation produces a value of one of four kinds:
 
 - **Real** — a `double`. The kind of arithmetic on real operands (component values like `R`, `L`, `C`).
 - **Complex** — `System.Numerics.Complex`. Produced when the imaginary unit `j` (or any complex value) enters, or by an operation on reals that is mathematically complex (e.g. `sqrt` of a negative). Impedances and the `Z[i,j]` block resolve here.
 - **Bool** — the result of comparisons and logical operators; consumed only by `if`/`? :` conditions.
+- **String** — a string literal (§3). **Storage only** — there are no string operators, no concatenation, no string comparison, and no implicit string↔number coercion. A `String` exists solely so a component can carry a genuinely textual parameter (the SnP block's `File`, `Type`, `InterpMode`, `InterpDom`, `ExtrapMode`). It flows through the same elaboration path as any other parameter (resolve → store on the `ElaboratedComponent`), so the elaborator, factory, and `Instance` need no special case.
 
-**A resolved variable or parameter is therefore Real *or* Complex** — it carries its kind (the same `DataKind` the result model uses, data-model §7) rather than forcing every `R=50` to be complex-with-zero-imaginary. This honesty lets a model validate its inputs (a resistor can reject a complex `R`) and lets the design layer round-trip `50` rather than `50+j0`.
+**A resolved variable or parameter is therefore Real, Complex, *or* String** — it carries its kind. Numeric values use the same `Real`/`Complex` `DataKind` the result model uses (data-model §7) rather than forcing every `R=50` to be complex-with-zero-imaginary; this honesty lets a model validate its inputs (a resistor rejects a complex `R`) and lets the design layer round-trip `50` rather than `50+j0`.
 
 **Promotion rules:**
-- Real literal → Real; `pi`/`e` → Real; `j` → Complex.
+- Real literal → Real; `pi`/`e` → Real; `j` → Complex; a quoted literal → String.
 - Real ∘ Real → Real for `+ - * / ^`, **unless** the operation is mathematically complex (`sqrt(-x)`, non-integer power of a negative) → then Complex in a parameter/variable context, or a domain error in the real-only SDD context (below).
 - Real ∘ Complex → Complex; Complex ∘ anything → Complex.
 - Most functions preserve kind for real input (`sin`, `tanh`, `exp`, `abs`, …); `sqrt`/`log` of a negative real promote to Complex (parameter context) or error (SDD context).
+- **String participates in no operators.** A `String` reaching any arithmetic, comparison, logical, or function operator is a type error (§15). It can only be produced by a string literal and consumed by a component reading its own textual parameter.
 
 **Rules:**
 - A **parameter, variable, or measurement that resolves to `Bool`** is a type error (a condition can't be a component value).
+- A **`String` reaching a numeric stamp is a type error.** `String` is valid only where a component explicitly asks for a textual parameter (`R = "foo"` fails: a resistor needs a Real). The validity restriction mirrors how `Bool` is valid only as an `if` condition.
 - **Ordering comparisons** (`< <= > >=`) require **Real** operands; a Complex operand is an error (complex numbers are unordered). **Equality** (`== !=`) is defined on Real and Complex.
 - `!`, `&&`, `||` require `Bool` operands.
 - `if(cond, then, else)` / `cond ? then : else`: `cond` is `Bool`; the result is the **selected** branch (the other is not evaluated — short-circuit, which also matters for AD, §12). The result kind is that branch's kind.
 
-**SDD constraint (real-only context).** SDD equations operate on **real** time-domain port voltages and must produce **real** current/charge. This is the context where `sqrt`/`log` of a negative is a domain error rather than a promotion, and where `j` is disallowed (a complex time-domain current is physically meaningless). The `j` constant and complex promotion are for frequency-domain parameter expressions (impedances, the `Z[i,j]` block), not for an SDD current/charge equation.
+For the enumerated string parameters (`Type`, `InterpMode`, `ExtrapMode`), the **component** validates the allowed values (e.g. `SnpModel` rejects a `Type` other than `"touchstone"`) and may narrow the string to an internal enum after retrieval — the value model only needs to *carry* the string; whether a model then narrows it to an enum is the model's business. `File` is free-form.
+
+**SDD constraint (real-only context).** SDD equations operate on **real** time-domain port voltages and must produce **real** current/charge. This is the context where `sqrt`/`log` of a negative is a domain error rather than a promotion, and where `j` is disallowed (a complex time-domain current is physically meaningless). The `j` constant and complex promotion are for frequency-domain parameter expressions (impedances, the `Z[i,j]` block), not for an SDD current/charge equation. `String` never appears in an SDD equation.
 
 ---
 

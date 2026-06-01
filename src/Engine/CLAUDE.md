@@ -73,3 +73,25 @@ Every analysis returns a **`DataSet`** of named single-kind `DataCube`s (→ `sr
 S-parameter → `S {freq, i, j}` (Complex). DC → node V + branch I at ω = 0. HB → `V`, `I`
 spectra (see `HarmonicBalance/CLAUDE.md`). Measurements are added to the DataSet as named cubes;
 the engine does not invent its own result type.
+
+## Phase 2 Step 1 deliverable — COMPLETE (2026-05-31)
+
+### `MnaSystem` — v1 backing store
+`MnaSystem` (in `src/Engine/MnaSystem.cs`) implements `IMnaContext` (defined in `src/Core/`).
+Backing store is `Dictionary<(int Row, int Col), Complex>` — simple for Step 1 stamp inspection.
+**Step 2 replaces this with CSparse.NET triplets** and adds the LU solve, AMD ordering, and the
+symbolic-once/numeric-per-frequency pattern.
+
+### Matrix index convention
+- Node k (k ≥ 1) → internal index k − 1 (method `Col(node) = node - 1`).
+- Ground (node 0) → index −1, all entries silently dropped.
+- Branch b (from `AddBranch()`) → internal index returned directly (= `_nodeCount + sequential counter`).
+- Matrix row/col layout: `[0 .. nodeCount−1]` = voltage unknowns; `[nodeCount ..]` = branch unknowns.
+
+### What Step 2 must add
+- Replace Dictionary backing with CSparse triplet/compressed-column storage.
+- `Solve()` method: AMD ordering (symbolic once per topology), numeric LU factorization per
+  frequency, multi-RHS back-substitution for port extraction.
+- DC analysis, S-parameter analysis, Port/Term extraction, per §§5, 9, 6 of linear-engine.md.
+- Stamps for R, L, C (updating existing stubs), voltage/current sources, Port/Term, TLIN.
+- CLI driver.

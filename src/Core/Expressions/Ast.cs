@@ -31,3 +31,9 @@ public sealed record ConditionalExpr(Expr Condition, Expr Then, Expr Else) : Exp
 
 /// <summary>Built-in or user-defined function call.</summary>
 public sealed record CallExpr(string Name, Expr[] Args) : Expr;
+
+/// <summary>
+/// String literal: "foo". Storage-only — no string operators or coercions allowed.
+/// Used for SnP/N-port config params (File, Type, InterpMode, ExtrapMode).
+/// </summary>
+public sealed record StringLiteralExpr(string Value) : Expr;

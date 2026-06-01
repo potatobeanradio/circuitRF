@@ -131,11 +131,20 @@ public sealed class Elaborator
 
             if (ComponentModelFactory.IsPrimitive(inst.Reference))
             {
-                // Primitive — emit it
-                var model          = ComponentModelFactory.TryCreate(inst.Reference)!;
+                // Primitive — resolve nodes and parameters first; model creation may need params (e.g. SnP).
                 var resolvedNodes  = inst.NetBindings.Select(n => netlist.Nodes.GetOrAssign(ResolveNet(n))).ToArray();
                 var resolvedParams = ResolveParameters(inst, currentScope);
-                var ec             = new ElaboratedComponent(inst.Reference, childPath, resolvedNodes, resolvedParams, model);
+                var model          = ComponentModelFactory.TryCreate(inst.Reference, resolvedParams)
+                                     ?? throw new InvalidOperationException(
+                                         $"Failed to create model for primitive '{inst.Reference}' at '{childPath}'");
+
+                // Reference node: null RefNetBinding → ground (0); otherwise resolve the named net.
+                var refNode = inst.RefNetBinding is null
+                              ? 0
+                              : netlist.Nodes.GetOrAssign(ResolveNet(inst.RefNetBinding));
+
+                var ec = new ElaboratedComponent(inst.Reference, childPath, resolvedNodes, resolvedParams, model)
+                         { ReferenceNode = refNode };
                 netlist.AddComponent(ec);
             }
             else

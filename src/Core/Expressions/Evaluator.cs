@@ -69,6 +69,7 @@ public sealed class Evaluator
     /// </summary>
     public Value EvalExpr(Expr expr, Scope scope) => expr switch
     {
+        StringLiteralExpr s => new Value(s.Value),
         NumberExpr      n  => new Value(n.Value),
         ConstExpr       c  => EvalConst(c.Name),
         RefExpr         r  => Resolve(r.Name, scope),
@@ -323,6 +324,8 @@ public sealed class Evaluator
     private static Value ApplyUnit(Value v, string? unit)
     {
         if (unit is null) return v;
+        if (v.Kind == ValueKind.String)
+            throw new TypeErrorException($"Cannot apply unit '{unit}' to a String value");
         var scale = Units.Scale(unit)
             ?? throw new ExpressionException($"Unknown unit '{unit}'");
         return v.Kind == ValueKind.Real

@@ -87,9 +87,33 @@ Expression engine + elaboration + `.cnl` reader, validated by the cycle-detectio
 - Left-assoc operators use `rbp = lbp + 1` in the Pratt table; right-assoc (`^`) uses `rbp = lbp - 1`.
 - Analysis/measure `.cnl` lines → `RawDirective { Kind; RawLine }` on `TestBench`. Typed `Analysis`
   subclasses (`SParameterAnalysis`, etc.) are defined but not populated by the Phase-1 reader.
-- Top-level instances in a `.cnl` (outside any `define` block) are collected into a synthetic
-  `Cell("__top__")` that the elaborator uses as the top cell.
+- Top-level instances in a `.cnl` (outside any `define` block) live directly on `TestBench.Instances`
+  (no synthetic wrapper cell).
 - `ComponentModel.Stamp` uses `object` placeholders for `mna` and `c` — types resolved in Phase 2.
+
+## Phase 2 Step 1 deliverable — COMPLETE (2026-05-31)
+SnP/Touchstone block end-to-end: `.cnl` reader parses `SnP:` lines, elaboration creates `SnpModel`,
+`SnpModel.Stamp` performs Z-expansion into a real `MnaSystem`. RfCore is now a dependency of Core.
+Gate: 4 tests in `tests/Engine.Tests/Linear/SnpStampTests.cs` — all green.
+
+### Implementation notes (reality vs. design)
+- `ValueKind.String` was added to `Value` (storage-only; no operators, no coercions). This is the
+  mechanism for SnP configuration params (`File`, `Type`, `InterpMode`, `ExtrapMode`). The tokenizer
+  lexes `"..."` as `StringLiteral`; the parser produces `StringLiteralExpr`; the evaluator returns
+  `Value.String(...)`. A String value is a type error in any arithmetic context.
+- `Instance.RefNetBinding` (nullable string net name) carries the N+1 floating reference node for
+  frequency-domain N-ports. `null` = ground. The elaborator resolves it to `ElaboratedComponent.ReferenceNode`.
+- `IMnaContext` interface lives in `CircuitRF.Core` (not Engine) because `ComponentModel.Stamp` must
+  be able to call it. `MnaSystem` in `CircuitRF.Engine` implements it.
+- `ComponentModel.Stamp(IMnaContext mna, ElaboratedComponent c, double omega)` — `object` placeholders
+  replaced with real types.
+- The elaborator now resolves parameters **before** creating the model (order swapped). This allows
+  `ComponentModelFactory.TryCreate(typeName, params)` to construct `SnpModel` with its file path
+  and settings baked in.
+- `CnlReader` stores `_sourceDirectory` (from `ReadFile`); relative `File=` paths are resolved to
+  absolute at parse time and re-stored in the `ParameterAssignment.Expression` as a string literal.
+- `TokeniseLine` in CnlReader now respects quoted regions so `key="value with spaces"` stays one
+  token.
 
 ## Ask before
 - Changing the `.cnl` or JSON format (round-trip + interop).

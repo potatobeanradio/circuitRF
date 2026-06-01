@@ -1,3 +1,5 @@
+using CircuitRF.Core.Elaboration;
+
 namespace CircuitRF.Core;
 
 /// <summary>
@@ -16,12 +18,11 @@ public abstract class ComponentModel
     public abstract ModelKind Kind      { get; }
 
     /// <summary>
-    /// Linear contribution — Phase 2. The model contributes stamps;
-    /// the engine owns the matrix. Not called in Phase 1.
-    /// mna is MnaSystem (Phase 2); c is ElaboratedComponent.
+    /// Linear contribution — the model contributes stamps; the engine owns the matrix.
+    /// Called once per frequency point during analysis assembly.
     /// </summary>
-    public virtual void Stamp(object mna, object c, double omega)
-        => throw new NotImplementedException($"{GetType().Name}.Stamp is not implemented (Phase 2+)");
+    public virtual void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
+        => throw new NotImplementedException($"{GetType().Name}.Stamp is not implemented");
 
     /// <summary>
     /// Nonlinear contribution — Phase 3 (HB). Not called in Phase 1.

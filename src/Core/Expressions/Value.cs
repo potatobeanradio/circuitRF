@@ -2,12 +2,15 @@ using System.Numerics;
 
 namespace CircuitRF.Core.Expressions;
 
-public enum ValueKind { Real, Complex, Bool }
+public enum ValueKind { Real, Complex, Bool, String }
 
 /// <summary>
-/// A kinded value produced by the expression engine: Real, Complex, or Bool.
+/// A kinded value produced by the expression engine: Real, Complex, Bool, or String.
 /// Real and Complex map directly to the DataKind used in the result model.
 /// Bool is internal to conditionals and never the final value of a parameter.
+/// String is storage-only (no operators, no coercions) — used for SnP/N-port config
+/// params (File, Type, InterpMode, ExtrapMode). A String value is a type error
+/// anywhere a number is required.
 /// </summary>
 public readonly struct Value
 {
@@ -16,6 +19,7 @@ public readonly struct Value
     private readonly double   _real;
     private readonly Complex  _complex;
     private readonly bool     _bool;
+    private readonly string?  _string;
 
     public static readonly Value Zero    = new(0.0);
     public static readonly Value One     = new(1.0);
@@ -28,17 +32,20 @@ public readonly struct Value
     public Value(double real)       { Kind = ValueKind.Real;    _real = real; }
     public Value(Complex complex)   { Kind = ValueKind.Complex; _complex = complex; }
     public Value(bool b)            { Kind = ValueKind.Bool;    _bool = b; }
+    public Value(string s)          { Kind = ValueKind.String;  _string = s; }
 
     public double  AsReal()    => Kind == ValueKind.Real    ? _real    : throw new InvalidCastException($"Value is {Kind}, not Real");
     public Complex AsComplex() => Kind == ValueKind.Complex ? _complex : throw new InvalidCastException($"Value is {Kind}, not Complex");
     public bool    AsBool()    => Kind == ValueKind.Bool    ? _bool    : throw new InvalidCastException($"Value is {Kind}, not Bool");
+    public string  AsString()  => Kind == ValueKind.String  ? _string! : throw new InvalidCastException($"Value is {Kind}, not String");
 
-    /// <summary>Returns the value as Complex regardless of kind (promotes Real; errors on Bool).</summary>
+    /// <summary>Returns the value as Complex regardless of kind (promotes Real; errors on Bool/String).</summary>
     public Complex ToComplex() => Kind switch
     {
         ValueKind.Real    => new Complex(_real, 0),
         ValueKind.Complex => _complex,
-        _                 => throw new InvalidCastException("Cannot convert Bool to Complex")
+        ValueKind.String  => throw new InvalidCastException("Cannot convert String to Complex"),
+        _                 => throw new InvalidCastException($"Cannot convert {Kind} to Complex")
     };
 
     public override string ToString() => Kind switch
@@ -46,6 +53,7 @@ public readonly struct Value
         ValueKind.Real    => _real.ToString("G"),
         ValueKind.Complex => _complex.ToString(),
         ValueKind.Bool    => _bool.ToString(),
+        ValueKind.String  => _string ?? "",
         _                 => "?"
     };
 
@@ -58,8 +66,10 @@ public readonly struct Value
     /// </summary>
     public static ValueKind CommonArithmeticKind(Value a, Value b)
     {
-        if (a.Kind == ValueKind.Bool || b.Kind == ValueKind.Bool)
+        if (a.Kind == ValueKind.Bool   || b.Kind == ValueKind.Bool)
             throw new ExpressionException("Bool value used in arithmetic context");
+        if (a.Kind == ValueKind.String || b.Kind == ValueKind.String)
+            throw new ExpressionException("String value used in arithmetic context");
         return (a.Kind == ValueKind.Complex || b.Kind == ValueKind.Complex)
             ? ValueKind.Complex
             : ValueKind.Real;

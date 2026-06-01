@@ -25,6 +25,14 @@ public sealed class Instance
     /// <summary>Parameter overrides; each expression is evaluated in the PARENT scope.</summary>
     public IReadOnlyList<ParameterAssignment> Overrides { get; }
 
+    /// <summary>
+    /// For frequency-domain N-port components: the net name of the shared reference node.
+    /// Null means reference is ground (node 0) — the default for all other components.
+    /// Set by the .cnl reader when an SnP line has NumPorts+1 nets (the N-or-N+1 rule).
+    /// The elaborator resolves this to ElaboratedComponent.ReferenceNode.
+    /// </summary>
+    public string? RefNetBinding { get; init; }
+
     public Instance(
         string instanceName,
         string reference,

@@ -26,11 +26,15 @@ public sealed class CnlReader
     private TestBench?         _testBench;
     private Cell?              _currentCell;
     private int                _lineNumber;
+    private string?            _sourceDirectory;
 
-    public (Library Library, TestBench TestBench) Read(string source, string testBenchName = "tb")
+    public (Library Library, TestBench TestBench) Read(string source,
+        string testBenchName = "tb",
+        string? sourceDirectory = null)
     {
-        _testBench = new TestBench(testBenchName);
-        _lineNumber = 0;
+        _testBench       = new TestBench(testBenchName);
+        _sourceDirectory = sourceDirectory;
+        _lineNumber      = 0;
 
         foreach (var rawLine in source.Split('\n'))
         {
@@ -59,7 +63,11 @@ public sealed class CnlReader
     }
 
     public static (Library Library, TestBench TestBench) ReadFile(string path, string testBenchName = "tb")
-        => new CnlReader().Read(File.ReadAllText(path), testBenchName);
+    {
+        var fullPath  = Path.GetFullPath(path);
+        var sourceDir = Path.GetDirectoryName(fullPath);
+        return new CnlReader().Read(File.ReadAllText(fullPath), testBenchName, sourceDir);
+    }
 
     // ── Line dispatch ─────────────────────────────────────────────────────────
 
@@ -245,8 +253,10 @@ public sealed class CnlReader
         var typeName     = typeAndName[..colon];
         var instanceName = typeAndName[(colon + 1)..];
 
+        bool isSnP = typeName.Equals("SnP", StringComparison.OrdinalIgnoreCase);
+
         // Remaining tokens: nets (no '=') then param=val pairs
-        var nets     = new List<string>();
+        var nets      = new List<string>();
         var overrides = new List<ParameterAssignment>();
 
         int i = 1;
@@ -255,12 +265,29 @@ public sealed class CnlReader
             var tok = tokens[i];
             if (tok.Contains('='))
             {
-                // parameter assignment: "name=value"
                 int eq = tok.IndexOf('=');
                 var pname = tok[..eq];
                 var pexpr = tok[(eq + 1)..];
+
+                // SnP: silently ignore Temp, CheckPassivity, Noise, SaveCurrent, Mode
+                if (isSnP && IsIgnoredSnpParam(pname))
+                    { i++; continue; }
+
+                // SnP File: resolve relative path to absolute using source directory
+                if (isSnP && pname.Equals("File", StringComparison.OrdinalIgnoreCase) &&
+                    pexpr.Length >= 2 && pexpr[0] == '"' && pexpr[^1] == '"')
+                {
+                    var rawPath      = pexpr[1..^1];
+                    var resolvedPath = _sourceDirectory is not null
+                        ? Path.GetFullPath(Path.Combine(_sourceDirectory, rawPath))
+                        : rawPath;
+                    pexpr = "\"" + resolvedPath.Replace('\\', '/') + "\"";
+                }
+
                 string? unit = null;
-                if (i + 1 < tokens.Count && Units.IsKnown(tokens[i + 1]))
+                // Only check for unit suffix when pexpr is NOT a string literal
+                if (!(pexpr.Length >= 2 && pexpr[0] == '"') &&
+                    i + 1 < tokens.Count && Units.IsKnown(tokens[i + 1]))
                 {
                     unit = tokens[i + 1];
                     i++;
@@ -274,21 +301,103 @@ public sealed class CnlReader
             i++;
         }
 
-        var inst = new Instance(instanceName, typeName, nets, overrides);
+        // SnP: validate NumPorts vs net count, extract floating reference if N+1 nets
+        string? refNetBinding = null;
+        if (isSnP)
+            ValidateSnpNets(nets, overrides, out refNetBinding);
+
+        var inst = new Instance(instanceName, typeName, nets, overrides)
+                   { RefNetBinding = refNetBinding };
         if (_currentCell is not null)
             _currentCell.Instances.Add(inst);
         else
-            _testBench!.Instances.Add(inst); // top-level — goes directly on the TestBench
+            _testBench!.Instances.Add(inst);
     }
+
+    private void ValidateSnpNets(List<string> nets, List<ParameterAssignment> overrides,
+        out string? refNetBinding)
+    {
+        refNetBinding = null;
+
+        var numPortsOv = overrides.FirstOrDefault(
+            ov => ov.Name.Equals("NumPorts", StringComparison.OrdinalIgnoreCase));
+        if (numPortsOv is null)
+            throw new CnlReadException(_lineNumber, "", "SnP: NumPorts parameter is required");
+        if (!int.TryParse(numPortsOv.Expression, out int numPorts) || numPorts < 1)
+            throw new CnlReadException(_lineNumber, "",
+                $"SnP: NumPorts must be a positive integer, got '{numPortsOv.Expression}'");
+
+        // Validate Type (hard error on anything other than "touchstone")
+        var typeOv = overrides.FirstOrDefault(
+            ov => ov.Name.Equals("Type", StringComparison.OrdinalIgnoreCase));
+        if (typeOv is not null)
+        {
+            var typeStr = typeOv.Expression.Trim('"');
+            if (!typeStr.Equals("touchstone", StringComparison.OrdinalIgnoreCase))
+                throw new CnlReadException(_lineNumber, "",
+                    $"SnP: Type must be \"touchstone\" in v1, got \"{typeStr}\"");
+        }
+
+        if (nets.Count == numPorts)
+        {
+            // Ground-referenced: reference is ground (node 0), refNetBinding stays null
+        }
+        else if (nets.Count == numPorts + 1)
+        {
+            // Floating reference: last net is the shared reference for all ports
+            refNetBinding = nets[numPorts];
+            nets.RemoveAt(numPorts);
+        }
+        else
+        {
+            throw new CnlReadException(_lineNumber, "",
+                $"SnP: NumPorts={numPorts} but {nets.Count} nets (expected {numPorts} or {numPorts + 1})");
+        }
+    }
+
+    private static bool IsIgnoredSnpParam(string name) =>
+        name.Equals("Temp",           StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("CheckPassivity", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("Noise",          StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("SaveCurrent",    StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("Mode",           StringComparison.OrdinalIgnoreCase);
 
     // ── Tokenisation helpers ──────────────────────────────────────────────────
 
     /// <summary>
     /// Split a line into whitespace-separated tokens.
-    /// Preserves "name=value" as a single token.
+    /// Quoted regions ("...") are kept as a single unit, so
+    /// key="value with spaces" stays one token.
     /// </summary>
     private static List<string> TokeniseLine(string line)
-        => [.. line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries)];
+    {
+        var tokens = new List<string>();
+        int i = 0;
+        while (i < line.Length)
+        {
+            while (i < line.Length && char.IsWhiteSpace(line[i])) i++;
+            if (i >= line.Length) break;
+
+            var sb = new System.Text.StringBuilder();
+            while (i < line.Length && !char.IsWhiteSpace(line[i]))
+            {
+                if (line[i] == '"')
+                {
+                    sb.Append(line[i++]); // opening "
+                    while (i < line.Length && line[i] != '"')
+                        sb.Append(line[i++]);
+                    if (i < line.Length)
+                        sb.Append(line[i++]); // closing "
+                }
+                else
+                {
+                    sb.Append(line[i++]);
+                }
+            }
+            if (sb.Length > 0) tokens.Add(sb.ToString());
+        }
+        return tokens;
+    }
 
     /// <summary>
     /// Given the right-hand side of "name = rhs", split into (expression, unit?).

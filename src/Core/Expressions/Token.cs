@@ -13,6 +13,8 @@ public enum TokenKind
     // Ternary / punctuation
     Question, Colon, Comma,
     LParen, RParen,
+    // String literal: "foo"  (storage-only config params; no string operations)
+    StringLiteral,
     // Sentinel
     Eof
 }
@@ -57,6 +59,9 @@ public sealed class Tokenizer(string source)
         if (char.IsLetter(c) || c == '_')
             return ReadIdentifier(start);
 
+        if (c == '"')
+            return ReadStringLiteral(start);
+
         return c switch
         {
             '+' => Advance(TokenKind.Plus,   start),
@@ -89,6 +94,19 @@ public sealed class Tokenizer(string source)
                         : throw new ParseException("Expected '||'", start),
             _ => throw new ParseException($"Unexpected character '{c}'", start)
         };
+    }
+
+    private Token ReadStringLiteral(int start)
+    {
+        _pos++; // skip opening "
+        int contentStart = _pos;
+        while (_pos < _source.Length && _source[_pos] != '"')
+            _pos++;
+        if (_pos >= _source.Length)
+            throw new ParseException("Unterminated string literal", start);
+        var content = _source[contentStart.._pos];
+        _pos++; // skip closing "
+        return Make(TokenKind.StringLiteral, content, start);
     }
 
     private Token ReadNumber(int start)
