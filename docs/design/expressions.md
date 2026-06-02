@@ -39,6 +39,8 @@ An expression is **parsed once** into an AST and cached; evaluation re-runs the 
 - **String literal** — a double-quoted run of characters: `"touchstone"`, `"path/to/file.s2p"`, `"spline"`. Lexes to a `String` value (§6); **storage only**, no string operators. Used for component parameters that are genuinely textual (the SnP block's `File`, `Type`, `InterpMode`, `InterpDom`, `ExtrapMode`).
 - **Identifier** — `[A-Za-z_][A-Za-z0-9_]*`, used for variable/parameter/argument names and function names. Hierarchical paths in measurements use `.` between identifiers (`X1.drain`) — see §13.
 - **Imaginary unit** — `j` is a reserved constant equal to `(0, 1)`; imaginary values are written `j*4`, `2 + j*3` (matching the prototype's `j*` convention). `pi` and `e` are reserved constants.
+- **`freq` — reserved injected keyword.** Lowercase `freq` is the **simulator's current stamping frequency** (in Hz), injected into scope by the engine when it evaluates a frequency-dependent component value (the `Z_Port` impedance expression, linear-engine §4; any future `Z(freq)`/`Y(freq)` model). It is **read-only and reserved** — a user may **not** name a variable `freq`. It is in scope only for component-value expressions the engine stamps per-frequency; it is **not** available in SDD time-domain equations (those see port voltages `_v`, not frequency) nor in ordinary variable/parameter expressions evaluated at elaboration. Distinct from the user-set **`Freq`** parameter (capital F) on a voltage source, which names the tone a source drives at (linear-engine §4.4); the commensurability check (harmonic-balance §3) verifies each source's `Freq` lands on the grid the engine stamps `freq` at.
+- **Reserved names.** Constants (`j`, `pi`, `e`), the injected `freq`, and all built-in function names (`sin`, `cos`, …, `real`, `imag`, `abs`, `mag`, `phase`, `phase_rad`, `polar`, … §7) are reserved — a user variable/parameter/argument may not shadow them.
 - **Operators** — `+ - * / ^`, `< <= > >= == !=`, `&& || !`, `? :`, and `( ) ,`.
 - **Whitespace** separates tokens and is otherwise ignored.
 
@@ -123,6 +125,10 @@ For the enumerated string parameters (`Type`, `InterpMode`, `ExtrapMode`), the *
 - Exp/log/power: `exp`, `log` (natural), `log10`, `sqrt`, `pow(x,y)` (same as `x^y`), `abs`.
 - Misc: `min(a,b)`, `max(a,b)`, `sign(x)`.
 - Conditional: `if(cond, then, else)`.
+- **Complex extraction** (Complex-or-Real → **Real**): `real(z)`, `imag(z)`, `abs(z)` (modulus; `|x|` for a real argument), `mag(z)` (**alias of `abs`** — RF spelling of the same modulus), `phase(z)` (angle in **degrees**), `phase_rad(z)` (angle in **radians**).
+- **Complex construction** (Real, Real → **Complex**): `polar(mag, phase_deg)` = `mag·(cosθ + j·sinθ)` with θ in **degrees**. The inverse of `mag`/`phase`; e.g. `polar(0.1, 10)` is the phasor 0.1∠10°. (No `polar_rad` — degrees is the designer-facing entry convention; `phase_rad` exists only as the radian extractor.)
+
+The extraction/construction family is consistent with the result-model **cube transforms** of the same name (`.real`/`.imag`/`.mag`/`.phase` in `measurements.md`): same operation, same units (phase in degrees), one on a scalar value, the other on a whole cube. **`phase`/`phase_rad` and the `.phase` cube transform must agree on units (degrees for `.phase`/`phase`).** Note `abs` is the canonical modulus (extending its real `|x|` meaning to complex), with `mag` a pure alias.
 
 `dB(...)` and `dBm(...)` are **measurement** functions (§13), not general-expression built-ins, because they are logarithmic and tied to power/wave semantics. They are also why `dB`/`dBm` are **not** unit suffixes (§8).
 

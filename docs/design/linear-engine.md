@@ -1,6 +1,6 @@
 # circuitRF — Linear Engine Design (MNA, DC, S-parameters)
 
-**Status:** Draft (rev 3) for review · **Date:** 2026-05-30
+**Status:** Draft (rev 4) for review · **Date:** 2026-05-31
 **Reads with:** `docs/design/data-model.md` (§3 elaboration, §5 `ComponentModel`, §6 RfCore, §7 result model), `docs/PRD.md` (§4 Hero 1, §5 simulation scope, §14 NFRs).
 **Defers to:** `docs/design/harmonic-balance.md` (the nonlinear partition + conversion-matrix Jacobian, which builds on this), `docs/design/expressions.md` (parameter resolution).
 
@@ -101,8 +101,9 @@ A model's `Stamp(mna, component, omega)` (data-model §5) calls these. The engin
 | Inductor | 2 | branch `i`; KCL `AddBranchCurrent(i, a, b)`; constraint `Va − Vb − jωL·i = 0` — at DC reduces to `Va = Vb` = short, exactly |
 | Mutual inductance | 2 | couples two inductor branches (§7) |
 | Frequency-domain N-port (Touchstone/SNP, impedance block, TLIN, user freq model) | 2 default, 1 if native Y | **default**: `Z(ω)` branch-current expansion — one branch per port, constraint `V = Z·I`; **if the block is natively `Y(ω)`**: stamp the admittance block directly with `AddBlockAdmittance` (no extra unknowns). See §4.1 |
-| DC / AC voltage source | 2 | branch `i`; constraint `Va − Vb = E`; `AddSourceValue(i, E)` |
-| RF power source | 2 | an AC voltage source behind a series internal impedance `Zs` (default 50 Ω) — see §4.2. The user specifies **available power** `Pavl`; the source back-solves its voltage. |
+| **`Z_Port`** (general N-port, impedance entries as `freq`-expressions) | 2 | the N-port whose `Z[i,j]` matrix entries are **expressions in the reserved keyword `freq`** (§4.4), evaluated per stamping frequency; stamped by the same `Z(ω)` branch expansion as the other freq-domain N-ports. Subsumes the impedance block. Hero 2 uses the 1-port (2-net) case. |
+| DC / AC voltage source | 2 | branch `i`; constraint `Va − Vb = E`; `AddSourceValue(i, E)`. The tone-carrying source is **`V_1Tone` / `V_nTone`** (§4.4) |
+| RF power source | 2 | an AC voltage source behind a series internal impedance `Zs` (default 50 Ω) — see §4.2. The user specifies **available power** `Pavl`; the source back-solves its voltage. (A convenience component; the Hero-2 drive instead composes `V_1Tone` + `Z_Port`, §4.4.) |
 | AC current source | 1-ish | `AddCurrentInjection(a, +J)`, `AddCurrentInjection(b, −J)` |
 | Port / Term | — | defines a port: records the port number and its reference impedance `Z0_k` for extraction (§9). Not stamped as a physical resistor for S-parameters (§9) |
 | Current probe | 2 | a 0 V branch whose current is the recorded quantity |
@@ -156,6 +157,40 @@ circuitRF is a research/experimentation tool: it lets users build deliberately n
 - **`InductanceRegularization`** — the inductive dual (a tiny series resistance / diagonal loading on the inductor block); cures a near-singular or rank-deficient coupled-inductance matrix (e.g. a degenerate EM-extracted coupled-coil block, or k≥1).
 
 Semantics (identical for both): **`IfNecessary`** assembles *without* the regularization, attempts the factorization, and on failure adds it and retries (clean circuits pay nothing and get the unperturbed result; if a solve fails with both at `IfNecessary`, add **both** on retry — they're cheap and orthogonal). **`Always`** assembles *with* it from the start (skips the speculative failed solve — useful for large circuits known to need it; slightly perturbs all results). **`Never`** assembles without and, if singular, **fails with the singular-node diagnostic** (§6 / engine CLAUDE.md) — a validation mode for users who want to *know* a circuit is degenerate. **Warn only when a regularization actually engages**, never merely for a clean solve or for negative M.
+
+### 4.4 `Z_Port` and the tone sources (`V_1Tone` / `V_nTone`)
+These three components are the **RF source/termination vocabulary** the HB drive composes from. `Z_Port` provides a frequency-dependent impedance *environment*; the tone sources provide the *excitation*. They are deliberately separate so a drive is `tone source` + `Z_Port` in series — the impedance and the excitation are independent.
+
+#### `Z_Port` — a frequency-controlled impedance N-port
+A new general **N-port** `ComponentModel`, **Group 2** (branch-current unknowns), whose impedance-matrix entries `Z[i,j]` are **expressions in the reserved keyword `freq`** (the engine-injected stamping frequency, expressions.md §3). At each frequency the engine stamps, it evaluates the `Z[i,j](freq)` expressions to a complex `n×n` matrix and stamps it by the **same `Z(ω)` branch expansion** as every other frequency-domain N-port (§4.1) — including the **N-or-(N+1) reference-node convention**. So `Z_Port` *is* the impedance block of §4.1, generalized: instead of a fixed `Z[i,j](ω)` closed form, the entries are arbitrary user `freq`-expressions. Hero 2 uses the **1-port (2-net)** case (`Z[1,1]=<freq expression>`).
+
+Because it stamps at whatever frequency it is given, `Z_Port` works in **any** frequency-stamping analysis — a swept linear S-parameter sweep *and* the HB per-harmonic solve. Its headline use is **per-harmonic termination**: a piecewise `if`-ladder over `freq` that returns a different impedance in each harmonic band, e.g. a load that is `80+j10` at the fundamental, `1` at the 2nd harmonic, and a near-short above. (The `if`/`elseif` ladder is evaluated **in order with short-circuit**, expressions.md §6, so the first true band wins.)
+
+**Exact-harmonic-frequency guarantee (engine).** A `Z_Port` termination expression compares `freq` against integer multiples of the fundamental (`freq <= 2*RFfreq`, etc.). For this to be robust, **HB computes each harmonic's stamping frequency as the exact double `k · f0`** (the same arithmetic the user's band edges use), so `freq` at harmonic `k` is **bit-identical** to `k*RFfreq` in the expression and band comparisons against fundamental multiples are exact — no floating-point drift at a band edge. This holds because integer multiples of an exactly-representable `f0` (e.g. `2e9`) stay exact in IEEE-754 double well within `2^53`. The guarantee covers band edges that are integer multiples of the fundamental (the only sensible harmonic-termination edges); a non-harmonic edge (`2.5*RFfreq`) is outside it. **Consistency note:** the `freq` band edges should reference the *same* fundamental the HB analysis drives at — if a user's `RFfreq` variable disagrees with the analysis fundamental, the bands misalign with the actual harmonics (a setup error, not drift; a future nicety may warn when a `Z_Port`'s apparent edges do not align with the harmonic grid).
+
+At **DC** (`freq = 0`) a `Z_Port` evaluates its expression at `freq = 0` (typically the sub-fundamental branch — e.g. a tiny `1e-5 Ω`); the bias-tee in a real drive network keeps that DC value from loading the bias supply, so it does not disturb the operating point.
+
+#### `V_1Tone` and `V_nTone` — the tone voltage sources
+One internal model, two netlist spellings. It is an ideal voltage source (Group 2, constraint `Va − Vb = E`) that contributes a **DC term at `freq = 0`** and a **phasor at each of its tone frequencies**, and **zero at every other stamped frequency** (an AC source is a short at frequencies it does not excite — like S-parameter sources being zeroed, §2.1). Parameters:
+
+- **`Freq`** (capital F) — the tone frequency the source drives at (Hz). *User-set*, distinct from the injected `freq` keyword (expressions.md §3). The **commensurability check** (harmonic-balance §3) validates every `Freq` against the analysis tone grid.
+- **`V`** — the tone's complex phasor amplitude (magnitude convention, §2.2). May be written as a real magnitude or as a complex phasor via `polar(mag, deg)`. For the RF drive the user computes `|Vs| = sqrt(8·Pavl·Re(Zs))` (§4.2) and supplies it here — e.g. `V = sqrt(8 * Pavl_w * real(Zs_f))`, with `Pavl_w` a watts expression and `Zs_f` the fundamental source impedance.
+- **`Phase`** (optional, **degrees**) — a phase added to the excitation. If `V` is itself a complex phasor, `Phase` **adds** to its angle.
+- **`Vdc`** (optional, volts) — a DC bias the same source carries; stamped **only at `freq = 0`** (the k=0 MNA). Lets one component be both bias and drive.
+
+**`V_1Tone`** is the single-tone spelling — scalar `Freq`/`V`/`Phase`/`Vdc`:
+```
+V_1Tone:Vdrive  N__gate 0  Freq=2 GHz  V=Vs_mag  Phase=0
+```
+**`V_nTone`** is the multi-tone spelling — parallel indexed lists for an arbitrary number of tones, **1-based in the netlist** (designer convenience), 0-based in C# storage:
+```
+V_nTone:SRC1  Net_In 0  NumFreqs=2 \
+   Freq[1]=1.900 GHz  V[1]=polar(0.1, 0) \
+   Freq[2]=1.901 GHz  V[2]=polar(0.1, 0)
+```
+(Either form may be single- or multi-line via `\` continuation.) `V_1Tone` is exactly the `NumFreqs=1` case; **the reader expands both spellings into one internal model**, so the stamping and commensurability logic is written once. `V_nTone` also accepts an optional `Vdc`. Each tone `i` stamps its phasor `V[i]` (plus `Phase` if present) at the stamped frequency equal to `Freq[i]`, and zero elsewhere; `Vdc` stamps at `freq = 0`.
+
+**The RF drive is a composition, not a bundled component.** The Hero-2 source side is `V_1Tone` (the excitation: `V`, `Freq`) **in series with** `Z_Port:Zsource` (the per-harmonic source impedance environment), feeding the gate through a bias-tee. Together they are the Thévenin equivalent of an RF power source with a frequency-dependent `Zs` — strictly more flexible than the bundled **RF power source** of §4.2 (which carries a single `Zs` per tone internally). The bundled RF power source is retained as a designer convenience for the common single-`Zs` case; the `V_1Tone` + `Z_Port` composition is what the heroes use and what the per-harmonic terminations require.
 
 ---
 

@@ -1,10 +1,12 @@
 # circuitRF — Harmonic Balance Engine Design
 
-**Status:** Draft for review · **Date:** 2026-05-30
-**Reads with:** `docs/design/data-model.md` (§3 elaboration + partition sets, §5 `ComponentModel`/`Evaluate`, §7 result model), `docs/design/linear-engine.md` (§2.1 the three MNA uses, §10 reuse by HB), `docs/design/measurements.md` (§3.4 IMn, §5 V/I retention + `Pdc` from k=0), `docs/design/expressions.md` (§12 AD for `dg`/`dc`), `docs/PRD.md` (§4 Heroes 2–5, §5 HB scope, §14 NFRs).
+**Status:** Draft (rev 2) for review · **Date:** 2026-05-31
+**Reads with:** `docs/design/data-model.md` (§3 elaboration + partition sets, §5 `ComponentModel`/`Evaluate`, §7 result model), `docs/design/linear-engine.md` (§2.1 the three MNA uses, §4.4 `Z_Port`/tone sources, §10 reuse by HB), `docs/design/nonlinear-dc.md` (the Phase-3 nonlinear-DC solver, AD engine, and SDD this engine **consumes**), `docs/design/measurements.md` (§3.4 IMn, §5 V/I retention + `Pdc` from k=0), `docs/design/expressions.md` (§12 AD for `dg`/`dc`), `docs/PRD.md` (§4 Heroes 2–5, §5 HB scope, §14 NFRs).
 **Defers to:** the data-cube note (axis/units, backing store), `src/Engine/CLAUDE.md` (the frozen FFT/sign conventions).
 
-This note specifies circuitRF's **harmonic-balance (HB) engine**: how an `ElaboratedNetlist` is partitioned, how the error function and its conversion-matrix Jacobian are formed and solved by Newton's method, how the time/frequency transform is conventioned (single- and multi-tone), and how convergence is driven (initial guess, DC seed, continuation, guard harmonic). It gates **Phase 3** and **Heroes 2–5**. It builds directly on the linear engine (§10 of that note is its supplier) and the `Evaluate` contract (data-model §5). It defines *method, contracts, and conventions* — not full derivations or C#. No code is written until this is approved.
+> **Phase note (rev 2):** this engine is **Phase 4**, built on the completed Phase 3 (nonlinear DC + the `Evaluate` `(i,q,dg,dc)` contract + the forward-mode AD engine + the SDD device, all in `nonlinear-dc.md`). Where this note describes the `Evaluate` contract, the AD-derived `dg`/`dc`, the SDD, and the nonlinear-DC solve, those are **built and validated — Phase 4 consumes them**, it does not re-implement them. Phase 4 adds the frequency-domain machinery *on top*: the FFT layer, the conversion-matrix Jacobian, the dense Newton over harmonics, continuation across sweeps (`DriveStepping`), the guard harmonic, and V/I-cube writeback. Phase 4 is **sub-gated** — 4a single-tone→Hero 2, 4b loadpull→Hero 3, 4c multi-tone→Hero 5, 4d multi-device→Hero 4 — so the single-tone engine is proven before the sweep/transform layers pile on.
+
+This note specifies circuitRF's **harmonic-balance (HB) engine**: how an `ElaboratedNetlist` is partitioned, how the error function and its conversion-matrix Jacobian are formed and solved by Newton's method, how the time/frequency transform is conventioned (single- and multi-tone), and how convergence is driven (initial guess, DC seed, continuation, guard harmonic). It gates **Phase 4** and **Heroes 2–5**. It builds directly on the linear engine (§10 of that note is its supplier) and the Phase-3 `Evaluate` contract + AD + nonlinear-DC solver (`nonlinear-dc.md`), which it **consumes**. It defines *method, contracts, and conventions* — not full derivations or C#. No code is written until this is approved.
 
 The formulation follows the owner's IMS short-course "Understanding Harmonic Balance Simulation for RF Power Amplifier Designers" (WSJ-3) and the two anchor references it cites — Kundert & Sangiovanni-Vincentelli (1986) and Maas, *Nonlinear Microwave and RF Circuits*, 2nd ed. (2003) — extended to multi-tone, which the course deliberately left out of scope.
 
@@ -59,6 +61,41 @@ The linear engine is the HB engine's supplier (linear-engine §10). At setup, an
 Both reuse the §9/§10 machinery of the linear note (build the linear-partition MNA, factor per harmonic, multi-RHS extract at the nonlinear-facing nodes; and a source-driven solve for the excitation). The **DC (k = 0) member is formulated exactly like the standalone nonlinear-DC analysis** (inductor short, capacitor open, `gmin`) — there is one DC formulation, used standalone and as the k = 0 slice here, which is why `Pdc` reads from this k = 0 component (linear-engine §2.1, measurements §5).
 
 For **loadpull** (Hero 3) the load/source Γ is a termination on the linear partition: changing Γ_L re-extracts `Y_{N×N}` (at the fundamental, and at the harmonics for harmonic loadpull, where `Z₂f₀ … Z_Hf₀` are set per the analysis's `HarmonicTermination[]`). The nonlinear devices and their `Evaluate` path are untouched by the sweep — only the interface network the deck calls `Y_{N×N}` moves.
+
+### 3.1 Tones are declared by the analysis; sources are validated against the grid (commensurability)
+The HB analysis **declares its tone(s)** — the fundamental `f0` (single-tone) or the tone set `{f1, f2, …}` (multi-tone) — and from them the engine builds the harmonic/mixing grid (the frequencies it will stamp `freq` at, §5/§6). Independent tone sources do **not** define the grid; they are **checked against it**. At setup the engine runs a **commensurability check**:
+
+- Enumerate every tone frequency of every voltage source — each `V_1Tone`'s `Freq`, and every `Freq[i]` of every `V_nTone` (linear-engine §4.4).
+- Verify each lands **exactly on the declared grid**: an integer combination of the analysis tones (`k·f0` single-tone; `k₁f₁ + k₂f₂` within the retained set, multi-tone).
+- If any source frequency is **off-grid**, error at setup naming the offending source and frequency (e.g. *"V_1Tone:Vdrive Freq=2.001 GHz is not commensurate with the HB tone grid {f0 = 2 GHz}"*). This catches the off-grid-drive mistake — the frequency-domain analog of the `Z_Port` band-edge drift (linear-engine §4.4) — before it produces silent garbage, and it is what makes the two-tone setup well-posed (every source must live on the `{k₁f₁+k₂f₂}` lattice the diamond is built on, §6).
+
+This is why the relationship between the user-set **`Freq`** (a source's tone) and the injected **`freq`** (what the engine stamps) is exact by construction: the grid is built from the declared tones, the source `Freq`s are validated onto it, and `freq` at harmonic `k` is the exact `k·f0` (linear-engine §4.4) — so a `Z_Port` band edge, a source `Freq`, and the stamped `freq` all agree to the bit.
+
+### 3.2 The HB analysis directive (`.cnl` grammar)
+The HB analysis is declared at the top level (the `TestBench`, data-model §2.1/§10) with an `analysis` line of `type=hb`. It populates the `HarmonicBalanceAnalysis` design type (data-model §4). **All knobs are `key=value` and resolve through the expression engine**, so each may be a literal *or* a named parameter/variable declared elsewhere in the netlist (the "config as parameters" convention — a user sets `MaxHarm=7` once at the top and the directive references it). Keys:
+
+| Key | Meaning | Default |
+|---|---|---|
+| `Tone` | single-tone fundamental f0 (Hz). For two-tone use `Tone1`/`Tone2` | (required) |
+| `MaxHarm` | harmonic count K (single-tone): solve harmonics 0…K | 7 |
+| `MaxMixOrder` | mixing-order truncation (two-tone diamond, §6); ignored single-tone | 5 |
+| `Sweep` | the parametric sweep, `"<var>: <start> .. <stop> step <step>"` (the swept variable is any §8 variable, e.g. `Pavl_dbm`) | none (single point) |
+| `FFTOverSample` | anti-aliasing grid multiplier `1·16·…` (§5.3) | 1 |
+| `Tol` | absolute convergence tolerance `‖F‖` (§12.2) | 1e-6 |
+| `MaxIter` | Newton max iterations per solve before continuation backoff | (engine default) |
+| `DriveStepping` | RF-drive continuation mode `{ IfNecessary, Always, Never }` (§11) | IfNecessary |
+| `GuardHarmonic` | guard-harmonic profile/index (§12.1); `0`/absent = off | off |
+| `ConductanceRegularization` | gmin mode `{ IfNecessary, Always, Never }` (linear-engine §4.3) | IfNecessary |
+| `InductanceRegularization` | inductance-block mode `{ IfNecessary, Always, Never }` | IfNecessary |
+
+```
+analysis HB1  type=hb  Tone=RFfreq  MaxHarm=MaxHarm  Sweep="Pavl_dbm: -20 .. 20 step 1" \
+     FFTOverSample=OverSamp  Tol=HBtol  DriveStepping=DriveStep  GuardHarmonic=Guard
+```
+
+The **`Tone` value declares the analysis fundamental** — the grid the commensurability check (§3.1) validates every source `Freq` against, and the `f0` the engine stamps harmonics at as exact `k·f0` (linear-engine §4.4). Output retention defaults to **all `V` and `I`, all harmonics including DC** (§9, measurements §5); a future `Keep=` key may prune. Two-tone replaces `Tone` with `Tone1`/`Tone2` and uses `MaxMixOrder`; everything else is identical (Phase 4c).
+
+> **Note — first concrete analysis-directive grammar.** Until now analysis/measurement directives were stored opaquely (`RawDirective`, data-model §10, deferred grammar). The HB directive above is the **first** one given real grammar; it sets the `type=<kind> key=value` pattern the other analyses (`sparam`, `dc`, `loadpull`) will follow when their directives are specified. The `key=value` values resolving through the expression engine (so any knob can be a parameter) is the reusable convention.
 
 ---
 
@@ -216,11 +253,11 @@ The result is the full `V`/`I` spectra written to the run's cubes — the engine
 
 A good first guess is decisive (deck slides 13, 16 — Newton converges fast from a good start and can be trapped from a bad one). The strategy:
 
-1. **DC operating point first.** Solve the **nonlinear DC** problem at the interface — the k = 0 balance alone — by Newton with `gmin` and source stepping (the same nonlinear-DC solve the linear note's DC formulation underlies, linear-engine §5; this is its home for the *nonlinear* case). This is the bias point the deck initializes from (`Vds[0]=48 V`, `Vgs[0]=−3.05 V` in slide 28).
+1. **DC operating point first.** Solve the **nonlinear DC** problem at the interface — the k = 0 balance alone — using the **Phase-3 nonlinear-DC solver** (`nonlinear-dc.md`): Newton on the `Evaluate` contract with `gmin` continuity and **`DcBiasStepping`** (the bias-supply ramp, default `IfNecessary`). This is already built and validated (Phase 3's hero converged to vds ≈ 47.0 V); **Phase 4 calls it, it does not re-implement it.** This is the bias point the deck initializes from (`Vds[0]=48 V`, `Vgs[0]=−3.05 V` in slide 28).
 2. **Seed the harmonics small.** Set the fundamental and higher harmonics to a small perturbation (the deck's `1e-3`), not zero — a pure-DC guess gives the Jacobian no harmonic signal to work from. Slide 28 shows this `1e-3` seed converging to `< 1e-10` total error in ~7 iterations at K = 5.
 3. **Or continue from a neighbor.** Under a sweep (power, Γ), the converged `V` of the previous point is a far better seed than the cold DC start — see §11.
 
-The nonlinear-DC solve is specified here (not in the linear note) because it is a Newton-on-`Evaluate` problem — it uses the same `(i, q→0 at DC, dg)` device contract and the same `gmin` continuity device the linear DC formulation introduced. The linear note owns the *linear* DC; this note owns the *nonlinear* DC, as its k = 0 specialization.
+The nonlinear-DC solver is **owned by Phase 3** (`nonlinear-dc.md`) — it is the Newton-on-`Evaluate` problem with the same `(i, q→0 at DC, dg)` contract and `gmin` continuity the linear DC formulation underlies. The linear note owns the *linear* DC; Phase 3 owns the *nonlinear* DC; **this note (Phase 4) consumes the nonlinear-DC solve as its k = 0 seed.** (Earlier drafts, written when HB was Phase 3, described building the nonlinear DC here — that work is done; Phase 4 only calls it.)
 
 ---
 
@@ -321,7 +358,7 @@ Beyond the cross-tool references, the deck establishes a **theory cross-check** 
 3. **Guard-harmonic profile** (§12.1) — **decided:** **hard cutoff is the default**; a tapered roll-off is selectable for heuristic tuning once the engine runs.
 6. **SDD domain error under overshoot** (§4, §11; closes `expressions.md` §18 open item 2) — **decided:** a `log`/`sqrt`/etc. domain error inside `Evaluate` on an overshooting iterate **clamps and warns** rather than hard-erroring, so continuation is not killed by a transient out-of-domain iterate. The **warning must be surfaced obviously to the user** (not buried in a log), naming the model and the offending operation. (`expressions.md` §18 item 2 should be updated to point here.)
 
-**Deferred to Phase-3 bring-up (settle empirically):**
+**Deferred to Phase-4 bring-up (settle empirically):**
 
 2. **Oversampled-vs-minimal `G`/`C` for the fixed-size Jacobian** (§5.3) — stays a flag **defaulting to oversampled**; revisit after measuring Hero-2/3 iteration counts. Affects convergence rate only, never the converged answer.
 4. **Damping policy** (§8, §11) — whether `λ` is fixed, line-searched, or engaged only after a failed full step; tune alongside the continuation step-backoff during heuristic bring-up.
@@ -329,4 +366,4 @@ Beyond the cross-tool references, the deck establishes a **theory cross-check** 
 
 ---
 
-*On approval, Phase 3 implements: the partition + interface extraction (reusing the Phase-2 linear engine), the FFT layer (single- and multi-tone, with `FFTOverSample`), the `Evaluate` time-domain loop, the real-valued conversion-matrix Jacobian and dense Newton solve, the initial-guess/continuation/guard-harmonic machinery, and the V/I-cube writeback — validated on Heroes 2–5 against the transcribed-SDD references and the Cripps/Class-mode theory cross-checks.*
+*On approval, Phase 4 implements (sub-gated 4a–4d): the partition + interface extraction (reusing the Phase-2 linear engine), the FFT layer (single- and multi-tone, with `FFTOverSample`), the per-iteration IFFT→`Evaluate`→FFT loop (calling the Phase-3 `Evaluate`/AD), the real-valued conversion-matrix Jacobian and dense Newton solve, the initial-guess (Phase-3 nonlinear-DC seed) / continuation (`DriveStepping`) / guard-harmonic machinery, and the V/I-cube writeback — validated on Heroes 2–5 against the transcribed-SDD references and the Cripps/Class-mode theory cross-checks. **4a (single-tone → Hero 2) is the make-or-break gate** before the sweep/transform layers (4b loadpull, 4c multi-tone, 4d multi-device).*
