@@ -2,6 +2,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Elaboration;
+using System.Text.RegularExpressions;
 
 namespace CircuitRF.Core.Elaboration;
 
@@ -182,11 +183,86 @@ public sealed class Elaborator
         Instance inst,
         Scope parentScope)
     {
+        if (inst.Reference.Equals("SDD", StringComparison.OrdinalIgnoreCase))
+            return ResolveSddParameters(inst, parentScope);
+
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
             result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
         return result;
     }
+
+    // Port voltage names in SDD equations — _v1, _v2, … (injected at eval time, not scope vars).
+    private static readonly Regex RxPortVoltage = new(@"^_v\d+$", RegexOptions.Compiled);
+    // SDD equation parameter name pattern.
+    private static readonly Regex RxSddEquation = new(@"^[IFCi][^\[]*\[", RegexOptions.Compiled);
+
+    private IReadOnlyDictionary<string, Value> ResolveSddParameters(
+        Instance inst,
+        Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+
+        // Port count = half the net count (2N nets in +/− pairs).
+        int portCount = inst.NetBindings.Count / 2;
+        result["SddPortCount"] = new Value((double)portCount);
+        result["SddName"]      = new Value(inst.InstanceName);
+
+        foreach (var ov in inst.Overrides)
+        {
+            // Equation parameters (I[p,w], F[p,w], C[n], etc.) — store raw expression as String.
+            // The factory will parse and validate them.
+            if (RxSddEquation.IsMatch(ov.Name) || IsNoiseEntry(ov.Name))
+            {
+                result[ov.Name] = new Value(ov.Expression);
+                // Resolve scope variables referenced by this equation and inject them.
+                InjectSddScopeVars(ov.Expression, parentScope, result);
+                continue;
+            }
+
+            // Regular parameter (unlikely for SDD in v1, but supported for future use).
+            result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+        }
+
+        return result;
+    }
+
+    private void InjectSddScopeVars(
+        string expression,
+        Scope scope,
+        Dictionary<string, Value> into)
+    {
+        Expr ast;
+        try { ast = Parser.Parse(expression); }
+        catch { return; }  // parse failure handled later in the factory
+
+        var refs = AstWalker.CollectRefs(ast);
+        foreach (var name in refs)
+        {
+            if (RxPortVoltage.IsMatch(name)) continue;     // _v1, _v2 — injected at eval time
+            if (into.ContainsKey(name))       continue;     // already injected by a prior equation
+
+            var binding = scope.Lookup(name);
+            if (binding is null) continue;                  // unknown name — factory will error later
+
+            try
+            {
+                var val = _evaluator.Resolve(name, scope);
+                if (val.Kind == ValueKind.Real)
+                    into[name] = val;
+                else if (val.Kind == ValueKind.Complex)
+                    throw new InvalidOperationException(
+                        $"SDD equation references '{name}' which resolved to a Complex value; " +
+                        $"SDD equations are real-only");
+                // Bool/String — silently skip (factory will catch actual type errors)
+            }
+            catch (UnresolvedNameException) { /* skip */ }
+        }
+    }
+
+    private static bool IsNoiseEntry(string name) =>
+        name.StartsWith("In[", StringComparison.OrdinalIgnoreCase) ||
+        name.StartsWith("Nc[", StringComparison.OrdinalIgnoreCase);
 
     // ── Library lookup ────────────────────────────────────────────────────────
 

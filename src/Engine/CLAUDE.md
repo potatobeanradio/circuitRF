@@ -220,3 +220,66 @@ The inductor's single Group-2 branch is a series-RLC element:
 - Test: `Mutual_OverCoupling_WarnsAndProducesResult` verifies warning fires + result returned.
 
 **Total tests: 134 pass, 0 fail.**
+
+## Phase 3 deliverable — COMPLETE (2026-06-01)
+Nonlinear-DC Newton solver, validated by the hero GaN HEMT operating point.
+
+### NonlinearDcEngine (`src/Engine/NonlinearDcEngine.cs`)
+Unified real sparse Newton solver (nonlinear-dc §4):
+
+**State vector** x = [V₁…Vₙ | I_branches]: voltage unknowns + all MNA branch-current unknowns
+(voltage sources, inductors — from MnaSystem at ω=0). The full augmented system is built once from
+`MnaSystem` at ω=0, extracting the real parts of all entries and the source RHS.
+
+**Residual** F(x) = G_aug·x + I_nl(x) − b_source·sourceFrac  
+**Jacobian** J = G_aug + dg(x): linear matrix (constant per source-stepping fraction) + dg from
+`Evaluate`, stamped at each nonlinear device's port nodes using the 4-way port-pair formula.
+
+**Port voltage convention** (from elaborated node layout):  
+SDD nodes are in 2N pairs: `[n1+, n1−, n2+, n2−, …]`. Port voltage p = V(nodes[2p]) − V(nodes[2p+1]).
+dg[p,q] stamps into the (np, nq) block with ±dgPQ signs from the 4 node-pair combinations.
+
+**gmin continuity**: shunt DefaultGmin (1e-12 S) added to every voltage row diagonal (nodes only, not
+branch rows). Controlled by `AnalysisSettings.ConductanceRegularization`.
+
+**Source-stepping** (§4.3): sources walked from 0 to 1 in DefaultMaxSteps (20) equal steps; step-halving
+backoff on Newton max-iter failure (up to 10 halvings). AMD permutation cached after first iteration.
+
+**Convergence**: ‖F‖₂ < 1e-6 (DefaultAbsTol) or ‖Δx‖₂ < 1e-9 (DefaultVTol).
+
+### Hero gate (2026-06-01)
+`tests/Engine.Tests/Nonlinear/NonlinearDcTests.cs`: Hero GaN HEMT + 20 Ω series Rd, gate −3.05 V, drain 48 V.
+Converges in 68 iterations to **vds = 47.0176 V, i2 = 49.122 mA** (golden: 47.018 V, 49.12 mA).
+Residual = 6.2e-11 (well below 1e-6 tolerance). All Phase 1–2 tests still pass.
+
+## Phase 3 Follow-up — DcBiasStepping, SDD whitespace, convergence settings (2026-06-02)
+
+### DcBiasStepping tri-state (`AnalysisSettings.DcBiasStepping`)
+New `DcBiasSteppingMode` enum (same tri-state pattern as `RegularizationMode`):
+
+- **`IfNecessary`** (default): direct cold-start Newton at frac=1.0; fall back to ramp only if it
+  fails. Hero converges in **4 iterations, 1 step** — no ramp needed.
+- **`Always`**: always ramp DC supplies 0→1 in `DcBiasRampSteps` (default 20) equal steps.
+  Reproduces the Phase-3 behavior (68 iters across 20 steps).
+- **`Never`**: direct solve only; throws `NonlinearDcNotConvergedException` on failure. For
+  validation/debugging.
+
+`DcBiasStepping` ramps DC *bias supplies* — distinct from Phase-4's reserved `DriveStepping`
+(which will ramp RF *drive power*). Do not conflate the two.
+
+`DcBiasRampSteps` (default 20): ramp step count, only relevant when `Always` or fallback fires.
+
+`NonlinearDcNotConvergedException` — new exception, thrown only by `Never` mode.
+
+### Convergence trace (permanent feature)
+`DcResult.Trace` holds a `ConvergenceTrace` with `StepRecord` (per continuation step: source
+fraction, iteration count, convergence, per-iteration `IterationRecord`) and `DampingPolicy`.
+The hero final step converges super-quadratically: ‖F‖ goes 2.4 → 9.9e-4 → 6.2e-11 in 3 iters.
+
+### Solver architecture (post-refactor)
+`NonlinearDcEngine.Solve()` dispatches to:
+- `SolveDirect(throwOnFailure)` — single Newton attempt at full bias (frac=1.0)
+- `SolveRamped()` — source-stepping loop (the former `Solve()` body)
+- `SolveIfNecessary()` — calls `SolveDirect(false)`, then `SolveRamped()` if needed
+
+**Total tests: 199 pass, 0 fail.**

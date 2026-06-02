@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 
@@ -36,7 +37,10 @@ public sealed class CnlReader
         _sourceDirectory = sourceDirectory;
         _lineNumber      = 0;
 
-        foreach (var rawLine in source.Split('\n'))
+        // Pre-process: join backslash-continued lines (VendorA convention).
+        var joinedLines = JoinContinuationLines(source.Split('\n'));
+
+        foreach (var rawLine in joinedLines)
         {
             _lineNumber++;
             var line = rawLine.TrimEnd('\r');
@@ -240,6 +244,143 @@ public sealed class CnlReader
             _testBench!.GlobalVariables.Add(v);
     }
 
+    // ── SDD-specific line parser ──────────────────────────────────────────────
+
+    // Matches SDD-style equation assignments: I[p,w]=, Q[p,w]=, F[p,w]=, C[n]=,
+    // Cport[n]=, In[p,w]=, Nc[p,q]= — used for boundary detection.
+    // Optional whitespace around '=' is allowed (spaced form: I[1,0] = expr).
+    // Capture group 3 captures the '=' (to find where the RHS expression starts).
+    private static readonly Regex SddAssignmentHeader = new(
+        @"(I|Q|F|In|Nc)\[\d+,\d+\]\s*(=)|(C(?:port)?)\[\d+\]\s*(=)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Parse a raw SDD instance line.
+    /// Equation expressions may contain whitespace; multiple assignments per line are allowed.
+    /// Boundary between assignments: the next I[p,w]= or Q[p,w]= (etc.) at parenthesis-depth zero.
+    /// </summary>
+    private void ParseSddLine(string rawLine)
+    {
+        // First token: SDD:Name
+        int firstSpace = rawLine.IndexOfAny([' ', '\t']);
+        if (firstSpace < 0) return;
+        var typeAndName  = rawLine[..firstSpace];
+        int colon        = typeAndName.IndexOf(':');
+        if (colon < 0) return;
+        var instanceName = typeAndName[(colon + 1)..];
+        var rest         = rawLine[(firstSpace + 1)..].TrimStart();
+
+        // Find first equation assignment in `rest`.
+        int eqStart = FindFirstSddEquation(rest);
+
+        // Everything before the first equation is net names.
+        var netSection = eqStart >= 0 ? rest[..eqStart].Trim() : rest;
+        var nets       = netSection.Length > 0
+            ? netSection.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).ToList()
+            : new List<string>();
+
+        // Parse equation assignments from the remainder.
+        var overrides = new List<ParameterAssignment>();
+        if (eqStart >= 0)
+            overrides = ParseSddEquations(rest[eqStart..]);
+
+        var inst = new Instance(instanceName, "SDD", nets, overrides);
+        if (_currentCell is not null)
+            _currentCell.Instances.Add(inst);
+        else
+            _testBench!.Instances.Add(inst);
+    }
+
+    /// <summary>
+    /// Returns the index of the first SDD equation header (I[p,w]=, Q[p,w]=, …)
+    /// at parenthesis-depth zero in <paramref name="text"/>, or -1 if none.
+    /// </summary>
+    private static int FindFirstSddEquation(string text)
+    {
+        int depth = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c == '(') { depth++; continue; }
+            if (c == ')') { depth--; continue; }
+            if (depth > 0) continue;
+            var m = SddAssignmentHeader.Match(text, i);
+            if (m.Success && m.Index == i) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Split <paramref name="eqSection"/> into SDD ParameterAssignments.
+    /// Boundaries are I[p,w]=, Q[p,w]=, etc. at parenthesis-depth zero.
+    /// Whitespace around '=' is accepted: "I[1,0] = expr" is valid.
+    /// </summary>
+    private static List<ParameterAssignment> ParseSddEquations(string eqSection)
+    {
+        var result     = new List<ParameterAssignment>();
+        var boundaries = new List<(int HeaderStart, int ExprStart, string Name)>();
+
+        int depth = 0;
+        int i = 0;
+        while (i < eqSection.Length)
+        {
+            char c = eqSection[i];
+            if (c == '(') { depth++; i++; continue; }
+            if (c == ')') { depth--; i++; continue; }
+            if (depth == 0)
+            {
+                var m = SddAssignmentHeader.Match(eqSection, i);
+                if (m.Success && m.Index == i)
+                {
+                    // Assignment name: everything before the optional-whitespace + '='
+                    // Find the '=' position in the match to determine where the name ends.
+                    int eqPos = m.Value.LastIndexOf('=');
+                    string assignName = m.Value[..eqPos].TrimEnd(); // e.g. "I[1,0]"
+                    int exprStart = m.Index + m.Length;             // expression starts after '='
+                    boundaries.Add((i, exprStart, assignName));
+                    i = exprStart;  // skip past the header
+                    continue;
+                }
+            }
+            i++;
+        }
+
+        // Extract expression text between consecutive boundaries.
+        for (int k = 0; k < boundaries.Count; k++)
+        {
+            var (hStart, exprStart, name) = boundaries[k];
+            int exprEnd = k + 1 < boundaries.Count ? boundaries[k + 1].HeaderStart : eqSection.Length;
+            var expr = eqSection[exprStart..exprEnd].Trim();
+            result.Add(new ParameterAssignment(name, expr));
+        }
+
+        return result;
+    }
+
+    // ── Line-continuation pre-processor ──────────────────────────────────────
+
+    private static IEnumerable<string> JoinContinuationLines(IEnumerable<string> rawLines)
+    {
+        var buf = new System.Text.StringBuilder();
+        foreach (var raw in rawLines)
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.TrimEnd().EndsWith('\\'))
+            {
+                buf.Append(line.TrimEnd()[..^1]);  // append without the trailing '\'
+            }
+            else
+            {
+                buf.Append(line);
+                yield return buf.ToString();
+                buf.Clear();
+            }
+        }
+        if (buf.Length > 0) yield return buf.ToString();
+    }
+
+    // ── General instance line parser ──────────────────────────────────────────
+
     private void ParseInstanceLine(string line)
     {
         // "Type:InstName net1 net2 ... [param=val [unit]] ..."
@@ -252,6 +393,13 @@ public sealed class CnlReader
 
         var typeName     = typeAndName[..colon];
         var instanceName = typeAndName[(colon + 1)..];
+
+        // SDD lines: delegate to the whitespace-aware SDD parser.
+        if (typeName.Equals("SDD", StringComparison.OrdinalIgnoreCase))
+        {
+            ParseSddLine(line);
+            return;
+        }
 
         bool isSnP = typeName.Equals("SnP", StringComparison.OrdinalIgnoreCase);
 

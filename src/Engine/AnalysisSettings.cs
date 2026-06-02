@@ -1,6 +1,37 @@
 namespace CircuitRF.Engine;
 
 /// <summary>
+/// Controls when DC bias-supply ramping (source-stepping) is applied during the Newton solve.
+/// Mirrors the <see cref="RegularizationMode"/> tri-state pattern.
+/// Named <c>DcBiasStepping</c> (ramps DC bias supplies) — distinct from the HB
+/// <c>DriveStepping</c> (reserved for Phase 4, ramps RF drive power).
+/// </summary>
+public enum DcBiasSteppingMode
+{
+    /// <summary>
+    /// Attempt a direct cold-start Newton solve first (sources at full bias).
+    /// Only if it fails to converge within the max-iteration cap, fall back to
+    /// ramping the DC supplies from zero to full bias (the <c>Always</c> path).
+    /// Easy circuits pay nothing; hard circuits are rescued automatically.
+    /// </summary>
+    IfNecessary,
+
+    /// <summary>
+    /// Always ramp the DC supplies from zero to full bias before Newton.
+    /// Use for known-difficult circuits (stiff nonlinearity, far-from-bias cold start)
+    /// where a failed direct attempt isn't worth paying for.
+    /// </summary>
+    Always,
+
+    /// <summary>
+    /// Direct solve only — no ramp ever. If Newton fails to converge,
+    /// throw <see cref="NonlinearDcNotConvergedException"/> with the residual and
+    /// iteration count. Use for validation/debugging to confirm a circuit is well-posed.
+    /// </summary>
+    Never,
+}
+
+/// <summary>
 /// Controls when a regularization pass is applied to the MNA matrix.
 /// </summary>
 public enum RegularizationMode
@@ -78,4 +109,54 @@ public sealed class AnalysisSettings
     /// Default: 1e12 S (1 TΩ⁻¹). A warning is always emitted when Gmax is used.
     /// </summary>
     public double Gmax { get; init; } = 1e12;
+
+    // ── Nonlinear-DC Newton solver ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Absolute residual tolerance for the Newton solver.
+    /// Convergence declared when ‖F(V)‖₂ &lt; NonlinearAbsTol.
+    /// Default: 1e-6.
+    /// </summary>
+    public double NonlinearAbsTol { get; init; } = 1e-6;
+
+    /// <summary>
+    /// Relative residual tolerance (optional). When &gt; 0, convergence also declared
+    /// when ‖F(V)‖₂ / ‖F(V₀)‖₂ &lt; NonlinearRelTol (normalized to the first-step residual).
+    /// Default: 0 (disabled).
+    /// </summary>
+    public double NonlinearRelTol { get; init; } = 0.0;
+
+    /// <summary>
+    /// Maximum Newton iterations per continuation step.
+    /// Exceeding this triggers continuation step-halving (if continuation is enabled).
+    /// Default: 150.
+    /// </summary>
+    public int NonlinearMaxIter { get; init; } = 150;
+
+    /// <summary>
+    /// Controls when the DC bias ramp (source-stepping) engages.
+    /// Default: <see cref="DcBiasSteppingMode.IfNecessary"/> — try a direct cold-start solve first;
+    /// ramp only if it fails.
+    /// </summary>
+    public DcBiasSteppingMode DcBiasStepping { get; init; } = DcBiasSteppingMode.IfNecessary;
+
+    /// <summary>
+    /// Number of equal ramp steps when DC bias-stepping runs (0 → full bias in this many increments).
+    /// Only relevant when <see cref="DcBiasStepping"/> is <c>Always</c> or the fallback ramp fires
+    /// under <c>IfNecessary</c>.
+    /// Default: 20.
+    /// </summary>
+    public int DcBiasRampSteps { get; init; } = 20;
+
+    /// <summary>
+    /// Maximum source-stepping continuation steps (0→1 in this many equal increments).
+    /// Default: 20. Kept for back-compat; prefer <see cref="DcBiasRampSteps"/>.
+    /// </summary>
+    public int NonlinearMaxContinuationSteps { get; init; } = 20;
+
+    /// <summary>
+    /// Maximum step-halvings per continuation step before declaring non-convergence.
+    /// Default: 10.
+    /// </summary>
+    public int NonlinearMaxHalvings { get; init; } = 10;
 }

@@ -115,6 +115,57 @@ Gate: 4 tests in `tests/Engine.Tests/Linear/SnpStampTests.cs` — all green.
 - `TokeniseLine` in CnlReader now respects quoted regions so `key="value with spaces"` stays one
   token.
 
+## Phase 3 deliverable — COMPLETE (2026-06-01)
+AD engine + SDD device, validated by the hero GaN HEMT bias.
+
+### Step 1: AD engine
+New files in `src/Core/Expressions/`:
+- `IAdScalar.cs` — static-abstract interface (C# 11 generic math) for real-only scalar operations
+- `Dual.cs` — forward-mode dual number, N-wide gradient via `[InlineArray(8)]` (MaxN=8, allocation-free)
+- `SddScalar.cs` — thin `double` wrapper implementing `IAdScalar<SddScalar>` (FD / plain-eval path)
+- `AdWarnings.cs` — thread-static model-name context for domain-clamp warnings to `Console.Error`
+- `SddEvaluator.cs` — generic `Eval<T>(Expr, bindings, modelName)` — ONE tree-walk, two scalar types
+- `AstWalker.cs` — collects all `RefExpr` names from an AST (used by Elaborator for SDD scope injection)
+- `FiniteDiff.cs` — central-difference gradient helper (AD oracle + production FD fallback)
+
+Gate (tests/Core.Tests/Expressions/AdVsFdTests.cs): AD of the hero i2 at (v1=−3.05, v2=48) matches
+central FD to ≥4 sig figs: gm = ∂i2/∂v1 ≈ 62.4 mS, gds = ∂i2/∂v2 ≈ −9.45 µS (negative — correct).
+
+### Implementation notes (reality vs. design)
+- `SddEvaluator.Eval<T>` is a generic local-function nest inside a single static method. Conditions in
+  `ConditionalExpr` are evaluated by extracting `T.ValueOf()` (the scalar) and comparing doubles —
+  AD takes the active-branch derivative, the other branch is not evaluated.
+- `Dual.Exp` caps argument at 700 (preventing overflow); `Dual.Log`/`Sqrt` clamp with warn.
+  Together, `log(exp(x)+1)` (softplus) evaluates correctly for all x — large x gives ≈ x, very
+  negative x gives ≈ exp(x). No special softplus pattern needed.
+- SDD equation expressions **may contain whitespace** — the SDD line parser uses bracket-depth-zero
+  boundary detection instead of the general whitespace tokenizer (Phase 3 follow-up, 2026-06-02).
+  Boundary: next `I[p,w]=`, `Q[p,w]=`, etc. at paren-depth 0. Multiple assignments on one line OK.
+  Backslash line-continuation (`\` at end of line) is also supported.
+- `Dual.NMax(a, b)`: picks the larger N for binary operations; constants have N=0 (zero gradient).
+
+### Step 2: SDD device
+New file `src/Core/Devices/SddModel.cs`:
+- `ComponentModel` subclass, `ModelKind.Nonlinear`, `Stamp` is a no-op.
+- Constructor receives cached equation ASTs + resolved scope-variable dict.
+- `Evaluate(in PortVoltages v)` calls `SddEvaluator.EvalDual` for each port equation → (i, q, dg, dc).
+
+`ComponentModelFactory` change: "SDD" added to `_parameterizedTypes`. `CreateSddModel` parses
+`Value.String` equation entries, validates `F[]/C[]/w≥2` hard errors, skips `In[]/Nc[]` noise entries.
+
+`Elaborator` change: `ResolveSddParameters` special-cases SDD — stores equation strings as
+`Value.String`, walks each equation AST to collect scope-variable references, resolves them from scope,
+and injects them as `Value.Real` in the resolved-params dict. The factory then sees both strings and
+resolved numbers.
+
+Gate (tests/Core.Tests/Devices/SddModelTests.cs): hero SDD parses; `Evaluate` at (−3.05, 48) returns
+i2 ≈ 49.11 mA, i1 = −61 mA, gm ≈ 62.4 mS, gds ≈ −9.45 µS (negative).
+
+### New device: VoltageSourceModel
+`src/Core/Devices/VoltageSourceModel.cs` — Group-2 branch-current element. Stamps Va − Vb = V
+(branch constraint + KCL). Parameter `V=`. Required for bias sources in the DC hero circuit.
+Registered as type `V` in `ComponentModelFactory`.
+
 ## Ask before
 - Changing the `.cnl` or JSON format (round-trip + interop).
 - Changing the scope/binding rule or the kinded-value model (ripples into the engine and SDD).

@@ -188,7 +188,8 @@ public sealed class Evaluator
             "cosh"  => UnaryMath(cl, scope, Math.Cosh,   Complex.Cosh),
             "tanh"  => UnaryMath(cl, scope, Math.Tanh,   Complex.Tanh),
             "exp"   => UnaryMath(cl, scope, Math.Exp,    Complex.Exp),
-            "log"   => UnaryMath(cl, scope, SafeLog,     Complex.Log),
+            "log"   => UnaryMath(cl, scope, SafeLog,     Complex.Log),     // natural log (legacy name)
+            "ln"    => UnaryMath(cl, scope, SafeLog,     Complex.Log),     // unambiguous natural log
             "log10" => UnaryMath(cl, scope, SafeLog10,   x => Complex.Log(x, 10)),
             "sqrt"  => UnaryMath(cl, scope, SafeSqrt,    Complex.Sqrt),
             "pow"   => BinaryMath(cl, scope, Math.Pow,   Complex.Pow),

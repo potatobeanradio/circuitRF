@@ -210,7 +210,7 @@ Parameters: `Sv=−0.837, Sc=0.71, TV0=4.268, TC=1.507, th=0.001, a=0.176, g=0.0
 - **Drain:** DC source at **+48 V** → series load resistor **Rd = 20 Ω** → drain (v2). This makes the drain a **genuine nonlinear fixed point**: `vds = 48 − i2·Rd`, where `i2 = i2(vgs, vds)` — vds and i2 must be solved self-consistently. (A bare choke to 48 V would pin vds = 48 with nothing to solve; the 20 Ω load line is what makes the drain solve non-trivial.)
 
 ### 5.3 The golden operating point (verified, exact)
-At vgs = −3.05 V, the self-consistent loadline solve (`vds = 48 − i2·20`) lands at:
+At vgs = −3.05 V, the self-consistent "series R" solve (`vds = 48 − i2·20`) lands at:
 
 | Quantity | Value | Note |
 |---|---|---|
@@ -222,13 +222,13 @@ At vgs = −3.05 V, the self-consistent loadline solve (`vds = 48 − i2·20`) l
 
 (Reference values: i2(−3.05, 48) = 49.113 mA at fixed vds=48; at the self-consistent vds=47.018, i2 = 49.122 mA. gm/gds computed by central finite-difference of the equation at the bias — these are the numbers the AD `dg` block must reproduce.)
 
-**Note — gds is negative (≈ −9.45 µS), and that is correct, not a bug.** At this bias i2 *decreases* slightly as vds rises (equivalently, i2 *increases* as vds drops): the loadline solve converges to a point where lowering vds from 48 to 47.0 raises i2 from 49.113 to 49.122 mA. This faint negative output slope falls directly out of the model (the drain-shaping `tanh` is saturated while the threshold feedback through `v2·th` just wins); its magnitude is tiny (1/gds ≈ −106 kΩ, essentially a flat current source). Flagged here so that "i2 went up when vds went down" during the Newton solve is recognized as the device's genuine negative gds, not chased as a sign error. It also makes the Jacobian's `dg[drain][drain]` entry negative — a slightly stronger test of the solver's sign handling than a routine positive gds.
+**Note — gds is negative (≈ −9.45 µS), and that is correct, not a bug.** Given the FET model parameters, at this bias i2 *decreases* slightly as vds rises (equivalently, i2 *increases* as vds drops): the "series R" solve converges to a point where lowering vds from 48 to 47.0 raises i2 from 49.113 to 49.122 mA. This faint negative output slope falls directly out of the model (the drain-shaping `tanh` is saturated while the threshold feedback through `v2·th` just wins); its magnitude is tiny (1/gds ≈ −106 kΩ, essentially a flat current source). Flagged here so that "i2 went up when vds went down" during the Newton solve is recognized as the device's genuine negative gds, not chased as a sign error. It also makes the Jacobian's `dg[drain][drain]` entry negative — a slightly stronger test of the solver's sign handling than a routine positive gds.
 
 (Equation provenance: the inline and MATLAB forms agree at i2 = 49.113 mA. An earlier 8.8 A hand-figure was a dropped negative sign in the second softplus exponent — the equation is correct as written.)
 
 ### 5.4 Acceptance criteria (the Phase-3 gate)
 1. **AD correctness (most important):** `Evaluate` at (v1=−3.05, v2=48) returns i2 = 49.11 mA, i1 = −61 mA; and the AD `dg` (gm = ∂i2/∂v1 ≈ 62.4 mS, gds = ∂i2/∂v2 ≈ −9.45 µS) matches a finite-difference of the equation to ≥ 4 significant figures. (Unit test, no solve.)
-2. **Nonlinear-DC convergence:** Newton converges from a cold start (source-stepped) to vds ≈ 47.018 V, i2 ≈ 49.12 mA — the self-consistent loadline point. (The full gate test.)
+2. **Nonlinear-DC convergence:** Newton converges from a cold start (source-stepped) to vds ≈ 47.018 V, i2 ≈ 49.12 mA — the self-consistent "series R" point. (The full gate test.)
 3. **Robustness:** an overshooting iterate that drives the `exp` argument large does not NaN — the overflow-safe softplus/clamp-and-warn holds the solve together.
 4. `dotnet build` / `dotnet test` green; no regression to Phases 1–2 (the linear DC, S-parameter, and elaboration tests still pass).
 
@@ -269,5 +269,5 @@ At vgs = −3.05 V, the self-consistent loadline solve (`vds = 48 − i2·20`) l
 - **`Dual` is allocation-free** (fixed-size gradient) for the HB hot path, though Phase 3 (DC) does not stress it.
 - **SDD device** authored as user expressions, evaluated in dual arithmetic; the hero FET (and Heroes 2–5's FET) are SDDs — same equations transcribed into the reference tool.
 - **Nonlinear-DC Newton**: real, sparse, full-circuit; `J = G_linear + dg`; `gmin` continuity; source-stepping continuation with step-backoff; reuses Phase-2 linear DC stamps. **It is the HB initial-guess generator** (one nonlinear-DC formulation, standalone and as the HB seed).
-- **Phase-3 hero**: grounded-source GaN HEMT SDD, gate −3.05 V (choke), drain 48 V through Rd = 20 Ω; golden point **i2 ≈ 49.12 mA, vds ≈ 47.018 V, i1 = −61 mA, gm ≈ 62.4 mS, gds ≈ −9.45 µS** (verified). Acceptance: AD matches FD; Newton converges to the loadline point; robustness under overshoot.
+- **Phase-3 hero**: grounded-source GaN HEMT SDD, gate −3.05 V (choke), drain 48 V through Rd = 20 Ω; golden point **i2 ≈ 49.12 mA, vds ≈ 47.018 V, i1 = −61 mA, gm ≈ 62.4 mS, gds ≈ −9.45 µS** (verified). Acceptance: AD matches FD; Newton converges to the "series R" point; robustness under overshoot.
 
