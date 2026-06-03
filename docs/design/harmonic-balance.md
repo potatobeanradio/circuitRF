@@ -82,7 +82,7 @@ The HB analysis is declared at the top level (the `TestBench`, data-model §2.1/
 | `Sweep` | the parametric sweep, `"<var>: <start> .. <stop> step <step>"` (the swept variable is any §8 variable, e.g. `Pavl_dbm`) | none (single point) |
 | `FFTOverSample` | anti-aliasing grid multiplier `1·16·…` (§5.3) | 1 |
 | `Tol` | absolute convergence tolerance `‖F‖` (§12.2) | 1e-6 |
-| `MaxIter` | Newton max iterations per solve before continuation backoff | (engine default) |
+| `MaxIter` | Newton max iterations per HB solve before continuation backoff / reporting non-convergence | 100 |
 | `DriveStepping` | RF-drive continuation mode `{ IfNecessary, Always, Never }` (§11) | IfNecessary |
 | `GuardHarmonic` | guard-harmonic profile/index (§12.1); `0`/absent = off | off |
 | `ConductanceRegularization` | gmin mode `{ IfNecessary, Always, Never }` (linear-engine §4.3) | IfNecessary |

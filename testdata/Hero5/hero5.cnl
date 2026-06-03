@@ -1,0 +1,89 @@
+; ============================================================
+; hero5.cnl — Phase-4c multi-tone HB: grounded-source GaN HEMT PA
+; Same SDD FET as Phase 3. Drive at 2 GHz, Pavl swept -20..+20 dBm.
+; Per-harmonic source/load terminations via Z_Port; bias-tees on both ports.
+; ============================================================
+
+; ---- FET model parameters (same as Phase 3) ----
+Sv=-0.837
+Sc=0.71
+TV0=4.268
+TC=1.507
+th=0.001
+a=0.176
+g=0.089
+lam=0.0012
+B=1130
+
+; ---- analysis fundamental and tone spacing----
+RFfreq = 2e9
+ToneSpacing = 10e6
+
+; ---- HB config (exposed as parameters) ----
+; Update for multi-tone
+MaxHarm   = 4
+OverSamp  = 1
+HBtol     = 1e-6
+DriveStep = IfNecessary
+Guard     = 0                 ; guard harmonic off by default; set an index to enable
+
+; ---- per-harmonic termination bands ----
+ZSource_0 = 0.00001 + j*0     ; sub-fundamental / DC band
+ZSource_f = 25                ; fundamental source impedance
+ZSource_2 = 1e-6              ; 2f0 and above: near-short
+ZSource_3 = 1e-6
+
+ZLoad_0 = 10 + j*10; baseband load, important for even-order IMs
+ZLoad_f = 80 + j*10           ; fundamental load
+ZLoad_2 = 1                   ; 2f0 termination (near-short, but not quite)
+ZLoad_3 = 1e-6              ; >=3f0: near-short
+
+; ---- DC bias ----
+Vgg = -3.05
+Vdd = 48
+
+; ---- drive level (swept) ----
+Pavl_dbm = -20               ; swept by the HB analysis, -20..-10 dBm, 1 dB steps
+Pavl_w   = 10^((Pavl_dbm - 30)/10)              ; dBm -> watts
+Vs_mag   = sqrt(8 * Pavl_w * real(ZSource_f))   ; |Vs| at the 25-ohm fundamental Zs
+
+; ============================================================
+; GATE bias-tee (SDD port 1 = n_gate)
+;   drive chain:  Vdrive -> Zsource -> Cblock_g -> n_gate
+;   bias  chain:  Vgate(Vdc) -> Lchoke_g -> n_gate
+; ============================================================
+V_nTone:Vdrive   n_src 0       NumFreqs=2 Freq[1]=RFfreq-ToneSpacing/2  V[1]=polar(Vs_mag, 0)  Freq[2]=RFfreq+ToneSpacing/2  V[2]=polar(Vs_mag, 0)
+Z_Port:Zsource   n_src n_zs    Z[1,1]=if(freq < RFfreq-ToneSpacing) then ZSource_0 elseif(freq <= RFfreq) then ZSource_f elseif(freq <= 2*RFfreq && freq > RFfreq) then ZSource_2 elseif(freq <= 3*RFfreq && freq > 2*RFfreq) then ZSource_3 else 1e-6 endif
+C:Cblock_g       n_zs n_gate   C=1 uF
+V_1Tone:Vgate    n_gbias 0     Vdc=Vgg
+L:Lchoke_g       n_gbias n_gate  L=1 uH
+
+; ============================================================
+; The FET (SDD), source grounded: port1 = n_gate, port2 = n_drain
+; ============================================================
+SDD:M1  n_gate 0  n_drain 0  \
+  I[1,0]=_v1/50  \
+  I[2,0]=(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1))) + 1))*ln(exp(-(2*TV0 - 2*_v1 + 2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1)*(_v2*lam + 1))/2
+
+; ============================================================
+; DRAIN bias-tee (SDD port 2 = n_drain)
+;   load chain:  n_drain -> Cblock_d -> Zload -> gnd
+;   bias chain:  n_drain -> Lchoke_d -> Vdrain(Vdc)
+; ============================================================
+C:Cblock_d       n_drain n_zl   C=1 uF
+Z_Port:Zload     n_zl 0          Z[1,1]=if(freq < RFfreq) then ZLoad_0 elseif(freq <= RFfreq) then ZLoad_f elseif(freq <= 2*RFfreq && freq > RFfreq) then ZLoad_2 elseif(freq <= 3*RFfreq && freq > 2*RFfreq) then ZLoad_3 else 1e-6 endif
+L:Lchoke_d       n_drain n_dbias  L=1 uH
+V_1Tone:Vdrain   n_dbias 0       Vdc=Vdd
+
+; ============================================================
+; HB analysis: single tone at RFfreq, sweep Pavl_dbm, harmonics to MaxHarm
+; ============================================================
+analysis HB1  type=hb  Tone=RFfreq  MaxHarm=MaxHarm  Sweep="Pavl_dbm: -20 .. 0 step 1" \
+     FFTOverSample=OverSamp  Tol=HBtol  DriveStepping=DriveStep  GuardHarmonic=Guard
+
+; ============================================================
+; Measurements (evaluated on the HB result cubes)
+; ============================================================
+measure Pout_dBm = dBm(Pout(n_drain, 1))      ; fundamental output power
+measure Gain_dB  = Pout_dBm - Pavl_dbm
+measure PAE      = PAE(n_drain, n_gate)        ; conceptual; measurement lib defines exact form

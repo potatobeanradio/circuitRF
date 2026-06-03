@@ -1,0 +1,33 @@
+# gamma Z0=50 mag_ang
+; Hero 3 load-pull grid — a small constellation for the first loadpull gate.
+; Gamma points (|G| < 1), magnitude then angle(degrees), normalized to Z0=50 ohm.
+; Kept modest (21 points) so the 2-D sweep runs quickly and can be spot-checked.
+; A future GUI grid-picker will generate finer/denser .gam files.
+
+; --- center region (near the nominal 80+j10 load, G ~ 0.26 @ 35 deg) ---
+0.00    0
+0.20    0
+0.20   90
+0.20  180
+0.20  270
+
+; --- mid ring ---
+0.40    0
+0.40   45
+0.40   90
+0.40  135
+0.40  180
+0.40  225
+0.40  270
+0.40  315
+
+; --- outer ring (closer to the unit circle — more reactive / higher-VSWR loads) ---
+0.60    0
+0.60   60
+0.60  120
+0.60  180
+0.60  240
+0.60  300
+
+; --- one high-reflection point ---
+0.80   30

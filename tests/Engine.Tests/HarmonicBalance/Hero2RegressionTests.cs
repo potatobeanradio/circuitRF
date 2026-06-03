@@ -1,3 +1,4 @@
+using System.Formats.Asn1;
 using System.Globalization;
 using System.Numerics;
 using CircuitRF.Core.Design;
@@ -5,6 +6,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using CircuitRF.Engine.HarmonicBalance;
+using NumFlat;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -262,4 +264,5 @@ public class Hero2RegressionTests(ITestOutputHelper output)
         Assert.True(nChecked > 0,
             $"No signal-bearing {quantityLabel} bins found — check interface node mapping.");
     }
+
 }
