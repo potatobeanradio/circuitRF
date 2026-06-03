@@ -184,8 +184,16 @@ public sealed class HbLinearExtractor
     {
         var rReg = new Complex(-_settings.InductanceRegR, 0.0);
         foreach (var ec in _netlist.Components)
+        {
             if (ec.Model is InductorModel im && im.LastBranchIndex >= 0)
                 mna.AddBranchConstraint(im.LastBranchIndex, im.LastBranchIndex, rReg);
+
+            // TunerModel's internal RF choke (stamped inline by TunerModel.StampInductor)
+            // must also be regularized — it is NOT an InductorModel, so the check above
+            // won't catch it. ChokeBranchIndex is set during the most recent Stamp() call.
+            if (ec.Model is TunerModel tm && tm.ChokeBranchIndex >= 0)
+                mna.AddBranchConstraint(tm.ChokeBranchIndex, tm.ChokeBranchIndex, rReg);
+        }
     }
 
     /// <summary>
@@ -331,7 +339,13 @@ public sealed class HbLinearExtractor
     }
 
     private static bool IsVoltageOrToneSource(ElaboratedComponent ec) =>
-        ec.Model is VoltageSourceModel or ToneSourceModel;
+        ec.Model is VoltageSourceModel or ToneSourceModel or TunerModel;
+    // TunerModel contains an internal V_1Tone drive (SourceTuner) and a bias supply
+    // (both roles) — it must be stamped via ZeroDriveMna in the zeroDrive=true path
+    // so its source values are zeroed for the Y_NN extraction. The ZeroDriveMna passes
+    // all AddBranch/AddConstraint/AddBranchConstraint/AddAdmittance through to the real
+    // MNA, zeroing only AddSourceValue — so the impedance topology (Z_Port, choke, cap)
+    // is correctly included in Y_NN while the independent sources are suppressed.
 
     // ── Dense N×N matrix inversion (Gauss-Jordan with partial pivoting) ───────
 

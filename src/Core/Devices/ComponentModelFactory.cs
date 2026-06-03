@@ -26,7 +26,7 @@ public static class ComponentModelFactory
 
     // Types that require resolved parameters at construction time.
     private static readonly HashSet<string> _parameterizedTypes =
-        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone" };
+        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner" };
 
     /// <summary>
     /// Returns a new ComponentModel, using resolved parameters when needed.
@@ -46,6 +46,8 @@ public static class ComponentModelFactory
         if (typeName.Equals("V_1Tone", StringComparison.OrdinalIgnoreCase) ||
             typeName.Equals("V_nTone", StringComparison.OrdinalIgnoreCase))
             return CreateToneSourceModel(typeName, parameters);
+        if (typeName.Equals("Tuner", StringComparison.OrdinalIgnoreCase))
+            return CreateTunerModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -219,6 +221,84 @@ public static class ComponentModelFactory
 
     private static double GetReal(IReadOnlyDictionary<string, Value> parameters, string key, double fallback)
         => parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+    // ── Tuner ─────────────────────────────────────────────────────────────────
+
+    private static readonly Regex RxTunerZ = new(@"^Z\[(\d+)\]$", RegexOptions.Compiled);
+    private static readonly Regex RxTunerG = new(@"^G\[(\d+)\]$", RegexOptions.Compiled);
+
+    private static TunerModel CreateTunerModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        string instanceName = parameters.TryGetValue("TunerName", out var nm) && nm.Kind == ValueKind.String
+            ? nm.AsString() : "Tuner";
+
+        double z0 = parameters.TryGetValue("Z0", out var z0v) && z0v.Kind == ValueKind.Real
+            ? z0v.AsReal() : 50.0;
+
+        // Zdefault: catch-all for harmonics not declared.
+        Complex zDefault = new(1e-6, 0);
+        if (parameters.TryGetValue("Zdefault", out var zdv))
+            zDefault = ToComplex(zdv);
+
+        bool   hasBiasTee = false;
+        double vbias      = 0.0;
+        if (parameters.TryGetValue("BiasTee", out var btv) &&
+            btv.Kind == ValueKind.String && btv.AsString().Equals("on", StringComparison.OrdinalIgnoreCase))
+            hasBiasTee = true;
+        if (parameters.TryGetValue("Vbias", out var vbv) && vbv.Kind == ValueKind.Real)
+            vbias = vbv.AsReal();
+
+        // Collect per-harmonic Z and G entries; detect same-harmonic Z+G conflict.
+        var harmonicZ = new Dictionary<int, Complex>();
+        var hasZ      = new HashSet<int>();
+        var hasG      = new HashSet<int>();
+
+        bool hasZ1 = false;
+
+        foreach (var kv in parameters)
+        {
+            var mz = RxTunerZ.Match(kv.Key);
+            if (mz.Success)
+            {
+                int k = int.Parse(mz.Groups[1].Value);
+                if (hasG.Contains(k))
+                    throw new InvalidOperationException(
+                        $"Tuner '{instanceName}': harmonic {k} has both Z[{k}] and G[{k}] — only one allowed.");
+                harmonicZ[k] = ToComplex(kv.Value);
+                hasZ.Add(k);
+                if (k == 1) hasZ1 = true;
+                continue;
+            }
+            var mg = RxTunerG.Match(kv.Key);
+            if (mg.Success)
+            {
+                int k = int.Parse(mg.Groups[1].Value);
+                if (hasZ.Contains(k))
+                    throw new InvalidOperationException(
+                        $"Tuner '{instanceName}': harmonic {k} has both Z[{k}] and G[{k}] — only one allowed.");
+                // Convert Γ → Z: Z = Z0·(1+Γ)/(1−Γ)
+                var gamma = ToComplex(kv.Value);
+                var one   = Complex.One;
+                harmonicZ[k] = z0 * (one + gamma) / (one - gamma);
+                hasG.Add(k);
+                if (k == 1) hasZ1 = true;
+                continue;
+            }
+        }
+
+        if (!hasZ1)
+            throw new InvalidOperationException(
+                $"Tuner '{instanceName}': Z[1] or G[1] is required (the fundamental termination must be specified).");
+
+        return new TunerModel(instanceName, harmonicZ, zDefault, hasBiasTee, vbias);
+    }
+
+    private static Complex ToComplex(Value v)
+    {
+        if (v.Kind == ValueKind.Real)    return new Complex(v.AsReal(), 0);
+        if (v.Kind == ValueKind.Complex) return v.AsComplex();
+        throw new InvalidOperationException($"Expected numeric value, got {v.Kind}");
+    }
 
     // Regex for I[p,w] parameter names — named groups "p" and "w".
     private static readonly Regex RxCurrentEq = new(@"^I\[(\d+),(\d+)\]$", RegexOptions.Compiled);

@@ -31,6 +31,8 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
     public string TolExpr           { get; init; } = "1e-6";
     public string DriveSteppingExpr { get; init; } = "IfNecessary";
     public string GuardHarmonicExpr { get; init; } = "0";
+    /// <summary>Max Newton iterations per HB solve before continuation backoff. Default 100.</summary>
+    public string MaxIterExpr       { get; init; } = "100";
 
     // Sweep: null = single point.
     public string? SweepVarName  { get; init; }
@@ -39,12 +41,36 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
     public string? SweepStepExpr { get; init; }
 }
 
-public sealed class LoadpullAnalysis(string name, PortRef dut, TerminationGrid grid)
-    : Analysis(name)
+/// <summary>
+/// Loadpull analysis directive (loadpull.md §2.1).
+/// Key=value fields store raw expression strings (resolved at engine time).
+/// </summary>
+public sealed class LoadpullAnalysis(string name) : Analysis(name)
 {
-    public PortRef          Dut      { get; } = dut;
-    public TerminationGrid  Grid     { get; } = grid;
-    public List<HarmonicTermination> Harmonics { get; } = [];
+    // ── Required ───────────────────────────────────────────────────────────────
+    public string ToneExpr        { get; init; } = "0";
+    public string LoadTunerName   { get; init; } = "";   // instance name of the load Tuner
+    public string SourceTunerName { get; init; } = "";   // instance name of the source Tuner
+    public string GridPath        { get; init; } = "";   // path to .gam grid file (required)
+    public string PinStartExpr    { get; init; } = "-20";
+    public string PinMaxExpr      { get; init; } = "10"; // safety cap — always required
+
+    // ── Optional with defaults ─────────────────────────────────────────────────
+    public string MaxHarmonicExpr   { get; init; } = "5";
+    public string SweepExpr         { get; init; } = "Load";   // "Load" or "Source"
+    public string TuneHarmExpr      { get; init; } = "1";
+    public string CompressionExpr   { get; init; } = "3";
+    public string GainTypeExpr      { get; init; } = "Gt";     // "Gt" or "Gp"
+    public string PinStepExpr       { get; init; } = "1";
+    public string TickleExpr        { get; init; } = "-50";    // dBm; "off" to disable
+    public string MaxIterExpr       { get; init; } = "100";
+    public string FFTOverSampleExpr { get; init; } = "1";
+    public string TolExpr           { get; init; } = "1e-6";
+    public string DriveSteppingExpr { get; init; } = "IfNecessary";
+    public string GuardHarmonicExpr { get; init; } = "0";
+
+    // Optional: source directory for resolving relative Grid paths (set by reader).
+    public string? SourceDirectory  { get; init; }
 }
 
 // ── Supporting types ──────────────────────────────────────────────────────────
@@ -66,31 +92,6 @@ public sealed class FrequencySpec(double start, double stop, double step, SweepK
     public double    Stop  { get; } = stop;
     public double    Step  { get; } = step;
     public SweepKind Kind  { get; } = kind;
-}
-
-public sealed class ToneSpec(string frequencyExpression, string powerVariable)
-{
-    public string FrequencyExpression { get; } = frequencyExpression;
-    public string PowerVariable       { get; } = powerVariable;
-}
-
-public sealed class PortRef(string path)
-{
-    public string Path { get; } = path;
-}
-
-public abstract class TerminationGrid(System.Numerics.Complex z0)
-{
-    public System.Numerics.Complex Z0 { get; } = z0;
-}
-
-public sealed class GammaGrid(System.Numerics.Complex z0) : TerminationGrid(z0);
-public sealed class ImpedanceGrid(System.Numerics.Complex z0) : TerminationGrid(z0);
-
-public sealed class HarmonicTermination(int harmonic, System.Numerics.Complex gamma)
-{
-    public int                     Harmonic { get; } = harmonic;
-    public System.Numerics.Complex Gamma    { get; } = gamma;
 }
 
 // ── Measurement (declared on TestBench) ──────────────────────────────────────

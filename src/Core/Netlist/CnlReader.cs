@@ -89,6 +89,8 @@ public sealed class CnlReader
             // If this is a type=hb directive, parse it into a typed HarmonicBalanceAnalysis.
             if (TryParseHbDirective(rawLine, out var hbAnalysis))
                 tb.Analyses.Add(hbAnalysis!);
+            else if (TryParseLoadpullDirective(rawLine, _sourceDirectory, out var lpAnalysis))
+                tb.Analyses.Add(lpAnalysis!);
             else
                 tb.RawDirectives.Add(new RawDirective("analysis", rawLine));
             return true;
@@ -473,6 +475,246 @@ public sealed class CnlReader
         return result;
     }
 
+    // ── Tuner line parser ─────────────────────────────────────────────────────
+
+    // Z[k]= or G[k]= at paren-depth zero (no spaces in the header itself).
+    private static readonly Regex TunerHarmonicHeader = new(
+        @"[ZG]\[\d+\]\s*=", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Parses "Tuner:Name net0 net1  Z[1]=expr  Z[2]=expr  Zdefault=expr  BiasTee=on  Vbias=expr"
+    /// The Z[k]= / G[k]= values may be complex expressions (e.g. 80+j*10).
+    /// Uses bracket-depth-zero scanning like ParseZPortLine / ParseSddLine.
+    /// </summary>
+    private void ParseTunerLine(string rawLine)
+    {
+        int firstSpace = rawLine.IndexOfAny([' ', '\t']);
+        if (firstSpace < 0) return;
+        var typeAndName  = rawLine[..firstSpace];
+        int colon        = typeAndName.IndexOf(':');
+        if (colon < 0) return;
+        var instanceName = typeAndName[(colon + 1)..];
+        var rest         = rawLine[(firstSpace + 1)..].TrimStart();
+
+        // Find first Z[k]= or G[k]= at paren-depth 0.
+        int eqStart = FindFirstTunerHarmonic(rest);
+        var netSection = eqStart >= 0 ? rest[..eqStart].Trim() : rest;
+        var nets = netSection.Length > 0
+            ? netSection.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).ToList()
+            : [];
+
+        // Parse simple key=value pairs before the harmonic entries.
+        // Everything after the first harmonic header uses the bracket-depth scanner.
+        var overrides = new List<ParameterAssignment>
+        {
+            new("TunerName", $"\"{instanceName}\""),
+        };
+
+        // First, collect plain params (Zdefault, BiasTee, Vbias, Z0) from the net section
+        // (they appear before the harmonic expressions in the canonical form, but may appear anywhere).
+        // Re-scan rest for non-bracket key=value pairs.
+        overrides.AddRange(ParseTunerSimpleParams(rest, eqStart));
+
+        // Then parse Z[k]= / G[k]= with the bracket-depth scanner.
+        if (eqStart >= 0)
+            overrides.AddRange(ParseTunerHarmonicEquations(rest[eqStart..]));
+
+        var inst = new Instance(instanceName, "Tuner", nets, overrides);
+        if (_currentCell is not null)
+            _currentCell.Instances.Add(inst);
+        else
+            _testBench!.Instances.Add(inst);
+    }
+
+    private static int FindFirstTunerHarmonic(string text)
+    {
+        int depth = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c == '(') { depth++; continue; }
+            if (c == ')') { depth--; continue; }
+            if (depth > 0) continue;
+            var m = TunerHarmonicHeader.Match(text, i);
+            if (m.Success && m.Index == i) return i;
+        }
+        return -1;
+    }
+
+    private static List<ParameterAssignment> ParseTunerSimpleParams(string rest, int harmonicStart)
+    {
+        // Extract simple key=value params that appear BEFORE the first harmonic entry.
+        // These are Zdefault=, BiasTee=, Vbias=, Z0=.
+        var result = new List<ParameterAssignment>();
+        var prefix = harmonicStart >= 0 ? rest[..harmonicStart] : rest;
+        var tokens = TokeniseLine(prefix);
+        foreach (var tok in tokens)
+        {
+            if (!tok.Contains('=')) continue;
+            int eq = tok.IndexOf('=');
+            var key = tok[..eq].Trim();
+            var val = tok[(eq + 1)..].Trim();
+            // Only accept known non-harmonic params.
+            if (key.Equals("Zdefault", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("BiasTee",  StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("Vbias",    StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("Z0",       StringComparison.OrdinalIgnoreCase))
+            {
+                // BiasTee is a string value ("on"/"off"); wrap in quotes if not already.
+                if (key.Equals("BiasTee", StringComparison.OrdinalIgnoreCase) &&
+                    !(val.StartsWith('"')))
+                    val = $"\"{val}\"";
+                result.Add(new ParameterAssignment(key, val));
+            }
+        }
+        return result;
+    }
+
+    private static List<ParameterAssignment> ParseTunerHarmonicEquations(string eqSection)
+    {
+        var result     = new List<ParameterAssignment>();
+        var boundaries = new List<(int HeaderStart, int ExprStart, string Name)>();
+
+        int depth = 0;
+        int i = 0;
+        while (i < eqSection.Length)
+        {
+            char c = eqSection[i];
+            if (c == '(') { depth++; i++; continue; }
+            if (c == ')') { depth--; i++; continue; }
+            if (depth == 0)
+            {
+                var m = TunerHarmonicHeader.Match(eqSection, i);
+                if (m.Success && m.Index == i)
+                {
+                    int eqPos = m.Value.LastIndexOf('=');
+                    string assignName = m.Value[..eqPos].TrimEnd(); // e.g. "Z[1]"
+                    int exprStart = m.Index + m.Length;
+                    boundaries.Add((i, exprStart, assignName));
+                    i = exprStart;
+                    continue;
+                }
+            }
+            i++;
+        }
+
+        for (int k = 0; k < boundaries.Count; k++)
+        {
+            var (_, exprStart, name) = boundaries[k];
+            int exprEnd = k + 1 < boundaries.Count ? boundaries[k + 1].HeaderStart : eqSection.Length;
+
+            // The region contains the harmonic expression value plus any trailing simple params.
+            // Harmonic values (80+j*10, 1, 1e-6) have no whitespace; everything after the
+            // first whitespace is trailing simple params (Zdefault=, BiasTee=, Vbias=, Z0=).
+            var region = eqSection[exprStart..exprEnd].TrimStart();
+
+            // Extract the harmonic expression value (first whitespace-delimited token).
+            int ws = region.IndexOfAny([' ', '\t']);
+            string harmonicExpr  = ws >= 0 ? region[..ws] : region.TrimEnd();
+            string trailingText  = ws >= 0 ? region[(ws + 1)..].TrimStart() : "";
+
+            if (!string.IsNullOrEmpty(harmonicExpr))
+                result.Add(new ParameterAssignment(name, harmonicExpr));
+
+            // Extract trailing simple params from the region (Zdefault=, BiasTee=, Vbias=, Z0=).
+            // These appear between harmonic values in any order.
+            if (!string.IsNullOrEmpty(trailingText))
+                result.AddRange(ParseTunerSimpleParamsDirect(trailingText));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Parses space-delimited key=value tokens for the known simple Tuner params
+    /// (Zdefault, BiasTee, Vbias, Z0). Used for tokens that appear anywhere in the
+    /// Tuner line (before or after harmonic Z[k]/G[k] entries).
+    /// </summary>
+    private static List<ParameterAssignment> ParseTunerSimpleParamsDirect(string text)
+    {
+        var result = new List<ParameterAssignment>();
+        var tokens = TokeniseLine(text);
+        foreach (var tok in tokens)
+        {
+            if (!tok.Contains('=')) continue;
+            int eq = tok.IndexOf('=');
+            var key = tok[..eq].Trim();
+            var val = tok[(eq + 1)..].Trim();
+            if (!key.Equals("Zdefault", StringComparison.OrdinalIgnoreCase) &&
+                !key.Equals("BiasTee",  StringComparison.OrdinalIgnoreCase) &&
+                !key.Equals("Vbias",    StringComparison.OrdinalIgnoreCase) &&
+                !key.Equals("Z0",       StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (key.Equals("BiasTee", StringComparison.OrdinalIgnoreCase) &&
+                !val.StartsWith('"'))
+                val = $"\"{val}\"";
+            result.Add(new ParameterAssignment(key, val));
+        }
+        return result;
+    }
+
+    // ── Loadpull analysis directive parser ────────────────────────────────────
+
+    /// <summary>
+    /// Attempts to parse a "Name type=loadpull key=value ..." directive.
+    /// Returns false if it is not a type=loadpull directive.
+    /// </summary>
+    private static bool TryParseLoadpullDirective(string rawLine, string? sourceDirectory,
+        out CircuitRF.Core.Design.LoadpullAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+
+        string analysisName = tokens[0];
+
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq <= 0) continue;
+            string key = tokens[i][..eq];
+            string val = tokens[i][(eq + 1)..];
+            if (val.Length >= 2 && val[0] == '"' && val[^1] == '"')
+                val = val[1..^1];
+            kv[key] = val;
+        }
+
+        if (!kv.TryGetValue("type", out var typeVal) ||
+            !typeVal.Equals("loadpull", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Resolve Grid path relative to the source directory (like SnP File= resolution).
+        string gridPath = kv.GetValueOrDefault("Grid", "");
+        if (!string.IsNullOrEmpty(gridPath) && sourceDirectory is not null &&
+            !Path.IsPathRooted(gridPath))
+            gridPath = Path.GetFullPath(Path.Combine(sourceDirectory, gridPath));
+
+        result = new CircuitRF.Core.Design.LoadpullAnalysis(analysisName)
+        {
+            ToneExpr          = kv.GetValueOrDefault("Tone",           "0"),
+            MaxHarmonicExpr   = kv.GetValueOrDefault("MaxHarm",        "5"),
+            LoadTunerName     = kv.GetValueOrDefault("LoadTuner",      ""),
+            SourceTunerName   = kv.GetValueOrDefault("SourceTuner",    ""),
+            SweepExpr         = kv.GetValueOrDefault("Sweep",          "Load"),
+            TuneHarmExpr      = kv.GetValueOrDefault("TuneHarm",       "1"),
+            GridPath          = gridPath,
+            CompressionExpr   = kv.GetValueOrDefault("Compression",    "3"),
+            GainTypeExpr      = kv.GetValueOrDefault("GainType",       "Gt"),
+            PinStartExpr      = kv.GetValueOrDefault("PinStart",       "-20"),
+            PinStepExpr       = kv.GetValueOrDefault("PinStep",        "1"),
+            PinMaxExpr        = kv.GetValueOrDefault("PinMax",         "10"),
+            TickleExpr        = kv.GetValueOrDefault("Tickle",         "-50"),
+            MaxIterExpr       = kv.GetValueOrDefault("MaxIter",        "100"),
+            FFTOverSampleExpr = kv.GetValueOrDefault("FFTOverSample",  "1"),
+            TolExpr           = kv.GetValueOrDefault("Tol",            "1e-6"),
+            DriveSteppingExpr = kv.GetValueOrDefault("DriveStepping", "IfNecessary"),
+            GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic", "0"),
+            SourceDirectory   = sourceDirectory,
+        };
+        return true;
+    }
+
     // ── HB analysis directive parser ─────────────────────────────────────────
 
     /// <summary>
@@ -520,6 +762,7 @@ public sealed class CnlReader
             TolExpr           = kv.GetValueOrDefault("Tol",             "1e-6"),
             DriveSteppingExpr = kv.GetValueOrDefault("DriveStepping",   "IfNecessary"),
             GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic",   "0"),
+            MaxIterExpr       = kv.GetValueOrDefault("MaxIter",         "100"),
             SweepVarName      = sweepVar,
             SweepStartExpr    = sweepStart,
             SweepStopExpr     = sweepStop,
@@ -598,6 +841,13 @@ public sealed class CnlReader
         if (typeName.Equals("Z_Port", StringComparison.OrdinalIgnoreCase))
         {
             ParseZPortLine(line);
+            return;
+        }
+
+        // Tuner lines: Z[k]=expr or G[k]=expr values may be complex; dedicated parser.
+        if (typeName.Equals("Tuner", StringComparison.OrdinalIgnoreCase))
+        {
+            ParseTunerLine(line);
             return;
         }
 

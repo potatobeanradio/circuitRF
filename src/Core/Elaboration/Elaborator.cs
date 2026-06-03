@@ -163,6 +163,16 @@ public sealed class Elaborator
                               ? 0
                               : netlist.Nodes.GetOrAssign(ResolveNet(inst.RefNetBinding));
 
+                // Tuner: mint two internal nodes for the bias-tee topology (loadpull.md §1.1).
+                // Names are collision-proof: keyed on the Tuner instance path.
+                // The __ prefix is reserved so user nets can never collide.
+                if (inst.Reference.Equals("Tuner", StringComparison.OrdinalIgnoreCase))
+                {
+                    int nBlock = netlist.Nodes.GetOrAssign($"__tuner_{childPath}_block");
+                    int nBias  = netlist.Nodes.GetOrAssign($"__tuner_{childPath}_bias");
+                    resolvedNodes = [..resolvedNodes, nBlock, nBias];
+                }
+
                 var ec = new ElaboratedComponent(inst.Reference, childPath, resolvedNodes, resolvedParams, model)
                          { ReferenceNode = refNode };
                 netlist.AddComponent(ec);
