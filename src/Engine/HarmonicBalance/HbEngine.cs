@@ -19,7 +19,8 @@ public sealed record HbAnalysisParams(
     string?  SweepVarName,
     double   SweepStart,
     double   SweepStop,
-    double   SweepStep)
+    double   SweepStep,
+    int      MaxIter = 100)
 {
     public bool HasSweep => SweepVarName is not null;
 
@@ -115,6 +116,7 @@ public sealed class HbEngine
         int    osamp   = Math.Max(1, (int)Num(hba.FFTOverSampleExpr, 1));
         double tol     = Num(hba.TolExpr, 1e-6);
         int    guard   = (int)Num(hba.GuardHarmonicExpr, 0);
+        int    maxIter = Math.Max(1, (int)Num(hba.MaxIterExpr, 100));
 
         var driveStepping = DcBiasSteppingMode.IfNecessary;
         var dsStr = hba.DriveSteppingExpr.Trim();
@@ -133,7 +135,7 @@ public sealed class HbEngine
         }
 
         return new HbAnalysisParams(tone, maxH, osamp, tol, driveStepping, guard,
-            sweepVar, sweepStart, sweepStop, sweepStep);
+            sweepVar, sweepStart, sweepStop, sweepStep, maxIter);
     }
 
     private static Scope BuildScope(IReadOnlyDictionary<string, Value> globals)
@@ -223,8 +225,23 @@ public sealed class HbEngine
             }
 
             // ── Newton solve ─────────────────────────────────────────────────
+            // Build effective settings: override HbMaxIter from the directive's MaxIter.
+            var effectiveSettings = p.MaxIter != _settings.HbMaxIter
+                ? new AnalysisSettings
+                  {
+                      HbMaxIter              = p.MaxIter,
+                      Gmin                   = _settings.Gmin,
+                      ConductanceRegularization = _settings.ConductanceRegularization,
+                      InductanceRegularization  = _settings.InductanceRegularization,
+                      InductanceRegR            = _settings.InductanceRegR,
+                      Gmax                      = _settings.Gmax,
+                      DcBiasStepping            = _settings.DcBiasStepping,
+                      DriveStepping             = _settings.DriveStepping,
+                      NonlinearAbsTol           = _settings.NonlinearAbsTol,
+                  }
+                : _settings;
             var solveResult = HbNewton.Solve(V, yNN, iSrc, f0, K, N,
-                _netlist, ifNodes, gridN, _settings, p.Tol);
+                _netlist, ifNodes, gridN, effectiveSettings, p.Tol);
 
             trace.AddStep(new HbConvergenceTrace.StepRecord(
                 sweepVal, solveResult.Iterations, solveResult.Converged,
@@ -265,6 +282,107 @@ public sealed class HbEngine
             ifNodes,
             nodeNames,
             trace);
+    }
+
+    // ── Single-point solve (used by the Loadpull engine) ─────────────────────
+
+    /// <summary>
+    /// Result of a single HB Newton solve at one operating point.
+    /// </summary>
+    public sealed record SinglePointResult(
+        Complex[,] V,          // [N, K+1] — converged interface voltages (or best-available)
+        Complex[,] INl,        // [N, K+1] — nonlinear device currents
+        bool       Converged,
+        int        Iterations,
+        string?    FailReason, // non-null only on non-convergence or errors
+        IReadOnlyList<HbConvergenceTrace.IterRecord> IterTrace);
+
+    /// <summary>
+    /// Runs a single HB Newton solve at the current netlist operating point (no sweep loop).
+    /// The caller (LoadpullEngine) manages the outer termination-grid and Pin loops,
+    /// updating TunerModel state before each call.
+    ///
+    /// <paramref name="warmStart"/> — if provided, seeds V from this array instead of the DC point.
+    /// Y_NN is re-extracted from the current netlist state (after any TunerModel overrides).
+    ///
+    /// Settings used: <paramref name="p"/>.MaxIter overrides HbMaxIter;
+    /// InductanceRegularization is taken from the injected <paramref name="settingsOverride"/>
+    /// (the loadpull engine passes Always).
+    /// </summary>
+    public SinglePointResult RunSinglePoint(
+        HbAnalysisParams  p,
+        Complex[,]?       warmStart        = null,
+        AnalysisSettings? settingsOverride  = null)
+    {
+        int    K      = p.MaxHarmonic;
+        double f0     = p.ToneHz;
+        int    gridN  = HbFft.GridSize(K, p.FFTOverSample);
+        double omega0 = 2.0 * Math.PI * f0;
+
+        var settings = settingsOverride ?? _settings;
+        // Honour the directive's MaxIter.
+        if (p.MaxIter != settings.HbMaxIter)
+            settings = new AnalysisSettings
+            {
+                HbMaxIter                 = p.MaxIter,
+                Gmin                      = settings.Gmin,
+                ConductanceRegularization = settings.ConductanceRegularization,
+                InductanceRegularization  = settings.InductanceRegularization,
+                InductanceRegR            = settings.InductanceRegR,
+                Gmax                      = settings.Gmax,
+                DcBiasStepping            = settings.DcBiasStepping,
+                DriveStepping             = settings.DriveStepping,
+                NonlinearAbsTol           = settings.NonlinearAbsTol,
+            };
+
+        var extractor = new HbLinearExtractor(_netlist, settings);
+        int N         = extractor.InterfaceCount;
+        int[] ifNodes = extractor.InterfaceNodes;
+
+        // Extract Y_NN and I_src at every harmonic.
+        var yNN  = new Complex[K + 1][,];
+        var iSrc = new Complex[K + 1][];
+        try
+        {
+            (yNN[0], iSrc[0]) = extractor.ExtractDC();
+        }
+        catch (SingularMatrixException ex)
+        {
+            return new SinglePointResult(
+                new Complex[N, K + 1], new Complex[N, K + 1],
+                false, 0, $"DC extraction singular: {ex.Message}", []);
+        }
+        for (int k = 1; k <= K; k++)
+        {
+            double omegaK = k * omega0;
+            var (y, s) = extractor.Extract(omegaK);
+            yNN[k]  = y;
+            iSrc[k] = s;
+        }
+
+        // Initial guess: warm-start if provided; else seed from DC operating point.
+        Complex[,] V;
+        if (warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == K + 1)
+        {
+            V = new Complex[N, K + 1];
+            for (int n = 0; n < N; n++)
+            for (int k = 0; k <= K; k++)
+                V[n, k] = warmStart[n, k];
+        }
+        else
+        {
+            var dcResult = NonlinearDcEngine.Run(_netlist, settings);
+            V = InitialGuess(null, dcResult, N, K, ifNodes);
+        }
+
+        // Newton solve.
+        var sr = HbNewton.Solve(V, yNN, iSrc, f0, K, N, _netlist, ifNodes, gridN, settings, p.Tol);
+
+        string? failReason = null;
+        if (!sr.Converged)
+            failReason = $"Newton non-convergence: ‖F‖={sr.IterTrace.LastOrDefault()?.ResidualNorm:E3} after {sr.Iterations} iters";
+
+        return new SinglePointResult(V, sr.INl, sr.Converged, sr.Iterations, failReason, sr.IterTrace);
     }
 
     // ── Initial guess ────────────────────────────────────────────────────────

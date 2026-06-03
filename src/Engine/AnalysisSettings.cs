@@ -183,7 +183,9 @@ public sealed class AnalysisSettings
 
     /// <summary>
     /// Maximum Newton iterations per HB solve before declaring non-convergence / triggering backoff.
-    /// Default: 50.
+    /// Default: 100. Both type=hb and type=loadpull directives default to MaxIter=100 and
+    /// build an AnalysisSettings with this value. The settings default here matches that directive
+    /// default so engine-direct callers (tests, CLI) also get 100 iterations.
     /// </summary>
-    public int HbMaxIter { get; init; } = 50;
+    public int HbMaxIter { get; init; } = 100;
 }

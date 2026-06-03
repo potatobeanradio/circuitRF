@@ -283,3 +283,49 @@ The hero final step converges super-quadratically: ‖F‖ goes 2.4 → 9.9e-4 �
 - `SolveIfNecessary()` — calls `SolveDirect(false)`, then `SolveRamped()` if needed
 
 **Total tests: 199 pass, 0 fail.**
+
+## Phase 4b-1 deliverable — COMPLETE (2026-06-03)
+Core loadpull engine and the `Tuner` component, validated on Hero 3.
+
+### `TunerModel` (`src/Core/Devices/TunerModel.cs`)
+New `ComponentModel` (Kind=Linear) wrapping Z_Port + bias-tee (L, C, V_supply) + optional
+V_1Tone drive (SourceTuner role). Four-node layout: two declared nets + two internal nodes
+`__tuner_<inst>_block` / `__tuner_<inst>_bias` minted by the Elaborator at elaboration time.
+- Role (Load / Source) assigned by `LoadpullEngine` before HB runs.
+- `ChokeBranchIndex` and `BiasSupplyBranchIndex` set each Stamp() pass.
+- `SetHarmonicOverride(k, Z)` overrides one harmonic for the loadpull grid sweep.
+- `SetSourceDrive(f0, Pavl)` updates the SourceTuner's V_1Tone amplitude each Pin step.
+- In S-param mode (no tone set), presents Z[1] flat over all frequencies.
+
+### `HbEngine.RunSinglePoint`
+New method on `HbEngine` that runs the Newton solve at a single operating point (no sweep
+loop). Accepts an optional warm-start `Complex[,]` seed. Used by `LoadpullEngine` for each
+grid×Pin step. Settings override (InductanceRegularization=Always) passed per call.
+
+### `HbLinearExtractor` changes
+- `IsVoltageOrToneSource` now includes `TunerModel` — the TunerModel is stamped via
+  `ZeroDriveMna` in the zeroDrive=true (Y_NN extraction) path, zeroing its V_1Tone and
+  bias supply values while keeping the impedance topology active.
+- `ApplyInductanceReg` now also regularizes `TunerModel.ChokeBranchIndex` (the internal
+  choke, not an InductorModel, needs explicit regularization when mode=Always).
+
+### `GamReader` (`src/Engine/Loadpull/GamReader.cs`)
+Parses `.gam` grid files: mag_ang / re_im / re+j*imag formats; gamma or impedance form;
+optional header; comment/blank skipping; Γ↔Z roundtrip via analytic formula.
+
+### `LoadpullEngine` (`src/Engine/Loadpull/LoadpullEngine.cs`)
+2-D sweep: outer Γ/Z grid × inner adaptive Pin drive-up. InductanceRegularization=Always
+forced for all inner HB solves. VSWR-nearest Γ-grid warm-start. Compression stop at
+P-xdB + one overshoot step. Stop reasons: Compression / PinMax / NonConvergence.
+
+### Hero 3 gate — PASSED (2026-06-03)
+20-point Γ grid, all converged. Gt 4.5..16.6 dB (varies with load — correct PA behavior).
+Pout 14.5..26.6 dBm. Stop = PinMax for all (FET does not reach 3 dB compression at
+PinMax=10 dBm from 25Ω source, which is physically correct for this bias point). Golden
+frozen in `testdata/Hero3/`. SELF-GENERATED — NOT INDEPENDENTLY VALIDATED.
+
+### `HarmonicBalanceAnalysis` / `LoadpullAnalysis` changes
+- Both now carry `MaxIterExpr` (default "100") — user-settable max Newton iterations.
+- `AnalysisSettings.HbMaxIter` default changed from 50 to 100.
+
+**Total tests: 225 pass, 0 fail.**
