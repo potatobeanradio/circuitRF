@@ -60,6 +60,29 @@ per harmonic at the nonlinear-facing nodes, not one:
    nonlinear-facing nodes (a Norton/Thévenin equivalent), per harmonic.
 Do not re-derive either inside the HB engine; request both from the linear layer.
 
+### DC interface extraction — real Y(0), auto-regularized (Maas 3.10–3.14; linear-engine §4.3.1)
+The k = 0 (DC) harmonic uses the **real DC admittance** `Y_{N×N}(0)` and Norton source
+`I_src(0)`, extracted identically to `Extract(ω)` but evaluated at ω = 0:
+1. Zero sources → Z-column extraction → `Y_{N×N}(0)` (via `BuildMna(0, zeroDrive: true)`).
+2. Active sources → single solve → `V_oc(0)` → `I_src(0) = −Y_{N×N}(0)·V_oc(0)`.
+
+**No virtual-admittance clamp.** The old `Y_DC_VIRT = 1e6 S` prevented the DC interface
+voltage from shifting with drive (defeating self-biasing). The real Y(0) lets the Newton
+solve balance the DC component self-consistently.
+
+**Voltage-pinned singularity handling** (`InductanceRegularization`, default `IfNecessary`):
+An ideal-choke (no `R=`) through an ideal voltage source → `Z(0) = 0` at the interface node.
+`ExtractDC` detects this (`|Z_NN[i,i]| < 1e-15`) and handles it per the regularization mode
+(identical tri-state behaviour to `ConductanceRegularization`/gmin):
+- **`IfNecessary`** (default): retry with series `R = InductanceRegR` (1 µΩ default) added to
+  all inductor branches. Warns to stderr naming the pinned nodes. Clean circuits pay nothing.
+- **`Always`**: apply from the start (skip the speculative first attempt).
+- **`Never`**: throw `SingularMatrixException` with full diagnostic (V_oc, node names, fix hint).
+
+This is regularization, not a circuit edit — the inductive dual of gmin. `Y_{N×N}(0) ≈ 1/R_reg
+≈ 1e6 S`, giving good Jacobian conditioning (same order as the old clamp). Converges to the
+exact answer as R_reg → 0. See linear-engine §4.3.1 for the principled Option-2 upgrade (deferred).
+
 ## Output
 Every HB run writes a **`DataSet`** — primary cubes `V` and `I` (axes typically
 `{…sweep, node, harmonic}`), each a single-kind `DataCube` (→ `src/Core/Data/CLAUDE.md`). FOM

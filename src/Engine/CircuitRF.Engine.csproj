@@ -14,7 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CSparse" Version="4.3.0" />
+    <PackageReference Include="CSparse"   Version="4.3.0" />
+    <PackageReference Include="NumFlat"   Version="1.3.0" />
+    <PackageReference Include="FftFlat"   Version="1.0.1" />
   </ItemGroup>
 
 </Project>

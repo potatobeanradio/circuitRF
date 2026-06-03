@@ -114,13 +114,28 @@ public sealed class Parser
                 if (t.Text == "pi") return new ConstExpr("pi");
                 if (t.Text == "e")  return new ConstExpr("e");
                 // if(...) keyword → ConditionalExpr (§5 AST spec)
+                // Two forms:
+                //   canonical:  if(cond, then, else)
+                //   extended:   if(cond) then ... [elseif(cond) then ...] else ... endif
                 if (t.Text == "if" && Current.Kind == TokenKind.LParen)
                 {
                     Advance(); // consume (
-                    var cond  = ParseExpr(0); Expect(TokenKind.Comma, ",");
-                    var then  = ParseExpr(0); Expect(TokenKind.Comma, ",");
-                    var els   = ParseExpr(0); Expect(TokenKind.RParen, ")");
-                    return new ConditionalExpr(cond, then, els);
+                    var cond = ParseExpr(0);
+                    if (Current.Kind == TokenKind.Comma)
+                    {
+                        // Canonical form: if(cond, then, else)
+                        Advance(); // consume ,
+                        var then = ParseExpr(0); Expect(TokenKind.Comma, ",");
+                        var els  = ParseExpr(0); Expect(TokenKind.RParen, ")");
+                        return new ConditionalExpr(cond, then, els);
+                    }
+                    else
+                    {
+                        // Extended form: if(cond) then expr [elseif(cond) then expr ...] else expr endif
+                        Expect(TokenKind.RParen, ")");
+                        ExpectKeyword("then");
+                        return ParseIfThenChain(cond);
+                    }
                 }
                 // function call or bare ref
                 if (Current.Kind == TokenKind.LParen)
@@ -186,6 +201,50 @@ public sealed class Parser
                                         => new LogicExpr(op, left, right),
         _                               => throw new ParseException($"Unknown infix op '{op}'", 0)
     };
+
+    // ── Extended if/then/elseif/else/endif ───────────────────────────────────
+
+    // Called after consuming "if(cond) then" — cond is the first condition already parsed.
+    // Collects the chain and folds right into nested ConditionalExprs.
+    private Expr ParseIfThenChain(Expr firstCond)
+    {
+        var conditions = new List<Expr> { firstCond };
+        var thens      = new List<Expr> { ParseExpr(0) };   // then-expression for firstCond
+
+        while (CurrentIsKeyword("elseif"))
+        {
+            Advance();  // consume elseif
+            Expect(TokenKind.LParen, "(");
+            conditions.Add(ParseExpr(0));
+            Expect(TokenKind.RParen, ")");
+            ExpectKeyword("then");
+            thens.Add(ParseExpr(0));
+        }
+
+        Expr els = new NumberExpr(0);
+        if (CurrentIsKeyword("else"))
+        {
+            Advance();  // consume else
+            els = ParseExpr(0);
+        }
+        ExpectKeyword("endif");
+
+        // Fold right: build if(cN, thenN, if(cN-1,..., els))
+        Expr result = els;
+        for (int k = thens.Count - 1; k >= 0; k--)
+            result = new ConditionalExpr(conditions[k], thens[k], result);
+        return result;
+    }
+
+    private bool CurrentIsKeyword(string kw)
+        => Current.Kind == TokenKind.Identifier && Current.Text == kw;
+
+    private void ExpectKeyword(string kw)
+    {
+        if (!CurrentIsKeyword(kw))
+            throw new ParseException($"Expected '{kw}', got '{Current.Text}'", Current.Position);
+        Advance();
+    }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 

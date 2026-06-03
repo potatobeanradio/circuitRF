@@ -76,7 +76,7 @@ V_1Tone:Vdrain   n_dbias 0       Vdc=Vdd
 ; ============================================================
 ; HB analysis: single tone at RFfreq, sweep Pavl_dbm, harmonics to MaxHarm
 ; ============================================================
-analysis HB1  type=hb  Tone=RFfreq  MaxHarm=MaxHarm  Sweep="Pavl_dbm: -20 .. -9 step 1" \
+analysis HB1  type=hb  Tone=RFfreq  MaxHarm=MaxHarm  Sweep="Pavl_dbm: -20 .. 0 step 1" \
      FFTOverSample=OverSamp  Tol=HBtol  DriveStepping=DriveStep  GuardHarmonic=Guard
 
 ; ============================================================

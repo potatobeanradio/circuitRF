@@ -84,8 +84,13 @@ public sealed class CnlReader
             var rawLine = line.Length > "analysis".Length
                 ? line["analysis".Length..].TrimStart()
                 : "";
-            (_currentCell is null ? _testBench! : ThrowDirectiveInCell(line))
-                .RawDirectives.Add(new RawDirective("analysis", rawLine));
+            var tb = _currentCell is null ? _testBench! : ThrowDirectiveInCell(line);
+
+            // If this is a type=hb directive, parse it into a typed HarmonicBalanceAnalysis.
+            if (TryParseHbDirective(rawLine, out var hbAnalysis))
+                tb.Analyses.Add(hbAnalysis!);
+            else
+                tb.RawDirectives.Add(new RawDirective("analysis", rawLine));
             return true;
         }
 
@@ -357,6 +362,194 @@ public sealed class CnlReader
         return result;
     }
 
+    // ── Z_Port line parser ────────────────────────────────────────────────────
+
+    // Z[i,j]= boundary detection (allows spaces inside the expression).
+    private static readonly Regex ZPortAssignmentHeader = new(
+        @"Z\[\d+,\d+\]\s*=", RegexOptions.Compiled);
+
+    private void ParseZPortLine(string rawLine)
+    {
+        int firstSpace = rawLine.IndexOfAny([' ', '\t']);
+        if (firstSpace < 0) return;
+        var typeAndName  = rawLine[..firstSpace];
+        int colon        = typeAndName.IndexOf(':');
+        if (colon < 0) return;
+        var instanceName = typeAndName[(colon + 1)..];
+        var rest         = rawLine[(firstSpace + 1)..].TrimStart();
+
+        // Find first Z[i,j]= at paren-depth 0.
+        int eqStart = FindFirstZPortEquation(rest);
+        var netSection = eqStart >= 0 ? rest[..eqStart].Trim() : rest;
+        var nets = netSection.Length > 0
+            ? netSection.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).ToList()
+            : new List<string>();
+
+        var overrides = new List<ParameterAssignment>();
+        if (eqStart >= 0)
+            overrides = ParseZPortEquations(rest[eqStart..]);
+
+        // N-or-(N+1) reference-node convention (same as SnP, linear-engine §4.1):
+        // Determine N from the max port index in Z[i,j] overrides.
+        // If nets.Count == N+1: last net is the shared reference; pop it.
+        int portCount = 0;
+        foreach (var ov in overrides)
+        {
+            var zm = System.Text.RegularExpressions.Regex.Match(ov.Name, @"\[(\d+),(\d+)\]");
+            if (zm.Success)
+            {
+                portCount = Math.Max(portCount, int.Parse(zm.Groups[1].Value));
+                portCount = Math.Max(portCount, int.Parse(zm.Groups[2].Value));
+            }
+        }
+        portCount = Math.Max(1, portCount);
+
+        string? refNetBinding = null;
+        if (nets.Count == portCount + 1)
+        {
+            refNetBinding = nets[portCount];
+            nets.RemoveAt(portCount);
+        }
+
+        var inst = new Instance(instanceName, "Z_Port", nets, overrides)
+                   { RefNetBinding = refNetBinding };
+        if (_currentCell is not null)
+            _currentCell.Instances.Add(inst);
+        else
+            _testBench!.Instances.Add(inst);
+    }
+
+    private static int FindFirstZPortEquation(string text)
+    {
+        int depth = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c == '(') { depth++; continue; }
+            if (c == ')') { depth--; continue; }
+            if (depth > 0) continue;
+            var m = ZPortAssignmentHeader.Match(text, i);
+            if (m.Success && m.Index == i) return i;
+        }
+        return -1;
+    }
+
+    private static List<ParameterAssignment> ParseZPortEquations(string eqSection)
+    {
+        var result     = new List<ParameterAssignment>();
+        var boundaries = new List<(int HeaderStart, int ExprStart, string Name)>();
+
+        int depth = 0;
+        int i = 0;
+        while (i < eqSection.Length)
+        {
+            char c = eqSection[i];
+            if (c == '(') { depth++; i++; continue; }
+            if (c == ')') { depth--; i++; continue; }
+            if (depth == 0)
+            {
+                var m = ZPortAssignmentHeader.Match(eqSection, i);
+                if (m.Success && m.Index == i)
+                {
+                    int eqPos = m.Value.LastIndexOf('=');
+                    string assignName = m.Value[..eqPos].TrimEnd(); // e.g. "Z[1,1]"
+                    int exprStart = m.Index + m.Length;
+                    boundaries.Add((i, exprStart, assignName));
+                    i = exprStart;
+                    continue;
+                }
+            }
+            i++;
+        }
+
+        for (int k = 0; k < boundaries.Count; k++)
+        {
+            var (hStart, exprStart, name) = boundaries[k];
+            int exprEnd = k + 1 < boundaries.Count ? boundaries[k + 1].HeaderStart : eqSection.Length;
+            var expr = eqSection[exprStart..exprEnd].Trim();
+            result.Add(new ParameterAssignment(name, expr));
+        }
+
+        return result;
+    }
+
+    // ── HB analysis directive parser ─────────────────────────────────────────
+
+    /// <summary>
+    /// Attempts to parse a "Name type=hb key=value ..." analysis directive into a typed
+    /// <see cref="HarmonicBalanceAnalysis"/>. Returns false if it is not a type=hb directive.
+    /// </summary>
+    private static bool TryParseHbDirective(string rawLine,
+        out CircuitRF.Core.Design.HarmonicBalanceAnalysis? result)
+    {
+        result = null;
+        // Use TokeniseLine (quote-aware) so that Sweep="var: a .. b step s" stays as one token.
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+
+        string analysisName = tokens[0];
+
+        // Collect key=value pairs.
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq <= 0) continue;
+            string key = tokens[i][..eq];
+            string val = tokens[i][(eq + 1)..];
+            // Strip surrounding quotes from string values (e.g. Sweep="...").
+            if (val.Length >= 2 && val[0] == '"' && val[^1] == '"')
+                val = val[1..^1];
+            kv[key] = val;
+        }
+
+        if (!kv.TryGetValue("type", out var typeVal) ||
+            !typeVal.Equals("hb", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Parse the Sweep string if present: "varName: start .. stop step s"
+        string?  sweepVar = null, sweepStart = null, sweepStop = null, sweepStep = null;
+        if (kv.TryGetValue("Sweep", out var sweepStr))
+            ParseSweepString(sweepStr, out sweepVar, out sweepStart, out sweepStop, out sweepStep);
+
+        result = new CircuitRF.Core.Design.HarmonicBalanceAnalysis(analysisName)
+        {
+            ToneExpr          = kv.GetValueOrDefault("Tone",            "0"),
+            MaxHarmonicExpr   = kv.GetValueOrDefault("MaxHarm",         "7"),
+            FFTOverSampleExpr = kv.GetValueOrDefault("FFTOverSample",    "1"),
+            TolExpr           = kv.GetValueOrDefault("Tol",             "1e-6"),
+            DriveSteppingExpr = kv.GetValueOrDefault("DriveStepping",   "IfNecessary"),
+            GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic",   "0"),
+            SweepVarName      = sweepVar,
+            SweepStartExpr    = sweepStart,
+            SweepStopExpr     = sweepStop,
+            SweepStepExpr     = sweepStep,
+        };
+        return true;
+    }
+
+    // Parse "varName: start .. stop step s" → parts
+    private static void ParseSweepString(string s,
+        out string? varName, out string? start, out string? stop, out string? step)
+    {
+        varName = start = stop = step = null;
+        // Split on ':' first to get variable name.
+        int colon = s.IndexOf(':');
+        if (colon < 0) return;
+        varName = s[..colon].Trim();
+        var rest = s[(colon + 1)..].Trim();
+        // Split on ".." for start/stop.
+        int dotDot = rest.IndexOf("..", StringComparison.Ordinal);
+        if (dotDot < 0) return;
+        start = rest[..dotDot].Trim();
+        var afterDotDot = rest[(dotDot + 2)..].Trim();
+        // Split on "step" (case-insensitive).
+        int stepIdx = afterDotDot.IndexOf("step", StringComparison.OrdinalIgnoreCase);
+        if (stepIdx < 0) { stop = afterDotDot; return; }
+        stop = afterDotDot[..stepIdx].Trim();
+        step = afterDotDot[(stepIdx + 4)..].Trim();
+    }
+
     // ── Line-continuation pre-processor ──────────────────────────────────────
 
     private static IEnumerable<string> JoinContinuationLines(IEnumerable<string> rawLines)
@@ -400,6 +593,17 @@ public sealed class CnlReader
             ParseSddLine(line);
             return;
         }
+
+        // Z_Port lines: expressions in Z[i,j] may contain spaces (if/then/endif) — dedicated parser.
+        if (typeName.Equals("Z_Port", StringComparison.OrdinalIgnoreCase))
+        {
+            ParseZPortLine(line);
+            return;
+        }
+
+        // V_1Tone / V_nTone: V= may reference complex expressions (e.g. Vs_mag) — standard whitespace
+        // tokenizer is fine since the values are simple identifiers, but we handle them explicitly
+        // so the Elaborator recognises them as parameterized types.
 
         bool isSnP = typeName.Equals("SnP", StringComparison.OrdinalIgnoreCase);
 
@@ -549,17 +753,34 @@ public sealed class CnlReader
 
     /// <summary>
     /// Given the right-hand side of "name = rhs", split into (expression, unit?).
+    /// Strips inline comments (from the first bare ';' not inside quotes).
     /// The unit, if present, is the last token if it matches a known unit.
     /// </summary>
     private static (string Expression, string? Unit) SplitExprUnit(string rhs)
     {
-        var tokens = rhs.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        // Strip inline comment: first ';' not inside a quoted string.
+        var stripped = StripInlineComment(rhs);
+        var tokens = stripped.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
         if (tokens.Length == 0) return ("", null);
         if (tokens.Length == 1) return (tokens[0], null);
         var last = tokens[^1];
         if (Units.IsKnown(last))
             return (string.Join(" ", tokens[..^1]), last);
-        return (rhs, null);
+        return (stripped.Trim(), null);
+    }
+
+    /// <summary>
+    /// Strips the remainder of the string from the first bare ';' (not inside quotes).
+    /// </summary>
+    private static string StripInlineComment(string s)
+    {
+        bool inString = false;
+        for (int i = 0; i < s.Length; i++)
+        {
+            if (s[i] == '"') { inString = !inString; continue; }
+            if (!inString && s[i] == ';') return s[..i].TrimEnd();
+        }
+        return s;
     }
 
     private static TestBench ThrowDirectiveInCell(string line)

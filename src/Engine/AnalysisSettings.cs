@@ -88,11 +88,15 @@ public sealed class AnalysisSettings
 
     /// <summary>
     /// When inductance regularization is applied, this series resistance (Ohms) is added
-    /// to every inductor branch diagonal. Cures a rank-deficient coupled-inductor D-block
-    /// (e.g. an EM-extracted network whose inductance matrix has a zero eigenvalue).
-    /// Default: 1e-9 Ω (1 nΩ) — negligible perturbation on physical circuits.
+    /// to every inductor branch diagonal. Cures:
+    ///   (a) a rank-deficient coupled-inductor D-block (zero eigenvalue from k≥1 or EM extraction);
+    ///   (b) a DC voltage-pinned interface (ideal choke + ideal voltage source → Z(0)=0):
+    ///       the resulting Y(0)≈1/InductanceRegR ≈ 1e6 S gives the Newton a well-conditioned
+    ///       DC block, equivalent to the analytical limit as R→0 (linear-engine §4.3.1).
+    /// Default: 1e-6 Ω — negligible at any RF frequency (|jωL| >> 1e-6 Ω), but large enough to
+    /// keep Y(0) near 1e6 S for good Jacobian conditioning in the HB DC block.
     /// </summary>
-    public double InductanceRegR { get; init; } = 1e-9;
+    public double InductanceRegR { get; init; } = 1e-6;
 
     /// <summary>
     /// Controls when the <see cref="InductanceRegR"/> pass is applied.
@@ -159,4 +163,27 @@ public sealed class AnalysisSettings
     /// Default: 10.
     /// </summary>
     public int NonlinearMaxHalvings { get; init; } = 10;
+
+    // ── HB-specific settings (Phase 4) ────────────────────────────────────────
+
+    /// <summary>
+    /// Controls when HB RF-drive continuation (power stepping) engages.
+    /// Distinct from <see cref="DcBiasStepping"/> which ramps DC supply voltages.
+    /// Default: <see cref="DcBiasSteppingMode.IfNecessary"/> — warm-start from previous
+    /// sweep point (or DC seed at first point); fall back to power ramping only on failure.
+    /// </summary>
+    public DcBiasSteppingMode DriveStepping { get; init; } = DcBiasSteppingMode.IfNecessary;
+
+    /// <summary>
+    /// Number of drive-stepping increments (0 → full drive in this many equal steps).
+    /// Only relevant when <see cref="DriveStepping"/> is Always or the fallback fires.
+    /// Default: 10.
+    /// </summary>
+    public int DriveRampSteps { get; init; } = 10;
+
+    /// <summary>
+    /// Maximum Newton iterations per HB solve before declaring non-convergence / triggering backoff.
+    /// Default: 50.
+    /// </summary>
+    public int HbMaxIter { get; init; } = 50;
 }

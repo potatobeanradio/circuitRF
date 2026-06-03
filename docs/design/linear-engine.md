@@ -1,6 +1,6 @@
 # circuitRF — Linear Engine Design (MNA, DC, S-parameters)
 
-**Status:** Draft (rev 4) for review · **Date:** 2026-05-31
+**Status:** Draft (rev 5) for review · **Date:** 2026-06-01
 **Reads with:** `docs/design/data-model.md` (§3 elaboration, §5 `ComponentModel`, §6 RfCore, §7 result model), `docs/PRD.md` (§4 Hero 1, §5 simulation scope, §14 NFRs).
 **Defers to:** `docs/design/harmonic-balance.md` (the nonlinear partition + conversion-matrix Jacobian, which builds on this), `docs/design/expressions.md` (parameter resolution).
 
@@ -154,7 +154,16 @@ circuitRF is a research/experimentation tool: it lets users build deliberately n
 
 **Two regularization settings** (each a tri-state `{ IfNecessary, Always, Never }`, default `IfNecessary`):
 - **`ConductanceRegularization`** — this is `gmin` (1e-12 S, every node→ground); cures floating-node singularities.
-- **`InductanceRegularization`** — the inductive dual (a tiny series resistance / diagonal loading on the inductor block); cures a near-singular or rank-deficient coupled-inductance matrix (e.g. a degenerate EM-extracted coupled-coil block, or k≥1).
+- **`InductanceRegularization`** — the inductive dual (a tiny series resistance / diagonal loading on the inductor block); cures a near-singular or rank-deficient coupled-inductance matrix (e.g. a degenerate EM-extracted coupled-coil block, or k≥1), **and** the DC voltage-pinned-interface singularity (§4.3.1).
+
+#### 4.3.1 Voltage-pinned DC interface (the ideal-choke singularity)
+When the HB engine extracts the linear-partition interface admittance at **DC** (`ω=0`, harmonic-balance §10), an interface node tied through an **ideal inductor** (a bias-tee choke with no series R) to an **ideal voltage source** has a **zero-impedance DC path** to that source. Its DC voltage is then *hard-pinned* (`Z(0)=0` at that node), so the port `Z`-matrix is singular and cannot be inverted to a finite `Y(0)`. This is not a numerical defect — it is the math correctly reporting that an *idealized* bias network fixes that node's DC voltage exactly, with no freedom to shift.
+
+**The mathematically exact treatment** is **constrained-system reduction ("Option 2"):** a voltage-pinned interface node is *not a free DC unknown* — its DC voltage is known (the bias value), so it is removed from the DC unknown set and substituted into the right-hand side as a boundary condition, and only the genuinely-free DC unknowns are solved. This is the standard handling of a Dirichlet/voltage constraint and introduces no fudge element. **It is the principled upgrade and is deferred** (a hardening-pass item), because it is a real formulation change to the DC extraction and its Jacobian block.
+
+**The v1 mechanism ("Path A")** routes this through `InductanceRegularization`: under **`IfNecessary`** (default), when the DC interface extraction hits this singularity, the engine **auto-applies a tiny series resistance to the offending ideal inductor(s)** so `Z(0)` becomes finite (a large but invertible `Y(0)`), and **warns** (naming the node), exactly as `ConductanceRegularization`/gmin auto-cures a floating node. This is **regularization, not a circuit change** — it is honestly labeled, automatic, and **converges to the exact constrained-reduction answer as R→0** (a milliohm of choke DCR is physically real and, at RF, utterly swamped by `jωL`). It is the inductive dual of gmin: gmin is a conductance *floor* to ground; this is a series-resistance *floor* on an ideal inductor that would otherwise create a zero-impedance DC path. `Always`/`Never` behave as for the other regularizations (`Never` → fail with the singular-node diagnostic naming the pinned interface node and its `V_oc(0)`). The default series-R floor value is small (e.g. `1e-6 Ω`) and exposed as a setting.
+
+> A *physically realistic* bias network (a choke with real DCR, or a bias resistor) has finite DC path impedance and **never hits this singularity** — `Z(0)` is finite, self-biasing appears naturally, and no regularization engages. The singularity is specific to *ideal* bias-tees; Path A makes ideal-choke circuits "just work" the way gmin makes floating-node circuits just work.
 
 Semantics (identical for both): **`IfNecessary`** assembles *without* the regularization, attempts the factorization, and on failure adds it and retries (clean circuits pay nothing and get the unperturbed result; if a solve fails with both at `IfNecessary`, add **both** on retry — they're cheap and orthogonal). **`Always`** assembles *with* it from the start (skips the speculative failed solve — useful for large circuits known to need it; slightly perturbs all results). **`Never`** assembles without and, if singular, **fails with the singular-node diagnostic** (§6 / engine CLAUDE.md) — a validation mode for users who want to *know* a circuit is degenerate. **Warn only when a regularization actually engages**, never merely for a clean solve or for negative M.
 

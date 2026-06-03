@@ -18,13 +18,25 @@ public sealed class SParameterAnalysis(string name, FrequencySpec freq) : Analys
     public FrequencySpec Freq { get; } = freq;
 }
 
-public sealed class HarmonicBalanceAnalysis(
-    string name, ToneSpec[] tones, int maxHarmonic, int maxMixingOrder)
-    : Analysis(name)
+/// <summary>
+/// HB analysis directive (harmonic-balance.md §3.2).
+/// Key=value fields store raw expression strings (resolved later via ResolvedGlobals).
+/// </summary>
+public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
 {
-    public ToneSpec[] Tones            { get; } = tones;
-    public int        MaxHarmonic      { get; } = maxHarmonic;
-    public int        MaxMixingOrder   { get; } = maxMixingOrder;
+    // Raw expression strings from the .cnl directive; resolved at engine time.
+    public string ToneExpr          { get; init; } = "0";
+    public string MaxHarmonicExpr   { get; init; } = "7";
+    public string FFTOverSampleExpr { get; init; } = "1";
+    public string TolExpr           { get; init; } = "1e-6";
+    public string DriveSteppingExpr { get; init; } = "IfNecessary";
+    public string GuardHarmonicExpr { get; init; } = "0";
+
+    // Sweep: null = single point.
+    public string? SweepVarName  { get; init; }
+    public string? SweepStartExpr{ get; init; }
+    public string? SweepStopExpr { get; init; }
+    public string? SweepStepExpr { get; init; }
 }
 
 public sealed class LoadpullAnalysis(string name, PortRef dut, TerminationGrid grid)

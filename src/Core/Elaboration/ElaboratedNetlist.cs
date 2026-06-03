@@ -1,3 +1,5 @@
+using CircuitRF.Core.Expressions;
+
 namespace CircuitRF.Core.Elaboration;
 
 /// <summary>
@@ -17,6 +19,15 @@ public sealed class ElaboratedNetlist
     public IReadOnlySet<int> NonlinearNodes => _nonlinearNodes;
     private readonly HashSet<int> _nonlinearNodes = [];
 
+    /// <summary>
+    /// Fully resolved global variable values (Real or Complex), populated by the Elaborator.
+    /// The HB engine uses these to resolve analysis directive expressions
+    /// (e.g. Tone=RFfreq → ResolvedGlobals["RFfreq"]) and to re-evaluate sweep-dependent
+    /// expressions at each sweep step.
+    /// </summary>
+    public IReadOnlyDictionary<string, Value> ResolvedGlobals => _resolvedGlobals;
+    private readonly Dictionary<string, Value> _resolvedGlobals = new(StringComparer.Ordinal);
+
     internal void AddComponent(ElaboratedComponent c)
     {
         int idx = Components.Count;
@@ -27,4 +38,6 @@ public sealed class ElaboratedNetlist
             foreach (var n in c.Nodes) _nonlinearNodes.Add(n);
         }
     }
+
+    internal void SetResolvedGlobal(string name, Value val) => _resolvedGlobals[name] = val;
 }

@@ -193,11 +193,18 @@ public sealed class Evaluator
             "log10" => UnaryMath(cl, scope, SafeLog10,   x => Complex.Log(x, 10)),
             "sqrt"  => UnaryMath(cl, scope, SafeSqrt,    Complex.Sqrt),
             "pow"   => BinaryMath(cl, scope, Math.Pow,   Complex.Pow),
-            "abs"   => EvalAbs(cl, scope),
-            "min"   => BinaryRealMath(cl, scope, Math.Min),
-            "max"   => BinaryRealMath(cl, scope, Math.Max),
-            "sign"  => EvalSign(cl, scope),
-            _       => throw new UnknownFunctionException(cl.Name)
+            "abs"       => EvalAbs(cl, scope),
+            "min"       => BinaryRealMath(cl, scope, Math.Min),
+            "max"       => BinaryRealMath(cl, scope, Math.Max),
+            "sign"      => EvalSign(cl, scope),
+            // Complex helpers (expressions.md §7)
+            "real"      => EvalReal(cl, scope),
+            "imag"      => EvalImag(cl, scope),
+            "mag"       => EvalMag(cl, scope),
+            "phase"     => EvalPhase(cl, scope),
+            "phase_rad" => EvalPhaseRad(cl, scope),
+            "polar"     => EvalPolar(cl, scope),
+            _           => throw new UnknownFunctionException(cl.Name)
         };
     }
 
@@ -289,6 +296,57 @@ public sealed class Evaluator
         return v.Kind == ValueKind.Real
             ? new Value(Math.Abs(v.AsReal()))
             : new Value(Complex.Abs(v.AsComplex()));
+    }
+
+    // ── Complex helpers (expressions.md §7) ─────────────────────────────────
+
+    private Value EvalReal(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("real", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        return v.Kind == ValueKind.Real ? v : new Value(v.AsComplex().Real);
+    }
+
+    private Value EvalImag(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("imag", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        return v.Kind == ValueKind.Real ? new Value(0.0) : new Value(v.AsComplex().Imaginary);
+    }
+
+    private Value EvalMag(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("mag", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        return v.Kind == ValueKind.Real ? new Value(Math.Abs(v.AsReal())) : new Value(Complex.Abs(v.AsComplex()));
+    }
+
+    private Value EvalPhase(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("phase", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        return v.Kind == ValueKind.Real
+            ? new Value(v.AsReal() >= 0 ? 0.0 : 180.0)
+            : new Value(v.AsComplex().Phase * (180.0 / Math.PI));
+    }
+
+    private Value EvalPhaseRad(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("phase_rad", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        return v.Kind == ValueKind.Real
+            ? new Value(v.AsReal() >= 0 ? 0.0 : Math.PI)
+            : new Value(v.AsComplex().Phase);
+    }
+
+    private Value EvalPolar(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 2) throw new ArityException("polar", 2, cl.Args.Length);
+        var r   = EvalExpr(cl.Args[0], scope);
+        var deg = EvalExpr(cl.Args[1], scope);
+        if (r.Kind != ValueKind.Real)   throw new TypeErrorException("polar() magnitude must be Real");
+        if (deg.Kind != ValueKind.Real) throw new TypeErrorException("polar() phase must be Real");
+        return new Value(Complex.FromPolarCoordinates(r.AsReal(), deg.AsReal() * Math.PI / 180.0));
     }
 
     private Value EvalSign(CallExpr cl, Scope scope)

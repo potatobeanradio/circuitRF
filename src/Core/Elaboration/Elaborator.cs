@@ -45,6 +45,19 @@ public sealed class Elaborator
             if (ec.Model is MutualInductanceModel m)
                 m.Resolve(netlist, ec);
 
+        // Populate ResolvedGlobals — used by the HB engine to resolve analysis directives
+        // and re-evaluate sweep-dependent expressions at each sweep step.
+        foreach (var v in tb.GlobalVariables)
+        {
+            try
+            {
+                var val = _evaluator.Resolve(v.Name, globalScope);
+                if (val.Kind is ValueKind.Real or ValueKind.Complex)
+                    netlist.SetResolvedGlobal(v.Name, val);
+            }
+            catch { /* skip variables that cannot resolve (e.g. forward refs) */ }
+        }
+
         return netlist;
     }
 
@@ -185,11 +198,153 @@ public sealed class Elaborator
     {
         if (inst.Reference.Equals("SDD", StringComparison.OrdinalIgnoreCase))
             return ResolveSddParameters(inst, parentScope);
+        if (inst.Reference.Equals("Z_Port", StringComparison.OrdinalIgnoreCase))
+            return ResolveZPortParameters(inst, parentScope);
+        if (inst.Reference.Equals("V_1Tone", StringComparison.OrdinalIgnoreCase) ||
+            inst.Reference.Equals("V_nTone", StringComparison.OrdinalIgnoreCase))
+            return ResolveToneSourceParameters(inst, parentScope);
 
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
             result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
         return result;
+    }
+
+    // ── Z_Port parameter resolution ───────────────────────────────────────────
+
+    private static readonly Regex RxZPortEntry = new(@"^Z\[\d+,\d+\]$", RegexOptions.Compiled);
+
+    private IReadOnlyDictionary<string, Value> ResolveZPortParameters(
+        Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        result["ZPortName"] = new Value(inst.InstanceName);
+
+        // Determine N from the maximum port/column index in Z[i,j] parameters.
+        int maxIdx = 0;
+        foreach (var ov in inst.Overrides)
+        {
+            if (!RxZPortEntry.IsMatch(ov.Name)) continue;
+            var m = System.Text.RegularExpressions.Regex.Match(ov.Name, @"\[(\d+),(\d+)\]");
+            if (m.Success)
+            {
+                maxIdx = Math.Max(maxIdx, int.Parse(m.Groups[1].Value));
+                maxIdx = Math.Max(maxIdx, int.Parse(m.Groups[2].Value));
+            }
+        }
+        result["ZPortCount"] = new Value((double)Math.Max(1, maxIdx));
+
+        foreach (var ov in inst.Overrides)
+        {
+            if (RxZPortEntry.IsMatch(ov.Name))
+            {
+                // Store Z[i,j] expression as string; inject referenced scope vars.
+                result[ov.Name] = new Value(ov.Expression);
+                InjectZPortScopeVars(ov.Expression, parentScope, result);
+            }
+            else
+            {
+                // Regular numeric parameter — resolve normally.
+                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                catch { /* skip unresolvable params */ }
+            }
+        }
+
+        return result;
+    }
+
+    private void InjectZPortScopeVars(string expression, Scope scope,
+        Dictionary<string, Value> into)
+    {
+        Expr ast;
+        try { ast = Parser.Parse(expression); }
+        catch { return; }
+
+        foreach (var name in AstWalker.CollectRefs(ast))
+        {
+            if (name == "freq") continue;   // reserved injected keyword — not a scope var
+            if (into.ContainsKey(name))  continue;
+            try
+            {
+                var val = _evaluator.Resolve(name, scope);
+                if (val.Kind is ValueKind.Real or ValueKind.Complex)
+                    into[name] = val;
+            }
+            catch { /* unresolvable — factory will catch real errors */ }
+        }
+    }
+
+    // ── V_1Tone / V_nTone parameter resolution ────────────────────────────────
+
+    private static readonly Regex RxToneIndexed = new(@"^(V|Freq|Phase)\[(\d+)\]$",
+        RegexOptions.Compiled);
+
+    private IReadOnlyDictionary<string, Value> ResolveToneSourceParameters(
+        Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        result["ToneSrcName"] = new Value(inst.InstanceName);
+
+        // Collect scope vars that any expression parameter might reference.
+        var scopeVarCache = new Dictionary<string, Value>(StringComparer.Ordinal);
+
+        foreach (var ov in inst.Overrides)
+        {
+            bool isExprParam = ov.Name is "V" or "Vdc" or "Phase"
+                || RxToneIndexed.IsMatch(ov.Name);
+
+            if (isExprParam)
+            {
+                // Try to resolve as a number; if it fails (it's a variable ref), store as string.
+                try
+                {
+                    var val = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+                    result[ov.Name] = val;
+                    // Also store as string so the model can re-evaluate on sweep updates.
+                    // Detect if expression was a non-literal by trying to parse and check for refs.
+                    var ast = Parser.Parse(ov.Expression);
+                    var refs = AstWalker.CollectRefs(ast);
+                    if (refs.Count > 0)
+                    {
+                        // Has variable references → also store the raw expression.
+                        result[$"_expr_{ov.Name}"] = new Value(ov.Expression);
+                        InjectToneScopeVars(ast, parentScope, scopeVarCache, result);
+                    }
+                }
+                catch
+                {
+                    result[ov.Name] = new Value(ov.Expression);  // store as string for later eval
+                }
+            }
+            else
+            {
+                // Freq, NumFreqs, etc. — resolve normally.
+                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                catch { /* skip */ }
+            }
+        }
+
+        return result;
+    }
+
+    private void InjectToneScopeVars(Expr ast, Scope scope,
+        Dictionary<string, Value> cache,
+        Dictionary<string, Value> into)
+    {
+        foreach (var name in AstWalker.CollectRefs(ast))
+        {
+            if (into.ContainsKey(name) || cache.ContainsKey(name)) continue;
+            try
+            {
+                var val = _evaluator.Resolve(name, scope);
+                if (val.Kind is ValueKind.Real or ValueKind.Complex)
+                {
+                    into[name]  = val;
+                    cache[name] = val;
+                }
+            }
+            catch { /* unresolvable */ }
+        }
     }
 
     // Port voltage names in SDD equations — _v1, _v2, … (injected at eval time, not scope vars).
