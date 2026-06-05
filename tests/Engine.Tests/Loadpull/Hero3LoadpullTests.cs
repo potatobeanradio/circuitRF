@@ -203,7 +203,7 @@ public class Hero3LoadpullTests(ITestOutputHelper output)
         w.WriteLine($"# Grid: {result.Grid.Points.Count} points  Z0={result.Grid.Z0} Ω");
         w.WriteLine("GridIdx; GammaRe; GammaIm; ZRe; ZIm; PavlDbm; IsTickle; " +
                     "Converged; Iterations; PavlW; PinDelivW; PoutW; GtDb; GpDb; " +
-                    "BiasVLoad; BiasILoad; BiasVSrc; BiasISrc; StopReason");
+                    "BiasVLoad; BiasILoad; BiasVSrc; BiasISrc; PdcW; De; Pae; StopReason");
 
         foreach (var gp in result.GridPoints)
         foreach (var s in gp.PinSteps)
@@ -228,6 +228,9 @@ public class Hero3LoadpullTests(ITestOutputHelper output)
                 s.BiasCurrentLoadA.ToString("G8", CultureInfo.InvariantCulture),
                 s.BiasVoltageSrcV.ToString("G8",  CultureInfo.InvariantCulture),
                 s.BiasCurrentSrcA.ToString("G8",  CultureInfo.InvariantCulture),
+                s.PdcW.ToString("G8",             CultureInfo.InvariantCulture),
+                s.De.ToString("G8",               CultureInfo.InvariantCulture),
+                s.Pae.ToString("G8",              CultureInfo.InvariantCulture),
                 gp.StopReason,
             }));
         }
@@ -302,6 +305,65 @@ public class Hero3LoadpullTests(ITestOutputHelper output)
         return result;
     }
 
+
+    // ── 3. Efficiency (DE/PAE) sanity test ────────────────────────────────────
+    //
+    // Verifies the efficiency computation (loadpull_pursuit.md §2) on a real converged
+    // Hero-3 operating point.  Hand-check:
+    //   Pdc = Vdd·Idd + Vgg·Igg
+    //       = BiasVoltageLoadV·(-BiasCurrentLoadA) + BiasVoltageSrcV·(-BiasCurrentSrcA)
+    //       = 48·(+Idd) + (-3.05)·(-Igg)
+    //   DE  = Pout / Pdc
+    //   PAE = (Pout − Pin_delivered) / Pdc
+    //
+    // Acceptance: DE ∈ (0,1), PAE < DE, PAE > 0 at a converged in-compression step.
+    [Fact]
+    public void Hero3_Efficiency_IsPhysical()
+    {
+        var dir     = Hero3Dir();
+        var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "hero3.cnl"));
+        var netlist = new Elaborator(lib).Elaborate(tb);
+        var lpa     = tb.Analyses.OfType<LoadpullAnalysis>().First();
+        var p       = LoadpullEngine.Resolve(lpa, netlist.ResolvedGlobals);
+        var engine  = new LoadpullEngine(netlist, tb);
+        var result  = engine.Run(p);
+
+        int checks = 0;
+        foreach (var gp in result.GridPoints)
+        {
+            // Use non-tickle converged steps only (tickle is at very low power: near-zero Pout).
+            var steps = gp.PinSteps.Where(s => s.Converged && !s.IsTickle).ToList();
+            if (steps.Count == 0) continue;
+
+            // Take the last converged step (highest power, most interesting for efficiency).
+            var s = steps.Last();
+            if (s.PdcW <= 0) continue;   // guard: degenerate bias
+
+            // Verify Pdc matches hand formula.
+            double pdcExpected = s.BiasVoltageLoadV * (-s.BiasCurrentLoadA)
+                               + s.BiasVoltageSrcV  * (-s.BiasCurrentSrcA);
+            Assert.Equal(pdcExpected, s.PdcW, precision: 8);
+
+            // Physical bounds: 0 < DE ≤ 1, 0 < PAE < DE.
+            Assert.True(s.De > 0,
+                $"Grid {gp.GridIndex}: DE={s.De:F4} ≤ 0 (non-physical).");
+            Assert.True(s.De <= 1.0,
+                $"Grid {gp.GridIndex}: DE={s.De:F4} > 1 (non-physical).");
+            Assert.True(s.Pae >= 0,
+                $"Grid {gp.GridIndex}: PAE={s.Pae:F4} < 0 (non-physical for a PA).");
+            Assert.True(s.Pae <= s.De,
+                $"Grid {gp.GridIndex}: PAE={s.Pae:F4} > DE={s.De:F4} (non-physical).");
+
+            output.WriteLine(
+                $"  [{gp.GridIndex}] Γ={gp.Gamma.Real:F3}+j{gp.Gamma.Imaginary:F3}  " +
+                $"Pout={s.PoutW*1e3:F1} mW  Pdc={s.PdcW*1e3:F1} mW  " +
+                $"DE={s.De*100:F1}%  PAE={s.Pae*100:F1}%");
+            checks++;
+        }
+
+        output.WriteLine($"Efficiency checks: {checks} grid points verified.");
+        Assert.True(checks > 0, "No converged non-tickle steps found — cannot verify efficiency.");
+    }
 
 // [Fact]
 //     public void TestHero3AtCompression()// additional test at compression added after Phase 4.1b officially passed; commented out to save test time

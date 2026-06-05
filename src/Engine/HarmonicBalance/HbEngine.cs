@@ -15,12 +15,20 @@ public sealed record HbAnalysisParams(
     int      FFTOverSample,
     double   Tol,
     DcBiasSteppingMode DriveStepping,
+    /// <summary>Guard harmonic index H.  0 = off.  See B3 in CLAUDE.md.</summary>
     int      GuardHarmonic,
     string?  SweepVarName,
     double   SweepStart,
     double   SweepStop,
     double   SweepStep,
-    int      MaxIter = 100)
+    int      MaxIter = 100,
+    /// <summary>
+    /// Newton step damping factor λ ∈ (0,1].
+    /// Default 1.0 = full Newton step (no damping).
+    /// Owner can supply &lt;1 via the cnl Lambda= key or by constructing with Lambda: x.
+    /// B2.
+    /// </summary>
+    double   Lambda  = 1.0)
 {
     public bool HasSweep => SweepVarName is not null;
 
@@ -46,6 +54,8 @@ public sealed class HbResult
     /// Nonlinear device currents at the interface: [sweepIdx][nodeIdx, harmonicK].
     /// I_nl[n,0] = DC device current — changes with Pin (self-biasing; Task-1 fix).
     /// I_nl[n,k] = k-th harmonic of the device current at interface node n.
+    /// I_nl current-direction convention —  current flowing FROM interface node n INTO the nonlinear device.
+    /// Positive = current entering the nonlinear device (passive sign convention on the device ports).
     /// </summary>
     public Complex[][,] INl { get; }
     /// <summary>Interface node indices (circuit node numbers, 1-based).</summary>
@@ -116,6 +126,7 @@ public sealed class HbEngine
         int    osamp   = Math.Max(1, (int)Num(hba.FFTOverSampleExpr, 1));
         double tol     = Num(hba.TolExpr, 1e-6);
         int    guard   = (int)Num(hba.GuardHarmonicExpr, 0);
+        double lambda  = Math.Clamp(Num(hba.LambdaExpr, 1.0), 1e-4, 1.0);  // B2
         int    maxIter = Math.Max(1, (int)Num(hba.MaxIterExpr, 100));
 
         var driveStepping = DcBiasSteppingMode.IfNecessary;
@@ -135,7 +146,8 @@ public sealed class HbEngine
         }
 
         return new HbAnalysisParams(tone, maxH, osamp, tol, driveStepping, guard,
-            sweepVar, sweepStart, sweepStop, sweepStep, maxIter);
+            sweepVar, sweepStart, sweepStop, sweepStep,
+            MaxIter: maxIter, Lambda: lambda);
     }
 
     private static Scope BuildScope(IReadOnlyDictionary<string, Value> globals)
@@ -241,7 +253,8 @@ public sealed class HbEngine
                   }
                 : _settings;
             var solveResult = HbNewton.Solve(V, yNN, iSrc, f0, K, N,
-                _netlist, ifNodes, gridN, effectiveSettings, p.Tol);
+                _netlist, ifNodes, gridN, effectiveSettings, p.Tol,
+                p.Lambda, p.GuardHarmonic);
 
             trace.AddStep(new HbConvergenceTrace.StepRecord(
                 sweepVal, solveResult.Iterations, solveResult.Converged,
@@ -289,9 +302,35 @@ public sealed class HbEngine
     /// <summary>
     /// Result of a single HB Newton solve at one operating point.
     /// </summary>
+    /// <summary>
+    /// INl[n,k] sign convention — stated once here, followed everywhere:
+    ///
+    /// INl[n,k] = current flowing FROM interface node n INTO the nonlinear device
+    ///            (passive sign convention: positive = entering the device, leaving the node).
+    ///
+    /// Derivation: EvaluateNonlinear accumulates res.I[p] (SDD port current, passive convention)
+    /// into iTime[nodeIdx] then FFTs.  The HB residual is F = Y_NN*(V−V_oc) + INl = 0.
+    /// At DC, INl[drain,0] = +Idd (drain current leaving n_drain into FET) balances the
+    /// Norton supply current Y_NN*(V_oc−V[drain]) = +Idd flowing into n_drain.  ✓
+    ///
+    /// Consequences for power and impedance formulas:
+    ///   At RF (choke open ⟹ only FET + load at drain; only FET + source at gate):
+    ///
+    ///   KCL at n_drain: I_into_load = −INl[drain,k]   (load absorbs what FET drives out)
+    ///   KCL at n_gate:  I_into_gate_from_source = INl[gate,k]  (source delivers what FET absorbs)
+    ///
+    ///   ⟹ Pout          = ½·Re(V[drain]·conj(−INl[drain,1])) = −½·Re(V[drain]·conj(INl[drain,1]))
+    ///   ⟹ Pin_delivered = ½·Re(V[gate]·conj(INl[gate,1]))     = +½·Re(V[gate]·conj(INl[gate,1]))
+    ///   ⟹ Zin (DUT input impedance seen from source)          = V[gate,1] / INl[gate,1]
+    ///      (no negation — INl[gate,1] = I_from_source_into_gate)
+    ///   ⟹ Zsource = conj(Zin)
+    ///
+    /// The sign ASYMMETRY between Pout and Pin is NOT ad-hoc; it follows directly from
+    /// which side is "into load" vs "into device."
+    /// </summary>
     public sealed record SinglePointResult(
         Complex[,] V,          // [N, K+1] — converged interface voltages (or best-available)
-        Complex[,] INl,        // [N, K+1] — nonlinear device currents
+        Complex[,] INl,        // [N, K+1] — nonlinear device currents; see sign convention above
         bool       Converged,
         int        Iterations,
         string?    FailReason, // non-null only on non-convergence or errors
@@ -376,7 +415,8 @@ public sealed class HbEngine
         }
 
         // Newton solve.
-        var sr = HbNewton.Solve(V, yNN, iSrc, f0, K, N, _netlist, ifNodes, gridN, settings, p.Tol);
+        var sr = HbNewton.Solve(V, yNN, iSrc, f0, K, N, _netlist, ifNodes, gridN, settings, p.Tol,
+            p.Lambda, p.GuardHarmonic);
 
         string? failReason = null;
         if (!sr.Converged)
@@ -412,7 +452,7 @@ public sealed class HbEngine
                 : 0.0;
             V[n, 0] = new Complex(vdc, 0);
             for (int k = 1; k <= K; k++)
-                V[n, k] = new Complex(1e-3, 0);   // small harmonic seed (deck slide 28)
+                V[n, k] = new Complex(1e-3, 1e-3);   // small harmonic seed (deck slide 28)
         }
 
         return V;
@@ -477,6 +517,54 @@ public sealed class HbEngine
         }
 
         return result;
+    }
+
+    // ── Jacobian diagnostic (PASS A) ─────────────────────────────────────────
+
+    /// <summary>
+    /// Compare the analytic Jacobian (BuildJ) to a central-difference Jacobian of BuildF
+    /// at operating point <paramref name="Vstar"/>, with the sweep variable set to
+    /// <paramref name="sweepVal"/>.
+    ///
+    /// Use after engine.Run() to get a converged V; pass result.V[sweepIdx] as Vstar.
+    /// </summary>
+    public HbNewton.JacobianComparisonResult RunJacobianDiagnostic(
+        HbAnalysisParams p,
+        Complex[,]       Vstar,
+        double           sweepVal)
+    {
+        // Set sweep state so I_src(k) reflects the right drive level.
+        if (p.SweepVarName is not null)
+            UpdateSweepPoint(p.SweepVarName, sweepVal);
+
+        int    K      = p.MaxHarmonic;
+        double f0     = p.ToneHz;
+        int    gridN  = HbFft.GridSize(K, p.FFTOverSample);
+        double omega0 = 2.0 * Math.PI * f0;
+
+        var extractor = new HbLinearExtractor(_netlist, _settings);
+        int N         = extractor.InterfaceCount;
+        int[] ifNodes = extractor.InterfaceNodes;
+
+        var yNN  = new Complex[K + 1][,];
+        var iSrc = new Complex[K + 1][];
+        (yNN[0], iSrc[0]) = extractor.ExtractDC();
+        for (int k = 1; k <= K; k++)
+        {
+            double omegaK = k * omega0;
+            var (y, s) = extractor.Extract(omegaK);
+            yNN[k]  = y;
+            iSrc[k] = s;
+        }
+
+        // Vstar may have been computed at a different N (e.g. different netlist state).
+        // Validate dimensions.
+        if (Vstar.GetLength(0) != N || Vstar.GetLength(1) != K + 1)
+            throw new ArgumentException(
+                $"Vstar dimensions [{Vstar.GetLength(0)},{Vstar.GetLength(1)}] " +
+                $"do not match extractor N={N}, K={K}.");
+
+        return HbNewton.CompareJacobianNumerical(Vstar, yNN, iSrc, f0, K, N, _netlist, ifNodes, gridN);
     }
 
     // ── Commensurability check (harmonic-balance.md §3.1) ────────────────────

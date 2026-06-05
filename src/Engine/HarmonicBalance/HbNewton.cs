@@ -43,7 +43,9 @@ public static class HbNewton
         int[]              interfaceNodes,
         int                gridN,
         AnalysisSettings   settings,
-        double             tol)
+        double             tol,
+        double             lambda         = 1.0,   // B2: Newton step size λ ∈ (0,1]
+        int                guardHarmonic  = 0)      // B3: guard harmonic index (0=off)
     {
         double omega0  = 2.0 * Math.PI * f0;
         int    unknowns = 2 * N * (K + 1);  // real-split: all harmonics k=0..K
@@ -67,7 +69,7 @@ public static class HbNewton
                 return new SolveResult(true, iter + 1, trace, iNlLast);
 
             // ── 3. Jacobian J (real-split 2×2 blocks, §7.2 + Maas §7.3) ───────
-            var J = BuildJ(yNN, G, C, N, K, omega0);
+            var J = BuildJ(yNN, G, C, N, K, omega0, guardHarmonic);
 
             // ── 4. Dense solve J·ΔV = −F ─────────────────────────────────────
             var negF = new double[unknowns];
@@ -79,8 +81,8 @@ public static class HbNewton
                 return new SolveResult(false, iter + 1, trace, iNlLast);
             }
 
-            // ── 5. Update V[k=0..K] += λ·ΔV  (λ=1) ──────────────────────────
-            ApplyUpdate(V, dV, N, K);
+            // ── 5. Update V[k=0..K] += λ·ΔV ─────────────────────────────────
+            ApplyUpdate(V, dV, N, K, lambda);
         }
 
         // Max iterations.
@@ -186,7 +188,7 @@ public static class HbNewton
 
     // ── Residual F[n, k=0..K] (real-split) ───────────────────────────────────
 
-    private static double[] BuildF(Complex[,] V, Complex[][,] yNN, Complex[][] iSrc,
+    public static double[] BuildF(Complex[,] V, Complex[][,] yNN, Complex[][] iSrc,
         Complex[,] iNl, Complex[,] qNl, int N, int K, double omega0)
     {
         int dof = 2 * N * (K + 1);
@@ -213,8 +215,8 @@ public static class HbNewton
 
     // ── Jacobian (real 2×2 blocks, §7.2 + Maas §7.3) ─────────────────────────
 
-    private static double[] BuildJ(Complex[][,] yNN, Complex[,,] G, Complex[,,] C,
-        int N, int K, double omega0)
+    public static double[] BuildJ(Complex[][,] yNN, Complex[,,] G, Complex[,,] C,
+        int N, int K, double omega0, int guardHarmonic = 0)
     {
         int dof = 2 * N * (K + 1);
         var J = new double[dof * dof];
@@ -224,34 +226,55 @@ public static class HbNewton
         for (int m = 0; m < N; m++)
         for (int i = 0; i <= K; i++)
         {
+
             int rk0 = Idx(n, k, false, N, K);
             int rk1 = Idx(n, k, true,  N, K);
             int ci0 = Idx(m, i, false, N, K);
             int ci1 = Idx(m, i, true,  N, K);
 
+            // ── Amplitude-convention per-term weights ─────────────────────────────
+            // HbFft: v(t)=V_DC+Σ Re{Vₖ e^{jkωt}}, so ∂v/∂Re(Vᵢ)=cos(iωt).
+            // Maas uses half-amplitude (∂v/∂Re(Vᵢ)=2·cos(iωt)) → each AC term is 2× large.
+            // DC bin (j=0) is normalized ÷N; AC bins normalized ÷(N/2) → DC-bin term in an
+            // AC (k≥1) row contributes weight 1, not 0.5. So weights are:
+            //   G[j=0] in k≥1 row: weight 1.0   (DC bin in AC row: no extra halving)
+            //   G[j≠0] in k≥1 row: weight 0.5   (half-amplitude correction)
+            //   Any G[j]  in k=0 row: × 0.5 additionally (DC row uses ÷N, not ÷(N/2))
+            double wKmi = ConversionWeight(k, k - i);
+            double wKpi = ConversionWeight(k, k + i);
+
             Complex Gkmi = SafeGet(G, n, m, k - i);
             Complex Gkpi = SafeGet(G, n, m, k + i);
-            double a00 =  Gkmi.Real + Gkpi.Real;
-            double a01 = -Gkmi.Imaginary + Gkpi.Imaginary;
-            double a10 =  Gkmi.Imaginary + Gkpi.Imaginary;
-            double a11 =  Gkmi.Real - Gkpi.Real;
+            double a00 =  wKmi *  Gkmi.Real      + wKpi *  Gkpi.Real;
+            double a01 = -wKmi *  Gkmi.Imaginary + wKpi *  Gkpi.Imaginary;
+            double a10 =  wKmi *  Gkmi.Imaginary + wKpi *  Gkpi.Imaginary;
+            double a11 =  wKmi *  Gkmi.Real      - wKpi *  Gkpi.Real;
 
             Complex Ckmi = SafeGet(C, n, m, k - i);
             Complex Ckpi = SafeGet(C, n, m, k + i);
-            double cb00 =  Ckmi.Real + Ckpi.Real;
-            double cb01 = -Ckmi.Imaginary + Ckpi.Imaginary;
-            double cb10 =  Ckmi.Imaginary + Ckpi.Imaginary;
-            double cb11 =  Ckmi.Real - Ckpi.Real;
+            double cb00 =  wKmi *  Ckmi.Real      + wKpi *  Ckpi.Real;
+            double cb01 = -wKmi *  Ckmi.Imaginary + wKpi *  Ckpi.Imaginary;
+            double cb10 =  wKmi *  Ckmi.Imaginary + wKpi *  Ckpi.Imaginary;
+            double cb11 =  wKmi *  Ckmi.Real      - wKpi *  Ckpi.Real;
             double kw   =  k * omega0;
             a00 += -kw * cb10;  a01 += -kw * cb11;
             a10 +=  kw * cb00;  a11 +=  kw * cb01;
 
+            // ── B3: Guard harmonic — hard cutoff above guardHarmonic index ────────
+            // Applied to G/C only (not Y_NN) and only to J, never to F.
+            // Attenuates the Newton update for high harmonics, improving convergence
+            // of stiff Class-F/F⁻¹ circuits (per harmonic-balance.md §12.1).
+            if (guardHarmonic > 0 && (k > guardHarmonic || i > guardHarmonic))
+                a00 = a01 = a10 = a11 = 0.0;
+
+            // ── Linear interface admittance (frequency-domain — no convention scaling) ──
             if (k == i && n < yNN[k].GetLength(0) && m < yNN[k].GetLength(1))
             {
                 Complex y = yNN[k][n, m];
                 a00 +=  y.Real;       a01 += -y.Imaginary;
                 a10 +=  y.Imaginary;  a11 +=  y.Real;
             }
+
 
             // ── Maas DC special cases (§7.3) ─────────────────────────────────
             // i=0 column: Im DOF of V[m,0] is fictitious (DC is real-only).
@@ -271,6 +294,168 @@ public static class HbNewton
         return J;
     }
 
+    // ── Finite-difference Jacobian comparison (PASS A diagnostic) ─────────────
+
+    /// <summary>One entry in the top-discrepancy list.</summary>
+    public record JacobianElement(
+        int Row, int Col,
+        int RowNode, int RowHarm, bool RowIsIm,
+        int ColNode, int ColHarm, bool ColIsIm,
+        string BlockDesc,
+        double AnalyticVal, double FdVal, double AbsError, double RelError);
+
+    /// <summary>Result of the analytic-vs-FD Jacobian comparison.</summary>
+    public record JacobianComparisonResult(
+        double MaxAbsError,
+        double MaxRelError,
+        int MaxAbsRow, int MaxAbsCol,
+        int MaxRelRow, int MaxRelCol,   // location of max relative error
+        int Dof, int N, int K,
+        IReadOnlyList<JacobianElement> TopDiscrepancies,
+        // DC Im dummy elements (Im-F[n,0] / Im-V[m,0]) are intentionally set to a00
+        // per Maas §7.3 to prevent Jacobian singularity — FD gives 0, analytic gives a00.
+        // These N×N entries are excluded from MaxAbsError / MaxRelError.
+        int    DcDummyCount,
+        double DcDummyMaxAbsError);
+
+    /// <summary>
+    /// Compare BuildJ (analytic) to a central-difference Jacobian of BuildF.
+    /// The FD Jacobian is the trusted oracle (owner's MATLAB practice).
+    /// </summary>
+    public static JacobianComparisonResult CompareJacobianNumerical(
+        Complex[,] V,
+        Complex[][,] yNN,
+        Complex[][] iSrc,
+        double f0, int K, int N,
+        ElaboratedNetlist netlist, int[] interfaceNodes, int gridN)
+    {
+        double omega0 = 2.0 * Math.PI * f0;
+        int dof = 2 * N * (K + 1);
+
+        // ── Analytic Jacobian at V ────────────────────────────────────────────
+        var (iNl0, qNl0, G0, C0) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
+        double[] analyticJ = BuildJ(yNN, G0, C0, N, K, omega0);
+
+        // ── FD Jacobian: perturb each real DOF j ──────────────────────────────
+        double[] fdJ = new double[dof * dof];
+        for (int j = 0; j < dof; j++)
+        {
+            // Decode DOF j → (node, harmonic, isIm)
+            bool jIsIm = (j & 1) == 1;
+            int tmp   = j >> 1;
+            int jNode = tmp / (K + 1);
+            int jHarm = tmp % (K + 1);
+
+            double nomVal = jIsIm ? V[jNode, jHarm].Imaginary : V[jNode, jHarm].Real;
+            // ε choice: central-diff truncation is O(ε²·J'''); FP cancellation is O(ε_m·|F|/ε).
+            // 1e-6 works well — the per-row domFloor (below) ensures near-zero elements in
+            // high-Y rows don't corrupt the relative-error statistic.
+            double eps    = 1e-6 * Math.Max(Math.Abs(nomVal), 1.0);
+
+            // V+
+            var Vp = (Complex[,])V.Clone();
+            Vp[jNode, jHarm] += jIsIm ? new Complex(0, eps) : new Complex(eps, 0);
+            var (iNlp, qNlp, _, _) = EvaluateNonlinear(Vp, N, K, gridN, netlist, interfaceNodes);
+            double[] Fp = BuildF(Vp, yNN, iSrc, iNlp, qNlp, N, K, omega0);
+
+            // V-
+            var Vm = (Complex[,])V.Clone();
+            Vm[jNode, jHarm] += jIsIm ? new Complex(0, -eps) : new Complex(-eps, 0);
+            var (iNlm, qNlm, _, _) = EvaluateNonlinear(Vm, N, K, gridN, netlist, interfaceNodes);
+            double[] Fm = BuildF(Vm, yNN, iSrc, iNlm, qNlm, N, K, omega0);
+
+            for (int r = 0; r < dof; r++)
+                fdJ[r * dof + j] = (Fp[r] - Fm[r]) / (2.0 * eps);
+        }
+
+        // ── Scale for relative error ──────────────────────────────────────────
+        // Global floor = globalScale × 1e-8: elements below this are treated as zero.
+        // This is intentionally coarse — near-zero elements in high-Y rows (k=2,5 with
+        // ZLoad≈1µΩ → Y≈1e6 S) have dom clamped to ≥0.01, so their FD-truncation error
+        // (≈2.8e-8 for J'''≈1.7e5) contributes ≤2.8e-6 relative — at the FD oracle limit.
+        // The SDD model's large J''' (up to ~1e7) makes sub-ppm FD accuracy impossible
+        // for near-zero elements; the 1e-5 assertion gate is set accordingly.
+        double globalScale = 0;
+        for (int i = 0; i < dof * dof; i++)
+            globalScale = Math.Max(globalScale, Math.Max(Math.Abs(analyticJ[i]), Math.Abs(fdJ[i])));
+
+        // ── Comparison ────────────────────────────────────────────────────────
+        double maxAbsErr = 0, maxRelErr = 0;
+        int maxAbsRow = 0, maxAbsCol = 0;
+        int maxRelRow = 0, maxRelCol = 0;
+        int    dcDummyCount = 0;
+        double dcDummyMaxAbsErr = 0;
+        var discrepancies = new List<JacobianElement>();
+
+        for (int r = 0; r < dof; r++)
+        for (int c = 0; c < dof; c++)
+        {
+            double an     = analyticJ[r * dof + c];
+            double fd     = fdJ[r * dof + c];
+            double absErr = Math.Abs(an - fd);
+
+            // DC Im dummy elements: Im-F[n,0] row AND Im-V[m,0] col.
+            // Analytic sets a11=a00 per Maas §7.3 (prevents singularity); FD=0.
+            // Excluded from the main comparison — reported separately.
+            if (IsDcImDof(r, K) && IsDcImDof(c, K))
+            {
+                dcDummyCount++;
+                if (absErr > dcDummyMaxAbsErr) dcDummyMaxAbsErr = absErr;
+                continue;
+            }
+
+            double domFloor = Math.Max(globalScale * 1e-8, 1e-12);
+            double dom    = Math.Max(Math.Max(Math.Abs(an), Math.Abs(fd)), domFloor);
+            double relErr = absErr / dom;
+
+            if (absErr > maxAbsErr) { maxAbsErr = absErr; maxAbsRow = r; maxAbsCol = c; }
+            if (relErr > maxRelErr) { maxRelErr = relErr; maxRelRow = r; maxRelCol = c; }
+
+            // Collect elements with meaningful relative error (>0.1%) above the noise floor.
+            if (relErr > 1e-3 && dom > domFloor)
+            {
+                bool rIsIm = (r & 1) == 1; int rTmp = r >> 1;
+                int rNode = rTmp / (K + 1); int rHarm = rTmp % (K + 1);
+                bool cIsIm = (c & 1) == 1; int cTmp = c >> 1;
+                int cNode = cTmp / (K + 1); int cHarm = cTmp % (K + 1);
+                string block = DescribeBlock(rHarm, cHarm, K);
+                discrepancies.Add(new JacobianElement(r, c, rNode, rHarm, rIsIm,
+                    cNode, cHarm, cIsIm, block, an, fd, absErr, relErr));
+            }
+        }
+
+        discrepancies.Sort((a, b) => b.AbsError.CompareTo(a.AbsError));
+        if (discrepancies.Count > 20) discrepancies = discrepancies.GetRange(0, 20);
+
+        return new JacobianComparisonResult(maxAbsErr, maxRelErr, maxAbsRow, maxAbsCol,
+            maxRelRow, maxRelCol, dof, N, K, discrepancies, dcDummyCount, dcDummyMaxAbsErr);
+    }
+
+    // Per-term G/C weight: accounts for HbFft amplitude convention vs Maas.
+    // w = (j==0 ? 1.0 : 0.5) × (kRow==0 ? 0.5 : 1.0).
+    // Derivation: rawFFT_g[j] / (2·scaleK) where scaleK=N for DC rows, N/2 for AC rows,
+    // and rawFFT_g[0]=G[0]·N vs rawFFT_g[j≥1]=G[j]·(N/2).
+    private static double ConversionWeight(int kRow, int j)
+        => (j == 0 ? 1.0 : 0.5) * (kRow == 0 ? 0.5 : 1.0);
+
+    // DC Im DOF: Im(V[n,0]) or Im(F[n,0]) — odd index j with harm=0.
+    private static bool IsDcImDof(int j, int K)
+        => (j & 1) == 1 && (j >> 1) % (K + 1) == 0;
+
+    private static string DescribeBlock(int k, int i, int K)
+    {
+        // k = row harmonic, i = col harmonic; maps onto the 2×2 sub-block structure.
+        var sb = new System.Text.StringBuilder();
+        int diff = k - i; int sum = k + i;
+        sb.Append($"k={k} i={i} → G[{diff}]+G[{sum}]");
+        if (k > 0) sb.Append($" +C×{k}ω");
+        if (k == i) sb.Append(" +Y");
+        if (k == 0) sb.Append(" [DC-row]");
+        if (i == 0) sb.Append(" [DC-col]");
+        if (k == 0 && i == 0) sb.Append(" [DC-diag]");
+        return sb.ToString();
+    }
+
     // ── Index helpers ─────────────────────────────────────────────────────────
 
     // Real-split index for (node n, harmonic k, Re/Im). k=0..K, all included.
@@ -287,7 +472,8 @@ public static class HbNewton
         return conj ? Complex.Conjugate(v) : v;
     }
 
-    private static void ApplyUpdate(Complex[,] V, double[] dV, int N, int K)
+    private static void ApplyUpdate(Complex[,] V, double[] dV, int N, int K,
+        double lambda = 1.0)
     {
         int len = dV.Length;
         for (int n = 0; n < N; n++)
@@ -298,7 +484,7 @@ public static class HbNewton
             double dRe = rRe >= 0 && rRe < len ? dV[rRe] : 0.0;
             // DC Im is always zero (real signal); Newton update at Im is meaningless.
             double dIm = (k > 0 && rIm >= 0 && rIm < len) ? dV[rIm] : 0.0;
-            V[n, k] += new Complex(dRe, dIm);
+            V[n, k] += new Complex(lambda * dRe, lambda * dIm);
         }
     }
 

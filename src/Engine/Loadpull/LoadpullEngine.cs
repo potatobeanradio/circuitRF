@@ -4,6 +4,7 @@ using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Engine.HarmonicBalance;
+using RfCore;
 
 namespace CircuitRF.Engine.Loadpull;
 
@@ -132,33 +133,63 @@ public sealed class LoadpullEngine
             compress, useGt, pinStart, pinStep, pinMax, tickle);
     }
 
-    // ── Engine entry point ───────────────────────────────────────────────────
+    // ── Setup context (shared between full sweep and per-termination queries) ───
 
-    public LoadpullResult Run(LoadpullAnalysisParams p)
+    /// <summary>
+    /// Pre-resolved setup for a loadpull or loadpull_pursuit run.
+    /// Created once by PrepareContext; shared across RunOneTermination calls.
+    /// </summary>
+    public sealed class PursuitContext
     {
-        // Validate required tuner names.
+        public TunerModel      LoadModel      { get; }
+        public TunerModel      SrcModel       { get; }
+        public TunerModel      SweptModel     { get; }
+        public int             LoadIfIdx      { get; }
+        public int             SrcIfIdx       { get; }
+        public int             K              { get; }
+        public int[]           InterfaceNodes { get; }
+        public string[]        NodeNames      { get; }
+        public HbAnalysisParams  HbParams     { get; }
+        public AnalysisSettings  SolveSettings{ get; }
+
+        public PursuitContext(TunerModel load, TunerModel src, TunerModel swept,
+            int loadIfIdx, int srcIfIdx, int k, int[] ifNodes, string[] nodeNames,
+            HbAnalysisParams hbParams, AnalysisSettings solveSettings)
+        {
+            LoadModel      = load;
+            SrcModel       = src;
+            SweptModel     = swept;
+            LoadIfIdx      = loadIfIdx;
+            SrcIfIdx       = srcIfIdx;
+            K              = k;
+            InterfaceNodes = ifNodes;
+            NodeNames      = nodeNames;
+            HbParams       = hbParams;
+            SolveSettings  = solveSettings;
+        }
+    }
+
+    /// <summary>
+    /// Validates, locates tuners, assigns roles, extracts interface nodes, and builds HB params.
+    /// Call once; pass the resulting context to RunOneTermination.
+    /// </summary>
+    public PursuitContext PrepareContext(LoadpullAnalysisParams p)
+    {
         if (string.IsNullOrEmpty(p.LoadTunerName))
             throw new InvalidOperationException("LoadpullAnalysis: LoadTuner= is required.");
         if (string.IsNullOrEmpty(p.SourceTunerName))
             throw new InvalidOperationException("LoadpullAnalysis: SourceTuner= is required.");
 
-        // Locate tuner models.
         var (loadEc, loadModel) = FindTuner(p.LoadTunerName, "LoadTuner");
         var (srcEc,  srcModel)  = FindTuner(p.SourceTunerName, "SourceTuner");
 
-        // Assign roles and tone.
         loadModel.SetRole(TunerRole.Load);
         srcModel.SetRole(TunerRole.Source);
         loadModel.SetTone(p.ToneHz);
-        // SourceTuner tone set via SetSourceDrive at each Pin step.
 
-        // DUT-facing nodes:
-        //   LoadTuner: Nodes[0] is the DUT-facing net.
-        //   SourceTuner: Nodes[1] is the DUT-facing net.
         int loadDutNode = loadEc.Nodes.Length > 0 ? loadEc.Nodes[0] : 0;
         int srcDutNode  = srcEc.Nodes.Length  > 1 ? srcEc.Nodes[1]  : 0;
 
-        // Discover interface nodes and check DUT connectivity.
         var tempExtractor = new HbLinearExtractor(_netlist, _lpSettings);
         int[] ifNodes     = tempExtractor.InterfaceNodes;
         var nodeNames     = ifNodes.Select(n =>
@@ -169,18 +200,13 @@ public sealed class LoadpullEngine
         if (loadIfIdx < 0)
             throw new InvalidOperationException(
                 $"LoadTuner '{p.LoadTunerName}' DUT node (node {loadDutNode}, net " +
-                $"'{_netlist.Nodes.NameOf(loadDutNode)}') is not a nonlinear interface node. " +
-                "The FET must be connected to the Tuner's first declared net.");
+                $"'{_netlist.Nodes.NameOf(loadDutNode)}') is not a nonlinear interface node.");
         if (srcIfIdx < 0)
             throw new InvalidOperationException(
                 $"SourceTuner '{p.SourceTunerName}' DUT node (node {srcDutNode}, net " +
-                $"'{_netlist.Nodes.NameOf(srcDutNode)}') is not a nonlinear interface node. " +
-                "The FET must be connected to the Tuner's second declared net.");
+                $"'{_netlist.Nodes.NameOf(srcDutNode)}') is not a nonlinear interface node.");
 
-        int N = ifNodes.Length;
         int K = p.MaxHarmonic;
-
-        // HB analysis params (no sweep; loadpull engine owns the outer loops).
         var hbParams = new HbAnalysisParams(
             ToneHz:        p.ToneHz,
             MaxHarmonic:   K,
@@ -192,7 +218,6 @@ public sealed class LoadpullEngine
             SweepStart:    0, SweepStop: 0, SweepStep: 1,
             MaxIter:       p.MaxIter);
 
-        // Per-solve settings: InductanceRegularization=Always, MaxIter from directive.
         var solveSettings = new AnalysisSettings
         {
             HbMaxIter                 = p.MaxIter,
@@ -206,14 +231,20 @@ public sealed class LoadpullEngine
             NonlinearAbsTol           = _lpSettings.NonlinearAbsTol,
         };
 
-        // The swept tuner (whose TuneHarm termination is overridden per grid point).
         var sweptModel = p.SweepLoad ? loadModel : srcModel;
+        return new PursuitContext(loadModel, srcModel, sweptModel,
+            loadIfIdx, srcIfIdx, K, ifNodes, nodeNames, hbParams, solveSettings);
+    }
 
+    // ── Engine entry point ───────────────────────────────────────────────────
+
+    public LoadpullResult Run(LoadpullAnalysisParams p)
+    {
+        var ctx           = PrepareContext(p);
         var gridPoints    = new List<GridPointResult>();
-        var convergedV    = new Dictionary<int, Complex[,]>();  // gridIdx → last converged V
+        var convergedV    = new Dictionary<int, Complex[,]>();
         var gridPointList = p.Grid.Points;
 
-        // ── Outer grid loop ──────────────────────────────────────────────────
         for (int gi = 0; gi < gridPointList.Count; gi++)
         {
             var gp    = gridPointList[gi];
@@ -225,105 +256,150 @@ public sealed class LoadpullEngine
                 $"Γ={gamma.Real:F4}{(gamma.Imaginary >= 0 ? "+" : "")}{gamma.Imaginary:F4}j  " +
                 $"Z={z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j Ω");
 
-            sweptModel.SetHarmonicOverride(p.TuneHarm, z);
-
-            // Γ-grid warm-start: seed from nearest already-converged neighbor.
             Complex[,]? gridSeed = FindNearestSeed(gi, gamma, convergedV, gridPointList);
+            var gpr = RunOneTermination(p, ctx, z, gi, gridSeed);
 
-            var pinSteps   = new List<PinStepResult>();
-            string stopReason = "PinMax";
-            double gMax    = double.NegativeInfinity;
-            bool   overshot = false;   // true after we drove one step past compression
-
-            Complex[,]? innerSeed = gridSeed;   // warm-start within the Pin sweep
-
-            foreach (var (pavlDbm, isTickle) in BuildPinSequence(p))
-            {
-                double pavlW = DbmToWatts(pavlDbm);
-
-                // Update source drive amplitude for this Pavl.
-                srcModel.SetSourceDrive(p.ToneHz, pavlW);
-
-                var sr = _hbEngine.RunSinglePoint(hbParams, innerSeed, solveSettings);
-
-                // Compute live FOMs.
-                var foms = ComputeFoms(sr.V, sr.INl, loadIfIdx, srcIfIdx, pavlW, K);
-
-                // Bias supply approximate readback (4b-2 will use branch current directly).
-                double vLoad = loadIfIdx >= 0 && sr.V.GetLength(1) > 0 ? sr.V[loadIfIdx, 0].Real : 0;
-                double iLoad = loadIfIdx >= 0 && sr.INl.GetLength(1) > 0 ? -sr.INl[loadIfIdx, 0].Real : 0;
-                double vSrc  = srcIfIdx  >= 0 && sr.V.GetLength(1) > 0 ? sr.V[srcIfIdx,  0].Real : 0;
-                double iSrc2 = srcIfIdx  >= 0 && sr.INl.GetLength(1) > 0 ? -sr.INl[srcIfIdx, 0].Real : 0;
-
-                pinSteps.Add(new PinStepResult(
-                    pavlDbm, isTickle,
-                    sr.V, sr.INl,
-                    foms.PavlW, foms.PinDeliveredW, foms.PoutW, foms.GtDb, foms.GpDb,
-                    vLoad, iLoad, vSrc, iSrc2,
-                    sr.Converged, sr.Iterations, sr.FailReason));
-
-                if (sr.Converged)
-                    innerSeed = sr.V;
-
-                // ── Stop logic ────────────────────────────────────────────────
-                if (!sr.Converged)
-                {
-                    stopReason = "NonConvergence";
-                    Console.Error.WriteLine(
-                        $"[LP]   Pin={pavlDbm:F1}: non-convergence ({sr.FailReason}). Stopping.");
-                    break;
-                }
-
-                double gain = p.UseGt ? foms.GtDb : foms.GpDb;
-                string gainTag = p.UseGt ? "Gt" : "Gp";
-
-                if (!isTickle)
-                {
-                    if (gain > gMax) gMax = gain;
-                    double compression = gMax - gain;
-                    Console.Error.WriteLine(
-                        $"[LP]   Pin={pavlDbm:F1} dBm  Pout={WattsToDbm(foms.PoutW):F2} dBm  " +
-                        $"{gainTag}={gain:F2} dB  compr={compression:F2} dB");
-
-                    if (overshot)
-                    {
-                        // One overshoot step done — stop.
-                        stopReason = "Compression";
-                        break;
-                    }
-
-                    if (compression >= p.Compression)
-                    {
-                        // Just reached P-xdB. One more step = "~0.1 dB overshoot" for bracket.
-                        stopReason = "Compression";
-                        overshot   = true;
-                        // Don't break yet — the loop will do one more step then hit the overshot check.
-                    }
-
-                    if (pavlDbm >= p.PinMaxDbm)
-                    {
-                        if (!overshot) stopReason = "PinMax";
-                        break;
-                    }
-                }
-            }
-
-            // Update converged seed map.
-            var lastConv = pinSteps.LastOrDefault(s => s.Converged);
+            var lastConv = gpr.PinSteps.LastOrDefault(s => s.Converged);
             if (lastConv is not null)
                 convergedV[gi] = lastConv.V;
 
-            gridPoints.Add(new GridPointResult(gi, gamma, z, pinSteps, stopReason));
+            gridPoints.Add(gpr);
             Console.Error.WriteLine(
-                $"[LP]   Stop={stopReason}  ({pinSteps.Count} Pin steps, " +
-                $"{pinSteps.Count(s => s.Converged)} converged)");
+                $"[LP]   Stop={gpr.StopReason}  ({gpr.PinSteps.Count} Pin steps, " +
+                $"{gpr.PinSteps.Count(s => s.Converged)} converged)");
         }
 
-        sweptModel.ClearHarmonicOverride();
-        srcModel.SetTone(0);   // reset to S-param mode
-        loadModel.SetTone(0);
+        ctx.SweptModel.ClearHarmonicOverride();
+        ctx.SrcModel.SetTone(0);
+        ctx.LoadModel.SetTone(0);
 
-        return new LoadpullResult(gridPoints, p.Grid, p.ToneHz, K, ifNodes, nodeNames);
+        return new LoadpullResult(gridPoints, p.Grid, p.ToneHz, ctx.K,
+            ctx.InterfaceNodes, ctx.NodeNames);
+    }
+
+    /// <summary>
+    /// Runs the inner adaptive Pin drive-up at a single termination Z.
+    /// Used by both Run() (outer grid loop) and LoadpullPursuitEngine (one query per call).
+    ///
+    /// Gamma is derived from Z and the grid's Z0 (RfCore convention). Callers need not supply it.
+    ///
+    /// <paramref name="warmStart"/> — optional warm-start V from a nearby converged solve.
+    /// </summary>
+    public GridPointResult RunOneTermination(
+        LoadpullAnalysisParams p,
+        PursuitContext         ctx,
+        Complex                z,
+        int                    gridIndex,
+        Complex[,]?            warmStart = null)
+    {
+        // B7: compute Γ from Z using the grid's actual Z0 (not hardcoded 50 Ω).
+        double z0    = p.Grid.Z0 > 0 ? p.Grid.Z0 : 50.0;
+        Complex gamma = RfHelpers.Z2G(z / z0);
+        ctx.SweptModel.SetHarmonicOverride(p.TuneHarm, z);
+
+        var pinSteps  = new List<PinStepResult>();
+        string stopReason = "PinMax";
+        double gMax   = double.NegativeInfinity;
+        bool   overshot = false;
+        Complex[,]? innerSeed = warmStart;
+
+        foreach (var (pavlDbm, isTickle) in BuildPinSequence(p))
+        {
+            double pavlW = DbmToWatts(pavlDbm);
+            ctx.SrcModel.SetSourceDrive(p.ToneHz, pavlW);
+
+            var sr = _hbEngine.RunSinglePoint(ctx.HbParams, innerSeed, ctx.SolveSettings);
+
+            var foms  = ComputeFoms(sr.V, sr.INl, ctx.LoadIfIdx, ctx.SrcIfIdx, pavlW, ctx.K);
+
+            double vLoad = ctx.LoadIfIdx >= 0 && sr.V.GetLength(1) > 0 ? sr.V[ctx.LoadIfIdx, 0].Real : 0;
+            double iLoad = ctx.LoadIfIdx >= 0 && sr.INl.GetLength(1) > 0 ? -sr.INl[ctx.LoadIfIdx, 0].Real : 0;
+            double vSrc  = ctx.SrcIfIdx  >= 0 && sr.V.GetLength(1) > 0 ? sr.V[ctx.SrcIfIdx,  0].Real : 0;
+            double iSrc2 = ctx.SrcIfIdx  >= 0 && sr.INl.GetLength(1) > 0 ? -sr.INl[ctx.SrcIfIdx, 0].Real : 0;
+
+            pinSteps.Add(new PinStepResult(
+                pavlDbm, isTickle,
+                sr.V, sr.INl,
+                foms.PavlW, foms.PinDeliveredW, foms.PoutW, foms.GtDb, foms.GpDb,
+                vLoad, iLoad, vSrc, iSrc2,
+                sr.Converged, sr.Iterations, sr.FailReason));
+
+            if (sr.Converged) innerSeed = sr.V;
+
+            if (!sr.Converged)
+            {
+                stopReason = "NonConvergence";
+                Console.Error.WriteLine(
+                    $"[LP]   Pin={pavlDbm:F1}: non-convergence ({sr.FailReason}). Stopping.");
+                break;
+            }
+
+            double gain    = p.UseGt ? foms.GtDb : foms.GpDb;
+            string gainTag = p.UseGt ? "Gt" : "Gp";
+
+            if (!isTickle)
+            {
+                if (gain > gMax) gMax = gain;
+                double compression = gMax - gain;
+                Console.Error.WriteLine(
+                    $"[LP]   Pin={pavlDbm:F1} dBm  Pout={WattsToDbm(foms.PoutW):F2} dBm  " +
+                    $"{gainTag}={gain:F2} dB  compr={compression:F2} dB");
+
+                if (overshot)
+                {
+                    // B2: we just completed the exact +0.1 dB overshoot step — stop now.
+                    stopReason = "Compression";
+                    break;
+                }
+
+                if (compression >= p.Compression)
+                {
+                    // P-xdB just reached.  B2: take exactly +0.1 dB more (tight bracket for
+                    // the interpolator) — do NOT wait for the next full PinStep.
+                    stopReason = "Compression";
+                    overshot   = true;
+                    // Override the next Pavl to be exactly +0.1 dB above the current step.
+                    // This is achieved by breaking out of the sequence iterator and doing one
+                    // extra solve directly (the foreach will yield the next regular step, but
+                    // we intercept by breaking and running the overshoot inline below).
+                    break;   // exit the foreach; overshoot solve follows
+                }
+
+                if (pavlDbm >= p.PinMaxDbm)
+                {
+                    if (!overshot) stopReason = "PinMax";
+                    break;
+                }
+            }
+        }
+
+        // B2: if we stopped at exactly compression, run one final +0.1 dB overshoot solve
+        // (tight bracket for the interpolator — loadpull.md §3.1).
+        if (overshot && stopReason == "Compression" && pinSteps.Count > 0)
+        {
+            var lastStep = pinSteps.Last(s => !s.IsTickle);
+            double overshootDbm = Math.Min(lastStep.PavlDbm + 0.1, p.PinMaxDbm);
+            double overshootW   = DbmToWatts(overshootDbm);
+            ctx.SrcModel.SetSourceDrive(p.ToneHz, overshootW);
+            var srOs = _hbEngine.RunSinglePoint(ctx.HbParams, innerSeed, ctx.SolveSettings);
+            var fomsOs = ComputeFoms(srOs.V, srOs.INl, ctx.LoadIfIdx, ctx.SrcIfIdx, overshootW, ctx.K);
+            double vLoadOs = ctx.LoadIfIdx >= 0 && srOs.V.GetLength(1) > 0 ? srOs.V[ctx.LoadIfIdx, 0].Real : 0;
+            double iLoadOs = ctx.LoadIfIdx >= 0 && srOs.INl.GetLength(1) > 0 ? -srOs.INl[ctx.LoadIfIdx, 0].Real : 0;
+            double vSrcOs  = ctx.SrcIfIdx  >= 0 && srOs.V.GetLength(1) > 0 ? srOs.V[ctx.SrcIfIdx,  0].Real : 0;
+            double iSrcOs  = ctx.SrcIfIdx  >= 0 && srOs.INl.GetLength(1) > 0 ? -srOs.INl[ctx.SrcIfIdx, 0].Real : 0;
+            pinSteps.Add(new PinStepResult(
+                overshootDbm, isTickle: false,
+                srOs.V, srOs.INl,
+                fomsOs.PavlW, fomsOs.PinDeliveredW, fomsOs.PoutW, fomsOs.GtDb, fomsOs.GpDb,
+                vLoadOs, iLoadOs, vSrcOs, iSrcOs,
+                srOs.Converged, srOs.Iterations, srOs.FailReason));
+            Console.Error.WriteLine(
+                $"[LP]   Pin={overshootDbm:F1} dBm (+0.1 overshoot)  " +
+                $"Pout={WattsToDbm(fomsOs.PoutW):F2} dBm  " +
+                $"{(p.UseGt ? "Gt" : "Gp")}={(p.UseGt ? fomsOs.GtDb : fomsOs.GpDb):F2} dB");
+        }
+
+        return new GridPointResult(gridIndex, gamma, z, pinSteps, stopReason);
     }
 
     // ── Pin sequence ─────────────────────────────────────────────────────────
@@ -410,8 +486,8 @@ public sealed class LoadpullEngine
         double pout         = -0.5 * (vLoad * Complex.Conjugate(iLoad)).Real;
         double pinDelivered =  0.5 * (vSrc  * Complex.Conjugate(iSrc)).Real;
 
-        double gtDb = pavlW > 1e-30         ? WToDb(pout / pavlW)         : double.NegativeInfinity;
-        double gpDb = pinDelivered > 1e-30  ? WToDb(pout / pinDelivered)  : double.NegativeInfinity;
+        double gtDb = pavlW > 1e-30         ? RatioToDb(pout / pavlW)         : double.NegativeInfinity;
+        double gpDb = pinDelivered > 1e-30  ? RatioToDb(pout / pinDelivered)  : double.NegativeInfinity;
 
         return new FomResult(pavlW, pinDelivered, pout, gtDb, gpDb);
     }
@@ -438,10 +514,11 @@ public sealed class LoadpullEngine
 
     // ── Unit helpers ─────────────────────────────────────────────────────────
 
-    private static double WToDb(double ratio)
+    /// <summary>10·log10 of a dimensionless power ratio (gain, efficiency). Never call with watts.</summary>
+    private static double RatioToDb(double ratio)
         => ratio > 1e-30 ? 10.0 * Math.Log10(ratio) : -300.0;
 
-    private static double WattsToDbm(double w)
+    internal static double WattsToDbm(double w)
         => w > 1e-30 ? 10.0 * Math.Log10(w) + 30.0 : -300.0;
 
     private static double DbmToWatts(double dbm)

@@ -31,6 +31,8 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
     public string TolExpr           { get; init; } = "1e-6";
     public string DriveSteppingExpr { get; init; } = "IfNecessary";
     public string GuardHarmonicExpr { get; init; } = "0";
+    /// <summary>Newton step damping factor λ ∈ (0,1]. 1 = full Newton step (default). B2.</summary>
+    public string LambdaExpr        { get; init; } = "1";
     /// <summary>Max Newton iterations per HB solve before continuation backoff. Default 100.</summary>
     public string MaxIterExpr       { get; init; } = "100";
 
@@ -71,6 +73,46 @@ public sealed class LoadpullAnalysis(string name) : Analysis(name)
 
     // Optional: source directory for resolving relative Grid paths (set by reader).
     public string? SourceDirectory  { get; init; }
+}
+
+/// <summary>
+/// Resolved directive for a loadpull_pursuit analysis (Phase 4b-2).
+/// All loadpull keys except Grid, plus pursuit-specific keys.
+/// loadpull_pursuit.md §3.
+/// </summary>
+public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name)
+{
+    // ── Shared with LoadpullAnalysis (no Grid) ────────────────────────────────
+    public string ToneExpr          { get; init; } = "0";
+    public string LoadTunerName     { get; init; } = "";
+    public string SourceTunerName   { get; init; } = "";
+    public string PinStartExpr      { get; init; } = "-20";
+    public string PinMaxExpr        { get; init; } = "10";
+    public string MaxHarmonicExpr   { get; init; } = "5";
+    public string SweepExpr         { get; init; } = "Load";
+    public string TuneHarmExpr      { get; init; } = "1";
+    public string CompressionExpr   { get; init; } = "3";
+    public string GainTypeExpr      { get; init; } = "Gt";
+    public string PinStepExpr       { get; init; } = "1";
+    public string TickleExpr        { get; init; } = "-50";
+    public string MaxIterExpr       { get; init; } = "100";
+    public string FFTOverSampleExpr { get; init; } = "1";
+    public string TolExpr           { get; init; } = "1e-6";
+    public string DriveSteppingExpr { get; init; } = "IfNecessary";
+    public string GuardHarmonicExpr { get; init; } = "0";
+
+    // ── Pursuit-specific keys ─────────────────────────────────────────────────
+    public string EffTypeExpr                { get; init; } = "DE";    // "DE" or "PAE"
+    public string ZsourceOBOExpr             { get; init; } = "5";     // dB backoff
+    public string? OutputGridPath            { get; init; }             // null = no file
+    public string Vswr1Expr                  { get; init; } = "1.5";
+    public string Vswr1ResolutionExpr        { get; init; } = "4";
+    public string Vswr2Expr                  { get; init; } = "3";
+    public string Vswr2ResolutionExpr        { get; init; } = "4";
+    public string KeepNonconvergingExpr      { get; init; } = "false";
+    public string NonconvergentVswrExpr      { get; init; } = "1.05";
+
+    public string? SourceDirectory           { get; init; }
 }
 
 // ── Supporting types ──────────────────────────────────────────────────────────

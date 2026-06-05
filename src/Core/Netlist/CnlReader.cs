@@ -89,6 +89,8 @@ public sealed class CnlReader
             // If this is a type=hb directive, parse it into a typed HarmonicBalanceAnalysis.
             if (TryParseHbDirective(rawLine, out var hbAnalysis))
                 tb.Analyses.Add(hbAnalysis!);
+            else if (TryParseLoadpullPursuitDirective(rawLine, _sourceDirectory, out var lppAnalysis))
+                tb.Analyses.Add(lppAnalysis!);
             else if (TryParseLoadpullDirective(rawLine, _sourceDirectory, out var lpAnalysis))
                 tb.Analyses.Add(lpAnalysis!);
             else
@@ -656,6 +658,72 @@ public sealed class CnlReader
     // ── Loadpull analysis directive parser ────────────────────────────────────
 
     /// <summary>
+    /// Attempts to parse a "Name type=loadpull_pursuit key=value ..." directive.
+    /// Returns false if it is not a type=loadpull_pursuit directive.
+    /// </summary>
+    private static bool TryParseLoadpullPursuitDirective(string rawLine, string? sourceDirectory,
+        out CircuitRF.Core.Design.LoadpullPursuitAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+
+        string analysisName = tokens[0];
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq <= 0) continue;
+            string key = tokens[i][..eq];
+            string val = tokens[i][(eq + 1)..];
+            if (val.Length >= 2 && val[0] == '"' && val[^1] == '"')
+                val = val[1..^1];
+            kv[key] = val;
+        }
+
+        if (!kv.TryGetValue("type", out var typeVal) ||
+            !typeVal.Equals("loadpull_pursuit", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Resolve OutputGrid path if provided.
+        string? outputGrid = kv.GetValueOrDefault("OutputGrid");
+        if (!string.IsNullOrEmpty(outputGrid) && sourceDirectory is not null &&
+            !Path.IsPathRooted(outputGrid))
+            outputGrid = Path.GetFullPath(Path.Combine(sourceDirectory, outputGrid));
+
+        result = new CircuitRF.Core.Design.LoadpullPursuitAnalysis(analysisName)
+        {
+            ToneExpr              = kv.GetValueOrDefault("Tone",                "0"),
+            MaxHarmonicExpr       = kv.GetValueOrDefault("MaxHarm",             "5"),
+            LoadTunerName         = kv.GetValueOrDefault("LoadTuner",           ""),
+            SourceTunerName       = kv.GetValueOrDefault("SourceTuner",         ""),
+            SweepExpr             = kv.GetValueOrDefault("Sweep",               "Load"),
+            TuneHarmExpr          = kv.GetValueOrDefault("TuneHarm",            "1"),
+            CompressionExpr       = kv.GetValueOrDefault("Compression",         "3"),
+            GainTypeExpr          = kv.GetValueOrDefault("GainType",            "Gt"),
+            PinStartExpr          = kv.GetValueOrDefault("PinStart",            "-20"),
+            PinStepExpr           = kv.GetValueOrDefault("PinStep",             "1"),
+            PinMaxExpr            = kv.GetValueOrDefault("PinMax",              "10"),
+            TickleExpr            = kv.GetValueOrDefault("Tickle",              "-50"),
+            MaxIterExpr           = kv.GetValueOrDefault("MaxIter",             "100"),
+            FFTOverSampleExpr     = kv.GetValueOrDefault("FFTOverSample",       "1"),
+            TolExpr               = kv.GetValueOrDefault("Tol",                 "1e-6"),
+            DriveSteppingExpr     = kv.GetValueOrDefault("DriveStepping",       "IfNecessary"),
+            GuardHarmonicExpr     = kv.GetValueOrDefault("GuardHarmonic",       "0"),
+            EffTypeExpr           = kv.GetValueOrDefault("EffType",             "DE"),
+            ZsourceOBOExpr        = kv.GetValueOrDefault("ZsourceOBO",          "5"),
+            OutputGridPath        = outputGrid,
+            Vswr1Expr             = kv.GetValueOrDefault("VSWR1",               "1.5"),
+            Vswr1ResolutionExpr   = kv.GetValueOrDefault("VSWR1_resolution",    "4"),
+            Vswr2Expr             = kv.GetValueOrDefault("VSWR2",               "3"),
+            Vswr2ResolutionExpr   = kv.GetValueOrDefault("VSWR2_resolution",    "4"),
+            KeepNonconvergingExpr = kv.GetValueOrDefault("keepNonconvergingPoints", "false"),
+            NonconvergentVswrExpr = kv.GetValueOrDefault("nonconvergentVSWR",   "1.05"),
+            SourceDirectory       = sourceDirectory,
+        };
+        return true;
+    }
+
     /// Attempts to parse a "Name type=loadpull key=value ..." directive.
     /// Returns false if it is not a type=loadpull directive.
     /// </summary>
@@ -762,6 +830,7 @@ public sealed class CnlReader
             TolExpr           = kv.GetValueOrDefault("Tol",             "1e-6"),
             DriveSteppingExpr = kv.GetValueOrDefault("DriveStepping",   "IfNecessary"),
             GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic",   "0"),
+            LambdaExpr        = kv.GetValueOrDefault("Lambda",          "1"),
             MaxIterExpr       = kv.GetValueOrDefault("MaxIter",         "100"),
             SweepVarName      = sweepVar,
             SweepStartExpr    = sweepStart,

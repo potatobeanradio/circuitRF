@@ -111,3 +111,91 @@ by collecting trailing tokens from the Z[2] expression region.
   The bias V/I approximate values (from interface V and I_nl at DC) are captured in
   `PinStepResult.BiasVoltageLoadV` / `BiasCurrentLoadA` etc.
 - MXP/MXE/auto-Zsource/frequency loop search layer — Phase 4b-2.
+
+## Phase 4b code review — COMPLETE (2026-06-03)
+
+### B1 — Zin sign fix (LoadpullPursuitEngine.ComputeZsource)
+Old: `Complex iSrc = -iNlSrc;`  → Re(Zin) < 0 (non-physical).
+New: `Complex iSrc = iNlSrc;`   → Re(Zin) > 0 (derived from INl convention + KCL).
+
+### B2 — Compression overshoot: exact +0.1 dB
+Old: continued to next full PinStep (1 dB) after compression detected.
+New: exits inner loop at compression and runs exactly one extra solve at `lastDbm + 0.1 dB`.
+Tightly brackets P-xdB for the downstream interpolator.
+
+### B3 — MXP criterion in dBm; clean ExtractCriterion interpolation
+Old: returned PoutW (Watts) — gradient surface order-of-magnitude inconsistent across terminations.
+     Bracket search found first-gain-drop (wrong), fraction formula missing xdB (wrong).
+New: returns Pout at P-xdB in dBm. Bracket = last-2 steps (below) and last step (above, +0.1 dB
+     overshoot from B2). Interpolation fraction = (xdB - gainBelow)/(gainAbove - gainBelow).
+
+### B4 — WToDb renamed to RatioToDb
+Applies only to dimensionless power ratios (gain). Never to absolute power (those use WattsToDbm).
+
+### B5 — Metric mismatch fixed: search now works in Γ-plane
+Old: FitLinearPlane used Euclidean Z offsets (Ω); StepAlongDirection used VSWR — inconsistent.
+New: PursuitEngine works entirely in Γ (normalised to Z0=50Ω). Gradient and step both use the
+     same Euclidean-Γ metric. Convert Z↔Γ at boundaries via RfHelpers.Z2G/G2Z.
+     VswrToDeltaGamma: dG=(vswr-1)/(vswr+1) — exact at Γ=0, ≤5% error for |Γ|<0.5.
+     Polynomial refinement uses ONLY the 4 cardinal neighbours (not history), preventing
+     large-offset history points from corrupting the local quadratic fit.
+
+### B6 — Mirror-neighbour fix (PursuitEngine)
+Old: `n1Z = TangentNeighbours(startZ, Dn).Item1 * new Complex(-1, 0)` — negated Z (negative-R probe).
+New: `n1Z = 2 * startZ - n1Z` — proper mirror through startZ in Γ-plane.
+
+### B7 — Dead gamma code removed; redundant gamma parameter removed
+Old: LoadpullPursuitEngine.Query had two dead lines computing gamma (identity expression, then
+     correct but hardcoded-50 formula) and passed gamma to RunOneTermination redundantly.
+New: RunOneTermination computes gamma internally from Z and the grid's Z0 (not hardcoded).
+     The gamma parameter is removed from RunOneTermination's signature.
+
+### B8 — Goldens regenerated
+Hero 3 and Hero 3B goldens regenerated with corrected code. Key numbers (owner to verify):
+  Hero 3B pursuit: MXP Pout = 40.39 dBm at Z≈65Ω, MXE DE = 59.6% at Z≈68Ω.
+  Zsource: Re(Zin) > 0 confirmed by diagnostic (was −50Ω before B1 fix, now +50Ω).
+  Pedro VSWR (MXP↔MXE) ≈ 1.05 — inherent property of this SDD model (not a search artifact).
+  NOT INDEPENDENTLY VALIDATED — owner to hand-check before freezing.
+
+## Phase 4b-2 deliverable — COMPLETE (2026-06-03)
+
+### New files
+- **`PursuitEngine`** — Baylis steepest-ascent search (loadpull_pursuit.md §1).
+  Distance = `RfHelpers.VswrFromZ` throughout. Internal rep = Z (Ω). Tangent-plane fit →
+  ascent with Ds-shrink-to-1/3 → 2nd-order polynomial refinement. Returns unscorable list.
+- **`LoadpullPursuitEngine`** — MXP-then-MXE orchestration (§4):
+  - `Query(Z)` = one `RunOneTermination` call, VSWR-dedup'd cache.
+  - Pedro seed: MXE starts at highest-efficiency cached point from MXP's search.
+  - Auto-Zsource (§6): `Zin = V[src,k=1]/(-INl[src,k=1])` at OBO level (linear interp
+    between bracketing Pin steps); `Zsource = conj(Zin)`.
+  - `Resolve(LoadpullPursuitAnalysis, globals)` → `PursuitParams`.
+- **`GamWriter`** — focused+broad .gam builder (§5): VSWR-circle box extents from
+  `z_center ± z_radius` (Z domain, §5.1); non-convergent exclusion with warning.
+  `WriteFile` emits `# impedance Z0=... re+j*imag` header readable by `GamReader`.
+- **`LoadpullEngine.PrepareContext`** / **`RunOneTermination`** — extracted from `Run()` so
+  the pursuit can issue single-termination queries without full-grid overhead.
+
+### Design layer changes
+- **`LoadpullPursuitAnalysis`** (`src/Core/Design/Analysis.cs`) — new third analysis type.
+- **`CnlReader`** — `TryParseLoadpullPursuitDirective` (dispatched before `loadpull`).
+
+### Efficiency (added to 4b-1 LP engine)
+- **`PinStepResult.PdcW / De / Pae`** — computed at construction from bias V/I fields.
+  Formula: `Pdc = BiasVoltageLoadV·(-BiasCurrentLoadA) + BiasVoltageSrcV·(-BiasCurrentSrcA)`.
+  KCL-exact for ideal choke/cap (V(n_dut)=Vbias, I_supply = INl[node,0]).
+
+### Hero 3B golden
+`testdata/Hero3B/hero3B_at_compression.cnl` — `type=loadpull_pursuit`, PinMax=30 dBm.
+`testdata/Hero3B/hero3B_self_pursuit.csv` — SELF-GENERATED, NOT INDEPENDENTLY VALIDATED.
+`testdata/Hero3B/loadpull_pursuit_output.gam` — recommended-terminations grid.
+
+### Test counts
+245 tests pass (158 Core + 87 Engine), including 3 Hero3B pursuit tests, 9 GamWriter tests,
+7 PursuitEngine unit tests, 1 efficiency sanity test.
+
+### Observed behavior on Hero 3B (synthetic SDD FET)
+MXP ≈ 65 Ω real, Pout ≈ 37 dBm at PinMax=30 dBm, 3 dB compression.
+MXE ≈ 68 Ω real, DE ≈ 44%.
+Pedro VSWR (MXP↔MXE) ≈ 1.05 — this FET's MXP and MXE are unusually close.
+The Pedro 2–2.5 VSWR coupling is empirical from real GaN PAs; synthetic SDDs may differ.
+Non-compression exit verified: PinMax=-18 aborts cleanly with an unscorable-start message.

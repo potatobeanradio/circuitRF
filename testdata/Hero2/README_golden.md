@@ -18,5 +18,5 @@
 
 | File | Status |
 |------|--------|
-| `hero2_golden_reference_n_drain.csv` | **DEPRECATED** — external reference data generated incorrectly - possible bug in simulation setup. Do not use for validation. |
+| `hero2_golden_reference_n_drain.csv` | **DEPRECATED** — external reference generated with the old Y_DC_VIRT clamped DC (wrong physics). Do not use for validation. |
 | `hero2_golden_reference_n_gate.csv`  | **DEPRECATED** — same reason. |

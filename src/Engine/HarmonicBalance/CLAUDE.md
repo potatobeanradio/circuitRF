@@ -15,6 +15,30 @@ before implementing, and keep the pieces below independently testable.
 - **Jacobian = conversion matrix.** Conductive part `Γ · diag(dg/dv) · Γ⁻¹`; charge part
   `jΩ · Γ · diag(dq/dv) · Γ⁻¹` (Γ = DFT operator, Ω = diagonal of angular frequencies).
   Assembling this correctly is the core of the engine.
+- **Amplitude-convention scaling (Phase 4a convergence fix, 2026-06-04).** `HbFft` uses
+  full-amplitude phasors: `v(t) = V_DC + Σ Re{Vₖ e^{jkωt}}`, giving `∂v/∂Re(Vᵢ) = cos(iωt)`.
+  Maas derives his conversion-matrix blocks for half-amplitude (`∂v/∂Re(Vᵢ) = 2·cos`), so the
+  G/C formula `G[k-i] + G[k+i]` is 2× too large. The correct per-term weights (`ConversionWeight`
+  in `HbNewton`) are:
+  - `G[j=0]` in a `k≥1` row: weight **1** (DC bin normalized ÷N, AC row uses ÷(N/2))
+  - `G[j≠0]` in a `k≥1` row: weight **0.5** (half-amplitude correction)
+  - Any `G[j]` in a `k=0` row: ×**0.5** additionally (DC row itself uses ÷N)
+  The same weights apply to the C (charge) blocks. Y_NN is **not scaled** (frequency-domain,
+  no convention mismatch). See `HbNewton.ConversionWeight` for the formula.
+- **Jacobian FD verification (Phase 4a, `JacobianFd_MatchesAnalytic_LowDriveAndNearFailing`).**
+  `HbNewton.CompareJacobianNumerical` compares the analytic Jacobian (BuildJ) against a central-
+  difference FD oracle. The permanent test in `Hero2Tests.cs` asserts 1e-5 relative on all
+  non-DC-dummy elements at Pin=0 (low drive) and Pin=18 (near-failing). Actual residual after
+  B1 fix: ~3 ppm (FD oracle limit from large J''' in the GaN SDD; Richardson extrapolation
+  would be needed to verify below 3 ppm). All per-block-class systematic errors eliminated.
+- **B2 — Newton step lambda (2026-06-04).** `HbAnalysisParams.Lambda` (default 1.0) scales the
+  Newton update `V += λ·ΔV` in `HbNewton.ApplyUpdate`. Set via `Lambda=` in the cnl analysis
+  directive or via `p with { Lambda = x }` in code. Owner tests non-unity λ externally.
+- **B3 — Guard harmonic (2026-06-04).** `HbAnalysisParams.GuardHarmonic` (default 0 = off) sets
+  the guard index H. In `HbNewton.BuildJ`, when H > 0, the G/C conversion-matrix terms for any
+  (k > H OR i > H) block are zeroed before Y_NN is added. Applied to J only, never to F.
+  Hard cutoff (default); tapered profile selectable in future. Y_NN is never guarded.
+  Set via `GuardHarmonic=` in the cnl directive.
 
 ## FFT / sign conventions — fix once, document, never silently change
 - Pick and record the time↔frequency sign convention and the harmonic ordering (DC, +k, −k).
@@ -50,6 +74,36 @@ transfer through the linear interstage network at every harmonic.
 - Seed from a converged DC operating point (gmin / source stepping lives in the DC analysis).
 - Hero-sized problems: sparse direct complex LU per Newton step is fine. Keep a matrix-free
   Newton–GMRES + block preconditioner in reserve for large problems — do not build it prematurely.
+
+## INl current-direction convention — one statement, applied everywhere
+
+**INl[n,k] = current flowing FROM interface node n INTO the nonlinear device.**
+Positive = current entering the device (passive sign convention on the device ports).
+
+Source: `EvaluateNonlinear` (HbNewton) accumulates `res.I[p]` — the SDD port current with
+passive-sign convention — into `iTime[nodeIdx]`, then FFTs.  The HB residual
+`F = Y_NN·(V−V_oc) + INl = 0` confirms this: at DC, `INl[drain,0] = +Idd` (drain current
+leaving n_drain into FET) is balanced by `Y_NN·(V_oc−V[drain]) = +Idd` from the supply.
+
+**Consequences for all consumers (derived from KCL at the interface node; NOT ad-hoc sign patches):**
+
+At RF (choke L=1H is open-circuit at f0):
+- n_drain has only load tuner + FET.  KCL: `I_into_load = −INl[drain,k]`
+- n_gate has only source tuner + FET.  KCL: `I_from_source = INl[gate,k]`
+
+Therefore:
+```
+Pout          = ½·Re(V[drain,k]·conj(I_into_load))    = −½·Re(V[drain,k]·conj(INl[drain,k]))
+Pin_delivered = ½·Re(V[gate,k]·conj(I_from_source))   = +½·Re(V[gate,k]·conj(INl[gate,k]))
+Zin           = V[gate,k] / I_from_source              = V[gate,k] / INl[gate,k]  (no negation)
+Zsource       = conj(Zin)
+Pdc           = Σ V[n,0]·INl[n,0]  over Tuner bias nodes  (supply current = INl at DC node)
+```
+
+The sign asymmetry between Pout (−½) and Pin (+½) is physically required, not a patch.
+The absence of negation in Zin is required; negating would make Re(Zin) negative (non-physical).
+
+Do NOT introduce per-site sign flips to "make a number look positive." Derive from this convention.
 
 ## Interface to the linear engine
 The linear engine (`docs/design/linear-engine.md` §2.1, §10) provides the HB engine **two** things

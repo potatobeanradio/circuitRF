@@ -83,11 +83,19 @@ public sealed class PinStepResult
     public double GtDb           { get; }   // transducer gain Gt = Pout/Pavl (dB)
     public double GpDb           { get; }   // power gain Gp = Pout/Pin_delivered (dB)
 
-    // ── Bias supply (for Pdc / efficiency; needed by 4b-2) ───────────────────
-    public double BiasVoltageLoadV   { get; }   // V(n_bias_load) ≈ Vdd
-    public double BiasCurrentLoadA   { get; }   // DC drain current (A) from bias branch
-    public double BiasVoltageSrcV    { get; }   // V(n_bias_src)  ≈ Vgg
-    public double BiasCurrentSrcA    { get; }   // DC gate  current (A) from bias branch
+    // ── Bias supply (for Pdc / efficiency) ───────────────────────────────────
+    public double BiasVoltageLoadV   { get; }   // V(n_drain) ≈ Vdd (at DC, exact for ideal choke)
+    public double BiasCurrentLoadA   { get; }   // = -INl[drain,0].Real; supply current = -BiasCurrentLoadA
+    public double BiasVoltageSrcV    { get; }   // V(n_gate)  ≈ Vgg
+    public double BiasCurrentSrcA    { get; }   // = -INl[gate,0].Real;  supply current = -BiasCurrentSrcA
+
+    // ── Efficiency (4b-2) ─────────────────────────────────────────────────────
+    // Pdc = Σ Vdc·Idc over Tuner bias supplies (loadpull_pursuit.md §2).
+    // Supply current sign: I_supply = INl[node,0].Real = -BiasCurrentA (see LoadpullEngine).
+    // For ideal choke/cap: V(n_dut) = Vbias exactly, so bias data is exact.
+    public double PdcW { get; }    // total DC power drawn from all Tuner bias supplies (W)
+    public double De   { get; }    // drain efficiency = Pout / Pdc (linear, not dB)
+    public double Pae  { get; }    // PAE = (Pout − Pin_delivered) / Pdc (linear)
 
     // ── Convergence ──────────────────────────────────────────────────────────
     public bool    Converged   { get; }
@@ -118,5 +126,11 @@ public sealed class PinStepResult
         Converged         = converged;
         Iterations        = iterations;
         FailReason        = failReason;
+
+        // Pdc: for each Tuner, supply current = INl[node,0].Real = -BiasCurrentA.
+        // Pdc = Vload·(-BiasILoad) + Vsrc·(-BiasISrc).
+        PdcW = biasVoltageLoadV * (-biasCurrentLoadA) + biasVoltageSrcV * (-biasCurrentSrcA);
+        De   = PdcW > 1e-9 ? poutW / PdcW : 0.0;
+        Pae  = PdcW > 1e-9 ? (poutW - pinDeliveredW) / PdcW : 0.0;
     }
 }

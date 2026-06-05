@@ -1,7 +1,6 @@
 ; ============================================================
-; hero3B_at_compression.cnl— Phase-4b-2 loadpull_pursuit: grounded-source GaN HEMT PA
+; hero3_at_compression.cnl— Phase-4b-1 loadpull: grounded-source GaN HEMT PA
 ; Same as hero3.cnl, except PinMax is much higher to allow DUT to compress.
-; Also uses loadpull_pursuit
 ; ============================================================
 
 ; ---- FET model parameters (same as Phase 3 / Hero 2) ----
@@ -19,9 +18,9 @@ B=1130
 RFfreq = 2e9
 
 ; ---- HB config (exposed as parameters) ----
-MaxHarm   = 5
+MaxHarm   = 4
 OverSamp  = 1
-HBtol     = 1e-8
+HBtol     = 1e-6
 DriveStep = IfNecessary
 Guard     = 0
 
@@ -47,14 +46,11 @@ SDD:M1  n_gate 0  n_drain 0  \
 Tuner:Load  n_drain 0   Z[1]=80+j*10   Z[2]=1   Zdefault=1e-6   BiasTee=on   Vbias=Vdd
 
 ; ============================================================
-; Loadpull Pursuit analysis, uses a PinMax to get compression; lower PinMax to -18 to get loadpull_pursuit to fail due to insufficient compression
+; Loadpull analysis, with much higher PinMax to get compression
 ; ============================================================
-analysis LP1  type=loadpull_pursuit  Tone=RFfreq  MaxHarm=MaxHarm \
+analysis LP1  type=loadpull  Tone=RFfreq  MaxHarm=MaxHarm \
      LoadTuner=Load  SourceTuner=Src  Sweep=Load  TuneHarm=1 \
-     OutputGrid="loadpull_pursuit_output.gam" \
-     VSWR1=1.5 VSWR2=3 \
-     VSWR1_resolution=4 VSWR2_resolution=4 \
-     keepNonconvergingPoints=false \
+     Grid="hero3_load.gam" \
      Compression=3  GainType=Gt \
      PinStart=-20  PinStep=1  PinMax=30  Tickle=-50 \
      MaxIter=100 \

@@ -329,3 +329,14 @@ frozen in `testdata/Hero3/`. SELF-GENERATED — NOT INDEPENDENTLY VALIDATED.
 - `AnalysisSettings.HbMaxIter` default changed from 50 to 100.
 
 **Total tests: 225 pass, 0 fail.**
+
+## Phase 4b-2 deliverable — COMPLETE (2026-06-03)
+Loadpull pursuit (MXP/MXE search + auto-Zsource), validated on Hero 3B.
+Details in `src/Engine/Loadpull/CLAUDE.md`.
+
+New files: `PursuitEngine`, `LoadpullPursuitEngine`, `GamWriter` (all in `Loadpull/`).
+New analysis type: `LoadpullPursuitAnalysis` (Core/Design) + CnlReader dispatch.
+Modified: `LoadpullEngine` (extracted `PrepareContext`/`RunOneTermination`);
+           `LoadpullResult.PinStepResult` (added `PdcW`, `De`, `Pae`).
+
+**Total tests: 245 pass, 0 fail.**
