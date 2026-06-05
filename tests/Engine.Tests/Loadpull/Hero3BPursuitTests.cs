@@ -48,16 +48,20 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
 
     private static (LoadpullPursuitEngine Engine, LoadpullPursuitEngine.PursuitParams Params,
                     string Dir)
-        BuildEngine()
+        BuildEngine(bool createLoadpullResult = false)
     {
         var dir     = Hero3BDir();
         var cnlPath = Path.Combine(dir, "hero3B_at_compression.cnl");
-        // var cnlPath = Path.Combine(dir, "fixture.cnl");
         var (lib, tb) = CnlReader.ReadFile(cnlPath);
         var netlist   = new Elaborator(lib).Elaborate(tb);
 
         var lpa = tb.Analyses.OfType<LoadpullPursuitAnalysis>().First();
         var pp  = LoadpullPursuitEngine.Resolve(lpa, netlist.ResolvedGlobals);
+
+        // Most tests run without the follow-on loadpull for speed; the acceptance test
+        // explicitly passes createLoadpullResult: true.
+        if (!createLoadpullResult)
+            pp = pp with { CreateLoadpullResult = false };
 
         var lpEngine = new LoadpullEngine(netlist, tb);
         var engine   = new LoadpullPursuitEngine(lpEngine);
@@ -267,8 +271,9 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         var pp  = LoadpullPursuitEngine.Resolve(lpa, netlist.ResolvedGlobals);
 
         // Override PinMax to -18 dBm — DUT cannot compress, so start point is unscorable.
+        // Also disable the follow-on loadpull (no valid optima → not meaningful, and fast).
         var lpLow = pp.LpParams with { PinMaxDbm = -18.0 };
-        var ppLow = pp with { LpParams = lpLow };
+        var ppLow = pp with { LpParams = lpLow, CreateLoadpullResult = false };
 
         var lpEngine = new LoadpullEngine(netlist, tb);
         var engine   = new LoadpullPursuitEngine(lpEngine);
@@ -355,7 +360,7 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
 
         // ── Pursuit ───────────────────────────────────────────────────────────
         var pursuitEngine = new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb));
-        var result        = pursuitEngine.Run(pp);
+        var result        = pursuitEngine.Run(pp with { CreateLoadpullResult = false });
 
         Assert.True(result.MXP.Converged, $"MXP did not converge: {result.MXP.AbortReason}");
 
@@ -425,7 +430,7 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         Assert.True(bfMxpPout > 25, $"Brute-force MXP implausibly low ({bfMxpPout:F2} dBm)");
 
         // ── IteratedQuadratic pursuit ─────────────────────────────────────────
-        var ppIQ = pp with { SearchMethod = SearchMethod.IteratedQuadratic };
+        var ppIQ = pp with { SearchMethod = SearchMethod.IteratedQuadratic, CreateLoadpullResult = false };
         var pursuitEngine = new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb));
         var result        = pursuitEngine.Run(ppIQ);
 
@@ -463,14 +468,14 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         var (engine, pp, _) = BuildEngine();
 
         // ── Run SteepestAscent first to get the baseline query count ──────────
-        var ppSA    = pp with { SearchMethod = SearchMethod.SteepestAscent };
+        var ppSA    = pp with { SearchMethod = SearchMethod.SteepestAscent, CreateLoadpullResult = false };
         var (saEng, _, _) = BuildEngine();
         var saResult = saEng.Run(ppSA);
         int saQueries = saResult.Cache.Count;
         output.WriteLine($"SA  query count: {saQueries}  MXP Z={saResult.MXP.Z.Real:F2}{(saResult.MXP.Z.Imaginary >= 0 ? "+" : "")}{saResult.MXP.Z.Imaginary:F2}j Ω  Pout={saResult.MXP.Value:F2} dBm");
 
         // ── Run IteratedQuadratic ─────────────────────────────────────────────
-        var ppIQ = pp with { SearchMethod = SearchMethod.IteratedQuadratic };
+        var ppIQ = pp with { SearchMethod = SearchMethod.IteratedQuadratic, CreateLoadpullResult = false };
         var iqResult = engine.Run(ppIQ);
         int iqQueries = iqResult.Cache.Count;
         output.WriteLine($"IQ  query count: {iqQueries}  MXP Z={iqResult.MXP.Z.Real:F2}{(iqResult.MXP.Z.Imaginary >= 0 ? "+" : "")}{iqResult.MXP.Z.Imaginary:F2}j Ω  Pout={iqResult.MXP.Value:F2} dBm");
@@ -508,7 +513,7 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
 
     // ── CSV I/O ───────────────────────────────────────────────────────────────
 
-    private void WriteGoldenCsv(string dir, LoadpullPursuitEngine.PursuitRunResult result,
+    private void WriteGoldenCsv(string dir, LoadpullPursuitEngine.LoadpullPursuitResult result,
         double pedroVswr)
     {
         var path = Path.Combine(dir, "hero3B_self_pursuit.csv");
@@ -556,5 +561,81 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
             catch { /* skip */ }
         }
         throw new InvalidOperationException($"Could not parse golden CSV: {path}");
+    }
+
+    // ── 7. Follow-on LoadpullResult acceptance (Phase 4b-2 enhancement) ───────
+
+    /// <summary>
+    /// Acceptance: with CreateLoadpullResult=true (the directive default), the run produces:
+    ///   - LoadpullData != null
+    ///   - LoadpullData.GridPoints.Count == RecommendedTerminations.Points.Count (same grid)
+    ///   - LoadpullData is role-agnostic (generic LoadpullResult, no pursuit-specific fields)
+    ///   - All grid points attempted (may stop at PinMax or Compression — not null)
+    /// Also verifies: LoadpullData=null when CreateLoadpullResult=false.
+    /// </summary>
+    [Fact]
+    public void Hero3BPursuit_FollowOnLoadpullResult_WhenCreateOn_DataPresent()
+    {
+        // Use the default (CreateLoadpullResult=true from directive).
+        var (engine, pp, _) = BuildEngine(createLoadpullResult: true);
+
+        var result = engine.Run(pp);
+
+        // ── Search optima ─────────────────────────────────────────────────────
+        Assert.True(result.MXP.Converged,
+            $"MXP did not converge: {result.MXP.AbortReason}");
+        Assert.True(result.MXE.Converged,
+            $"MXE did not converge: {result.MXE.AbortReason}");
+
+        // ── RecommendedTerminations always present ────────────────────────────
+        Assert.NotNull(result.RecommendedTerminations);
+        Assert.True(result.RecommendedTerminations.Points.Count > 0,
+            "RecommendedTerminations is empty — gam builder should produce points around the optima.");
+
+        // ── Follow-on LoadpullData present and role-agnostic ──────────────────
+        Assert.NotNull(result.LoadpullData);
+        var lpData = result.LoadpullData!;
+
+        // Grid must match the recommended terminations exactly.
+        Assert.Equal(result.RecommendedTerminations.Points.Count, lpData.GridPoints.Count);
+
+        // Every grid point was attempted (may stop at PinMax or Compression; not missing).
+        Assert.All(lpData.GridPoints, gp => Assert.NotNull(gp));
+        Assert.All(lpData.GridPoints, gp =>
+            Assert.True(gp.StopReason is "Compression" or "PinMax" or "NonConvergence" or "NoConvergedSeed",
+                $"Unexpected StopReason '{gp.StopReason}' at grid point {gp.GridIndex}"));
+
+        // LoadpullResult is the generic type — no pursuit-specific fields.
+        Assert.IsType<LoadpullResult>(lpData);
+
+        output.WriteLine(
+            $"Follow-on LoadpullResult: {lpData.GridPoints.Count} grid points  " +
+            $"(compressed: {lpData.GridPoints.Count(g => g.StopReason == "Compression")})");
+        output.WriteLine(
+            $"Recommended terminations: {result.RecommendedTerminations.Points.Count} pts");
+        output.WriteLine(
+            $"Params.LoadpullResultZsource={result.Params.LoadpullResultZsource}");
+        if (result.MXE.Zsource.HasValue)
+            output.WriteLine(
+                $"MXE Zsource used for source match: " +
+                $"{result.MXE.Zsource.Value.Real:F2}{(result.MXE.Zsource.Value.Imaginary >= 0 ? "+" : "")}{result.MXE.Zsource.Value.Imaginary:F2}j Ω");
+    }
+
+    [Fact]
+    public void Hero3BPursuit_FollowOnLoadpullResult_WhenCreateOff_DataNull()
+    {
+        var (engine, pp, _) = BuildEngine(createLoadpullResult: false);
+
+        var result = engine.Run(pp);
+
+        // RecommendedTerminations always built.
+        Assert.NotNull(result.RecommendedTerminations);
+
+        // No follow-on loadpull.
+        Assert.Null(result.LoadpullData);
+
+        output.WriteLine(
+            $"CreateLoadpullResult=false → LoadpullData=null  " +
+            $"(RecommendedTerminations still has {result.RecommendedTerminations.Points.Count} pts)");
     }
 }

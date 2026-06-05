@@ -5,6 +5,17 @@ using RfCore;
 
 namespace CircuitRF.Engine.Loadpull;
 
+/// <summary>Which Zsource the follow-on loadpull uses for the source match (§6.5.2).</summary>
+public enum LoadpullResultZsourceMode
+{
+    /// <summary>Use the MXE optimum's recommended Zsource (default).</summary>
+    MXE,
+    /// <summary>Use the MXP optimum's recommended Zsource.</summary>
+    MXP,
+    /// <summary>No override — use the Source Tuner's own declared Z1.</summary>
+    None,
+}
+
 /// <summary>
 /// Phase 4b-2: orchestrates MXP + MXE steepest-ascent searches and auto-Zsource extraction.
 ///
@@ -21,6 +32,10 @@ namespace CircuitRF.Engine.Loadpull;
 ///   Zin = V[srcIfIdx, k=1] / (-INl[srcIfIdx, k=1]) at the OBO drive level.
 ///   Zsource = conj(Zin).  Computed once per optimum from the cached inner sweep.
 ///   OBO step: linearly interpolated from the cached Pin sweep (granularity = PinStep).
+///
+/// Always produces a LoadpullPursuitResult (§6.5.1) containing: resolved params, MXP/MXE,
+/// cache, unscorable, warnings, the always-built in-memory GamBuilderResult, and the
+/// optional follow-on LoadpullResult (§6.5.2).
 /// </summary>
 public sealed class LoadpullPursuitEngine
 {
@@ -37,7 +52,7 @@ public sealed class LoadpullPursuitEngine
     {
         /// <summary>Optimum termination Z (Ω).</summary>
         public Complex Z             { get; }
-        /// <summary>Criterion value at the optimum (Pout W or efficiency linear).</summary>
+        /// <summary>Criterion value at the optimum (Pout dBm for MXP, efficiency linear for MXE).</summary>
         public double  Value         { get; }
         /// <summary>Cached inner sweep at the optimum termination.</summary>
         public GridPointResult? Sweep { get; }
@@ -58,29 +73,56 @@ public sealed class LoadpullPursuitEngine
         }
     }
 
-    public sealed class PursuitRunResult
+    /// <summary>
+    /// The single self-documenting result of a loadpull_pursuit run (loadpull_pursuit.md §6.5.1).
+    ///
+    /// Carries: resolved input Params, MXP/MXE optima, query Cache, UnscorableZ, Warnings,
+    /// the always-built in-memory RecommendedTerminations (GamBuilderResult), and the optional
+    /// follow-on LoadpullData (null if CreateLoadpullResult=false or neither optimum converged).
+    ///
+    /// (Formerly PursuitRunResult — renamed and extended.)
+    /// </summary>
+    public sealed class LoadpullPursuitResult
     {
+        /// <summary>The resolved directive parameters that produced this result.</summary>
+        public PursuitParams Params { get; }
         public PursuitOptimum MXP { get; }
         public PursuitOptimum MXE { get; }
-        /// <summary>
-        /// All terminations queried during both searches, keyed by Z, with their cached sweep.
-        /// </summary>
+        /// <summary>All terminations queried during both searches, keyed by Z, with cached sweep.</summary>
         public IReadOnlyDictionary<Complex, GridPointResult> Cache { get; }
         /// <summary>Z values found unscorable (non-convergent/non-compressing).</summary>
         public IReadOnlyList<Complex> UnscorableZ { get; }
-        /// <summary>Warnings accumulated during the run (e.g. non-convergent exclusions).</summary>
+        /// <summary>Warnings accumulated during the run.</summary>
         public IReadOnlyList<string> Warnings { get; }
+        /// <summary>
+        /// Focused+broad recommended-termination point set (always built in memory, §6.5.1).
+        /// Independent of OutputGrid (file write) and CreateLoadpullResult (simulation).
+        /// </summary>
+        public GamWriter.GamBuilderResult RecommendedTerminations { get; }
+        /// <summary>
+        /// Follow-on loadpull over the recommended terminations (§6.5.2), or null if
+        /// CreateLoadpullResult=false or neither optimum converged.
+        /// </summary>
+        public LoadpullResult? LoadpullData { get; }
 
-        public PursuitRunResult(PursuitOptimum mxp, PursuitOptimum mxe,
-            IReadOnlyDictionary<Complex, GridPointResult> cache,
-            IReadOnlyList<Complex> unscorableZ,
-            IReadOnlyList<string> warnings)
+        public LoadpullPursuitResult(
+            PursuitParams                                    @params,
+            PursuitOptimum                                   mxp,
+            PursuitOptimum                                   mxe,
+            IReadOnlyDictionary<Complex, GridPointResult>    cache,
+            IReadOnlyList<Complex>                           unscorableZ,
+            IReadOnlyList<string>                            warnings,
+            GamWriter.GamBuilderResult                       recommendedTerminations,
+            LoadpullResult?                                  loadpullData)
         {
-            MXP        = mxp;
-            MXE        = mxe;
-            Cache      = cache;
-            UnscorableZ = unscorableZ;
-            Warnings   = warnings;
+            Params                 = @params;
+            MXP                    = mxp;
+            MXE                    = mxe;
+            Cache                  = cache;
+            UnscorableZ            = unscorableZ;
+            Warnings               = warnings;
+            RecommendedTerminations = recommendedTerminations;
+            LoadpullData           = loadpullData;
         }
     }
 
@@ -93,9 +135,20 @@ public sealed class LoadpullPursuitEngine
         // Search tuning (empirical; tuned on Hero 3B).
         double Dn             = 1.05,
         double Ds             = 1.3,
-        double ConvThreshold  = 1.02,   // VSWR threshold; Fix 1: must be > 1, << DsInitial
+        double ConvThreshold  = 1.02,   // VSWR threshold; must be > 1, << DsInitial
         int    MaxAscentSteps = 40,
-        SearchMethod SearchMethod = SearchMethod.SteepestAscent);
+        SearchMethod SearchMethod = SearchMethod.SteepestAscent,
+        // Gam builder params (always built in memory; OutputGridPath controls file write only).
+        double Vswr1              = 1.5,
+        int    Vswr1Resolution    = 4,
+        double Vswr2              = 3.0,
+        int    Vswr2Resolution    = 4,
+        bool   KeepNonconverging  = false,
+        double NonconvergentVswr  = 1.05,
+        string? OutputGridPath    = null,
+        // Follow-on loadpull (§6.5.2).
+        bool   CreateLoadpullResult   = true,
+        LoadpullResultZsourceMode LoadpullResultZsource = LoadpullResultZsourceMode.MXE);
 
     // ── Cache ─────────────────────────────────────────────────────────────────
 
@@ -147,31 +200,21 @@ public sealed class LoadpullPursuitEngine
             catch { return def; }
         }
 
-        // Build a proxy LoadpullAnalysis to reuse LoadpullEngine.Resolve for inner-sweep keys.
-        var proxy = new LoadpullAnalysis(lpa.Name)
+        bool Bool(string expr, bool def)
         {
-            ToneExpr          = lpa.ToneExpr,
-            MaxHarmonicExpr   = lpa.MaxHarmonicExpr,
-            LoadTunerName     = lpa.LoadTunerName,
-            SourceTunerName   = lpa.SourceTunerName,
-            SweepExpr         = lpa.SweepExpr,
-            TuneHarmExpr      = lpa.TuneHarmExpr,
-            GridPath          = "",   // pursuit has no Grid input
-            CompressionExpr   = lpa.CompressionExpr,
-            GainTypeExpr      = lpa.GainTypeExpr,
-            PinStartExpr      = lpa.PinStartExpr,
-            PinStepExpr       = lpa.PinStepExpr,
-            PinMaxExpr        = lpa.PinMaxExpr,
-            TickleExpr        = lpa.TickleExpr,
-            MaxIterExpr       = lpa.MaxIterExpr,
-            FFTOverSampleExpr = lpa.FFTOverSampleExpr,
-            TolExpr           = lpa.TolExpr,
-            DriveSteppingExpr = lpa.DriveSteppingExpr,
-            GuardHarmonicExpr = lpa.GuardHarmonicExpr,
-        };
+            var s = expr.Trim();
+            if (s.Equals("true",  StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("on",    StringComparison.OrdinalIgnoreCase)  ||
+                s.Equals("yes",   StringComparison.OrdinalIgnoreCase)  ||
+                s == "1") return true;
+            if (s.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("off",   StringComparison.OrdinalIgnoreCase)  ||
+                s.Equals("no",    StringComparison.OrdinalIgnoreCase)  ||
+                s == "0") return false;
+            try { return (int)Num(expr, def ? 1 : 0) != 0; } catch { return def; }
+        }
 
-        // Resolve the inner-sweep params — but Grid validation will fail on empty path.
-        // We resolve manually to avoid that.
+        // Resolve the inner-sweep params manually (avoid Grid validation on empty path).
         double tone    = Num(lpa.ToneExpr,           1e9);
         int    maxH    = (int)Num(lpa.MaxHarmonicExpr,   5);
         int    osamp   = Math.Max(1, (int)Num(lpa.FFTOverSampleExpr, 1));
@@ -218,12 +261,40 @@ public sealed class LoadpullPursuitEngine
             ? SearchMethod.IteratedQuadratic
             : SearchMethod.SteepestAscent;
 
-        return new PursuitParams(lpParams, usePae, obo, SearchMethod: searchMethod);
+        // Gam builder params.
+        double vswr1     = Num(lpa.Vswr1Expr,             1.5);
+        int    vswr1Res  = Math.Max(2, (int)Num(lpa.Vswr1ResolutionExpr, 4));
+        double vswr2     = Num(lpa.Vswr2Expr,             3.0);
+        int    vswr2Res  = Math.Max(2, (int)Num(lpa.Vswr2ResolutionExpr, 4));
+        bool   keepNonconv  = Bool(lpa.KeepNonconvergingExpr, false);
+        double nonconvVswr  = Num(lpa.NonconvergentVswrExpr, 1.05);
+
+        // Follow-on loadpull params.
+        bool createLp = Bool(lpa.CreateLoadpullResultExpr, true);
+        var lpZsrcMode = lpa.LoadpullResultZsourceExpr.Trim().ToUpperInvariant() switch
+        {
+            "MXP"  => LoadpullResultZsourceMode.MXP,
+            "NONE" => LoadpullResultZsourceMode.None,
+            _      => LoadpullResultZsourceMode.MXE,   // default
+        };
+
+        return new PursuitParams(
+            lpParams, usePae, obo,
+            SearchMethod:           searchMethod,
+            Vswr1:                  vswr1,
+            Vswr1Resolution:        vswr1Res,
+            Vswr2:                  vswr2,
+            Vswr2Resolution:        vswr2Res,
+            KeepNonconverging:      keepNonconv,
+            NonconvergentVswr:      nonconvVswr,
+            OutputGridPath:         lpa.OutputGridPath,
+            CreateLoadpullResult:   createLp,
+            LoadpullResultZsource:  lpZsrcMode);
     }
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
-    public PursuitRunResult Run(PursuitParams pp)
+    public LoadpullPursuitResult Run(PursuitParams pp)
     {
         var lpp    = pp.LpParams;
         var ctx    = _lp.PrepareContext(lpp);
@@ -248,7 +319,6 @@ public sealed class LoadpullPursuitEngine
 
             // Cache miss: run a full drive-to-compression sweep.
             queryCount++;
-            // B7: dead gamma lines removed; gamma now computed inside RunOneTermination from Z and grid Z0.
             Console.Error.WriteLine(
                 $"[Pursuit] Query {queryCount}: Z={z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j Ω");
 
@@ -265,7 +335,6 @@ public sealed class LoadpullPursuitEngine
             }
 
             double? c = ExtractCriterion(gpr, isMxe ? pp.UsePae : false, mxe: isMxe, xdB: lpp.Compression);
-            // MXP criterion is in dBm; MXE criterion is a linear efficiency ratio.
             Console.Error.WriteLine(
                 $"[Pursuit]   → {(isMxe ? "Eff" : "Pout(dBm)")}={c:F4}");
             return (c, gpr);
@@ -375,7 +444,7 @@ public sealed class LoadpullPursuitEngine
                 $"(VSWR from MXP = {RfHelpers.VswrFromZ(mxeZ, mxpResult.Z):F2})");
         }
 
-        // Tear down.
+        // ── Tear down search context ──────────────────────────────────────────
         ctx.SweptModel.ClearHarmonicOverride();
         ctx.SrcModel.SetTone(0);
         ctx.LoadModel.SetTone(0);
@@ -385,7 +454,96 @@ public sealed class LoadpullPursuitEngine
         Console.Error.WriteLine(
             $"[Pursuit] Total queries={queryCount}  Cache entries={cacheDict.Count}  Unscorable={unscorable.Count}");
 
-        return new PursuitRunResult(mxpResult, mxeResult, cacheDict, unscorable, warnings);
+        // ── Always build recommended terminations in memory (§6.5.1) ─────────
+        var gamParams = new GamWriter.GamBuilderParams(
+            mxpResult.Z, mxeResult.Z, unscorable,
+            pp.Vswr1, pp.Vswr1Resolution, pp.Vswr2, pp.Vswr2Resolution,
+            pp.KeepNonconverging, pp.NonconvergentVswr);
+        var recommendedTerminations = GamWriter.Build(gamParams);
+        foreach (var w in recommendedTerminations.Warnings)
+            warnings.Add(w);
+
+        // Optionally write the .gam file (OutputGrid controls file only, not simulation).
+        if (!string.IsNullOrEmpty(pp.OutputGridPath))
+        {
+            GamWriter.WriteFile(pp.OutputGridPath!, recommendedTerminations);
+            Console.Error.WriteLine(
+                $"[Pursuit] .gam written → {pp.OutputGridPath}  ({recommendedTerminations.Points.Count} pts)");
+        }
+
+        // ── Optionally run follow-on loadpull (§6.5.2) ───────────────────────
+        // Runs iff CreateLoadpullResult=true AND both optima converged.
+        // Uses the in-memory recommended terminations (independent of OutputGrid).
+        LoadpullResult? followOnResult = null;
+        if (pp.CreateLoadpullResult
+            && mxpResult.Converged && mxeResult.Converged
+            && recommendedTerminations.Points.Count > 0)
+        {
+            followOnResult = RunFollowOnLoadpull(pp, mxpResult, mxeResult, recommendedTerminations);
+        }
+
+        return new LoadpullPursuitResult(
+            pp, mxpResult, mxeResult, cacheDict, unscorable, warnings,
+            recommendedTerminations, followOnResult);
+    }
+
+    // ── Follow-on loadpull (§6.5.2) ───────────────────────────────────────────
+
+    /// <summary>
+    /// Runs a standard loadpull over the recommended terminations using the chosen source match.
+    ///
+    /// Source match (LoadpullResultZsource):
+    ///   MXE → override Source Tuner Z[1] with MXE.Zsource
+    ///   MXP → override Source Tuner Z[1] with MXP.Zsource
+    ///   None → leave Source Tuner's declared Z[1] untouched
+    ///
+    /// SetHarmonicOverride on the Source Tuner overrides both the Z_Port impedance and the
+    /// drive-voltage calibration (SetSourceDrive calls GetZ, which respects the override), so
+    /// Pavl and the presented source impedance are always in agreement.
+    /// </summary>
+    private LoadpullResult RunFollowOnLoadpull(
+        PursuitParams pp,
+        PursuitOptimum mxp, PursuitOptimum mxe,
+        GamWriter.GamBuilderResult recommendedTerminations)
+    {
+        // Build a GamGrid from the in-memory recommended terminations.
+        const double z0 = 50.0;
+        var followOnPoints = recommendedTerminations.Points
+            .Select((z, i) => new GamReader.GamPoint(RfHelpers.Z2G(z / z0), z, i))
+            .ToList();
+        var followOnGrid   = new GamReader.GamGrid(followOnPoints, z0);
+        var followOnLpParams = pp.LpParams with { Grid = followOnGrid };
+
+        // Determine Zsource override.
+        Complex? zsourceOverride = pp.LoadpullResultZsource switch
+        {
+            LoadpullResultZsourceMode.MXE => mxe.Zsource,
+            LoadpullResultZsourceMode.MXP => mxp.Zsource,
+            _                             => null,          // None: no override
+        };
+
+        Console.Error.WriteLine(
+            $"[Pursuit] Follow-on loadpull: {followOnGrid.Points.Count} terminations  " +
+            $"Zsource={pp.LoadpullResultZsource}" +
+            (zsourceOverride.HasValue
+                ? $"={zsourceOverride.Value.Real:F2}{(zsourceOverride.Value.Imaginary >= 0 ? "+" : "")}{zsourceOverride.Value.Imaginary:F2}j Ω"
+                : " (Source Tuner's declared Z1)"));
+
+        // Get a context to access the source model reference for the override.
+        var followCtx = _lp.PrepareContext(pp.LpParams);
+        try
+        {
+            if (zsourceOverride.HasValue)
+                followCtx.SrcModel.SetHarmonicOverride(1, zsourceOverride.Value);
+
+            return _lp.Run(followOnLpParams);
+        }
+        finally
+        {
+            // _lp.Run() clears the swept (load) model's override but not the src model's.
+            if (zsourceOverride.HasValue)
+                followCtx.SrcModel.ClearHarmonicOverride();
+        }
     }
 
     // ── Criterion extraction ──────────────────────────────────────────────────
@@ -398,13 +556,9 @@ public sealed class LoadpullPursuitEngine
     ///   1. Compute Gmax over all converged non-tickle steps.
     ///   2. Find the bracket: "below" = last step with compression &lt; xdB,
     ///      "above" = first step with compression ≥ xdB.
-    ///      With Change 1, the sweep stops at compression ≥ xdB+0.1 on the regular grid,
-    ///      so "below" and "above" are adjacent regular-grid steps that straddle xdB.
     ///   3. t = (xdB − comprBelow) / (comprAbove − comprBelow) — a real fraction in [0,1].
-    ///      This interpolates to EXACTLY P-xdB, so the result lies strictly between the
-    ///      two grid steps' values (not equal to the over-compression step).
     ///
-    /// MXP criterion = Pout at P-xdB in <b>dBm</b> (consistent gradient surface across Ω).
+    /// MXP criterion = Pout at P-xdB in <b>dBm</b>.
     /// MXE criterion = DE or PAE at P-xdB (linear ratio, ≤ 1).
     /// Returns null if the sweep never reached xdB compression.
     /// </summary>
@@ -415,42 +569,36 @@ public sealed class LoadpullPursuitEngine
         var converged = gpr.PinSteps.Where(s => s.Converged && !s.IsTickle).ToList();
         if (converged.Count == 0) return null;
 
-        // need the index for maxGain so that all lower index can be ignored
-        int ? maxIndex = converged.Select((item, index) => new { item.GtDb, index }).MaxBy(x => x.GtDb)?.index;
+        int? maxIndex = converged.Select((item, index) => new { item.GtDb, index }).MaxBy(x => x.GtDb)?.index;
         if (maxIndex == null) return null;
         double gMax = converged[maxIndex.Value].GtDb;
 
-        // Find the bracket straddling xdB.
         PinStepResult? below = null, above = null;
-        for (int i = maxIndex.Value; i < converged.Count; i++)// only use power sweep points higher than the max Gain
+        for (int i = maxIndex.Value; i < converged.Count; i++)
         {
             double compr = gMax - converged[i].GtDb;
             if (compr < xdB)       below = converged[i];
             else if (above is null) above = converged[i];
         }
-        if (above is null) return null;   // sweep reached stop but never crossed xdB — unscorable
-        below ??= above;                   // xdB first reached at step 0 (no sub-compression step)
+        if (above is null) return null;
+        below ??= above;
 
         double comprBelow = gMax - below.GtDb;
         double comprAbove = gMax - above.GtDb;
         double dCompr     = comprAbove - comprBelow;
 
-        // True interpolation fraction to exactly xdB.  With PinStep=1 dB, t is typically
-        // 0.1–0.9 — far from 1.0 (which was the pre-fix bug where xdB was set to comprAbove).
         double t = dCompr > 1e-10
             ? Math.Clamp((xdB - comprBelow) / dCompr, 0.0, 1.0)
             : 0.0;
 
         if (!mxe)
         {
-            // MXP: interpolated Pout in dBm — must lie BETWEEN below and above grid steps.
             double poutBelowDbm = LoadpullEngine.WattsToDbm(below.PoutW);
             double poutAboveDbm = LoadpullEngine.WattsToDbm(above.PoutW);
             return poutBelowDbm + t * (poutAboveDbm - poutBelowDbm);
         }
         else
         {
-            // MXE: interpolated DE or PAE (linear ratio).
             double effBelow = usePae ? below.Pae : below.De;
             double effAbove = usePae ? above.Pae : above.De;
             return effBelow + t * (effAbove - effBelow);
@@ -461,7 +609,7 @@ public sealed class LoadpullPursuitEngine
 
     /// <summary>
     /// Computes Zsource = conj(Zin) at ZsourceOBO dB below compression.
-    /// Zin = V[srcIfIdx, k=1] / (-INl[srcIfIdx, k=1]).
+    /// Zin = V[srcIfIdx, k=1] / INl[srcIfIdx, k=1].
     /// OBO drive level is found by linear interpolation in the cached Pin sweep.
     /// </summary>
     private static Complex? ComputeZsource(
@@ -473,9 +621,7 @@ public sealed class LoadpullPursuitEngine
         var converged = gpr.PinSteps.Where(s => s.Converged && !s.IsTickle).ToList();
         if (converged.Count < 2) return null;
 
-        // Find Pin at exactly lpp.Compression dB using the same bracket as ExtractCriterion.
-        // This is the conventional compression point (P-xdB), from which OBO is measured.
-        int ? maxIndex = converged.Select((item, index) => new { item.GtDb, index }).MaxBy(x => x.GtDb)?.index;
+        int? maxIndex = converged.Select((item, index) => new { item.GtDb, index }).MaxBy(x => x.GtDb)?.index;
         if (maxIndex == null) return null;
         double gMax = converged[maxIndex.Value].GtDb;
 
@@ -488,10 +634,9 @@ public sealed class LoadpullPursuitEngine
             if (compr < xdB)        compLo = converged[i];
             else if (compHi is null) compHi = converged[i];
         }
-        if (compHi is null) return null;   // sweep never reached lpp.Compression — can't place OBO
+        if (compHi is null) return null;
         compLo ??= compHi;
 
-        // Interpolate Pin to exactly P-xdB.
         double cLo   = gMax - compLo.GtDb;
         double cHi   = gMax - compHi.GtDb;
         double dC    = cHi - cLo;
@@ -500,7 +645,6 @@ public sealed class LoadpullPursuitEngine
 
         double pinObo = pinComp - oboDb;
 
-        // Find the two steps that bracket pinObo.
         PinStepResult? lo = null, hi = null;
         for (int i = 0; i < converged.Count; i++)
         {
@@ -511,7 +655,6 @@ public sealed class LoadpullPursuitEngine
         lo ??= hi;
         hi ??= lo;
 
-        // Linear interpolation of V and INl at f0 (k=1) to pinObo.
         double pin0 = lo!.PavlDbm, pin1 = hi!.PavlDbm;
         double frac2 = pin1 > pin0 + 1e-12
             ? Math.Clamp((pinObo - pin0) / (pin1 - pin0), 0, 1)
@@ -523,15 +666,10 @@ public sealed class LoadpullPursuitEngine
         Complex vSrc  = lo.V[ctx.SrcIfIdx, 1]   + frac2 * (hi.V[ctx.SrcIfIdx, 1]   - lo.V[ctx.SrcIfIdx, 1]);
         Complex iNlSrc= lo.INl[ctx.SrcIfIdx, 1] + frac2 * (hi.INl[ctx.SrcIfIdx, 1] - lo.INl[ctx.SrcIfIdx, 1]);
 
-        // Zin = V[gate,k=1] / I_into_DUT
-        // INl convention (HbEngine.cs): INl[gate,1] = current FROM node INTO device.
-        // At n_gate (RF, choke open): only source + FET, so KCL gives
-        //   I_from_source_into_gate = INl[gate,1]  (no negation).
-        // Therefore Zin = V / INl[gate,1].  Do NOT negate — negation gives Re(Zin) < 0, non-physical.
-        // See Pass A diagnostic: Zin_correct = 50 Ω, Zin_code_with_minus = −50 Ω.
+        // Zin = V[gate,k=1] / I_into_DUT (B1 fix: no negation — see CLAUDE.md §B1).
         if (iNlSrc.Magnitude < 1e-30) return null;
 
-        Complex zIn = vSrc / iNlSrc;   // B1 fix: removed the erroneous negation
+        Complex zIn = vSrc / iNlSrc;
         return Complex.Conjugate(zIn);   // Zsource = Zin*
     }
 }

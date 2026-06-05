@@ -66,17 +66,20 @@ public sealed class TunerModel : ComponentModel
     // ── Source-role drive parameters ─────────────────────────────────────────
     // _toneFreqHz == 0 means S-param mode (no tone, no drive stamped).
     private double _toneFreqHz;
-    private double _vsMagnitude;   // |Vs| = sqrt(8·Pavl·Re(Z[1])), updated each Pin step
+    private double _vsMagnitude;   // |Vs| = sqrt(8·Pavl·Re(Z1_eff)), updated each Pin step
 
     /// <summary>
     /// Set by the LoadpullEngine at setup and updated each Pin step.
-    /// Computes |Vs| = sqrt(8·Pavl·Re(Z[1])) from the current Z[1] and analysis Pavl.
+    /// Computes |Vs| = sqrt(8·Pavl·Re(Z1_eff)) where Z1_eff is the effective fundamental
+    /// impedance — the harmonic-override value if one is set, else the declared Z[1].
+    /// This keeps Pavl and the presented source impedance in agreement at all times.
     /// </summary>
     public void SetSourceDrive(double toneFreqHz, double pavlWatts)
     {
         _toneFreqHz = toneFreqHz;
-        double reZ1  = GetDeclaredZ(1).Real;
-        _vsMagnitude = reZ1 > 0 ? Math.Sqrt(8.0 * pavlWatts * reZ1) : 0.0;
+        double omega0 = 2.0 * Math.PI * toneFreqHz;
+        double reZ1   = GetZ(omega0).Real;   // respects harmonic override if set
+        _vsMagnitude  = reZ1 > 0 ? Math.Sqrt(8.0 * pavlWatts * reZ1) : 0.0;
     }
 
     /// <summary>Set tone for non-source-role HB (e.g. unit tests); no drive stamped.</summary>

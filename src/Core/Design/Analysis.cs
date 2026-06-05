@@ -112,6 +112,8 @@ public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name)
     public string Vswr2ResolutionExpr        { get; init; } = "4";
     public string KeepNonconvergingExpr      { get; init; } = "false";
     public string NonconvergentVswrExpr      { get; init; } = "1.05";
+    public string CreateLoadpullResultExpr   { get; init; } = "true";  // default on
+    public string LoadpullResultZsourceExpr  { get; init; } = "MXE";   // MXE | MXP | None
 
     public string? SourceDirectory           { get; init; }
 }

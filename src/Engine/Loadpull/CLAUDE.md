@@ -252,3 +252,47 @@ The two leftover `poutAboveDbm=…` and `effAbove=…` debug prints are removed.
 - `PursuitEngineTests.IteratedQuadratic_FindsKnownOptimum_QuadraticCriterion` — IQ unit test.
 - `Hero3BPursuitTests.Hero3BPursuit_BruteForceAgreement_IteratedQuadratic` — IQ brute-force gate.
 - `Hero3BPursuit_IteratedQuadratic_ReachesOptimum` — IQ walk + query count vs SA report.
+
+## Phase 4b-2 enhancement — `LoadpullPursuitResult` + optional follow-on `LoadpullResult` (2026-06-05)
+
+Completes the "search → recommend → focused loadpull, unattended" headline workflow (loadpull_pursuit.md §0.1).
+
+### `LoadpullPursuitResult` (replaces `PursuitRunResult`)
+`PursuitRunResult` renamed → **`LoadpullPursuitResult`** and extended with three new fields:
+- **`Params`** — the resolved `PursuitParams` (inputs: all directive settings; self-documenting).
+- **`RecommendedTerminations`** — `GamWriter.GamBuilderResult` (always built in memory, §6.5.1).
+  Previously only built when `OutputGrid` was set; now always computed and stored in the result.
+  `OutputGrid` still controls only the `.gam` file write (`GamWriter.WriteFile`).
+- **`LoadpullData`** — the follow-on `LoadpullResult` (§6.5.2), or **null** if
+  `CreateLoadpullResult=false` or either optimum did not converge.
+
+### New directive keys (`LoadpullPursuitAnalysis` + `CnlReader` + `PursuitParams`)
+- **`CreateLoadpullResult`** (bool, default **on**) — whether to run the follow-on loadpull.
+- **`LoadpullResultZsource`** (`MXE` default / `MXP` / `None`) — which Zsource the follow-on uses
+  for the Source Tuner's fundamental impedance.
+
+### `PursuitParams` extended
+Gam-builder fields added (previously implicit via directive, now resolved into params):
+`Vswr1`, `Vswr1Resolution`, `Vswr2`, `Vswr2Resolution`, `KeepNonconverging`, `NonconvergentVswr`,
+`OutputGridPath`, `CreateLoadpullResult`, `LoadpullResultZsource`.
+
+### Follow-on loadpull mechanics (`RunFollowOnLoadpull`)
+1. Builds `GamReader.GamGrid` from `RecommendedTerminations.Points` (Z values; gamma via `Z2G`).
+2. Optionally sets `Source Tuner.SetHarmonicOverride(1, zsource)` for MXE/MXP modes before
+   calling `_lp.Run(followOnLpParams)`. Cleared in a `finally` block.
+3. **`LoadpullResultZsource=None`** — no override; Source Tuner keeps its declared `Z[1]`.
+4. **Drive-voltage and Pavl always in agreement:** `SetSourceDrive` calls `GetZ(omega0)` (not
+   `GetDeclaredZ`) for the Pavl calibration, so `|Vs| = sqrt(8·Pavl·Re(Z1_eff))` where `Z1_eff`
+   is the effective impedance — the override if set, else the declared value. `TunerModel.cs` fix
+   applied 2026-06-05.
+
+### Three orthogonal outputs (verified)
+- **Recommended terminations** (in-memory `GamBuilderResult`): always built.
+- **`.gam` file**: written **iff** `OutputGridPath` is non-null — controlled by `OutputGrid` directive.
+- **Follow-on `LoadpullResult`**: run **iff** `CreateLoadpullResult=true` AND both MXP+MXE converged.
+
+### New tests (total now 259: 158 Core + 101 Engine)
+- `Hero3BPursuit_FollowOnLoadpullResult_WhenCreateOn_DataPresent` — `CreateLoadpullResult=true`:
+  `LoadpullData` present, grid-point count == recommended-terminations count, role-agnostic type.
+- `Hero3BPursuit_FollowOnLoadpullResult_WhenCreateOff_DataNull` — `CreateLoadpullResult=false`:
+  `RecommendedTerminations` built, `LoadpullData=null`.

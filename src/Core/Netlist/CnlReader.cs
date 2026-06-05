@@ -718,9 +718,11 @@ public sealed class CnlReader
             Vswr1ResolutionExpr   = kv.GetValueOrDefault("VSWR1_resolution",    "4"),
             Vswr2Expr             = kv.GetValueOrDefault("VSWR2",               "3"),
             Vswr2ResolutionExpr   = kv.GetValueOrDefault("VSWR2_resolution",    "4"),
-            KeepNonconvergingExpr = kv.GetValueOrDefault("keepNonconvergingPoints", "false"),
-            NonconvergentVswrExpr = kv.GetValueOrDefault("nonconvergentVSWR",   "1.05"),
-            SourceDirectory       = sourceDirectory,
+            KeepNonconvergingExpr        = kv.GetValueOrDefault("keepNonconvergingPoints", "false"),
+            NonconvergentVswrExpr        = kv.GetValueOrDefault("nonconvergentVSWR",        "1.05"),
+            CreateLoadpullResultExpr     = kv.GetValueOrDefault("CreateLoadpullResult",     "true"),
+            LoadpullResultZsourceExpr    = kv.GetValueOrDefault("LoadpullResultZsource",    "MXE"),
+            SourceDirectory              = sourceDirectory,
         };
         return true;
     }
