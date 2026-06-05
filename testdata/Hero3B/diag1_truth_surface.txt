@@ -71,4 +71,4 @@ True MXE: Z=120.0+0.0j Ω  DE@P3dB = 69.68%
   Z=   85+0j Ω   Pout=40.566 dBm   DE=67.06%
   Z=   90+0j Ω   Pout=40.463 dBm   DE=67.96%
 
-Written to: /testdata/Hero3B/diag1_truth_surface.txt
+Written to: testdata/Hero3B/diag1_truth_surface.txt

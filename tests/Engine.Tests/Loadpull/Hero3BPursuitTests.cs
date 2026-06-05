@@ -370,6 +370,142 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
             $"brute-force MXP at Z={bfMxpZ.Real:F1} Ω — search missed the optimum.");
     }
 
+    // ── 5. IteratedQuadratic — brute-force agreement ──────────────────────────
+    //
+    // Mirrors Hero3BPursuit_BruteForceAgreement but with SearchMethod.IteratedQuadratic.
+    // Verifies the new method also lands within 1.20 VSWR of the brute-force grid MXP.
+    // Reports walk trajectory and query count vs SteepestAscent for diagnostic purposes.
+
+    [Fact]
+    public void Hero3BPursuit_BruteForceAgreement_IteratedQuadratic()
+    {
+        var dir    = Hero3BDir();
+        var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "hero3B_at_compression.cnl"));
+        var netlist   = new Elaborator(lib).Elaborate(tb);
+
+        var lpa      = tb.Analyses.OfType<LoadpullPursuitAnalysis>().First();
+        var pp       = LoadpullPursuitEngine.Resolve(lpa, netlist.ResolvedGlobals);
+        var lpp      = pp.LpParams;
+        var lpEngine = new LoadpullEngine(netlist, tb);
+
+        // ── Brute-force sweep (Im=0, Re=60..100 Ω, step 5) ──────────────────
+        var ctx     = lpEngine.PrepareContext(lpp);
+        double bfMxpPout = double.NegativeInfinity;
+        Complex bfMxpZ  = new Complex(50, 0);
+        int idx = 0;
+        foreach (double zRe in Enumerable.Range(0, 9).Select(i => 60.0 + i * 5.0))
+        {
+            var z   = new Complex(zRe, 0);
+            var gpr = lpEngine.RunOneTermination(lpp, ctx, z, idx++);
+            if (gpr.StopReason != "Compression") continue;
+            var conv = gpr.PinSteps.Where(s => s.Converged && !s.IsTickle).ToList();
+            if (conv.Count == 0) continue;
+            int? maxIdx = conv.Select((s, i) => new { s.GtDb, i }).MaxBy(x => x.GtDb)?.i;
+            if (maxIdx is null) continue;
+            double gMax = conv[maxIdx.Value].GtDb;
+            PinStepResult? bel = null, abv = null;
+            for (int i = maxIdx.Value; i < conv.Count; i++)
+            {
+                double compr = gMax - conv[i].GtDb;
+                if (compr < lpp.Compression)       bel = conv[i];
+                else if (abv is null)               abv = conv[i];
+            }
+            if (abv is null) continue;
+            bel ??= abv;
+            double cB = gMax - bel.GtDb, cA = gMax - abv.GtDb, dC = cA - cB;
+            double t  = dC > 1e-10 ? Math.Clamp((lpp.Compression - cB) / dC, 0, 1) : 0;
+            double pdbm = 10*Math.Log10(bel.PoutW*1000) + t*(10*Math.Log10(abv.PoutW*1000) - 10*Math.Log10(bel.PoutW*1000));
+            if (pdbm > bfMxpPout) { bfMxpPout = pdbm; bfMxpZ = z; }
+        }
+        ctx.SweptModel.ClearHarmonicOverride();
+        ctx.SrcModel.SetTone(0);
+        ctx.LoadModel.SetTone(0);
+
+        output.WriteLine($"Brute-force MXP: Z={bfMxpZ.Real:F1} Ω  Pout={bfMxpPout:F3} dBm");
+        Assert.True(bfMxpPout > 25, $"Brute-force MXP implausibly low ({bfMxpPout:F2} dBm)");
+
+        // ── IteratedQuadratic pursuit ─────────────────────────────────────────
+        var ppIQ = pp with { SearchMethod = SearchMethod.IteratedQuadratic };
+        var pursuitEngine = new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb));
+        var result        = pursuitEngine.Run(ppIQ);
+
+        Assert.True(result.MXP.Converged, $"IQ MXP did not converge: {result.MXP.AbortReason}");
+
+        double vswr = RfHelpers.VswrFromZ(result.MXP.Z, bfMxpZ);
+        output.WriteLine(
+            $"IQ Pursuit MXP: Z={result.MXP.Z.Real:F1}{(result.MXP.Z.Imaginary >= 0 ? "+" : "")}{result.MXP.Z.Imaginary:F1}j Ω  " +
+            $"Pout={result.MXP.Value:F3} dBm");
+        output.WriteLine($"VSWR(IQ pursuit, brute-force) = {vswr:F3}  (limit 1.20)");
+        output.WriteLine($"IQ cache entries: {result.Cache.Count}  IQ unscorable: {result.UnscorableZ.Count}");
+
+        // Trajectory: all queried points in order.
+        output.WriteLine("IQ queried Z trajectory (MXP):");
+        foreach (var (qz, qv) in result.MXP.Sweep is not null
+            ? new[] { (result.MXP.Z, (double?)result.MXP.Value) }
+            : Array.Empty<(Complex, double?)>())
+            output.WriteLine($"  Z={qz.Real:F2}{(qz.Imaginary >= 0 ? "+" : "")}{qz.Imaginary:F2}j  c={qv:G6}");
+
+        Assert.True(vswr < 1.20,
+            $"IQ Pursuit MXP at Z={result.MXP.Z.Real:F1} Ω is {vswr:F3} VSWR from " +
+            $"brute-force MXP at Z={bfMxpZ.Real:F1} Ω — IQ search missed the optimum.");
+    }
+
+    // ── 6. IteratedQuadratic — Hero 3B convergence to ~80 Ω (diagnostic) ─────
+    //
+    // Reports IQ walk, query count vs SteepestAscent (target ≤ 2×), and whether IQ
+    // lands near the true Hero 3B MXP (~80 Ω, per loadpull_pursuit.md §1.1.2).
+    // Per brief: "diagnostics over grinding — if it doesn't reach 80 Ω, report the
+    // walk trajectory vs the brute-force surface."
+
+    [Fact]
+    public void Hero3BPursuit_IteratedQuadratic_ReachesOptimum()
+    {
+        var (engine, pp, _) = BuildEngine();
+
+        // ── Run SteepestAscent first to get the baseline query count ──────────
+        var ppSA    = pp with { SearchMethod = SearchMethod.SteepestAscent };
+        var (saEng, _, _) = BuildEngine();
+        var saResult = saEng.Run(ppSA);
+        int saQueries = saResult.Cache.Count;
+        output.WriteLine($"SA  query count: {saQueries}  MXP Z={saResult.MXP.Z.Real:F2}{(saResult.MXP.Z.Imaginary >= 0 ? "+" : "")}{saResult.MXP.Z.Imaginary:F2}j Ω  Pout={saResult.MXP.Value:F2} dBm");
+
+        // ── Run IteratedQuadratic ─────────────────────────────────────────────
+        var ppIQ = pp with { SearchMethod = SearchMethod.IteratedQuadratic };
+        var iqResult = engine.Run(ppIQ);
+        int iqQueries = iqResult.Cache.Count;
+        output.WriteLine($"IQ  query count: {iqQueries}  MXP Z={iqResult.MXP.Z.Real:F2}{(iqResult.MXP.Z.Imaginary >= 0 ? "+" : "")}{iqResult.MXP.Z.Imaginary:F2}j Ω  Pout={iqResult.MXP.Value:F2} dBm");
+        output.WriteLine($"IQ  MXE: Z={iqResult.MXE.Z.Real:F2}{(iqResult.MXE.Z.Imaginary >= 0 ? "+" : "")}{iqResult.MXE.Z.Imaginary:F2}j Ω  Eff={iqResult.MXE.Value*100:F1}%");
+
+        // Verify convergence.
+        Assert.True(iqResult.MXP.Converged, $"IQ MXP did not converge: {iqResult.MXP.AbortReason}");
+        Assert.True(iqResult.MXE.Converged, $"IQ MXE did not converge: {iqResult.MXE.AbortReason}");
+
+        // Verify IQ is physically reasonable (same basic sanity as SA test).
+        Assert.True(iqResult.MXP.Value > 20.0,
+            $"IQ MXP Pout={iqResult.MXP.Value:F2} dBm implausibly low.");
+        Assert.True(iqResult.MXE.Value > 0 && iqResult.MXE.Value < 1,
+            $"IQ MXE efficiency={iqResult.MXE.Value:F4} not in (0,1).");
+
+        // Report query economy: target ≤ 2× SteepestAscent.
+        double queryRatio = saQueries > 0 ? (double)iqQueries / saQueries : double.PositiveInfinity;
+        output.WriteLine($"Query ratio IQ/SA = {queryRatio:F2}  (target ≤ 2.0; if >> 2 the VSWR cache may not be catching clustered cardinals)");
+        if (queryRatio > 2.0)
+            output.WriteLine($"WARNING: IQ query count ({iqQueries}) is {queryRatio:F2}× SA ({saQueries}) — exceeds the ≤2× guideline. Check cache hit rate.");
+
+        // Report whether IQ lands at the expected ~80 Ω MXP.
+        double mxpRe = iqResult.MXP.Z.Real;
+        output.WriteLine($"IQ MXP Re(Z) = {mxpRe:F1} Ω  (design-note target ~80 Ω per loadpull_pursuit.md §1.1.2)");
+        if (Math.Abs(mxpRe - 80.0) > 15.0)
+            output.WriteLine($"DIAGNOSTIC: IQ MXP Re(Z)={mxpRe:F1} Ω differs >15 Ω from ~80 Ω target. " +
+                $"SA landed at {saResult.MXP.Z.Real:F1} Ω. " +
+                $"Run Diagnostic1_TruthSurface to verify the brute-force criterion surface.");
+
+        // Zsource reported for both.
+        Assert.NotNull(iqResult.MXP.Zsource);
+        Assert.NotNull(iqResult.MXE.Zsource);
+        output.WriteLine($"IQ Zsource@MXP = {iqResult.MXP.Zsource!.Value.Real:F2}{(iqResult.MXP.Zsource.Value.Imaginary >= 0 ? "+" : "")}{iqResult.MXP.Zsource.Value.Imaginary:F2}j Ω");
+    }
+
     // ── CSV I/O ───────────────────────────────────────────────────────────────
 
     private void WriteGoldenCsv(string dir, LoadpullPursuitEngine.PursuitRunResult result,

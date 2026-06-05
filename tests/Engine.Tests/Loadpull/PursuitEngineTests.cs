@@ -64,6 +64,43 @@ public class PursuitEngineTests(ITestOutputHelper output)
         Assert.True(queries <= 60, $"Too many queries ({queries}); engine not efficient.");
     }
 
+    // ── 1b. Same quadratic criterion, IteratedQuadratic method ───────────────
+
+    [Fact]
+    public void IteratedQuadratic_FindsKnownOptimum_QuadraticCriterion()
+    {
+        var zOpt   = new Complex(80, 10);
+        var zStart = new Complex(50, 0);
+        int queries = 0;
+
+        var engine = new PursuitEngine
+        {
+            Dn = 1.05, DsInitial = 1.3, ConvergenceThreshold = 1.05, MaxAscentSteps = 60,
+            Method = SearchMethod.IteratedQuadratic,
+        };
+
+        var result = engine.Run(zStart, z =>
+        {
+            queries++;
+            double c = QuadraticCriterion(z, zOpt);
+            if (RfHelpers.VswrFromZ(z, new Complex(50, 0)) > 10.0) return null;
+            return c;
+        });
+
+        output.WriteLine(
+            $"[IQ] Start={zStart}  Opt={zOpt}  Found={result.OptimumZ:F3}  " +
+            $"C={result.OptimumValue:F4}  Queries={queries}  Converged={result.Converged}");
+
+        Assert.True(result.Converged, $"IQ engine did not converge: {result.AbortReason}");
+
+        double vswr = RfHelpers.VswrFromZ(result.OptimumZ, zOpt);
+        output.WriteLine($"[IQ] VSWR(found, true_opt) = {vswr:F4}  (target ≤ 1.1)");
+        Assert.True(vswr <= 1.1,
+            $"IQ optimum {result.OptimumZ:F3} is {vswr:F4} VSWR from true optimum {zOpt} — exceeds 1.1.");
+
+        Assert.True(queries <= 120, $"IQ query count too high ({queries}); cache may not be working.");
+    }
+
     // ── 2. High-reactance optimum (tests geometry in Im(Z) direction) ─────────
 
     [Fact]

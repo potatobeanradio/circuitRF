@@ -94,7 +94,8 @@ public sealed class LoadpullPursuitEngine
         double Dn             = 1.05,
         double Ds             = 1.3,
         double ConvThreshold  = 1.02,   // VSWR threshold; Fix 1: must be > 1, << DsInitial
-        int    MaxAscentSteps = 40);
+        int    MaxAscentSteps = 40,
+        SearchMethod SearchMethod = SearchMethod.SteepestAscent);
 
     // ── Cache ─────────────────────────────────────────────────────────────────
 
@@ -212,7 +213,12 @@ public sealed class LoadpullPursuitEngine
         bool usePae  = lpa.EffTypeExpr.Trim().Equals("PAE", StringComparison.OrdinalIgnoreCase);
         double obo   = Num(lpa.ZsourceOBOExpr, 5.0);
 
-        return new PursuitParams(lpParams, usePae, obo);
+        var searchMethod = lpa.SearchMethodExpr.Trim().Equals(
+            nameof(SearchMethod.IteratedQuadratic), StringComparison.OrdinalIgnoreCase)
+            ? SearchMethod.IteratedQuadratic
+            : SearchMethod.SteepestAscent;
+
+        return new PursuitParams(lpParams, usePae, obo, SearchMethod: searchMethod);
     }
 
     // ── Entry point ───────────────────────────────────────────────────────────
@@ -266,12 +272,13 @@ public sealed class LoadpullPursuitEngine
         }
 
         // ── MXP search ───────────────────────────────────────────────────────
-        Console.Error.WriteLine("[Pursuit] ── MXP search (Baylis steepest-ascent) ──");
+        Console.Error.WriteLine($"[Pursuit] ── MXP search ({pp.SearchMethod}) ──");
         var mxpEngine = new PursuitEngine
         {
             Dn = pp.Dn, DsInitial = pp.Ds,
             ConvergenceThreshold = pp.ConvThreshold,
-            MaxAscentSteps       = pp.MaxAscentSteps
+            MaxAscentSteps       = pp.MaxAscentSteps,
+            Method               = pp.SearchMethod,
         };
 
         var mxpBaylis = mxpEngine.Run(
@@ -311,7 +318,7 @@ public sealed class LoadpullPursuitEngine
         }
 
         // ── MXE search — seeded from highest-efficiency cached point ──────────
-        Console.Error.WriteLine("[Pursuit] ── MXE search (seeded from MXP cache) ──");
+        Console.Error.WriteLine($"[Pursuit] ── MXE search ({pp.SearchMethod}, seeded from MXP cache) ──");
 
         // Pedro coupling: seed at the cached point with highest efficiency
         // (naturally ~2-2.5 VSWR from MXP for a stable FET).
@@ -331,7 +338,8 @@ public sealed class LoadpullPursuitEngine
         {
             Dn = pp.Dn, DsInitial = pp.Ds,
             ConvergenceThreshold = pp.ConvThreshold,
-            MaxAscentSteps       = pp.MaxAscentSteps
+            MaxAscentSteps       = pp.MaxAscentSteps,
+            Method               = pp.SearchMethod,
         };
 
         var mxeBaylis = mxeEngine.Run(mxeStart, z =>
@@ -438,7 +446,6 @@ public sealed class LoadpullPursuitEngine
             // MXP: interpolated Pout in dBm — must lie BETWEEN below and above grid steps.
             double poutBelowDbm = LoadpullEngine.WattsToDbm(below.PoutW);
             double poutAboveDbm = LoadpullEngine.WattsToDbm(above.PoutW);
-            Console.WriteLine($"poutAboveDbm={poutAboveDbm:F2}, poutBelowDbm={poutBelowDbm:F2}, interpTo={(poutBelowDbm + t * (poutAboveDbm - poutBelowDbm)):F2}");
             return poutBelowDbm + t * (poutAboveDbm - poutBelowDbm);
         }
         else
@@ -446,8 +453,6 @@ public sealed class LoadpullPursuitEngine
             // MXE: interpolated DE or PAE (linear ratio).
             double effBelow = usePae ? below.Pae : below.De;
             double effAbove = usePae ? above.Pae : above.De;
-            Console.WriteLine($"effAbove={effAbove:F2}, effBelow={effBelow:F2}, interpTo={(effBelow + t * (effAbove - effBelow)):F2}");
-
             return effBelow + t * (effAbove - effBelow);
         }
     }

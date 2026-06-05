@@ -4,6 +4,28 @@ using RfCore;
 namespace CircuitRF.Engine.Loadpull;
 
 /// <summary>
+/// Selectable search method for <see cref="PursuitEngine"/>.
+/// Default is <see cref="SteepestAscent"/> (the committed Baylis algorithm).
+/// Open to future additions.
+/// </summary>
+public enum SearchMethod
+{
+    /// <summary>
+    /// Baylis fixed-direction steepest-ascent line search (loadpull_pursuit.md §1.1, §1.1.1).
+    /// Fits the gradient once per leg, ascends along that ray, shrinks on rejection.
+    /// Default and backwards-compatible.
+    /// </summary>
+    SteepestAscent,
+
+    /// <summary>
+    /// Trust-region iterated-quadratic search (loadpull_pursuit.md §1.1.2).
+    /// Re-fits curvature at every iterate; jumps toward the quadratic optimum where the
+    /// Hessian is negative-definite, degrades to a gradient step otherwise.
+    /// </summary>
+    IteratedQuadratic,
+}
+
+/// <summary>
 /// Baylis steepest-ascent search for MXP (max output power) or MXE (max efficiency)
 /// terminations in the Z-plane (Re/Im in Ω).
 ///
@@ -51,8 +73,15 @@ public sealed class PursuitEngine
     public int MaxAscentSteps { get; init; } = 40;
 
     /// <summary>
+    /// Search method to use.  Default is <see cref="SearchMethod.SteepestAscent"/>;
+    /// the committed, passing Baylis algorithm.  <see cref="SearchMethod.IteratedQuadratic"/>
+    /// re-fits curvature at every iterate (loadpull_pursuit.md §1.1.2).
+    /// </summary>
+    public SearchMethod Method { get; init; } = SearchMethod.SteepestAscent;
+
+    /// <summary>
     /// Optional diagnostic logger.  When set, the engine writes step-by-step diagnostics
-    /// (prefix "[PE]") to this writer.  Format: <c>[PE] &lt;tag&gt;: key=val …</c>
+    /// (prefix "[PE]" for SteepestAscent, "[IQ]" for IteratedQuadratic) to this writer.
     /// </summary>
     public TextWriter? Log { get; init; }
 
@@ -84,11 +113,21 @@ public sealed class PursuitEngine
     // ── Entry point ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Run the Baylis steepest-ascent search starting from <paramref name="startZ"/> (Ω).
+    /// Run the configured search method starting from <paramref name="startZ"/> (Ω).
     /// <paramref name="criterion"/> returns the scalar criterion at a candidate Z, or null
-    /// if unscorable.
+    /// if unscorable.  The criterion delegate is the ONLY way scores are obtained — never
+    /// call the loadpull engine directly, so the VSWR-dedup cache applies automatically.
     /// </summary>
-    public PursuitResult Run(Complex startZ, Func<Complex, double?> criterion)
+    public PursuitResult Run(Complex startZ, Func<Complex, double?> criterion) =>
+        Method switch
+        {
+            SearchMethod.IteratedQuadratic => RunIteratedQuadratic(startZ, criterion),
+            _                              => RunSteepestAscent(startZ, criterion),
+        };
+
+    // ── SteepestAscent (Baylis, the committed default) ────────────────────────
+
+    private PursuitResult RunSteepestAscent(Complex startZ, Func<Complex, double?> criterion)
     {
         var queries    = new List<(Complex Z, double? Value)>();
         var unscorable = new List<Complex>();
@@ -285,6 +324,243 @@ public sealed class PursuitEngine
         return new PursuitResult(optimumZ, cOptimum, queries, unscorable, converged: true);
     }
 
+    // ── IteratedQuadratic (trust-region iterated quadratic) ───────────────────
+
+    /// <summary>
+    /// Trust-region iterated-quadratic search (loadpull_pursuit.md §1.1.2).
+    ///
+    /// At each iterate: places 4 cardinal neighbours at the trust-region radius R (VSWR,
+    /// exact via FindStepLength), fits the local quadratic surface, and jumps toward its
+    /// analytic optimum if the Hessian is negative-definite and the optimum is within the
+    /// trust region.  If not, falls back to a gradient step using the same fit's linear
+    /// part — degrading gracefully to steepest ascent where curvature is unusable.
+    ///
+    /// The quadratic is fitted as a DECOUPLED model — ΔC = m1·Δx + m2·Δy + ½(m11·Δx² + m22·Δy²)
+    /// — using separate 1-D fits per axis (Re and Im).  This avoids the singular AtA matrix
+    /// that arises from the full 5-parameter fit when all cardinal probes are axis-aligned
+    /// (the cross-term column ΔxΔy is identically zero for axis-aligned cardinals, making
+    /// Solve5x5 return all-zeros and the gradient appear flat).  With m12=0 the Hessian is
+    /// diagonal, and SolveQuadraticOptimum reduces to delta = (−m1/m11, −m2/m22).
+    ///
+    /// Scores obtained ONLY via the criterion delegate, so the VSWR-dedup cache in
+    /// LoadpullPursuitEngine applies automatically.  Tracks and returns the best point
+    /// seen across all iterations (including scored cardinals).
+    /// </summary>
+    private PursuitResult RunIteratedQuadratic(Complex startZ, Func<Complex, double?> criterion)
+    {
+        var queries    = new List<(Complex Z, double? Value)>();
+        var unscorable = new List<Complex>();
+
+        double? Score(Complex z)
+        {
+            if (z.Real <= 0) return null;   // physical guard: passive termination only
+            var v = criterion(z);
+            queries.Add((z, v));
+            if (v is null) unscorable.Add(z);
+            return v;
+        }
+
+        // 1. Seed at startZ.
+        double? c0 = Score(startZ);
+        Log?.WriteLine($"[IQ] Seed: Z={FmtZ(startZ)} c0={c0:G6}");
+        if (c0 is null)
+            return Abort(startZ, queries, unscorable,
+                $"Start point Z={startZ} is unscorable — DUT does not compress; " +
+                "raise PinMax or check bias/load.");
+
+        Complex curZ  = startZ;
+        double  cCur  = c0.Value;
+        Complex bestZ = startZ;
+        double  bestC = c0.Value;
+
+        // 2. Trust-region radius R (VSWR ≥ 1), initialized to DsInitial.
+        //    Shrink rule (same as SteepestAscent): R = 1 + (R-1)/3 on rejection.
+        //    Grow rule on quadratic improvement: R = min(DsInitial, 1 + (R-1)*2).
+        double R = DsInitial;
+
+        // dirs[0]=+Re, [1]=−Re, [2]=+Im, [3]=−Im.
+        // isRe[i]: dirs 0 and 1 are on the Re axis; dirs 2 and 3 are on the Im axis.
+        var dirs  = new Complex[] { new Complex(1,0), new Complex(-1,0), new Complex(0,1), new Complex(0,-1) };
+        var isRe  = new bool[]    { true,              true,              false,             false             };
+
+        Log?.WriteLine($"[IQ] Loop: DsInitial={DsInitial} ConvergenceThreshold={ConvergenceThreshold} MaxSteps={MaxAscentSteps}");
+
+        for (int step = 0; step < MaxAscentSteps; step++)
+        {
+            Log?.WriteLine($"[IQ] Check: step={step} R={R:G4} threshold={ConvergenceThreshold}  curZ={FmtZ(curZ)} cCur={cCur:G6}");
+            if (R < ConvergenceThreshold)
+            {
+                Log?.WriteLine($"[IQ] Converged: R={R:G4} < threshold={ConvergenceThreshold} after {step} steps");
+                break;
+            }
+
+            // 3a. Place 4 cardinal neighbours at R VSWR in ±Re(Z), ±Im(Z).
+            //     Mirror any unscorable cardinal through curZ (no negative-R probes).
+            //     Collect Re-axis and Im-axis points separately for the decoupled 1-D fit.
+            var rePts = new List<(double Du, double Dc)>();   // (ΔRe, ΔC) from Re-axis cardinals
+            var imPts = new List<(double Du, double Dc)>();   // (ΔIm, ΔC) from Im-axis cardinals
+            int nScored = 0;
+
+            for (int d = 0; d < dirs.Length; d++)
+            {
+                var dir = dirs[d];
+                double  len   = FindStepLength(curZ, dir, R);
+                Complex cardZ = curZ + dir * len;
+
+                // Physical guard: mirror immediately if the placed point is non-physical.
+                if (cardZ.Real <= 0)
+                    cardZ = 2 * curZ - cardZ;
+
+                if (cardZ.Real <= 0) continue;   // both endpoints non-physical — skip
+
+                double? cardC = Score(cardZ);
+                Log?.WriteLine($"[IQ] Cardinal: dir=({dir.Real:G2},{dir.Imaginary:G2}) Z={FmtZ(cardZ)} VSWR={RfHelpers.VswrFromZ(curZ, cardZ):F4} c={cardC?.ToString("G6") ?? "null"}");
+
+                // If unscorable (non-convergent), mirror through curZ and retry.
+                if (cardC is null)
+                {
+                    Complex mirZ = 2 * curZ - cardZ;
+                    if (mirZ.Real > 0)
+                    {
+                        cardC = Score(mirZ);
+                        if (cardC is not null) cardZ = mirZ;
+                        Log?.WriteLine($"[IQ] Cardinal.Mirror: Z={FmtZ(mirZ)} c={cardC?.ToString("G6") ?? "null"}");
+                    }
+                }
+
+                if (cardC is not null)
+                {
+                    nScored++;
+                    // Classify by axis: compute the axial displacement from curZ.
+                    double du = isRe[d]
+                        ? (cardZ.Real      - curZ.Real)
+                        : (cardZ.Imaginary - curZ.Imaginary);
+                    if (isRe[d]) rePts.Add((du, cardC.Value - cCur));
+                    else          imPts.Add((du, cardC.Value - cCur));
+                    if (cardC.Value > bestC) { bestC = cardC.Value; bestZ = cardZ; }
+                }
+            }
+
+            // 3b. Fit decoupled 1-D quadratics per axis.
+            //     Full 5-parameter FitQuadraticSurface cannot be used here: with axis-aligned
+            //     cardinals the ΔxΔy cross-term column is identically zero, making AtA singular
+            //     and Solve5x5 return all-zeros (flat apparent gradient).  Instead fit each axis
+            //     independently, setting m12=0 (unobservable from axis-aligned probes).
+            if (nScored == 0)
+            {
+                // No scored cardinals — shrink R and retry.
+                double Rold = R;
+                R = 1.0 + (R - 1.0) / 3.0;
+                Log?.WriteLine($"[IQ] TooFewPoints(0): shrink R {Rold:G4} → {R:G4}");
+                continue;
+            }
+
+            var (m1, m11) = FitAxis1D(rePts);
+            var (m2, m22) = FitAxis1D(imPts);
+
+            // 3c. Decide jump direction: quadratic optimum (if Hessian negative-definite
+            //     and within/near trust region) or gradient fallback (same fit, linear part).
+            // With m12=0 (decoupled): Hessian det = m11*m22 > 0 iff both m11<0 and m22<0.
+            // SolveQuadraticOptimum then gives delta = (−m1/m11, −m2/m22).
+            Complex delta     = SolveQuadraticOptimum(m1, m2, m11, 0.0, m22);
+            Complex? jumpZ    = null;
+            bool     isQuad   = false;
+
+            if (delta != Complex.Zero)
+            {
+                // Hessian is negative-definite: check containment in trust region.
+                Complex candQ = curZ + delta;
+                double  vswrQ = candQ.Real > 0
+                    ? RfHelpers.VswrFromZ(curZ, candQ)
+                    : double.MaxValue;
+
+                // Accept the quadratic jump if within / just outside the trust region.
+                // Clamp to the trust boundary if it lands just outside (vswrQ ≤ R*1.5).
+                if (vswrQ <= R * 1.5 && candQ.Real > 0)
+                {
+                    if (vswrQ > R)
+                    {
+                        // Clamp: project the delta direction to exactly R VSWR.
+                        double dLen = delta.Magnitude;
+                        if (dLen > 1e-20)
+                        {
+                            Complex ddir = delta / dLen;
+                            double  sl   = FindStepLength(curZ, ddir, R);
+                            candQ = curZ + ddir * sl;
+                        }
+                    }
+                    if (candQ.Real > 0)
+                    {
+                        jumpZ  = candQ;
+                        isQuad = true;
+                    }
+                }
+                // Else: optimum clearly outside trust region → fall through to gradient.
+            }
+
+            if (jumpZ is null)
+            {
+                // Gradient step: use the linear part (m1, m2) of the same quadratic fit
+                // as the ascent direction — identical to SteepestAscent behavior.
+                double gradMag = Math.Sqrt(m1 * m1 + m2 * m2);
+                if (gradMag < 1e-20)
+                {
+                    // Flat criterion surface at this scale — shrink R and retry.
+                    double Rold = R;
+                    R = 1.0 + (R - 1.0) / 3.0;
+                    Log?.WriteLine($"[IQ] FlatGradient: shrink R {Rold:G4} → {R:G4}");
+                    continue;
+                }
+                double  ux = m1 / gradMag, uy = m2 / gradMag;
+                double  sl = FindStepLength(curZ, new Complex(ux, uy), R);
+                Complex gZ = curZ + new Complex(ux, uy) * sl;
+                if (gZ.Real > 0) jumpZ = gZ;
+            }
+
+            if (jumpZ is null)
+            {
+                // No valid move in any direction (exits physical region) — shrink R.
+                double Rold = R;
+                R = 1.0 + (R - 1.0) / 3.0;
+                Log?.WriteLine($"[IQ] NoValidJump: shrink R {Rold:G4} → {R:G4}");
+                continue;
+            }
+
+            // Score the candidate.
+            double? cJump = Score(jumpZ.Value);
+            Log?.WriteLine($"[IQ] Jump({(isQuad ? "quadratic" : "gradient")}): Z={FmtZ(jumpZ.Value)} VSWR={RfHelpers.VswrFromZ(curZ, jumpZ.Value):F4} c={cJump?.ToString("G6") ?? "null"}");
+
+            if (cJump is not null && cJump.Value > cCur)
+            {
+                curZ = jumpZ.Value;
+                cCur = cJump.Value;
+                if (cJump.Value > bestC) { bestC = cJump.Value; bestZ = curZ; }
+
+                if (isQuad)
+                {
+                    // Quadratic model proved accurate: grow trust radius (cap at DsInitial).
+                    double Rold = R;
+                    R = Math.Min(DsInitial, 1.0 + (R - 1.0) * 2.0);
+                    Log?.WriteLine($"[IQ] Accept.Quadratic: grow R {Rold:G4} → {R:G4}");
+                }
+                else
+                {
+                    Log?.WriteLine($"[IQ] Accept.Gradient: R unchanged={R:G4}");
+                }
+            }
+            else
+            {
+                // Reject: shrink trust radius.
+                double Rold = R;
+                R = 1.0 + (R - 1.0) / 3.0;
+                Log?.WriteLine($"[IQ] Reject(c={cJump?.ToString("G6") ?? "null"} ≤ cCur={cCur:G6}): shrink R {Rold:G4} → {R:G4}");
+            }
+        }
+
+        Log?.WriteLine($"[IQ] Done: bestZ={FmtZ(bestZ)} bestC={bestC:G6} total_queries={queries.Count}");
+        return new PursuitResult(bestZ, bestC, queries, unscorable, converged: true);
+    }
+
     // ── Exact VSWR step-length solver (Fix 2) ─────────────────────────────────
 
     /// <summary>
@@ -331,6 +607,39 @@ public sealed class PursuitEngine
         => $"{z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j";
 
     // ── Curve-fitting helpers (unchanged) ────────────────────────────────────
+
+    /// <summary>
+    /// Fit a 1-D quadratic ΔC = m·Δu + ½·muu·Δu² through the origin and the supplied
+    /// (Δu, ΔC) points (typically the two axis-aligned cardinals on one axis).
+    ///
+    /// Used by <see cref="RunIteratedQuadratic"/> to avoid the singular AtA matrix that
+    /// arises when axis-aligned cardinals are fed to the full 5-parameter
+    /// <see cref="FitQuadraticSurface"/> (the ΔxΔy cross-term column is identically zero
+    /// for axis-aligned probes, making the system rank-deficient).
+    ///
+    /// With 0 points: returns (0, 0).
+    /// With 1 point:  gradient-only estimate (muu = 0, m = ΔC/Δu).
+    /// With 2 points: exact 2×2 solve.  (Origin is implicit — it is the reference point.)
+    /// </summary>
+    private static (double M, double Muu) FitAxis1D(List<(double Du, double Dc)> pts)
+    {
+        if (pts.Count == 0) return (0.0, 0.0);
+        if (pts.Count == 1)
+        {
+            double du = pts[0].Du, dc = pts[0].Dc;
+            return Math.Abs(du) > 1e-20 ? (dc / du, 0.0) : (0.0, 0.0);
+        }
+        // Two points: [du_a, du_a²/2] [m]   [dc_a]
+        //             [du_b, du_b²/2] [muu] = [dc_b]
+        double a = pts[0].Du, cA = pts[0].Dc;
+        double b = pts[1].Du, cB = pts[1].Dc;
+        double det = a * (b * b / 2.0) - b * (a * a / 2.0);   // = ab(b−a)/2
+        if (Math.Abs(det) < 1e-30)
+            return Math.Abs(a) > 1e-20 ? (cA / a, 0.0) : (0.0, 0.0);
+        double m   = (cA * (b * b / 2.0) - cB * (a * a / 2.0)) / det;
+        double muu = (a * cB - b * cA) / det;
+        return (m, muu);
+    }
 
     /// <summary>
     /// Fit linear plane ΔC = m1·x + m2·y through two data points.

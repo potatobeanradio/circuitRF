@@ -111,4 +111,4 @@ Reject ds transitions (from log):
 Pursuit optimum: Z=80.48+0.00j Ω  value=40.6253 dBm
 Total queries: 12  (start=1, tangent=2, ascent=5, refine=4)
 
-Written to: /testdata/Hero3B/diag2_walk.txt
+Written to: testdata/Hero3B/diag2_walk.txt

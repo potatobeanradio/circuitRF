@@ -712,6 +712,7 @@ public sealed class CnlReader
             GuardHarmonicExpr     = kv.GetValueOrDefault("GuardHarmonic",       "0"),
             EffTypeExpr           = kv.GetValueOrDefault("EffType",             "DE"),
             ZsourceOBOExpr        = kv.GetValueOrDefault("ZsourceOBO",          "5"),
+            SearchMethodExpr      = kv.GetValueOrDefault("SearchMethod",         "SteepestAscent"),
             OutputGridPath        = outputGrid,
             Vswr1Expr             = kv.GetValueOrDefault("VSWR1",               "1.5"),
             Vswr1ResolutionExpr   = kv.GetValueOrDefault("VSWR1_resolution",    "4"),

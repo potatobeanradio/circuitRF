@@ -204,8 +204,51 @@ Hero 3 and Hero 3B goldens regenerated with corrected code. Key numbers (owner t
 7 PursuitEngine unit tests, 1 efficiency sanity test.
 
 ### Observed behavior on Hero 3B (synthetic SDD FET)
-MXP ≈ 65 Ω real, Pout ≈ 37 dBm at PinMax=30 dBm, 3 dB compression.
-MXE ≈ 68 Ω real, DE ≈ 44%.
-Pedro VSWR (MXP↔MXE) ≈ 1.05 — this FET's MXP and MXE are unusually close.
-The Pedro 2–2.5 VSWR coupling is empirical from real GaN PAs; synthetic SDDs may differ.
+SteepestAscent (default): MXP ≈ 80.5 Ω real, Pout ≈ 40.6 dBm at PinMax=30 dBm, 3 dB compression.
+(Note: earlier CLAUDE.md entries showed MXP at 65 Ω; those reflected a pre-debug state.
+ The golden CSV was regenerated after the B-series fixes; the current SA result is 80.5 Ω.)
+MXE ≈ 140 Ω real, DE ≈ 69.6%.
+Pedro VSWR (MXP↔MXE) ≈ 1.75 for this SDD model.
 Non-compression exit verified: PinMax=-18 aborts cleanly with an unscorable-start message.
+
+## Phase 4b-2 enhancement — IteratedQuadratic search method (2026-06-05)
+
+### New: `SearchMethod` enum and `PursuitParams.SearchMethod` field
+- `public enum SearchMethod { SteepestAscent, IteratedQuadratic }` — extensible, open to future methods.
+- `LoadpullPursuitAnalysis.SearchMethodExpr` (default `"SteepestAscent"`) — parsed by `CnlReader`.
+- `PursuitParams.SearchMethod` (default `SteepestAscent`) — threaded into both MXP and MXE engine instances.
+- `PursuitEngine.Method` (init property, default `SteepestAscent`) — dispatches `Run` to either
+  `RunSteepestAscent` (existing path, unchanged) or `RunIteratedQuadratic` (new).
+
+### `RunIteratedQuadratic` — trust-region iterated quadratic
+At each iterate: places 4 axis-aligned cardinal neighbours at R VSWR (exact `FindStepLength`),
+fits a decoupled local quadratic per axis, and jumps toward the analytic optimum if the Hessian
+is negative-definite and the optimum is within the trust region. Otherwise: gradient step.
+Shrinks/grows R (VSWR) by the VSWR-excess rule; converges when R < ConvergenceThreshold.
+Tracks and returns the best-scored point seen across all iterations (including cardinals).
+
+**Implementation note — decoupled fit (`FitAxis1D`):**
+The full 5-parameter `FitQuadraticSurface` cannot be used with axis-aligned cardinals: the ΔxΔy
+cross-term column in AtA is identically zero, making `Solve5x5` return all-zeros (flat apparent
+gradient). Solution: `FitAxis1D` fits each axis independently — (m1, m11) from Re-axis cardinals,
+(m2, m22) from Im-axis cardinals, m12=0 (unobservable from axis-aligned probes). `SolveQuadraticOptimum`
+receives m12=0, giving the correct decoupled optimum delta = (−m1/m11, −m2/m22).
+
+### Cache: automatic via criterion delegate
+IQ obtains every score through the `criterion` delegate (never calls `LoadpullEngine` directly),
+so the VSWR-dedup cache in `LoadpullPursuitEngine` applies automatically to all cardinal queries.
+
+### Cleanup: debug `Console.WriteLine` removed from `ExtractCriterion`
+The two leftover `poutAboveDbm=…` and `effAbove=…` debug prints are removed. The intentional
+`Console.Error.WriteLine` diagnostic logging is preserved.
+
+### Hero 3B results (IteratedQuadratic, 2026-06-05)
+- MXP: Z ≈ 77.6 Ω real, Pout ≈ 40.64 dBm.  VSWR from brute-force MXP (80 Ω) = 1.031. ✓
+- MXE: Z ≈ 123 Ω real, DE ≈ 69.7%.
+- Query count: IQ=39 vs SA=21 → ratio 1.86× (target ≤ 2×). ✓
+- Brute-force-vs-pursuit VSWR = 1.031 < 1.20. ✓
+
+### New tests (total now 257: 158 Core + 99 Engine)
+- `PursuitEngineTests.IteratedQuadratic_FindsKnownOptimum_QuadraticCriterion` — IQ unit test.
+- `Hero3BPursuitTests.Hero3BPursuit_BruteForceAgreement_IteratedQuadratic` — IQ brute-force gate.
+- `Hero3BPursuit_IteratedQuadratic_ReachesOptimum` — IQ walk + query count vs SA report.

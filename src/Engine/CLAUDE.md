@@ -340,3 +340,19 @@ Modified: `LoadpullEngine` (extracted `PrepareContext`/`RunOneTermination`);
            `LoadpullResult.PinStepResult` (added `PdcW`, `De`, `Pae`).
 
 **Total tests: 245 pass, 0 fail.**
+
+## Phase 4b-2 enhancement — IteratedQuadratic (2026-06-05)
+Second, more robust search method added to `PursuitEngine` alongside the existing `SteepestAscent`.
+
+- **`SearchMethod` enum** (`PursuitEngine.cs`): `{ SteepestAscent, IteratedQuadratic }` — extensible.
+- **`PursuitEngine.Method`** init property (default `SteepestAscent`): dispatches `Run` to either
+  `RunSteepestAscent` (unchanged existing path) or `RunIteratedQuadratic` (new).
+- **`SearchMethod` directive key** in `loadpull_pursuit` (default `SteepestAscent`): parsed from
+  `LoadpullPursuitAnalysis.SearchMethodExpr` by `CnlReader`, threaded into `PursuitParams`.
+- **`FitAxis1D`** new private static helper in `PursuitEngine`: decoupled 1-D quadratic fit per axis,
+  avoiding the singular AtA matrix that arises when axis-aligned cardinals feed the full 5-parameter
+  `FitQuadraticSurface` (the ΔxΔy column is identically zero → `Solve5x5` returns all-zeros).
+- **Debug cleanup**: removed leftover `Console.WriteLine` calls in `ExtractCriterion`.
+- **Hero 3B IQ results**: MXP=77.6 Ω (brute-force VSWR=1.031 < 1.20), query ratio IQ/SA=1.86× ≤ 2×.
+
+**Total tests: 257 pass, 0 fail (158 Core + 99 Engine).**

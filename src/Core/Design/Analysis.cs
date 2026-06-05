@@ -102,8 +102,9 @@ public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name)
     public string GuardHarmonicExpr { get; init; } = "0";
 
     // ── Pursuit-specific keys ─────────────────────────────────────────────────
-    public string EffTypeExpr                { get; init; } = "DE";    // "DE" or "PAE"
-    public string ZsourceOBOExpr             { get; init; } = "5";     // dB backoff
+    public string EffTypeExpr                { get; init; } = "DE";            // "DE" or "PAE"
+    public string ZsourceOBOExpr             { get; init; } = "5";             // dB backoff
+    public string SearchMethodExpr           { get; init; } = "SteepestAscent"; // SearchMethod enum name
     public string? OutputGridPath            { get; init; }             // null = no file
     public string Vswr1Expr                  { get; init; } = "1.5";
     public string Vswr1ResolutionExpr        { get; init; } = "4";
