@@ -1,0 +1,57 @@
+; ============================================================
+; hero3_at_compression.cnl— Phase-4b-1 loadpull: grounded-source GaN HEMT PA
+; Same as hero3.cnl, except PinMax is much higher to allow DUT to compress.
+; ============================================================
+
+; ---- FET model parameters (same as Phase 3 / Hero 2) ----
+Sv=-0.837
+Sc=0.71
+TV0=4.268
+TC=1.507
+th=0.001
+a=0.176
+g=0.089
+lam=0.0012
+B=1130
+
+; ---- analysis fundamental ----
+RFfreq = 2e9
+
+; ---- HB config (exposed as parameters) ----
+MaxHarm   = 5
+OverSamp  = 1
+HBtol     = 1e-7
+DriveStep = IfNecessary
+Guard     = 0
+
+; ---- DC bias ----
+Vgg = -3.05
+Vdd = 48
+
+; ============================================================
+; SOURCE Tuner (DUT port 1 = n_gate)
+; ============================================================
+Tuner:Src   n_src n_gate   Z[1]=25   Zdefault=1e-6   BiasTee=on   Vbias=Vgg
+
+; ============================================================
+; The FET (SDD), source grounded: port1 = n_gate, port2 = n_drain
+; ============================================================
+SDD:M1  n_gate 0  n_drain 0  \
+  I[1,0]=_v1/50  \
+  I[2,0]=(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1))) + 1))*ln(exp(-(2*TV0 - 2*_v1 + 2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1)*(_v2*lam + 1))/2
+
+; ============================================================
+; LOAD Tuner (DUT port 2 = n_drain) — THE SWEPT TUNER
+; ============================================================
+Tuner:Load  n_drain 0   Z[1]=80+j*10   Z[2]=1   Zdefault=1e-6   BiasTee=on   Vbias=Vdd
+
+; ============================================================
+; Loadpull analysis, with much higher PinMax to get compression
+; ============================================================
+analysis LP1  type=loadpull  Tone=RFfreq  MaxHarm=MaxHarm \
+     LoadTuner=Load  SourceTuner=Src  Sweep=Load  TuneHarm=1 \
+     Grid="RLSweep.gam" \
+     Compression=3  GainType=Gt \
+     PinStart=-20  PinStep=1  PinMax=30  Tickle=-50 \
+     MaxIter=100 \
+     FFTOverSample=OverSamp  Tol=HBtol  DriveStepping=DriveStep  GuardHarmonic=Guard

@@ -300,7 +300,6 @@ public sealed class LoadpullEngine
         var pinSteps  = new List<PinStepResult>();
         string stopReason = "PinMax";
         double gMax   = double.NegativeInfinity;
-        bool   overshot = false;
         Complex[,]? innerSeed = warmStart;
 
         foreach (var (pavlDbm, isTickle) in BuildPinSequence(p))
@@ -345,58 +344,21 @@ public sealed class LoadpullEngine
                     $"[LP]   Pin={pavlDbm:F1} dBm  Pout={WattsToDbm(foms.PoutW):F2} dBm  " +
                     $"{gainTag}={gain:F2} dB  compr={compression:F2} dB");
 
-                if (overshot)
+                // Stop when we have driven at least 0.1 dB past the compression target.
+                // Every step stays on the regular Pin grid (PinStart + n·PinStep).
+                // The step just below this one and this step bracket P-xdB for ExtractCriterion.
+                if (compression >= p.Compression + 0.1)
                 {
-                    // B2: we just completed the exact +0.1 dB overshoot step — stop now.
                     stopReason = "Compression";
                     break;
-                }
-
-                if (compression >= p.Compression)
-                {
-                    // P-xdB just reached.  B2: take exactly +0.1 dB more (tight bracket for
-                    // the interpolator) — do NOT wait for the next full PinStep.
-                    stopReason = "Compression";
-                    overshot   = true;
-                    // Override the next Pavl to be exactly +0.1 dB above the current step.
-                    // This is achieved by breaking out of the sequence iterator and doing one
-                    // extra solve directly (the foreach will yield the next regular step, but
-                    // we intercept by breaking and running the overshoot inline below).
-                    break;   // exit the foreach; overshoot solve follows
                 }
 
                 if (pavlDbm >= p.PinMaxDbm)
                 {
-                    if (!overshot) stopReason = "PinMax";
+                    stopReason = "PinMax";
                     break;
                 }
             }
-        }
-
-        // B2: if we stopped at exactly compression, run one final +0.1 dB overshoot solve
-        // (tight bracket for the interpolator — loadpull.md §3.1).
-        if (overshot && stopReason == "Compression" && pinSteps.Count > 0)
-        {
-            var lastStep = pinSteps.Last(s => !s.IsTickle);
-            double overshootDbm = Math.Min(lastStep.PavlDbm + 0.1, p.PinMaxDbm);
-            double overshootW   = DbmToWatts(overshootDbm);
-            ctx.SrcModel.SetSourceDrive(p.ToneHz, overshootW);
-            var srOs = _hbEngine.RunSinglePoint(ctx.HbParams, innerSeed, ctx.SolveSettings);
-            var fomsOs = ComputeFoms(srOs.V, srOs.INl, ctx.LoadIfIdx, ctx.SrcIfIdx, overshootW, ctx.K);
-            double vLoadOs = ctx.LoadIfIdx >= 0 && srOs.V.GetLength(1) > 0 ? srOs.V[ctx.LoadIfIdx, 0].Real : 0;
-            double iLoadOs = ctx.LoadIfIdx >= 0 && srOs.INl.GetLength(1) > 0 ? -srOs.INl[ctx.LoadIfIdx, 0].Real : 0;
-            double vSrcOs  = ctx.SrcIfIdx  >= 0 && srOs.V.GetLength(1) > 0 ? srOs.V[ctx.SrcIfIdx,  0].Real : 0;
-            double iSrcOs  = ctx.SrcIfIdx  >= 0 && srOs.INl.GetLength(1) > 0 ? -srOs.INl[ctx.SrcIfIdx, 0].Real : 0;
-            pinSteps.Add(new PinStepResult(
-                overshootDbm, isTickle: false,
-                srOs.V, srOs.INl,
-                fomsOs.PavlW, fomsOs.PinDeliveredW, fomsOs.PoutW, fomsOs.GtDb, fomsOs.GpDb,
-                vLoadOs, iLoadOs, vSrcOs, iSrcOs,
-                srOs.Converged, srOs.Iterations, srOs.FailReason));
-            Console.Error.WriteLine(
-                $"[LP]   Pin={overshootDbm:F1} dBm (+0.1 overshoot)  " +
-                $"Pout={WattsToDbm(fomsOs.PoutW):F2} dBm  " +
-                $"{(p.UseGt ? "Gt" : "Gp")}={(p.UseGt ? fomsOs.GtDb : fomsOs.GpDb):F2} dB");
         }
 
         return new GridPointResult(gridIndex, gamma, z, pinSteps, stopReason);

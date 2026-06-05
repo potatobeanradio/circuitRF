@@ -118,16 +118,23 @@ by collecting trailing tokens from the Z[2] expression region.
 Old: `Complex iSrc = -iNlSrc;`  → Re(Zin) < 0 (non-physical).
 New: `Complex iSrc = iNlSrc;`   → Re(Zin) > 0 (derived from INl convention + KCL).
 
-### B2 — Compression overshoot: exact +0.1 dB
-Old: continued to next full PinStep (1 dB) after compression detected.
-New: exits inner loop at compression and runs exactly one extra solve at `lastDbm + 0.1 dB`.
-Tightly brackets P-xdB for the downstream interpolator.
+### B2 — Compression stop simplified (supersedes earlier +0.1 dB overshoot design)
+Old (phase 4b-2 original): ran one extra solve at `lastDbm + 0.1 dB` off the regular grid;
+     ExtractCriterion set xdB = comprAbove (overshoot compression level), making t ≈ 1.0 so
+     it always returned the overshoot step's Pout — effectively Pout at ABOVE p.Compression.
+New (final): drive stays on the regular Pin grid; stop when `compression >= p.Compression + 0.1`.
+     The two bracketing steps are adjacent regular-grid steps straddling p.Compression.
+     No off-grid solve; cleaner code, eliminates the non-convergence risk of the overshoot solve.
 
-### B3 — MXP criterion in dBm; clean ExtractCriterion interpolation
+### B3 — MXP criterion in dBm; ExtractCriterion correctly interpolates to p.Compression
 Old: returned PoutW (Watts) — gradient surface order-of-magnitude inconsistent across terminations.
      Bracket search found first-gain-drop (wrong), fraction formula missing xdB (wrong).
-New: returns Pout at P-xdB in dBm. Bracket = last-2 steps (below) and last step (above, +0.1 dB
-     overshoot from B2). Interpolation fraction = (xdB - gainBelow)/(gainAbove - gainBelow).
+     After B2 original: xdB = comprAbove → t ≈ 1.0 → returned overshoot step Pout (still wrong).
+New: signature `ExtractCriterion(gpr, usePae, mxe, xdB)` — xdB = lpp.Compression from caller.
+     Bracket: below = last step with compr < xdB; above = first step with compr >= xdB.
+     t = (xdB − comprBelow) / (comprAbove − comprBelow) — real fraction in [0,1].
+     Interpolated Pout lies STRICTLY BETWEEN the two grid steps (regression-verified).
+     ComputeZsource: replaced 0.5 dB proxy with same bracketing at lpp.Compression.
 
 ### B4 — WToDb renamed to RatioToDb
 Applies only to dimensionless power ratios (gain). Never to absolute power (those use WattsToDbm).
@@ -150,11 +157,14 @@ Old: LoadpullPursuitEngine.Query had two dead lines computing gamma (identity ex
 New: RunOneTermination computes gamma internally from Z and the grid's Z0 (not hardcoded).
      The gamma parameter is removed from RunOneTermination's signature.
 
-### B8 — Goldens regenerated
+### B8 — Goldens regenerated (twice: after B3 original, again after B2+B3 final fix)
 Hero 3 and Hero 3B goldens regenerated with corrected code. Key numbers (owner to verify):
-  Hero 3B pursuit: MXP Pout = 40.39 dBm at Z≈65Ω, MXE DE = 59.6% at Z≈68Ω.
+  Hero 3B pursuit (B2+B3 final):
+    MXP Pout = 37.64 dBm at Z≈65Ω — correctly interpolated to exactly P-3dB (not to overshoot step).
+    MXE DE = 60.4% at Z≈85Ω.
+    Pedro VSWR (MXP↔MXE) = 1.31 — MXP and MXE separated more than before; still inherent to this SDD model.
+    Unscorable = 0 (was 2 with B2 original — those 2 had the off-grid overshoot solve fail to converge).
   Zsource: Re(Zin) > 0 confirmed by diagnostic (was −50Ω before B1 fix, now +50Ω).
-  Pedro VSWR (MXP↔MXE) ≈ 1.05 — inherent property of this SDD model (not a search artifact).
   NOT INDEPENDENTLY VALIDATED — owner to hand-check before freezing.
 
 ## Phase 4b-2 deliverable — COMPLETE (2026-06-03)

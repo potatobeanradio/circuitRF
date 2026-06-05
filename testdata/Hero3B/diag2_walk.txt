@@ -1,0 +1,114 @@
+═══════════════════════════════════════════════════════════════════
+ DIAGNOSTIC 2 — Instrumented pursuit walk (Hero 3B, MXP)
+ Dn=1.05  DsInitial=1.3  ConvergenceThreshold=1.02  MaxSteps=40
+═══════════════════════════════════════════════════════════════════
+
+── PursuitEngine.Log (full) ─────────────────────────────────────────
+[PE] Tangent.Start: Z=50.00+0.00j c0=39.1029
+[PE] Tangent.N1: Z=52.50+0.00j VSWR=1.0500 c1=39.316
+[PE] Tangent.N2: Z=50.00+2.44j VSWR=1.0500 c2=39.1029
+[PE] Gradient: m1=0.08525 m2=3.016E-06 gradMag=0.08525
+[PE] Gradient: ux=1 uy=3.537E-05  (unit vector in Z-plane, Ω)
+[PE] Ascent.Loop: DsInitial=1.3 ConvergenceThreshold=1.02 MaxSteps=40
+[PE] Ascent.Check: step=0 ds=1.3 threshold=1.02 → continue
+[PE] Ascent.Step: step=0 ds=1.3 stepLen=15.00Ω curZ=50.00+0.00j candZ=65.00+0.00j trueVSWR=1.3000
+[PE] Ascent.Accept: step=0 crit=40.2248 > prev=39.1029 Δ=1.122 ds_unchanged=1.3
+[PE] Ascent.Check: step=1 ds=1.3 threshold=1.02 → continue
+[PE] Ascent.Step: step=1 ds=1.3 stepLen=19.50Ω curZ=65.00+0.00j candZ=84.50+0.00j trueVSWR=1.3000
+[PE] Ascent.Accept: step=1 crit=40.5744 > prev=40.2248 Δ=0.3496 ds_unchanged=1.3
+[PE] Ascent.Check: step=2 ds=1.3 threshold=1.02 → continue
+[PE] Ascent.Step: step=2 ds=1.3 stepLen=25.35Ω curZ=84.50+0.00j candZ=109.85+0.00j trueVSWR=1.3000
+[PE] Ascent.Reject: step=2 crit=39.9011 <= prev=40.5744  ds: 1.3 → 1.1
+[PE] Ascent.Check: step=3 ds=1.1 threshold=1.02 → continue
+[PE] Ascent.Step: step=3 ds=1.1 stepLen=8.45Ω curZ=84.50+0.00j candZ=92.95+0.00j trueVSWR=1.1000
+[PE] Ascent.Reject: step=3 crit=40.3846 <= prev=40.5744  ds: 1.1 → 1.033
+[PE] Ascent.Check: step=4 ds=1.033 threshold=1.02 → continue
+[PE] Ascent.Step: step=4 ds=1.033 stepLen=2.82Ω curZ=84.50+0.00j candZ=87.32+0.00j trueVSWR=1.0333
+[PE] Ascent.Reject: step=4 crit=40.5217 <= prev=40.5744  ds: 1.033 → 1.011
+[PE] Ascent.Check: step=5 ds=1.011 threshold=1.02 → TERMINATE
+[PE] Ascent.Terminate: ds=1.011 < threshold=1.02 after 5 iterations
+[PE] Ascent.Done: curZ=84.50+0.00j cCur=40.5744 ds_final=1.011 accepted_steps=2
+[PE] Refine.Start: curZ=84.50+0.00j
+[PE] Refine.Cardinal: Z=88.72+0.00j VSWR=1.0500 crit=40.4918
+[PE] Refine.Cardinal: Z=80.48+0.00j VSWR=1.0500 crit=40.6253
+[PE] Refine.Cardinal: Z=84.50+4.12j VSWR=1.0500 crit=40.568
+[PE] Refine.Cardinal: Z=84.50-4.12j VSWR=1.0500 crit=40.568
+[PE] Refine.Result: poly_rejected (delta=0+0j) → best-cardinal fallback
+[PE] Refine.BestCardinal: Z=80.48+0.00j crit=40.6253 — beats curZ
+[PE] Final: optimumZ=80.48+0.00j cOptimum=40.6253 total_queries=12
+
+── ds trajectory summary ────────────────────────────────────────────
+DsInitial            = 1.3
+ConvergenceThreshold = 1.02
+MaxAscentSteps       = 40
+Accepts              = 2
+Rejects              = 3
+Terminate lines      = 1
+Loop checks          = 6
+
+── Hypothesis 1: ds collapse after first rejection ──────────────────
+DsInitial / 3 = 1.3 / 3 = 0.433333
+ConvergenceThreshold  = 1.02
+0.433333 < 1.02  →  loop exits IMMEDIATELY after first rejection: True
+
+Reject ds transitions (from log):
+  ds: 1.3 → 1.1
+    → ds_before=1.3  ds_after=1.1  threshold=1.02  exits_immediately=False  H1_CONFIRMED=False
+  ds: 1.1 → 1.033
+    → ds_before=1.1  ds_after=1.033  threshold=1.02  exits_immediately=False  H1_CONFIRMED=False
+  ds: 1.033 → 1.011
+    → ds_before=1.033  ds_after=1.011  threshold=1.02  exits_immediately=True  H1_CONFIRMED=True
+
+── Hypothesis 2: VswrToDeltaGamma approximation error ───────────────
+  (formula uses (vswr-1)/(vswr+1) = |Γ|-from-origin, ignores current Γ)
+            curZ     |Γ|   stepLen(approx)           candZ    trueVSWR  intendedVSWR    error
+──────────────────────────────────────────────────────────────────────────────────────────
+    50.00+0.00j  0.0000            0.1304    65.00+0.00j      1.3000        1.3000   +0.000
+    65.00+0.00j  0.1304            0.1304    84.50+0.00j      1.3000        1.3000   +0.000
+    84.50+0.00j  0.2565            0.1304   109.85+0.00j      1.3000        1.3000  -+0.000
+    84.50+0.00j  0.2565            0.0476    92.95+0.00j      1.1000        1.1000   +0.000
+    84.50+0.00j  0.2565            0.0162    87.32+0.00j      1.0334        1.0330   +0.000
+
+  Refinement cardinal neighbours (Dn steps from final curZ):
+  [PE] Refine.Start: curZ=84.50+0.00j
+    [PE] Refine.Cardinal: Z=88.72+0.00j VSWR=1.0500 crit=40.4918
+    [PE] Refine.Cardinal: Z=80.48+0.00j VSWR=1.0500 crit=40.6253
+    [PE] Refine.Cardinal: Z=84.50+4.12j VSWR=1.0500 crit=40.568
+    [PE] Refine.Cardinal: Z=84.50-4.12j VSWR=1.0500 crit=40.568
+
+── Scoring check: pursuit criterion vs independent re-run ────────────
+  (same RunOneTermination + LocalExtract; criteria should be identical)
+    #                  Z    pursuit_crit  match?
+───────────────────────────────────────────────────────
+    0    50.00+0.00j         39.1029  ✓  start
+    1    52.50+0.00j         39.3160  ✓  tangent N1
+    2    50.00+2.44j         39.1029  ✓  tangent N2
+    3    65.00+0.00j         40.2248  ✓  ascent step 1
+    4    84.50+0.00j         40.5744  ✓  ascent step 2
+    5   109.85+0.00j         39.9011  ✓  ascent step 3
+    6    92.95+0.00j         40.3846  ✓  ascent step 4
+    7    87.32+0.00j         40.5217  ✓  ascent step 5
+    8    88.72+0.00j         40.4918  ✓  refine 1
+    9    80.48+0.00j         40.6253  ✓  refine 2
+   10    84.50+4.12j         40.5680  ✓  refine 3
+   11    84.50-4.12j         40.5680  ✓  refine 4
+
+── Search walk (queried Z in order) ─────────────────────────────────
+    #                  Z     crit(dBm)  note
+    0    50.00+0.00j        39.103  start
+    1    52.50+0.00j        39.316  tangent N1
+    2    50.00+2.44j        39.103  tangent N2
+    3    65.00+0.00j        40.225  ascent step 1
+    4    84.50+0.00j        40.574  ascent step 2
+    5   109.85+0.00j        39.901  ascent step 3
+    6    92.95+0.00j        40.385  ascent step 4
+    7    87.32+0.00j        40.522  ascent step 5
+    8    88.72+0.00j        40.492  refine
+    9    80.48+0.00j        40.625  refine
+   10    84.50+4.12j        40.568  refine
+   11    84.50-4.12j        40.568  refine
+
+Pursuit optimum: Z=80.48+0.00j Ω  value=40.6253 dBm
+Total queries: 12  (start=1, tangent=2, ascent=5, refine=4)
+
+Written to: /testdata/Hero3B/diag2_walk.txt

@@ -93,7 +93,7 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         double mxeEffPct  = result.MXE.Value * 100;
         Console.WriteLine(
             $"MXP: Z={result.MXP.Z.Real:F2}{(result.MXP.Z.Imaginary >= 0 ? "+" : "")}{result.MXP.Z.Imaginary:F2}j Ω  " +
-            $"Pout={mxpPoutDbm:F2} dBm");
+            $"Pout={result.MXP.Value:F2} dBm");
         Console.WriteLine(
             $"MXE: Z={result.MXE.Z.Real:F2}{(result.MXE.Z.Imaginary >= 0 ? "+" : "")}{result.MXE.Z.Imaginary:F2}j Ω  " +
             $"Eff={mxeEffPct:F1}%");
@@ -288,6 +288,86 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
                 $"Abort message missing key context: '{result.MXP.AbortReason}'");
         });
         Assert.Null(ex);   // must not crash
+    }
+
+    // ── 4. Brute-force vs pursuit agreement (permanent regression) ───────────
+
+    /// <summary>
+    /// Runs a 1-D brute-force sweep over the real axis (60–100 Ω, step 5 Ω) to find the
+    /// true MXP Z, then runs the pursuit and asserts that the pursuit lands within 1.2 VSWR
+    /// of the brute-force truth.
+    ///
+    /// This guards against the three search-algorithm bugs fixed on 2026-06-04:
+    ///   (1) ds-collapse (exiting after 1 rejection),
+    ///   (2) VswrToDeltaGamma approximation, and
+    ///   (3) Γ-plane vs Z-plane metric mismatch.
+    ///
+    /// The brute-force is restricted to Im=0, 9 points, so it runs in ~1–2 s.
+    /// Tolerance 1.2 VSWR: allows ≈±10 Ω error at Z≈80 Ω.
+    /// </summary>
+    [Fact]
+    public void Hero3BPursuit_BruteForceAgreement()
+    {
+        var dir    = Hero3BDir();
+        var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "hero3B_at_compression.cnl"));
+        var netlist   = new Elaborator(lib).Elaborate(tb);
+
+        var lpa      = tb.Analyses.OfType<LoadpullPursuitAnalysis>().First();
+        var pp       = LoadpullPursuitEngine.Resolve(lpa, netlist.ResolvedGlobals);
+        var lpp      = pp.LpParams;
+        var lpEngine = new LoadpullEngine(netlist, tb);
+
+        // ── Brute-force sweep (Im=0, Re=60..100 Ω, step 5) ──────────────────
+        var ctx     = lpEngine.PrepareContext(lpp);
+        double bfMxpPout = double.NegativeInfinity;
+        Complex bfMxpZ  = new Complex(50, 0);
+        int idx = 0;
+        foreach (double zRe in Enumerable.Range(0, 9).Select(i => 60.0 + i * 5.0))
+        {
+            var z   = new Complex(zRe, 0);
+            var gpr = lpEngine.RunOneTermination(lpp, ctx, z, idx++);
+            if (gpr.StopReason != "Compression") continue;
+            var conv = gpr.PinSteps.Where(s => s.Converged && !s.IsTickle).ToList();
+            if (conv.Count == 0) continue;
+            int? maxIdx = conv.Select((s, i) => new { s.GtDb, i }).MaxBy(x => x.GtDb)?.i;
+            if (maxIdx is null) continue;
+            double gMax = conv[maxIdx.Value].GtDb;
+            PinStepResult? bel = null, abv = null;
+            for (int i = maxIdx.Value; i < conv.Count; i++)
+            {
+                double compr = gMax - conv[i].GtDb;
+                if (compr < lpp.Compression)       bel = conv[i];
+                else if (abv is null)               abv = conv[i];
+            }
+            if (abv is null) continue;
+            bel ??= abv;
+            double cB = gMax - bel.GtDb, cA = gMax - abv.GtDb, dC = cA - cB;
+            double t  = dC > 1e-10 ? Math.Clamp((lpp.Compression - cB) / dC, 0, 1) : 0;
+            double pdbm = 10*Math.Log10(bel.PoutW*1000) + t*(10*Math.Log10(abv.PoutW*1000) - 10*Math.Log10(bel.PoutW*1000));
+            if (pdbm > bfMxpPout) { bfMxpPout = pdbm; bfMxpZ = z; }
+        }
+        ctx.SweptModel.ClearHarmonicOverride();
+        ctx.SrcModel.SetTone(0);
+        ctx.LoadModel.SetTone(0);
+
+        output.WriteLine($"Brute-force MXP: Z={bfMxpZ.Real:F1} Ω  Pout={bfMxpPout:F3} dBm");
+        Assert.True(bfMxpPout > 25, $"Brute-force MXP implausibly low ({bfMxpPout:F2} dBm)");
+
+        // ── Pursuit ───────────────────────────────────────────────────────────
+        var pursuitEngine = new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb));
+        var result        = pursuitEngine.Run(pp);
+
+        Assert.True(result.MXP.Converged, $"MXP did not converge: {result.MXP.AbortReason}");
+
+        double vswr = RfHelpers.VswrFromZ(result.MXP.Z, bfMxpZ);
+        output.WriteLine(
+            $"Pursuit MXP:     Z={result.MXP.Z.Real:F1}{(result.MXP.Z.Imaginary >= 0 ? "+" : "")}{result.MXP.Z.Imaginary:F1}j Ω  " +
+            $"Pout={result.MXP.Value:F3} dBm");
+        output.WriteLine($"VSWR(pursuit, brute-force) = {vswr:F3}  (limit 1.20)");
+
+        Assert.True(vswr < 1.20,
+            $"Pursuit MXP at Z={result.MXP.Z.Real:F1} Ω is {vswr:F3} VSWR from " +
+            $"brute-force MXP at Z={bfMxpZ.Real:F1} Ω — search missed the optimum.");
     }
 
     // ── CSV I/O ───────────────────────────────────────────────────────────────

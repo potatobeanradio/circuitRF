@@ -5,65 +5,67 @@ namespace CircuitRF.Engine.Loadpull;
 
 /// <summary>
 /// Baylis steepest-ascent search for MXP (max output power) or MXE (max efficiency)
-/// terminations in the VSWR plane.  loadpull_pursuit.md §1.
+/// terminations in the Z-plane (Re/Im in Ω).
 ///
-/// One engine; the caller supplies a criterion delegate that scores each candidate
-/// termination (supplied and returned as Z in Ω).
+/// Algorithm:
+///   1. Tangent-plane stage: query 2 neighbours at Dn VSWR in the +Re(Z) and +Im(Z)
+///      directions (step lengths computed via exact VswrFromZ root-find), fit
+///      ΔC = m1·ΔRe(Z) + m2·ΔIm(Z), compute steepest-ascent unit direction in Z-space.
+///   2. Ascend by Ds VSWR along that direction (exact step via VswrFromZ root-find);
+///      accept if criterion improves; on failure shrink the VSWR-excess-over-unity by /3:
+///        ds = 1 + (ds−1)/3       (so 1.3→1.1→1.033→1.011…, always VSWR ≥ 1)
+///      Converge when ds &lt; ConvergenceThreshold (a VSWR just above 1).
+///   3. Polynomial refinement in Z-space with 4 exact Dn-VSWR cardinal neighbours.
+///      Fallback: if the polynomial can't find an improvement, step to the best-scored
+///      cardinal that beats the current point.
 ///
-/// B5 fix — internal working representation is Γ (reflection coefficient, normalised to Z0).
-/// Reason: VSWR distance is monotonic with |ΔΓ| for small steps near any Γ.  Working in Γ
-/// makes the gradient (Euclidean in Re/Im Γ space) and the step (also Euclidean in Γ space)
-/// use the SAME metric.  In Z-space the VSWR metric is non-Euclidean (Möbius), so the
-/// Z-gradient direction differs from the VSWR-gradient direction — the old bug.
-///
-/// Z0 = 50 Ω (Smith-chart normalisation).  Z↔Γ via RfHelpers.Z2G/G2Z at the boundaries.
-///
-/// Algorithm (Baylis et al.):
-///   1. Tangent-plane stage: query 2 neighbours at Dn (VSWR) in Γ-space, fit
-///      ΔC = m1·ΔΓ_re + m2·ΔΓ_im, compute steepest-ascent direction in Γ-space.
-///   2. Ascend by Ds along that direction; repeat while criterion increases, shrink Ds
-///      to 1/3 on failure.
-///   3. Converge when Ds &lt; convergence threshold (= Dn); 2nd-order polynomial refinement
-///      in Γ-space; report analytic optimum converted back to Z.
+/// Three bug-fixes from the 2026-06-04 diagnostic:
+///   Fix 1 — ds stays VSWR ≥ 1 throughout (excess-over-unity shrink).
+///            Old: ds /= 3 → 0.433 &lt; threshold 1.05, exited after 1 rejection.
+///            New: ds = 1+(ds-1)/3 → converges over 3-4 shrink steps.
+///   Fix 2 — exact VSWR step via FindStepLength bisection; VswrToDeltaGamma deleted.
+///            Old: (vswr-1)/(vswr+1) approximation (0–3% error, grows with Γ, needs Z0).
+///            New: exact bilinear VSWR from VswrFromZ, no Z0, no approximation.
+///   Fix 3 — gradient and stepping in the raw Z-plane (Ω), no Γ, no Z0.
+///            Old: internal Γ representation with Z0=50 baked in.
+///            New: tangent-plane neighbours placed at exact Dn VSWR in ±Re/±Im Z directions.
 /// </summary>
 public sealed class PursuitEngine
 {
-    // ── Tunable defaults ──────────────────────────────────────────────────────
+    // ── Tunable parameters ────────────────────────────────────────────────────
 
-    /// <summary>
-    /// VSWR step for tangent-plane neighbours (Dn).
-    /// Small enough to fit a local linear plane; large enough to resolve criterion gradients.
-    /// </summary>
+    /// <summary>VSWR step for tangent-plane neighbours (Dn).</summary>
     public double Dn { get; init; } = 1.05;
 
-    /// <summary>Initial ascent step size (Ds, VSWR).</summary>
+    /// <summary>Initial ascent step size (Ds, VSWR ≥ 1).</summary>
     public double DsInitial { get; init; } = 1.3;
 
     /// <summary>
-    /// Convergence threshold: when Ds falls below this (VSWR), do final polynomial refinement.
-    /// Default equals Dn (standard Baylis stopping criterion).
+    /// Convergence threshold: when Ds (VSWR) falls below this the ascent terminates
+    /// and polynomial refinement runs.  Must satisfy 1 &lt; threshold &lt; DsInitial.
+    /// Default 1.02 ≈ negligible impedance step (&lt;1% VSWR excess).
     /// </summary>
-    public double ConvergenceThreshold { get; init; } = 1.05;
+    public double ConvergenceThreshold { get; init; } = 1.02;
 
-    /// <summary>Maximum ascent steps (safety limit).</summary>
+    /// <summary>Maximum ascent iterations (safety cap).</summary>
     public int MaxAscentSteps { get; init; } = 40;
 
-    // ── Result ────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// Optional diagnostic logger.  When set, the engine writes step-by-step diagnostics
+    /// (prefix "[PE]") to this writer.  Format: <c>[PE] &lt;tag&gt;: key=val …</c>
+    /// </summary>
+    public TextWriter? Log { get; init; }
+
+    // ── Result type ───────────────────────────────────────────────────────────
 
     public sealed class PursuitResult
     {
-        /// <summary>Reported optimum termination (analytic polynomial peak, Z in Ω).</summary>
         public Complex OptimumZ     { get; }
-        /// <summary>Criterion value at the optimum (from the nearest queried point).</summary>
         public double  OptimumValue { get; }
-        /// <summary>All (Z, criterion?) pairs queried during the search.</summary>
         public IReadOnlyList<(Complex Z, double? Value)> AllQueries { get; }
-        /// <summary>Z values that were unscorable (non-converging/non-compressing).</summary>
         public IReadOnlyList<Complex> UnscorableZ { get; }
-        /// <summary>True if the search converged; false if it hit MaxAscentSteps or an abort.</summary>
-        public bool Converged { get; }
-        /// <summary>Non-null if the search aborted (e.g. start point unscorable).</summary>
-        public string? AbortReason { get; }
+        public bool    Converged    { get; }
+        public string? AbortReason  { get; }
 
         public PursuitResult(Complex optimumZ, double optimumValue,
             IReadOnlyList<(Complex, double?)> allQueries,
@@ -81,181 +83,257 @@ public sealed class PursuitEngine
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
-    // Z0 for Γ normalisation (Smith-chart reference impedance).
-    private const double Z0 = 50.0;
-
     /// <summary>
-    /// Run the Baylis steepest-ascent search starting from <paramref name="startZ"/>.
-    ///
-    /// <paramref name="criterion"/> returns the scalar criterion at a candidate Z (in Ω),
-    /// or null if the point is unscorable (non-convergent or non-compressing).
-    ///
-    /// Returns immediately with AbortReason set if the start point (or its neighbours)
-    /// are all unscorable (no tangent plane can be formed).
-    ///
-    /// B5: all internal maths run in Γ-space (Re/Im of reflection coefficient) so the
-    /// Euclidean gradient and the Euclidean step size use the same metric.
+    /// Run the Baylis steepest-ascent search starting from <paramref name="startZ"/> (Ω).
+    /// <paramref name="criterion"/> returns the scalar criterion at a candidate Z, or null
+    /// if unscorable.
     /// </summary>
     public PursuitResult Run(Complex startZ, Func<Complex, double?> criterion)
     {
         var queries    = new List<(Complex Z, double? Value)>();
         var unscorable = new List<Complex>();
 
-        // Score wrapper: queries using Z, caches in Z.
-        double? Score(Complex g)   // g = Γ (internal)
+        double? Score(Complex z)
         {
-            Complex z = GammaToZ(g);
-            if (z.Real <= 0) return null;     // physical guard: Z must have positive real part
+            if (z.Real <= 0) return null;   // physical guard: passive termination only
             var v = criterion(z);
             queries.Add((z, v));
             if (v is null) unscorable.Add(z);
             return v;
         }
 
-        // B5: convert start to Γ; all search maths in Γ.
-        Complex startG = ZToGamma(startZ);
-
-        // ── 1. Tangent-plane stage in Γ-space ─────────────────────────────────
-        double? c0 = Score(startG);
+        // ── 1. Tangent-plane stage in Z-space ─────────────────────────────────
+        double? c0 = Score(startZ);
+        Log?.WriteLine($"[PE] Tangent.Start: Z={FmtZ(startZ)} c0={c0:G6}");
         if (c0 is null)
             return Abort(startZ, queries, unscorable,
                 $"Start point Z={startZ} is unscorable — DUT does not compress; " +
                 "raise PinMax or check bias/load.");
 
-        // Two neighbours at Dn: step in +Re(Γ) and +Im(Γ) directions.
-        double dG = VswrToDeltaGamma(startG, Dn);   // Euclidean Γ-step for target VSWR
-        Complex n1G = new Complex(startG.Real + dG, startG.Imaginary);
-        Complex n2G = new Complex(startG.Real,       startG.Imaginary + dG);
+        // Two neighbours at exactly Dn VSWR: +Re(Z) and +Im(Z) directions.
+        // Fix 3: Z-plane directions; Fix 2: exact step via FindStepLength.
+        double  len1 = FindStepLength(startZ, new Complex(1, 0), Dn);
+        double  len2 = FindStepLength(startZ, new Complex(0, 1), Dn);
+        Complex n1Z  = startZ + new Complex(len1, 0);
+        Complex n2Z  = startZ + new Complex(0,    len2);
 
-        double? c1 = Score(n1G);
-        double? c2 = Score(n2G);
+        double? c1 = Score(n1Z);
+        Log?.WriteLine($"[PE] Tangent.N1: Z={FmtZ(n1Z)} VSWR={RfHelpers.VswrFromZ(startZ, n1Z):F4} c1={c1?.ToString("G6") ?? "null"}");
+        double? c2 = Score(n2Z);
+        Log?.WriteLine($"[PE] Tangent.N2: Z={FmtZ(n2Z)} VSWR={RfHelpers.VswrFromZ(startZ, n2Z):F4} c2={c2?.ToString("G6") ?? "null"}");
 
         if (c1 is null && c2 is null)
             return Abort(startZ, queries, unscorable,
                 "Both tangent-plane neighbours are unscorable — cannot form a gradient; " +
                 "try a different start point.");
 
-        // B6 fix: mirror = reflect through startG in Γ-space (no negative-R probes).
-        if (c1 is null) { n1G = 2 * startG - n1G; c1 = Score(n1G); }
-        if (c2 is null) { n2G = 2 * startG - n2G; c2 = Score(n2G); }
+        // Mirror unscorable neighbours through startZ (B6: no negative-R probes).
+        if (c1 is null)
+        {
+            n1Z = 2 * startZ - n1Z;
+            c1  = Score(n1Z);
+            Log?.WriteLine($"[PE] Tangent.N1.Mirror: Z={FmtZ(n1Z)} c1={c1:G6}");
+        }
+        if (c2 is null)
+        {
+            n2Z = 2 * startZ - n2Z;
+            c2  = Score(n2Z);
+            Log?.WriteLine($"[PE] Tangent.N2.Mirror: Z={FmtZ(n2Z)} c2={c2:G6}");
+        }
 
-        // Fit tangent plane ΔC = m1·ΔΓ_re + m2·ΔΓ_im (Baylis Eq. 1).
-        // Now both Δ and step are in the same Euclidean Γ metric — B5 fix.
-        double dx1 = (n1G - startG).Real, dy1 = (n1G - startG).Imaginary;
-        double dx2 = (n2G - startG).Real, dy2 = (n2G - startG).Imaginary;
+        // Fit ΔC = m1·ΔRe(Z) + m2·ΔIm(Z) in Z-space (Baylis Eq. 1).
+        double dx1 = n1Z.Real - startZ.Real, dy1 = n1Z.Imaginary - startZ.Imaginary;
+        double dx2 = n2Z.Real - startZ.Real, dy2 = n2Z.Imaginary - startZ.Imaginary;
         (double m1, double m2) = FitLinearPlane(
             dx1, dy1, (c1 ?? c0.Value) - c0.Value,
             dx2, dy2, (c2 ?? c0.Value) - c0.Value);
 
-        // Steepest-ascent direction unit vector in (Re,Im) Γ-space.
+        // Steepest-ascent unit vector in Z-plane.
         double gradMag = Math.Sqrt(m1 * m1 + m2 * m2);
+        Log?.WriteLine($"[PE] Gradient: m1={m1:G4} m2={m2:G4} gradMag={gradMag:G4}");
         if (gradMag < 1e-20)
         {
+            Log?.WriteLine("[PE] Gradient: flat — returning start as optimum");
             return new PursuitResult(startZ, c0.Value, queries, unscorable, converged: true);
         }
         double ux = m1 / gradMag, uy = m2 / gradMag;
+        Log?.WriteLine($"[PE] Gradient: ux={ux:G4} uy={uy:G4}  (unit vector in Z-plane, Ω)");
 
-        // ── 2. Ascent loop in Γ-space ─────────────────────────────────────────
-        double   ds      = DsInitial;
-        Complex  curG    = startG;
-        double   cCur    = c0.Value;
-        var      history = new List<(Complex G, double C)> { (startG, c0.Value) };
+        // ── 2. Ascent loop ─────────────────────────────────────────────────────
+        double  ds      = DsInitial;   // always VSWR ≥ 1; Fix 1: excess-over-unity shrink
+        Complex curZ    = startZ;
+        double  cCur    = c0.Value;
+        var     history = new List<(Complex Z, double C)> { (startZ, c0.Value) };
+
+        Log?.WriteLine($"[PE] Ascent.Loop: DsInitial={DsInitial} ConvergenceThreshold={ConvergenceThreshold} MaxSteps={MaxAscentSteps}");
 
         for (int step = 0; step < MaxAscentSteps; step++)
         {
+            Log?.WriteLine($"[PE] Ascent.Check: step={step} ds={ds:G4} threshold={ConvergenceThreshold} → {(ds < ConvergenceThreshold ? "TERMINATE" : "continue")}");
             if (ds < ConvergenceThreshold)
+            {
+                Log?.WriteLine($"[PE] Ascent.Terminate: ds={ds:G4} < threshold={ConvergenceThreshold} after {step} iterations");
                 break;
+            }
 
-            // Step ds (VSWR) along ascent direction in Γ-space.
-            double stepLen  = VswrToDeltaGamma(curG, ds);
-            Complex candG   = new Complex(curG.Real + ux * stepLen, curG.Imaginary + uy * stepLen);
-            // Clamp Γ to the unit disk (physical passive terminations only).
-            if (candG.Magnitude >= 1.0) candG = candG / (candG.Magnitude + 1e-9) * 0.99;
+            // Fix 2: exact VSWR step length via bisection.
+            double  stepLen = FindStepLength(curZ, new Complex(ux, uy), ds);
+            Complex candZ   = curZ + new Complex(ux, uy) * stepLen;
 
-            double? cCand = Score(candG);
+            if (candZ.Real <= 0)
+            {
+                // Gradient direction exits the passive half-plane — shrink and retry.
+                double dsOld = ds;
+                ds = 1.0 + (ds - 1.0) / 3.0;
+                Log?.WriteLine($"[PE] Ascent.NonPhysical: step={step} candZ.Re={candZ.Real:F2} → shrink ds: {dsOld:G4} → {ds:G4}");
+                continue;
+            }
+
+            Log?.WriteLine($"[PE] Ascent.Step: step={step} ds={ds:G4} stepLen={stepLen:F2}Ω curZ={FmtZ(curZ)} candZ={FmtZ(candZ)} trueVSWR={RfHelpers.VswrFromZ(curZ, candZ):F4}");
+            double? cCand = Score(candZ);
 
             if (cCand is not null && cCand.Value > cCur)
             {
-                history.Add((candG, cCand.Value));
-                curG  = candG;
-                cCur  = cCand.Value;
+                Log?.WriteLine($"[PE] Ascent.Accept: step={step} crit={cCand:G6} > prev={cCur:G6} Δ={cCand.Value - cCur:G4} ds_unchanged={ds:G4}");
+                history.Add((candZ, cCand.Value));
+                curZ = candZ;
+                cCur = cCand.Value;
             }
             else
             {
-                ds /= 3.0;
+                // Fix 1: shrink VSWR-excess-over-unity; ds stays ≥ 1.
+                double dsOld = ds;
+                ds = 1.0 + (ds - 1.0) / 3.0;
+                Log?.WriteLine($"[PE] Ascent.Reject: step={step} crit={cCand?.ToString("G6") ?? "null"} <= prev={cCur:G6}  ds: {dsOld:G4} → {ds:G4}");
             }
         }
 
-        // ── 3. Final 2nd-order polynomial refinement in Γ-space (Baylis Eq. 4) ─
-        // Use ONLY the 4 cardinal neighbours at Dn around curG — do NOT include the
-        // ascent history.  Reason: history points are at large ΔΓ offsets from curG
-        // and dominate the least-squares fit, corrupting the local curvature estimate.
-        // Baylis Eq. 4 is a local refinement; it uses points within Dn of the converged point.
-        double dGref = VswrToDeltaGamma(curG, Dn);
-        var refineG = new[]
+        Log?.WriteLine($"[PE] Ascent.Done: curZ={FmtZ(curZ)} cCur={cCur:G6} ds_final={ds:G4} accepted_steps={history.Count - 1}");
+
+        // ── 3. Polynomial refinement in Z-space (Baylis Eq. 4) ────────────────
+        // Four exact Dn-VSWR cardinal neighbours in ±Re, ±Im directions.
+        var refineDir = new[]
         {
-            new Complex(curG.Real + dGref, curG.Imaginary),
-            new Complex(curG.Real - dGref, curG.Imaginary),
-            new Complex(curG.Real,         curG.Imaginary + dGref),
-            new Complex(curG.Real,         curG.Imaginary - dGref),
+            new Complex( 1,  0),   // +Re(Z)
+            new Complex(-1,  0),   // −Re(Z)
+            new Complex( 0,  1),   // +Im(Z)
+            new Complex( 0, -1),   // −Im(Z)
         };
 
-        var poly = new List<(double Dx, double Dy, double Dc)>();
-        poly.Add((0, 0, 0));   // current point as origin
-        foreach (var rg in refineG)
+        Log?.WriteLine($"[PE] Refine.Start: curZ={FmtZ(curZ)}");
+        var poly            = new List<(double Dx, double Dy, double Dc)> { (0, 0, 0) };
+        var scoredCardinals = new List<(Complex Z, double C)>();
+
+        foreach (var dir in refineDir)
         {
-            if (rg.Magnitude >= 1.0) continue;
-            double? rc = Score(rg);
+            double  rLen = FindStepLength(curZ, dir, Dn);
+            Complex rZ   = curZ + dir * rLen;
+            if (rZ.Real <= 0) continue;
+            double? rc = Score(rZ);
+            Log?.WriteLine($"[PE] Refine.Cardinal: Z={FmtZ(rZ)} VSWR={RfHelpers.VswrFromZ(curZ, rZ):F4} crit={rc?.ToString("G6") ?? "null"}");
             if (rc is null) continue;
-            poly.Add(((rg - curG).Real, (rg - curG).Imaginary, rc.Value - cCur));
+            scoredCardinals.Add((rZ, rc.Value));
+            poly.Add(((rZ - curZ).Real, (rZ - curZ).Imaginary, rc.Value - cCur));
         }
 
-        Complex optimumG = curG;
-        if (poly.Count >= 5)   // origin + at least 4 cardinal neighbours
+        Complex optimumZ  = curZ;
+        double  cOptimum  = cCur;
+        bool    polyMoved = false;
+
+        if (poly.Count >= 5)   // origin + all 4 cardinals
         {
             var (mm1, mm2, mm11, mm12, mm22) = FitQuadraticSurface(poly);
-            Complex delta = SolveQuadraticOptimum(mm1, mm2, mm11, mm12, mm22);
-            Complex candG2 = curG + delta;
-            // Accept only if the analytic optimum is within 2·Dn of current and inside unit disk.
-            // Tight radius prevents the ill-conditioned polynomial from extrapolating too far.
-            if (candG2.Magnitude < 1.0 &&
-                RfHelpers.VswrFromZ(GammaToZ(candG2), GammaToZ(curG)) < 2.0 * Dn + 1.0)
-                optimumG = candG2;
+            Complex delta  = SolveQuadraticOptimum(mm1, mm2, mm11, mm12, mm22);
+            Complex candZ2 = curZ + delta;   // delta in Z-plane (Ω)
+            if (delta != Complex.Zero &&
+                candZ2.Real > 0 &&
+                RfHelpers.VswrFromZ(candZ2, curZ) < 2.0 * Dn + 1.0)
+            {
+                optimumZ  = candZ2;
+                polyMoved = true;
+                Log?.WriteLine($"[PE] Refine.Result: poly_accepted Z={FmtZ(optimumZ)} VSWR_from_cur={RfHelpers.VswrFromZ(candZ2, curZ):G4}");
+            }
+            else
+            {
+                Log?.WriteLine($"[PE] Refine.Result: poly_rejected (delta={delta.Real:G4}+{delta.Imaginary:G4}j) → best-cardinal fallback");
+            }
+        }
+        else
+        {
+            Log?.WriteLine($"[PE] Refine.Result: too_few_cardinals ({poly.Count}) → best-cardinal fallback");
         }
 
-        Complex optimumZ = GammaToZ(optimumG);
-        return new PursuitResult(optimumZ, cCur, queries, unscorable, converged: true);
+        // Fallback: if polynomial didn't move, step to the best-scored cardinal if it improves.
+        if (!polyMoved)
+        {
+            bool improved = false;
+            foreach (var (cZ, cC) in scoredCardinals)
+            {
+                if (cC > cOptimum)
+                {
+                    cOptimum = cC;
+                    optimumZ = cZ;
+                    improved = true;
+                    Log?.WriteLine($"[PE] Refine.BestCardinal: Z={FmtZ(cZ)} crit={cC:G6} — beats curZ");
+                }
+            }
+            if (!improved)
+                Log?.WriteLine("[PE] Refine.BestCardinal: no cardinal improves on curZ — staying put");
+        }
+
+        Log?.WriteLine($"[PE] Final: optimumZ={FmtZ(optimumZ)} cOptimum={cOptimum:G6} total_queries={queries.Count}");
+        return new PursuitResult(optimumZ, cOptimum, queries, unscorable, converged: true);
     }
 
-    // ── Γ↔Z converters ───────────────────────────────────────────────────────
-
-    private static Complex ZToGamma(Complex z) => RfHelpers.Z2G(z / Z0);
-    private static Complex GammaToZ(Complex g) => RfHelpers.G2Z(g) * Z0;
+    // ── Exact VSWR step-length solver (Fix 2) ─────────────────────────────────
 
     /// <summary>
-    /// Euclidean Γ-step magnitude that corresponds to <paramref name="vswr"/> from
-    /// <paramref name="g"/>.  For a small-VSWR step, VSWR ≈ 1 + 2·|ΔΓ| (near g=0),
-    /// so |ΔΓ| ≈ (vswr−1)/2.  This is a first-order approximation; exact for g=0,
-    /// good to &lt;1% for |g| &lt; 0.7 (VSWR &lt; 5.7).
-    ///
-    /// B5: using this consistently for both the neighbour step and the ascent step
-    /// keeps gradient and step in the same Euclidean Γ metric.
+    /// Returns scalar L (Ω) such that VswrFromZ(curZ, curZ + dir·L) == targetVswr.
+    /// <paramref name="dir"/> is a unit vector in the Z-plane.
+    /// Uses bisection (30 iterations, ~1 ppm precision).
     /// </summary>
-    private static double VswrToDeltaGamma(Complex g, double vswr)
+    private static double FindStepLength(Complex curZ, Complex dir, double targetVswr)
     {
-        // Exact formula: VSWR = (1 + |Δ|) / (1 - |Δ|) where Δ = (g1−g2)/(1−g1·conj(g2)).
-        // For a pure Euclidean step ΔΓ (i.e. g2 = g + ΔΓ·hat), |Δ| ≠ |ΔΓ| in general.
-        // We use the approximation |ΔΓ| = (vswr−1)/(vswr+1) which is exact at g=0 and
-        // is the standard VSWR-to-|Γ| formula for distance from the match point.
-        // For our small Dn steps (vswr ≈ 1.05–1.3) the error is negligible.
-        return (vswr - 1.0) / (vswr + 1.0);
+        if (targetVswr <= 1.0 + 1e-10) return 0.0;
+
+        // Upper bound on L that keeps Re(Z) ≥ 1 Ω (for −Re directions).
+        double maxL = dir.Real < -1e-10
+            ? (curZ.Real - 1.0) / (-dir.Real)
+            : 1e6;
+        if (maxL <= 0.0) return 0.0;
+
+        // Doubling search for hi where VSWR(hi) >= targetVswr.
+        double hi = Math.Min(maxL, Math.Max(0.5, curZ.Real * 0.05));
+        for (int i = 0; i < 60 && hi < maxL; i++)
+        {
+            Complex c = curZ + dir * hi;
+            if (c.Real > 0.5 && RfHelpers.VswrFromZ(curZ, c) >= targetVswr) break;
+            hi = Math.Min(hi * 2.0, maxL);
+        }
+
+        // Bisection (30 iterations).
+        double lo = 0.0;
+        for (int i = 0; i < 30; i++)
+        {
+            double  mid = 0.5 * (lo + hi);
+            Complex cm  = curZ + dir * mid;
+            if (cm.Real > 0.5 && RfHelpers.VswrFromZ(curZ, cm) < targetVswr)
+                lo = mid;
+            else
+                hi = mid;
+        }
+        return 0.5 * (lo + hi);
     }
 
-    // ── Curve-fitting helpers ─────────────────────────────────────────────────
+    // ── Formatting helpers (used by Log) ──────────────────────────────────────
+
+    private static string FmtZ(Complex z)
+        => $"{z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j";
+
+    // ── Curve-fitting helpers (unchanged) ────────────────────────────────────
 
     /// <summary>
     /// Fit linear plane ΔC = m1·x + m2·y through two data points.
-    /// Closed-form (2×2 system).
     /// </summary>
     private static (double M1, double M2) FitLinearPlane(
         double x1, double y1, double dc1,
@@ -270,13 +348,11 @@ public sealed class PursuitEngine
 
     /// <summary>
     /// Fit 2nd-order surface ΔC = m1·x + m2·y + ½(m11·x² + 2·m12·x·y + m22·y²)
-    /// to a set of (Δx, Δy, ΔC) points using least-squares (normal equations).
-    /// Baylis Eq. 4.
+    /// to (Δx, Δy, ΔC) points via least-squares. Baylis Eq. 4.
     /// </summary>
     private static (double M1, double M2, double M11, double M12, double M22)
         FitQuadraticSurface(List<(double Dx, double Dy, double Dc)> pts)
     {
-        // Basis: [x, y, x²/2, x*y, y²/2]
         int n = pts.Count;
         var A = new double[n, 5];
         var b = new double[n];
@@ -290,7 +366,6 @@ public sealed class PursuitEngine
             A[i, 4] = 0.5 * y * y;
             b[i]    = dc;
         }
-        // Normal equations A'A θ = A'b (5×5 system).
         var AtA = new double[5, 5];
         var Atb = new double[5];
         for (int j = 0; j < 5; j++)
@@ -306,26 +381,21 @@ public sealed class PursuitEngine
     }
 
     /// <summary>
-    /// Find the analytic optimum of the 2nd-order surface:
-    ///   grad = 0 ⟹ [m11 m12; m12 m22][x;y] = -[m1;m2]
-    /// Returns the (Δx, Δy) offset (as a Complex for convenience).
-    /// Falls back to (0,0) if the Hessian is singular or not negative-definite.
+    /// Analytic optimum of ΔC = m1·x + m2·y + ½(m11·x² + 2·m12·x·y + m22·y²).
+    /// Requires negative-definite Hessian (m11 &lt; 0, det &gt; 0).
+    /// Returns Complex.Zero if Hessian is not negative-definite.
     /// </summary>
     private static Complex SolveQuadraticOptimum(
         double m1, double m2, double m11, double m12, double m22)
     {
         double det = m11 * m22 - m12 * m12;
-        // Require negative-definite Hessian (m11 < 0 and det > 0 → maximum).
         if (det < 1e-30 || m11 >= 0) return Complex.Zero;
         double dx = (m12 * m2 - m22 * m1) / det;
         double dy = (m12 * m1 - m11 * m2) / det;
         return new Complex(dx, dy);
     }
 
-    /// <summary>
-    /// Gaussian elimination with partial pivoting for a 5×5 system.
-    /// Returns the solution vector or zeros on singularity.
-    /// </summary>
+    /// <summary>Gaussian elimination with partial pivoting for a 5×5 system.</summary>
     private static double[] Solve5x5(double[,] A, double[] b)
     {
         const int N = 5;
@@ -336,7 +406,6 @@ public sealed class PursuitEngine
 
         for (int col = 0; col < N; col++)
         {
-            // Partial pivot.
             int pivot = col;
             for (int row = col + 1; row < N; row++)
                 if (Math.Abs(a[row, col]) > Math.Abs(a[pivot, col])) pivot = row;
@@ -362,7 +431,7 @@ public sealed class PursuitEngine
         return x;
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Abort helper ──────────────────────────────────────────────────────────
 
     private static PursuitResult Abort(Complex startZ,
         List<(Complex, double?)> queries,

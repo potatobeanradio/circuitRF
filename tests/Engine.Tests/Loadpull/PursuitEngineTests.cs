@@ -103,10 +103,9 @@ public class PursuitEngineTests(ITestOutputHelper output)
 
     // ── 4. VSWR-distance metric consistency ────────────────────────────────────
     //
-    // B5 fix: the search now works in Γ-space.  The step dG = (vswr−1)/(vswr+1) is
-    // exact at Γ=0 (Z=50Ω) and approximate for |Γ|>0 (error ≤ ~5% for |Γ|<0.5).
-    // The test verifies the neighbours are within a generous 10% of the target VSWR —
-    // the algorithm is adaptive and converges regardless of the exact step size.
+    // Fix 2+3: tangent neighbours are now placed via FindStepLength bisection — the
+    // actual VSWR is exact to bisection precision (~1 ppm), not approximate.
+    // The tolerance here is 0.1% (numerical precision only, not approximation error).
 
     [Theory]
     [InlineData(50,  0,  1.05)]
@@ -122,21 +121,20 @@ public class PursuitEngineTests(ITestOutputHelper output)
         engine.Run(z, qz =>
         {
             queriedZ.Add(qz);
-            return 1.0;   // always scorable, flat criterion → converges quickly
+            return 1.0;   // flat criterion → gradient near-zero → returns quickly
         });
 
-        // queriedZ[0] = start, queriedZ[1] and [2] are the Γ-plane neighbours.
+        // queriedZ[0] = start, queriedZ[1] and [2] are the Z-plane neighbours.
         if (queriedZ.Count >= 3)
         {
             double v1 = RfHelpers.VswrFromZ(z, queriedZ[1]);
             double v2 = RfHelpers.VswrFromZ(z, queriedZ[2]);
-            output.WriteLine($"Z={z}  N1 VSWR={v1:F4}  N2 VSWR={v2:F4}  target={dn}");
-            // 10% tolerance: the Γ-space step approximation is exact at Z=50Ω and
-            // ≤5% off for |Γ|<0.5; the search is adaptive so exact step size matters less.
-            Assert.True(Math.Abs(v1 - dn) / dn < 0.10,
-                $"N1 VSWR={v1:F4} deviates >10% from Dn={dn}");
-            Assert.True(Math.Abs(v2 - dn) / dn < 0.10,
-                $"N2 VSWR={v2:F4} deviates >10% from Dn={dn}");
+            output.WriteLine($"Z={z}  N1 VSWR={v1:F6}  N2 VSWR={v2:F6}  target={dn}");
+            // Fix 2+3: exact VSWR via bisection; tolerance is numerical only (< 0.1%).
+            Assert.True(Math.Abs(v1 - dn) / dn < 0.001,
+                $"N1 VSWR={v1:F6} deviates >0.1% from Dn={dn}");
+            Assert.True(Math.Abs(v2 - dn) / dn < 0.001,
+                $"N2 VSWR={v2:F6} deviates >0.1% from Dn={dn}");
         }
     }
 }

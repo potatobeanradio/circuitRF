@@ -365,98 +365,101 @@ public class Hero3LoadpullTests(ITestOutputHelper output)
         Assert.True(checks > 0, "No converged non-tickle steps found — cannot verify efficiency.");
     }
 
-// [Fact]
-//     public void TestHero3AtCompression()// additional test at compression added after Phase 4.1b officially passed; commented out to save test time
-//     {
-//         var dir = Hero3Dir();
-//         var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "hero3_at_compression.cnl"));
-//         var netlist   = new Elaborator(lib).Elaborate(tb);
+   // ── 1. RLSweep a simple resistive loadpull ────────────────────────────────────────────────────
 
-//         var lpa = tb.Analyses.OfType<LoadpullAnalysis>().First();
-//         var p   = LoadpullEngine.Resolve(lpa, netlist.ResolvedGlobals);
-//         output.WriteLine(
-//             $"Hero 3 Loadpull: f0={p.ToneHz/1e9:F3} GHz  K={p.MaxHarmonic}  " +
-//             $"Grid={p.Grid.Points.Count} pts  " +
-//             $"Pin={p.PinStartDbm}..{p.PinMaxDbm} step {p.PinStepDb} dBm  " +
-//             $"Compression={p.Compression} dB  GainType={( p.UseGt ? "Gt" : "Gp" )}");
+    [Fact]
+    public void RLSweep()
+    {
+        var dir = Hero3Dir();
+        var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "RLSweep.cnl"));
+        var netlist   = new Elaborator(lib).Elaborate(tb);
 
-//         var engine = new LoadpullEngine(netlist, tb);
-//         var result = engine.Run(p);
+        var lpa = tb.Analyses.OfType<LoadpullAnalysis>().First();
+        var p   = LoadpullEngine.Resolve(lpa, netlist.ResolvedGlobals);
 
-//         // ── Acceptance checks ─────────────────────────────────────────────────
+        Console.WriteLine(
+            $"RL SweepLoadpull: f0={p.ToneHz/1e9:F3} GHz  K={p.MaxHarmonic}  " +
+            $"Grid={p.Grid.Points.Count} pts  " +
+            $"Pin={p.PinStartDbm}..{p.PinMaxDbm} step {p.PinStepDb} dBm  " +
+            $"Compression={p.Compression} dB  GainType={( p.UseGt ? "Gt" : "Gp" )}");
 
-//         // Every grid point must have a recorded stop reason.
-//         foreach (var gp in result.GridPoints)
-//         {
-//             Assert.False(string.IsNullOrEmpty(gp.StopReason),
-//                 $"Grid point {gp.GridIndex}: missing stop reason.");
-//         }
+        var engine = new LoadpullEngine(netlist, tb);
+        var result = engine.Run(p);
 
-//         // At least one grid point must have converged Pin steps.
-//         int totalConverged = result.GridPoints.Sum(gp => gp.PinSteps.Count(s => s.Converged));
-//         output.WriteLine($"Total converged Pin steps: {totalConverged}");
-//         Assert.True(totalConverged > 0, "No Pin steps converged across the entire grid.");
+        // ── Acceptance checks ─────────────────────────────────────────────────
 
-//         // Print per-grid-point summary.
-//         output.WriteLine("--- Grid point summary ---");
-//         var gmaxValues = new List<double>();
-//         foreach (var gp in result.GridPoints)
-//         {
-//             var convSteps = gp.PinSteps.Where(s => s.Converged && !s.IsTickle).ToList();
-//             if (convSteps.Count == 0)
-//             {
-//                 output.WriteLine(
-//                     $"  [{gp.GridIndex}] Γ={gp.Gamma.Real:F3}+j{gp.Gamma.Imaginary:F3}  " +
-//                     $"No converged steps  Stop={gp.StopReason}");
-//                 continue;
-//             }
+        // Every grid point must have a recorded stop reason.
+        foreach (var gp in result.GridPoints)
+        {
+            Assert.False(string.IsNullOrEmpty(gp.StopReason),
+                $"Grid point {gp.GridIndex}: missing stop reason.");
+        }
 
-//             double gmax   = convSteps.Max(s => s.GtDb);
-//             double gmin   = convSteps.Min(s => s.GtDb);
-//             double poutAt = convSteps.Last().PoutW;
-//             gmaxValues.Add(gmax);
+        // At least one grid point must have converged Pin steps.
+        int totalConverged = result.GridPoints.Sum(gp => gp.PinSteps.Count(s => s.Converged));
+        Console.WriteLine($"Total converged Pin steps: {totalConverged}");
+        Assert.True(totalConverged > 0, "No Pin steps converged across the entire grid.");
 
-//             output.WriteLine(
-//                 $"  [{gp.GridIndex}] Γ={gp.Gamma.Real:F3}+j{gp.Gamma.Imaginary:F3}  " +
-//                 $"Gt={gmax:F2}..{gmin:F2} dB  " +
-//                 $"Pout_last={10*Math.Log10(poutAt*1000):F2} dBm  " +
-//                 $"Steps={convSteps.Count}  Stop={gp.StopReason}");
+        // Print per-grid-point summary.
+        Console.WriteLine("--- Grid point summary ---");
+        var gmaxValues = new List<double>();
+        foreach (var gp in result.GridPoints)
+        {
+            var convSteps = gp.PinSteps.Where(s => s.Converged && !s.IsTickle).ToList();
+            if (convSteps.Count == 0)
+            {
+                Console.WriteLine(
+                    $"  [{gp.GridIndex}] Γ={gp.Gamma.Real:F3}+j{gp.Gamma.Imaginary:F3}  " +
+                    $"No converged steps  Stop={gp.StopReason}");
+                continue;
+            }
 
-//             // Gt must be positive for a PA.
-//             Assert.True(gmax > 0, $"Grid point {gp.GridIndex}: max Gt={gmax:F2} dB ≤ 0 (not a PA).");
-//         }
+            double gmax   = convSteps.Max(s => s.GtDb);
+            double gmin   = convSteps.Min(s => s.GtDb);
+            double poutAt = convSteps.Last().PoutW;
+            gmaxValues.Add(gmax);
 
-//         // Small-signal gain consistency: Gmax should be roughly the same for all grid points
-//         // that converged (the small-signal gain is termination-independent for a unilateral device,
-//         // or nearly so; we allow 10 dB variation which is generous for a real device).
-//         if (gmaxValues.Count > 1)
-//         {
-//             double spreadDb = gmaxValues.Max() - gmaxValues.Min();
-//             output.WriteLine($"Gmax spread across grid: {spreadDb:F2} dB " +
-//                              $"(min={gmaxValues.Min():F2}, max={gmaxValues.Max():F2})");
-//             Assert.True(spreadDb < 20.0,
-//                 $"Gmax spread of {spreadDb:F2} dB is implausibly large — check sign convention.");
-//         }
+            output.WriteLine(
+                $"  [{gp.GridIndex}] Γ={gp.Gamma.Real:F3}+j{gp.Gamma.Imaginary:F3}  " +
+                $"Gt={gmax:F2}..{gmin:F2} dB  " +
+                $"Pout_last={10*Math.Log10(poutAt*1000):F2} dBm  " +
+                $"Steps={convSteps.Count}  Stop={gp.StopReason}");
 
-//         // Count grid points by stop reason — all three are valid per the brief (§3.1):
-//         // Compression, PinMax, NonConvergence. PinMax is expected if the FET requires
-//         // higher drive than the directive's PinMax to reach the target compression.
-//         int compressionCount  = result.GridPoints.Count(gp => gp.StopReason == "Compression");
-//         int pinMaxCount       = result.GridPoints.Count(gp => gp.StopReason == "PinMax");
-//         int nonConvCount      = result.GridPoints.Count(gp => gp.StopReason == "NonConvergence");
-//         output.WriteLine(
-//             $"Stop reasons: Compression={compressionCount}  PinMax={pinMaxCount}  NonConvergence={nonConvCount}");
-//         // Every grid point must have a valid stop reason.
-//         Assert.Equal(result.GridPoints.Count, compressionCount + pinMaxCount + nonConvCount);
+            // Gt must be positive for a PA.
+            Assert.True(gmax > 0, $"Grid point {gp.GridIndex}: max Gt={gmax:F2} dB ≤ 0 (not a PA).");
+        }
 
-//         // ── Write golden data ─────────────────────────────────────────────────
-//         output.WriteLine("Writing Hero 3 at compression golden data ...");
-//         WriteFomsCsv(dir, "hero3_at_compression_self_FOMs.csv", result, p);
-//         WriteSpectraCsv(dir, "hero3_at_compression_self_V.csv",   "V",   result, true);
-//         WriteSpectraCsv(dir, "hero3_at_compression_self_INl.csv", "INl", result, false);
+        // Small-signal gain consistency: Gmax should be roughly the same for all grid points
+        // that converged (the small-signal gain is termination-independent for a unilateral device,
+        // or nearly so; we allow 10 dB variation which is generous for a real device).
+        if (gmaxValues.Count > 1)
+        {
+            double spreadDb = gmaxValues.Max() - gmaxValues.Min();
+            Console.WriteLine($"Gmax spread across grid: {spreadDb:F2} dB " +
+                             $"(min={gmaxValues.Min():F2}, max={gmaxValues.Max():F2})");
+            Assert.True(spreadDb < 20.0,
+                $"Gmax spread of {spreadDb:F2} dB is implausibly large — check sign convention.");
+        }
 
-//         output.WriteLine("Hero 3 at compression golden generated successfully.");
-//     }
+        // Count grid points by stop reason — all three are valid per the brief (§3.1):
+        // Compression, PinMax, NonConvergence. PinMax is expected if the FET requires
+        // higher drive than the directive's PinMax to reach the target compression.
+        int compressionCount  = result.GridPoints.Count(gp => gp.StopReason == "Compression");
+        int pinMaxCount       = result.GridPoints.Count(gp => gp.StopReason == "PinMax");
+        int nonConvCount      = result.GridPoints.Count(gp => gp.StopReason == "NonConvergence");
+        Console.WriteLine(
+            $"Stop reasons: Compression={compressionCount}  PinMax={pinMaxCount}  NonConvergence={nonConvCount}");
+        // Every grid point must have a valid stop reason.
+        Assert.Equal(result.GridPoints.Count, compressionCount + pinMaxCount + nonConvCount);
+
+        // ── data data ─────────────────────────────────────────────────
+        Console.WriteLine("Writing RLSweep data ...");
+        WriteFomsCsv(dir, "RLSweep_FOMs.csv", result, p);
+        WriteSpectraCsv(dir, "RLSweep_V.csv",   "V",   result, true);
+        WriteSpectraCsv(dir, "RLSweep_INl.csv", "INl", result, false);
+
+        output.WriteLine("RLSweep generated successfully.");
+    }
 
 
 

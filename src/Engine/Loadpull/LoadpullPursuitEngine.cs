@@ -91,9 +91,9 @@ public sealed class LoadpullPursuitEngine
         bool   UsePae,         // false = DE (default); true = PAE
         double ZsourceOBoDB,   // backoff from compression for Zsource (dB, default 5)
         // Search tuning (empirical; tuned on Hero 3B).
-        double Dn   = 1.05,
-        double Ds   = 1.3,
-        double ConvThreshold = 1.05,
+        double Dn             = 1.05,
+        double Ds             = 1.3,
+        double ConvThreshold  = 1.02,   // VSWR threshold; Fix 1: must be > 1, << DsInitial
         int    MaxAscentSteps = 40);
 
     // ── Cache ─────────────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ public sealed class LoadpullPursuitEngine
             SourceTunerName   = lpa.SourceTunerName,
             SweepExpr         = lpa.SweepExpr,
             TuneHarmExpr      = lpa.TuneHarmExpr,
-            GridPath          = "",   // pursuit has no Grid
+            GridPath          = "",   // pursuit has no Grid input
             CompressionExpr   = lpa.CompressionExpr,
             GainTypeExpr      = lpa.GainTypeExpr,
             PinStartExpr      = lpa.PinStartExpr,
@@ -236,7 +236,7 @@ public sealed class LoadpullPursuitEngine
             var hit = cache.TryGet(z);
             if (hit is not null)
             {
-                double? hitC = ExtractCriterion(hit, isMxe ? pp.UsePae : false, mxe: isMxe);
+                double? hitC = ExtractCriterion(hit, isMxe ? pp.UsePae : false, mxe: isMxe, xdB: lpp.Compression);
                 return (hitC, hit);
             }
 
@@ -258,7 +258,7 @@ public sealed class LoadpullPursuitEngine
                 return (null, gpr);
             }
 
-            double? c = ExtractCriterion(gpr, isMxe ? pp.UsePae : false, mxe: isMxe);
+            double? c = ExtractCriterion(gpr, isMxe ? pp.UsePae : false, mxe: isMxe, xdB: lpp.Compression);
             // MXP criterion is in dBm; MXE criterion is a linear efficiency ratio.
             Console.Error.WriteLine(
                 $"[Pursuit]   → {(isMxe ? "Eff" : "Pout(dBm)")}={c:F4}");
@@ -296,11 +296,11 @@ public sealed class LoadpullPursuitEngine
         else
         {
             var mxpSweep = cache.TryGet(mxpBaylis.OptimumZ)
-                        ?? cache.All.MaxBy(e => ExtractCriterion(e.Gpr, false, mxe: false) ?? double.NegativeInfinity).Gpr;
+                        ?? cache.All.MaxBy(e => ExtractCriterion(e.Gpr, false, mxe: false, xdB: lpp.Compression) ?? double.NegativeInfinity).Gpr;
             var mxpZ     = mxpSweep is not null
                 ? cache.All.First(e => ReferenceEquals(e.Gpr, mxpSweep)).Z
                 : mxpBaylis.OptimumZ;
-            double mxpVal = ExtractCriterion(mxpSweep, false, mxe: false) ?? mxpBaylis.OptimumValue;
+            double mxpVal = ExtractCriterion(mxpSweep, false, mxe: false, xdB: lpp.Compression) ?? mxpBaylis.OptimumValue;
             var mxpZsrc   = mxpSweep is not null
                 ? ComputeZsource(mxpSweep, ctx, pp.ZsourceOBoDB, lpp)
                 : null;
@@ -319,7 +319,7 @@ public sealed class LoadpullPursuitEngine
         double bestEff = double.NegativeInfinity;
         foreach (var (cz, cgpr) in cache.All)
         {
-            double? eff = ExtractCriterion(cgpr, pp.UsePae, mxe: true);
+            double? eff = ExtractCriterion(cgpr, pp.UsePae, mxe: true, xdB: lpp.Compression);
             if (eff > bestEff) { bestEff = eff.Value; mxeStart = cz; }
         }
         Console.Error.WriteLine(
@@ -352,11 +352,11 @@ public sealed class LoadpullPursuitEngine
         else
         {
             var mxeSweep = cache.TryGet(mxeBaylis.OptimumZ)
-                        ?? cache.All.MaxBy(e => ExtractCriterion(e.Gpr, pp.UsePae, mxe: true) ?? double.NegativeInfinity).Gpr;
+                        ?? cache.All.MaxBy(e => ExtractCriterion(e.Gpr, pp.UsePae, mxe: true, xdB: lpp.Compression) ?? double.NegativeInfinity).Gpr;
             var mxeZ     = mxeSweep is not null
                 ? cache.All.First(e => ReferenceEquals(e.Gpr, mxeSweep)).Z
                 : mxeBaylis.OptimumZ;
-            double mxeVal = ExtractCriterion(mxeSweep, pp.UsePae, mxe: true) ?? mxeBaylis.OptimumValue;
+            double mxeVal = ExtractCriterion(mxeSweep, pp.UsePae, mxe: true, xdB: lpp.Compression) ?? mxeBaylis.OptimumValue;
             var mxeZsrc   = mxeSweep is not null
                 ? ComputeZsource(mxeSweep, ctx, pp.ZsourceOBoDB, lpp)
                 : null;
@@ -383,110 +383,71 @@ public sealed class LoadpullPursuitEngine
     // ── Criterion extraction ──────────────────────────────────────────────────
 
     /// <summary>
-    /// Extracts the criterion value from a GridPointResult's compression sweep.
-    /// For MXP: Pout at the compression step (exact P-xdB by linear interpolation
-    ///          between the last sub-compression step and the first over-compression step).
-    /// For MXE: DE (or PAE) at that same compression point.
-    /// Returns null if the sweep didn't compress.
-    /// </summary>
-    /// <summary>
-    /// B3 rewrite — clean interpolation to exact P-xdB.
-    ///
-    /// With the B2 +0.1 dB overshoot step, the last two converged non-tickle steps
-    /// always tightly bracket P-xdB: "below" is at or just under, "above" is +0.1 dB further.
+    /// Extracts the criterion value from a GridPointResult by interpolating to exactly
+    /// <paramref name="xdB"/> dB of gain compression.
     ///
     /// Algorithm:
-    ///   1. Find Gmax (tickle or first low-Pin step).
+    ///   1. Compute Gmax over all converged non-tickle steps.
     ///   2. Find the bracket: "below" = last step with compression &lt; xdB,
-    ///      "above" = first step with compression ≥ xdB (the overshoot step).
-    ///   3. Linear-interpolate Pout (dBm) and efficiency to the exact P-xdB level.
+    ///      "above" = first step with compression ≥ xdB.
+    ///      With Change 1, the sweep stops at compression ≥ xdB+0.1 on the regular grid,
+    ///      so "below" and "above" are adjacent regular-grid steps that straddle xdB.
+    ///   3. t = (xdB − comprBelow) / (comprAbove − comprBelow) — a real fraction in [0,1].
+    ///      This interpolates to EXACTLY P-xdB, so the result lies strictly between the
+    ///      two grid steps' values (not equal to the over-compression step).
     ///
-    /// MXP criterion = Pout at P-xdB in **dBm** (B3: must be dBm so the gradient surface
-    /// is consistent across terminations — Watts varies by orders of magnitude).
-    /// MXE criterion = DE or PAE at P-xdB (linear ratio — efficiency is already ≤ 1).
+    /// MXP criterion = Pout at P-xdB in <b>dBm</b> (consistent gradient surface across Ω).
+    /// MXE criterion = DE or PAE at P-xdB (linear ratio, ≤ 1).
+    /// Returns null if the sweep never reached xdB compression.
     /// </summary>
-    private static double? ExtractCriterion(GridPointResult? gpr, bool usePae, bool mxe)
+    private static double? ExtractCriterion(GridPointResult? gpr, bool usePae, bool mxe, double xdB)
     {
         if (gpr is null || gpr.StopReason != "Compression") return null;
 
         var converged = gpr.PinSteps.Where(s => s.Converged && !s.IsTickle).ToList();
         if (converged.Count == 0) return null;
 
-        // Gmax: take the maximum Gt across all converged non-tickle steps.
-        double gMax = converged.Max(s => s.GtDb);
+        // need the index for maxGain so that all lower index can be ignored
+        int ? maxIndex = converged.Select((item, index) => new { item.GtDb, index }).MaxBy(x => x.GtDb)?.index;
+        if (maxIndex == null) return null;
+        double gMax = converged[maxIndex.Value].GtDb;
 
-        // Compression target = the P-xdB level used to stop this sweep.
-        // We don't store the target separately, but we can read it from the GtDb drop:
-        // The step immediately before the overshoot step (last-1) is the last step where
-        // compression < xdB. The last step is the +0.1 dB overshoot (compression ≥ xdB).
-        // Rather than guess xdB, find the bracket directly:
-        //   "below" = last step with compression < the gain drop seen at the overshoot step
-        //   (i.e., the actual compression level at which the sweep stopped).
-        // Since the stop was triggered at compression ≥ p.Compression, we bracket on that.
-        // The simplest robust approach: below = second-to-last, above = last.
-        // With the +0.1 dB overshoot design these two always tightly bracket P-xdB.
-        PinStepResult below, above;
-        if (converged.Count == 1)
+        // Find the bracket straddling xdB.
+        PinStepResult? below = null, above = null;
+        for (int i = maxIndex.Value; i < converged.Count; i++)// only use power sweep points higher than the max Gain
         {
-            below = above = converged[0];
+            double compr = gMax - converged[i].GtDb;
+            if (compr < xdB)       below = converged[i];
+            else if (above is null) above = converged[i];
         }
-        else
-        {
-            above = converged[^1];   // last = overshoot step (compression ≥ xdB)
-            below = converged[^2];   // second-to-last = last step before reaching xdB
+        if (above is null) return null;   // sweep reached stop but never crossed xdB — unscorable
+        below ??= above;                   // xdB first reached at step 0 (no sub-compression step)
 
-            // Verify bracket: if "below" has MORE compression than "above" (non-monotonic),
-            // search backward for the correct bracket.
-            if (gMax - below.GtDb >= gMax - above.GtDb)
-            {
-                // Monotonicity broken (unusual). Fall back: find last step < compression and
-                // first step ≥ compression using Gmax and the actual compression target.
-                // Use the compression level at "above" as the threshold.
-                double xdBTarget = gMax - above.GtDb;
-                below = converged[^1]; above = converged[^1];
-                for (int i = converged.Count - 2; i >= 0; i--)
-                {
-                    double compr = gMax - converged[i].GtDb;
-                    if (compr < xdBTarget)
-                    {
-                        below = converged[i];
-                        above = converged[i + 1];
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Compression levels at bracket endpoints (dB drop from Gmax).
         double comprBelow = gMax - below.GtDb;
         double comprAbove = gMax - above.GtDb;
+        double dCompr     = comprAbove - comprBelow;
 
-        // Use the compression at "above" (the overshoot step) as xdB — this is the actual
-        // compression target used to stop the sweep (≥ p.Compression).
-        double xdB  = comprAbove;   // the compression at which the overshoot step sits
-        double dCompr = comprAbove - comprBelow;
-        // Fraction: how far between "below" and "above" is the exact P-xdB point?
-        // Since xdB = comprAbove for the overshoot step, t=1 would give "above" values.
-        // But we want the exact P-xdB level = p.Compression.  We don't have it stored, so
-        // use comprAbove as the threshold (≤ 0.1 dB above p.Compression with B2).
+        // True interpolation fraction to exactly xdB.  With PinStep=1 dB, t is typically
+        // 0.1–0.9 — far from 1.0 (which was the pre-fix bug where xdB was set to comprAbove).
         double t = dCompr > 1e-10
             ? Math.Clamp((xdB - comprBelow) / dCompr, 0.0, 1.0)
             : 0.0;
-        // t ≈ 1.0 because xdB ≈ comprAbove; the linear interp gives "above" values.
-        // This is intentional: the overshoot step IS at P-xdB (by the B2 design).
 
         if (!mxe)
         {
-            // MXP criterion: Pout at P-xdB in dBm (B3: dBm so gradient is well-conditioned).
+            // MXP: interpolated Pout in dBm — must lie BETWEEN below and above grid steps.
             double poutBelowDbm = LoadpullEngine.WattsToDbm(below.PoutW);
             double poutAboveDbm = LoadpullEngine.WattsToDbm(above.PoutW);
+            Console.WriteLine($"poutAboveDbm={poutAboveDbm:F2}, poutBelowDbm={poutBelowDbm:F2}, interpTo={(poutBelowDbm + t * (poutAboveDbm - poutBelowDbm)):F2}");
             return poutBelowDbm + t * (poutAboveDbm - poutBelowDbm);
         }
         else
         {
-            // MXE criterion: DE or PAE (linear ratio) at P-xdB.
+            // MXE: interpolated DE or PAE (linear ratio).
             double effBelow = usePae ? below.Pae : below.De;
             double effAbove = usePae ? above.Pae : above.De;
+            Console.WriteLine($"effAbove={effAbove:F2}, effBelow={effBelow:F2}, interpTo={(effBelow + t * (effAbove - effBelow)):F2}");
+
             return effBelow + t * (effAbove - effBelow);
         }
     }
@@ -507,24 +468,30 @@ public sealed class LoadpullPursuitEngine
         var converged = gpr.PinSteps.Where(s => s.Converged && !s.IsTickle).ToList();
         if (converged.Count < 2) return null;
 
-        // Find the compression Pin level (last step before overshoot or step with max Gt).
-        double gMax = converged.Max(s => s.GtDb);
-        // OBO drive = compression drive - oboDb.  Approximate compression Pin from small-signal
-        // gain: Pin_compression ≈ the Pin where gain first drops ≥ 0.5 dB below Gmax.
-        double pinComp = converged.Last().PavlDbm;  // fallback: last converged step
-        for (int i = 1; i < converged.Count; i++)
+        // Find Pin at exactly lpp.Compression dB using the same bracket as ExtractCriterion.
+        // This is the conventional compression point (P-xdB), from which OBO is measured.
+        int ? maxIndex = converged.Select((item, index) => new { item.GtDb, index }).MaxBy(x => x.GtDb)?.index;
+        if (maxIndex == null) return null;
+        double gMax = converged[maxIndex.Value].GtDb;
+
+        double xdB  = lpp.Compression;
+
+        PinStepResult? compLo = null, compHi = null;
+        for (int i = maxIndex.Value; i < converged.Count; i++)
         {
-            if (gMax - converged[i].GtDb >= 0.5)
-            {
-                // Interpolate between converged[i-1] and converged[i].
-                double g0 = gMax - converged[i - 1].GtDb;
-                double g1 = gMax - converged[i].GtDb;
-                double frac = (0.5 - g0) / (g1 - g0 + 1e-15);
-                pinComp = converged[i - 1].PavlDbm
-                        + frac * (converged[i].PavlDbm - converged[i - 1].PavlDbm);
-                break;
-            }
+            double compr = gMax - converged[i].GtDb;
+            if (compr < xdB)        compLo = converged[i];
+            else if (compHi is null) compHi = converged[i];
         }
+        if (compHi is null) return null;   // sweep never reached lpp.Compression — can't place OBO
+        compLo ??= compHi;
+
+        // Interpolate Pin to exactly P-xdB.
+        double cLo   = gMax - compLo.GtDb;
+        double cHi   = gMax - compHi.GtDb;
+        double dC    = cHi - cLo;
+        double fC    = dC > 1e-10 ? Math.Clamp((xdB - cLo) / dC, 0.0, 1.0) : 0.0;
+        double pinComp = compLo.PavlDbm + fC * (compHi.PavlDbm - compLo.PavlDbm);
 
         double pinObo = pinComp - oboDb;
 

@@ -1,0 +1,74 @@
+═══════════════════════════════════════════════════════════════════
+ DIAGNOSTIC 1 — Brute-force criterion surface (Hero 3B)
+ Compression target = 3 dB  PinMax = 30 dBm
+═══════════════════════════════════════════════════════════════════
+   ZRe    ZIm    Pout@PxdB(dBm)     DE@PxdB  Stop
+──────────────────────────────────────────────────────────────
+    40   -10.0             38.13       35.0%  Compression
+    45   -10.0             38.64       39.4%  Compression
+    50   -10.0             39.10       43.8%  Compression
+    55   -10.0             39.52       48.2%  Compression
+    60   -10.0             39.89       52.6%  Compression
+    65   -10.0             40.22       56.8%  Compression
+    70   -10.0             40.47       60.6%  Compression
+    75   -10.0             40.59       63.5%  Compression
+    80   -10.0             40.59       65.5%  Compression
+    85   -10.0             40.53       66.8%  Compression
+    90   -10.0             40.42       67.7%  Compression
+    95   -10.0             40.29       68.3%  Compression
+   100   -10.0             40.16       68.7%  Compression
+   105   -10.0             40.02       69.0%  Compression
+   110   -10.0             39.87       69.2%  Compression
+   115   -10.0             39.72       69.4%  Compression
+   120   -10.0             39.58       69.5%  Compression
+    40     0.0             38.13       35.0%  Compression
+    45     0.0             38.64       39.4%  Compression
+    50     0.0             39.10       43.8%  Compression
+    55     0.0             39.52       48.2%  Compression
+    60     0.0             39.89       52.6%  Compression
+    65     0.0             40.22       56.8%  Compression
+    70     0.0             40.48       60.7%  Compression
+    75     0.0             40.62       63.7%  Compression
+    80     0.0             40.63       65.7%  Compression
+    85     0.0             40.57       67.1%  Compression
+    90     0.0             40.46       68.0%  Compression
+    95     0.0             40.33       68.5%  Compression
+   100     0.0             40.19       69.0%  Compression
+   105     0.0             40.05       69.2%  Compression
+   110     0.0             39.90       69.5%  Compression
+   115     0.0             39.75       69.6%  Compression
+   120     0.0             39.60       69.7%  Compression
+    40    10.0             38.13       35.0%  Compression
+    45    10.0             38.64       39.4%  Compression
+    50    10.0             39.10       43.8%  Compression
+    55    10.0             39.52       48.2%  Compression
+    60    10.0             39.89       52.6%  Compression
+    65    10.0             40.22       56.8%  Compression
+    70    10.0             40.47       60.6%  Compression
+    75    10.0             40.59       63.5%  Compression
+    80    10.0             40.59       65.5%  Compression
+    85    10.0             40.53       66.8%  Compression
+    90    10.0             40.42       67.7%  Compression
+    95    10.0             40.29       68.3%  Compression
+   100    10.0             40.16       68.7%  Compression
+   105    10.0             40.02       69.0%  Compression
+   110    10.0             39.87       69.2%  Compression
+   115    10.0             39.72       69.4%  Compression
+   120    10.0             39.58       69.5%  Compression
+
+─── True optima (from brute-force) ──────────────────────────────────
+True MXP: Z=80.0+0.0j Ω  Pout@P3dB = 40.629 dBm
+True MXE: Z=120.0+0.0j Ω  DE@P3dB = 69.68%
+
+─── Criterion value at pursuit-queried Z values ─────────────────────
+  Z=   50+0j Ω   Pout=39.103 dBm   DE=43.82%
+  Z=   55+0j Ω   Pout=39.519 dBm   DE=48.21%
+  Z=   60+0j Ω   Pout=39.895 dBm   DE=52.58%
+  Z=   65+0j Ω   Pout=40.225 dBm   DE=56.84%
+  Z=   70+0j Ω   Pout=40.481 dBm   DE=60.71%
+  Z=   75+0j Ω   Pout=40.617 dBm   DE=63.72%
+  Z=   80+0j Ω   Pout=40.629 dBm   DE=65.73% ◄ TRUE MXP
+  Z=   85+0j Ω   Pout=40.566 dBm   DE=67.06%
+  Z=   90+0j Ω   Pout=40.463 dBm   DE=67.96%
+
+Written to: /testdata/Hero3B/diag1_truth_surface.txt

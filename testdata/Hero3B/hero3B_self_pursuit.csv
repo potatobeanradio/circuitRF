@@ -3,4 +3,4 @@
 # Circuit: hero3B_at_compression.cnl
 # Key: MxpPout(dBm); MxpZRe; MxpZIm; MxeEff(linear); MxeZRe; MxeZIm; PedroVswr; CacheCount; UnscorableCount
 # B3 fix: MxpPout is now in dBm (not Watts).
-40.62968536; 85.26986417; -1.164994918; 0.6899431259; 114.2138637; -2.575772174; 1.339901478; 15; 0
+40.62531534; 80.47619043; 0.001220409139; 0.6961681275; 140.3119895; -4.947115134; 1.746750373; 21; 0
