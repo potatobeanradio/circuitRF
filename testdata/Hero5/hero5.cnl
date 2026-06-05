@@ -1,6 +1,6 @@
 ; ============================================================
 ; hero5.cnl — Phase-4c multi-tone HB: grounded-source GaN HEMT PA
-; Same SDD FET as Phase 3. Drive at 2 GHz, Pavl swept -20..+20 dBm.
+; Same SDD FET as Phase 3. Drive at 2 GHz, Pavl swept -20..PavlStop_dbm dBm.
 ; Per-harmonic source/load terminations via Z_Port; bias-tees on both ports.
 ; ============================================================
 
@@ -23,9 +23,11 @@ ToneSpacing = 10e6
 ; Update for multi-tone
 MaxHarm   = 4
 OverSamp  = 1
-HBtol     = 1e-6
+HBtol     = 1e-7
 DriveStep = IfNecessary
 Guard     = 0                 ; guard harmonic off by default; set an index to enable
+MaxMixOrder = 5
+
 
 ; ---- per-harmonic termination bands ----
 ZSource_0 = 0.00001 + j*0     ; sub-fundamental / DC band
@@ -43,7 +45,8 @@ Vgg = -3.05
 Vdd = 48
 
 ; ---- drive level (swept) ----
-Pavl_dbm = -20               ; swept by the HB analysis, -20..-10 dBm, 1 dB steps
+PavlStop_dbm = 20 ; end power level
+Pavl_dbm = -20               ; swept by the HB analysis, -20..PavlStop_dbm dBm, 1 dB steps
 Pavl_w   = 10^((Pavl_dbm - 30)/10)              ; dBm -> watts
 Vs_mag   = sqrt(8 * Pavl_w * real(ZSource_f))   ; |Vs| at the 25-ohm fundamental Zs
 
@@ -78,12 +81,5 @@ V_1Tone:Vdrain   n_dbias 0       Vdc=Vdd
 ; ============================================================
 ; HB analysis: single tone at RFfreq, sweep Pavl_dbm, harmonics to MaxHarm
 ; ============================================================
-analysis HB1  type=hb  Tone=RFfreq  MaxHarm=MaxHarm  Sweep="Pavl_dbm: -20 .. 0 step 1" \
+analysis HB1  type=hb  NumFreqs=2 Tone[1]=RFfreq-ToneSpacing/2 Tone[2]=RFfreq+ToneSpacing/2  MaxHarm=MaxHarm  MaxMixOrder=MaxMixOrder Sweep="Pavl_dbm: -20 .. PavlStop_dbm step 1" \
      FFTOverSample=OverSamp  Tol=HBtol  DriveStepping=DriveStep  GuardHarmonic=Guard
-
-; ============================================================
-; Measurements (evaluated on the HB result cubes)
-; ============================================================
-measure Pout_dBm = dBm(Pout(n_drain, 1))      ; fundamental output power
-measure Gain_dB  = Pout_dBm - Pavl_dbm
-measure PAE      = PAE(n_drain, n_gate)        ; conceptual; measurement lib defines exact form

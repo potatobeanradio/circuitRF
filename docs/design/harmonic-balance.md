@@ -76,9 +76,10 @@ The HB analysis is declared at the top level (the `TestBench`, data-model §2.1/
 
 | Key | Meaning | Default |
 |---|---|---|
-| `Tone` | single-tone fundamental f0 (Hz). For two-tone use `Tone1`/`Tone2` | (required) |
+| `Tone` | single-tone fundamental f0 (Hz). Multi-tone uses `NumFreqs=N Tone[1]=… … Tone[N]=…` instead (the `Tone=` scalar is the `NumFreqs=1` spelling — one model, two spellings, mirroring `V_1Tone`/`V_nTone`, linear-engine §4.4) | (required) |
+| `NumFreqs` | number of analysis tones (multi-tone); with `Tone[1..N]`. Absent / `1` ⇒ single-tone `Tone=` | 1 |
 | `MaxHarm` | harmonic count K (single-tone): solve harmonics 0…K | 7 |
-| `MaxMixOrder` | mixing-order truncation (two-tone diamond, §6); ignored single-tone | 5 |
+| `MaxMixOrder` | mixing-order truncation (multi-tone diamond `|k₁|+…+|k_N| ≤ MaxMixOrder`, §6); ignored single-tone | 5 |
 | `Sweep` | the parametric sweep, `"<var>: <start> .. <stop> step <step>"` (the swept variable is any §8 variable, e.g. `Pavl_dbm`) | none (single point) |
 | `FFTOverSample` | anti-aliasing grid multiplier `1·16·…` (§5.3) | 1 |
 | `Tol` | absolute convergence tolerance `‖F‖` (§12.2) | 1e-6 |
@@ -93,7 +94,12 @@ analysis HB1  type=hb  Tone=RFfreq  MaxHarm=MaxHarm  Sweep="Pavl_dbm: -20 .. 20 
      FFTOverSample=OverSamp  Tol=HBtol  DriveStepping=DriveStep  GuardHarmonic=Guard
 ```
 
-The **`Tone` value declares the analysis fundamental** — the grid the commensurability check (§3.1) validates every source `Freq` against, and the `f0` the engine stamps harmonics at as exact `k·f0` (linear-engine §4.4). Output retention defaults to **all `V` and `I`, all harmonics including DC** (§9, measurements §5); a future `Keep=` key may prune. Two-tone replaces `Tone` with `Tone1`/`Tone2` and uses `MaxMixOrder`; everything else is identical (Phase 4c).
+The **`Tone` value (or the `Tone[1..N]` set) declares the analysis tones** — the grid the commensurability check (§3.1) validates every source `Freq` against, and the tones the engine stamps mixing products at as exact `k₁·f₁ + … + k_N·f_N` (linear-engine §4.4). Output retention defaults to **all `V` and `I`, all harmonics/mixing products including DC** (§9, measurements §5); a future `Keep=` key may prune. Multi-tone uses `NumFreqs=N Tone[1..N]` with `MaxMixOrder` (the diamond, §6); single-tone uses the scalar `Tone=` with `MaxHarm`. Everything else is identical (Phase 4c). Example two-tone directive (Hero 5):
+```
+analysis HB1  type=hb  NumFreqs=2 Tone[1]=RFfreq-ToneSpacing/2 Tone[2]=RFfreq+ToneSpacing/2 \
+     MaxHarm=MaxHarm MaxMixOrder=MaxMixOrder  Sweep="Pavl_dbm: -20 .. PavlStop_dbm step 1" \
+     FFTOverSample=OverSamp Tol=HBtol DriveStepping=DriveStep GuardHarmonic=Guard
+```
 
 > **Note — first concrete analysis-directive grammar.** Until now analysis/measurement directives were stored opaquely (`RawDirective`, data-model §10, deferred grammar). The HB directive above is the **first** one given real grammar; it sets the `type=<kind> key=value` pattern the other analyses (`sparam`, `dc`, `loadpull`) will follow when their directives are specified. The `key=value` values resolving through the expression engine (so any knob can be a parameter) is the reusable convention.
 
