@@ -295,3 +295,51 @@ only updates ToneSourceModels and is NOT sufficient for bias/topology parameters
 - `TwoLevel_VggVdd_PrependsTwoAxes` — 2-level axis structure (recursive composition)
 - `SingleLevel_PositionalSlice_WorksAtEachVggPoint` — axis-count-agnostic positional slicing
 - `SingleLevel_DcDrainCurrent_ShiftsWithVgg` — physics: Idc(Vgg=-3.0) > Idc(Vgg=-3.2)
+
+## Phase 5-7 — DataSet export (.mat / .npy) — COMPLETE (2026-06-06)
+
+Exports a `DataSet` to MATLAB v7.3 / HDF5 (`.mat`) or NumPy packed structured array (`.npy`).
+When `IncludeLinearNetwork = true`, the per-harmonic linear MNA system is also serialised —
+enough for a consumer to reconstruct any linear-interior node voltage or branch current without
+rerunning the HB sweep.
+
+### Engine changes (this directory)
+- **`HbLinearExtractor._luCache`** extended to cache the pre-factorization sparse G matrix
+  (`CompressedColumnStorage<Complex>`) alongside the LU. `BuildCsc()` is called before
+  `Factorize()` and stored in the tuple.  `HbLinearExtractor.GetSparseG(omega)` exposes it.
+- **`MnaSystem.BuildCsc()`** — new public method that wraps `BuildCscMatrix()`, snapshotting
+  the sparse matrix before it is consumed by `Factorize()`.
+- **`HbLinearNetworkPayload`** — new class implementing both `ILinearNetworkPayload` (RfCore)
+  and `IBackSolverProvider` (RfCore).  Wraps `HbLinearBackSolver` to expose all engine data
+  the exporter needs without a circular dependency.
+- **`HbRunResult.LinearPayload`** — new property, always non-null when `BackSolver` is non-null
+  (§8.6: expose always; cost is zero — data was already retained).
+
+### RfCore changes (sibling project)
+- **`ILinearNetworkPayload`** — bridge interface for the linear-network data.
+- **`IBackSolverProvider`** — optional interface enabling eager evaluation of V_linear/I_linear.
+- **`LinearEvalMode`** — enum: `EvaluateNone` / `EvaluateAll` / `EvaluateSpecified`.
+- **`ExportFormat`** — enum: `Mat` / `Npy`.
+- **`ExportOptions`** — record: `IncludeLinearNetwork`, `LinearEvalMode`, `EvalNodeNames`,
+  `EvalBranchRefs`, `SizeWarningThresholdMiB` (default 100).
+- **`NpyWriter`** — NumPy v1.0/v2.0 structured-array writer; header padded to 64-byte boundary.
+- **`MatWriter`** — PureHDF 2.1.2 HDF5 v7.3 writer; complex data as compound `{real, imag}`.
+- **`DataSetExporter`** — entry point: size estimate → optional warning → EvalMode evaluation
+  → format dispatch.
+
+### Key design facts
+- **k=0 vs k≥1 sparsity**: the design note claimed topology-invariance across ALL harmonics, but
+  in practice the DC MNA (ω=0) can have a different sparsity pattern than AC harmonics because
+  zero-admittance entries from capacitors at DC are stored in the CSC (but some components may
+  not stamp them consistently). AC harmonics k≥1 ARE topology-invariant. The NpyWriter and
+  MatWriter call `GetSparseG(k)` per harmonic, so both patterns are handled correctly.
+- **Eager back-solve** (`EvaluateAll`/`EvaluateSpecified`): implemented via `IBackSolverProvider`;
+  falls back to zero if the payload is not `HbLinearNetworkPayload`.
+
+### Tests
+- **`LinearNetworkPayloadTests`** (7 tests, HarmonicBalance/): round-trip oracle including k=0 DC
+  and k=1 fundamental; all harmonics; drain-node cross-check; omegas validation.
+- **`DataSetExportTests`** (14 tests, Export/): .npy magic/header/alignment/size; .mat HDF5
+  read-back; size-warning fires/not-fires; EvaluateNone/All; IncludeLinearNetwork in both formats.
+
+**Total tests: 367 pass, 0 fail (171 Core + 196 Engine).**

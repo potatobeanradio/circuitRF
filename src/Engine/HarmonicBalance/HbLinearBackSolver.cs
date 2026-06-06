@@ -63,8 +63,18 @@ public sealed class HbLinearBackSolver : ILinearBackSolver
         return idx < x.Length ? x[idx] : Complex.Zero;
     }
 
-    public int SweepCount    => _iNl.Length;
+    public int SweepCount     => _iNl.Length;
     public int NonGroundCount => _extractor.NonGroundCount;
+
+    // ── Internal accessors for ILinearNetworkPayload ─────────────────────────
+
+    internal HbLinearExtractor Extractor => _extractor;
+    internal double             F0       => _f0;
+    internal int                K        => _K;
+
+    // Read-only view of the raw iNl and bSrc arrays for the payload.
+    internal Complex[][,]    INlRaw  => _iNl;
+    internal Complex[][][]   BSrcRaw => _bSrc;
 
     // ── Internal (also used by LinearBackSolveTests) ─────────────────────────
 

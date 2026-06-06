@@ -284,6 +284,15 @@ public sealed class MnaSystem : IMnaContext
     private void AccumRhs(int row, Complex value)
         => _rhs[row] = _rhs.TryGetValue(row, out var existing) ? existing + value : value;
 
+    /// <summary>
+    /// Build and return the CSC representation of the current matrix.
+    /// Used by <see cref="HarmonicBalance.HbLinearExtractor"/> to snapshot G(ω)
+    /// before factorization so the sparse matrix can be exported without recomputing.
+    /// Calling this after <see cref="Factorize"/> on the same MnaSystem instance is
+    /// safe — both calls build from the same <c>_entries</c> dictionary.
+    /// </summary>
+    public CompressedColumnStorage<Complex> BuildCsc() => BuildCscMatrix();
+
     private CompressedColumnStorage<Complex> BuildCscMatrix()
     {
         int n   = Size;

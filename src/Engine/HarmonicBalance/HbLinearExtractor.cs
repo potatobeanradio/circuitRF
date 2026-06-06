@@ -4,6 +4,7 @@ using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 using System.Text;
 using CSparse.Complex.Factorization;
+using CSparse.Storage;
 
 namespace CircuitRF.Engine.HarmonicBalance;
 
@@ -36,7 +37,17 @@ public sealed class HbLinearExtractor
 
     // Keyed by omega = k·ω₀.  G is topology-based and unchanged across sweep points,
     // so the factorization computed during Extract() is reused by SolveFullNetwork().
-    private readonly Dictionary<double, (SparseLU Lu, int Size, Complex[,] YNN)> _luCache = new();
+    // G is also cached (pre-factored CSC matrix) so the exporter can retrieve sparse G
+    // without rebuilding it.  G is null in the SolveFullNetwork lazy-cache path only
+    // when Extract() was never called for that omega (e.g. DC k=0 back-solve hit first);
+    // in that case the exporter must call Extract() or rebuild G on demand.
+    private readonly Dictionary<double, (SparseLU Lu, int Size, Complex[,]? YNN,
+        CompressedColumnStorage<Complex>? G)> _luCache = new();
+
+    // Branch-name map built lazily after the first BuildMna() call.
+    // index b (0-based branch offset) → human-readable name for export.
+    private string[]? _branchNames;
+    private int       _cachedMnaSize = -1;
 
     public HbLinearExtractor(ElaboratedNetlist netlist, AnalysisSettings settings)
     {
@@ -270,8 +281,18 @@ public sealed class HbLinearExtractor
         if (!_luCache.TryGetValue(omega, out var entry))
         {
             var mnaZ = BuildMna(omega, zeroDrive: true);
+            // Snapshot the sparse G BEFORE factorization for export use (data-export.md §4.2).
+            // BuildCsc() reads the same _entries dict that Factorize() will consume — safe.
+            var gMatrix = mnaZ.BuildCsc();
             luZ     = mnaZ.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
             mnaSize = mnaZ.Size;
+
+            // Lazy-build branch name map on first successful MNA (size is stable).
+            if (_branchNames is null && mnaZ.BranchCount > 0)
+            {
+                _branchNames = BuildBranchNamesFromMna(mnaZ);
+                _cachedMnaSize = mnaSize;
+            }
 
             var zNN  = new Complex[_N, _N];
             var xBuf = new Complex[mnaSize];
@@ -294,11 +315,13 @@ public sealed class HbLinearExtractor
 
             // Invert Z_{N×N} → Y_{N×N}.
             yNN = InvertNN(zNN, _N);
-            _luCache[omega] = (luZ, mnaSize, yNN);
+            _luCache[omega] = (luZ, mnaSize, yNN, gMatrix);
         }
         else
         {
-            (luZ, mnaSize, yNN) = entry;
+            luZ     = entry.Lu;
+            mnaSize = entry.Size;
+            yNN     = entry.YNN ?? new Complex[_N, _N]; // guard — should never be null from Extract path
         }
 
         // ── Step 2: V_oc with sources active → I_src = −Y_{N×N}·V_oc ─────────
@@ -398,12 +421,21 @@ public sealed class HbLinearExtractor
     {
         // Reuse the exact factorization built during Extract() so the back-solve and
         // the HB solve use the SAME linear system (machine-precision agreement, ~1e-12).
-        // If omega was never Extract()ed (e.g., DC k=0), build and cache it now.
+        // If omega was never Extract()ed (e.g., DC k=0), build and cache it now,
+        // including the sparse G snapshot for export.
         if (!_luCache.TryGetValue(omega, out var entry))
         {
             var mna0 = BuildMna(omega, zeroDrive: true);
+            var g0   = mna0.BuildCsc();   // snapshot before Factorize (data-export.md §4.2)
             var lu0  = mna0.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
-            entry = (lu0, mna0.Size, null!);
+
+            if (_branchNames is null && mna0.BranchCount > 0)
+            {
+                _branchNames = BuildBranchNamesFromMna(mna0);
+                _cachedMnaSize = mna0.Size;
+            }
+
+            entry = (lu0, mna0.Size, null, g0);
             _luCache[omega] = entry;
         }
 
@@ -419,6 +451,119 @@ public sealed class HbLinearExtractor
         var x = new Complex[entry.Size];
         entry.Lu.Solve(b, x);
         return x;
+    }
+
+    // ── Export accessors (data-export.md §4, §8) ─────────────────────────────
+
+    /// <summary>
+    /// Size of the full MNA system (nonGroundCount + branchCount).
+    /// Available after the first Extract() or SolveFullNetwork() call.
+    /// Returns −1 if no stamp has occurred yet.
+    /// </summary>
+    internal int MnaSize => _cachedMnaSize;
+
+    /// <summary>
+    /// Node-index → name map for export.
+    /// Index i (0-based) → name of circuit node (i+1).
+    /// Length = NonGroundCount.
+    /// </summary>
+    internal string[] NodeNames
+    {
+        get
+        {
+            var names = new string[_nonGroundCount];
+            for (int i = 0; i < _nonGroundCount; i++)
+                names[i] = _netlist.Nodes.NameOf(i + 1);
+            return names;
+        }
+    }
+
+    /// <summary>
+    /// Branch-index → name map for export.
+    /// Index b (0-based branch offset from NonGroundCount) → human-readable name.
+    /// Built lazily on first Extract()/SolveFullNetwork() call; returns empty array
+    /// before any stamp has occurred.
+    /// </summary>
+    internal string[] BranchNames => _branchNames ?? [];
+
+    /// <summary>
+    /// Return the sparse G(ω_k) matrix in triplet (COO) form for export.
+    /// omega = k == 0 ? 0.0 : k * 2π * f0.
+    ///
+    /// The G matrix is topology-invariant: the same nonzero pattern and values are
+    /// produced for every call with the same omega.  The caller must have called
+    /// Extract(omega) or triggered SolveFullNetwork(omega, …) at least once so the
+    /// cache entry exists.  Returns ([], [], []) if the cache has no entry for this omega.
+    /// </summary>
+    internal (int[] Rows, int[] Cols, System.Numerics.Complex[] Data) GetSparseG(double omega)
+    {
+        if (!_luCache.TryGetValue(omega, out var entry) || entry.G is null)
+            return ([], [], []);
+
+        var g = entry.G;
+        // CSparse CSC: ColumnPointers[j] .. ColumnPointers[j+1]-1 hold row indices for col j.
+        int n   = g.ColumnCount;
+        int nnz = g.Values.Length;
+        var rows = new int[nnz];
+        var cols = new int[nnz];
+        var data = new System.Numerics.Complex[nnz];
+
+        int idx = 0;
+        for (int j = 0; j < n; j++)
+        {
+            for (int ptr = g.ColumnPointers[j]; ptr < g.ColumnPointers[j + 1]; ptr++)
+            {
+                rows[idx] = g.RowIndices[ptr];
+                cols[idx] = j;
+                data[idx] = g.Values[ptr];
+                idx++;
+            }
+        }
+        return (rows, cols, data);
+    }
+
+    /// <summary>
+    /// Build the branch-index→name map by inspecting LastBranchIndex on stamped models.
+    /// Called once after the first BuildMna(); the map is stable (branch indices are
+    /// topology-invariant across frequencies and sweep points).
+    /// </summary>
+    private string[] BuildBranchNamesFromMna(MnaSystem mna)
+    {
+        int branchCount = mna.BranchCount;
+        var names       = new string[branchCount];
+
+        foreach (var ec in _netlist.Components)
+        {
+            if (ec.IsNonlinear) continue;
+
+            switch (ec.Model)
+            {
+                case InductorModel im when im.LastBranchIndex >= _nonGroundCount:
+                    names[im.LastBranchIndex - _nonGroundCount] = $"L:{ec.InstancePath}";
+                    break;
+
+                case VoltageSourceModel vm when vm.LastBranchIndex >= _nonGroundCount:
+                    names[vm.LastBranchIndex - _nonGroundCount] = $"V:{ec.InstancePath}";
+                    break;
+
+                case IProbeModel ipm when ipm.LastBranchIndex >= _nonGroundCount:
+                    names[ipm.LastBranchIndex - _nonGroundCount] = $"IProbe:{ec.InstancePath}";
+                    break;
+
+                case TunerModel tm:
+                    if (tm.ChokeBranchIndex >= _nonGroundCount)
+                        names[tm.ChokeBranchIndex - _nonGroundCount]      = $"Tuner:{ec.InstancePath}:choke";
+                    if (tm.BiasSupplyBranchIndex >= _nonGroundCount)
+                        names[tm.BiasSupplyBranchIndex - _nonGroundCount] = $"Tuner:{ec.InstancePath}:bias";
+                    break;
+            }
+        }
+
+        // Fill any unnamed slots (SnpModel multi-branch Z-expansion, Short, etc.)
+        for (int b = 0; b < branchCount; b++)
+            if (names[b] is null) names[b] = $"branch#{b}";
+
+        return names;
     }
 
     // ── Dense N×N matrix inversion (Gauss-Jordan with partial pivoting) ───────

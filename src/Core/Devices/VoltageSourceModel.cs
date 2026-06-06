@@ -24,6 +24,14 @@ public sealed class VoltageSourceModel : ComponentModel
 
     private double _voltage;
 
+    /// <summary>
+    /// Matrix index of the branch-current unknown allocated during the most recent
+    /// <see cref="Stamp"/> call.  Stable across frequencies (topology-invariant).
+    /// −1 before first Stamp call.  Used by <see cref="HarmonicBalance.HbLinearExtractor"/>
+    /// to build the branch-index↔name map for export.
+    /// </summary>
+    public int LastBranchIndex { get; private set; } = -1;
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
         if (c.Nodes.Length < 2) return;
@@ -39,6 +47,7 @@ public sealed class VoltageSourceModel : ComponentModel
         }
 
         int br = mna.AddBranch();
+        LastBranchIndex = br;
         // Constraint row: Va − Vb − V = 0  →  Va − Vb = V
         mna.AddConstraint(br, va, new Complex(+1, 0));
         mna.AddConstraint(br, vb, new Complex(-1, 0));

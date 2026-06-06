@@ -157,6 +157,29 @@ the x-axis.
   `.npy` file whose record fields carry the named cubes plus axis metadata. (Not one file per cube.)
 - Details in `docs/design/data-export.md`. The `.npy` "one packed structure" choice is fixed in
   `docs/PRD.md` §11.
+- **`.npy` is circuitRF's native data file format** — the file circuitRF writes and splotRF (and other
+  viewers) read back. A C# **importer** in RfCore reconstructs a `DataSet` from a `.npy` (the inverse of
+  the exporter); the round-trip `export → import` is the symmetry oracle.
+
+## File-format stability — NO backward compatibility during alpha
+**Until the product approaches final release, the data-file format is NOT stable and we do NOT support
+reading older files.** This is a deliberate standing decision — do not re-raise it, and do not add
+migration/compat shims for old files.
+- **Breaking the format is fine right now.** If a better layout, dtype, or schema emerges, just change
+  it. Update the exporter and importer together; regenerate any test fixtures. Do **not** preserve the
+  ability to read files written by an earlier alpha build.
+- **Do not build version-negotiation, upgraders, or "read v1, write v2" paths.** A `format_version`
+  field may be *written* (cheap, and useful later), and the importer may *reject* a mismatched version
+  with a clear error — but it must **not** attempt to *read* an old version. Reject-with-clear-error is
+  the only backward behavior; never silent migration.
+- **Rationale:** we are in early development; supporting alpha-level files we know we will abandon is
+  wasted effort and a drag on changing the format freely while it's still settling.
+- This relaxation applies **only to on-disk file backward-compatibility.** The *in-process*
+  `DataSet`/`DataCube` API contract with splotRF is still lockstep (see "Change carefully"): changing
+  the file format means upgrading the circuitRF exporter and the RfCore importer and splotRF's reader
+  together, in the same change — what we drop is the obligation to keep reading *yesterday's files*.
+- **Revisit near final product:** when we approach release, this section is replaced by a real
+  format-versioning + compatibility policy. Flag that transition when it's time (root `CLAUDE.md`).
 
 ## Memory
 A `Complex` is 16 bytes (`double` is 8). A dense 50×50 loadpull grid × 100 nodes × 20 spectral lines
@@ -176,7 +199,10 @@ filter — the instance name is the user's handle. Deep, hierarchy-reaching meas
 the same set a future "retain only referenced nodes" optimization would prune to.
 
 ## Change carefully
-The `DataSet`/`DataCube` contract is **owned by circuitRF and consumed by splotRF.** Any change to
-cube shape, `DataKind`, axis semantics, or serialization is a reviewed decision — flag it
-(root `CLAUDE.md` → "Ask before") because splotRF must be upgraded in lockstep, and it must handle
-both `DataKind`s when consuming a cube.
+The `DataSet`/`DataCube` **in-process API** contract (cube shape, `DataKind`, axis semantics, the
+accessors) is **owned by circuitRF and consumed by splotRF.** Any change to it is a reviewed decision
+— flag it (root `CLAUDE.md` → "Ask before") because splotRF must be upgraded in lockstep, and it must
+handle both `DataKind`s when consuming a cube. *(The on-disk **file format** is exempt during alpha —
+see "File-format stability" above: break it freely, just upgrade exporter+importer+splotRF together. The
+lockstep that remains is the in-process API and the requirement that the three serialization sites move
+together — not backward-compatibility with old files.)*
