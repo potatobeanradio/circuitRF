@@ -208,8 +208,9 @@ public sealed class LoadpullEngine
 
         int K = p.MaxHarmonic;
         var hbParams = new HbAnalysisParams(
-            ToneHz:        p.ToneHz,
+            ToneFreqsHz:   [p.ToneHz],
             MaxHarmonic:   K,
+            MaxMixOrder:   5,      // single-tone loadpull — MaxMixOrder ignored
             FFTOverSample: p.FFTOverSample,
             Tol:           p.Tol,
             DriveStepping: p.DriveStepping,

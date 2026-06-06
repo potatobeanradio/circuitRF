@@ -490,7 +490,7 @@ public static class HbNewton
 
     // ── Gaussian elimination with partial pivoting ─────────────────────────────
 
-    private static double[]? SolveGaussian(double[] A, double[] b, int n)
+    internal static double[]? SolveGaussian(double[] A, double[] b, int n)
     {
         var aug = new double[n * (n + 1)];
         for (int r = 0; r < n; r++)
@@ -525,5 +525,5 @@ public static class HbNewton
         return x;
     }
 
-    private static double L2(double[] v) { double s = 0; foreach (double x in v) s += x*x; return Math.Sqrt(s); }
+    internal static double L2(double[] v) { double s = 0; foreach (double x in v) s += x*x; return Math.Sqrt(s); }
 }

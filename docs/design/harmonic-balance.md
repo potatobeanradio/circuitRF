@@ -188,6 +188,11 @@ The retained diamond's half-plane representatives are enumerated in a **fixed, d
 
 Retaining the baseband `(1,−1)` and the close-in `(3,−2)` is what `MaxMixingOrder ≥ 5` buys, and is directly relevant to the source/load baseband-termination effects the tool targets (PRD §5).
 
+### 6.4 Future development — true n-tone (≥ 3 tones)
+The v1 multi-tone engine is implemented for **two tones** (the `HbFft2D` / `(k₁,k₂)` / `N₁×N₂` path), which covers the dominant intermodulation use case (two-carrier IMD3/IMD5 on a PA). The formulation in this section is written to **generalize to an arbitrary number of tones T** — the torus is `T`-dimensional, the FFT is a separable `N₁×…×N_T` real FFT, the diamond becomes the `T`-dimensional simplex `Σ_t |k_t| ≤ MaxMixOrder`, the conjugate symmetry becomes a half-**space**, and the Jacobian's difference/sum lookups become `T`-vector index arithmetic `(k₁∓i₁, …, k_T∓i_T)`. None of the math changes; only the hardcoded dimensionality of the 2-tone implementation (FFT, index map, Jacobian indexing) would be lifted to general `T`.
+
+**This is recorded as future development, not v1 scope.** Its primary motivation is **RF mixer design** (and multi-carrier / wideband work), where three or more tones — e.g. an RF tone, an LO tone, and their mixing products — are the natural problem, and where the retained low-order products (IF, image, LO leakage) are exactly what the designer needs. The engineering cost is twofold: (a) a focused **dimensionality refactor** lifting the 2-tone FFT/index-map/Jacobian-indexing to general `T` (moderate, mechanical — the per-axis separability and the FD-Jacobian oracle make it tractable and verifiable), and (b) the **scalability** concern that the retained set grows steeply with tone count, which pairs naturally with the deferred block-structured/iterative HB solve (§8, §16 item 5). Because both halves are "scale the HB engine" work and neither is needed by the v1 hero suite, n-tone is best taken as its **own future phase** rather than bolted onto the two-tone engine. (When undertaken, the n-tone generalization and the iterative solver should land together.)
+
 ---
 
 ## 7. The Jacobian — the conversion matrix, real-valued
@@ -369,6 +374,7 @@ Beyond the cross-tool references, the deck establishes a **theory cross-check** 
 2. **Oversampled-vs-minimal `G`/`C` for the fixed-size Jacobian** (§5.3) — stays a flag **defaulting to oversampled**; revisit after measuring Hero-2/3 iteration counts. Affects convergence rate only, never the converged answer.
 4. **Damping policy** (§8, §11) — whether `λ` is fixed, line-searched, or engaged only after a failed full step; tune alongside the continuation step-backoff during heuristic bring-up.
 5. **Block-structured / iterative HB solve** (§8) — deferred; the dense solve stands unless a hero misses the `< 3 s`/point NFR at Hero-4 scale, at which point a block/iterative scheme is the profiled optimization.
+7. **True n-tone (≥ 3 tones)** (§6.4) — deferred to its own future phase; motivated by **RF mixer design** and multi-carrier work. A dimensionality refactor of the 2-tone FFT/index-map/Jacobian to general `T`, landing together with the iterative solver (item 5) since the retained set grows steeply with tone count. Not needed by the v1 hero suite.
 
 ---
 

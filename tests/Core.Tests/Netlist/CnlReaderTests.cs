@@ -231,6 +231,75 @@ public class CnlReaderTests
         Assert.Equal("Ohm", ov.Unit);
     }
 
+    [Theory]
+    [InlineData("R:R1  N1 0  R=50 Ohm\n")]      // canonical
+    [InlineData("R:R1  N1 0  R = 50 Ohm\n")]    // spaces around '='
+    [InlineData("R:R1  N1 0  R =50 Ohm\n")]     // space before '='
+    [InlineData("R:R1  N1 0  R= 50 Ohm\n")]     // space after '='
+    public void InlineRead_SpacedEquals_ParsesSameAsCanonical(string src)
+    {
+        var (_, tb) = new CnlReader().Read(src);
+        var r1 = tb.Instances[0];
+        Assert.Equal(["N1", "0"], r1.NetBindings);   // 'R' must NOT be misread as a net
+        var ov = r1.Overrides.Single();
+        Assert.Equal("R", ov.Name);
+        Assert.Equal("50", ov.Expression);
+        Assert.Equal("Ohm", ov.Unit);
+    }
+
+    [Fact]
+    public void InlineRead_SpacedEquals_CapacitorWithUnit()
+    {
+        // The Hero-4 case that broke the parser: "C = 1 uF".
+        var (_, tb) = new CnlReader().Read("C:Cb  a b  C = 1 uF\n");
+        var c = tb.Instances[0];
+        Assert.Equal(["a", "b"], c.NetBindings);
+        Assert.Equal("C",  c.Overrides.Single().Name);
+        Assert.Equal("1",  c.Overrides.Single().Expression);
+        Assert.Equal("uF", c.Overrides.Single().Unit);
+    }
+
+    [Theory]
+    [InlineData("C:Cb a b C=1uF\n")]        // glued unit, no space around '='
+    [InlineData("C:Cb a b C = 1uF\n")]      // glued unit + spaces around '=' (the Hero-4 example)
+    [InlineData("C:Cb a b C =1uF\n")]
+    public void InlineRead_GluedUnit_SplitsValueAndUnit(string src)
+    {
+        var (_, tb) = new CnlReader().Read(src);
+        var c = tb.Instances[0];
+        Assert.Equal(["a", "b"], c.NetBindings);
+        Assert.Equal("C",  c.Overrides.Single().Name);
+        Assert.Equal("1",  c.Overrides.Single().Expression);
+        Assert.Equal("uF", c.Overrides.Single().Unit);
+    }
+
+    [Theory]
+    [InlineData("R:Rx a b R=2e9\n",     "2e9")]      // scientific literal — must NOT split
+    [InlineData("R:Rx a b R=2e-12\n",   "2e-12")]    // negative exponent — must NOT split
+    [InlineData("R:Rx a b R=50\n",      "50")]       // bare number — no unit
+    [InlineData("V:Vx a b V=Vs_mag\n",  "Vs_mag")]   // identifier — must NOT split
+    public void InlineRead_GluedUnit_DoesNotSplitNonUnits(string src, string expectExpr)
+    {
+        var (_, tb) = new CnlReader().Read(src);
+        var ov = tb.Instances[0].Overrides.Single();
+        Assert.Equal(expectExpr, ov.Expression);
+        Assert.Null(ov.Unit);
+    }
+
+    [Fact]
+    public void InlineRead_SpacedEquals_MultipleParamsAndNets()
+    {
+        // Two params, mixed spacing, several nets — order and values preserved.
+        var (_, tb) = new CnlReader().Read("L:Lx  n1 n2  L=300 pH  C = 1 uF\n");
+        var l = tb.Instances[0];
+        Assert.Equal(["n1", "n2"], l.NetBindings);
+        Assert.Equal("300", l.Overrides[0].Expression);
+        Assert.Equal("pH",  l.Overrides[0].Unit);
+        Assert.Equal("C",   l.Overrides[1].Name);
+        Assert.Equal("1",   l.Overrides[1].Expression);
+        Assert.Equal("uF",  l.Overrides[1].Unit);
+    }
+
     [Fact]
     public void InlineRead_RawDirectivesRoundTrip()
     {

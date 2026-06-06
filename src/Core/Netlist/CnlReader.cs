@@ -825,9 +825,27 @@ public sealed class CnlReader
         if (kv.TryGetValue("Sweep", out var sweepStr))
             ParseSweepString(sweepStr, out sweepVar, out sweepStart, out sweepStop, out sweepStep);
 
+        // Parse multi-tone fields: NumFreqs and Tone[1..N].
+        string numFreqsExpr   = kv.GetValueOrDefault("NumFreqs",      "1");
+        string maxMixOrderExpr = kv.GetValueOrDefault("MaxMixOrder",  "5");
+
+        // Collect Tone[i] expressions in order (1-based in the directive, 0-based in the array).
+        // Scan the kv dictionary for keys matching "Tone[N]".
+        var toneExprs = new List<string>();
+        for (int i = 1; ; i++)
+        {
+            if (kv.TryGetValue($"Tone[{i}]", out var tExpr))
+                toneExprs.Add(tExpr);
+            else
+                break;  // stop at first gap
+        }
+
         result = new CircuitRF.Core.Design.HarmonicBalanceAnalysis(analysisName)
         {
             ToneExpr          = kv.GetValueOrDefault("Tone",            "0"),
+            NumFreqsExpr      = numFreqsExpr,
+            ToneExprs         = toneExprs.ToArray(),
+            MaxMixOrderExpr   = maxMixOrderExpr,
             MaxHarmonicExpr   = kv.GetValueOrDefault("MaxHarm",         "7"),
             FFTOverSampleExpr = kv.GetValueOrDefault("FFTOverSample",    "1"),
             TolExpr           = kv.GetValueOrDefault("Tol",             "1e-6"),
@@ -929,6 +947,12 @@ public sealed class CnlReader
 
         bool isSnP = typeName.Equals("SnP", StringComparison.OrdinalIgnoreCase);
 
+        // Tolerate whitespace around '=' in param assignments: "C = 1 uF", "C =1", "C= 1" all become
+        // the canonical "C=1" token (the trailing unit stays its own token). Safe here because the
+        // expression-bearing lines (Z_Port/SDD/Tuner) were already dispatched above, and quoted
+        // values (SnP File="…") are atomic tokens from TokeniseLine.
+        tokens = MergeSpacedAssignments(tokens);
+
         // Remaining tokens: nets (no '=') then param=val pairs
         var nets      = new List<string>();
         var overrides = new List<ParameterAssignment>();
@@ -959,12 +983,20 @@ public sealed class CnlReader
                 }
 
                 string? unit = null;
-                // Only check for unit suffix when pexpr is NOT a string literal
-                if (!(pexpr.Length >= 2 && pexpr[0] == '"') &&
-                    i + 1 < tokens.Count && Units.IsKnown(tokens[i + 1]))
+                bool isStringLit = pexpr.Length >= 2 && pexpr[0] == '"';
+                // Unit as a separate token: "C=1 uF".
+                if (!isStringLit && i + 1 < tokens.Count && Units.IsKnown(tokens[i + 1]))
                 {
                     unit = tokens[i + 1];
                     i++;
+                }
+                // Unit glued to the value: "C=1uF" → value "1", unit "uF". Guarded by IsKnown so a
+                // bare number ("50"), scientific literal ("2e9"/"2e-9") or identifier ("Vs_mag")
+                // is never split.
+                else if (!isStringLit && TrySplitGluedUnit(pexpr, out var gv, out var gu))
+                {
+                    pexpr = gv;
+                    unit  = gu;
                 }
                 overrides.Add(new ParameterAssignment(pname, pexpr, unit));
             }
@@ -1071,6 +1103,51 @@ public sealed class CnlReader
             if (sb.Length > 0) tokens.Add(sb.ToString());
         }
         return tokens;
+    }
+
+    /// <summary>
+    /// Rejoins whitespace-separated assignment tokens so spaces around '=' are tolerated:
+    /// ["C","=","1"] / ["C","=1"] / ["C=","1"] all collapse to ["C=1"]. A trailing unit ("uF")
+    /// stays a separate token, and quoted values (already atomic from TokeniseLine) are never split.
+    /// Applied only on the generic component path (expression lines use dedicated parsers).
+    /// </summary>
+    // Matches a numeric literal (incl. scientific) glued directly to a trailing alpha suffix:
+    // "1uF" → ("1","uF"), "300pH" → ("300","pH"). "2e9"/"2e-9" leave no alpha tail → no match.
+    private static readonly Regex GluedNumericUnit = new(
+        @"^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([A-Za-z]+)$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Splits a value with a glued unit suffix ("1uF") into ("1","uF") — but only when the suffix
+    /// is a known unit. Bare numbers, scientific literals, and identifiers return false (unchanged).
+    /// </summary>
+    private static bool TrySplitGluedUnit(string s, out string value, out string unit)
+    {
+        value = s; unit = "";
+        var m = GluedNumericUnit.Match(s);
+        if (!m.Success) return false;
+        string u = m.Groups[2].Value;
+        if (!Units.IsKnown(u)) return false;
+        value = m.Groups[1].Value;
+        unit  = u;
+        return true;
+    }
+
+    private static List<string> MergeSpacedAssignments(List<string> tokens)
+    {
+        var result = new List<string>();
+        for (int i = 0; i < tokens.Count; i++)
+        {
+            string t = tokens[i];
+            if (t == "=" && result.Count > 0 && i + 1 < tokens.Count)
+                result[^1] += "=" + tokens[++i];            // "key = value"
+            else if (t.Length > 1 && t[0] == '=' && result.Count > 0)
+                result[^1] += t;                            // "key =value"
+            else if (t.Length > 1 && t[^1] == '=' && i + 1 < tokens.Count)
+                result.Add(t + tokens[++i]);                // "key= value"
+            else
+                result.Add(t);
+        }
+        return result;
     }
 
     /// <summary>

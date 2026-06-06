@@ -1,0 +1,81 @@
+; ============================================================
+; hero5_unequal.cnl — Hero 5 with UNEQUAL tone amplitudes (V[1] != V[2]).
+; Identical to hero5.cnl except the second tone is scaled by ToneRatio.
+; Guards the general V_nTone path: each tone's excitation must be stamped at its own magnitude.
+; ============================================================
+
+; ---- FET model parameters (same as Phase 3) ----
+Sv=-0.837
+Sc=0.71
+TV0=4.268
+TC=1.507
+th=0.001
+a=0.176
+g=0.089
+lam=0.0012
+B=1130
+
+; ---- two-tone plan ----
+RFfreq      = 2e9
+ToneSpacing = 10e6
+ToneRatio   = 0.5            ; V[2] = ToneRatio * V[1]
+
+; ---- HB config ----
+MaxMixOrder = 5
+MaxHarm     = 4
+OverSamp    = 1
+HBtol       = 1e-7
+DriveStep   = IfNecessary
+Guard       = 0
+
+; ---- terminations, banded by frequency (positive) around the carriers ----
+ZSource_0 = 0.00001 + j*0
+ZSource_f = 25
+ZSource_2 = 1e-6
+ZSource_3 = 1e-6
+
+ZLoad_0 = 10 + j*10
+ZLoad_f = 80 + j*10
+ZLoad_2 = 1
+ZLoad_3 = 1e-6
+
+; ---- DC bias ----
+Vgg = -3.05
+Vdd = 48
+
+; ---- drive level (swept) ----
+PavlStop_dbm = 20
+Pavl_dbm = -20
+Pavl_w   = 10^((Pavl_dbm - 30)/10)
+Vs_mag   = sqrt(8 * Pavl_w * real(ZSource_f))
+
+; ============================================================
+; GATE bias-tee — two-tone drive with UNEQUAL amplitudes
+; ============================================================
+V_nTone:Vdrive   n_src 0   NumFreqs=2  Freq[1]=RFfreq-ToneSpacing/2  V[1]=Vs_mag  Phase[1]=0  Freq[2]=RFfreq+ToneSpacing/2  V[2]=Vs_mag*ToneRatio  Phase[2]=0
+Z_Port:Zsource   n_src n_zs    Z[1,1]=if(freq < 0.5e9) then ZSource_0 elseif(freq < 2.5e9) then ZSource_f elseif(freq < 4.5e9) then ZSource_2 elseif(freq < 6.5e9) then ZSource_3 else 1e-6 endif
+C:Cblock_g       n_zs n_gate   C=1 uF
+V_1Tone:Vgate    n_gbias 0     Vdc=Vgg
+L:Lchoke_g       n_gbias n_gate  L=1 uH
+
+; ============================================================
+; The FET (SDD), source grounded: port1 = n_gate, port2 = n_drain
+; ============================================================
+SDD:M1  n_gate 0  n_drain 0  \
+  I[1,0]=_v1/50  \
+  I[2,0]=(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1))) + 1))*ln(exp(-(2*TV0 - 2*_v1 + 2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1)*(_v2*lam + 1))/2
+
+; ============================================================
+; DRAIN bias-tee
+; ============================================================
+C:Cblock_d       n_drain n_zl   C=1 uF
+Z_Port:Zload     n_zl 0          Z[1,1]=if(freq < 0.5e9) then ZLoad_0 elseif(freq < 2.5e9) then ZLoad_f elseif(freq < 4.5e9) then ZLoad_2 elseif(freq < 6.5e9) then ZLoad_3 else 1e-6 endif
+L:Lchoke_d       n_drain n_dbias  L=1 uH
+V_1Tone:Vdrain   n_dbias 0       Vdc=Vdd
+
+; ============================================================
+; HB analysis: two tones, unequal amplitudes
+; ============================================================
+analysis HB5u  type=hb  NumFreqs=2  Tone[1]=RFfreq-ToneSpacing/2  Tone[2]=RFfreq+ToneSpacing/2  MaxMixOrder=MaxMixOrder  MaxHarm=MaxHarm \
+     Sweep="Pavl_dbm: -20 .. PavlStop_dbm step 1"  FFTOverSample=OverSamp  Tol=HBtol \
+     DriveStepping=DriveStep  GuardHarmonic=Guard

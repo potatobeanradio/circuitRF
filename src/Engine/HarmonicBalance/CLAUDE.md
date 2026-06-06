@@ -40,6 +40,23 @@ before implementing, and keep the pieces below independently testable.
   Hard cutoff (default); tapered profile selectable in future. Y_NN is never guarded.
   Set via `GuardHarmonic=` in the cnl directive.
 
+## Models are evaluated only at ω ≥ 0 — engine contract (do not break)
+**Every component model is stamped/evaluated at a NON-NEGATIVE frequency.** A two-tone retained
+mixing product (k₁,k₂) may have a *negative* physical frequency (e.g. (1,−1) = f₁−f₂ = −10 MHz),
+but the engine never passes that negative ω to a model. `HbEngine.RunTwoTone.ExtractMix` extracts
+the linear interface at **+|ω|** and applies the conjugate (`Y(−ω) = conj(Y(ω))`, the physical
+requirement for a real network; the Norton source at a negative-ω rep is zero since sources sit on
+positive carriers). Consequences:
+- A `.cnl` `Z(freq)` / `Y(freq)` expression sees `freq` as the **positive magnitude**
+  `|k₁f₁+k₂f₂|`. Band on `freq` directly — **`abs(freq)` is unnecessary** (and so is any attempt to
+  specify different behavior at −f, which conjugate symmetry forbids). This matches VendorA: users
+  think in positive frequency.
+- Frequency-band boundaries must be **magnitude windows** (e.g. fundamental = `freq < 2.5e9`), NOT
+  single-tone `freq > RFfreq` tests — the latter mis-bands the upper carrier/IM products in
+  two-tone (the upper carrier 2.005 GHz is > RFfreq but is still the fundamental band).
+- Any future caller of `HbLinearExtractor.Extract(ω)` with ω < 0 must conjugate, or route through
+  an `ExtractMix`-style helper, to preserve this contract.
+
 ## FFT / sign conventions — fix once, document, never silently change
 - Pick and record the time↔frequency sign convention and the harmonic ordering (DC, +k, −k).
 - All FFT round-trips must use the same convention; a sign/order mismatch is the most common bug.
@@ -152,3 +169,43 @@ the same DataSet as named cubes; the HB engine does not invent its own result ty
 Hero 2 (single-FET PA power sweep), Hero 4 (2-stage PA), Hero 5 (two-tone IM). References use the
 **identical SDD FET** transcribed into other simulators with matched harmonic count and solver
 tolerances — so a tolerance miss points at our HB math, not the transistor model.
+
+## Phase 4c deliverable — multi-tone (two-tone) HB — COMPLETE (2026-06-05)
+GENERALIZES the single-tone engine from the scalar harmonic axis k to the 2-D mixing lattice
+(k₁,k₂); it does NOT rewrite it. **Single-tone is the `NumFreqs=1` path and stays on the original
+`HbNewton`/`HbEngine.Run` code (golden byte-identical).** The two-tone path is parallel, sharing the
+real-split block math (the FD oracle guards it).
+
+### Components
+- **`MixingGrid`** — diamond-truncated half-plane lattice, locked mixIndex order (§16 item 1):
+  ascending |k₁|+|k₂|, then upper-half-plane (k₁>0, or k₁=0∧k₂≥0), k₁ then k₂ descending. (0,0)=DC
+  is index 0. M = 1 + order·(order+1). Raising the order only appends — never renumber.
+- **`HbFft2D`** — separable 2-D FFT composing the 1-D primitives. **Amplitude convention is GLOBAL,
+  not per-axis:** divisor N₁N₂ at the global DC bin (0,0), N₁N₂/2 at every other bin (a per-axis
+  ½·½ wrongly halves cross bins twice). Same for `ConversionWeight2D`. Forward2D folds out the
+  redundant k₂=0 negative-k₁ half (real-signal symmetry). The Jacobian's G/C spectra use a
+  NON-folded forward so `SpecGet` reconstructs every (k₁∓i₁,k₂∓i₂) lookup.
+- **`HbNewton2D`** — `EvaluateNonlinear2D` / `BuildF2D` / `BuildJ2D` / `Solve`: the single-tone
+  blocks with k→mixIndex, scalar k∓i → vector (k₁∓i₁,k₂∓i₂), charge rotation by ω=2π(k₁f₁+k₂f₂).
+  Reduces EXACTLY to single-tone when k₂≡0. Guarded by the two-tone FD-Jacobian oracle
+  (`HbJacobian2DTests`, gate 1e-4 — the active-device FD floor is ~2e-5; structural bugs show at
+  O(0.1–1), as the per-axis ConversionWeight2D bug did at exactly 0.5).
+- **`HbEngine.RunTwoTone`** — dispatched from `Run` on `p.IsMultiTone`. Extracts the linear
+  interface per mixing product; `HbResult` carries the `MixingGrid` + tone freqs, with V/INl on the
+  mixIndex axis. See the ω≥0 contract above for negative-frequency handling.
+- **`TwoToneMeasurements`** — IMD selectors: `Tone(k₁,k₂)` (inverts mixIndex, conjugate fallback for
+  non-retained reps), per-product Pout/Pout(dBm), `ImDbc`.
+
+### Hero 5 gate — PASSED (self-generated golden; physics anchor independent)
+`testdata/Hero5/hero5.cnl` (two tones 1.995/2.005 GHz, MaxMixOrder=5, MaxHarm=4, baseband
+ZLoad₀=10+j10). Self-generated golden over the mixIndex axis (V/I at n_gate, n_drain) with the
+<1e-5-is-noise rule — SELF-CONSISTENCY, not independently validated. **Independent physics anchor:
+the IM3 3:1 slope is exact — carrier slope 1.00, IM3 slope 3.00** over −18..−12 dBm; the
+unequal-amplitude (V[2]=0.5·V[1]) guard gives output carrier ratio 0.5001. The Newton residual
+floors at ~1e-9 (huge Y dynamic range from 1µΩ near-shorts → Y~1e6 caps conditioning), so IMD
+slope checks must sit in a drive window where the product current is well above ~1e-9 yet below
+compression.
+
+### Owed
+Cross-check Hero 5 against other simulators with the identical SDD FET (currently self-consistent
+only). Phase 4d (multi-device → Hero 4) remains to complete Phase 4.

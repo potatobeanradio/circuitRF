@@ -21,11 +21,31 @@ public sealed class SParameterAnalysis(string name, FrequencySpec freq) : Analys
 /// <summary>
 /// HB analysis directive (harmonic-balance.md §3.2).
 /// Key=value fields store raw expression strings (resolved later via ResolvedGlobals).
+///
+/// Two spellings — one model (harmonic-balance.md §3.2):
+///   Single-tone:  Tone=f0  MaxHarm=K
+///   Multi-tone:   NumFreqs=N  Tone[1]=f1 … Tone[N]=fN  MaxMixOrder=M  MaxHarm=K
 /// </summary>
 public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
 {
     // Raw expression strings from the .cnl directive; resolved at engine time.
+
+    // ── Single-tone spelling ───────────────────────────────────────────────────
+    /// <summary>Single-tone fundamental (Hz). Ignored when NumFreqsExpr &gt; 1.</summary>
     public string ToneExpr          { get; init; } = "0";
+
+    // ── Multi-tone spelling ────────────────────────────────────────────────────
+    /// <summary>Number of independent tones. "1" = single-tone (ToneExpr used). Default "1".</summary>
+    public string NumFreqsExpr      { get; init; } = "1";
+    /// <summary>
+    /// Multi-tone frequencies: ToneExprs[i] is the expression for Tone[i+1] (0-based).
+    /// Empty for single-tone (use ToneExpr instead).
+    /// </summary>
+    public string[] ToneExprs       { get; init; } = [];
+    /// <summary>Diamond mixing-order bound |k₁|+|k₂| ≤ MaxMixOrder (§6). Multi-tone only.</summary>
+    public string MaxMixOrderExpr   { get; init; } = "5";
+
+    // ── Common ─────────────────────────────────────────────────────────────────
     public string MaxHarmonicExpr   { get; init; } = "7";
     public string FFTOverSampleExpr { get; init; } = "1";
     public string TolExpr           { get; init; } = "1e-6";

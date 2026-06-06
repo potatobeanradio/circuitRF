@@ -1,6 +1,6 @@
 ; ============================================================
 ; hero4.cnl — Phase-4d single-tone HB: grounded-source 2 Stage GaN HEMT PA
-; Same SDD FET as Phase 3. Drive at 2 GHz, Pavl swept -20..+20 dBm.
+; Same SDD FET as Phase 3. Drive at 2 GHz, Pavl swept -40..-20 dBm.
 ; Per-harmonic source/load terminations via Z_Port; bias-tees on both ports.
 ; ============================================================
 
@@ -21,7 +21,7 @@ RFfreq = 2e9
 ; ---- HB config (exposed as parameters) ----
 MaxHarm   = 4
 OverSamp  = 1
-HBtol     = 1e-6
+HBtol     = 1e-8
 DriveStep = IfNecessary
 Guard     = 0                 ; guard harmonic off by default; set an index to enable
 
@@ -72,17 +72,17 @@ L:Lchoke_d       n_drain n_dbias  L=1 uH
 V_1Tone:Vdrain   n_dbias 0       Vdc=Vdd
 
 ; small series LC in for interstage, no fancy matching circuit, the C blocks DC
-L:Linterstage      n_drain n_gate2  L=300 pH C = 1uF
+L:Linterstage      n_drain n_gate2  L=300 pH C=1 uF
 ; small parastic C's for fun
-C:Cds_Stage1      n_drain 0  C = 1 pF
-C:Cshunt_Stage2      n_gate2 0  C = 0.1 pF
+C:Cds_Stage1      n_drain 0  C=1 pF
+C:Cshunt_Stage2      n_gate2 0  C=0.1 pF
 
 
 ; ============================================================
 ; The Stage 2 FET (SDD) 10x more periphery than Stage 1, source grounded: port1 = n_gate2, port2 = n_drain2
 ; scale the input impedance I[1,0] for our purposes; Stage 1 may have too much gain for this Stage 2. This is a quick 2-stage test.
 ; ============================================================
-SDD:M1  n_gate2 0  n_drain2 0  \
+SDD:M2  n_gate2 0  n_drain2 0  \
   I[1,0]=_v1/80  \
   I[2,0]=10*(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1))) + 1))*ln(exp(-(2*TV0 - 2*_v1 + 2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1)*(_v2*lam + 1))/2
 
@@ -92,7 +92,7 @@ L:Lchoke_g2      n_gbias2 n_gate2  L=1 uH
 L:Lchoke_d2       n_drain2 n_dbias2  L=1 uH
 V_1Tone:Vdrain2   n_dbias2 0       Vdc=Vdd
 
-C:Cblock_d       n_drain n_zl   C=1 uF
+C:Cblock_d       n_drain2 n_zl   C=1 uF
 Z_Port:Zload     n_zl 0          Z[1,1]=if(freq < RFfreq) then ZLoad_0 elseif(freq <= RFfreq) then ZLoad_f elseif(freq <= 2*RFfreq && freq > RFfreq) then ZLoad_2 elseif(freq <= 3*RFfreq && freq > 2*RFfreq) then ZLoad_3 else 1e-6 endif
 
 
@@ -106,6 +106,6 @@ analysis HB1  type=hb  Tone=RFfreq  MaxHarm=MaxHarm  Sweep="Pavl_dbm: -40 .. -20
 ; ============================================================
 ; Measurements (evaluated on the HB result cubes)
 ; ============================================================
-measure Pout_dBm = dBm(Pout(n_drain, 1))      ; fundamental output power
+measure Pout_dBm = dBm(Pout(n_drain2, 1))     ; composite output power (Stage 2 drain)
 measure Gain_dB  = Pout_dBm - Pavl_dbm
-measure PAE      = PAE(n_drain, n_gate)        ; conceptual; measurement lib defines exact form
+measure PAE      = PAE(n_drain2, n_gate)       ; conceptual; measurement lib defines exact form

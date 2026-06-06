@@ -8,10 +8,21 @@ namespace CircuitRF.Engine.HarmonicBalance;
 
 /// <summary>
 /// Resolved HB analysis parameters (expression strings evaluated against ResolvedGlobals).
+///
+/// Two modes (harmonic-balance.md §3.2):
+///   Single-tone:  ToneFreqsHz.Length == 1.  MaxMixOrder is ignored.
+///   Multi-tone:   ToneFreqsHz.Length >= 2.  MaxHarmonic provides per-axis reach; MaxMixOrder
+///                 bounds the diamond |k₁|+|k₂| ≤ MaxMixOrder.
 /// </summary>
 public sealed record HbAnalysisParams(
-    double   ToneHz,
+    /// <summary>
+    /// Tone frequencies in Hz.  Length 1 = single-tone; length 2+ = multi-tone.
+    /// Use ToneHz as a convenience getter for the single-tone case.
+    /// </summary>
+    double[] ToneFreqsHz,
     int      MaxHarmonic,
+    /// <summary>Diamond mixing-order bound for two-tone. Ignored when single-tone.</summary>
+    int      MaxMixOrder,
     int      FFTOverSample,
     double   Tol,
     DcBiasSteppingMode DriveStepping,
@@ -30,7 +41,11 @@ public sealed record HbAnalysisParams(
     /// </summary>
     double   Lambda  = 1.0)
 {
-    public bool HasSweep => SweepVarName is not null;
+    /// <summary>Convenience: fundamental frequency for single-tone runs.</summary>
+    public double ToneHz      => ToneFreqsHz[0];
+    /// <summary>True when two or more independent tones are declared.</summary>
+    public bool   IsMultiTone => ToneFreqsHz.Length > 1;
+    public bool   HasSweep    => SweepVarName is not null;
 
     /// <summary>Enumerate the sweep values (or a single 0 for no sweep).</summary>
     public IEnumerable<double> SweepValues()
@@ -65,8 +80,22 @@ public sealed class HbResult
     /// <summary>Per-sweep-point convergence trace.</summary>
     public HbConvergenceTrace Trace { get; }
 
+    /// <summary>
+    /// Two-tone only: the mixing lattice. When non-null, the second index of <see cref="V"/> /
+    /// <see cref="INl"/> is the <c>mixIndex</c> (0..M-1) per <see cref="MixingGrid"/>, NOT the
+    /// scalar harmonic k. Null for single-tone runs (index is harmonic k=0..K).
+    /// </summary>
+    public MixingGrid? Grid { get; }
+
+    /// <summary>Tone frequencies (Hz). Length 1 single-tone; length 2+ multi-tone.</summary>
+    public double[] ToneFreqsHz { get; }
+
+    /// <summary>True when the result is on the 2-D mixing-lattice axis.</summary>
+    public bool IsMultiTone => Grid is not null;
+
     internal HbResult(double[] sweepValues, Complex[][,] V, Complex[][,] iNl,
-        int[] interfaceNodes, string[] names, HbConvergenceTrace trace)
+        int[] interfaceNodes, string[] names, HbConvergenceTrace trace,
+        MixingGrid? grid = null, double[]? toneFreqsHz = null)
     {
         SweepValues       = sweepValues;
         this.V            = V;
@@ -74,6 +103,8 @@ public sealed class HbResult
         InterfaceNodes    = interfaceNodes;
         InterfaceNodeNames = names;
         Trace             = trace;
+        Grid              = grid;
+        ToneFreqsHz       = toneFreqsHz ?? [];
     }
 }
 
@@ -121,13 +152,29 @@ public sealed class HbEngine
             catch { return def; }
         }
 
-        double tone    = Num(hba.ToneExpr, 1e9);
         int    maxH    = (int)Num(hba.MaxHarmonicExpr, 7);
         int    osamp   = Math.Max(1, (int)Num(hba.FFTOverSampleExpr, 1));
         double tol     = Num(hba.TolExpr, 1e-6);
         int    guard   = (int)Num(hba.GuardHarmonicExpr, 0);
         double lambda  = Math.Clamp(Num(hba.LambdaExpr, 1.0), 1e-4, 1.0);  // B2
         int    maxIter = Math.Max(1, (int)Num(hba.MaxIterExpr, 100));
+
+        // ── Tone frequencies: single-tone (scalar Tone=) or multi-tone (Tone[1..N]) ──
+        int numFreqs = Math.Max(1, (int)Num(hba.NumFreqsExpr, 1));
+        double[] toneFreqsHz;
+        if (numFreqs > 1 && hba.ToneExprs.Length >= numFreqs)
+        {
+            toneFreqsHz = new double[numFreqs];
+            for (int i = 0; i < numFreqs; i++)
+                toneFreqsHz[i] = Num(hba.ToneExprs[i], 1e9);
+        }
+        else
+        {
+            // Single-tone: use scalar Tone=.
+            toneFreqsHz = [Num(hba.ToneExpr, 1e9)];
+        }
+
+        int maxMixOrder = Math.Max(1, (int)Num(hba.MaxMixOrderExpr, 5));
 
         var driveStepping = DcBiasSteppingMode.IfNecessary;
         var dsStr = hba.DriveSteppingExpr.Trim();
@@ -145,7 +192,7 @@ public sealed class HbEngine
             sweepStep  = Num(hba.SweepStepExpr  ?? "1", 1);
         }
 
-        return new HbAnalysisParams(tone, maxH, osamp, tol, driveStepping, guard,
+        return new HbAnalysisParams(toneFreqsHz, maxH, maxMixOrder, osamp, tol, driveStepping, guard,
             sweepVar, sweepStart, sweepStop, sweepStep,
             MaxIter: maxIter, Lambda: lambda);
     }
@@ -170,6 +217,8 @@ public sealed class HbEngine
 
     public HbResult Run(HbAnalysisParams p)
     {
+        if (p.IsMultiTone) return RunTwoTone(p);
+
         int    K      = p.MaxHarmonic;
         double f0     = p.ToneHz;
         int    gridN  = HbFft.GridSize(K, p.FFTOverSample);
@@ -295,6 +344,195 @@ public sealed class HbEngine
             ifNodes,
             nodeNames,
             trace);
+    }
+
+    // ── Two-tone engine entry point (harmonic-balance.md §6) ─────────────────
+
+    /// <summary>
+    /// Multi-tone (two-tone) HB run. Generalizes <see cref="Run"/> from the scalar harmonic axis
+    /// to the 2-D mixing lattice (<see cref="MixingGrid"/>): the linear interface and Norton source
+    /// are extracted per retained mixing product at ω(k₁,k₂)=2π(k₁f₁+k₂f₂), the nonlinear blocks
+    /// use the separable 2-D FFT, and the Newton solve is <see cref="HbNewton2D.Solve"/>.
+    /// The returned <see cref="HbResult"/> carries the grid; V/INl are indexed [sweep][node, mixIdx].
+    /// </summary>
+    private HbResult RunTwoTone(HbAnalysisParams p)
+    {
+        double f1 = p.ToneFreqsHz[0];
+        double f2 = p.ToneFreqsHz[1];
+        double w1 = 2.0 * Math.PI * f1, w2 = 2.0 * Math.PI * f2;
+
+        var grid     = new MixingGrid(p.MaxMixOrder);
+        int M        = grid.MixCount;
+        // Per-axis grid sizing reaches the diamond's single-axis extent (k=MaxMixOrder) and, via
+        // the 4·order rule, the 2·order sum bins the Jacobian needs (harmonic-balance.md §5.2/§6.1).
+        var (N1, N2) = HbFft2D.GridSizes(p.MaxMixOrder, p.MaxMixOrder, p.FFTOverSample);
+
+        var extractor = new HbLinearExtractor(_netlist, _settings);
+        int N         = extractor.InterfaceCount;
+        int[] ifNodes = extractor.InterfaceNodes;
+        var nodeNames = ifNodes.Select(n =>
+            n < _netlist.Nodes.Count ? _netlist.Nodes.NameOf(n) : $"node{n}").ToArray();
+
+        CheckCommensurabilityMultiTone(grid, f1, f2);
+
+        // Extract the linear interface per mixing product. A retained rep may have NEGATIVE
+        // frequency (e.g. (1,-1) = f1−f2); for a real network Y(−ω)=conj(Y(ω)). We extract at |ω|
+        // and conjugate so the Z_Port's explicit complex Z(|f|) stays consistent with the L/C
+        // elements (which conjugate naturally under ω→−ω). Sources sit only on positive carriers,
+        // so the Norton vector at a negative-ω rep is zero (conj is a no-op there).
+        (Complex[,] y, Complex[] s) ExtractMix(double omega)
+        {
+            if (omega >= 0) return extractor.Extract(omega);
+            var (yp, sp) = extractor.Extract(-omega);
+            return (ConjugateMatrix(yp), ConjugateVector(sp));
+        }
+
+        var yNN  = new Complex[M][,];
+        var iSrc = new Complex[M][];
+        (yNN[0], iSrc[0]) = extractor.ExtractDC();
+        for (int m = 1; m < M; m++)
+            (yNN[m], iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
+
+        var dcResult = NonlinearDcEngine.Run(_netlist, _settings);
+        if (!dcResult.Converged)
+            Console.Error.WriteLine("[HB2D] Warning: DC operating point did not converge; proceeding with best available.");
+
+        var sweepVals   = new List<double>();
+        var sweepVArr   = new List<Complex[,]>();
+        var sweepINlArr = new List<Complex[,]>();
+        var trace       = new HbConvergenceTrace();
+        Complex[,]? prevV = null;
+
+        var effectiveSettings = EffectiveSettings(p);
+
+        foreach (double sweepVal in p.SweepValues())
+        {
+            sweepVals.Add(sweepVal);
+
+            if (p.SweepVarName is not null)
+                UpdateSweepPoint(p.SweepVarName, sweepVal);
+
+            var V = InitialGuess2D(prevV, dcResult, N, M, ifNodes);
+
+            // Re-extract source excitation at each sweep point (drive depends on Pavl).
+            // Y_{N×N} is topology-based (constant); only I_src changes.
+            for (int m = 1; m < M; m++)
+                (_, iSrc[m]) = ExtractMix(grid.OmegaOf(m, w1, w2));
+
+            var solveResult = HbNewton2D.Solve(V, yNN, iSrc, grid, f1, f2, N, N1, N2,
+                _netlist, ifNodes, effectiveSettings, p.Tol, p.Lambda, p.GuardHarmonic);
+
+            trace.AddStep(new HbConvergenceTrace.StepRecord(
+                sweepVal, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
+
+            if (!solveResult.Converged)
+                Console.Error.WriteLine(
+                    $"[HB2D] Non-convergence at {p.SweepVarName}={sweepVal}: " +
+                    $"‖F‖={solveResult.IterTrace.LastOrDefault()?.ResidualNorm:E3} " +
+                    $"after {solveResult.Iterations} iters. Storing best-available result.");
+
+            Console.Error.Write($"[HB2D-DC] {p.SweepVarName}={sweepVal:F1}:");
+            for (int n = 0; n < N; n++)
+                Console.Error.Write(
+                    $"  {nodeNames[n]} V={V[n,0].Real:F3}V I_nl={solveResult.INl[n,0].Real*1e3:F2}mA");
+            Console.Error.WriteLine();
+
+            sweepVArr.Add(V);
+            sweepINlArr.Add(solveResult.INl);
+            prevV = V;
+        }
+
+        trace.Print();
+
+        return new HbResult(
+            sweepVals.ToArray(), sweepVArr.ToArray(), sweepINlArr.ToArray(),
+            ifNodes, nodeNames, trace, grid, [f1, f2]);
+    }
+
+    /// <summary>Effective settings with HbMaxIter overridden from the directive's MaxIter.</summary>
+    private AnalysisSettings EffectiveSettings(HbAnalysisParams p)
+        => p.MaxIter == _settings.HbMaxIter ? _settings : new AnalysisSettings
+        {
+            HbMaxIter                 = p.MaxIter,
+            Gmin                      = _settings.Gmin,
+            ConductanceRegularization = _settings.ConductanceRegularization,
+            InductanceRegularization  = _settings.InductanceRegularization,
+            InductanceRegR            = _settings.InductanceRegR,
+            Gmax                      = _settings.Gmax,
+            DcBiasStepping            = _settings.DcBiasStepping,
+            DriveStepping             = _settings.DriveStepping,
+            NonlinearAbsTol           = _settings.NonlinearAbsTol,
+        };
+
+    private static Complex[,] ConjugateMatrix(Complex[,] a)
+    {
+        int r = a.GetLength(0), c = a.GetLength(1);
+        var b = new Complex[r, c];
+        for (int i = 0; i < r; i++)
+            for (int j = 0; j < c; j++)
+                b[i, j] = Complex.Conjugate(a[i, j]);
+        return b;
+    }
+
+    private static Complex[] ConjugateVector(Complex[] a)
+    {
+        var b = new Complex[a.Length];
+        for (int i = 0; i < a.Length; i++) b[i] = Complex.Conjugate(a[i]);
+        return b;
+    }
+
+    private static Complex[,] InitialGuess2D(
+        Complex[,]? prevV, NonlinearDcEngine.DcResult dcResult, int N, int M, int[] ifNodes)
+    {
+        var V = new Complex[N, M];
+        if (prevV is not null)
+        {
+            for (int n = 0; n < N; n++)
+            for (int m = 0; m < M; m++)
+                V[n, m] = prevV[n, m];
+            return V;
+        }
+
+        for (int n = 0; n < N; n++)
+        {
+            int circNode = ifNodes[n];
+            double vdc = circNode > 0 && circNode - 1 < dcResult.NodeVoltages.Length
+                ? dcResult.NodeVoltages[circNode - 1] : 0.0;
+            V[n, 0] = new Complex(vdc, 0);          // (0,0) DC from the operating point
+            for (int m = 1; m < M; m++)
+                V[n, m] = new Complex(1e-3, 1e-3);  // small AC seed
+        }
+        return V;
+    }
+
+    /// <summary>
+    /// Multi-tone commensurability (harmonic-balance.md §3.1): every tone-source frequency must land
+    /// on the {k₁f₁+k₂f₂} lattice of a retained mixing product. Errors naming any off-grid source.
+    /// </summary>
+    private void CheckCommensurabilityMultiTone(MixingGrid grid, double f1, double f2)
+    {
+        const double Tol = 1.0;  // 1 Hz
+        foreach (var ec in _netlist.Components)
+        {
+            if (ec.Model is not ToneSourceModel) continue;
+            foreach (var (key, val) in ec.Parameters)
+            {
+                if (val.Kind != ValueKind.Real) continue;
+                bool isFreqKey = key.Equals("Freq", StringComparison.OrdinalIgnoreCase)
+                              || (key.StartsWith("Freq[", StringComparison.OrdinalIgnoreCase));
+                if (!isFreqKey) continue;
+                double fTone = val.AsReal();
+                if (Math.Abs(fTone) < Tol) continue;  // DC-only entry
+
+                bool onGrid = false;
+                foreach (var (k1, k2) in grid.All())
+                    if (Math.Abs(k1 * f1 + k2 * f2 - fTone) <= Tol) { onGrid = true; break; }
+                if (!onGrid)
+                    throw new InvalidOperationException(
+                        $"Commensurability check failed: source '{ec.InstancePath}' {key}={fTone:G6} Hz " +
+                        $"is not on the two-tone grid {{f1={f1:G6}, f2={f2:G6}, MaxMixOrder={grid.MaxMixOrder}}}");
+            }
+        }
     }
 
     // ── Single-point solve (used by the Loadpull engine) ─────────────────────

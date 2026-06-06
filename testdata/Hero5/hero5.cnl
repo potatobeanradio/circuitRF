@@ -1,7 +1,9 @@
 ; ============================================================
-; hero5.cnl — Phase-4c multi-tone HB: grounded-source GaN HEMT PA
-; Same SDD FET as Phase 3. Drive at 2 GHz, Pavl swept -20..PavlStop_dbm dBm.
-; Per-harmonic source/load terminations via Z_Port; bias-tees on both ports.
+; hero5.cnl — Phase-4c two-tone HB: grounded-source GaN HEMT PA, intermodulation.
+; Same SDD FET as Phase 3 / Hero 2. Two tones at RFfreq ± ToneSpacing/2
+; (1.995 / 2.005 GHz, 10 MHz spacing). Diamond MaxMixOrder=5, MaxHarm=4.
+; Deliberate baseband load ZLoad_0 = 10+j10 to exercise even-order IM behavior.
+; SELF-GENERATED regression target — NOT independently validated.
 ; ============================================================
 
 ; ---- FET model parameters (same as Phase 3) ----
@@ -15,48 +17,52 @@ g=0.089
 lam=0.0012
 B=1130
 
-; ---- analysis fundamental and tone spacing----
-RFfreq = 2e9
+; ---- two-tone plan ----
+RFfreq      = 2e9
 ToneSpacing = 10e6
 
-; ---- HB config (exposed as parameters) ----
-; Update for multi-tone
-MaxHarm   = 4
-OverSamp  = 1
-HBtol     = 1e-7
-DriveStep = IfNecessary
-Guard     = 0                 ; guard harmonic off by default; set an index to enable
-MaxMixOrder = 5
+; ---- HB config ----
+MaxMixOrder = 5               ; diamond bound |k1|+|k2| <= MaxMixOrder
+MaxHarm     = 4
+OverSamp    = 1
+HBtol       = 1e-7
+DriveStep   = IfNecessary
+Guard       = 0
 
-
-; ---- per-harmonic termination bands ----
-ZSource_0 = 0.00001 + j*0     ; sub-fundamental / DC band
+; ---- terminations, banded by frequency around the carriers ----
+;   The engine evaluates every model at the POSITIVE mixing-product frequency |k1*f1+k2*f2|
+;   (negative-frequency reps are handled by conjugate symmetry in the engine), so 'freq' here is
+;   always the positive magnitude — band on it directly, no abs() needed.
+;   baseband (freq < 0.5 GHz):  difference products (f2-f1 = 10 MHz, etc.)
+;   fundamental (0.5..2.5 GHz): carriers + IM3/IM5 (1.975..2.025 GHz)
+;   2nd zone (2.5..4.5 GHz), 3rd zone (4.5..6.5 GHz), else near-short.
+ZSource_0 = 0.00001 + j*0     ; baseband source
 ZSource_f = 25                ; fundamental source impedance
 ZSource_2 = 1e-6              ; 2f0 and above: near-short
 ZSource_3 = 1e-6
 
-ZLoad_0 = 10 + j*10; baseband load, important for even-order IMs
+ZLoad_0 = 10 + j*10           ; baseband load — exercises even-order IM
 ZLoad_f = 80 + j*10           ; fundamental load
-ZLoad_2 = 1                   ; 2f0 termination (near-short, but not quite)
-ZLoad_3 = 1e-6              ; >=3f0: near-short
+ZLoad_2 = 1                   ; 2f0 termination
+ZLoad_3 = 1e-6               ; >=3f0: near-short
 
 ; ---- DC bias ----
 Vgg = -3.05
 Vdd = 48
 
-; ---- drive level (swept) ----
-PavlStop_dbm = 20 ; end power level
-Pavl_dbm = -20               ; swept by the HB analysis, -20..PavlStop_dbm dBm, 1 dB steps
-Pavl_w   = 10^((Pavl_dbm - 30)/10)              ; dBm -> watts
-Vs_mag   = sqrt(8 * Pavl_w * real(ZSource_f))   ; |Vs| at the 25-ohm fundamental Zs
+; ---- drive level (swept), equal-amplitude tones ----
+PavlStop_dbm = 20
+Pavl_dbm = -20
+Pavl_w   = 10^((Pavl_dbm - 30)/10)
+Vs_mag   = sqrt(8 * Pavl_w * real(ZSource_f))   ; per-tone |Vs| at the 25-ohm fundamental Zs
 
 ; ============================================================
 ; GATE bias-tee (SDD port 1 = n_gate)
-;   drive chain:  Vdrive -> Zsource -> Cblock_g -> n_gate
+;   drive chain:  Vdrive(2 tones) -> Zsource -> Cblock_g -> n_gate
 ;   bias  chain:  Vgate(Vdc) -> Lchoke_g -> n_gate
 ; ============================================================
-V_nTone:Vdrive   n_src 0       NumFreqs=2 Freq[1]=RFfreq-ToneSpacing/2  V[1]=polar(Vs_mag, 0)  Freq[2]=RFfreq+ToneSpacing/2  V[2]=polar(Vs_mag, 0)
-Z_Port:Zsource   n_src n_zs    Z[1,1]=if(freq < RFfreq-ToneSpacing) then ZSource_0 elseif(freq <= RFfreq) then ZSource_f elseif(freq <= 2*RFfreq && freq > RFfreq) then ZSource_2 elseif(freq <= 3*RFfreq && freq > 2*RFfreq) then ZSource_3 else 1e-6 endif
+V_nTone:Vdrive   n_src 0   NumFreqs=2  Freq[1]=RFfreq-ToneSpacing/2  V[1]=Vs_mag  Phase[1]=0  Freq[2]=RFfreq+ToneSpacing/2  V[2]=Vs_mag  Phase[2]=0
+Z_Port:Zsource   n_src n_zs    Z[1,1]=if(freq < 0.5e9) then ZSource_0 elseif(freq < 2.5e9) then ZSource_f elseif(freq < 4.5e9) then ZSource_2 elseif(freq < 6.5e9) then ZSource_3 else 1e-6 endif
 C:Cblock_g       n_zs n_gate   C=1 uF
 V_1Tone:Vgate    n_gbias 0     Vdc=Vgg
 L:Lchoke_g       n_gbias n_gate  L=1 uH
@@ -74,12 +80,13 @@ SDD:M1  n_gate 0  n_drain 0  \
 ;   bias chain:  n_drain -> Lchoke_d -> Vdrain(Vdc)
 ; ============================================================
 C:Cblock_d       n_drain n_zl   C=1 uF
-Z_Port:Zload     n_zl 0          Z[1,1]=if(freq < RFfreq) then ZLoad_0 elseif(freq <= RFfreq) then ZLoad_f elseif(freq <= 2*RFfreq && freq > RFfreq) then ZLoad_2 elseif(freq <= 3*RFfreq && freq > 2*RFfreq) then ZLoad_3 else 1e-6 endif
+Z_Port:Zload     n_zl 0          Z[1,1]=if(freq < 0.5e9) then ZLoad_0 elseif(freq < 2.5e9) then ZLoad_f elseif(freq < 4.5e9) then ZLoad_2 elseif(freq < 6.5e9) then ZLoad_3 else 1e-6 endif
 L:Lchoke_d       n_drain n_dbias  L=1 uH
 V_1Tone:Vdrain   n_dbias 0       Vdc=Vdd
 
 ; ============================================================
-; HB analysis: single tone at RFfreq, sweep Pavl_dbm, harmonics to MaxHarm
+; HB analysis: two tones, diamond MaxMixOrder, sweep Pavl_dbm, harmonics to MaxHarm
 ; ============================================================
-analysis HB1  type=hb  NumFreqs=2 Tone[1]=RFfreq-ToneSpacing/2 Tone[2]=RFfreq+ToneSpacing/2  MaxHarm=MaxHarm  MaxMixOrder=MaxMixOrder Sweep="Pavl_dbm: -20 .. PavlStop_dbm step 1" \
-     FFTOverSample=OverSamp  Tol=HBtol  DriveStepping=DriveStep  GuardHarmonic=Guard
+analysis HB5  type=hb  NumFreqs=2  Tone[1]=RFfreq-ToneSpacing/2  Tone[2]=RFfreq+ToneSpacing/2  MaxMixOrder=MaxMixOrder  MaxHarm=MaxHarm \
+     Sweep="Pavl_dbm: -20 .. PavlStop_dbm step 1"  FFTOverSample=OverSamp  Tol=HBtol \
+     DriveStepping=DriveStep  GuardHarmonic=Guard
