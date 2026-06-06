@@ -4,6 +4,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using CircuitRF.Engine.HarmonicBalance;
+using RfCore.Data;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -33,7 +34,7 @@ public class TwoToneMeasurementsTests(ITestOutputHelper output)
         throw new DirectoryNotFoundException("testdata/Hero5 not found");
     }
 
-    private static HbResult RunHero5(double pavlStop)
+    private static DataSet RunHero5(double pavlStop)
     {
         var dir       = Hero5Dir();
         var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "hero5.cnl"));
@@ -46,43 +47,47 @@ public class TwoToneMeasurementsTests(ITestOutputHelper output)
     [Fact]
     public void Selectors_InvertMixIndex_AndReadImdTable()
     {
-        var r = RunHero5(-14.0);                 // a few low/mid-drive points
-        int last = r.SweepValues.Length - 1;
-        var grid = r.Grid!;
-        double f1 = r.ToneFreqsHz[0], f2 = r.ToneFreqsHz[1];
+        var ds = RunHero5(-14.0);                // a few low/mid-drive points
+        var sweepVals = ds["Converged"].Axes[0].Values;
+        int last = sweepVals.Length - 1;
+        int maxOrder = (int)Math.Round(ds["MetaMixOrder"].RealValues[0]);
+        var grid = new MixingGrid(maxOrder);
+        var tf = ds["ToneFreqs"].RealValues;
+        double f1 = tf[0], f2 = tf[1];
 
-        int drainIdx = Array.FindIndex(r.InterfaceNodeNames, s => s.Contains("drain", StringComparison.OrdinalIgnoreCase));
+        string[] nodeNames = ds["V"].Axes[0].Labels!;
+        int drainIdx = Array.FindIndex(nodeNames, s => s.Contains("drain", StringComparison.OrdinalIgnoreCase));
         Assert.True(drainIdx >= 0);
-        string drain = r.InterfaceNodeNames[drainIdx];
+        string drain = nodeNames[drainIdx];
 
         // ── Tone() on a RETAINED rep equals the raw stored phasor. ──
-        var direct = r.V[last][drainIdx, grid.IndexOf(2, -1)];
-        Assert.Equal(direct, TwoToneMeasurements.Tone(r, last, drain, 2, -1));
+        var direct = (Complex)ds["V"][drainIdx, grid.IndexOf(2, -1), last];
+        Assert.Equal(direct, TwoToneMeasurements.Tone(ds, last, drain, 2, -1));
 
         // ── Tone() on a NON-RETAINED rep uses the conjugate of its retained partner. ──
         // (−1,2) is not in the half-plane; its conjugate (1,−2) is.
         Assert.Equal(-1, grid.IndexOf(-1, 2));
         Assert.True(grid.IndexOf(1, -2) >= 0);
-        var conjPartner = Complex.Conjugate(r.V[last][drainIdx, grid.IndexOf(1, -2)]);
-        var viaSelector = TwoToneMeasurements.Tone(r, last, drain, -1, 2);
+        var conjPartner = Complex.Conjugate((Complex)ds["V"][drainIdx, grid.IndexOf(1, -2), last]);
+        var viaSelector = TwoToneMeasurements.Tone(ds, last, drain, -1, 2);
         Assert.Equal(conjPartner.Real,      viaSelector.Real,      1e-12);
         Assert.Equal(conjPartner.Imaginary, viaSelector.Imaginary, 1e-12);
 
         // ── Product frequencies map correctly. ──
-        Assert.Equal(f1,          TwoToneMeasurements.FrequencyOf(r, 1, 0), 1.0);
-        Assert.Equal(f2,          TwoToneMeasurements.FrequencyOf(r, 0, 1), 1.0);
-        Assert.Equal(2 * f1 - f2, TwoToneMeasurements.FrequencyOf(r, 2, -1), 1.0);
-        Assert.Equal(2 * f2 - f1, TwoToneMeasurements.FrequencyOf(r, -1, 2), 1.0);
-        Assert.Equal(3 * f1 - 2 * f2, TwoToneMeasurements.FrequencyOf(r, 3, -2), 1.0);
+        Assert.Equal(f1,          TwoToneMeasurements.FrequencyOf(ds, 1, 0), 1.0);
+        Assert.Equal(f2,          TwoToneMeasurements.FrequencyOf(ds, 0, 1), 1.0);
+        Assert.Equal(2 * f1 - f2, TwoToneMeasurements.FrequencyOf(ds, 2, -1), 1.0);
+        Assert.Equal(2 * f2 - f1, TwoToneMeasurements.FrequencyOf(ds, -1, 2), 1.0);
+        Assert.Equal(3 * f1 - 2 * f2, TwoToneMeasurements.FrequencyOf(ds, 3, -2), 1.0);
 
         // ── IMD levels (dBc), §6.3 products on the drain. ──
-        double carrierDbm = TwoToneMeasurements.PoutDbm(r, last, drain, 1, 0);
-        double im3LoDbc = TwoToneMeasurements.ImDbc(r, last, drain, 2, -1, 1, 0);   // 2f1-f2 vs f1
-        double im3HiDbc = TwoToneMeasurements.ImDbc(r, last, drain, -1, 2, 0, 1);   // 2f2-f1 vs f2
-        double im2Dbc   = TwoToneMeasurements.ImDbc(r, last, drain, 1, -1, 1, 0);   // f2-f1 baseband
-        double im5LoDbc = TwoToneMeasurements.ImDbc(r, last, drain, 3, -2, 1, 0);   // 3f1-2f2
+        double carrierDbm = TwoToneMeasurements.PoutDbm(ds, last, drain, 1, 0);
+        double im3LoDbc = TwoToneMeasurements.ImDbc(ds, last, drain, 2, -1, 1, 0);   // 2f1-f2 vs f1
+        double im3HiDbc = TwoToneMeasurements.ImDbc(ds, last, drain, -1, 2, 0, 1);   // 2f2-f1 vs f2
+        double im2Dbc   = TwoToneMeasurements.ImDbc(ds, last, drain, 1, -1, 1, 0);   // f2-f1 baseband
+        double im5LoDbc = TwoToneMeasurements.ImDbc(ds, last, drain, 3, -2, 1, 0);   // 3f1-2f2
 
-        output.WriteLine($"Hero5 @ Pavl={r.SweepValues[last]:F0} dBm — carrier Pout={carrierDbm:F2} dBm");
+        output.WriteLine($"Hero5 @ Pavl={sweepVals[last]:F0} dBm — carrier Pout={carrierDbm:F2} dBm");
         output.WriteLine($"  IM3 lo (2f1-f2) = {im3LoDbc:F1} dBc   IM3 hi (2f2-f1) = {im3HiDbc:F1} dBc");
         output.WriteLine($"  IM2 (f2-f1)     = {im2Dbc:F1} dBc");
         output.WriteLine($"  IM5 lo (3f1-2f2)= {im5LoDbc:F1} dBc");

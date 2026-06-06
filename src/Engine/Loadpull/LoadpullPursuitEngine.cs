@@ -2,6 +2,7 @@ using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 using RfCore;
+using RfCore.Data;
 
 namespace CircuitRF.Engine.Loadpull;
 
@@ -294,7 +295,7 @@ public sealed class LoadpullPursuitEngine
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
-    public LoadpullPursuitResult Run(PursuitParams pp)
+    public DataSet Run(PursuitParams pp)
     {
         var lpp    = pp.LpParams;
         var ctx    = _lp.PrepareContext(lpp);
@@ -474,17 +475,16 @@ public sealed class LoadpullPursuitEngine
         // ── Optionally run follow-on loadpull (§6.5.2) ───────────────────────
         // Runs iff CreateLoadpullResult=true AND both optima converged.
         // Uses the in-memory recommended terminations (independent of OutputGrid).
-        LoadpullResult? followOnResult = null;
+        DataSet? followOnDs = null;
         if (pp.CreateLoadpullResult
             && mxpResult.Converged && mxeResult.Converged
             && recommendedTerminations.Points.Count > 0)
         {
-            followOnResult = RunFollowOnLoadpull(pp, mxpResult, mxeResult, recommendedTerminations);
+            followOnDs = RunFollowOnLoadpull(pp, mxpResult, mxeResult, recommendedTerminations);
         }
 
-        return new LoadpullPursuitResult(
-            pp, mxpResult, mxeResult, cacheDict, unscorable, warnings,
-            recommendedTerminations, followOnResult);
+        return BuildPursuitDataSet(mxpResult, mxeResult,
+            cache.All.Count, unscorable.Count, recommendedTerminations, followOnDs);
     }
 
     // ── Follow-on loadpull (§6.5.2) ───────────────────────────────────────────
@@ -501,7 +501,7 @@ public sealed class LoadpullPursuitEngine
     /// drive-voltage calibration (SetSourceDrive calls GetZ, which respects the override), so
     /// Pavl and the presented source impedance are always in agreement.
     /// </summary>
-    private LoadpullResult RunFollowOnLoadpull(
+    private DataSet RunFollowOnLoadpull(
         PursuitParams pp,
         PursuitOptimum mxp, PursuitOptimum mxe,
         GamWriter.GamBuilderResult recommendedTerminations)
@@ -671,5 +671,50 @@ public sealed class LoadpullPursuitEngine
 
         Complex zIn = vSrc / iNlSrc;
         return Complex.Conjugate(zIn);   // Zsource = Zin*
+    }
+
+    // ── Pursuit DataSet builder ───────────────────────────────────────────────
+
+    private static DataSet BuildPursuitDataSet(
+        PursuitOptimum mxp,
+        PursuitOptimum mxe,
+        int cacheCount,
+        int unscorableCount,
+        GamWriter.GamBuilderResult recommendedTerminations,
+        DataSet? followOnDs)
+    {
+        var ds = new DataSet();
+
+        // MXP scalars
+        ds.Add("MXP_PoutDbm",    DataCube.Scalar(mxp.Converged ? mxp.Value : 0.0));
+        ds.Add("MXP_ZRe",        DataCube.Scalar(mxp.Z.Real));
+        ds.Add("MXP_ZIm",        DataCube.Scalar(mxp.Z.Imaginary));
+        ds.Add("MXP_Converged",  DataCube.Scalar(mxp.Converged ? 1.0 : 0.0));
+        ds.Add("MXP_ZsourceRe",  DataCube.Scalar(mxp.Zsource?.Real      ?? 0.0));
+        ds.Add("MXP_ZsourceIm",  DataCube.Scalar(mxp.Zsource?.Imaginary ?? 0.0));
+        ds.Add("MXP_HasZsource", DataCube.Scalar(mxp.Zsource.HasValue   ? 1.0 : 0.0));
+
+        // MXE scalars
+        ds.Add("MXE_Eff",        DataCube.Scalar(mxe.Converged ? mxe.Value : 0.0));
+        ds.Add("MXE_ZRe",        DataCube.Scalar(mxe.Z.Real));
+        ds.Add("MXE_ZIm",        DataCube.Scalar(mxe.Z.Imaginary));
+        ds.Add("MXE_Converged",  DataCube.Scalar(mxe.Converged ? 1.0 : 0.0));
+        ds.Add("MXE_ZsourceRe",  DataCube.Scalar(mxe.Zsource?.Real      ?? 0.0));
+        ds.Add("MXE_ZsourceIm",  DataCube.Scalar(mxe.Zsource?.Imaginary ?? 0.0));
+        ds.Add("MXE_HasZsource", DataCube.Scalar(mxe.Zsource.HasValue   ? 1.0 : 0.0));
+
+        // Metadata scalars
+        ds.Add("CacheCount",      DataCube.Scalar((double)cacheCount));
+        ds.Add("UnscorableCount", DataCube.Scalar((double)unscorableCount));
+        ds.Add("RecommTermCount", DataCube.Scalar((double)recommendedTerminations.Points.Count));
+
+        // Embed follow-on loadpull cubes with "LP_" prefix (if present)
+        if (followOnDs is not null)
+        {
+            foreach (var (name, cube) in followOnDs.Cubes)
+                ds.Add("LP_" + name, cube);
+        }
+
+        return ds;
     }
 }

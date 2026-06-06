@@ -41,6 +41,21 @@ public sealed class SddModel : ComponentModel
     public override int       PortCount => _portCount;
     public override ModelKind Kind      => ModelKind.Nonlinear;
 
+    // SDD gate=port0, drain=port1 for a 2-port FET; 3-port adds source; 4-port adds thermal.
+    // Names match the common equation-defined-device convention so hero references stay transcribable.
+    private static readonly string[][] _termNames =
+    [
+        [],
+        ["1"],
+        ["g", "d"],
+        ["g", "d", "s"],
+        ["g", "d", "s", "t"],
+    ];
+
+    public override string[] TerminalNames
+        => _portCount < _termNames.Length ? _termNames[_portCount] :
+           Enumerable.Range(1, _portCount).Select(i => i.ToString()).ToArray();
+
     // SDD contributes nothing to linear stamps — fully nonlinear.
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     { }

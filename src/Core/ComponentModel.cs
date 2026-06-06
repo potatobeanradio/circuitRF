@@ -18,6 +18,13 @@ public abstract class ComponentModel
     public abstract ModelKind Kind      { get; }
 
     /// <summary>
+    /// Terminal names for each port, used to form branch-current cube keys "instancePath:terminalName".
+    /// Default: 1-based numeric strings ("1", "2", …). Override in derived types for semantic names.
+    /// </summary>
+    public virtual string[] TerminalNames
+        => Enumerable.Range(1, PortCount).Select(i => i.ToString()).ToArray();
+
+    /// <summary>
     /// Linear contribution — the model contributes stamps; the engine owns the matrix.
     /// Called once per frequency point during analysis assembly.
     /// </summary>

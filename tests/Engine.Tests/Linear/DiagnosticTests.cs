@@ -4,6 +4,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using RfCore;
+using RfCore.Data;
 
 namespace CircuitRF.Engine.Tests.Linear;
 
@@ -143,7 +144,7 @@ Short:S1  0 0
     {
         // A valid 1-port circuit: matched load.  No degeneracy → first attempt succeeds.
         // IfNecessary should produce the same correct result as Always.
-        static SNP Run(RegularizationMode mode)
+        static DataSet Run(RegularizationMode mode)
         {
             var (lib, tb) = new CnlReader().Read(@"
 Port:P1  n1 0  Num=1 Z=50 Ohm
@@ -158,16 +159,16 @@ R:R1     n1 0  R=50 Ohm
                 });
         }
 
-        var snpIfNec  = Run(RegularizationMode.IfNecessary);
-        var snpAlways = Run(RegularizationMode.Always);
+        var dsIfNec  = Run(RegularizationMode.IfNecessary);
+        var dsAlways = Run(RegularizationMode.Always);
 
         // Both must give S11 ≈ 0 (matched load).
-        Assert.True(snpIfNec.Matrices[0][0, 0].Magnitude < 1e-6, "IfNecessary S11 not ≈ 0");
-        Assert.True(snpAlways.Matrices[0][0, 0].Magnitude < 1e-6, "Always S11 not ≈ 0");
+        Assert.True(((Complex)dsIfNec["S"][0, 0, 0]).Magnitude  < 1e-6, "IfNecessary S11 not ≈ 0");
+        Assert.True(((Complex)dsAlways["S"][0, 0, 0]).Magnitude < 1e-6, "Always S11 not ≈ 0");
 
         // Results must be identical (same regularization applied since no singularity).
         Assert.True(
-            (snpIfNec.Matrices[0][0, 0] - snpAlways.Matrices[0][0, 0]).Magnitude < 1e-10,
+            ((Complex)dsIfNec["S"][0, 0, 0] - (Complex)dsAlways["S"][0, 0, 0]).Magnitude < 1e-10,
             "IfNecessary and Always differ for a non-degenerate circuit");
     }
 }

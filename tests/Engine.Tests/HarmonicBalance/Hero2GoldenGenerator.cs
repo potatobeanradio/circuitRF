@@ -5,6 +5,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using CircuitRF.Engine.HarmonicBalance;
+using RfCore.Data;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -50,39 +51,36 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
                          $"sweep {p.SweepStart}..{p.SweepStop} step {p.SweepStep} dBm");
 
         var engine = new HbEngine(netlist, tb);
-        var result = engine.Run(p);
+        var ds     = engine.Run(p);
 
-        int converged    = result.Trace.Steps.Count(s => s.Converged);
-        int total        = result.Trace.TotalSteps;
+        var sweepVals = ds["Converged"].Axes[0].Values;
+        int total     = sweepVals.Length;
+        int converged = (int)ds["Converged"].RealValues.Sum();
         output.WriteLine($"Convergence: {converged}/{total} sweep points converged.");
 
         Assert.True(converged == total,
             $"Some sweep points did not converge ({converged}/{total}). Cannot write golden.");
 
         // ── Identify interface node indices ────────────────────────────────────
-        int[] ifNodes   = result.InterfaceNodes;
-        string[] ifNames = result.InterfaceNodeNames;
+        var ifNames  = ds["V"].Axes[0].Labels!;
         int gateIdx  = Array.FindIndex(ifNames, n => n.Contains("n_gate",  StringComparison.OrdinalIgnoreCase));
         int drainIdx = Array.FindIndex(ifNames, n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
 
         Assert.True(gateIdx  >= 0, "n_gate interface node not found");
         Assert.True(drainIdx >= 0, "n_drain interface node not found");
 
-        output.WriteLine($"Gate  interface index: {gateIdx}  (circuit node {ifNodes[gateIdx]})");
-        output.WriteLine($"Drain interface index: {drainIdx} (circuit node {ifNodes[drainIdx]})");
+        output.WriteLine($"Gate  interface index: {gateIdx}");
+        output.WriteLine($"Drain interface index: {drainIdx}");
 
         // ── Write golden CSVs ─────────────────────────────────────────────────
         double f0 = p.ToneHz;
         int    K  = p.MaxHarmonic;
 
-        WriteGolden(dir, "hero2_self_V_n_gate.csv",   "n_gate",  "V (interface voltage)",
-            result.SweepValues, result.V,   gateIdx,  f0, K, isVoltage: true);
-        WriteGolden(dir, "hero2_self_V_n_drain.csv",  "n_drain", "V (interface voltage)",
-            result.SweepValues, result.V,   drainIdx, f0, K, isVoltage: true);
-        WriteGolden(dir, "hero2_self_INl_n_gate.csv", "n_gate",  "I_nl (nonlinear device current, A)",
-            result.SweepValues, result.INl, gateIdx,  f0, K, isVoltage: false);
-        WriteGolden(dir, "hero2_self_INl_n_drain.csv","n_drain", "I_nl (nonlinear device current, A)",
-            result.SweepValues, result.INl, drainIdx, f0, K, isVoltage: false);
+        WriteGolden(dir, "hero2_self_V_n_gate.csv",    "n_gate",  "V (interface voltage)",              ds, "V",   gateIdx,  f0, K);
+        WriteGolden(dir, "hero2_self_V_n_drain.csv",   "n_drain", "V (interface voltage)",              ds, "V",   drainIdx, f0, K);
+        // Branch-current cubes have no node axis — use WriteBranchGolden
+        WriteBranchGolden(dir, "hero2_self_INl_n_gate.csv",  "n_gate",  "I_nl (M1 gate port current, A)",  ds, "I:M1:g", f0, K);
+        WriteBranchGolden(dir, "hero2_self_INl_n_drain.csv", "n_drain", "I_nl (M1 drain port current, A)", ds, "I:M1:d", f0, K);
 
         // ── Write README ──────────────────────────────────────────────────────
         WriteReadme(dir, p, converged, total);
@@ -90,10 +88,10 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
         output.WriteLine("Golden files written to " + dir);
 
         // ── Quick sanity on the DC anchors ────────────────────────────────────
-        for (int si = 0; si < result.SweepValues.Length; si++)
+        for (int si = 0; si < total; si++)
         {
-            double vGateDc  = result.V[si][gateIdx,  0].Real;
-            double vDrainDc = result.V[si][drainIdx, 0].Real;
+            double vGateDc  = ((System.Numerics.Complex)ds["V"][gateIdx,  0, si]).Real;
+            double vDrainDc = ((System.Numerics.Complex)ds["V"][drainIdx, 0, si]).Real;
             Assert.InRange(vGateDc,  -3.10, -3.00);
             Assert.InRange(vDrainDc,  47.0,  49.0);
         }
@@ -103,8 +101,9 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static void WriteGolden(string dir, string filename, string nodeName, string quantityDesc,
-        double[] sweepVals, Complex[][,] data, int nodeIdx, double f0, int K, bool isVoltage)
+        RfCore.Data.DataSet ds, string cubeName, int nodeIdx, double f0, int K)
     {
+        var sweepVals = ds["Converged"].Axes[0].Values;
         var path = Path.Combine(dir, filename);
         using var w = new StreamWriter(path);
 
@@ -124,9 +123,39 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
             for (int k = 0; k <= K; k++)
             {
                 double freqHz = k * f0;
-                Complex v     = data[si][nodeIdx, k];
+                Complex v     = (Complex)ds[cubeName][nodeIdx, k, si];
                 // DC bin: imaginary part is always 0 (real signal).
                 double im = k == 0 ? 0.0 : v.Imaginary;
+                w.WriteLine($"{freqHz.ToString(ci)}; {pIn.ToString(ci)}; " +
+                             $"{v.Real.ToString("G8", ci)}; {im.ToString("G8", ci)}");
+            }
+        }
+    }
+
+    // Branch-current cube has no node axis: indexed [harmonic, Pin]
+    private static void WriteBranchGolden(string dir, string filename, string nodeName,
+        string quantityDesc, RfCore.Data.DataSet ds, string branchCube, double f0, int K)
+    {
+        var sweepVals = ds["Converged"].Axes[0].Values;
+        var path = Path.Combine(dir, filename);
+        using var w = new StreamWriter(path);
+
+        w.WriteLine($"# SELF-GENERATED REGRESSION DATA — NOT INDEPENDENTLY VALIDATED");
+        w.WriteLine($"# Generated by circuitRF Hero 2 HB engine.");
+        w.WriteLine($"# Circuit: hero2.cnl  |  Branch: {branchCube}  |  Quantity: {quantityDesc}");
+        w.WriteLine($"# f0 = {f0/1e9:F3} GHz  |  K (max harmonic) = {K}");
+        w.WriteLine($"# Columns: freq_Hz; Pave_dBm; Re; Im");
+        w.WriteLine("freq_Hz; Pave_dBm; Re; Im");
+
+        var ci = CultureInfo.InvariantCulture;
+        for (int si = 0; si < sweepVals.Length; si++)
+        {
+            double pIn = sweepVals[si];
+            for (int k = 0; k <= K; k++)
+            {
+                double freqHz = k * f0;
+                Complex v     = (Complex)ds[branchCube][k, si];
+                double  im    = k == 0 ? 0.0 : v.Imaginary;
                 w.WriteLine($"{freqHz.ToString(ci)}; {pIn.ToString(ci)}; " +
                              $"{v.Real.ToString("G8", ci)}; {im.ToString("G8", ci)}");
             }

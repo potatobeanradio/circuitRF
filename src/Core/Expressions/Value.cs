@@ -1,43 +1,51 @@
 using System.Numerics;
+using RfCore.Data;
 
 namespace CircuitRF.Core.Expressions;
 
-public enum ValueKind { Real, Complex, Bool, String }
+public enum ValueKind { Real, Complex, Bool, String, Cube, All }
 
 /// <summary>
-/// A kinded value produced by the expression engine: Real, Complex, Bool, or String.
+/// A kinded value produced by the expression engine: Real, Complex, Bool, String, Cube, or All.
 /// Real and Complex map directly to the DataKind used in the result model.
 /// Bool is internal to conditionals and never the final value of a parameter.
 /// String is storage-only (no operators, no coercions) — used for SnP/N-port config
 /// params (File, Type, InterpMode, ExtrapMode). A String value is a type error
 /// anywhere a number is required.
+/// Cube is a DataCube operand produced by a measurement accessor; arithmetic broadcasts element-wise.
+/// All is a sentinel used in accessor slice positions to keep an entire axis (mirrors DataCube.All).
 /// </summary>
 public readonly struct Value
 {
     public ValueKind Kind { get; }
 
-    private readonly double   _real;
-    private readonly Complex  _complex;
-    private readonly bool     _bool;
-    private readonly string?  _string;
+    private readonly double    _real;
+    private readonly Complex   _complex;
+    private readonly bool      _bool;
+    private readonly string?   _string;
+    private readonly DataCube? _cube;
 
-    public static readonly Value Zero    = new(0.0);
-    public static readonly Value One     = new(1.0);
-    public static readonly Value Pi      = new(Math.PI);
-    public static readonly Value E       = new(Math.E);
-    public static readonly Value J       = new(Complex.ImaginaryOne);
-    public static readonly Value True    = new(true);
-    public static readonly Value False   = new(false);
+    public static readonly Value Zero        = new(0.0);
+    public static readonly Value One         = new(1.0);
+    public static readonly Value Pi          = new(Math.PI);
+    public static readonly Value E           = new(Math.E);
+    public static readonly Value J           = new(Complex.ImaginaryOne);
+    public static readonly Value True        = new(true);
+    public static readonly Value False       = new(false);
+    public static readonly Value AllSentinel = new(ValueKind.All);
 
-    public Value(double real)       { Kind = ValueKind.Real;    _real = real; }
+    public Value(double real)       { Kind = ValueKind.Real;    _real    = real; }
     public Value(Complex complex)   { Kind = ValueKind.Complex; _complex = complex; }
-    public Value(bool b)            { Kind = ValueKind.Bool;    _bool = b; }
-    public Value(string s)          { Kind = ValueKind.String;  _string = s; }
+    public Value(bool b)            { Kind = ValueKind.Bool;    _bool    = b; }
+    public Value(string s)          { Kind = ValueKind.String;  _string  = s; }
+    public Value(DataCube cube)     { Kind = ValueKind.Cube;    _cube    = cube; }
+    private Value(ValueKind kind)   { Kind = kind; }   // for AllSentinel
 
-    public double  AsReal()    => Kind == ValueKind.Real    ? _real    : throw new InvalidCastException($"Value is {Kind}, not Real");
-    public Complex AsComplex() => Kind == ValueKind.Complex ? _complex : throw new InvalidCastException($"Value is {Kind}, not Complex");
-    public bool    AsBool()    => Kind == ValueKind.Bool    ? _bool    : throw new InvalidCastException($"Value is {Kind}, not Bool");
-    public string  AsString()  => Kind == ValueKind.String  ? _string! : throw new InvalidCastException($"Value is {Kind}, not String");
+    public double    AsReal()    => Kind == ValueKind.Real    ? _real    : throw new InvalidCastException($"Value is {Kind}, not Real");
+    public Complex   AsComplex() => Kind == ValueKind.Complex ? _complex : throw new InvalidCastException($"Value is {Kind}, not Complex");
+    public bool      AsBool()    => Kind == ValueKind.Bool    ? _bool    : throw new InvalidCastException($"Value is {Kind}, not Bool");
+    public string    AsString()  => Kind == ValueKind.String  ? _string! : throw new InvalidCastException($"Value is {Kind}, not String");
+    public DataCube  AsCube()    => Kind == ValueKind.Cube    ? _cube!   : throw new InvalidCastException($"Value is {Kind}, not Cube");
 
     /// <summary>Returns the value as Complex regardless of kind (promotes Real; errors on Bool/String).</summary>
     public Complex ToComplex() => Kind switch
@@ -54,6 +62,8 @@ public readonly struct Value
         ValueKind.Complex => _complex.ToString(),
         ValueKind.Bool    => _bool.ToString(),
         ValueKind.String  => _string ?? "",
+        ValueKind.Cube    => "<DataCube>",
+        ValueKind.All     => "All",
         _                 => "?"
     };
 
@@ -70,6 +80,8 @@ public readonly struct Value
             throw new ExpressionException("Bool value used in arithmetic context");
         if (a.Kind == ValueKind.String || b.Kind == ValueKind.String)
             throw new ExpressionException("String value used in arithmetic context");
+        if (a.Kind == ValueKind.Cube   || b.Kind == ValueKind.Cube)
+            throw new ExpressionException("Cube operand must go through Add/Sub/Mul/Div — not CommonArithmeticKind");
         return (a.Kind == ValueKind.Complex || b.Kind == ValueKind.Complex)
             ? ValueKind.Complex
             : ValueKind.Real;
@@ -79,6 +91,12 @@ public readonly struct Value
 
     public static Value Add(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube)
+        {
+            if (a.Kind == ValueKind.Cube && b.Kind == ValueKind.Cube) return new Value(a._cube! + b._cube!);
+            if (a.Kind == ValueKind.Cube) return b.Kind == ValueKind.Complex ? new Value(a._cube! + b._complex) : new Value(a._cube! + b._real);
+            return a.Kind == ValueKind.Complex ? new Value(b._cube! + a._complex) : new Value(b._cube! + a._real);
+        }
         var kind = CommonArithmeticKind(a, b);
         return kind == ValueKind.Real
             ? new Value(a._real + b._real)
@@ -87,6 +105,12 @@ public readonly struct Value
 
     public static Value Sub(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube)
+        {
+            if (a.Kind == ValueKind.Cube && b.Kind == ValueKind.Cube) return new Value(a._cube! - b._cube!);
+            if (a.Kind == ValueKind.Cube) return b.Kind == ValueKind.Complex ? new Value(a._cube! - b._complex) : new Value(a._cube! - b._real);
+            return a.Kind == ValueKind.Complex ? new Value(a._complex - b._cube!) : new Value(a._real - b._cube!);
+        }
         var kind = CommonArithmeticKind(a, b);
         return kind == ValueKind.Real
             ? new Value(a._real - b._real)
@@ -95,6 +119,12 @@ public readonly struct Value
 
     public static Value Mul(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube)
+        {
+            if (a.Kind == ValueKind.Cube && b.Kind == ValueKind.Cube) return new Value(a._cube! * b._cube!);
+            if (a.Kind == ValueKind.Cube) return b.Kind == ValueKind.Complex ? new Value(a._cube! * b._complex) : new Value(a._cube! * b._real);
+            return a.Kind == ValueKind.Complex ? new Value(b._cube! * a._complex) : new Value(b._cube! * a._real);
+        }
         var kind = CommonArithmeticKind(a, b);
         return kind == ValueKind.Real
             ? new Value(a._real * b._real)
@@ -103,6 +133,12 @@ public readonly struct Value
 
     public static Value Div(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube)
+        {
+            if (a.Kind == ValueKind.Cube && b.Kind == ValueKind.Cube) return new Value(a._cube! / b._cube!);
+            if (a.Kind == ValueKind.Cube) return b.Kind == ValueKind.Complex ? new Value(a._cube! / b._complex) : new Value(a._cube! / b._real);
+            return a.Kind == ValueKind.Complex ? new Value(a._complex / b._cube!) : new Value(a._real / b._cube!);
+        }
         var kind = CommonArithmeticKind(a, b);
         if (kind == ValueKind.Real)
         {
@@ -132,14 +168,16 @@ public readonly struct Value
     {
         ValueKind.Real    => new Value(-a._real),
         ValueKind.Complex => new Value(-a._complex),
-        _                 => throw new ExpressionException("Cannot negate a Bool")
+        ValueKind.Cube    => new Value(-a._cube!),
+        _                 => throw new ExpressionException($"Cannot negate a {a.Kind}")
     };
 
     public static Value UnaryPlus(Value a) => a.Kind switch
     {
         ValueKind.Real    => a,
         ValueKind.Complex => a,
-        _                 => throw new ExpressionException("Cannot apply unary + to a Bool")
+        ValueKind.Cube    => a,
+        _                 => throw new ExpressionException($"Cannot apply unary + to a {a.Kind}")
     };
 
     // ── Comparison ───────────────────────────────────────────────────────────

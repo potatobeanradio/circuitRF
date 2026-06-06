@@ -112,12 +112,14 @@ public class CnlReaderTests
     public void PiNetwork_RawDirectivesPreserved()
     {
         var (lib, tb) = CnlReader.ReadFile(FixturePath("pi_network.cnl"));
-        Assert.Equal(2, tb.RawDirectives.Count);
-        Assert.Equal("analysis", tb.RawDirectives[0].Kind);
-        Assert.Equal("measure",  tb.RawDirectives[1].Kind);
-        // verbatim content preserved
-        Assert.Contains("sparam", tb.RawDirectives[0].RawLine);
-        Assert.Contains("InsertionLoss", tb.RawDirectives[1].RawLine);
+        // measure lines are now promoted to typed Measurement, so only the analysis raw directive remains
+        var rd = Assert.Single(tb.RawDirectives);
+        Assert.Equal("analysis", rd.Kind);
+        Assert.Contains("sparam", rd.RawLine);
+        // measure promoted to Measurements collection
+        var m = Assert.Single(tb.Measurements);
+        Assert.Equal("InsertionLoss", m.Name);
+        Assert.Contains("dB", m.Expression);
     }
 
     // ── Full elaboration round-trip ───────────────────────────────────────────
@@ -305,10 +307,13 @@ public class CnlReaderTests
     {
         var src = "analysis SP type=sparam start=1 GHz\nmeasure Gain = dB(S(2,1))\n";
         var (_, tb) = new CnlReader().Read(src);
-        Assert.Equal(2, tb.RawDirectives.Count);
-        Assert.Equal("analysis", tb.RawDirectives[0].Kind);
-        Assert.Equal("measure",  tb.RawDirectives[1].Kind);
-        Assert.Equal("SP type=sparam start=1 GHz", tb.RawDirectives[0].RawLine);
-        Assert.Equal("Gain = dB(S(2,1))", tb.RawDirectives[1].RawLine);
+        // measure lines are promoted to typed Measurements; only the analysis raw directive remains
+        var rd = Assert.Single(tb.RawDirectives);
+        Assert.Equal("analysis", rd.Kind);
+        Assert.Equal("SP type=sparam start=1 GHz", rd.RawLine);
+        // measure promoted
+        var m = Assert.Single(tb.Measurements);
+        Assert.Equal("Gain",       m.Name);
+        Assert.Equal("dB(S(2,1))", m.Expression);
     }
 }

@@ -11,7 +11,7 @@ public enum TokenKind
     // Logic
     AmpAmp, PipePipe, Bang,
     // Ternary / punctuation
-    Question, Colon, Comma,
+    Question, Colon, Comma, Dot,
     LParen, RParen,
     // String literal: "foo"  (storage-only config params; no string operations)
     StringLiteral,
@@ -72,6 +72,7 @@ public sealed class Tokenizer(string source)
             ',' => Advance(TokenKind.Comma,  start),
             '(' => Advance(TokenKind.LParen, start),
             ')' => Advance(TokenKind.RParen, start),
+            '.' => Advance(TokenKind.Dot,     start),
             '?' => Advance(TokenKind.Question, start),
             ':' => Advance(TokenKind.Colon,  start),
             '<' => _pos + 1 < _source.Length && _source[_pos + 1] == '='

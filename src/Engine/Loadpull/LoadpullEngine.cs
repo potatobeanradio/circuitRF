@@ -5,6 +5,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Engine.HarmonicBalance;
 using RfCore;
+using RfCore.Data;
 
 namespace CircuitRF.Engine.Loadpull;
 
@@ -239,7 +240,7 @@ public sealed class LoadpullEngine
 
     // ── Engine entry point ───────────────────────────────────────────────────
 
-    public LoadpullResult Run(LoadpullAnalysisParams p)
+    public DataSet Run(LoadpullAnalysisParams p)
     {
         var ctx           = PrepareContext(p);
         var gridPoints    = new List<GridPointResult>();
@@ -274,8 +275,140 @@ public sealed class LoadpullEngine
         ctx.SrcModel.SetTone(0);
         ctx.LoadModel.SetTone(0);
 
-        return new LoadpullResult(gridPoints, p.Grid, p.ToneHz, ctx.K,
-            ctx.InterfaceNodes, ctx.NodeNames);
+        return BuildLoadpullDataSet(gridPoints, p, ctx);
+    }
+
+    // ── DataSet builder ──────────────────────────────────────────────────────
+
+    private static DataSet BuildLoadpullDataSet(
+        List<GridPointResult> gridPoints,
+        LoadpullAnalysisParams p,
+        PursuitContext ctx)
+    {
+        var pinSeq = BuildPinSequence(p).ToList();
+        int nG  = gridPoints.Count;
+        int nP  = pinSeq.Count;
+        int nN  = ctx.NodeNames.Length;
+        int nH  = ctx.K + 1;   // harmonics 0..K
+
+        // Axes
+        var gridAxis = new Axis("gridPoint",
+            Enumerable.Range(0, nG).Select(i => (double)i).ToArray(),
+            labels: gridPoints.Select(gp =>
+                $"{gp.Z.Real:G6}{(gp.Z.Imaginary >= 0 ? "+" : "")}{gp.Z.Imaginary:G6}j").ToArray());
+
+        var pinAxis = new Axis("pinStep",
+            pinSeq.Select(ps => ps.PavlDbm).ToArray(),
+            labels: pinSeq.Select(ps => $"{ps.PavlDbm:G4}").ToArray());
+
+        var nodeAxis = new Axis("node",
+            Enumerable.Range(0, nN).Select(i => (double)i).ToArray(),
+            labels: ctx.NodeNames);
+
+        var harmAxis = new Axis("harmonic",
+            Enumerable.Range(0, nH).Select(i => (double)i).ToArray());
+
+        // FOM buffers {gridPoint, pinStep} — row-major: gi*nP + pi
+        int fomLen = nG * nP;
+        var converged  = new double[fomLen];
+        var isTickle   = new double[fomLen];
+        var pavlDbmArr = new double[fomLen];
+        var pout       = new double[fomLen];
+        var gt         = new double[fomLen];
+        var gp2        = new double[fomLen];
+        var de         = new double[fomLen];
+        var pae        = new double[fomLen];
+        var pdc        = new double[fomLen];
+        var biasVLoad  = new double[fomLen];
+        var biasILoad  = new double[fomLen];
+        var biasVSrc   = new double[fomLen];
+        var biasISrc   = new double[fomLen];
+
+        // Grid-point buffers {gridPoint}
+        var zLoad     = new Complex[nG];
+        var gammaLoad = new Complex[nG];
+        var stopCode  = new double[nG];
+
+        // Spectra {gridPoint, pinStep, node, harmonic}
+        int specLen = nG * nP * nN * nH;
+        var vData   = new Complex[specLen];
+        var inlData = new Complex[specLen];
+
+        for (int gi = 0; gi < nG; gi++)
+        {
+            var gpr = gridPoints[gi];
+            zLoad[gi]     = gpr.Z;
+            gammaLoad[gi] = gpr.Gamma;
+            stopCode[gi]  = gpr.StopReason switch
+            {
+                "PinMax"          => 0,
+                "Compression"     => 1,
+                "NonConvergence"  => 2,
+                "NoConvergedSeed" => 3,
+                _                 => 0,
+            };
+
+            for (int pi = 0; pi < nP; pi++)
+            {
+                int fomIdx = gi * nP + pi;
+                pavlDbmArr[fomIdx] = pinSeq[pi].PavlDbm;   // always fill dBm axis value
+
+                if (pi < gpr.PinSteps.Count)
+                {
+                    var step = gpr.PinSteps[pi];
+                    converged[fomIdx]  = step.Converged ? 1.0 : 0.0;
+                    isTickle[fomIdx]   = step.IsTickle  ? 1.0 : 0.0;
+                    pout[fomIdx]       = step.PoutW;
+                    gt[fomIdx]         = step.GtDb;
+                    gp2[fomIdx]        = step.GpDb;
+                    de[fomIdx]         = step.De;
+                    pae[fomIdx]        = step.Pae;
+                    pdc[fomIdx]        = step.PdcW;
+                    biasVLoad[fomIdx]  = step.BiasVoltageLoadV;
+                    biasILoad[fomIdx]  = step.BiasCurrentLoadA;
+                    biasVSrc[fomIdx]   = step.BiasVoltageSrcV;
+                    biasISrc[fomIdx]   = step.BiasCurrentSrcA;
+
+                    if (step.Converged && step.V is not null)
+                    {
+                        int nVNodes = step.V.GetLength(0);
+                        int nVHarm  = step.V.GetLength(1);
+                        for (int ni = 0; ni < nN && ni < nVNodes; ni++)
+                        for (int hi = 0; hi < nH && hi < nVHarm; hi++)
+                        {
+                            int sIdx = ((gi * nP + pi) * nN + ni) * nH + hi;
+                            vData[sIdx]   = step.V[ni, hi];
+                            inlData[sIdx] = step.INl[ni, hi];
+                        }
+                    }
+                }
+                // else: pi >= PinSteps.Count — padded with 0 (default)
+            }
+        }
+
+        var ds = new DataSet();
+        ds.Add("Converged",  new DataCube(new[] { gridAxis, pinAxis }, converged));
+        ds.Add("IsTickle",   new DataCube(new[] { gridAxis, pinAxis }, isTickle));
+        ds.Add("PavlDbm",    new DataCube(new[] { gridAxis, pinAxis }, pavlDbmArr));
+        ds.Add("Pout",       new DataCube(new[] { gridAxis, pinAxis }, pout));
+        ds.Add("Gt",         new DataCube(new[] { gridAxis, pinAxis }, gt));
+        ds.Add("Gp",         new DataCube(new[] { gridAxis, pinAxis }, gp2));
+        ds.Add("DE",         new DataCube(new[] { gridAxis, pinAxis }, de));
+        ds.Add("PAE",        new DataCube(new[] { gridAxis, pinAxis }, pae));
+        ds.Add("Pdc",        new DataCube(new[] { gridAxis, pinAxis }, pdc));
+        ds.Add("BiasVLoad",  new DataCube(new[] { gridAxis, pinAxis }, biasVLoad));
+        ds.Add("BiasILoad",  new DataCube(new[] { gridAxis, pinAxis }, biasILoad));
+        ds.Add("BiasVSrc",   new DataCube(new[] { gridAxis, pinAxis }, biasVSrc));
+        ds.Add("BiasISrc",   new DataCube(new[] { gridAxis, pinAxis }, biasISrc));
+        ds.Add("ZLoad",      new DataCube(new[] { gridAxis }, zLoad));
+        ds.Add("GammaLoad",  new DataCube(new[] { gridAxis }, gammaLoad));
+        ds.Add("StopCode",   new DataCube(new[] { gridAxis }, stopCode));
+        if (nN > 0 && nH > 0 && nG > 0 && nP > 0)
+        {
+            ds.Add("V",   new DataCube(new[] { gridAxis, pinAxis, nodeAxis, harmAxis }, vData));
+            ds.Add("INl", new DataCube(new[] { gridAxis, pinAxis, nodeAxis, harmAxis }, inlData));
+        }
+        return ds;
     }
 
     /// <summary>

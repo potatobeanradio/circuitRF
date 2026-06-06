@@ -4,6 +4,7 @@ using CircuitRF.Core.Elaboration;
 using CSparse.Complex.Factorization;
 using NumFlat;
 using RfCore;
+using RfCore.Data;
 
 namespace CircuitRF.Engine;
 
@@ -28,7 +29,7 @@ public static class SParameterEngine
     /// <summary>gmin conductance added from every node to ground (§5).</summary>
     public const double DefaultGmin = 1e-12;
 
-    public static SNP Run(
+    public static DataSet Run(
         ElaboratedNetlist netlist,
         double[]          freqsHz,
         AnalysisSettings? settings = null)
@@ -137,8 +138,9 @@ public static class SParameterEngine
             sMatrices[fi] = RFNetwork.YToS(yMat, z0PerPort);
         }
 
-        var refZ0  = z0PerPort.Length > 0 ? z0PerPort[0] : new Complex(50, 0);
-        return new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
+        var refZ0 = z0PerPort.Length > 0 ? z0PerPort[0] : new Complex(50, 0);
+        var snp   = new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
+        return DataSetBuilder.FromSnp(snp);
     }
 
     // ── Assembly helpers ───────────────────────────────────────────────────────

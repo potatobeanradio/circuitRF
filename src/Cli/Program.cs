@@ -73,7 +73,8 @@ static int RunSparam(string[] args)
             $"S-parameter analysis: {freqs.Length} points, " +
             $"{start/1e9:G4}–{stop/1e9:G4} GHz");
 
-        var snp = SParameterEngine.Run(nl, freqs);
+        var ds  = SParameterEngine.Run(nl, freqs);
+        var snp = RfCore.Data.DataSetBuilder.ToSnp(ds);
 
         // Write Touchstone
         var outPath = output ?? Path.ChangeExtension(input, $".s{snp.Ports}p");

@@ -138,6 +138,24 @@ public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name)
     public string? SourceDirectory           { get; init; }
 }
 
+/// <summary>
+/// Composable parametric sweep that wraps an inner analysis (or another parametric sweep).
+/// Each nesting level prepends one named axis to every cube in the resulting DataSet.
+/// </summary>
+public sealed class ParametricSweepAnalysis(
+    string name,
+    string sweepVarName,
+    double[] sweepValues,
+    string innerAnalysisName) : Analysis(name)
+{
+    /// <summary>The global variable to override at each sweep point.</summary>
+    public string   SweepVarName      { get; } = sweepVarName;
+    /// <summary>Explicit list of values to sweep over (ordered, outer→inner).</summary>
+    public double[] SweepValues       { get; } = (double[])sweepValues.Clone();
+    /// <summary>Name of the inner analysis (HarmonicBalanceAnalysis or another ParametricSweepAnalysis).</summary>
+    public string   InnerAnalysisName { get; } = innerAnalysisName;
+}
+
 // ── Supporting types ──────────────────────────────────────────────────────────
 
 public enum SweepKind { Linear, Log }

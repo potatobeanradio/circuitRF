@@ -111,8 +111,9 @@ public sealed class Parser
                     }
                     return new ConstExpr("j");
                 }
-                if (t.Text == "pi") return new ConstExpr("pi");
-                if (t.Text == "e")  return new ConstExpr("e");
+                if (t.Text == "pi")  return new ConstExpr("pi");
+                if (t.Text == "e")   return new ConstExpr("e");
+                if (t.Text == "All") return new ConstExpr("All");
                 // if(...) keyword → ConditionalExpr (§5 AST spec)
                 // Two forms:
                 //   canonical:  if(cond, then, else)
@@ -136,6 +137,30 @@ public sealed class Parser
                         ExpectKeyword("then");
                         return ParseIfThenChain(cond);
                     }
+                }
+                // qualified accessor: Analysis.Cube(args) — e.g. HB1.V("n_drain", 1, All)
+                // Recognized when: current token is '.', next is Identifier, one after that is '('
+                if (Current.Kind == TokenKind.Dot
+                    && _pos + 1 < _tokens.Length
+                    && _tokens[_pos + 1].Kind == TokenKind.Identifier
+                    && _pos + 2 < _tokens.Length
+                    && _tokens[_pos + 2].Kind == TokenKind.LParen)
+                {
+                    Advance(); // consume '.'
+                    var methodName = Advance().Text; // consume method name
+                    Advance(); // consume '('
+                    var qArgs = new List<Expr>();
+                    if (Current.Kind != TokenKind.RParen)
+                    {
+                        qArgs.Add(ParseExpr(0));
+                        while (Current.Kind == TokenKind.Comma)
+                        {
+                            Advance();
+                            qArgs.Add(ParseExpr(0));
+                        }
+                    }
+                    Expect(TokenKind.RParen, ")");
+                    return new CallExpr($"{t.Text}.{methodName}", [.. qArgs]);
                 }
                 // function call or bare ref
                 if (Current.Kind == TokenKind.LParen)

@@ -192,7 +192,14 @@ real-split block math (the FD oracle guards it).
   O(0.1–1), as the per-axis ConversionWeight2D bug did at exactly 0.5).
 - **`HbEngine.RunTwoTone`** — dispatched from `Run` on `p.IsMultiTone`. Extracts the linear
   interface per mixing product; `HbResult` carries the `MixingGrid` + tone freqs, with V/INl on the
-  mixIndex axis. See the ω≥0 contract above for negative-frequency handling.
+  mixIndex axis, plus per-device branch-current cubes `I:instance:terminal` (axes `[mixIndex, Pin]`).
+  See the ω≥0 contract above for negative-frequency handling.
+- **`HbNewton2D.ComputeDevicePortCurrents2D`** — post-convergence per-port current extraction for the
+  two-tone path. Mirrors `HbNewton.ComputeDevicePortCurrents` (IFFT V → time domain, device eval, FFT
+  per port) but uses `HbFft2D.Inverse2D` / `HbFft2D.SpecGet` over the mixing lattice. Returns
+  `Dictionary<string, Complex[]>` keyed "instancePath:terminal" → `Complex[M]`. Values are numerically
+  identical to INl at the device's interface nodes (same passive-sign convention). Called per sweep point
+  in `RunTwoTone`; results are stored as `I:instancePath:terminal` cubes in the DataSet.
 - **`TwoToneMeasurements`** — IMD selectors: `Tone(k₁,k₂)` (inverts mixIndex, conjugate fallback for
   non-retained reps), per-product Pout/Pout(dBm), `ImDbc`.
 
@@ -209,3 +216,82 @@ compression.
 ### Owed
 Cross-check Hero 5 against other simulators with the identical SDD FET (currently self-consistent
 only). Phase 4d (multi-device → Hero 4) remains to complete Phase 4.
+
+## Phase 5 corrective brief — COMPLETE (2026-06-06)
+Three coordinated corrections to the Phase 5-3/5-5 retrofit:
+
+### C1 — Linear back-solve (lazy cached reconstruction)
+`HbLinearBackSolver` (in `HarmonicBalance/`) lazily reconstructs linear-interior node voltages and
+branch currents from the converged interface solution. The per-harmonic LU factorization performed
+during HB extraction is cached in `HbLinearExtractor._luCache` and **reused** in
+`SolveFullNetwork` — one cheap back-solve per harmonic per sweep point, no refactorization.
+
+`ILinearBackSolver` (in `src/Core/Expressions/`) exposes `TryGetNodeNumber`, `GetNodeVoltage`,
+`SweepCount`, `NonGroundCount`. The full solution vector `x[0..NonGroundCount-1]` = node voltages;
+`x[NonGroundCount..]` = branch currents. `HbRunResult.BackSolver` returns the solver after Run().
+
+**LU reuse proof:** tightening HB Tol from 1e-6 to 1e-10 improves cube↔back-solve agreement by
+11 billion× at intermediate sweep points — proving the residual is Newton convergence quality, not
+a back-solve bug. Test: `BackSolver_TighterHbTol_ImprovesCubeAgreement` in `LinearBackSolveTests`.
+
+### C2 — Branch-current addressing
+Current is addressed by **named branch** (`I:instancePath:terminal`), never by net/node index.
+
+- **Single-tone:** `BuildSingleToneDataSet` already built `I:instance:terminal` cubes (axes
+  `[harmonic, Pin]` with sweep; `[harmonic]` without).
+- **Two-tone:** `RunTwoTone` now calls `HbNewton2D.ComputeDevicePortCurrents2D` per sweep point
+  and passes results to `BuildTwoToneDataSet`, which emits `I:instance:terminal` cubes
+  (axes `[mixIndex, Pin]`).
+- **Forbidden test accesses** (`ds["INl"][nodeIdx, ...]`) replaced throughout Hero 2/4/5 tests and
+  NoSweep tests with the proper branch-cube accessors. Hero 4 `PinW`/`PoutW` now use
+  `I:M1:g`/`I:M1:d`/`I:M2:g`/`I:M2:d`. Hero 5 golden generator uses `I:M1:d`/`I:M1:g`.
+- `INl` persists as an internal diagnostic cube; it is **not** the measurement/test-facing current path.
+
+### C3 — Optional sweep axis
+`BuildSingleToneDataSet` now takes `isSweep: bool` (computed from `HbAnalysisParams.HasSweep`):
+- **Sweep present:** V/INl have axes `[node, harmonic, Pin]`; Converged/Residual have axis `[Pin]`;
+  branch-I cubes have axes `[harmonic, Pin]`.
+- **No sweep:** V/INl have axes `[node, harmonic]` (2 axes, no Pin); Converged/Residual are
+  rank-0 scalars; branch-I cubes have axis `[harmonic]` only.
+No dummy sweep axis is fabricated. Gate: `NoSweepHbTests.NoSweep_VCube_Is2D_NodeHarmonic`.
+
+## Phase 5-6 — Composable nested parametric sweep — COMPLETE (2026-06-06)
+
+`ParametricSweepEngine` (in `src/Engine/ParametricSweepEngine.cs`) wraps any inner analysis
+(HarmonicBalanceAnalysis or another ParametricSweepAnalysis) and **prepends one named axis** to
+every cube in the resulting DataSet per nesting level. N nested sweeps → N prepended axes.
+
+### Components
+- **`DataCube.PrependAxis(Axis, IReadOnlyList<DataCube>)`** (RfCore) — stacks N same-shaped cubes
+  along a new prepended axis. Accesses `_complexData`/`_realData` directly (internal access for
+  zero-copy). Validates DataKind + rank + axis lengths.
+- **`DataSet.StackSweepAxis(Axis, IReadOnlyList<DataSet>)`** (RfCore) — calls PrependAxis for each
+  key present in all datasets. Result is a new DataSet with every cube one rank higher.
+- **`ParametricSweepAnalysis`** (Core/Design/Analysis.cs) — new Analysis subtype with
+  `SweepVarName`, `SweepValues` (double[]), `InnerAnalysisName`. Slots into `TestBench.Analyses`.
+- **CNL directive:** `analysis SW1 type=parametric_sweep Var=Vgg Values=-3.0,-3.2 Inner=HB1`
+  Parsed by `CnlReader.TryParseParametricSweepDirective` (inserted in the analysis dispatch chain).
+  Values= is comma-separated, unquoted or quoted.
+- **`ParametricSweepEngine.Run(sweep, lib, tb, settings?)`** — for each value: temporarily
+  overrides `tb.GlobalVariables` (restored in finally), re-elaborates, dispatches inner analysis
+  via `RunInner`. Recursive for nested sweeps. Returns `DataSet.StackSweepAxis(...)` result.
+
+### Override mechanism
+The swept variable is injected by temporarily mutating `TestBench.GlobalVariables` — the existing
+variable entry is replaced with `Variable(name, value.ToString("G17"))`, then restored in a
+`finally` block. Re-elaboration from `Elaborator(lib).Elaborate(tb)` sees the overridden value
+and propagates it to all component resolved params (VoltageSourceModel.V, etc.). This is the
+correct path for sweeping circuit globals — `UpdateSweepPoint`/`ReEvaluateGlobals` (inner HB sweep)
+only updates ToneSourceModels and is NOT sufficient for bias/topology parameters.
+
+### Cube shape after stacking
+- 1-level (Vgg outer × HB1 inner with Pin sweep): V axes = `[Vgg, node, harmonic, Pin]`
+- 2-level (Vgg outer × Vdd middle × HB1 inner): V axes = `[Vgg, Vdd, node, harmonic, Pin]`
+- Branch-I cubes gain the same prepended axes: `I:M1:d` axes = `[Vgg, harmonic, Pin]`.
+
+### Gate: `Hero2ParametricSweepTests` (5 tests)
+- `CnlRoundTrip_ParametricSweepDirective_Parses` — CNL parse
+- `SingleLevel_VggSweep_PrependsSweepAxis` — 1-level axis structure
+- `TwoLevel_VggVdd_PrependsTwoAxes` — 2-level axis structure (recursive composition)
+- `SingleLevel_PositionalSlice_WorksAtEachVggPoint` — axis-count-agnostic positional slicing
+- `SingleLevel_DcDrainCurrent_ShiftsWithVgg` — physics: Idc(Vgg=-3.0) > Idc(Vgg=-3.2)

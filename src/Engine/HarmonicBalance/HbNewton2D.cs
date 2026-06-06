@@ -489,6 +489,95 @@ public static class HbNewton2D
         return 2.0 * Math.PI * (k1 * f1 + k2 * f2);
     }
 
+    /// <summary>
+    /// Computes per-port current spectra for each nonlinear device over the two-tone mixing lattice.
+    /// Returns a dict keyed "instancePath:terminalName" → Complex[M] (one per mixing product).
+    /// Values are numerically identical to INl at nodes belonging exclusively to this device
+    /// (both follow the passive-sign convention: positive = current INTO the device port = FROM node).
+    /// </summary>
+    public static Dictionary<string, Complex[]> ComputeDevicePortCurrents2D(
+        Complex[,]        V,
+        MixingGrid        grid,
+        int               N,
+        int               N1,
+        int               N2,
+        ElaboratedNetlist netlist,
+        int[]             interfaceNodes)
+    {
+        int M = grid.MixCount;
+
+        // IFFT V to time domain (mirrors EvaluateNonlinear2D step 1)
+        var diamond = new Complex[M];
+        var vTime   = new double[N][,];
+        for (int n = 0; n < N; n++)
+        {
+            for (int m = 0; m < M; m++)
+                diamond[m] = (m == 0) ? new Complex(V[n, 0].Real, 0) : V[n, m];
+            vTime[n] = new double[N1, N2];
+            HbFft2D.Inverse2D(grid, diamond, N1, N2, vTime[n]);
+        }
+
+        var result = new Dictionary<string, Complex[]>(StringComparer.Ordinal);
+
+        foreach (var nlIdx in netlist.NonlinearComponents)
+        {
+            var    ec        = netlist.Components[nlIdx];
+            int    portCount = ec.Model.PortCount;
+            string[] terms   = ec.Model.TerminalNames;
+
+            var portPlusIdx  = new int[portCount];
+            var portMinusIdx = new int[portCount];
+            for (int p = 0; p < portCount; p++)
+            {
+                int np = ec.Nodes.Length > 2*p   ? ec.Nodes[2*p]   : 0;
+                int nm = ec.Nodes.Length > 2*p+1 ? ec.Nodes[2*p+1] : 0;
+                portPlusIdx[p]  = Array.IndexOf(interfaceNodes, np);
+                portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
+            }
+
+            var portITime = new double[portCount][,];
+            for (int p = 0; p < portCount; p++) portITime[p] = new double[N1, N2];
+
+            var portV = new double[portCount];
+            for (int t1 = 0; t1 < N1; t1++)
+            for (int t2 = 0; t2 < N2; t2++)
+            {
+                for (int p = 0; p < portCount; p++)
+                {
+                    double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t1, t2]  : 0.0;
+                    double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t1, t2] : 0.0;
+                    portV[p] = vp - vm;
+                }
+                var res = ec.Model.Evaluate(new PortVoltages(portV));
+                for (int p = 0; p < portCount; p++)
+                    portITime[p][t1, t2] = res.I[p];
+            }
+
+            // FFT each port → spectrum, extract retained mixing products
+            for (int p = 0; p < portCount; p++)
+            {
+                string term = p < terms.Length ? terms[p] : (p + 1).ToString();
+                string key  = $"{ec.InstancePath}:{term}";
+
+                var iSpec = ForwardConv2D(portITime[p], N1, N2);
+                var iAmpl = new Complex[M];
+                for (int m = 0; m < M; m++)
+                {
+                    var (k1, k2) = grid.ToneOf(m);
+                    iAmpl[m] = HbFft2D.SpecGet(iSpec, k1, k2);
+                }
+                result[key] = iAmpl;
+
+                // Also emit a 0-based port-index alias ("M1:0", "M1:1", …) so generic SDDs
+                // (not necessarily FETs) can be accessed by port number regardless of terminal names.
+                string numKey = $"{ec.InstancePath}:{p}";
+                if (numKey != key) result[numKey] = iAmpl;
+            }
+        }
+
+        return result;
+    }
+
     // Real-split DOF index for (node n, mixIdx, Re/Im). mix=0..M-1, all included.
     private static int Idx(int n, int mix, bool isIm, int M)
         => 2 * (n * M + mix) + (isIm ? 1 : 0);

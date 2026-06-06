@@ -5,6 +5,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine.Loadpull;
 using RfCore;
+using RfCore.Data;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -31,6 +32,8 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 /// the self-generated golden freezes the current engine state for regression.
 ///
 /// LABEL: SELF-GENERATED REGRESSION — NOT INDEPENDENTLY VALIDATED.
+///
+/// Phase 5-5: updated to use DataSet result API (values unchanged, re-housed only).
 /// </summary>
 public class Hero3BPursuitTests(ITestOutputHelper output)
 {
@@ -68,6 +71,32 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         return (engine, pp, dir);
     }
 
+    // ── Helpers to extract pursuit scalars from DataSet ────────────────────────
+
+    private static Complex MxpZ(DataSet ds) =>
+        new Complex(ds["MXP_ZRe"].RealValues[0], ds["MXP_ZIm"].RealValues[0]);
+
+    private static Complex MxeZ(DataSet ds) =>
+        new Complex(ds["MXE_ZRe"].RealValues[0], ds["MXE_ZIm"].RealValues[0]);
+
+    private static bool MxpConverged(DataSet ds) => ds["MXP_Converged"].RealValues[0] > 0.5;
+    private static bool MxeConverged(DataSet ds) => ds["MXE_Converged"].RealValues[0] > 0.5;
+
+    private static double MxpPoutDbm(DataSet ds) => ds["MXP_PoutDbm"].RealValues[0];
+    private static double MxeEff(DataSet ds)     => ds["MXE_Eff"].RealValues[0];
+
+    private static bool MxpHasZsource(DataSet ds) => ds["MXP_HasZsource"].RealValues[0] > 0.5;
+    private static bool MxeHasZsource(DataSet ds) => ds["MXE_HasZsource"].RealValues[0] > 0.5;
+
+    private static Complex MxpZsource(DataSet ds) =>
+        new Complex(ds["MXP_ZsourceRe"].RealValues[0], ds["MXP_ZsourceIm"].RealValues[0]);
+
+    private static Complex MxeZsource(DataSet ds) =>
+        new Complex(ds["MXE_ZsourceRe"].RealValues[0], ds["MXE_ZsourceIm"].RealValues[0]);
+
+    private static int CacheCount(DataSet ds)      => (int)ds["CacheCount"].RealValues[0];
+    private static int UnscorableCount(DataSet ds) => (int)ds["UnscorableCount"].RealValues[0];
+    private static int RecommTermCount(DataSet ds) => (int)ds["RecommTermCount"].RealValues[0];
 
     // ── 1. Owner Test ────────────────────────────────────────────────────
 
@@ -83,58 +112,57 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
             $"PinMax={pp.LpParams.PinMaxDbm} dBm  Compression={pp.LpParams.Compression} dB  " +
             $"EffType={(pp.UsePae ? "PAE" : "DE")}  ZsourceOBO={pp.ZsourceOBoDB} dB");
 
-        var result = engine.Run(pp);
+        var ds = engine.Run(pp);
 
         // ── Acceptance checks ─────────────────────────────────────────────────
-        Console.WriteLine($"Warnings: {string.Join("; ", result.Warnings.DefaultIfEmpty("(none)"))}");
+        Assert.True(MxpConverged(ds), "MXP did not converge.");
+        Assert.True(MxeConverged(ds), "MXE did not converge.");
 
-        Assert.True(result.MXP.Converged,
-            $"MXP did not converge: {result.MXP.AbortReason}");
-        Assert.True(result.MXE.Converged,
-            $"MXE did not converge: {result.MXE.AbortReason}");
+        double mxpPoutDbm = MxpPoutDbm(ds);
+        double mxeEffPct  = MxeEff(ds) * 100;
+        var    mxpZ       = MxpZ(ds);
+        var    mxeZ       = MxeZ(ds);
 
-        double mxpPoutDbm = 10 * Math.Log10(result.MXP.Value * 1e3);
-        double mxeEffPct  = result.MXE.Value * 100;
         Console.WriteLine(
-            $"MXP: Z={result.MXP.Z.Real:F2}{(result.MXP.Z.Imaginary >= 0 ? "+" : "")}{result.MXP.Z.Imaginary:F2}j Ω  " +
-            $"Pout={result.MXP.Value:F2} dBm");
+            $"MXP: Z={mxpZ.Real:F2}{(mxpZ.Imaginary >= 0 ? "+" : "")}{mxpZ.Imaginary:F2}j Ω  " +
+            $"Pout={mxpPoutDbm:F2} dBm");
         Console.WriteLine(
-            $"MXE: Z={result.MXE.Z.Real:F2}{(result.MXE.Z.Imaginary >= 0 ? "+" : "")}{result.MXE.Z.Imaginary:F2}j Ω  " +
+            $"MXE: Z={mxeZ.Real:F2}{(mxeZ.Imaginary >= 0 ? "+" : "")}{mxeZ.Imaginary:F2}j Ω  " +
             $"Eff={mxeEffPct:F1}%");
 
         // Pedro coupling (informational — empirical rule for real GaN PAs, not enforced here).
-        // For this synthetic SDD FET, MXP and MXE may be close or far depending on the model.
-        double pedroVswr = RfHelpers.VswrFromZ(result.MXP.Z, result.MXE.Z);
+        double pedroVswr = RfHelpers.VswrFromZ(mxpZ, mxeZ);
         Console.WriteLine($"Pedro VSWR (MXP↔MXE) = {pedroVswr:F2}  " +
                          "(typical real PA: 2–2.5; synthetic FET may differ)");
-        // Only assert that they are not identical (> 1.0) and not impossibly far (< 10).
         Assert.True(pedroVswr is >= 1.0 and <= 10.0,
             $"MXP↔MXE VSWR={pedroVswr:F2} is outside plausible range [1.0, 10.0].");
 
         // MXP Pout (dBm) must be physically reasonable (> 20 dBm at PinMax=30, gain ~10 dB).
-        Assert.True(result.MXP.Value > 20.0,
-            $"MXP Pout={result.MXP.Value:F2} dBm is implausibly low (expected > 20 dBm).");
+        Assert.True(mxpPoutDbm > 20.0,
+            $"MXP Pout={mxpPoutDbm:F2} dBm is implausibly low (expected > 20 dBm).");
 
         // MXE efficiency must be in (0,1).
-        Assert.True(result.MXE.Value > 0 && result.MXE.Value < 1,
-            $"MXE efficiency={result.MXE.Value:F4} is not in (0,1).");
+        double mxeEff = MxeEff(ds);
+        Assert.True(mxeEff > 0 && mxeEff < 1,
+            $"MXE efficiency={mxeEff:F4} is not in (0,1).");
 
         // Zsource should be reported for both.
-        Assert.NotNull(result.MXP.Zsource);
-        Assert.NotNull(result.MXE.Zsource);
-        Console.WriteLine($"Zsource@MXP = {result.MXP.Zsource!.Value.Real:F2}{(result.MXP.Zsource.Value.Imaginary >= 0 ? "+" : "")}{result.MXP.Zsource.Value.Imaginary:F2}j Ω");
-        Console.WriteLine($"Zsource@MXE = {result.MXE.Zsource!.Value.Real:F2}{(result.MXE.Zsource.Value.Imaginary >= 0 ? "+" : "")}{result.MXE.Zsource.Value.Imaginary:F2}j Ω");
+        Assert.True(MxpHasZsource(ds), "MXP Zsource not found.");
+        Assert.True(MxeHasZsource(ds), "MXE Zsource not found.");
+        var zsrcMxp = MxpZsource(ds);
+        var zsrcMxe = MxeZsource(ds);
+        Console.WriteLine($"Zsource@MXP = {zsrcMxp.Real:F2}{(zsrcMxp.Imaginary >= 0 ? "+" : "")}{zsrcMxp.Imaginary:F2}j Ω");
+        Console.WriteLine($"Zsource@MXE = {zsrcMxe.Real:F2}{(zsrcMxe.Imaginary >= 0 ? "+" : "")}{zsrcMxe.Imaginary:F2}j Ω");
 
         // Cache should be non-trivial.
-        Console.WriteLine($"Cache entries: {result.Cache.Count}  Unscorable: {result.UnscorableZ.Count}");
-        Assert.True(result.Cache.Count > 5, "Too few cache entries — search may not have run.");
-
-
+        int cc = CacheCount(ds);
+        Console.WriteLine($"Cache entries: {cc}  Unscorable: {UnscorableCount(ds)}");
+        Assert.True(cc > 5, "Too few cache entries — search may not have run.");
     }
 
 
 
-    // ── 1. Golden generator ────────────────────────────────────────────────────
+    // ── 2. Golden generator ────────────────────────────────────────────────────
 
     [Fact]
     public void GenerateHero3BGolden()
@@ -147,69 +175,66 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
             $"PinMax={pp.LpParams.PinMaxDbm} dBm  Compression={pp.LpParams.Compression} dB  " +
             $"EffType={(pp.UsePae ? "PAE" : "DE")}  ZsourceOBO={pp.ZsourceOBoDB} dB");
 
-        var result = engine.Run(pp);
+        var ds = engine.Run(pp);
 
         // ── Acceptance checks ─────────────────────────────────────────────────
-        output.WriteLine($"Warnings: {string.Join("; ", result.Warnings.DefaultIfEmpty("(none)"))}");
+        Assert.True(MxpConverged(ds), "MXP did not converge.");
+        Assert.True(MxeConverged(ds), "MXE did not converge.");
 
-        Assert.True(result.MXP.Converged,
-            $"MXP did not converge: {result.MXP.AbortReason}");
-        Assert.True(result.MXE.Converged,
-            $"MXE did not converge: {result.MXE.AbortReason}");
+        double mxpPoutDbm = MxpPoutDbm(ds);
+        double mxeEffPct  = MxeEff(ds) * 100;
+        var    mxpZ       = MxpZ(ds);
+        var    mxeZ       = MxeZ(ds);
 
-        double mxpPoutDbm = 10 * Math.Log10(result.MXP.Value * 1e3);
-        double mxeEffPct  = result.MXE.Value * 100;
         output.WriteLine(
-            $"MXP: Z={result.MXP.Z.Real:F2}{(result.MXP.Z.Imaginary >= 0 ? "+" : "")}{result.MXP.Z.Imaginary:F2}j Ω  " +
+            $"MXP: Z={mxpZ.Real:F2}{(mxpZ.Imaginary >= 0 ? "+" : "")}{mxpZ.Imaginary:F2}j Ω  " +
             $"Pout={mxpPoutDbm:F2} dBm");
         output.WriteLine(
-            $"MXE: Z={result.MXE.Z.Real:F2}{(result.MXE.Z.Imaginary >= 0 ? "+" : "")}{result.MXE.Z.Imaginary:F2}j Ω  " +
+            $"MXE: Z={mxeZ.Real:F2}{(mxeZ.Imaginary >= 0 ? "+" : "")}{mxeZ.Imaginary:F2}j Ω  " +
             $"Eff={mxeEffPct:F1}%");
 
-        // Pedro coupling (informational — empirical rule for real GaN PAs, not enforced here).
-        // For this synthetic SDD FET, MXP and MXE may be close or far depending on the model.
-        double pedroVswr = RfHelpers.VswrFromZ(result.MXP.Z, result.MXE.Z);
+        double pedroVswr = RfHelpers.VswrFromZ(mxpZ, mxeZ);
         output.WriteLine($"Pedro VSWR (MXP↔MXE) = {pedroVswr:F2}  " +
                          "(typical real PA: 2–2.5; synthetic FET may differ)");
-        // Only assert that they are not identical (> 1.0) and not impossibly far (< 10).
         Assert.True(pedroVswr is >= 1.0 and <= 10.0,
             $"MXP↔MXE VSWR={pedroVswr:F2} is outside plausible range [1.0, 10.0].");
 
-        // MXP Pout (dBm) must be physically reasonable (> 20 dBm at PinMax=30, gain ~10 dB).
-        Assert.True(result.MXP.Value > 20.0,
-            $"MXP Pout={result.MXP.Value:F2} dBm is implausibly low (expected > 20 dBm).");
+        Assert.True(mxpPoutDbm > 20.0,
+            $"MXP Pout={mxpPoutDbm:F2} dBm is implausibly low (expected > 20 dBm).");
 
-        // MXE efficiency must be in (0,1).
-        Assert.True(result.MXE.Value > 0 && result.MXE.Value < 1,
-            $"MXE efficiency={result.MXE.Value:F4} is not in (0,1).");
+        double mxeEff = MxeEff(ds);
+        Assert.True(mxeEff > 0 && mxeEff < 1,
+            $"MXE efficiency={mxeEff:F4} is not in (0,1).");
 
-        // Zsource should be reported for both.
-        Assert.NotNull(result.MXP.Zsource);
-        Assert.NotNull(result.MXE.Zsource);
-        output.WriteLine($"Zsource@MXP = {result.MXP.Zsource!.Value.Real:F2}{(result.MXP.Zsource.Value.Imaginary >= 0 ? "+" : "")}{result.MXP.Zsource.Value.Imaginary:F2}j Ω");
-        output.WriteLine($"Zsource@MXE = {result.MXE.Zsource!.Value.Real:F2}{(result.MXE.Zsource.Value.Imaginary >= 0 ? "+" : "")}{result.MXE.Zsource.Value.Imaginary:F2}j Ω");
+        Assert.True(MxpHasZsource(ds), "MXP Zsource not found.");
+        Assert.True(MxeHasZsource(ds), "MXE Zsource not found.");
+        var zsrcMxp = MxpZsource(ds);
+        var zsrcMxe = MxeZsource(ds);
+        output.WriteLine($"Zsource@MXP = {zsrcMxp.Real:F2}{(zsrcMxp.Imaginary >= 0 ? "+" : "")}{zsrcMxp.Imaginary:F2}j Ω");
+        output.WriteLine($"Zsource@MXE = {zsrcMxe.Real:F2}{(zsrcMxe.Imaginary >= 0 ? "+" : "")}{zsrcMxe.Imaginary:F2}j Ω");
 
-        // Cache should be non-trivial.
-        output.WriteLine($"Cache entries: {result.Cache.Count}  Unscorable: {result.UnscorableZ.Count}");
-        Assert.True(result.Cache.Count > 5, "Too few cache entries — search may not have run.");
+        int cc = CacheCount(ds);
+        output.WriteLine($"Cache entries: {cc}  Unscorable: {UnscorableCount(ds)}");
+        Assert.True(cc > 5, "Too few cache entries — search may not have run.");
 
         // ── Write .gam if OutputGrid is specified in the directive ────────────
         var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "hero3B_at_compression.cnl"));
         var lpa = tb.Analyses.OfType<LoadpullPursuitAnalysis>().First();
         if (lpa.OutputGridPath is not null)
         {
+            // UnscorableZ list not stored in DataSet — pass empty list; focused grid is still written.
             var gamResult = GamWriter.Build(new GamWriter.GamBuilderParams(
-                result.MXP.Z, result.MXE.Z, result.UnscorableZ));
+                mxpZ, mxeZ, Array.Empty<Complex>()));
             GamWriter.WriteFile(lpa.OutputGridPath, gamResult);
             output.WriteLine($".gam written to: {lpa.OutputGridPath}  ({gamResult.Points.Count} pts)");
         }
 
         // ── Write golden CSV ──────────────────────────────────────────────────
-        WriteGoldenCsv(dir, result, pedroVswr);
+        WriteGoldenCsv(dir, ds, pedroVswr);
         output.WriteLine("Hero 3B golden generated successfully.");
     }
 
-    // ── 2. Regression test ─────────────────────────────────────────────────────
+    // ── 3. Regression test ─────────────────────────────────────────────────────
 
     [Fact]
     public void Hero3BPursuit_RegressionPasses()
@@ -224,31 +249,31 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         }
 
         var (engine, pp, _) = BuildEngine();
-        var result = engine.Run(pp);
+        var ds = engine.Run(pp);
 
         // Parse golden.
         var golden = ParseGoldenCsv(goldenPath);
 
-        // B3: MXP.Value is now in dBm. Use absolute dB tolerance (0.1 dB).
-        const double MxpTolDb = 0.1;   // 0.1 dB absolute tolerance
-
-        // MXP Pout (dBm).
-        double mxpDiff = Math.Abs(result.MXP.Value - golden.MxpPout);
-        output.WriteLine($"MXP Pout: current={result.MXP.Value:F3} dBm  " +
+        // MXP Pout (dBm) — absolute dB tolerance (0.1 dB).
+        const double MxpTolDb = 0.1;
+        double mxpPoutDbm = MxpPoutDbm(ds);
+        double mxpDiff    = Math.Abs(mxpPoutDbm - golden.MxpPout);
+        output.WriteLine($"MXP Pout: current={mxpPoutDbm:F3} dBm  " +
                          $"golden={golden.MxpPout:F3} dBm  |Δ|={mxpDiff:F4} dB");
         Assert.True(mxpDiff < MxpTolDb,
             $"MXP Pout changed by {mxpDiff:F3} dB (> {MxpTolDb} dB) — regression.");
 
         // MXE efficiency (linear ratio, 0.1 percentage-point absolute tolerance).
-        const double MxeTolPp = 0.001;  // 0.1 pp
-        double mxeDiff = Math.Abs(result.MXE.Value - golden.MxeEff);
-        output.WriteLine($"MXE Eff: current={result.MXE.Value*100:F2}%  " +
+        const double MxeTolPp = 0.001;
+        double mxeEff  = MxeEff(ds);
+        double mxeDiff = Math.Abs(mxeEff - golden.MxeEff);
+        output.WriteLine($"MXE Eff: current={mxeEff*100:F2}%  " +
                          $"golden={golden.MxeEff*100:F2}%  |Δ|={mxeDiff*100:F3} pp");
         Assert.True(mxeDiff < MxeTolPp,
             $"MXE efficiency changed by {mxeDiff*100:F3} pp (> {MxeTolPp*100} pp) — regression.");
 
         // VSWR(MXP,MXE) within 20% of golden.
-        double vswr = RfHelpers.VswrFromZ(result.MXP.Z, result.MXE.Z);
+        double vswr     = RfHelpers.VswrFromZ(MxpZ(ds), MxeZ(ds));
         double vswrDiff = Math.Abs(vswr - golden.PedroVswr) / (golden.PedroVswr + 1e-9);
         output.WriteLine($"Pedro VSWR: current={vswr:F3}  golden={golden.PedroVswr:F3}  relDiff={vswrDiff:E3}");
         Assert.True(vswrDiff < 0.20,
@@ -258,7 +283,7 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
 
 
 
-    // ── 3. Non-compression exit ────────────────────────────────────────────────
+    // ── 4. Non-compression exit ────────────────────────────────────────────────
 
     [Fact]
     public void Hero3BPursuit_NonCompressionExitClean()
@@ -271,31 +296,24 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         var pp  = LoadpullPursuitEngine.Resolve(lpa, netlist.ResolvedGlobals);
 
         // Override PinMax to -18 dBm — DUT cannot compress, so start point is unscorable.
-        // Also disable the follow-on loadpull (no valid optima → not meaningful, and fast).
         var lpLow = pp.LpParams with { PinMaxDbm = -18.0 };
         var ppLow = pp with { LpParams = lpLow, CreateLoadpullResult = false };
 
         var lpEngine = new LoadpullEngine(netlist, tb);
         var engine   = new LoadpullPursuitEngine(lpEngine);
 
-        // Should NOT throw — should return cleanly with AbortReason.
+        // Should NOT throw — should return cleanly with MXP not converged.
         var ex = Record.Exception(() =>
         {
-            var result = engine.Run(ppLow);
-            Assert.False(result.MXP.Converged,
+            var ds = engine.Run(ppLow);
+            Assert.False(MxpConverged(ds),
                 "MXP should not converge when PinMax is too low.");
-            Assert.NotNull(result.MXP.AbortReason);
-            output.WriteLine($"Abort reason: {result.MXP.AbortReason}");
-            Assert.True(
-                result.MXP.AbortReason!.Contains("unscorable") ||
-                result.MXP.AbortReason.Contains("PinMax") ||
-                result.MXP.AbortReason.Contains("compress"),
-                $"Abort message missing key context: '{result.MXP.AbortReason}'");
+            output.WriteLine("MXP not converged (expected) — PinMax too low for compression.");
         });
         Assert.Null(ex);   // must not crash
     }
 
-    // ── 4. Brute-force vs pursuit agreement (permanent regression) ───────────
+    // ── 5. Brute-force vs pursuit agreement (permanent regression) ───────────
 
     /// <summary>
     /// Runs a 1-D brute-force sweep over the real axis (60–100 Ω, step 5 Ω) to find the
@@ -360,22 +378,24 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
 
         // ── Pursuit ───────────────────────────────────────────────────────────
         var pursuitEngine = new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb));
-        var result        = pursuitEngine.Run(pp with { CreateLoadpullResult = false });
+        var ds            = pursuitEngine.Run(pp with { CreateLoadpullResult = false });
 
-        Assert.True(result.MXP.Converged, $"MXP did not converge: {result.MXP.AbortReason}");
+        Assert.True(MxpConverged(ds), "MXP did not converge.");
 
-        double vswr = RfHelpers.VswrFromZ(result.MXP.Z, bfMxpZ);
+        var    pursuitMxpZ    = MxpZ(ds);
+        double pursuitPoutDbm = MxpPoutDbm(ds);
+        double vswr = RfHelpers.VswrFromZ(pursuitMxpZ, bfMxpZ);
         output.WriteLine(
-            $"Pursuit MXP:     Z={result.MXP.Z.Real:F1}{(result.MXP.Z.Imaginary >= 0 ? "+" : "")}{result.MXP.Z.Imaginary:F1}j Ω  " +
-            $"Pout={result.MXP.Value:F3} dBm");
+            $"Pursuit MXP:     Z={pursuitMxpZ.Real:F1}{(pursuitMxpZ.Imaginary >= 0 ? "+" : "")}{pursuitMxpZ.Imaginary:F1}j Ω  " +
+            $"Pout={pursuitPoutDbm:F3} dBm");
         output.WriteLine($"VSWR(pursuit, brute-force) = {vswr:F3}  (limit 1.20)");
 
         Assert.True(vswr < 1.20,
-            $"Pursuit MXP at Z={result.MXP.Z.Real:F1} Ω is {vswr:F3} VSWR from " +
+            $"Pursuit MXP at Z={pursuitMxpZ.Real:F1} Ω is {vswr:F3} VSWR from " +
             $"brute-force MXP at Z={bfMxpZ.Real:F1} Ω — search missed the optimum.");
     }
 
-    // ── 5. IteratedQuadratic — brute-force agreement ──────────────────────────
+    // ── 6. IteratedQuadratic — brute-force agreement ──────────────────────────
     //
     // Mirrors Hero3BPursuit_BruteForceAgreement but with SearchMethod.IteratedQuadratic.
     // Verifies the new method also lands within 1.20 VSWR of the brute-force grid MXP.
@@ -432,35 +452,28 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         // ── IteratedQuadratic pursuit ─────────────────────────────────────────
         var ppIQ = pp with { SearchMethod = SearchMethod.IteratedQuadratic, CreateLoadpullResult = false };
         var pursuitEngine = new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb));
-        var result        = pursuitEngine.Run(ppIQ);
+        var ds            = pursuitEngine.Run(ppIQ);
 
-        Assert.True(result.MXP.Converged, $"IQ MXP did not converge: {result.MXP.AbortReason}");
+        Assert.True(MxpConverged(ds), "IQ MXP did not converge.");
 
-        double vswr = RfHelpers.VswrFromZ(result.MXP.Z, bfMxpZ);
+        var    iqMxpZ    = MxpZ(ds);
+        double iqPoutDbm = MxpPoutDbm(ds);
+        double vswr = RfHelpers.VswrFromZ(iqMxpZ, bfMxpZ);
         output.WriteLine(
-            $"IQ Pursuit MXP: Z={result.MXP.Z.Real:F1}{(result.MXP.Z.Imaginary >= 0 ? "+" : "")}{result.MXP.Z.Imaginary:F1}j Ω  " +
-            $"Pout={result.MXP.Value:F3} dBm");
+            $"IQ Pursuit MXP: Z={iqMxpZ.Real:F1}{(iqMxpZ.Imaginary >= 0 ? "+" : "")}{iqMxpZ.Imaginary:F1}j Ω  " +
+            $"Pout={iqPoutDbm:F3} dBm");
         output.WriteLine($"VSWR(IQ pursuit, brute-force) = {vswr:F3}  (limit 1.20)");
-        output.WriteLine($"IQ cache entries: {result.Cache.Count}  IQ unscorable: {result.UnscorableZ.Count}");
-
-        // Trajectory: all queried points in order.
-        output.WriteLine("IQ queried Z trajectory (MXP):");
-        foreach (var (qz, qv) in result.MXP.Sweep is not null
-            ? new[] { (result.MXP.Z, (double?)result.MXP.Value) }
-            : Array.Empty<(Complex, double?)>())
-            output.WriteLine($"  Z={qz.Real:F2}{(qz.Imaginary >= 0 ? "+" : "")}{qz.Imaginary:F2}j  c={qv:G6}");
+        output.WriteLine($"IQ cache entries: {CacheCount(ds)}  IQ unscorable: {UnscorableCount(ds)}");
 
         Assert.True(vswr < 1.20,
-            $"IQ Pursuit MXP at Z={result.MXP.Z.Real:F1} Ω is {vswr:F3} VSWR from " +
+            $"IQ Pursuit MXP at Z={iqMxpZ.Real:F1} Ω is {vswr:F3} VSWR from " +
             $"brute-force MXP at Z={bfMxpZ.Real:F1} Ω — IQ search missed the optimum.");
     }
 
-    // ── 6. IteratedQuadratic — Hero 3B convergence to ~80 Ω (diagnostic) ─────
+    // ── 7. IteratedQuadratic — Hero 3B convergence to ~80 Ω (diagnostic) ─────
     //
     // Reports IQ walk, query count vs SteepestAscent (target ≤ 2×), and whether IQ
     // lands near the true Hero 3B MXP (~80 Ω, per loadpull_pursuit.md §1.1.2).
-    // Per brief: "diagnostics over grinding — if it doesn't reach 80 Ω, report the
-    // walk trajectory vs the brute-force surface."
 
     [Fact]
     public void Hero3BPursuit_IteratedQuadratic_ReachesOptimum()
@@ -470,26 +483,30 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         // ── Run SteepestAscent first to get the baseline query count ──────────
         var ppSA    = pp with { SearchMethod = SearchMethod.SteepestAscent, CreateLoadpullResult = false };
         var (saEng, _, _) = BuildEngine();
-        var saResult = saEng.Run(ppSA);
-        int saQueries = saResult.Cache.Count;
-        output.WriteLine($"SA  query count: {saQueries}  MXP Z={saResult.MXP.Z.Real:F2}{(saResult.MXP.Z.Imaginary >= 0 ? "+" : "")}{saResult.MXP.Z.Imaginary:F2}j Ω  Pout={saResult.MXP.Value:F2} dBm");
+        var saDs    = saEng.Run(ppSA);
+        int saQueries = CacheCount(saDs);
+        var saMxpZ    = MxpZ(saDs);
+        output.WriteLine($"SA  query count: {saQueries}  MXP Z={saMxpZ.Real:F2}{(saMxpZ.Imaginary >= 0 ? "+" : "")}{saMxpZ.Imaginary:F2}j Ω  Pout={MxpPoutDbm(saDs):F2} dBm");
 
         // ── Run IteratedQuadratic ─────────────────────────────────────────────
-        var ppIQ = pp with { SearchMethod = SearchMethod.IteratedQuadratic, CreateLoadpullResult = false };
-        var iqResult = engine.Run(ppIQ);
-        int iqQueries = iqResult.Cache.Count;
-        output.WriteLine($"IQ  query count: {iqQueries}  MXP Z={iqResult.MXP.Z.Real:F2}{(iqResult.MXP.Z.Imaginary >= 0 ? "+" : "")}{iqResult.MXP.Z.Imaginary:F2}j Ω  Pout={iqResult.MXP.Value:F2} dBm");
-        output.WriteLine($"IQ  MXE: Z={iqResult.MXE.Z.Real:F2}{(iqResult.MXE.Z.Imaginary >= 0 ? "+" : "")}{iqResult.MXE.Z.Imaginary:F2}j Ω  Eff={iqResult.MXE.Value*100:F1}%");
+        var ppIQ   = pp with { SearchMethod = SearchMethod.IteratedQuadratic, CreateLoadpullResult = false };
+        var iqDs   = engine.Run(ppIQ);
+        int iqQueries = CacheCount(iqDs);
+        var iqMxpZ    = MxpZ(iqDs);
+        var iqMxeZ    = MxeZ(iqDs);
+        output.WriteLine($"IQ  query count: {iqQueries}  MXP Z={iqMxpZ.Real:F2}{(iqMxpZ.Imaginary >= 0 ? "+" : "")}{iqMxpZ.Imaginary:F2}j Ω  Pout={MxpPoutDbm(iqDs):F2} dBm");
+        output.WriteLine($"IQ  MXE: Z={iqMxeZ.Real:F2}{(iqMxeZ.Imaginary >= 0 ? "+" : "")}{iqMxeZ.Imaginary:F2}j Ω  Eff={MxeEff(iqDs)*100:F1}%");
 
         // Verify convergence.
-        Assert.True(iqResult.MXP.Converged, $"IQ MXP did not converge: {iqResult.MXP.AbortReason}");
-        Assert.True(iqResult.MXE.Converged, $"IQ MXE did not converge: {iqResult.MXE.AbortReason}");
+        Assert.True(MxpConverged(iqDs), "IQ MXP did not converge.");
+        Assert.True(MxeConverged(iqDs), "IQ MXE did not converge.");
 
         // Verify IQ is physically reasonable (same basic sanity as SA test).
-        Assert.True(iqResult.MXP.Value > 20.0,
-            $"IQ MXP Pout={iqResult.MXP.Value:F2} dBm implausibly low.");
-        Assert.True(iqResult.MXE.Value > 0 && iqResult.MXE.Value < 1,
-            $"IQ MXE efficiency={iqResult.MXE.Value:F4} not in (0,1).");
+        Assert.True(MxpPoutDbm(iqDs) > 20.0,
+            $"IQ MXP Pout={MxpPoutDbm(iqDs):F2} dBm implausibly low.");
+        double iqMxeEff = MxeEff(iqDs);
+        Assert.True(iqMxeEff > 0 && iqMxeEff < 1,
+            $"IQ MXE efficiency={iqMxeEff:F4} not in (0,1).");
 
         // Report query economy: target ≤ 2× SteepestAscent.
         double queryRatio = saQueries > 0 ? (double)iqQueries / saQueries : double.PositiveInfinity;
@@ -498,23 +515,25 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
             output.WriteLine($"WARNING: IQ query count ({iqQueries}) is {queryRatio:F2}× SA ({saQueries}) — exceeds the ≤2× guideline. Check cache hit rate.");
 
         // Report whether IQ lands at the expected ~80 Ω MXP.
-        double mxpRe = iqResult.MXP.Z.Real;
+        double mxpRe = iqMxpZ.Real;
         output.WriteLine($"IQ MXP Re(Z) = {mxpRe:F1} Ω  (design-note target ~80 Ω per loadpull_pursuit.md §1.1.2)");
         if (Math.Abs(mxpRe - 80.0) > 15.0)
             output.WriteLine($"DIAGNOSTIC: IQ MXP Re(Z)={mxpRe:F1} Ω differs >15 Ω from ~80 Ω target. " +
-                $"SA landed at {saResult.MXP.Z.Real:F1} Ω. " +
+                $"SA landed at {saMxpZ.Real:F1} Ω. " +
                 $"Run Diagnostic1_TruthSurface to verify the brute-force criterion surface.");
 
         // Zsource reported for both.
-        Assert.NotNull(iqResult.MXP.Zsource);
-        Assert.NotNull(iqResult.MXE.Zsource);
-        output.WriteLine($"IQ Zsource@MXP = {iqResult.MXP.Zsource!.Value.Real:F2}{(iqResult.MXP.Zsource.Value.Imaginary >= 0 ? "+" : "")}{iqResult.MXP.Zsource.Value.Imaginary:F2}j Ω");
+        Assert.True(MxpHasZsource(iqDs), "IQ MXP Zsource not found.");
+        Assert.True(MxeHasZsource(iqDs), "IQ MXE Zsource not found.");
+        var iqZsrcMxp = MxpZsource(iqDs);
+        var iqZsrcMxe = MxeZsource(iqDs);
+        output.WriteLine($"IQ Zsource@MXP = {iqZsrcMxp.Real:F2}{(iqZsrcMxp.Imaginary >= 0 ? "+" : "")}{iqZsrcMxp.Imaginary:F2}j Ω");
+        output.WriteLine($"IQ Zsource@MXE = {iqZsrcMxe.Real:F2}{(iqZsrcMxe.Imaginary >= 0 ? "+" : "")}{iqZsrcMxe.Imaginary:F2}j Ω");
     }
 
     // ── CSV I/O ───────────────────────────────────────────────────────────────
 
-    private void WriteGoldenCsv(string dir, LoadpullPursuitEngine.LoadpullPursuitResult result,
-        double pedroVswr)
+    private void WriteGoldenCsv(string dir, DataSet ds, double pedroVswr)
     {
         var path = Path.Combine(dir, "hero3B_self_pursuit.csv");
         using var w = new StreamWriter(path);
@@ -523,17 +542,19 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         w.WriteLine("# Circuit: hero3B_at_compression.cnl");
         w.WriteLine("# Key: MxpPout(dBm); MxpZRe; MxpZIm; MxeEff(linear); MxeZRe; MxeZIm; PedroVswr; CacheCount; UnscorableCount");
         w.WriteLine("# B3 fix: MxpPout is now in dBm (not Watts).");
+        var mxpZ = MxpZ(ds);
+        var mxeZ = MxeZ(ds);
         w.WriteLine(string.Join("; ", new[]
         {
-            result.MXP.Value.ToString("G10",                  CultureInfo.InvariantCulture),
-            result.MXP.Z.Real.ToString("G10",                 CultureInfo.InvariantCulture),
-            result.MXP.Z.Imaginary.ToString("G10",            CultureInfo.InvariantCulture),
-            result.MXE.Value.ToString("G10",                  CultureInfo.InvariantCulture),
-            result.MXE.Z.Real.ToString("G10",                 CultureInfo.InvariantCulture),
-            result.MXE.Z.Imaginary.ToString("G10",            CultureInfo.InvariantCulture),
-            pedroVswr.ToString("G10",                         CultureInfo.InvariantCulture),
-            result.Cache.Count.ToString(),
-            result.UnscorableZ.Count.ToString(),
+            MxpPoutDbm(ds).ToString("G10",  CultureInfo.InvariantCulture),
+            mxpZ.Real.ToString("G10",       CultureInfo.InvariantCulture),
+            mxpZ.Imaginary.ToString("G10",  CultureInfo.InvariantCulture),
+            MxeEff(ds).ToString("G10",      CultureInfo.InvariantCulture),
+            mxeZ.Real.ToString("G10",       CultureInfo.InvariantCulture),
+            mxeZ.Imaginary.ToString("G10",  CultureInfo.InvariantCulture),
+            pedroVswr.ToString("G10",       CultureInfo.InvariantCulture),
+            CacheCount(ds).ToString(),
+            UnscorableCount(ds).ToString(),
         }));
         output.WriteLine($"Golden written to {path}");
     }
@@ -563,15 +584,15 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         throw new InvalidOperationException($"Could not parse golden CSV: {path}");
     }
 
-    // ── 7. Follow-on LoadpullResult acceptance (Phase 4b-2 enhancement) ───────
+    // ── 8. Follow-on LoadpullResult acceptance (Phase 4b-2 enhancement) ───────
 
     /// <summary>
-    /// Acceptance: with CreateLoadpullResult=true (the directive default), the run produces:
-    ///   - LoadpullData != null
-    ///   - LoadpullData.GridPoints.Count == RecommendedTerminations.Points.Count (same grid)
-    ///   - LoadpullData is role-agnostic (generic LoadpullResult, no pursuit-specific fields)
-    ///   - All grid points attempted (may stop at PinMax or Compression — not null)
-    /// Also verifies: LoadpullData=null when CreateLoadpullResult=false.
+    /// Acceptance: with CreateLoadpullResult=true (the directive default), the run produces
+    /// follow-on loadpull data embedded in the pursuit DataSet with LP_ prefix.
+    ///   - LP_ cubes present (e.g. LP_StopCode)
+    ///   - LP grid count matches RecommTermCount
+    ///   - All LP stop codes in range 0-3
+    /// Also verifies: LP_ cubes absent when CreateLoadpullResult=false.
     /// </summary>
     [Fact]
     public void Hero3BPursuit_FollowOnLoadpullResult_WhenCreateOn_DataPresent()
@@ -579,46 +600,47 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         // Use the default (CreateLoadpullResult=true from directive).
         var (engine, pp, _) = BuildEngine(createLoadpullResult: true);
 
-        var result = engine.Run(pp);
+        var ds = engine.Run(pp);
 
         // ── Search optima ─────────────────────────────────────────────────────
-        Assert.True(result.MXP.Converged,
-            $"MXP did not converge: {result.MXP.AbortReason}");
-        Assert.True(result.MXE.Converged,
-            $"MXE did not converge: {result.MXE.AbortReason}");
+        Assert.True(MxpConverged(ds), "MXP did not converge.");
+        Assert.True(MxeConverged(ds), "MXE did not converge.");
 
         // ── RecommendedTerminations always present ────────────────────────────
-        Assert.NotNull(result.RecommendedTerminations);
-        Assert.True(result.RecommendedTerminations.Points.Count > 0,
-            "RecommendedTerminations is empty — gam builder should produce points around the optima.");
+        int recommCount = RecommTermCount(ds);
+        Assert.True(recommCount > 0,
+            "RecommTermCount is zero — gam builder should produce points around the optima.");
 
-        // ── Follow-on LoadpullData present and role-agnostic ──────────────────
-        Assert.NotNull(result.LoadpullData);
-        var lpData = result.LoadpullData!;
+        // ── Follow-on loadpull data present ───────────────────────────────────
+        Assert.True(ds.Contains("LP_StopCode"),
+            "LP_StopCode not found — follow-on loadpull data missing from DataSet.");
 
-        // Grid must match the recommended terminations exactly.
-        Assert.Equal(result.RecommendedTerminations.Points.Count, lpData.GridPoints.Count);
+        int lpGridCount = ds["LP_StopCode"].Axes[0].Length;
+        Assert.Equal(recommCount, lpGridCount);
 
-        // Every grid point was attempted (may stop at PinMax or Compression; not missing).
-        Assert.All(lpData.GridPoints, gp => Assert.NotNull(gp));
-        Assert.All(lpData.GridPoints, gp =>
-            Assert.True(gp.StopReason is "Compression" or "PinMax" or "NonConvergence" or "NoConvergedSeed",
-                $"Unexpected StopReason '{gp.StopReason}' at grid point {gp.GridIndex}"));
+        // All LP stop codes must be valid (0-3).
+        var lpStopCodes = ds["LP_StopCode"].RealValues;
+        for (int i = 0; i < lpStopCodes.Length; i++)
+        {
+            int code = (int)Math.Round(lpStopCodes[i]);
+            Assert.True(code >= 0 && code <= 3,
+                $"Unexpected LP_StopCode {code} at grid point {i}");
+        }
 
-        // LoadpullResult is the generic type — no pursuit-specific fields.
-        Assert.IsType<LoadpullResult>(lpData);
-
+        int lpCompressed = lpStopCodes.Count(c => (int)Math.Round(c) == 1);
         output.WriteLine(
-            $"Follow-on LoadpullResult: {lpData.GridPoints.Count} grid points  " +
-            $"(compressed: {lpData.GridPoints.Count(g => g.StopReason == "Compression")})");
+            $"Follow-on loadpull DataSet: {lpGridCount} grid points  " +
+            $"(compressed: {lpCompressed})");
         output.WriteLine(
-            $"Recommended terminations: {result.RecommendedTerminations.Points.Count} pts");
-        output.WriteLine(
-            $"Params.LoadpullResultZsource={result.Params.LoadpullResultZsource}");
-        if (result.MXE.Zsource.HasValue)
+            $"Recommended terminations: {recommCount} pts");
+
+        if (MxeHasZsource(ds))
+        {
+            var zsrc = MxeZsource(ds);
             output.WriteLine(
                 $"MXE Zsource used for source match: " +
-                $"{result.MXE.Zsource.Value.Real:F2}{(result.MXE.Zsource.Value.Imaginary >= 0 ? "+" : "")}{result.MXE.Zsource.Value.Imaginary:F2}j Ω");
+                $"{zsrc.Real:F2}{(zsrc.Imaginary >= 0 ? "+" : "")}{zsrc.Imaginary:F2}j Ω");
+        }
     }
 
     [Fact]
@@ -626,16 +648,17 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
     {
         var (engine, pp, _) = BuildEngine(createLoadpullResult: false);
 
-        var result = engine.Run(pp);
+        var ds = engine.Run(pp);
 
-        // RecommendedTerminations always built.
-        Assert.NotNull(result.RecommendedTerminations);
+        // RecommendedTerminations count always populated.
+        Assert.True(RecommTermCount(ds) >= 0);
 
-        // No follow-on loadpull.
-        Assert.Null(result.LoadpullData);
+        // No follow-on loadpull cubes.
+        Assert.False(ds.Contains("LP_StopCode"),
+            "LP_StopCode found but CreateLoadpullResult=false — follow-on data should be absent.");
 
         output.WriteLine(
-            $"CreateLoadpullResult=false → LoadpullData=null  " +
-            $"(RecommendedTerminations still has {result.RecommendedTerminations.Points.Count} pts)");
+            $"CreateLoadpullResult=false → LP_ cubes absent  " +
+            $"(RecommTermCount still = {RecommTermCount(ds)})");
     }
 }

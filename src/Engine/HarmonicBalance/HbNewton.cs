@@ -526,4 +526,88 @@ public static class HbNewton
     }
 
     internal static double L2(double[] v) { double s = 0; foreach (double x in v) s += x*x; return Math.Sqrt(s); }
+
+    // ── Post-convergence port current extraction (C2) ────────────────────────
+    //
+    // Called ONCE after Newton convergence per sweep point — NOT in the Newton hot path.
+    // Re-evaluates each nonlinear device at each time sample using the converged V, then
+    // FFTs per port to recover the complex harmonic spectrum.
+    //
+    // Returns dict keyed by "instancePath:terminalName" → Complex[K+1] spectrum.
+    // Sign: res.I[p] = current INTO the device at port p (passive sign convention),
+    // matching INl[portPlusIdx[p], k] when that node belongs exclusively to this device.
+    // Values are therefore numerically identical to INl — just re-housed by named branch.
+
+    public static Dictionary<string, Complex[]> ComputeDevicePortCurrents(
+        Complex[,]        V,
+        int               N,
+        int               K,
+        int               gridN,
+        ElaboratedNetlist netlist,
+        int[]             interfaceNodes)
+    {
+        // IFFT V to time domain
+        var vTime = new double[N][];
+        for (int n = 0; n < N; n++)
+        {
+            vTime[n] = new double[gridN];
+            var Xn = new Complex[K + 1];
+            for (int k = 0; k <= K; k++) Xn[k] = V[n, k];
+            HbFft.Inverse(Xn, K, vTime[n]);
+        }
+
+        var result = new Dictionary<string, Complex[]>(StringComparer.Ordinal);
+
+        foreach (var nlIdx in netlist.NonlinearComponents)
+        {
+            var    ec        = netlist.Components[nlIdx];
+            int    portCount = ec.Model.PortCount;
+            string[] terms   = ec.Model.TerminalNames;
+
+            var portPlusIdx  = new int[portCount];
+            var portMinusIdx = new int[portCount];
+            for (int p = 0; p < portCount; p++)
+            {
+                int np = ec.Nodes.Length > 2*p   ? ec.Nodes[2*p]   : 0;
+                int nm = ec.Nodes.Length > 2*p+1 ? ec.Nodes[2*p+1] : 0;
+                portPlusIdx[p]  = Array.IndexOf(interfaceNodes, np);
+                portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
+            }
+
+            var portITime = new double[portCount, gridN];
+
+            for (int t = 0; t < gridN; t++)
+            {
+                var portV = new double[portCount];
+                for (int p = 0; p < portCount; p++)
+                {
+                    double vp = portPlusIdx[p]  >= 0 ? vTime[portPlusIdx[p]][t]  : 0.0;
+                    double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t] : 0.0;
+                    portV[p] = vp - vm;
+                }
+                var res = ec.Model.Evaluate(new PortVoltages(portV));
+                for (int p = 0; p < portCount; p++)
+                    portITime[p, t] = res.I[p];
+            }
+
+            // FFT each port's time series → harmonic spectrum
+            for (int p = 0; p < portCount; p++)
+            {
+                string term = p < terms.Length ? terms[p] : (p + 1).ToString();
+                string key  = $"{ec.InstancePath}:{term}";
+
+                var iX = new double[gridN];
+                for (int t = 0; t < gridN; t++) iX[t] = portITime[p, t];
+                HbFft.Forward(iX, K, out var iAmpl, out _);
+                result[key] = iAmpl;
+
+                // Also emit a 0-based port-index alias ("M1:0", "M1:1", …) so generic SDDs
+                // (not necessarily FETs) can be accessed by port number regardless of terminal names.
+                string numKey = $"{ec.InstancePath}:{p}";
+                if (numKey != key) result[numKey] = iAmpl;
+            }
+        }
+
+        return result;
+    }
 }

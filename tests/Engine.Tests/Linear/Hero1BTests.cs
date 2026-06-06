@@ -4,6 +4,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using RfCore;
+using RfCore.Data;
 
 namespace CircuitRF.Engine.Tests.Linear;
 
@@ -96,7 +97,7 @@ public class Hero1BTests
 
         // ── Run simulation ────────────────────────────────────────────────
         sw.Restart();
-        var simSnp = SParameterEngine.Run(nl, freqs);
+        var ds = SParameterEngine.Run(nl, freqs);
         var solveMs = sw.ElapsedMilliseconds;
 
         var totalS = (importMs + solveMs) / 1000.0;
@@ -110,19 +111,17 @@ public class Hero1BTests
         // ── Gate 2: internal consistency — passivity and reciprocity ──────
         // The circuit is all-passive (R, L, C, mutuals) → should be reciprocal (S_ij = S_ji)
         // and passive (|S_ij| ≤ 1 on diagonal, network-passivity via max singular value ≤ 1).
-        int N = simSnp.Ports;
+        int N = ds["S"].Axes[1].Length;
         double maxReciprocalErr = 0.0;
         double maxPassivityViol = 0.0;
 
         for (int fi = 0; fi < freqs.Length; fi++)
         {
-            var m = simSnp.Matrices[fi];
-
             // Reciprocity: S_ij = S_ji
             for (int r = 0; r < N; r++)
             for (int c = 0; c < N; c++)
             {
-                double diff = (m[r, c] - m[c, r]).Magnitude;
+                double diff = ((Complex)ds["S"][fi, r, c] - (Complex)ds["S"][fi, c, r]).Magnitude;
                 if (diff > maxReciprocalErr) maxReciprocalErr = diff;
             }
 
@@ -132,7 +131,10 @@ public class Hero1BTests
             {
                 double outPower = 0.0;
                 for (int k = 0; k < N; k++)
-                    outPower += m[k, j].Magnitude * m[k, j].Magnitude;
+                {
+                    double mag = ((Complex)ds["S"][fi, k, j]).Magnitude;
+                    outPower += mag * mag;
+                }
                 double viol = outPower - 1.0;
                 if (viol > maxPassivityViol) maxPassivityViol = viol;
             }

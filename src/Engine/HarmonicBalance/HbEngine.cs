@@ -3,6 +3,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
+using RfCore.Data;
 
 namespace CircuitRF.Engine.HarmonicBalance;
 
@@ -47,10 +48,15 @@ public sealed record HbAnalysisParams(
     public bool   IsMultiTone => ToneFreqsHz.Length > 1;
     public bool   HasSweep    => SweepVarName is not null;
 
-    /// <summary>Enumerate the sweep values (or a single 0 for no sweep).</summary>
+    /// <summary>
+    /// Enumerate the sweep values.
+    /// Returns the actual sweep points when HasSweep=true; empty when HasSweep=false.
+    /// The engine's Run() always executes at least one Newton solve — no-sweep is handled
+    /// by a separate single-iteration path, not by yielding a dummy value.
+    /// </summary>
     public IEnumerable<double> SweepValues()
     {
-        if (!HasSweep) { yield return 0; yield break; }
+        if (!HasSweep) yield break;
         for (double v = SweepStart; v <= SweepStop + 1e-10; v += SweepStep)
             yield return v;
     }
@@ -215,9 +221,14 @@ public sealed class HbEngine
 
     // ── Engine entry point ───────────────────────────────────────────────────
 
-    public HbResult Run(HbAnalysisParams p)
+    /// <summary>
+    /// Run the HB analysis.  Returns an <see cref="HbRunResult"/> that wraps the DataSet
+    /// and, for single-tone runs, a lazy <see cref="HbLinearBackSolver"/> for recovering
+    /// linear-interior node voltages (C1).  Implicit conversion to DataSet is available.
+    /// </summary>
+    public HbRunResult Run(HbAnalysisParams p)
     {
-        if (p.IsMultiTone) return RunTwoTone(p);
+        if (p.IsMultiTone) return new HbRunResult(RunTwoTone(p));
 
         int    K      = p.MaxHarmonic;
         double f0     = p.ToneHz;
@@ -258,20 +269,41 @@ public sealed class HbEngine
             Console.Error.WriteLine("[HB] Warning: DC operating point did not converge; proceeding with best available.");
 
         // ── Sweep loop ───────────────────────────────────────────────────────
+        bool isSweep    = p.HasSweep;
         var sweepVals   = new List<double>();
         var sweepVArr   = new List<Complex[,]>();
         var sweepINlArr = new List<Complex[,]>();
         var trace       = new HbConvergenceTrace();
 
+        // C2: Per-branch current accumulator: "instancePath:terminalName" → spectra per sweep point.
+        var portCurrentsByBranch = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
+
+        // C1: Per-sweep-point source RHS snapshots for the linear back-solver.
+        // Must be captured inside the loop while ToneSourceModel._currentPhasors is current.
+        var sweepBSrc = new List<Complex[][]>();
+
         Complex[,]? prevV = null;  // for warm-start continuation
 
-        foreach (double sweepVal in p.SweepValues())
+        // When no sweep, iterate exactly once with a dummy value (not stored as sweep axis).
+        var sweepIterable = isSweep ? p.SweepValues() : Enumerable.Repeat(0.0, 1);
+
+        foreach (double sweepVal in sweepIterable)
         {
-            sweepVals.Add(sweepVal);
+            if (isSweep) sweepVals.Add(sweepVal);
 
             // Update sweep variable and re-evaluate any sweep-dependent expressions.
             if (p.SweepVarName is not null)
                 UpdateSweepPoint(p.SweepVarName, sweepVal);
+
+            // Snapshot source RHS for ALL harmonics NOW (component state is current for this sweep point).
+            // SolveFullNetwork uses these snapshots to avoid using stale state after the loop ends.
+            var bSrcThisSweep = new Complex[K + 1][];
+            for (int k = 0; k <= K; k++)
+            {
+                double omegaSnap = k == 0 ? 0.0 : k * omega0;
+                bSrcThisSweep[k] = extractor.BuildSourceRhs(omegaSnap);
+            }
+            sweepBSrc.Add(bSrcThisSweep);
 
             // Initial guess: warm-start from previous point, or cold-start from DC seed.
             var V = InitialGuess(prevV, dcResult, N, K, ifNodes);
@@ -329,6 +361,16 @@ public sealed class HbEngine
             }
             Console.Error.WriteLine();
 
+            // C2: Post-convergence per-device port-current extraction (not in Newton hot path).
+            var pointPortCurrents = HbNewton.ComputeDevicePortCurrents(
+                V, N, K, gridN, _netlist, ifNodes);
+            foreach (var (key, spec) in pointPortCurrents)
+            {
+                if (!portCurrentsByBranch.TryGetValue(key, out var lst))
+                    portCurrentsByBranch[key] = lst = [];
+                lst.Add(spec);
+            }
+
             sweepVArr.Add(V);
             sweepINlArr.Add(solveResult.INl);
             prevV = V;
@@ -337,13 +379,17 @@ public sealed class HbEngine
         // Print convergence summary to stderr (primary diagnostic).
         trace.Print();
 
-        return new HbResult(
-            sweepVals.ToArray(),
-            sweepVArr.ToArray(),
-            sweepINlArr.ToArray(),
-            ifNodes,
-            nodeNames,
-            trace);
+        // C1: Lazy linear back-solver — recovers linear-interior node voltages on demand.
+        var backSolver = new HbLinearBackSolver(
+            extractor, f0, K, sweepINlArr.ToArray(), sweepBSrc.ToArray(), _netlist);
+
+        var ds = BuildSingleToneDataSet(
+            isSweep ? sweepVals.ToArray() : [],
+            sweepVArr, sweepINlArr,
+            nodeNames, f0, K, trace,
+            portCurrentsByBranch, isSweep);
+
+        return new HbRunResult(ds, backSolver);
     }
 
     // ── Two-tone engine entry point (harmonic-balance.md §6) ─────────────────
@@ -355,7 +401,7 @@ public sealed class HbEngine
     /// use the separable 2-D FFT, and the Newton solve is <see cref="HbNewton2D.Solve"/>.
     /// The returned <see cref="HbResult"/> carries the grid; V/INl are indexed [sweep][node, mixIdx].
     /// </summary>
-    private HbResult RunTwoTone(HbAnalysisParams p)
+    private DataSet RunTwoTone(HbAnalysisParams p)
     {
         double f1 = p.ToneFreqsHz[0];
         double f2 = p.ToneFreqsHz[1];
@@ -403,6 +449,8 @@ public sealed class HbEngine
         var trace       = new HbConvergenceTrace();
         Complex[,]? prevV = null;
 
+        var portCurrentsByBranch = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
+
         var effectiveSettings = EffectiveSettings(p);
 
         foreach (double sweepVal in p.SweepValues())
@@ -437,6 +485,16 @@ public sealed class HbEngine
                     $"  {nodeNames[n]} V={V[n,0].Real:F3}V I_nl={solveResult.INl[n,0].Real*1e3:F2}mA");
             Console.Error.WriteLine();
 
+            // C2: post-convergence per-device port-current extraction over the mixing lattice.
+            var pointPortCurrents = HbNewton2D.ComputeDevicePortCurrents2D(
+                V, grid, N, N1, N2, _netlist, ifNodes);
+            foreach (var (key, spec) in pointPortCurrents)
+            {
+                if (!portCurrentsByBranch.TryGetValue(key, out var lst))
+                    portCurrentsByBranch[key] = lst = [];
+                lst.Add(spec);
+            }
+
             sweepVArr.Add(V);
             sweepINlArr.Add(solveResult.INl);
             prevV = V;
@@ -444,9 +502,9 @@ public sealed class HbEngine
 
         trace.Print();
 
-        return new HbResult(
-            sweepVals.ToArray(), sweepVArr.ToArray(), sweepINlArr.ToArray(),
-            ifNodes, nodeNames, trace, grid, [f1, f2]);
+        return BuildTwoToneDataSet(
+            sweepVals.ToArray(), sweepVArr, sweepINlArr,
+            nodeNames, grid, f1, f2, trace, portCurrentsByBranch);
     }
 
     /// <summary>Effective settings with HbMaxIter overridden from the directive's MaxIter.</summary>
@@ -803,6 +861,212 @@ public sealed class HbEngine
                 $"do not match extractor N={N}, K={K}.");
 
         return HbNewton.CompareJacobianNumerical(Vstar, yNN, iSrc, f0, K, N, _netlist, ifNodes, gridN);
+    }
+
+    // ── DataSet builders (5-3) ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Build the DataSet returned by single-tone Run().
+    ///
+    /// C3 — optional sweep axis:
+    ///   sweep=true  → V/INl axes [node, harmonic, Pin]; I:* axes [harmonic, Pin].
+    ///   sweep=false → V/INl axes [node, harmonic]; I:* axes [harmonic]; Converged/Residual = scalar.
+    ///
+    /// C2 — branch current cubes:
+    ///   portCurrents dict keyed "instancePath:terminalName" → stored as "I:instancePath:terminalName".
+    ///   Indexed by [harmonic] (no-sweep) or [harmonic, Pin] (sweep).  No node axis.
+    ///
+    /// Node axis carries Labels = nodeNames for V("n_drain", …) lookups.
+    /// Harmonic axis values = {0, f0, 2f0, …, K·f0} Hz.
+    /// Pin axis values = sweepVals (dBm).  Only present when isSweep=true.
+    /// </summary>
+    private static DataSet BuildSingleToneDataSet(
+        double[]            sweepVals,       // empty when isSweep=false
+        List<Complex[,]>    sweepV,
+        List<Complex[,]>    sweepINl,
+        string[]            nodeNames,
+        double              f0,
+        int                 K,
+        HbConvergenceTrace  trace,
+        Dictionary<string, List<Complex[]>> portCurrents,
+        bool                isSweep)
+    {
+        int N      = sweepV[0].GetLength(0);
+        int K1     = K + 1;
+        int nSweep = sweepV.Count;           // always >= 1 (even for no-sweep)
+
+        var nodeVals = new double[N];
+        for (int i = 0; i < N; i++) nodeVals[i] = i;
+        var nodeAxis = new Axis("node", nodeVals, "", nodeNames);
+
+        var harmVals = new double[K1];
+        for (int k = 0; k < K1; k++) harmVals[k] = k * f0;
+        var harmAxis = new Axis("harmonic", harmVals, "Hz");
+
+        var ds = new DataSet();
+
+        if (isSweep)
+        {
+            var pinAxis = new Axis("Pin", sweepVals, "dBm");
+
+            // [node, harmonic, Pin] row-major: stride = [K1*nSweep, nSweep, 1]
+            var vData   = new Complex[N * K1 * nSweep];
+            var inlData = new Complex[N * K1 * nSweep];
+            for (int n = 0; n < N; n++)
+            for (int k = 0; k < K1; k++)
+            for (int si = 0; si < nSweep; si++)
+            {
+                int idx  = n * K1 * nSweep + k * nSweep + si;
+                vData[idx]   = sweepV[si][n, k];
+                inlData[idx] = sweepINl[si][n, k];
+            }
+
+            var convData = new double[nSweep];
+            var resData  = new double[nSweep];
+            for (int si = 0; si < nSweep; si++)
+            {
+                var step = si < trace.Steps.Count ? trace.Steps[si] : null;
+                convData[si] = step?.Converged == true ? 1.0 : 0.0;
+                resData[si]  = step?.IterTrace.Count > 0 ? step.IterTrace[^1].ResidualNorm : 0.0;
+            }
+
+            ds.Add("V",         new DataCube([nodeAxis, harmAxis, pinAxis], vData));
+            ds.Add("INl",       new DataCube([nodeAxis, harmAxis, pinAxis], inlData));
+            ds.Add("Converged", new DataCube([pinAxis], convData));
+            ds.Add("Residual",  new DataCube([pinAxis], resData));
+
+            // C2: branch current cubes [harmonic, Pin]
+            foreach (var (branchKey, specList) in portCurrents)
+            {
+                var iData = new Complex[K1 * nSweep];
+                for (int si = 0; si < nSweep && si < specList.Count; si++)
+                {
+                    var spec = specList[si];
+                    for (int k = 0; k < K1 && k < spec.Length; k++)
+                        iData[k * nSweep + si] = spec[k];
+                }
+                ds.Add("I:" + branchKey, new DataCube([harmAxis, pinAxis], iData));
+            }
+        }
+        else
+        {
+            // No-sweep: 2-axis V/INl cubes [node, harmonic]; scalar Converged/Residual.
+            var vData   = new Complex[N * K1];
+            var inlData = new Complex[N * K1];
+            for (int n = 0; n < N; n++)
+            for (int k = 0; k < K1; k++)
+            {
+                vData  [n * K1 + k] = sweepV  [0][n, k];
+                inlData[n * K1 + k] = sweepINl[0][n, k];
+            }
+
+            var step0   = trace.Steps.Count > 0 ? trace.Steps[0] : null;
+            double conv = step0?.Converged == true ? 1.0 : 0.0;
+            double res  = step0?.IterTrace.Count > 0 ? step0.IterTrace[^1].ResidualNorm : 0.0;
+
+            ds.Add("V",         new DataCube([nodeAxis, harmAxis], vData));
+            ds.Add("INl",       new DataCube([nodeAxis, harmAxis], inlData));
+            ds.Add("Converged", DataCube.Scalar(conv));
+            ds.Add("Residual",  DataCube.Scalar(res));
+
+            // C2: branch current cubes [harmonic]
+            foreach (var (branchKey, specList) in portCurrents)
+            {
+                if (specList.Count == 0) continue;
+                var spec  = specList[0];
+                var iData = new Complex[K1];
+                for (int k = 0; k < K1 && k < spec.Length; k++) iData[k] = spec[k];
+                ds.Add("I:" + branchKey, new DataCube([harmAxis], iData));
+            }
+        }
+
+        return ds;
+    }
+
+    /// <summary>
+    /// Build the DataSet returned by two-tone Run().
+    /// V and INl cubes have axes [node, mixIndex, Pin] (Complex).
+    /// MixIndex axis values = {k1·f1+k2·f2} Hz per product, Labels = {"(k1,k2)"}.
+    /// ToneFreqs cube has axis [tone] (Real): {f1, f2} Hz.
+    /// MetaMixOrder cube has axis [1] (Real): {MaxMixOrder} (scalar).
+    /// </summary>
+    private static DataSet BuildTwoToneDataSet(
+        double[]         sweepVals,
+        List<Complex[,]> sweepV,
+        List<Complex[,]> sweepINl,
+        string[]         nodeNames,
+        MixingGrid       grid,
+        double           f1,
+        double           f2,
+        HbConvergenceTrace trace,
+        Dictionary<string, List<Complex[]>> portCurrentsByBranch)
+    {
+        int N      = sweepV[0].GetLength(0);
+        int M      = grid.MixCount;
+        int nSweep = sweepVals.Length;
+
+        var nodeVals = new double[N];
+        for (int i = 0; i < N; i++) nodeVals[i] = i;
+        var nodeAxis = new Axis("node", nodeVals, "", nodeNames);
+
+        var mixVals   = new double[M];
+        var mixLabels = new string[M];
+        for (int m = 0; m < M; m++)
+        {
+            var (k1, k2) = grid.ToneOf(m);
+            mixVals[m]   = k1 * f1 + k2 * f2;
+            mixLabels[m] = $"({k1},{k2})";
+        }
+        var mixAxis = new Axis("mixIndex", mixVals, "Hz", mixLabels);
+
+        var pinAxis = new Axis("Pin", sweepVals, "dBm");
+
+        // [node, mixIndex, Pin] row-major: stride = [M*nSweep, nSweep, 1]
+        var vData   = new Complex[N * M * nSweep];
+        var inlData = new Complex[N * M * nSweep];
+        for (int n = 0; n < N; n++)
+        for (int m = 0; m < M; m++)
+        for (int si = 0; si < nSweep; si++)
+        {
+            int idx    = n * M * nSweep + m * nSweep + si;
+            vData[idx]   = sweepV[si][n, m];
+            inlData[idx] = sweepINl[si][n, m];
+        }
+
+        var convData = new double[nSweep];
+        var resData  = new double[nSweep];
+        for (int si = 0; si < nSweep; si++)
+        {
+            var step    = si < trace.Steps.Count ? trace.Steps[si] : null;
+            convData[si] = step?.Converged == true ? 1.0 : 0.0;
+            resData[si]  = step?.IterTrace.Count > 0 ? step.IterTrace[^1].ResidualNorm : 0.0;
+        }
+
+        var toneAxis  = new Axis("tone", [1.0, 2.0], "");
+        var orderAxis = new Axis("order", [1.0], "");
+
+        var ds = new DataSet();
+        ds.Add("V",            new DataCube([nodeAxis, mixAxis, pinAxis], vData));
+        ds.Add("INl",          new DataCube([nodeAxis, mixAxis, pinAxis], inlData));
+        ds.Add("Converged",    new DataCube([pinAxis], convData));
+        ds.Add("Residual",     new DataCube([pinAxis], resData));
+        ds.Add("ToneFreqs",    new DataCube([toneAxis], new double[] { f1, f2 }));
+        ds.Add("MetaMixOrder", new DataCube([orderAxis], new double[] { grid.MaxMixOrder }));
+
+        // C2: branch current cubes [mixIndex, Pin]
+        foreach (var (branchKey, specList) in portCurrentsByBranch)
+        {
+            var iData = new Complex[M * nSweep];
+            for (int si = 0; si < nSweep && si < specList.Count; si++)
+            {
+                var spec = specList[si];
+                for (int m = 0; m < M && m < spec.Length; m++)
+                    iData[m * nSweep + si] = spec[m];
+            }
+            ds.Add("I:" + branchKey, new DataCube([mixAxis, pinAxis], iData));
+        }
+
+        return ds;
     }
 
     // ── Commensurability check (harmonic-balance.md §3.1) ────────────────────

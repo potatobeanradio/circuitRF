@@ -6,6 +6,7 @@ using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using CircuitRF.Engine.HarmonicBalance;
 using NumFlat;
+using RfCore.Data;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -68,40 +69,39 @@ public class Hero2Tests(ITestOutputHelper output)
         var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
         var p   = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
         var engine = new HbEngine(netlist, tb);
-        var result = engine.Run(p);
+        var ds = engine.Run(p);
 
-        int[] ifNodes  = result.InterfaceNodes;
-        string[] ifNames = result.InterfaceNodeNames;
+        string[] ifNames = ds["V"].Axes[0].Labels!;
         int gateIdx  = Array.FindIndex(ifNames, n => n.Contains("n_gate",  StringComparison.OrdinalIgnoreCase));
         int drainIdx = Array.FindIndex(ifNames, n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
 
+        var sweepVals = ds["Converged"].Axes[0].Values;
 
         // ── All sweep points converged ────────────────────────────────────────
-        int nonConv = result.Trace.Steps.Count(s => !s.Converged);
+        int nonConv = ds["Converged"].RealValues.Count(v => v < 0.5);
         Assert.True(nonConv == 0, $"{nonConv} sweep points did not converge.");
 
-        Console.WriteLine($"All {result.Trace.TotalSteps} sweep points converged. " +
-                         $"Total iterations: {result.Trace.TotalIterations}.");
+        Console.WriteLine($"All {sweepVals.Length} sweep points converged.");
 
         // PA measurement calcs
 
-        double[] Pin_dBm = new double[result.SweepValues.Length];
-        double[] poutW = new double[result.SweepValues.Length];
-        double[] Pout_dBm = new double[result.SweepValues.Length];
-        double[] Gain = new double[result.SweepValues.Length];
-        double[] PDC = new double[result.SweepValues.Length];
-        double[] DEff = new double[result.SweepValues.Length];
-        double[] compression = new double[result.SweepValues.Length];
+        double[] Pin_dBm = new double[sweepVals.Length];
+        double[] poutW = new double[sweepVals.Length];
+        double[] Pout_dBm = new double[sweepVals.Length];
+        double[] Gain = new double[sweepVals.Length];
+        double[] PDC = new double[sweepVals.Length];
+        double[] DEff = new double[sweepVals.Length];
+        double[] compression = new double[sweepVals.Length];
 
 
-        for (int si = 0; si < result.SweepValues.Length; si++)
+        for (int si = 0; si < sweepVals.Length; si++)
         {
-            double pin    = result.SweepValues[si];
+            double pin    = sweepVals[si];
 
-            double VDD = result.V[si][drainIdx, 0].Real;
-            double IDC = result.INl[si][drainIdx, 0].Real;// at DC
-            Complex Vout = result.V[si][drainIdx, 1];// at f0
-            Complex Iout = -result.INl[si][drainIdx, 1];// negative sign is for current out of the port
+            double VDD = ((Complex)ds["V"][drainIdx, 0, si]).Real;
+            double IDC = ((Complex)ds["I:M1:d"][0, si]).Real; // at DC — drain port current into FET
+            Complex Vout = (Complex)ds["V"][drainIdx, 1, si]; // at f0
+            Complex Iout = -(Complex)ds["I:M1:d"][1, si]; // current OUT of port = −(current INTO FET)
 
             Pin_dBm[si] = pin;
             poutW[si] = 0.5*(Vout*Iout.Conjugate()).Real;
@@ -111,13 +111,13 @@ public class Hero2Tests(ITestOutputHelper output)
             DEff[si] = poutW[si]/PDC[si]*100;
         }
 
-         Array.Clear(compression, 0, compression.Length);
+        Array.Clear(compression, 0, compression.Length);
         // 1. Find the maximum Gain and its index
         double maxValue = Gain.Max();
         int maxIndex = Array.IndexOf(Gain, maxValue);
         for (int i = maxIndex + 1; i < Gain.Length; i++)
             compression[i] = maxValue - Gain[i];
-        for (int si = 0; si < result.SweepValues.Length; si++)
+        for (int si = 0; si < sweepVals.Length; si++)
             Console.WriteLine($"Pin={Pin_dBm[si]:F1} dBm:  Pout={Pout_dBm[si]:F1} dBm  Gain={Gain[si]:F1} dB  " +
                              $"DEff={DEff[si]:F1} %  " +
                              $"comp={compression[si]:F2} dB");
@@ -144,15 +144,16 @@ public class Hero2Tests(ITestOutputHelper output)
         var engine    = new HbEngine(netlist, tb);
 
         // Run the standard sweep (Pstop=18, all converge).
-        var result = engine.Run(p);
-        int nSteps = result.SweepValues.Length;
+        var ds = engine.Run(p);
+        var sweepVals = ds["Converged"].Axes[0].Values;
+        int nSteps = sweepVals.Length;
         Assert.True(nSteps >= 2, "Expected at least two sweep points.");
 
         // Two operating points.
-        double pinLow  = result.SweepValues[0];
-        double pinFail = result.SweepValues[nSteps - 1];
-        var    VLow    = result.V[0];
-        var    VFail   = result.V[nSteps - 1];
+        double pinLow  = sweepVals[0];
+        double pinFail = sweepVals[nSteps - 1];
+        var    VLow    = ExtractVMatrix(ds, 0);
+        var    VFail   = ExtractVMatrix(ds, nSteps - 1);
 
         // ── Low-drive comparison ──────────────────────────────────────────────
         var diagLow = engine.RunJacobianDiagnostic(p, VLow, pinLow);
@@ -287,21 +288,21 @@ public class Hero2Tests(ITestOutputHelper output)
         output.WriteLine("\n--- Real ZLoad_f sweep ---");
         foreach (double zloadF in zloadFArr)
         {
-            var result = RunConvergenceTarget(dir,
+            var ds = RunConvergenceTarget(dir,
                 zloadF: zloadF, zloadF2: 1e-6, zloadF3: 1e-6, pstopOverride: 25);
-            ReportConvergenceCurve(zloadF, result, output);
+            ReportConvergenceCurve(zloadF, ds, output);
         }
 
         // ── Inverse-Class-F ────────────────────────────────────────────────────
         output.WriteLine("\n--- Inverse-Class-F: ZLoad_f=80Ω  ZLoad_2=500Ω ---");
         {
-            var result = RunConvergenceTarget(dir,
+            var ds = RunConvergenceTarget(dir,
                 zloadF: 80, zloadF2: 500, zloadF3: 1e-6, pstopOverride: 25);
-            ReportConvergenceCurve(80, result, output);
+            ReportConvergenceCurve(80, ds, output);
         }
     }
 
-    private static HbResult RunConvergenceTarget(
+    private static DataSet RunConvergenceTarget(
         string dir,
         double zloadF,
         double zloadF2,
@@ -333,11 +334,13 @@ public class Hero2Tests(ITestOutputHelper output)
     }
 
     private static void ReportConvergenceCurve(
-        double zloadF, HbResult result, ITestOutputHelper output)
+        double zloadF, DataSet ds, ITestOutputHelper output)
     {
-        var ifNames = result.InterfaceNodeNames;
+        var ifNames = ds["V"].Axes[0].Labels!;
         int drainIdx = Array.FindIndex(ifNames, n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
         if (drainIdx < 0) { output.WriteLine($"  ZL_f={zloadF}Ω: drain node not found!"); return; }
+
+        var sweepVals = ds["Converged"].Axes[0].Values;
 
         // Compute Pout and Gain at each sweep point.
         bool reachedP3dB = false;
@@ -345,13 +348,12 @@ public class Hero2Tests(ITestOutputHelper output)
         int p3dBPin = int.MaxValue;
 
         var lines = new System.Text.StringBuilder();
-        for (int si = 0; si < result.SweepValues.Length; si++)
+        for (int si = 0; si < sweepVals.Length; si++)
         {
-            double pin    = result.SweepValues[si];
-            bool   conv   = result.Trace.Steps.Count > si && result.Trace.Steps[si].Converged;
-            double vdd    = result.V[si][drainIdx, 0].Real;
-            var    vOut   = result.V[si][drainIdx, 1];
-            var    iInto  = -result.INl[si][drainIdx, 1];
+            double pin    = sweepVals[si];
+            bool   conv   = (double)ds["Converged"][si] > 0.5;
+            var    vOut   = (Complex)ds["V"][drainIdx, 1, si];
+            var    iInto  = -(Complex)ds["I:M1:d"][1, si];
             double poutW  = 0.5 * (vOut * iInto.Conjugate()).Real;
             double pout   = poutW > 1e-15 ? 10*Math.Log10(poutW*1000) : double.NegativeInfinity;
             double gain   = double.IsFinite(pout) ? pout - pin : double.NegativeInfinity;
@@ -436,16 +438,17 @@ public class Hero2Tests(ITestOutputHelper output)
         output.WriteLine($"Sweep: {p.SweepVarName} {p.SweepStart}..{p.SweepStop} step {p.SweepStep}");
 
         var engine = new HbEngine(netlist, tb);
-        var result = engine.Run(p);
+        var ds = engine.Run(p);
+        var sweepVals = ds["Converged"].Axes[0].Values;
 
         // Print convergence trace.
         output.WriteLine("\n[HB convergence trace]");
-        output.WriteLine($"Total steps: {result.Trace.TotalSteps}, Total iters: {result.Trace.TotalIterations}");
-        foreach (var step in result.Trace.Steps)
+        output.WriteLine($"Total steps: {sweepVals.Length}");
+        for (int si = 0; si < sweepVals.Length; si++)
         {
-            double finalRes = step.IterTrace.Count > 0 ? step.IterTrace[^1].ResidualNorm : double.NaN;
-            output.WriteLine($"  Pin={step.Pin_dBm:F1} dBm  iters={step.Iterations}  " +
-                             $"converged={step.Converged}  ‖F‖={finalRes:E3}");
+            bool conv = (double)ds["Converged"][si] > 0.5;
+            double finalRes = (double)ds["Residual"][si];
+            output.WriteLine($"  Pin={sweepVals[si]:F1} dBm  converged={conv}  ‖F‖={finalRes:E3}");
         }
 
         // ── Load golden data ─────────────────────────────────────────────────
@@ -453,12 +456,11 @@ public class Hero2Tests(ITestOutputHelper output)
         var gateGolden  = LoadGolden(Path.Combine(dir, "hero2_golden_reference_n_gate.csv"));
 
         // Map node names to interface indices.
-        int[] ifNodes = result.InterfaceNodes;
-        string[] ifNames = result.InterfaceNodeNames;
+        string[] ifNames = ds["V"].Axes[0].Labels!;
         int drainIfIdx = Array.FindIndex(ifNames, n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
         int gateIfIdx  = Array.FindIndex(ifNames, n => n.Contains("n_gate",  StringComparison.OrdinalIgnoreCase));
 
-        output.WriteLine($"\nInterface nodes: {string.Join(", ", ifNames.Select((nm,i) => $"{nm}(#{ifNodes[i]})"))}");
+        output.WriteLine($"\nInterface nodes: {string.Join(", ", ifNames)}");
         output.WriteLine($"drain interface idx={drainIfIdx}, gate interface idx={gateIfIdx}");
 
         // ── Compare sweep points ─────────────────────────────────────────────
@@ -467,10 +469,9 @@ public class Hero2Tests(ITestOutputHelper output)
         int    nCheck = 0;
         const double NoiseFloor = 1e-5;
 
-        for (int si = 0; si < result.SweepValues.Length; si++)
+        for (int si = 0; si < sweepVals.Length; si++)
         {
-            double sweepPav = result.SweepValues[si];
-            var Vsi = result.V[si];
+            double sweepPav = sweepVals[si];
 
             // Find matching Pave row in golden data.
             var drainRow = drainGolden.Where(e => Math.Abs(e.Pave_dBm - sweepPav) < 0.05).ToList();
@@ -490,8 +491,8 @@ public class Hero2Tests(ITestOutputHelper output)
                 if (dEntry != null && drainIfIdx >= 0)
                 {
                     Complex simV = (k == 0)
-                        ? new Complex(Vsi[drainIfIdx, 0].Real, 0)
-                        : Vsi[drainIfIdx, k];
+                        ? new Complex(((Complex)ds["V"][drainIfIdx, 0, si]).Real, 0)
+                        : (Complex)ds["V"][drainIfIdx, k, si];
                     double goldenRe = dEntry.Re, goldenIm = dEntry.Im;
 
                     bool reSignal = Math.Abs(goldenRe) >= NoiseFloor;
@@ -507,11 +508,6 @@ public class Hero2Tests(ITestOutputHelper output)
                             $"sim=({simV.Real:+0.4f;-0.4f},{simV.Imaginary:+0.4f;-0.4f})  " +
                             $"golden=({goldenRe:+0.4f;-0.4f},{goldenIm:+0.4f;-0.4f})  " +
                             $"Δ=({reDiff:E2},{imDiff:E2})");
-                        // Console.WriteLine(
-                        //     $"  drain k={k} Pin={sweepPav:F1}:  " +
-                        //     $"sim=({simV.Real:G4},{simV.Imaginary:G4})  " +
-                        //     $"golden=({goldenRe:G4},{goldenIm:G4})  " +
-                        //     $"Δ=({reDiff:G6},{imDiff:G6})");
                     }
                 }
 
@@ -519,8 +515,8 @@ public class Hero2Tests(ITestOutputHelper output)
                 if (gEntry != null && gateIfIdx >= 0)
                 {
                     Complex simV = (k == 0)
-                        ? new Complex(Vsi[gateIfIdx, 0].Real, 0)
-                        : Vsi[gateIfIdx, k];
+                        ? new Complex(((Complex)ds["V"][gateIfIdx, 0, si]).Real, 0)
+                        : (Complex)ds["V"][gateIfIdx, k, si];
                     double goldenRe = gEntry.Re, goldenIm = gEntry.Im;
 
                     bool reSignal = Math.Abs(goldenRe) >= NoiseFloor;
@@ -547,12 +543,25 @@ public class Hero2Tests(ITestOutputHelper output)
         Assert.True(nCheck > 0, "No signal-bearing voltage bins found to compare — check interface node mapping.");
 
         // All sweep points should converge.
-        int nonConverged = result.Trace.Steps.Count(s => !s.Converged);
+        int nonConverged = ds["Converged"].RealValues.Count(v => v < 0.5);
         if (nonConverged > 0)
-            output.WriteLine($"WARNING: {nonConverged}/{result.Trace.TotalSteps} sweep points did not converge — see trace above.");
+            output.WriteLine($"WARNING: {nonConverged}/{sweepVals.Length} sweep points did not converge — see trace above.");
 
         // The test passes as long as we get results and signal-bearing bins were compared.
         // Numerical accuracy is judged by the owner reviewing the output table above.
         // A future strict gate can tighten the tolerance once the engine is tuned.
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static Complex[,] ExtractVMatrix(DataSet ds, int sweepIdx)
+    {
+        int N  = ds["V"].Axes[0].Length;
+        int K1 = ds["V"].Axes[1].Length;  // K+1 harmonics (DC through Kf0)
+        var mat = new Complex[N, K1];
+        for (int n = 0; n < N; n++)
+            for (int k = 0; k < K1; k++)
+                mat[n, k] = (Complex)ds["V"][n, k, sweepIdx];
+        return mat;
     }
 }

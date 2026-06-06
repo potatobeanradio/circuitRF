@@ -93,6 +93,8 @@ public sealed class CnlReader
                 tb.Analyses.Add(lppAnalysis!);
             else if (TryParseLoadpullDirective(rawLine, _sourceDirectory, out var lpAnalysis))
                 tb.Analyses.Add(lpAnalysis!);
+            else if (TryParseParametricSweepDirective(rawLine, out var psAnalysis))
+                tb.Analyses.Add(psAnalysis!);
             else
                 tb.RawDirectives.Add(new RawDirective("analysis", rawLine));
             return true;
@@ -104,8 +106,9 @@ public sealed class CnlReader
             var rawLine = line.Length > "measure".Length
                 ? line["measure".Length..].TrimStart()
                 : "";
-            (_currentCell is null ? _testBench! : ThrowDirectiveInCell(line))
-                .RawDirectives.Add(new RawDirective("measure", rawLine));
+            var tb = _currentCell is null ? _testBench! : ThrowDirectiveInCell(line);
+            if (!TryParseMeasurementLine(rawLine, tb))
+                tb.RawDirectives.Add(new RawDirective("measure", rawLine));
             return true;
         }
 
@@ -156,6 +159,21 @@ public sealed class CnlReader
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static bool TryParseMeasurementLine(string rawLine, TestBench tb)
+    {
+        // Format: "Name = expression [; comment]"
+        int eq = rawLine.IndexOf('=');
+        if (eq <= 0) return false;
+        var name = rawLine[..eq].Trim();
+        if (!IsIdentifier(name)) return false;
+        var expr = rawLine[(eq + 1)..].Trim();
+        // Strip trailing semicolon comment
+        int semi = expr.IndexOf(';');
+        if (semi >= 0) expr = expr[..semi].Trim();
+        tb.Measurements.Add(new Measurement(name, expr));
+        return true;
+    }
 
     private static bool IsVariableAssignment(string line)
     {
@@ -792,6 +810,68 @@ public sealed class CnlReader
     /// Attempts to parse a "Name type=hb key=value ..." analysis directive into a typed
     /// <see cref="HarmonicBalanceAnalysis"/>. Returns false if it is not a type=hb directive.
     /// </summary>
+    /// <summary>
+    /// Parses: "Name type=parametric_sweep Var=VarName Values=v1,v2,... Inner=InnerName"
+    /// </summary>
+    private static bool TryParseParametricSweepDirective(string rawLine,
+        out CircuitRF.Core.Design.ParametricSweepAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+
+        string analysisName = tokens[0];
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq <= 0) continue;
+            string key = tokens[i][..eq];
+            string val = tokens[i][(eq + 1)..];
+            if (val.Length >= 2 && val[0] == '"' && val[^1] == '"')
+                val = val[1..^1];
+            kv[key] = val;
+        }
+
+        if (!kv.TryGetValue("type", out var typeVal) ||
+            !typeVal.Equals("parametric_sweep", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (!kv.TryGetValue("Var", out var varName) || string.IsNullOrEmpty(varName))
+            throw new InvalidOperationException(
+                $"Parametric sweep '{analysisName}': missing or empty Var= key.");
+
+        if (!kv.TryGetValue("Values", out var valuesStr) || string.IsNullOrEmpty(valuesStr))
+            throw new InvalidOperationException(
+                $"Parametric sweep '{analysisName}': missing or empty Values= key.");
+
+        double[] values;
+        try
+        {
+            values = valuesStr.Split(',')
+                .Select(s => double.Parse(s.Trim(),
+                    System.Globalization.CultureInfo.InvariantCulture))
+                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Parametric sweep '{analysisName}': cannot parse Values='{valuesStr}': {ex.Message}");
+        }
+
+        if (values.Length == 0)
+            throw new InvalidOperationException(
+                $"Parametric sweep '{analysisName}': Values= must contain at least one value.");
+
+        if (!kv.TryGetValue("Inner", out var innerName) || string.IsNullOrEmpty(innerName))
+            throw new InvalidOperationException(
+                $"Parametric sweep '{analysisName}': missing or empty Inner= key.");
+
+        result = new CircuitRF.Core.Design.ParametricSweepAnalysis(
+            analysisName, varName, values, innerName);
+        return true;
+    }
+
     private static bool TryParseHbDirective(string rawLine,
         out CircuitRF.Core.Design.HarmonicBalanceAnalysis? result)
     {

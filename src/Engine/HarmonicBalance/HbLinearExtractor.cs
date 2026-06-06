@@ -3,6 +3,7 @@ using CircuitRF.Core;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 using System.Text;
+using CSparse.Complex.Factorization;
 
 namespace CircuitRF.Engine.HarmonicBalance;
 
@@ -32,6 +33,10 @@ public sealed class HbLinearExtractor
 
     private readonly Func<int, string> _nodeNamer;
     private readonly Func<int, string> _branchNamer;
+
+    // Keyed by omega = k·ω₀.  G is topology-based and unchanged across sweep points,
+    // so the factorization computed during Extract() is reused by SolveFullNetwork().
+    private readonly Dictionary<double, (SparseLU Lu, int Size, Complex[,] YNN)> _luCache = new();
 
     public HbLinearExtractor(ElaboratedNetlist netlist, AnalysisSettings settings)
     {
@@ -71,6 +76,8 @@ public sealed class HbLinearExtractor
     public int   InterfaceCount       => _N;
     public int[] InterfaceNodes       => _interfaceNodes;
     public int   InterfaceNode(int p) => _interfaceNodes[p];
+    /// <summary>Number of non-ground circuit nodes (solution x[0..NonGroundCount-1] = node voltages).</summary>
+    public int   NonGroundCount       => _nonGroundCount;
 
     /// <summary>
     /// Returns Y_{N×N}(0) and I_src(0) for the DC (k=0) harmonic using the REAL
@@ -251,39 +258,55 @@ public sealed class HbLinearExtractor
     /// </summary>
     public (Complex[,] YNN, Complex[] ISrc) Extract(double omega)
     {
+        SparseLU   luZ;
+        int        mnaSize;
+        Complex[,] yNN;
+
         // ── Step 1: Y_{N×N} via Z-column extraction (sources zeroed) ──────────
-        var mnaZ = BuildMna(omega, zeroDrive: true);
-        var luZ  = mnaZ.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
-
-        var zNN  = new Complex[_N, _N];
-        var xBuf = new Complex[mnaZ.Size];
-
-        for (int j = 0; j < _N; j++)
+        // G is topology-based — identical across sweep points.  Cache the factorization
+        // so (a) repeated sweep-loop Extract calls skip refactorization, and (b)
+        // SolveFullNetwork reuses the EXACT same LU, giving back-solve matching the
+        // HB interface voltages to ~1e-12 instead of ~1e-5 from a rebuild.
+        if (!_luCache.TryGetValue(omega, out var entry))
         {
-            // Inject 1A at interface node j; solve; V at interface nodes = Z column j.
-            var b = new Complex[mnaZ.Size];
-            int nodeJ = _interfaceNodes[j];
-            if (nodeJ > 0) b[nodeJ - 1] = Complex.One;
+            var mnaZ = BuildMna(omega, zeroDrive: true);
+            luZ     = mnaZ.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
+            mnaSize = mnaZ.Size;
 
-            luZ.Solve(b, xBuf);
+            var zNN  = new Complex[_N, _N];
+            var xBuf = new Complex[mnaSize];
 
-            for (int k = 0; k < _N; k++)
+            for (int j = 0; j < _N; j++)
             {
-                int nodeK = _interfaceNodes[k];
-                zNN[k, j] = nodeK > 0 ? xBuf[nodeK - 1] : Complex.Zero;
+                // Inject 1A at interface node j; solve; V at interface nodes = Z column j.
+                var b = new Complex[mnaSize];
+                int nodeJ = _interfaceNodes[j];
+                if (nodeJ > 0) b[nodeJ - 1] = Complex.One;
+
+                luZ.Solve(b, xBuf);
+
+                for (int k = 0; k < _N; k++)
+                {
+                    int nodeK = _interfaceNodes[k];
+                    zNN[k, j] = nodeK > 0 ? xBuf[nodeK - 1] : Complex.Zero;
+                }
             }
+
+            // Invert Z_{N×N} → Y_{N×N}.
+            yNN = InvertNN(zNN, _N);
+            _luCache[omega] = (luZ, mnaSize, yNN);
+        }
+        else
+        {
+            (luZ, mnaSize, yNN) = entry;
         }
 
-        // Invert Z_{N×N} → Y_{N×N}.
-        var yNN = InvertNN(zNN, _N);
-
         // ── Step 2: V_oc with sources active → I_src = −Y_{N×N}·V_oc ─────────
+        // Reuse cached LU: G is the same; only bSrc changes with sweep/drive state.
         var mnaS = BuildMna(omega, zeroDrive: false);
-        var luS  = mnaS.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
-
         var bSrc = mnaS.BuildRhs();
-        var xSrc = new Complex[mnaS.Size];
-        luS.Solve(bSrc, xSrc);
+        var xSrc = new Complex[mnaSize];
+        luZ.Solve(bSrc, xSrc);
 
         var vOc  = new Complex[_N];
         for (int k = 0; k < _N; k++)
@@ -346,6 +369,57 @@ public sealed class HbLinearExtractor
     // all AddBranch/AddConstraint/AddBranchConstraint/AddAdmittance through to the real
     // MNA, zeroing only AddSourceValue — so the impedance topology (Z_Port, choke, cap)
     // is correctly included in Y_NN while the independent sources are suppressed.
+
+    // ── Full-network back-solve (Correction 1: lazy linear interior recovery) ──
+
+    /// <summary>
+    /// Returns the full-MNA right-hand-side vector for the given frequency with
+    /// all sources active.  Caller must snapshot this during the sweep loop while
+    /// the component state (ToneSource phasors, bias values) is correct for that
+    /// sweep point — the RHS is NOT stable after UpdateSweepPoint advances.
+    /// </summary>
+    public Complex[] BuildSourceRhs(double omega) =>
+        BuildMna(omega, zeroDrive: false).BuildRhs();
+
+    /// <summary>
+    /// Solve the full linear network at <paramref name="omega"/> using a pre-built
+    /// source RHS (snapshotted during the sweep loop at the correct sweep state)
+    /// and injecting the converged NL currents at the interface nodes.
+    ///
+    /// The returned solution vector x has:
+    ///   x[0 .. NonGroundCount-1]  = node voltages (1-based node n → index n-1)
+    ///   x[NonGroundCount .. Size-1] = branch currents (e.g. IProbe, inductors)
+    ///
+    /// The matrix topology (G) is independent of zeroDrive, so BuildMna with
+    /// zeroDrive=true gives the same G that was used to build bSrc — only b differs.
+    /// Gmin regularization (always applied via BuildMna) prevents singularity.
+    /// </summary>
+    public Complex[] SolveFullNetwork(double omega, Complex[] iNlAtInterface, Complex[] bSrc)
+    {
+        // Reuse the exact factorization built during Extract() so the back-solve and
+        // the HB solve use the SAME linear system (machine-precision agreement, ~1e-12).
+        // If omega was never Extract()ed (e.g., DC k=0), build and cache it now.
+        if (!_luCache.TryGetValue(omega, out var entry))
+        {
+            var mna0 = BuildMna(omega, zeroDrive: true);
+            var lu0  = mna0.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
+            entry = (lu0, mna0.Size, null!);
+            _luCache[omega] = entry;
+        }
+
+        var b = (Complex[])bSrc.Clone();  // don't modify caller's copy
+
+        for (int j = 0; j < _N; j++)
+        {
+            int nodeJ = _interfaceNodes[j];
+            if (nodeJ > 0 && nodeJ - 1 < b.Length)
+                b[nodeJ - 1] -= iNlAtInterface[j];  // NL device draws iNl FROM the node
+        }
+
+        var x = new Complex[entry.Size];
+        entry.Lu.Solve(b, x);
+        return x;
+    }
 
     // ── Dense N×N matrix inversion (Gauss-Jordan with partial pivoting) ───────
 

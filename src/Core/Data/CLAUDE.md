@@ -33,10 +33,14 @@ ds.Y(1, 2) / ds.Z(...) // same i/j port-number convention
 spells out axis plumbing for the most common extraction in the tool. This matches `S(2,1)` in
 `measurements.md`, so the accessor and the measurement language agree.
 
-**HB node voltages / currents — by node *name* + positional slice of the remaining axes:**
-For a single-tone HB power sweep the `V` cube is `{node, harmonic, Pin}`. The node is addressed by
-its **user-defined name** (resolved against the elaborated node map, like `V(X1.drain)` in
-measurements); the bracket then indexes the *remaining* axes `(harmonic, Pin)` positionally.
+**HB node voltages — by node *name* + positional slice of the remaining axes:**
+The `V` cube's axis set follows **what the analysis actually produced** — axes are NOT a fixed template:
+- **Single-tone, with sweep:** `V` = `{node, harmonic, Pin}` (3 axes)
+- **Single-tone, no sweep:** `V` = `{node, harmonic}` (2 axes — no Pin axis)
+- **Two-tone, with sweep:** `V` = `{node, mixIndex, Pin}` (3 axes; mixIndex enumerates `(k1,k2)` pairs)
+
+The node is addressed by its **user-defined name** (resolved against the elaborated node map, like
+`V(X1.drain)` in measurements); the bracket then indexes the *remaining* axes positionally.
 **Every bracket slot is an axis INDEX, never a physical value** — `1` is harmonic *index* 1, `0` is
 Pin *index* 0 (the first sweep point), not 0 W:
 ```
@@ -46,9 +50,24 @@ ds.V("X1.drain", .., 0)      // all harmonics at Pin index 0         -> the spec
 ds.V("X1.drain", 1, 2..4)    // harmonic=1, Pin indices 2,3 (end-exclusive) -> length-2 trace
 ds.V("X1.drain", 1, 3)       // harmonic=1, single Pin index 3        -> a single complex value
 ```
-Harmonic is addressed **by index**: `0`=DC, `1`=fundamental, `2`=2nd, … (two-tone uses a tone pair
-`(k1,k2)`, see `measurements.md`). Currents are `ds.I("X1.M1:d", …)` — identified by component
-instance + port, which the user always knows from their own netlist.
+Harmonic is addressed **by index**: `0`=DC, `1`=fundamental, `2`=2nd, …
+
+**HB branch currents — by named branch, never by node/net:**
+Current is a **branch** property. The `I:instancePath:terminal` cube in the DataSet is the ONLY
+public current path. Node/net-indexed current (`ds["INl"][nodeIdx, …]`) is an internal diagnostic,
+not a measurement accessor. Named-branch cubes:
+- **Single-tone, with sweep:** `I:M1:d` = `{harmonic, Pin}`  (`ds["I:M1:d"][1, si]` = fundamental)
+- **Single-tone, no sweep:** `I:M1:d` = `{harmonic}`         (`ds["I:M1:d"][1]` = fundamental)
+- **Two-tone, with sweep:** `I:M1:d` = `{mixIndex, Pin}`     (`ds["I:M1:d"][m, si]` = mix m)
+
+```
+ds.I("X1.M1:d", 1, ..)       // drain fundamental (k=1) over all Pin  -> 1-D trace vs Pin
+ds.I("X1.M1:d", .., 0)       // all harmonics at Pin index 0           -> spectrum
+ds.I("IP1", 1, 3)             // IProbe named IP1, fundamental, Pin=3   -> scalar
+```
+`ds.I("X1.M1:d", …)` resolves against the `I:X1.M1:d` cube; the instance path and terminal name
+come from the component's elaborated instance path and `ComponentModel.TerminalNames`. In
+`measurements.md` the surface form is `I(X1.M1:d)` or `I(IProbe1)` for an explicit probe.
 
 *(To select by physical value rather than index — e.g. "Pin = 0.01 W" — resolve the value to an
 index against the axis first; a value-based lookup helper may be added later, but the slice API

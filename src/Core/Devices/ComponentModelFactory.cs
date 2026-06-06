@@ -21,7 +21,8 @@ public static class ComponentModelFactory
             { "V",     () => new VoltageSourceModel() },
             { "Port",  () => new PortModel()          },
             { "Term",  () => new TermModel()          },
-            { "Short", () => new ShortModel()         },
+            { "Short",  () => new ShortModel()          },
+            { "IProbe", () => new IProbeModel()        },
         };
 
     // Types that require resolved parameters at construction time.

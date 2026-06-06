@@ -3,6 +3,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using RfCore;
+using RfCore.Data;
 
 namespace CircuitRF.Engine.Tests.Linear;
 
@@ -43,7 +44,7 @@ public class Hero1Tests
             .ToArray();
 
         // ── Run simulation ────────────────────────────────────────────────
-        var simSnp = SParameterEngine.Run(netlist, freqs);
+        var ds = SParameterEngine.Run(netlist, freqs);
 
         // ── Load reference ────────────────────────────────────────────────
         var refSnpRaw = TouchstoneIO.ReadFile(refPath);
@@ -54,10 +55,10 @@ public class Hero1Tests
             MatrixType.S, OutOfRangePolicy.WarnClamp);
 
         // ── Compare ───────────────────────────────────────────────────────
-        Assert.Equal(simSnp.Ports,          refSnp.Ports);
-        Assert.Equal(simSnp.FrequencyCount, refSnp.FrequencyCount);
+        int N = ds["S"].Axes[1].Length;
+        Assert.Equal(N,                        refSnp.Ports);
+        Assert.Equal(ds["S"].Axes[0].Length,   refSnp.FrequencyCount);
 
-        int    N       = simSnp.Ports;
         double maxDiff = 0.0;
         (int fi, int row, int col) worstAt = default;
 
@@ -65,7 +66,7 @@ public class Hero1Tests
         for (int r  = 0; r  < N; r++)
         for (int c  = 0; c  < N; c++)
         {
-            double diff = (simSnp.Matrices[fi][r, c] - refSnp.Matrices[fi][r, c]).Magnitude;
+            double diff = ((Complex)ds["S"][fi, r, c] - refSnp.Matrices[fi][r, c]).Magnitude;
             if (diff > maxDiff) { maxDiff = diff; worstAt = (fi, r, c); }
         }
 

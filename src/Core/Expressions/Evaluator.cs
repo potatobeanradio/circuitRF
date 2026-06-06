@@ -1,4 +1,5 @@
 using System.Numerics;
+using RfCore.Data;
 
 namespace CircuitRF.Core.Expressions;
 
@@ -14,6 +15,11 @@ public sealed class Evaluator
     private readonly Dictionary<string, Value> _memo = new(StringComparer.Ordinal);
     // user-defined functions registered for this evaluator
     private readonly Dictionary<string, UserFunction> _functions = new(StringComparer.Ordinal);
+    // optional measurement context (analysis results for qualified accessors)
+    private readonly MeasurementContext? _ctx;
+
+    public Evaluator() { }
+    public Evaluator(MeasurementContext ctx) => _ctx = ctx;
 
     public void RegisterFunction(UserFunction fn) => _functions[fn.Name] = fn;
 
@@ -94,10 +100,11 @@ public sealed class Evaluator
 
     private static Value EvalConst(string name) => name switch
     {
-        "j"  => Value.J,
-        "pi" => Value.Pi,
-        "e"  => Value.E,
-        _    => throw new ExpressionException($"Unknown constant '{name}'")
+        "j"   => Value.J,
+        "pi"  => Value.Pi,
+        "e"   => Value.E,
+        "All" => Value.AllSentinel,
+        _     => throw new ExpressionException($"Unknown constant '{name}'")
     };
 
     private Value EvalUnary(UnaryExpr u, Scope scope)
@@ -170,11 +177,15 @@ public sealed class Evaluator
 
     private Value EvalCall(CallExpr cl, Scope scope)
     {
+        // qualified accessor: "Analysis.CubeName(args)" e.g. "HB1.V"
+        if (cl.Name.Contains('.') && _ctx != null)
+            return EvalQualifiedAccessor(cl, scope);
+
         // user-defined function?
         if (_functions.TryGetValue(cl.Name, out var ufn))
             return CallUserFunction(ufn, cl.Args, scope);
 
-        // built-ins
+        // built-ins — cube-aware variants handle DataCube args; scalars fall through to normal math
         return cl.Name switch
         {
             "sin"   => UnaryMath(cl, scope, Math.Sin,    Complex.Sin),
@@ -188,25 +199,202 @@ public sealed class Evaluator
             "cosh"  => UnaryMath(cl, scope, Math.Cosh,   Complex.Cosh),
             "tanh"  => UnaryMath(cl, scope, Math.Tanh,   Complex.Tanh),
             "exp"   => UnaryMath(cl, scope, Math.Exp,    Complex.Exp),
-            "log"   => UnaryMath(cl, scope, SafeLog,     Complex.Log),     // natural log (legacy name)
-            "ln"    => UnaryMath(cl, scope, SafeLog,     Complex.Log),     // unambiguous natural log
-            "log10" => UnaryMath(cl, scope, SafeLog10,   x => Complex.Log(x, 10)),
-            "sqrt"  => UnaryMath(cl, scope, SafeSqrt,    Complex.Sqrt),
-            "pow"   => BinaryMath(cl, scope, Math.Pow,   Complex.Pow),
+            "log"   => EvalLog(cl, scope),         // natural log, cube-aware
+            "ln"    => EvalLog(cl, scope),          // alias
+            "log10" => EvalLog10(cl, scope),        // cube-aware
+            "sqrt"  => UnaryMath(cl, scope, SafeSqrt, Complex.Sqrt),
+            "pow"   => BinaryMath(cl, scope, Math.Pow,  Complex.Pow),
             "abs"       => EvalAbs(cl, scope),
             "min"       => BinaryRealMath(cl, scope, Math.Min),
             "max"       => BinaryRealMath(cl, scope, Math.Max),
             "sign"      => EvalSign(cl, scope),
-            // Complex helpers (expressions.md §7)
+            // Complex / cube helpers (expressions.md §7 + measurements §3.1)
+            "conj"      => EvalConj(cl, scope),
             "real"      => EvalReal(cl, scope),
             "imag"      => EvalImag(cl, scope),
             "mag"       => EvalMag(cl, scope),
             "phase"     => EvalPhase(cl, scope),
             "phase_rad" => EvalPhaseRad(cl, scope),
             "polar"     => EvalPolar(cl, scope),
+            "dB"        => EvalDB20(cl, scope),     // 20·log10|z|
+            "dB10"      => EvalDB10(cl, scope),     // 10·log10|z|
+            "dBm"       => EvalDBm(cl, scope),      // 10·log10(|z|/1e-3)
             _           => throw new UnknownFunctionException(cl.Name)
         };
     }
+
+    // ── Qualified cube accessor: Analysis.CubeName(args) ────────────────────
+
+    private Value EvalQualifiedAccessor(CallExpr cl, Scope scope)
+    {
+        var dot          = cl.Name.IndexOf('.');
+        var analysisName = cl.Name[..dot];
+        var accessorName = cl.Name[(dot + 1)..];  // "V", "INl", "I", "S", …
+
+        var ds = _ctx!.GetAnalysis(analysisName);
+
+        if (cl.Args.Length == 0)
+            return new Value(ds[accessorName]);
+
+        // ── I(branchRef, harm [, sweepSlice]) — branch-current accessor ──────
+        // Resolves "I:branchRef" cube (e.g. "I:M1:d"); no node axis.
+        if (accessorName == "I")
+            return EvalBranchCurrentAccessor(ds, cl.Args, scope, cl.Name);
+
+        // ── S(portI, portJ) — S-parameter pair ───────────────────────────────
+        if (accessorName == "S")
+        {
+            if (cl.Args.Length != 2) throw new ArityException(cl.Name, 2, cl.Args.Length);
+            int pi = (int)EvalExpr(cl.Args[0], scope).AsReal() - 1;
+            int pj = (int)EvalExpr(cl.Args[1], scope).AsReal() - 1;
+            var sc = ds["S"];
+            return SliceToValue(sc[new object[] { pi, pj, Range.All }]);
+        }
+
+        // ── V(nodeName, …) / INl(nodeName, …) — node-indexed ─────────────────
+        if (accessorName is "V" or "INl")
+        {
+            var cube    = ds[accessorName];
+            var nameVal = EvalExpr(cl.Args[0], scope);
+            string nodeName = nameVal.Kind == ValueKind.String
+                ? nameVal.AsString()
+                : nameVal.ToString();
+
+            var labels  = cube.Axes[0].Labels;
+            int nodeIdx = labels is null ? -1 :
+                Array.FindIndex(labels, s => s.Equals(nodeName, StringComparison.OrdinalIgnoreCase));
+
+            // C1: V on a linear-interior node — fall back to the linear back-solver.
+            if (nodeIdx < 0 && accessorName == "V" &&
+                _ctx.TryGetBackSolver(analysisName, out var bs))
+                return EvalVFromBackSolver(bs!, cube, cl.Args, scope, cl.Name, nodeName);
+
+            if (nodeIdx < 0)
+                throw new ExpressionException(
+                    $"{cl.Name}: node '{nodeName}' not found. " +
+                    $"Available: [{string.Join(", ", labels ?? [])}]");
+
+            var sliceArgs = new object[cl.Args.Length];
+            sliceArgs[0] = (object)nodeIdx;
+            for (int i = 1; i < cl.Args.Length; i++)
+                sliceArgs[i] = ArgToSliceObj(EvalExpr(cl.Args[i], scope), cl.Name, i);
+            return SliceToValue(cube[sliceArgs]);
+        }
+
+        // ── Generic positional accessor ───────────────────────────────────────
+        {
+            var cube      = ds[accessorName];
+            var sliceArgs = new object[cl.Args.Length];
+            for (int i = 0; i < cl.Args.Length; i++)
+                sliceArgs[i] = ArgToSliceObj(EvalExpr(cl.Args[i], scope), cl.Name, i);
+            return SliceToValue(cube[sliceArgs]);
+        }
+    }
+
+    // ── Branch-current accessor: I("M1:d", harm [, sweepSlice]) ─────────────
+
+    private Value EvalBranchCurrentAccessor(DataSet ds, Expr[] args, Scope scope, string exprName)
+    {
+        if (args.Length == 0) throw new ArityException(exprName, 1, 0);
+
+        var nameVal   = EvalExpr(args[0], scope);
+        string branch = nameVal.Kind == ValueKind.String ? nameVal.AsString() : nameVal.ToString();
+        string cname  = "I:" + branch;
+
+        if (!ds.Contains(cname))
+            throw new ExpressionException(
+                $"{exprName}: branch '{branch}' not found — cube '{cname}' not in DataSet. " +
+                $"Use instance:terminal form (e.g. \"M1:d\") or an IProbe name.");
+
+        var cube      = ds[cname];
+        var sliceArgs = new object[args.Length - 1];
+        for (int i = 1; i < args.Length; i++)
+            sliceArgs[i - 1] = ArgToSliceObj(EvalExpr(args[i], scope), exprName, i);
+        return SliceToValue(cube[sliceArgs]);
+    }
+
+    // ── V back-solve from linear back-solver (C1) ────────────────────────────
+
+    private Value EvalVFromBackSolver(
+        ILinearBackSolver bs, DataCube vCube, Expr[] args, Scope scope,
+        string exprName, string nodeName)
+    {
+        if (!bs.TryGetNodeNumber(nodeName, out int circNode))
+            throw new ExpressionException(
+                $"{exprName}: node '{nodeName}' not found in stored cube or netlist.");
+
+        // args[1] = harmonic (scalar or All), args[2] = sweep slice (scalar, All, or absent)
+        var harmVal  = args.Length > 1 ? EvalExpr(args[1], scope) : Value.AllSentinel;
+        var sweepVal = args.Length > 2 ? EvalExpr(args[2], scope) : Value.AllSentinel;
+
+        int nSweep = bs.SweepCount;
+
+        // Scalar harmonic + All sweep → 1D cube [Pin] (or scalar if no-sweep)
+        if (harmVal.Kind == ValueKind.Real && sweepVal.Kind == ValueKind.All)
+        {
+            int k = (int)harmVal.AsReal();
+            if (vCube.Rank < 3)
+            {
+                // No-sweep: return scalar
+                return new Value(bs.GetNodeVoltage(circNode, k, 0));
+            }
+            var pinAxis = vCube.Axes[2];
+            var data    = new System.Numerics.Complex[nSweep];
+            for (int si = 0; si < nSweep; si++)
+                data[si] = bs.GetNodeVoltage(circNode, k, si);
+            return new Value(new RfCore.Data.DataCube([pinAxis], data));
+        }
+
+        // Scalar harmonic + scalar sweep → Complex scalar
+        if (harmVal.Kind == ValueKind.Real && sweepVal.Kind == ValueKind.Real)
+        {
+            int k  = (int)harmVal.AsReal();
+            int si = (int)sweepVal.AsReal();
+            return new Value(bs.GetNodeVoltage(circNode, k, si));
+        }
+
+        // All harmonics + All sweep → 2D cube [harmonic, Pin] (or 1D [harmonic] if no-sweep)
+        if (harmVal.Kind == ValueKind.All && sweepVal.Kind == ValueKind.All)
+        {
+            var harmAxis = vCube.Axes[1];
+            int K1       = harmAxis.Values.Length;
+            if (vCube.Rank < 3)
+            {
+                var data1 = new System.Numerics.Complex[K1];
+                for (int k = 0; k < K1; k++)
+                    data1[k] = bs.GetNodeVoltage(circNode, k, 0);
+                return new Value(new RfCore.Data.DataCube([harmAxis], data1));
+            }
+            var pinAxis2 = vCube.Axes[2];
+            var data2    = new System.Numerics.Complex[K1 * nSweep];
+            for (int k = 0; k < K1; k++)
+            for (int si = 0; si < nSweep; si++)
+                data2[k * nSweep + si] = bs.GetNodeVoltage(circNode, k, si);
+            return new Value(new RfCore.Data.DataCube([harmAxis, pinAxis2], data2));
+        }
+
+        throw new ExpressionException(
+            $"{exprName}: V back-solve: unsupported argument combination " +
+            $"(harmonic kind={harmVal.Kind}, sweep kind={sweepVal.Kind}). " +
+            "Use a scalar index or All for each axis.");
+    }
+
+    // ── Shared slice-result → Value conversion ────────────────────────────────
+
+    private static Value SliceToValue(SliceResult sr)
+    {
+        if (sr.IsCube)    return new Value(sr.Cube!);
+        if (sr.IsComplex) return new Value(sr.ComplexValue!.Value);
+        return new Value(sr.RealValue!.Value);
+    }
+
+    private static object ArgToSliceObj(Value v, string name, int idx) => v.Kind switch
+    {
+        ValueKind.All  => (object)Range.All,
+        ValueKind.Real => (object)(int)v.AsReal(),
+        _ => throw new ExpressionException(
+            $"{name}: argument {idx} must be an integer index or All, got {v.Kind}")
+    };
 
     private Value EvalIf(Expr[] args, Scope scope)
     {
@@ -304,6 +492,7 @@ public sealed class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("real", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Real());
         return v.Kind == ValueKind.Real ? v : new Value(v.AsComplex().Real);
     }
 
@@ -311,6 +500,7 @@ public sealed class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("imag", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Imag());
         return v.Kind == ValueKind.Real ? new Value(0.0) : new Value(v.AsComplex().Imaginary);
     }
 
@@ -318,6 +508,7 @@ public sealed class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("mag", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Mag());
         return v.Kind == ValueKind.Real ? new Value(Math.Abs(v.AsReal())) : new Value(Complex.Abs(v.AsComplex()));
     }
 
@@ -325,6 +516,7 @@ public sealed class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("phase", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Phase(degrees: true));
         return v.Kind == ValueKind.Real
             ? new Value(v.AsReal() >= 0 ? 0.0 : 180.0)
             : new Value(v.AsComplex().Phase * (180.0 / Math.PI));
@@ -334,6 +526,7 @@ public sealed class Evaluator
     {
         if (cl.Args.Length != 1) throw new ArityException("phase_rad", 1, cl.Args.Length);
         var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Phase(degrees: false));
         return v.Kind == ValueKind.Real
             ? new Value(v.AsReal() >= 0 ? 0.0 : Math.PI)
             : new Value(v.AsComplex().Phase);
@@ -356,6 +549,65 @@ public sealed class Evaluator
         if (v.Kind != ValueKind.Real)
             throw new TypeErrorException("sign() requires a real argument");
         return new Value((double)Math.Sign(v.AsReal()));
+    }
+
+    // ── Cube-aware complex/dB helpers (measurements §3.1) ────────────────────
+
+    private Value EvalConj(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("conj", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube)  return new Value(v.AsCube().Conj());
+        if (v.Kind == ValueKind.Real)   return v;
+        return new Value(Complex.Conjugate(v.AsComplex()));
+    }
+
+    private Value EvalLog(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException(cl.Name, 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Ln());
+        return v.Kind == ValueKind.Real
+            ? new Value(SafeLog(v.AsReal()))
+            : new Value(Complex.Log(v.AsComplex()));
+    }
+
+    private Value EvalLog10(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("log10", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().Log10());
+        return v.Kind == ValueKind.Real
+            ? new Value(SafeLog10(v.AsReal()))
+            : new Value(Complex.Log(v.AsComplex(), 10));
+    }
+
+    private Value EvalDB20(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("dB", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().DB20());
+        var mag = v.Kind == ValueKind.Real ? Math.Abs(v.AsReal()) : v.AsComplex().Magnitude;
+        return new Value(20.0 * Math.Log10(mag + 1e-300));
+    }
+
+    private Value EvalDB10(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("dB10", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().DB10());
+        var mag = v.Kind == ValueKind.Real ? Math.Abs(v.AsReal()) : v.AsComplex().Magnitude;
+        return new Value(10.0 * Math.Log10(mag + 1e-300));
+    }
+
+    private Value EvalDBm(CallExpr cl, Scope scope)
+    {
+        // dBm(p) = 10*log10(|p| / 1e-3) = 10*log10(|p|) + 30
+        if (cl.Args.Length != 1) throw new ArityException("dBm", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        if (v.Kind == ValueKind.Cube) return new Value(v.AsCube().DB10() + 30.0);
+        var mag = v.Kind == ValueKind.Real ? Math.Abs(v.AsReal()) : v.AsComplex().Magnitude;
+        return new Value(10.0 * Math.Log10(mag / 1e-3 + 1e-300));
     }
 
     // ── Domain-safe wrappers ─────────────────────────────────────────────────

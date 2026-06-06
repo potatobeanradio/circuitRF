@@ -5,6 +5,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using CircuitRF.Engine.HarmonicBalance;
+using RfCore.Data;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -30,8 +31,8 @@ public class Hero5GateTests(ITestOutputHelper output)
         => RunAndCompare(compareV: true, label: "V");
 
     [Fact]
-    public void Hero5_INl_MatchesSelfGeneratedGolden()
-        => RunAndCompare(compareV: false, label: "I_nl");
+    public void Hero5_DeviceCurrent_MatchesSelfGeneratedGolden()
+        => RunAndCompare(compareV: false, label: "I:M1");
 
     private void RunAndCompare(bool compareV, string label)
     {
@@ -41,19 +42,20 @@ public class Hero5GateTests(ITestOutputHelper output)
         Assert.NotEmpty(drain);
         Assert.NotEmpty(gate);
 
-        var result = RunHero5("hero5.cnl",
+        var ds = RunHero5("hero5.cnl",
             Hero5GoldenGenerator.GoldenStart, Hero5GoldenGenerator.GoldenStop, Hero5GoldenGenerator.GoldenStep);
-        var grid = result.Grid!;
-        int gateIdx  = NodeIdx(result, "n_gate");
-        int drainIdx = NodeIdx(result, "n_drain");
-        var data = compareV ? result.V : result.INl;
+        int maxOrder = (int)Math.Round(ds["MetaMixOrder"].RealValues[0]);
+        var grid = new MixingGrid(maxOrder);
+        int gateIdx  = NodeIdx(ds, "n_gate");
+        int drainIdx = NodeIdx(ds, "n_drain");
 
+        var sweepVals = ds["Converged"].Axes[0].Values;
         int nChecked = 0, nFail = 0;
         var fails = new List<string>();
 
-        for (int si = 0; si < result.SweepValues.Length; si++)
+        for (int si = 0; si < sweepVals.Length; si++)
         {
-            double pin = result.SweepValues[si];
+            double pin = sweepVals[si];
             for (int m = 0; m < grid.MixCount; m++)
             {
                 var (k1, k2) = grid.ToneOf(m);
@@ -63,7 +65,12 @@ public class Hero5GateTests(ITestOutputHelper output)
                         g.K1 == k1 && g.K2 == k2 && Math.Abs(g.Pave - pin) < 0.05);
                     if (e is null) continue;
 
-                    Complex sim = data[si][idx, m];
+                    // V uses the node-indexed cube; I: uses the named branch cube (no node index).
+                    Complex sim = compareV
+                        ? (Complex)ds["V"][idx, m, si]
+                        : lbl == "drain"
+                            ? (Complex)ds["I:M1:d"][m, si]
+                            : (Complex)ds["I:M1:g"][m, si];
                     double simRe = sim.Real;
                     double simIm = m == 0 ? 0.0 : sim.Imaginary;
 
@@ -101,22 +108,24 @@ public class Hero5GateTests(ITestOutputHelper output)
         // above it to be resolved) yet below compression (where the 3:1 law holds). tol=1e-8 is the
         // achievable floor here — the huge Y dynamic range (1µΩ near-shorts → Y~1e6) caps Newton.
         // Slopes by least squares over the window for robustness against per-point IM3 noise.
-        var result = RunHero5("hero5.cnl", start: -18, stop: -12, step: 2, tol: 1e-8);
-        foreach (var s in result.Trace.Steps)
-            Assert.True(s.Converged, $"point Pavl={s.Pin_dBm} did not converge (‖F‖={s.IterTrace.LastOrDefault()?.ResidualNorm:E2}).");
+        var ds = RunHero5("hero5.cnl", start: -18, stop: -12, step: 2, tol: 1e-8);
+        var sweepVals = ds["Converged"].Axes[0].Values;
+        for (int si = 0; si < sweepVals.Length; si++)
+            Assert.True((double)ds["Converged"][si] > 0.5,
+                $"point Pavl={sweepVals[si]} did not converge.");
 
-        int n = result.SweepValues.Length;
+        int n = sweepVals.Length;
         var carDbm = new double[n];
         var im3Dbm = new double[n];
         for (int i = 0; i < n; i++)
         {
-            carDbm[i] = TwoToneMeasurements.PoutDbm(result, i, "n_drain", 1, 0);
-            im3Dbm[i] = TwoToneMeasurements.PoutDbm(result, i, "n_drain", 2, -1);
-            output.WriteLine($"  Pavl={result.SweepValues[i],5:F0} dBm  carrier={carDbm[i],8:F2}  IM3={im3Dbm[i],8:F2} dBm");
+            carDbm[i] = TwoToneMeasurements.PoutDbm(ds, i, "n_drain", 1, 0);
+            im3Dbm[i] = TwoToneMeasurements.PoutDbm(ds, i, "n_drain", 2, -1);
+            output.WriteLine($"  Pavl={sweepVals[i],5:F0} dBm  carrier={carDbm[i],8:F2}  IM3={im3Dbm[i],8:F2} dBm");
         }
 
-        double carrierSlope = Slope(result.SweepValues, carDbm);
-        double im3Slope     = Slope(result.SweepValues, im3Dbm);
+        double carrierSlope = Slope(sweepVals, carDbm);
+        double im3Slope     = Slope(sweepVals, im3Dbm);
         output.WriteLine($"  carrier slope = {carrierSlope:F2} (expect ~1)   IM3 slope = {im3Slope:F2} (expect ~3)");
 
         Assert.InRange(carrierSlope, 0.9, 1.1);   // fundamental rises 1:1
@@ -141,12 +150,12 @@ public class Hero5GateTests(ITestOutputHelper output)
         // ToneRatio = 0.5 in hero5_unequal.cnl (V[2] = 0.5·V[1]). At low drive (linear regime), both
         // carriers see the same fundamental-band impedances, so the output carrier ratio must equal
         // the drive ratio — proving each tone is stamped at its own magnitude.
-        var result = RunHero5("hero5_unequal.cnl", start: -20, stop: -20, step: 1);
-        Assert.True(result.Trace.Steps[0].Converged,
-            $"unequal-amplitude point did not converge (‖F‖={result.Trace.Steps[0].IterTrace.LastOrDefault()?.ResidualNorm:E2}).");
+        var ds = RunHero5("hero5_unequal.cnl", start: -20, stop: -20, step: 1);
+        Assert.True((double)ds["Converged"][0] > 0.5,
+            "unequal-amplitude point did not converge.");
 
-        Complex c1 = TwoToneMeasurements.Tone(result, 0, "n_drain", 1, 0);
-        Complex c2 = TwoToneMeasurements.Tone(result, 0, "n_drain", 0, 1);
+        Complex c1 = TwoToneMeasurements.Tone(ds, 0, "n_drain", 1, 0);
+        Complex c2 = TwoToneMeasurements.Tone(ds, 0, "n_drain", 0, 1);
         double ratio = c2.Magnitude / c1.Magnitude;
 
         output.WriteLine($"|carrier(0,1)| / |carrier(1,0)| = {ratio:F4} (expect ≈ 0.5)");
@@ -155,7 +164,7 @@ public class Hero5GateTests(ITestOutputHelper output)
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
-    private static HbResult RunHero5(string cnl, double start, double stop, double step, double? tol = null)
+    private static DataSet RunHero5(string cnl, double start, double stop, double step, double? tol = null)
     {
         var dir       = Dir();
         var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, cnl));
@@ -167,8 +176,8 @@ public class Hero5GateTests(ITestOutputHelper output)
         return new HbEngine(netlist, tb).Run(p);
     }
 
-    private static int NodeIdx(HbResult r, string name)
-        => Array.FindIndex(r.InterfaceNodeNames, s => s.Contains(name, StringComparison.OrdinalIgnoreCase));
+    private static int NodeIdx(DataSet ds, string name)
+        => Array.FindIndex(ds["V"].Axes[0].Labels!, s => s.Contains(name, StringComparison.OrdinalIgnoreCase));
 
     private record GoldenRow(int K1, int K2, double FreqHz, double Pave, double Re, double Im);
 
