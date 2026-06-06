@@ -27,16 +27,28 @@ namespace RfCore.Data
 
     public sealed class Axis
     {
-        public string   Name   { get; }
-        public double[] Values { get; }
-        public string   Unit   { get; }
-        public int      Length => Values.Length;
+        public string    Name   { get; }
+        public double[]  Values { get; }
+        public string    Unit   { get; }
+        /// <summary>
+        /// Optional per-element string labels (same length as Values).
+        /// Used by the node/branch axes of V and I cubes so that
+        /// <see cref="DataSet.V"/> / <see cref="DataSet.I"/> can resolve
+        /// a name like "X1.drain" or "X1.M1:d" to an axis index.
+        /// Null for numeric-only axes (frequency, port number, etc.).
+        /// </summary>
+        public string[]? Labels { get; }
+        public int       Length => Values.Length;
 
-        public Axis(string name, double[] values, string unit = "")
+        public Axis(string name, double[] values, string unit = "", string[]? labels = null)
         {
+            if (labels is not null && labels.Length != values.Length)
+                throw new ArgumentException(
+                    $"Labels length ({labels.Length}) must match Values length ({values.Length}).");
             Name   = name;
             Values = (double[])values.Clone();
             Unit   = unit;
+            Labels = labels is not null ? (string[])labels.Clone() : null;
         }
 
         internal Axis Slice(Range r)
@@ -44,7 +56,13 @@ namespace RfCore.Data
             var (offset, length) = r.GetOffsetAndLength(Values.Length);
             var sliced = new double[length];
             Array.Copy(Values, offset, sliced, 0, length);
-            return new Axis(Name, sliced, Unit);
+            string[]? slicedLabels = null;
+            if (Labels is not null)
+            {
+                slicedLabels = new string[length];
+                Array.Copy(Labels, offset, slicedLabels, 0, length);
+            }
+            return new Axis(Name, sliced, Unit, slicedLabels);
         }
     }
 
@@ -58,6 +76,13 @@ namespace RfCore.Data
     /// </summary>
     public sealed class DataCube
     {
+        /// <summary>
+        /// Readable alias for the full-range C# <c>..</c> operator.
+        /// Use in slice arguments to keep an entire axis:
+        /// <c>ds.V("X1.drain", 1, All)</c> is identical to <c>ds.V("X1.drain", 1, ..)</c>.
+        /// </summary>
+        public static readonly Range All = Range.All;
+
         // ---- Storage -------------------------------------------
 
         private readonly Complex[]? _complexData;
@@ -107,6 +132,16 @@ namespace RfCore.Data
             _realData = noCopy ? data : (double[])data.Clone();
             _strides  = ComputeStrides(axes);
         }
+
+        // ---- Scalar (0-rank) factory ----------------------------
+
+        /// <summary>Creates a scalar (0-rank) Real DataCube holding a single value.</summary>
+        public static DataCube Scalar(double value) =>
+            new(Array.Empty<Axis>(), new[] { value }, noCopy: true);
+
+        /// <summary>Creates a scalar (0-rank) Complex DataCube holding a single value.</summary>
+        public static DataCube Scalar(Complex value) =>
+            new(Array.Empty<Axis>(), new[] { value }, noCopy: true);
 
         // ---- Raw access ----------------------------------------
 
@@ -279,6 +314,124 @@ namespace RfCore.Data
             return new DataCube(AxesArray(), buf, noCopy: true);
         }
 
+        /// <summary>log₁₀(|z|) element-wise → Real cube.  For real cubes uses log₁₀(|x|).</summary>
+        public DataCube Log10()
+        {
+            var buf = new double[ElementCount()];
+            if (DataKind == DataKind.Complex)
+                for (int i = 0; i < buf.Length; i++)
+                    buf[i] = Math.Log10(_complexData![i].Magnitude + 1e-300);
+            else
+                for (int i = 0; i < buf.Length; i++)
+                    buf[i] = Math.Log10(Math.Abs(_realData![i]) + 1e-300);
+            return new DataCube(AxesArray(), buf, noCopy: true);
+        }
+
+        /// <summary>ln(|z|) element-wise → Real cube.</summary>
+        public DataCube Ln()
+        {
+            var buf = new double[ElementCount()];
+            if (DataKind == DataKind.Complex)
+                for (int i = 0; i < buf.Length; i++)
+                    buf[i] = Math.Log(_complexData![i].Magnitude + 1e-300);
+            else
+                for (int i = 0; i < buf.Length; i++)
+                    buf[i] = Math.Log(Math.Abs(_realData![i]) + 1e-300);
+            return new DataCube(AxesArray(), buf, noCopy: true);
+        }
+
+        // ---- Arithmetic operators (element-wise) ---------------
+
+        // Helpers used by operators:
+
+        private static void RequireSameShape(DataCube a, DataCube b)
+        {
+            if (a.Rank != b.Rank)
+                throw new ArgumentException($"Cube rank mismatch: {a.Rank} vs {b.Rank}.");
+            for (int d = 0; d < a.Rank; d++)
+                if (a.Axes[d].Length != b.Axes[d].Length)
+                    throw new ArgumentException(
+                        $"Axis {d} length mismatch: {a.Axes[d].Length} vs {b.Axes[d].Length}.");
+        }
+
+        private static DataCube MapElements(DataCube a,
+            Func<double, double> realOp, Func<Complex, Complex> complexOp)
+        {
+            int n = a.ElementCount();
+            if (a.DataKind == DataKind.Real)
+            {
+                var buf = new double[n];
+                for (int i = 0; i < n; i++) buf[i] = realOp(a._realData![i]);
+                return new DataCube(a.AxesArray(), buf, noCopy: true);
+            }
+            else
+            {
+                var buf = new Complex[n];
+                for (int i = 0; i < n; i++) buf[i] = complexOp(a._complexData![i]);
+                return new DataCube(a.AxesArray(), buf, noCopy: true);
+            }
+        }
+
+        private static DataCube MapToComplex(DataCube a,
+            Func<double, Complex> realMap, Func<Complex, Complex> complexMap)
+        {
+            int n = a.ElementCount();
+            var buf = new Complex[n];
+            if (a.DataKind == DataKind.Real)
+                for (int i = 0; i < n; i++) buf[i] = realMap(a._realData![i]);
+            else
+                for (int i = 0; i < n; i++) buf[i] = complexMap(a._complexData![i]);
+            return new DataCube(a.AxesArray(), buf, noCopy: true);
+        }
+
+        private static DataCube ElementWise(DataCube a, DataCube b,
+            Func<double, double, double> realOp, Func<Complex, Complex, Complex> complexOp)
+        {
+            RequireSameShape(a, b);
+            int n = a.ElementCount();
+            if (a.DataKind == DataKind.Real && b.DataKind == DataKind.Real)
+            {
+                var buf = new double[n];
+                for (int i = 0; i < n; i++) buf[i] = realOp(a._realData![i], b._realData![i]);
+                return new DataCube(a.AxesArray(), buf, noCopy: true);
+            }
+            var cbuf = new Complex[n];
+            for (int i = 0; i < n; i++)
+            {
+                var ca = a.DataKind == DataKind.Complex ? a._complexData![i] : new Complex(a._realData![i], 0);
+                var cb = b.DataKind == DataKind.Complex ? b._complexData![i] : new Complex(b._realData![i], 0);
+                cbuf[i] = complexOp(ca, cb);
+            }
+            return new DataCube(a.AxesArray(), cbuf, noCopy: true);
+        }
+
+        // Cube × Cube
+        public static DataCube operator +(DataCube a, DataCube b) => ElementWise(a, b, (x, y) => x + y, (x, y) => x + y);
+        public static DataCube operator -(DataCube a, DataCube b) => ElementWise(a, b, (x, y) => x - y, (x, y) => x - y);
+        public static DataCube operator *(DataCube a, DataCube b) => ElementWise(a, b, (x, y) => x * y, (x, y) => x * y);
+        public static DataCube operator /(DataCube a, DataCube b) => ElementWise(a, b, (x, y) => x / y, (x, y) => x / y);
+        public static DataCube operator -(DataCube a)             => MapElements(a, x => -x, x => -x);
+
+        // Cube × double (scalar broadcast; result kind same as cube)
+        public static DataCube operator +(DataCube a, double s) => MapElements(a, x => x + s, x => x + s);
+        public static DataCube operator +(double s, DataCube a) => MapElements(a, x => s + x, x => s + x);
+        public static DataCube operator -(DataCube a, double s) => MapElements(a, x => x - s, x => x - s);
+        public static DataCube operator -(double s, DataCube a) => MapElements(a, x => s - x, x => new Complex(s, 0) - x);
+        public static DataCube operator *(DataCube a, double s) => MapElements(a, x => x * s, x => x * s);
+        public static DataCube operator *(double s, DataCube a) => MapElements(a, x => s * x, x => s * x);
+        public static DataCube operator /(DataCube a, double s) => MapElements(a, x => x / s, x => x / s);
+        public static DataCube operator /(double s, DataCube a) => MapElements(a, x => s / x, x => new Complex(s, 0) / x);
+
+        // Cube × Complex (always Complex result)
+        public static DataCube operator +(DataCube a, Complex s) => MapToComplex(a, x => x + s, x => x + s);
+        public static DataCube operator +(Complex s, DataCube a) => MapToComplex(a, x => s + x, x => s + x);
+        public static DataCube operator -(DataCube a, Complex s) => MapToComplex(a, x => x - s, x => x - s);
+        public static DataCube operator -(Complex s, DataCube a) => MapToComplex(a, x => s - x, x => s - x);
+        public static DataCube operator *(DataCube a, Complex s) => MapToComplex(a, x => new Complex(x, 0) * s, x => x * s);
+        public static DataCube operator *(Complex s, DataCube a) => MapToComplex(a, x => s * x, x => s * x);
+        public static DataCube operator /(DataCube a, Complex s) => MapToComplex(a, x => new Complex(x, 0) / s, x => x / s);
+        public static DataCube operator /(Complex s, DataCube a) => MapToComplex(a, x => s / x, x => s / x);
+
         // ---- Reductions ----------------------------------------
 
         public DataCube Max(string axisName) => Reduce(axisName, (a, b) => a > b, isMin: false);
@@ -299,6 +452,60 @@ namespace RfCore.Data
                 args[d] = d == dim ? (object)index : (object)(..);
             var result = Slice(args);
             return result.Cube!;
+        }
+
+        // ---- Stacking -------------------------------------------
+
+        /// <summary>
+        /// Stack <paramref name="cubes"/> along a new prepended axis.
+        /// All cubes must have the same shape (rank + axis lengths) and DataKind.
+        /// <paramref name="newAxis"/>.Length must equal cubes.Count.
+        /// Produces a cube of shape [N, d₀, d₁, …] from N cubes of shape [d₀, d₁, …].
+        /// Scalar (rank-0) cubes produce a rank-1 result.
+        /// </summary>
+        public static DataCube PrependAxis(Axis newAxis, IReadOnlyList<DataCube> cubes)
+        {
+            if (cubes.Count == 0)
+                throw new ArgumentException("At least one cube is required.", nameof(cubes));
+            if (newAxis.Length != cubes.Count)
+                throw new ArgumentException(
+                    $"New axis length ({newAxis.Length}) must match cube count ({cubes.Count}).");
+
+            var first = cubes[0];
+            for (int n = 1; n < cubes.Count; n++)
+            {
+                if (cubes[n].DataKind != first.DataKind)
+                    throw new ArgumentException($"Cube [{n}] DataKind mismatch.");
+                if (cubes[n].Rank != first.Rank)
+                    throw new ArgumentException($"Cube [{n}] rank mismatch.");
+                for (int d = 0; d < first.Rank; d++)
+                    if (cubes[n].Axes[d].Length != first.Axes[d].Length)
+                        throw new ArgumentException(
+                            $"Cube [{n}] axis {d} length {cubes[n].Axes[d].Length} " +
+                            $"!= {first.Axes[d].Length}.");
+            }
+
+            int chunkSize = first.Rank == 0 ? 1
+                : first._strides[0] * first.Axes[0].Length;
+
+            var axes = new Axis[1 + first.Rank];
+            axes[0] = newAxis;
+            for (int d = 0; d < first.Rank; d++) axes[1 + d] = first.Axes[d];
+
+            if (first.DataKind == DataKind.Complex)
+            {
+                var data = new Complex[cubes.Count * chunkSize];
+                for (int n = 0; n < cubes.Count; n++)
+                    Array.Copy(cubes[n]._complexData!, 0, data, n * chunkSize, chunkSize);
+                return new DataCube(axes, data, noCopy: true);
+            }
+            else
+            {
+                var data = new double[cubes.Count * chunkSize];
+                for (int n = 0; n < cubes.Count; n++)
+                    Array.Copy(cubes[n]._realData!, 0, data, n * chunkSize, chunkSize);
+                return new DataCube(axes, data, noCopy: true);
+            }
         }
 
         // ---- Helpers -------------------------------------------

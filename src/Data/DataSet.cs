@@ -12,6 +12,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using NumFlat;
 using RfCore.Data;
 
 namespace RfCore.Data
@@ -39,6 +40,27 @@ namespace RfCore.Data
             : throw new KeyNotFoundException($"No cube named '{name}' in this DataSet.");
 
         public bool Contains(string name) => _cubes.ContainsKey(name);
+
+        /// <summary>
+        /// Stack multiple DataSets along a new prepended axis.
+        /// Every cube present in all DataSets is stacked; any cube missing from a DataSet
+        /// causes an exception.  Call with a sweep axis whose length equals datasets.Count.
+        /// </summary>
+        public static DataSet StackSweepAxis(Axis sweepAxis, IReadOnlyList<DataSet> datasets)
+        {
+            if (datasets.Count == 0)
+                throw new ArgumentException("At least one DataSet is required.", nameof(datasets));
+
+            var result = new DataSet();
+            foreach (var key in datasets[0].Cubes.Keys)
+            {
+                var cubes = new DataCube[datasets.Count];
+                for (int n = 0; n < datasets.Count; n++)
+                    cubes[n] = datasets[n][key];
+                result.Add(key, DataCube.PrependAxis(sweepAxis, cubes));
+            }
+            return result;
+        }
 
         public IReadOnlyDictionary<string, DataCube> Cubes =>
             (IReadOnlyDictionary<string, DataCube>)_cubes;
@@ -133,19 +155,23 @@ namespace RfCore.Data
 
         private static int LabelIndex(Axis axis, string label, string cubeName, string axisName)
         {
-            // Node axis Values are not meaningful strings; node names are stored separately.
-            // By convention, HB results store node names in axis.Name metadata via a name map.
-            // For this v1 implementation, the index IS the lookup key (axis.Values[k] == k+1
-            // for node indices).  A richer implementation uses a separate string[] name array.
-            throw new NotImplementedException(
-                $"Node name lookup ('{label}' on axis '{axisName}' of cube '{cubeName}') " +
-                "requires a node name registry — not yet implemented in this v1 DataSet.");
+            if (axis.Labels is null)
+                throw new InvalidOperationException(
+                    $"Axis '{axisName}' of cube '{cubeName}' has no string labels — " +
+                    $"cannot resolve name '{label}'. " +
+                    "Only node/branch axes built with Axis.Labels support name lookup.");
+
+            for (int k = 0; k < axis.Labels.Length; k++)
+                if (axis.Labels[k] == label) return k;
+
+            throw new ArgumentException(
+                $"Node/branch name '{label}' not found on axis '{axisName}' of cube '{cubeName}'. " +
+                $"Available: [{string.Join(", ", axis.Labels)}]");
         }
     }
 
     // ================================================================
-    //  DataSetBuilder  —  helper for constructing S-parameter DataSets
-    //  from SNP objects (the splotRF integration path)
+    //  DataSetBuilder  —  helpers for S-parameter DataSet ↔ SNP
     // ================================================================
 
     public static class DataSetBuilder
@@ -186,6 +212,31 @@ namespace RfCore.Data
             var ds    = new DataSet();
             ds.Add("S", sCube);
             return ds;
+        }
+
+        /// <summary>
+        /// Extract the "S" cube from a DataSet and reconstruct an SNP for Touchstone I/O.
+        /// The DataSet must contain an "S" cube with axes [freq, i, j].
+        /// Reference impedance is 50Ω real (standard; per-port complex Z0 is not stored in the cube).
+        /// </summary>
+        public static SNP ToSnp(DataSet ds)
+        {
+            var cube   = ds["S"];
+            int nFreq  = cube.Axes[0].Length;
+            int nPorts = cube.Axes[1].Length;
+            var freqs  = cube.Axes[0].Values;
+            var raw    = cube.ComplexValues;  // row-major [freq, i, j]
+
+            var mats = new NumFlat.Mat<Complex>[nFreq];
+            for (int fi = 0; fi < nFreq; fi++)
+            {
+                mats[fi] = new NumFlat.Mat<Complex>(nPorts, nPorts);
+                for (int i = 0; i < nPorts; i++)
+                for (int j = 0; j < nPorts; j++)
+                    mats[fi][i, j] = raw[fi * nPorts * nPorts + i * nPorts + j];
+            }
+
+            return new SNP(freqs, mats, MatrixType.S, MatrixFormat.RI, new Complex(50, 0));
         }
     }
 }

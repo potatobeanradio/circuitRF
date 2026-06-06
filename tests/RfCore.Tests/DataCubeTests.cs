@@ -3,6 +3,7 @@
 // ================================================================
 
 using System;
+using System.Linq;
 using System.Numerics;
 using RfCore;
 using RfCore.Data;
@@ -357,5 +358,177 @@ public class DataCubeTests
     {
         var ds = new DataSet();
         Assert.Throws<System.Collections.Generic.KeyNotFoundException>(() => _ = ds["X"]);
+    }
+
+    // ================================================================
+    //  DataCube.All alias
+    // ================================================================
+
+    [Fact]
+    public void All_IsEquivalentTo_DotDot()
+    {
+        var cube = MakeSCube();
+        // DataCube.All should produce identical results to the .. operator
+        DataCube withAll    = (DataCube)cube[DataCube.All, 0, 0];
+        DataCube withDotDot = (DataCube)cube[..,           0, 0];
+        Assert.Equal(withDotDot.Axes[0].Length, withAll.Axes[0].Length);
+        var v1 = withAll.ComplexValues;
+        var v2 = withDotDot.ComplexValues;
+        for (int i = 0; i < v1.Length; i++)
+            Assert.Equal(v2[i], v1[i]);
+    }
+
+    // ================================================================
+    //  Axis.Labels — construction and slice propagation
+    // ================================================================
+
+    [Fact]
+    public void Axis_Labels_StoredAndReturned()
+    {
+        var axis = new Axis("node", new[] { 0.0, 1.0, 2.0 }, "", new[] { "drain", "gate", "src" });
+        Assert.NotNull(axis.Labels);
+        Assert.Equal(new[] { "drain", "gate", "src" }, axis.Labels);
+    }
+
+    [Fact]
+    public void Axis_Labels_LengthMismatch_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new Axis("node", new[] { 0.0, 1.0 }, "", new[] { "a", "b", "c" }));
+    }
+
+    [Fact]
+    public void Axis_Labels_NullByDefault()
+    {
+        var axis = new Axis("freq", new[] { 1e9, 2e9 }, "Hz");
+        Assert.Null(axis.Labels);
+    }
+
+    [Fact]
+    public void Axis_Labels_SurviveRangeSlice()
+    {
+        var axis = new Axis("node", new[] { 0.0, 1.0, 2.0, 3.0 }, "",
+                            new[] { "a", "b", "c", "d" });
+        var sliced = axis.Slice(1..3);  // indices 1,2
+        Assert.Equal(2, sliced.Length);
+        Assert.Equal(new[] { "b", "c" }, sliced.Labels);
+        Assert.Equal(new[] { 1.0, 2.0 }, sliced.Values);
+    }
+
+    // ================================================================
+    //  DataSet V/I node-name accessors (node-name registry — 5-1)
+    // ================================================================
+
+    // Helper: make a synthetic V cube {node × harmonic × Pin}
+    // node axis carries string labels; values = node_idx * 100 + harm_idx * 10 + pin_idx
+    private static (DataSet ds, int nNodes, int nHarm, int nPin) MakeHbDataSet(
+        string[] nodeNames)
+    {
+        int nN = nodeNames.Length, nH = 3, nP = 4;
+        var nodeAxis = new Axis("node",     new double[nN].Select((_, i) => (double)i).ToArray(), "",
+                                nodeNames);
+        var harmAxis = new Axis("harmonic", new[] { 0.0, 1.0, 2.0 }, "");
+        var pinAxis  = new Axis("Pin",      new[] { -10.0, 0.0, 10.0, 20.0 }, "dBm");
+
+        var data = new Complex[nN * nH * nP];
+        int k = 0;
+        for (int n = 0; n < nN; n++)
+        for (int h = 0; h < nH; h++)
+        for (int p = 0; p < nP; p++)
+            data[k++] = new Complex(n * 100 + h * 10 + p, n + 0.5);
+
+        var vCube = new DataCube(new[] { nodeAxis, harmAxis, pinAxis }, data);
+        var ds = new DataSet();
+        ds.Add("V", vCube);
+        ds.Add("I", vCube);  // reuse same shape for branch tests
+        return (ds, nN, nH, nP);
+    }
+
+    [Fact]
+    public void DataSet_V_NodeName_PinHarmonic_AllPin_Returns1DTrace()
+    {
+        var (ds, _, _, nP) = MakeHbDataSet(new[] { "X1.drain", "X1.gate" });
+        // V("X1.drain", 1, All) → node=0, harm=1, all Pin → 4 values
+        DataCube trace = ds.V("X1.drain", 1, DataCube.All);
+        Assert.Equal(1, trace.Rank);
+        Assert.Equal(nP, trace.Axes[0].Length);
+        Assert.Equal("Pin", trace.Axes[0].Name);
+        var vals = trace.ComplexValues;
+        for (int p = 0; p < nP; p++)
+            Assert.Equal(new Complex(0 * 100 + 1 * 10 + p, 0.5), vals[p]);
+    }
+
+    [Fact]
+    public void DataSet_V_NodeName_SecondNode_CorrectValues()
+    {
+        var (ds, _, _, nP) = MakeHbDataSet(new[] { "X1.drain", "X1.gate" });
+        DataCube trace = ds.V("X1.gate", 1, DataCube.All);
+        var vals = trace.ComplexValues;
+        for (int p = 0; p < nP; p++)
+            Assert.Equal(new Complex(1 * 100 + 1 * 10 + p, 1.5), vals[p]);
+    }
+
+    [Fact]
+    public void DataSet_V_NodeName_HarmonicPinned_ReturnsTraceOverPin()
+    {
+        // The V cube is {node, harmonic, Pin}.
+        // V("X1.drain", 0, All) → node=0 (by name), harm=0 pinned, all Pin → rank-1 trace.
+        var (ds, _, _, nP) = MakeHbDataSet(new[] { "X1.drain", "X1.gate" });
+        DataCube pinTrace = ds.V("X1.drain", 0, DataCube.All);
+        Assert.Equal(1, pinTrace.Rank);
+        Assert.Equal(nP, pinTrace.Axes[0].Length);
+        Assert.Equal("Pin", pinTrace.Axes[0].Name);
+
+        // Pin index 2 → bare Complex via positional indexer on the 1-D trace
+        Complex bare = (Complex)pinTrace[2];
+        Assert.Equal(new Complex(0 * 100 + 0 * 10 + 2, 0.5), bare);
+    }
+
+    [Fact]
+    public void DataSet_V_HarmonicRange_SubRange_EndExclusive()
+    {
+        var (ds, _, _, _) = MakeHbDataSet(new[] { "n_drain" });
+        // V("n_drain", 1..3, All) → harm indices 1,2 (end-exclusive), all Pin
+        DataCube sub = ds.V("n_drain", 1..3, DataCube.All);
+        Assert.Equal(2, sub.Rank);
+        Assert.Equal("harmonic", sub.Axes[0].Name);
+        Assert.Equal(2, sub.Axes[0].Length);   // indices 1, 2
+        Assert.Equal(4, sub.Axes[1].Length);   // all 4 Pin points
+    }
+
+    [Fact]
+    public void DataSet_I_BranchNameResolves()
+    {
+        var (ds, _, _, nP) = MakeHbDataSet(new[] { "X1.M1:d", "X1.M1:g" });
+        // I("X1.M1:d", 1, All) uses the same cube shape as V
+        DataCube trace = ds.I("X1.M1:d", 1, DataCube.All);
+        Assert.Equal(1, trace.Rank);
+        Assert.Equal(nP, trace.Axes[0].Length);
+        // node=0 (X1.M1:d), harm=1, pin=all → imaginary part = 0.5
+        var vals = trace.ComplexValues;
+        Assert.Equal(0.5, vals[0].Imaginary, 12);
+    }
+
+    [Fact]
+    public void DataSet_V_UnknownNode_ThrowsWithHelpfulMessage()
+    {
+        var (ds, _, _, _) = MakeHbDataSet(new[] { "X1.drain", "X1.gate" });
+        var ex = Assert.Throws<ArgumentException>(() =>
+            ds.V("X1.foo", 0, DataCube.All));
+        Assert.Contains("X1.foo", ex.Message);
+        Assert.Contains("X1.drain", ex.Message);  // available names listed
+    }
+
+    [Fact]
+    public void DataSet_V_UnlabeledAxis_ThrowsInvalidOperation()
+    {
+        // A cube whose "node" axis has no Labels should throw clearly
+        var nodeAxis = new Axis("node", new[] { 0.0, 1.0 }, "");  // no labels
+        var harmAxis = new Axis("harmonic", new[] { 0.0, 1.0 }, "");
+        var data = new Complex[2 * 2];
+        var cube = new DataCube(new[] { nodeAxis, harmAxis }, data);
+        var ds = new DataSet();
+        ds.Add("V", cube);
+        Assert.Throws<InvalidOperationException>(() => ds.V("anything", DataCube.All));
     }
 }
