@@ -36,6 +36,13 @@ re-raise it.
   exported `__linnet_*` payload already carries everything Level 2 needs; the 5-7 round-trip test proves
   it is complete.
 
+## MatWriter and NpyWriter must track each other
+Both writers serialise the same logical payload (cubes, axes, linnet) to different container formats.
+**Any bug found in one writer must be investigated in the other.** The two known examples of this
+class: the union-sparsity-pattern fix (G_data nnz = union across all harmonics, not just k=0) and
+the `format_version` addition — both affected MatWriter and NpyWriter identically. When you fix or
+change either file, open the other and apply the equivalent change before closing the task.
+
 ## Don't densify
 Sparse `G` stays sparse on disk (triplet/CSC) and sparse on import. Never materialize the dense MNA
 matrix — memory.

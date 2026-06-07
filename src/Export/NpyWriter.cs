@@ -35,6 +35,11 @@ namespace RfCore.Export;
 /// </summary>
 internal static class NpyWriter
 {
+    /// <summary>
+    /// Format version written into the <c>__meta__</c> JSON and checked by <see cref="NpyReader"/>.
+    /// Increment when the file layout changes.  The importer rejects any mismatch.
+    /// </summary>
+    internal const int FormatVersion = 1;
     // ── NumPy magic & version constants ─────────────────────────────────────
 
     private static readonly byte[] Magic = { 0x93, (byte)'N', (byte)'U', (byte)'M', (byte)'P', (byte)'Y' };
@@ -48,7 +53,7 @@ internal static class NpyWriter
         ILinearNetworkPayload? payload)
     {
         // 1. Build JSON metadata first — need byte count for |S<N> dtype.
-        string metaJson  = BuildMetaJson(ds);
+        string metaJson  = BuildMetaJson(ds, opts, payload);
         byte[] metaBytes = Encoding.UTF8.GetBytes(metaJson);
 
         // 2. Collect field descriptors (name, numpy-dtype, int[] shape).
@@ -128,8 +133,11 @@ internal static class NpyWriter
         // Linear-network fields
         if (opts.IncludeLinearNetwork && payload != null)
         {
-            var (rows, _, _) = payload.GetSparseG(0);
-            int nnz = rows.Length;
+            // nnz = union of all harmonics' sparsity patterns.
+            // G(DC) has fewer nonzeros than G(fundamental+) because capacitors are open
+            // at DC (ω=0). Using k=0 alone would undercount and corrupt the layout.
+            var (canonRows, _) = BuildCanonicalPattern(payload, payload.HarmonicCount);
+            int nnz = canonRows.Length;
             int K1  = payload.HarmonicCount;
             int S   = payload.SweepCount;
             int M   = payload.MnaSize;
@@ -258,29 +266,37 @@ internal static class NpyWriter
 
             case "__linnet_G_rows":
             {
-                var (rows, _, _) = p.GetSparseG(0);
+                var (rows, _) = BuildCanonicalPattern(p, p.HarmonicCount);
                 foreach (var v in rows) w.Write(v);
                 break;
             }
 
             case "__linnet_G_cols":
             {
-                var (_, cols, _) = p.GetSparseG(0);
+                var (_, cols) = BuildCanonicalPattern(p, p.HarmonicCount);
                 foreach (var v in cols) w.Write(v);
                 break;
             }
 
             case "__linnet_G_data":
             {
-                // Shape [K+1, nnz], row-major: outer = harmonic k, inner = nnz entries
+                // Shape [K+1, nnz], row-major.  Use the canonical union sparsity pattern so
+                // every harmonic's slice is the same nnz.  Positions absent from harmonic k
+                // (e.g. capacitors at DC where ω₀=0) are zero-padded — physically correct.
                 int K1 = p.HarmonicCount;
+                var (canonRows, canonCols) = BuildCanonicalPattern(p, K1);
+                int nnz = canonRows.Length;
                 for (int k = 0; k < K1; k++)
                 {
-                    var (_, _, data) = p.GetSparseG(k);
-                    foreach (var c in data)
+                    var (rk, ck, dk) = p.GetSparseG(k);
+                    var lookup = new Dictionary<(int, int), Complex>(rk.Length);
+                    for (int i = 0; i < rk.Length; i++) lookup[(rk[i], ck[i])] = dk[i];
+                    for (int nz = 0; nz < nnz; nz++)
                     {
-                        w.Write(c.Real);
-                        w.Write(c.Imaginary);
+                        var val = lookup.TryGetValue((canonRows[nz], canonCols[nz]), out var c)
+                            ? c : Complex.Zero;
+                        w.Write(val.Real);
+                        w.Write(val.Imaginary);
                     }
                 }
                 break;
@@ -332,19 +348,45 @@ internal static class NpyWriter
         }
     }
 
+    // ── Sparse-G canonical pattern ────────────────────────────────────────────
+
+    /// <summary>
+    /// Build the union (row, col) sparsity pattern across all harmonics k=0..K1-1,
+    /// sorted by (row, col).  G(DC) typically omits capacitor entries (ω₀=0 → open
+    /// circuit), so the union is larger than k=0 alone.
+    /// </summary>
+    private static (int[] rows, int[] cols) BuildCanonicalPattern(
+        ILinearNetworkPayload p, int K1)
+    {
+        var seen  = new HashSet<(int, int)>();
+        var pairs = new List<(int row, int col)>();
+        for (int k = 0; k < K1; k++)
+        {
+            var (r, c, _) = p.GetSparseG(k);
+            for (int i = 0; i < r.Length; i++)
+            {
+                if (seen.Add((r[i], c[i])))
+                    pairs.Add((r[i], c[i]));
+            }
+        }
+        pairs.Sort((a, b) => a.row != b.row ? a.row.CompareTo(b.row) : a.col.CompareTo(b.col));
+        return (pairs.Select(p => p.row).ToArray(),
+                pairs.Select(p => p.col).ToArray());
+    }
+
     // ── Metadata JSON ─────────────────────────────────────────────────────────
 
-    private static string BuildMetaJson(DataSet ds)
+    private static string BuildMetaJson(DataSet ds, ExportOptions opts, ILinearNetworkPayload? payload)
     {
-        // Build: { "CubeName": { "kind": "Complex"|"Real", "axes": [...] }, ... }
+        // Build: { "format_version":N, "CubeName": { "kind": "Complex"|"Real", "axes": [...] }, ...
+        //          "__linnet_node_names":[...], "__linnet_branch_names":[...] }
         // Hand-built to avoid a System.Text.Json dependency (and to control precision).
         var sb = new StringBuilder();
-        sb.Append('{');
-        bool firstCube = true;
+        sb.Append("{\"format_version\":");
+        sb.Append(FormatVersion);
         foreach (var kvp in ds.Cubes)
         {
-            if (!firstCube) sb.Append(',');
-            firstCube = false;
+            sb.Append(',');
 
             string fieldName = EscapeName(kvp.Key);
             var    cube      = kvp.Value;
@@ -392,6 +434,31 @@ internal static class NpyWriter
             }
             sb.Append("]}");
         }
+
+        // Linnet name maps: include when IncludeLinearNetwork is on.
+        // Stored in __meta__ (not as a separate structured field) because variable-length
+        // string arrays cannot be embedded in NumPy structured dtypes without pickling.
+        if (opts.IncludeLinearNetwork && payload != null)
+        {
+            sb.Append(",\"__linnet_node_names\":[");
+            for (int i = 0; i < payload.NodeNames.Length; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append('"');
+                AppendJsonString(sb, payload.NodeNames[i]);
+                sb.Append('"');
+            }
+            sb.Append("],\"__linnet_branch_names\":[");
+            for (int i = 0; i < payload.BranchNames.Length; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append('"');
+                AppendJsonString(sb, payload.BranchNames[i]);
+                sb.Append('"');
+            }
+            sb.Append(']');
+        }
+
         sb.Append('}');
         return sb.ToString();
     }

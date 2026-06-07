@@ -42,6 +42,11 @@ namespace RfCore.Export;
 /// </summary>
 internal static class MatWriter
 {
+    /// <summary>
+    /// Format version written as <c>/dataset/format_version</c>.
+    /// Increment when the file layout changes.  Consumers should reject mismatches.
+    /// </summary>
+    internal const int FormatVersion = 1;
     // ── Compound type for complex double (MATLAB-compatible field names) ──────
 
     /// <summary>
@@ -69,6 +74,9 @@ internal static class MatWriter
         var datasetGroup  = new H5Group();
         var axesGroup     = new H5Group();
         datasetGroup["__axes__"] = axesGroup;
+
+        // Format version — scalar int64 at /dataset/format_version
+        datasetGroup["format_version"] = MakeShapedArray(new long[] { (long)FormatVersion }, Array.Empty<int>());
 
         // ── Cube datasets ────────────────────────────────────────────────────
         foreach (var kvp in ds.Cubes)
@@ -172,24 +180,34 @@ internal static class MatWriter
         int M  = p.MnaSize;
         int N  = p.InterfaceCount;
 
-        // Sparse G data: topology-invariant rows/cols + per-harmonic data
-        var (rows, cols, _) = p.GetSparseG(0);
-        int nnz             = rows.Length;
+        // Sparse G: union sparsity pattern across all harmonics.
+        // G(DC) has fewer nonzeros than G(fundamental+) because capacitors are open
+        // at DC (ω=0). Using k=0 alone would undercount and corrupt G_data entries.
+        var (canonRows, canonCols) = BuildCanonicalPattern(p, K1);
+        int nnz = canonRows.Length;
 
         // omegas — float64[K+1]
         double[] omegas = p.Omegas;
 
         // G_rows, G_cols — int32[nnz]
-        int[] gRows = rows;
-        int[] gCols = cols;
+        int[] gRows = canonRows;
+        int[] gCols = canonCols;
 
-        // G_data — complex128[K+1, nnz] — flatten as [K1*nnz]
+        // G_data — complex128[K+1, nnz] — flatten as [K1*nnz], row-major.
+        // Use canonical pattern with lookup; entries absent from a harmonic (e.g.
+        // capacitors at DC where ω₀=0) are zero-padded — physically correct.
         var gDataFlat = new ComplexEntry[K1 * nnz];
         for (int k = 0; k < K1; k++)
         {
-            var (_, _, data) = p.GetSparseG(k);
-            for (int j = 0; j < nnz; j++)
-                gDataFlat[k * nnz + j] = new ComplexEntry(data[j]);
+            var (rk, ck, dk) = p.GetSparseG(k);
+            var lookup = new Dictionary<(int, int), Complex>(rk.Length);
+            for (int i = 0; i < rk.Length; i++) lookup[(rk[i], ck[i])] = dk[i];
+            for (int nz = 0; nz < nnz; nz++)
+            {
+                var val = lookup.TryGetValue((canonRows[nz], canonCols[nz]), out var c)
+                    ? c : Complex.Zero;
+                gDataFlat[k * nnz + nz] = new ComplexEntry(val);
+            }
         }
 
         // bSrc — complex128[S, K+1, mnaSize] — flatten as [S*K1*M]
@@ -231,6 +249,32 @@ internal static class MatWriter
             ["mna_size"]         = MakeShapedArray(mnaSizeArr,      Array.Empty<int>()),
             ["non_ground_count"] = MakeShapedArray(nonGroundCountArr, Array.Empty<int>()),
         };
+    }
+
+    // ── Sparse-G canonical pattern ────────────────────────────────────────────
+
+    /// <summary>
+    /// Build the union (row, col) sparsity pattern across all harmonics k=0..K1-1,
+    /// sorted by (row, col).  G(DC) typically omits capacitor entries (ω₀=0 → open
+    /// circuit), so the union is larger than k=0 alone.
+    /// </summary>
+    private static (int[] rows, int[] cols) BuildCanonicalPattern(
+        ILinearNetworkPayload p, int K1)
+    {
+        var seen  = new HashSet<(int, int)>();
+        var pairs = new List<(int row, int col)>();
+        for (int k = 0; k < K1; k++)
+        {
+            var (r, c, _) = p.GetSparseG(k);
+            for (int i = 0; i < r.Length; i++)
+            {
+                if (seen.Add((r[i], c[i])))
+                    pairs.Add((r[i], c[i]));
+            }
+        }
+        pairs.Sort((a, b) => a.row != b.row ? a.row.CompareTo(b.row) : a.col.CompareTo(b.col));
+        return (pairs.Select(p => p.row).ToArray(),
+                pairs.Select(p => p.col).ToArray());
     }
 
     // ── Axis JSON ────────────────────────────────────────────────────────────
