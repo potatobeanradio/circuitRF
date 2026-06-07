@@ -1,7 +1,13 @@
 # UI (Avalonia) — local conventions
 
-Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`. The UI is how people drive the
-engine; it must never become the source of truth for simulation.
+Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`, the interaction spec
+`docs/design/ui-design.md`, and the architecture/firewall note `docs/design/ui-architecture.md`. The UI is
+how people drive the engine; it must never become the source of truth for simulation.
+
+**Firewall (load-bearing):** all UI-framework code lives here in `src/Ui`. `RfCore`/`Core`/`Engine`/`Cli`
+reference **no Avalonia** — an enforced CI check fails the build otherwise (`ui-architecture.md` §3). Keep
+Skia *rendering* separable from Avalonia *control hosting* so a re-skin keeps the renderers. The display
+layer is circuitRF's own, `DataCube`-native (C1); splotRF is reference material, not a dependency.
 
 ## Framework & patterns
 - **Avalonia 12**, single codebase for Windows/macOS/Linux. Mirror splotRF's structure, controls,
@@ -34,15 +40,24 @@ engine; it must never become the source of truth for simulation.
   every instance; instance-level parameter overrides (root `CLAUDE.md` → expressions) stay per-instance.
 
 ## Data Display
-Plots and tables are **splotRF** controls from `RfCore` — do not reimplement Smith/polar/rectangular
-plotting here. Support measured-vs-simulated overlay (a lab Touchstone over a simulated result
-cube from the `DataSet`).
+The data-display layer is **circuitRF's own**, built fresh and **`DataCube`-native** (a trace is a slice of
+a cube), living under `src/Ui` (see `docs/design/ui-design.md` / `ui-architecture.md`). It is **NOT** taken
+from splotRF as a dependency and is not in RfCore. splotRF is **reference material only** — mine its proven
+techniques (the three-coordinate-space transform pipeline, Smith/polar/rectangular rendering math, the
+placeable-plot canvas, plot/trace/table rendering, MarkerInfoBox, autoscale-with-marker-preservation,
+tick snapping, pan/zoom/hit-test) and **re-implement them cleanly against `DataCube`** — do not reimplement
+from scratch ignoring splotRF's solved problems, and do not depend on splotRF's code. Keep it
+UI-framework-light (clean Skia-render vs thin Avalonia-host split) so it stays re-skinnable and could be
+lifted into a shared lib later if ever needed (not now). Support measured-vs-simulated overlay (a lab
+Touchstone over a simulated result cube from the `DataSet`).
 
 ## "Easy" budgets (testable)
 Honor the PRD §12 click budgets (e.g. placed FET → running HB power sweep in ≤ 8 actions). Advanced
 settings must remain reachable but must not clutter the default path.
 
 # circuitRF UI Coding Context
+
+These are design-quality standards; the architectural rules above are non-negotiable structural constraints.
 
 ## Abstract
 

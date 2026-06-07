@@ -11,7 +11,7 @@ hero circuits, and non-goals. This file is standing project memory — keep it c
 - Consumes an `RfCore` library shared with splotRF (Touchstone I/O, network params, the
   `DataSet`/`DataCube` result types, interpolation, renormalization, plotting). **RfCore is an
   external sibling project**, cloned side-by-side and referenced via `ProjectReference`
-  (`../RfCore/RfCore.csproj`) — it is *not* under `src/`. It must be extracted from splotRF.
+  (`../RfCore/RfCore.csproj`) — it is *not* under `src/`.
 
 ## Build / test / run
 - Build:   `dotnet build`
@@ -29,6 +29,12 @@ hero circuits, and non-goals. This file is standing project memory — keep it c
 Source map: `src/Core` (layers 1–2 + the expression engine), `src/Engine` (layer 3 + analyses),
 `src/Ui` (Avalonia), `src/Cli` (headless driver + test harness). `RfCore` is a **sibling project
 outside this tree**, referenced via `ProjectReference`.
+
+**UI firewall:** `RfCore`, `src/Core`, `src/Engine`, `src/Cli` must reference **no UI framework**
+(no Avalonia) — all UI-framework code lives in `src/Ui`, so circuitRF can be re-skinned by replacing
+`src/Ui` only. This is an **enforced** invariant (a CI assembly-reference check fails the build if the
+core references Avalonia). Contract across the boundary: design model down, `DataSet` up. See
+`docs/design/ui-architecture.md`.
 
 ## Invariants — do not violate
 - Node 0 is ground.

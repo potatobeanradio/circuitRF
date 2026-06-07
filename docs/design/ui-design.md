@@ -1,0 +1,436 @@
+# circuitRF — UI Design
+
+**Status:** Draft (rev 1) for review · **Date:** 2026-06-06 · **Phase:** 6a
+
+This document defines how the circuitRF GUI works: the interaction model, the window/region structure, the
+two canvases, the schematic editor, the schematic→engine bridge, the data display, and the workflows. It is
+the authoritative interaction spec for Phases 6b–6g; the companion `ui-architecture.md` defines the
+layering/firewall, and `src/Ui/CLAUDE.md` holds the standing UI rules (architectural constraints + the
+design-quality bar). Where this and those disagree, flag it.
+
+**Guiding intent (owner):** the GUI must be *a joy to use* — responsive, familiar to RF engineers, clean by
+default with advanced settings reachable but not cluttering. A bad GUI would sink an otherwise strong engine.
+
+---
+
+## 1. Overview — the Workspace model
+
+A **Workspace** is a window. It represents a user's working context and holds:
+- the project's **TestBenches** and **schematics**,
+- **cells** (each with a symbol view, a schematic view, and — future — a layout view),
+- references to external user **Libraries** (each with their own cells),
+- **data-display configurations** (plot/table layouts over result `DataSet`s).
+
+A user may have several Workspace windows open at once (e.g. `File → Open` an existing workspace into a new
+window; `File → New Workspace` for an empty one). The Workspace is the top-level unit the user saves and
+reopens.
+
+The GUI **never simulates directly**. It builds and edits the *design layer* (cells, schematics, nets,
+parameters), then asks the engine to elaborate and run; results come back as a **`DataSet`** of `DataCube`s
+(the one result currency, Phase 5). This separation is load-bearing — see `ui-architecture.md`.
+
+---
+
+## 2. Regions & docking
+
+A Workspace window is divided into dockable **regions**. **All region management uses the AvaloniaUI `Dock`
+library** — resize, rearrange, tear-out-to-window, re-dock, minimize — rather than a hand-rolled docking
+system. The four default regions:
+
+| Region | Default position | Default size | Purpose |
+|---|---|---|---|
+| **Project Tree** | top-left | ~10% width | nodal tree of libraries, cells, data-display configs |
+| **Properties** | left, below the tree | tree width | hosts the **Component Palette** first (see §2.2); the region is named generically because it will grow other property/inspector uses |
+| **Content** | center | most of the area | a **tab view** of schematic / symbol-editor / data-display views |
+| **Messages** | bottom | short, full width | engine messages: color+icon coded, clickable file links (§8) |
+
+**Dock behaviors (all via Dock):** each region is resizable by dragging its edge handles; rearrangeable by
+dragging its title (with live visual feedback as the layout adapts); **poppable** out to its own window by
+dragging it out and releasing; **minimizable** to give an adjacent region more area; re-dockable by dragging
+a popped window back. Small scroll bars appear within regions as needed.
+
+### 2.0 Dock mapping (how the regions use AvaloniaUI `Dock`)
+The regions map onto Dock's dockable layout primitives as follows:
+- **Content** = a Dock **DocumentDock** (the tabbed document area). Schematic / symbol-editor / data-display
+  views are **Documents**; Dock provides their tab strip, tear-out, and re-dock natively.
+- **Project Tree**, **Properties**, **Messages** = Dock **ToolDocks** (dockable tool panels) anchored
+  left/left-below/bottom respectively. Tools get Dock's pin/float/close/resize and drag-to-rearrange.
+- The Workspace window's root is a Dock **RootDock** containing a **ProportionalDock** (the splitter layout)
+  that arranges the left tool column (Tree over Properties) | the Content document area, with Messages as a
+  bottom tool dock. Proportional splitters give the user-draggable resize.
+- **Layout persistence:** Dock serializes its layout tree; the Workspace **saves the serialized Dock layout**
+  (region sizes, arrangement, floating windows) as part of the workspace file, and restores it on reopen. A
+  **"Reset Layout"** View-menu command restores the default arrangement (the table below).
+- **Default arrangement** (what a fresh Workspace opens with):
+
+| Region | Dock type | Anchor | Default size |
+|---|---|---|---|
+| **Project Tree** | ToolDock | left, top | ~10% width, upper portion |
+| **Properties** (palette first) | ToolDock | left, below tree | tree width, lower portion |
+| **Content** | DocumentDock | center | remaining area (most of the window) |
+| **Messages** | ToolDock | bottom | full width, short height |
+
+Do not hand-roll any of the docking, tear-out, re-dock, float, or resize behavior — it is all Dock. circuitRF
+supplies the *contents* of each dock and the default layout; Dock supplies the mechanics.
+
+### 2.1 Project Tree
+A nodal tree (there may be many libraries/cells/configs). Right-click an item for operations: **Open**, **Open
+in New Window**, **Delete**, and context-appropriate others. Double-click opens the item in the Content
+region (a schematic/symbol/data-display tab).
+
+### 2.2 Component Palette (first occupant of the Properties region)
+A ComboBox selects a standard component library (lumped components, sources, simulation directives, …); the
+palette below shows that library's components as **graphical depictions**. The user **drags components from
+the palette into a schematic** (§4). The region is named **"Properties"** (not "Palette") because it is
+expected to grow other inspector/property roles later; for v1 it shows the palette.
+
+### 2.3 Content region
+Holds **only a tab view**; tab items are schematic views, symbol-editor views, or data-display views. A tab
+**tears out** to its own window by dragging it out; a torn-out window **re-docks** as a new tab by dragging it
+back (Dock document semantics).
+
+---
+
+## 3. The two canvases
+
+circuitRF has **two distinct canvases** that share the same underlying machinery but render different things:
+
+1. **The schematic canvas** (§4) — renders symbols, wires, nets, grid; the editing surface.
+2. **The data-display canvas** (§6) — renders plots (rectangular / Smith / polar / **contour**) and tables;
+   the placeable-plot surface.
+
+**Shared machinery (build once, use for both):** the **three-coordinate-space transform pipeline**
+(data/world → fractional viewport → Skia pixels), pan/zoom, hit-testing via a **spatial index**, and the
+**SkiaSharp custom-control rendering** with viewport virtualization. This is exactly splotRF's proven
+approach (`PlotRenderer` transforms, `PlotControl` interaction, `Axes` viewport) — **mined as reference and
+re-implemented cleanly** (see `ui-architecture.md` §display; splotRF is reference, not a dependency). Keep the
+Skia *rendering* separable from the Avalonia *control hosting* (the firewall + future re-skin).
+
+**Performance target (testable):** smooth (**≥ 30 fps**) pan/zoom on a **10,000-component** schematic on a
+mid-range laptop, verified with a generated stress schematic in `testdata/` — not a toy. The schematic canvas
+**must not** render components as individual styled controls (it would die at 10k); it renders itself via the
+custom control with viewport virtualization + spatial-index hit-testing (`src/Ui/CLAUDE.md`).
+
+---
+
+## 4. Schematic editor
+
+The schematic canvas may hold thousands of component primitives or cell instances, so responsiveness (§3) is
+a first-class constraint, not an afterthought.
+
+### 4.1 Navigation & grid
+- **Pan** and **zoom** (zoom centered on cursor; pan by drag — exact button mapping in §4.6).
+- A **subtle background grid**; the user sets grid resolution and may require component **ports to be
+  on-grid** (snap) via a flag.
+
+### 4.2 Placing & moving
+- **Drag a component from the Palette** (§2.2) into the schematic to place it; **drag placed components/cell
+  symbols** to move them.
+- **Drag-release-over-wires auto-connects:** when a component is released so its ports overlap wires, the
+  ports connect to those wires at the overlap location.
+
+### 4.3 Connections & visual state
+- A **connected** point (wire-wire or port-wire) renders as a **dark square** at the connection.
+- An **unconnected port** renders with a **subtle red box** outline; on connection the red box becomes the
+  standard dark square.
+- **Wire routing is simple orthogonal for v1** — snap + auto-connect + basic orthogonal segments. **Beautiful
+  dynamic obstacle-aware auto-routing is explicitly DEFERRED** (a research item, possibly never fully solved;
+  do not attempt in v1). The router is kept separable and headless-testable (`src/Ui/CLAUDE.md`).
+
+### 4.4 Nets & naming
+See §5 for the extraction details. In the editor: the user may **explicitly name a net** by placing a **net
+label** on a wire; labeled nets are the names the engine and measurements address. Unlabeled nets receive
+deterministic auto-generated names at extraction (§5).
+
+### 4.5 Parameters on the schematic
+- Most components display a few editable parameters on the schematic (e.g. an inductor shows instance name +
+  inductance with units). **Click** the parameter text → it becomes an **inline editable text box**.
+- A **per-parameter "show on schematic" flag** controls which parameters are displayed (keeps the schematic
+  clean); not all parameters show by default.
+- **Double-click** a component (or cell) → a **parameter dialog/popover** listing *all* parameters, editable.
+  The dialog always has a **Help** button → opens a local HTML doc for that component (placeholder HTML for
+  now; real docs later).
+
+### 4.6 Selection & keyboard grammar (standard EDA conventions)
+Mirrors the idioms RF engineers know from other EDA tools so the editor feels native:
+- **Click** selects; **Shift+Click** adds/removes from selection; **rubber-band drag** (on empty canvas)
+  multi-selects.
+- **Esc** cancels the current operation (placement, wiring, drag) and clears selection.
+- **Delete / Backspace** deletes the selection.
+- **Arrow keys** nudge the selection by one grid step; **Shift+Arrow** nudges by a coarse step.
+- **R** rotates the selection (90° CCW; **Shift+R** CW); **M** mirrors (horizontal; **Shift+M** vertical) —
+  active both during placement and on a selected object.
+- **Ctrl/Cmd+C / +X / +V** copy / cut / paste (§9); **Ctrl/Cmd+Z / +Shift+Z** undo / redo (§9).
+- **Ctrl/Cmd+A** select all; **F** or scroll-to-fit zooms to the design extent.
+- (Platform modifier: Cmd on macOS, Ctrl on Windows/Linux — Avalonia's platform-aware gesture handling.)
+
+### 4.7 Save / restore
+Component placement, wire placement, net labels, zoom level, and (for a torn-out schematic window) window
+placement are tracked and **saved to disk at the user's will**, restoring the visual state on reopen.
+
+---
+
+## 5. Net extraction — the schematic→engine bridge
+
+This is the critical seam that turns a drawn schematic into something the engine runs. It is **core logic,
+not view logic** — headless and unit-testable, behind the firewall (no UI dependency).
+
+**Flow:** placed symbols (with port geometry) + wires + net labels → **connectivity extraction** (which ports
+and wire endpoints are electrically common) → **nets** → the **design model** the engine already elaborates →
+engine run → **`DataSet`** back to the data display.
+
+**Net naming scheme:**
+- At extraction, **every net gets a deterministic, stable auto-generated name** (stable across re-extraction
+  so results/measurements don't churn).
+- A user **promotes** a net by placing a **net label** (§4.4) on it; labeled nets are addressed by that name
+  in the engine, in measurements (`HB1.V(X1.drain)`), and in the design model.
+- Unlabeled nets keep their auto-names (a user cannot measure a net they never named — consistent with the
+  node-retention policy, `src/Core/Data/CLAUDE.md`).
+
+**Connectivity rules:** ports overlapping a wire (or a wire-wire crossing with a junction dot) are common;
+the extractor resolves the equivalence classes into nets. Hierarchical instances expose their cell's
+interface ports as connection points at this level (the interior is a separate schematic — §4 hierarchy).
+
+This is what realizes the PRD §12 click budget (placed FET → running HB power sweep in ≤ 8 actions): place,
+wire, drop a source + an HB directive, label the ports you'll measure, run.
+
+### 5.1 The extraction algorithm
+Connectivity extraction is a **union-find over geometry**, run headless (no UI types):
+1. **Collect connection points:** every component/cell-instance **port** (at its placed, possibly
+   rotated/mirrored coordinate) and every **wire endpoint** and **wire-wire junction** (a junction exists
+   where wires meet *and* a junction dot is present — a crossing without a dot is not a connection).
+2. **Union by coincidence:** points that are geometrically coincident (within a small tolerance, snapped to
+   the grid when on-grid snapping is on) are unioned. A port lying on a wire segment (not just its endpoint)
+   unions with that wire (the drag-release-over-wire connect, §4.2).
+3. **Resolve nets:** each union-find equivalence class is one **net**. Net labels (§4.4) placed on any member
+   of a class give that net its user-facing name; multiple labels on one class that disagree → a **user
+   error** surfaced in Messages (§8), not a silent pick.
+4. **Name:** labeled class → the label name; unlabeled class → a deterministic auto-name derived from a
+   stable ordering of its members (so re-extraction yields the same name and results/measurements don't
+   churn).
+5. **Emit the design model:** components/instances become design-model elements with their parameters; nets
+   become the connectivity; the result is exactly the design model the engine **already elaborates** (root
+   `CLAUDE.md` / elaboration) — extraction produces the *same* model an authored `.cnl` produces, so the
+   engine path downstream is unchanged.
+6. **Honor disabled components (Disable to Open / Short, §7.2):** before emitting, the extractor inspects each
+   component's **disable state** and bridges accordingly — no engine change, the netlist simply comes out as
+   if the part were open or shorted:
+   - **`Open`** — the component is **omitted** from the emitted netlist; its ports are left as they would be
+     with the part removed (the nets it touched remain, simply no longer joined *through* the component). An
+     open two-terminal part therefore breaks the connection it bridged; a port left dangling by the removal
+     is handled by the normal floating-port validation (below).
+   - **`Short`** — the component's ports are **unioned into a single net** (steps 2–3 treat the part as a
+     zero-impedance bridge), so the emitted netlist connects them directly with no element between. For a
+     two-terminal part this merges its two nets into one; for a **multi-terminal** part, **all ports short
+     together** into one net (no user choice on which terminals — always all of them).
+   This keeps Disable-to-Open/Short purely a **schematic-side, extraction-time** transform: the design model
+   the engine receives looks exactly like one drawn with the part genuinely removed or replaced by a wire,
+   so the engine and elaboration need no awareness of the feature.
+
+**Hierarchy:** a placed cell instance contributes its **interface ports** as connection points at this level;
+its interior schematic is a separate design (§9 in-place descend). Extraction is per-schematic; the engine's
+elaboration flattens the hierarchy as it already does for authored designs.
+
+**Validation surfaced to Messages (§8):** conflicting net labels, an unconnected required port, a port left
+floating — reported as warnings/errors with the offending instance/net named, never silently dropped.
+
+**Incremental vs full:** v1 may re-extract the whole schematic on run (simple, correct); incremental
+re-extraction on edit is a later optimization (the extractor staying headless/testable makes either viable).
+Keep extraction deterministic and pure so it is unit-testable against authored-`.cnl` equivalents — a strong
+oracle: a schematic drawn to match a hero `.cnl` must extract to an equivalent design model and produce the
+same `DataSet`.
+
+---
+
+## 6. Data Display — `DataCube`-native, mining splotRF
+
+The data-display canvas renders results from a run's **`DataSet`**. It is **circuitRF's own**, built fresh and
+**`DataCube`-native** (a trace is a *slice of a cube*), living under `src/Ui` (C1). splotRF is **reference
+material** — its proven techniques are mined and re-implemented cleanly, not consumed as a dependency
+(`ui-architecture.md`).
+
+### 6.1 The placeable-plot canvas
+A data-display view is a canvas on which the user **places plots at arbitrary locations**, **selects**,
+**moves**, and resizes them; a plot tears out to its own window and re-docks (mirroring splotRF's
+`PlotContainer`/`DisplayWindow` pattern). The canvas shares the §3 transform/interaction machinery.
+
+### 6.2 Plot types (1-D traces over a sweep/freq axis)
+Re-implement, against `DataCube`, the proven splotRF plot types:
+- **Rectangular** (e.g. a measurement vs Pin or vs frequency — a 1-D cube slice).
+- **Smith chart** (reflection/impedance — complex cube data).
+- **Polar**.
+- **Tables** (`TableRenderer` reference).
+Plus markers and the **MarkerInfoBox** (splotRF `Marker`/`MarkerInfoBox` reference), **autoscale with marker
+preservation**, tick-interval snapping, and the three-space transforms (§3). A trace binds to a `DataCube`
+slice (the cube's axes supply the x-axis and units automatically — the Phase-5 payoff).
+
+### 6.3 Contour plots — the loadpull-contour feature (MAJOR new item)
+**The signature data-display feature for circuitRF, and net-new work** (splotRF has nothing like it — no
+reference to mine). Contour plots visualize **loadpull data**: a scalar measurement (Pout, PAE, DE, gain)
+over the **2-D termination grid** (the Γ/Z load-pull plane), drawn as **contours on a Smith chart**. This is
+the visual payoff of the entire Phase-4b loadpull/pursuit engine — a loadpull-pursuit run that can't show its
+contours is only half-delivered.
+
+What it entails (details deferred — "sort out when we build it"; flagged here as a major §6 scope item):
+- Input is a **2-D `DataCube` slice** over the termination-grid axes (the loadpull DataSet already carries
+  this — §5-5 of Phase 5), i.e. a scalar FOM (Real cube) sampled across the load Γ/Z plane.
+- **Contour extraction** from the gridded scalar field (marching-squares or equivalent) → contour paths at
+  chosen levels. The extraction is **coordinate-agnostic** (it operates on the scalar field over the grid);
+  only the final path rendering differs between the two display modes below.
+- **Two display modes** (the termination plane can be viewed either way — user-selectable):
+  - **Γ-plane on a Smith chart** — contours drawn on the Smith coordinate system (reuse the Smith transform,
+    §6.2). The natural RF view of loadpull.
+  - **Z-plane on a rectangular plot** — contours drawn in the impedance plane on rectangular axes (reuse the
+    rectangular transform, §6.2), Re(Z) vs Im(Z). Useful when the user thinks in impedance.
+  Both modes share the same extracted contour paths; the Γ↔Z mapping uses RfCore (the same Z↔Γ the engine
+  uses), so switching modes is a re-projection, not a re-extraction.
+- Level labels, optional fill/shading, and overlay of the **MXP/MXE optima markers** and recommended
+  terminations from the `LoadpullPursuitResult`.
+- Interaction: choose which FOM to contour, the contour levels (auto or user), the Γ/Z display mode, and the
+  optima/recommendation overlays.
+- Likely its own design sub-note when Phase 7 reaches it.
+
+### 6.4 Measured-vs-simulated overlay
+Support overlaying a **measured** lab Touchstone over a **simulated** result cube (a common RF validation
+workflow) — a measured trace and a simulated `DataCube` slice on the same plot.
+
+---
+
+## 7. Toolbars
+
+Two tiers of toolbar, matching the window structure: **one global Workspace toolbar** (always present) and a
+**context toolbar that swaps with the active Content tab** (the schematic toolbar below; a data-display
+toolbar later). Toolbar buttons are quick-access duplicates of menu actions (§8) — same commands, same
+undo/command-pattern path (§10); the toolbar never has behavior the menus/commands don't.
+
+**The context toolbar belongs to the view, not the Workspace frame.** A schematic (or data-display) view
+carries its own context toolbar/command bar, so when the view is **torn out into its own window** (§2.3),
+its toolbar **travels with it** — a popped-out schematic window has the full schematic toolbar (§7.2),
+zoom/draw/select tools and all, and is fully editable on its own. (A torn-out window does **not** carry the
+global Workspace toolbar of §7.1; it gets the view's own context toolbar plus whatever minimal
+window/file/edit affordances a standalone editor window needs — e.g. Save, Undo/Redo, Help.) Within the
+main Workspace window, the active Content tab's context toolbar is shown; tearing the tab out moves that
+toolbar into the new window with it, and re-docking returns it to the tab-context position.
+
+### 7.1 Workspace toolbar (global controls)
+Always present at the workspace level; acts on the whole workspace (not just the Project Tree). File/window
+management and run control:
+- **Start Page / New**, **Open / Save**
+- **Cut / Copy / Paste**, **Undo / Redo**
+- **Print / Help**
+- **Hide/Show Dockers** — toggle region visibility (Project Tree, Properties, Messages, and the future Tune
+  window); the View-menu equivalent of showing/hiding Dock tools (§2.0).
+- **Fit Windows to Frame** — reset/fit the dock layout to the frame.
+- **Run / Stop Analysis** — launches the active TestBench's configured simulation, or raises the analysis-
+  selection menu if none is configured. Same action as `Simulate → Run/Stop` (§8); toolbar = quick access.
+- **Status Messages** — expands the Messages region if minimized, or pops it out to its own window if it is
+  not minimized (§9).
+
+### 7.2 Schematic toolbar (the schematic-tab context toolbar)
+Shown when a **schematic** Content tab is active (the first of the per-editor context toolbars; the
+data-display tab gets its own later — §10). Drawing tools, view controls, and schematic-specific edits:
+
+*Tools & selection*
+- **Select** — default cursor; highlight/select components or text (§4.6).
+- **Part Selector** — opens the component palette / library browser to add parts (drives the Properties-region
+  palette, §2.2).
+- **Ground** — place a **ground** symbol. Promoted to its own toolbar button (not buried in the palette)
+  because it is by far the most frequently placed element — it must be one click away. A ground marks its
+  net as the circuit reference (node 0); extraction (§5) unions all ground-tied nets into the single global
+  reference node the engine expects. (If multiple ground symbols touch distinct nets, those nets are all the
+  one reference node — the usual schematic convention.)
+- **Var** — place a **variable/expression** component on the schematic: a named parameter defined by an
+  expression (the Phase-1 expression engine — root `CLAUDE.md`/`expressions.md`), e.g. `RFfreq = 2e9` or
+  `ToneSpacing = 10e6`. Vars are design-level definitions other components' parameters reference by name (the
+  inductor's value can be `1/(w0^2*C)`). On the schematic a Var renders as an editable name=expression label
+  (inline-editable like any parameter, §4.5). Extraction (§5) carries Vars into the design model as the
+  variable definitions the engine already resolves — it is the schematic face of a `.cnl` variable
+  declaration, not a new engine concept.
+- **Measurement** — place a **measurement** on the schematic: a `measure Name = expression` (the composable
+  cube-algebra measurement layer — `measurements.md`), e.g. `Pout_dBm = ...`. It renders as an editable
+  name=expression label and is carried by extraction into the TestBench's measurement set, evaluated
+  post-run against the result `DataSet` (§6). Placing a measurement on the schematic is a convenience entry
+  point for the same measurement objects the TestBench holds; the analysis-qualified operands
+  (`HB1.V(X1.drain,1,All)`) reference nets/branches by the names extraction assigns (§5). A measurement IS
+  part of the netlist/design (a `.cnl` legitimately contains `measure` statements the engine evaluates) —
+  it just isn't part of the *electrical connectivity*: it has no ports, contributes no nets, and is invisible
+  to the connectivity union-find (§5.1). Extraction collects it as a TestBench measurement statement, not as
+  a component or net.
+- **Part Group** — toggles display of specific component toolbars/groups (lumped elements, transmission lines,
+  …).
+- **Annotation** — toggles the annotation toolbar (text, lines, shapes on the schematic — decoration, not
+  electrical; ignored by extraction).
+- **Text Visibility (eye)** — pull-down to toggle visible text on the schematic (net names, part parameters);
+  the global counterpart to the per-parameter “show on schematic” flag (§4.5).
+
+*Edit modifiers (toggles)*
+- **Keep Connect** — automatic wire re-connection when moving parts (the drag-release-over-wire behavior,
+  §4.2, kept live during moves).
+- **Grid Snap** — toggle grid alignment on/off (§4.1).
+
+*Drawing, zoom & manipulation*
+- **Pan / Zoom Area / Zoom to Fit / Zoom to Page** — navigation (§4.1; Zoom to Fit = the `F` shortcut, §4.6).
+- **Line / Angled Line** — draw net connections (orthogonal and angled wire tools; routing is simple-ortho,
+  §4.3).
+- **Rotate** — rotate the selected part 90° (the `R` shortcut, §4.6).
+- **Tune** — mark selected parts tunable for real-time parameter sweeping. **PLACEHOLDER** — tuning is not yet
+  implemented; build the button/affordance stub but no backing behavior until the tuning feature exists.
+- **Disable to Open / Disable to Short** — mark the selected components to simulate as an open or short
+  circuit without deleting them. This sets a per-instance **disable state** (`None` / `Open` / `Short`) on
+  the component in the design model; the visual shows the disabled state (e.g. greyed with an open/short
+  glyph). **No engine change is needed** — the mark is honored entirely by **net extraction** (§5.2): the
+  extractor bridges the component to an open or short when building the netlist. The toolbar only sets the
+  flag and reflects it; the bridging lives in the schematic→engine seam.
+
+---
+
+## 8. Menus & workflows
+
+Standard menu bar: **File** (New Workspace, Open, Add Library [reference an existing cell library], Save,
+Save As, Import/Export DataSet, …), **Edit** (Undo/Redo, Cut/Copy/Paste, Select All, …), **View** (region
+show/hide, zoom-to-fit, theme), **Simulate** (Run, Stop, the analysis the active TestBench defines, …).
+
+The default path must honor the PRD §12 **click budgets** (e.g. placed FET → running HB power sweep in ≤ 8
+actions). Advanced settings remain reachable but must not clutter the default workflow (progressive
+disclosure — `src/Ui/CLAUDE.md`).
+
+---
+
+## 9. Messages region
+
+A scrollable, selectable text area showing engine/netlist messages. **Color + icon coded** (never color
+alone — accessibility, `src/Ui/CLAUDE.md`): error (red + error icon), warning (yellow + warning icon),
+success (green + check). Color *meaning* may be localized, but the icon carries the meaning regardless of
+locale or color vision.
+
+**Clickable file links:** any file name in a message is underlined; clicking it **reveals the file in the OS
+file manager** (Finder / Explorer). Engine errors that reference a netlist file + line should link to it.
+
+---
+
+## 10. Cross-cutting editor behaviors
+
+- **Undo/redo via the command pattern** across all editors (schematic, symbol, data-display). Every mutation
+  is a reversible command; nothing mutates model state directly (`src/Ui/CLAUDE.md`).
+- **Copy/paste via the system clipboard** — all or a selectable subset of a schematic, to/from other
+  schematics; pasted items stay selected.
+- **Hierarchy navigation — in-place descend.** Pushing into a sub-cell's schematic **descends the canvas into
+  that cell in place**, with a **breadcrumb** to pop back out (not a new tab). Editing a cell affects every
+  instance; instance-level parameter **overrides** stay per-instance (root `CLAUDE.md` → expressions).
+- **Drag-and-drop** broadly (palette→schematic, tree items, tabs) with drag previews, valid/invalid-target
+  feedback, and undo support (`src/Ui/CLAUDE.md` §11).
+
+---
+
+## 11. Open items / deferred
+
+- **Beautiful auto-routing** (obstacle-aware, aesthetic) — deferred research item; v1 is simple-ortho (§4.3).
+- **Layout views** for cells — future (cells today have symbol + schematic).
+- **Contour plot** (§6.3) — major item, design sub-note when Phase 7 reaches it.
+- **Properties region** (§2.2) — additional inspector roles beyond the palette — future.
+- **Tune** (§7.2) — placeholder button; real behavior arrives with the tuning feature.
+- **Data-display context toolbar** (§7.2) — the plot/contour-tools toolbar for the data-display tab — built
+  with the data display (Phase 7).
+- **Component HTML docs** (§4.5) — placeholder now, written later.
+- The Dock layout serialization (§2.0) and the net-extraction algorithm (§5.1) are now specified to the
+  level 6b/6e need; finer details (exact serialized schema, junction-dot UX) refined during implementation.
