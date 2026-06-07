@@ -463,6 +463,12 @@ public class DataSetExportTests(ITestOutputHelper output) : IDisposable
 
         using var file    = H5File.OpenRead(path);
         var dsGroup   = file.Group("dataset");
+
+        // Verify format_version scalar
+        var fmtVer = dsGroup.Dataset("format_version").Read<long[]>();
+        Assert.Single(fmtVer);
+        Assert.Equal(1L, fmtVer[0]);
+
         var linGroup  = dsGroup.Group("__linear_network__");
         Assert.NotNull(linGroup);
 
@@ -482,10 +488,20 @@ public class DataSetExportTests(ITestOutputHelper output) : IDisposable
             result.LinearPayload.MnaSize - result.LinearPayload.NonGroundCount,
             branchNames.Length);
 
-        // Verify G_rows and G_cols have same length
+        // Verify G_rows and G_cols reflect the union sparsity pattern (not just DC).
+        // DC has fewer entries than AC harmonics (capacitors are open at ω=0);
+        // nnz must equal the union count across all harmonics.
         var gRows = linGroup.Dataset("G_rows").Read<int[]>();
         var gCols = linGroup.Dataset("G_cols").Read<int[]>();
         Assert.Equal(gRows.Length, gCols.Length);
+
+        var patternSet = new HashSet<(int, int)>();
+        for (int k = 0; k < result.LinearPayload.HarmonicCount; k++)
+        {
+            var (r, c, _) = result.LinearPayload.GetSparseG(k);
+            for (int i = 0; i < r.Length; i++) patternSet.Add((r[i], c[i]));
+        }
+        Assert.Equal(patternSet.Count, gRows.Length);
 
         output.WriteLine(
             $"  __linear_network__: K+1={omegas.Length}, nnz={gRows.Length}, " +
