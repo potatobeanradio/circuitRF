@@ -8,6 +8,7 @@
              xmlns:pv="using:CircuitRF.Ui.Views.ProjectTree"
              xmlns:propv="using:CircuitRF.Ui.Views.Properties"
              xmlns:cv="using:CircuitRF.Ui.Views.Content"
+             xmlns:schemDoc="using:CircuitRF.Ui.Schematic"
              xmlns:mv="using:CircuitRF.Ui.Views.Messages"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
@@ -44,6 +45,9 @@
         </DataTemplate>
         <DataTemplate DataType="{x:Type dockVm:StubDocument}">
             <cv:StubContentView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type schemDoc:SchematicDocument}">
+            <cv:SchematicView/>
         </DataTemplate>
     </Application.DataTemplates>
 
@@ -89,6 +93,18 @@
         <!-- Dock.Avalonia.Themes.Fluent — provides DockControl rendering and styling.
              Resolved from Dock.Avalonia.Themes.Fluent 12.0.0.2 package. -->
         <StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml"/>
+
+        <!-- Document bodies: use Dock's NON-deferred (cached) content template.
+             The default 'DockDocumentControlSingleContentTemplate' wraps each document body in a
+             DeferredContentControl that realizes content on a background-priority timeline. In our
+             app that defers the first paint of a newly-activated document until the next layout
+             pass (the canvas stayed blank/stale until a panel was toggled). The cached template
+             hosts each dockable in a plain ContentControl (resolved via the App DataTemplates),
+             so document bodies paint on the normal layout pass. Trade-off: all open document
+             bodies are kept realized (cached) rather than lazily built — fine at our tab counts. -->
+        <Style Selector="dockCtrl|DocumentControl">
+            <Setter Property="Template" Value="{DynamicResource DockDocumentControlCachedContentTemplate}"/>
+        </Style>
 
         <!-- Material Icons -->
         <mi:MaterialIconStyles/>

@@ -9,6 +9,7 @@ namespace CircuitRF.Ui.ViewModels.Dock;
 /// </summary>
 public class StubDocument : Document
 {
+
     public enum StubKind { Welcome, Schematic, SymbolEditor, DataDisplay }
 
     public StubKind Kind { get; }

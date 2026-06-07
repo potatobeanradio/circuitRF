@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:schemDoc="using:CircuitRF.Ui.Schematic"
+             xmlns:ctrl="using:CircuitRF.Ui.Controls"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Content.SchematicView"
+             x:DataType="schemDoc:SchematicDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <DockPanel>
+
+        <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,2">
+
+            <StackPanel Orientation="Horizontal" Spacing="4" Classes="Toolbar">
+
+                <!-- Zoom to Fit -->
+                <Button Click="OnZoomToFit"
+                        ToolTip.Tip="Zoom to Fit  (double-click canvas)"
+                        Padding="6,3">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                        <TextBlock Text="Fit" FontSize="11" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Zoom to Page (1:1) -->
+                <Button Click="OnZoomToPage"
+                        ToolTip.Tip="Reset to 1:1 zoom"
+                        Padding="6,3">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                        <TextBlock Text="1:1" FontSize="11" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- FPS readout (updated by timer in code-behind) -->
+                <TextBlock x:Name="FpsText"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           FontFamily="Monospace"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                           Opacity="0.8"/>
+
+            </StackPanel>
+        </Border>
+
+        <!-- ── Schematic canvas (fills remaining space) ─────────────────────── -->
+        <ctrl:SchematicCanvas x:Name="SchematicCanvasCtrl"
+                              Model="{Binding Model}"
+                              ShowFps="True"
+                              ClipToBounds="True"/>
+
+    </DockPanel>
+</UserControl>

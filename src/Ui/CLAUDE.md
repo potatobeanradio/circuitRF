@@ -57,6 +57,21 @@ original brush object. To fix those, you must ALSO override the Tier-2 alias key
 - `SetFocusedDockable(IDock, IDockable)` requires the parent `IDock` container, not the tool itself.
   When programmatically activating a tool, use `SetActiveDockable(tool)` only unless you hold a
   reference to the container.
+- **GOTCHA — document bodies must use the CACHED (non-deferred) content template.** Dock's default
+  `DocumentControl` template (`DockDocumentControlSingleContentTemplate`, Fluent theme) wraps each
+  document body in a **`DeferredContentControl`** that realizes content on a *background-priority
+  dispatcher timeline*. The DataTemplate resolves correctly and the right view IS built — but its
+  first **paint is deferred** and (in our app) does not flush until the next layout pass, so a
+  newly-activated document stays unpainted (the previous tab's stale view lingers) until something
+  forces a relayout (e.g. toggling a panel). The `IDeferredContentPresentation { DeferContentPresentation
+  => false }` opt-out did NOT help (its readiness gate fails at the instant content swaps). **Fix
+  (in `App.axaml`):** override `DocumentControl.Template` to Dock's other built-in template,
+  `DockDocumentControlCachedContentTemplate`, which hosts each dockable in a plain `ContentControl`
+  (no `DeferredContentControl`, no timeline) and paints on the normal layout pass:
+  `<Style Selector="dockCtrl|DocumentControl"><Setter Property="Template"
+  Value="{DynamicResource DockDocumentControlCachedContentTemplate}"/></Style>`. Trade-off: all open
+  document bodies stay realized (cached) instead of lazily built — negligible at our tab counts, and
+  tab switching becomes instant. Document views still resolve via the `App.axaml` DataTemplates.
 
 ### Command / undo-redo infrastructure
 - **All user mutations route through `IUiCommand` → `UndoRedoStack`** in `WorkspaceViewModel`.
@@ -133,7 +148,61 @@ layer is circuitRF's own, `DataCube`-native (C1); splotRF is reference material,
   then asks the engine to elaborate and run. Results come back as a **`DataSet`** (named
   single-kind `DataCube`s).
 
-## Schematic canvas — the performance-critical control
+
+### System Specific Differences Between Window, Linux, macOS
+- macOS uses ⌘ symbol instead of Ctrl on Windows and Linux. Ensure this is respected in menus and tooltips text.
+- The System file manager in macOS is called the "Finder", while Windows has an "Explorer". Respect this convention in menus and tooltip text when referring to the System File Manager.
+
+## Schematic canvas — the performance-critical control (6c pattern, locked in)
+
+### Render pipeline (do not change)
+- **Control.Render → ICustomDrawOperation → ISkiaSharpApiLease → SchematicRenderer.Draw**
+  - `SchematicCanvas : Control` — Avalonia host; owns pan/zoom state, pointer handling, DirectProperty bindings
+  - `SchematicDrawOperation : ICustomDrawOperation` — captures a snapshot of viewport state; leases the Skia canvas
+  - `SchematicRenderer` (static class) — pure Skia; no Avalonia types; re-skinnable
+  - **NOT SKCanvasView** — that path is not composited correctly in Avalonia 11+
+- See `splotRF/src/Controls/PlotControl.cs` for the proven pattern this is adapted from.
+
+### World ↔ pixel transform
+- `panX, panY` = world coords at the top-left corner of the canvas (in world units)
+- `zoom` = pixels per world unit
+- `px = (wx - panX) * zoom`; `wy = py / zoom + panY`
+- Scroll-zoom: record world point under cursor *before* zoom change, adjust pan to keep it fixed after.
+- Symbol local coords: 100 units = 1 grid square; standard component width = 300 units (body + leads)
+
+### Performance
+- **Viewport virtualization**: `SchematicSpatialIndex` (uniform grid, cell size 1500 world units, `Dictionary<(int,int),List<int>>`)
+  — `QueryViewport(vpMinX,Y,vpMaxX,Y)` returns conservative candidate sets for components and wires.
+  Never draw everything; the index prunes invisible items before the render loop.
+- **LOD (level of detail)**: based on `compPixW = zoom × 300`
+  - `< 6px`  → single filled rect (`LodRect` colour); skip all else
+  - `< 22px` → body symbol lines only; skip port markers and text
+  - `≥ 22px` → full: symbol + port markers (red box for unconnected) + labels
+- **Grid**: adaptive — fine grid drawn when spacing ≥ 4px × 3; coarse-only (×10) when spacing ≥ 4px; skipped below 4px.
+  Cap at 600 lines per axis.
+- **FPS**: `static volatile long SchematicRenderer.LastFrameTicks` written by the renderer each frame.
+  `SchematicView.axaml.cs` reads it every 333 ms via `DispatcherTimer` to update the toolbar readout.
+  The renderer also draws an overlay in the top-right corner of the canvas (enabled by `ShowFps=True`).
+
+### DirectProperty pattern
+```csharp
+public static readonly DirectProperty<SchematicCanvas, SchematicModel?> ModelProperty =
+    AvaloniaProperty.RegisterDirect<SchematicCanvas, SchematicModel?>(
+        nameof(Model), o => o.Model, (o, v) => o.Model = v);
+```
+Model setter rebuilds `SchematicSpatialIndex`, sets `_needsInitialFit = true`, calls `InvalidateVisual()`.
+
+### Initial fit
+`LayoutUpdated` event fires when `Bounds` is valid. A `_needsInitialFit` flag triggers `ZoomToFitInternal`
+exactly once. The handler unsubscribes itself. Do NOT call `InvalidateVisual()` inside `Render()`.
+
+### Adding a new canvas type (6d Data Display, etc.)
+1. Create `MyRenderer` (static, no Avalonia — parallel to `SchematicRenderer`)
+2. Create `MyCanvas : Control` with a `DirectProperty<MyCanvas, MyModel?>` and an `ICustomDrawOperation`
+   nested class that leases Skia and calls `MyRenderer.Draw`
+3. Create `MyView.axaml` with toolbar + `MyCanvas`; wire buttons in `MyView.axaml.cs`
+4. Add `DataTemplate DataType="{x:Type ...}"` in `App.axaml`
+
 - **Do NOT render components as individual styled controls.** A 10,000-component schematic will die
   that way. Render the canvas yourself via a custom control (`DrawingContext`, dropping to
   **SkiaSharp** for hot paths), with **viewport virtualization** and a **spatial index** (e.g.

@@ -42,8 +42,14 @@ public partial class ProjectTreeTool : Tool
         lib2.Children.Add(new ProjectTreeItemViewModel("Inductor", ProjectTreeItemKind.Cell));
         lib2.Children.Add(new ProjectTreeItemViewModel("Capacitor", ProjectTreeItemKind.Cell));
 
+        // 6c demo: stress-test cell — opens a programmatically generated 10k-component schematic.
+        var demos = new ProjectTreeItemViewModel("Demos", ProjectTreeItemKind.Library) { IsExpanded = true };
+        demos.Children.Add(new ProjectTreeItemViewModel("Hero2 PA",      ProjectTreeItemKind.Cell));
+        demos.Children.Add(new ProjectTreeItemViewModel("StressTest10k", ProjectTreeItemKind.Cell));
+
         Items.Add(lib1);
         Items.Add(lib2);
+        Items.Add(demos);
     }
 
     // Called by the view when an item is double-clicked — opens a stub Content tab.

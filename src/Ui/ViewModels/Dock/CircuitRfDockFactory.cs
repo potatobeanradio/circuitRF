@@ -141,10 +141,10 @@ public class CircuitRfDockFactory : Factory
     }
 
     /// <summary>
-    /// Opens a new stub document tab in the DocumentDock. Called by WorkspaceViewModel
-    /// when the user double-clicks an item in the Project Tree.
+    /// Opens a document tab in the DocumentDock. Accepts any Dock Document subclass
+    /// (StubDocument, SchematicDocument, etc.). Called by WorkspaceViewModel.
     /// </summary>
-    public void OpenDocument(StubDocument doc)
+    public void OpenDocument(Document doc)
     {
         if (_documentDock is null) return;
         AddDockable(_documentDock, doc);

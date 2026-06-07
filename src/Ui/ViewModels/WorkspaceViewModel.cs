@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Messages;
+using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels.Dock;
 using CircuitRF.Ui.ViewModels.ProjectTree;
 
@@ -222,12 +223,23 @@ public partial class WorkspaceViewModel : ViewModelBase
 
     private void OpenTreeItem(ProjectTreeItemViewModel item)
     {
-        var doc = new StubDocument(
-            item.Name,
-            item.Kind == ProjectTreeItemKind.DataDisplay
-                ? StubDocument.StubKind.DataDisplay
-                : StubDocument.StubKind.Schematic);
-        _factory.OpenDocument(doc);
+        if (item.Kind == ProjectTreeItemKind.DataDisplay)
+        {
+            // Data display canvas arrives in 6d/6e — open placeholder for now.
+            var stub = new StubDocument(item.Name, StubDocument.StubKind.DataDisplay);
+            _factory.OpenDocument(stub);
+            return;
+        }
+
+        if (item.Kind is ProjectTreeItemKind.Cell or ProjectTreeItemKind.TestBench)
+        {
+            var model = item.Name == "StressTest10k"
+                ? SchematicModelBuilder.GenerateStressTest(10_000)
+                : SchematicModelBuilder.BuildHero2PA();
+            var doc = new SchematicDocument(item.Name, model);
+            _factory.OpenDocument(doc);
+            return;
+        }
     }
 
     // ---- Quit ----------------------------------------------------------------
