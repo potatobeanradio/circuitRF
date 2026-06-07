@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.AcknowledgmentsWindow"
+        Title="Acknowledgments"
+        Width="480"
+        Height="420"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20">
+
+        <ScrollViewer Grid.Row="0">
+            <StackPanel Spacing="8">
+
+                <TextBlock Text="Open Source Libraries"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,4"/>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">Avalonia</Run>
+                    <Run> — Cross-platform UI framework for .NET. MIT License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">CommunityToolkit.Mvvm</Run>
+                    <Run> — MVVM helpers for .NET. MIT License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">SkiaSharp</Run>
+                    <Run> — Cross-platform 2D graphics API. MIT License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">Dock.Avalonia / Dock.Model.Mvvm</Run>
+                    <Run> — Docking library for Avalonia. MIT License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">Material.Icons.Avalonia</Run>
+                    <Run> — Material Design icon set for Avalonia. MIT License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">CSparse.NET</Run>
+                    <Run> — Sparse matrix library for .NET. LGPL v2.1.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">NumFlat</Run>
+                    <Run> — Dense linear algebra for .NET. MIT License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">PureHDF</Run>
+                    <Run> — HDF5 library for .NET. MIT License.</Run>
+                </TextBlock>
+
+                <TextBlock Text="Fonts" FontSize="14" FontWeight="SemiBold" Margin="0,8,0,4"/>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">DejaVu Sans</Run>
+                    <Run> — Derivative of Bitstream Vera Sans, with extended Unicode coverage.</Run>
+                    <LineBreak/>
+                    <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">Fonts © Bitstream Inc. DejaVu changes are in the public domain. Arev glyphs © Tavmjong Bah. Bitstream Vera Fonts License.</Run>
+                    <LineBreak/>
+                    <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">Embedded at: Assets/Fonts/DejaVuSans*.ttf</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18" Margin="0,6,0,0">
+                    <Run FontWeight="SemiBold">IBM Plex Sans</Run>
+                    <Run> — IBM's open-source typeface family. Static variants embedded for SkiaSharp compatibility.</Run>
+                    <LineBreak/>
+                    <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">© 2017 IBM Corp. SIL Open Font License, Version 1.1.</Run>
+                    <LineBreak/>
+                    <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">Embedded at: Assets/Fonts/IBM_Plex_Sans/static/IBMPlexSans-*.ttf</Run>
+                </TextBlock>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <Button Grid.Row="1"
+                Content="Close"
+                IsDefault="True"
+                Width="90"
+                HorizontalAlignment="Right"
+                Margin="0,12,0,0"
+                Click="OnCloseClicked"
+                FontSize="12"/>
+
+    </Grid>
+</Window>

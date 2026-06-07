@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!-- ── Required bundle identity keys ─────────────────────────────────────
+         CFBundleIdentifier must match BUNDLE_ID in bundleForMacOS.sh and the
+         --entitlements arg to codesign. CFBundleExecutable must match the binary
+         name inside Contents/MacOS/. -->
+
+    <key>CFBundleIdentifier</key>
+    <string>com.circuitRF.circuitRF</string>
+
+    <key>CFBundleExecutable</key>
+    <string>CircuitRF.Ui</string>
+
+    <key>CFBundleName</key>
+    <string>circuitRF</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>circuitRF</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+
+    <!-- .NET 10 requires macOS 13 (Ventura) or later. -->
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+
+    <!-- Suppress quarantine "damaged app" dialog for ad-hoc signed builds. -->
+    <key>LSFileQuarantineEnabled</key>
+    <false/>
+
+    <key>CFBundleIconFile</key>
+    <string>circuitRFIcon</string>
+
+    <!-- Declare the custom UTI for .crfw (circuitRF Workspace) files. -->
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.circuitrf.crfw</string>
+            <key>UTTypeDescription</key>
+            <string>circuitRF Workspace</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>crfw</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
+
+    <!-- Document types this app can open. -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>circuitRF Workspace</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.circuitrf.crfw</string>
+            </array>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>crfw</string>
+            </array>
+        </dict>
+    </array>
+
+</dict>
+</plist>

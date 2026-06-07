@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <!--
+        com.apple.security.files.user-selected.read-write
+        ──────────────────────────────────────────────────
+        Grants read/write access to files explicitly chosen by the user — including
+        files sent via Apple Events (Finder double-click / "Open With"). Required for
+        Hardened Runtime apps; without it, File operations silently fail for TCC-protected
+        locations (Desktop, Documents, Downloads) even when the user initiated the open.
+    -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+</dict>
+</plist>

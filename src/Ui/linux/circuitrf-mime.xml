@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+    <mime-type type="application/x-circuitrf-workspace">
+        <comment>circuitRF Workspace</comment>
+        <comment xml:lang="en">circuitRF Workspace file</comment>
+        <glob pattern="*.crfw"/>
+        <icon name="circuitrf"/>
+    </mime-type>
+</mime-info>

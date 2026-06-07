@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:msg="using:CircuitRF.Ui.Messages"
+             xmlns:conv="using:CircuitRF.Ui.Converters"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Messages.MessagesView"
+             x:DataType="vm:MessagesTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <UserControl.Resources>
+        <conv:MessageLevelToIconConverter  x:Key="LevelToIcon"  />
+        <conv:MessageLevelToColorConverter x:Key="LevelToColor" />
+        <conv:IsNotNullConverter           x:Key="IsNotNull"    />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Header strip with title and Clear button -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="4,3,4,2">
+            <TextBlock Grid.Column="0"
+                       Text="Messages"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       VerticalAlignment="Center"/>
+            <Button Grid.Column="1"
+                    Command="{Binding ClearMessagesCommand}"
+                    ToolTip.Tip="Clear messages"
+                    Padding="4,2"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    FontSize="11">
+                <mi:MaterialIcon Kind="DeleteOutline" Width="14" Height="14"/>
+            </Button>
+        </Grid>
+
+        <!-- Message list — scrollable, selectable. Named for scroll-to-bottom in code-behind. -->
+        <ListBox Grid.Row="1"
+                 x:Name="MessagesListBox"
+                 ItemsSource="{Binding Messages}"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 SelectionMode="Multiple">
+
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="msg:MessageEntry">
+                    <Grid ColumnDefinitions="Auto,*" Margin="4,2">
+
+                        <!-- Level icon — carries meaning for accessibility (never color alone) -->
+                        <mi:MaterialIcon Grid.Column="0"
+                                         Kind="{Binding Level, Converter={StaticResource LevelToIcon}}"
+                                         Foreground="{Binding Level, Converter={StaticResource LevelToColor}}"
+                                         Width="14" Height="14"
+                                         Margin="0,0,6,0"
+                                         VerticalAlignment="Top"/>
+
+                        <!-- Message body -->
+                        <StackPanel Grid.Column="1" Spacing="1">
+                            <TextBlock Text="{Binding Text}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource SystemBaseHighColor}"/>
+
+                            <!-- Clickable file link (shown only when FilePath is non-null).
+                                 Underlined button styled as a hyperlink; clicking reveals the
+                                 file in the OS file manager (Finder/Explorer/xdg-open). -->
+                            <Button IsVisible="{Binding FilePath, Converter={StaticResource IsNotNull}}"
+                                    Command="{Binding $parent[UserControl].DataContext.RevealFileCommand}"
+                                    CommandParameter="{Binding FilePath}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    HorizontalAlignment="Left"
+                                    HorizontalContentAlignment="Left"
+                                    Cursor="Hand"
+                                    ToolTip.Tip="Reveal in file manager">
+                                <TextBlock Text="{Binding FilePath}"
+                                           FontSize="11"
+                                           TextDecorations="Underline"
+                                           Foreground="{DynamicResource SystemAccentColor}"
+                                           TextWrapping="NoWrap"/>
+                            </Button>
+                        </StackPanel>
+
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+
+            <ListBox.ItemContainerTheme>
+                <ControlTheme TargetType="ListBoxItem">
+                    <Setter Property="Padding" Value="2"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                </ControlTheme>
+            </ListBox.ItemContainerTheme>
+
+        </ListBox>
+    </Grid>
+</UserControl>

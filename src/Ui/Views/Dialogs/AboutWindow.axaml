@@ -1,0 +1,70 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.AboutWindow"
+        Title="About circuitRF"
+        Width="400"
+        Height="340"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <StackPanel Margin="32,28,32,24" Spacing="0">
+
+        <!-- App name -->
+        <TextBlock Text="circuitRF"
+                   FontSize="28"
+                   FontWeight="Bold"
+                   HorizontalAlignment="Center"/>
+
+        <!-- Version -->
+        <TextBlock Text="Version 0.1.0 (Phase 6b)"
+                   FontSize="12"
+                   HorizontalAlignment="Center"
+                   Opacity="0.6"
+                   Margin="0,4,0,16"/>
+
+        <!-- Description -->
+        <TextBlock Text="Lightweight RF Circuit Simulator"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   HorizontalAlignment="Center"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"/>
+
+        <TextBlock Text="DC, S-parameters, harmonic balance, loadpull/sourcepull."
+                   FontSize="12"
+                   HorizontalAlignment="Center"
+                   Opacity="0.7"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   Margin="0,4,0,4"/>
+
+        <TextBlock Text="Open source. Built with .NET 10 and Avalonia."
+                   FontSize="12"
+                   HorizontalAlignment="Center"
+                   Opacity="0.7"
+                   Margin="0,2,0,24"/>
+
+        <!-- Action row -->
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    Spacing="12">
+
+            <Button Content="Acknowledgments…"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="OnAcknowledgmentsClicked"
+                    FontSize="12"/>
+
+            <Button Content="OK"
+                    Width="90"
+                    IsDefault="True"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Click="OnOkClicked"
+                    FontSize="12"/>
+
+        </StackPanel>
+
+    </StackPanel>
+</Window>

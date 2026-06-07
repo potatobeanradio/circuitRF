@@ -1,0 +1,17 @@
+#!/bin/sh
+# circuitRF post-remove script (Debian/Ubuntu)
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    xdg-mime uninstall /usr/share/mime/packages/circuitrf-mime.xml || true
+    update-mime-database /usr/share/mime 2>/dev/null || true
+
+    xdg-desktop-menu uninstall /usr/share/applications/circuitrf.desktop || true
+    update-desktop-database /usr/share/applications 2>/dev/null || true
+
+    xdg-icon-resource uninstall --novendor --size 256 circuitrf || true
+    gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
+fi
+
+#DEBHELPER#
+exit 0

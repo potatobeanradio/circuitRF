@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  circuitRF Windows installer (WiX v4).
+  Adapted from splotRF/src/package.wx.
+  Build: wix build package.wx -o circuitRF-Setup.msi
+  Requires: WiX Toolset v4+ (https://wixtoolset.org/)
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="circuitRF"
+           Manufacturer="circuitRF Contributors"
+           Version="0.1.0"
+           UpgradeCode="E8C7F3A1-2B4D-4E6F-9C8A-1D3E5F7B9A2C"
+           Language="1033"
+           Codepage="1252"
+           InstallerVersion="500">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of circuitRF is already installed."/>
+    <MediaTemplate EmbedCab="yes"/>
+
+    <!-- Program Files installation directory -->
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="circuitRF"/>
+    </StandardDirectory>
+
+    <!-- Start Menu shortcut -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="circuitRF"/>
+    </StandardDirectory>
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <!-- Main executable and all published files go here; populated by heat.exe harvest. -->
+      <!-- Placeholder: add harvested components here in the CI/CD build pipeline. -->
+      <Component Id="MainExecutable">
+        <File Id="CircuitRFExe"
+              Source="bin\Release\net10.0\win-x64\publish\CircuitRF.Ui.exe"
+              KeyPath="yes"/>
+        <Shortcut Id="StartMenuShortcut"
+                  Directory="ApplicationProgramsFolder"
+                  Name="circuitRF"
+                  Description="Lightweight RF Circuit Simulator"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Advertise="no"/>
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="ProductFeature" Title="circuitRF" Level="1">
+      <ComponentGroupRef Id="ProductComponents"/>
+    </Feature>
+
+    <!-- File associations for .crfw -->
+    <Component Id="FileAssociation" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKCU" Key="Software\Classes\.crfw" Value="circuitRF.Workspace" Type="string" KeyPath="yes"/>
+      <RegistryValue Root="HKCU" Key="Software\Classes\circuitRF.Workspace" Value="circuitRF Workspace" Type="string"/>
+      <RegistryValue Root="HKCU" Key="Software\Classes\circuitRF.Workspace\DefaultIcon" Value="[INSTALLFOLDER]CircuitRF.Ui.exe,0" Type="string"/>
+      <RegistryValue Root="HKCU" Key="Software\Classes\circuitRF.Workspace\shell\open\command" Value="&quot;[INSTALLFOLDER]CircuitRF.Ui.exe&quot; &quot;%1&quot;" Type="string"/>
+    </Component>
+
+  </Package>
+</Wix>

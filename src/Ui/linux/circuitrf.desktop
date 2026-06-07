@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=circuitRF
+Comment=Lightweight RF Circuit Simulator
+Exec=/usr/bin/circuitrf %U
+Icon=circuitrf
+Terminal=false
+Type=Application
+Categories=Science;Engineering;Electronics;
+MimeType=application/x-circuitrf-workspace;
+Keywords=RF;simulation;S-parameters;harmonic balance;loadpull;
+StartupWMClass=circuitRF

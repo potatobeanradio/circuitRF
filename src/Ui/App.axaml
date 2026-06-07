@@ -1,0 +1,140 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:CircuitRF.Ui"
+             xmlns:conv="using:CircuitRF.Ui.Converters"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:views="using:CircuitRF.Ui.Views"
+             xmlns:pv="using:CircuitRF.Ui.Views.ProjectTree"
+             xmlns:propv="using:CircuitRF.Ui.Views.Properties"
+             xmlns:cv="using:CircuitRF.Ui.Views.Content"
+             xmlns:mv="using:CircuitRF.Ui.Views.Messages"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+             xmlns:dockCtrl="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
+             x:Class="CircuitRF.Ui.App"
+             Name="circuitRF"
+             RequestedThemeVariant="Default">
+
+    <!-- macOS app menu (app name + About + Settings). Ignored on Windows/Linux.
+         Do NOT add Quit here — AppKit appends it automatically; adding it explicitly
+         causes a duplicate. Quit is handled via ShutdownRequested in App.axaml.cs. -->
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="About circuitRF…"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Settings…" Gesture="Meta+OemComma"/>
+        </NativeMenu>
+    </NativeMenu.Menu>
+
+    <Application.DataTemplates>
+        <!-- Standard ViewLocator for normal MVVM pairs. -->
+        <local:ViewLocator/>
+
+        <!-- Dock region views — DataTemplates map Dock Tool/Document subclasses to views.
+             Dock resolves these when rendering the dock layout. -->
+        <DataTemplate DataType="{x:Type dockVm:ProjectTreeTool}">
+            <pv:ProjectTreeView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type dockVm:PropertiesTool}">
+            <propv:PropertiesView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type dockVm:MessagesTool}">
+            <mv:MessagesView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type dockVm:StubDocument}">
+            <cv:StubContentView/>
+        </DataTemplate>
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <FontFamily x:Key="DejaVuSans">avares://CircuitRF.Ui/Assets/Fonts#DejaVu Sans</FontFamily>
+        <sys:Double x:Key="FontSize">12</sys:Double>
+
+        <!-- Converters registered as application-level resources so all views can use them -->
+        <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
+        <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>
+        <conv:StubKindIsDataDisplayConverter  x:Key="StubKindIsDataDisplayConverter"/>
+        <conv:MessageLevelToIconConverter     x:Key="MessageLevelToIconConverter"/>
+        <conv:MessageLevelToColorConverter    x:Key="MessageLevelToColorConverter"/>
+        <conv:IsNotNullConverter              x:Key="IsNotNullConverter"/>
+
+        <!-- Override Dock.Fluent accent brushes with the OS system accent color.
+             DockFluentTheme/Accents/Fluent.axaml hardcodes VS-blue (#007ACC) for these
+             "DockApplication*" keys. Application.Resources wins over StyleInclude resources
+             for DynamicResource lookups, so overriding them here replaces the hardcoded blue.
+             However, the theme also uses StaticResource aliases (e.g. DockTabActiveBackgroundBrush
+             → DockApplicationAccentBrushLow) which resolve at THEME LOAD time — those alias keys
+             must be overridden here directly too, or they keep pointing to the original #007ACC
+             brush regardless of the DockApplicationAccentBrush* overrides. -->
+
+        <!-- Primary accent family -->
+        <SolidColorBrush x:Key="DockApplicationAccentBrushLow"       Color="{DynamicResource SystemAccentColor}"/>
+        <SolidColorBrush x:Key="DockApplicationAccentBrushMed"       Color="{DynamicResource SystemAccentColorLight1}"/>
+        <SolidColorBrush x:Key="DockApplicationAccentBrushHigh"      Color="{DynamicResource SystemAccentColorLight2}"/>
+        <SolidColorBrush x:Key="DockApplicationAccentBrushIndicator" Color="{DynamicResource SystemAccentColor}"/>
+
+        <!-- StaticResource aliases the theme resolves at load time — must also be overridden -->
+        <SolidColorBrush x:Key="DockTabActiveBackgroundBrush"        Color="{DynamicResource SystemAccentColor}"/>
+        <SolidColorBrush x:Key="DockTabActiveIndicatorBrush"         Color="{DynamicResource SystemAccentColor}"/>
+        <SolidColorBrush x:Key="DockTabHoverBackgroundBrush"         Color="{DynamicResource SystemAccentColorLight1}"/>
+        <SolidColorBrush x:Key="DockTabCloseHoverBackgroundBrush"    Color="{DynamicResource SystemAccentColorLight2}"/>
+        <SolidColorBrush x:Key="DockSplitterHoverBrush"              Color="{DynamicResource SystemAccentColorLight1}"/>
+        <SolidColorBrush x:Key="DockSplitterDragBrush"               Color="{DynamicResource SystemAccentColor}"/>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme DensityStyle="Compact" />
+
+        <!-- Dock.Avalonia.Themes.Fluent — provides DockControl rendering and styling.
+             Resolved from Dock.Avalonia.Themes.Fluent 12.0.0.2 package. -->
+        <StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml"/>
+
+        <!-- Material Icons -->
+        <mi:MaterialIconStyles/>
+
+        <!-- ── Dock region backgrounds ──────────────────────────────────────
+             The DockFluentTheme defaults to SystemAltHighColor (pure white / pure black).
+             Override to SystemChromeLowColor (~#F2F2F2 light / ~#171717 dark) so panels
+             feel like part of the window chrome, not a harsh contrast surface. -->
+        <Style Selector="dockCtrl|ToolControl">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
+        </Style>
+        <Style Selector="dockCtrl|DocumentDockControl">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
+        </Style>
+        <Style Selector="dockCtrl|RootDockControl">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
+        </Style>
+        <Style Selector="dockCtrl|ProportionalDockControl">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
+        </Style>
+        <Style Selector="dockCtrl|PinnedDockControl">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
+        </Style>
+
+        <!-- Toolbar icons: soften from SystemBaseHighColor (~87% black) to SystemBaseMediumColor (~60%).
+             MaterialIcon.Foreground does not inherit via TextElement.Foreground, so a descendant
+             style targeting the StackPanel.Toolbar class is required. -->
+        <Style Selector="StackPanel.Toolbar mi|MaterialIcon">
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+
+        <!-- Global font defaults -->
+        <Style Selector="TextBlock">
+            <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="MenuItem">
+            <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
+        </Style>
+    </Application.Styles>
+</Application>

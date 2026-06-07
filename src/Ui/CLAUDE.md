@@ -4,6 +4,121 @@ Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`, the interact
 `docs/design/ui-design.md`, and the architecture/firewall note `docs/design/ui-architecture.md`. The UI is
 how people drive the engine; it must never become the source of truth for simulation.
 
+## Phase 6b shell conventions (locked in — do not deviate without discussion)
+
+### Dock library
+- **Dock.Avalonia 12.0.0.2** + **Dock.Model.Mvvm 12.0.0.2** + **Dock.Avalonia.Themes.Fluent 12.0.0.2** —
+  all three are required. Theme is loaded via `StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml"`.
+
+#### Dock color system — how it works and how to override it
+The theme's accent colors are defined in `avares://Dock.Avalonia.Themes.Fluent/Accents/Fluent.axaml`
+(source: `src/Dock.Avalonia.Themes.Fluent/Accents/Fluent.axaml` in the wieslawsoltes/Dock repo).
+Two tiers of resources exist:
+
+**Tier 1 — primary accent family (hardcoded VS blue):**
+```
+DockApplicationAccentBrushLow      #007ACC  ← active tab background, splitter drag
+DockApplicationAccentBrushMed      #1C97EA  ← hover tab background, splitter hover
+DockApplicationAccentBrushHigh     #52B0EF  ← close-button hover
+DockApplicationAccentForegroundBrush #F0F0F0 ← text on active (accent) tabs
+DockApplicationAccentBrushIndicator #007ACC ← dock target indicators
+```
+
+**Tier 2 — StaticResource aliases** (resolved at theme load time, pointing into Tier 1):
+```
+DockTabActiveBackgroundBrush  → DockApplicationAccentBrushLow
+DockTabActiveIndicatorBrush   → DockApplicationAccentBrushLow
+DockTabHoverBackgroundBrush   → DockApplicationAccentBrushMed
+DockTabCloseHoverBackgroundBrush → DockApplicationAccentBrushHigh
+DockSplitterHoverBrush        → DockApplicationAccentBrushMed
+DockSplitterDragBrush         → DockApplicationAccentBrushLow
+DockSurfaceHeaderActiveBrush  → DockThemeAccentBrush → {DynamicResource SystemAccentColor} ✓
+```
+
+**Key rule:** `Application.Resources` wins over `StyleInclude` resources for `{DynamicResource}` lookups.
+Overriding a Tier-1 key in `Application.Resources` fixes places that reference it directly.
+BUT StaticResource aliases (Tier 2) are resolved at load time — their VALUE is baked in as the
+original brush object. To fix those, you must ALSO override the Tier-2 alias keys directly in
+`Application.Resources`. Both tiers are overridden in `App.axaml`'s `Application.Resources` block.
+
+**Note:** `DockSurfaceHeaderActiveBrush` (tool panel active title bar) already chains to
+`SystemAccentColor` via `DockThemeAccentBrush`, so it was correct without any override.
+
+**What controls which UI element:**
+- Active document tab strip item background: `DockTabActiveBackgroundBrush`
+- Separator line between tab strip and content: `DockTabActiveIndicatorBrush`
+- Tool panel active title bar (Project/Properties/Messages): `DockSurfaceHeaderActiveBrush`
+- Splitter bar on hover/drag: `DockSplitterHoverBrush` / `DockSplitterDragBrush`
+- **`CircuitRfDockFactory`** extends `Factory`; owns the layout tree. It exposes `MessagesTool?`,
+  `ProjectTreeTool?`, `DocumentDock?`. Use `factory.OpenDocument(stub)` to add tabs in 6c+.
+- Dock Tool/Document subclasses live in `src/Ui/ViewModels/Dock/`. Their views are wired via
+  **`DataTemplate`** in `App.axaml` (NOT ViewLocator — Dock resolves its own templates from the
+  `Application.DataTemplates` list).
+- `SetFocusedDockable(IDock, IDockable)` requires the parent `IDock` container, not the tool itself.
+  When programmatically activating a tool, use `SetActiveDockable(tool)` only unless you hold a
+  reference to the container.
+
+### Command / undo-redo infrastructure
+- **All user mutations route through `IUiCommand` → `UndoRedoStack`** in `WorkspaceViewModel`.
+  Menu and toolbar commands call `WorkspaceViewModel` RelayCommands, which call `UndoRedo.Execute(cmd)`.
+  Do not wire actions that bypass the stack (except global file ops: New/Open/Save).
+- `UndoRedo.CanUndo`/`CanRedo` are observable properties — bind toolbar Undo/Redo button
+  `IsEnabled` to them in 6d when you wire the first real command.
+
+### Messages / IMessageSink
+- **`IMessageSink`** lives in `src/Ui/Messages/` — not in Core/Engine (firewall respected).
+  `MessagesTool` implements it. Obtain via `WorkspaceViewModel.Messages`.
+- Always post from any thread: `MessagesTool.Post()` dispatches to the UI thread internally.
+- Level semantics: Info = neutral status; Success = operation completed; Warning = degraded or
+  unexpected but non-fatal; Error = operation failed, user must act.
+- Icon + color both carry the level (never color alone — accessibility requirement from ui-design.md §2).
+
+### Toolbar
+- Avalonia 12 has **no built-in `ToolBar` control**. Use `Border` + `StackPanel Orientation="Horizontal"`
+  with `Background="Transparent" BorderThickness="0"` buttons and `Border Width="1"` separators.
+
+### Icons (Material.Icons.Avalonia 3.0.2)
+- Always verify enum names against the `Material.Icons` 3.0.2 DLL before using them —
+  many intuitively-named icons don't exist (e.g. `Chip`, `PanelLeftOpen`, `Undo`, `PlusBox`).
+  Valid substitutes used in 6b: `IntegratedCircuitChip`, `PageLayoutSidebarLeft`, `UndoVariant`/`RedoVariant`, `FilePlus`.
+- Context menus on `TreeView` items: place `<Grid.ContextMenu>` inside the `TreeDataTemplate` Grid
+  so the DataContext is the item VM, not the tool VM.
+
+### Fonts
+Two font families are embedded in `Assets/Fonts/` and registered as `Application.Resources` in `App.axaml`:
+
+| Resource key   | Family          | Files                                      | License                  |
+|----------------|-----------------|--------------------------------------------|--------------------------|
+| `DejaVuSans`   | DejaVu Sans     | `Assets/Fonts/DejaVuSans*.ttf`             | Bitstream Vera Fonts     |
+| `IBMPlexSans`  | IBM Plex Sans   | `Assets/Fonts/IBM_Plex_Sans/static/*.ttf`  | SIL Open Font License 1.1 |
+
+**IBM Plex Sans is static-only** (no variable fonts) because SkiaSharp does not support variable fonts.
+
+**Avalonia controls** reference them via `{DynamicResource IBMPlexSans}` / `{DynamicResource DejaVuSans}`.
+
+**SkiaSharp renderers** must use `SkiaFonts` (`src/Ui/Renderers/SkiaFonts.cs`) — lazy-loaded
+`SKTypeface` instances sourced from the same embedded assets via `AssetLoader.Open()`. **Default
+to `IBMPlexSans` for all renderer text** (labels, tick marks, annotations, tables). Fall back to
+`DejaVuSans` only when broader Unicode coverage is needed (e.g. non-Latin axis labels).
+
+```csharp
+// Preferred — clean, modern, designed for screen
+var tf = SkiaFonts.PlexRegular;    // Regular
+var tf = SkiaFonts.PlexBold;       // Bold
+var tf = SkiaFonts.PlexSemiBold;   // SemiBold
+var tf = SkiaFonts.PlexItalic;     // Italic
+var tf = SkiaFonts.PlexLight;      // Light
+
+// Fallback — wide Unicode range
+var tf = SkiaFonts.DejaVuRegular;
+var tf = SkiaFonts.DejaVuBold;
+```
+
+Add additional weights by copying the `Lazy<SKTypeface>` pattern in `SkiaFonts.cs` — every static
+file in `Assets/Fonts/IBM_Plex_Sans/static/` is embedded and loadable. Never call
+`SKTypeface.Default` or `SKTypeface.FromFamilyName(...)` in renderers; that pulls from the host OS
+and produces inconsistent cross-platform output.
+
 **Firewall (load-bearing):** all UI-framework code lives here in `src/Ui`. `RfCore`/`Core`/`Engine`/`Cli`
 reference **no Avalonia** — an enforced CI check fails the build otherwise (`ui-architecture.md` §3). Keep
 Skia *rendering* separable from Avalonia *control hosting* so a re-skin keeps the renderers. The display
@@ -197,8 +312,11 @@ Do NOT use Material.Icons.Avalonia for schematic cell symbols.
 
 ## Fonts
 
-* Use the system UI font.
-* Create centralized semantic Avalonia styles.
+* Avalonia controls use the system UI font by default — do not override it globally.
+* For custom Skia renderers, use **IBM Plex Sans** (`SkiaFonts.PlexRegular` etc.) as the default.
+  Fall back to **DejaVu Sans** (`SkiaFonts.DejaVuRegular` etc.) only for wide Unicode coverage.
+* Never call `SKTypeface.Default` or `SKTypeface.FromFamilyName(...)` in renderers.
+* Create centralized semantic Avalonia styles for any explicit font overrides.
 * Avoid excessive typeface variation.
 
 ## Hierarchy

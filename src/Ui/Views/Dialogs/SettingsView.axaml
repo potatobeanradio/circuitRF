@@ -1,0 +1,61 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.SettingsView"
+        Title="circuitRF Settings"
+        Width="480"
+        Height="360"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20">
+
+        <ScrollViewer Grid.Row="0">
+            <StackPanel Spacing="16">
+
+                <TextBlock Text="General" FontSize="14" FontWeight="SemiBold"/>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Theme" FontSize="12"/>
+                    <ComboBox SelectedIndex="0" FontSize="12" Width="180">
+                        <ComboBoxItem Content="System (follows OS)"/>
+                        <ComboBoxItem Content="Light"/>
+                        <ComboBoxItem Content="Dark"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <Separator/>
+
+                <TextBlock Text="Simulation" FontSize="14" FontWeight="SemiBold"/>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Default harmonic count" FontSize="12"/>
+                    <NumericUpDown Value="7" Minimum="1" Maximum="64"
+                                   Width="120" FontSize="12"/>
+                </StackPanel>
+
+                <Separator/>
+
+                <TextBlock Text="Appearance" FontSize="14" FontWeight="SemiBold"/>
+
+                <CheckBox Content="Show grid in schematic by default"
+                          IsChecked="True"
+                          FontSize="12"/>
+
+                <CheckBox Content="Auto-scroll Messages region on new message"
+                          IsChecked="True"
+                          FontSize="12"/>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,12,0,0">
+            <Button Content="Cancel" Width="80" Click="OnCancelClick" FontSize="12" HorizontalContentAlignment="Center"/>
+            <Button Content="OK" Width="80" IsDefault="True" Classes="accent" Click="OnOkClick" FontSize="12" HorizontalContentAlignment="Center"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

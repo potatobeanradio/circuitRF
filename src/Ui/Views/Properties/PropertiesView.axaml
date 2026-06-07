@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             x:Class="CircuitRF.Ui.Views.Properties.PropertiesView"
+             x:DataType="vm:PropertiesTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="4,4,4,2">
+            <TextBlock Text="Properties" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <!-- Placeholder: Component Palette occupies this region in 6c/6d. -->
+        <Border Grid.Row="1"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                BorderThickness="0">
+            <TextBlock Text="Component Palette (6c)"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       Opacity="0.5"/>
+        </Border>
+
+    </Grid>
+</UserControl>

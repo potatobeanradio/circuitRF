@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.SaveChangesDialog"
+        Title="Save Changes"
+        Width="400"
+        Height="150"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="*,Auto" Margin="20">
+
+        <TextBlock Grid.Row="0"
+                   x:Name="MessageText"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center"
+                   FontSize="13"/>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8">
+
+            <Button x:Name="CancelButton"
+                    Content="Cancel"
+                    Width="80"
+                    Click="OnCancelClick"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button x:Name="DontSaveButton"
+                    Content="Don't Save"
+                    Width="90"
+                    Click="OnDontSaveClick"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button x:Name="SaveButton"
+                    Content="Save"
+                    Width="80"
+                    IsDefault="True"
+                    Classes="accent"
+                    Click="OnSaveClick"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"/>
+
+        </StackPanel>
+
+    </Grid>
+</Window>

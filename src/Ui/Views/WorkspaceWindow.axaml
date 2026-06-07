@@ -1,0 +1,350 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.ViewModels"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        x:Class="CircuitRF.Ui.Views.WorkspaceWindow"
+        x:DataType="vm:WorkspaceViewModel"
+        Title="{Binding WindowTitle}"
+        Width="1200"
+        Height="800"
+        MinWidth="800"
+        MinHeight="500"
+        Background="{DynamicResource SystemChromeLowColor}">
+
+    <Design.DataContext>
+        <vm:WorkspaceViewModel/>
+    </Design.DataContext>
+
+    <!-- ── macOS native menu bar ────────────────────────────────────────── -->
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="File">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="New Workspace"   Command="{Binding NewWorkspaceCommand}"   Gesture="Meta+N"/>
+                        <NativeMenuItem Header="Open…"           Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}" Gesture="Meta+O"/>
+                        <NativeMenuItem Header="Add Library…"    Command="{Binding AddLibraryCommand}"     CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Save"            Command="{Binding SaveWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}" Gesture="Meta+S"/>
+                        <NativeMenuItem Header="Save As…"        Command="{Binding SaveWorkspaceAsCommand}" CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
+                        <!-- Settings is in the app menu on macOS; omit here to avoid duplication -->
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <NativeMenuItem Header="Edit">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Undo"       Command="{Binding UndoCommand}"     Gesture="Meta+Z"/>
+                        <NativeMenuItem Header="Redo"       Command="{Binding RedoCommand}"     Gesture="Meta+Shift+Z"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Cut"        Command="{Binding CutCommand}"      Gesture="Meta+X"/>
+                        <NativeMenuItem Header="Copy"       Command="{Binding CopyCommand}"     Gesture="Meta+C"/>
+                        <NativeMenuItem Header="Paste"      Command="{Binding PasteCommand}"    Gesture="Meta+V"/>
+                        <NativeMenuItem Header="Select All" Command="{Binding SelectAllCommand}" Gesture="Meta+A"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <NativeMenuItem Header="View">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Reset Layout"     Command="{Binding ResetLayoutCommand}"/>
+                        <NativeMenuItem Header="Hide/Show Dockers" Command="{Binding HideShowDockersCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Zoom to Fit"      Command="{Binding ZoomToFitCommand}"   Gesture="Meta+D0"/>
+                        <NativeMenuItem Header="New Tab"          Command="{Binding NewTabCommand}"      Gesture="Meta+T"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <NativeMenuItem Header="Simulate">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Run"  Command="{Binding RunAnalysisCommand}"  Gesture="Meta+R"/>
+                        <NativeMenuItem Header="Stop" Command="{Binding StopAnalysisCommand}" Gesture="Meta+OemPeriod"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+        </NativeMenu>
+    </NativeMenu.Menu>
+
+    <!-- ── Keyboard shortcuts (cross-platform) ──────────────────────────── -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+N"        Command="{Binding NewWorkspaceCommand}"/>
+        <KeyBinding Gesture="Meta+N"        Command="{Binding NewWorkspaceCommand}"/>
+        <KeyBinding Gesture="Ctrl+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Meta+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Ctrl+S"        Command="{Binding SaveWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Meta+S"        Command="{Binding SaveWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Ctrl+Shift+S"  Command="{Binding SaveWorkspaceAsCommand}" CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Meta+Shift+S"  Command="{Binding SaveWorkspaceAsCommand}" CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Ctrl+Z"        Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Meta+Z"        Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z"  Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+Z"  Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y"        Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+X"        Command="{Binding CutCommand}"/>
+        <KeyBinding Gesture="Meta+X"        Command="{Binding CutCommand}"/>
+        <KeyBinding Gesture="Ctrl+C"        Command="{Binding CopyCommand}"/>
+        <KeyBinding Gesture="Meta+C"        Command="{Binding CopyCommand}"/>
+        <KeyBinding Gesture="Ctrl+V"        Command="{Binding PasteCommand}"/>
+        <KeyBinding Gesture="Meta+V"        Command="{Binding PasteCommand}"/>
+        <KeyBinding Gesture="Ctrl+A"        Command="{Binding SelectAllCommand}"/>
+        <KeyBinding Gesture="Meta+A"        Command="{Binding SelectAllCommand}"/>
+        <KeyBinding Gesture="Ctrl+T"        Command="{Binding NewTabCommand}"/>
+        <KeyBinding Gesture="Meta+T"        Command="{Binding NewTabCommand}"/>
+        <KeyBinding Gesture="Ctrl+R"        Command="{Binding RunAnalysisCommand}"/>
+        <KeyBinding Gesture="Meta+R"        Command="{Binding RunAnalysisCommand}"/>
+        <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding ShowSettingsCommand}" CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Ctrl+Q"        Command="{Binding QuitApplicationCommand}"/>
+    </Window.KeyBindings>
+
+    <DockPanel>
+
+        <!-- ── In-window menu bar (hidden on macOS — uses NativeMenu above) ── -->
+        <Menu DockPanel.Dock="Top" IsVisible="{OnPlatform True, macOS=False}">
+
+            <MenuItem Header="_File" Padding="8,4">
+                <MenuItem Header="New _Workspace"
+                          Command="{Binding NewWorkspaceCommand}"
+                          InputGesture="Ctrl+N">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PlusBox" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Open…"
+                          Command="{Binding OpenWorkspaceCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          InputGesture="Ctrl+O">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Add _Library…"
+                          Command="{Binding AddLibraryCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="BookOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Save"
+                          Command="{Binding SaveWorkspaceCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          InputGesture="Ctrl+S">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Save _As…"
+                          Command="{Binding SaveWorkspaceAsCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          InputGesture="Ctrl+Shift+S">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveEdit" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Settings…"
+                          Command="{Binding ShowSettingsCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          InputGesture="Ctrl+OemComma">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="CogOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Quit circuitRF"
+                          IsVisible="{OnPlatform True, macOS=False}"
+                          Command="{Binding QuitApplicationCommand}"
+                          InputGesture="Ctrl+Q">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ExitToApp" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+
+            <MenuItem Header="_Edit" Padding="8,4">
+                <MenuItem Header="_Undo"
+                          Command="{Binding UndoCommand}"
+                          InputGesture="Ctrl+Z">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Undo" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Redo"
+                          Command="{Binding RedoCommand}"
+                          InputGesture="Ctrl+Shift+Z">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Redo" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Cu_t"
+                          Command="{Binding CutCommand}"
+                          InputGesture="Ctrl+X">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ContentCut" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Copy"
+                          Command="{Binding CopyCommand}"
+                          InputGesture="Ctrl+C">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ContentCopy" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Paste"
+                          Command="{Binding PasteCommand}"
+                          InputGesture="Ctrl+V">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ContentPaste" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Select _All"
+                          Command="{Binding SelectAllCommand}"
+                          InputGesture="Ctrl+A">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="SelectAll" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+
+            <MenuItem Header="_View" Padding="8,4">
+                <MenuItem Header="Reset _Layout"
+                          Command="{Binding ResetLayoutCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ViewDashboardOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Hide/Show Dockers"
+                          Command="{Binding HideShowDockersCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PageLayoutSidebarLeft" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Zoom to _Fit"
+                          Command="{Binding ZoomToFitCommand}"
+                          InputGesture="Ctrl+D0">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New _Tab"
+                          Command="{Binding NewTabCommand}"
+                          InputGesture="Ctrl+T">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="TabPlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+
+            <MenuItem Header="_Simulate" Padding="8,4">
+                <MenuItem Header="_Run"
+                          Command="{Binding RunAnalysisCommand}"
+                          InputGesture="Ctrl+R">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Play" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Stop"
+                          Command="{Binding StopAnalysisCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Stop" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+
+            <MenuItem Header="_Help" Padding="8,4">
+                <MenuItem Header="About circuitRF…"
+                          Click="OnAboutMenuItemClick">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="InformationOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Post Test _Messages"
+                          Command="{Binding PostTestMessagesCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="MessageTextOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+
+        </Menu>
+
+        <!-- ── Workspace toolbar ─────────────────────────────────────────── -->
+        <!-- §7.1: global controls — always visible at workspace level.
+             Avalonia 12 has no built-in ToolBar control; we use a styled Border+StackPanel. -->
+        <Border DockPanel.Dock="Top"
+                Background="{DynamicResource SystemChromeLowColor}"
+                BorderBrush="{DynamicResource SystemBaseLowColor}"
+                BorderThickness="0,0,0,1"
+                Padding="2,2">
+            <StackPanel Orientation="Horizontal" Spacing="1" VerticalAlignment="Center"
+                        Classes="Toolbar">
+
+                <!-- Start Page / New -->
+                <Button Command="{Binding NewWorkspaceCommand}"
+                        ToolTip.Tip="New Workspace (Ctrl+N)"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="FilePlus" Width="18" Height="18"/>
+                </Button>
+
+                <!-- Open / Save -->
+                <Button Command="{Binding OpenWorkspaceCommand}"
+                        CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Open Workspace (Ctrl+O)"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="FolderOpenOutline" Width="18" Height="18"/>
+                </Button>
+                <Button Command="{Binding SaveWorkspaceCommand}"
+                        CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Save Workspace (Ctrl+S)"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="ContentSave" Width="18" Height="18"/>
+                </Button>
+
+                <Border Width="1" Margin="3,2" Background="{DynamicResource SystemBaseMediumLowColor}"/>
+
+                <!-- Cut / Copy / Paste -->
+                <Button Command="{Binding CutCommand}" ToolTip.Tip="Cut (Ctrl+X)"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="ContentCut" Width="18" Height="18"/>
+                </Button>
+                <Button Command="{Binding CopyCommand}" ToolTip.Tip="Copy (Ctrl+C)"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="ContentCopy" Width="18" Height="18"/>
+                </Button>
+                <Button Command="{Binding PasteCommand}" ToolTip.Tip="Paste (Ctrl+V)"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="ContentPaste" Width="18" Height="18"/>
+                </Button>
+
+                <Border Width="1" Margin="3,2" Background="{DynamicResource SystemBaseMediumLowColor}"/>
+
+                <!-- Undo / Redo -->
+                <Button Command="{Binding UndoCommand}"
+                        ToolTip.Tip="{Binding UndoRedo.UndoDescription}"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="UndoVariant" Width="18" Height="18"/>
+                </Button>
+                <Button Command="{Binding RedoCommand}"
+                        ToolTip.Tip="{Binding UndoRedo.RedoDescription}"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="RedoVariant" Width="18" Height="18"/>
+                </Button>
+
+                <Border Width="1" Margin="3,2" Background="{DynamicResource SystemBaseMediumLowColor}"/>
+
+                <!-- Hide/Show Dockers -->
+                <Button Command="{Binding HideShowDockersCommand}"
+                        ToolTip.Tip="Hide/Show Dockers"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="PageLayoutSidebarLeft" Width="18" Height="18"/>
+                </Button>
+
+                <!-- Fit Windows to Frame -->
+                <Button Command="{Binding FitWindowsToFrameCommand}"
+                        ToolTip.Tip="Fit Windows to Frame"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="FitToPageOutline" Width="18" Height="18"/>
+                </Button>
+
+                <Border Width="1" Margin="3,2" Background="{DynamicResource SystemBaseMediumLowColor}"/>
+
+                <!-- Run / Stop Analysis -->
+                <Button Command="{Binding RunAnalysisCommand}"
+                        ToolTip.Tip="Run Analysis (Ctrl+R)"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="PlayCircleOutline" Width="18" Height="18"/>
+                </Button>
+                <Button Command="{Binding StopAnalysisCommand}"
+                        ToolTip.Tip="Stop Analysis"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="StopCircleOutline" Width="18" Height="18"/>
+                </Button>
+
+                <Border Width="1" Margin="3,2" Background="{DynamicResource SystemBaseMediumLowColor}"/>
+
+                <!-- Status Messages (expand/pop Messages region) -->
+                <Button Command="{Binding ToggleMessagesRegionCommand}"
+                        ToolTip.Tip="Status Messages"
+                        Background="Transparent" BorderThickness="0" Padding="4,2">
+                    <mi:MaterialIcon Kind="MessageTextOutline" Width="18" Height="18"/>
+                </Button>
+
+            </StackPanel>
+        </Border>
+
+        <!-- ── DockControl (the four Dock regions) ─────────────────────── -->
+        <!-- RUNTIME NOTE: DockControl requires Dock.Avalonia styles to be loaded in
+             App.axaml (see <StyleInclude Source="avares://Dock.Avalonia/..."/>).
+             If the layout renders as blank panels, verify the style path. -->
+        <dock:DockControl Layout="{Binding Layout}"/>
+
+    </DockPanel>
+</Window>

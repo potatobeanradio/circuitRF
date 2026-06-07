@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/src/" />
+  <Folder Name="/src/Ui/">
+    <Project Path="src/Ui/CircuitRF.Ui.csproj" />
+  </Folder>
   <Folder Name="/src/Cli/">
     <Project Path="src/Cli/CircuitRF.Cli.csproj" />
   </Folder>

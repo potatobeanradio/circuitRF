@@ -1,0 +1,18 @@
+#!/bin/sh
+# circuitRF post-install script (Debian/Ubuntu)
+set -e
+
+# Register MIME type
+xdg-mime install /usr/share/mime/packages/circuitrf-mime.xml || true
+update-mime-database /usr/share/mime 2>/dev/null || true
+
+# Register desktop entry
+xdg-desktop-menu install /usr/share/applications/circuitrf.desktop || true
+update-desktop-database /usr/share/applications 2>/dev/null || true
+
+# Register icon
+xdg-icon-resource install --novendor --size 256 /usr/share/pixmaps/circuitrf.png || true
+gtk-update-icon-cache /usr/share/icons/hicolor 2>/dev/null || true
+
+#DEBHELPER#
+exit 0

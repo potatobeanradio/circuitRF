@@ -1,0 +1,62 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:ptvm="using:CircuitRF.Ui.ViewModels.ProjectTree"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.ProjectTree.ProjectTreeView"
+             x:DataType="vm:ProjectTreeTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Toolbar strip -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="2" Margin="4,4,4,2">
+            <TextBlock Text="Project" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1">
+            <TreeView ItemsSource="{Binding Items}"
+                      SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                      DoubleTapped="OnItemDoubleTapped">
+
+                <TreeView.ItemTemplate>
+                    <TreeDataTemplate x:DataType="ptvm:ProjectTreeItemViewModel"
+                                      ItemsSource="{Binding Children}">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <!-- Icon per kind -->
+                            <mi:MaterialIcon Grid.Column="0"
+                                            Kind="{Binding Kind, Converter={StaticResource TreeItemIconConverter}}"
+                                            Width="14" Height="14"
+                                            Margin="0,0,4,0"
+                                            Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Name}"
+                                       FontSize="12"/>
+                            <!-- Context menu bound here so DataContext = ProjectTreeItemViewModel -->
+                            <Grid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Open"
+                                              Command="{Binding OpenCommand}"
+                                              InputGesture="Return">
+                                        <MenuItem.Icon><mi:MaterialIcon Kind="OpenInApp" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Open in New Window"
+                                              Command="{Binding OpenInNewWindowCommand}">
+                                        <MenuItem.Icon><mi:MaterialIcon Kind="OpenInNew" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <Separator/>
+                                    <MenuItem Header="Delete"
+                                              Command="{Binding DeleteCommand}">
+                                        <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </Grid.ContextMenu>
+                        </Grid>
+                    </TreeDataTemplate>
+                </TreeView.ItemTemplate>
+
+            </TreeView>
+        </ScrollViewer>
+
+    </Grid>
+</UserControl>

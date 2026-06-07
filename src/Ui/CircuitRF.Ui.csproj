@@ -1,0 +1,85 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+
+  <!-- Windows: embeds the icon into the .exe PE resources -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) and Exists('Assets\circuitRFIcon.ico')">
+    <ApplicationIcon>Assets\circuitRFIcon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PackAsTool>false</PackAsTool>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfContained Condition="$([MSBuild]::IsOSPlatform('Windows'))">true</IncludeNativeLibrariesForSelfContained>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Authors>circuitRF</Authors>
+    <Description>Lightweight cross-platform RF circuit simulator (DC, S-parameters, harmonic balance, loadpull/sourcepull)</Description>
+    <PackageId>com.circuitRF.circuitRF</PackageId>
+  </PropertyGroup>
+
+  <!-- SelfContained only activates when an explicit -r <rid> is supplied (dotnet publish). -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <!-- macOS: Info.plist, Entitlements, icon -->
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <MacOSXBundleIcon>Assets/circuitRFIcon.icns</MacOSXBundleIcon>
+    <MacOSXBundleInfoPlist>Assets/macOS/Info.plist</MacOSXBundleInfoPlist>
+    <CodeSignEntitlements>Assets/macOS/Entitlements.plist</CodeSignEntitlements>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- Strip .pdb files from publish output -->
+  <Target Name="RemovePdbsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <!-- Core stack -->
+    <ProjectReference Include="../Core/CircuitRF.Core.csproj" />
+    <ProjectReference Include="../Engine/CircuitRF.Engine.csproj" />
+    <ProjectReference Include="../../../RfCore/src/RfCore.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Avalonia UI framework (match splotRF versions) -->
+    <PackageReference Include="Avalonia" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.3" />
+    <PackageReference Include="Avalonia.Skia" Version="12.0.3" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.1">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+
+    <!-- MVVM + icons -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
+    <PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="12.0.0.2" />
+    <PackageReference Include="Material.Icons.Avalonia" Version="3.0.2" />
+
+    <!-- SkiaSharp (for future canvas rendering) -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.4" />
+
+    <!-- Dock: AvaloniaUI docking library — regions, tear-out, re-dock -->
+    <!-- NOTE: Verify Dock.Avalonia styles path at runtime; see CircuitRfDockFactory.cs -->
+    <PackageReference Include="Dock.Avalonia" Version="12.0.0.2" />
+    <PackageReference Include="Dock.Model.Mvvm" Version="12.0.0.2" />
+  </ItemGroup>
+</Project>

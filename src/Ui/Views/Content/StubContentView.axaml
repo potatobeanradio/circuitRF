@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Content.StubContentView"
+             x:DataType="vm:StubDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- Placeholder shown in Content tabs until the real canvas is built in 6c/6d. -->
+    <Grid>
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="12">
+
+            <mi:MaterialIcon Kind="IntegratedCircuitChip"
+                             Width="48" Height="48"
+                             HorizontalAlignment="Center"
+                             Foreground="{DynamicResource SystemBaseMediumColor}"
+                             Opacity="0.4"/>
+
+            <TextBlock Text="{Binding Label}"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource SystemBaseHighColor}"/>
+
+            <TextBlock Text="Schematic editor arrives in Phase 6c"
+                       IsVisible="{Binding Kind, Converter={StaticResource StubKindIsSchematicConverter}}"
+                       FontSize="11"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       Opacity="0.6"/>
+
+            <TextBlock Text="Data display arrives in Phase 6d/6e"
+                       IsVisible="{Binding Kind, Converter={StaticResource StubKindIsDataDisplayConverter}}"
+                       FontSize="11"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       Opacity="0.6"/>
+
+        </StackPanel>
+    </Grid>
+</UserControl>
