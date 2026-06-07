@@ -10,5 +10,7 @@
 /src/Engine/obj
 /tests/Engine.Tests/bin
 /tests/Engine.Tests/obj
+/tests/Firewall.Tests/bin
+/tests/Firewall.Tests/obj
 
 TestResults/

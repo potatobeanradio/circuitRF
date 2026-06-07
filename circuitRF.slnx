@@ -16,4 +16,7 @@
   <Folder Name="/tests/Engine.Tests/">
     <Project Path="tests/Engine.Tests/CircuitRF.Engine.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Firewall.Tests/">
+    <Project Path="tests/Firewall.Tests/CircuitRF.Firewall.Tests.csproj" />
+  </Folder>
 </Solution>
