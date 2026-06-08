@@ -1,6 +1,6 @@
 # circuitRF — UI Design
 
-**Status:** Draft (rev 1) for review · **Date:** 2026-06-06 · **Phase:** 6a
+**Status:** Draft (rev 2) for review · **Date:** 2026-06-06 · **Phase:** 6a (rev 2 adds §3.1 canvas objects, §5A symbol editor, §5B component-type registry)
 
 This document defines how the circuitRF GUI works: the interaction model, the window/region structure, the
 two canvases, the schematic editor, the schematic→engine bridge, the data display, and the workflows. It is
@@ -109,7 +109,71 @@ Skia *rendering* separable from the Avalonia *control hosting* (the firewall + f
 **Performance target (testable):** smooth (**≥ 30 fps**) pan/zoom on a **10,000-component** schematic on a
 mid-range laptop, verified with a generated stress schematic in `testdata/` — not a toy. The schematic canvas
 **must not** render components as individual styled controls (it would die at 10k); it renders itself via the
-custom control with viewport virtualization + spatial-index hit-testing (`src/Ui/CLAUDE.md`).
+custom control with viewport virtualization + spatial-index hit-testing (`src/Ui/CLAUDE.md`). *(Achieved in
+Phase 6c: >120 fps at 10k components.)*
+
+### 3.1 Canvas objects (non-electrical decorations) — one shared family
+Beyond the electrical content (symbols, wires) and the data content (plots, tables), every canvas supports a
+family of **canvas objects**: non-electrical, placeable decorations. **Bitmaps, text boxes, shape primitives,
+and plots-placed-on-a-schematic are ONE concept** — they share an identical interaction/lifecycle contract
+and differ only in what they render and a few per-type properties. Build the shared abstraction once; the
+per-type objects are thin specializations. (This mirrors how splotRF already treats plots/MarkerInfoBoxes as
+selectable placeable objects — the owner's framing: "selectable, just like a plot.")
+
+**The shared canvas-object contract** (every object below has all of this):
+- **Selectable** (click; part of rubber-band/multi-select), **drag-move**, **resize**, **rotate** (by the
+  user), adjustable **transparency**.
+- **Cut / Copy / Paste** (system clipboard, §10) and **undo/redo** (command pattern, §10) like any edit.
+- **Render size respects the canvas zoom level** (an object scales with pan/zoom like everything else).
+- **Z-order** in the canvas stack (below). **Lock / Unlock** state via context menu: when **locked**, the
+  object cannot be selected, moved, or resized; changing Unlock→Lock **deselects** it.
+- **Inserted** via the **Insert** menu (`Insert → Image…`, `Insert → Text`, `Insert → Shape…`, plots via the
+  data-display/Insert path) and via the context toolbar where applicable.
+- A **context menu** exposes the per-type properties (transparency, relative size presets, lock/unlock, etc.).
+
+**Which canvases host which objects:**
+| Object | Schematic canvas | Data-display canvas | Symbol-editor canvas |
+|---|---|---|---|
+| **Bitmap** (§3.1.1) | ✓ | ✓ | — |
+| **Text** (§3.1.2) | ✓ | ✓ | ✓ |
+| **Primitive** rect/circle/line (§3.1.3) | ✓ | ✓ | ✓ |
+| **Plot** + MarkerInfoBox (§3.1.4) | ✓ | ✓ (native home) | — |
+
+**Z-order (the canvas stack, bottom → top):** grid → **bitmaps** → **plots** / **text** / **primitives**
+(decoration layer) → **schematic components + wires** (top). Decorations sit *above the grid but below the
+electrical content*, so a background image or a callout never obscures the circuit. (Within the decoration
+layer, normal per-object Z-ordering applies; the rule is that decorations as a group are below components.)
+
+#### 3.1.1 Bitmaps
+A placed raster image, **purely cosmetic** (no electrical/symbolic meaning). In addition to the shared
+contract: **aspect-ratio-locked resize** via a gripper in the **bottom-left corner**; a context menu for
+**transparency**, **relative size** presets (50% / 75% / 100% / 200% / …), **lock/unlock**, **Locate…** (a
+System file dialog to re-point a missing/moved image), and **Refresh** (reload the image from disk at its
+current path); **rotate**. **Persistence: only the image file *path* is saved** in the schematic/data-display
+config — not the pixels (relative path preferred/default, absolute allowed — `project-file-formats.md`).
+If the image can't be loaded from that path on open, render a **placeholder box** marking where an image
+should be (use **Locate…** to re-point it). Inserted via `Insert → Image…`.
+
+#### 3.1.2 Text objects
+A placed text box. **Inline-editable** (same interaction as editing a schematic symbol's parameter, §4.5);
+the text **wraps** within the box; box is selectable/movable/resizable/rotatable (shared contract).
+Per-type properties: **Font, Font Size, Font Weight (regular/bold/italic/…), Color, transparency**. Inserted
+via `Insert → Text`. Available on the schematic, data-display, AND symbol-editor canvases.
+
+#### 3.1.3 Shape primitives (rectangle, circle, line)
+Placed vector primitives, selectable/movable/resizable/rotatable (shared contract). Per-type properties:
+**line width, color, transparency**; the **line** primitive adds **arrowheads** (none / start / end / both)
+with an **arrowhead-size** property, and has **two control points** (one at each end) the user drags to set
+its orientation/length. Inserted via `Insert → Shape…`. Available on schematic, data-display, AND
+symbol-editor canvases.
+
+#### 3.1.4 Plots on any canvas (no schematic/data-display distinction)
+In circuitRF a **plot object** (and its associated **MarkerInfoBox**) is a canvas object that can be placed
+on the **schematic canvas as well as** the data-display canvas — *there is no distinction*. A plot on a
+schematic **behaves exactly** as one on a data-display canvas (select/move/resize/rotate, full plot
+interaction, §6). Z-order: a plot sits in the decoration layer (above grid, below schematic components), same
+as the other canvas objects. (The plot's own rendering/behavior is §6; §3.1 only states that it is a
+placeable canvas object usable on either canvas.)
 
 ---
 
@@ -144,9 +208,16 @@ deterministic auto-generated names at extraction (§5).
 
 ### 4.5 Parameters on the schematic
 - Most components display a few editable parameters on the schematic (e.g. an inductor shows instance name +
-  inductance with units). **Click** the parameter text → it becomes an **inline editable text box**.
+  inductance with units). **Click** the parameter text → it becomes an **inline editable text box**. A
+  parameter line renders as `<Name> = <Expression> <Unit>` (e.g. `L = 2.5 nH`); double-clicking it opens the
+  inline editor on the `<Expression> <Unit>` portion (the name is fixed). Which parameters a freshly-placed
+  component has, and which show by default, comes from the **component-type registry's default-parameter
+  template** (§5B) — e.g. a tone source defaults to two shown parameters (`V`, `Freq`).
 - A **per-parameter "show on schematic" flag** controls which parameters are displayed (keeps the schematic
   clean); not all parameters show by default.
+- The **type label** (the component's type, e.g. `C`/`L`/`R`) is also editable inline; typing a **short type
+  code** (§5B / §7.2) changes the component's type. (Editing the type label vs a parameter line is keyed off
+  which label was clicked — they are different edits.)
 - **Double-click** a component (or cell) → a **parameter dialog/popover** listing *all* parameters, editable.
   The dialog always has a **Help** button → opens a local HTML doc for that component (placeholder HTML for
   now; real docs later).
@@ -165,8 +236,13 @@ Mirrors the idioms RF engineers know from other EDA tools so the editor feels na
 - (Platform modifier: Cmd on macOS, Ctrl on Windows/Linux — Avalonia's platform-aware gesture handling.)
 
 ### 4.7 Save / restore
-Component placement, wire placement, net labels, zoom level, and (for a torn-out schematic window) window
-placement are tracked and **saved to disk at the user's will**, restoring the visual state on reopen.
+Component placement, wire placement, net labels, junction dots, disable states, canvas objects, zoom level,
+and (for a torn-out schematic window) window placement are tracked and **saved to disk at the user's will**,
+restoring the visual state on reopen. This is the **`.csch`** (circuitRF schematic) format — the schematic's
+visual/geometry layer. **`.cnl` stays netlist-only** (no placement/geometry); the engine-facing netlist is
+*derived* from the `.csch` by net extraction (§5). See `project-file-formats.md` for the full format family
+(`.cnl` netlist, `.csch` schematic, `.csym` symbol, `.cdd` data-display, `.cws` workspace, and how Library/
+Cell/TestBench map to folders).
 
 ---
 
@@ -211,7 +287,12 @@ Connectivity extraction is a **union-find over geometry**, run headless (no UI t
 5. **Emit the design model:** components/instances become design-model elements with their parameters; nets
    become the connectivity; the result is exactly the design model the engine **already elaborates** (root
    `CLAUDE.md` / elaboration) — extraction produces the *same* model an authored `.cnl` produces, so the
-   engine path downstream is unchanged.
+   engine path downstream is unchanged. **Port-index caution:** emit each component's connected nets **in the
+   symbol's terminal order** (symbol terminals are **1-based**, user-facing; the `.cnl`/engine infers the
+   terminal from net-node *position*, not an explicit number). Do not shift by one when crossing 1-based
+   symbol ↔ 0-based engine, and do not reorder terminals — a multi-terminal device (FET d/g/s) is where a
+   transposed/off-by-one terminal silently makes a wrong-but-plausible netlist. See `project-file-formats.md`
+   “Port-index conventions”; the extraction oracle catches this.
 6. **Honor disabled components (Disable to Open / Short, §7.2):** before emitting, the extractor inspects each
    component's **disable state** and bridges accordingly — no engine change, the netlist simply comes out as
    if the part were open or shorted:
@@ -239,6 +320,86 @@ re-extraction on edit is a later optimization (the extractor staying headless/te
 Keep extraction deterministic and pure so it is unit-testable against authored-`.cnl` equivalents — a strong
 oracle: a schematic drawn to match a hero `.cnl` must extract to an equivalent design model and produce the
 same `DataSet`.
+
+---
+
+## 5A. Symbol editor
+
+Each cell has a **symbol view** (its schematic-level representation) edited in a **symbol-editor canvas** — a
+Content tab/view like the schematic and data-display canvases, sharing the same canvas core (§3). It is for
+drawing the cell's **symbol geometry** (the body shape) and placing its **ports/pins** (the connection points
+that appear when the cell is instanced in a schematic, §5 hierarchy).
+
+- **Canvas objects:** the symbol editor hosts **text** (§3.1.2) and **shape primitives** (§3.1.3) — the same
+  shared canvas-object family — for drawing/labeling the symbol. (Bitmaps and plots are not symbol content.)
+- **SVG import:** the symbol editor can **import an SVG file** into its canvas, converting the SVG paths/
+  shapes into editable primitives the user can then refine (move, resize, restyle, delete). This lets a user
+  start from existing vector art for a symbol rather than drawing from scratch. (Import maps SVG primitives
+  to the §3.1.3 primitive family where they map cleanly; complex SVG features that don't map are
+  approximated or flagged — detail settled when built, Phase 6f.)
+- **Ports/pins:** placing named ports that become the instance's connection points; the port names are what
+  the schematic's extraction (§5) uses for the cell-instance interface.
+- Standard editor behaviors (select/move/resize/rotate, undo/redo, copy/paste, zoom) per §10.
+
+---
+
+## 5B. The component-type registry (single source of per-type knowledge)
+
+Every component type (resistor, inductor, capacitor, tone source, FET/SDD, Z-port, …) carries a bundle of
+**per-type knowledge** the GUI needs in several places at once: its short display name, its instance-name
+prefix, its short type code (what the user types to set the type), and — importantly — its **default
+parameter set** (which parameters a freshly-placed instance has, and which show on the schematic). The
+**component-type registry** is the **one place** all of that lives, so the renderer, the palette, the inline
+type editor, instance auto-naming, and parameter seeding all read from a single authority rather than each
+hard-coding its own copy.
+
+**What it stores, per type:**
+- **Display name** — the short label rendered as the component's type on the schematic: `R`, `L`, `C`, `FET`,
+  and for a Z-port the **port-count-aware** `Z1P`/`Z2P`/… (a 2-node Z-port is `Z1P`, 4-node `Z2P`, i.e.
+  `Z{nodes/2}P`). (This replaced the old `SymbolKind.ToString()` which rendered ugly enum names like
+  "FetSdd".)
+- **Instance-name prefix** — used when auto-naming a placed instance (`R1`, `C3`, `X2`).
+- **Short type code** — the case-insensitive code the user types in the inline type editor to set/change the
+  type: `R`, `L`, `C`, `V`, `VTone`, `SDD`/`FetSDD` (aliases for the same device), `Z1P`/`Z2P`/… (any `Z{N}P`
+  → Z-port with the matching node count), `GND`, `Port`/`P`, `X`.
+- **Default parameter template** — the list of parameters a freshly-placed instance gets: each with a
+  **name**, a default **expression** (often blank), a **unit**, and a **ShowOnSchematic** flag. This is
+  per-type and may be **more than one** parameter: a resistor's template is one parameter (`R`, ohm); a
+  **tone source's is two** (`V` in volts *and* `Freq` in Hz), both shown. **There is no notion of a single
+  "primary" parameter** — a type shows whatever set its template says, of any length.
+
+**Why it matters — it's the seam where the GUI, the renderer, parameter defaults, and the future standard
+library all meet.** Three concrete payoffs:
+- **One source of truth, no drift.** When the same per-type fact (the prefix, the display name, the default
+  params) is duplicated across the renderer, a placement path, and a demo builder, they *diverge* — and that
+  divergence is a bug factory (e.g. a tone source rendering `V = 2 GHz V` because a builder hand-typed a
+  single "2 GHz" label while the registry knew the type has two params). Centralizing kills that class of
+  bug: there is exactly one definition of "what is a capacitor, on the schematic."
+- **Multi-parameter defaults done right.** Because the template is a *list*, a type that should display
+  several parameters by default (the tone source's amplitude **and** frequency) just lists them — no special
+  case, no "primary parameter" fiction. Placement seeds an instance's parameters straight from the template
+  (correct names/units/show-flags), so a freshly-placed tone source shows both lines immediately.
+- **The standard component library is the registry, scaled up.** The shipped component libraries (Phase 6f+)
+  will use these *same* codes and defaults (`R`, `L`, `C`, `Z1P`, `Z2P`, `SDD`, `FetSDD`, …). The registry is
+  the small, in-code seed of that library; growing the library is adding entries, not inventing a parallel
+  scheme. The codes a user types today are the codes the library uses tomorrow.
+
+**Where it lives & the firewall.** The registry is **design-model knowledge, not view knowledge** — "a
+capacitor is called C and has a capacitance parameter" is true regardless of how it's drawn — so it is
+**Avalonia-free** and read by the renderer rather than owned by it. (It currently sits in the schematic
+layer keyed by `SymbolKind`; when the component model gains a richer type system it should re-key off the
+real component type and move toward core with the standard-library work. The principle holds either way: one
+registry, framework-free, every consumer reads from it.)
+
+**The parameter names must match the engine.** A type's default parameter names (e.g. the tone source's `V`
+and `Freq`) must be the names the device model and elaboration actually resolve (`src/Core/Devices/*Model.cs`)
+— otherwise a placed component carries parameters the engine doesn't recognize, a mismatch that wouldn't
+surface until extraction + run (and which the §5.1 extraction oracle is designed to catch). The registry's
+default names are therefore chosen against the device models, not invented.
+
+**Consumers (all read the one registry):** the renderer (type label, §4.5), the inline type editor (parses
+the short code → type, §4.5), component placement (seeds default parameters), instance auto-naming (the
+prefix), and — later — the palette and the standard component library.
 
 ---
 
@@ -387,7 +548,8 @@ data-display tab gets its own later — §10). Drawing tools, view controls, and
 ## 8. Menus & workflows
 
 Standard menu bar: **File** (New Workspace, Open, Add Library [reference an existing cell library], Save,
-Save As, Import/Export DataSet, …), **Edit** (Undo/Redo, Cut/Copy/Paste, Select All, …), **View** (region
+Save As, Import/Export DataSet, …), **Edit** (Undo/Redo, Cut/Copy/Paste, Select All, …), **Insert** (Image…,
+Text, Shape… — the canvas objects of §3.1; the available items depend on the active canvas), **View** (region
 show/hide, zoom-to-fit, theme), **Simulate** (Run, Stop, the analysis the active TestBench defines, …).
 
 The default path must honor the PRD §12 **click budgets** (e.g. placed FET → running HB power sweep in ≤ 8
@@ -425,6 +587,9 @@ file manager** (Finder / Explorer). Engine errors that reference a netlist file 
 ## 11. Open items / deferred
 
 - **Beautiful auto-routing** (obstacle-aware, aesthetic) — deferred research item; v1 is simple-ortho (§4.3).
+- **Canvas objects** (§3.1) — the shared bitmap/text/primitive/plot family is built with schematic editing
+  (Phase 6d, which builds the select/move/resize/undo machinery they share); plots-on-canvas (§3.1.4) lands
+  when the plot object exists (Phase 7). SVG import (§5A) is Phase 6f (symbol editor).
 - **Layout views** for cells — future (cells today have symbol + schematic).
 - **Contour plot** (§6.3) — major item, design sub-note when Phase 7 reaches it.
 - **Properties region** (§2.2) — additional inspector roles beyond the palette — future.

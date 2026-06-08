@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!--
+      TreatWarningsAsErrors is intentionally OFF for the test project so that
+      framework-generated partial classes (xunit) don't fail the build.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <!-- CommunityToolkit.Mvvm needed because SchematicViewModel is ObservableObject -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!--
+    Reference Ui project. Only framework-free classes are under test:
+    SchematicEditModel, commands, SchematicHitTest, WireGeometry, SchematicPersistence.
+    Tests must NOT call any Avalonia runtime APIs.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ui\CircuitRF.Ui.csproj" />
+  </ItemGroup>
+
+</Project>

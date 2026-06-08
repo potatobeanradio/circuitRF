@@ -50,6 +50,13 @@
   </Target>
 
   <ItemGroup>
+    <!-- Allow test project access to internal types -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>CircuitRF.Ui.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Core stack -->
     <ProjectReference Include="../Core/CircuitRF.Core.csproj" />
     <ProjectReference Include="../Engine/CircuitRF.Engine.csproj" />

@@ -14,5 +14,7 @@
 /tests/Firewall.Tests/obj
 /src/Ui/obj
 /src/Ui/bin
+/tests/Ui.Tests/obj
+/tests/Ui.Tests/bin
 
 TestResults/

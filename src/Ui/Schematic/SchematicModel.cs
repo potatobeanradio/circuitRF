@@ -1,7 +1,7 @@
 namespace CircuitRF.Ui.Schematic;
 
 // ---------------------------------------------------------------------------
-//  Schematic read model — 6c render-only. No mutation API.
+//  Schematic read model 
 //  World units: 100 = one grid square (standard EDA: 100 mils).
 //  Component origin is the geometric center of its body.
 // ---------------------------------------------------------------------------
@@ -16,7 +16,12 @@ public enum SymbolKind
     Ground,
     Port,
     FetSdd,
+    Sdd,
     ZPort,
+    Z1P,
+    Z2P,
+    Z3P,
+    ZNP,
     Generic
 }
 
@@ -27,33 +32,60 @@ public enum SymbolRotation { R0 = 0, R90 = 90, R180 = 180, R270 = 270 }
 /// <summary>Port descriptor in component-LOCAL coordinates (before rotation/translation).</summary>
 public sealed record SchematicPortDef(string Name, float LocalX, float LocalY, PortConnectionState State);
 
-/// <summary>A placed component instance with pre-computed world bounding box.</summary>
+/// <summary>A placed component instance with pre-computed world bounding boxes.</summary>
 public sealed class SchematicComponent
 {
-    public string InstanceName { get; init; } = "";
+    /// <summary>Stable ID carried from EditableComponent.Id — used by overlay for selection lookup.</summary>
+    public string Id            { get; init; } = "";
+    public string InstanceName  { get; init; } = "";
     public SymbolKind Symbol    { get; init; }
-    public double X             { get; init; }   // world X of component origin
-    public double Y             { get; init; }   // world Y of component origin
+    public double X             { get; init; }
+    public double Y             { get; init; }
     public SymbolRotation Rotation { get; init; }
     public bool MirrorX        { get; init; }
+    public DisableState DisableState { get; init; }
     public IReadOnlyList<SchematicPortDef> Ports { get; init; } = [];
-    public string? LabelA      { get; init; }    // primary on-schematic label (instance name)
-    public string? LabelB      { get; init; }    // secondary (key value with units)
-    // Axis-aligned bounding box in world coords (pre-computed, includes port leads).
-    public double BbMinX       { get; init; }
-    public double BbMinY       { get; init; }
-    public double BbMaxX       { get; init; }
-    public double BbMaxY       { get; init; }
+
+    /// <summary>
+    /// On-schematic labels in display order: [0] = type, [1] = instance name, [2+] = parameters
+    /// flagged ShowOnSchematic. Rendered left-aligned below the glyph.
+    /// </summary>
+    public IReadOnlyList<string> Labels { get; init; } = [];
+
+    /// <summary>
+    /// Per-label world-position offsets (DX, DY) from the default auto-position.
+    /// Parallel to Labels; missing entries imply (0,0).
+    /// </summary>
+    public IReadOnlyList<(double DX, double DY)> LabelOffsets { get; init; } = [];
+
+    // Full axis-aligned bounding box (symbol geometry, used by spatial index & zoom-to-fit).
+    public double BbMinX { get; init; }
+    public double BbMinY { get; init; }
+    public double BbMaxX { get; init; }
+    public double BbMaxY { get; init; }
+
+    // Symbol-glyph-only bounding box (no text area). Used for hit-testing and selection highlight.
+    public double GlyphBbMinX { get; init; }
+    public double GlyphBbMinY { get; init; }
+    public double GlyphBbMaxX { get; init; }
+    public double GlyphBbMaxY { get; init; }
+
 }
 
 /// <summary>A wire segment (orthogonal polyline) with pre-computed world bounding box.</summary>
 public sealed class SchematicWire
 {
+    /// <summary>Stable ID carried from EditableWire.Id — used by overlay for selection lookup.</summary>
+    public string Id            { get; init; } = "";
     public IReadOnlyList<(double X, double Y)> Points { get; init; } = [];
     public double BbMinX { get; init; }
     public double BbMinY { get; init; }
     public double BbMaxX { get; init; }
     public double BbMaxY { get; init; }
+    /// <summary>Whether the first endpoint connects to another wire or component port.</summary>
+    public bool StartConnected { get; init; }
+    /// <summary>Whether the last endpoint connects to another wire or component port.</summary>
+    public bool EndConnected   { get; init; }
 }
 
 /// <summary>A wire-wire or port-wire junction dot (§4.3 dark square).</summary>
@@ -63,15 +95,25 @@ public sealed class SchematicDot(double x, double y)
     public double Y { get; } = y;
 }
 
+/// <summary>A user-placed net (node) label displayed on the canvas.</summary>
+public sealed class SchematicNetLabel
+{
+    public string Id   { get; init; } = "";
+    public double X    { get; init; }
+    public double Y    { get; init; }
+    public string Name { get; init; } = "";
+}
+
 /// <summary>
 /// The complete schematic read model consumed by SchematicRenderer.
 /// Immutable after construction — 6c is read-only.
 /// </summary>
 public sealed class SchematicModel
 {
-    public IReadOnlyList<SchematicComponent> Components   { get; init; } = [];
-    public IReadOnlyList<SchematicWire>      Wires        { get; init; } = [];
-    public IReadOnlyList<SchematicDot>       ConnectionDots { get; init; } = [];
+    public IReadOnlyList<SchematicComponent>  Components   { get; init; } = [];
+    public IReadOnlyList<SchematicWire>       Wires        { get; init; } = [];
+    public IReadOnlyList<SchematicDot>        ConnectionDots { get; init; } = [];
+    public IReadOnlyList<SchematicNetLabel>   NetLabels    { get; init; } = [];
     public double GridSize  { get; init; } = 100.0;
     // Overall bounding box of all elements (used for zoom-to-fit).
     public double BbMinX   { get; init; }

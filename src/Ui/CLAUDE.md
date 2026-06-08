@@ -4,6 +4,60 @@ Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`, the interact
 `docs/design/ui-design.md`, and the architecture/firewall note `docs/design/ui-architecture.md`. The UI is
 how people drive the engine; it must never become the source of truth for simulation.
 
+## Phase 6d schematic editor — key rules (from 6d-fix)
+
+### Per-segment wire drag convention (Phase 6d wire editing)
+Wire segments are **independently selectable and draggable**. A direct click on a wire segment (not near an endpoint) returns `HitKind.WireSegment` with `SubIndex = segmentIndex`, and highlights only that segment. The drag convention is **perpendicular-only**:
+- A **horizontal** segment can be dragged **vertically** only (dx zeroed out).
+- A **vertical** segment can be dragged **horizontally** only (dy zeroed out).
+- Dragging along the segment's own axis is not offered (delta constrained in `HandleSegmentDragLive`, not as a fixup after).
+
+This preserves orthogonality automatically — moving a segment perpendicular to itself only lengthens/shortens its adjacent neighbors. For endpoint segments whose outer point is connected (pinned), `OrthogonalRoute` re-routes to keep the pinned end connected (B3). A 2-point wire with both ends pinned is fully constrained and does not move.
+
+Each segment drag commits as a single `MoveCommand` with a `WireMoveSnapshot` (old points → new points), undoable. Live preview uses `SchematicOverlay.WireDragPoints` — no `BuildRenderModel()` per tick.
+
+**Selection model**: `_selectedSegment: (string WireId, int SegmentIndex)?` in `SchematicViewModel` tracks the segment selection separately from `SchematicSelection` (which holds whole-object IDs). `SchematicOverlay.SelectedWireSegment` carries it to the renderer. Rubber-band selection still selects whole wires (`HitKind.Wire` from `TestRect`), not individual segments.
+
+### Wire draw-mode cursor and finish gestures (Phase 6d)
+- Wire tool cursor: `StandardCursorType.Cross` (reverts to Default when tool changes away from Wire).
+- **Enter** or **double-click** finishes the in-progress wire (keeps what was drawn) and returns to Select tool.
+- **Esc** discards the in-progress wire (via `CancelCurrentOp`) and returns to Select.
+- `< 2` distinct points: discarded, nothing placed.
+
+### Incremental render rule (Item 1 / perf)
+During an **active drag or nudge**, do NOT call `BuildRenderModel()` per tick. Update
+`SchematicOverlay.ComponentDragPositions` / `WireDragPoints` only (O(k) for k moved objects).
+`BuildRenderModel()` is deferred to drag-END. The connectivity pass inside `BuildRenderModel()`
+is O(N) via spatial hash — never revert to the O(N²) linear scan.
+
+### Display name registry (Item 8)
+`ComponentTypeRegistry` in `src/Ui/Schematic/ComponentTypeRegistry.cs` maps `SymbolKind` →
+`(DisplayName, InstancePrefix)`. **Always** read `ComponentTypeRegistry.DisplayName(kind)` for
+the on-schematic type label — **never** call `kind.ToString()` or hard-code abbreviations in the
+renderer. When the component model gains a richer type system, re-key the registry off that type.
+
+### Id not persisted (Item 2)
+`Id` on `EditableComponent`, `EditableWire`, `EditableNetLabel`, `EditableDot`, `EditableCanvasObject`
+is **runtime identity only** — it must NOT appear in any persisted file (`.csch`, `.cws`, `.csym`,
+`.cdd`). Fresh Ids are auto-generated on import. Tests compare content, never Ids.
+
+### Move-Labels op (Item 14)
+**F5** or the right-click "Move Labels" context menu entry enters Move-Labels mode.
+- Phase `Picking` (nothing selected): next click picks which component to move.
+- Phase `WaitFirstClick` (components already selected): next click sets the drag reference point.
+- Phase `Moving`: mouse moves show live preview via `SchematicOverlay.LabelDragOffsets`; second click commits as a `MoveLabelsCommand`. **Esc always returns to Select.**
+- Label offsets persist in `.csch` as `LabelOffsets: [[dx,dy],…]` on each component (omitted when all zero).
+- `SchematicOverlay.LabelDragOffsets` carries `{compId → (DX,DY)}` during the drag. The renderer applies the delta on top of any existing per-label offset stored in `SchematicComponent.LabelOffsets`.
+
+### Clipboard (Item 15)
+`SchematicClipboard.CopyAsync()` places four formats on the clipboard simultaneously via Avalonia's `DataTransfer` API (richest first):
+- `PdfNativeMacFormat` (`com.adobe.pdf` UTI, macOS) / `PdfNativeWinFormat` (`application/pdf`, Windows) — PDF bytes via `SKDocument.CreatePdf()`; recognised by Keynote, Preview, Pages, etc.
+- `SvgNativeFormat` (`public.svg-image` UTI) — SVG bytes for macOS/Linux vector apps (Illustrator, Inkscape). Omitted on Windows (no well-known SVG clipboard format; EMF would be the Windows vector path — needs System.Drawing.Imaging + Svg.NET, follow splotRF's `WindowsClipboard.cs`).
+- `DataFormat.Bitmap` — Avalonia `Bitmap` (PNG-backed raster; universal fallback for Keynote, Pages, Word, etc.).
+- `DataFormat.Text` — JSON text (primary for Paste; cross-session portable). Always present even if rich formats fail.
+- **Paste** reads `DataFormat.Text` (JSON) and wraps in `SchematicPasteCommand` (undoable).
+- **Ctrl/Cmd+C / +X / +V** in the canvas raise events on `SchematicCanvas` (`ClipboardCopyRequested` / `ClipboardCutRequested` / `ClipboardPasteRequested`) handled async in `SchematicView.axaml.cs`.
+
 ## Phase 6b shell conventions (locked in — do not deviate without discussion)
 
 ### Dock library

@@ -91,7 +91,7 @@ public partial class WorkspaceViewModel : ViewModelBase
             AllowMultiple = false,
             FileTypeFilter = new[]
             {
-                new FilePickerFileType("circuitRF Workspace") { Patterns = new[] { "*.crfw" } },
+                new FilePickerFileType("circuitRF Workspace") { Patterns = new[] { "*.cws" } },
                 new FilePickerFileType("All Files")           { Patterns = new[] { "*.*" } },
             },
         });
@@ -108,8 +108,7 @@ public partial class WorkspaceViewModel : ViewModelBase
     {
         if (CurrentWorkspacePath is not null)
         {
-            // Stub: actual serialization wired in 6c.
-            Messages.Success($"Saved: {CurrentWorkspacePath}");
+            WriteWorkspaceFile(CurrentWorkspacePath);
             return;
         }
         await SaveWorkspaceAs(owner);
@@ -123,17 +122,34 @@ public partial class WorkspaceViewModel : ViewModelBase
         {
             Title = "Save Workspace As",
             SuggestedFileName = "untitled",
-            DefaultExtension = "crfw",
+            DefaultExtension = "cws",
             FileTypeChoices = new[]
             {
-                new FilePickerFileType("circuitRF Workspace") { Patterns = new[] { "*.crfw" } },
+                new FilePickerFileType("circuitRF Workspace") { Patterns = new[] { "*.cws" } },
             },
         });
 
         if (result is null) return;
         CurrentWorkspacePath = result.Path.LocalPath;
-        // Stub: actual serialization wired in 6c.
-        Messages.Success($"Saved: {CurrentWorkspacePath}");
+        WriteWorkspaceFile(CurrentWorkspacePath);
+    }
+
+    private void WriteWorkspaceFile(string path)
+    {
+        try
+        {
+            var ws = new CwsFile
+            {
+                // Member files and dock layout serialization deferred — workspace manifest
+                // scaffolding is wired here; full member tracking in later phases.
+            };
+            WorkspacePersistence.SaveToFile(path, ws);
+            Messages.Success($"Saved: {path}", path);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Workspace save failed: {ex.Message}");
+        }
     }
 
     [RelayCommand]
@@ -154,11 +170,13 @@ public partial class WorkspaceViewModel : ViewModelBase
     private void Redo() => UndoRedo.Redo();
     private bool CanRedo() => UndoRedo.CanRedo;
 
-    // Cut / Copy / Paste / Select All — placeholder; real impl in 6d with schematic editor.
-    [RelayCommand] private void Cut()       { Messages.Info("Cut: not yet implemented (6d)."); }
-    [RelayCommand] private void Copy()      { Messages.Info("Copy: not yet implemented (6d)."); }
-    [RelayCommand] private void Paste()     { Messages.Info("Paste: not yet implemented (6d)."); }
-    [RelayCommand] private void SelectAll() { Messages.Info("Select All: not yet implemented (6d)."); }
+    // Cut / Copy / Paste / Select All — no-ops at the window level.
+    // Each active control (TextBox, SchematicCanvas) handles clipboard natively via its own
+    // key routing.  These stubs satisfy NativeMenuItem Command bindings without interfering.
+    [RelayCommand] private void Cut()       { }
+    [RelayCommand] private void Copy()      { }
+    [RelayCommand] private void Paste()     { }
+    [RelayCommand] private void SelectAll() { }
 
     // ---- View commands -------------------------------------------------------
 
@@ -225,7 +243,6 @@ public partial class WorkspaceViewModel : ViewModelBase
     {
         if (item.Kind == ProjectTreeItemKind.DataDisplay)
         {
-            // Data display canvas arrives in 6d/6e — open placeholder for now.
             var stub = new StubDocument(item.Name, StubDocument.StubKind.DataDisplay);
             _factory.OpenDocument(stub);
             return;
@@ -233,10 +250,13 @@ public partial class WorkspaceViewModel : ViewModelBase
 
         if (item.Kind is ProjectTreeItemKind.Cell or ProjectTreeItemKind.TestBench)
         {
-            var model = item.Name == "StressTest10k"
+            var renderModel = item.Name == "StressTest10k"
                 ? SchematicModelBuilder.GenerateStressTest(10_000)
                 : SchematicModelBuilder.BuildHero2PA();
-            var doc = new SchematicDocument(item.Name, model);
+
+            var editModel = SchematicEditModel.FromRenderModel(renderModel);
+            var vm        = new SchematicViewModel(editModel, UndoRedo, Messages);
+            var doc       = new SchematicDocument(item.Name, vm) { Messages = Messages };
             _factory.OpenDocument(doc);
             return;
         }

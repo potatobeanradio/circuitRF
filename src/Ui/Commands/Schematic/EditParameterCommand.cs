@@ -1,0 +1,74 @@
+using CircuitRF.Ui.Schematic;
+
+namespace CircuitRF.Ui.Commands.Schematic;
+
+/// <summary>
+/// Changes the expression and unit of a single named parameter on a component.
+/// The parameter name stays fixed — only value and units are edited via the inline box.
+/// </summary>
+internal sealed class EditParameterCommand : IUiCommand
+{
+    private readonly EditableParameter _param;
+    private readonly string _newExpression;
+    private readonly string _oldExpression;
+    private readonly string _newUnit;
+    private readonly string _oldUnit;
+
+    public string Description => $"Edit {_param.Name}";
+
+    public EditParameterCommand(EditableParameter param, string newExpression, string newUnit = "")
+    {
+        _param         = param;
+        _oldExpression = param.Expression;
+        _oldUnit       = param.Unit;
+        _newExpression = newExpression;
+        _newUnit       = newUnit;
+    }
+
+    public void Execute() { _param.Expression = _newExpression; _param.Unit = _newUnit; }
+    public void Undo()    { _param.Expression = _oldExpression; _param.Unit = _oldUnit; }
+}
+
+/// <summary>
+/// Changes a component's InstanceName.
+/// </summary>
+internal sealed class RenameComponentCommand : IUiCommand
+{
+    private readonly EditableComponent _comp;
+    private readonly string _newName;
+    private readonly string _oldName;
+
+    public string Description => "Rename component";
+
+    public RenameComponentCommand(EditableComponent comp, string newName)
+    {
+        _comp    = comp;
+        _oldName = comp.InstanceName;
+        _newName = newName;
+    }
+
+    public void Execute() => _comp.InstanceName = _newName;
+    public void Undo()    => _comp.InstanceName = _oldName;
+}
+
+/// <summary>
+/// Renames an existing net label.
+/// </summary>
+internal sealed class RenameNetLabelCommand : IUiCommand
+{
+    private readonly EditableNetLabel _label;
+    private readonly string _newName;
+    private readonly string _oldName;
+
+    public string Description => $"Rename net label to {_newName}";
+
+    public RenameNetLabelCommand(EditableNetLabel label, string newName)
+    {
+        _label   = label;
+        _oldName = label.Name;
+        _newName = newName;
+    }
+
+    public void Execute() => _label.Name = _newName;
+    public void Undo()    => _label.Name = _oldName;
+}

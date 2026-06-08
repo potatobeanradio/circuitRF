@@ -46,7 +46,7 @@ public static class SchematicModelBuilder
                 SymbolKind kind = kinds[(col + row) % kinds.Length];
                 string name = $"{KindPrefix(kind)}{count + 1}";
 
-                var comp = MakeComponent(name, kind, cx, cy, SymbolRotation.R0, $"{ComponentValue(kind, count)}");
+                var comp = MakeComponent(name, kind, cx, cy, SymbolRotation.R0, DemoParams(kind, count));
                 int compIdx = components.Count;
                 components.Add(comp);
 
@@ -115,53 +115,53 @@ public static class SchematicModelBuilder
 
         // Drive source (left port connected to n_src, right port unconnected toward ground)
         components.Add(MakeComponent("Vdrive", SymbolKind.ToneSource, 0, signalY,
-            SymbolRotation.R0, "2 GHz",
-            port0State: PortConnectionState.Connected,   // left → into circuit
-            port1State: PortConnectionState.Unconnected  // right → open (will demo red box)
-        ));
+            SymbolRotation.R0,
+            [("V", "1", "V"), ("Freq", "2", "GHz")],      // V amplitude + 2 GHz frequency
+            port0State: PortConnectionState.Connected,
+            port1State: PortConnectionState.Unconnected));
 
         components.Add(MakeComponent("Zsource", SymbolKind.ZPort, pitch, signalY,
-            SymbolRotation.R0, "25 Ω"));
+            SymbolRotation.R0, [("Z[1,1]", "25", "ohm")]));
 
         components.Add(MakeComponent("Cblock_g", SymbolKind.Capacitor, 2 * pitch, signalY,
-            SymbolRotation.R0, "1 µF"));
+            SymbolRotation.R0, [("C", "1", "µF")]));
 
         // FET — SDD model (3-port: gate L, drain R-top, source R-bottom; using 2-port layout)
         components.Add(MakeComponent("FET1", SymbolKind.FetSdd, 3 * pitch, signalY,
-            SymbolRotation.R0, "GaN SDD"));
+            SymbolRotation.R0));
 
         components.Add(MakeComponent("Lchoke_d", SymbolKind.Inductor, 4 * pitch, signalY,
-            SymbolRotation.R0, "1 µH"));
+            SymbolRotation.R0, [("L", "1", "µH")]));
 
         components.Add(MakeComponent("Zload", SymbolKind.ZPort, 5 * pitch, signalY,
-            SymbolRotation.R0, "160 Ω"));
+            SymbolRotation.R0, [("Z[1,1]", "160", "ohm")]));
 
         components.Add(MakeComponent("P2", SymbolKind.Port, 6 * pitch, signalY,
-            SymbolRotation.R0, "Port 2"));
+            SymbolRotation.R0));
 
         // ── Gate bias ──────────────────────────────────────────────────────────
 
         // Lchoke_g stacked above the FET gate node
         components.Add(MakeComponent("Lchoke_g", SymbolKind.Inductor,
-            3 * pitch - 200, -biasY, SymbolRotation.R90, "1 µH"));
+            3 * pitch - 200, -biasY, SymbolRotation.R90, [("L", "1", "µH")]));
 
         components.Add(MakeComponent("Vgate", SymbolKind.VoltageSource,
-            3 * pitch - 200, -biasY - 400, SymbolRotation.R90, "-3.05 V"));
+            3 * pitch - 200, -biasY - 400, SymbolRotation.R90, [("Vac", "-3.05", "V")]));
 
         components.Add(MakeComponent("GND1", SymbolKind.Ground,
-            3 * pitch - 200, -biasY - 800, SymbolRotation.R0, ""));
+            3 * pitch - 200, -biasY - 800, SymbolRotation.R0));
 
         // ── Drain bias ─────────────────────────────────────────────────────────
 
         components.Add(MakeComponent("Vdrain", SymbolKind.VoltageSource,
-            4 * pitch, biasY, SymbolRotation.R90, "48 V"));
+            4 * pitch, biasY, SymbolRotation.R90, [("Vac", "48", "V")]));
 
         components.Add(MakeComponent("GND2", SymbolKind.Ground,
-            4 * pitch, biasY + 400, SymbolRotation.R0, ""));
+            4 * pitch, biasY + 400, SymbolRotation.R0));
 
         // Drive source ground
         components.Add(MakeComponent("GND3", SymbolKind.Ground,
-            0, biasY, SymbolRotation.R0, ""));
+            0, biasY, SymbolRotation.R0));
 
         // ── Signal-path wires ─────────────────────────────────────────────────
 
@@ -236,24 +236,40 @@ public static class SchematicModelBuilder
 
     private static SchematicComponent MakeComponent(
         string name, SymbolKind kind, double cx, double cy,
-        SymbolRotation rot, string? valueLabel,
+        SymbolRotation rot,
+        (string Name, string Expr, string Unit)[]? parameters = null,
         PortConnectionState port0State = PortConnectionState.Connected,
         PortConnectionState port1State = PortConnectionState.Connected)
     {
         var ports = BuildPorts(kind, rot, port0State, port1State);
+        var labels = new List<string> { ComponentTypeRegistry.DisplayName(kind, ports.Count), name };
+        // Format parameter labels the same way EditableComponent.ToRenderComponent does:
+        // "Name = Expression Unit" — skip params with a blank expression.
+        if (parameters is not null)
+        {
+            foreach (var (pname, expr, unit) in parameters)
+            {
+                if (string.IsNullOrEmpty(expr)) continue;
+                string val = string.IsNullOrEmpty(unit) ? expr : $"{expr} {unit}";
+                labels.Add(string.IsNullOrEmpty(pname) ? val : $"{pname} = {val}");
+            }
+        }
         return new SchematicComponent
         {
-            InstanceName = name,
-            Symbol       = kind,
+            InstanceName  = name,
+            Symbol        = kind,
             X = cx, Y = cy,
-            Rotation     = rot,
-            Ports        = ports,
-            LabelA       = name,
-            LabelB       = valueLabel,
-            BbMinX = cx - HalfBound,
-            BbMinY = cy - HalfBound,
-            BbMaxX = cx + HalfBound,
-            BbMaxY = cy + HalfBound,
+            Rotation      = rot,
+            Ports         = ports,
+            Labels        = labels,
+            BbMinX        = cx - HalfBound,
+            BbMinY        = cy - HalfBound,
+            BbMaxX        = cx + HalfBound,
+            BbMaxY        = cy + HalfBound,
+            GlyphBbMinX   = cx - 160,
+            GlyphBbMinY   = cy - 60,
+            GlyphBbMaxX   = cx + 160,
+            GlyphBbMaxY   = cy + 60,
         };
     }
 
@@ -291,13 +307,13 @@ public static class SchematicModelBuilder
         _                        => "X",
     };
 
-    private static string ComponentValue(SymbolKind k, int idx) => k switch
+    private static (string Name, string Expr, string Unit)[] DemoParams(SymbolKind k, int idx) => k switch
     {
-        SymbolKind.Resistor  => $"{50 + (idx % 5) * 10} Ω",
-        SymbolKind.Capacitor => "1 pF",
-        SymbolKind.Inductor  => "1 nH",
-        SymbolKind.VoltageSource => "1 V",
-        _ => "",
+        SymbolKind.Resistor      => [("R",   $"{50 + (idx % 5) * 10}", "ohm")],
+        SymbolKind.Capacitor     => [("C",   "1",                        "pF")],
+        SymbolKind.Inductor      => [("L",   "1",                        "nH")],
+        SymbolKind.VoltageSource => [("Vac", "1",                        "V"), ("Freq", "", "Hz")],
+        _                        => [],
     };
 
     private static void ComputeOverallBounds(

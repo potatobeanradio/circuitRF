@@ -22,4 +22,7 @@
   <Folder Name="/tests/Firewall.Tests/">
     <Project Path="tests/Firewall.Tests/CircuitRF.Firewall.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/Ui.Tests/">
+    <Project Path="tests/Ui.Tests/CircuitRF.Ui.Tests.csproj" />
+  </Folder>
 </Solution>

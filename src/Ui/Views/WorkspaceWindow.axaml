@@ -42,10 +42,10 @@
                         <NativeMenuItem Header="Undo"       Command="{Binding UndoCommand}"     Gesture="Meta+Z"/>
                         <NativeMenuItem Header="Redo"       Command="{Binding RedoCommand}"     Gesture="Meta+Shift+Z"/>
                         <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Cut"        Command="{Binding CutCommand}"      Gesture="Meta+X"/>
-                        <NativeMenuItem Header="Copy"       Command="{Binding CopyCommand}"     Gesture="Meta+C"/>
-                        <NativeMenuItem Header="Paste"      Command="{Binding PasteCommand}"    Gesture="Meta+V"/>
-                        <NativeMenuItem Header="Select All" Command="{Binding SelectAllCommand}" Gesture="Meta+A"/>
+                        <NativeMenuItem Header="Cut"        Command="{Binding CutCommand}"/>
+                        <NativeMenuItem Header="Copy"       Command="{Binding CopyCommand}"/>
+                        <NativeMenuItem Header="Paste"      Command="{Binding PasteCommand}"/>
+                        <NativeMenuItem Header="Select All" Command="{Binding SelectAllCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -88,14 +88,9 @@
         <KeyBinding Gesture="Ctrl+Shift+Z"  Command="{Binding RedoCommand}"/>
         <KeyBinding Gesture="Meta+Shift+Z"  Command="{Binding RedoCommand}"/>
         <KeyBinding Gesture="Ctrl+Y"        Command="{Binding RedoCommand}"/>
-        <KeyBinding Gesture="Ctrl+X"        Command="{Binding CutCommand}"/>
-        <KeyBinding Gesture="Meta+X"        Command="{Binding CutCommand}"/>
-        <KeyBinding Gesture="Ctrl+C"        Command="{Binding CopyCommand}"/>
-        <KeyBinding Gesture="Meta+C"        Command="{Binding CopyCommand}"/>
-        <KeyBinding Gesture="Ctrl+V"        Command="{Binding PasteCommand}"/>
-        <KeyBinding Gesture="Meta+V"        Command="{Binding PasteCommand}"/>
-        <KeyBinding Gesture="Ctrl+A"        Command="{Binding SelectAllCommand}"/>
-        <KeyBinding Gesture="Meta+A"        Command="{Binding SelectAllCommand}"/>
+        <!-- Cut/Copy/Paste/SelectAll are intentionally NOT window-level key bindings.
+             Routing them here would intercept before the focused TextBox (inline edit) or
+             canvas can handle them. Each control handles its own clipboard keys natively. -->
         <KeyBinding Gesture="Ctrl+T"        Command="{Binding NewTabCommand}"/>
         <KeyBinding Gesture="Meta+T"        Command="{Binding NewTabCommand}"/>
         <KeyBinding Gesture="Ctrl+R"        Command="{Binding RunAnalysisCommand}"/>

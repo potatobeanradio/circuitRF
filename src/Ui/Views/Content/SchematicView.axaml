@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:schemDoc="using:CircuitRF.Ui.Schematic"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
              xmlns:ctrl="using:CircuitRF.Ui.Controls"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Content.SchematicView"
@@ -15,11 +16,11 @@
                 BorderThickness="0,0,0,1"
                 Padding="4,2">
 
-            <StackPanel Orientation="Horizontal" Spacing="4" Classes="Toolbar">
+            <StackPanel Orientation="Horizontal" Spacing="2" Classes="Toolbar">
 
                 <!-- Zoom to Fit -->
                 <Button Click="OnZoomToFit"
-                        ToolTip.Tip="Zoom to Fit  (double-click canvas)"
+                        ToolTip.Tip="Zoom to Fit"
                         Padding="6,3">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
@@ -27,13 +28,144 @@
                     </StackPanel>
                 </Button>
 
-                <!-- Zoom to Page (1:1) -->
+                <!-- Zoom 1:1 -->
                 <Button Click="OnZoomToPage"
                         ToolTip.Tip="Reset to 1:1 zoom"
                         Padding="6,3">
+                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Zoom Box -->
+                <Button Click="OnZoomBoxTool"
+                        ToolTip.Tip="Zoom Box  (Z)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Select tool -->
+                <Button Click="OnSelectTool"
+                        ToolTip.Tip="Select  (S)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="CursorDefault" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Wire tool -->
+                <Button Click="OnWireTool"
+                        ToolTip.Tip="Wire  (W)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Ground symbol -->
+                <Button Click="OnPlaceGround"
+                        ToolTip.Tip="Place Ground"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="ArrowCollapseDown" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Port symbol -->
+                <Button Click="OnPlacePort"
+                        ToolTip.Tip="Place Port"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="SquareCircle" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Rotate CCW -->
+                <Button Click="OnRotateCcw"
+                        ToolTip.Tip="Rotate 90° CCW  (R)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="RotateLeft" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Rotate CW -->
+                <Button Click="OnRotateCw"
+                        ToolTip.Tip="Rotate 90° CW  (Shift+R)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="RotateRight" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Mirror H -->
+                <Button Click="OnMirrorH"
+                        ToolTip.Tip="Mirror Horizontal  (M)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="FlipHorizontal" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Mirror V -->
+                <Button Click="OnMirrorV"
+                        ToolTip.Tip="Mirror Vertical  (Shift+M)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="FlipVertical" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Delete -->
+                <Button Click="OnDelete"
+                        ToolTip.Tip="Delete  (Del)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="Delete" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Grid Snap toggle -->
+                <ToggleButton x:Name="GridSnapToggle"
+                              IsChecked="True"
+                              Click="OnGridSnapToggle"
+                              ToolTip.Tip="Snap to Grid"
+                              Padding="6,3">
+                    <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
+                </ToggleButton>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Disable to Open -->
+                <Button Click="OnDisableOpen"
+                        ToolTip.Tip="Disable → Open circuit"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="EyeOff" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Disable to Short -->
+                <Button Click="OnDisableShort"
+                        ToolTip.Tip="Disable → Short circuit"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="EyeOffOutline" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Re-enable -->
+                <Button Click="OnReEnable"
+                        ToolTip.Tip="Re-enable component"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="CheckCircleOutline" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Save .csch -->
+                <Button Click="OnSaveCsch"
+                        ToolTip.Tip="Save schematic  (Ctrl+S)"
+                        Padding="6,3">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
-                        <TextBlock Text="1:1" FontSize="11" VerticalAlignment="Center"/>
+                        <mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/>
+                        <TextBlock Text="Save" FontSize="11" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
 
@@ -41,7 +173,7 @@
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
-                <!-- FPS readout (updated by timer in code-behind) -->
+                <!-- FPS readout -->
                 <TextBlock x:Name="FpsText"
                            VerticalAlignment="Center"
                            FontSize="11"
@@ -52,11 +184,120 @@
             </StackPanel>
         </Border>
 
-        <!-- ── Schematic canvas (fills remaining space) ─────────────────────── -->
-        <ctrl:SchematicCanvas x:Name="SchematicCanvasCtrl"
-                              Model="{Binding Model}"
-                              ShowFps="True"
-                              ClipToBounds="True"/>
+        <!-- ── Canvas + overlay ─────────────────────────────────────────────── -->
+        <Grid>
+            <ctrl:SchematicCanvas x:Name="SchematicCanvasCtrl"
+                                  Model="{Binding Model}"
+                                  ShowFps="True"
+                                  ClipToBounds="True">
+
+                <!-- Right-click context menu for components/wires -->
+                <ctrl:SchematicCanvas.ContextMenu>
+                    <ContextMenu x:Name="ComponentContextMenu"
+                                 Opening="OnContextMenuOpening">
+                        <MenuItem x:Name="CtxEditParameters"
+                                  Header="Edit Parameters"
+                                  Click="OnCtxEditParameters">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="Pencil" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <MenuItem x:Name="CtxPushIn"
+                                  Header="Push In"
+                                  IsEnabled="False"
+                                  Click="OnCtxPushIn">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="ArrowRight" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <Separator/>
+
+                        <MenuItem Header="Rotate 90°"
+                                  Click="OnCtxRotate">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="RotateLeft" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <MenuItem Header="Move Labels"
+                                  Click="OnCtxMoveLabels"
+                                  InputGesture="F5">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="LabelOutline" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <MenuItem Header="Reset Label Position"
+                                  Click="OnCtxResetLabels">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="LabelOff" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <Separator/>
+
+                        <MenuItem x:Name="CtxDisconnect"
+                                  Header="Disconnect"
+                                  Click="OnCtxDisconnect">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="LinkOff" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <Separator/>
+
+                        <MenuItem Header="Copy"
+                                  Click="OnCtxCopy">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <MenuItem Header="Delete"
+                                  Click="OnCtxDelete">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="Delete" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+                    </ContextMenu>
+                </ctrl:SchematicCanvas.ContextMenu>
+            </ctrl:SchematicCanvas>
+
+            <!-- Inline text edit overlay — positioned via Margin from code-behind.
+                 Padding="4,2" is explicit so ShowInlineEditBox can use known constants.
+                 ContextMenu replaces the theme's built-in ContextFlyout so we can track
+                 Opening/Closed and prevent LostFocus from dismissing the box prematurely. -->
+            <TextBox x:Name="InlineEditBox"
+                     IsVisible="False"
+                     Width="140"
+                     FontSize="11"
+                     FontFamily="{DynamicResource IBMPlexSans}"
+                     TextAlignment="Left"
+                     Padding="4,2"
+                     MinHeight="0"
+                     HorizontalAlignment="Left"
+                     VerticalAlignment="Top"
+                     LostFocus="OnInlineEditLostFocus"
+                     KeyDown="OnInlineEditKeyDown">
+                <TextBox.ContextMenu>
+                    <ContextMenu Opening="OnInlineEditContextMenuOpening">
+                        <MenuItem x:Name="InlineCtxCut"
+                                  Header="Cut"
+                                  Click="OnInlineCtxCut"/>
+                        <MenuItem x:Name="InlineCtxCopy"
+                                  Header="Copy"
+                                  Click="OnInlineCtxCopy"/>
+                        <MenuItem Header="Paste"
+                                  Click="OnInlineCtxPaste"/>
+                        <Separator/>
+                        <MenuItem Header="Select All"
+                                  Click="OnInlineCtxSelectAll"/>
+                    </ContextMenu>
+                </TextBox.ContextMenu>
+            </TextBox>
+        </Grid>
 
     </DockPanel>
 </UserControl>
