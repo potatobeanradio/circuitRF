@@ -9,6 +9,7 @@ using Dock.Model.Controls;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels.Dock;
 using CircuitRF.Ui.ViewModels.ProjectTree;
 
@@ -98,8 +99,17 @@ public partial class WorkspaceViewModel : ViewModelBase
 
         if (result.Count == 0) return;
         var path = result[0].Path.LocalPath;
-        // Stub: actual workspace deserialization wired in 6c.
         CurrentWorkspacePath = path;
+
+        // Apply workspace color scheme if recorded.
+        try
+        {
+            var cws = WorkspacePersistence.LoadFromFile(path);
+            if (cws.ColorSchemeName is { } schemeName)
+                ThemeService.Active = ThemeResolver.Resolve(schemeName, Path.GetDirectoryName(path));
+        }
+        catch { }
+
         Messages.Success($"Opened: {path}");
     }
 
@@ -138,10 +148,12 @@ public partial class WorkspaceViewModel : ViewModelBase
     {
         try
         {
+            var activeName = ThemeService.Active.Name;
             var ws = new CwsFile
             {
                 // Member files and dock layout serialization deferred — workspace manifest
                 // scaffolding is wired here; full member tracking in later phases.
+                ColorSchemeName = activeName != "Default" ? activeName : null,
             };
             WorkspacePersistence.SaveToFile(path, ws);
             Messages.Success($"Saved: {path}", path);
@@ -223,7 +235,10 @@ public partial class WorkspaceViewModel : ViewModelBase
     private async Task ShowSettings(Window? owner)
     {
         if (owner is null) return;
-        var w = new Views.Dialogs.SettingsView();
+        var workspaceDir = CurrentWorkspacePath is not null
+            ? Path.GetDirectoryName(CurrentWorkspacePath)
+            : null;
+        var w = new Views.Dialogs.SettingsView(workspaceDir);
         w.Show(owner);
         await Task.CompletedTask;
     }

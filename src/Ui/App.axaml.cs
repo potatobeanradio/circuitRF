@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
+using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views;
 
@@ -33,6 +34,24 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Register built-in .ccolor assets via AssetLoader so ThemeResolver can find them.
+        ThemeResolver.SetBuiltInProvider(name =>
+        {
+            try
+            {
+                var uri = new Uri($"avares://CircuitRF.Ui/Assets/Color/{name}.ccolor");
+                using var stream = AssetLoader.Open(uri);
+                using var reader = new System.IO.StreamReader(stream);
+                return ColorThemeIo.Load(reader.ReadToEnd());
+            }
+            catch { return null; }
+        });
+
+        // Apply saved theme preference before the first window is shown.
+        var prefs = AppPreferencesIo.Load();
+        if (prefs.ActiveThemeName is { } savedTheme)
+            ThemeService.Active = ThemeResolver.Resolve(savedTheme);
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             _desktop = desktop;

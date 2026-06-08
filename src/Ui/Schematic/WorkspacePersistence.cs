@@ -30,6 +30,14 @@ public sealed class CwsFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? DockLayout { get; set; }
+
+    /// <summary>
+    /// Name of the color scheme (.ccolor) to activate when this workspace is opened.
+    /// Resolved via ThemeResolver (workspace dir → user dir → built-in assets).
+    /// Null means "use the application-level preference".
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ColorSchemeName { get; set; }
 }
 
 /// <summary>

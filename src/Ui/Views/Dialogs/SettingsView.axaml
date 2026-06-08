@@ -1,61 +1,132 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dialogs="clr-namespace:CircuitRF.Ui.Views.Dialogs"
         x:Class="CircuitRF.Ui.Views.Dialogs.SettingsView"
         Title="circuitRF Settings"
-        Width="480"
-        Height="360"
+        Width="720"
+        Height="540"
+        MinWidth="620"
+        MinHeight="440"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
-    <Grid RowDefinitions="*,Auto" Margin="20">
+    <Grid RowDefinitions="Auto,*,Auto" Margin="14">
 
-        <ScrollViewer Grid.Row="0">
-            <StackPanel Spacing="16">
+        <!-- ── Theme selector row ─────────────────────────────────────────── -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,10">
+            <!-- Variant toggle (right-docked first so it doesn't collapse) -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                <RadioButton Name="LightRadio" Content="Light" IsChecked="True"
+                             GroupName="Variant" Click="OnVariantChanged" FontSize="12"/>
+                <RadioButton Name="DarkRadio"  Content="Dark"
+                             GroupName="Variant" Click="OnVariantChanged" FontSize="12"/>
+            </StackPanel>
 
-                <TextBlock Text="General" FontSize="14" FontWeight="SemiBold"/>
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <TextBlock Text="Color Theme:" VerticalAlignment="Center" FontSize="12"/>
+                <ComboBox Name="ThemeCombo" FontSize="12" MinWidth="140"
+                          SelectionChanged="OnThemeComboChanged"/>
+                <Button Name="SaveThemeButton" Content="Save Theme…" FontSize="12"
+                        Click="OnSaveThemeClick" Padding="8,4"/>
+            </StackPanel>
+        </DockPanel>
 
-                <StackPanel Spacing="6">
-                    <TextBlock Text="Theme" FontSize="12"/>
-                    <ComboBox SelectedIndex="0" FontSize="12" Width="180">
-                        <ComboBoxItem Content="System (follows OS)"/>
-                        <ComboBoxItem Content="Light"/>
-                        <ComboBoxItem Content="Dark"/>
-                    </ComboBox>
+        <!-- ── Main editor panel ──────────────────────────────────────────── -->
+        <Grid Grid.Row="1" ColumnDefinitions="200,10,*">
+
+            <!-- Role list -->
+            <Border Grid.Column="0"
+                    BorderBrush="{DynamicResource ThemeBorderMidBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    ClipToBounds="True">
+                <ListBox Name="RoleList"
+                         SelectionMode="Single"
+                         SelectionChanged="OnRoleSelected"
+                         FontSize="11.5"
+                         Padding="2">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="dialogs:RoleRowModel">
+                            <StackPanel Orientation="Horizontal" Spacing="7" Margin="2,1">
+                                <Rectangle Width="14" Height="14" RadiusX="2" RadiusY="2"
+                                           VerticalAlignment="Center">
+                                    <Rectangle.Fill>
+                                        <SolidColorBrush Color="{Binding SwatchColor}"/>
+                                    </Rectangle.Fill>
+                                </Rectangle>
+                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <!-- Color editor (right panel) -->
+            <StackPanel Grid.Column="2" Spacing="10">
+
+                <!-- Color preview swatch -->
+                <Border CornerRadius="4" ClipToBounds="True" Height="50">
+                    <Rectangle Name="ColorPreviewRect"/>
+                </Border>
+
+                <!-- RGBA sliders -->
+                <Grid ColumnDefinitions="14,*,36" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="7">
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="R" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+                    <Slider    Grid.Row="0" Grid.Column="1" Name="SliderR" Minimum="0" Maximum="255"
+                               IsSnapToTickEnabled="True" TickFrequency="1"
+                               ValueChanged="OnSliderChanged" Margin="6,0"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Name="LabelR" Text="0"
+                               VerticalAlignment="Center" FontSize="12" TextAlignment="Right"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="G" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+                    <Slider    Grid.Row="1" Grid.Column="1" Name="SliderG" Minimum="0" Maximum="255"
+                               IsSnapToTickEnabled="True" TickFrequency="1"
+                               ValueChanged="OnSliderChanged" Margin="6,0"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Name="LabelG" Text="0"
+                               VerticalAlignment="Center" FontSize="12" TextAlignment="Right"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="B" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+                    <Slider    Grid.Row="2" Grid.Column="1" Name="SliderB" Minimum="0" Maximum="255"
+                               IsSnapToTickEnabled="True" TickFrequency="1"
+                               ValueChanged="OnSliderChanged" Margin="6,0"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2" Name="LabelB" Text="0"
+                               VerticalAlignment="Center" FontSize="12" TextAlignment="Right"/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="A" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+                    <Slider    Grid.Row="3" Grid.Column="1" Name="SliderA" Minimum="0" Maximum="255"
+                               IsSnapToTickEnabled="True" TickFrequency="1"
+                               ValueChanged="OnSliderChanged" Margin="6,0"/>
+                    <TextBlock Grid.Row="3" Grid.Column="2" Name="LabelA" Text="255"
+                               VerticalAlignment="Center" FontSize="12" TextAlignment="Right"/>
+
+                </Grid>
+
+                <!-- Hex input -->
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="#" VerticalAlignment="Center" FontSize="12" FontWeight="Medium" Width="14"/>
+                    <TextBox Name="HexBox" FontSize="12" Width="88" MaxLength="8"
+                             LostFocus="OnHexLostFocus" KeyDown="OnHexKeyDown"
+                             FontFamily="Courier New,Consolas,monospace"/>
                 </StackPanel>
 
-                <Separator/>
-
-                <TextBlock Text="Simulation" FontSize="14" FontWeight="SemiBold"/>
-
-                <StackPanel Spacing="6">
-                    <TextBlock Text="Default harmonic count" FontSize="12"/>
-                    <NumericUpDown Value="7" Minimum="1" Maximum="64"
-                                   Width="120" FontSize="12"/>
-                </StackPanel>
-
-                <Separator/>
-
-                <TextBlock Text="Appearance" FontSize="14" FontWeight="SemiBold"/>
-
-                <CheckBox Content="Show grid in schematic by default"
-                          IsChecked="True"
-                          FontSize="12"/>
-
-                <CheckBox Content="Auto-scroll Messages region on new message"
-                          IsChecked="True"
-                          FontSize="12"/>
+                <!-- Role path label -->
+                <TextBlock Name="RoleNameLabel" FontSize="10.5" Opacity="0.5"/>
 
             </StackPanel>
-        </ScrollViewer>
+        </Grid>
 
-        <StackPanel Grid.Row="1"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Spacing="8"
-                    Margin="0,12,0,0">
-            <Button Content="Cancel" Width="80" Click="OnCancelClick" FontSize="12" HorizontalContentAlignment="Center"/>
-            <Button Content="OK" Width="80" IsDefault="True" Classes="accent" Click="OnOkClick" FontSize="12" HorizontalContentAlignment="Center"/>
-        </StackPanel>
+        <!-- ── Footer buttons ─────────────────────────────────────────────── -->
+        <DockPanel Grid.Row="2" Margin="0,10,0,0">
+            <Button DockPanel.Dock="Left" Content="Revert" FontSize="12"
+                    Click="OnRevertClick" Padding="8,4"/>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                <Button Content="Cancel" FontSize="12" Width="80"
+                        HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+                <Button Content="Close"  FontSize="12" Width="80" IsDefault="True"
+                        Classes="accent" HorizontalContentAlignment="Center" Click="OnCloseClick"/>
+            </StackPanel>
+        </DockPanel>
 
     </Grid>
 </Window>

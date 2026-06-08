@@ -1,100 +1,119 @@
+using CircuitRF.Ui.Theming;
 using SkiaSharp;
 
 namespace CircuitRF.Ui.Renderers;
 
 /// <summary>
-/// Colour tokens for the schematic renderer.
-/// Two static presets (Light / Dark); the canvas selects based on ActualThemeVariant.
+/// SKColor token bundle consumed by the schematic renderer.
+/// Built from a ColorTheme via FromTheme (Layer 2 projection) — never hardcoded.
+/// Overlay/selection/accent colors are not yet user-themed and keep variant-specific defaults.
 /// </summary>
 public sealed class SchematicRenderTheme
 {
-    public SKColor Background      { get; init; }
-    public SKColor Grid            { get; init; }
-    public SKColor Wire            { get; init; }
-    public SKColor ComponentBody   { get; init; }
-    public SKColor Label           { get; init; }
-    public SKColor ConnectionDot   { get; init; }
-    public SKColor UnconnectedPort { get; init; }
-    public SKColor LodRect         { get; init; }
+    // ── Themed roles ──────────────────────────────────────────────────────────
 
-    // 6d overlay colors
-    public SKColor SelectionBox    { get; init; }   // selection highlight stroke
-    public SKColor SelectionFill   { get; init; }   // selection highlight fill
-    public SKColor RubberBandStroke{ get; init; }   // rubber-band rect stroke (overridden by accent)
-    public SKColor RubberBandFill  { get; init; }   // rubber-band rect fill   (overridden by accent)
-    public SKColor GhostBody       { get; init; }   // placement ghost
-    public SKColor WirePreview     { get; init; }   // live wire preview
-    public SKColor DisabledGlyph   { get; init; }   // disabled component overlay (legacy; Open/Short now use Warning)
+    public SKColor Background        { get; init; }
+    public SKColor Grid              { get; init; }
+    public SKColor Wire              { get; init; }
+    public SKColor SymbolLine        { get; init; }   // component body lines
+    public SKColor SymbolPlus        { get; init; }   // +/− polarity marks (VoltageSource)
+    public SKColor ComponentNameText { get; init; }   // label row 0: type / component name
+    public SKColor InstanceNameText  { get; init; }   // label row 1: instance name
+    public SKColor ParameterNameText { get; init; }   // label row 2+: parameters
+    public SKColor ConnectionDot     { get; init; }   // wire-to-wire junction dot
+    public SKColor UnconnectedPort   { get; init; }   // unconnected pin marker (= System.Warning)
+    public SKColor Warning           { get; init; }   // unconnected wire endpoint (= System.Warning)
+    public SKColor ConnectedPin      { get; init; }   // filled dot on a connected port
+    public SKColor NetLabelText      { get; init; }   // wire node-name label
 
-    // 6d rendering additions
-    public SKColor Warning         { get; init; }   // DisableState / unconnected port / unconnected wire endpoint
-    public SKColor ConnectedPin    { get; init; }   // filled dot on a connected port
-    public SKColor NetLabelText    { get; init; }   // wire node-name label text
+    // ── Not yet themed (overlay, interaction, LOD) ────────────────────────────
 
-    public static readonly SchematicRenderTheme Light = new()
+    public SKColor LodRect           { get; init; }
+    public SKColor SelectionBox      { get; init; }
+    public SKColor SelectionFill     { get; init; }
+    public SKColor RubberBandStroke  { get; init; }
+    public SKColor RubberBandFill    { get; init; }
+    public SKColor GhostBody         { get; init; }
+    public SKColor WirePreview       { get; init; }
+    public SKColor DisabledGlyph     { get; init; }
+
+    // ── Projection factory (L2) ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a SchematicRenderTheme by projecting the given ColorTheme's roles to SKColor.
+    /// Overlay / interaction colors that are not yet user-themed keep variant-specific defaults.
+    /// </summary>
+    public static SchematicRenderTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
-        Background      = new SKColor(250, 250, 250),
-        Grid            = new SKColor(170, 170, 170, 70),
-        Wire            = new SKColor(25,  25,  25),
-        ComponentBody   = new SKColor(30,  30,  30),
-        Label           = new SKColor(30,  30,  30),
-        ConnectionDot   = new SKColor(20,  20,  20),
-        UnconnectedPort = new SKColor(200, 30,  30, 200),
-        LodRect         = new SKColor(70,  90,  180, 180),
-        SelectionBox    = new SKColor(0,   120, 215, 255),
-        SelectionFill   = new SKColor(0,   120, 215,  40),
-        RubberBandStroke= new SKColor(0,   120, 215, 200),
-        RubberBandFill  = new SKColor(0,   120, 215,  28),
-        GhostBody       = new SKColor(0,   100, 180, 120),
-        WirePreview     = new SKColor(0,   140, 60,  200),
-        DisabledGlyph   = new SKColor(200, 60,  60,  160),
-        Warning         = new SKColor(220, 100, 0,   220),
-        ConnectedPin    = new SKColor(0,   150, 80,  220),
-        NetLabelText    = new SKColor(0,   80,  160, 220),
-    };
+        SKColor SK(string role)
+        {
+            var c = theme.Resolve(role, variant);
+            return new SKColor(c.R, c.G, c.B, c.A);
+        }
 
-    public static readonly SchematicRenderTheme Dark = new()
-    {
-        Background      = new SKColor(28,  28,  28),
-        Grid            = new SKColor(80,  80,  80, 70),
-        Wire            = new SKColor(200, 200, 200),
-        ComponentBody   = new SKColor(190, 190, 190),
-        Label           = new SKColor(190, 190, 190),
-        ConnectionDot   = new SKColor(210, 210, 210),
-        UnconnectedPort = new SKColor(220, 60,  60, 200),
-        LodRect         = new SKColor(100, 120, 220, 180),
-        SelectionBox    = new SKColor(70,  160, 255, 255),
-        SelectionFill   = new SKColor(70,  160, 255,  50),
-        RubberBandStroke= new SKColor(70,  160, 255, 200),
-        RubberBandFill  = new SKColor(70,  160, 255,  35),
-        GhostBody       = new SKColor(80,  180, 255, 130),
-        WirePreview     = new SKColor(60,  200, 100, 220),
-        DisabledGlyph   = new SKColor(240, 80,  80,  160),
-        Warning         = new SKColor(255, 140, 0,   230),
-        ConnectedPin    = new SKColor(0,   200, 100, 220),
-        NetLabelText    = new SKColor(80,  160, 255, 220),
-    };
+        bool isLight = variant == ColorVariant.Light;
+        return new SchematicRenderTheme
+        {
+            // ── Themed roles ──────────────────────────────────────────────────
+            Background        = SK(ColorRole.SchematicBackground),
+            Grid              = SK(ColorRole.SchematicGrid),
+            Wire              = SK(ColorRole.SchematicWire),
+            SymbolLine        = SK(ColorRole.SchematicSymbolLine),
+            SymbolPlus        = SK(ColorRole.SchematicSymbolPlus),
+            ComponentNameText = SK(ColorRole.SchematicComponentNameText),
+            InstanceNameText  = SK(ColorRole.SchematicInstanceNameText),
+            ParameterNameText = SK(ColorRole.SchematicParameterNameText),
+            ConnectionDot     = SK(ColorRole.SchematicWireJunctionDot),
+            UnconnectedPort   = SK(ColorRole.SystemWarning),
+            Warning           = SK(ColorRole.SystemWarning),
+            ConnectedPin      = SK(ColorRole.SchematicConnectedPin),
+            NetLabelText      = SK(ColorRole.SchematicNodeLabelText),
 
-    /// <summary>Returns a copy of this theme with rubber-band colors overridden by the system accent.</summary>
+            // ── Not yet themed — vary by variant ──────────────────────────────
+            LodRect          = isLight ? new SKColor( 70,  90, 180, 180) : new SKColor(100, 120, 220, 180),
+            SelectionBox     = isLight ? new SKColor(  0, 120, 215, 255) : new SKColor( 70, 160, 255, 255),
+            SelectionFill    = isLight ? new SKColor(  0, 120, 215,  40) : new SKColor( 70, 160, 255,  50),
+            RubberBandStroke = isLight ? new SKColor(  0, 120, 215, 200) : new SKColor( 70, 160, 255, 200),
+            RubberBandFill   = isLight ? new SKColor(  0, 120, 215,  28) : new SKColor( 70, 160, 255,  35),
+            GhostBody        = isLight ? new SKColor(  0, 100, 180, 120) : new SKColor( 80, 180, 255, 130),
+            WirePreview      = isLight ? new SKColor(  0, 140,  60, 200) : new SKColor( 60, 200, 100, 220),
+            DisabledGlyph    = isLight ? new SKColor(200,  60,  60, 160) : new SKColor(240,  80,  80, 160),
+        };
+    }
+
+    // ── Convenience statics (derived from BuiltIn — one source of truth) ──────
+
+    /// <summary>Default light-mode token set, derived from ColorTheme.BuiltIn.</summary>
+    public static readonly SchematicRenderTheme Light = FromTheme(ColorTheme.BuiltIn, ColorVariant.Light);
+
+    /// <summary>Default dark-mode token set, derived from ColorTheme.BuiltIn.</summary>
+    public static readonly SchematicRenderTheme Dark  = FromTheme(ColorTheme.BuiltIn, ColorVariant.Dark);
+
+    // ── Accent override ───────────────────────────────────────────────────────
+
+    /// <summary>Returns a copy with rubber-band colors replaced by the system accent color.</summary>
     public SchematicRenderTheme WithAccent(SKColor accent) => new()
     {
-        Background      = Background,
-        Grid            = Grid,
-        Wire            = Wire,
-        ComponentBody   = ComponentBody,
-        Label           = Label,
-        ConnectionDot   = ConnectionDot,
-        UnconnectedPort = UnconnectedPort,
-        LodRect         = LodRect,
-        SelectionBox    = SelectionBox,
-        SelectionFill   = SelectionFill,
-        RubberBandStroke= accent.WithAlpha(200),
-        RubberBandFill  = accent.WithAlpha(35),
-        GhostBody       = GhostBody,
-        WirePreview     = WirePreview,
-        DisabledGlyph   = DisabledGlyph,
-        Warning         = Warning,
-        ConnectedPin    = ConnectedPin,
-        NetLabelText    = NetLabelText,
+        Background        = Background,
+        Grid              = Grid,
+        Wire              = Wire,
+        SymbolLine        = SymbolLine,
+        SymbolPlus        = SymbolPlus,
+        ComponentNameText = ComponentNameText,
+        InstanceNameText  = InstanceNameText,
+        ParameterNameText = ParameterNameText,
+        ConnectionDot     = ConnectionDot,
+        UnconnectedPort   = UnconnectedPort,
+        Warning           = Warning,
+        ConnectedPin      = ConnectedPin,
+        NetLabelText      = NetLabelText,
+        LodRect           = LodRect,
+        SelectionBox      = SelectionBox,
+        SelectionFill     = SelectionFill,
+        RubberBandStroke  = accent.WithAlpha(200),
+        RubberBandFill    = accent.WithAlpha(35),
+        GhostBody         = GhostBody,
+        WirePreview       = WirePreview,
+        DisabledGlyph     = DisabledGlyph,
     };
 }

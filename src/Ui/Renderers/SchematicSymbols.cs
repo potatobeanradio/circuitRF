@@ -38,11 +38,19 @@ public static class SchematicSymbols
          18f,-40f,  18f, 40f,    // right plate
     ];
 
-    /// <summary>DC Voltage Source: circle + +/- marks + leads.</summary>
-    public static readonly float[] VoltageSource = BuildCircleSource(addPlusMinus: true);
+    /// <summary>DC Voltage Source body: circle + leads (no +/- marks — those are in VoltageSourcePlus).</summary>
+    public static readonly float[] VoltageSource = BuildCircleSource();
+
+    /// <summary>DC Voltage Source +/- polarity marks, drawn in SymbolPlus color.</summary>
+    public static readonly float[] VoltageSourcePlus =
+    [
+        -12f, -22f, 12f, -22f,   // horizontal bar of +
+          0f, -32f,  0f, -12f,   // vertical bar of +
+        -12f,  22f, 12f,  22f,   // − bar
+    ];
 
     /// <summary>Tone Source: circle + sine-wave mark + leads.</summary>
-    public static readonly float[] ToneSource = BuildCircleSource(addPlusMinus: false);
+    public static readonly float[] ToneSource = BuildToneSource();
 
     /// <summary>Ground: vertical stem + 3 tapering horizontal bars.</summary>
     public static readonly float[] Ground = [
@@ -120,6 +128,17 @@ public static class SchematicSymbols
 
     // ── Dispatch by SymbolKind ─────────────────────────────────────────────────
 
+    /// <summary>
+    /// Returns the SymbolPlus-colored segment array for symbols that have one (e.g. +/− marks
+    /// on VoltageSource), or null if the symbol has no such marks.
+    /// Drawn with a separate paint so the polarity indicator can use a distinct theme color.
+    /// </summary>
+    public static float[]? ForSymbolPlusSegments(SymbolKind kind) => kind switch
+    {
+        SymbolKind.VoltageSource => VoltageSourcePlus,
+        _                        => null,
+    };
+
     public static float[] For(SymbolKind kind) => kind switch
     {
         SymbolKind.Resistor      => Resistor,
@@ -168,9 +187,9 @@ public static class SchematicSymbols
         return [.. segs];
     }
 
-    private static float[] BuildCircleSource(bool addPlusMinus)
+    // Body-only (circle + leads, no +/- marks — those live in VoltageSourcePlus).
+    private static float[] BuildCircleSource()
     {
-        // Octagonal circle approximation, radius=50
         const float r = 50f;
         float d = r * 0.7071f;
         float[] pts = [r, 0f, d, -d, 0f, -r, -d, -d, -r, 0f, -d, d, 0f, r, d, d];
@@ -178,33 +197,37 @@ public static class SchematicSymbols
         var segs = new List<float>
         {
             -150f, 0f, -r, 0f,   // left lead
-             r, 0f, 150f, 0f,    // right lead
+              r,   0f, 150f, 0f, // right lead
         };
-
-        // Circle (8 segments, wrap around)
         for (int i = 0; i < 8; i++)
         {
             int j = (i + 1) % 8;
             segs.Add(pts[i * 2]); segs.Add(pts[i * 2 + 1]);
             segs.Add(pts[j * 2]); segs.Add(pts[j * 2 + 1]);
         }
+        return [.. segs];
+    }
 
-        if (addPlusMinus)
-        {
-            // + mark in upper half
-            segs.AddRange([-12f, -22f, 12f, -22f]);   // horizontal bar of +
-            segs.AddRange([0f,   -32f,  0f, -12f]);   // vertical bar of +
-            // - mark in lower half
-            segs.AddRange([-12f, 22f, 12f, 22f]);      // - bar
-        }
-        else
-        {
-            // Sine wave approximation (3 segments inside circle)
-            segs.AddRange([-28f, 0f,  -14f, -18f]);
-            segs.AddRange([-14f,-18f,  14f,  18f]);
-            segs.AddRange([ 14f, 18f,  28f,   0f]);
-        }
+    private static float[] BuildToneSource()
+    {
+        const float r = 50f;
+        float d = r * 0.7071f;
+        float[] pts = [r, 0f, d, -d, 0f, -r, -d, -d, -r, 0f, -d, d, 0f, r, d, d];
 
+        var segs = new List<float>
+        {
+            -150f, 0f, -r, 0f,
+              r,   0f, 150f, 0f,
+        };
+        for (int i = 0; i < 8; i++)
+        {
+            int j = (i + 1) % 8;
+            segs.Add(pts[i * 2]); segs.Add(pts[i * 2 + 1]);
+            segs.Add(pts[j * 2]); segs.Add(pts[j * 2 + 1]);
+        }
+        segs.AddRange([-28f, 0f, -14f, -18f]);
+        segs.AddRange([-14f, -18f, 14f, 18f]);
+        segs.AddRange([14f, 18f, 28f, 0f]);
         return [.. segs];
     }
 

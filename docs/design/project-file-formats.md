@@ -97,9 +97,14 @@ To keep the format family coherent, name the siblings now (full specs when their
 - **Workspace file (`.cws` — “circuit workspace”)** — the top-level project document (`ui-design.md` §1):
   references to the cells/schematics/libraries/data-display configs in the workspace, plus the **Dock
   layout** (§2.0). It references `.csch`/`.csym`/`.cdd`/`.cnl` files rather than embedding them.
+- **`.ccolor` — “circuitRF color”** — a named **color theme** (light + dark role→RGBA maps) for rendering.
+  Built-in presets ship in `/Assets/Color`; custom themes (forked when a user edits a color) save as
+  `.ccolor` in the user themes dir or workspace dir. The `.cws` records which theme name is active; resolution
+  order is workspace dir → user themes → `/Assets/Color`. Full spec in `color-themes.md`. (Themes everything
+  eventually; schematic first.)
 
-(These three share the canvas-object model §3.1 and the no-Avalonia-in-the-model rule. `.csch`, `.csym`, and
-`.cdd` are three views' configs; the workspace ties them together.)
+(These share the no-Avalonia-in-the-model rule. `.csch`, `.csym`, and `.cdd` are view configs; `.ccolor` is
+cross-cutting presentation; the workspace ties them together.)
 
 ## Library, Cell, TestBench — how they map to files
 
@@ -163,6 +168,10 @@ The **`.cws`** file is the **workspace manifest** — a JSON document that recor
    File → Add Library.
 3. **Member files / project members** — relative paths to the `.csch`, `.cdd`, `.csym`, `.cnl` etc.
    files that belong to this workspace.
+4. **Color scheme name** (`ColorSchemeName`, optional/null) — the `.ccolor` theme to activate on open.
+   Resolved via the four-step chain: workspace dir → user themes dir → bundled assets → `ColorTheme.BuiltIn`.
+   Null means "use the application-level user preference". Omitted from the file when it is null
+   (`WhenWritingNull`).
 
 It **references, never embeds** — the actual design lives in the cell folders; the same cell/library can
 be referenced by multiple workspaces. A workspace is the “what am I working on right now” document; the

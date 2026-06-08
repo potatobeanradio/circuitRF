@@ -1,0 +1,152 @@
+{
+  "format_version": 1,
+  "name": "Default",
+  "light": {
+    "Schematic.Background": {
+      "r": 250,
+      "g": 250,
+      "b": 250,
+      "a": 255
+    },
+    "Schematic.ComponentNameText": {
+      "r": 106,
+      "g": 142,
+      "b": 246,
+      "a": 255
+    },
+    "Schematic.ConnectedPin": {
+      "r": 94,
+      "g": 105,
+      "b": 216,
+      "a": 255
+    },
+    "Schematic.Grid": {
+      "r": 170,
+      "g": 170,
+      "b": 170,
+      "a": 70
+    },
+    "Schematic.InstanceNameText": {
+      "r": 59,
+      "g": 28,
+      "b": 243,
+      "a": 255
+    },
+    "Schematic.NodeLabelText": {
+      "r": 164,
+      "g": 63,
+      "b": 129,
+      "a": 255
+    },
+    "Schematic.ParameterNameText": {
+      "r": 24,
+      "g": 8,
+      "b": 122,
+      "a": 255
+    },
+    "Schematic.SymbolLine": {
+      "r": 45,
+      "g": 20,
+      "b": 195,
+      "a": 255
+    },
+    "Schematic.SymbolPlus": {
+      "r": 210,
+      "g": 99,
+      "b": 40,
+      "a": 255
+    },
+    "Schematic.Wire": {
+      "r": 164,
+      "g": 63,
+      "b": 129,
+      "a": 255
+    },
+    "Schematic.WireJunctionDot": {
+      "r": 59,
+      "g": 28,
+      "b": 243,
+      "a": 255
+    },
+    "System.Warning": {
+      "r": 206,
+      "g": 74,
+      "b": 36,
+      "a": 255
+    }
+  },
+  "dark": {
+    "Schematic.Background": {
+      "r": 28,
+      "g": 28,
+      "b": 30,
+      "a": 255
+    },
+    "Schematic.ComponentNameText": {
+      "r": 140,
+      "g": 174,
+      "b": 255,
+      "a": 255
+    },
+    "Schematic.ConnectedPin": {
+      "r": 130,
+      "g": 145,
+      "b": 240,
+      "a": 255
+    },
+    "Schematic.Grid": {
+      "r": 70,
+      "g": 70,
+      "b": 80,
+      "a": 70
+    },
+    "Schematic.InstanceNameText": {
+      "r": 138,
+      "g": 120,
+      "b": 255,
+      "a": 255
+    },
+    "Schematic.NodeLabelText": {
+      "r": 214,
+      "g": 122,
+      "b": 178,
+      "a": 255
+    },
+    "Schematic.ParameterNameText": {
+      "r": 120,
+      "g": 104,
+      "b": 230,
+      "a": 255
+    },
+    "Schematic.SymbolLine": {
+      "r": 150,
+      "g": 132,
+      "b": 250,
+      "a": 255
+    },
+    "Schematic.SymbolPlus": {
+      "r": 245,
+      "g": 140,
+      "b": 75,
+      "a": 255
+    },
+    "Schematic.Wire": {
+      "r": 214,
+      "g": 122,
+      "b": 178,
+      "a": 255
+    },
+    "Schematic.WireJunctionDot": {
+      "r": 138,
+      "g": 120,
+      "b": 255,
+      "a": 255
+    },
+    "System.Warning": {
+      "r": 240,
+      "g": 120,
+      "b": 70,
+      "a": 255
+    }
+  }
+}

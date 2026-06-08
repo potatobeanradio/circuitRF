@@ -10,6 +10,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels;
 using SkiaSharp;
 
@@ -226,12 +227,15 @@ public sealed class SchematicCanvas : Control
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        ThemeService.ThemeChanged += OnThemeServiceChanged;
+        _activeTheme = ThemeService.Active;
         if (TopLevel.GetTopLevel(this) is TopLevel tl)
             tl.SizeChanged += OnTopLevelSizeChanged;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
+        ThemeService.ThemeChanged -= OnThemeServiceChanged;
         base.OnDetachedFromVisualTree(e);
         if (TopLevel.GetTopLevel(this) is TopLevel tl)
             tl.SizeChanged -= OnTopLevelSizeChanged;
@@ -239,12 +243,26 @@ public sealed class SchematicCanvas : Control
 
     private void OnTopLevelSizeChanged(object? s, SizeChangedEventArgs e) => InvalidateVisual();
 
+    private void OnThemeServiceChanged(object? sender, EventArgs e)
+    {
+        _activeTheme = ThemeService.Active;
+        InvalidateVisual();
+    }
+
     // ── Render ────────────────────────────────────────────────────────────────
+
+    private ColorTheme _activeTheme = ColorTheme.BuiltIn;
+
+    /// <summary>
+    /// Sets the active theme globally (via ThemeService) and redraws this canvas.
+    /// Prefer setting ThemeService.Active directly; this method is a convenience shim.
+    /// </summary>
+    public void ApplyTheme(ColorTheme theme) => ThemeService.Active = theme;
 
     public override void Render(DrawingContext context)
     {
-        bool isDark = ActualThemeVariant == ThemeVariant.Dark;
-        var  theme  = isDark ? SchematicRenderTheme.Dark : SchematicRenderTheme.Light;
+        var variant = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
+        var theme   = SchematicRenderTheme.FromTheme(_activeTheme, variant);
 
         // Apply system accent color to rubber-band
         if (Application.Current?.TryGetResource("SystemAccentColor", ActualThemeVariant, out var res) == true
