@@ -287,130 +287,14 @@ public sealed class SchematicEditModel
     /// </summary>
     public (SchematicModel Model, SchematicSpatialIndex Index) BuildRenderModel()
     {
-        // ── O(N) connectivity via spatial hash ────────────────────────────────
-        // Quantize each point to a grid cell of size ConnectTolerance; nearby-but-not-exact
-        // points that round to the same cell are treated as coincident.
-        static (long, long) Quant(double x, double y, double q)
-            => ((long)Math.Round(x / q), (long)Math.Round(y / q));
-
-        // Hash of all wire vertex positions → fast port-connection detection.
-        var wirePointHash = new HashSet<(long, long)>(Wires.Count * 4);
-        foreach (var w in Wires)
-            foreach (var (px, py) in w.Points)
-                wirePointHash.Add(Quant(px, py, ConnectTolerance));
-
-        // Count of all connection points (wire vertices + component port positions).
-        // A wire endpoint with count > 1 is connected to at least one other object.
-        // Deduplicate points within each wire so a zero-length or repeated interior point
-        // in one wire cannot falsely inflate the count and hide an unconnected dot.
-        var conPointCounts = new Dictionary<(long, long), int>(Wires.Count * 4 + Components.Count * 3);
-        void AddConPoint(double x, double y)
-        {
-            var key = Quant(x, y, ConnectTolerance);
-            conPointCounts[key] = conPointCounts.GetValueOrDefault(key, 0) + 1;
-        }
-        foreach (var w in Wires)
-        {
-            var seenInWire = new HashSet<(long, long)>();
-            foreach (var (px, py) in w.Points)
-            {
-                var key = Quant(px, py, ConnectTolerance);
-                if (seenInWire.Add(key)) AddConPoint(px, py);
-            }
-        }
-        foreach (var comp in Components)
-            for (int pi = 0; pi < comp.PortCount; pi++)
-            {
-                var (px, py) = comp.GetPortWorldCoord(pi);
-                AddConPoint(px, py);
-            }
-
-        // ── T-junction detection (§5.1) ───────────────────────────────────────
-        // A wire endpoint that lands on the *interior* of another wire's segment
-        // (strictly between that segment's two vertices, within tolerance) forms a
-        // 3-way T-junction: an unambiguous connection that auto-shows a junction dot.
-        // This is distinct from a 4-way crossing (two wires crossing, neither ending
-        // on the other), which stays ambiguous and connects only via a user-placed
-        // EditableDot (§5.1) — that path is untouched here.
-        //
-        // 6e extraction note: the electrical meaning — one node shared by the three
-        // incident wire-ends — is realized at net extraction (6e, union-find over
-        // geometry). When 6e is built, the union step MUST treat a point lying on a
-        // wire's segment interior as splitting that wire at the T and unioning all
-        // three incident wire-ends into one net. This is the same rule §5.1 step 2
-        // already states for "a port lying on a wire segment unions with that wire";
-        // a wire endpoint on another wire's segment is the same coincidence. The 6d
-        // connection visuals (below) and the 6e extraction must agree that an
-        // endpoint-on-segment is a connection — do NOT implement extraction here.
-        //
-        // O(N) via a segment cell-hash: index each segment by the grid cells its
-        // tolerance-expanded bbox covers, then test each endpoint only against the
-        // few segments sharing its cell (never an O(N²) all-pairs scan).
-        const double SegCell = 100.0;
-        var segList  = new List<(double ax, double ay, double bx, double by)>();
-        var segIndex = new Dictionary<(long, long), List<int>>();
-        foreach (var w in Wires)
-        {
-            var pts = w.Points;
-            for (int i = 0; i < pts.Count - 1; i++)
-            {
-                int si = segList.Count;
-                segList.Add((pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y));
-                long cMinX = (long)Math.Floor((Math.Min(pts[i].X, pts[i + 1].X) - ConnectTolerance) / SegCell);
-                long cMaxX = (long)Math.Floor((Math.Max(pts[i].X, pts[i + 1].X) + ConnectTolerance) / SegCell);
-                long cMinY = (long)Math.Floor((Math.Min(pts[i].Y, pts[i + 1].Y) - ConnectTolerance) / SegCell);
-                long cMaxY = (long)Math.Floor((Math.Max(pts[i].Y, pts[i + 1].Y) + ConnectTolerance) / SegCell);
-                for (long cx = cMinX; cx <= cMaxX; cx++)
-                    for (long cy = cMinY; cy <= cMaxY; cy++)
-                    {
-                        var ck = (cx, cy);
-                        if (!segIndex.TryGetValue(ck, out var lst)) segIndex[ck] = lst = new List<int>();
-                        lst.Add(si);
-                    }
-            }
-        }
-
-        // True if (px,py) lands on the interior of some wire segment (a T-junction body hit).
-        bool IsTJunction(double px, double py)
-        {
-            var ck = ((long)Math.Floor(px / SegCell), (long)Math.Floor(py / SegCell));
-            if (!segIndex.TryGetValue(ck, out var cands)) return false;
-            foreach (int si in cands)
-            {
-                var s = segList[si];
-                if (SchematicGeometry.PointOnSegmentInterior(px, py, s.ax, s.ay, s.bx, s.by, ConnectTolerance))
-                    return true;
-            }
-            return false;
-        }
-
-        // Collect the distinct T-junction points (one per quantized position → one dot).
-        // A wire's own incident segment is excluded by the interior test (the endpoint
-        // is that segment's vertex), so only endpoints landing on *another* wire qualify.
-        var tJunctionKeys = new HashSet<(long, long)>();
-        var tJunctionPts  = new List<(double X, double Y)>();
-        foreach (var w in Wires)
-        {
-            var pts = w.Points;
-            if (pts.Count == 0) continue;
-            int lastIdx = pts.Count - 1;
-            for (int e = 0; e < (pts.Count == 1 ? 1 : 2); e++)
-            {
-                int ei = e == 0 ? 0 : lastIdx;
-                var (ex, ey) = pts[ei];
-                var key = Quant(ex, ey, ConnectTolerance);
-                if (!tJunctionKeys.Contains(key) && IsTJunction(ex, ey))
-                {
-                    tJunctionKeys.Add(key);
-                    tJunctionPts.Add((ex, ey));
-                }
-            }
-        }
+        // Connectivity geometry (vertex hashes, T-junctions, crossing predicate) is computed by
+        // a shared helper so the live dot preview during drags reuses the identical logic.
+        var cg = ComputeConnectivityGeometry();
 
         // IsConnected for a port: O(1) hash lookup; rare fallback to segment scan on miss.
         bool IsConnected(double wx, double wy)
         {
-            if (wirePointHash.Contains(Quant(wx, wy, ConnectTolerance))) return true;
+            if (cg.WirePointHash.Contains(QuantKey(wx, wy))) return true;
             // Fallback: mid-segment connection (port lands on a wire body, not just endpoints).
             foreach (var w in Wires)
             {
@@ -422,33 +306,19 @@ public sealed class SchematicEditModel
             return false;
         }
 
-        // IsEndpointConnected: O(1) lookup — endpoint is connected if another vertex sits
-        // there (count > 1) OR it lands on another wire's segment interior (a T-junction,
-        // §5.1). The T case reads as connected so no false "unconnected" indicator shows.
+        // IsEndpointConnected: O(1) lookup — an endpoint is connected if another vertex sits there
+        // (count > 1, a shared vertex / corner) OR it is part of an auto-junction (e.g. it lands on
+        // another wire's body — a T). Either way no false "unconnected" indicator shows.
         bool IsEndpointConnected(EditableWire _, double wx, double wy)
         {
-            var key = Quant(wx, wy, ConnectTolerance);
-            if (conPointCounts.TryGetValue(key, out int cnt) && cnt > 1) return true;
-            return tJunctionKeys.Contains(key);
+            var key = QuantKey(wx, wy);
+            if (cg.ConPointCounts.TryGetValue(key, out int cnt) && cnt > 1) return true;
+            return cg.AutoDotKeys.Contains(key);
         }
 
         var comps = Components.Select(c => c.ToRenderComponent(IsConnected)).ToList();
         var wires = Wires.Select(w => w.ToRenderWire(IsEndpointConnected)).ToList();
-
-        // Connection dots = user-placed dots (persisted, mark 4-way crossings) + derived
-        // auto-dots at T-junctions (NOT persisted — recomputed here each build, never added
-        // back as EditableDots). A T-junction that coincides with a user dot is not
-        // double-drawn.
-        var userDotKeys = new HashSet<(long, long)>(Dots.Count);
-        var dots = new List<SchematicDot>(Dots.Count + tJunctionPts.Count);
-        foreach (var d in Dots)
-        {
-            dots.Add(new SchematicDot(d.X, d.Y));
-            userDotKeys.Add(Quant(d.X, d.Y, ConnectTolerance));
-        }
-        foreach (var (tx, ty) in tJunctionPts)
-            if (!userDotKeys.Contains(Quant(tx, ty, ConnectTolerance)))
-                dots.Add(new SchematicDot(tx, ty));
+        var dots  = AssembleConnectionDots(cg);
         var netLabels = NetLabels.Select(l => new SchematicNetLabel { Id = l.Id, X = l.X, Y = l.Y, Name = l.Name }).ToList();
 
         double minX = double.MaxValue, minY = double.MaxValue;
@@ -480,6 +350,254 @@ public sealed class SchematicEditModel
 
         return (model, new SchematicSpatialIndex(model));
     }
+
+    // ── Connectivity helpers (shared by BuildRenderModel and the live dot preview) ──
+
+    /// <summary>Quantize a point to a ConnectTolerance grid cell; near-coincident points
+    /// rounding to the same cell are treated as the same connection point.</summary>
+    private static (long, long) QuantKey(double x, double y)
+        => ((long)Math.Round(x / ConnectTolerance), (long)Math.Round(y / ConnectTolerance));
+
+    /// <summary>Geometry derived for the connectivity pass: vertex hashes, auto-junction points
+    /// (3+ segment meetings with a vertex), and a crossing predicate. Shared so the render model
+    /// and the live drag preview agree.</summary>
+    private readonly record struct ConnectivityGeometry(
+        HashSet<(long, long)> WirePointHash,
+        Dictionary<(long, long), int> ConPointCounts,
+        HashSet<(long, long)> AutoDotKeys,
+        List<(double X, double Y)> AutoDotPts,
+        Func<double, double, bool> IsCrossingAtDot);
+
+    /// <summary>
+    /// Computes the connectivity geometry from the current Wires/Components in O(N) via a
+    /// segment cell-hash. This is the single source of truth for T-junction and 4-way crossing
+    /// detection; both BuildRenderModel and ComputeConnectionDots() call it.
+    /// </summary>
+    private ConnectivityGeometry ComputeConnectivityGeometry()
+    {
+        // Hash of all wire vertex positions → fast port-connection detection.
+        var wirePointHash = new HashSet<(long, long)>(Wires.Count * 4);
+        foreach (var w in Wires)
+            foreach (var (px, py) in w.Points)
+                wirePointHash.Add(QuantKey(px, py));
+
+        // Count of all connection points (wire vertices + component port positions).
+        // A wire endpoint with count > 1 is connected to at least one other object.
+        // Deduplicate points within each wire so a zero-length or repeated interior point
+        // in one wire cannot falsely inflate the count and hide an unconnected dot.
+        var conPointCounts = new Dictionary<(long, long), int>(Wires.Count * 4 + Components.Count * 3);
+        void AddConPoint(double x, double y)
+        {
+            var key = QuantKey(x, y);
+            conPointCounts[key] = conPointCounts.GetValueOrDefault(key, 0) + 1;
+        }
+        foreach (var w in Wires)
+        {
+            var seenInWire = new HashSet<(long, long)>();
+            foreach (var (px, py) in w.Points)
+            {
+                var key = QuantKey(px, py);
+                if (seenInWire.Add(key)) AddConPoint(px, py);
+            }
+        }
+        foreach (var comp in Components)
+            for (int pi = 0; pi < comp.PortCount; pi++)
+            {
+                var (px, py) = comp.GetPortWorldCoord(pi);
+                AddConPoint(px, py);
+            }
+
+        // ── T-junction detection (§5.1) ───────────────────────────────────────
+        // A wire endpoint that lands on the *interior* of another wire's segment
+        // (strictly between that segment's two vertices, within tolerance) forms a
+        // 3-way T-junction: an unambiguous connection that auto-shows a junction dot.
+        // This is distinct from a 4-way crossing (two wires crossing, neither ending
+        // on the other), which stays ambiguous and connects only via a user-placed
+        // EditableDot (§5.1).
+        //
+        // 6e extraction note: the electrical meaning — one node shared by the three
+        // incident wire-ends — is realized at net extraction (6e, union-find over
+        // geometry). When 6e is built, the union step MUST treat a point lying on a
+        // wire's segment interior as splitting that wire at the T and unioning all
+        // three incident wire-ends into one net. This is the same rule §5.1 step 2
+        // already states for "a port lying on a wire segment unions with that wire";
+        // a wire endpoint on another wire's segment is the same coincidence. The 6d
+        // connection visuals and the 6e extraction must agree that an endpoint-on-segment
+        // is a connection — do NOT implement extraction here.
+        //
+        // O(N) via a segment cell-hash: index each segment by the grid cells its
+        // tolerance-expanded bbox covers, then test each endpoint only against the
+        // few segments sharing its cell (never an O(N²) all-pairs scan).
+        const double SegCell = 100.0;
+        // Wi = owning wire index — lets crossing detection require two *distinct* wires.
+        var segList  = new List<(int Wi, double ax, double ay, double bx, double by)>();
+        var segIndex = new Dictionary<(long, long), List<int>>();
+        for (int wi = 0; wi < Wires.Count; wi++)
+        {
+            var pts = Wires[wi].Points;
+            for (int i = 0; i < pts.Count - 1; i++)
+            {
+                int si = segList.Count;
+                segList.Add((wi, pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y));
+                long cMinX = (long)Math.Floor((Math.Min(pts[i].X, pts[i + 1].X) - ConnectTolerance) / SegCell);
+                long cMaxX = (long)Math.Floor((Math.Max(pts[i].X, pts[i + 1].X) + ConnectTolerance) / SegCell);
+                long cMinY = (long)Math.Floor((Math.Min(pts[i].Y, pts[i + 1].Y) - ConnectTolerance) / SegCell);
+                long cMaxY = (long)Math.Floor((Math.Max(pts[i].Y, pts[i + 1].Y) + ConnectTolerance) / SegCell);
+                for (long cx = cMinX; cx <= cMaxX; cx++)
+                    for (long cy = cMinY; cy <= cMaxY; cy++)
+                    {
+                        var ck = (cx, cy);
+                        if (!segIndex.TryGetValue(ck, out var lst)) segIndex[ck] = lst = new List<int>();
+                        lst.Add(si);
+                    }
+            }
+        }
+
+        // ── Auto junction dots (§5.1) — the standard EDA rule ─────────────────
+        // A junction dot is drawn wherever 3+ wire segments meet AND at least one wire has a
+        // vertex (endpoint or bend) there. This covers, with one rule:
+        //   • a wire ending on another wire's body  → classic T-junction;
+        //   • a wire ending on another wire's CORNER (bend vertex) → corner junction;
+        //   • 3+ wire-ends meeting at one point.
+        // A pure 4-way crossing (two wires passing through, neither with a vertex) is NOT a
+        // candidate — it has no vertex, so it never auto-connects; it joins only via a user dot.
+        //
+        // incident(P) = (segment-ends at P) + 2·(segments whose interior passes through P):
+        //   a wire endpoint contributes 1, an interior vertex (bend) contributes 2, a segment
+        //   split by P contributes 2. Evaluated only at wire vertices (a dot needs a vertex), so
+        //   crossings are excluded by construction. ≥3 ⇒ a real junction ⇒ dot.
+        //
+        // A dot is drawn only when the incident segments form a real BRANCH — i.e. they are not all
+        // collinear. Three+ collinear segments meeting (two wires overlapping/abutting on the same
+        // line) is NOT a junction: it is redundant wire that should merge, so no dot is drawn there.
+        // The branch test is "incident segments span both axes" (a horizontal AND a vertical one).
+        //
+        // 6e extraction note: every auto-dot is one node uniting the incident wire-ends/segments
+        // (the through-wire is split at P). Do NOT implement extraction here.
+        //
+        // For each candidate vertex P, enumerate the segments incident at P (via the cell index):
+        //   a segment with an ENDPOINT at P contributes 1; a segment whose interior P splits
+        //   contributes 2. incident ≥ 3 ⇒ a connection point (autoDotKeys, for endpoint-connected
+        //   state); additionally requiring both a horizontal and a vertical incident segment ⇒ a
+        //   visible junction dot (autoDotPts).
+        (int Incident, bool HasH, bool HasV) IncidentAt(double px, double py)
+        {
+            int incident = 0; bool hasH = false, hasV = false;
+            var ck = ((long)Math.Floor(px / SegCell), (long)Math.Floor(py / SegCell));
+            if (segIndex.TryGetValue(ck, out var cands))
+                foreach (int si in cands)
+                {
+                    var s = segList[si];
+                    int contrib;
+                    if (SchematicGeometry.CoincidentPoints(px, py, s.ax, s.ay, ConnectTolerance) ||
+                        SchematicGeometry.CoincidentPoints(px, py, s.bx, s.by, ConnectTolerance))
+                        contrib = 1;                                   // segment ends at P
+                    else if (SchematicGeometry.PointOnSegmentInterior(px, py, s.ax, s.ay, s.bx, s.by, ConnectTolerance))
+                        contrib = 2;                                   // P splits the segment
+                    else continue;                                     // not incident
+                    incident += contrib;
+                    if (Math.Abs(s.bx - s.ax) < Math.Abs(s.by - s.ay)) hasV = true; else hasH = true;
+                }
+            return (incident, hasH, hasV);
+        }
+
+        var autoDotKeys = new HashSet<(long, long)>();
+        var autoDotPts  = new List<(double X, double Y)>();
+        var evaluated   = new HashSet<(long, long)>();
+        foreach (var w in Wires)
+            foreach (var (px, py) in w.Points)
+            {
+                var key = QuantKey(px, py);
+                if (!evaluated.Add(key)) continue;   // each distinct point judged once
+                var (incident, hasH, hasV) = IncidentAt(px, py);
+                if (incident < 3) continue;
+                autoDotKeys.Add(key);                 // a connection point (endpoint-connected)
+                if (hasH && hasV) autoDotPts.Add((px, py));   // a real branch → a visible dot
+            }
+
+        // ── 4-way crossing detection (§5.1) ───────────────────────────────────
+        // Two wires whose segment interiors intersect at a point where NEITHER wire has a
+        // vertex/endpoint is an ambiguous crossing: by EDA convention it connects ONLY if the
+        // user places a junction dot there (the complement of the T, which auto-connects). The
+        // wirePointHash guard makes this mutually exclusive with the endpoint-coincidence (merge)
+        // and T cases — if any vertex sits at the point, it is handled by those paths, not here.
+        //
+        // 6e extraction note: at net extraction (6e), a user dot at a 4-way crossing unions the
+        // two crossing wires into ONE node; a crossing WITHOUT a dot leaves them as two separate
+        // nets (the wires pass over each other unconnected) — the dot-gated union, the complement
+        // of the T's automatic union. Because the editor maintains the §5.1 invariant (a user dot
+        // EXISTS iff it sits on a real crossing — rejected at placement, auto-removed when the
+        // crossing dissolves), the extractor can treat every dot as a valid crossing-union with no
+        // validity check. This predicate is the single definition of "valid crossing" reused by
+        // dot rendering (AssembleConnectionDots) and re-validation (FindInvalidDots). Do NOT
+        // implement extraction here.
+        bool IsCrossingAtDot(double px, double py)
+        {
+            // A vertex here means it is a merge/T, not a pure crossing — defer to those paths.
+            if (wirePointHash.Contains(QuantKey(px, py))) return false;
+            var ck = ((long)Math.Floor(px / SegCell), (long)Math.Floor(py / SegCell));
+            if (!segIndex.TryGetValue(ck, out var cands)) return false;
+            int firstWi = -1;
+            foreach (int si in cands)
+            {
+                var s = segList[si];
+                if (!SchematicGeometry.PointOnSegmentInterior(px, py, s.ax, s.ay, s.bx, s.by, ConnectTolerance))
+                    continue;
+                if (firstWi == -1) firstWi = s.Wi;
+                else if (s.Wi != firstWi) return true;   // two distinct wires cross here
+            }
+            return false;
+        }
+
+        return new ConnectivityGeometry(wirePointHash, conPointCounts, autoDotKeys, autoDotPts, IsCrossingAtDot);
+    }
+
+    /// <summary>
+    /// Assembles the connection-dot list from connectivity geometry. By the §5.1 invariant a dot
+    /// is rendered only where it marks a real connection:
+    ///  • a user dot that sits on a genuine 4-way crossing (≥2 distinct wires' interiors meet, no
+    ///    vertex there) — a user dot anywhere else is inert and is NOT rendered (and the matching
+    ///    EditableDot is removed on the next geometry edit; see DotRevalidationCommand);
+    ///  • a derived auto-dot at every junction where 3+ wire segments meet with a vertex present
+    ///    (T, corner, or 3-way endpoint — NOT persisted, geometry-derived each build).
+    /// Auto-dots and crossing dots are mutually exclusive (an auto-dot needs a vertex; a crossing
+    /// has none), so the two sets never overlap.
+    /// </summary>
+    private List<SchematicDot> AssembleConnectionDots(ConnectivityGeometry cg)
+    {
+        var dots = new List<SchematicDot>(Dots.Count + cg.AutoDotPts.Count);
+        foreach (var d in Dots)
+            if (cg.IsCrossingAtDot(d.X, d.Y))           // invariant: render a user dot only on a real crossing
+                dots.Add(new SchematicDot(d.X, d.Y));
+        foreach (var (tx, ty) in cg.AutoDotPts)
+            dots.Add(new SchematicDot(tx, ty));
+        return dots;
+    }
+
+    /// <summary>
+    /// Returns the user EditableDots that violate the §5.1 invariant — i.e. no longer sit on a
+    /// genuine 4-way crossing (the crossing dissolved because a wire moved/was deleted, or the
+    /// point became a T/merge, or the dot was never on a crossing). Callers remove these as part
+    /// of the same undoable edit that dissolved the crossing. O(N): one connectivity pass.
+    /// </summary>
+    public List<EditableDot> FindInvalidDots()
+    {
+        if (Dots.Count == 0) return [];
+        var cg = ComputeConnectivityGeometry();
+        var invalid = new List<EditableDot>();
+        foreach (var d in Dots)
+            if (!cg.IsCrossingAtDot(d.X, d.Y)) invalid.Add(d);
+        return invalid;
+    }
+
+    /// <summary>
+    /// Computes just the connection dots from the current geometry — the same result as
+    /// BuildRenderModel's ConnectionDots, without building the full render model. Used for the
+    /// live dot preview during drags (the geometry is live-mutated as the drag progresses).
+    /// O(N) like the full connectivity pass.
+    /// </summary>
+    public IReadOnlyList<SchematicDot> ComputeConnectionDots()
+        => AssembleConnectionDots(ComputeConnectivityGeometry());
 
     // ── Factory: convert from legacy demo render model ────────────────────────
 

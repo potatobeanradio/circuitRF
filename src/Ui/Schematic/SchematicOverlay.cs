@@ -59,6 +59,14 @@ public sealed record class SchematicOverlay
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyList<(double X, double Y)>>? WireDragPoints { get; init; }
 
+    /// <summary>
+    /// Live connection dots during an active drag, recomputed from the moving geometry. When
+    /// non-null the renderer draws these INSTEAD of SchematicModel.ConnectionDots, so junction
+    /// dots (T-junctions, crossings) follow the drag instead of lagging at their pre-drag spots.
+    /// Null when not dragging (or when the schematic is too large to recompute per tick).
+    /// </summary>
+    public IReadOnlyList<SchematicDot>? ConnectionDotsOverride { get; init; }
+
     // ── Move-Labels drag ──────────────────────────────────────────────────────
 
     /// <summary>

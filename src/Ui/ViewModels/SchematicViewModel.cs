@@ -78,6 +78,16 @@ public sealed partial class SchematicViewModel : ObservableObject
     // once at drag start; moved live and folded into the same MoveCommand at commit.
     private List<StemFollow>? _segmentDragStems;
 
+    // User crossing-dots on the dragged segment's interior — they ride the segment (sliding along
+    // the stationary crossed wire) so a cross connection is not broken by the move.
+    private List<(EditableDot Dot, double StartX, double StartY)>? _segmentDragCrossDots;
+
+    // Allowed range of the perpendicular drag delta when an endpoint slides along a parallel wire:
+    // the drag is clamped so the endpoint never slides off the end of a connected wire (which would
+    // break the connection). Intersection across sliding endpoints ⇒ stops at the shorter wire's end.
+    private double _segSlideMin = double.NegativeInfinity;
+    private double _segSlideMax = double.PositiveInfinity;
+
     /// <summary>A wire T-ed onto the dragged segment: which end is the junction, plus the
     /// original junction/far endpoints and the original full point list (for snapshot/restore).</summary>
     private readonly record struct StemFollow(
@@ -125,7 +135,10 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     // ── Command execution ─────────────────────────────────────────────────────
 
-    public void Execute(IUiCommand cmd) => _undoRedo.Execute(cmd);
+    // Every edit is wrapped so the junction-dot invariant (§5.1) is re-enforced as part of the
+    // same undoable command: any user dot whose 4-way crossing dissolved is removed, and one Undo
+    // restores both the geometry and the dot. No-op when there are no dots / no crossing changed.
+    public void Execute(IUiCommand cmd) => _undoRedo.Execute(new DotRevalidationCommand(EditModel, cmd));
 
     // ── Render model rebuild ──────────────────────────────────────────────────
 
@@ -329,14 +342,26 @@ public sealed partial class SchematicViewModel : ObservableObject
                 _segmentDragWireId       = hit.Id;
                 _segmentDragSegmentIndex = hit.SubIndex;
                 _segmentDragStartPoints  = wire.Points.ToList();
+                bool dragIsVertical = IsSegmentHorizontal(
+                    wire.Points[hit.SubIndex], wire.Points[hit.SubIndex + 1]);   // horizontal seg → vertical drag
                 _segmentDragStartPinned  = hit.SubIndex == 0
-                    && IsWireEndpointConnectedToUnselected(wire, 0);
+                    && ShouldPinDraggedEndpoint(wire, 0, dragIsVertical);
                 _segmentDragEndPinned    = hit.SubIndex == wire.Points.Count - 2
-                    && IsWireEndpointConnectedToUnselected(wire, wire.Points.Count - 1);
-                // Stems T-ed onto the dragged segment must follow it (§5.1) — detect now,
-                // against the original segment geometry, so they ride along as it moves.
-                _segmentDragStems = FindStemsOnSegment(
-                    hit.Id, _segmentDragStartPoints[hit.SubIndex], _segmentDragStartPoints[hit.SubIndex + 1]);
+                    && ShouldPinDraggedEndpoint(wire, wire.Points.Count - 1, dragIsVertical);
+                // Clamp the slide so a connected endpoint can't run off the end of its wire.
+                (_segSlideMin, _segSlideMax) = ComputeSlideClamp(
+                    wire, hit.SubIndex, dragIsVertical, _segmentDragStartPinned, _segmentDragEndPinned);
+                // Wires connected ON the dragged segment must follow it (§5.1) so their connection
+                // never breaks — detect now, against the original geometry. A segment vertex that is
+                // a pinned outer endpoint is held fixed (does not move), so followers there are
+                // excluded; every other vertex (and the interior) moves with the segment.
+                bool aMoves = !(hit.SubIndex == 0 && _segmentDragStartPinned);
+                bool bMoves = !(hit.SubIndex == wire.Points.Count - 2 && _segmentDragEndPinned);
+                var segA = _segmentDragStartPoints[hit.SubIndex];
+                var segB = _segmentDragStartPoints[hit.SubIndex + 1];
+                _segmentDragStems = FindStemsOnSegment(hit.Id, segA, segB, aMoves, bMoves);
+                // User crossing-dots on this segment ride along so the cross stays connected.
+                _segmentDragCrossDots = FindDotsOnSegment(segA, segB);
                 _isDragging      = false;
                 _dragStartWorldX = wx;
                 _dragStartWorldY = wy;
@@ -551,6 +576,90 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// <summary>
     /// Returns true if wire.Points[ptIdx] is connected to something not in the current selection.
     /// </summary>
+    /// <summary>
+    /// Whether a dragged segment's endpoint must be PINNED (held fixed + jogged) to preserve its
+    /// connection, given the perpendicular drag axis (<paramref name="dragIsVertical"/>). A port or
+    /// a coincident wire vertex is a fixed point → always pins. A connection to a wire BODY pins
+    /// only when that body is perpendicular to the drag (the endpoint would move OFF it); when the
+    /// body is PARALLEL to the drag the endpoint simply slides along it and stays connected, so it
+    /// is NOT pinned — this prevents bogus jog segments running along (and re-junctioning) that
+    /// wire. Example: a horizontal wire joining two vertical wires slides down them as one piece.
+    /// </summary>
+    private bool ShouldPinDraggedEndpoint(EditableWire wire, int ptIdx, bool dragIsVertical)
+    {
+        const double tol = 8.0;
+        if ((uint)ptIdx >= (uint)wire.Points.Count) return false;
+        var (wx, wy) = wire.Points[ptIdx];
+
+        foreach (var comp in EditModel.Components)
+        {
+            if (Selection.IsSelected(comp.Id)) continue;
+            for (int pi = 0; pi < comp.PortCount; pi++)
+            {
+                var (px, py) = comp.GetPortWorldCoord(pi);
+                if (SchematicGeometry.CoincidentPoints(wx, wy, px, py, tol)) return true;   // port → pin
+            }
+        }
+        foreach (var other in EditModel.Wires)
+        {
+            if (other.Id == wire.Id || Selection.IsSelected(other.Id)) continue;
+            var pts = other.Points;
+            for (int k = 0; k < pts.Count; k++)
+                if (SchematicGeometry.CoincidentPoints(wx, wy, pts[k].X, pts[k].Y, tol)) return true;   // vertex → pin
+            for (int k = 0; k < pts.Count - 1; k++)
+                if (SchematicGeometry.PointOnSegmentInterior(
+                        wx, wy, pts[k].X, pts[k].Y, pts[k + 1].X, pts[k + 1].Y, tol))
+                {
+                    bool bodyVertical = Math.Abs(pts[k + 1].X - pts[k].X) < Math.Abs(pts[k + 1].Y - pts[k].Y);
+                    if (bodyVertical != dragIsVertical) return true;   // body ⊥ drag → pin (would move off)
+                    // body ∥ drag → endpoint slides along it; keep checking other connections
+                }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Allowed range for the perpendicular drag delta so that any endpoint sliding along a parallel
+    /// wire stays within that wire's extent — i.e. it stops at the wire's end instead of sliding off
+    /// and disconnecting. Only non-pinned outer endpoints slide; ranges from all of them (and all
+    /// the wires each touches) are intersected, so the drag stops at the SHORTER wire's end. Returns
+    /// (-∞,+∞) when nothing slides.
+    /// </summary>
+    private (double Min, double Max) ComputeSlideClamp(
+        EditableWire wire, int segIdx, bool dragIsVertical, bool startPinned, bool endPinned)
+    {
+        const double tol = 8.0;
+        int n = wire.Points.Count;
+        double min = double.NegativeInfinity, max = double.PositiveInfinity;
+
+        void ConstrainEndpoint(int ptIdx)
+        {
+            var (ex, ey) = wire.Points[ptIdx];
+            foreach (var other in EditModel.Wires)
+            {
+                if (other.Id == wire.Id || Selection.IsSelected(other.Id)) continue;
+                var pts = other.Points;
+                for (int k = 0; k < pts.Count - 1; k++)
+                {
+                    if (!SchematicGeometry.PointOnSegmentInterior(
+                            ex, ey, pts[k].X, pts[k].Y, pts[k + 1].X, pts[k + 1].Y, tol)) continue;
+                    bool bodyVertical = Math.Abs(pts[k + 1].X - pts[k].X) < Math.Abs(pts[k + 1].Y - pts[k].Y);
+                    if (bodyVertical != dragIsVertical) continue;   // perpendicular body pins, doesn't slide
+                    // Parallel body: keep the endpoint between the body's ends along the drag axis.
+                    double lo = dragIsVertical ? Math.Min(pts[k].Y, pts[k + 1].Y) : Math.Min(pts[k].X, pts[k + 1].X);
+                    double hi = dragIsVertical ? Math.Max(pts[k].Y, pts[k + 1].Y) : Math.Max(pts[k].X, pts[k + 1].X);
+                    double e  = dragIsVertical ? ey : ex;
+                    min = Math.Max(min, lo - e);
+                    max = Math.Min(max, hi - e);
+                }
+            }
+        }
+
+        if (segIdx == 0 && !startPinned)         ConstrainEndpoint(0);
+        if (segIdx == n - 2 && !endPinned)       ConstrainEndpoint(n - 1);
+        return (min, max);
+    }
+
     private bool IsWireEndpointConnectedToUnselected(EditableWire wire, int ptIdx)
     {
         const double tol = 8.0;
@@ -566,12 +675,68 @@ public sealed partial class SchematicViewModel : ObservableObject
                 if (SchematicGeometry.CoincidentPoints(wx, wy, px, py, tol)) return true;
             }
         }
-        // Wire-to-wire endpoint coincidence intentionally does NOT pin a drag. Wires at
-        // junctions can be freely dragged; merge-on-commit handles re-joining after a drag.
+        // Wire-to-wire connections also pin the drag so the connection is NEVER broken by moving a
+        // segment — the re-route adds jogs to keep this endpoint exactly in place (a connection must
+        // survive any segment move). Connected if this endpoint coincides with another (unselected)
+        // wire's vertex (endpoint/corner) OR lies on another wire's segment body (a T-junction).
+        foreach (var other in EditModel.Wires)
+        {
+            if (other.Id == wire.Id || Selection.IsSelected(other.Id)) continue;
+            var pts = other.Points;
+            for (int k = 0; k < pts.Count; k++)
+                if (SchematicGeometry.CoincidentPoints(wx, wy, pts[k].X, pts[k].Y, tol)) return true;
+            for (int k = 0; k < pts.Count - 1; k++)
+                if (SchematicGeometry.PointOnSegmentInterior(
+                        wx, wy, pts[k].X, pts[k].Y, pts[k + 1].X, pts[k + 1].Y, tol)) return true;
+        }
         return false;
     }
 
     // ── Wire endpoint merge helpers ───────────────────────────────────────────
+
+    /// <summary>
+    /// True if (x, y) lies on the segment interior of some wire OTHER than the two being merged —
+    /// i.e. the merge point is a T-junction with a third wire. Used to suppress a merge that would
+    /// bury that junction (§5.1). Uses the connectivity pass's tolerance so it triggers exactly
+    /// when a real T exists there.
+    /// </summary>
+    /// <summary>
+    /// True if a collinear-overlap merge of the two wires would bury a T-junction: an endpoint of
+    /// either wire that falls strictly INSIDE the merged span (so it disappears into the merged
+    /// wire's interior) and lies on a third wire's body. Merging there would turn that T into an
+    /// unconnected crossing, so the caller skips the merge.
+    /// </summary>
+    private bool OverlapMergeBuriesT(
+        IReadOnlyList<(double X, double Y)> a, IReadOnlyList<(double X, double Y)> b,
+        IReadOnlyList<(double X, double Y)> union, string idA, string idB)
+    {
+        const double tol = 8.0;
+        bool horiz = Math.Abs(union[0].Y - union[^1].Y) < tol;
+        double lo = horiz ? Math.Min(union[0].X, union[^1].X) : Math.Min(union[0].Y, union[^1].Y);
+        double hi = horiz ? Math.Max(union[0].X, union[^1].X) : Math.Max(union[0].Y, union[^1].Y);
+        foreach (var ep in new[] { a[0], a[^1], b[0], b[^1] })
+        {
+            double c = horiz ? ep.X : ep.Y;
+            bool buried = c > lo + tol && c < hi - tol;   // strictly inside the union span
+            if (buried && JointLiesOnThirdWireBody(ep.X, ep.Y, idA, idB)) return true;
+        }
+        return false;
+    }
+
+    private bool JointLiesOnThirdWireBody(double x, double y, string idA, string idB)
+    {
+        foreach (var w in EditModel.Wires)
+        {
+            if (w.Id == idA || w.Id == idB) continue;
+            var pts = w.Points;
+            for (int i = 0; i < pts.Count - 1; i++)
+                if (SchematicGeometry.PointOnSegmentInterior(
+                        x, y, pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y,
+                        SchematicEditModel.ConnectTolerance))
+                    return true;
+        }
+        return false;
+    }
 
     /// <summary>
     /// Returns the unique other wire whose endpoint is coincident with (x, y) within tol.
@@ -611,10 +776,41 @@ public sealed partial class SchematicViewModel : ObservableObject
         const double tol = 8.0;
         if (endPoints.Count < 2) return null;
 
+        // 1. Collinear-overlap merge FIRST: two collinear wires that overlap/abut combine into their
+        // UNION span (no junction where collinear wires overlap). This must precede the endpoint
+        // merge — for collinear wires that merely share an endpoint, the endpoint merge would build
+        // a back-tracking path that NormalizePoints collapses, dropping part of the span.
+        foreach (var other in EditModel.Wires)
+        {
+            if (other.Id == wire.Id || other.Points.Count < 2) continue;
+            if (excludeIds is not null && excludeIds.Contains(other.Id)) continue;
+            var overlapPts = WireGeometry.TryMergeCollinearOverlap(endPoints, other.Points, tol);
+            if (overlapPts is null) continue;
+            // Don't bury a T: if either wire has an endpoint that falls INSIDE the merged span and
+            // lies on a third wire's body, merging would collapse that T-junction into an
+            // unconnected crossing — skip the merge so the connection survives.
+            if (OverlapMergeBuriesT(endPoints, other.Points, overlapPts, wire.Id, other.Id)) continue;
+            var m = new EditableWire();
+            m.Points.AddRange(overlapPts);
+            return new WireMergeCommand(EditModel, wire, wireIndexInModel, endPoints, other, m);
+        }
+
+        // 2. Endpoint-coincidence merge (non-collinear: L-corners / continuations meeting at a point).
         // Prefer end-endpoint (where the user just dragged / finished drawing).
-        var target = FindUniqueEndpointMatch(wire.Id, endPoints[^1].X, endPoints[^1].Y, tol, excludeIds)
-                  ?? FindUniqueEndpointMatch(wire.Id, endPoints[0].X,  endPoints[0].Y,  tol, excludeIds);
+        var target = FindUniqueEndpointMatch(wire.Id, endPoints[^1].X, endPoints[^1].Y, tol, excludeIds);
+        var joint  = endPoints[^1];
+        if (target is null)
+        {
+            target = FindUniqueEndpointMatch(wire.Id, endPoints[0].X, endPoints[0].Y, tol, excludeIds);
+            joint  = endPoints[0];
+        }
         if (target is null) return null;
+
+        // Connecting a wire must never UNCONNECT another (§5.1). If the shared endpoint sits on a
+        // THIRD wire's segment interior, that point is a T-junction. Merging would bury that endpoint
+        // and silently break the connection — so suppress the merge and keep them separate.
+        if (JointLiesOnThirdWireBody(joint.X, joint.Y, wire.Id, target.Id))
+            return null;
 
         var mergedPts = WireGeometry.TryBuildMergedPoints(endPoints, target.Points, tol);
         if (mergedPts is null) return null;
@@ -934,8 +1130,19 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireSegments   = Selection.GetSelectedSegments(EditModel).ToHashSet(),
             ComponentDragPositions = compOverrides,
             WireDragPoints         = wireOverrides,
+            ConnectionDotsOverride = LiveConnectionDots(),
         };
     }
+
+    // Live connection dots for the drag preview. The drag mutates EditModel geometry live, so a
+    // fresh O(N) connectivity pass yields dots at the moved positions. Gated by schematic size:
+    // above the cap, the per-tick O(N) pass would risk the 10k frame budget (the locked perf
+    // rule), so dots simply snap into place at drag-end (BuildRenderModel) as before.
+    private const int LiveDotMaxObjects = 1500;
+    private IReadOnlyList<SchematicDot>? LiveConnectionDots()
+        => (EditModel.Wires.Count + EditModel.Components.Count) <= LiveDotMaxObjects
+            ? EditModel.ComputeConnectionDots()
+            : null;
 
     private void ClearDragState()
     {
@@ -954,6 +1161,9 @@ public sealed partial class SchematicViewModel : ObservableObject
         _segmentDragWireId      = null;
         _segmentDragStartPoints = null;
         _segmentDragStems       = null;
+        _segmentDragCrossDots   = null;
+        _segSlideMin            = double.NegativeInfinity;
+        _segSlideMax            = double.PositiveInfinity;
     }
 
     /// <summary>Sequence-equal comparison of two wire point lists (exact, within float epsilon).</summary>
@@ -991,23 +1201,29 @@ public sealed partial class SchematicViewModel : ObservableObject
 
         bool isHoriz = IsSegmentHorizontal(pts[i], pts[i + 1]);
 
-        // Constrain to perpendicular axis and snap (B2).
+        // Constrain to perpendicular axis, snap (B2), then clamp so a sliding endpoint can't run
+        // off the end of its connected wire (never break a connection).
         double dx, dy;
         if (isHoriz)
         {
             double rawY = pts[i].Y + rawDy;
             dy = EditModel.SnapToGrid(rawY) - pts[i].Y;
+            dy = Math.Clamp(dy, _segSlideMin, _segSlideMax);
             dx = 0;
         }
         else
         {
             double rawX = pts[i].X + rawDx;
             dx = EditModel.SnapToGrid(rawX) - pts[i].X;
+            dx = Math.Clamp(dx, _segSlideMin, _segSlideMax);
             dy = 0;
         }
 
-        var newPts = ComputeSegmentDragPoints(pts, i, dx, dy,
-            _segmentDragStartPinned, _segmentDragEndPinned);
+        // Simplify LIVE (same cleanup as commit) so redundant collinear runs / zero-length jogs are
+        // collapsed as the drag brings geometry back into line — otherwise segments (and their
+        // junction dots) appear stacked exactly over existing ones, which reads as a bug.
+        var newPts = SimplifyWirePoints(ComputeSegmentDragPoints(pts, i, dx, dy,
+            _segmentDragStartPinned, _segmentDragEndPinned));
 
         wire.Points.Clear();
         wire.Points.AddRange(newPts);
@@ -1017,24 +1233,32 @@ public sealed partial class SchematicViewModel : ObservableObject
             [_segmentDragWireId] = wire.Points.ToList(),
         };
 
-        // T-junction stem follow (§5.1). When the segment translates rigidly (the base case —
-        // both segment endpoints shift by the perpendicular delta), each stem riding it moves by
-        // that same delta so its junction endpoint stays on the segment; re-route keeps the stem
-        // orthogonal with its far (anchored) end fixed. In the pinned-endpoint re-route case the
-        // segment's original line is preserved (an L-leg is added, not a translation), so stems on
-        // it stay valid in place — they are intentionally not moved.
-        bool rigidTranslate = !(i == 0 && _segmentDragStartPinned)
-                           && !(i == pts.Count - 2 && _segmentDragEndPinned);
-        if (rigidTranslate && _segmentDragStems is { Count: > 0 })
+        // Stem / vertex follow. The dragged segment's body always translates by the perpendicular
+        // delta (even when an outer end is pinned — jogs absorb that at the ends), so every wire
+        // connected ON the segment moves by that same delta to stay attached: a stem T-ed onto its
+        // interior, and a wire joined at one of its moving vertices. Re-route keeps each follower
+        // orthogonal with its far (anchored) end fixed. This is what keeps T/corner connections
+        // from breaking as the segment moves.
+        if (_segmentDragStems is { Count: > 0 })
         {
             foreach (var stem in _segmentDragStems)
             {
-                var routed = RouteStem(stem, dx, dy);
+                var routed = SimplifyWirePoints(RouteStem(stem, dx, dy));
                 stem.Wire.Points.Clear();
                 stem.Wire.Points.AddRange(routed);
                 wireDragPoints[stem.Wire.Id] = routed;
             }
         }
+
+        // Crossing dots ride the segment by the same delta (live LiveConnectionDots() re-renders
+        // them at the moved crossing). If the drag carries the wire off the crossed wire entirely,
+        // the dot stops being a crossing and is removed by re-validation at commit.
+        if (_segmentDragCrossDots is { Count: > 0 })
+            foreach (var (dot, sx, sy) in _segmentDragCrossDots)
+            {
+                dot.X = sx + dx;
+                dot.Y = sy + dy;
+            }
 
         // Fast overlay update — no full BuildRenderModel() per tick (B4 perf).
         Overlay = new SchematicOverlay
@@ -1044,35 +1268,55 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireIds      = Selection.GetSelectedWireIds(EditModel).ToHashSet(),
             SelectedCanvasObjIds = Selection.GetSelectedCanvasObjectIds(EditModel).ToHashSet(),
             WireDragPoints       = wireDragPoints,
+            ConnectionDotsOverride = LiveConnectionDots(),
         };
     }
 
     /// <summary>
-    /// Finds wires T-ed onto segment (a)-(b) of the through-wire <paramref name="throughWireId"/>:
-    /// other wires with an endpoint on the segment's interior (the same PointOnSegmentInterior test
-    /// BuildRenderModel uses for T-detection, at the identical tolerance). Endpoint-on-vertex is a
-    /// coincidence/merge case, excluded by the interior test. Picks one junction end per stem
-    /// (start preferred); the other end is the anchored far end.
+    /// Finds wires whose endpoint sits on the dragged segment (a)-(b) and so must follow it to keep
+    /// their connection. This is any other wire ending on the segment's INTERIOR (a T-junction) or
+    /// coincident with one of the segment's MOVING vertices (a corner/endpoint junction —
+    /// <paramref name="aMoves"/>/<paramref name="bMoves"/> say which vertices actually move; a
+    /// pinned outer vertex is held fixed, so wires there stay put and are excluded). Picks one
+    /// junction end per follower (start preferred); the other end is the anchored far end.
     /// </summary>
     private List<StemFollow> FindStemsOnSegment(
-        string throughWireId, (double X, double Y) a, (double X, double Y) b)
+        string throughWireId, (double X, double Y) a, (double X, double Y) b,
+        bool aMoves, bool bMoves)
     {
+        const double tol = SchematicEditModel.ConnectTolerance;
+        bool OnMovingPartOfSegment((double X, double Y) p)
+            => SchematicGeometry.PointOnSegmentInterior(p.X, p.Y, a.X, a.Y, b.X, b.Y, tol)
+            || (aMoves && SchematicGeometry.CoincidentPoints(p.X, p.Y, a.X, a.Y, tol))
+            || (bMoves && SchematicGeometry.CoincidentPoints(p.X, p.Y, b.X, b.Y, tol));
+
         var stems = new List<StemFollow>();
         foreach (var w in EditModel.Wires)
         {
             if (w.Id == throughWireId || w.Points.Count < 2) continue;
             var p0 = w.Points[0];
             var pN = w.Points[^1];
-            bool startOn = SchematicGeometry.PointOnSegmentInterior(
-                p0.X, p0.Y, a.X, a.Y, b.X, b.Y, SchematicEditModel.ConnectTolerance);
-            bool endOn = !startOn && SchematicGeometry.PointOnSegmentInterior(
-                pN.X, pN.Y, a.X, a.Y, b.X, b.Y, SchematicEditModel.ConnectTolerance);
+            bool startOn = OnMovingPartOfSegment(p0);
+            bool endOn   = !startOn && OnMovingPartOfSegment(pN);
             if (!startOn && !endOn) continue;
             var junction = startOn ? p0 : pN;
             var far      = startOn ? pN : p0;
             stems.Add(new StemFollow(w, startOn, junction, far, w.Points.ToList()));
         }
         return stems;
+    }
+
+    /// <summary>User junction dots on the dragged segment's interior (crossing dots), with their
+    /// original positions — they ride the segment so the cross connection survives the move.</summary>
+    private List<(EditableDot Dot, double StartX, double StartY)> FindDotsOnSegment(
+        (double X, double Y) a, (double X, double Y) b)
+    {
+        var list = new List<(EditableDot, double, double)>();
+        foreach (var d in EditModel.Dots)
+            if (SchematicGeometry.PointOnSegmentInterior(
+                    d.X, d.Y, a.X, a.Y, b.X, b.Y, SchematicEditModel.ConnectTolerance))
+                list.Add((d, d.X, d.Y));
+        return list;
     }
 
     /// <summary>Re-routes a stem after its junction endpoint moves by the perpendicular delta,
@@ -1120,12 +1364,25 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
         }
 
+        // Fold crossing-dot follows into the same command — their positions were updated live;
+        // restore each so MoveCommand.Execute() re-applies the move. One Undo restores the wire,
+        // the stems, and every ridden dot together.
+        var dotSnaps = new List<DotMoveSnapshot>();
+        if (_segmentDragCrossDots is not null)
+            foreach (var (dot, sx, sy) in _segmentDragCrossDots)
+            {
+                if (Math.Abs(dot.X - sx) < 1e-6 && Math.Abs(dot.Y - sy) < 1e-6) continue;  // unmoved
+                double ex = dot.X, ey = dot.Y;
+                dot.X = sx; dot.Y = sy;   // restore
+                dotSnaps.Add(new DotMoveSnapshot(dot, sx, sy, ex, ey));
+            }
+
         // Restore the dragged wire to start state; MoveCommand.Execute() re-applies the end state.
         wire.Points.Clear();
         wire.Points.AddRange(_segmentDragStartPoints);
 
         wireSnaps.Insert(0, new WireMoveSnapshot(wire, _segmentDragStartPoints, endPoints));
-        var moveCmd = new MoveCommand(EditModel, [], wireSnaps, []);
+        var moveCmd = new MoveCommand(EditModel, [], wireSnaps, [], dots: dotSnaps);
 
         if (mergeCmd is not null)
         {
@@ -1140,9 +1397,13 @@ public sealed partial class SchematicViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Computes the new point list after dragging segment[i] by (dx,dy).
-    /// Parallel component of the delta is zeroed out by the caller before this is called.
-    /// Pinned outer endpoints are re-routed via OrthogonalRoute (B3).
+    /// Computes the new point list after dragging segment[i] by perpendicular (dx,dy).
+    /// The dragged segment always translates by the delta; whatever is connected stays put:
+    ///  • an interior neighbour stretches to the moved vertex (stays orthogonal);
+    ///  • a PINNED outer endpoint is held fixed and a jog (OrthogonalRoute) bridges it to the
+    ///    moved segment — so a connected wire bows out instead of detaching or freezing. When BOTH
+    ///    outer ends are pinned (a single connected segment), jogs are added at both ends.
+    /// Connections are therefore never broken by a segment move (§ rubber-band).
     /// </summary>
     private static IReadOnlyList<(double X, double Y)> ComputeSegmentDragPoints(
         IReadOnlyList<(double X, double Y)> startPoints,
@@ -1152,35 +1413,39 @@ public sealed partial class SchematicViewModel : ObservableObject
         int n = startPoints.Count;
         if (n < 2 || i < 0 || i >= n - 1) return startPoints;
 
-        // Both outer endpoints pinned on a single-segment wire → no movement.
-        if (startPinned && endPinned && n == 2) return startPoints;
+        var movedA = (X: startPoints[i].X     + dx, Y: startPoints[i].Y     + dy);
+        var movedB = (X: startPoints[i + 1].X + dx, Y: startPoints[i + 1].Y + dy);
 
-        // Shift pts[i] and pts[i+1] by the perpendicular delta (base case).
-        var result = startPoints.ToList();
-        result[i]     = (startPoints[i].X     + dx, startPoints[i].Y     + dy);
-        result[i + 1] = (startPoints[i + 1].X + dx, startPoints[i + 1].Y + dy);
+        var result = new List<(double X, double Y)>();
 
-        // B3: First segment with pinned outer start → re-route from pts[0] to new pts[1].
-        if (i == 0 && startPinned)
+        // Left of the dragged segment (toward pts[0]); ends at the moved segment start.
+        if (i == 0)
         {
-            var rerouted = WireGeometry.OrthogonalRoute(
-                startPoints[0].X, startPoints[0].Y,
-                result[1].X, result[1].Y);
-            var final = new List<(double X, double Y)>(rerouted);
-            for (int k = 2; k < n; k++) final.Add(startPoints[k]);
-            return final;
+            if (startPinned)
+                result.AddRange(WireGeometry.OrthogonalRoute(
+                    startPoints[0].X, startPoints[0].Y, movedA.X, movedA.Y));   // fixed end → jog → movedA
+            else
+                result.Add(movedA);                                            // free end moves
+        }
+        else
+        {
+            for (int k = 0; k < i; k++) result.Add(startPoints[k]);            // unchanged prefix
+            result.Add(movedA);                                               // neighbour i-1 stretches to here
         }
 
-        // B3: Last segment with pinned outer end → re-route from new pts[n-2] to pts[n-1].
-        if (i == n - 2 && endPinned)
+        // Right of the dragged segment (toward pts[n-1]); starts at the moved segment end.
+        if (i + 1 == n - 1)
         {
-            var rerouted = WireGeometry.OrthogonalRoute(
-                result[n - 2].X, result[n - 2].Y,
-                startPoints[n - 1].X, startPoints[n - 1].Y);
-            var final = new List<(double X, double Y)>();
-            for (int k = 0; k < n - 2; k++) final.Add(startPoints[k]);
-            final.AddRange(rerouted);
-            return final;
+            if (endPinned)
+                result.AddRange(WireGeometry.OrthogonalRoute(
+                    movedB.X, movedB.Y, startPoints[n - 1].X, startPoints[n - 1].Y));   // movedB → jog → fixed end
+            else
+                result.Add(movedB);
+        }
+        else
+        {
+            result.Add(movedB);
+            for (int k = i + 2; k < n; k++) result.Add(startPoints[k]);        // unchanged suffix
         }
 
         return result;
@@ -1338,22 +1603,25 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         double sx = EditModel.SnapToGrid(wx);
         double sy = EditModel.SnapToGrid(wy);
+        // Snap the click to a connection target (priority: port → wire endpoint → wire body) and
+        // remember whether we hit one. Landing on any existing wire/port both makes the connection
+        // and ends the draw (see below) — the standard "click on a wire to terminate" gesture.
+        bool onConnectionTarget = false;
         if (SpatialIndex is not null)
         {
             var (pFound, _, _, px, py) = SchematicHitTest.NearestPort(EditModel, wx, wy, 15);
-            if (pFound) { sx = px; sy = py; }
+            if (pFound) { sx = px; sy = py; onConnectionTarget = true; }
             else
             {
                 var (eFound, _, _, ex, ey) = SchematicHitTest.NearestWireEndpoint(EditModel, wx, wy, 15);
-                if (eFound) { sx = ex; sy = ey; }
+                if (eFound) { sx = ex; sy = ey; onConnectionTarget = true; }
                 else
                 {
-                    // Lowest-priority snap: project onto a wire's segment body so the
-                    // endpoint lands exactly on another wire, forming a T-junction (§5.1).
-                    // Grid-snapped to stay consistent with the rest of wire placement;
-                    // orthogonal grid-aligned wires keep the projected point on the segment.
+                    // Lowest-priority snap: project onto a wire's segment body so the endpoint
+                    // lands exactly on another wire, forming a T-junction (§5.1). Grid-snapped to
+                    // stay consistent; orthogonal grid-aligned wires keep the point on the segment.
                     var (sFound, _, _, segX, segY) = SchematicHitTest.NearestPointOnWireSegment(EditModel, wx, wy, 15);
-                    if (sFound) { sx = EditModel.SnapToGrid(segX); sy = EditModel.SnapToGrid(segY); }
+                    if (sFound) { sx = EditModel.SnapToGrid(segX); sy = EditModel.SnapToGrid(segY); onConnectionTarget = true; }
                 }
             }
         }
@@ -1377,10 +1645,12 @@ public sealed partial class SchematicViewModel : ObservableObject
                 _wirePoints.AddRange(normalized);
             }
 
-            if (SpatialIndex is not null)
+            // Clicking onto an existing wire (endpoint or body) or a port terminates the draw and
+            // makes the connection there: endpoint→merge, body→T-junction, all via FinishWire().
+            if (onConnectionTarget)
             {
-                var (pfound, _, _, _, _) = SchematicHitTest.NearestPort(EditModel, sx, sy, 8);
-                if (pfound) FinishWire();
+                FinishWire();
+                return;
             }
         }
         RebuildOverlay();
@@ -1588,9 +1858,9 @@ public sealed partial class SchematicViewModel : ObservableObject
                 if (nudgeDx == 0 && nudgeDy == 0) continue;
 
                 bool startPinned = segIdx == 0
-                    && IsWireEndpointConnectedToUnselected(wire, 0);
+                    && ShouldPinDraggedEndpoint(wire, 0, isHoriz);
                 bool endPinned = segIdx == startPoints.Count - 2
-                    && IsWireEndpointConnectedToUnselected(wire, startPoints.Count - 1);
+                    && ShouldPinDraggedEndpoint(wire, startPoints.Count - 1, isHoriz);
 
                 pts = ComputeSegmentDragPoints(pts, segIdx, nudgeDx, nudgeDy,
                           startPinned, endPinned).ToList();
@@ -1822,9 +2092,18 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     public void PlaceDot(double wx, double wy)
     {
-        double sx = EditModel.SnapToGrid(wx);
-        double sy = EditModel.SnapToGrid(wy);
-        Execute(new PlaceDotCommand(EditModel, new EditableDot { X = sx, Y = sy }));
+        // INVARIANT (§5.1): a junction dot is valid ONLY on a genuine 4-way wire crossing. Snap to
+        // the nearest crossing within tolerance; if there is none, create nothing — the user cannot
+        // place an inert dot in empty space, on a lone wire, or at a T/merge (those connect without
+        // a dot). This keeps every dot an unambiguous crossing-union for net extraction (6e).
+        if (SpatialIndex is null) return;
+        var (found, cx, cy) = SchematicHitTest.NearestWireCrossing(EditModel, SpatialIndex, wx, wy, 15);
+        if (!found)
+        {
+            _messageSink?.Warning("A junction dot must be placed on a wire crossing.");
+            return;
+        }
+        Execute(new PlaceDotCommand(EditModel, new EditableDot { X = cx, Y = cy }));
     }
 
     public void FinishCurrentWire() => FinishWire();
@@ -1847,6 +2126,12 @@ public sealed partial class SchematicViewModel : ObservableObject
                 {
                     stem.Wire.Points.Clear();
                     stem.Wire.Points.AddRange(stem.StartPoints);
+                }
+            // Restore any crossing-dots moved live during the drag.
+            if (_segmentDragCrossDots is not null)
+                foreach (var (dot, sx, sy) in _segmentDragCrossDots)
+                {
+                    dot.X = sx; dot.Y = sy;
                 }
         }
         ClearSegmentDragState();

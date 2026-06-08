@@ -88,7 +88,12 @@ public sealed class SchematicWire
     public bool EndConnected   { get; init; }
 }
 
-/// <summary>A wire-wire or port-wire junction dot (§4.3 dark square).</summary>
+/// <summary>
+/// A junction dot (§4.3 dark square). circuitRF maintains a hard invariant (§5.1): a dot exists
+/// only where it marks a genuine connection — a user dot on a real 4-way wire crossing, or a
+/// derived auto-dot at a T-junction. Inert dots never reach the render model, so every dot here
+/// is an unambiguous "these wires are connected" mark (load-bearing for 6e net extraction).
+/// </summary>
 public sealed class SchematicDot(double x, double y)
 {
     public double X { get; } = x;

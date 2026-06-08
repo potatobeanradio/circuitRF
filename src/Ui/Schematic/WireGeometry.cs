@@ -162,6 +162,43 @@ public static class WireGeometry
     /// coincident within <paramref name="tol"/>; returns null if no junction or
     /// if more than one endpoint pair matches (loop / ambiguous junction).
     /// </summary>
+    /// <summary>
+    /// If wires <paramref name="aPoints"/> and <paramref name="bPoints"/> are both straight and
+    /// COLLINEAR (same horizontal or vertical line) with overlapping or abutting spans, returns the
+    /// single merged wire spanning their union; otherwise null. This simplifies redundant overlapping
+    /// wire away (no junction is created where collinear wires overlap).
+    /// </summary>
+    public static IReadOnlyList<(double X, double Y)>? TryMergeCollinearOverlap(
+        IReadOnlyList<(double X, double Y)> aPoints,
+        IReadOnlyList<(double X, double Y)> bPoints,
+        double tol)
+    {
+        var a = NormalizePoints(aPoints);
+        var b = NormalizePoints(bPoints);
+        if (a.Count != 2 || b.Count != 2) return null;   // only straight wires
+
+        bool aH = Math.Abs(a[0].Y - a[1].Y) < tol, aV = Math.Abs(a[0].X - a[1].X) < tol;
+        bool bH = Math.Abs(b[0].Y - b[1].Y) < tol, bV = Math.Abs(b[0].X - b[1].X) < tol;
+
+        if (aH && bH && Math.Abs(a[0].Y - b[0].Y) < tol)
+        {
+            double aLo = Math.Min(a[0].X, a[1].X), aHi = Math.Max(a[0].X, a[1].X);
+            double bLo = Math.Min(b[0].X, b[1].X), bHi = Math.Max(b[0].X, b[1].X);
+            if (bLo > aHi + tol || aLo > bHi + tol) return null;   // disjoint
+            double y = a[0].Y;
+            return [(Math.Min(aLo, bLo), y), (Math.Max(aHi, bHi), y)];
+        }
+        if (aV && bV && Math.Abs(a[0].X - b[0].X) < tol)
+        {
+            double aLo = Math.Min(a[0].Y, a[1].Y), aHi = Math.Max(a[0].Y, a[1].Y);
+            double bLo = Math.Min(b[0].Y, b[1].Y), bHi = Math.Max(b[0].Y, b[1].Y);
+            if (bLo > aHi + tol || aLo > bHi + tol) return null;
+            double x = a[0].X;
+            return [(x, Math.Min(aLo, bLo)), (x, Math.Max(aHi, bHi))];
+        }
+        return null;
+    }
+
     public static IReadOnlyList<(double X, double Y)>? TryBuildMergedPoints(
         IReadOnlyList<(double X, double Y)> aPoints,
         IReadOnlyList<(double X, double Y)> bPoints,

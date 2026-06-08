@@ -402,7 +402,65 @@ public static class SchematicHitTest
         return (bestWireId != "", bestWireId, bestSeg, bestX, bestY);
     }
 
+    /// <summary>
+    /// Nearest 4-way wire crossing to (worldX,worldY): the proper interior intersection of two
+    /// distinct wires' segments (neither ending there). Lets a junction dot snap exactly onto a
+    /// crossing so it actually unions the wires (§5.1). Returns the intersection point, or
+    /// Found=false if none within tolerance. O(k²) over the few segments near the click (the
+    /// spatial index prunes the rest), so it stays cheap even on a 10k schematic.
+    /// </summary>
+    public static (bool Found, double X, double Y) NearestWireCrossing(
+        SchematicEditModel editModel, SchematicSpatialIndex index,
+        double worldX, double worldY, double tolerance = 15.0)
+    {
+        var candWires = new HashSet<int>();
+        var candComps = new HashSet<int>();
+        index.QueryViewport(worldX - tolerance, worldY - tolerance,
+                            worldX + tolerance, worldY + tolerance, candComps, candWires);
+
+        double bestDist = tolerance * tolerance;
+        bool found = false; double bestX = 0, bestY = 0;
+
+        var wireIdxs = candWires.Where(wi => wi < editModel.Wires.Count).ToList();
+        for (int a = 0; a < wireIdxs.Count; a++)
+        for (int b = a + 1; b < wireIdxs.Count; b++)
+        {
+            var wa = editModel.Wires[wireIdxs[a]].Points;
+            var wb = editModel.Wires[wireIdxs[b]].Points;
+            for (int i = 0; i < wa.Count - 1; i++)
+            for (int j = 0; j < wb.Count - 1; j++)
+            {
+                if (!SchematicGeometry.SegmentsIntersectInterior(
+                        wa[i].X, wa[i].Y, wa[i + 1].X, wa[i + 1].Y,
+                        wb[j].X, wb[j].Y, wb[j + 1].X, wb[j + 1].Y,
+                        out double ix, out double iy)) continue;
+                // Reject an intersection where any nearby wire has a vertex — that point is a
+                // T/merge, not a pure crossing. Keeps placement consistent with the connectivity
+                // pass's crossing test (which defers vertex points to the T/merge paths).
+                if (AnyWireVertexAt(editModel, wireIdxs, ix, iy)) continue;
+                double d = SchematicGeometry.DistanceSq(worldX, worldY, ix, iy);
+                if (d <= bestDist)
+                {
+                    bestDist = d; bestX = ix; bestY = iy; found = true;
+                }
+            }
+        }
+
+        return (found, bestX, bestY);
+    }
+
     // ── Internal helpers ──────────────────────────────────────────────────────
+
+    /// <summary>True if any of the given candidate wires has a vertex coincident with (x,y).</summary>
+    private static bool AnyWireVertexAt(
+        SchematicEditModel editModel, List<int> wireIdxs, double x, double y)
+    {
+        foreach (int wi in wireIdxs)
+            foreach (var (px, py) in editModel.Wires[wi].Points)
+                if (SchematicGeometry.CoincidentPoints(x, y, px, py, SchematicEditModel.ConnectTolerance))
+                    return true;
+        return false;
+    }
 
     private static (double MinX, double MinY, double MaxX, double MaxY) GetCompGlyphBb(EditableComponent comp)
         => comp.ComputeGlyphBb();

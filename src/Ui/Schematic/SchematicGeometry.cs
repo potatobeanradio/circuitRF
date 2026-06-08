@@ -63,6 +63,32 @@ public static class SchematicGeometry
         return true;
     }
 
+    /// <summary>
+    /// True if segments (a1)-(a2) and (b1)-(b2) cross at a point strictly interior to BOTH
+    /// (a proper 4-way crossing — neither segment merely touches the other at an endpoint).
+    /// Outputs the intersection point. Parallel/collinear segments return false.
+    /// </summary>
+    public static bool SegmentsIntersectInterior(
+        double a1x, double a1y, double a2x, double a2y,
+        double b1x, double b1y, double b2x, double b2y,
+        out double ix, out double iy)
+    {
+        ix = iy = 0;
+        double rx = a2x - a1x, ry = a2y - a1y;
+        double sx = b2x - b1x, sy = b2y - b1y;
+        double denom = rx * sy - ry * sx;
+        if (Math.Abs(denom) < 1e-9) return false;   // parallel or degenerate
+
+        double t = ((b1x - a1x) * sy - (b1y - a1y) * sx) / denom;
+        double u = ((b1x - a1x) * ry - (b1y - a1y) * rx) / denom;
+        const double eps = 1e-6;   // strict interior → exclude endpoint touches (T/merge cases)
+        if (t <= eps || t >= 1 - eps || u <= eps || u >= 1 - eps) return false;
+
+        ix = a1x + t * rx;
+        iy = a1y + t * ry;
+        return true;
+    }
+
     /// <summary>Squared distance between two points.</summary>
     public static double DistanceSq(double ax, double ay, double bx, double by)
     {

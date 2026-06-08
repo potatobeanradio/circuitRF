@@ -190,8 +190,11 @@ public static class SchematicRenderer
         // ── Connection dots ───────────────────────────────────────────────────
         if (!isLod)
         {
+            // During a drag the overlay carries live dots recomputed from the moving geometry;
+            // use them so junction dots follow instead of lagging at their pre-drag positions.
+            var dotsToDraw = overlay?.ConnectionDotsOverride ?? model.ConnectionDots;
             float dotHalf = (float)Math.Clamp(zoom * DotHalfSize, 2.0, 6.0);
-            foreach (var dot in model.ConnectionDots)
+            foreach (var dot in dotsToDraw)
             {
                 if (dot.X < vpMinX - 20 || dot.X > vpMaxX + 20 ||
                     dot.Y < vpMinY - 20 || dot.Y > vpMaxY + 20) continue;
