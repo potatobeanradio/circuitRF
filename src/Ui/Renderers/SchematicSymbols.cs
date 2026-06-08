@@ -79,10 +79,13 @@ public static class SchematicSymbols
         -30f,-50f, -20f,-60f,
     ];
 
-    /// <summary>Z_Port / N-port termination: rectangle + Z label lines.</summary>
+    /// <summary>
+    /// Z-Port / N-port termination body: box + Z label lines.
+    /// Port lead stubs are NOT included here — the renderer draws them dynamically
+    /// from each port's LocalX/LocalY so they adapt to any port count.
+    /// Body edges: left x=−70, right x=+70.
+    /// </summary>
     public static readonly float[] ZPort = [
-        -150f,  0f, -70f,  0f,
-         70f,  0f, 150f,  0f,
         -70f,-50f,  70f,-50f,
          70f,-50f,  70f, 50f,
          70f, 50f, -70f, 50f,
@@ -91,6 +94,18 @@ public static class SchematicSymbols
         -40f,-30f,  40f,-30f,
          40f,-30f, -40f, 30f,
         -40f, 30f,  40f, 30f,
+    ];
+
+    /// <summary>
+    /// SDD body: box only, no port leads.
+    /// Port lead stubs are drawn dynamically by the renderer per port count.
+    /// Body edges: left x=−80, right x=+80.
+    /// </summary>
+    public static readonly float[] SddBody = [
+        -80f,-50f,  80f,-50f,
+         80f,-50f,  80f, 50f,
+         80f, 50f, -80f, 50f,
+        -80f, 50f, -80f,-50f,
     ];
 
     /// <summary>Generic cell: box with 2 port leads.</summary>
@@ -116,6 +131,7 @@ public static class SchematicSymbols
         SymbolKind.Port          => Port,
         SymbolKind.FetSdd        => FetSdd,
         SymbolKind.ZPort         => ZPort,
+        SymbolKind.Sdd           => SddBody,
         _                        => Generic,
     };
 

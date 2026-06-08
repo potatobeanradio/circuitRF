@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -27,6 +28,9 @@ public partial class SchematicView : UserControl
     // Ascender ratio measured from the Skia font the renderer uses.
     // Computed once at construction — update SkiaFonts.PlexRegular to switch fonts.
     private readonly double _fontAscenderRatio;
+
+    // Tracks the VM we're currently subscribed to so we can unsubscribe on DataContext change.
+    private SchematicViewModel? _subscribedVm;
 
     public SchematicView()
     {
@@ -67,12 +71,99 @@ public partial class SchematicView : UserControl
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
-        SchematicCanvasCtrl.EditContext =
-            DataContext is SchematicDocument doc ? doc.ViewModel : null;
+        if (_subscribedVm is not null)
+        {
+            _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
+            _subscribedVm.Selection.Changed -= OnSelectionChanged;
+            _subscribedVm = null;
+        }
+
+        var vm = DataContext is SchematicDocument doc ? doc.ViewModel : null;
+        SchematicCanvasCtrl.EditContext = vm;
+
+        if (vm is not null)
+        {
+            _subscribedVm = vm;
+            vm.PropertyChanged += OnViewModelPropertyChanged;
+            vm.Selection.Changed += OnSelectionChanged;
+            UpdateToolButtonStates();
+            UpdateDisableButtonStates();
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(SchematicViewModel.ActiveTool)
+                           or nameof(SchematicViewModel.PlacementSymbol))
+            UpdateToolButtonStates();
+    }
+
+    private void OnSelectionChanged(object? sender, EventArgs e) => UpdateDisableButtonStates();
+
+    private void UpdateToolButtonStates()
+    {
+        var vm   = Vm;
+        var tool = vm?.ActiveTool ?? SchematicViewModel.Tool.Select;
+
+        SelectToolBtn.Classes.Set("ToolActive", tool == SchematicViewModel.Tool.Select);
+        ZoomBoxToolBtn.Classes.Set("ToolActive", tool == SchematicViewModel.Tool.ZoomBox);
+        WireToolBtn.Classes.Set("ToolActive", tool == SchematicViewModel.Tool.Wire);
+        PlaceGroundBtn.Classes.Set("ToolActive",
+            tool == SchematicViewModel.Tool.Place && vm?.PlacementSymbol == SymbolKind.Ground);
+        PlacePortBtn.Classes.Set("ToolActive",
+            tool == SchematicViewModel.Tool.Place && vm?.PlacementSymbol == SymbolKind.Port);
+    }
+
+    private void UpdateDisableButtonStates()
+    {
+        bool hasSelection = Vm?.Selection.Ids.Count > 0;
+        RotateCcwBtn.IsEnabled    = hasSelection;
+        RotateCwBtn.IsEnabled     = hasSelection;
+        MirrorHBtn.IsEnabled      = hasSelection;
+        MirrorVBtn.IsEnabled      = hasSelection;
+        DeleteBtn.IsEnabled       = hasSelection;
+        DisableOpenBtn.IsEnabled  = hasSelection;
+        DisableShortBtn.IsEnabled = hasSelection;
     }
 
     private SchematicViewModel? Vm =>
         (DataContext as SchematicDocument)?.ViewModel;
+
+    // ── Global schematic key handling (works regardless of which toolbar item is focused) ──
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Handled || InlineEditBox.IsVisible) return;
+        if (Vm is null) return;
+
+        bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        if (ctrl) return;
+
+        switch (e.Key)
+        {
+            case Key.Escape:
+                Vm.SetSelectTool();
+                Vm.Selection.Clear();
+                SchematicCanvasCtrl.InvalidateVisual();
+                e.Handled = true;
+                break;
+            case Key.S:
+                Vm.SetSelectTool();
+                SchematicCanvasCtrl.InvalidateVisual();
+                e.Handled = true;
+                break;
+            case Key.W:
+                Vm.SetWireTool();
+                SchematicCanvasCtrl.InvalidateVisual();
+                e.Handled = true;
+                break;
+            case Key.F:
+                SchematicCanvasCtrl.ZoomToFit();
+                e.Handled = true;
+                break;
+        }
+    }
 
     // ── Zoom buttons ──────────────────────────────────────────────────────────
 
@@ -81,11 +172,35 @@ public partial class SchematicView : UserControl
 
     // ── Tool buttons ──────────────────────────────────────────────────────────
 
-    private void OnSelectTool(object? sender, RoutedEventArgs e)  => Vm?.SetSelectTool();
-    private void OnWireTool(object? sender, RoutedEventArgs e)    => Vm?.SetWireTool();
-    private void OnZoomBoxTool(object? sender, RoutedEventArgs e) => Vm?.SetZoomBoxTool();
-    private void OnPlaceGround(object? sender, RoutedEventArgs e) => Vm?.BeginPlacement(SymbolKind.Ground);
-    private void OnPlacePort(object? sender, RoutedEventArgs e)   => Vm?.BeginPlacement(SymbolKind.Port);
+    private void OnSelectTool(object? sender, RoutedEventArgs e)
+    {
+        Vm?.SetSelectTool();
+        SchematicCanvasCtrl.Focus();
+    }
+
+    private void OnWireTool(object? sender, RoutedEventArgs e)
+    {
+        Vm?.SetWireTool();
+        SchematicCanvasCtrl.Focus();
+    }
+
+    private void OnZoomBoxTool(object? sender, RoutedEventArgs e)
+    {
+        Vm?.SetZoomBoxTool();
+        SchematicCanvasCtrl.Focus();
+    }
+
+    private void OnPlaceGround(object? sender, RoutedEventArgs e)
+    {
+        Vm?.BeginPlacement(SymbolKind.Ground);
+        SchematicCanvasCtrl.Focus();
+    }
+
+    private void OnPlacePort(object? sender, RoutedEventArgs e)
+    {
+        Vm?.BeginPlacement(SymbolKind.Port);
+        SchematicCanvasCtrl.Focus();
+    }
 
     // ── Transform buttons ─────────────────────────────────────────────────────
 
@@ -107,7 +222,6 @@ public partial class SchematicView : UserControl
 
     private void OnDisableOpen(object? sender, RoutedEventArgs e)  => Vm?.DisableSelection(DisableState.Open);
     private void OnDisableShort(object? sender, RoutedEventArgs e) => Vm?.DisableSelection(DisableState.Short);
-    private void OnReEnable(object? sender, RoutedEventArgs e)     => Vm?.DisableSelection(DisableState.None);
 
     // ── Save ──────────────────────────────────────────────────────────────────
 
@@ -163,7 +277,31 @@ public partial class SchematicView : UserControl
 
         // Push In only enabled for hierarchy cells (not primitives yet — v1 deferred)
         CtxPushIn.IsEnabled = false;
+
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+
+        // GND is a special symbol — hide the items that have no meaning for it.
+        bool isGnd = comp?.Symbol == SymbolKind.Ground;
+        CtxEditParameters.IsVisible  = !isGnd;
+        CtxPushIn.IsVisible          = !isGnd;
+        CtxSep1.IsVisible            = !isGnd;
+        CtxMoveLabels.IsVisible      = !isGnd;
+        CtxResetLabels.IsVisible     = !isGnd;
+        CtxLabelsSubMenu.IsVisible   = !isGnd;
+        CtxSep2.IsVisible            = !isGnd;
+
+        // Reflect the target component's current label-visibility state via eye icons.
+        bool typeLabelVisible    = comp?.ShowTypeLabel    ?? true;
+        bool instanceNameVisible = comp?.ShowInstanceName ?? true;
+        CtxShowTypeLabel.Icon    = MakeEyeIcon(typeLabelVisible);
+        CtxShowInstanceName.Icon = MakeEyeIcon(instanceNameVisible);
     }
+
+    private static Material.Icons.Avalonia.MaterialIcon MakeEyeIcon(bool visible) =>
+        new() { Kind = visible ? Material.Icons.MaterialIconKind.Eye
+                               : Material.Icons.MaterialIconKind.EyeOff,
+                Width = 14, Height = 14 };
 
     private void OnCtxEditParameters(object? sender, RoutedEventArgs e)
     {
@@ -195,6 +333,18 @@ public partial class SchematicView : UserControl
 
     private void OnCtxMoveLabels(object? sender, RoutedEventArgs e)  => Vm?.BeginMoveLabels();
     private void OnCtxResetLabels(object? sender, RoutedEventArgs e) => Vm?.ResetLabelOffsets();
+
+    private void OnCtxShowTypeLabel(object? sender, RoutedEventArgs e)
+    {
+        var id = SchematicCanvasCtrl.ContextMenuTargetId;
+        if (id is not null) Vm?.ToggleLabelVisibility(id, isTypeLabel: true);
+    }
+
+    private void OnCtxShowInstanceName(object? sender, RoutedEventArgs e)
+    {
+        var id = SchematicCanvasCtrl.ContextMenuTargetId;
+        if (id is not null) Vm?.ToggleLabelVisibility(id, isTypeLabel: false);
+    }
 
     // ── Clipboard (Ctrl+C / Ctrl+X / Ctrl+V) ─────────────────────────────────
 

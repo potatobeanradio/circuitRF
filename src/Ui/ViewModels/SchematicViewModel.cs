@@ -254,6 +254,9 @@ public sealed partial class SchematicViewModel : ObservableObject
         CancelCurrentOp();
     }
 
+    /// <summary>The symbol currently being placed (valid only when ActiveTool == Tool.Place).</summary>
+    public SymbolKind PlacementSymbol => _placementSymbol;
+
     // ── Keyboard ──────────────────────────────────────────────────────────────
 
     public void OnKeyDown(Key key, KeyModifiers modifiers)
@@ -266,7 +269,9 @@ public sealed partial class SchematicViewModel : ObservableObject
             case Key.Return:
                 if (ActiveTool == Tool.Wire) { FinishWire(); ActiveTool = Tool.Select; }
                 break;
-            case Key.Z: SetZoomBoxTool(); break;
+            case Key.S when !ctrl: SetSelectTool(); break;
+            case Key.W when !ctrl: SetWireTool(); break;
+            case Key.Z when !ctrl: SetZoomBoxTool(); break;
             case Key.F5: BeginMoveLabels(); break;
             case Key.Delete: case Key.Back: DeleteSelection(); break;
             case Key.R when !modifiers.HasFlag(KeyModifiers.Shift): RotateSelection(clockwise: false); break;
@@ -594,7 +599,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         foreach (var comp in EditModel.Components)
         {
             if (Selection.IsSelected(comp.Id)) continue;
-            for (int pi = 0; pi < comp.PortCount; pi++)
+            int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
+            for (int pi = 0; pi < nPins; pi++)
             {
                 var (px, py) = comp.GetPortWorldCoord(pi);
                 if (SchematicGeometry.CoincidentPoints(wx, wy, px, py, tol)) return true;   // port → pin
@@ -669,7 +675,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         foreach (var comp in EditModel.Components)
         {
             if (Selection.IsSelected(comp.Id)) continue;
-            for (int pi = 0; pi < comp.PortCount; pi++)
+            int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
+            for (int pi = 0; pi < nPins; pi++)
             {
                 var (px, py) = comp.GetPortWorldCoord(pi);
                 if (SchematicGeometry.CoincidentPoints(wx, wy, px, py, tol)) return true;
@@ -866,7 +873,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         {
             var comp = EditModel.FindComponent(id);
             if (comp is null) continue;
-            var portDefs = SymbolPortDefs.For(comp.Symbol);
+            var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
             for (int pi = 0; pi < portDefs.Length; pi++)
             {
                 var (ox, oy) = SchematicGeometry.LocalToWorld(
@@ -1707,7 +1714,15 @@ public sealed partial class SchematicViewModel : ObservableObject
             Rotation     = _placementRot,
             MirrorX      = _placementMirrorX,
         };
-        int portCount = SymbolPortDefs.For(_placementSymbol).Length;
+        // Seed label visibility from registry defaults (Ground → both false, all others → true).
+        var placeInfo = ComponentTypeRegistry.Get(_placementSymbol);
+        comp.ShowTypeLabel    = placeInfo.DefaultShowTypeLabel;
+        comp.ShowInstanceName = placeInfo.DefaultShowInstanceName;
+        // DefaultParameters expects N (the Z-matrix port count), not the schematic pin count (N+1).
+        // For variadic types default to N=2; for fixed types pin count == port count.
+        int portCount = (_placementSymbol is SymbolKind.ZPort or SymbolKind.Sdd)
+            ? 2
+            : SymbolPortDefs.For(_placementSymbol).Length;
         foreach (var dp in ComponentTypeRegistry.DefaultParameters(_placementSymbol, portCount))
             comp.Parameters.Add(new EditableParameter
                 { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic });
@@ -1900,12 +1915,32 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         var ids = Selection.Ids.ToList();
         if (ids.Count == 0) return;
-        Execute(new SetDisableStateCommand(EditModel, ids, state));
+
+        // Toggle: if all selected components are already in this state, re-enable them.
+        var comps = ids.Select(id => EditModel.FindComponent(id))
+                       .OfType<EditableComponent>()
+                       .ToList();
+        var targetState = (comps.Count > 0 && comps.All(c => c.Disable == state))
+            ? DisableState.None
+            : state;
+
+        Execute(new SetDisableStateCommand(EditModel, ids, targetState));
     }
 
     public void SelectIfUnselected(string id)
     {
         if (!Selection.IsSelected(id)) Selection.SelectOne(id);
+    }
+
+    // ── Label visibility ──────────────────────────────────────────────────────
+
+    /// <summary>Toggles ShowTypeLabel or ShowInstanceName on a single component (undoable).</summary>
+    public void ToggleLabelVisibility(string compId, bool isTypeLabel)
+    {
+        var comp = EditModel.FindComponent(compId);
+        if (comp is null) return;
+        bool current = isTypeLabel ? comp.ShowTypeLabel : comp.ShowInstanceName;
+        Execute(new SetLabelVisibilityCommand(EditModel, comp, isTypeLabel, !current));
     }
 
     // ── Inline editing ────────────────────────────────────────────────────────
@@ -1977,26 +2012,30 @@ public sealed partial class SchematicViewModel : ObservableObject
             {
                 var comp = EditModel.FindComponent(_inlineEditTargetId ?? "");
                 if (comp is null) break;
-                if (!ComponentTypeRegistry.TryParseCode(newVal, out var newKind))
+                if (!ComponentTypeRegistry.TryParseCode(newVal, out var newKind, out int parsedPortCount))
                 {
-                    _messageSink?.Warning($"Unknown component type: '{newVal}' — use R, L, C, V, GND, FET, Z2P, …");
+                    _messageSink?.Warning($"Unknown component type: '{newVal}' — use R, L, C, V, GND, FET, Z2P, SDD3, …");
                     break;
                 }
-                if (newKind != comp.Symbol)
+                if (newKind != comp.Symbol || (parsedPortCount > 0 && parsedPortCount != comp.PortCount))
                 {
                     // Build the replacement component: same position/rotation/mirror, new Id/name/params.
                     // Exclude the old component from naming so its slot is treated as free.
                     string prefix    = ComponentTypeRegistry.InstancePrefix(newKind);
                     var    remaining = EditModel.Components.Where(c => c.Id != comp.Id);
                     string newName   = SchematicEditModel.NextAvailableName(remaining, prefix);
-                    int    portCount = SymbolPortDefs.For(newKind).Length;
+                    // Use parsed port count N for variadic types; fall back to SymbolPortDefs for fixed-pin types.
+                    int    portCount = parsedPortCount > 0 ? parsedPortCount : SymbolPortDefs.For(newKind).Length;
+                    var    typeInfo  = ComponentTypeRegistry.Get(newKind);
                     var    newComp   = new EditableComponent
                     {
-                        InstanceName = newName,
-                        Symbol       = newKind,
+                        InstanceName     = newName,
+                        Symbol           = newKind,
                         X = comp.X, Y = comp.Y,
-                        Rotation     = comp.Rotation,
-                        MirrorX      = comp.MirrorX,
+                        Rotation         = comp.Rotation,
+                        MirrorX          = comp.MirrorX,
+                        ShowTypeLabel    = typeInfo.DefaultShowTypeLabel,
+                        ShowInstanceName = typeInfo.DefaultShowInstanceName,
                     };
                     foreach (var dp in ComponentTypeRegistry.DefaultParameters(newKind, portCount))
                         newComp.Parameters.Add(new EditableParameter
@@ -2168,7 +2207,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         _moveLabelComps = [];
         _moveLabelPhase = MoveLabelPhase.Picking;
         // Clear drag overrides and segment highlight so the renderer falls back to model positions.
-        Overlay = Overlay with { RubberBand = null, WirePreview = null,
+        Overlay = Overlay with { RubberBand = null, WirePreview = null, Ghost = null,
                                  ComponentDragPositions = null, WireDragPoints = null,
                                  LabelDragOffsets = null,
                                  SelectedWireSegments = SchematicOverlay.EmptySegments };

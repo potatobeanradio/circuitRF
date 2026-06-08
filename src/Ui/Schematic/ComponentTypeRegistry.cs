@@ -13,11 +13,15 @@ public sealed record ComponentTypeInfo(
     /// <summary>Short label shown on the schematic (e.g. "R", "C", "FET").</summary>
     string DisplayName,
     /// <summary>Prefix used when auto-generating instance names (e.g. "R", "C", "X").</summary>
-    string InstancePrefix);
+    string InstancePrefix,
+    /// <summary>Whether to show the type label by default when a component is placed.</summary>
+    bool DefaultShowTypeLabel = true,
+    /// <summary>Whether to show the instance name by default when a component is placed.</summary>
+    bool DefaultShowInstanceName = true);
 
 /// <summary>
 /// Maps SymbolKind → display metadata.
-/// Use <see cref="DisplayName"/> for the on-schematic type label instead of SymbolKind.ToString().
+/// Use <see cref="DisplayName(SymbolKind,int)"/> for the on-schematic type label instead of SymbolKind.ToString().
 /// </summary>
 public static class ComponentTypeRegistry
 {
@@ -28,7 +32,8 @@ public static class ComponentTypeRegistry
         [SymbolKind.Capacitor]     = new("C",     "C"),
         [SymbolKind.VoltageSource] = new("V",     "V"),
         [SymbolKind.ToneSource]    = new("VTone", "V"),   // NOTE: abbreviation; revisit when palette has richer type
-        [SymbolKind.Ground]        = new("GND",   "GND"),
+        // Ground is self-identifying via its symbol glyph; suppress both labels by default.
+        [SymbolKind.Ground]        = new("GND",   "GND",  DefaultShowTypeLabel: false, DefaultShowInstanceName: false),
         [SymbolKind.Port]          = new("Port",  "P"),
         [SymbolKind.FetSdd]        = new("FET",   "X"),
         [SymbolKind.Sdd]           = new("SDD",   "X"),
@@ -44,60 +49,96 @@ public static class ComponentTypeRegistry
     public static string DisplayName(SymbolKind kind) => Get(kind).DisplayName;
 
     /// <summary>
-    /// Port-count-aware display name. For ZPort, returns "Z{N}P" where N = portCount/2 (nodes=2N).
-    /// Falls back to <see cref="DisplayName(SymbolKind)"/> for all other kinds.
+    /// Port-count-aware display name.
+    /// <list type="bullet">
+    ///   <item>ZPort with portCount ≥ 1 → "Z{portCount}P" (portCount = N, the number of network ports).</item>
+    ///   <item>Sdd with portCount ≥ 1 → "SDD{portCount}".</item>
+    ///   <item>All other kinds → <see cref="DisplayName(SymbolKind)"/>.</item>
+    /// </list>
     /// </summary>
     public static string DisplayName(SymbolKind kind, int portCount)
-        => kind == SymbolKind.ZPort && portCount >= 2
-            ? $"Z{portCount / 2}P"
-            : DisplayName(kind);
+    {
+        if (kind == SymbolKind.ZPort && portCount >= 1) return $"Z{portCount}P";
+        if (kind == SymbolKind.Sdd   && portCount >= 1) return $"SDD{portCount}";
+        return DisplayName(kind);
+    }
 
     /// <summary>Instance-name prefix for auto-naming (e.g. "R", "C", "X").</summary>
     public static string InstancePrefix(SymbolKind kind) => Get(kind).InstancePrefix;
 
     /// <summary>
-    /// Default parameter template for a freshly-placed component of the given type.
+    /// Default parameter template for a freshly-placed component of the given type and port count.
     /// Each entry carries the parameter name, a blank default expression, unit, and whether
     /// it shows on the schematic. This is the single source of truth for "what params does a
     /// newly-placed component have and show."
+    ///
+    /// ZPort: generates NumPorts (= N, hidden) then the full N×N Z[i,j] matrix (1-based i,j), matching
+    /// ZPortModel's Z[i,j] convention. Works for any N ≥ 1 — no hardcoded 1/2/3 cases.
+    ///
+    /// Sdd: SddModel equations are user-authored. Default is minimal: only NumPorts (= N, hidden).
+    /// The engine reads the equation slots at elaboration time; no universal per-port param default exists.
+    /// Checked against SddModel constructor: expects portCount, currentAst[], chargeAst[], params dict —
+    /// the per-port equation arrays are filled in by the user; no registry default beyond port count.
     ///
     /// Parameter names match what the engine/device models expect at elaboration time, with
     /// one known exception: VoltageSource shows Vac/Freq here while VoltageSourceModel currently
     /// reads "V" — the schematic params and the model will converge when the model is updated.
     /// </summary>
-    public static IReadOnlyList<DefaultParam> DefaultParameters(SymbolKind kind, int portCount) => kind switch
+    public static IReadOnlyList<DefaultParam> DefaultParameters(SymbolKind kind, int portCount)
     {
-        SymbolKind.Resistor      => [new("R",    "1", "ohm", true)],
-        SymbolKind.Inductor      => [new("L",    "1", "nH",  true)],
-        SymbolKind.Capacitor     => [new("C",    "1", "pF",  true)],
-        // NOTE: VoltageSourceModel currently reads "V"; these names are the intended schematic-layer params.
-        SymbolKind.VoltageSource => [new("Vac",  "1", "V",   true), new("Freq", "2", "GHz", true)],
-        // V and Freq match V_1Tone factory keys (V= amplitude, Freq= frequency in Hz).
-        SymbolKind.ToneSource    => [new("V",    "1", "V",   true), new("Freq", "2", "GHz", true)],
-        // Z[1,1] matches the Z_Port factory's matrix-entry key convention.
-        SymbolKind.Z1P         => [new("NumPorts", "1", "", false), new("Z[1,1]", "50", "ohm", true)],
-        SymbolKind.Z2P         => [new("NumPorts", "2", "", false),
-                                    new("Z[1,1]", "50", "ohm", true), new("Z[1,2]", "50", "ohm", true),
-                                    new("Z[2,1]", "50", "ohm", true), new("Z[2,2]", "50", "ohm", true)],
-        SymbolKind.Z3P         => [new("NumPorts", "3", "", false),
-                                    new("Z[1,1]", "50", "ohm", true), new("Z[1,2]", "50", "ohm", true), new("Z[1,3]", "50", "ohm", true),
-                                    new("Z[2,1]", "50", "ohm", true), new("Z[2,2]", "50", "ohm", true), new("Z[2,3]", "50", "ohm", true),
-                                    new("Z[3,1]", "50", "ohm", true), new("Z[3,2]", "50", "ohm", true), new("Z[3,3]", "50", "ohm", true)],
-        // SDD equations are user-authored; no universal default param set.
-        // Ground/Port/Generic need no default parameters.
-        _                        => [],
-    };
+        switch (kind)
+        {
+            case SymbolKind.Resistor:      return [new("R",    "1", "ohm", true)];
+            case SymbolKind.Inductor:      return [new("L",    "1", "nH",  true)];
+            case SymbolKind.Capacitor:     return [new("C",    "1", "pF",  true)];
+            // NOTE: VoltageSourceModel currently reads "V"; these names are the intended schematic-layer params.
+            case SymbolKind.VoltageSource: return [new("Vac",  "1", "V",   true), new("Freq", "2", "GHz", true)];
+            // V and Freq match V_1Tone factory keys (V= amplitude, Freq= frequency in Hz).
+            case SymbolKind.ToneSource:    return [new("V",    "1", "V",   true), new("Freq", "2", "GHz", true)];
+
+            case SymbolKind.ZPort:
+            {
+                int n = portCount >= 1 ? portCount : 2;
+                var ps = new List<DefaultParam>(1 + n * n) { new("NumPorts", $"{n}", "", false) };
+                for (int p = 1; p <= n; p++)
+                    for (int q = 1; q <= n; q++)
+                        ps.Add(new($"Z[{p},{q}]", "50", "ohm", true));
+                return ps;
+            }
+
+            // SDD equations are user-authored; only expose NumPorts as a default param.
+            // The engine reads per-port current/charge equations separately from the param dict.
+            case SymbolKind.Sdd:
+            {
+                int n = portCount >= 1 ? portCount : 2;
+                return [new("NumPorts", $"{n}", "", false)];
+            }
+
+            // Ground/Port/FetSdd/Generic need no default parameters.
+            default: return [];
+        }
+    }
 
     /// <summary>
-    /// Parses a short type code (case-insensitive) to a SymbolKind.
-    /// Canonical codes: R, L, C, V, VTone, GND, Port/P, FET/SDD/FetSDD, Z1P/Z2P/…, X.
-    /// SDD and FetSDD are aliases for FetSdd (same device).
-    /// ZNP codes (any N) resolve to ZPort; port count is set separately in the component model.
+    /// Parses a short type code (case-insensitive) to a SymbolKind and, for variadic-port types,
+    /// the parsed port count N.
+    ///
+    /// Canonical codes: R, L, C, V, VTone, GND, Port/P, FET/SDD/FetSDD, Z{N}P (any N ≥ 1),
+    /// SDD{N} (any N ≥ 1), X.
+    ///
+    /// <list type="bullet">
+    ///   <item>Z{N}P (e.g. Z2P, Z5P) → (ZPort, portCount=N)</item>
+    ///   <item>SDD{N} (e.g. SDD2, SDD3) → (Sdd, portCount=N)</item>
+    ///   <item>SDD / FET / FetSDD (no number) → (FetSdd, portCount=0) — existing 3-port SDD FET device</item>
+    ///   <item>All other codes → portCount=0 (use type's built-in default from SymbolPortDefs)</item>
+    /// </list>
+    ///
     /// Falls back to enum-name parsing if no short code matches.
     /// </summary>
-    public static bool TryParseCode(string input, out SymbolKind kind)
+    public static bool TryParseCode(string input, out SymbolKind kind, out int portCount)
     {
-        kind = default;
+        kind      = default;
+        portCount = 0;
         if (string.IsNullOrWhiteSpace(input)) return false;
         string s = input.Trim().ToUpperInvariant();
         switch (s)
@@ -112,18 +153,24 @@ public static class ComponentTypeRegistry
             case "P":      kind = SymbolKind.Port;          return true;
             case "FET":
             case "SDD":
-            case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device
-            case "Z1P":    kind = SymbolKind.Z1P;           return true;
-            case "Z2P":    kind = SymbolKind.Z2P;           return true;
-            case "Z3P":    kind = SymbolKind.Z3P;           return true;
+            case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default
             case "X":      kind = SymbolKind.Generic;       return true;
-            
+
             default:
-                // ZNP codes (ZNP ) all map to ZPort; port count must be stored separately.
+                // Z{N}P — variadic Z-port network (e.g. Z1P, Z2P, Z5P).
                 if (s.Length >= 3 && s[0] == 'Z' && s[^1] == 'P' &&
-                    int.TryParse(s[1..^1], out _))
+                    int.TryParse(s[1..^1], out int zn) && zn >= 1)
                 {
-                    kind = SymbolKind.ZPort;
+                    kind      = SymbolKind.ZPort;
+                    portCount = zn;
+                    return true;
+                }
+                // SDD{N} — generic variadic SDD device (e.g. SDD2, SDD3).
+                if (s.Length >= 4 && s.StartsWith("SDD", StringComparison.Ordinal) &&
+                    int.TryParse(s[3..], out int sn) && sn >= 1)
+                {
+                    kind      = SymbolKind.Sdd;
+                    portCount = sn;
                     return true;
                 }
                 return Enum.TryParse(input, ignoreCase: true, out kind);

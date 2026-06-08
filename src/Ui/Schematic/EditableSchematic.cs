@@ -30,19 +30,63 @@ public sealed class EditableParameter
 /// Matches the rendering geometry in SchematicSymbols.cs.
 /// Port indices are 0-based internally; they map to 1-based user-facing port numbers
 /// following the port-index convention in project-file-formats.md.
+///
+/// For variadic-port types (ZPort, Sdd) the portCount overload must be used; the
+/// single-argument overload falls back to portCount=2 for those types.
 /// </summary>
 public static class SymbolPortDefs
 {
-    public static (string Name, float LocalX, float LocalY)[] For(SymbolKind kind) => kind switch
+    /// <summary>Convenience overload; uses portCount=2 for variadic types.</summary>
+    public static (string Name, float LocalX, float LocalY)[] For(SymbolKind kind)
+        => For(kind, portCount: 2);
+
+    /// <summary>
+    /// Returns port definitions for the given kind and (for variadic types) port count.
+    /// ZPort and Sdd generate <paramref name="portCount"/> pins arranged symmetrically:
+    /// left group = ports 1..⌈N/2⌉ at x=−150, right group = ports ⌈N/2⌉+1..N at x=+150.
+    /// </summary>
+    public static (string Name, float LocalX, float LocalY)[] For(SymbolKind kind, int portCount)
     {
-        SymbolKind.Ground   => [("1",      0f,    0f)],
-        SymbolKind.Port     => [("1",   -150f,    0f)],
-        SymbolKind.FetSdd   => [("gate", -150f,   0f),
-                                ("drain",  150f,-100f),
-                                ("source", 150f, 100f)],
-        _                   => [("1",   -150f,    0f),
-                                ("2",    150f,    0f)],
-    };
+        switch (kind)
+        {
+            case SymbolKind.Ground:  return [("1", 0f, 0f)];
+            case SymbolKind.Port:    return [("1", -150f, 0f)];
+            case SymbolKind.FetSdd:  return [("gate",   -150f,   0f),
+                                             ("drain",   150f, -100f),
+                                             ("source",  150f,  100f)];
+            case SymbolKind.ZPort:
+            case SymbolKind.Sdd:
+                return GeneratePorts(portCount >= 1 ? portCount : 2);
+            default:
+                return [("1", -150f, 0f), ("2", 150f, 0f)];
+        }
+    }
+
+    // Generates N+1 schematic pins for an N-port ZPort/Sdd:
+    //   N signal ports split left/right + 1 shared reference port on the right.
+    // Convention per ZPortModel: N port nodes (signal) + node 0 (reference/ground).
+    //   Z1P → 2 pins: port "1" left, port "ref" right.
+    //   Z2P → 3 pins: port "1" left, ports "2"+"ref" right.
+    //   ZNP → N+1 pins: ceil(N/2) signal left, floor(N/2) signal + ref right.
+    private static (string Name, float LocalX, float LocalY)[] GeneratePorts(int n)
+    {
+        int nLeft  = (n + 1) / 2;   // ceil(N/2) signal ports on left
+        int nRight = n / 2 + 1;     // floor(N/2) signal ports + 1 reference on right
+        var ports  = new (string, float, float)[n + 1];
+
+        for (int i = 0; i < nLeft; i++)
+        {
+            float localY = nLeft > 1 ? (i - (nLeft - 1) * 0.5f) * 200f : 0f;
+            ports[i] = ($"{i + 1}", -150f, localY);
+        }
+        for (int i = 0; i < nRight; i++)
+        {
+            float localY = nRight > 1 ? (i - (nRight - 1) * 0.5f) * 200f : 0f;
+            bool isRef   = (i == nRight - 1);
+            ports[nLeft + i] = (isRef ? "ref" : $"{nLeft + i + 1}", 150f, localY);
+        }
+        return ports;
+    }
 }
 
 // ── Placed component ─────────────────────────────────────────────────────────
@@ -62,6 +106,11 @@ public sealed class EditableComponent
     /// <summary>Per-label world-offset from default position. Index matches Labels list (0=type,1=name,2+=params).</summary>
     public List<(double DX, double DY)> LabelOffsets { get; } = new();
 
+    /// <summary>Whether to render the type label (e.g. "Z2P", "R"). Seeded from registry default at placement; overridable per-instance.</summary>
+    public bool ShowTypeLabel    { get; set; } = true;
+    /// <summary>Whether to render the instance name (e.g. "R1", "Z1"). Seeded from registry default at placement; overridable per-instance.</summary>
+    public bool ShowInstanceName { get; set; } = true;
+
     public (double DX, double DY) GetLabelOffset(int index)
         => index < LabelOffsets.Count ? LabelOffsets[index] : (0, 0);
 
@@ -73,20 +122,37 @@ public sealed class EditableComponent
     /// <summary>World coordinates of a port by 0-based port index.</summary>
     public (double X, double Y) GetPortWorldCoord(int portIndex)
     {
-        var ports = SymbolPortDefs.For(Symbol);
+        var ports = SymbolPortDefs.For(Symbol, PortCount);
         if ((uint)portIndex >= (uint)ports.Length)
             throw new ArgumentOutOfRangeException(nameof(portIndex));
         var (_, lx, ly) = ports[portIndex];
         return SchematicGeometry.LocalToWorld(lx, ly, X, Y, Rotation, MirrorX);
     }
 
-    /// <summary>Number of ports on this symbol.</summary>
-    public int PortCount => SymbolPortDefs.For(Symbol).Length;
+    /// <summary>
+    /// Number of schematic ports on this symbol.
+    /// For variadic-port types (ZPort, Sdd) this reads the NumPorts parameter; for all
+    /// other types it delegates to SymbolPortDefs.
+    /// </summary>
+    public int PortCount
+    {
+        get
+        {
+            if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd)
+            {
+                var p = Parameters.FirstOrDefault(q => q.Name == "NumPorts");
+                if (p is not null && int.TryParse(p.Expression, out int n) && n >= 1)
+                    return n;
+                return 2; // default for variadic types when NumPorts not yet set
+            }
+            return SymbolPortDefs.For(Symbol).Length;
+        }
+    }
 
     /// <summary>Convert to the immutable render type, with port connection state.</summary>
     public SchematicComponent ToRenderComponent(Func<double, double, bool>? isPointConnected = null)
     {
-        var portDefs = SymbolPortDefs.For(Symbol);
+        var portDefs = SymbolPortDefs.For(Symbol, PortCount);
         var ports = portDefs.Select((p, _) =>
         {
             var (wx, wy) = SchematicGeometry.LocalToWorld(p.LocalX, p.LocalY, X, Y, Rotation, MirrorX);
@@ -96,12 +162,14 @@ public sealed class EditableComponent
         }).ToList();
 
         // Labels in display order: type (from registry), instance name, then ShowOnSchematic params.
-        // Ground never shows its instance name — the symbol is self-identifying.
+        // ShowTypeLabel/ShowInstanceName suppress the respective label (stored as ""); renderer skips empty strings.
+        // GND suppression is now driven by the registry default (DefaultShowTypeLabel=false,
+        // DefaultShowInstanceName=false on Ground), seeded into these flags at placement — no hardcoded check.
         // Param format: "<Name> = <Expression> <Unit>" (spaces around =; unit omitted when empty).
         var labels = new List<string>
         {
-            ComponentTypeRegistry.DisplayName(Symbol, PortCount),
-            Symbol == SymbolKind.Ground ? "" : InstanceName,
+            ShowTypeLabel    ? ComponentTypeRegistry.DisplayName(Symbol, PortCount) : "",
+            ShowInstanceName ? InstanceName : "",
         };
         foreach (var p in Parameters)
         {
@@ -147,6 +215,17 @@ public sealed class EditableComponent
             lMaxX = Math.Max(lMaxX, Math.Max(segs[i],     segs[i + 2]));
             lMaxY = Math.Max(lMaxY, Math.Max(segs[i + 1], segs[i + 3]));
         }
+        // For variadic types the static geometry has no lead stubs; extend BB to port tips.
+        if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd)
+        {
+            foreach (var (_, lx, ly) in SymbolPortDefs.For(Symbol, PortCount))
+            {
+                lMinX = Math.Min(lMinX, lx);
+                lMinY = Math.Min(lMinY, ly);
+                lMaxX = Math.Max(lMaxX, lx);
+                lMaxY = Math.Max(lMaxY, ly);
+            }
+        }
         const float pad = 15f;
         // Transform all four local corners and take world BB
         var corners = new[]
@@ -167,8 +246,10 @@ public sealed class EditableComponent
     {
         var c = new EditableComponent
         {
-            InstanceName = InstanceName, Symbol = Symbol,
+            InstanceName     = InstanceName, Symbol = Symbol,
             X = X, Y = Y, Rotation = Rotation, MirrorX = MirrorX, Disable = Disable,
+            ShowTypeLabel    = ShowTypeLabel,
+            ShowInstanceName = ShowInstanceName,
         };
         foreach (var p in Parameters)    c.Parameters.Add(p.Clone());
         foreach (var o in LabelOffsets) c.LabelOffsets.Add(o);
@@ -401,11 +482,15 @@ public sealed class SchematicEditModel
             }
         }
         foreach (var comp in Components)
-            for (int pi = 0; pi < comp.PortCount; pi++)
+        {
+            // Use the actual schematic pin count (N+1 for variadic), not just PortCount (N).
+            int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
+            for (int pi = 0; pi < nPins; pi++)
             {
                 var (px, py) = comp.GetPortWorldCoord(pi);
                 AddConPoint(px, py);
             }
+        }
 
         // ── T-junction detection (§5.1) ───────────────────────────────────────
         // A wire endpoint that lands on the *interior* of another wire's segment
@@ -614,27 +699,42 @@ public sealed class SchematicEditModel
 
         foreach (var rc in src.Components)
         {
+            var info = ComponentTypeRegistry.Get(rc.Symbol);
             var c = new EditableComponent
             {
-                InstanceName = rc.InstanceName,
-                Symbol       = rc.Symbol,
+                InstanceName     = rc.InstanceName,
+                Symbol           = rc.Symbol,
                 X = rc.X, Y = rc.Y,
-                Rotation     = rc.Rotation,
-                MirrorX      = rc.MirrorX,
+                Rotation         = rc.Rotation,
+                MirrorX          = rc.MirrorX,
+                ShowTypeLabel    = info.DefaultShowTypeLabel,
+                ShowInstanceName = info.DefaultShowInstanceName,
             };
-            // Build parameters from the registry template (Name/Unit/ShowOnSchematic from template).
-            // For each template slot, extract the expression from the matching label when present.
-            // Labels[2+] have the form "Name = Expr Unit" or "Expr Unit"; we strip the "Name = "
-            // prefix and unit suffix to recover the bare expression. Template Name/Unit win over
-            // whatever the label carried — only the expression value is taken from the label.
-            var template = ComponentTypeRegistry.DefaultParameters(rc.Symbol, rc.Ports.Count);
-            for (int ti = 0; ti < template.Count; ti++)
+            // For variadic types derive N from the type label ("Z1P"→1) — Ports.Count is N+1
+            // (pin count), so using it would select the wrong template and corrupt param mapping.
+            // Fallback to Ports.Count-1 when the type label is absent or hidden.
+            int portCount = 0;
+            if (rc.Symbol is SymbolKind.ZPort or SymbolKind.Sdd)
             {
-                var tp = template[ti];
-                int li = ti + 2;                       // Labels[0]=type, Labels[1]=name, Labels[2+]=params
-                string expr = li < rc.Labels.Count
-                    ? ExtractExpressionFromLabel(rc.Labels[li])
-                    : "";
+                if (rc.Labels.Count > 0 &&
+                    ComponentTypeRegistry.TryParseCode(rc.Labels[0], out _, out int parsed) && parsed >= 1)
+                    portCount = parsed;
+                else
+                    portCount = Math.Max(1, rc.Ports.Count - 1);
+            }
+            var template = ComponentTypeRegistry.DefaultParameters(rc.Symbol, portCount);
+
+            // Match shown labels to shown template slots; skip hidden params (e.g. NumPorts).
+            // Without the skip, slot 0 (NumPorts, hidden) would consume Labels[2] (the first
+            // visible param label), assigning the impedance value to NumPorts and corrupting PortCount.
+            int li = 2;   // next label to consume: Labels[0]=type, Labels[1]=name, Labels[2+]=shown params
+            foreach (var tp in template)
+            {
+                string expr;
+                if (tp.ShowOnSchematic)
+                    expr = li < rc.Labels.Count ? ExtractExpressionFromLabel(rc.Labels[li++]) : "";
+                else
+                    expr = tp.Expression;   // hidden: use template default, never a label
                 c.Parameters.Add(new EditableParameter
                     { Name = tp.Name, Expression = expr, Unit = tp.Unit, ShowOnSchematic = tp.ShowOnSchematic });
             }

@@ -172,6 +172,7 @@ public static class SchematicRenderer
             }
 
             DrawSymbolLines(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
+            DrawVariadicPortLeads(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
 
             // DisableState overlay (drawn on top of body)
             if (c.DisableState != DisableState.None && !isLod)
@@ -237,6 +238,29 @@ public static class SchematicRenderer
         {
             var (ax, ay) = LocalToPixel(segs[i],     segs[i + 1], compX, compY, c.Rotation, c.MirrorX, panX, panY, zoom);
             var (bx, by) = LocalToPixel(segs[i + 2], segs[i + 3], compX, compY, c.Rotation, c.MirrorX, panX, panY, zoom);
+            canvas.DrawLine(ax, ay, bx, by, paint);
+        }
+    }
+
+    // ── Variadic port lead stubs (ZPort, Sdd) ────────────────────────────────
+
+    // Draws stub lines from each port tip to the component body edge.
+    // ZPort body: left edge x=−70, right edge x=+70.
+    // Sdd body:   left edge x=−80, right edge x=+80.
+    // Ports at LocalX<0 are left ports; ports at LocalX>0 are right ports.
+    private static void DrawVariadicPortLeads(
+        SKCanvas canvas, SchematicComponent c,
+        double compX, double compY,
+        double panX, double panY, double zoom,
+        SKPaint paint)
+    {
+        if (c.Symbol is not (SymbolKind.ZPort or SymbolKind.Sdd)) return;
+        float bodyEdge = c.Symbol == SymbolKind.ZPort ? 70f : 80f;
+        foreach (var port in c.Ports)
+        {
+            float innerX = port.LocalX < 0f ? -bodyEdge : bodyEdge;
+            var (ax, ay) = LocalToPixel(port.LocalX, port.LocalY, compX, compY, c.Rotation, c.MirrorX, panX, panY, zoom);
+            var (bx, by) = LocalToPixel(innerX,      port.LocalY, compX, compY, c.Rotation, c.MirrorX, panX, panY, zoom);
             canvas.DrawLine(ax, ay, bx, by, paint);
         }
     }

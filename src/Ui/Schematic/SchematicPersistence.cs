@@ -50,6 +50,11 @@ public sealed class CschComponent
 
     /// <summary>Per-label world-position deltas [[dx,dy], ...]. Null when all zero (omitted from file).</summary>
     public List<double[]>? LabelOffsets { get; set; }
+
+    /// <summary>Whether to render the type label; omitted (null) when true (default).</summary>
+    public bool? ShowTypeLabel    { get; set; }
+    /// <summary>Whether to render the instance name; omitted (null) when true (default).</summary>
+    public bool? ShowInstanceName { get; set; }
 }
 
 public sealed class CschParameter
@@ -215,6 +220,9 @@ public static class SchematicPersistence
                     { Name = p.Name, Expression = p.Expression, Unit = p.Unit, ShowOnSchematic = p.ShowOnSchematic });
             if (c.LabelOffsets.Any(o => o.DX != 0 || o.DY != 0))
                 cc.LabelOffsets = c.LabelOffsets.Select(o => new[] { o.DX, o.DY }).ToList();
+            // Omit when true (the default) to keep files compact.
+            if (!c.ShowTypeLabel)    cc.ShowTypeLabel    = false;
+            if (!c.ShowInstanceName) cc.ShowInstanceName = false;
             file.Components.Add(cc);
         }
 
@@ -261,6 +269,9 @@ public static class SchematicPersistence
             if (cc.LabelOffsets is not null)
                 foreach (var lo in cc.LabelOffsets)
                     if (lo.Length >= 2) c.LabelOffsets.Add((lo[0], lo[1]));
+            // Null means "not written" → use the persisted default (true).
+            if (cc.ShowTypeLabel    is bool stl) c.ShowTypeLabel    = stl;
+            if (cc.ShowInstanceName is bool sin) c.ShowInstanceName = sin;
             m.Components.Add(c);
         }
 

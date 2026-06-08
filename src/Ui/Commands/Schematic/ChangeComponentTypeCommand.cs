@@ -31,7 +31,7 @@ internal sealed class ChangeComponentTypeCommand : IUiCommand
         _model    = model;
         _oldComp  = oldComp;
         _newComp  = newComp;
-        _endMoves = ComputeEndMoves(model, oldComp, newComp.Symbol);
+        _endMoves = ComputeEndMoves(model, oldComp, newComp);
     }
 
     public void Execute()
@@ -55,12 +55,12 @@ internal sealed class ChangeComponentTypeCommand : IUiCommand
     private static List<WireEndpointMoveSnapshot> ComputeEndMoves(
         SchematicEditModel model,
         EditableComponent  comp,
-        SymbolKind         newKind)
+        EditableComponent  newComp)
     {
         var moves = new List<WireEndpointMoveSnapshot>();
 
-        var oldPorts = SymbolPortDefs.For(comp.Symbol);
-        var newPorts = SymbolPortDefs.For(newKind);
+        var oldPorts = SymbolPortDefs.For(comp.Symbol,    comp.PortCount);
+        var newPorts = SymbolPortDefs.For(newComp.Symbol, newComp.PortCount);
 
         // World positions of old ports (component is still at its original kind here)
         var oldWorldPorts = new (double X, double Y)[oldPorts.Length];

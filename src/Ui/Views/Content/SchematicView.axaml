@@ -8,6 +8,51 @@
              x:DataType="schemDoc:SchematicDocument"
              Background="{DynamicResource SystemChromeLowColor}">
 
+    <UserControl.Styles>
+        <!-- Show tooltips even on disabled buttons/toggles throughout this view -->
+        <Style Selector="Button">
+            <Setter Property="ToolTip.ShowOnDisabled" Value="True"/>
+        </Style>
+        <Style Selector="ToggleButton">
+            <Setter Property="ToolTip.ShowOnDisabled" Value="True"/>
+        </Style>
+
+        <!--
+            Active tool button states. The Fluent theme sets hover/pressed backgrounds directly
+            on the inner ContentPresenter (not on Button.Background), so we must target the
+            template part explicitly to prevent the theme's grey hover from overriding accent.
+        -->
+        <Style Selector="Button.ToolActive">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.ToolActive /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pressed /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColorDark1}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Selection-dependent buttons: dim icon when disabled -->
+        <Style Selector="Button.SelectionBtn:disabled /template/ ContentPresenter">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
+    </UserControl.Styles>
+
     <DockPanel>
 
         <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
@@ -20,11 +65,10 @@
 
                 <!-- Zoom to Fit -->
                 <Button Click="OnZoomToFit"
-                        ToolTip.Tip="Zoom to Fit"
+                        ToolTip.Tip="Zoom to Fit  (F)"
                         Padding="6,3">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
-                        <TextBlock Text="Fit" FontSize="11" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
 
@@ -36,7 +80,8 @@
                 </Button>
 
                 <!-- Zoom Box -->
-                <Button Click="OnZoomBoxTool"
+                <Button x:Name="ZoomBoxToolBtn"
+                        Click="OnZoomBoxTool"
                         ToolTip.Tip="Zoom Box  (Z)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
@@ -47,28 +92,32 @@
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <!-- Select tool -->
-                <Button Click="OnSelectTool"
+                <Button x:Name="SelectToolBtn"
+                        Click="OnSelectTool"
                         ToolTip.Tip="Select  (S)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="CursorDefault" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Wire tool -->
-                <Button Click="OnWireTool"
+                <Button x:Name="WireToolBtn"
+                        Click="OnWireTool"
                         ToolTip.Tip="Wire  (W)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Ground symbol -->
-                <Button Click="OnPlaceGround"
+                <Button x:Name="PlaceGroundBtn"
+                        Click="OnPlaceGround"
                         ToolTip.Tip="Place Ground"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="ArrowCollapseDown" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Port symbol -->
-                <Button Click="OnPlacePort"
+                <Button x:Name="PlacePortBtn"
+                        Click="OnPlacePort"
                         ToolTip.Tip="Place Port"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="SquareCircle" Width="16" Height="16"/>
@@ -79,29 +128,41 @@
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <!-- Rotate CCW -->
-                <Button Click="OnRotateCcw"
+                <Button x:Name="RotateCcwBtn"
+                        Classes="SelectionBtn"
+                        Click="OnRotateCcw"
                         ToolTip.Tip="Rotate 90° CCW  (R)"
+                        IsEnabled="False"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="RotateLeft" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Rotate CW -->
-                <Button Click="OnRotateCw"
+                <Button x:Name="RotateCwBtn"
+                        Classes="SelectionBtn"
+                        Click="OnRotateCw"
                         ToolTip.Tip="Rotate 90° CW  (Shift+R)"
+                        IsEnabled="False"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="RotateRight" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Mirror H -->
-                <Button Click="OnMirrorH"
+                <Button x:Name="MirrorHBtn"
+                        Classes="SelectionBtn"
+                        Click="OnMirrorH"
                         ToolTip.Tip="Mirror Horizontal  (M)"
+                        IsEnabled="False"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="FlipHorizontal" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Mirror V -->
-                <Button Click="OnMirrorV"
+                <Button x:Name="MirrorVBtn"
+                        Classes="SelectionBtn"
+                        Click="OnMirrorV"
                         ToolTip.Tip="Mirror Vertical  (Shift+M)"
+                        IsEnabled="False"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="FlipVertical" Width="16" Height="16"/>
                 </Button>
@@ -111,8 +172,11 @@
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <!-- Delete -->
-                <Button Click="OnDelete"
+                <Button x:Name="DeleteBtn"
+                        Classes="SelectionBtn"
+                        Click="OnDelete"
                         ToolTip.Tip="Delete  (Del)"
+                        IsEnabled="False"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="Delete" Width="16" Height="16"/>
                 </Button>
@@ -135,24 +199,23 @@
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <!-- Disable to Open -->
-                <Button Click="OnDisableOpen"
-                        ToolTip.Tip="Disable → Open circuit"
+                <Button x:Name="DisableOpenBtn"
+                        Classes="SelectionBtn"
+                        Click="OnDisableOpen"
+                        ToolTip.Tip="Disable → Open circuit (toggles if all selected are already disabled)"
+                        IsEnabled="False"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="EyeOff" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Disable to Short -->
-                <Button Click="OnDisableShort"
-                        ToolTip.Tip="Disable → Short circuit"
+                <Button x:Name="DisableShortBtn"
+                        Classes="SelectionBtn"
+                        Click="OnDisableShort"
+                        ToolTip.Tip="Disable → Short circuit (toggles if all selected are already disabled)"
+                        IsEnabled="False"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="EyeOffOutline" Width="16" Height="16"/>
-                </Button>
-
-                <!-- Re-enable -->
-                <Button Click="OnReEnable"
-                        ToolTip.Tip="Re-enable component"
-                        Padding="6,3">
-                    <mi:MaterialIcon Kind="CheckCircleOutline" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Separator -->
@@ -165,7 +228,6 @@
                         Padding="6,3">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/>
-                        <TextBlock Text="Save" FontSize="11" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
 
@@ -212,7 +274,7 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
-                        <Separator/>
+                        <Separator x:Name="CtxSep1"/>
 
                         <MenuItem Header="Rotate 90°"
                                   Click="OnCtxRotate">
@@ -221,7 +283,8 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
-                        <MenuItem Header="Move Labels"
+                        <MenuItem x:Name="CtxMoveLabels"
+                                  Header="Move Labels"
                                   Click="OnCtxMoveLabels"
                                   InputGesture="F5">
                             <MenuItem.Icon>
@@ -229,14 +292,28 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
-                        <MenuItem Header="Reset Label Position"
+                        <MenuItem x:Name="CtxResetLabels"
+                                  Header="Reset Label Position"
                                   Click="OnCtxResetLabels">
                             <MenuItem.Icon>
                                 <mi:MaterialIcon Kind="LabelOff" Width="14" Height="14"/>
                             </MenuItem.Icon>
                         </MenuItem>
 
-                        <Separator/>
+                        <MenuItem x:Name="CtxLabelsSubMenu"
+                                  Header="Labels">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="Label" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                            <MenuItem x:Name="CtxShowTypeLabel"
+                                      Header="Show Type Label"
+                                      Click="OnCtxShowTypeLabel"/>
+                            <MenuItem x:Name="CtxShowInstanceName"
+                                      Header="Show Name"
+                                      Click="OnCtxShowInstanceName"/>
+                        </MenuItem>
+
+                        <Separator x:Name="CtxSep2"/>
 
                         <MenuItem x:Name="CtxDisconnect"
                                   Header="Disconnect"

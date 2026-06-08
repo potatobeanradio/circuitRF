@@ -121,7 +121,7 @@ public static class SchematicModelBuilder
             port1State: PortConnectionState.Unconnected));
 
         components.Add(MakeComponent("Zsource", SymbolKind.ZPort, pitch, signalY,
-            SymbolRotation.R0, [("Z[1,1]", "25", "ohm")]));
+            SymbolRotation.R0, [("Z[1,1]", "25", "ohm")], portCount: 1));
 
         components.Add(MakeComponent("Cblock_g", SymbolKind.Capacitor, 2 * pitch, signalY,
             SymbolRotation.R0, [("C", "1", "µF")]));
@@ -134,7 +134,7 @@ public static class SchematicModelBuilder
             SymbolRotation.R0, [("L", "1", "µH")]));
 
         components.Add(MakeComponent("Zload", SymbolKind.ZPort, 5 * pitch, signalY,
-            SymbolRotation.R0, [("Z[1,1]", "160", "ohm")]));
+            SymbolRotation.R0, [("Z[1,1]", "160", "ohm")], portCount: 1));
 
         components.Add(MakeComponent("P2", SymbolKind.Port, 6 * pitch, signalY,
             SymbolRotation.R0));
@@ -239,21 +239,39 @@ public static class SchematicModelBuilder
         SymbolRotation rot,
         (string Name, string Expr, string Unit)[]? parameters = null,
         PortConnectionState port0State = PortConnectionState.Connected,
-        PortConnectionState port1State = PortConnectionState.Connected)
+        PortConnectionState port1State = PortConnectionState.Connected,
+        int portCount = -1)
     {
-        var ports = BuildPorts(kind, rot, port0State, port1State);
-        var labels = new List<string> { ComponentTypeRegistry.DisplayName(kind, ports.Count), name };
-        // Format parameter labels the same way EditableComponent.ToRenderComponent does:
-        // "Name = Expression Unit" — skip params with a blank expression.
+        // N = network port count for variadic types; 0 for fixed types.
+        int n = portCount > 0 ? portCount
+              : kind is SymbolKind.ZPort or SymbolKind.Sdd ? 2 : 0;
+
+        // Seed from the registry template so hidden params (e.g. NumPorts="1") are present
+        // and correct. Merge caller-supplied values by name, leaving unmentioned slots at default.
+        var tpl = ComponentTypeRegistry.DefaultParameters(kind, n);
+        var merged = tpl.Select(tp => (tp.Name, Expr: tp.Expression, tp.Unit, tp.ShowOnSchematic)).ToList();
         if (parameters is not null)
         {
-            foreach (var (pname, expr, unit) in parameters)
+            foreach (var (oName, oExpr, oUnit) in parameters)
             {
-                if (string.IsNullOrEmpty(expr)) continue;
-                string val = string.IsNullOrEmpty(unit) ? expr : $"{expr} {unit}";
-                labels.Add(string.IsNullOrEmpty(pname) ? val : $"{pname} = {val}");
+                int idx = merged.FindIndex(p => p.Name == oName);
+                if (idx >= 0) merged[idx] = (oName, oExpr, oUnit, merged[idx].ShowOnSchematic);
             }
         }
+
+        var ports = BuildPorts(kind, rot, port0State, port1State, n);
+
+        // Type label uses N directly — ports.Count is N+1 for variadic types.
+        var labels = new List<string> { ComponentTypeRegistry.DisplayName(kind, n > 0 ? n : ports.Count), name };
+        foreach (var (pName, pExpr, pUnit, show) in merged)
+        {
+            if (!show || string.IsNullOrEmpty(pExpr)) continue;
+            string val = string.IsNullOrEmpty(pUnit) ? pExpr : $"{pExpr} {pUnit}";
+            labels.Add(string.IsNullOrEmpty(pName) ? val : $"{pName} = {val}");
+        }
+
+        var (gMinX, gMinY, gMaxX, gMaxY) = ComputeGlyphBbLocal(kind, cx, cy, n);
+
         return new SchematicComponent
         {
             InstanceName  = name,
@@ -266,16 +284,37 @@ public static class SchematicModelBuilder
             BbMinY        = cy - HalfBound,
             BbMaxX        = cx + HalfBound,
             BbMaxY        = cy + HalfBound,
-            GlyphBbMinX   = cx - 160,
-            GlyphBbMinY   = cy - 60,
-            GlyphBbMaxX   = cx + 160,
-            GlyphBbMaxY   = cy + 60,
+            GlyphBbMinX   = gMinX,
+            GlyphBbMinY   = gMinY,
+            GlyphBbMaxX   = gMaxX,
+            GlyphBbMaxY   = gMaxY,
         };
+    }
+
+    // Glyph BB for variadic types extends to port tips; fixed types use the standard box.
+    private static (double MinX, double MinY, double MaxX, double MaxY) ComputeGlyphBbLocal(
+        SymbolKind kind, double cx, double cy, int n)
+    {
+        if (n > 0 && kind is SymbolKind.ZPort or SymbolKind.Sdd)
+        {
+            var portDefs = SymbolPortDefs.For(kind, n);
+            float minX = -70f, maxX = 70f;   // body bounds (ZPort ±70, Sdd ±80)
+            float minY = -50f, maxY = 50f;
+            foreach (var (_, lx, ly) in portDefs)
+            {
+                if (lx < minX) minX = lx; if (lx > maxX) maxX = lx;
+                if (ly < minY) minY = ly; if (ly > maxY) maxY = ly;
+            }
+            const float pad = 15f;
+            return (cx + minX - pad, cy + minY - pad, cx + maxX + pad, cy + maxY + pad);
+        }
+        return (cx - 160, cy - 60, cx + 160, cy + 60);
     }
 
     private static IReadOnlyList<SchematicPortDef> BuildPorts(
         SymbolKind kind, SymbolRotation rotation,
-        PortConnectionState p0, PortConnectionState p1)
+        PortConnectionState p0, PortConnectionState p1,
+        int portCount = -1)
     {
         return kind switch
         {
@@ -286,11 +325,34 @@ public static class SchematicModelBuilder
                 new SchematicPortDef("drain",   150, -100, p1),
                 new SchematicPortDef("source",  150,  100, PortConnectionState.Unconnected),
             ],
+            SymbolKind.ZPort or SymbolKind.Sdd =>
+                GenerateVariadicPorts(portCount > 0 ? portCount : 2),
             _ => [
                 new SchematicPortDef("1", -150, 0, p0),
                 new SchematicPortDef("2",  150, 0, p1),
             ],
         };
+    }
+
+    // Mirrors EditableSchematic.GeneratePorts — N+1 pins: N signal ports + 1 reference.
+    private static IReadOnlyList<SchematicPortDef> GenerateVariadicPorts(int n)
+    {
+        int nLeft  = (n + 1) / 2;
+        int nRight = n / 2 + 1;
+        var ports  = new SchematicPortDef[n + 1];
+        for (int i = 0; i < nLeft; i++)
+        {
+            float localY = nLeft > 1 ? (i - (nLeft - 1) * 0.5f) * 200f : 0f;
+            ports[i] = new SchematicPortDef($"{i + 1}", -150f, localY, PortConnectionState.Connected);
+        }
+        for (int i = 0; i < nRight; i++)
+        {
+            float localY = nRight > 1 ? (i - (nRight - 1) * 0.5f) * 200f : 0f;
+            bool isRef   = i == nRight - 1;
+            ports[nLeft + i] = new SchematicPortDef(
+                isRef ? "ref" : $"{nLeft + i + 1}", 150f, localY, PortConnectionState.Connected);
+        }
+        return ports;
     }
 
     private static string KindPrefix(SymbolKind k) => k switch

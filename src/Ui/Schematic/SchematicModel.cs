@@ -18,10 +18,6 @@ public enum SymbolKind
     FetSdd,
     Sdd,
     ZPort,
-    Z1P,
-    Z2P,
-    Z3P,
-    ZNP,
     Generic
 }
 
