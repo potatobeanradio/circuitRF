@@ -1,0 +1,16 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:param="using:CircuitRF.Ui.Views.ParameterEditor"
+        x:Class="CircuitRF.Ui.Views.Dialogs.ParameterEditorDialog"
+        Title="Component Parameters"
+        Width="420"
+        MinWidth="320"
+        MinHeight="200"
+        SizeToContent="Height"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <param:ParameterEditorView/>
+
+</Window>

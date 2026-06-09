@@ -15,13 +15,16 @@ public sealed class EditableParameter
     public string Name            { get; set; } = "";
     /// <summary>Raw expression string (e.g. "1/(w0^2*C)") — not yet evaluated.</summary>
     public string Expression      { get; set; } = "";
-    /// <summary>Unit string (e.g. "nH", "pF", "ohm"). Empty when dimensionless.</summary>
+    /// <summary>Unit string (e.g. "nH", "pF", "Ω"). Empty when dimensionless.</summary>
     public string Unit            { get; set; } = "";
     public bool   ShowOnSchematic { get; set; } = true;
+    /// <summary>Physical dimension — drives the closed Unit ComboBox options.</summary>
+    public UnitDimension Dimension { get; set; } = UnitDimension.None;
 
     public EditableParameter Clone() => new()
     {
         Name = Name, Expression = Expression, Unit = Unit, ShowOnSchematic = ShowOnSchematic,
+        Dimension = Dimension,
     };
 }
 
@@ -755,7 +758,7 @@ public sealed class SchematicEditModel
                 else
                     expr = tp.Expression;   // hidden: use template default, never a label
                 c.Parameters.Add(new EditableParameter
-                    { Name = tp.Name, Expression = expr, Unit = tp.Unit, ShowOnSchematic = tp.ShowOnSchematic });
+                    { Name = tp.Name, Expression = expr, Unit = tp.Unit, ShowOnSchematic = tp.ShowOnSchematic, Dimension = tp.Dimension });
             }
             m.Components.Add(c);
         }

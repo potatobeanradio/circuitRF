@@ -72,6 +72,10 @@ public partial class WorkspaceViewModel : ViewModelBase
             if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) RedoCommand.NotifyCanExecuteChanged();
         };
 
+        // Notify PropertiesTool when the active document tab changes (active schematic tracking).
+        if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged npc)
+            npc.PropertyChanged += OnDocumentDockPropertyChanged;
+
         // Post a welcome message.
         Messages.Info("circuitRF ready. Open a workspace or add a library to get started.");
     }
@@ -284,6 +288,17 @@ public partial class WorkspaceViewModel : ViewModelBase
             _factory.OpenDocument(doc);
             return;
         }
+    }
+
+    // ---- Active-document tracking (Properties region) ───────────────────────
+
+    private void OnDocumentDockPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != "ActiveDockable") return;
+        var activeVm = _factory.DocumentDock?.ActiveDockable is SchematicDocument doc
+            ? doc.ViewModel
+            : null;
+        _factory.PropertiesTool?.SetActiveSchematic(activeVm);
     }
 
     // ---- Quit ----------------------------------------------------------------

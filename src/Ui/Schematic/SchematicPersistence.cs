@@ -63,6 +63,9 @@ public sealed class CschParameter
     public string Expression      { get; set; } = "";
     public string Unit            { get; set; } = "";
     public bool   ShowOnSchematic { get; set; } = true;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public UnitDimension Dimension { get; set; } = UnitDimension.None;
 }
 
 public sealed class CschWire
@@ -217,7 +220,7 @@ public static class SchematicPersistence
             };
             foreach (var p in c.Parameters)
                 cc.Parameters.Add(new CschParameter
-                    { Name = p.Name, Expression = p.Expression, Unit = p.Unit, ShowOnSchematic = p.ShowOnSchematic });
+                    { Name = p.Name, Expression = p.Expression, Unit = p.Unit, ShowOnSchematic = p.ShowOnSchematic, Dimension = p.Dimension });
             if (c.LabelOffsets.Any(o => o.DX != 0 || o.DY != 0))
                 cc.LabelOffsets = c.LabelOffsets.Select(o => new[] { o.DX, o.DY }).ToList();
             // Omit when true (the default) to keep files compact.
@@ -265,7 +268,7 @@ public static class SchematicPersistence
             };
             foreach (var cp in cc.Parameters)
                 c.Parameters.Add(new EditableParameter
-                    { Name = cp.Name, Expression = cp.Expression, Unit = cp.Unit, ShowOnSchematic = cp.ShowOnSchematic });
+                    { Name = cp.Name, Expression = cp.Expression, Unit = cp.Unit, ShowOnSchematic = cp.ShowOnSchematic, Dimension = cp.Dimension });
             if (cc.LabelOffsets is not null)
                 foreach (var lo in cc.LabelOffsets)
                     if (lo.Length >= 2) c.LabelOffsets.Add((lo[0], lo[1]));

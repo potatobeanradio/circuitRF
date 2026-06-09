@@ -31,15 +31,17 @@ public class CircuitRfDockFactory : Factory
     private IDocumentDock? _documentDock;
     public IDocumentDock? DocumentDock => _documentDock;
 
-    // Expose the dock tools so WorkspaceViewModel can access the message sink.
-    public MessagesTool? MessagesTool { get; private set; }
-    public ProjectTreeTool? ProjectTreeTool { get; private set; }
+    // Expose the dock tools so WorkspaceViewModel can access the message sink and properties panel.
+    public MessagesTool?     MessagesTool     { get; private set; }
+    public ProjectTreeTool?  ProjectTreeTool  { get; private set; }
+    public PropertiesTool?   PropertiesTool   { get; private set; }
 
     public override IRootDock CreateLayout()
     {
         // ── Create dockable items ──────────────────────────────────────────────
         ProjectTreeTool = new ProjectTreeTool();
-        var properties  = new PropertiesTool();
+        PropertiesTool  = new PropertiesTool();
+        var properties  = PropertiesTool;
         MessagesTool    = new MessagesTool();
         var welcome     = new StubDocument("Welcome", StubDocument.StubKind.Welcome);
 

@@ -1,0 +1,144 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.ParameterEditor.ParameterEditorView"
+             x:DataType="vm:ParameterEditorViewModel"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+
+        <!-- Empty-state overlay: spans all rows, shown when IsEmptyState -->
+        <TextBlock Grid.Row="0" Grid.RowSpan="4"
+                   IsVisible="{Binding IsEmptyState}"
+                   Text="{Binding EmptyMessage}"
+                   Foreground="{DynamicResource SystemBaseMediumColor}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   FontSize="11"
+                   Opacity="0.5"/>
+
+        <!-- ── Row 0: Header — type label + editable instance name ─────────── -->
+        <Grid Grid.Row="0"
+              IsVisible="{Binding IsNotEmptyState}"
+              ColumnDefinitions="Auto,*"
+              Margin="6,6,6,4">
+            <TextBlock Grid.Column="0"
+                       Text="{Binding TypeDisplayName}"
+                       FontWeight="SemiBold"
+                       FontSize="13"
+                       VerticalAlignment="Center"
+                       Margin="0,0,8,0"/>
+            <TextBox Grid.Column="1"
+                     x:Name="InstanceNameBox"
+                     Text="{Binding StagedInstanceName}"
+                     FontSize="12"
+                     VerticalAlignment="Center"
+                     LostFocus="OnInstanceNameLostFocus"
+                     KeyDown="OnInstanceNameKeyDown"/>
+        </Grid>
+
+        <!-- ── Row 1: Label-visibility flags ──────────────────────────────── -->
+        <StackPanel Grid.Row="1"
+                    IsVisible="{Binding IsNotEmptyState}"
+                    Orientation="Horizontal"
+                    Spacing="12"
+                    Margin="6,0,6,4">
+            <CheckBox IsChecked="{Binding ShowTypeLabel}"
+                      Content="Type label"
+                      FontSize="11"/>
+            <CheckBox IsChecked="{Binding ShowInstanceName}"
+                      Content="Instance name"
+                      FontSize="11"/>
+        </StackPanel>
+
+        <!-- ── Row 2: Scrollable parameter list ───────────────────────────── -->
+        <ScrollViewer Grid.Row="2"
+                      IsVisible="{Binding IsNotEmptyState}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Rows}"
+                          Grid.IsSharedSizeScope="True"
+                          Margin="4,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ParameterRowViewModel">
+                        <Grid Margin="0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>
+                                <ColumnDefinition Width="*"                                   MinWidth="50"/>
+                                <ColumnDefinition SharedSizeGroup="ParamUnit"    Width="Auto" MinWidth="60"/>
+                                <ColumnDefinition SharedSizeGroup="ParamPreview" Width="Auto"/>
+                                <ColumnDefinition SharedSizeGroup="ParamDisplay" Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Name (read-only) -->
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Name}"
+                                       FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Margin="2,0,6,0"/>
+
+                            <!-- Expression TextBox -->
+                            <TextBox Grid.Column="1"
+                                     Text="{Binding StagedExpression}"
+                                     FontSize="11"
+                                     Padding="4,3"
+                                     VerticalAlignment="Center"
+                                     LostFocus="OnParamExprLostFocus"
+                                     KeyDown="OnParamExprKeyDown"/>
+
+                            <!-- Unit ComboBox (closed, dimension-keyed) -->
+                            <ComboBox Grid.Column="2"
+                                      ItemsSource="{Binding UnitOptions}"
+                                      SelectedItem="{Binding StagedUnit}"
+                                      FontSize="11"
+                                      Padding="4,3"
+                                      MinWidth="60"
+                                      Margin="3,0,0,0"
+                                      VerticalAlignment="Center"
+                                      SelectionChanged="OnUnitSelectionChanged"/>
+
+                            <!-- Value preview: subtle grey "≈ evaluated". Non-interactive and
+                                 non-editable, but SelectableTextBlock lets the user select &
+                                 copy the text. Hidden when there is no preview. -->
+                            <SelectableTextBlock Grid.Column="3"
+                                                 Text="{Binding ValuePreview}"
+                                                 IsVisible="{Binding HasValuePreview}"
+                                                 Foreground="{DynamicResource SystemBaseMediumColor}"
+                                                 FontSize="11"
+                                                 Opacity="0.7"
+                                                 VerticalAlignment="Center"
+                                                 Margin="8,0,4,0"
+                                                 ToolTip.Tip="Approximate value at current schematic state (pre-simulation)"/>
+
+                            <!-- Display-on-schematic CheckBox -->
+                            <CheckBox Grid.Column="4"
+                                      IsChecked="{Binding ShowOnSchematic}"
+                                      ToolTip.Tip="Show on schematic"
+                                      Margin="6,0,2,0"
+                                      VerticalAlignment="Center"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- ── Row 3: Footer — Help + optional Close ──────────────────────── -->
+        <StackPanel Grid.Row="3"
+                    IsVisible="{Binding IsNotEmptyState}"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="6,4,6,6"
+                    Spacing="6">
+            <Button Content="Help"
+                    FontSize="11"
+                    Padding="8,3"
+                    Click="OnHelpClick"/>
+            <Button Content="Close"
+                    FontSize="11"
+                    Padding="8,3"
+                    IsVisible="{Binding ShowClose}"
+                    Click="OnCloseClick"/>
+        </StackPanel>
+
+    </Grid>
+</UserControl>

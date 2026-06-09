@@ -15,7 +15,7 @@ public class ParameterCommandTests
         comp.Parameters.Add(param);
         m.Components.Add(comp);
 
-        var cmd = new EditParameterCommand(param, "100");
+        var cmd = new EditParameterCommand(m, param, "100");
         cmd.Execute();
         Assert.Equal("100", param.Expression);
     }
@@ -29,7 +29,7 @@ public class ParameterCommandTests
         comp.Parameters.Add(param);
         m.Components.Add(comp);
 
-        var cmd = new EditParameterCommand(param, "100");
+        var cmd = new EditParameterCommand(m, param, "100");
         cmd.Execute();
         cmd.Undo();
         Assert.Equal("50", param.Expression);
@@ -42,7 +42,7 @@ public class ParameterCommandTests
         var comp = new EditableComponent { InstanceName = "R1", Symbol = SymbolKind.Resistor };
         m.Components.Add(comp);
 
-        var cmd = new RenameComponentCommand(comp, "R99");
+        var cmd = new RenameComponentCommand(m, comp, "R99");
         cmd.Execute();
         Assert.Equal("R99", comp.InstanceName);
     }
@@ -54,7 +54,7 @@ public class ParameterCommandTests
         var comp = new EditableComponent { InstanceName = "R1", Symbol = SymbolKind.Resistor };
         m.Components.Add(comp);
 
-        var cmd = new RenameComponentCommand(comp, "R99");
+        var cmd = new RenameComponentCommand(m, comp, "R99");
         cmd.Execute();
         cmd.Undo();
         Assert.Equal("R1", comp.InstanceName);

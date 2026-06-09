@@ -5,8 +5,23 @@ namespace CircuitRF.Ui.Schematic;
 // system (v2, real component-model factory), re-key off that type instead.
 // Lives here (Avalonia-free) so the renderer, palette, and auto-naming all share it.
 
+/// <summary>Physical dimension of a component parameter — drives the closed Unit ComboBox.</summary>
+public enum UnitDimension
+{
+    None,
+    Resistance,
+    Inductance,
+    Capacitance,
+    Frequency,
+    Voltage,
+    Current,
+    Power,
+    Length,
+    Angle,
+}
+
 /// <summary>One entry in the default parameter template for a freshly-placed component.</summary>
-public readonly record struct DefaultParam(string Name, string Expression, string Unit, bool ShowOnSchematic);
+public readonly record struct DefaultParam(string Name, string Expression, string Unit, bool ShowOnSchematic, UnitDimension Dimension = UnitDimension.None);
 
 /// <summary>Display metadata for one component type.</summary>
 public sealed record ComponentTypeInfo(
@@ -25,6 +40,24 @@ public sealed record ComponentTypeInfo(
 /// </summary>
 public static class ComponentTypeRegistry
 {
+    private static readonly Dictionary<UnitDimension, string[]> _unitOptions = new()
+    {
+        [UnitDimension.None]        = ["None"],
+        [UnitDimension.Resistance]  = ["None", "mΩ", "Ω", "kΩ", "MΩ", "GΩ"],
+        [UnitDimension.Inductance]  = ["None", "pH", "nH", "µH", "mH", "H"],
+        [UnitDimension.Capacitance] = ["None", "fF", "pF", "nF", "µF", "mF", "F"],
+        [UnitDimension.Frequency]   = ["None", "Hz", "kHz", "MHz", "GHz", "THz"],
+        [UnitDimension.Voltage]     = ["None", "nV", "µV", "mV", "V", "kV"],
+        [UnitDimension.Current]     = ["None", "nA", "µA", "mA", "A"],
+        [UnitDimension.Power]       = ["None", "fW", "pW", "nW", "µW", "mW", "W", "dBm"],
+        [UnitDimension.Length]      = ["None", "nm", "µm", "mm", "cm", "m", "mil"],
+        [UnitDimension.Angle]       = ["None", "deg", "rad"],
+    };
+
+    /// <summary>Closed list of unit strings for a given physical dimension. Always has "None" at index 0.</summary>
+    public static string[] UnitOptions(UnitDimension dim)
+        => _unitOptions.TryGetValue(dim, out var opts) ? opts : _unitOptions[UnitDimension.None];
+
     private static readonly Dictionary<SymbolKind, ComponentTypeInfo> Registry = new()
     {
         [SymbolKind.Resistor]      = new("R",     "R"),
@@ -88,21 +121,23 @@ public static class ComponentTypeRegistry
     {
         switch (kind)
         {
-            case SymbolKind.Resistor:      return [new("R",    "1", "ohm", true)];
-            case SymbolKind.Inductor:      return [new("L",    "1", "nH",  true)];
-            case SymbolKind.Capacitor:     return [new("C",    "1", "pF",  true)];
+            case SymbolKind.Resistor:      return [new("R",    "1", "Ω",   true, UnitDimension.Resistance)];
+            case SymbolKind.Inductor:      return [new("L",    "1", "nH",  true, UnitDimension.Inductance)];
+            case SymbolKind.Capacitor:     return [new("C",    "1", "pF",  true, UnitDimension.Capacitance)];
             // NOTE: VoltageSourceModel currently reads "V"; these names are the intended schematic-layer params.
-            case SymbolKind.VoltageSource: return [new("Vac",  "1", "V",   true), new("Freq", "2", "GHz", true)];
+            case SymbolKind.VoltageSource: return [new("Vac",  "1", "V",   true, UnitDimension.Voltage),
+                                                   new("Freq", "2", "GHz", true, UnitDimension.Frequency)];
             // V and Freq match V_1Tone factory keys (V= amplitude, Freq= frequency in Hz).
-            case SymbolKind.ToneSource:    return [new("V",    "1", "V",   true), new("Freq", "2", "GHz", true)];
+            case SymbolKind.ToneSource:    return [new("V",    "1", "V",   true, UnitDimension.Voltage),
+                                                   new("Freq", "2", "GHz", true, UnitDimension.Frequency)];
 
             case SymbolKind.ZPort:
             {
                 int n = portCount >= 1 ? portCount : 2;
-                var ps = new List<DefaultParam>(1 + n * n) { new("NumPorts", $"{n}", "", false) };
+                var ps = new List<DefaultParam>(1 + n * n) { new("NumPorts", $"{n}", "", false, UnitDimension.None) };
                 for (int p = 1; p <= n; p++)
                     for (int q = 1; q <= n; q++)
-                        ps.Add(new($"Z[{p},{q}]", "50", "ohm", true));
+                        ps.Add(new($"Z[{p},{q}]", "50", "Ω", true, UnitDimension.Resistance));
                 return ps;
             }
 
@@ -111,7 +146,7 @@ public static class ComponentTypeRegistry
             case SymbolKind.Sdd:
             {
                 int n = portCount >= 1 ? portCount : 2;
-                return [new("NumPorts", $"{n}", "", false)];
+                return [new("NumPorts", $"{n}", "", false, UnitDimension.None)];
             }
 
             // Ground/Port/FetSdd/Generic need no default parameters.

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:param="using:CircuitRF.Ui.Views.ParameterEditor"
              x:Class="CircuitRF.Ui.Views.Properties.PropertiesView"
              x:DataType="vm:PropertiesTool"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -11,18 +12,30 @@
             <TextBlock Text="Properties" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
         </StackPanel>
 
-        <!-- Placeholder: Component Palette occupies this region in 6c/6d. -->
-        <Border Grid.Row="1"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Stretch"
-                BorderThickness="0">
+        <!--
+            COEXISTENCE_FLAG: "content-switch" (default) — parameter editor when one non-Ground
+            component is selected, palette placeholder otherwise. To switch to "stack" (show both
+            simultaneously), replace this Grid with a StackPanel and remove the IsVisible toggles.
+        -->
+        <Grid Grid.Row="1"
+              HorizontalAlignment="Stretch"
+              VerticalAlignment="Stretch">
+
+            <!-- Palette placeholder (shown when no single non-Ground component is selected) -->
             <TextBlock Text="Component Palette (6c)"
+                       IsVisible="{Binding EditorVm.IsEmptyState}"
                        Foreground="{DynamicResource SystemBaseMediumColor}"
                        HorizontalAlignment="Center"
                        VerticalAlignment="Center"
                        FontSize="11"
                        Opacity="0.5"/>
-        </Border>
+
+            <!-- Parameter editor (shown when exactly one non-Ground component is selected) -->
+            <param:ParameterEditorView
+                DataContext="{Binding EditorVm}"
+                IsVisible="{Binding IsNotEmptyState}"/>
+
+        </Grid>
 
     </Grid>
 </UserControl>

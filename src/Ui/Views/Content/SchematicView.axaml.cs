@@ -18,6 +18,7 @@ using CircuitRF.Ui.Renderers;
 using SkiaSharp;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
+using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.Content;
 
@@ -549,11 +550,26 @@ public partial class SchematicView : UserControl
 
     private void OnComponentDoubleTapped(object? sender, EditableComponent comp)
     {
-        // Full ParameterDialog deferred; show inline edit for first param as fallback.
-        if (Vm is null || comp.Parameters.Count == 0) return;
-        var param = comp.Parameters[0];
-        Vm.BeginInlineEdit(comp, param, 80, 80);
-        ShowInlineEditBox(80, 80, Vm.InlineEditValue);
+        if (Vm is null) return;
+
+        // Guard: Ground double-click → do not open (single check, per spec).
+        if (comp.Symbol == SymbolKind.Ground) return;
+
+        var editorVm = new ParameterEditorViewModel();
+        editorVm.SetTargetDirect(Vm, comp, showClose: true);
+
+        var dialog = new ParameterEditorDialog { DataContext = editorVm };
+        dialog.Closed += (_, _) => editorVm.Dispose();
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+
+        // DIALOG_MODAL_FLAG: false = non-modal (default, lets user see schematic update live).
+        //                    true  = modal (one-line flip for owner experiment).
+        const bool isModal = false;
+        if (isModal && owner is not null)
+            _ = dialog.ShowDialog(owner);
+        else
+            dialog.Show(owner!);  // owner may be null when no window parent (e.g. embedded in non-Window host)
     }
 
     // ── Shared inline edit box helper ─────────────────────────────────────────

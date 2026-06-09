@@ -1725,7 +1725,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             : SymbolPortDefs.For(_placementSymbol).Length;
         foreach (var dp in ComponentTypeRegistry.DefaultParameters(_placementSymbol, portCount))
             comp.Parameters.Add(new EditableParameter
-                { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic });
+                { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
         Execute(new PlaceComponentCommand(EditModel, comp));
         Selection.SelectOne(comp.Id);
     }
@@ -2054,7 +2054,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                     };
                     foreach (var dp in ComponentTypeRegistry.DefaultParameters(newKind, portCount))
                         newComp.Parameters.Add(new EditableParameter
-                            { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic });
+                            { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
                     Execute(new ChangeComponentTypeCommand(EditModel, comp, newComp));
                 }
                 break;

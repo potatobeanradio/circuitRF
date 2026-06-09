@@ -595,3 +595,39 @@ When generating UI code for circuitRF:
 * Ensure keyboard accessibility where practical.
 * Minimize unnecessary dependencies and visual complexity.
 * Treat schematic symbols separately from standard UI iconography.
+
+---
+
+# 14. Parameter Editor (Phase 6 / ParameterEditorView)
+
+## One view, two hosts
+`ParameterEditorView` (`UserControl`) + `ParameterEditorViewModel` are built once and hosted two ways:
+1. **Embedded inspector** — in the Properties region (`PropertiesView`), bound to the active schematic's
+   selection via `ParameterEditorViewModel.SetContext(vm)`. Activated by `PropertiesTool.SetActiveSchematic`.
+2. **Dialog** — opened on component double-click (`SchematicView.axaml.cs :: OnComponentDoubleTapped`),
+   configured via `ParameterEditorViewModel.SetTargetDirect(vm, comp, showClose: true)`. Uses `ParameterEditorDialog` Window.
+
+Neither host decision (coexistence mode, modality) touches `ParameterEditorView` internals — both are
+single swappable flags.
+
+## Chosen defaults (owner experiments — change these single points)
+- **Coexistence = content-switch** (parameter editor shown when one non-Ground component is selected,
+  palette placeholder otherwise). Flag location: `PropertiesView.axaml` `<!-- COEXISTENCE_FLAG -->` comment.
+  To switch to stack: replace the outer `Grid` with a `StackPanel` and remove the `IsVisible` toggles.
+- **Modality = non-modal** (lets the user see schematic labels update live as they edit). Flag location:
+  `SchematicView.axaml.cs :: OnComponentDoubleTapped` `const bool isModal = false;`.
+
+## Units keyed by dimension
+Unit ComboBox options come from `ComponentTypeRegistry.UnitOptions(UnitDimension)`, not per-`SymbolKind`.
+Each `EditableParameter` carries a `Dimension` field (seeded at placement, type-change, and `FromRenderModel`).
+`NumPorts` is never shown as a row. The single Ground/null guard is in `ParameterEditorViewModel.SetTarget`.
+
+## Active-schematic wiring
+`WorkspaceViewModel` subscribes to `DocumentDock.PropertyChanged` and calls
+`CircuitRfDockFactory.PropertiesTool.SetActiveSchematic(vm)` when `ActiveDockable` changes.
+`PropertiesTool` delegates to `EditorVm.SetContext(vm)`.
+
+## Command stack discipline
+All edits (expression, unit, ShowOnSchematic, instance name, label visibility) go through `SchematicViewModel.Execute`,
+which wraps in `DotRevalidationCommand`. No-change guard in every commit method. `SetParameterVisibilityCommand`
+(new in Phase 6) notifies in both Execute and Undo, consistent with all other mutation commands.
