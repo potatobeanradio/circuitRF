@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:symDoc="using:CircuitRF.Ui.Schematic"
+        xmlns:cv="using:CircuitRF.Ui.Views.Content"
+        x:Class="CircuitRF.Ui.Views.SymbolEditorWindow"
+        x:DataType="symDoc:SymbolEditorDocument"
+        Title="{Binding Title}"
+        Width="700"
+        Height="600"
+        MinWidth="400"
+        MinHeight="300"
+        Background="{DynamicResource SystemChromeLowColor}">
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Z"       Command="{Binding ViewModel.UndoCommand}"/>
+        <KeyBinding Gesture="Meta+Z"       Command="{Binding ViewModel.UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding ViewModel.RedoCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+Z" Command="{Binding ViewModel.RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y"       Command="{Binding ViewModel.RedoCommand}"/>
+    </Window.KeyBindings>
+
+    <cv:SymbolEditorView/>
+
+</Window>

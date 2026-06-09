@@ -75,9 +75,9 @@ public class HitTestTests
     public void NearestPort_FindsPort_WithinTolerance()
     {
         var (edit, render, index) = BuildSmall();
-        // Resistor port 0 is at (-200, 0) in world coords (origin on grid, pin tip at local -200)
-        var (found, _, _, px, py) = SchematicHitTest.NearestPort(edit, -200, 0, 20);
+        // Resistor is vertical: port 0 is at local (0,-200) → world (0,-200) at R0
+        var (found, _, _, px, py) = SchematicHitTest.NearestPort(edit, 0, -200, 20);
         Assert.True(found);
-        Assert.InRange(px, -210.0, -190.0);
+        Assert.InRange(py, -210.0, -190.0);
     }
 }

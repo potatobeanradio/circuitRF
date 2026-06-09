@@ -18,11 +18,24 @@ public sealed class CwsFile
 {
     public int FormatVersion { get; set; } = 1;
 
-    /// <summary>Relative or absolute paths to member files (.csch, .cdd, .csym, .cnl, …).</summary>
+    /// <summary>
+    /// Relative or absolute paths to member files (.csch, .cdd, .csym, .cnl, …).
+    /// Retained for format round-trip; the scanner ignores this list — membership is read
+    /// from the filesystem (workspace-and-project-tree.md intro).
+    /// </summary>
     public List<string> MemberFiles { get; set; } = [];
 
-    /// <summary>Relative or absolute paths to library manifests (.clib) added to this workspace.</summary>
+    /// <summary>
+    /// Relative or absolute paths to external library folders (or legacy .clib manifest files).
+    /// Resolved by the scanner relative to the workspace root when relative.
+    /// </summary>
     public List<string> LibraryRefs { get; set; } = [];
+
+    /// <summary>
+    /// Relative or absolute paths to files bookmarked for convenient access (§5).
+    /// Unresolvable paths produce a KnownFile node with a WarningReason.
+    /// </summary>
+    public List<string> KnownFiles { get; set; } = [];
 
     /// <summary>
     /// Dock layout serialized as a JSON string (Dock library format).

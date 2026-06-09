@@ -28,9 +28,8 @@ public class DotInvariantTests
     {
         var model = new SchematicEditModel { GridSnap = false };
         foreach (var w in wires) model.Wires.Add(w);
-        var undo = new UndoRedoStack();
-        var vm   = new SchematicViewModel(model, undo);
-        return (model, vm, undo);
+        var vm   = new SchematicViewModel(model);
+        return (model, vm, vm.UndoRedo);
     }
 
     // crossing of H (0,0)-(200,0) and V (100,-100)-(100,100) at (100,0)

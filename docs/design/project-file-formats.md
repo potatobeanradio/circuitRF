@@ -89,6 +89,9 @@ the derived `.cnl`/design model.
 ## Related GUI documents (same family, named here for coherence)
 
 To keep the format family coherent, name the siblings now (full specs when their phases arrive):
+- **`.ccell`** — a **cell manifest** (workspace doc §2): the cell's declared **parameters + defaults**, which
+  view file is **primary** per type (schematic/symbol/layout), and the **IsTestBench** flag. One per cell
+  folder; the cell's interface record (the on-disk form of what `ComponentTypeRegistry` hardcodes today).
 - **`.csym`** — a **cell's symbol** (the symbol-editor output, §5A): symbol geometry (primitives/text),
   named ports/pins, the bounding/connection metadata an instance uses. (Phase 6f.)
 - **`.cdd`** — a **data-display config** (the data-display canvas, §6): placed plots/tables/contours, their
@@ -112,19 +115,29 @@ The conceptual hierarchy (`ui-design.md` §1) maps to disk as **folders of the s
 monolithic blobs — so everything stays text, diffable, and individually addressable.
 
 ### Cell = a folder of views
+> **Refined by `workspace-and-project-tree.md` (rev 1).** The cell layout below is updated there: a cell folder
+> now contains a single **`.ccell`** manifest (parameters + which view is primary + IsTestBench) at its root
+> and three **view sub-folders** `schematic/`, `symbol/`, `layout/`, each holding **any number** of
+> `*.csch`/`*.csym`/`*.clay`. The flat `<CellName>.csch` layout shown here is superseded. See that doc §1.2/§2.
+
 A **Cell** is the reusable design unit. It is a **folder** named for the cell, containing its **views** as
-separate files:
+separate files (now under per-type sub-folders — see the refinement note above):
 ```
 <CellName>/
-   <CellName>.csym     symbol view      (the symbol-editor output, §5A)
-   <CellName>.csch     schematic view   (the schematic, §4)
-   (<CellName>.clay     layout view      — future, not v1)
+   .ccell              cell manifest: parameters + defaults + primary view per type + IsTestBench
+   schematic/  *.csch  schematic views  (§4)
+   symbol/     *.csym  symbol views      (the symbol-editor output, §5A)
+   layout/     *.clay  layout views      (future, folder present-but-empty in v1)
 ```
 - A cell need not have every view: a leaf/primitive wrapper might be `.csym` only; a cell may have a `.csch`
-  but no `.csym` yet (see symbol handling below); etc.
-- **A component with no `.csym` cannot be placed on a canvas by the GUI.** There is **no automatic** symbol
-  generation on placement. If a schematic references a component that has no symbol, the canvas **draws a
-  plain rectangle outline in the `System.Warning` color** as a stand-in (it does *not* invent a symbol).
+  but no `.csym` yet (see symbol handling below); etc. A view sub-folder with exactly one file makes that
+  file primary by default; `.ccell` records the primary when there are several (workspace doc §2).
+- **A component with no `.csym` cannot be placed on a canvas by the GUI *until its symbol is defined*.** There
+  is **no automatic** symbol generation on placement. If the user attempts to place a component whose cell has
+  no symbol, the placement is **deferred or cancelled** and the user is **prompted** to either (a) create the
+  symbol in the **Symbol Editor** (§5A) or (b) run the **symbol auto-gen** system (below). Placement proceeds
+  once a symbol exists. *(The plain-rectangle `System.Warning` stand-in below is for the separate case of an
+  already-placed instance whose symbol reference later breaks — not for first placement.)*
 - **User-commanded symbol auto-generation:** the user may explicitly command "generate symbol" for a cell.
   The generated `.csym` is a **rectangle** with the cell's ports split **odd-numbered ports on the left
   side, even-numbered on the right**; each port has a short **pin line extending outward** from the
@@ -134,18 +147,25 @@ separate files:
 - The **electrical netlist of a cell is *derived* from its `.csch`** by extraction — it is **not** stored as a
   per-cell `.cnl` (the `.cnl` is netlist-only and is produced on demand, see “netlist.cnl on simulate” below).
 - The cell folder is the unit you copy/share to reuse a cell.
+- **A placed component references its cell by RELATIVE PATH**, and resolves its glyph/pins via
+  `instance → relative path → .ccell → primary .csym` (workspace doc §4). A broken path → a “Not Found” glyph;
+  a resolved cell whose **named primary `.csym` is missing** → the plain-rectangle stand-in (and the tree flags
+  the cell System.Warning). Changing the primary symbol re-renders instances live (a risky op — pin counts may
+  differ; wires that no longer meet a pin show unconnected).
 
 ### Library = a folder of cells
 A **Library** is a **folder containing cell folders** (plus a small manifest):
 ```
 <LibraryName>/
-   library.clib        manifest: library name, version, list/index of cells, metadata
+   .clib               manifest: library name, version, metadata (NOT a cell list — cells are scanned)
    <CellA>/  …         (cell folders as above)
    <CellB>/  …
 ```
-- `library.clib` is a JSON manifest (same serialization conventions) naming the library and indexing its
-  cells — it lets the Project Tree show the library without scanning, and lets `File → Add Library`
-  (`ui-design.md` §8) reference an external library by pointing at its folder/manifest.
+- **Refined by `workspace-and-project-tree.md`:** membership is **filesystem-is-truth** — the Project Tree
+  discovers cells by **scanning** the library folder, not from a manifest list. `.clib` is therefore
+  *lightweight*: library name, version, metadata only (no cell index). `File → Add Library` references an
+  external library by pointing at its folder. Built-in libraries (standard library) ship as real cell folders
+  with a `.clib` and a `.ccell` per cell (built-in cells: typically one symbol + one schematic, no layout).
 - The **standard component libraries** (lumped elements, sources, simulation directives — the palette
   contents, §2.2) are libraries of this shape shipped with circuitRF.
 - A user library is just a folder of cells the user points the workspace at; libraries are shareable as
@@ -155,23 +175,32 @@ A **Library** is a **folder containing cell folders** (plus a small manifest):
 A **TestBench** is **not a separate file type** — it is a **Cell** (a folder with a `.csch`) whose schematic
 includes the **analysis directives** and **measurements** (the `Var`/`Measurement`/analysis content,
 §7.2/§5) that make it *runnable*. In other words: any cell schematic that contains analyses is a testbench;
-“TestBench” is a role a cell plays, marked in the cell/`.csch` metadata (an `IsTestBench`/has-analyses flag
-the Project Tree uses to show it as runnable), not a distinct on-disk format. This matches the engine model
+“TestBench” is a role a cell plays, marked by the **`IsTestBench` flag in the cell's `.ccell`** (workspace doc
+§2; moved here from `.csch` metadata) that the Project Tree uses to show it as runnable and to drive the
+“Only TestBench” filter, not a distinct on-disk format. This matches the engine model
 (the TestBench is the top-level runnable design, data-model §2.1) and means a testbench is authored,
 saved, copied, and version-controlled exactly like any other cell.
 
 ### Workspace (`.cws`) = the project that references the above
-The **`.cws`** file is the **workspace manifest** — a JSON document that records:
+> **Refined by `workspace-and-project-tree.md` (rev 1):** the workspace is a **folder** (root folder name =
+> workspace name); the file is literally **`.cws`** (no stem), one per workspace. **Membership is
+> filesystem-is-truth** — the tree is built by scanning the folder structure, so the `.cws` **member-files
+> list below is removed**. The `.cws` records configuration only.
+
+The **`.cws`** file is the **workspace config** — a JSON document that records:
 1. **The Dock layout** (§2.0 panel/tab arrangement) — stored as a JSON blob so the user's panel
    arrangement is restored on next open.
-2. **Referenced libraries** — relative or absolute paths to library manifests (`.clib`) added via
-   File → Add Library.
-3. **Member files / project members** — relative paths to the `.csch`, `.cdd`, `.csym`, `.cnl` etc.
-   files that belong to this workspace.
+2. **Referenced libraries** — relative or absolute paths to external library folders added via
+   File → Add Library. Unresolvable → shown System.Warning + italics in the tree.
+3. **Known Files** — an arbitrary list of paths to other files the user keeps at hand while working (no
+   semantic role; convenient bookmarks). Unresolvable → System.Warning + italics, same as a broken library.
+   *(Replaces the old “member files” entry — membership is now the filesystem, not a list.)*
 4. **Color scheme name** (`ColorSchemeName`, optional/null) — the `.ccolor` theme to activate on open.
    Resolved via the four-step chain: workspace dir → user themes dir → bundled assets → `ColorTheme.BuiltIn`.
    Null means "use the application-level user preference". Omitted from the file when it is null
    (`WhenWritingNull`).
+5. **Tree view-state** (optional) — the user's custom ordering and active filter set, so the tree restores
+   as arranged.
 
 It **references, never embeds** — the actual design lives in the cell folders; the same cell/library can
 be referenced by multiple workspaces. A workspace is the “what am I working on right now” document; the

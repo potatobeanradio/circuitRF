@@ -1,0 +1,443 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:symDoc="using:CircuitRF.Ui.Schematic"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:ctrl="using:CircuitRF.Ui.Controls"
+             xmlns:converters="using:CircuitRF.Ui.Converters"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Content.SymbolEditorView"
+             x:DataType="symDoc:SymbolEditorDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <UserControl.Resources>
+        <converters:EnumEqualsToBoolConverter x:Key="EnumEqualsBool"/>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <!-- Show tooltips even on disabled buttons throughout this view -->
+        <Style Selector="Button">
+            <Setter Property="ToolTip.ShowOnDisabled" Value="True"/>
+        </Style>
+
+        <!--
+            Active tool button states.  Targets the inner ContentPresenter so the Fluent theme's
+            grey hover does not override the accent colour (same fix as SchematicView).
+        -->
+        <Style Selector="Button.ToolActive">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.ToolActive /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pressed /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColorDark1}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+
+        <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,2">
+
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" Spacing="2">
+
+                    <!-- ── Navigation ──────────────────────────────────────── -->
+
+                    <Button Click="OnZoomToFit"
+                            ToolTip.Tip="Zoom to Fit  (F)"
+                            Padding="6,3">
+                        <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Select ──────────────────────────────────────────── -->
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Select}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Select"
+                            ToolTip.Tip="Select / Move  (S)"
+                            Padding="6,3">
+                        <mi:MaterialIcon Kind="CursorDefault" Width="16" Height="16"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Line primitives ─────────────────────────────────── -->
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Line}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Line"
+                            ToolTip.Tip="Line — click and drag"
+                            Padding="6,3">
+                        <TextBlock Text="Line" FontSize="11"/>
+                    </Button>
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Polyline}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Polyline"
+                            ToolTip.Tip="Polyline — click points; Enter or double-click to finish"
+                            Padding="6,3">
+                        <TextBlock Text="PLine" FontSize="11"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Rectangle / circle primitives ──────────────────── -->
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Rect}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Rect"
+                            ToolTip.Tip="Rectangle — drag corner to corner"
+                            Padding="6,3">
+                        <TextBlock Text="Rect" FontSize="11"/>
+                    </Button>
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=RoundedRect}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="RoundedRect"
+                            ToolTip.Tip="Rounded Rectangle — drag corner to corner"
+                            Padding="6,3">
+                        <TextBlock Text="RRect" FontSize="11"/>
+                    </Button>
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Circle}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Circle"
+                            ToolTip.Tip="Circle — drag from centre"
+                            Padding="6,3">
+                        <TextBlock Text="Circ" FontSize="11"/>
+                    </Button>
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Ellipse}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Ellipse"
+                            ToolTip.Tip="Ellipse — drag bounding box"
+                            Padding="6,3">
+                        <TextBlock Text="Ell" FontSize="11"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Arc ────────────────────────────────────────────── -->
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Arc}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Arc"
+                            ToolTip.Tip="Arc — drag from centre; 270° sweep"
+                            Padding="6,3">
+                        <TextBlock Text="Arc" FontSize="11"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Polygon / triangle ─────────────────────────────── -->
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Triangle}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Triangle"
+                            ToolTip.Tip="Triangle — click 3 points (auto-commits)"
+                            Padding="6,3">
+                        <TextBlock Text="Tri" FontSize="11"/>
+                    </Button>
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Polygon}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Polygon"
+                            ToolTip.Tip="Polygon — click points; Enter or double-click to close"
+                            Padding="6,3">
+                        <TextBlock Text="Poly" FontSize="11"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Bezier curves ───────────────────────────────────── -->
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=QuadCurve}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="QuadCurve"
+                            ToolTip.Tip="Quadratic Bézier — click start, control, end (3 points)"
+                            Padding="6,3">
+                        <TextBlock Text="QBez" FontSize="11"/>
+                    </Button>
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=CubicCurve}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="CubicCurve"
+                            ToolTip.Tip="Cubic Bézier — click start, ctrl1, ctrl2, end (4 points)"
+                            Padding="6,3">
+                        <TextBlock Text="CBez" FontSize="11"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Wave shapes ────────────────────────────────────── -->
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Sine}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Sine"
+                            ToolTip.Tip="Sine wave — drag to set length and amplitude"
+                            Padding="6,3">
+                        <TextBlock Text="Sine" FontSize="11"/>
+                    </Button>
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=HalfWave}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="HalfWave"
+                            ToolTip.Tip="Half-wave — drag to set length and amplitude"
+                            Padding="6,3">
+                        <TextBlock Text="½Wav" FontSize="11"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Text ───────────────────────────────────────────── -->
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Text}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Text"
+                            ToolTip.Tip="Text — click anchor, type, Enter to place"
+                            Padding="6,3">
+                        <mi:MaterialIcon Kind="FormatText" Width="16" Height="16"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Pin tool ───────────────────────────────────────── -->
+
+                    <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Pin}"
+                            Command="{Binding ViewModel.SetActiveToolCommand}"
+                            CommandParameter="Pin"
+                            IsEnabled="{Binding ViewModel.IsEditable}"
+                            ToolTip.Tip="Pin — click to place; click existing pin to move/select"
+                            Padding="6,3">
+                        <mi:MaterialIcon Kind="MapMarker" Width="16" Height="16"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Stroke tier ────────────────────────────────────── -->
+
+                    <TextBlock Text="Stroke:" VerticalAlignment="Center"
+                               Margin="2,0,4,0" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               FontSize="11"/>
+
+                    <Button Classes.ToolActive="{Binding ViewModel.CurrentStrokeTier,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Normal}"
+                            Command="{Binding ViewModel.SetCurrentStrokeTierCommand}"
+                            CommandParameter="Normal"
+                            ToolTip.Tip="Normal stroke weight"
+                            Padding="6,3">
+                        <TextBlock Text="Normal" FontSize="11"/>
+                    </Button>
+
+                    <Button Classes.ToolActive="{Binding ViewModel.CurrentStrokeTier,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Thin}"
+                            Command="{Binding ViewModel.SetCurrentStrokeTierCommand}"
+                            CommandParameter="Thin"
+                            ToolTip.Tip="Thin stroke weight"
+                            Padding="6,3">
+                        <TextBlock Text="Thin" FontSize="11"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Font controls (for Text tool) ──────────────────── -->
+
+                    <TextBlock Text="Font:" VerticalAlignment="Center"
+                               Margin="2,0,4,0" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               FontSize="11"/>
+
+                    <NumericUpDown Value="{Binding ViewModel.CurrentFontSize, Mode=TwoWay}"
+                                   Minimum="4" Maximum="200" Increment="1"
+                                   FormatString="0"
+                                   Width="64"
+                                   VerticalAlignment="Center"
+                                   ToolTip.Tip="Font size (local symbol units)"/>
+
+                    <ComboBox ItemsSource="{x:Static vm:SymbolEditorViewModel.FontStyleOptions}"
+                              SelectedItem="{Binding ViewModel.CurrentFontStyle, Mode=TwoWay}"
+                              Width="95"
+                              VerticalAlignment="Center"
+                              Margin="2,0,0,0"
+                              ToolTip.Tip="Font style.  'Condensed' falls back to Light — IBM Plex Sans has no condensed variant (§7.3)."/>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Undo / Redo ─────────────────────────────────────── -->
+
+                    <Button Command="{Binding ViewModel.UndoCommand}"
+                            ToolTip.Tip="Undo  (⌘Z / Ctrl+Z)"
+                            Padding="6,3">
+                        <mi:MaterialIcon Kind="UndoVariant" Width="16" Height="16"/>
+                    </Button>
+
+                    <Button Command="{Binding ViewModel.RedoCommand}"
+                            ToolTip.Tip="Redo  (⌘⇧Z / Ctrl+Shift+Z)"
+                            Padding="6,3">
+                        <mi:MaterialIcon Kind="RedoVariant" Width="16" Height="16"/>
+                    </Button>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- ── Symbol metadata bar ─────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,2">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+
+                <!-- Locked indicator — visible when UserEditable = false -->
+                <Border IsVisible="{Binding ViewModel.IsLocked}"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                        CornerRadius="3" Padding="4,1">
+                    <StackPanel Orientation="Horizontal" Spacing="3">
+                        <mi:MaterialIcon Kind="Lock" Width="12" Height="12"
+                                         Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBlock Text="Read-only" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Dirty marker -->
+                <TextBlock Text="●" FontSize="11"
+                           IsVisible="{Binding ViewModel.IsDirty}"
+                           Foreground="{DynamicResource SystemAccentColor}"
+                           ToolTip.Tip="Unsaved changes"
+                           VerticalAlignment="Center"/>
+
+                <!-- Current file path (abbreviated) -->
+                <TextBlock Text="{Binding ViewModel.CurrentSymbolPath}"
+                           FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding ViewModel.CurrentSymbolPath, Converter={x:Static ObjectConverters.IsNotNull}}"
+                           ToolTip.Tip="{Binding ViewModel.CurrentSymbolPath}"/>
+
+                <Border Width="1" Height="14"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Port count -->
+                <TextBlock Text="Ports:" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <NumericUpDown Value="{Binding ViewModel.PortCount, Mode=TwoWay}"
+                               Minimum="0" Maximum="64" Increment="1"
+                               FormatString="0"
+                               Width="60"
+                               IsEnabled="{Binding ViewModel.IsEditable}"
+                               VerticalAlignment="Center"
+                               ToolTip.Tip="Number of ports this symbol maps pins to"/>
+
+                <Border Width="1" Height="14"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Save / Save As -->
+                <Button Command="{Binding ViewModel.SaveSymbolCommand}"
+                        CommandParameter="{Binding $parent[Window]}"
+                        IsEnabled="{Binding ViewModel.IsEditable}"
+                        ToolTip.Tip="Save  (⌘S / Ctrl+S)"
+                        Padding="5,2" FontSize="11">
+                    <StackPanel Orientation="Horizontal" Spacing="3">
+                        <mi:MaterialIcon Kind="ContentSave" Width="13" Height="13"/>
+                        <TextBlock Text="Save"/>
+                    </StackPanel>
+                </Button>
+
+                <Button Command="{Binding ViewModel.SaveSymbolAsCommand}"
+                        CommandParameter="{Binding $parent[Window]}"
+                        IsEnabled="{Binding ViewModel.IsEditable}"
+                        ToolTip.Tip="Save As…"
+                        Padding="5,2" FontSize="11">
+                    <TextBlock Text="Save As…"/>
+                </Button>
+
+            </StackPanel>
+        </Border>
+
+        <!-- ── Canvas ──────────────────────────────────────────────────────── -->
+        <ctrl:SymbolEditorCanvas x:Name="SymbolEditorCanvasCtrl"
+                                 ViewModel="{Binding ViewModel}"
+                                 ClipToBounds="True"/>
+
+    </DockPanel>
+</UserControl>

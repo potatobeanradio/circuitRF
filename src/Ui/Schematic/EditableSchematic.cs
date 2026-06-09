@@ -1,5 +1,3 @@
-using CircuitRF.Ui.Renderers;
-
 namespace CircuitRF.Ui.Schematic;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -53,7 +51,7 @@ public static class SymbolPortDefs
         switch (kind)
         {
             case SymbolKind.Ground:  return [("1", 0f, 0f)];
-            case SymbolKind.Port:    return [("1", -200f, 0f)];
+            case SymbolKind.Port:    return [("1", 0f, -200f)];
             case SymbolKind.FetSdd:  return [("gate",   -200f,   0f),
                                              ("drain",   200f, -100f),
                                              ("source",  200f,  100f)];
@@ -61,7 +59,7 @@ public static class SymbolPortDefs
             case SymbolKind.Sdd:
                 return GeneratePorts(portCount >= 1 ? portCount : 2);
             default:
-                return [("1", -200f, 0f), ("2", 200f, 0f)];
+                return [("1", 0f, -200f), ("2", 0f, 200f)];
         }
     }
 
@@ -225,37 +223,30 @@ public sealed class EditableComponent
     /// <summary>Axis-aligned bounding box of the symbol geometry in world coordinates.</summary>
     public (double MinX, double MinY, double MaxX, double MaxY) ComputeGlyphBb()
     {
-        float[] segs = SchematicSymbols.For(Symbol);
-        if (segs.Length < 4) return (X - 160, Y - 60, X + 160, Y + 60);
+        var sym = BuiltInSymbols.Primitives(Symbol);
+        if (sym.Primitives.Count == 0) return (X - 160, Y - 60, X + 160, Y + 60);
 
-        float lMinX = float.MaxValue, lMinY = float.MaxValue;
-        float lMaxX = float.MinValue, lMaxY = float.MinValue;
-        for (int i = 0; i + 3 < segs.Length; i += 4)
-        {
-            lMinX = Math.Min(lMinX, Math.Min(segs[i],     segs[i + 2]));
-            lMinY = Math.Min(lMinY, Math.Min(segs[i + 1], segs[i + 3]));
-            lMaxX = Math.Max(lMaxX, Math.Max(segs[i],     segs[i + 2]));
-            lMaxY = Math.Max(lMaxY, Math.Max(segs[i + 1], segs[i + 3]));
-        }
-        // For variadic types the static geometry has no lead stubs; extend BB to port tips.
+        var (lMinX, lMinY, lMaxX, lMaxY) = SymbolGeometry.ComputeBb(sym.Primitives);
+
+        // For variadic types the static body has no lead stubs; extend BB to port tips.
         if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd)
         {
             foreach (var (_, lx, ly) in SymbolPortDefs.For(Symbol, PortCount))
             {
-                lMinX = Math.Min(lMinX, lx);
-                lMinY = Math.Min(lMinY, ly);
-                lMaxX = Math.Max(lMaxX, lx);
-                lMaxY = Math.Max(lMaxY, ly);
+                if (lx < lMinX) lMinX = lx;
+                if (ly < lMinY) lMinY = ly;
+                if (lx > lMaxX) lMaxX = lx;
+                if (ly > lMaxY) lMaxY = ly;
             }
         }
         const float pad = 15f;
-        // Transform all four local corners and take world BB
+        // Transform all four local corners and take world BB.
         var corners = new[]
         {
-            SchematicGeometry.LocalToWorld(lMinX - pad, lMinY - pad, X, Y, Rotation, MirrorX),
-            SchematicGeometry.LocalToWorld(lMaxX + pad, lMinY - pad, X, Y, Rotation, MirrorX),
-            SchematicGeometry.LocalToWorld(lMinX - pad, lMaxY + pad, X, Y, Rotation, MirrorX),
-            SchematicGeometry.LocalToWorld(lMaxX + pad, lMaxY + pad, X, Y, Rotation, MirrorX),
+            SchematicGeometry.LocalToWorld((float)(lMinX - pad), (float)(lMinY - pad), X, Y, Rotation, MirrorX),
+            SchematicGeometry.LocalToWorld((float)(lMaxX + pad), (float)(lMinY - pad), X, Y, Rotation, MirrorX),
+            SchematicGeometry.LocalToWorld((float)(lMinX - pad), (float)(lMaxY + pad), X, Y, Rotation, MirrorX),
+            SchematicGeometry.LocalToWorld((float)(lMaxX + pad), (float)(lMaxY + pad), X, Y, Rotation, MirrorX),
         };
         return (
             corners.Min(c => c.X),

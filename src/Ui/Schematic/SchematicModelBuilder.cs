@@ -6,7 +6,9 @@ namespace CircuitRF.Ui.Schematic;
 ///  - BuildHero2PA()         — simplified GaN PA to demonstrate correct rendering
 ///
 /// All positions are in world units (100 = 1 grid square).
-/// Components are placed on a 400-unit horizontal pitch (standard EDA: 4 grid squares).
+/// 2-terminal vertical symbols (R/L/C/V/Tone/Port/GND) have pins at (0,±200) in local
+/// coords.  Place them at R90 in horizontal signal paths (pin1 right, pin2 left).
+/// Box symbols (FET/ZPort/Sdd) stay horizontal (pins ±200 on the x-axis).
 /// </summary>
 public static class SchematicModelBuilder
 {
@@ -46,15 +48,16 @@ public static class SchematicModelBuilder
                 SymbolKind kind = kinds[(col + row) % kinds.Length];
                 string name = $"{KindPrefix(kind)}{count + 1}";
 
-                var comp = MakeComponent(name, kind, cx, cy, SymbolRotation.R0, DemoParams(kind, count));
+                // R90: vertical 2-terminal passive lies horizontal (pin1 right, pin2 left)
+                var comp = MakeComponent(name, kind, cx, cy, SymbolRotation.R90, DemoParams(kind, count));
                 int compIdx = components.Count;
                 components.Add(comp);
 
-                // Wire from previous component's right port to this component's left port
+                // Wire from previous component's right connector (cx_prev+200) to this left (cx-200).
+                // At R90 pin1 is at cx+200 (right) and pin2 is at cx-200 (left); same x-coords as before.
                 if (prevIdx.HasValue)
                 {
                     var prev = components[prevIdx.Value];
-                    // prev port2 at (prev.X + 200, prev.Y), this port1 at (cx - 200, cy)
                     double wireX0 = prev.X + 200;
                     double wireY0 = prev.Y;
                     double wireX1 = cx - 200;
@@ -96,74 +99,86 @@ public static class SchematicModelBuilder
     // ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Builds a simplified version of the Hero 2 GaN PA schematic for visual testing:
-    /// ToneSource → Resistor(match) → Capacitor(block) → FetSdd → Inductor(choke) → Port
-    /// with gate bias and drain bias stubs below.
+    /// Builds a simplified version of the Hero 2 GaN PA schematic for visual testing.
+    /// Signal path (left → right, all at y=0):
+    ///   ToneSource(R90) → ZPort → Cap(R90) → FetSdd → Inductor(R90) → ZPort → Port(R270)
+    /// Gate bias (vertical, x=gateNodeX): Inductor(R0) → VoltageSource(R0) → Ground
+    /// Drain bias (vertical, x=drainNodeX): VoltageSource(R0) → Ground
+    /// Drive source return: Ground below Vdrive left pin.
     /// </summary>
     public static SchematicModel BuildHero2PA()
     {
-        // Signal path at y=0, components spaced 500 units apart (wider for clarity)
-        const double pitch = 500.0;
-        const double signalY = 0.0;
-        const double biasY   = 400.0;
+        // Signal path at y=0, components spaced 500 units apart
+        const double pitch       = 500.0;
+        const double signalY     = 0.0;
+        const double biasY       = 400.0;   // vertical offset for bias components below signal
 
         var components = new List<SchematicComponent>();
         var wires      = new List<SchematicWire>();
         var dots       = new List<SchematicDot>();
 
-        // ── Signal path ────────────────────────────────────────────────────────
+        // ── Signal path ─────────────────────────────────────────────────────────
 
-        // Drive source (left port connected to n_src, right port unconnected toward ground)
+        // Vdrive: vertical ToneSource at R90 → pin1 at (+200,0), pin2 at (-200,0)
         components.Add(MakeComponent("Vdrive", SymbolKind.ToneSource, 0, signalY,
-            SymbolRotation.R0,
-            [("V", "1", "V"), ("Freq", "2", "GHz")],      // V amplitude + 2 GHz frequency
-            port0State: PortConnectionState.Connected,
-            port1State: PortConnectionState.Unconnected));
+            SymbolRotation.R90,
+            [("V", "1", "V"), ("Freq", "2", "GHz")]));
 
         components.Add(MakeComponent("Zsource", SymbolKind.ZPort, pitch, signalY,
             SymbolRotation.R0, [("Z[1,1]", "25", "ohm")], portCount: 1));
 
+        // Cblock_g: vertical Cap at R90 → connects horizontally in signal path
         components.Add(MakeComponent("Cblock_g", SymbolKind.Capacitor, 2 * pitch, signalY,
-            SymbolRotation.R0, [("C", "1", "µF")]));
+            SymbolRotation.R90, [("C", "1", "µF")]));
 
-        // FET — SDD model (3-port: gate L, drain R-top, source R-bottom; using 2-port layout)
+        // FET — SDD model (3-port: gate left, drain right-top, source right-bottom; horizontal box)
         components.Add(MakeComponent("FET1", SymbolKind.FetSdd, 3 * pitch, signalY,
             SymbolRotation.R0));
 
+        // Lchoke_d: vertical Inductor at R90 → connects horizontally; drain junction at left pin
         components.Add(MakeComponent("Lchoke_d", SymbolKind.Inductor, 4 * pitch, signalY,
-            SymbolRotation.R0, [("L", "1", "µH")]));
+            SymbolRotation.R90, [("L", "1", "µH")]));
 
         components.Add(MakeComponent("Zload", SymbolKind.ZPort, 5 * pitch, signalY,
             SymbolRotation.R0, [("Z[1,1]", "160", "ohm")], portCount: 1));
 
+        // P2: vertical Port at R270 → single pin at local(0,-200) R270 → world(-200,0) = left side
         components.Add(MakeComponent("P2", SymbolKind.Port, 6 * pitch, signalY,
-            SymbolRotation.R0));
+            SymbolRotation.R270));
 
-        // ── Gate bias ──────────────────────────────────────────────────────────
+        // ── Gate bias (vertical stack above signal path, x = gateNodeX = 3*pitch-200) ──
 
-        // Lchoke_g stacked above the FET gate node
+        double gateNodeX = Port1X(3 * pitch, 0);   // FET gate world x = 3*pitch - 200
+
+        // Lchoke_g at R0 (vertical native): pin2 at (gateNodeX,-200), pin1 at (gateNodeX,-600)
         components.Add(MakeComponent("Lchoke_g", SymbolKind.Inductor,
-            3 * pitch - 200, -biasY, SymbolRotation.R90, [("L", "1", "µH")]));
+            gateNodeX, -biasY, SymbolRotation.R0, [("L", "1", "µH")]));
 
+        // Vgate at R0 (vertical native): pin2 at (gateNodeX,-700), pin1 at (gateNodeX,-1100)
         components.Add(MakeComponent("Vgate", SymbolKind.VoltageSource,
-            3 * pitch - 200, -biasY - 500, SymbolRotation.R90, [("Vac", "-3.05", "V")]));
+            gateNodeX, -biasY - 500, SymbolRotation.R0, [("Vac", "-3.05", "V")]));
 
         components.Add(MakeComponent("GND1", SymbolKind.Ground,
-            3 * pitch - 200, -biasY - 1000, SymbolRotation.R0));
+            gateNodeX, -biasY - 1000, SymbolRotation.R0));
 
-        // ── Drain bias ─────────────────────────────────────────────────────────
+        // ── Drain bias (vertical stack below signal path, x = drainNodeX = Lchoke_d left pin) ──
 
+        double drainNodeX = Port1X(4 * pitch, 0);  // Lchoke_d left pin x at R90 = 4*pitch - 200
+
+        // Vdrain at R0 (vertical): pin1 at (drainNodeX, biasY-100), pin2 at (drainNodeX, biasY+300)
         components.Add(MakeComponent("Vdrain", SymbolKind.VoltageSource,
-            4 * pitch, biasY + 100, SymbolRotation.R90, [("Vac", "48", "V")]));
+            drainNodeX, biasY + 100, SymbolRotation.R0, [("Vac", "48", "V")]));
 
+        // GND2 below Vdrain
         components.Add(MakeComponent("GND2", SymbolKind.Ground,
-            4 * pitch, biasY + 500, SymbolRotation.R0));
+            drainNodeX, biasY + 500, SymbolRotation.R0));
 
-        // Drive source ground
+        // ── Drive source return (below Vdrive left pin at (-200,0)) ─────────────
+
         components.Add(MakeComponent("GND3", SymbolKind.Ground,
-            0, biasY + 100, SymbolRotation.R0));
+            -200, 200, SymbolRotation.R0));
 
-        // ── Signal-path wires ─────────────────────────────────────────────────
+        // ── Signal-path wires ────────────────────────────────────────────────────
 
         void AddWire(double x0, double y0, double x1, double y1) =>
             wires.Add(new SchematicWire
@@ -175,41 +190,42 @@ public static class SchematicModelBuilder
                 BbMaxY  = Math.Max(y0, y1) + 5,
             });
 
-        // Vdrive left port → (circuit input, unconnected — already shown via red box)
-        // Vdrive right port → Zsource left port
-        AddWire(Port2X(0, 0), signalY, Port1X(pitch, 0), signalY);
-        // Zsource → Cblock_g
-        AddWire(Port2X(pitch, 0), signalY, Port1X(2 * pitch, 0), signalY);
-        // Cblock_g → FET gate
-        AddWire(Port2X(2 * pitch, 0), signalY, Port1X(3 * pitch, 0), signalY);
-        // FET drain → Lchoke_d
-        AddWire(Port2X(3 * pitch, 0), signalY, Port1X(4 * pitch, 0), signalY);
-        // Lchoke_d → Zload
-        AddWire(Port2X(4 * pitch, 0), signalY, Port1X(5 * pitch, 0), signalY);
-        // Zload → P2
-        AddWire(Port2X(5 * pitch, 0), signalY, Port1X(6 * pitch, 0), signalY);
+        // At R90 the vertical passives have their connectors at cx±200 on the x-axis —
+        // same world coordinates as the old horizontal layout, so Port1X/Port2X are unchanged.
+        AddWire(Port2X(0, 0),           signalY, Port1X(pitch, 0),       signalY); // Vdrive → Zsource
+        AddWire(Port2X(pitch, 0),       signalY, Port1X(2 * pitch, 0),   signalY); // Zsource → Cblock_g
+        AddWire(Port2X(2 * pitch, 0),   signalY, Port1X(3 * pitch, 0),   signalY); // Cblock_g → FET gate
+        AddWire(Port2X(3 * pitch, 0),   signalY, Port1X(4 * pitch, 0),   signalY); // FET drain → Lchoke_d
+        AddWire(Port2X(4 * pitch, 0),   signalY, Port1X(5 * pitch, 0),   signalY); // Lchoke_d → Zload
+        AddWire(Port2X(5 * pitch, 0),   signalY, Port1X(6 * pitch, 0),   signalY); // Zload → P2
 
-        // Gate bias: FET gate node → Lchoke_g (vertical) → Vgate → GND1
-        // Lchoke_g at (gateNodeX, -biasY=-400) R90: port2 at y=-200, port1 at y=-600
-        // Vgate at (gateNodeX, -biasY-500=-900) R90: port1 at y=-700 (top), port2 at y=-1100 (bottom)
-        // Wait: R90 port1(local -200,0)→ world y=cy-200; port2(local +200,0)→ world y=cy+200
-        // So Vgate port1 at -900-200=-1100, port2 at -900+200=-700
-        double gateNodeX = Port1X(3 * pitch, 0);
-        AddWire(gateNodeX, signalY, gateNodeX, -biasY + 200);           // FET gate → Lchoke_g port2
-        AddWire(3 * pitch - 200, -biasY - 200, 3 * pitch - 200, -biasY - 300); // Lchoke_g port1 → Vgate port2
-        AddWire(3 * pitch - 200, -biasY - 700, 3 * pitch - 200, -biasY - 1000); // Vgate port1 → GND1
+        // ── Gate bias wires ─────────────────────────────────────────────────────
 
-        // Drain bias: Lchoke_d center stub → Vdrain → GND2
-        // Vdrain at (4*pitch, biasY+100=500) R90: port1 at y=300, port2 at y=700
-        AddWire(4 * pitch, signalY + 200, 4 * pitch, biasY - 100);      // Lchoke_d top stub → Vdrain port1
-        AddWire(4 * pitch, biasY + 300, 4 * pitch, biasY + 500);        // Vdrain port2 → GND2
+        // FET gate node → Lchoke_g pin2 (Lchoke_g at R0: pin2 = local(0,+200) → y=-biasY+200=-200)
+        AddWire(gateNodeX, signalY,              gateNodeX, -biasY + 200);
+        // Lchoke_g pin1 (y=-biasY-200=-600) → Vgate pin2 (Vgate at R0: pin2 = y=-biasY-500+200=-700)
+        AddWire(gateNodeX, -biasY - 200,         gateNodeX, -biasY - 300);
+        // Vgate pin1 (y=-biasY-500-200=-1100) → GND1 (y=-biasY-1000=-1400)
+        AddWire(gateNodeX, -biasY - 700,         gateNodeX, -biasY - 1000);
 
-        // Drive source → GND3 (GND3 at y=biasY+100=500, port at y=500)
-        AddWire(0, signalY + 200, 0, biasY + 100);
+        // ── Drain bias wires ────────────────────────────────────────────────────
 
-        // Junction dots at Lchoke_d mid-node and FET gate node
-        dots.Add(new SchematicDot(4 * pitch, signalY));
+        // Lchoke_d left-pin junction → Vdrain pin1 (y=biasY+100-200=biasY-100)
+        AddWire(drainNodeX, signalY,             drainNodeX, biasY - 100);
+        // Vdrain pin2 (y=biasY+100+200=biasY+300) → GND2 (y=biasY+500)
+        AddWire(drainNodeX, biasY + 300,         drainNodeX, biasY + 500);
+
+        // ── Drive source return wire ─────────────────────────────────────────────
+
+        // Vdrive left pin at (-200,0) → GND3 at (-200,200)
+        AddWire(-200, signalY, -200, 200);
+
+        // ── Junction dots ────────────────────────────────────────────────────────
+
+        // FET gate node: Cblock_g right wire + FET gate port + gate bias stub
         dots.Add(new SchematicDot(gateNodeX, signalY));
+        // Lchoke_d left-pin drain node: FET drain wire + Lchoke_d pin2 + drain bias stub
+        dots.Add(new SchematicDot(drainNodeX, signalY));
 
         ComputeOverallBounds(components, wires, out double minX, out double minY, out double maxX, out double maxY);
 
@@ -228,7 +244,10 @@ public static class SchematicModelBuilder
     //  Helpers
     // ---------------------------------------------------------------------------
 
-    // Right/left port of a standard 2-terminal component at origin x on y-row
+    // Right/left connection point x-coordinate for a component centered at cx.
+    // For vertical 2-terminal passives at R90: pin1 is at cx+200 (right), pin2 at cx-200 (left).
+    // For horizontal box symbols at R0: port2 is at cx+200 (right), port1 at cx-200 (left).
+    // Either way, the connection x-coordinate is cx±200.
     private static double Port2X(double cx, double _cy) => cx + 200;
     private static double Port1X(double cx, double _cy) => cx - 200;
 
@@ -268,7 +287,7 @@ public static class SchematicModelBuilder
             labels.Add(string.IsNullOrEmpty(pName) ? val : $"{pName} = {val}");
         }
 
-        var (gMinX, gMinY, gMaxX, gMaxY) = ComputeGlyphBbLocal(kind, cx, cy, n);
+        var (gMinX, gMinY, gMaxX, gMaxY) = ComputeGlyphBbLocal(kind, cx, cy, n, rot);
 
         // FullBb: glyph BB unioned with default label positions (no offsets — builder creates
         // components without saved LabelOffsets).
@@ -308,14 +327,17 @@ public static class SchematicModelBuilder
         };
     }
 
-    // Glyph BB for variadic types extends to port tips; fixed types use the standard box.
+    // Glyph BB (world coords) for the built-in symbols.
+    // Vertical 2-terminal symbols (R/L/C/V/Tone/Port/GND) span ±200 in local y, ~60 in x.
+    // At R90/R270 the axes are swapped (lying horizontal).
+    // Box symbols (FET/ZPort/Sdd/Generic) keep the legacy horizontal box.
     private static (double MinX, double MinY, double MaxX, double MaxY) ComputeGlyphBbLocal(
-        SymbolKind kind, double cx, double cy, int n)
+        SymbolKind kind, double cx, double cy, int n, SymbolRotation rot)
     {
         if (n > 0 && kind is SymbolKind.ZPort or SymbolKind.Sdd)
         {
             var portDefs = SymbolPortDefs.For(kind, n);
-            float minX = -70f, maxX = 70f;   // body bounds (ZPort ±70, Sdd ±80)
+            float minX = -70f, maxX = 70f;
             float minY = -50f, maxY = 50f;
             foreach (var (_, lx, ly) in portDefs)
             {
@@ -325,7 +347,17 @@ public static class SchematicModelBuilder
             const float pad = 15f;
             return (cx + minX - pad, cy + minY - pad, cx + maxX + pad, cy + maxY + pad);
         }
-        return (cx - 160, cy - 60, cx + 160, cy + 60);
+
+        // Box symbols stay horizontal regardless of rotation.
+        if (kind is SymbolKind.FetSdd or SymbolKind.Generic)
+            return (cx - 210, cy - 110, cx + 210, cy + 110);
+
+        // Vertical 2-terminal symbols: local x ≈ ±65, local y ≈ ±210.
+        // At R90/R270 the axes swap (component lies horizontal).
+        bool isHorizontal = rot is SymbolRotation.R90 or SymbolRotation.R270;
+        return isHorizontal
+            ? (cx - 210, cy - 65, cx + 210, cy + 65)
+            : (cx -  65, cy - 210, cx +  65, cy + 210);
     }
 
     private static IReadOnlyList<SchematicPortDef> BuildPorts(
@@ -335,18 +367,23 @@ public static class SchematicModelBuilder
     {
         return kind switch
         {
+            // Ground: single pin at local origin (unchanged)
             SymbolKind.Ground => [new SchematicPortDef("1", 0, 0, p0)],
-            SymbolKind.Port   => [new SchematicPortDef("1", -200, 0, p0)],
+            // Port: single pin at local top (0,-200) — vertical; rotated by renderer
+            SymbolKind.Port   => [new SchematicPortDef("1", 0, -200, p0)],
+            // FetSdd: horizontal box, pins unchanged
             SymbolKind.FetSdd => [
                 new SchematicPortDef("gate",   -200, 0,    p0),
                 new SchematicPortDef("drain",   200, -100, p1),
                 new SchematicPortDef("source",  200,  100, PortConnectionState.Unconnected),
             ],
+            // Variadic box symbols
             SymbolKind.ZPort or SymbolKind.Sdd =>
                 GenerateVariadicPorts(portCount > 0 ? portCount : 2),
+            // 2-terminal vertical: pins at local top (0,-200) and bottom (0,+200)
             _ => [
-                new SchematicPortDef("1", -200, 0, p0),
-                new SchematicPortDef("2",  200, 0, p1),
+                new SchematicPortDef("1", 0, -200, p0),
+                new SchematicPortDef("2", 0,  200, p1),
             ],
         };
     }

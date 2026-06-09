@@ -111,7 +111,7 @@ public class CornerJunctionTests
     {
         var bent = MakeWire((0, 0), (100, 0), (100, 100));
         var model = ModelWith(bent);
-        var vm = new SchematicViewModel(model, new UndoRedoStack()) { };
+        var vm = new SchematicViewModel(model);
         vm.SetWireTool();
 
         vm.OnPointerPressed(100, 0, default);     // start on the corner

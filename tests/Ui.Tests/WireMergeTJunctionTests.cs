@@ -25,9 +25,8 @@ public class WireMergeTJunctionTests
     {
         var model = new SchematicEditModel { GridSnap = false };
         foreach (var w in wires) model.Wires.Add(w);
-        var undo = new UndoRedoStack();
-        var vm   = new SchematicViewModel(model, undo);
-        return (model, vm, undo);
+        var vm   = new SchematicViewModel(model);
+        return (model, vm, vm.UndoRedo);
     }
 
     private static bool HasDotAt(SchematicViewModel vm, double x, double y)

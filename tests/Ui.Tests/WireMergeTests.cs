@@ -24,9 +24,8 @@ public class WireMergeTests
 
     private static (SchematicEditModel Model, SchematicViewModel Vm) MakeVm()
     {
-        var model    = new SchematicEditModel { GridSnap = false };
-        var undoRedo = new UndoRedoStack();
-        var vm       = new SchematicViewModel(model, undoRedo);
+        var model = new SchematicEditModel { GridSnap = false };
+        var vm    = new SchematicViewModel(model);
         return (model, vm);
     }
 
@@ -106,8 +105,8 @@ public class WireMergeTests
         // Before draw: 1 wire (wireA). After draw+merge: 1 wire (merged).
         // After undo: 1 wire (wireA) — the drawn wire disappears as if never placed.
         var model    = new SchematicEditModel { GridSnap = false };
-        var undoRedo = new UndoRedoStack();
-        var vm       = new SchematicViewModel(model, undoRedo);
+        var vm       = new SchematicViewModel(model);
+        var undoRedo = vm.UndoRedo;
 
         var wireA = MakeWire((0, 0), (100, 0));
         model.Wires.Add(wireA);

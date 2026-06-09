@@ -49,6 +49,9 @@
         <DataTemplate DataType="{x:Type schemDoc:SchematicDocument}">
             <cv:SchematicView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type schemDoc:SymbolEditorDocument}">
+            <cv:SymbolEditorView/>
+        </DataTemplate>
     </Application.DataTemplates>
 
     <Application.Resources>

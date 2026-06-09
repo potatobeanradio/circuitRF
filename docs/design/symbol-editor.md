@@ -324,9 +324,43 @@ workspace / project file) records which `.csym` is **primary** and the `UserEdit
    path. Render the **existing** (placeholder) symbols through it first to prove parity, before changing art.
 2. **`.csym` persistence** (§10) — read/write the primitive model; built-in library as resources.
 3. **Standard library art** (§8) — translate the Core Graphics shapes, **vertical**, into primitives; flip
-   `SymbolPortDefs` 2-terminal entries to vertical; re-lay-out the GUI demo (§4 consequence).
+   `SymbolPortDefs` 2-terminal entries to vertical; re-lay-out the GUI demo (§4 consequence). ✅ **Done (Phase 6f step 3).**
+   R/L/C/V/Tone/Port/GND are vertical (pins at `(0,∓200)`); FET/ZPort/Sdd/Generic unchanged (horizontal).
 4. **Symbol editor canvas + tools + pins** (§5) — primitives, pin mapping, stroke/font controls, undo;
    docked + tear-off; **live schematic update**.
+   - **4a done (Phase 6f).** `EditableSymbol` (mutable working copy) + `SymbolGeometry.BboxOf/HitTest/
+     TranslateBy` (framework-free); `SymbolEditorViewModel` (Select tool, selection, move-drag, delete,
+     rubber-band, per-document `UndoRedoStack`); `SymbolEditorCanvas` (Skia control, pan/zoom, fine-grid `p=5`,
+     selection overlay, reuses `SchematicRenderer.DrawSymbol`); `SymbolEditorDocument` + `SymbolEditorView`
+     + `SymbolEditorWindow` (dockable + tear-off); `MoveSymbolPrimitivesCommand` + `DeleteSymbolPrimitivesCommand`
+     (both directions notify). Open via View → "Open Symbol Editor (docked/window)".
+   - **4b done (Phase 6f).** Drawing tools: `PlaceSymbolPrimitiveCommand` (append + undo-remove, notify
+     both); `Tool` enum extended with all 14 drawing tools; `CurrentColorRole/StrokeTier/FontSize/FontStyle`
+     properties; two-point drag gestures (Line/Rect/RoundedRect/Circle/Ellipse/Arc/Sine/HalfWave),
+     multi-point click gestures (Polyline/Polygon/Triangle/QuadCurve/CubicCurve), click-then-type text
+     gesture; `InProgressPrimitive` on `SymbolEditorOverlay`; ghost-dashed preview via `DrawSymbol` with
+     `overridePaint`; tool cursors (crosshair for drawing tools, arrow for Select); `TextPrimitive` real
+     rendering in `SchematicRenderer.DrawSymbol` (IBM Plex Sans, align, font-style); toolbar: 14 tool
+     buttons (data-driven `Classes.ToolActive` via `EnumEqualsToBoolConverter` + `SetActiveToolCommand`),
+     stroke-tier Normal/Thin buttons, font-size `NumericUpDown`, font-style `ComboBox`; all placements
+     undoable; art snaps to `p = 5`; no RGB picker (color is `SymbolColorRole` role only).
+   - **4c done (Phase 6f).** Pin tool, `.csym` I/O, locked gate:
+     - `PortCount` on `Symbol` + `EditableSymbol` + `CsymFile` (backward-compat: 0 → inferred from pins.Count).
+     - Four pin commands: `PlaceSymbolPinCommand`, `MoveSymbolPinCommand`, `DeleteSymbolPinCommand`,
+       `RemapSymbolPinCommand` — all undoable, both directions notify.
+     - `SymbolEditorViewModel.Tool.Pin` — click to place (snapped to P=100, not fine p=5); click existing
+       pin to select + drag; `RemapSymbolPinCommand` fires on `SelectedPinPortIndex` change.
+     - `SymbolEditorOverlay` extended: `SelectedPinIndex`, `PinLiveDragOffset`, `UnmappedPortIndices`.
+     - `SymbolEditorRenderer.DrawPinMarkers` — filled circles at pin locations, port labels, selected
+       highlight, live drag ghost (dashed); `DrawUnmappedPortPanel` — soft-yellow info panel (non-blocking).
+     - `.csym` open via File → "Open Symbol…" (Workspace window) → `SymbolPersistence.LoadFromFile` →
+       `EditableSymbol.FromSymbol`; save/save-as via `SaveSymbolCommand`/`SaveSymbolAsCommand` in the VM.
+     - Locked gate: built-in symbols (`OpenSymbolEditorDocked/Window`) marked `UserEditable = false` →
+       `SymbolEditorViewModel.IsLocked = true` → all mutation paths gated; edit tools disabled in toolbar;
+       cross cursor reverts to arrow; "Read-only" indicator shown in metadata bar.
+     - Metadata bar in `SymbolEditorView`: dirty indicator (●), file path, port count `NumericUpDown`, Save/Save-As buttons.
+     - **Hard deferred (by design):** live schematic update, cell model, cell-driven open, rewiring
+       `SymbolKind → BuiltInSymbols`. These require the project-tree/workspace design (later phase).
 5. **Sine / half-wave smart-paths** (§7.1), **font styles** (§7.3), and the **Bitmap** primitive (§2.5 —
    import/place/resize-with-aspect-lock/opacity/locked-flag/lowest-Z; path-reference persistence).
 6. **Locked-symbol flag** (§7.2) — cell-level `UserEditable`; library/sim/VAR/Measurement locked.

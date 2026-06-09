@@ -1,11 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
+using Dock.Model.Core;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Schematic;
@@ -31,8 +35,18 @@ public partial class WorkspaceViewModel : ViewModelBase
 
     // ---- Infrastructure ------------------------------------------------------
 
-    public UndoRedoStack UndoRedo { get; } = new();
     public IMessageSink Messages { get; }
+
+    // ---- Per-document undo routing ------------------------------------------
+
+    // The active editable document; null when no undoable document is active.
+    private IUndoableDocument? _activeUndoTarget;
+
+    // Windows that already have undo/redo KeyBindings injected (Dock float support).
+    private readonly HashSet<Window> _wiredHostWindows = [];
+
+    public string UndoDescription => _activeUndoTarget?.UndoRedo.UndoDescription ?? "Undo";
+    public string RedoDescription => _activeUndoTarget?.UndoRedo.RedoDescription ?? "Redo";
 
     // ---- Window title --------------------------------------------------------
 
@@ -63,15 +77,6 @@ public partial class WorkspaceViewModel : ViewModelBase
         if (_factory.ProjectTreeTool is { } tree)
             tree.OpenItemRequested = OpenTreeItem;
 
-        // Re-evaluate Undo/Redo CanExecute whenever the stack depth changes.
-        // RelayCommand's CanExecute queries CanUndo()/CanRedo() on UndoRedo (an external object),
-        // so the generated command never auto-notifies — we must call NotifyCanExecuteChanged manually.
-        UndoRedo.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName is nameof(UndoRedoStack.CanUndo)) UndoCommand.NotifyCanExecuteChanged();
-            if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) RedoCommand.NotifyCanExecuteChanged();
-        };
-
         // Notify PropertiesTool when the active document tab changes (active schematic tracking).
         if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged npc)
             npc.PropertyChanged += OnDocumentDockPropertyChanged;
@@ -85,7 +90,7 @@ public partial class WorkspaceViewModel : ViewModelBase
     [RelayCommand]
     private void NewWorkspace()
     {
-        UndoRedo.Reset();
+        SetActiveUndoTarget(null);
         CurrentWorkspacePath = null;
         // Reset Dock layout to default.
         var newLayout = _factory.CreateDefaultLayout();
@@ -185,15 +190,46 @@ public partial class WorkspaceViewModel : ViewModelBase
         await Task.CompletedTask;
     }
 
-    // ---- Edit commands (route through UndoRedoStack) -------------------------
+    // ---- Edit commands (route to the active document's stack) ---------------
 
     [RelayCommand(CanExecute = nameof(CanUndo))]
-    private void Undo() => UndoRedo.Undo();
-    private bool CanUndo() => UndoRedo.CanUndo;
+    private void Undo() => _activeUndoTarget?.UndoRedo.Undo();
+    private bool CanUndo() => _activeUndoTarget?.UndoRedo.CanUndo ?? false;
 
     [RelayCommand(CanExecute = nameof(CanRedo))]
-    private void Redo() => UndoRedo.Redo();
-    private bool CanRedo() => UndoRedo.CanRedo;
+    private void Redo() => _activeUndoTarget?.UndoRedo.Redo();
+    private bool CanRedo() => _activeUndoTarget?.UndoRedo.CanRedo ?? false;
+
+    private void SetActiveUndoTarget(IUndoableDocument? target)
+    {
+        if (_activeUndoTarget?.UndoRedo is { } old)
+            old.PropertyChanged -= OnActiveStackPropertyChanged;
+
+        _activeUndoTarget = target;
+
+        if (_activeUndoTarget?.UndoRedo is { } stack)
+            stack.PropertyChanged += OnActiveStackPropertyChanged;
+
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(UndoDescription));
+        OnPropertyChanged(nameof(RedoDescription));
+    }
+
+    private void OnActiveStackPropertyChanged(object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(UndoRedoStack.CanUndo))
+        {
+            UndoCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(UndoDescription));
+        }
+        if (e.PropertyName is nameof(UndoRedoStack.CanRedo))
+        {
+            RedoCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(RedoDescription));
+        }
+    }
 
     // Cut / Copy / Paste / Select All — no-ops at the window level.
     // Each active control (TextBox, SchematicCanvas) handles clipboard natively via its own
@@ -265,6 +301,66 @@ public partial class WorkspaceViewModel : ViewModelBase
         _factory.OpenDocument(doc);
     }
 
+    // ---- Symbol Editor commands ---------------------------------------------
+
+    /// <summary>Opens the Symbol Editor docked on a built-in Resistor symbol (read-only).</summary>
+    [RelayCommand]
+    private void OpenSymbolEditorDocked()
+    {
+        var editable = EditableSymbol.FromSymbol(BuiltInSymbols.Primitives(SymbolKind.Resistor));
+        editable.UserEditable = false;  // built-ins are read-only
+        var vm  = new SymbolEditorViewModel(editable);
+        var doc = new SymbolEditorDocument("Symbol Editor [Resistor]", vm);
+        _factory.OpenDocument(doc);
+    }
+
+    /// <summary>Opens the Symbol Editor as a standalone tear-off window on a built-in Inductor symbol (read-only).</summary>
+    [RelayCommand]
+    private void OpenSymbolEditorWindow()
+    {
+        var editable = EditableSymbol.FromSymbol(BuiltInSymbols.Primitives(SymbolKind.Inductor));
+        editable.UserEditable = false;  // built-ins are read-only
+        var vm     = new SymbolEditorViewModel(editable);
+        var doc    = new SymbolEditorDocument("Symbol Editor [Inductor]", vm);
+        var window = new CircuitRF.Ui.Views.SymbolEditorWindow(doc);
+        window.Show();
+    }
+
+    /// <summary>Opens a .csym file and loads it into a docked Symbol Editor tab.</summary>
+    [RelayCommand]
+    private async Task OpenSymbolFile(Window? owner)
+    {
+        if (owner is null) return;
+        var result = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Open Symbol",
+            AllowMultiple  = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("circuitRF Symbol") { Patterns = ["*.csym"] },
+                new FilePickerFileType("All Files")        { Patterns = ["*.*"] },
+            ],
+        });
+
+        if (result.Count == 0) return;
+        var path = result[0].Path.LocalPath;
+
+        try
+        {
+            var symbol   = SymbolPersistence.LoadFromFile(path);
+            var editable = EditableSymbol.FromSymbol(symbol);
+            editable.UserEditable = true;  // user file — editable
+            var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = path };
+            var doc = new SymbolEditorDocument(Path.GetFileNameWithoutExtension(path), vm);
+            _factory.OpenDocument(doc);
+            Messages.Success($"Opened: {path}");
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to open symbol: {ex.Message}");
+        }
+    }
+
     // ---- Project Tree double-click ------------------------------------------
 
     private void OpenTreeItem(ProjectTreeItemViewModel item)
@@ -283,7 +379,7 @@ public partial class WorkspaceViewModel : ViewModelBase
                 : SchematicModelBuilder.BuildHero2PA();
 
             var editModel = SchematicEditModel.FromRenderModel(renderModel);
-            var vm        = new SchematicViewModel(editModel, UndoRedo, Messages);
+            var vm        = new SchematicViewModel(editModel, Messages);
             var doc       = new SchematicDocument(item.Name, vm) { Messages = Messages };
             _factory.OpenDocument(doc);
             return;
@@ -295,10 +391,107 @@ public partial class WorkspaceViewModel : ViewModelBase
     private void OnDocumentDockPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != "ActiveDockable") return;
-        var activeVm = _factory.DocumentDock?.ActiveDockable is SchematicDocument doc
-            ? doc.ViewModel
-            : null;
+
+        var activeDockable = _factory.DocumentDock?.ActiveDockable;
+
+        // Properties panel — tracks only schematics.
+        var activeVm = activeDockable is SchematicDocument schDoc ? schDoc.ViewModel : null;
         _factory.PropertiesTool?.SetActiveSchematic(activeVm);
+
+        // Undo routing — follows any IUndoableDocument for main-window tabs.
+        SetActiveUndoTarget(activeDockable as IUndoableDocument);
+
+        // A dockable may have just been floated into a Dock-generated HostWindow.
+        // Defer one frame (Background) so the HostWindow is fully shown before we scan.
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            TryWireHostWindowsUndo,
+            Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    // ---- Dock float — per-window undo wiring --------------------------------
+
+    // Scans all application windows for Dock-created host windows that are not yet
+    // wired with undo/redo key bindings and injects them.  Called deferred after every
+    // ActiveDockable change so it catches newly-floated documents.
+    private void TryWireHostWindowsUndo()
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime
+                is not IClassicDesktopStyleApplicationLifetime desktop) return;
+
+        foreach (var window in desktop.Windows)
+        {
+            // Skip our own known window types — they have their own undo handling.
+            if (window is Views.WorkspaceWindow or Views.SymbolEditorWindow) continue;
+            if (_wiredHostWindows.Contains(window)) continue;
+
+            var undoDoc = FindUndoDocInWindow(window);
+            if (undoDoc is null) continue;
+
+            WireWindowUndo(window, undoDoc);
+        }
+    }
+
+    // Finds the first IUndoableDocument reachable from a window's DataContext.
+    // Dock's HostWindow sets DataContext to the IDockWindow (an IDock) that contains
+    // the layout with the floated dockable.
+    private static IUndoableDocument? FindUndoDocInWindow(Window window)
+    {
+        if (window.DataContext is IUndoableDocument direct) return direct;
+        if (window.DataContext is IDock dock) return FindUndoDocInDock(dock);
+        return null;
+    }
+
+    private static IUndoableDocument? FindUndoDocInDock(IDock dock)
+    {
+        if (dock is IUndoableDocument ud) return ud;
+        if (dock.ActiveDockable is IUndoableDocument active) return active;
+        if (dock.ActiveDockable is IDock nestedActive)
+        {
+            var result = FindUndoDocInDock(nestedActive);
+            if (result is not null) return result;
+        }
+        if (dock.VisibleDockables is null) return null;
+        foreach (var dockable in dock.VisibleDockables)
+        {
+            if (dockable is IUndoableDocument ud2) return ud2;
+            if (dockable is IDock childDock)
+            {
+                var result = FindUndoDocInDock(childDock);
+                if (result is not null) return result;
+            }
+        }
+        return null;
+    }
+
+    // Injects Ctrl+Z / Cmd+Z / Ctrl+Shift+Z / Cmd+Shift+Z / Ctrl+Y key bindings
+    // onto a Dock-created host window, pointing at the given document's own stack.
+    // Mirrors the pattern used in SetActiveUndoTarget (PropertyChanged subscribe).
+    private void WireWindowUndo(Window window, IUndoableDocument undoDoc)
+    {
+        _wiredHostWindows.Add(window);
+
+        var stack   = undoDoc.UndoRedo;
+        var undoCmd = new RelayCommand(stack.Undo, () => stack.CanUndo);
+        var redoCmd = new RelayCommand(stack.Redo, () => stack.CanRedo);
+
+        void OnStackChanged(object? _, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(UndoRedoStack.CanUndo)) undoCmd.NotifyCanExecuteChanged();
+            if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) redoCmd.NotifyCanExecuteChanged();
+        }
+        stack.PropertyChanged += OnStackChanged;
+
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Control),                       Command = undoCmd });
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Meta),                          Command = undoCmd });
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Control | KeyModifiers.Shift),  Command = redoCmd });
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Z, KeyModifiers.Meta    | KeyModifiers.Shift),  Command = redoCmd });
+        window.KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Y, KeyModifiers.Control),                       Command = redoCmd });
+
+        window.Closed += (_, _) =>
+        {
+            stack.PropertyChanged -= OnStackChanged;
+            _wiredHostWindows.Remove(window);
+        };
     }
 
     // ---- Quit ----------------------------------------------------------------

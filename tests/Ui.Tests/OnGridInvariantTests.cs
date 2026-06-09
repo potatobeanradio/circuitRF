@@ -73,8 +73,7 @@ public class OnGridInvariantTests
     public void AllEditOps_KeepConnectionPointsOnGrid()
     {
         var model = new SchematicEditModel();  // GridSnap = true (default), GridSize = 100.0
-        var undo  = new UndoRedoStack();
-        var vm    = new SchematicViewModel(model, undo);
+        var vm    = new SchematicViewModel(model);
 
         // ── 1. Place every built-in component type ──────────────────────────
         PlaceAt(vm, SymbolKind.Resistor,         0,    0);
@@ -160,9 +159,9 @@ public class OnGridInvariantTests
         AssertOnGrid(model, "after-paste");
 
         // ── 9. Undo / Redo ────────────────────────────────────────────────────
-        undo.Undo();
+        vm.UndoRedo.Undo();
         AssertOnGrid(model, "after-undo");
-        undo.Redo();
+        vm.UndoRedo.Redo();
         AssertOnGrid(model, "after-redo");
     }
 }

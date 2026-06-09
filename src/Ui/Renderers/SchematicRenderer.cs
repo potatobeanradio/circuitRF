@@ -186,13 +186,12 @@ public static class SchematicRenderer
                 continue;
             }
 
-            DrawSymbolLines(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
+            // Body + polarity marks: DrawSymbol dispatches per-primitive to the right paint.
+            // Plus-role primitives (e.g. VoltageSource +/−) are inside the same primitive list,
+            // so the separate ForSymbolPlusSegments path is gone.
+            DrawSymbol(canvas, BuiltInSymbols.Primitives(c.Symbol).Primitives,
+                cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme);
             DrawVariadicPortLeads(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
-
-            // Symbol "plus" marks (e.g. +/− on VoltageSource) — drawn in SymbolPlus color.
-            var plusSegs = SchematicSymbols.ForSymbolPlusSegments(c.Symbol);
-            if (plusSegs is { Length: > 0 })
-                DrawSymbolLines(canvas, plusSegs, cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, plusPaint);
 
             // DisableState overlay (drawn on top of body)
             if (c.DisableState != DisableState.None && !isLod)
@@ -246,30 +245,304 @@ public static class SchematicRenderer
         DrawFpsOverlay(canvas, canvasSize, sw.ElapsedTicks, theme, showFps);
     }
 
-    // ── Symbol lines ─────────────────────────────────────────────────────────
+    // ── DrawSymbol — generic primitive-list renderer ──────────────────────────
 
-    private static void DrawSymbolLines(
-        SKCanvas canvas, SchematicComponent c,
+    /// <summary>
+    /// Draws a symbol's primitive list through the component's LocalToPixel transform.
+    /// When <paramref name="overridePaint"/> is non-null (ghost preview):
+    ///   • only SymbolLine-role primitives are drawn, using overridePaint.
+    ///   • SymbolPlus-role and all other roles are skipped (parity with the prior
+    ///     ghost path that only called SchematicSymbols.For, not ForSymbolPlusSegments).
+    /// Text and Bitmap are stubbed (no-op) — see TODO below.
+    /// </summary>
+    internal static void DrawSymbol(
+        SKCanvas canvas,
+        IReadOnlyList<SymbolPrimitive> primitives,
         double compX, double compY,
+        SymbolRotation rotation, bool mirrorX,
         double panX, double panY, double zoom,
-        SKPaint paint)
-        => DrawSymbolLines(canvas, SchematicSymbols.For(c.Symbol),
-               compX, compY, c.Rotation, c.MirrorX, panX, panY, zoom, paint);
-
-    // Draws an arbitrary segment array using the component's transform — used for
-    // both the main symbol body and per-symbol extras (e.g. VoltageSourcePlus).
-    private static void DrawSymbolLines(
-        SKCanvas canvas, float[] segs,
-        double compX, double compY, SymbolRotation rotation, bool mirrorX,
-        double panX, double panY, double zoom,
-        SKPaint paint)
+        SchematicRenderTheme theme,
+        SKPaint? overridePaint = null)
     {
-        for (int i = 0; i < segs.Length; i += 4)
+        // Rotation in degrees for angle-bearing primitives (Arc, Sine, HalfWave).
+        double rotDeg = rotation switch
         {
-            var (ax, ay) = LocalToPixel(segs[i],     segs[i + 1], compX, compY, rotation, mirrorX, panX, panY, zoom);
-            var (bx, by) = LocalToPixel(segs[i + 2], segs[i + 3], compX, compY, rotation, mirrorX, panX, panY, zoom);
-            canvas.DrawLine(ax, ay, bx, by, paint);
+            SymbolRotation.R90  =>  90.0,
+            SymbolRotation.R180 => 180.0,
+            SymbolRotation.R270 => 270.0,
+            _                   =>   0.0,
+        };
+
+        (float X, float Y) LP(double lx, double ly) =>
+            LocalToPixel(lx, ly, compX, compY, rotation, mirrorX, panX, panY, zoom);
+
+        foreach (var prim in primitives)
+        {
+            // Bitmap — deferred (step 5/7).
+            if (prim is BitmapPrimitive) continue;
+
+            // TextPrimitive — separate paint model (no StrokeTier; font-driven).
+            if (prim is TextPrimitive txt)
+            {
+                // In ghost mode draw text with the ghost color; otherwise use SymbolLine
+                // (SymbolText role falls back to SymbolLine — no dedicated theme field yet).
+                SKColor textColor = overridePaint?.Color ?? theme.SymbolLine;
+                SKTypeface typeface = txt.FontStyle switch
+                {
+                    SymbolFontStyle.Bold      => SkiaFonts.PlexBold,
+                    SymbolFontStyle.Italic    => SkiaFonts.PlexItalic,
+                    SymbolFontStyle.Condensed => SkiaFonts.PlexLight,  // graceful fallback (§7.3)
+                    _                         => SkiaFonts.PlexRegular,
+                };
+                float fontSize = Math.Max(1f, (float)(txt.FontSize * zoom));
+                using var font   = new SKFont(typeface, fontSize);
+                using var tPaint = new SKPaint { IsAntialias = true, Color = textColor };
+                var (ax, ay) = LP(txt.AnchorX, txt.AnchorY);
+                SKTextAlign align = txt.Align switch
+                {
+                    SymbolTextAlign.Center => SKTextAlign.Center,
+                    SymbolTextAlign.Right  => SKTextAlign.Right,
+                    _                      => SKTextAlign.Left,
+                };
+                canvas.DrawText(txt.Content, ax, ay, align, font, tPaint);
+                continue;
+            }
+
+            // Determine role+tier of this vector primitive.
+            (SymbolColorRole role, SymbolStrokeTier tier, bool filled) info = prim switch
+            {
+                LinePrimitive        l  => (l.ColorRole,  l.StrokeTier,  false),
+                PolylinePrimitive    pl => (pl.ColorRole, pl.StrokeTier, false),
+                RectPrimitive        r  => (r.ColorRole,  r.StrokeTier,  r.Filled),
+                RoundedRectPrimitive rr => (rr.ColorRole, rr.StrokeTier, rr.Filled),
+                CirclePrimitive      c  => (c.ColorRole,  c.StrokeTier,  c.Filled),
+                EllipsePrimitive     e  => (e.ColorRole,  e.StrokeTier,  e.Filled),
+                ArcPrimitive         a  => (a.ColorRole,  a.StrokeTier,  false),
+                PolygonPrimitive     pg => (pg.ColorRole, pg.StrokeTier, pg.Filled),
+                QuadCurvePrimitive   qc => (qc.ColorRole, qc.StrokeTier, false),
+                CubicCurvePrimitive  cc => (cc.ColorRole, cc.StrokeTier, false),
+                SinePrimitive        s  => (s.ColorRole,  s.StrokeTier,  false),
+                HalfWavePrimitive    hw => (hw.ColorRole, hw.StrokeTier, false),
+                _                      => (SymbolColorRole.SymbolLine, SymbolStrokeTier.Normal, false),
+            };
+
+            // Ghost mode: skip everything except SymbolLine (preserves parity with the
+            // prior path that only drew SchematicSymbols.For segments, not plus marks).
+            if (overridePaint is not null && info.role != SymbolColorRole.SymbolLine) continue;
+
+            // Resolve paint.
+            SKColor color = overridePaint?.Color ?? info.role switch
+            {
+                SymbolColorRole.SymbolPlus => theme.SymbolPlus,
+                _                          => theme.SymbolLine,
+            };
+            float sw = overridePaint is not null
+                ? overridePaint.StrokeWidth
+                : (float)Math.Max(1.0, zoom * (info.tier == SymbolStrokeTier.Normal ? 3.0 : 1.5));
+
+            using var paint = new SKPaint
+            {
+                IsAntialias = true,
+                Style       = info.filled ? SKPaintStyle.Fill : SKPaintStyle.Stroke,
+                Color       = color,
+                StrokeWidth = sw,
+            };
+            if (overridePaint?.PathEffect is { } pe) paint.PathEffect = pe;
+
+            switch (prim)
+            {
+                case LinePrimitive l:
+                {
+                    var (ax, ay) = LP(l.X1, l.Y1);
+                    var (bx, by) = LP(l.X2, l.Y2);
+                    canvas.DrawLine(ax, ay, bx, by, paint);
+                    break;
+                }
+
+                case PolylinePrimitive pl:
+                {
+                    if (pl.Points.Count < 2) break;
+                    using var path = new SKPath();
+                    var (px0, py0) = LP(pl.Points[0][0], pl.Points[0][1]);
+                    path.MoveTo(px0, py0);
+                    for (int i = 1; i < pl.Points.Count; i++)
+                    {
+                        var (px, py) = LP(pl.Points[i][0], pl.Points[i][1]);
+                        path.LineTo(px, py);
+                    }
+                    canvas.DrawPath(path, paint);
+                    break;
+                }
+
+                case RectPrimitive r:
+                {
+                    // Transform all 4 corners and draw as a closed polygon path.
+                    double hw = r.W * 0.5, hh = r.H * 0.5;
+                    DrawQuadPath(canvas, paint,
+                        LP(r.Cx - hw, r.Cy - hh), LP(r.Cx + hw, r.Cy - hh),
+                        LP(r.Cx + hw, r.Cy + hh), LP(r.Cx - hw, r.Cy + hh));
+                    break;
+                }
+
+                case RoundedRectPrimitive rr:
+                {
+                    // Approximated as a plain rect when rotated; only R0 gets corner rounding.
+                    double hw = rr.W * 0.5, hh = rr.H * 0.5;
+                    if (rotation == SymbolRotation.R0 && !mirrorX)
+                    {
+                        var (x0, y0) = LP(rr.Cx - hw, rr.Cy - hh);
+                        var (x1, y1) = LP(rr.Cx + hw, rr.Cy + hh);
+                        float rx = (float)(rr.Radius * zoom);
+                        canvas.DrawRoundRect(new SKRoundRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0), rx), paint);
+                    }
+                    else
+                    {
+                        DrawQuadPath(canvas, paint,
+                            LP(rr.Cx - hw, rr.Cy - hh), LP(rr.Cx + hw, rr.Cy - hh),
+                            LP(rr.Cx + hw, rr.Cy + hh), LP(rr.Cx - hw, rr.Cy + hh));
+                    }
+                    break;
+                }
+
+                case CirclePrimitive c:
+                {
+                    var (pcx, pcy) = LP(c.Cx, c.Cy);
+                    float pr = (float)(c.R * zoom);
+                    if (info.filled)
+                        canvas.DrawCircle(pcx, pcy, pr, paint);
+                    else
+                        canvas.DrawCircle(pcx, pcy, pr, paint);
+                    break;
+                }
+
+                case EllipsePrimitive e:
+                {
+                    var (pcx, pcy) = LP(e.Cx, e.Cy);
+                    float prx = (float)(e.Rx * zoom);
+                    float pry = (float)(e.Ry * zoom);
+                    canvas.DrawOval(pcx, pcy, prx, pry, paint);
+                    break;
+                }
+
+                case ArcPrimitive a:
+                {
+                    var (pcx, pcy) = LP(a.Cx, a.Cy);
+                    float pr = (float)(a.R * zoom);
+                    var oval = SKRect.Create(pcx - pr, pcy - pr, pr * 2, pr * 2);
+                    double startWorld = mirrorX
+                        ? (180.0 - a.StartDeg + rotDeg)
+                        : (a.StartDeg + rotDeg);
+                    double sweepWorld = mirrorX ? -a.SweepDeg : a.SweepDeg;
+                    canvas.DrawArc(oval, (float)startWorld, (float)sweepWorld, useCenter: false, paint);
+                    break;
+                }
+
+                case PolygonPrimitive pg:
+                {
+                    if (pg.Points.Count < 2) break;
+                    using var path = new SKPath();
+                    var (px0, py0) = LP(pg.Points[0][0], pg.Points[0][1]);
+                    path.MoveTo(px0, py0);
+                    for (int i = 1; i < pg.Points.Count; i++)
+                    {
+                        var (px, py) = LP(pg.Points[i][0], pg.Points[i][1]);
+                        path.LineTo(px, py);
+                    }
+                    path.Close();
+                    canvas.DrawPath(path, paint);
+                    break;
+                }
+
+                case QuadCurvePrimitive qc:
+                {
+                    var (px0, py0) = LP(qc.P0X,   qc.P0Y);
+                    var (pcx, pcy) = LP(qc.CtrlX, qc.CtrlY);
+                    var (px2, py2) = LP(qc.P2X,   qc.P2Y);
+                    using var path = new SKPath();
+                    path.MoveTo(px0, py0);
+                    path.QuadTo(pcx, pcy, px2, py2);
+                    canvas.DrawPath(path, paint);
+                    break;
+                }
+
+                case CubicCurvePrimitive cc:
+                {
+                    var (px0, py0) = LP(cc.P0X, cc.P0Y);
+                    var (pc1x, pc1y) = LP(cc.C1X, cc.C1Y);
+                    var (pc2x, pc2y) = LP(cc.C2X, cc.C2Y);
+                    var (px3, py3) = LP(cc.P3X, cc.P3Y);
+                    using var path = new SKPath();
+                    path.MoveTo(px0, py0);
+                    path.CubicTo(pc1x, pc1y, pc2x, pc2y, px3, py3);
+                    canvas.DrawPath(path, paint);
+                    break;
+                }
+
+                case SinePrimitive s:
+                {
+                    const int N = 32;
+                    using var path = new SKPath();
+                    for (int k = 0; k <= N; k++)
+                    {
+                        double t = (double)k / N;
+                        double lx, ly;
+                        if (s.Axis == SineAxis.Horizontal)
+                        {
+                            lx = s.Cx + (t - 0.5) * s.Length;
+                            ly = s.Cy + s.Amp * Math.Sin(2 * Math.PI * s.Cycles * t);
+                        }
+                        else
+                        {
+                            ly = s.Cy + (t - 0.5) * s.Length;
+                            lx = s.Cx + s.Amp * Math.Sin(2 * Math.PI * s.Cycles * t);
+                        }
+                        var (px, py) = LP(lx, ly);
+                        if (k == 0) path.MoveTo(px, py); else path.LineTo(px, py);
+                    }
+                    canvas.DrawPath(path, paint);
+                    break;
+                }
+
+                case HalfWavePrimitive hw:
+                {
+                    const int N = 16;
+                    using var path = new SKPath();
+                    for (int k = 0; k <= N; k++)
+                    {
+                        double t = (double)k / N;
+                        double lx, ly;
+                        if (hw.Axis == SineAxis.Horizontal)
+                        {
+                            lx = hw.Cx + (t - 0.5) * hw.Length;
+                            ly = hw.Cy + hw.Amp * Math.Sin(Math.PI * t);
+                        }
+                        else
+                        {
+                            ly = hw.Cy + (t - 0.5) * hw.Length;
+                            lx = hw.Cx + hw.Amp * Math.Sin(Math.PI * t);
+                        }
+                        var (px, py) = LP(lx, ly);
+                        if (k == 0) path.MoveTo(px, py); else path.LineTo(px, py);
+                    }
+                    canvas.DrawPath(path, paint);
+                    break;
+                }
+            }
         }
+    }
+
+    private static void DrawQuadPath(
+        SKCanvas canvas, SKPaint paint,
+        (float X, float Y) a, (float X, float Y) b,
+        (float X, float Y) c, (float X, float Y) d)
+    {
+        using var path = new SKPath();
+        path.MoveTo(a.X, a.Y);
+        path.LineTo(b.X, b.Y);
+        path.LineTo(c.X, c.Y);
+        path.LineTo(d.X, d.Y);
+        path.Close();
+        canvas.DrawPath(path, paint);
     }
 
     // ── Variadic port lead stubs (ZPort, Sdd) ────────────────────────────────
@@ -503,7 +776,9 @@ public static class SchematicRenderer
             }
         }
 
-        // Placement ghost
+        // Placement ghost — uses DrawSymbol with overridePaint so it reads the single
+        // geometry source (BuiltInSymbols.Primitives) and draws only SymbolLine-role
+        // primitives (matching the prior behaviour that called SchematicSymbols.For only).
         if (overlay.Ghost is { } ghost && !isLod)
         {
             using var ghostPaint = new SKPaint
@@ -513,15 +788,9 @@ public static class SchematicRenderer
                 Color       = theme.GhostBody,
                 PathEffect  = SKPathEffect.CreateDash([6f, 3f], 0f),
             };
-            float[] segs = SchematicSymbols.For(ghost.Symbol);
-            for (int i = 0; i < segs.Length; i += 4)
-            {
-                var (ax, ay) = LocalToPixel(segs[i],     segs[i + 1],
-                    ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom);
-                var (bx, by) = LocalToPixel(segs[i + 2], segs[i + 3],
-                    ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom);
-                canvas.DrawLine(ax, ay, bx, by, ghostPaint);
-            }
+            DrawSymbol(canvas, BuiltInSymbols.Primitives(ghost.Symbol).Primitives,
+                ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom,
+                theme, ghostPaint);
         }
 
         // Rubber-band — solid outline for window (L→R), dashed for crossing (R→L)
@@ -634,6 +903,25 @@ public static class SchematicRenderer
             SymbolRotation.R180 => (-(double)mlx, -(double)ly),
             SymbolRotation.R270 => ((double)ly,   -(double)mlx),
             _                   => ((double)mlx,  (double)ly),
+        };
+        return ((float)((compX + rx - panX) * zoom),
+                (float)((compY + ry - panY) * zoom));
+    }
+
+    // Double-coordinate overload — used by DrawSymbol for double-precision local coords.
+    private static (float X, float Y) LocalToPixel(
+        double lx, double ly,
+        double compX, double compY,
+        SymbolRotation rot, bool mirrorX,
+        double panX, double panY, double zoom)
+    {
+        double mlx = mirrorX ? -lx : lx;
+        (double rx, double ry) = rot switch
+        {
+            SymbolRotation.R90  => (-ly,  mlx),
+            SymbolRotation.R180 => (-mlx, -ly),
+            SymbolRotation.R270 => ( ly,  -mlx),
+            _                   => ( mlx,  ly),
         };
         return ((float)((compX + rx - panX) * zoom),
                 (float)((compY + ry - panY) * zoom));

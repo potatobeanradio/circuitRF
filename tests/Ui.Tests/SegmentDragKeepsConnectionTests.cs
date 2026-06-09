@@ -26,9 +26,8 @@ public class SegmentDragKeepsConnectionTests
     {
         var model = new SchematicEditModel { GridSnap = false };
         foreach (var w in wires) model.Wires.Add(w);
-        var undo = new UndoRedoStack();
-        var vm   = new SchematicViewModel(model, undo);
-        return (model, vm, undo);
+        var vm   = new SchematicViewModel(model);
+        return (model, vm, vm.UndoRedo);
     }
 
     private static void DragSegment(SchematicViewModel vm, double pressX, double pressY, double toX, double toY)

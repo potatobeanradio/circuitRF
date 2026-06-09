@@ -4,6 +4,139 @@ Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`, the interact
 `docs/design/ui-design.md`, and the architecture/firewall note `docs/design/ui-architecture.md`. The UI is
 how people drive the engine; it must never become the source of truth for simulation.
 
+## Workspace scan + project tree model (Phase 6g Step 2 — done)
+
+Three framework-free files in `src/Ui/Schematic/` (no Avalonia / Skia):
+- **`ProjectTreeNode`** / **`NodeKind`** (`ProjectTreeNode.cs`) — the in-memory tree node.
+  `NodeKind` covers all §3.3 filter categories: `Workspace`, `Cell`, `Library`, `LibrariesGroup`,
+  `CellViewFolder`, `ViewFile`, `UserFolder`, `DataDisplayFile`, `ColorThemeFile`, `OtherFile`,
+  `KnownFile`, `KnownFilesGroup`.  Per-node flags: `IsPrimary`, `IsTestBench`, `WarningReason`
+  (non-null = System.Warning tooltip text).  Children are mutable only via `internal AddChild`
+  (called only by the scanner).  The tree is transient — rebuilt on every refresh.
+- **`WorkspaceScanner`** (`WorkspaceScanner.cs`) — `static Scan(rootDir)` walks the workspace folder
+  into that model.  Filesystem is truth (no membership list consulted).  Delegates primacy entirely
+  to `CellFolder.ResolvePrimary` (never re-derived).  Empty view sub-folders produce no node.
+  Stable ordering: alphabetical (OrdinalIgnoreCase) within every level.  Tolerates missing/corrupt
+  `.cws`.  Warning states recorded as DATA (MissingNamedPrimary, broken library paths, broken Known
+  Files) so step 3 can render System.Warning + tooltip without the scanner caring about rendering.
+- **`WorkspaceModel`** (`WorkspaceModel.cs`) — thin wrapper: `WorkspaceRootDir`, `RootNode`,
+  `Rescan()`.  The step-3 view will bind to this object and call `Rescan()` on focus/Refresh.
+  No `FileSystemWatcher` (deferred per §9).
+
+`CwsFile.KnownFiles` (`List<string>`) added to `WorkspacePersistence.cs` — additive v1 field;
+old `.cws` files load with an empty list.  `LibraryRefs` now accepts folder paths or `.clib` file
+paths (scanner takes the parent dir for `.clib`).  `MemberFiles` is retained for round-trip but
+is ignored by the scanner (membership is the filesystem, not a manifest).
+
+41 new tests in `WorkspaceScannerTests.cs` (L1 node model, L2 scanner, L3 refresh); 362 total green.
+
+## Workspace cell-level building blocks (Phase 6g Step 1 — done)
+
+Three framework-free files in `src/Ui/Schematic/` (no Avalonia / Skia):
+- **`NameValidator`** — cross-platform-safe name validation (§1.4 charset; `IsValid`/`Validate`).
+- **`CellPersistence`** / **`CcellFile`** / **`CcellParameter`** — `.ccell` read/write mirroring `SymbolPersistence`
+  conventions (System.Text.Json, enum-as-string, format_version reject, `Id` never persisted).
+  `CcellParameter` mirrors `EditableParameter`'s shape but holds the **default** expression (the cell's
+  declared interface, not an instance override).
+- **`CellFolder`** — `CreateCellFolder(parentDir, cellName)` creates `cellName/schematic/symbol/layout/` + initial
+  `.ccell`.  **`ResolvePrimary(cellFolder, viewType)`** is the single source of primacy truth implementing
+  the five-branch rule (workspace-and-project-tree.md §2): SoleFile → NamedPresent → MissingNamedPrimary →
+  NoPrimary → NoView.  The **MissingNamedPrimary** contradiction is kept distinct (drives System.Warning).
+  The filesystem is truth; no membership list is maintained here.
+
+## Symbol Editor (Phase 6f steps 4a + 4b — editing shell + drawing tools)
+
+The Symbol Editor is a **smaller sibling of the schematic stack**. Mirror its patterns; do not reinvent.
+
+### Stack structure
+- `EditableSymbol` (`src/Ui/Schematic/EditableSymbol.cs`) — mutable working copy of a `Symbol`. Commands
+  hold a reference and call `NotifyChanged()` after mutation.  Framework-free.
+- `SymbolGeometry` (`src/Ui/Schematic/SymbolGeometry.cs`) — `BboxOf(prim)`, `HitTest(prim, x, y, tol)`,
+  `TranslateBy(prim, dx, dy)`, `ComputeBb(list)`. Framework-free.
+- `SymbolEditorViewModel` (`src/Ui/ViewModels/SymbolEditorViewModel.cs`) — all 15 tools (Select + 14
+  drawing tools), selection, move-drag, rubber-band, gesture state, current style (`ColorRole`,
+  `StrokeTier`, `FontSize`, `FontStyle`), `Execute(IUiCommand)` on the VM's **own** `UndoRedoStack`.
+  `SetActiveToolCommand` and `SetCurrentStrokeTierCommand` are `RelayCommand<string>` (parse enum from
+  CommandParameter) so every toolbar button needs zero code-behind.
+  `FontStyleOptions` is a public static array exposed as ComboBox `ItemsSource`.
+- `Commands/Symbol/PlaceSymbolPrimitiveCommand` — appends primitive (topmost Z); Undo removes it. Both
+  directions call `NotifyChanged()`. Mirrors Move/Delete commands.
+- `Commands/Symbol/MoveSymbolPrimitivesCommand` + `DeleteSymbolPrimitivesCommand` — both directions call
+  `EditableSymbol.NotifyChanged()`.
+- `SymbolEditorCanvas` (`src/Ui/Controls/SymbolEditorCanvas.cs`) — Skia control with pan/zoom,
+  delegates pointer/keyboard/TextInput to VM, cursor = Cross for drawing tools / Default for Select.
+- `SymbolEditorRenderer` (`src/Ui/Renderers/SymbolEditorRenderer.cs`) — draws fine-grid (`p=5`),
+  calls `SchematicRenderer.DrawSymbol` (reused, not duplicated), selection bboxes, rubber-band;
+  renders `InProgressPrimitive` from overlay as dashed ghost via `DrawSymbol(overridePaint: ghostPaint)`.
+- `SymbolEditorOverlay` — carries `InProgressPrimitive` (nullable), selection, rubber-band, drag offset.
+- `SchematicRenderer.DrawSymbol` — now renders `TextPrimitive` for real (IBM Plex Sans, align, style).
+- `EnumEqualsToBoolConverter` (`src/Ui/Converters/`) — `(enum, string param) → bool`; drives
+  `Classes.ToolActive` binding on toolbar buttons.
+- `SymbolEditorDocument` / `SymbolEditorView` / `SymbolEditorWindow` — dockable document + tear-off window.
+  Both host the same `SymbolEditorView`; only the chrome differs.
+
+### Drawing gestures
+- **Two-point drag** (click + drag to release): Line, Rect, RoundedRect, Circle, Ellipse, Arc, Sine, HalfWave.
+- **Multi-point click** (click per point; Enter or double-click to commit):
+  Polyline (≥2 pts), Polygon (≥3 pts, auto-closes), Triangle (exactly 3, auto-commits),
+  QuadCurve (exactly 3, auto-commits), CubicCurve (exactly 4, auto-commits).
+- **Text**: click anchor → type → Enter commits; Backspace erases; Escape cancels; live cursor shows `|`.
+  Uses Avalonia `TextInput` event (IME-safe), not raw `KeyDown`.
+- **Escape** during any gesture: cancel (nothing placed). **Escape** with nothing in progress: clear selection.
+- All snapped to `p = 5` local units via `SnapToP`.
+
+### Pins (4c — done)
+- **Two separate snap grids:** art snaps to `p = 5` (`SnapToP` in the VM); pins snap to `P = 100`
+  (`SnapToConnectionGrid`, `PinGrid = 100.0`). Never use `SnapToP` for a pin; never use `SnapToConnectionGrid`
+  for art.
+- **Pin tool owns pin interaction.** The Select tool only touches primitives. Pin select/move/remap all
+  live in `PinToolPress` / `PinToolMove` / `PinToolRelease` paths.
+- **Unmapped port = open circuit, never an error.** Surface informally via `DrawUnmappedPortPanel` (soft-
+  yellow overlay); do not block editing or flag as an error.
+- **PortCount** is the number of ports the symbol maps pins to. Persisted in `.csym`. A `.csym` with
+  `PortCount = 0` infers `PortCount = pins.Count` for backward compatibility (old files).
+- **Locked gate:** `EditableSymbol.UserEditable = false` → `SymbolEditorViewModel.IsLocked = true` →
+  all `Execute()` calls are no-ops; Pin / drawing tools disabled in toolbar; cross cursor reverts to arrow;
+  "Read-only" shown in metadata bar. Built-in symbols opened via View menu are always locked.
+
+### .csym I/O (4c — done)
+- **Save/Save-As:** `SaveSymbolCommand`/`SaveSymbolAsCommand` on the VM; delegate to
+  `SymbolPersistence.SaveToFile`. Both are `IAsyncRelayCommand<Window?>`.
+- **Open:** File → "Open Symbol…" in the Workspace window → `WorkspaceViewModel.OpenSymbolFileCommand` →
+  `SymbolPersistence.LoadFromFile` → `EditableSymbol.FromSymbol(symbol)` with `UserEditable = true`.
+- **Built-in symbols opened from the View menu** are loaded with `UserEditable = false`.
+- `.csym` format: JSON with `format_version`; reject-on-mismatch; alpha policy (no migration in v1).
+
+### Deferred (do NOT build without discussion)
+- Live schematic update — requires cell model / project-tree / workspace design (later phase).
+- Cell-driven open — same dependency.
+- Rewiring `SymbolKind → BuiltInSymbols` — same dependency.
+- If a task seems to need the cell model, STOP and report (it's the project-tree design).
+
+### Key invariants
+- **`DrawSymbol` is shared** — `SchematicRenderer.DrawSymbol` is `internal static`; the editor calls it
+  directly. Do NOT write a second symbol renderer.
+- **All mutations undoable** on the document's own `UndoRedoStack`; `NotifyChanged()` in both Execute and Undo.
+- **Art snaps to `p = 5` local units** (`SnapToP` in the VM). Pins snap to `P = 100` (`SnapToConnectionGrid`).
+- **Color is a role** (`SymbolColorRole`), never literal RGB. No color picker in the editor.
+
+### Opening the editor
+`WorkspaceViewModel.OpenSymbolEditorDockedCommand` (View menu) opens on Resistor (docked).
+`WorkspaceViewModel.OpenSymbolEditorWindowCommand` opens on Inductor (tear-off window).
+
+---
+
+## Symbol orientation (Phase 6f step 3 — standard library art)
+
+**2-terminal symbols are VERTICAL** (R, L, C, V, Tone, Port/Term, GND): local pin 1 at `(0,-200)` (top),
+pin 2 at `(0,+200)` (bottom). FET, ZPort, Sdd, Generic stay **horizontal** (ports left/right).
+
+Schematic layout code consequence: place 2-terminal passives at `SymbolRotation.R90` in a horizontal signal
+path (pin 1 right, pin 2 left at R90) — same `cx ± 200` wire coordinates as before. Bias-path vertical
+components (at R0) need no rotation. See `docs/design/standard-library-symbols.md` for geometry.
+
+---
+
 ## Color theming (Phase 6 — three-layer separation)
 
 `src/Ui/Theming/` holds the **framework-free L1 theme model** (no SKColor, no Avalonia):
@@ -174,12 +307,38 @@ original brush object. To fix those, you must ALSO override the Tier-2 alias key
   document bodies stay realized (cached) instead of lazily built — negligible at our tab counts, and
   tab switching becomes instant. Document views still resolve via the `App.axaml` DataTemplates.
 
-### Command / undo-redo infrastructure
-- **All user mutations route through `IUiCommand` → `UndoRedoStack`** in `WorkspaceViewModel`.
-  Menu and toolbar commands call `WorkspaceViewModel` RelayCommands, which call `UndoRedo.Execute(cmd)`.
-  Do not wire actions that bypass the stack (except global file ops: New/Open/Save).
-- `UndoRedo.CanUndo`/`CanRedo` are observable properties — bind toolbar Undo/Redo button
-  `IsEnabled` to them in 6d when you wire the first real command.
+### Command / undo-redo infrastructure — per-document stacks, focused-window routing
+
+**The rule (do not violate):** Undo/Redo is per-document, resolved by the focused window.
+- Each editable document VM (`SchematicViewModel`, `SymbolEditorViewModel`) owns its **own**
+  `UndoRedoStack` (created internally, exposed as `public UndoRedoStack UndoRedo`).
+- Each document wrapper (`SchematicDocument`, `SymbolEditorDocument`) implements `IUndoableDocument`
+  (in `src/Ui/Commands/IUndoableDocument.cs`) and forwards `UndoRedo` to its VM.
+- **Focused-window rule:** every window's Undo targets the document it is showing, never another.
+  - **Main `WorkspaceWindow`:** `WorkspaceViewModel` tracks `_factory.DocumentDock.ActiveDockable`
+    via `OnDocumentDockPropertyChanged`; its `Undo`/`Redo` commands route to that document's stack.
+    Switching tabs re-subscribes `PropertyChanged` on the new stack so enable-state updates correctly.
+  - **Tear-off windows** (`SymbolEditorWindow`): `Window.KeyBindings` bind to the document's own
+    `ViewModel.UndoCommand`/`RedoCommand` directly — fully independent of `WorkspaceViewModel`.
+  - **Dock-floated dockables** (user drags a tab into its own floating window): `WorkspaceViewModel.
+    TryWireHostWindowsUndo` detects the new `HostWindow` via `ApplicationLifetime.Windows` scan
+    (deferred one frame) and injects matching `KeyBindings` pointing at the floated document's stack.
+    The host window's `Closed` event cleans up the subscription and removes it from `_wiredHostWindows`.
+- **One keystroke owner:** do NOT handle undo/redo keys both at the canvas level and at the window
+  level — choose one. The window `KeyBindings` are the authoritative path; canvas `OnKeyDown`
+  handlers must **not** call `_undoRedo.Undo()` directly (and must set `e.Handled = true` for any
+  keys they DO consume, so they don't bubble to the window binding and fire a second time).
+- **Cross-document undo is impossible:** undoing in a symbol can never revert a schematic edit.
+- **The Parameter Editor has NO independent stack.** It commits through `_schematicVm.Execute(...)`,
+  so parameter edits live in the owning schematic's history and are undoable from that schematic.
+  `ParameterEditorViewModel.UndoCommand`/`RedoCommand` delegate to `_schematicVm.UndoRedo` — they
+  are only an affordance so the user can undo a parameter edit while the dialog is focused; they do
+  not own a separate stack. Never give an inspector/properties panel its own undo stack.
+- All user mutations still route through `IUiCommand` → the document's own `UndoRedoStack.Execute(cmd)`.
+  Do not wire mutations that bypass the stack (except global file ops: New/Open/Save).
+- Future document types (data display etc.) implement `IUndoableDocument` to participate automatically.
+  Their windows follow the same focused-window rule: tear-off → own `KeyBindings`; Dock-floated →
+  `TryWireHostWindowsUndo` picks them up automatically.
 
 ### Messages / IMessageSink
 - **`IMessageSink`** lives in `src/Ui/Messages/` — not in Core/Engine (firewall respected).

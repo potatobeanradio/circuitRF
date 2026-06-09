@@ -1,7 +1,9 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.ViewModels"
         xmlns:param="using:CircuitRF.Ui.Views.ParameterEditor"
         x:Class="CircuitRF.Ui.Views.Dialogs.ParameterEditorDialog"
+        x:DataType="vm:ParameterEditorViewModel"
         Title="Component Parameters"
         Width="420"
         MinWidth="320"
@@ -10,6 +12,17 @@
         CanResize="True"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
+
+    <!-- Undo/Redo act on the *owning schematic's* stack — the dialog has no
+         independent stack.  The Parameter Editor commits through _schematicVm,
+         so its edits are undoable here exactly as they are from the schematic tab. -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Z"       Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Meta+Z"       Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+Z" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y"       Command="{Binding RedoCommand}"/>
+    </Window.KeyBindings>
 
     <param:ParameterEditorView/>
 

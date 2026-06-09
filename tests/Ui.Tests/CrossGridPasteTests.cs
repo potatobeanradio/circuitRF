@@ -32,10 +32,9 @@ public class CrossGridPasteTests
     private static (SchematicEditModel Model, UndoRedoStack Undo, SchematicViewModel Vm) MakeDst(
         double dstGrid = 100.0)
     {
-        var m    = new SchematicEditModel { GridSize = dstGrid, GridSnap = true };
-        var undo = new UndoRedoStack();
-        var vm   = new SchematicViewModel(m, undo);
-        return (m, undo, vm);
+        var m  = new SchematicEditModel { GridSize = dstGrid, GridSnap = true };
+        var vm = new SchematicViewModel(m);
+        return (m, vm.UndoRedo, vm);
     }
 
     // ── Same-grid paste (unchanged behaviour) ────────────────────────────────

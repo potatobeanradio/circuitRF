@@ -29,6 +29,8 @@
                         <NativeMenuItem Header="Open…"           Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}" Gesture="Meta+O"/>
                         <NativeMenuItem Header="Add Library…"    Command="{Binding AddLibraryCommand}"     CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Open Symbol…"    Command="{Binding OpenSymbolFileCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Save"            Command="{Binding SaveWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}" Gesture="Meta+S"/>
                         <NativeMenuItem Header="Save As…"        Command="{Binding SaveWorkspaceAsCommand}" CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
                         <!-- Settings is in the app menu on macOS; omit here to avoid duplication -->
@@ -58,6 +60,9 @@
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Zoom to Fit"      Command="{Binding ZoomToFitCommand}"   Gesture="Meta+D0"/>
                         <NativeMenuItem Header="New Tab"          Command="{Binding NewTabCommand}"      Gesture="Meta+T"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Open Symbol Editor (docked)" Command="{Binding OpenSymbolEditorDockedCommand}"/>
+                        <NativeMenuItem Header="Open Symbol Editor (window)" Command="{Binding OpenSymbolEditorWindowCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -204,6 +209,15 @@
                           InputGesture="Ctrl+T">
                     <MenuItem.Icon><mi:MaterialIcon Kind="TabPlus" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                <Separator/>
+                <MenuItem Header="Open Symbol Editor (_docked)"
+                          Command="{Binding OpenSymbolEditorDockedCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PencilBox" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open Symbol Editor (_window)"
+                          Command="{Binding OpenSymbolEditorWindowCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PencilBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
 
             <MenuItem Header="_Simulate" Padding="8,4">
@@ -283,12 +297,12 @@
 
                 <!-- Undo / Redo -->
                 <Button Command="{Binding UndoCommand}"
-                        ToolTip.Tip="{Binding UndoRedo.UndoDescription}"
+                        ToolTip.Tip="{Binding UndoDescription}"
                         Background="Transparent" BorderThickness="0" Padding="4,2">
                     <mi:MaterialIcon Kind="UndoVariant" Width="18" Height="18"/>
                 </Button>
                 <Button Command="{Binding RedoCommand}"
-                        ToolTip.Tip="{Binding UndoRedo.RedoDescription}"
+                        ToolTip.Tip="{Binding RedoDescription}"
                         Background="Transparent" BorderThickness="0" Padding="4,2">
                     <mi:MaterialIcon Kind="RedoVariant" Width="18" Height="18"/>
                 </Button>

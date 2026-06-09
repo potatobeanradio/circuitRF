@@ -23,9 +23,8 @@ public class WireSplitTests
 
     private static (SchematicEditModel Model, SchematicViewModel Vm) MakeVm()
     {
-        var model    = new SchematicEditModel { GridSnap = false };
-        var undoRedo = new UndoRedoStack();
-        var vm       = new SchematicViewModel(model, undoRedo);
+        var model = new SchematicEditModel { GridSnap = false };
+        var vm    = new SchematicViewModel(model);
         return (model, vm);
     }
 

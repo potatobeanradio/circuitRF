@@ -141,10 +141,10 @@ public class WireGeometryTests
         };
         model.Components.Add(r1);
 
-        // Resistor port 0 is at local (-200, 0) → world (-200, 0) at rotation R0; wire covers it
+        // Resistor is vertical: port 0 is at local (0,-200) → world (0,-200) at R0; wire covers it
         var wire = new EditableWire();
-        wire.Points.Add((-150, 0));
-        wire.Points.Add((-250, 0));
+        wire.Points.Add((-50, -200));
+        wire.Points.Add(( 50, -200));
         model.Wires.Add(wire);
 
         var connected = WireGeometry.FindConnectedPorts(model);

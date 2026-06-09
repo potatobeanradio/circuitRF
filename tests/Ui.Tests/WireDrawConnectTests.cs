@@ -26,9 +26,8 @@ public class WireDrawConnectTests
     {
         var model = new SchematicEditModel { GridSnap = false };
         foreach (var w in wires) model.Wires.Add(w);
-        var undo = new UndoRedoStack();
-        var vm   = new SchematicViewModel(model, undo);
-        return (model, vm, undo);
+        var vm   = new SchematicViewModel(model);
+        return (model, vm, vm.UndoRedo);
     }
 
     // ── Issue 1: ending a draw on another wire's body forms a connected T ──────

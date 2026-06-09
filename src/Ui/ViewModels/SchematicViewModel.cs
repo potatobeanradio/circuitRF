@@ -17,7 +17,8 @@ public sealed partial class SchematicViewModel : ObservableObject
 {
     // ── Dependencies ─────────────────────────────────────────────────────────
 
-    private readonly UndoRedoStack _undoRedo;
+    private readonly UndoRedoStack _undoRedo = new();
+    public  UndoRedoStack UndoRedo => _undoRedo;
     private readonly IMessageSink? _messageSink;
 
     public SchematicEditModel EditModel  { get; }
@@ -121,11 +122,9 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
-    public SchematicViewModel(SchematicEditModel editModel, UndoRedoStack undoRedo,
-                              IMessageSink? messageSink = null)
+    public SchematicViewModel(SchematicEditModel editModel, IMessageSink? messageSink = null)
     {
         EditModel    = editModel;
-        _undoRedo    = undoRedo;
         _messageSink = messageSink;
 
         EditModel.Changed += (_, _) => RebuildRenderModel();

@@ -27,10 +27,9 @@ public class TJunctionStemFollowTests
     {
         var model = new SchematicEditModel { GridSnap = false };
         foreach (var w in wires) model.Wires.Add(w);
-        var undo = new UndoRedoStack();
-        var vm   = new SchematicViewModel(model, undo);
+        var vm   = new SchematicViewModel(model);
         vm.SetSelectTool();
-        return (model, vm, undo);
+        return (model, vm, vm.UndoRedo);
     }
 
     /// <summary>Drag the segment grabbed at (pressX,pressY) to (toX,toY) — press, move, release.</summary>

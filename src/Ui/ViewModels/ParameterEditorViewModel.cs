@@ -1,5 +1,8 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
 
@@ -15,6 +18,48 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     private SchematicViewModel? _schematicVm;
     private EditableComponent?  _target;
     private bool                _isRefreshing;
+
+    // ── Undo/Redo — delegate to the target schematic's own stack ─────────────
+    // The Parameter Editor has NO independent stack.  These commands act on
+    // _schematicVm.UndoRedo so that parameter edits are undoable via the owning
+    // schematic (whether the editor is embedded or open as a dialog).
+
+    public IRelayCommand UndoCommand { get; }
+    public IRelayCommand RedoCommand { get; }
+
+    private UndoRedoStack? _hookedStack;
+
+    public ParameterEditorViewModel()
+    {
+        UndoCommand = new RelayCommand(
+            () => _schematicVm?.UndoRedo.Undo(),
+            () => _schematicVm?.UndoRedo.CanUndo ?? false);
+        RedoCommand = new RelayCommand(
+            () => _schematicVm?.UndoRedo.Redo(),
+            () => _schematicVm?.UndoRedo.CanRedo ?? false);
+    }
+
+    // Subscribe/unsubscribe PropertyChanged on the target schematic's stack so
+    // that UndoCommand.CanExecute stays in sync as edits are made.
+    private void HookSchematicStack(SchematicViewModel? vm)
+    {
+        if (_hookedStack is not null)
+            _hookedStack.PropertyChanged -= OnSchematicStackChanged;
+
+        _hookedStack = vm?.UndoRedo;
+
+        if (_hookedStack is not null)
+            _hookedStack.PropertyChanged += OnSchematicStackChanged;
+
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnSchematicStackChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(UndoRedoStack.CanUndo)) UndoCommand.NotifyCanExecuteChanged();
+        if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) RedoCommand.NotifyCanExecuteChanged();
+    }
 
     // ── Empty / non-empty state ────────────────────────────────────────────────
 
@@ -71,6 +116,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         }
 
         _schematicVm = vm;
+        HookSchematicStack(vm);
 
         if (_schematicVm is not null)
         {
@@ -96,6 +142,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             _schematicVm.EditModel.Changed -= OnModelChanged;
 
         _schematicVm = vm;
+        HookSchematicStack(vm);
         ShowClose = showClose;
         _schematicVm.EditModel.Changed += OnModelChanged;
         SetTarget(comp);
@@ -199,5 +246,6 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (_schematicVm is null) return;
         _schematicVm.Selection.Changed -= OnSelectionChanged;
         _schematicVm.EditModel.Changed -= OnModelChanged;
+        HookSchematicStack(null);
     }
 }
