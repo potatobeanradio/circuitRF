@@ -169,6 +169,14 @@ public sealed class SchematicCanvas : Control
     // Left-button Pan tool
     private bool   _isLeftPanning;
 
+    // ── Net-label placement gaps ──────────────────────────────────────────────
+    // Offset from the wire's exact coordinate to the stored net-label anchor.
+    // Tune these two constants to adjust the visual gap between wire and label.
+    // Horizontal wire → label baseline is this many world units ABOVE the wire.
+    // Vertical wire   → label left edge is this many world units to the RIGHT of the wire.
+    private const float NetLabelGapAboveHorizontal = 20f;
+    private const float NetLabelGapBesideVertical  = 20f;
+
     // ── Context menu tracking ─────────────────────────────────────────────────
 
     /// <summary>ID of the component (or wire) that was right-clicked. Null if background.</summary>
@@ -497,8 +505,8 @@ public sealed class SchematicCanvas : Control
                 var (oDx, oDy)  = editComp.GetLabelOffset(row);
                 var (cpx, cpy)  = WorldToScreen(editComp.X, editComp.Y);
                 double textSize = Math.Max(_zoom * 70, 4.0);        // matches renderer (no upper cap)
-                double lx = cpx - Math.Min(_zoom * 155, 160.0) + oDx * _zoom;  // text left edge
-                double ly = cpy + Math.Min(_zoom * 120, 150.0) + textSize
+                double lx = cpx - _zoom * 155 + oDx * _zoom;  // text left edge
+                double ly = cpy + _zoom * 120 + textSize
                             + row * (textSize + 2) + oDy * _zoom;  // Skia baseline
 
                 // For parameter rows the rendered label is "<Name> = <Expression> <Unit>".
@@ -528,21 +536,29 @@ public sealed class SchematicCanvas : Control
                     ComponentDoubleTapped?.Invoke(this, comp);
                 break;
             }
+            case SchematicHitTest.HitKind.NetLabel:
+            {
+                var lbl = _editContext.EditModel.FindNetLabel(hit.Id);
+                if (lbl is null) break;
+                var (sx, sy) = WorldToScreen(lbl.X, lbl.Y);
+                WireDoubleTapped?.Invoke(this, new WireHitArgs("", lbl.X, lbl.Y, sx, sy));
+                break;
+            }
             case SchematicHitTest.HitKind.Wire:
             case SchematicHitTest.HitKind.WireSegment:
             case SchematicHitTest.HitKind.WireEndpoint:
             {
-                // Determine offset direction based on wire orientation at click point
                 var wire = _editContext.EditModel.FindWire(hit.Id);
                 double labelWx = wx, labelWy = wy;
                 if (wire is { Points.Count: >= 2 })
                 {
-                    // Find which segment was clicked to determine orientation
-                    bool horizontal = IsHorizontalAt(wire, wx, wy);
+                    // Use the segment's exact coordinate (not click) as the base so the gap is
+                    // always exactly NetLabelGap* world units from the wire regardless of click precision.
+                    var (horizontal, baseCoord) = ClassifySegmentAt(wire, wx, wy);
                     if (horizontal)
-                        labelWy -= 50;  // offset above horizontal segment
+                        labelWy = baseCoord - NetLabelGapAboveHorizontal;
                     else
-                        labelWx += 50;  // offset right of vertical segment
+                        labelWx = baseCoord + NetLabelGapBesideVertical;
                 }
                 // WorldX/Y = net-label world placement; ScreenX/Y = actual click position for TextBox centering
                 WireDoubleTapped?.Invoke(this, new WireHitArgs(hit.Id, labelWx, labelWy, pos.X, pos.Y));
@@ -551,7 +567,9 @@ public sealed class SchematicCanvas : Control
         }
     }
 
-    private static bool IsHorizontalAt(EditableWire wire, double wx, double wy)
+    // Returns (isHorizontal, baseCoord) where baseCoord is the segment's Y for horizontal
+    // or X for vertical — the exact wire coordinate used as the net-label placement base.
+    private static (bool IsHorizontal, double BaseCoord) ClassifySegmentAt(EditableWire wire, double wx, double wy)
     {
         const double tol = 8.0;
         var pts = wire.Points;
@@ -559,9 +577,10 @@ public sealed class SchematicCanvas : Control
         {
             if (!SchematicGeometry.PointOnSegment(wx, wy, pts[i].X, pts[i].Y, pts[i+1].X, pts[i+1].Y, tol))
                 continue;
-            return Math.Abs(pts[i+1].Y - pts[i].Y) < tol;
+            bool isH = Math.Abs(pts[i+1].Y - pts[i].Y) < tol;
+            return (isH, isH ? pts[i].Y : pts[i].X);
         }
-        return true;
+        return (true, wy);  // default: treat as horizontal, use click Y
     }
 
     // ── Keyboard ─────────────────────────────────────────────────────────────

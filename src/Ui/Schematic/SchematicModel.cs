@@ -31,6 +31,17 @@ public sealed record SchematicPortDef(string Name, float LocalX, float LocalY, P
 /// <summary>A placed component instance with pre-computed world bounding boxes.</summary>
 public sealed class SchematicComponent
 {
+    // ── Label layout constants (world units, relative to component center) ────
+    // Single source of truth shared by BuildRenderModel (which stores FullBb) and
+    // the renderer (which reads it). Having them here prevents the two callsites
+    // drifting to different values — that drift was what caused the LabelOffsets
+    // cull blind spot fixed in this commit.
+    public const double LabelBaseOffsetX   = -155.0; // label anchor X from center
+    public const double LabelBaseY         =  190.0; // first-row Skia baseline Y from center
+    public const double LabelWorldHeight   =   70.0; // font cap-height in world units
+    public const double LabelWorldStep     =   72.0; // line-to-line spacing
+    public const double LabelWidthEstimate =  500.0; // conservative text-width estimate
+
     /// <summary>Stable ID carried from EditableComponent.Id — used by overlay for selection lookup.</summary>
     public string Id            { get; init; } = "";
     public string InstanceName  { get; init; } = "";
@@ -54,7 +65,7 @@ public sealed class SchematicComponent
     /// </summary>
     public IReadOnlyList<(double DX, double DY)> LabelOffsets { get; init; } = [];
 
-    // Full axis-aligned bounding box (symbol geometry, used by spatial index & zoom-to-fit).
+    // Glyph-only bounding box (±200 around center, used for zoom-to-fit and hit-test).
     public double BbMinX { get; init; }
     public double BbMinY { get; init; }
     public double BbMaxX { get; init; }
@@ -65,6 +76,14 @@ public sealed class SchematicComponent
     public double GlyphBbMinY { get; init; }
     public double GlyphBbMaxX { get; init; }
     public double GlyphBbMaxY { get; init; }
+
+    // Full visual bounding box: glyph BB unioned with every label at its actual offset position
+    // (including LabelOffsets). Read by SchematicSpatialIndex (build) and the renderer in-loop
+    // cull — both reference the same value so they stay in sync automatically.
+    public double FullBbMinX { get; init; }
+    public double FullBbMinY { get; init; }
+    public double FullBbMaxX { get; init; }
+    public double FullBbMaxY { get; init; }
 
 }
 

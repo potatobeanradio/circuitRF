@@ -18,8 +18,15 @@ public static class SchematicRenderer
     private const double CoarseGridRatio     = 10.0;
 
     private const float DotHalfSize = 5f;
-    private const float PortBoxHalf = 10f;
+    private const float PortBoxHalf = 8f;   // world units; chosen so zoom=1 → 8px (matches prior clamped appearance)
     private const float ConnDotHalf = 4f;
+
+    // Label layout aliases — authoritative values live on SchematicComponent; these keep the
+    // renderer readable without repeating the magic numbers.
+    private const double LabelBaseOffsetX = SchematicComponent.LabelBaseOffsetX;
+    private const double LabelBaseY       = SchematicComponent.LabelBaseY;
+    private const double LabelWorldHeight = SchematicComponent.LabelWorldHeight;
+    private const double LabelWorldStep   = SchematicComponent.LabelWorldStep;
 
     public static void Draw(
         SKCanvas canvas,
@@ -64,9 +71,9 @@ public static class SchematicRenderer
             for (int i = 0; i < model.Wires.Count;      i++) visWires.Add(i);
         }
 
-        double compPixW    = zoom * 300.0;
-        bool isLod         = compPixW < LodThreshold;
-        bool isSimplified  = compPixW < SimplifiedThreshold;
+        double compPixW   = zoom * 300.0;
+        bool isLod        = compPixW < LodThreshold;
+        bool isSimplified = compPixW < SimplifiedThreshold;
 
         using var wirePaint       = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Stroke,
                                                    StrokeWidth = (float)Math.Max(1.0, zoom * 4),    Color = theme.Wire,
@@ -83,15 +90,15 @@ public static class SchematicRenderer
         using var warnFillPaint   = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill,   Color = theme.Warning.WithAlpha(60) };
         using var warnStrokePaint = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Stroke,
                                                    StrokeWidth = (float)Math.Max(1.5, zoom * 2.5),  Color = theme.Warning };
-        using var textFont        = new SKFont(SkiaFonts.PlexRegular, (float)Math.Max(zoom * 70, 4.0));
+        using var textFont        = new SKFont(SkiaFonts.PlexRegular, Math.Max(4f, (float)(zoom * LabelWorldHeight)));
         using var compNamePaint   = new SKPaint { IsAntialias = true,  Color = theme.ComponentNameText };
         using var instNamePaint   = new SKPaint { IsAntialias = true,  Color = theme.InstanceNameText };
         using var paramNamePaint  = new SKPaint { IsAntialias = true,  Color = theme.ParameterNameText };
-        using var netLabelFont    = new SKFont(SkiaFonts.PlexItalic,  (float)Math.Max(zoom * 65, 4.0));
+        using var netLabelFont    = new SKFont(SkiaFonts.PlexItalic,  Math.Max(4f, (float)(zoom * 65.0)));
         using var netLabelPaint   = new SKPaint { IsAntialias = true,  Color = theme.NetLabelText };
 
         // ── Wires ─────────────────────────────────────────────────────────────
-        float unconnEndHalf = (float)Math.Clamp(zoom * PortBoxHalf, 3.0, 8.0);
+        float unconnEndHalf = (float)Math.Max(3.0, zoom * PortBoxHalf);
         var wireDragPts = overlay?.WireDragPoints;
 
         // Reused path object — Rewind() resets it without reallocation.
@@ -162,8 +169,12 @@ public static class SchematicRenderer
                 if (!BbIntersects(cx - hb, cy - hb, cx + hb, cy + hb, vpMinX, vpMinY, vpMaxX, vpMaxY))
                     continue;
             }
-            else if (!BbIntersects(c.BbMinX, c.BbMinY, c.BbMaxX, c.BbMaxY, vpMinX, vpMinY, vpMaxX, vpMaxY))
-                continue;
+            else
+            {
+                if (!BbIntersects(c.FullBbMinX, c.FullBbMinY, c.FullBbMaxX, c.FullBbMaxY,
+                                  vpMinX, vpMinY, vpMaxX, vpMaxY))
+                    continue;
+            }
 
             var (cpx, cpy) = ToPixel(cx, cy, panX, panY, zoom);
 
@@ -193,7 +204,7 @@ public static class SchematicRenderer
                 (double DX, double DY)? lblDrag = null;
                 if (overlay?.LabelDragOffsets is { } ldo && ldo.TryGetValue(c.Id, out var ld))
                     lblDrag = ld;
-                DrawLabels(canvas, c, cpx, cpy, zoom, textFont,
+                DrawLabels(canvas, c, cx, cy, panX, panY, zoom, textFont,
                     compNamePaint, instNamePaint, paramNamePaint, lblDrag);
             }
         }
@@ -204,7 +215,7 @@ public static class SchematicRenderer
             // During a drag the overlay carries live dots recomputed from the moving geometry;
             // use them so junction dots follow instead of lagging at their pre-drag positions.
             var dotsToDraw = overlay?.ConnectionDotsOverride ?? model.ConnectionDots;
-            float dotHalf = (float)Math.Clamp(zoom * DotHalfSize, 2.0, 6.0);
+            float dotHalf = (float)Math.Max(2.0, zoom * DotHalfSize);
             foreach (var dot in dotsToDraw)
             {
                 if (dot.X < vpMinX - 20 || dot.X > vpMaxX + 20 ||
@@ -292,8 +303,8 @@ public static class SchematicRenderer
         double panX, double panY, double zoom,
         SKPaint unconnPaint, SKPaint connPaint)
     {
-        float boxHalf  = (float)Math.Clamp(zoom * PortBoxHalf, 3.0, 8.0);
-        float connHalf = (float)Math.Clamp(zoom * ConnDotHalf, 2.0, 5.0);
+        float boxHalf  = (float)Math.Max(3.0, zoom * PortBoxHalf);
+        float connHalf = (float)Math.Max(2.0, zoom * ConnDotHalf);
 
         foreach (var port in c.Ports)
         {
@@ -313,27 +324,22 @@ public static class SchematicRenderer
 
     private static void DrawLabels(
         SKCanvas canvas, SchematicComponent c,
-        float cpx, float cpy, double zoom,
+        double cx, double cy,
+        double panX, double panY, double zoom,
         SKFont font,
         SKPaint compNamePaint, SKPaint instNamePaint, SKPaint paramNamePaint,
         (double DX, double DY)? dragDelta = null)
     {
-        float textSize = font.Size;
-        if (textSize < 4f) return;
-
-        // Cap screen-space offsets so labels stay visible when the component center is on-screen.
-        float labelX   = cpx - (float)Math.Min(zoom * 155, 160.0);
-        float startY   = cpy + (float)Math.Min(zoom * 120, 150.0) + textSize;
-        float lineStep = textSize + 2f;
-
+        // All anchors are computed in world space and transformed once — same model as symbols and net labels.
         for (int i = 0; i < c.Labels.Count; i++)
         {
             string label = c.Labels[i];
             if (string.IsNullOrEmpty(label)) continue;
             var (oDx, oDy) = i < c.LabelOffsets.Count ? c.LabelOffsets[i] : (0.0, 0.0);
             if (dragDelta is { } dd) { oDx += dd.DX; oDy += dd.DY; }
-            float lx = labelX + (float)(oDx * zoom);
-            float ly = startY + i * lineStep + (float)(oDy * zoom);
+            double worldX = cx + LabelBaseOffsetX + oDx;
+            double worldY = cy + LabelBaseY       + oDy + i * LabelWorldStep;
+            var (lx, ly) = ToPixel(worldX, worldY, panX, panY, zoom);
             var paint = i == 0 ? compNamePaint : (i == 1 ? instNamePaint : paramNamePaint);
             canvas.DrawText(label, lx, ly, SKTextAlign.Left, font, paint);
         }
@@ -427,7 +433,7 @@ public static class SchematicRenderer
             {
                 IsAntialias = true, Style = SKPaintStyle.Stroke,
                 StrokeWidth = (float)Math.Max(6.0, zoom * 14),
-                Color       = theme.SelectionBox,
+                Color       = theme.SelectionBox.WithAlpha(120),
                 StrokeJoin  = SKStrokeJoin.Miter,
             };
             foreach (var wire in model.Wires)
@@ -458,7 +464,7 @@ public static class SchematicRenderer
             {
                 IsAntialias = true, Style = SKPaintStyle.Stroke,
                 StrokeWidth = (float)Math.Max(6.0, zoom * 14),
-                Color       = theme.SelectionBox,
+                Color       = theme.SelectionBox.WithAlpha(120),
                 StrokeJoin  = SKStrokeJoin.Miter,
             };
             foreach (var segSel in selSegs)

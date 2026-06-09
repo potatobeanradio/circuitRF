@@ -2005,12 +2005,27 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     public void CommitInlineEdit()
     {
-        string newVal = InlineEditValue.Trim();
-        switch (_inlineEditKind)
+        // Idempotency guard: a second call (Enter+LostFocus race or stale deferred post) is a no-op.
+        if (_inlineEditKind == InlineEditKind.None) return;
+
+        // Capture locals and clear VM state immediately so any deferred re-entry sees None and exits.
+        // Reading captured locals (not fields) also prevents cross-contamination when the user has
+        // already started editing a different component before the deferred call fires.
+        var kind       = _inlineEditKind;
+        var targetId   = _inlineEditTargetId;
+        var param      = _inlineEditParam;
+        var label      = _inlineEditExistingNetLabel;
+        var worldX     = _inlineEditWorldX;
+        var worldY     = _inlineEditWorldY;
+        string newVal  = InlineEditValue.Trim();
+
+        CancelInlineEdit();  // zero out all fields now — deferred call hits None guard above
+
+        switch (kind)
         {
             case InlineEditKind.ComponentType:
             {
-                var comp = EditModel.FindComponent(_inlineEditTargetId ?? "");
+                var comp = EditModel.FindComponent(targetId ?? "");
                 if (comp is null) break;
                 if (!ComponentTypeRegistry.TryParseCode(newVal, out var newKind, out int parsedPortCount))
                 {
@@ -2046,48 +2061,41 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
             case InlineEditKind.ComponentName:
             {
-                var comp = EditModel.FindComponent(_inlineEditTargetId ?? "");
+                var comp = EditModel.FindComponent(targetId ?? "");
                 if (comp is null || newVal.Length == 0 || newVal == comp.InstanceName) break;
-                Execute(new RenameComponentCommand(comp, newVal));
-                EditModel.NotifyChanged();
+                Execute(new RenameComponentCommand(EditModel, comp, newVal));
                 break;
             }
             case InlineEditKind.ComponentParam:
             {
-                if (_inlineEditParam is null) break;
+                if (param is null) break;
                 if (newVal.Length > 0)
                 {
                     var (expr, unit) = ParseExpressionUnit(newVal);
-                    if (expr != _inlineEditParam.Expression || unit != _inlineEditParam.Unit)
-                    {
-                        Execute(new EditParameterCommand(_inlineEditParam, expr, unit));
-                        EditModel.NotifyChanged();
-                    }
+                    if (expr != param.Expression || unit != param.Unit)
+                        Execute(new EditParameterCommand(EditModel, param, expr, unit));
                 }
                 break;
             }
             case InlineEditKind.WireNetLabel:
             {
                 if (newVal.Length == 0) break;
-                if (_inlineEditExistingNetLabel is not null)
+                if (label is not null)
                 {
-                    if (newVal != _inlineEditExistingNetLabel.Name)
-                    {
-                        Execute(new RenameNetLabelCommand(_inlineEditExistingNetLabel, newVal));
-                        EditModel.NotifyChanged();
-                    }
+                    if (newVal != label.Name)
+                        Execute(new RenameNetLabelCommand(EditModel, label, newVal));
                 }
                 else
                 {
-                    double sx = EditModel.SnapToGrid(_inlineEditWorldX);
-                    double sy = EditModel.SnapToGrid(_inlineEditWorldY);
+                    // Use the placement coordinates as-is: the perpendicular gap was computed
+                    // from the wire's exact position in ClassifySegmentAt, so grid-snapping
+                    // the perpendicular axis would round it back onto the wire.
                     Execute(new PlaceNetLabelCommand(EditModel,
-                        new EditableNetLabel { Name = newVal, X = sx, Y = sy }));
+                        new EditableNetLabel { Name = newVal, X = worldX, Y = worldY }));
                 }
                 break;
             }
         }
-        CancelInlineEdit();
     }
 
     public void CancelInlineEdit()

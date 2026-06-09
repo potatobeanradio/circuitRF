@@ -516,8 +516,8 @@ public partial class SchematicView : UserControl
 
         var (cpx, cpy)  = SchematicCanvasCtrl.WorldToScreen(a.CompX, a.CompY);
         double textSize = Math.Max(zoom * 70, 4.0);
-        double lx = cpx - Math.Min(zoom * 155, 160.0) + a.ODx * zoom;
-        double ly = cpy + Math.Min(zoom * 120, 150.0) + textSize + a.Row * (textSize + 2) + a.ODy * zoom;
+        double lx = cpx - zoom * 155 + a.ODx * zoom;
+        double ly = cpy + zoom * 120 + textSize + a.Row * (textSize + 2) + a.ODy * zoom;
         // Offset past the "<Name> = " prefix.  PrefixWorldUnits was measured with Skia at edit-start
         // and stored as px/zoom so that multiplying by current zoom gives the correct screen offset
         // at any zoom level without re-measuring.
@@ -713,12 +713,16 @@ public partial class SchematicView : UserControl
 
     private void CommitAndDismissInlineEdit()
     {
+        // Dismiss first so that the LostFocus this triggers (and any already-queued deferred post)
+        // sees IsVisible=false and returns early from MaybeDismissInlineEdit — belt-and-suspenders
+        // on top of the VM-level idempotency guard in CommitInlineEdit.
+        string text = InlineEditBox.Text ?? "";
+        DismissInlineEditBox();
         if (Vm is not null)
         {
-            Vm.InlineEditValue = InlineEditBox.Text ?? "";
+            Vm.InlineEditValue = text;
             Vm.CommitInlineEdit();
         }
-        DismissInlineEditBox();
     }
 
     private void OnInlineEditKeyDown(object? sender, KeyEventArgs e)

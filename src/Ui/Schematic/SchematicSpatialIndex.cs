@@ -27,7 +27,7 @@ public sealed class SchematicSpatialIndex
         for (int i = 0; i < model.Components.Count; i++)
         {
             var c = model.Components[i];
-            Insert(_compCells, i, c.BbMinX, c.BbMinY, c.BbMaxX, c.BbMaxY);
+            Insert(_compCells, i, c.FullBbMinX, c.FullBbMinY, c.FullBbMaxX, c.FullBbMaxY);
         }
 
         for (int i = 0; i < model.Wires.Count; i++)
@@ -58,13 +58,20 @@ public sealed class SchematicSpatialIndex
     /// <summary>
     /// Returns the (possibly non-unique) component and wire indices that overlap the
     /// given world viewport. Callers should still test each item's bounding box.
+    /// <para>
+    /// <paramref name="margin"/> expands the query rect (in world units) before mapping to
+    /// cell coordinates. Use this to include items whose glyph BB is just outside the viewport
+    /// but whose label region extends into it. The index is built on tight glyph BBs; the
+    /// margin only widens the cell-coordinate range walked — it does not affect the index build.
+    /// </para>
     /// </summary>
     public void QueryViewport(
         double vpMinX, double vpMinY, double vpMaxX, double vpMaxY,
-        HashSet<int> outComponents, HashSet<int> outWires)
+        HashSet<int> outComponents, HashSet<int> outWires,
+        double margin = 0.0)
     {
-        int cx0 = CellCoord(vpMinX), cy0 = CellCoord(vpMinY);
-        int cx1 = CellCoord(vpMaxX), cy1 = CellCoord(vpMaxY);
+        int cx0 = CellCoord(vpMinX - margin), cy0 = CellCoord(vpMinY - margin);
+        int cx1 = CellCoord(vpMaxX + margin), cy1 = CellCoord(vpMaxY + margin);
 
         for (int cx = cx0; cx <= cx1; cx++)
         for (int cy = cy0; cy <= cy1; cy++)

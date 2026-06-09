@@ -19,6 +19,11 @@ public static class SchematicHitTest
     private const double LabelStartOffY = 134.0;
     private const double CharWidthWorld = 38.5;   // textSize_world(70) × ~0.55 avg char ratio
 
+    // Net label: PlexItalic at 65 world units, drawn at stored lbl.X/lbl.Y (no render-time shift).
+    private const double NetLabelCharWidth     = 36.0;  // 65 × ~0.55 avg char ratio
+    private const double NetLabelAboveBaseline = 47.0;  // ascender height at font size 65 (measured)
+    private const double NetLabelBelowBaseline = 17.0;  // descender(15) + 2 click comfort
+
     public enum HitKind
     {
         None,
@@ -131,7 +136,9 @@ public static class SchematicHitTest
         // ── 7. Net labels ─────────────────────────────────────────────────────
         foreach (var lbl in editModel.NetLabels)
         {
-            if (Math.Abs(worldX - lbl.X) < 150 && Math.Abs(worldY - lbl.Y) < 50)
+            if (worldY < lbl.Y - NetLabelAboveBaseline || worldY > lbl.Y + NetLabelBelowBaseline) continue;
+            double right = lbl.X + lbl.Name.Length * NetLabelCharWidth;
+            if (worldX >= lbl.X - 8 && worldX <= right + 8)
                 return new HitResult(HitKind.NetLabel, lbl.Id);
         }
 

@@ -181,6 +181,23 @@ public sealed class EditableComponent
         var bb = GetBoundingBox();
         var (glyphMinX, glyphMinY, glyphMaxX, glyphMaxY) = ComputeGlyphBb();
 
+        // FullBb: glyph BB unioned with every label's actual world position including offsets.
+        // Computed once here so the spatial index and the renderer in-loop cull share a single
+        // pre-baked value and cannot drift from each other.
+        double fullMinX = bb.MinX, fullMinY = bb.MinY;
+        double fullMaxX = bb.MaxX, fullMaxY = bb.MaxY;
+        for (int li = 0; li < labels.Count; li++)
+        {
+            if (string.IsNullOrEmpty(labels[li])) continue;
+            var (oDx, oDy) = li < LabelOffsets.Count ? LabelOffsets[li] : (0.0, 0.0);
+            double lx  = X + SchematicComponent.LabelBaseOffsetX + oDx;
+            double ly  = Y + SchematicComponent.LabelBaseY + oDy + li * SchematicComponent.LabelWorldStep;
+            fullMinX = Math.Min(fullMinX, lx);
+            fullMinY = Math.Min(fullMinY, ly - SchematicComponent.LabelWorldHeight);
+            fullMaxX = Math.Max(fullMaxX, lx + SchematicComponent.LabelWidthEstimate);
+            fullMaxY = Math.Max(fullMaxY, ly + 20.0);
+        }
+
         return new SchematicComponent
         {
             Id           = Id,
@@ -197,6 +214,8 @@ public sealed class EditableComponent
             BbMaxX = bb.MaxX, BbMaxY = bb.MaxY,
             GlyphBbMinX = glyphMinX, GlyphBbMinY = glyphMinY,
             GlyphBbMaxX = glyphMaxX, GlyphBbMaxY = glyphMaxY,
+            FullBbMinX = fullMinX, FullBbMinY = fullMinY,
+            FullBbMaxX = fullMaxX, FullBbMaxY = fullMaxY,
         };
     }
 

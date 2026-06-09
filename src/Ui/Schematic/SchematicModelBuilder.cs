@@ -272,6 +272,21 @@ public static class SchematicModelBuilder
 
         var (gMinX, gMinY, gMaxX, gMaxY) = ComputeGlyphBbLocal(kind, cx, cy, n);
 
+        // FullBb: glyph BB unioned with default label positions (no offsets — builder creates
+        // components without saved LabelOffsets).
+        double fullMinX = cx - HalfBound, fullMinY = cy - HalfBound;
+        double fullMaxX = cx + HalfBound, fullMaxY = cy + HalfBound;
+        for (int li = 0; li < labels.Count; li++)
+        {
+            if (string.IsNullOrEmpty(labels[li])) continue;
+            double lx  = cx + SchematicComponent.LabelBaseOffsetX;
+            double ly  = cy + SchematicComponent.LabelBaseY + li * SchematicComponent.LabelWorldStep;
+            fullMinX = Math.Min(fullMinX, lx);
+            fullMinY = Math.Min(fullMinY, ly - SchematicComponent.LabelWorldHeight);
+            fullMaxX = Math.Max(fullMaxX, lx + SchematicComponent.LabelWidthEstimate);
+            fullMaxY = Math.Max(fullMaxY, ly + 20.0);
+        }
+
         return new SchematicComponent
         {
             InstanceName  = name,
@@ -288,6 +303,10 @@ public static class SchematicModelBuilder
             GlyphBbMinY   = gMinY,
             GlyphBbMaxX   = gMaxX,
             GlyphBbMaxY   = gMaxY,
+            FullBbMinX    = fullMinX,
+            FullBbMinY    = fullMinY,
+            FullBbMaxX    = fullMaxX,
+            FullBbMaxY    = fullMaxY,
         };
     }
 

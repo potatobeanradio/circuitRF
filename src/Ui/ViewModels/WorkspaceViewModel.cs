@@ -63,6 +63,15 @@ public partial class WorkspaceViewModel : ViewModelBase
         if (_factory.ProjectTreeTool is { } tree)
             tree.OpenItemRequested = OpenTreeItem;
 
+        // Re-evaluate Undo/Redo CanExecute whenever the stack depth changes.
+        // RelayCommand's CanExecute queries CanUndo()/CanRedo() on UndoRedo (an external object),
+        // so the generated command never auto-notifies — we must call NotifyCanExecuteChanged manually.
+        UndoRedo.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(UndoRedoStack.CanUndo)) UndoCommand.NotifyCanExecuteChanged();
+            if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) RedoCommand.NotifyCanExecuteChanged();
+        };
+
         // Post a welcome message.
         Messages.Info("circuitRF ready. Open a workspace or add a library to get started.");
     }
