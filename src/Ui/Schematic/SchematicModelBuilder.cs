@@ -10,7 +10,7 @@ namespace CircuitRF.Ui.Schematic;
 /// </summary>
 public static class SchematicModelBuilder
 {
-    // Standard 2-terminal component: body ±60, leads ±150 → total span ±175 with margin
+    // Standard 2-terminal component: body ±60, leads ±200 → total span ±215 with margin
     private const double HalfBound = 200.0;
 
     // ---------------------------------------------------------------------------
@@ -25,9 +25,9 @@ public static class SchematicModelBuilder
         // Actually limit to n components total
         int total = Math.Min(n, rows * cols);
 
-        // Component pitch
-        const double pitchX = 400.0;  // horizontal spacing (component center to center)
-        const double pitchY = 350.0;  // vertical row spacing
+        // Component pitch — pins are at ±200, so use 500 to keep 100-unit wire segments
+        const double pitchX = 500.0;  // horizontal spacing (component center to center)
+        const double pitchY = 400.0;  // vertical row spacing
 
         SymbolKind[] kinds = [SymbolKind.Resistor, SymbolKind.Capacitor, SymbolKind.Inductor, SymbolKind.VoltageSource];
 
@@ -54,10 +54,10 @@ public static class SchematicModelBuilder
                 if (prevIdx.HasValue)
                 {
                     var prev = components[prevIdx.Value];
-                    // prev port2 at (prev.X + 150, prev.Y), this port1 at (cx - 150, cy)
-                    double wireX0 = prev.X + 150;
+                    // prev port2 at (prev.X + 200, prev.Y), this port1 at (cx - 200, cy)
+                    double wireX0 = prev.X + 200;
                     double wireY0 = prev.Y;
-                    double wireX1 = cx - 150;
+                    double wireX1 = cx - 200;
                     double wireY1 = cy;
 
                     wires.Add(new SchematicWire
@@ -146,22 +146,22 @@ public static class SchematicModelBuilder
             3 * pitch - 200, -biasY, SymbolRotation.R90, [("L", "1", "µH")]));
 
         components.Add(MakeComponent("Vgate", SymbolKind.VoltageSource,
-            3 * pitch - 200, -biasY - 400, SymbolRotation.R90, [("Vac", "-3.05", "V")]));
+            3 * pitch - 200, -biasY - 500, SymbolRotation.R90, [("Vac", "-3.05", "V")]));
 
         components.Add(MakeComponent("GND1", SymbolKind.Ground,
-            3 * pitch - 200, -biasY - 800, SymbolRotation.R0));
+            3 * pitch - 200, -biasY - 1000, SymbolRotation.R0));
 
         // ── Drain bias ─────────────────────────────────────────────────────────
 
         components.Add(MakeComponent("Vdrain", SymbolKind.VoltageSource,
-            4 * pitch, biasY, SymbolRotation.R90, [("Vac", "48", "V")]));
+            4 * pitch, biasY + 100, SymbolRotation.R90, [("Vac", "48", "V")]));
 
         components.Add(MakeComponent("GND2", SymbolKind.Ground,
-            4 * pitch, biasY + 400, SymbolRotation.R0));
+            4 * pitch, biasY + 500, SymbolRotation.R0));
 
         // Drive source ground
         components.Add(MakeComponent("GND3", SymbolKind.Ground,
-            0, biasY, SymbolRotation.R0));
+            0, biasY + 100, SymbolRotation.R0));
 
         // ── Signal-path wires ─────────────────────────────────────────────────
 
@@ -174,12 +174,6 @@ public static class SchematicModelBuilder
                 BbMaxX  = Math.Max(x0, x1) + 5,
                 BbMaxY  = Math.Max(y0, y1) + 5,
             });
-
-        void AddPolyWire(params (double X, double Y)[] pts)
-        {
-            for (int i = 0; i < pts.Length - 1; i++)
-                AddWire(pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y);
-        }
 
         // Vdrive left port → (circuit input, unconnected — already shown via red box)
         // Vdrive right port → Zsource left port
@@ -196,18 +190,22 @@ public static class SchematicModelBuilder
         AddWire(Port2X(5 * pitch, 0), signalY, Port1X(6 * pitch, 0), signalY);
 
         // Gate bias: FET gate node → Lchoke_g (vertical) → Vgate → GND1
+        // Lchoke_g at (gateNodeX, -biasY=-400) R90: port2 at y=-200, port1 at y=-600
+        // Vgate at (gateNodeX, -biasY-500=-900) R90: port1 at y=-700 (top), port2 at y=-1100 (bottom)
+        // Wait: R90 port1(local -200,0)→ world y=cy-200; port2(local +200,0)→ world y=cy+200
+        // So Vgate port1 at -900-200=-1100, port2 at -900+200=-700
         double gateNodeX = Port1X(3 * pitch, 0);
-        AddPolyWire((gateNodeX, signalY), (gateNodeX, -150),
-                    (3 * pitch - 200, -150), (3 * pitch - 200, -biasY + 150));
-        AddWire(3 * pitch - 200, -biasY - 150, 3 * pitch - 200, -biasY - 250);
-        AddWire(3 * pitch - 200, -biasY - 550, 3 * pitch - 200, -biasY - 650);
+        AddWire(gateNodeX, signalY, gateNodeX, -biasY + 200);           // FET gate → Lchoke_g port2
+        AddWire(3 * pitch - 200, -biasY - 200, 3 * pitch - 200, -biasY - 300); // Lchoke_g port1 → Vgate port2
+        AddWire(3 * pitch - 200, -biasY - 700, 3 * pitch - 200, -biasY - 1000); // Vgate port1 → GND1
 
-        // Drain bias: Lchoke_d mid-node → Vdrain → GND2
-        AddPolyWire((4 * pitch, signalY + 150), (4 * pitch, biasY - 150));
-        AddWire(4 * pitch, biasY + 150, 4 * pitch, biasY + 250);
+        // Drain bias: Lchoke_d center stub → Vdrain → GND2
+        // Vdrain at (4*pitch, biasY+100=500) R90: port1 at y=300, port2 at y=700
+        AddWire(4 * pitch, signalY + 200, 4 * pitch, biasY - 100);      // Lchoke_d top stub → Vdrain port1
+        AddWire(4 * pitch, biasY + 300, 4 * pitch, biasY + 500);        // Vdrain port2 → GND2
 
-        // Drive source → GND3
-        AddWire(0, signalY + 150, 0, biasY - 150);
+        // Drive source → GND3 (GND3 at y=biasY+100=500, port at y=500)
+        AddWire(0, signalY + 200, 0, biasY + 100);
 
         // Junction dots at Lchoke_d mid-node and FET gate node
         dots.Add(new SchematicDot(4 * pitch, signalY));
@@ -230,9 +228,9 @@ public static class SchematicModelBuilder
     //  Helpers
     // ---------------------------------------------------------------------------
 
-    // Right port of a standard 2-terminal component at origin x on y-row
-    private static double Port2X(double cx, double _cy) => cx + 150;
-    private static double Port1X(double cx, double _cy) => cx - 150;
+    // Right/left port of a standard 2-terminal component at origin x on y-row
+    private static double Port2X(double cx, double _cy) => cx + 200;
+    private static double Port1X(double cx, double _cy) => cx - 200;
 
     private static SchematicComponent MakeComponent(
         string name, SymbolKind kind, double cx, double cy,
@@ -338,17 +336,17 @@ public static class SchematicModelBuilder
         return kind switch
         {
             SymbolKind.Ground => [new SchematicPortDef("1", 0, 0, p0)],
-            SymbolKind.Port   => [new SchematicPortDef("1", -150, 0, p0)],
+            SymbolKind.Port   => [new SchematicPortDef("1", -200, 0, p0)],
             SymbolKind.FetSdd => [
-                new SchematicPortDef("gate",   -150, 0,    p0),
-                new SchematicPortDef("drain",   150, -100, p1),
-                new SchematicPortDef("source",  150,  100, PortConnectionState.Unconnected),
+                new SchematicPortDef("gate",   -200, 0,    p0),
+                new SchematicPortDef("drain",   200, -100, p1),
+                new SchematicPortDef("source",  200,  100, PortConnectionState.Unconnected),
             ],
             SymbolKind.ZPort or SymbolKind.Sdd =>
                 GenerateVariadicPorts(portCount > 0 ? portCount : 2),
             _ => [
-                new SchematicPortDef("1", -150, 0, p0),
-                new SchematicPortDef("2",  150, 0, p1),
+                new SchematicPortDef("1", -200, 0, p0),
+                new SchematicPortDef("2",  200, 0, p1),
             ],
         };
     }
@@ -362,14 +360,14 @@ public static class SchematicModelBuilder
         for (int i = 0; i < nLeft; i++)
         {
             float localY = nLeft > 1 ? (i - (nLeft - 1) * 0.5f) * 200f : 0f;
-            ports[i] = new SchematicPortDef($"{i + 1}", -150f, localY, PortConnectionState.Connected);
+            ports[i] = new SchematicPortDef($"{i + 1}", -200f, localY, PortConnectionState.Connected);
         }
         for (int i = 0; i < nRight; i++)
         {
             float localY = nRight > 1 ? (i - (nRight - 1) * 0.5f) * 200f : 0f;
             bool isRef   = i == nRight - 1;
             ports[nLeft + i] = new SchematicPortDef(
-                isRef ? "ref" : $"{nLeft + i + 1}", 150f, localY, PortConnectionState.Connected);
+                isRef ? "ref" : $"{nLeft + i + 1}", 200f, localY, PortConnectionState.Connected);
         }
         return ports;
     }

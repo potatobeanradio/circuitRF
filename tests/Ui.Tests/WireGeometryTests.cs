@@ -141,7 +141,7 @@ public class WireGeometryTests
         };
         model.Components.Add(r1);
 
-        // Resistor port 0 is at local (-150, 0) → world (-150, 0) at rotation R0
+        // Resistor port 0 is at local (-200, 0) → world (-200, 0) at rotation R0; wire covers it
         var wire = new EditableWire();
         wire.Points.Add((-150, 0));
         wire.Points.Add((-250, 0));

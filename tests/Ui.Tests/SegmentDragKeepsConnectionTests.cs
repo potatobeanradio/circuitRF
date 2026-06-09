@@ -46,21 +46,23 @@ public class SegmentDragKeepsConnectionTests
     [Fact]
     public void DraggingStemSegment_SlidesTAlongThroughWire_StaysConnected()
     {
-        var through = MakeWire((0, 0), (200, 0));
-        var stem    = MakeWire((100, 0), (100, 100));   // endpoint (100,0) on through's body → T
+        // Through-wire extended to 400 so T at x=200 and T at x=300 are both on the interior
+        // (not at endpoints) — required for P-multiple quantization to detect them as T-junctions.
+        var through = MakeWire((0, 0), (400, 0));
+        var stem    = MakeWire((200, 0), (200, 200));   // endpoint (200,0) on through's body → T
         var (model, vm, undo) = MakeVm(through, stem);
-        Assert.True(HasDotAt(vm, 100, 0), "precondition: T-junction dot");
+        Assert.True(HasDotAt(vm, 200, 0), "precondition: T-junction dot");
 
-        // Grab the stem's (vertical) segment and drag it sideways by +50. The through-wire is
-        // parallel to the drag, so the T-point slides along it — the stem stays a straight wire.
-        DragSegment(vm, 100, 50, 150, 50);
+        // Grab the stem's (vertical) segment and drag it sideways by +100 (P-multiple delta).
+        // The through-wire is parallel to the drag, so the T-point slides along it.
+        DragSegment(vm, 200, 100, 300, 100);
 
-        Assert.True(HasDotAt(vm, 150, 0), "the T slides along the through-wire, staying connected");
+        Assert.True(HasDotAt(vm, 300, 0), "the T slides along the through-wire, staying connected");
         Assert.Equal(2, model.FindWire(stem.Id)!.Points.Count);   // no jog — still a 2-point wire
         Assert.Single(vm.RenderModel!.ConnectionDots);
 
         undo.Undo();
-        Assert.True(HasDotAt(vm, 100, 0));
+        Assert.True(HasDotAt(vm, 200, 0));
         Assert.Equal(2, model.FindWire(stem.Id)!.Points.Count);
     }
 
@@ -130,18 +132,20 @@ public class SegmentDragKeepsConnectionTests
     {
         // H joins two vertical wires at their bodies → 2 T-dots. Dragging H down must slide the
         // connections along the verticals (H stays one straight segment) — exactly 2 dots, not 4.
-        var v1 = MakeWire((0, -100), (0, 100));
-        var v2 = MakeWire((200, -100), (200, 100));
+        // Verticals extended to ±200 so the dragged T-points (y=100) remain on the interior
+        // (not at endpoints) — required for P-multiple quantization to detect them as T-junctions.
+        var v1 = MakeWire((0, -200), (0, 200));
+        var v2 = MakeWire((200, -200), (200, 200));
         var h  = MakeWire((0, 0), (200, 0));
         var (model, vm, _) = MakeVm(v1, v2, h);
         Assert.Equal(2, vm.RenderModel!.ConnectionDots.Count);
 
-        DragSegment(vm, 100, 0, 100, 60);   // drag H down by 60 (within the verticals' span)
+        DragSegment(vm, 100, 0, 100, 100);   // drag H down by 100 (P-multiple delta)
 
         var rh = model.FindWire(h.Id)!;
-        Assert.Equal(2, rh.Points.Count);                          // straight wire, no jogs
-        Assert.Equal(2, vm.RenderModel!.ConnectionDots.Count);     // 2 dots, NOT 4
-        Assert.True(HasDotAt(vm, 0, 60) && HasDotAt(vm, 200, 60)); // dots slid down with H
+        Assert.Equal(2, rh.Points.Count);                           // straight wire, no jogs
+        Assert.Equal(2, vm.RenderModel!.ConnectionDots.Count);      // 2 dots, NOT 4
+        Assert.True(HasDotAt(vm, 0, 100) && HasDotAt(vm, 200, 100)); // dots slid down with H
     }
 
     [Fact]

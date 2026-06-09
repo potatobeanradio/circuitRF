@@ -22,6 +22,7 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     public SchematicEditModel EditModel  { get; }
     public SchematicSelection Selection  { get; } = new();
+    public IMessageSink?      MessageSink => _messageSink;
 
     // ── Render snapshot ───────────────────────────────────────────────────────
 
@@ -482,8 +483,8 @@ public sealed partial class SchematicViewModel : ObservableObject
                 var obj = EditModel.FindCanvasObject(id);
                 if (obj is not null)
                 {
-                    obj.X = EditModel.SnapToGrid(start.X + dx);
-                    obj.Y = EditModel.SnapToGrid(start.Y + dy);
+                    obj.X = EditModel.SnapToAuthorGrid(start.X + dx);
+                    obj.Y = EditModel.SnapToAuthorGrid(start.Y + dy);
                 }
             }
         }
@@ -949,8 +950,8 @@ public sealed partial class SchematicViewModel : ObservableObject
             {
                 var obj = EditModel.FindCanvasObject(id);
                 if (obj is null) continue;
-                double ex = EditModel.SnapToGrid(start.X + dx);
-                double ey = EditModel.SnapToGrid(start.Y + dy);
+                double ex = EditModel.SnapToAuthorGrid(start.X + dx);
+                double ey = EditModel.SnapToAuthorGrid(start.Y + dy);
                 objSnaps.Add(new CanvasObjectMoveSnapshot(obj, start.X, start.Y, ex, ey));
             }
         }
@@ -1535,7 +1536,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         if (_moveLabelPhase != MoveLabelPhase.Moving || _moveLabelComps.Count == 0) return;
         var (dx, dy) = ComputeLabelDelta(wx - _moveLabelRefX, wy - _moveLabelRefY,
-                                         modifiers, EditModel.GridSize);
+                                         modifiers, EditModel.AuthorGridSize);
         var dict = _moveLabelComps.ToDictionary(c => c.Id, _ => (DX: dx, DY: dy));
         Overlay = Overlay with { LabelDragOffsets = dict };
     }
@@ -1543,7 +1544,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     private void CommitMoveLabels(double wx, double wy, KeyModifiers modifiers)
     {
         var (dx, dy) = ComputeLabelDelta(wx - _moveLabelRefX, wy - _moveLabelRefY,
-                                         modifiers, EditModel.GridSize);
+                                         modifiers, EditModel.AuthorGridSize);
         var snaps = _moveLabelComps.Select(c =>
         {
             int labelCount = 2 + c.Parameters.Count(p => p.ShowOnSchematic);

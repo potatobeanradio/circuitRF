@@ -53,15 +53,15 @@ public static class SymbolPortDefs
         switch (kind)
         {
             case SymbolKind.Ground:  return [("1", 0f, 0f)];
-            case SymbolKind.Port:    return [("1", -150f, 0f)];
-            case SymbolKind.FetSdd:  return [("gate",   -150f,   0f),
-                                             ("drain",   150f, -100f),
-                                             ("source",  150f,  100f)];
+            case SymbolKind.Port:    return [("1", -200f, 0f)];
+            case SymbolKind.FetSdd:  return [("gate",   -200f,   0f),
+                                             ("drain",   200f, -100f),
+                                             ("source",  200f,  100f)];
             case SymbolKind.ZPort:
             case SymbolKind.Sdd:
                 return GeneratePorts(portCount >= 1 ? portCount : 2);
             default:
-                return [("1", -150f, 0f), ("2", 150f, 0f)];
+                return [("1", -200f, 0f), ("2", 200f, 0f)];
         }
     }
 
@@ -80,13 +80,13 @@ public static class SymbolPortDefs
         for (int i = 0; i < nLeft; i++)
         {
             float localY = nLeft > 1 ? (i - (nLeft - 1) * 0.5f) * 200f : 0f;
-            ports[i] = ($"{i + 1}", -150f, localY);
+            ports[i] = ($"{i + 1}", -200f, localY);
         }
         for (int i = 0; i < nRight; i++)
         {
             float localY = nRight > 1 ? (i - (nRight - 1) * 0.5f) * 200f : 0f;
             bool isRef   = (i == nRight - 1);
-            ports[nLeft + i] = (isRef ? "ref" : $"{nLeft + i + 1}", 150f, localY);
+            ports[nLeft + i] = (isRef ? "ref" : $"{nLeft + i + 1}", 200f, localY);
         }
         return ports;
     }
@@ -360,8 +360,14 @@ public sealed class SchematicEditModel
     public List<EditableDot>        Dots         { get; } = new();
     public List<EditableCanvasObject> CanvasObjects { get; } = new();
 
-    public double GridSize { get; set; } = 100.0;
-    public bool   GridSnap { get; set; } = true;
+    public double GridSize          { get; set; } = 100.0;
+    public bool   GridSnap          { get; set; } = true;
+    /// <summary>Fine authoring grid divisor k: p = P/k (default k=20 → p=5).
+    /// Governs label offsets, net-label positions, and canvas objects only — never connection points.</summary>
+    public int    AuthorGridDivisor { get; set; } = 20;
+
+    /// <summary>Fine authoring grid pitch p = GridSize / AuthorGridDivisor (default 5).</summary>
+    public double AuthorGridSize => GridSize / AuthorGridDivisor;
 
     // View state (saved/restored with .csch)
     public double ViewPanX { get; set; }
@@ -372,15 +378,20 @@ public sealed class SchematicEditModel
     public event EventHandler? Changed;
     public void NotifyChanged() => Changed?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>Snap to the connection grid P. Use for all electrical points (pins, wires, dots).</summary>
     public double SnapToGrid(double v)
         => GridSnap ? Math.Round(v / GridSize) * GridSize : v;
 
+    /// <summary>Snap to the fine authoring grid p = P/k. Use for labels, net-labels, canvas objects only.</summary>
+    public double SnapToAuthorGrid(double v)
+        => GridSnap ? Math.Round(v / AuthorGridSize) * AuthorGridSize : v;
+
     // ── Render model build ────────────────────────────────────────────────────
 
-    /// <summary>Quantization / coincidence tolerance for the connectivity pass (world units).
-    /// Public so editing code (e.g. T-junction stem-follow) detects T's at the identical
-    /// tolerance the render-model T-detection uses, keeping visuals and editing in agreement.</summary>
-    public const double ConnectTolerance = 6.0;
+    /// <summary>Float-dust guard for geometric coincidence checks (world units).
+    /// Connection is established at input by snapping to P (R3/R4 — not by this tolerance).
+    /// Public so editing code uses the same guard as the connectivity pass.</summary>
+    public const double ConnectTolerance = 0.5;
 
     /// <summary>
     /// Builds an immutable SchematicModel + spatial index from current state.
@@ -456,10 +467,10 @@ public sealed class SchematicEditModel
 
     // ── Connectivity helpers (shared by BuildRenderModel and the live dot preview) ──
 
-    /// <summary>Quantize a point to a ConnectTolerance grid cell; near-coincident points
-    /// rounding to the same cell are treated as the same connection point.</summary>
-    private static (long, long) QuantKey(double x, double y)
-        => ((long)Math.Round(x / ConnectTolerance), (long)Math.Round(y / ConnectTolerance));
+    /// <summary>Quantize a point to the connection-grid cell (P = GridSize).
+    /// Exact P-multiples map to their integer index; float-dust rounds to the same cell.</summary>
+    private (long, long) QuantKey(double x, double y)
+        => ((long)Math.Round(x / GridSize), (long)Math.Round(y / GridSize));
 
     /// <summary>Geometry derived for the connectivity pass: vertex hashes, auto-junction points
     /// (3+ segment meetings with a vertex), and a crossing predicate. Shared so the render model

@@ -109,9 +109,10 @@ public class CschRoundTripTests
         var json = SchematicPersistence.SerializeSelection(
             m.Components, m.Wires, m.CanvasObjects);
 
-        var (comps, wires, cobjs) = SchematicPersistence.DeserializeSelection(json);
+        var (comps, wires, cobjs, srcGrid) = SchematicPersistence.DeserializeSelection(json);
         Assert.Equal(m.Components.Count, comps.Count);
         Assert.Equal(m.Wires.Count,      wires.Count);
+        Assert.Equal(100.0, srcGrid, 1e-9);
     }
 
     [Fact]
@@ -121,5 +122,57 @@ public class CschRoundTripTests
         string j = SchematicPersistence.Serialize(m, "Test", 0, 0, 1);
         string broken = j.Replace("\"FormatVersion\": 1", "\"FormatVersion\": 999");
         Assert.Throws<InvalidDataException>(() => SchematicPersistence.Deserialize(broken));
+    }
+
+    // ── Layer 5: fine authoring grid ─────────────────────────────────────────
+
+    [Fact]
+    public void AuthorGridDivisor_DefaultIs20_AndRoundTrips()
+    {
+        var m = new SchematicEditModel { GridSize = 100, GridSnap = true };
+        Assert.Equal(20, m.AuthorGridDivisor);
+        Assert.Equal(5.0, m.AuthorGridSize, 1e-9);
+
+        string json = SchematicPersistence.Serialize(m, "Test", 0, 0, 1);
+        var (restored, _, _) = SchematicPersistence.Deserialize(json);
+        Assert.Equal(20, restored.AuthorGridDivisor);
+        Assert.Equal(5.0, restored.AuthorGridSize, 1e-9);
+    }
+
+    [Fact]
+    public void AuthorGridDivisor_Custom_RoundTrips()
+    {
+        var m = new SchematicEditModel { GridSize = 100, GridSnap = true, AuthorGridDivisor = 10 };
+        Assert.Equal(10.0, m.AuthorGridSize, 1e-9);
+
+        string json = SchematicPersistence.Serialize(m, "Test", 0, 0, 1);
+        var (restored, _, _) = SchematicPersistence.Deserialize(json);
+        Assert.Equal(10, restored.AuthorGridDivisor);
+        Assert.Equal(10.0, restored.AuthorGridSize, 1e-9);
+    }
+
+    [Fact]
+    public void AbsentAuthorGridDivisor_InJson_DefaultsTo20()
+    {
+        var m    = new SchematicEditModel { GridSize = 100, GridSnap = true };
+        string j = SchematicPersistence.Serialize(m, "Test", 0, 0, 1);
+        // Strip the field to simulate an old .csch file that predates Layer 5.
+        string old = j.Replace("\"AuthorGridDivisor\": 20,", "")
+                      .Replace(",\n  \"AuthorGridDivisor\": 20", "")
+                      .Replace(",\"AuthorGridDivisor\":20", "");
+        var (restored, _, _) = SchematicPersistence.Deserialize(old);
+        Assert.Equal(20, restored.AuthorGridDivisor);
+    }
+
+    [Fact]
+    public void SnapToAuthorGrid_SnapsToFinePitch()
+    {
+        // With P=100, k=20: p=5. SnapToAuthorGrid(7) → 5; SnapToGrid(7) → 0.
+        var m = new SchematicEditModel { GridSize = 100, GridSnap = true, AuthorGridDivisor = 20 };
+        Assert.Equal(5.0, m.SnapToAuthorGrid(7.0),  1e-9);
+        Assert.Equal(0.0, m.SnapToGrid(7.0),         1e-9);
+        // Connection points are NOT on author grid (they go to P=100, not p=5).
+        Assert.Equal(100.0, m.SnapToGrid(60.0),    1e-9);
+        Assert.Equal(60.0,  m.SnapToAuthorGrid(60.0), 1e-9);
     }
 }

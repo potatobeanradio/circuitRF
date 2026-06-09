@@ -49,12 +49,13 @@ public static class SchematicClipboard
         IReadOnlyList<EditableComponent>    components,
         IReadOnlyList<EditableWire>         wires,
         IReadOnlyList<EditableCanvasObject> canvasObjects,
+        double gridSize = 100.0,
         bool useTransparentBackground = true,
         bool excludeGrid = true)
     {
         if (components.Count == 0 && wires.Count == 0 && canvasObjects.Count == 0) return;
 
-        string json = SchematicPersistence.SerializeSelection(components, wires, canvasObjects);
+        string json = SchematicPersistence.SerializeSelection(components, wires, canvasObjects, gridSize);
 
         var item = new DataTransferItem();
 
@@ -100,9 +101,11 @@ public static class SchematicClipboard
     /// Tries to paste from the system clipboard.
     /// Returns null if the clipboard has no recognized schematic JSON.
     /// Offsets pasted items to avoid exact overlap.
+    /// <c>SourceGridSize</c> in the result is the P that was active when the content was copied —
+    /// pass it to <c>SchematicPasteCommand</c> so cross-grid snapping can be applied (§5).
     /// </summary>
     public static async Task<(List<EditableComponent> Comps, List<EditableWire> Wires,
-        List<EditableCanvasObject> CanvasObjs)?> PasteAsync(
+        List<EditableCanvasObject> CanvasObjs, double SourceGridSize)?> PasteAsync(
         IClipboard clipboard,
         double offsetX = 100, double offsetY = 100)
     {
@@ -114,7 +117,7 @@ public static class SchematicClipboard
 
         try
         {
-            var (comps, wires, cobjs) = SchematicPersistence.DeserializeSelection(json);
+            var (comps, wires, cobjs, srcGrid) = SchematicPersistence.DeserializeSelection(json);
 
             var newComps = new List<EditableComponent>(comps.Count);
             foreach (var c in comps)
@@ -146,7 +149,7 @@ public static class SchematicClipboard
                 newCobjs.Add(no);
             }
 
-            return (newComps, newWires, newCobjs);
+            return (newComps, newWires, newCobjs, srcGrid);
         }
         catch { return null; }
     }

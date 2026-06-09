@@ -373,13 +373,15 @@ public partial class SchematicView : UserControl
 
         var result = await SchematicClipboard.PasteAsync(clipboard);
         if (result is null) return;
-        var (comps, wires, cobjs) = result.Value;
+        var (comps, wires, cobjs, srcGrid) = result.Value;
         if (comps.Count == 0 && wires.Count == 0 && cobjs.Count == 0) return;
 
         var vm = doc.ViewModel;
         vm.Execute(new SchematicPasteCommand(
             vm.EditModel, comps, wires, cobjs,
-            ids => vm.Selection.SetAll(ids)));
+            ids => vm.Selection.SetAll(ids),
+            sourceGridSize: srcGrid,
+            messageSink: vm.MessageSink));
     }
 
     private async Task CopySelectionToClipboardAsync(SchematicDocument doc, IClipboard clipboard, bool cut)
@@ -410,7 +412,7 @@ public partial class SchematicView : UserControl
 
         if (comps.Count == 0 && wires.Count == 0 && objs.Count == 0) return;
 
-        await SchematicClipboard.CopyAsync(clipboard, comps, wires, objs);
+        await SchematicClipboard.CopyAsync(clipboard, comps, wires, objs, model.GridSize);
         if (cut) vm.DeleteSelection();
     }
 

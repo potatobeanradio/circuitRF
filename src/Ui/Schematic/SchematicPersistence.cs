@@ -18,8 +18,10 @@ public sealed class CschFile
 {
     public int    FormatVersion { get; set; } = 1;
     public string CellName      { get; set; } = "";
-    public double GridSize      { get; set; } = 100.0;
-    public bool   GridSnap      { get; set; } = true;
+    public double GridSize           { get; set; } = 100.0;
+    public bool   GridSnap           { get; set; } = true;
+    /// <summary>Fine authoring grid divisor k (p = GridSize/k). Absent in old files → default 20.</summary>
+    public int    AuthorGridDivisor  { get; set; } = 20;
 
     public List<CschComponent>  Components    { get; set; } = [];
     public List<CschWire>       Wires         { get; set; } = [];
@@ -202,11 +204,12 @@ public static class SchematicPersistence
     {
         var file = new CschFile
         {
-            FormatVersion = CurrentFormatVersion,
-            CellName      = cellName,
-            GridSize      = m.GridSize,
-            GridSnap      = m.GridSnap,
-            View          = new CschViewState { PanX = panX, PanY = panY, Zoom = zoom },
+            FormatVersion    = CurrentFormatVersion,
+            CellName         = cellName,
+            GridSize         = m.GridSize,
+            GridSnap         = m.GridSnap,
+            AuthorGridDivisor = m.AuthorGridDivisor,
+            View             = new CschViewState { PanX = panX, PanY = panY, Zoom = zoom },
         };
 
         foreach (var c in m.Components)
@@ -253,8 +256,9 @@ public static class SchematicPersistence
     {
         var m = new SchematicEditModel
         {
-            GridSize = file.GridSize,
-            GridSnap = file.GridSnap,
+            GridSize          = file.GridSize,
+            GridSnap          = file.GridSnap,
+            AuthorGridDivisor = file.AuthorGridDivisor,
         };
 
         foreach (var cc in file.Components)
@@ -385,15 +389,18 @@ public static class SchematicPersistence
 
     // ── Clipboard (JSON selection fragment) ──────────────────────────────────
 
-    /// <summary>Serializes a selection of objects to a JSON fragment for clipboard use.</summary>
+    /// <summary>Serializes a selection of objects to a JSON fragment for clipboard use.
+    /// <paramref name="sourceGridSize"/> is the source design's P (connection grid pitch);
+    /// it is embedded in the payload so the paste path can detect cross-grid pastes (§5).</summary>
     public static string SerializeSelection(
         IEnumerable<EditableComponent> comps,
         IEnumerable<EditableWire> wires,
-        IEnumerable<EditableCanvasObject> canvasObjs)
+        IEnumerable<EditableCanvasObject> canvasObjs,
+        double sourceGridSize = 100.0)
     {
-        var scratch = new SchematicEditModel();
-        foreach (var c in comps)     scratch.Components.Add(c.Clone());
-        foreach (var w in wires)     scratch.Wires.Add(w.Clone());
+        var scratch = new SchematicEditModel { GridSize = sourceGridSize };
+        foreach (var c in comps)      scratch.Components.Add(c.Clone());
+        foreach (var w in wires)      scratch.Wires.Add(w.Clone());
         foreach (var o in canvasObjs) scratch.CanvasObjects.Add(o.Clone());
         return Serialize(scratch);
     }
@@ -401,15 +408,17 @@ public static class SchematicPersistence
     /// <summary>
     /// Deserializes a clipboard fragment (produced by SerializeSelection).
     /// Returns empty lists if the JSON is not a valid schematic fragment.
+    /// <c>SourceGridSize</c> is the P that was in effect when the content was copied — used by
+    /// <c>SchematicPasteCommand</c> to detect and handle cross-grid pastes (§5).
     /// </summary>
     public static (List<EditableComponent> Comps, List<EditableWire> Wires,
-                   List<EditableCanvasObject> CanvasObjs) DeserializeSelection(string json)
+                   List<EditableCanvasObject> CanvasObjs, double SourceGridSize) DeserializeSelection(string json)
     {
         var file = JsonSerializer.Deserialize<CschFile>(json, _jsonOpts);
-        if (file is null) return ([], [], []);
+        if (file is null) return ([], [], [], 100.0);
 
         // Accept any version for clipboard fragments — don't reject on version mismatch.
         var model = FromFileModel(file, null);
-        return (model.Components, model.Wires, model.CanvasObjects);
+        return (model.Components, model.Wires, model.CanvasObjects, file.GridSize);
     }
 }

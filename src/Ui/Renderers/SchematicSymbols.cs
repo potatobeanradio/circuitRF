@@ -7,7 +7,7 @@ namespace CircuitRF.Ui.Renderers;
 /// Built-in vector geometry for schematic component symbols.
 ///
 /// All coordinates are in component-LOCAL space (100 units = 1 grid square).
-/// Standard 2-terminal horizontal orientation: port 1 at (-150, 0), port 2 at (150, 0).
+/// Standard 2-terminal horizontal orientation: port 1 at (-200, 0), port 2 at (200, 0).
 /// Each float[] array encodes line segments as successive (x1,y1,x2,y2) quads.
 ///
 /// Drawing applies rotation + translation via the renderer's LocalToPixel helper.
@@ -15,12 +15,12 @@ namespace CircuitRF.Ui.Renderers;
 /// </summary>
 public static class SchematicSymbols
 {
-    // ── 2-terminal components (ports at ±150 on X axis) ──────────────────────
+    // ── 2-terminal components (ports at ±200 on X axis) ──────────────────────
 
-    /// <summary>Resistor: IEC box style. Leads ±150→±60; box ±60 × ±30.</summary>
+    /// <summary>Resistor: IEC box style. Leads ±200→±60; box ±60 × ±30.</summary>
     public static readonly float[] Resistor = [
-        -150f, 0f, -60f, 0f,     // left lead
-         60f,  0f, 150f, 0f,     // right lead
+        -200f, 0f, -60f, 0f,     // left lead
+          60f, 0f, 200f, 0f,     // right lead
         -60f,-30f,  60f,-30f,    // top
          60f,-30f,  60f, 30f,    // right
          60f, 30f, -60f, 30f,    // bottom
@@ -32,8 +32,8 @@ public static class SchematicSymbols
 
     /// <summary>Capacitor: two parallel plates with leads.</summary>
     public static readonly float[] Capacitor = [
-        -150f, 0f, -18f, 0f,     // left lead
-         18f,  0f, 150f, 0f,     // right lead
+        -200f, 0f, -18f, 0f,     // left lead
+          18f, 0f, 200f, 0f,     // right lead
         -18f,-40f, -18f, 40f,    // left plate
          18f,-40f,  18f, 40f,    // right plate
     ];
@@ -65,8 +65,8 @@ public static class SchematicSymbols
 
     /// <summary>FET/SDD: simplified box with gate (L), drain (UR), source (LR) leads.</summary>
     public static readonly float[] FetSdd = [
-        // Gate lead
-        -150f,  0f, -80f,  0f,
+        // Gate lead (tip at -200)
+        -200f,  0f, -80f,  0f,
         // Box body
         -80f,-100f,  80f,-100f,
          80f,-100f,  80f, 100f,
@@ -76,12 +76,12 @@ public static class SchematicSymbols
         -80f,  0f, -30f,  0f,
         // Channel vertical bar
         -30f,-70f, -30f,  70f,
-        // Drain lead
+        // Drain lead (tip at 200,-100)
         -30f,-50f,  80f,-50f,
-         80f,-50f, 150f,-100f,
-        // Source lead
+         80f,-50f, 200f,-100f,
+        // Source lead (tip at 200,100)
         -30f, 50f,  80f,  50f,
-         80f, 50f, 150f, 100f,
+         80f, 50f, 200f, 100f,
         // Arrow on drain (direction indicator)
         -30f,-50f, -20f,-40f,
         -30f,-50f, -20f,-60f,
@@ -118,8 +118,8 @@ public static class SchematicSymbols
 
     /// <summary>Generic cell: box with 2 port leads.</summary>
     public static readonly float[] Generic = [
-        -150f,  0f, -80f,  0f,
-         80f,  0f, 150f,  0f,
+        -200f,  0f, -80f,  0f,
+          80f,  0f, 200f,  0f,
         -80f,-50f,  80f,-50f,
          80f,-50f,  80f, 50f,
          80f, 50f, -80f, 50f,
@@ -165,7 +165,7 @@ public static class SchematicSymbols
         float[] bumps = [-60f, 0f, 30f];  // bump centers
         var segs = new List<float>();
 
-        segs.AddRange([-150f, 0f, -90f, 0f]);  // left lead
+        segs.AddRange([-200f, 0f, -90f, 0f]);  // left lead
 
         foreach (float cx in bumps)
         {
@@ -183,7 +183,7 @@ public static class SchematicSymbols
             }
         }
 
-        segs.AddRange([90f, 0f, 150f, 0f]);   // right lead
+        segs.AddRange([90f, 0f, 200f, 0f]);   // right lead
         return [.. segs];
     }
 
@@ -196,8 +196,8 @@ public static class SchematicSymbols
 
         var segs = new List<float>
         {
-            -150f, 0f, -r, 0f,   // left lead
-              r,   0f, 150f, 0f, // right lead
+            -200f, 0f, -r, 0f,   // left lead
+               r,  0f, 200f, 0f, // right lead
         };
         for (int i = 0; i < 8; i++)
         {
@@ -216,8 +216,8 @@ public static class SchematicSymbols
 
         var segs = new List<float>
         {
-            -150f, 0f, -r, 0f,
-              r,   0f, 150f, 0f,
+            -200f, 0f, -r, 0f,
+               r,  0f, 200f, 0f,
         };
         for (int i = 0; i < 8; i++)
         {
@@ -238,7 +238,7 @@ public static class SchematicSymbols
         float d = r * 0.7071f;
         float[] pts = [r, 0f, d, -d, 0f, -r, -d, -d, -r, 0f, -d, d, 0f, r, d, d];
 
-        var segs = new List<float> { -150f, 0f, -r, 0f };  // lead
+        var segs = new List<float> { -200f, 0f, -r, 0f };  // lead
 
         for (int i = 0; i < 8; i++)
         {

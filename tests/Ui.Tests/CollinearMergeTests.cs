@@ -109,9 +109,10 @@ public class CollinearMergeTests
         // w1 short vertical at x=0; w2 longer vertical at x=200 (extends past w1's end); H joins
         // them → 2 T's. Drag w1 right onto w2: they merge to the UNION, the now-degenerate H
         // connector is removed, and NO stray junction is left.
-        var w1 = MakeWire((0, 0), (0, 100));
+        // (w1 extended to 200 so the T at y=100 lands on a P-multiple interior point.)
+        var w1 = MakeWire((0, 0), (0, 200));
         var w2 = MakeWire((200, 0), (200, 200));
-        var h  = MakeWire((0, 50), (200, 50));
+        var h  = MakeWire((0, 100), (200, 100));
         var (model, vm, undo) = MakeVm(w1, w2, h);
         Assert.Equal(2, vm.RenderModel!.ConnectionDots.Count);   // precondition: 2 T's
 
