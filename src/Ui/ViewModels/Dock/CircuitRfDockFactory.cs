@@ -14,18 +14,20 @@ namespace CircuitRF.Ui.ViewModels.Dock;
 ///   RootDock
 ///     ProportionalDock (Horizontal)
 ///       ProportionalDock (Vertical)     [20% width — left column, full height]
-///         ToolDock  Project Tree         [50% of left]
-///         ToolDock  Properties           [50% of left]
+///         ToolDock  projectTreeDock      [65% of left — Project Tree + Library Palette tabs]
+///         ToolDock  propertiesDock       [35% of left — Properties + Analyses tabs]
 ///       ProportionalDock (Vertical)     [80% width — right column]
 ///         DocumentDock                   [80% of right]
 ///         ToolDock  Messages             [20% of right]
 ///
-/// Messages is aligned with the document area only (not spanning the left panel).
-/// The left column spans the full window height so Properties fills the freed space.
+/// Both left ToolDocks are tabbed. Tab switching works correctly because App.axaml applies
+/// CrfToolControlCachedContentTemplate (the tool analog of DockDocumentControlCachedContentTemplate):
+/// a plain ContentControl replaces DeferredContentControl+ControlRecyclingDataTemplate so
+/// Avalonia re-resolves the App DataTemplate on each tab switch, realizing the correct view
+/// for the new dockable type rather than retaining the previously realized view.
 ///
-/// RUNTIME NOTE: Dock.Avalonia 12.0.0.2 — verify the style include path in App.axaml
-/// and that DockControl can locate the avares:// Dock theme assets. If the dock renders
-/// blank panels without chrome, the style path is wrong.
+/// Messages is aligned with the document area only (not spanning the left panel).
+/// The left column spans the full window height so both left panels share the height.
 /// </summary>
 public class CircuitRfDockFactory : Factory
 {
@@ -38,6 +40,7 @@ public class CircuitRfDockFactory : Factory
     public ProjectTreeTool?  ProjectTreeTool  { get; private set; }
     public PropertiesTool?   PropertiesTool   { get; private set; }
     public AnalysesTool?     AnalysesTool     { get; private set; }
+    public PaletteTool?      PaletteTool      { get; private set; }
 
     public override IRootDock CreateLayout()
     {
@@ -45,6 +48,7 @@ public class CircuitRfDockFactory : Factory
         ProjectTreeTool = new ProjectTreeTool();
         PropertiesTool  = new PropertiesTool();
         AnalysesTool    = new AnalysesTool();
+        PaletteTool     = new PaletteTool();
         var properties  = PropertiesTool;
         MessagesTool    = new MessagesTool();
         var welcome     = new StubDocument("Welcome", StubDocument.StubKind.Welcome);
@@ -60,14 +64,23 @@ public class CircuitRfDockFactory : Factory
         };
         _documentDock = documentDock;
 
-        // ── Left column: Project Tree (top 50%) + Properties (bottom 50%, full height) ─
+        // ── Left column: two tabbed ToolDocks stacked vertically ─────────────
+        //
+        // Tab switching works app-wide because App.axaml overrides ToolControl.Template
+        // with CrfToolControlCachedContentTemplate (plain ContentControl instead of
+        // DeferredContentControl+ControlRecyclingDataTemplate). Avalonia re-resolves the
+        // correct App DataTemplate on each tab switch rather than retaining the old view.
+        //
+        // Layout:
+        //   projectTreeDock  (65%) — Project Tree + Library Palette (tabbed)
+        //   propertiesDock   (35%) — Properties + Analyses (tabbed)
         var projectTreeDock = new ToolDock
         {
             Id               = "ProjectTreePane",
             Title            = "ProjectTreePane",
-            Proportion       = 0.50,
+            Proportion       = 0.65,
             ActiveDockable   = ProjectTreeTool,
-            VisibleDockables = CreateList<IDockable>(ProjectTreeTool),
+            VisibleDockables = CreateList<IDockable>(ProjectTreeTool, PaletteTool),
             Alignment        = Alignment.Left,
             GripMode         = GripMode.Visible,
         };
@@ -76,7 +89,7 @@ public class CircuitRfDockFactory : Factory
         {
             Id               = "PropertiesPane",
             Title            = "PropertiesPane",
-            Proportion       = 0.50,
+            Proportion       = 0.35,
             ActiveDockable   = properties,
             VisibleDockables = CreateList<IDockable>(properties, AnalysesTool),
             Alignment        = Alignment.Left,

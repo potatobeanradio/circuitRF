@@ -42,6 +42,11 @@ public sealed partial class SchematicViewModel : ObservableObject
     private SymbolKind     _placementSymbol;
     private SymbolRotation _placementRot;
     private bool           _placementMirrorX;
+    private int            _placementPortCount;
+    private PlacementService? _placementService;
+
+    /// <summary>Fired after each successful component placement via the Place tool.</summary>
+    public event Action<SymbolKind>? ComponentPlaced;
 
     private readonly List<(double X, double Y)> _wirePoints = [];
 
@@ -173,7 +178,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireSegments = selSegs,
             WirePreview          = _wirePoints.Count > 0 ? _wirePoints.ToList() : null,
             Ghost                = ActiveTool == Tool.Place
-                ? new PlacementGhost(0, 0, _placementSymbol, _placementRot, _placementMirrorX)
+                ? new PlacementGhost(0, 0, _placementSymbol, _placementRot, _placementMirrorX, _placementPortCount)
                 : null,
             RubberBand           = _isRubberBanding ? Overlay.RubberBand : null,
             LabelDragOffsets     = ActiveTool == Tool.MoveLabels && _moveLabelPhase == MoveLabelPhase.Moving
@@ -265,6 +270,58 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// <summary>The symbol currently being placed (valid only when ActiveTool == Tool.Place).</summary>
     public SymbolKind PlacementSymbol => _placementSymbol;
 
+    /// <summary>Port count for the component being placed (valid when ActiveTool == Tool.Place).</summary>
+    public int PlacementPortCount => _placementPortCount;
+
+    /// <summary>
+    /// Subscribes to app-level placement service. Called by WorkspaceViewModel after doc creation.
+    /// When Pending becomes non-null, arms this canvas's placement mode.
+    /// When Pending becomes null, cancels placement if active.
+    /// </summary>
+    public void SetPlacementService(PlacementService? svc)
+    {
+        if (_placementService is not null)
+            _placementService.PropertyChanged -= OnSvcPropertyChanged;
+        _placementService = svc;
+        if (_placementService is not null)
+            _placementService.PropertyChanged += OnSvcPropertyChanged;
+    }
+
+    private void OnSvcPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(PlacementService.Pending)) return;
+
+        var p = _placementService?.Pending;
+
+        if (p is null)
+        {
+            if (ActiveTool == Tool.Place) SetSelectTool();
+            return;
+        }
+
+        bool kindChanged = _placementSymbol != p.Kind
+                        || _placementPortCount != p.PortCount
+                        || ActiveTool != Tool.Place;
+
+        _placementSymbol    = p.Kind;
+        _placementPortCount = p.PortCount;
+        _placementRot       = p.Rotation;
+        _placementMirrorX   = false;
+
+        if (kindChanged)
+        {
+            // New kind or not yet in Place mode: full activation (ghost appears on first mouse move).
+            ActiveTool = Tool.Place;
+            CancelCurrentOp();
+        }
+        else
+        {
+            // Same kind, rotation changed: update existing ghost in-place.
+            if (Overlay.Ghost is { } g)
+                Overlay = Overlay with { Ghost = g with { Rotation = p.Rotation } };
+        }
+    }
+
     // ── Keyboard ──────────────────────────────────────────────────────────────
 
     public void OnKeyDown(Key key, KeyModifiers modifiers)
@@ -282,8 +339,18 @@ public sealed partial class SchematicViewModel : ObservableObject
             case Key.Z when !ctrl: SetZoomBoxTool(); break;
             case Key.F5: BeginMoveLabels(); break;
             case Key.Delete: case Key.Back: DeleteSelection(); break;
-            case Key.R when !modifiers.HasFlag(KeyModifiers.Shift): RotateSelection(clockwise: false); break;
-            case Key.R when  modifiers.HasFlag(KeyModifiers.Shift): RotateSelection(clockwise: true);  break;
+            case Key.R when !modifiers.HasFlag(KeyModifiers.Shift):
+                if (ActiveTool == Tool.Place && _placementService is not null)
+                    _placementService.Rotate(false);
+                else
+                    RotateSelection(clockwise: false);
+                break;
+            case Key.R when modifiers.HasFlag(KeyModifiers.Shift):
+                if (ActiveTool == Tool.Place && _placementService is not null)
+                    _placementService.Rotate(true);
+                else
+                    RotateSelection(clockwise: true);
+                break;
             case Key.M when !modifiers.HasFlag(KeyModifiers.Shift): MirrorSelection(horizontal: true);  break;
             case Key.M when  modifiers.HasFlag(KeyModifiers.Shift): MirrorSelection(horizontal: false); break;
             case Key.A when ctrl: SelectAll(); break;
@@ -1710,32 +1777,49 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     // ── Place tool ────────────────────────────────────────────────────────────
 
+    /// <summary>Last-used placement rotation — read by the drop target to honour the user's rotation.</summary>
+    public SymbolRotation CurrentPlacementRotation => _placementRot;
+
     private void HandlePlacePress(double wx, double wy)
+        => CommitPlacement(_placementSymbol, _placementPortCount, _placementRot, wx, wy, _placementMirrorX);
+
+    /// <summary>
+    /// Places a component instance at the snapped world position with the given parameters.
+    /// Single shared commit path for both the click-arm and DnD placement paths.
+    /// Auto-names, seeds default parameters, runs the on-P connectivity union, and fires
+    /// <see cref="ComponentPlaced"/>.  One undoable command on the schematic's stack.
+    /// </summary>
+    public void CommitPlacement(SymbolKind kind, int portCount, SymbolRotation rotation,
+                                double worldX, double worldY, bool mirrorX = false)
     {
-        double sx = EditModel.SnapToGrid(wx);
-        double sy = EditModel.SnapToGrid(wy);
+        double sx = EditModel.SnapToGrid(worldX);
+        double sy = EditModel.SnapToGrid(worldY);
         var comp = new EditableComponent
         {
-            InstanceName = GenerateInstanceName(_placementSymbol),
-            Symbol       = _placementSymbol,
+            InstanceName = GenerateInstanceName(kind),
+            Symbol       = kind,
             X = sx, Y = sy,
-            Rotation     = _placementRot,
-            MirrorX      = _placementMirrorX,
+            Rotation     = rotation,
+            MirrorX      = mirrorX,
         };
         // Seed label visibility from registry defaults (Ground → both false, all others → true).
-        var placeInfo = ComponentTypeRegistry.Get(_placementSymbol);
+        var placeInfo = ComponentTypeRegistry.Get(kind);
         comp.ShowTypeLabel    = placeInfo.DefaultShowTypeLabel;
         comp.ShowInstanceName = placeInfo.DefaultShowInstanceName;
         // DefaultParameters expects N (the Z-matrix port count), not the schematic pin count (N+1).
-        // For variadic types default to N=2; for fixed types pin count == port count.
-        int portCount = (_placementSymbol is SymbolKind.ZPort or SymbolKind.Sdd)
-            ? 2
-            : SymbolPortDefs.For(_placementSymbol).Length;
-        foreach (var dp in ComponentTypeRegistry.DefaultParameters(_placementSymbol, portCount))
+        // portCount is set by the palette service (correct for variadic types like Sdd3).
+        // For the keyboard-initiated path (P key), fall back to the symbol's canonical pin count.
+        int resolvedPortCount = portCount > 0
+            ? portCount
+            : (kind is SymbolKind.ZPort or SymbolKind.Sdd)
+                ? 2
+                : SymbolPortDefs.For(kind).Length;
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, resolvedPortCount))
             comp.Parameters.Add(new EditableParameter
                 { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
         Execute(new PlaceComponentCommand(EditModel, comp));
         Selection.SelectOne(comp.Id);
+        ComponentPlaced?.Invoke(kind);
     }
 
     private void HandlePlaceMove(double wx, double wy)
@@ -1744,7 +1828,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         double sy = EditModel.SnapToGrid(wy);
         Overlay = Overlay with
         {
-            Ghost = new PlacementGhost(sx, sy, _placementSymbol, _placementRot, _placementMirrorX),
+            Ghost = new PlacementGhost(sx, sy, _placementSymbol, _placementRot, _placementMirrorX, _placementPortCount),
         };
     }
 

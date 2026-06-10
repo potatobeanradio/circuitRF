@@ -46,10 +46,15 @@ palette, and auto-naming all share it."*
 ## 2. The library data model (one library, category + search metadata)
 
 Extend `ComponentTypeRegistry` (Avalonia-free) so each component type carries **Palette metadata**:
-- **Category** — an enum/string: `Lumped` (R, L, C, Mutual, Term), `TransmissionLine` (TLIN, Lossy TLIN,
+- **Category (primary)** — an enum: `Lumped` (R, L, C, Mutual, Term), `TransmissionLine` (TLIN, Lossy TLIN,
   Coax, …), `Microstrip` (MLIN, MSTEP, MTEE, …), `Sources` (VTone, VDC, VnTone, ITone, IDC, InTone, …),
-  `DataFiles` (SNP, .npy), `Ground/Port` (or folded into a "Terminals" category) — extensible as the library
-  grows.
+  `DataFiles` (SNP, .npy), `Terminals` (GND, Port) — extensible as the library grows.
+- **ExtraCategories (optional)** — `IReadOnlyList<ComponentCategory>?` on `ComponentTypeInfo`; a component
+  that belongs to more than one category (e.g. a future MLIN belongs to both `Microstrip` and
+  `TransmissionLine`) appears under **every** category it lists. `AllItems` still lists each component
+  **once**, sorted by the primary `Category`. `ByCategory` uses **set-containment**: a component appears in
+  the result if its primary or any extra category matches. The contribution point is the registry — add a
+  `SymbolKind` entry with `ExtraCategories` to make the component appear under multiple filters automatically.
 - **Search terms** — the display name + type name + category + optional aliases/keywords (so "cap" finds the
   capacitor). **Parameter search is OUT for v1** (low value; type/category/name covers it — §6).
 - **Common flag** — marks the subset shown under the **Common** virtual category (a curated everyday mix).
@@ -57,9 +62,9 @@ Extend `ComponentTypeRegistry` (Avalonia-free) so each component type carries **
   instance).
 
 A **`LibraryCatalog`** (Avalonia-free) projects the registry into an ordered list of **palette items**
-(`{ SymbolKind, DisplayName, Category, SearchTerms, IsCommon }`), the single source the Palette VM binds to.
-Adding a component to the library = **adding one registry entry** (+ its `BuiltInSymbols` geometry + engine
-type string) → it appears in the Palette automatically (§8).
+(`{ SymbolKind, DisplayName, Category, ExtraCategories, SearchTerms, IsCommon }`), the single source the
+Palette VM binds to. Adding a component to the library = **adding one registry entry** (+ its
+`BuiltInSymbols` geometry + engine type string) → it appears in the Palette automatically (§8).
 
 **Virtual categories** (filters, not stores):
 - **All** — every item.
@@ -80,8 +85,13 @@ Each item is a **square button** showing the component's **symbol glyph only**:
   tile with padding, centered. Honors the active color theme (symbol-line role).
 - **Type label underneath** — the registry `DisplayName` (e.g. "R", "TLIN", "VTone") as the tile caption —
   the searchable, novice-friendly identity (a bare glyph is ambiguous to newcomers).
-- **Armed state** — when a tile's placement is armed, the button renders **depressed/highlighted** (a clear
-  "this is the part you're placing"); only one tile armed at a time.
+- **Armed state** — when a tile's placement is armed, the button renders **depressed/highlighted** (accent
+  background + matching border); only one tile armed at a time.
+- **Unarmed subtle border** — a 1 px `DockBorderSubtleBrush` border with `CornerRadius=3` gives each tile
+  visual definition without fighting the accent highlight. Armed state overrides `BorderBrush` to the accent
+  color so the definition border never competes with the highlight.
+- **Tighter horizontal gap** — tile `Margin="2 3 2 3"` (2 px left/right, 3 px top/bottom) gives a slot
+  width of 72 px (was 74 px). Column rule: `floor(availableWidth / 72)`.
 - **Tooltip** — full display name + category (and maybe a one-line description) on hover.
 
 ---
@@ -121,8 +131,12 @@ part can be dropped into **any** schematic in view (tabbed or torn-off).
   Clicking a **different** tile → **switch** the armed type (old tile un-depresses, new depresses).
 
 **The interaction (in any schematic canvas, reading the armed state):**
-- **Ghost follow** — a live ghost rendering of the component (its symbol, snapped to the authoring grid `p`)
-  follows the cursor wherever it moves over a schematic canvas.
+- **Ghost follow** — a live ghost rendering of the component (its symbol **plus port-marker squares** at each
+  terminal, snapped to the authoring grid `p`) follows the cursor wherever it moves over a schematic canvas.
+  The ghost draws the body (dashed `GhostBody` color) then small solid squares at pin positions via
+  `SymbolPortDefs.For(symbol, portCount)` → `LocalToPixel`. `PlacementGhost` carries `PortCount` so variadic
+  devices (ZPort-N, Sdd-N) show all their pins. Rotation moves the pins correctly via the same `LocalToPixel`
+  transform used by `DrawPortMarkers`.
 - **Rotate** — `R` / `Ctrl-R` rotates the ghost (the placement rotation) before commit.
 - **Cancel** — `Esc` cancels the placement (ghost disappears, tile un-depresses); also clicking the armed tile
   again cancels.
@@ -147,12 +161,13 @@ place there — so "what is armed" cannot live on one canvas. A small app/worksp
 
 The Palette supports **system drag-and-drop** as an alternative to click-arm:
 - **Drag** a tile → a system drag with a **circuitRF palette drop-type** payload (the `SymbolKind` / catalog
-  item id). The OS drag image is the ghost (no separate follow needed during the drag).
+  item id). **During drag-over** the schematic canvas sets `overlay.Ghost` at the snapped world position so
+  the same dashed ghost (now with pin markers from §6) follows the cursor. Ghost is cleared on `DragLeave` or
+  if the drop fails.
 - **Drop** onto a schematic canvas → the canvas (which **registers the palette drop-type**) **commits** a
   placement at the drop point — the **same create-instance + connectivity-union commit** as the click path.
-- DnD and click-arm **converge** on one commit routine; only the *pre-commit* affordance differs (OS drag
-  image vs. live ghost + rotate). (Rotation during a raw OS drag is limited; the click-arm path is the one
-  with R/Ctrl-R. State whether drop uses the last-used rotation.)
+- DnD and click-arm **converge** on one commit routine; only the *pre-commit* affordance differs (schematic
+  ghost during drag vs. live ghost + rotate from the click path). Rotation during DnD uses `CurrentPlacementRotation`.
 
 ---
 
@@ -199,17 +214,78 @@ is documented for users. *(Doc deliverables tracked with the build.)*
 ---
 
 ## 10. Implementation order (smallest correct first)
-1. **Catalog metadata** (§2): extend `ComponentTypeRegistry` with category + search terms + Common flag; a
-   framework-free `LibraryCatalog` projection; tests. (Headless.)
-2. **The tile render** (§3): glyph-only `DrawSymbol` flag + the square-button tile (symbol + caption); a
-   non-interactive grid first.
-3. **Layout + header** (§4/§5): width-driven column count, scroll, dock tool + tear-off; category ComboBox +
-   search filter.
-4. **Placement state machine** (§6): app-level `PendingPlacement`; arm/disarm/switch from tiles; ghost-follow
+1. ~~**Catalog metadata** (§2): extend `ComponentTypeRegistry` with category + search terms + Common flag; a
+   framework-free `LibraryCatalog` projection; tests. (Headless.)~~ **Done (step 1).** `ComponentCategory`
+   enum + `Category`/`SearchTerms`/`IsCommon` on `ComponentTypeInfo` + `LibraryCatalog` (`PaletteItem`,
+   `AllItems`, `ByCategory`, `Common`, `RecentlyUsed`, `Search`) in `src/Ui/Schematic/`. 60 new tests.
+   All 1037 tests green; firewall green.
+2. ~~**The tile render** (§3): glyph-only `DrawSymbol` flag + the square-button tile (symbol + caption); a
+   non-interactive grid first.~~ **Done (step 2).** `PaletteGlyphControl` (`src/Ui/Controls/`) — Skia
+   `ICustomDrawOperation` control; `BuiltInSymbols.Primitives(kind).Primitives` → `SymbolGeometry.ComputeBb`
+   → auto-scale+center (12% padding) → `SchematicRenderer.DrawSymbol`; transparent bg; subscribes to
+   `ThemeService`. `PaletteTile` UserControl (`src/Ui/Controls/`) — square `Button` + glyph + `DisplayName`
+   caption + `IsArmed` styled property (step 4 drives it). `PaletteTool` (`src/Ui/ViewModels/Dock/`) + inert
+   `PaletteToolView` (`src/Ui/Views/Palette/`) — `ItemsControl`+`WrapPanel` bound to `LibraryCatalog.AllItems`,
+   tabs alongside Project Tree. All 1037 tests green; firewall green.
+3. ~~**Layout + header** (§4/§5): width-driven column count, scroll, dock tool + tear-off; category ComboBox +
+   search filter.~~ **Done (step 3).** `PaletteTool` extended with `SelectedCategory` / `SearchQuery` /
+   `DisplayedItems` / `HasNoItems` / `HasSearchQuery` / `ClearSearchCommand`; `PaletteCategoryEntry` enum covers
+   virtual (All/Common/Recently Used) + real categories; `DisplayedItems` computed via `LibraryCatalog` (real
+   category → `Search(q, cat)`; virtual + no query → virtual set; virtual + query → `Search(q)` across All).
+   MRU is empty in-memory list (persistence is step 4). `PaletteToolView` rewritten: header with category
+   `ComboBox` + live-search `TextBox` (magnifier + clear-button overlay) + "No matching components." empty
+   state; tile area: `ScrollViewer`(H-disabled) → `ItemsControl` → `WrapPanel` — one width rule for dock +
+   tear-off (`columns = max(1, floor(width/74))`). All 1037 tests green; firewall green.
+4. ~~**Placement state machine** (§6): app-level `PendingPlacement`; arm/disarm/switch from tiles; ghost-follow
    + rotate + Esc + click-commit + **connectivity union on commit** + auto-name + defaults; **stay-armed**;
-   Recently-Used MRU.
-5. **Drag-and-drop** (§7): palette drop-type; schematic accepts the drop; converge on the commit routine.
-6. **Docs** (§8): the contributor recipe + the user UX.
+   Recently-Used MRU.~~ **Done (step 4).** Three sub-layers: **(L1)** `PendingPlacement` record + `PlacementService`
+   (`ObservableObject`; `Toggle`/`Disarm`/`Rotate`) in `src/Ui/Schematic/`; `PaletteTileVm` per-tile wrapper
+   (`IsArmed`, `ArmCommand`); `PaletteTool.SetPlacementService` + `UpdateArmedState`; `PaletteTile.axaml` armed
+   style (`Classes.armed` → accent `Background`); `WorkspaceViewModel.PlacementService` injected everywhere; Esc
+   `KeyBinding` in `WorkspaceWindow`. **(L2)** `SchematicViewModel.SetPlacementService` subscribes to service
+   `Pending` changes → activates `Tool.Place` with correct symbol/rotation/portCount on every canvas; in-place
+   ghost rotation update; R/Shift-R routes through `PlacementService.Rotate` for cross-canvas sync; crosshair
+   cursor for `Tool.Place`; injected via `vm.SetPlacementService(PlacementService)` at all 4 document-creation
+   sites. **(L3)** `SchematicViewModel.ComponentPlaced` event fired in `HandlePlacePress` after each commit;
+   `_placementPortCount` used for variadic types (Sdd/ZPort) so palette-set PortCount is honoured;
+   `WorkspaceViewModel.OnComponentPlaced` → `PushMruPlaced` (dedup+front+cap 12) → `PaletteTool.SetMru` live
+   + `AppPreferences.RecentlyPlaced` persisted; stay-armed is the default (tool stays `Place` after commit).
+   Connectivity on commit reuses existing on-`P` union via `BuildRenderModel`. All 1037 tests green; firewall green.
+5. ~~**Drag-and-drop** (§7): palette drop-type; schematic accepts the drop; converge on the commit routine.~~
+   **Done (step 5).** **(L1)** Extracted `SchematicViewModel.CommitPlacement(kind, portCount, rotation, worldX,
+   worldY, mirrorX=false)` — single shared commit used by both click-arm and drop; click path now calls it
+   unchanged. `CurrentPlacementRotation` property exposes `_placementRot`. `PaletteDragPayload` record carries
+   `{Kind, PortCount}` with a typed `static readonly DataFormat<PaletteDragPayload> Format =
+   DataFormat.CreateInProcessFormat<PaletteDragPayload>("circuitrf/palette-item")` (Avalonia 12 in-process DnD
+   format). `SchematicCanvas` registered as drop target (`DragDrop.SetAllowDrop` + `DragOverEvent`/`DropEvent`
+   handlers); `DragOver` accepts only the palette format (foreign drags → `DragDropEffects.None`); `Drop` reads
+   `e.DataTransfer.Items` for the payload → `CommitPlacement` at snapped world point with last-used rotation.
+   **(L2)** `PaletteTile.axaml.cs` drag source: `PointerPressed` stores event args; `PointerMoved` detects 5 px
+   threshold and calls `DragDrop.DoDragDropAsync(pressArgs, transfer, Copy)` with `DataTransfer` +
+   `DataTransferItem` carrying the payload; `PointerReleased` clears state. End-to-end: drag R → drop on
+   schematic → auto-named connected component at snapped point, undoable. Click-arm unaffected. 1037 tests green;
+   firewall green.
+6. ~~**Docs + Polish** (§3/§6/§7): ghost pins, DnD ghost-during-drag, tile grid tightening + border.~~
+   **Done (Polish step).** **(L1 ghost pins)** `PlacementGhost` gains `PortCount = 2` (default covers all
+   non-variadic built-ins; variadic ZPort/Sdd get the correct count from `_placementPortCount`). Both ghost
+   construction sites in `SchematicViewModel` pass `_placementPortCount`. `DrawOverlay` draws solid small
+   squares at each port (same `PortBoxHalf` size, `GhostBody` color, no path effect) via
+   `SymbolPortDefs.For(ghost.Symbol, ghost.PortCount)` → `LocalToPixel`. Rotation moves pins correctly.
+   **(L2 DnD)** `OnPaletteDragOver` now extracts the payload via `TryGetRaw` and sets `_editContext.Overlay`
+   ghost at snapped world position → ghost (with pins) follows during drag. `DragLeaveEvent` handler clears the
+   ghost. `OnPaletteDrop` clears the ghost before processing. `Console.Error` `[DnD]` instrumentation added at
+   all four stages (threshold/DoDragDropAsync/DragOver/Drop) to aid diagnosis if DnD events fail to reach
+   the canvas at runtime. **(L3 grid)** `PaletteTile` margin changed to `2 3 2 3` (72 px slot, was 74 px);
+   `Button` gains `BorderThickness=1` / `BorderBrush=DockBorderSubtleBrush` / `CornerRadius=3`; armed state
+   overrides `BorderBrush` to accent color so definition border never fights highlight. 1042 tests green;
+   firewall green.
 
 Steps 1–3 stand up a visible (inert) Palette; 4 is the core placement; 5 adds DnD; 6 documents. The
 connectivity-union-on-commit (step 4) must **reuse** the existing on-`P` union — no second connectivity path.
+
+---
+
+## Dock tab-switching fix (Fix v2 — done)
+
+`PaletteTool` tabs alongside `ProjectTreeTool` in `projectTreeDock`. Tab switching works correctly app-wide
+via **`CrfToolControlCachedContentTemplate`** (inline `<Setter.Value>` in the `<Style Selector="dockCtrl|ToolControl">` block in `App.axaml`): a plain `ContentControl` replaces `DeferredContentControl+ControlRecyclingDataTemplate` from the package ControlTheme, so Avalonia re-resolves the App DataTemplate on each tab switch. The same fix covers `PropertiesPane` (Properties + Analyses). No per-tool layout isolation required. On Dock upgrades, re-extract `Controls/ToolControl.axaml` from the package and mirror the chrome in `App.axaml`.

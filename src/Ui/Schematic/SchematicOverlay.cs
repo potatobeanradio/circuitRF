@@ -84,4 +84,5 @@ public sealed record PlacementGhost(
     double        Y,
     SymbolKind    Symbol,
     SymbolRotation Rotation,
-    bool          MirrorX);
+    bool          MirrorX,
+    int           PortCount = 2);

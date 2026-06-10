@@ -16,6 +16,11 @@ public sealed class AppPreferences
     [JsonPropertyName("recent_workspaces")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? RecentWorkspaces { get; set; }
+
+    // MRU list of recently-placed component kinds (SymbolKind.ToString()), most-recent first, capped at 12.
+    [JsonPropertyName("recently_placed")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? RecentlyPlaced { get; set; }
 }
 
 public static class AppPreferencesIo

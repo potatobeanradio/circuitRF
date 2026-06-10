@@ -37,6 +37,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
     private readonly CircuitRfDockFactory _factory;
 
+    // ---- App-level placement service -----------------------------------------
+
+    /// <summary>
+    /// App-level armed-placement state shared by all schematic canvases and the Library Palette.
+    /// The palette ARMS via Toggle(); each SchematicCanvas READS the Pending state.
+    /// </summary>
+    public PlacementService PlacementService { get; } = new();
+
+    [RelayCommand]
+    private void DisarmPlacement() => PlacementService.Disarm();
+
     // ---- Open-document tracking (dedup by absolute path) --------------------
 
     // Maps absolute path → the open dockable.  Checked before opening a new tab.
@@ -102,6 +113,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     private readonly AppPreferences _preferences;
     private readonly List<string> _recentWorkspaces;
 
+    // ---- Recently-Placed MRU (persisted in AppPreferences) ------------------
+
+    private readonly List<SymbolKind> _recentlyPlaced;
+    private const int MruPlacedCap = 12;
+
     // Observable collection of menu items for the in-window "Open Recent" submenu.
     // Rebuilt by RebuildRecentMenuItems() after every push/clear.
     public ObservableCollection<Control> RecentMenuItems { get; } = new();
@@ -144,6 +160,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         var layout = _factory.CreateLayout();
         _factory.InitLayout(layout);
         Layout = layout;
+        _factory.PaletteTool?.SetPlacementService(PlacementService);
 
         // Wire tree-item actions before any workspace is loaded so actions are available
         // the moment SetWorkspace builds the first VM tree.
@@ -157,9 +174,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged npc)
             npc.PropertyChanged += OnDocumentDockPropertyChanged;
 
-        // Load persisted preferences and seed the recent list.
-        _preferences     = AppPreferencesIo.Load();
+        // Load persisted preferences and seed the recent lists.
+        _preferences      = AppPreferencesIo.Load();
         _recentWorkspaces = new List<string>(_preferences.RecentWorkspaces ?? []);
+        _recentlyPlaced   = ParseMruPlaced(_preferences.RecentlyPlaced);
+        _factory.PaletteTool?.SetMru(_recentlyPlaced);
         RebuildRecentMenuItems();
 
         // Wire close-tab prompt: before a dockable is removed, show Save/Don't Save/Cancel
@@ -233,6 +252,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             var newLayout = _factory.CreateDefaultLayout();
             _factory.InitLayout(newLayout);
             Layout = newLayout;
+            _factory.PaletteTool?.SetPlacementService(PlacementService);
+            _factory.PaletteTool?.SetMru(_recentlyPlaced);
 
             // CreateDefaultLayout replaced ProjectTreeTool with a fresh instance — re-wire it.
             _factory.ProjectTreeTool?.SetActions(this);
@@ -529,6 +550,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         AppPreferencesIo.Save(_preferences);
     }
 
+    // ── Recently-Placed MRU ──────────────────────────────────────────────────
+
+    private static List<SymbolKind> ParseMruPlaced(List<string>? stored)
+    {
+        if (stored is null) return [];
+        var result = new List<SymbolKind>(stored.Count);
+        foreach (var s in stored)
+            if (Enum.TryParse<SymbolKind>(s, ignoreCase: true, out var k)) result.Add(k);
+        return result;
+    }
+
+    private void OnComponentPlaced(SymbolKind kind) => PushMruPlaced(kind);
+
+    private void PushMruPlaced(SymbolKind kind)
+    {
+        _recentlyPlaced.Remove(kind);
+        _recentlyPlaced.Insert(0, kind);
+        while (_recentlyPlaced.Count > MruPlacedCap)
+            _recentlyPlaced.RemoveAt(_recentlyPlaced.Count - 1);
+
+        _factory.PaletteTool?.SetMru(_recentlyPlaced);
+
+        _preferences.RecentlyPlaced = _recentlyPlaced.Count > 0
+            ? _recentlyPlaced.Select(k => k.ToString()).ToList()
+            : null;
+        AppPreferencesIo.Save(_preferences);
+    }
+
     // Rebuilds the in-window menu ObservableCollection and fires RecentWorkspacesChanged
     // so the NativeMenu code-behind can sync.
     private void RebuildRecentMenuItems()
@@ -618,6 +667,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         var newLayout = _factory.CreateDefaultLayout();
         _factory.InitLayout(newLayout);
         Layout = newLayout;
+        _factory.PaletteTool?.SetPlacementService(PlacementService);
+        _factory.PaletteTool?.SetMru(_recentlyPlaced);
         SubscribeToFilterState();
         Messages.Info("Layout reset to default.");
     }
@@ -807,6 +858,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         var title = NextScratchSchematicTitle();
         var model = new SchematicEditModel();
         var vm    = new SchematicViewModel(model, Messages);
+        vm.SetPlacementService(PlacementService);
+        vm.ComponentPlaced += OnComponentPlaced;
         // filePath = null → scratch; IsScratch = true, IsDirty = true, Title = "• <title>"
         var doc   = new SchematicDocument(title, vm) { Messages = Messages };
 
@@ -953,6 +1006,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         {
             var (editModel, _, cellName) = SchematicPersistence.LoadFromFile(absolutePath);
             var vm  = new SchematicViewModel(editModel, Messages);
+            vm.SetPlacementService(PlacementService);
+            vm.ComponentPlaced += OnComponentPlaced;
             var title = string.IsNullOrWhiteSpace(cellName)
                 ? Path.GetFileNameWithoutExtension(absolutePath)
                 : cellName;
@@ -1308,6 +1363,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
             // Open in a schematic content tab (materialized — has a real file path).
             var vm  = new SchematicViewModel(emptyModel, Messages);
+            vm.SetPlacementService(PlacementService);
+            vm.ComponentPlaced += OnComponentPlaced;
             var doc = new SchematicDocument(name, vm, filePath) { Messages = Messages };
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;
@@ -1762,6 +1819,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             foreach (var (name, model) in allDocs)
             {
                 var vm  = new SchematicViewModel(model, Messages);
+                vm.SetPlacementService(PlacementService);
+                vm.ComponentPlaced += OnComponentPlaced;
                 var doc = new SchematicDocument(name, vm) { Messages = Messages };
                 _scratchDocs.Add(doc);
                 _factory.OpenDocument(doc);

@@ -850,6 +850,20 @@ public static class SchematicRenderer
             DrawSymbol(canvas, BuiltInSymbols.Primitives(ghost.Symbol).Primitives,
                 ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom,
                 theme, ghostPaint);
+
+            // Ghost port markers — same geometry source as DrawPortMarkers, ghost color (solid; no dash)
+            float ghostBoxHalf = (float)Math.Max(3.0, zoom * PortBoxHalf);
+            using var ghostPortPaint = new SKPaint
+            {
+                IsAntialias = true, Style = SKPaintStyle.Stroke,
+                StrokeWidth = (float)Math.Max(1.0, zoom * 2),
+                Color       = theme.GhostBody,
+            };
+            foreach (var (_, lx, ly) in SymbolPortDefs.For(ghost.Symbol, ghost.PortCount))
+            {
+                var (px, py) = LocalToPixel(lx, ly, ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom);
+                canvas.DrawRect(SKRect.Create(px - ghostBoxHalf, py - ghostBoxHalf, ghostBoxHalf * 2, ghostBoxHalf * 2), ghostPortPaint);
+            }
         }
 
         // Rubber-band — solid outline for window (L→R), dashed for crossing (R→L)

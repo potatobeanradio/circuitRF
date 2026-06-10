@@ -1,0 +1,91 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:ctrl="using:CircuitRF.Ui.Controls"
+             xmlns:pal="using:CircuitRF.Ui.Schematic"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Palette.PaletteToolView"
+             x:DataType="dockVm:PaletteTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Header: category ComboBox + search field (mirrors Project Tree toolbar pattern) -->
+        <StackPanel Grid.Row="0" Spacing="3" Margin="4,4,4,2">
+
+            <!-- Category ComboBox -->
+            <ComboBox ItemsSource="{Binding Categories}"
+                      SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch"
+                      FontSize="12"
+                      Padding="6,3">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate DataType="dockVm:PaletteCategoryEntry">
+                        <TextBlock Text="{Binding DisplayName}" FontSize="12"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <!-- Search TextBox with magnifier prefix and clear button overlay -->
+            <Grid>
+                <TextBox Text="{Binding SearchQuery, Mode=TwoWay}"
+                         PlaceholderText="Search…"
+                         FontSize="12"
+                         Padding="24,4,26,4"
+                         VerticalContentAlignment="Center"/>
+                <mi:MaterialIcon Kind="Magnify"
+                                 Width="14" Height="14"
+                                 HorizontalAlignment="Left" VerticalAlignment="Center"
+                                 Margin="6,0"
+                                 IsHitTestVisible="False"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                <Button HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Margin="2" Padding="2"
+                        Background="Transparent" BorderThickness="0"
+                        IsVisible="{Binding HasSearchQuery}"
+                        Command="{Binding ClearSearchCommand}"
+                        ToolTip.Tip="Clear search">
+                    <mi:MaterialIcon Kind="Close" Width="10" Height="10"
+                                     Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+            </Grid>
+
+        </StackPanel>
+
+        <!-- Tile area: scrollable grid + empty-result state -->
+        <Grid Grid.Row="1">
+
+            <!-- Empty-result placeholder -->
+            <TextBlock Text="No matching components."
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       FontSize="11"
+                       Margin="8,6"
+                       VerticalAlignment="Top"
+                       IsVisible="{Binding HasNoItems}"/>
+
+            <!-- Width-driven reflow grid:
+                 columns = max(1, floor(availableWidth / tileWidth)) arises naturally from WrapPanel
+                 with fixed-width tiles (68px tile + 6px margin = 74px per slot).
+                 Vertical scroll only; horizontal scroll disabled so WrapPanel measures correctly. -->
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto"
+                          IsVisible="{Binding !HasNoItems}">
+                <ItemsControl ItemsSource="{Binding DisplayedItems}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="dockVm:PaletteTileVm">
+                            <ctrl:PaletteTile IsArmed="{Binding IsArmed}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+        </Grid>
+
+    </Grid>
+
+</UserControl>

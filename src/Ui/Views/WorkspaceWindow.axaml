@@ -114,6 +114,7 @@
         <KeyBinding Gesture="Meta+R"        Command="{Binding RunAnalysisCommand}"/>
         <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding ShowSettingsCommand}" CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+Q"        Command="{Binding QuitApplicationCommand}"/>
+        <KeyBinding Gesture="Escape"        Command="{Binding DisarmPlacementCommand}"/>
     </Window.KeyBindings>
 
     <DockPanel>

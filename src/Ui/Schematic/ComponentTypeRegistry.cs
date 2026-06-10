@@ -5,6 +5,21 @@ namespace CircuitRF.Ui.Schematic;
 // system (v2, real component-model factory), re-key off that type instead.
 // Lives here (Avalonia-free) so the renderer, palette, and auto-naming all share it.
 
+/// <summary>
+/// Palette category for grouping components in the Library Palette header ComboBox.
+/// All/Common/RecentlyUsed are virtual categories (filters); these are the real ones.
+/// </summary>
+public enum ComponentCategory
+{
+    Lumped,
+    TransmissionLine,
+    Microstrip,
+    Sources,
+    DataFiles,
+    Terminals,
+    Other,
+}
+
 /// <summary>Physical dimension of a component parameter — drives the closed Unit ComboBox.</summary>
 public enum UnitDimension
 {
@@ -32,7 +47,22 @@ public sealed record ComponentTypeInfo(
     /// <summary>Whether to show the type label by default when a component is placed.</summary>
     bool DefaultShowTypeLabel = true,
     /// <summary>Whether to show the instance name by default when a component is placed.</summary>
-    bool DefaultShowInstanceName = true);
+    bool DefaultShowInstanceName = true,
+    /// <summary>Primary palette category (drives sort order in AllItems and the on-tile tooltip).</summary>
+    ComponentCategory Category = ComponentCategory.Other,
+    /// <summary>
+    /// Search terms for the Library Palette: display name, type code, and aliases (e.g. "cap", "res", "ind").
+    /// Null = no aliases beyond what Search derives from DisplayName + Category.
+    /// </summary>
+    IReadOnlyList<string>? SearchTerms = null,
+    /// <summary>True = shown in the curated Common virtual category.</summary>
+    bool IsCommon = false,
+    /// <summary>
+    /// Additional categories this component belongs to. The item appears under <see cref="Category"/>
+    /// AND each extra category in ByCategory filtering. AllItems still lists it once, sorted by
+    /// <see cref="Category"/>. Null means single-category.
+    /// </summary>
+    IReadOnlyList<ComponentCategory>? ExtraCategories = null);
 
 /// <summary>
 /// Maps SymbolKind → display metadata.
@@ -60,18 +90,50 @@ public static class ComponentTypeRegistry
 
     private static readonly Dictionary<SymbolKind, ComponentTypeInfo> Registry = new()
     {
-        [SymbolKind.Resistor]      = new("R",     "R"),
-        [SymbolKind.Inductor]      = new("L",     "L"),
-        [SymbolKind.Capacitor]     = new("C",     "C"),
-        [SymbolKind.VoltageSource] = new("V",     "V"),
-        [SymbolKind.ToneSource]    = new("VTone", "V"),   // NOTE: abbreviation; revisit when palette has richer type
+        [SymbolKind.Resistor]      = new("R",     "R",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["R", "Resistor", "res", "resistance"],
+            IsCommon: true),
+        [SymbolKind.Inductor]      = new("L",     "L",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["L", "Inductor", "ind", "coil", "inductance"],
+            IsCommon: true),
+        [SymbolKind.Capacitor]     = new("C",     "C",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["C", "Capacitor", "cap", "capacitance"],
+            IsCommon: true),
+        [SymbolKind.VoltageSource] = new("V",     "V",
+            Category: ComponentCategory.Sources,
+            SearchTerms: ["V", "VoltageSource", "voltage", "DC", "bias"],
+            IsCommon: true),
+        // NOTE: abbreviation; revisit when palette has richer type
+        [SymbolKind.ToneSource]    = new("VTone", "V",
+            Category: ComponentCategory.Sources,
+            SearchTerms: ["VTone", "ToneSource", "tone", "RF", "signal"],
+            IsCommon: true),
         // Ground is self-identifying via its symbol glyph; suppress both labels by default.
-        [SymbolKind.Ground]        = new("GND",   "GND",  DefaultShowTypeLabel: false, DefaultShowInstanceName: false),
-        [SymbolKind.Port]          = new("Port",  "P"),
-        [SymbolKind.FetSdd]        = new("FET",   "X"),
-        [SymbolKind.Sdd]           = new("SDD",   "X"),
-        [SymbolKind.ZPort]         = new("Z",     "Z"),
-        [SymbolKind.Generic]       = new("X",     "X"),
+        [SymbolKind.Ground]        = new("GND",   "GND",
+            DefaultShowTypeLabel: false, DefaultShowInstanceName: false,
+            Category: ComponentCategory.Terminals,
+            SearchTerms: ["GND", "Ground", "gnd", "reference"],
+            IsCommon: true),
+        [SymbolKind.Port]          = new("Port",  "P",
+            Category: ComponentCategory.Terminals,
+            SearchTerms: ["Port", "P", "port", "terminal"],
+            IsCommon: true),
+        [SymbolKind.FetSdd]        = new("FET",   "X",
+            Category: ComponentCategory.Other,
+            SearchTerms: ["FET", "SDD", "FetSDD", "transistor", "nonlinear"]),
+        [SymbolKind.Sdd]           = new("SDD",   "X",
+            Category: ComponentCategory.Other,
+            SearchTerms: ["SDD", "Sdd", "nonlinear", "behavioral"]),
+        [SymbolKind.ZPort]         = new("Z",     "Z",
+            Category: ComponentCategory.Other,
+            SearchTerms: ["Z", "ZPort", "impedance", "network"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
+        [SymbolKind.Generic]       = new("X",     "X",
+            Category: ComponentCategory.Other,
+            SearchTerms: ["X", "Generic", "custom", "subcircuit"]),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>

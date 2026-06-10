@@ -11,6 +11,7 @@
              xmlns:schemDoc="using:CircuitRF.Ui.Schematic"
              xmlns:mv="using:CircuitRF.Ui.Views.Messages"
              xmlns:av="using:CircuitRF.Ui.Views.Analyses"
+             xmlns:palv="using:CircuitRF.Ui.Views.Palette"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:dockCtrl="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
@@ -47,6 +48,9 @@
         <DataTemplate DataType="{x:Type dockVm:MessagesTool}">
             <mv:MessagesView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type dockVm:PaletteTool}">
+            <palv:PaletteToolView/>
+        </DataTemplate>
         <DataTemplate DataType="{x:Type dockVm:StubDocument}">
             <cv:StubContentView/>
         </DataTemplate>
@@ -69,7 +73,7 @@
              updated on ThemeService.ThemeChanged so tree warning nodes follow the active theme. -->
         <SolidColorBrush x:Key="CrfWarningBrush" Color="#CE4A24"/>
 
-        <!-- Converters registered as application-level resources so all views can use them -->
+<!-- Converters registered as application-level resources so all views can use them -->
         <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
         <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>
         <conv:StubKindIsDataDisplayConverter  x:Key="StubKindIsDataDisplayConverter"/>
@@ -129,6 +133,61 @@
              feel like part of the window chrome, not a harsh contrast surface. -->
         <Style Selector="dockCtrl|ToolControl">
             <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
+
+            <!-- CrfToolControlCachedContentTemplate — TOOL analog of DockDocumentControlCachedContentTemplate.
+                 The package ToolControl ControlTheme (Dock.Avalonia.Themes.Fluent 12.0.0.2) wraps
+                 the active dockable in DeferredContentControl+ControlRecyclingDataTemplate. On tab
+                 switch the deferred control retains the existing realized view and only updates
+                 DataContext; views with x:DataType compiled bindings silently no-op on the wrong type
+                 → stale fallback content ("No workspace open").
+                 This template reproduces the full package chrome extracted from the ControlTheme
+                 (ToolTabStrip at DockPanel.Dock="Bottom"; Border with DockSurfacePanelBrush /
+                 DockBorderSubtleBrush / BorderThickness "1 0 1 0"; PART names preserved) but replaces
+                 DeferredContentControl with a plain ContentControl. Avalonia re-resolves the App
+                 DataTemplate on each Content change, realizing the correct view for the new active
+                 dockable type on every tab switch.
+                 x:CompileBindings="False": the DataContext is set at runtime by Dock (to the ToolDock
+                 model); no fixed x:DataType is available. DockProperties/ToolTabStrip/DockableControl
+                 are in the default Avalonia xmlns (registered by Dock.Avalonia) — no prefix needed.
+                 On Dock upgrades: re-extract the ToolControl ControlTheme and mirror its chrome here;
+                 change only PART_ContentPresenter (DeferredContentControl → plain ContentControl). -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate x:CompileBindings="False" TargetType="dockCtrl:ToolControl">
+                        <DockPanel x:Name="PART_DockPanel"
+                                   Background="Transparent"
+                                   ZIndex="1"
+                                   DockProperties.IsDropArea="True"
+                                   DockProperties.IsDockTarget="True">
+                            <ToolTabStrip x:Name="PART_TabStrip"
+                                          ItemsSource="{Binding VisibleDockables}"
+                                          SelectedItem="{Binding ActiveDockable, Mode=TwoWay}"
+                                          IconTemplate="{TemplateBinding IconTemplate}"
+                                          HeaderTemplate="{TemplateBinding HeaderTemplate}"
+                                          ModifiedTemplate="{TemplateBinding ModifiedTemplate}"
+                                          DockPanel.Dock="Bottom"
+                                          DockProperties.IsDropArea="True"
+                                          DockProperties.DockAdornerHost="{Binding ElementName=PART_DockPanel}"/>
+                            <Border x:Name="PART_Border"
+                                    ZIndex="-1"
+                                    Background="{DynamicResource DockSurfacePanelBrush}"
+                                    Margin="0"
+                                    BorderBrush="{DynamicResource DockBorderSubtleBrush}"
+                                    BorderThickness="1 0 1 0">
+                                <DockableControl DataContext="{Binding ActiveDockable}"
+                                                 TrackingMode="Visible">
+                                    <ContentControl x:Name="PART_ContentPresenter"
+                                                    Content="{Binding}"
+                                                    HorizontalAlignment="Stretch"
+                                                    VerticalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Stretch"
+                                                    VerticalContentAlignment="Stretch"/>
+                                </DockableControl>
+                            </Border>
+                        </DockPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style Selector="dockCtrl|DocumentDockControl">
             <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
