@@ -1,6 +1,6 @@
 # circuitRF — Workspace & Project Tree Design
 
-**Status:** Draft (rev 1) for review · **Date:** 2026-06-09 · **Phase:** 6g (post-symbol-editor)
+**Status:** Step 5 + fixes done · **Date:** 2026-06-09 · **Phase:** 6g (post-symbol-editor)
 
 Specifies the **workspace model** (filesystem structure), the **Project Tree** (the tree view that reads it),
 the **cell reference model** (how a placed component resolves to a cell's primary symbol — the linkage that
@@ -304,13 +304,69 @@ the instance editor) · **Dimension** · **Show-on-schematic default**.
    `CwsFile.KnownFiles` added to `WorkspacePersistence.cs` (additive, backward-compatible v1 field).
    41 new tests green; 362 total.
 3. **Project Tree view**: disclosure, bold primaries, System.Warning broken refs + tooltips, the
-   category-toggle filter (§3.3), customizable ordering.
+   category-toggle filter (§3.3), manual + on-focus refresh.
+   **DONE** — `ProjectTreeFilterState` (7-toggle ObservableObject), `ProjectTreeNodeViewModel` (wraps
+   `ProjectTreeNode`; exposes `IconKind`, `IsWarning`, `IsBold`, `IsItalic`, `FilteredChildren`),
+   `ProjectTreeTool` (Refresh command, `SetWorkspace`/`ClearWorkspace`, expand-state preservation),
+   `ProjectTreeView.axaml` (TreeDataTemplate, per-kind Material icons, bold/italic/CrfWarningBrush
+   styles, filter Flyout, on-focus debounced refresh). `CrfWarningBrush` DynamicResource wired in
+   `App.axaml` + `App.axaml.cs` (follows `ThemeService.ThemeChanged`). 10 new VM tests green; 372 total.
 4. **Context menus + double-click** (§3.4/§3.5): New Cell (container nodes), New Schematic/Symbol/Layout
    (cell node; Layout greyed), Make Primary, Reveal in Finder, the open/activate behaviors.
+   **DONE** — `ITreeActions` interface (injected from WorkspaceViewModel); commands on
+   `ProjectTreeNodeViewModel` (ActivateCommand, MakePrimaryCommand, RevealCommand, New*Command);
+   `InputNameDialog` (name-prompt Window with NameValidator); `ProjectTreeTool.SetActions(ITreeActions)`;
+   `WorkspaceViewModel implements ITreeActions`: OpenNode (`.csym` → SymbolEditor, `.csch` →
+   SchematicDocument, cell → placeholder stub), MakePrimary (writes `.ccell` + Refresh), Reveal
+   (macOS `open -R`, Windows `explorer /select,`, Linux `xdg-open`), NewCellAsync / NewSymbolAsync /
+   NewSchematicAsync (InputNameDialog + NameValidator + file create + open tab + Refresh); open/activate
+   dedup by absolute path via `_openDocsByPath[absPath]`; Layout greyed; cell double-click opens
+   placeholder stub (step 6); unviewable types no-op. 372 tests green; firewall green.
 5. **Cell reference model** (§4): instance → relative-path → `.ccell` → primary `.csym` resolution, replacing
    the static `SymbolKind → BuiltInSymbols` path; "Not Found" glyph; **live re-render on primary-symbol
    change** (this is the symbol-editor 4c-later payoff). *(Registry → `.ccell`-loader migration, §6, lands
    here or just before.)*
+   **DONE (Phase 6g Step 5).**
+   - **L1 (entry points):** `NewWorkspace` now creates a real `.cws` + folder on disk. `File → New Cell`
+     (`NewCellInWorkspaceCommand`, greyed when no workspace); tree-header New Cell button (`IsVisible=HasWorkspace`).
+     `ITreeActions.NewCellInWorkspaceAsync()` shared by File menu and header button. `InputNameDialog` +
+     `NameValidator`; `CellFolder.CreateCellFolder` + Refresh. 763 tests green.
+   - **L2 (resolver):** `CellRef: string?` added to `EditableComponent` and `CschComponent` (nullable,
+     `WhenWritingNull`; round-tripped through `SchematicPersistence`). `SchematicDirectory: string?` on
+     `SchematicEditModel` (set by `LoadFromFile`). Framework-free `CellSymbolResolver.Resolve(cellRef, baseDir)`
+     returns `CellSymbolResolution { State, Symbol? }` with `CellSymbolState` enum
+     (`Resolved / NotFound / PrimaryMissing`). Cache keyed by `(cellAbsDir, primaryFilename, symFileMtime)`;
+     `Invalidate(cellAbsDir)` and `InvalidateAll()`. Three-state gate test (8 headless tests).
+   - **L3 (render):** `SchematicComponent` gained `CellRefState: CellSymbolState?` and
+     `CellRefPrimitives: IReadOnlyList<SymbolPrimitive>?`. `BuildRenderModel` pre-resolves all cell-refs via
+     `ResolveAllCellRefs()`, threads through connectivity pass (resolved pins for port positions) and
+     `ToRenderComponent`. `SchematicRenderer` dispatches on `CellRefState`: `Resolved` → `DrawSymbol(CellRefPrimitives)`;
+     `NotFound` → warning box + "Not Found" label (`DrawCellRefNotFoundGlyph`);
+     `PrimaryMissing` → plain-rectangle stand-in (`DrawCellRefPrimaryMissingGlyph`). Built-in path unchanged.
+   - **L4 (live update):** `SymbolEditorViewModel.SymbolSaved: event Action<string>?` fires from `PerformSave`
+     with the saved `.csym` path. `SchematicViewModel.TriggerRebuild()` calls `EditModel.NotifyChanged()`.
+     `WorkspaceViewModel.OnSymbolSaved` derives the cell dir, calls `CellSymbolResolver.Invalidate(cellDir)`,
+     then `RebuildOpenSchematics()` (iterates `_openDocsByPath`, calls `TriggerRebuild` on every
+     `SchematicDocument`). `MakePrimary` also calls `Invalidate + RebuildOpenSchematics` when the symbol
+     primary changes. Both `OpenOrActivateSymbol` and `NewSymbolAsync` subscribe `vm.SymbolSaved += OnSymbolSaved`.
+   - **Step 5 fixes (post-L4):**
+     - **Bug 1 — New Workspace never prompted:** `$parent[Window]` binding resolves to null on macOS for
+       both `NativeMenuItem.CommandParameter` and `Window.KeyBindings.CommandParameter` — neither lives in
+       the visual tree. `desktop.MainWindow` was also null (App never assigns it). Fixed with `ResolveOwner`
+       that walks `ApplicationLifetime.Windows` for the window whose `DataContext` is `this`. Applied to
+       `NewWorkspace`, `OpenWorkspace`, `SaveWorkspaceAs`. Gotcha recorded in `src/Ui/CLAUDE.md`.
+     - **Bug 2 — layout rebuild orphaned ProjectTreeTool:** `NewWorkspace` sets `CurrentWorkspacePath`
+       (which triggers `OnCurrentWorkspacePathChanged → SetWorkspace` on the OLD tool), then calls
+       `CreateDefaultLayout()` which replaces `factory.ProjectTreeTool` with a fresh instance. The new
+       layout's tool never had `SetWorkspace` called → `HasWorkspace = false`, "No workspace open."
+       placeholder visible. Fixed: after `Layout = newLayout`, call `SetActions(this)` then
+       `SetWorkspace(workspaceDir)` on the new tool. Gotcha recorded in `src/Ui/CLAUDE.md`.
+     - **Bug 3 — Project Tree header static:** `Tool.Title` (Dock base) `SetProperty`-based
+       `PropertyChanged` not reliably picked up by Avalonia compiled bindings. Fixed with a separate
+       `[ObservableProperty] string _workspaceName` on `ProjectTreeTool`; view binds `Text="{Binding WorkspaceName}"`.
+       Header toolbar changed from `StackPanel` to `Grid ColumnDefinitions="*,Auto,Auto,Auto"` so the label
+       fills available width and `TextTrimming="CharacterEllipsis"` elides long names without stretching.
+       Gotcha recorded in `src/Ui/CLAUDE.md`.
 6. **Cell-parameter editor** (§7): the editable-list editor writing `.ccell`, undoable.
 7. **`.cws` refinement** (§5): Known Files, library refs, tree view-state; remove the member-files list.
 

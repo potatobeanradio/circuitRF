@@ -2,27 +2,42 @@ using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
 using Material.Icons;
-using CircuitRF.Ui.ViewModels.ProjectTree;
+using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Converters;
 
-/// <summary>Maps ProjectTreeItemKind to a Material Icon kind for the tree view.</summary>
+/// <summary>
+/// Maps NodeKind to a Material Icon kind for the project tree view.
+/// For TestBench cells, pass the full ProjectTreeNodeViewModel to pick TestTube instead.
+/// (The view now binds directly to ProjectTreeNodeViewModel.IconKind, so this converter
+/// is retained as a utility but is no longer used in the tree AXAML.)
+/// </summary>
 public class TreeItemIconConverter : IValueConverter
 {
     public static readonly TreeItemIconConverter Instance = new();
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        return value is ProjectTreeItemKind kind
-            ? kind switch
+        if (value is NodeKind kind)
+        {
+            return kind switch
             {
-                ProjectTreeItemKind.Library     => MaterialIconKind.BookOpenPageVariant,
-                ProjectTreeItemKind.Cell        => MaterialIconKind.IntegratedCircuitChip,
-                ProjectTreeItemKind.TestBench   => MaterialIconKind.TestTube,
-                ProjectTreeItemKind.DataDisplay => MaterialIconKind.ChartLine,
-                _                               => MaterialIconKind.File,
-            }
-            : MaterialIconKind.FileOutline;
+                NodeKind.Workspace       => MaterialIconKind.Folder,
+                NodeKind.Cell            => MaterialIconKind.IntegratedCircuitChip,
+                NodeKind.Library         => MaterialIconKind.BookOpenPageVariant,
+                NodeKind.LibrariesGroup  => MaterialIconKind.BookOpenPageVariant,
+                NodeKind.CellViewFolder  => MaterialIconKind.FolderOutline,
+                NodeKind.ViewFile        => MaterialIconKind.FileOutline,
+                NodeKind.DataDisplayFile => MaterialIconKind.ChartLine,
+                NodeKind.ColorThemeFile  => MaterialIconKind.Palette,
+                NodeKind.KnownFile       => MaterialIconKind.FileOutline,
+                NodeKind.KnownFilesGroup => MaterialIconKind.FolderOutline,
+                NodeKind.UserFolder      => MaterialIconKind.Folder,
+                NodeKind.OtherFile       => MaterialIconKind.FileOutline,
+                _                        => MaterialIconKind.FileOutline,
+            };
+        }
+        return MaterialIconKind.FileOutline;
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

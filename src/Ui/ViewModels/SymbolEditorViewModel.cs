@@ -948,10 +948,18 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
         PerformSave(result.Path.LocalPath);
     }
 
+    /// <summary>
+    /// Fired after each successful save with the absolute path of the saved .csym file.
+    /// WorkspaceViewModel subscribes to invalidate the CellSymbolResolver cache and
+    /// trigger re-renders of any open schematics that reference this cell's symbol.
+    /// </summary>
+    public event Action<string>? SymbolSaved;
+
     private void PerformSave(string path)
     {
         SymbolPersistence.SaveToFile(path, EditableSymbol.ToSymbol());
         CurrentSymbolPath = path;
         IsDirty           = false;
+        SymbolSaved?.Invoke(path);
     }
 }

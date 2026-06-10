@@ -1,65 +1,141 @@
+using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Mvvm.Controls;
+using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels.ProjectTree;
 
 namespace CircuitRF.Ui.ViewModels.Dock;
 
 /// <summary>
-/// Dock Tool for the Project Tree region (top-left). Hosts a stub tree model in 6b;
-/// wired to the real design model in 6c.
+/// Dock Tool for the Project Tree region.  Owns the scanned VM tree and the
+/// category-toggle filter (§3.3).  Refresh = re-scan; no FileSystemWatcher (deferred §9).
 /// </summary>
 public partial class ProjectTreeTool : Tool
 {
-    public ObservableCollection<ProjectTreeItemViewModel> Items { get; } = new();
+    private WorkspaceModel? _workspaceModel;
+    private ITreeActions?   _actions;
 
-    // The item selected in the tree — used to drive the active Content tab when double-clicked.
-    private ProjectTreeItemViewModel? _selectedItem;
-    public ProjectTreeItemViewModel? SelectedItem
-    {
-        get => _selectedItem;
-        set
-        {
-            if (_selectedItem == value) return;
-            _selectedItem = value;
-            OnPropertyChanged();
-        }
-    }
+    // ── Filter (§3.3) ─────────────────────────────────────────────────────────
+
+    public ProjectTreeFilterState FilterState { get; } = new();
+
+    // ── Tree data ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Full VM tree (one root = the workspace node). Kept for expand-state collection
+    /// and refresh; not bound as the TreeView's ItemsSource — use TopLevelItems instead.
+    /// </summary>
+    public ObservableCollection<ProjectTreeNodeViewModel> RootItems { get; } = new();
+
+    /// <summary>
+    /// The workspace root's filtered children, exposed as the TreeView's ItemsSource so
+    /// the root "Workspace" row is omitted (the header already names the workspace).
+    /// Null when no workspace is loaded.
+    /// </summary>
+    [ObservableProperty] private ObservableCollection<ProjectTreeNodeViewModel>? _topLevelItems;
+
+    [ObservableProperty] private ProjectTreeNodeViewModel? _selectedItem;
+
+    /// <summary>
+    /// Workspace folder name shown in the in-view header; resets to "No workspace" when
+    /// no workspace is open.  A separate [ObservableProperty] because Tool.Title (Dock base)
+    /// fires its own PropertyChanged which Avalonia compiled bindings don't reliably pick up.
+    /// </summary>
+    [ObservableProperty] private string _workspaceName = "No workspace";
+
+    /// <summary>True when a workspace is loaded; drives placeholder visibility in the view.</summary>
+    public bool HasWorkspace => _workspaceModel is not null;
+
+    // ── Construction ──────────────────────────────────────────────────────────
 
     public ProjectTreeTool()
     {
         Id    = "ProjectTree";
-        Title = "Project Tree";
-
-        // Stub model: a couple of demo libraries and cells so the tree is non-empty.
-        var lib1 = new ProjectTreeItemViewModel("My Project", ProjectTreeItemKind.Library) { IsExpanded = true };
-        lib1.Children.Add(new ProjectTreeItemViewModel("PA_TestBench",  ProjectTreeItemKind.TestBench));
-        lib1.Children.Add(new ProjectTreeItemViewModel("GaN_FET",       ProjectTreeItemKind.Cell));
-        lib1.Children.Add(new ProjectTreeItemViewModel("OutputNetwork", ProjectTreeItemKind.Cell));
-        lib1.Children.Add(new ProjectTreeItemViewModel("PA_DataDisplay",ProjectTreeItemKind.DataDisplay));
-
-        var lib2 = new ProjectTreeItemViewModel("RfLib", ProjectTreeItemKind.Library);
-        lib2.Children.Add(new ProjectTreeItemViewModel("Inductor", ProjectTreeItemKind.Cell));
-        lib2.Children.Add(new ProjectTreeItemViewModel("Capacitor", ProjectTreeItemKind.Cell));
-
-        // 6c demo: stress-test cell — opens a programmatically generated 10k-component schematic.
-        var demos = new ProjectTreeItemViewModel("Demos", ProjectTreeItemKind.Library) { IsExpanded = true };
-        demos.Children.Add(new ProjectTreeItemViewModel("Hero2 PA",      ProjectTreeItemKind.Cell));
-        demos.Children.Add(new ProjectTreeItemViewModel("StressTest10k", ProjectTreeItemKind.Cell));
-
-        Items.Add(lib1);
-        Items.Add(lib2);
-        Items.Add(demos);
+        Title = "Project";   // static — never updated per workspace
     }
 
-    // Called by the view when an item is double-clicked — opens a stub Content tab.
-    // The real open logic is injected by WorkspaceViewModel in 6c.
-    public System.Action<ProjectTreeItemViewModel>? OpenItemRequested { get; set; }
+    // ── Actions wiring ────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Called by WorkspaceViewModel to inject the open/create/reveal callback interface.
+    /// Must be called before SetWorkspace so actions are available during the first scan.
+    /// </summary>
+    public void SetActions(ITreeActions actions) => _actions = actions;
+
+    /// <summary>New Cell in the workspace root — bound to the tree-header button.</summary>
     [RelayCommand]
-    private void OpenItem(ProjectTreeItemViewModel? item)
+    private Task NewCellInWorkspace() => _actions?.NewCellInWorkspaceAsync() ?? Task.CompletedTask;
+
+    // ── Workspace wiring ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called by WorkspaceViewModel when a workspace file is opened.
+    /// The workspace root dir is the folder containing the .cws file.
+    /// </summary>
+    public void SetWorkspace(string rootDir)
     {
-        if (item is null) return;
-        OpenItemRequested?.Invoke(item);
+        _workspaceModel = new WorkspaceModel(rootDir);
+        var name = Path.GetFileName(rootDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        WorkspaceName = name;   // header shows the workspace name; Title stays "Project"
+        RebuildVmTree(expandedPaths: []);
+        OnPropertyChanged(nameof(HasWorkspace));
+    }
+
+    /// <summary>Called when the workspace is closed or reset.</summary>
+    public void ClearWorkspace()
+    {
+        _workspaceModel = null;
+        WorkspaceName = "No workspace";
+        TopLevelItems = null;
+        RootItems.Clear();
+        OnPropertyChanged(nameof(HasWorkspace));
+    }
+
+    // ── Refresh ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Re-scans the workspace folder and rebuilds the VM tree, preserving expanded paths.
+    /// Called by the Refresh button and on-focus re-entry in the view.
+    /// No FileSystemWatcher — manual + on-focus only (FileSystemWatcher deferred per §9).
+    /// </summary>
+    [RelayCommand]
+    public void Refresh()
+    {
+        if (_workspaceModel is null) return;
+        var expandedPaths = CollectExpandedPaths();
+        _workspaceModel.Rescan();
+        RebuildVmTree(expandedPaths);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private void RebuildVmTree(HashSet<string> expandedPaths)
+    {
+        if (_workspaceModel is null) return;
+        RootItems.Clear();
+        var root = new ProjectTreeNodeViewModel(_workspaceModel.RootNode, FilterState, expandedPaths, _actions);
+        RootItems.Add(root);
+        // Point the tree at the workspace root's children — the header already names the workspace,
+        // so the root row itself is omitted from the rendered tree.
+        TopLevelItems = root.FilteredChildren;
+    }
+
+    private HashSet<string> CollectExpandedPaths()
+    {
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in RootItems)
+            CollectExpandedPathsRecursive(root, paths);
+        return paths;
+    }
+
+    private static void CollectExpandedPathsRecursive(ProjectTreeNodeViewModel vm, HashSet<string> paths)
+    {
+        if (vm.IsExpanded) paths.Add(vm.AbsolutePath);
+        foreach (var child in vm.Children)
+            CollectExpandedPathsRecursive(child, paths);
     }
 }

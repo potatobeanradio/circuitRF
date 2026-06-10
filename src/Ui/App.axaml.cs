@@ -7,8 +7,10 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
+using Avalonia.Styling;
 using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views;
@@ -51,6 +53,12 @@ public partial class App : Application
         var prefs = AppPreferencesIo.Load();
         if (prefs.ActiveThemeName is { } savedTheme)
             ThemeService.Active = ThemeResolver.Resolve(savedTheme);
+
+        // Wire CrfWarningBrush to the active color theme so Project Tree warning nodes
+        // use System.Warning from the theme rather than a literal color value.
+        UpdateCrfWarningBrush();
+        ThemeService.ThemeChanged += (_, _) =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(UpdateCrfWarningBrush);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -264,6 +272,20 @@ public partial class App : Application
             Position = new PixelPoint(-2, -2),
         };
         NativeMenu.SetMenu(_bgMenuWindow, bgMenu);
+    }
+
+    // ---- CrfWarningBrush (System.Warning from the active color theme) --------
+
+    private void UpdateCrfWarningBrush()
+    {
+        var variant = ActualThemeVariant == ThemeVariant.Dark
+            ? ColorVariant.Dark
+            : ColorVariant.Light;
+        var rgba  = ThemeService.Active.Resolve(ColorRole.SystemWarning, variant);
+        var color = Color.FromArgb(rgba.A, rgba.R, rgba.G, rgba.B);
+        if (Resources.TryGetResource("CrfWarningBrush", null, out var res)
+            && res is SolidColorBrush brush)
+            brush.Color = color;
     }
 
     internal bool IsShuttingDown => _isShuttingDown;

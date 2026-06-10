@@ -25,11 +25,18 @@
             <NativeMenuItem Header="File">
                 <NativeMenuItem.Menu>
                     <NativeMenu>
-                        <NativeMenuItem Header="New Workspace"   Command="{Binding NewWorkspaceCommand}"   Gesture="Meta+N"/>
-                        <NativeMenuItem Header="Open…"           Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}" Gesture="Meta+O"/>
-                        <NativeMenuItem Header="Add Library…"    Command="{Binding AddLibraryCommand}"     CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="New Workspace"   Command="{Binding NewWorkspaceCommand}"      CommandParameter="{Binding $parent[Window]}" Gesture="Meta+N"/>
+                        <NativeMenuItem Header="New Schematic"   Command="{Binding NewScratchSchematicCommand}"                                            Gesture="Meta+Shift+N"/>
+                        <NativeMenuItem Header="New Cell"        Command="{Binding NewCellInWorkspaceCommand}"/>
+                        <NativeMenuItem Header="Open Workspace…" Command="{Binding OpenWorkspaceCommand}"      CommandParameter="{Binding $parent[Window]}" Gesture="Meta+O"/>
+                        <NativeMenuItem Header="Open Recent">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu/>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                        <NativeMenuItem Header="Add Library…"    Command="{Binding AddLibraryCommand}"         CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Open Symbol…"    Command="{Binding OpenSymbolFileCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Open Symbol…"    Command="{Binding OpenSymbolFileCommand}"     CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Save"            Command="{Binding SaveWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}" Gesture="Meta+S"/>
                         <NativeMenuItem Header="Save As…"        Command="{Binding SaveWorkspaceAsCommand}" CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
@@ -80,8 +87,10 @@
 
     <!-- ── Keyboard shortcuts (cross-platform) ──────────────────────────── -->
     <Window.KeyBindings>
-        <KeyBinding Gesture="Ctrl+N"        Command="{Binding NewWorkspaceCommand}"/>
-        <KeyBinding Gesture="Meta+N"        Command="{Binding NewWorkspaceCommand}"/>
+        <KeyBinding Gesture="Ctrl+N"        Command="{Binding NewWorkspaceCommand}"          CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Meta+N"        Command="{Binding NewWorkspaceCommand}"          CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Ctrl+Shift+N"  Command="{Binding NewScratchSchematicCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+N"  Command="{Binding NewScratchSchematicCommand}"/>
         <KeyBinding Gesture="Ctrl+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Meta+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+S"        Command="{Binding SaveWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
@@ -112,14 +121,29 @@
             <MenuItem Header="_File" Padding="8,4">
                 <MenuItem Header="New _Workspace"
                           Command="{Binding NewWorkspaceCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+N">
                     <MenuItem.Icon><mi:MaterialIcon Kind="PlusBox" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="_Open…"
+                <MenuItem Header="New _Schematic"
+                          Command="{Binding NewScratchSchematicCommand}"
+                          InputGesture="Ctrl+Shift+N">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New _Cell"
+                          Command="{Binding NewCellInWorkspaceCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderPlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open _Workspace…"
                           Command="{Binding OpenWorkspaceCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+O">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open _Recent"
+                          ItemsSource="{Binding RecentMenuItems}"
+                          IsEnabled="{Binding HasRecentWorkspaces}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="History" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Add _Library…"
                           Command="{Binding AddLibraryCommand}"
@@ -258,6 +282,7 @@
 
                 <!-- Start Page / New -->
                 <Button Command="{Binding NewWorkspaceCommand}"
+                        CommandParameter="{Binding $parent[Window]}"
                         ToolTip.Tip="New Workspace (Ctrl+N)"
                         Background="Transparent" BorderThickness="0" Padding="4,2">
                     <mi:MaterialIcon Kind="FilePlus" Width="18" Height="18"/>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -10,6 +11,11 @@ public sealed class AppPreferences
     [JsonPropertyName("active_theme_name")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ActiveThemeName { get; set; }
+
+    // MRU list of workspace .cws paths, most-recent first, capped at 10.
+    [JsonPropertyName("recent_workspaces")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? RecentWorkspaces { get; set; }
 }
 
 public static class AppPreferencesIo

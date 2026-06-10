@@ -7,11 +7,14 @@ namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
 /// Dock Document representing an open schematic in a Content tab.
-/// In 6d the ViewModel owns the mutable EditModel and command dispatch.
-/// The read-only Model property is a convenience alias to ViewModel.RenderModel.
+/// A scratch document has <see cref="FilePath"/> == null: it is in-memory only,
+/// dirty from creation, and invisible to the project tree.
+/// A materialized document has a real on-disk path (set at save time, step 2+).
 /// </summary>
 public sealed class SchematicDocument : Document, IUndoableDocument
 {
+    private readonly string _baseTitle;
+
     public SchematicViewModel ViewModel { get; }
     public UndoRedoStack      UndoRedo  => ViewModel.UndoRedo;
 
@@ -21,11 +24,60 @@ public sealed class SchematicDocument : Document, IUndoableDocument
     /// <summary>Current render snapshot (convenience alias for canvas binding).</summary>
     public SchematicModel? Model => ViewModel.RenderModel;
 
-    public SchematicDocument(string cellName, SchematicViewModel viewModel)
+    // ── Scratch / dirty identity ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Absolute on-disk path of the .csch file, or null for a scratch document.
+    /// Materialization (step 2) will set this once; null = scratch for now.
+    /// </summary>
+    public string? FilePath { get; }
+
+    /// <summary>True when this document has no on-disk path yet (scratch mode).</summary>
+    public bool IsScratch => FilePath is null;
+
+    private bool _isDirty;
+
+    /// <summary>
+    /// True when the document has unsaved content.
+    /// Scratch documents start dirty and remain dirty in step 1 (no save path yet).
+    /// On-disk documents become dirty on the first undoable edit.
+    /// </summary>
+    public bool IsDirty
     {
-        Id       = cellName;
-        Title    = cellName;
-        ViewModel = viewModel;
+        get => _isDirty;
+        private set
+        {
+            if (_isDirty == value) return;
+            _isDirty = value;
+            // Reflect dirty state in the tab title with a leading bullet.
+            Title = _isDirty ? $"• {_baseTitle}" : _baseTitle;
+        }
+    }
+
+    // ── Constructor ───────────────────────────────────────────────────────────
+
+    /// <param name="cellName">Display name / base title for the tab.</param>
+    /// <param name="viewModel">The schematic view model.</param>
+    /// <param name="filePath">
+    /// Absolute path of the .csch file on disk, or null for a scratch (in-memory) document.
+    /// </param>
+    public SchematicDocument(string cellName, SchematicViewModel viewModel, string? filePath = null)
+    {
+        _baseTitle = cellName;
+        Id         = cellName;
+        FilePath   = filePath;
+        ViewModel  = viewModel;
+
+        // Scratch is dirty from creation; on-disk starts clean.
+        _isDirty = IsScratch;
+        Title    = _isDirty ? $"• {_baseTitle}" : _baseTitle;
+
+        // Any edit on a non-scratch doc makes it dirty (first undo-able action recorded).
+        ViewModel.UndoRedo.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(UndoRedoStack.CanUndo) && ViewModel.UndoRedo.CanUndo)
+                IsDirty = true;
+        };
 
         // Keep the Model property change notification alive so bindings update.
         ViewModel.PropertyChanged += (_, e) =>

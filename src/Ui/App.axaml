@@ -58,6 +58,10 @@
         <FontFamily x:Key="DejaVuSans">avares://CircuitRF.Ui/Assets/Fonts#DejaVu Sans</FontFamily>
         <sys:Double x:Key="FontSize">12</sys:Double>
 
+        <!-- System.Warning brush — initialized from ColorTheme.BuiltIn in App.axaml.cs;
+             updated on ThemeService.ThemeChanged so tree warning nodes follow the active theme. -->
+        <SolidColorBrush x:Key="CrfWarningBrush" Color="#CE4A24"/>
+
         <!-- Converters registered as application-level resources so all views can use them -->
         <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
         <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>

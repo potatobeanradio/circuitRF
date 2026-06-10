@@ -9,54 +9,183 @@
 
     <Grid RowDefinitions="Auto,*">
 
-        <!-- Toolbar strip -->
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="2" Margin="4,4,4,2">
-            <TextBlock Text="Project" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
-        </StackPanel>
+        <!-- Toolbar: title + refresh + filter -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="4,4,4,2">
 
-        <ScrollViewer Grid.Row="1">
-            <TreeView ItemsSource="{Binding Items}"
-                      SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
-                      DoubleTapped="OnItemDoubleTapped">
+            <!-- Workspace name — elides when the panel is narrow -->
+            <TextBlock Grid.Column="0"
+                       Text="{Binding WorkspaceName}"
+                       FontWeight="SemiBold" FontSize="12"
+                       VerticalAlignment="Center"
+                       Margin="0,0,4,0"
+                       TextTrimming="CharacterEllipsis"/>
 
-                <TreeView.ItemTemplate>
-                    <TreeDataTemplate x:DataType="ptvm:ProjectTreeItemViewModel"
-                                      ItemsSource="{Binding Children}">
-                        <Grid ColumnDefinitions="Auto,*">
-                            <!-- Icon per kind -->
-                            <mi:MaterialIcon Grid.Column="0"
-                                            Kind="{Binding Kind, Converter={StaticResource TreeItemIconConverter}}"
-                                            Width="14" Height="14"
-                                            Margin="0,0,4,0"
-                                            Foreground="{DynamicResource SystemBaseMediumColor}"/>
-                            <TextBlock Grid.Column="1"
-                                       Text="{Binding Name}"
-                                       FontSize="12"/>
-                            <!-- Context menu bound here so DataContext = ProjectTreeItemViewModel -->
-                            <Grid.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Open"
-                                              Command="{Binding OpenCommand}"
-                                              InputGesture="Return">
-                                        <MenuItem.Icon><mi:MaterialIcon Kind="OpenInApp" Width="14" Height="14"/></MenuItem.Icon>
-                                    </MenuItem>
-                                    <MenuItem Header="Open in New Window"
-                                              Command="{Binding OpenInNewWindowCommand}">
-                                        <MenuItem.Icon><mi:MaterialIcon Kind="OpenInNew" Width="14" Height="14"/></MenuItem.Icon>
-                                    </MenuItem>
-                                    <Separator/>
-                                    <MenuItem Header="Delete"
-                                              Command="{Binding DeleteCommand}">
-                                        <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
-                                    </MenuItem>
-                                </ContextMenu>
-                            </Grid.ContextMenu>
-                        </Grid>
-                    </TreeDataTemplate>
-                </TreeView.ItemTemplate>
+            <!-- Refresh button (Layer 4 — manual refresh) -->
+            <Button Grid.Column="1"
+                    Command="{Binding RefreshCommand}"
+                    ToolTip.Tip="Refresh workspace"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,2,0">
+                <mi:MaterialIcon Kind="Refresh" Width="14" Height="14"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
 
-            </TreeView>
-        </ScrollViewer>
+            <!-- New Cell button — only visible when a workspace is loaded -->
+            <Button Grid.Column="2"
+                    Command="{Binding NewCellInWorkspaceCommand}"
+                    ToolTip.Tip="New Cell in workspace"
+                    IsVisible="{Binding HasWorkspace}"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,2,0">
+                <mi:MaterialIcon Kind="PlusBox" Width="14" Height="14"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+
+            <!-- Filter toggle (Layer 3 — category-toggle filter §3.3) -->
+            <Button Grid.Column="3"
+                    ToolTip.Tip="Filter categories"
+                    Padding="3,2" Background="Transparent" BorderThickness="0">
+                <mi:MaterialIcon Kind="Filter" Width="14" Height="14"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                <Button.Flyout>
+                    <Flyout Placement="BottomEdgeAlignedLeft">
+                        <StackPanel Spacing="3" Margin="8">
+                            <CheckBox IsChecked="{Binding FilterState.WorkspaceFileSystem}" Content="Workspace File-System" FontSize="12"/>
+                            <CheckBox IsChecked="{Binding FilterState.TestBenches}"         Content="TestBenches"           FontSize="12"/>
+                            <CheckBox IsChecked="{Binding FilterState.Cells}"               Content="Cells"                 FontSize="12"/>
+                            <CheckBox IsChecked="{Binding FilterState.DataDisplays}"        Content="Data Displays"         FontSize="12"/>
+                            <CheckBox IsChecked="{Binding FilterState.Libraries}"           Content="Libraries"             FontSize="12"/>
+                            <CheckBox IsChecked="{Binding FilterState.KnownFiles}"          Content="Known Files"           FontSize="12"/>
+                            <CheckBox IsChecked="{Binding FilterState.ColorThemes}"         Content="Color Themes"          FontSize="12"/>
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+
+        </Grid>
+
+        <!-- Tree area -->
+        <Grid Grid.Row="1">
+
+            <!-- No-workspace placeholder -->
+            <TextBlock Text="No workspace open."
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       FontSize="11"
+                       Margin="8,6"
+                       VerticalAlignment="Top"
+                       IsVisible="{Binding !HasWorkspace}"/>
+
+            <!-- Tree (Layer 2 — disclosure, bold primaries, warning styling) -->
+            <ScrollViewer IsVisible="{Binding HasWorkspace}">
+                <TreeView x:Name="TheTreeView"
+                          ItemsSource="{Binding TopLevelItems}"
+                          SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+                          DoubleTapped="OnTreeDoubleTapped">
+
+                    <TreeView.Styles>
+                        <!-- Bind tree-item expansion to the VM's IsExpanded for refresh-state persistence.
+                             x:DataType tells the AXAML compiler the style's DataContext is the item VM. -->
+                        <Style Selector="TreeViewItem" x:DataType="ptvm:ProjectTreeNodeViewModel">
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                        </Style>
+                        <!-- Bold for primary view files (§3.2) -->
+                        <Style Selector="TextBlock.pt-bold">
+                            <Setter Property="FontWeight" Value="Bold"/>
+                        </Style>
+                        <!-- Italic for warning nodes (§3.2) -->
+                        <Style Selector="TextBlock.pt-italic">
+                            <Setter Property="FontStyle" Value="Italic"/>
+                        </Style>
+                        <!-- System.Warning color for broken refs — uses CrfWarningBrush DynamicResource
+                             so it follows the active color theme instead of a literal color value. -->
+                        <Style Selector="TextBlock.pt-warning">
+                            <Setter Property="Foreground" Value="{DynamicResource CrfWarningBrush}"/>
+                        </Style>
+                    </TreeView.Styles>
+
+                    <TreeView.ItemTemplate>
+                        <!-- ItemsSource=FilteredChildren provides the category filter AND ensures
+                             no expander triangle appears for empty nodes (Avalonia hides it when
+                             the bound collection is empty). -->
+                        <TreeDataTemplate x:DataType="ptvm:ProjectTreeNodeViewModel"
+                                          ItemsSource="{Binding FilteredChildren}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <!-- Per-kind icon (NodeKind + IsTestBench → MaterialIconKind) -->
+                                <mi:MaterialIcon Grid.Column="0"
+                                                Kind="{Binding IconKind}"
+                                                Width="14" Height="14"
+                                                Margin="0,0,4,0"
+                                                Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+                                <!-- Name: bold for IsPrimary, italic + warning-color for IsWarning.
+                                     Tooltip: WarningReason first (if warning), then RelativePath. -->
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Name}"
+                                           FontSize="12"
+                                           Classes.pt-bold="{Binding IsBold}"
+                                           Classes.pt-italic="{Binding IsItalic}"
+                                           Classes.pt-warning="{Binding IsWarning}">
+                                    <ToolTip.Tip>
+                                        <StackPanel MaxWidth="320" Spacing="2">
+                                            <TextBlock Text="{Binding WarningReason}"
+                                                       IsVisible="{Binding IsWarning}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource CrfWarningBrush}"/>
+                                            <TextBlock Text="{Binding RelativePath}"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                                        </StackPanel>
+                                    </ToolTip.Tip>
+                                </TextBlock>
+
+                                <!-- Context menu — items shown per NodeKind via IsVisible bindings.
+                                     DataContext is the item VM (ProjectTreeNodeViewModel).
+                                     Commands are RelayCommands / AsyncRelayCommands on the VM,
+                                     delegating to ITreeActions (WorkspaceViewModel). -->
+                                <Grid.ContextMenu>
+                                    <ContextMenu>
+
+                                        <!-- View file actions (Make Primary + Reveal) -->
+                                        <MenuItem Header="Make Primary"
+                                                  Command="{Binding MakePrimaryCommand}"
+                                                  IsVisible="{Binding IsViewFile}"/>
+
+                                        <!-- All revealable nodes -->
+                                        <MenuItem Header="{Binding RevealLabel}"
+                                                  Command="{Binding RevealCommand}"
+                                                  IsVisible="{Binding CanReveal}"/>
+
+                                        <!-- Separator before creation actions -->
+                                        <Separator IsVisible="{Binding IsWorkspaceOrLibrary}"/>
+                                        <Separator IsVisible="{Binding IsCell}"/>
+
+                                        <!-- Workspace / Library node actions -->
+                                        <MenuItem Header="New Cell"
+                                                  Command="{Binding NewCellCommand}"
+                                                  IsVisible="{Binding IsWorkspaceOrLibrary}"/>
+
+                                        <!-- Cell node actions -->
+                                        <MenuItem Header="New Schematic"
+                                                  Command="{Binding NewSchematicCommand}"
+                                                  IsVisible="{Binding IsCell}"/>
+                                        <MenuItem Header="New Symbol"
+                                                  Command="{Binding NewSymbolCommand}"
+                                                  IsVisible="{Binding IsCell}"/>
+                                        <MenuItem Header="New Layout"
+                                                  IsEnabled="False"
+                                                  IsVisible="{Binding IsCell}"/>
+                                        <MenuItem Header="Edit Parameters"
+                                                  Command="{Binding ActivateCommand}"
+                                                  IsVisible="{Binding IsCell}"/>
+
+                                    </ContextMenu>
+                                </Grid.ContextMenu>
+
+                            </Grid>
+                        </TreeDataTemplate>
+                    </TreeView.ItemTemplate>
+
+                </TreeView>
+            </ScrollViewer>
+        </Grid>
 
     </Grid>
 </UserControl>

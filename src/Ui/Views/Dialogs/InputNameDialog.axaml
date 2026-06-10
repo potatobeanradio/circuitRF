@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.InputNameDialog"
+        Title="Name"
+        Width="360"
+        Height="160"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+            <TextBlock x:Name="PromptLabel" FontSize="12"/>
+            <TextBox   x:Name="NameBox"
+                       FontSize="12"
+                       MaxLength="200"
+                       KeyDown="OnKeyDown"/>
+            <TextBlock x:Name="ValidationMessage"
+                       FontSize="11"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8">
+            <Button Content="Cancel"
+                    Width="80"
+                    FontSize="12"
+                    Click="OnCancelClick"/>
+            <Button Content="OK"
+                    Width="80"
+                    IsDefault="True"
+                    FontSize="12"
+                    Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

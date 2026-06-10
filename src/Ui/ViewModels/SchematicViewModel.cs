@@ -142,6 +142,14 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     // ── Render model rebuild ──────────────────────────────────────────────────
 
+    /// <summary>
+    /// Forces an immediate render-model rebuild.  Called by WorkspaceViewModel when an
+    /// external change (Make-Primary, symbol save) invalidates cached cell-ref symbols.
+    /// Implemented as NotifyChanged so the same rebuild path used by all other mutations
+    /// is reused — no duplicate logic.
+    /// </summary>
+    public void TriggerRebuild() => EditModel.NotifyChanged();
+
     private void RebuildRenderModel()
     {
         var (model, index) = EditModel.BuildRenderModel();

@@ -98,6 +98,12 @@ public sealed class EditableComponent
     public string         Id           { get; } = Guid.NewGuid().ToString("N")[..12];
     public string         InstanceName { get; set; } = "";
     public SymbolKind     Symbol       { get; set; }
+    /// <summary>
+    /// Relative path from the containing schematic's directory to the referenced cell folder.
+    /// Null for built-in components (the built-in SymbolKind path is used instead).
+    /// When non-null the cell-reference resolution path is used (CellSymbolResolver).
+    /// </summary>
+    public string?        CellRef      { get; set; }
     public double         X            { get; set; }
     public double         Y            { get; set; }
     public SymbolRotation Rotation     { get; set; }
@@ -151,16 +157,54 @@ public sealed class EditableComponent
     }
 
     /// <summary>Convert to the immutable render type, with port connection state.</summary>
-    public SchematicComponent ToRenderComponent(Func<double, double, bool>? isPointConnected = null)
+    /// <param name="isPointConnected">World-coordinate connectivity predicate.</param>
+    /// <param name="cellRefResolution">
+    /// Non-null for cell-reference components (CellRef != null).
+    /// Resolved → use resolved symbol pins+primitives; NotFound/PrimaryMissing → no pins, glyph placeholder.
+    /// Null → built-in component path (unchanged).
+    /// </param>
+    public SchematicComponent ToRenderComponent(
+        Func<double, double, bool>? isPointConnected = null,
+        CellSymbolResolution? cellRefResolution = null)
     {
-        var portDefs = SymbolPortDefs.For(Symbol, PortCount);
-        var ports = portDefs.Select((p, _) =>
+        List<SchematicPortDef> ports;
+        CellSymbolState? cellRefState = null;
+        IReadOnlyList<SymbolPrimitive>? cellRefPrimitives = null;
+
+        if (cellRefResolution is not null)
         {
-            var (wx, wy) = SchematicGeometry.LocalToWorld(p.LocalX, p.LocalY, X, Y, Rotation, MirrorX);
-            bool conn = isPointConnected?.Invoke(wx, wy) ?? false;
-            return new SchematicPortDef(p.Name, p.LocalX, p.LocalY,
-                conn ? PortConnectionState.Connected : PortConnectionState.Unconnected);
-        }).ToList();
+            cellRefState = cellRefResolution.State;
+            if (cellRefResolution is { State: CellSymbolState.Resolved, Symbol: { } resolvedSym })
+            {
+                cellRefPrimitives = resolvedSym.Primitives;
+                ports = resolvedSym.Pins.Select(pin =>
+                {
+                    var (wx, wy) = SchematicGeometry.LocalToWorld(
+                        (float)pin.LocalX, (float)pin.LocalY, X, Y, Rotation, MirrorX);
+                    bool conn = isPointConnected?.Invoke(wx, wy) ?? false;
+                    return new SchematicPortDef(
+                        pin.Name ?? $"P{pin.PortIndex + 1}",
+                        (float)pin.LocalX, (float)pin.LocalY,
+                        conn ? PortConnectionState.Connected : PortConnectionState.Unconnected);
+                }).ToList();
+            }
+            else
+            {
+                // NotFound / PrimaryMissing: no pin geometry
+                ports = [];
+            }
+        }
+        else
+        {
+            var portDefs = SymbolPortDefs.For(Symbol, PortCount);
+            ports = portDefs.Select((p, _) =>
+            {
+                var (wx, wy) = SchematicGeometry.LocalToWorld(p.LocalX, p.LocalY, X, Y, Rotation, MirrorX);
+                bool conn = isPointConnected?.Invoke(wx, wy) ?? false;
+                return new SchematicPortDef(p.Name, p.LocalX, p.LocalY,
+                    conn ? PortConnectionState.Connected : PortConnectionState.Unconnected);
+            }).ToList();
+        }
 
         // Labels in display order: type (from registry), instance name, then ShowOnSchematic params.
         // ShowTypeLabel/ShowInstanceName suppress the respective label (stored as ""); renderer skips empty strings.
@@ -180,7 +224,11 @@ public sealed class EditableComponent
         }
 
         var bb = GetBoundingBox();
-        var (glyphMinX, glyphMinY, glyphMaxX, glyphMaxY) = ComputeGlyphBb();
+        var (glyphMinX, glyphMinY, glyphMaxX, glyphMaxY) = cellRefPrimitives is not null
+            ? ComputeGlyphBb(cellRefPrimitives)
+            : cellRefResolution is not null
+                ? (X - 160, Y - 60, X + 160, Y + 60)   // NotFound / PrimaryMissing placeholder
+                : ComputeGlyphBb(null);
 
         // FullBb: glyph BB unioned with every label's actual world position including offsets.
         // Computed once here so the spatial index and the renderer in-loop cull share a single
@@ -201,35 +249,44 @@ public sealed class EditableComponent
 
         return new SchematicComponent
         {
-            Id           = Id,
-            InstanceName = InstanceName,
-            Symbol       = Symbol,
+            Id               = Id,
+            InstanceName     = InstanceName,
+            Symbol           = Symbol,
             X = X, Y = Y,
-            Rotation     = Rotation,
-            MirrorX      = MirrorX,
-            DisableState = Disable,
-            Ports        = ports,
-            Labels       = labels,
-            LabelOffsets = LabelOffsets.Count > 0 ? LabelOffsets.ToList() : [],
+            Rotation         = Rotation,
+            MirrorX          = MirrorX,
+            DisableState     = Disable,
+            Ports            = ports,
+            Labels           = labels,
+            LabelOffsets     = LabelOffsets.Count > 0 ? LabelOffsets.ToList() : [],
             BbMinX = bb.MinX, BbMinY = bb.MinY,
             BbMaxX = bb.MaxX, BbMaxY = bb.MaxY,
             GlyphBbMinX = glyphMinX, GlyphBbMinY = glyphMinY,
             GlyphBbMaxX = glyphMaxX, GlyphBbMaxY = glyphMaxY,
             FullBbMinX = fullMinX, FullBbMinY = fullMinY,
             FullBbMaxX = fullMaxX, FullBbMaxY = fullMaxY,
+            CellRefState     = cellRefState,
+            CellRefPrimitives = cellRefPrimitives,
         };
     }
 
     /// <summary>Axis-aligned bounding box of the symbol geometry in world coordinates.</summary>
-    public (double MinX, double MinY, double MaxX, double MaxY) ComputeGlyphBb()
+    /// <param name="overridePrimitives">
+    /// When non-null, use these primitives instead of the built-in symbol primitives.
+    /// Used by the cell-reference Resolved render path to compute the glyph BB from the
+    /// resolved .csym primitives without re-querying BuiltInSymbols.
+    /// When null, falls back to the built-in BuiltInSymbols.Primitives(Symbol) path.
+    /// </param>
+    public (double MinX, double MinY, double MaxX, double MaxY) ComputeGlyphBb(
+        IReadOnlyList<SymbolPrimitive>? overridePrimitives = null)
     {
-        var sym = BuiltInSymbols.Primitives(Symbol);
-        if (sym.Primitives.Count == 0) return (X - 160, Y - 60, X + 160, Y + 60);
+        IReadOnlyList<SymbolPrimitive> prims = overridePrimitives ?? BuiltInSymbols.Primitives(Symbol).Primitives;
+        if (prims.Count == 0) return (X - 160, Y - 60, X + 160, Y + 60);
 
-        var (lMinX, lMinY, lMaxX, lMaxY) = SymbolGeometry.ComputeBb(sym.Primitives);
+        var (lMinX, lMinY, lMaxX, lMaxY) = SymbolGeometry.ComputeBb(prims);
 
-        // For variadic types the static body has no lead stubs; extend BB to port tips.
-        if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd)
+        // Variadic port-lead extension applies only to built-in types, not cell-ref symbols.
+        if (overridePrimitives is null && Symbol is SymbolKind.ZPort or SymbolKind.Sdd)
         {
             foreach (var (_, lx, ly) in SymbolPortDefs.For(Symbol, PortCount))
             {
@@ -263,6 +320,7 @@ public sealed class EditableComponent
             X = X, Y = Y, Rotation = Rotation, MirrorX = MirrorX, Disable = Disable,
             ShowTypeLabel    = ShowTypeLabel,
             ShowInstanceName = ShowInstanceName,
+            CellRef          = CellRef,
         };
         foreach (var p in Parameters)    c.Parameters.Add(p.Clone());
         foreach (var o in LabelOffsets) c.LabelOffsets.Add(o);
@@ -345,6 +403,13 @@ public sealed class EditableDot
 /// </summary>
 public sealed class SchematicEditModel
 {
+    /// <summary>
+    /// Absolute path to the directory containing this schematic's .csch file.
+    /// Set by SchematicPersistence.LoadFromFile; null for unsaved schematics.
+    /// Used as the base directory for resolving CellRef relative paths.
+    /// </summary>
+    public string? SchematicDirectory { get; set; }
+
     public List<EditableComponent>  Components   { get; } = new();
     public List<EditableWire>       Wires        { get; } = new();
     public List<EditableNetLabel>   NetLabels    { get; } = new();
@@ -392,9 +457,12 @@ public sealed class SchematicEditModel
     /// </summary>
     public (SchematicModel Model, SchematicSpatialIndex Index) BuildRenderModel()
     {
+        // Pre-resolve all cell-refs before the connectivity pass so pin positions are available.
+        var cellRefResolutions = ResolveAllCellRefs();
+
         // Connectivity geometry (vertex hashes, T-junctions, crossing predicate) is computed by
         // a shared helper so the live dot preview during drags reuses the identical logic.
-        var cg = ComputeConnectivityGeometry();
+        var cg = ComputeConnectivityGeometry(cellRefResolutions);
 
         // IsConnected for a port: O(1) hash lookup; rare fallback to segment scan on miss.
         bool IsConnected(double wx, double wy)
@@ -421,7 +489,12 @@ public sealed class SchematicEditModel
             return cg.AutoDotKeys.Contains(key);
         }
 
-        var comps = Components.Select(c => c.ToRenderComponent(IsConnected)).ToList();
+        var comps = Components.Select(c =>
+        {
+            CellSymbolResolution? res = c.CellRef is not null && cellRefResolutions is not null
+                && cellRefResolutions.TryGetValue(c.Id, out var r) ? r : null;
+            return c.ToRenderComponent(IsConnected, res);
+        }).ToList();
         var wires = Wires.Select(w => w.ToRenderWire(IsEndpointConnected)).ToList();
         var dots  = AssembleConnectionDots(cg);
         var netLabels = NetLabels.Select(l => new SchematicNetLabel { Id = l.Id, X = l.X, Y = l.Y, Name = l.Name }).ToList();
@@ -456,6 +529,25 @@ public sealed class SchematicEditModel
         return (model, new SchematicSpatialIndex(model));
     }
 
+    // ── Cell-ref resolution ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves all CellRef values on Components using SchematicDirectory as the base path.
+    /// Returns null when there are no cell-ref components or SchematicDirectory is not set.
+    /// </summary>
+    private Dictionary<string, CellSymbolResolution>? ResolveAllCellRefs()
+    {
+        if (SchematicDirectory is null) return null;
+        Dictionary<string, CellSymbolResolution>? result = null;
+        foreach (var comp in Components)
+        {
+            if (comp.CellRef is null) continue;
+            result ??= new Dictionary<string, CellSymbolResolution>(StringComparer.Ordinal);
+            result[comp.Id] = CellSymbolResolver.Resolve(comp.CellRef, SchematicDirectory);
+        }
+        return result;
+    }
+
     // ── Connectivity helpers (shared by BuildRenderModel and the live dot preview) ──
 
     /// <summary>Quantize a point to the connection-grid cell (P = GridSize).
@@ -478,7 +570,14 @@ public sealed class SchematicEditModel
     /// segment cell-hash. This is the single source of truth for T-junction and 4-way crossing
     /// detection; both BuildRenderModel and ComputeConnectionDots() call it.
     /// </summary>
-    private ConnectivityGeometry ComputeConnectivityGeometry()
+    /// <param name="cellRefResolutions">
+    /// Optional pre-resolved cell-ref map from BuildRenderModel.
+    /// When provided and a component has a Resolved CellRef, its symbol pins are used
+    /// instead of SymbolPortDefs for the connectivity port-position pass.
+    /// Null (default) is safe — callers that don't need cell-ref connectivity can omit it.
+    /// </param>
+    private ConnectivityGeometry ComputeConnectivityGeometry(
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
     {
         // Hash of all wire vertex positions → fast port-connection detection.
         var wirePointHash = new HashSet<(long, long)>(Wires.Count * 4);
@@ -507,12 +606,33 @@ public sealed class SchematicEditModel
         }
         foreach (var comp in Components)
         {
-            // Use the actual schematic pin count (N+1 for variadic), not just PortCount (N).
-            int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
-            for (int pi = 0; pi < nPins; pi++)
+            if (comp.CellRef is not null)
             {
-                var (px, py) = comp.GetPortWorldCoord(pi);
-                AddConPoint(px, py);
+                // Cell-reference component: use resolved symbol pins if available.
+                if (cellRefResolutions is not null
+                    && cellRefResolutions.TryGetValue(comp.Id, out var res)
+                    && res is { State: CellSymbolState.Resolved, Symbol: { } sym })
+                {
+                    foreach (var pin in sym.Pins)
+                    {
+                        var (px, py) = SchematicGeometry.LocalToWorld(
+                            (float)pin.LocalX, (float)pin.LocalY,
+                            comp.X, comp.Y, comp.Rotation, comp.MirrorX);
+                        AddConPoint(px, py);
+                    }
+                }
+                // NotFound / PrimaryMissing: no pin geometry — nothing to add.
+            }
+            else
+            {
+                // Built-in component: existing path.
+                // Use the actual schematic pin count (N+1 for variadic), not just PortCount (N).
+                int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
+                for (int pi = 0; pi < nPins; pi++)
+                {
+                    var (px, py) = comp.GetPortWorldCoord(pi);
+                    AddConPoint(px, py);
+                }
             }
         }
 

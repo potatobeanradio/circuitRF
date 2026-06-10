@@ -85,6 +85,21 @@ public sealed class SchematicComponent
     public double FullBbMaxX { get; init; }
     public double FullBbMaxY { get; init; }
 
+    // ── Cell-reference rendering state ────────────────────────────────────────
+    // Non-null only for cell-reference components (EditableComponent.CellRef != null).
+    // Drives which render path the renderer takes:
+    //   Resolved       → draw CellRefPrimitives via DrawSymbol
+    //   NotFound       → "Not Found" warning glyph
+    //   PrimaryMissing → plain-rectangle stand-in
+    // Null = built-in component, BuiltInSymbols path unchanged.
+
+    /// <summary>
+    /// Three-state resolution result for cell-reference components; null for built-ins.
+    /// </summary>
+    public CellSymbolState? CellRefState      { get; init; }
+
+    /// <summary>Non-null when CellRefState == Resolved — the primary .csym primitives to draw.</summary>
+    public IReadOnlyList<SymbolPrimitive>? CellRefPrimitives { get; init; }
 }
 
 /// <summary>A wire segment (orthogonal polyline) with pre-computed world bounding box.</summary>

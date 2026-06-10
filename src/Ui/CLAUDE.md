@@ -4,6 +4,288 @@ Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`, the interact
 `docs/design/ui-design.md`, and the architecture/firewall note `docs/design/ui-architecture.md`. The UI is
 how people drive the engine; it must never become the source of truth for simulation.
 
+## Scratch documents + New Schematic (Phase 6h Step 1 — done)
+
+**Scratch = in-memory, no path, dirty, tree-invisible.** A scratch `SchematicDocument` is a normal
+`SchematicViewModel`/`SchematicDocument` with `FilePath = null`. It is NOT in `_openDocsByPath` (which is
+keyed by absolute path) and is NOT shown in the project tree (the tree reflects disk only).
+
+### SchematicDocument scratch identity
+- `FilePath: string?` — null for scratch; set to the on-disk `.csch` path for materialized docs.
+  Step 2 (materialize-ancestors) will set this once at save time.
+- `IsScratch => FilePath is null` — computed flag.
+- `IsDirty: bool` — scratch starts `true` and stays true in step 1 (no save path yet).
+  On-disk docs start `false` and flip to `true` on the first undoable edit (`CanUndo` flips).
+- Tab title = `"• " + baseTitle` when `IsDirty`; plain title when clean.
+
+### WorkspaceViewModel scratch tracking
+- `_scratchDocs: List<SchematicDocument>` — open scratch docs. NOT `_openDocsByPath`.
+  **NOTE (step 1):** entries are not removed when a tab is closed (no Dock close callback yet).
+  The close-prompt and cleanup come in step 3. `_scratchDocs.Clear()` is called in `NewWorkspace`
+  (which resets the Dock layout, so tabs are gone). `OpenWorkspace` does NOT clear it (tabs survive).
+- `RebuildOpenSchematics()` iterates both `_openDocsByPath.Values` and `_scratchDocs` so scratch
+  schematics re-resolve cell-ref symbols after a symbol save or Make-Primary.
+
+### NewScratchSchematicCommand (⇧⌘N / Ctrl+Shift+N)
+- Parameterless `[RelayCommand]`, always enabled — **no workspace required**.
+- Creates `SchematicEditModel` → `SchematicViewModel` → `SchematicDocument(title, vm)` (null path).
+- Title = next free `Untitled-Schematic-N` (lowest N not already in `_scratchDocs` or `_openDocsByPath`).
+- Adds doc to `_scratchDocs`, opens via `_factory.OpenDocument(doc)`.
+- Bound to File → New Schematic in the macOS NativeMenu (`Meta+Shift+N`) and in-window Menu
+  (`Ctrl+Shift+N`). **New Cell (workspace-required) has no keyboard shortcut** — it was displaced.
+
+### Launch state
+At startup, the constructor auto-opens one `Untitled-Schematic-1` scratch tab so the app lands directly
+on an editable canvas. The welcome message is "circuitRF ready." (not "Create a New Schematic to get
+started" — the schematic is already open).
+
+### No save in step 1
+Save, materialize, the plan dialog, close/quit prompts, and autosave are steps 2+. Closing a scratch
+tab in step 1 loses it silently. This is a known, intentional limitation — note it, don't fix it here.
+
+---
+
+## New Workspace dialog + Open Workspace + Recent Workspaces (Phase 6g Step 5 fix 5)
+
+**File → New Workspace uses `NewWorkspaceDialog`** (`src/Ui/Views/Dialogs/NewWorkspaceDialog.axaml(.cs)`),
+NOT a raw system folder picker. The user names a *Workspace*; circuitRF creates the folder.
+
+Key rules:
+- The system folder picker (`OpenFolderPickerAsync`) is used **only** behind the "Choose…" button to
+  select the **parent location** — an existing folder is fine for that.
+- The workspace folder = `parent/<name>/` — always created by us, never pre-existing (dialog gates OK
+  on this + `NewWorkspace` re-checks at create time as a race guard).
+- `NewWorkspaceDialog` returns `NewWorkspaceResult { ParentDir, Name }` via `ShowDialog<NewWorkspaceResult?>`,
+  or null on cancel — mirrors `InputNameDialog`'s return-or-null contract.
+- Name validated live via `NameValidator`; workspace name comes from the folder leaf, never the `.cws` stem.
+- On open, the name field is **prefilled** with the next free `Untitled-Workspace-N` for the current Location.
+  When the user changes Location via "Choose…" without having manually edited the name, the suggestion is
+  recomputed for the new location. Suppression flag `_settingSuggested` prevents `OnNameChanged` from
+  marking the programmatic fill as a user edit.
+
+### Tracked Location (in-memory, not persisted)
+`WorkspaceViewModel._lastWorkspaceParentDir` (initialized to Documents): seeds the Location field in
+`NewWorkspaceDialog` and the `SuggestedStartLocation` of `OpenFolderPickerAsync`. Updated after every
+successful New or Open to the parent of the workspace folder. **Never persisted.**
+
+### Open Workspace = folder picker
+`OpenWorkspace` uses `OpenFolderPickerAsync` (not file picker). The selected folder IS the workspace
+folder; `.cws` = `Path.Combine(folder, ".cws")`. If `.cws` does not exist, the open is rejected with a
+clear error message. Menu item reads "Open Workspace…" in both NativeMenu and in-window Menu.
+
+### Recent Workspaces (persisted in AppPreferences)
+- `AppPreferences.RecentWorkspaces: List<string>?` — the `.cws` paths, MRU order, capped at 10.
+  Serialized as `recent_workspaces` in `preferences.json`. Null when empty (omitted from JSON).
+- `WorkspaceViewModel.PushRecent(cwsPath)` — dedup (case-insensitive), insert at front, cap 10, save,
+  rebuild menu items. Called after every successful `NewWorkspace` and `OpenWorkspace`.
+- `WorkspaceViewModel.RecentMenuItems: ObservableCollection<Control>` — holds `MenuItem` + `Separator`
+  instances rebuilt by `RebuildRecentMenuItems()`. Bound to the in-window "Open Recent" submenu via
+  `ItemsSource`. `HasRecentWorkspaces` (bool property, notified on change) drives `IsEnabled`.
+- `WorkspaceViewModel.RecentWorkspacesChanged: event Action?` — fired after every push/clear so
+  `WorkspaceWindow.axaml.cs` can rebuild the NativeMenu.
+- **NativeMenu rebuild**: `WorkspaceWindow.axaml.cs` subscribes to `RecentWorkspacesChanged` in
+  `OnDataContextChanged`. `EnsureNativeRecentMenuWired()` (called once from `OnOpened`) inserts the
+  "Open Recent" `NativeMenuItem` programmatically after "Open Workspace…" and populates it.
+  `RebuildNativeRecentMenu()` clears and repopulates `NativeMenuItem.Menu.Items` on every change.
+- **Missing entry**: if a recent workspace's `.cws` no longer exists, `OpenRecentWorkspace` removes it
+  from the list, saves, rebuilds menus, and shows an error.
+- `ClearRecentWorkspaces` command empties the list, saves, and rebuilds both menus.
+
+## macOS / command gotchas (Phase 6g Step 5 fixes)
+
+### `$parent[Window]` is null on macOS for NativeMenu and KeyBinding
+`{Binding $parent[Window]}` resolves to `null` for `NativeMenuItem.CommandParameter` and
+`KeyBinding.CommandParameter` on macOS — neither lives in the Avalonia visual tree where the ancestor
+walk can reach a `Window`. The standard fix is a `ResolveOwner(Window? parameter)` helper in the ViewModel:
+
+```csharp
+private Window? ResolveOwner(Window? parameter) =>
+    parameter
+    ?? (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)
+       ?.Windows.FirstOrDefault(w => ReferenceEquals(w.DataContext, this));
+```
+
+`desktop.MainWindow` is also null in this app (`App.axaml.cs` calls `window.Show()` but never assigns
+`desktop.MainWindow`), so `.MainWindow` is the wrong fallback. Walking `ApplicationLifetime.Windows`
+keyed by `ReferenceEquals(w.DataContext, this)` finds the exact host window and works correctly in
+multi-window scenarios. Apply `ResolveOwner` to every command that takes `Window?` and opens a picker.
+
+### `CreateDefaultLayout()` replaces all factory tools
+`CircuitRfDockFactory.CreateDefaultLayout()` internally calls `CreateLayout()` which assigns new
+instances to `ProjectTreeTool`, `PropertiesTool`, etc. Any command that resets the layout (currently
+only `NewWorkspace`) must re-wire those tools **after** `Layout = newLayout`:
+
+```csharp
+Layout = newLayout;
+_factory.ProjectTreeTool?.SetActions(this);
+_factory.ProjectTreeTool?.SetWorkspace(workspaceDir);
+```
+
+`SetActions` before `SetWorkspace` because `SetWorkspace` → `RebuildVmTree` uses `_actions`.
+
+### Dock `Tool.Title` PropertyChanged is not reliably picked up by Avalonia compiled bindings
+Setting `Title` on a Dock `Tool` (base class) calls `SetProperty` which fires `PropertyChanged` via
+the Dock library's `ObservableObject`. However, Avalonia compiled bindings (`x:DataType`) on the
+tool's view do not reliably pick up this event in practice. Expose a separate `[ObservableProperty]`
+for any observable header text the view needs to bind to:
+
+```csharp
+[ObservableProperty] private string _workspaceName = "No workspace";
+```
+
+`ProjectTreeTool.Title` is **static "Project"** — set once in the constructor, never updated per workspace.
+The in-view header `TextBlock.Text` binds to `WorkspaceName` (set in `SetWorkspace`, reset to "No workspace"
+in `ClearWorkspace`). Do NOT update `Title` per workspace — the dock-tab label is intentionally always "Project".
+
+### `.cws` is a dotfile — derive the workspace name from the FOLDER, not the file stem
+A circuitRF workspace is a **named folder containing a `.cws` file**: `…/<name>/.cws`.
+`Path.GetFileNameWithoutExtension(".cws")` in .NET returns `".cws"` (dotfiles have no extension), NOT the
+workspace name. Always derive the workspace name from the **folder name**:
+
+```csharp
+var dir  = Path.GetDirectoryName(cwsPath);       // …/<name>
+var name = Path.GetFileName(dir);                 // <name>
+```
+
+Apply this everywhere the workspace name must be displayed (window title, `WorkspaceName`, messages).
+
+---
+
+## Cell reference model + live update (Phase 6g Step 5 — done)
+
+### Entry points (L1)
+`NewWorkspace` creates a real `.cws` + workspace folder on disk (was only resetting dock state).
+`File → New Cell` menu item (`NewCellInWorkspaceCommand` on `WorkspaceViewModel`, greyed via
+`CanExecute = CurrentWorkspacePath is not null`; `NotifyCanExecuteChanged` in `OnCurrentWorkspacePathChanged`).
+Tree-header **New Cell** button in `ProjectTreeView` (`IsVisible="{Binding HasWorkspace}"`).
+`ITreeActions.NewCellInWorkspaceAsync()` is the shared implementation: prompts with `InputNameDialog`,
+validates with `NameValidator`, calls `CellFolder.CreateCellFolder(workspaceDir, name)` + `Refresh()`.
+
+### Cell-ref data model (L2)
+**`EditableComponent.CellRef: string?`** — relative path from the schematic directory to the referenced
+cell folder.  Null for built-in components.  Round-tripped through `CschComponent.CellRef` (nullable,
+`WhenWritingNull`; omitted from file when null).
+
+**`SchematicEditModel.SchematicDirectory: string?`** — absolute directory of the containing `.csch` file.
+Set by `SchematicPersistence.FromFileModel` from the directory argument passed by `LoadFromFile`.
+Used as the base for resolving `CellRef` relative paths.
+
+**`CellSymbolResolver`** (`src/Ui/Schematic/CellSymbolResolver.cs`) — framework-free static resolver.
+`Resolve(cellRef, baseDir) → CellSymbolResolution { State: CellSymbolState, Symbol? }`.
+`CellSymbolState` enum: `Resolved / NotFound / PrimaryMissing` (kept distinct — do NOT collapse).
+Cache keyed by `(cellAbsDir, primaryFilename, symFileMtime)`; invalidated by `Invalidate(cellAbsDir)`
+or `InvalidateAll()`.  Resolution chain: relative path → `Directory.Exists` → `CellFolder.ResolvePrimary`
+(single primacy source) → `SymbolPersistence.LoadFromFile`.
+
+### Three-state rendering (L3)
+**`SchematicComponent`** gained `CellRefState: CellSymbolState?` and
+`CellRefPrimitives: IReadOnlyList<SymbolPrimitive>?` (both null for built-ins).
+
+**`BuildRenderModel`** pre-resolves all `CellRef` values via `ResolveAllCellRefs()` before the
+connectivity pass.  Resolved symbol pins supply port world-coords (not `SymbolPortDefs`).
+`ToRenderComponent(isConnected, cellRefResolution?)` uses resolved pins for ports and resolved
+primitives for the glyph BB.
+
+**`SchematicRenderer`** dispatches on `CellRefState` before the built-in draw path:
+- `Resolved` → `DrawSymbol(c.CellRefPrimitives, ...)` — same path as built-ins, no `DrawVariadicPortLeads`
+- `NotFound` → `DrawCellRefNotFoundGlyph` — warning fill+stroke box, "Not Found" centred label
+- `PrimaryMissing` → `DrawCellRefPrimaryMissingGlyph` — plain stroke rectangle stand-in
+- `null` (built-in) → existing `BuiltInSymbols.Primitives` + `DrawVariadicPortLeads` path, unchanged
+
+### Live update (L4)
+**`SymbolEditorViewModel.SymbolSaved: event Action<string>?`** fires from `PerformSave` with the
+absolute `.csym` path.  Both Save and Save-As go through `PerformSave`.
+
+**`SchematicViewModel.TriggerRebuild()`** calls `EditModel.NotifyChanged()` — reuses the same
+`Changed → RebuildRenderModel` pipeline used by all mutation commands.
+
+**`WorkspaceViewModel`** wiring:
+- `OnSymbolSaved(savedSymPath)` — derives `cellDir` (two `GetDirectoryName` calls up), calls
+  `CellSymbolResolver.Invalidate(cellDir)`, then `RebuildOpenSchematics()`.
+- `RebuildOpenSchematics()` — iterates `_openDocsByPath.Values`, calls `TriggerRebuild()` on every
+  `SchematicDocument`.
+- `MakePrimary` — after writing a new primary symbol (`subFolderName == CellFolder.SymbolSubFolder`),
+  calls `Invalidate(cellDir)` + `RebuildOpenSchematics()`.
+- `OpenOrActivateSymbol` and `NewSymbolAsync` both subscribe `vm.SymbolSaved += OnSymbolSaved` when
+  the `SymbolEditorViewModel` is created.
+
+**Dangling wires on pin-count change:** wires to ports that no longer exist in the new symbol show
+as unconnected (dangling). No auto-rewire (Option B still deferred).
+
+---
+
+## Project Tree interactions (Phase 6g Step 4 — done)
+
+**ITreeActions** (`src/Ui/ViewModels/ProjectTree/ITreeActions.cs`) — callback interface implemented by
+WorkspaceViewModel, injected into `ProjectTreeNodeViewModel` via `ProjectTreeTool.SetActions(ITreeActions)`.
+Every tree-node command delegates to this interface so all open/create/reveal operations live in WorkspaceViewModel.
+
+**Commands on ProjectTreeNodeViewModel** — `ActivateCommand` (double-click open/activate),
+`MakePrimaryCommand` (view files), `RevealCommand` (all file/folder nodes), `NewCellCommand`
+(workspace/library nodes), `NewSymbolCommand` / `NewSchematicCommand` (cell nodes).  Context-menu
+`IsVisible` driven by `IsViewFile`, `IsCell`, `IsWorkspaceOrLibrary`, `CanReveal`.
+
+**Open/activate dedup** — `WorkspaceViewModel._openDocsByPath` (`Dictionary<string, IDockable>`,
+OrdinalIgnoreCase) tracks open docs by absolute path. `ActivateIfOpen(absPath)` checks before opening;
+activates the existing tab if found. Users can close a tab and reopen from the tree without issue.
+
+**Double-click open paths (real vs. stub):**
+- `.csym` → `SymbolPersistence.LoadFromFile` + `EditableSymbol.FromSymbol` + `SymbolEditorDocument` (real)
+- `.csch` → `SchematicPersistence.LoadFromFile` + `SchematicViewModel` + `SchematicDocument` (real)
+- cell node → placeholder `StubDocument` (real cell editor is step 6)
+- `.clay`, other view-file types, data displays, color themes → no-op
+
+**Make Primary** — reads `.ccell` from `../..` of the view file path, sets the correct `PrimarySchematic` /
+`PrimarySymbol` / `PrimaryLayout` field (discriminated by sub-folder name), writes back, calls `Refresh()`.
+When the changed view is a symbol, also calls `CellSymbolResolver.Invalidate(cellDir)` + `RebuildOpenSchematics()`
+so open schematics re-render with the new primary (Step 5 live-update).
+
+**Reveal** — `Process.Start`: macOS `open -R <path>`, Windows `explorer /select,"<path>"`,
+Linux `xdg-open <parent-dir>`.  Platform detected via `RuntimeInformation.IsOSPlatform`.
+
+**Creation actions** — `InputNameDialog` (`src/Ui/Views/Dialogs/`) prompts for name, validated with
+`NameValidator`.  On confirm:
+- New Cell → `CellFolder.CreateCellFolder(parentDir, name)` + `Refresh()`
+- New Symbol → write empty `.csym` via `SymbolPersistence.SaveToFile` + open `SymbolEditorDocument` with
+  fresh `EditableSymbol { UserEditable=true, CurrentSymbolPath=path }` + `Refresh()`
+- New Schematic → write empty `.csch` via `SchematicPersistence.SaveToFile` + open `SchematicDocument` with
+  new `SchematicViewModel(emptyModel)` + `Refresh()`
+- New Layout → `IsEnabled=False` (greyed, v2)
+
+`RevealLabel` on the VM is platform-aware ("Reveal in Finder" / "Reveal in Explorer" / "Reveal in File Manager").
+
+## Project Tree VIEW (Phase 6g Step 3 — done)
+
+Three new files in `src/Ui/ViewModels/ProjectTree/`:
+- **`ProjectTreeFilterState`** (`ProjectTreeFilterState.cs`) — `ObservableObject` with 7 independently
+  togglable bool properties (`Cells`, `Libraries`, `TestBenches`, `DataDisplays`, `ColorThemes`,
+  `KnownFiles`, `WorkspaceFileSystem`); `IsAllOn` and `SetAll(bool)` helpers.
+- **`ProjectTreeNodeViewModel`** (`ProjectTreeItemViewModel.cs` — old stub replaced) — wraps a
+  `ProjectTreeNode`; exposes `IconKind` (`MaterialIconKind` switch on `Kind` + `IsTestBench`),
+  `IsWarning`, `IsBold`, `IsItalic`, `IsExpanded` (two-way, for refresh-state preservation),
+  `Children` (all), `FilteredChildren` (category-filtered, reactive).  Bottom-up `ApplyFilter()`
+  preserves ancestors when a descendant's category is on.  `MissingNamedPrimary` → `IsWarning = true`.
+- **`ProjectTreeTool`** (rewritten, deletes 6b stub) — `FilterState`, `RootItems`, `HasWorkspace`,
+  `SetWorkspace(dir)` / `ClearWorkspace()`, `[RelayCommand] Refresh()` (re-scans + preserves expand
+  state), `RebuildVmTree(expandedPaths)`.
+
+Views:
+- **`ProjectTreeView.axaml`** (rewritten) — toolbar (Refresh button + Filter flyout with 7 checkboxes),
+  no-workspace placeholder, `TreeView` with `TreeDataTemplate ItemsSource="{Binding FilteredChildren}"`;
+  styles: `TreeViewItem` `IsExpanded TwoWay`, `.pt-bold` / `.pt-italic` / `.pt-warning`
+  (`.pt-warning` uses `{DynamicResource CrfWarningBrush}`); per-kind Material icon + name `TextBlock`
+  with conditional classes; tooltip = WarningReason (if warning) + RelativePath.
+- **`ProjectTreeView.axaml.cs`** (rewritten) — on-focus refresh via `Window.Activated`, debounced with
+  `_refreshPending` bool + `Dispatcher.UIThread.Post` at `Background` priority.
+
+`WorkspaceViewModel` updated: `SetWorkspace(dir)` / `ClearWorkspace()` wired to `CurrentWorkspacePath`
+change; `OpenTreeItem` and its coupling to the 6b stub removed.
+
+`CrfWarningBrush` (`SolidColorBrush`) declared in `App.axaml`; updated from `ThemeService.Active`
+`ColorRole.SystemWarning` in `App.axaml.cs` `UpdateCrfWarningBrush()`, subscribed to `ThemeChanged`.
+
+10 new VM tests in `ProjectTreeNodeViewModelTests.cs`; 372 total green.
+
 ## Workspace scan + project tree model (Phase 6g Step 2 — done)
 
 Three framework-free files in `src/Ui/Schematic/` (no Avalonia / Skia):
@@ -18,9 +300,9 @@ Three framework-free files in `src/Ui/Schematic/` (no Avalonia / Skia):
   to `CellFolder.ResolvePrimary` (never re-derived).  Empty view sub-folders produce no node.
   Stable ordering: alphabetical (OrdinalIgnoreCase) within every level.  Tolerates missing/corrupt
   `.cws`.  Warning states recorded as DATA (MissingNamedPrimary, broken library paths, broken Known
-  Files) so step 3 can render System.Warning + tooltip without the scanner caring about rendering.
+  Files) so step 3 renders System.Warning + tooltip without the scanner caring about rendering.
 - **`WorkspaceModel`** (`WorkspaceModel.cs`) — thin wrapper: `WorkspaceRootDir`, `RootNode`,
-  `Rescan()`.  The step-3 view will bind to this object and call `Rescan()` on focus/Refresh.
+  `Rescan()`.  The step-3 view binds to this and calls `Rescan()` on focus/Refresh.
   No `FileSystemWatcher` (deferred per §9).
 
 `CwsFile.KnownFiles` (`List<string>`) added to `WorkspacePersistence.cs` — additive v1 field;

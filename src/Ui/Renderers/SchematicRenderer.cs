@@ -186,12 +186,31 @@ public static class SchematicRenderer
                 continue;
             }
 
-            // Body + polarity marks: DrawSymbol dispatches per-primitive to the right paint.
-            // Plus-role primitives (e.g. VoltageSource +/−) are inside the same primitive list,
-            // so the separate ForSymbolPlusSegments path is gone.
-            DrawSymbol(canvas, BuiltInSymbols.Primitives(c.Symbol).Primitives,
-                cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme);
-            DrawVariadicPortLeads(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
+            // Body: dispatch on CellRefState for cell-reference components; built-in path unchanged.
+            if (c.CellRefState is CellSymbolState.Resolved && c.CellRefPrimitives is not null)
+            {
+                DrawSymbol(canvas, c.CellRefPrimitives,
+                    cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme);
+            }
+            else if (c.CellRefState is CellSymbolState.NotFound)
+            {
+                DrawCellRefNotFoundGlyph(canvas, cx, cy, panX, panY, zoom,
+                    warnStrokePaint, warnFillPaint, instNamePaint);
+            }
+            else if (c.CellRefState is CellSymbolState.PrimaryMissing)
+            {
+                DrawCellRefPrimaryMissingGlyph(canvas, cx, cy, panX, panY, zoom, bodyPaint);
+            }
+            else
+            {
+                // Built-in component: existing path.
+                // Body + polarity marks: DrawSymbol dispatches per-primitive to the right paint.
+                // Plus-role primitives (e.g. VoltageSource +/−) are inside the same primitive list,
+                // so the separate ForSymbolPlusSegments path is gone.
+                DrawSymbol(canvas, BuiltInSymbols.Primitives(c.Symbol).Primitives,
+                    cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme);
+                DrawVariadicPortLeads(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
+            }
 
             // DisableState overlay (drawn on top of body)
             if (c.DisableState != DisableState.None && !isLod)
@@ -652,6 +671,46 @@ public static class SchematicRenderer
                 canvas.DrawLine(d, rect.Top, d + h, rect.Bottom, hatchFill);
             canvas.Restore();
         }
+    }
+
+    // ── Cell-reference glyphs ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Draws the "Not Found" warning glyph for a cell-ref component whose cell folder
+    /// does not resolve.  Warning box (fill + stroke) with centred "Not Found" label.
+    /// </summary>
+    private static void DrawCellRefNotFoundGlyph(
+        SKCanvas canvas,
+        double cx, double cy,
+        double panX, double panY, double zoom,
+        SKPaint strokePaint, SKPaint fillPaint, SKPaint textPaint)
+    {
+        float hw = (float)(zoom * 160);
+        float hh = (float)(zoom * 60);
+        var (px, py) = ToPixel(cx, cy, panX, panY, zoom);
+        var rect = SKRect.Create(px - hw, py - hh, hw * 2, hh * 2);
+        canvas.DrawRect(rect, fillPaint);
+        canvas.DrawRect(rect, strokePaint);
+
+        float fontSize = (float)Math.Max(6.0, zoom * 40);
+        using var font  = new SKFont(SkiaFonts.PlexRegular, fontSize);
+        canvas.DrawText("Not Found", px, py + font.Size * 0.4f, SKTextAlign.Center, font, textPaint);
+    }
+
+    /// <summary>
+    /// Draws a plain-rectangle stand-in for a cell-ref component whose primary symbol
+    /// is missing (PrimaryMissing state — cell resolves but no usable .csym).
+    /// </summary>
+    private static void DrawCellRefPrimaryMissingGlyph(
+        SKCanvas canvas,
+        double cx, double cy,
+        double panX, double panY, double zoom,
+        SKPaint strokePaint)
+    {
+        float hw = (float)(zoom * 160);
+        float hh = (float)(zoom * 60);
+        var (px, py) = ToPixel(cx, cy, panX, panY, zoom);
+        canvas.DrawRect(SKRect.Create(px - hw, py - hh, hw * 2, hh * 2), strokePaint);
     }
 
     // ── Overlay (selection, wire preview, ghost, rubber-band) ────────────────

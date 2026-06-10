@@ -1,0 +1,71 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.NewWorkspaceDialog"
+        Title="New Workspace"
+        Width="460"
+        SizeToContent="Height"
+        MinHeight="200"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+            <TextBlock Text="Workspace name:" FontSize="12"/>
+            <TextBox   x:Name="NameBox"
+                       FontSize="12"
+                       MaxLength="200"
+                       TextChanged="OnNameChanged"
+                       KeyDown="OnKeyDown"/>
+            <TextBlock x:Name="ValidationMessage"
+                       FontSize="11"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+
+            <TextBlock Text="Location:" FontSize="12" Margin="0,4,0,0"/>
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBox x:Name="LocationBox"
+                         Grid.Column="0"
+                         FontSize="12"
+                         IsReadOnly="True"
+                         PlaceholderText="Choose a parent folder…"/>
+                <Button x:Name="ChooseButton"
+                        Grid.Column="1"
+                        Content="Choose…"
+                        FontSize="12"
+                        Margin="8,0,0,0"
+                        Click="OnChooseClick"/>
+            </Grid>
+
+            <TextBlock x:Name="PreviewLabel"
+                       FontSize="11"
+                       Opacity="0.7"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,12,0,0">
+            <Button Content="Cancel"
+                    Width="80"
+                    FontSize="12"
+                    IsCancel="True"
+                    HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"/>
+            <Button x:Name="OkButton"
+                    Content="OK"
+                    Width="80"
+                    IsDefault="True"
+                    IsEnabled="False"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"
+                    Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

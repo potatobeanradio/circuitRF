@@ -359,8 +359,10 @@ workspace / project file) records which `.csym` is **primary** and the `UserEdit
        `SymbolEditorViewModel.IsLocked = true` → all mutation paths gated; edit tools disabled in toolbar;
        cross cursor reverts to arrow; "Read-only" indicator shown in metadata bar.
      - Metadata bar in `SymbolEditorView`: dirty indicator (●), file path, port count `NumericUpDown`, Save/Save-As buttons.
-     - **Hard deferred (by design):** live schematic update, cell model, cell-driven open, rewiring
-       `SymbolKind → BuiltInSymbols`. These require the project-tree/workspace design (later phase).
+     - **Hard deferred at 4c time; now resolved:** live schematic update and cell-ref rendering
+       delivered in Phase 6g Step 5 (`CellSymbolResolver`, `CellRefState` render dispatch,
+       `SymbolSaved` event + `TriggerRebuild`). Still deferred: cell-driven double-click open,
+       rewiring `SymbolKind → BuiltInSymbols` to the `.ccell` loader (§6 migration).
 5. **Sine / half-wave smart-paths** (§7.1), **font styles** (§7.3), and the **Bitmap** primitive (§2.5 —
    import/place/resize-with-aspect-lock/opacity/locked-flag/lowest-Z; path-reference persistence).
 6. **Locked-symbol flag** (§7.2) — cell-level `UserEditable`; library/sim/VAR/Measurement locked.

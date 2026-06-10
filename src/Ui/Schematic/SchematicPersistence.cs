@@ -57,6 +57,12 @@ public sealed class CschComponent
     public bool? ShowTypeLabel    { get; set; }
     /// <summary>Whether to render the instance name; omitted (null) when true (default).</summary>
     public bool? ShowInstanceName { get; set; }
+
+    /// <summary>
+    /// Relative path from the schematic directory to the referenced cell folder.
+    /// Null for built-in components. Omitted from file when null (WhenWritingNull).
+    /// </summary>
+    public string? CellRef { get; set; }
 }
 
 public sealed class CschParameter
@@ -229,6 +235,7 @@ public static class SchematicPersistence
             // Omit when true (the default) to keep files compact.
             if (!c.ShowTypeLabel)    cc.ShowTypeLabel    = false;
             if (!c.ShowInstanceName) cc.ShowInstanceName = false;
+            if (c.CellRef is not null) cc.CellRef = c.CellRef;
             file.Components.Add(cc);
         }
 
@@ -256,9 +263,10 @@ public static class SchematicPersistence
     {
         var m = new SchematicEditModel
         {
-            GridSize          = file.GridSize,
-            GridSnap          = file.GridSnap,
-            AuthorGridDivisor = file.AuthorGridDivisor,
+            GridSize            = file.GridSize,
+            GridSnap            = file.GridSnap,
+            AuthorGridDivisor   = file.AuthorGridDivisor,
+            SchematicDirectory  = directory,
         };
 
         foreach (var cc in file.Components)
@@ -279,6 +287,7 @@ public static class SchematicPersistence
             // Null means "not written" → use the persisted default (true).
             if (cc.ShowTypeLabel    is bool stl) c.ShowTypeLabel    = stl;
             if (cc.ShowInstanceName is bool sin) c.ShowInstanceName = sin;
+            if (cc.CellRef is not null) c.CellRef = cc.CellRef;
             m.Components.Add(c);
         }
 
