@@ -1,0 +1,97 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.SavePlanDialog"
+        Title="Save your work"
+        Width="560"
+        SizeToContent="Height"
+        MinHeight="200"
+        MaxHeight="700"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
+
+        <!-- ── Content ──────────────────────────────────────────────────────── -->
+        <StackPanel Grid.Row="0" Spacing="10">
+
+            <!-- Title -->
+            <TextBlock Text="Save your work"
+                       FontSize="15"
+                       FontWeight="SemiBold"/>
+
+            <!-- Subtitle -->
+            <TextBlock Text="circuitRF will create the following and save your documents."
+                       FontSize="12"
+                       Opacity="0.75"
+                       TextWrapping="Wrap"
+                       Margin="0,-4,0,0"/>
+
+            <!-- Mode toggle — shown only when scratch schematics need cells -->
+            <Border x:Name="ModeToggleArea"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="10,8"
+                    IsVisible="False">
+                <StackPanel Spacing="6">
+                    <RadioButton x:Name="EachOwnCellRadio"
+                                 Content="Each in its own cell"
+                                 FontSize="12"
+                                 IsChecked="True"
+                                 GroupName="SaveMode"
+                                 IsCheckedChanged="OnModeRadioChecked"/>
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                        <RadioButton x:Name="AllInOneCellRadio"
+                                     Content="All in one cell:"
+                                     FontSize="12"
+                                     GroupName="SaveMode"
+                                     IsCheckedChanged="OnModeRadioChecked"/>
+                        <TextBox x:Name="SharedCellNameBox"
+                                 FontSize="12"
+                                 Width="180"
+                                 MaxLength="200"
+                                 IsEnabled="False"
+                                 TextChanged="OnSharedCellNameChanged"/>
+                    </StackPanel>
+                    <TextBlock x:Name="AllInOneCellHint"
+                               Text="Only the first schematic will be the cell's primary view."
+                               FontSize="11"
+                               Opacity="0.6"
+                               Margin="22,0,0,0"
+                               IsVisible="False"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Plan table -->
+            <ScrollViewer MaxHeight="340"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="PlanRowsPanel" Spacing="2"/>
+            </ScrollViewer>
+
+        </StackPanel>
+
+        <!-- ── Buttons (HIG: Save All default + centered labels) ────────────── -->
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,14,0,0">
+            <Button Content="Cancel"
+                    Width="80"
+                    FontSize="12"
+                    IsCancel="True"
+                    HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"/>
+            <Button x:Name="SaveAllButton"
+                    Content="Save All"
+                    Width="90"
+                    FontSize="12"
+                    IsDefault="True"
+                    IsEnabled="False"
+                    HorizontalContentAlignment="Center"
+                    Click="OnSaveAllClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

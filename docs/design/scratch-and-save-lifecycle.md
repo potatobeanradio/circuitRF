@@ -212,16 +212,24 @@ shapes its durability rules:
    separately from `_openDocsByPath`; `NewScratchSchematicCommand` (⇧⌘N / Ctrl+Shift+N, always enabled,
    no workspace required); auto-opens `Untitled-Schematic-1` at launch. Closing a scratch tab in step 1 loses
    it silently — the close-prompt is added in step 3.
-2. **The materialize-ancestors algorithm + plan model:** the framework-free "given a set of dirty documents,
-   compute the plan (workspace? which cells? which saves?), de-duped per ancestor" — testable headless.
-3. **The Plan Dialog (HIG):** the reviewable/editable table + global mode toggle + TestBench annotation +
-   Save All / Cancel; drives the algorithm; reports all paths.
-4. **Three-tier save** wiring (into-cell / loose-Known-File / loose-plain-file; offer-then-fallback for
-   no-workspace).
-5. **Close/quit/open-workspace prompts** routed through the plan dialog.
-6. **`.cws` durability:** atomic write, debounced + on-close, tolerate-corruption-by-rescan.
-7. **Minimal autosave/recovery:** per-session recovery dir; periodic dirty-scratch serialization; restore-on-
-   launch; clear-on-clean-exit; the shared scratch working dir for scratch `netlist.cnl`.
+2. **The materialize-ancestors algorithm + plan model:** **✓ Done (Phase 6h Step 2).**
+   `SavePlanBuilder` (framework-free, `src/Ui/Schematic/SavePlan.cs`) computes the plan from workspace state
+   and scratch docs; `SaveMode.EachOwnCell` / `AllInOneCell`; doc-name-seeded defaults; `SchematicHasAnalyses`
+   hook (returns false, TODO 6e). `SavePlanExecutor.ExecuteFileOps` (framework-free, `SavePlanExecutor.cs`)
+   creates workspace/.cws, cell folders/.ccell, .csch files, calls `SchematicDocument.Materialize(path)`.
+3. **The Plan Dialog (HIG):** **✓ Done (Phase 6h Step 2).**
+   `SavePlanDialog` (`src/Ui/Views/Dialogs/SavePlanDialog.axaml(.cs)`): title/subtitle, mode toggle
+   (EachOwnCell / AllInOneCell), plan table with editable names + inline NameValidator errors + TestBench
+   annotation, Save All (default, centered) / Cancel. ⌘S/Ctrl+S → `SaveAllDocumentsCommand` routes scratch
+   work through the dialog; already-materialized docs write directly. Scratch→materialized transition: FilePath
+   set, IsDirty cleared, moved from `_scratchDocs` to `_openDocsByPath`, tree refreshed, all paths reported.
+4. **Three-tier save + close/quit prompts + autosave/recovery:** **✓ Done (Phase 6h Step 3).**
+   - **Tier 2 (loose Known File):** `SaveLooseSchematicCommand` → `SaveLooseToWorkspace` (file picker + atomic `.cws` update via `WorkspacePersistence.SaveToFileAtomic`; scratch→materialized transition; `_recovery.ClearDoc`).
+   - **Tier 3 (loose plain file):** `SaveLooseNoWorkspace` offers "Create Workspace…" or "Save as File"; "Save as File" → `SaveLoosePlainFile` (direct `.csch`, no workspace registration; `_recovery.ClearDoc`).
+   - **Close/quit/open prompts:** `CircuitRfDockFactory.CloseDockableConfirm` hook (async void override) shows `SaveChangesDialog` per dirty tab; `WorkspaceWindow.OnClosing` async override with `e.Cancel = true` + `_closingConfirmed` bypass; `PromptSaveBeforeClose` guards `NewWorkspace` and `OpenWorkspace`.
+   - **Minimal autosave/recovery:** `RecoveryManager` (`src/Ui/Schematic/RecoveryManager.cs`) — per-session GUID directory under `LocalApplicationData/circuitRF/recovery/`; `AutoSave` (atomic `.csch`); `ClearDoc` / `ClearSession` (on materialization and clean exit); `FindPriorSessions` / `LoadSession` / `DeletePriorSession`. `DispatcherTimer` (30 s) drives `AutoSaveAll`. `CheckForRecovery` (deferred via `Dispatcher.UIThread.Post(..., Background)`) offers restore at launch after ungraceful exit. Scratch-only — materialized docs are never re-offered.
+5. **`.cws` durability:** atomic write, debounced + on-close, tolerate-corruption-by-rescan.
+6. **Open / deferred:** see §8.
 
 Order 1–3 deliver the core first-impression (start immediately + save once); 4–5 complete the save matrix; 6
 hardens `.cws`; 7 adds crash safety.

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Dock.Model.Mvvm;
@@ -140,6 +142,27 @@ public class CircuitRfDockFactory : Factory
         root.DefaultDockable  = outerLayout;
 
         return root;
+    }
+
+    // ── Tab-close hook ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Set by WorkspaceViewModel. Called before each CloseDockable with the dockable
+    /// being closed. Return true to proceed with the close, false to cancel it.
+    /// Null = no hook (always proceed).
+    /// </summary>
+    public Func<IDockable, Task<bool>>? CloseDockableConfirm { get; set; }
+
+    public override async void CloseDockable(IDockable dockable)
+    {
+        if (CloseDockableConfirm is not null)
+        {
+            var proceed = await CloseDockableConfirm(dockable);
+            if (!proceed) return; // user cancelled — tab stays open
+        }
+
+        // FactoryBase.DockableClosed fires from base.CloseDockable internally.
+        base.CloseDockable(dockable);
     }
 
     /// <summary>

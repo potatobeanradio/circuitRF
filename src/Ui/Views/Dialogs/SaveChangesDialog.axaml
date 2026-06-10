@@ -2,13 +2,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CircuitRF.Ui.Views.Dialogs.SaveChangesDialog"
         Title="Save Changes"
-        Width="400"
-        Height="150"
+        MinWidth="400"
+        SizeToContent="WidthAndHeight"
         CanResize="False"
         ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner">
 
-    <Grid RowDefinitions="*,Auto" Margin="20">
+    <Grid RowDefinitions="*,Auto" Margin="20" MinHeight="100">
 
         <TextBlock Grid.Row="0"
                    x:Name="MessageText"
@@ -23,21 +23,24 @@
 
             <Button x:Name="CancelButton"
                     Content="Cancel"
-                    Width="80"
+                    MinWidth="70"
+                    Padding="12,4"
                     Click="OnCancelClick"
                     FontSize="12"
                     HorizontalContentAlignment="Center"/>
 
             <Button x:Name="DontSaveButton"
                     Content="Don't Save"
-                    Width="90"
+                    MinWidth="70"
+                    Padding="12,4"
                     Click="OnDontSaveClick"
                     FontSize="12"
                     HorizontalContentAlignment="Center"/>
 
             <Button x:Name="SaveButton"
                     Content="Save"
-                    Width="80"
+                    MinWidth="70"
+                    Padding="12,4"
                     IsDefault="True"
                     Classes="accent"
                     Click="OnSaveClick"

@@ -14,16 +14,29 @@ namespace CircuitRF.Ui.Schematic;
 //   - references, never embedded payloads
 //   - relative paths preferred
 
+/// <summary>
+/// Tree view-state persisted in .cws — filter category flags + ordering preference.
+/// Ordering is alphabetical-only in v1; the field is reserved for a future ordering UI (§3.1).
+/// </summary>
+public sealed class CwsTreeViewState
+{
+    public bool Cells               { get; set; } = true;
+    public bool Libraries           { get; set; } = true;
+    public bool TestBenches         { get; set; } = true;
+    public bool DataDisplays        { get; set; } = true;
+    public bool ColorThemes         { get; set; } = true;
+    public bool KnownFiles          { get; set; } = true;
+    public bool WorkspaceFileSystem { get; set; } = true;
+
+    /// <summary>Ordering mode; "alphabetical" is the only valid value in v1.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Ordering { get; set; }
+}
+
 public sealed class CwsFile
 {
     public int FormatVersion { get; set; } = 1;
-
-    /// <summary>
-    /// Relative or absolute paths to member files (.csch, .cdd, .csym, .cnl, …).
-    /// Retained for format round-trip; the scanner ignores this list — membership is read
-    /// from the filesystem (workspace-and-project-tree.md intro).
-    /// </summary>
-    public List<string> MemberFiles { get; set; } = [];
 
     /// <summary>
     /// Relative or absolute paths to external library folders (or legacy .clib manifest files).
@@ -51,6 +64,13 @@ public sealed class CwsFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ColorSchemeName { get; set; }
+
+    /// <summary>
+    /// Project Tree filter category flags + ordering, restored on open.
+    /// Null means "use defaults" (all categories on, alphabetical ordering).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CwsTreeViewState? TreeViewState { get; set; }
 }
 
 /// <summary>
@@ -73,6 +93,17 @@ public static class WorkspacePersistence
 
     public static void SaveToFile(string path, CwsFile ws)
         => File.WriteAllText(path, Serialize(ws));
+
+    /// <summary>
+    /// Atomic write: serializes to a temp file then renames over the target.
+    /// A crash mid-write leaves the old file intact (never a half-written .cws).
+    /// </summary>
+    public static void SaveToFileAtomic(string path, CwsFile ws)
+    {
+        var tmp = path + ".tmp";
+        File.WriteAllText(tmp, Serialize(ws));
+        File.Move(tmp, path, overwrite: true);
+    }
 
     public static CwsFile Deserialize(string json)
     {

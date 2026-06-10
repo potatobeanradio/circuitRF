@@ -38,8 +38,9 @@
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Open Symbol…"    Command="{Binding OpenSymbolFileCommand}"     CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Save"            Command="{Binding SaveWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}" Gesture="Meta+S"/>
-                        <NativeMenuItem Header="Save As…"        Command="{Binding SaveWorkspaceAsCommand}" CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
+                        <NativeMenuItem Header="Save All"              Command="{Binding SaveAllDocumentsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+S"/>
+                        <NativeMenuItem Header="Save Schematic As…"  Command="{Binding SaveLooseSchematicCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Save Workspace As…"  Command="{Binding SaveWorkspaceAsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
                         <!-- Settings is in the app menu on macOS; omit here to avoid duplication -->
                     </NativeMenu>
                 </NativeMenuItem.Menu>
@@ -93,8 +94,8 @@
         <KeyBinding Gesture="Meta+Shift+N"  Command="{Binding NewScratchSchematicCommand}"/>
         <KeyBinding Gesture="Ctrl+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Meta+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
-        <KeyBinding Gesture="Ctrl+S"        Command="{Binding SaveWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
-        <KeyBinding Gesture="Meta+S"        Command="{Binding SaveWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Ctrl+S"        Command="{Binding SaveAllDocumentsCommand}" CommandParameter="{Binding $parent[Window]}"/>
+        <KeyBinding Gesture="Meta+S"        Command="{Binding SaveAllDocumentsCommand}" CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+Shift+S"  Command="{Binding SaveWorkspaceAsCommand}" CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Meta+Shift+S"  Command="{Binding SaveWorkspaceAsCommand}" CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+Z"        Command="{Binding UndoCommand}"/>
@@ -151,13 +152,18 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="BookOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
-                <MenuItem Header="_Save"
-                          Command="{Binding SaveWorkspaceCommand}"
+                <MenuItem Header="Save _All"
+                          Command="{Binding SaveAllDocumentsCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+S">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="Save _As…"
+                <MenuItem Header="Save Schematic _As…"
+                          Command="{Binding SaveLooseSchematicCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Save Workspace _As…"
                           Command="{Binding SaveWorkspaceAsCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+Shift+S">

@@ -1,0 +1,181 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:schemDoc="using:CircuitRF.Ui.Schematic"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Content.CellParameterEditorView"
+             x:DataType="schemDoc:CellParameterEditorDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <DockPanel>
+
+        <!-- ── Header bar ──────────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <mi:MaterialIcon Kind="IntegratedCircuitChip" Width="16" Height="16"
+                                 Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+                <TextBlock Text="{Binding ViewModel.CellName}"
+                           FontWeight="SemiBold"
+                           FontSize="13"
+                           VerticalAlignment="Center"/>
+                <TextBlock Text="· Parameters"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                           FontSize="12"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <!-- ── Footer: Add Parameter ───────────────────────────────────────── -->
+        <Border DockPanel.Dock="Bottom"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="6,5">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <Button Content="＋ Add Parameter"
+                        Command="{Binding ViewModel.AddParameterCommand}"
+                        FontSize="11"
+                        Padding="8,3"/>
+            </StackPanel>
+        </Border>
+
+        <!-- ── Main area: column headers + scrollable rows ─────────────────── -->
+        <!--  Grid.IsSharedSizeScope covers both the header Grid and each row
+              Grid so shared-size columns align across the scroll region.        -->
+        <Grid Grid.IsSharedSizeScope="True">
+
+            <!-- Empty-state placeholder -->
+            <TextBlock IsVisible="{Binding ViewModel.HasNoParameters}"
+                       Text="No parameters defined. Click ＋ Add Parameter to add one."
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       FontSize="11"
+                       Opacity="0.6"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="240"/>
+
+            <!-- Header + rows -->
+            <DockPanel IsVisible="{Binding ViewModel.HasParameters}">
+
+                <!-- Column headers -->
+                <Grid DockPanel.Dock="Top" Margin="4,4,4,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="CpName"   Width="Auto" MinWidth="60"/>
+                        <ColumnDefinition Width="*"                               MinWidth="60"/>
+                        <ColumnDefinition SharedSizeGroup="CpUnit"   Width="Auto" MinWidth="60"/>
+                        <ColumnDefinition SharedSizeGroup="CpDim"    Width="Auto" MinWidth="80"/>
+                        <ColumnDefinition SharedSizeGroup="CpShow"   Width="Auto"/>
+                        <ColumnDefinition SharedSizeGroup="CpRemove" Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Name"      FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="4,0,6,0"/>
+                    <TextBlock Grid.Column="1" Text="Default"   FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="4,0,0,0"/>
+                    <TextBlock Grid.Column="2" Text="Unit"      FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="4,0,0,0"/>
+                    <TextBlock Grid.Column="3" Text="Dimension" FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="4,0,0,0"/>
+                    <TextBlock Grid.Column="4" Text="Show"      FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="6,0,2,0"/>
+                </Grid>
+
+                <!-- Scrollable rows -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+
+                    <ItemsControl ItemsSource="{Binding ViewModel.Rows}"
+                                  Margin="4,0,4,4">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CellParameterRowViewModel">
+                                <StackPanel Margin="0,1,0,0">
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition SharedSizeGroup="CpName"   Width="Auto" MinWidth="60"/>
+                                            <ColumnDefinition Width="*"                               MinWidth="60"/>
+                                            <ColumnDefinition SharedSizeGroup="CpUnit"   Width="Auto" MinWidth="60"/>
+                                            <ColumnDefinition SharedSizeGroup="CpDim"    Width="Auto" MinWidth="80"/>
+                                            <ColumnDefinition SharedSizeGroup="CpShow"   Width="Auto"/>
+                                            <ColumnDefinition SharedSizeGroup="CpRemove" Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Name (editable TextBox — the key delta vs. the instance editor) -->
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding StagedName}"
+                                                 FontSize="11"
+                                                 Padding="4,3"
+                                                 MinWidth="60"
+                                                 VerticalAlignment="Center"
+                                                 LostFocus="OnNameLostFocus"
+                                                 KeyDown="OnNameKeyDown"/>
+
+                                        <!-- Default expression -->
+                                        <TextBox Grid.Column="1"
+                                                 Text="{Binding StagedDefault}"
+                                                 FontSize="11"
+                                                 Padding="4,3"
+                                                 VerticalAlignment="Center"
+                                                 Margin="3,0,0,0"
+                                                 LostFocus="OnDefaultLostFocus"
+                                                 KeyDown="OnDefaultKeyDown"/>
+
+                                        <!-- Unit ComboBox (dimension-keyed) -->
+                                        <ComboBox Grid.Column="2"
+                                                  ItemsSource="{Binding UnitOptions}"
+                                                  SelectedItem="{Binding StagedUnit}"
+                                                  FontSize="11"
+                                                  Padding="4,3"
+                                                  MinWidth="60"
+                                                  Margin="3,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  SelectionChanged="OnUnitSelectionChanged"/>
+
+                                        <!-- Dimension ComboBox (all UnitDimension values) -->
+                                        <ComboBox Grid.Column="3"
+                                                  ItemsSource="{Binding AllDimensions}"
+                                                  SelectedItem="{Binding StagedDimension}"
+                                                  FontSize="11"
+                                                  Padding="4,3"
+                                                  MinWidth="80"
+                                                  Margin="3,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  SelectionChanged="OnDimensionSelectionChanged"/>
+
+                                        <!-- Show on schematic CheckBox -->
+                                        <CheckBox Grid.Column="4"
+                                                  IsChecked="{Binding ShowOnSchematic}"
+                                                  ToolTip.Tip="Show on schematic"
+                                                  Margin="6,0,2,0"
+                                                  VerticalAlignment="Center"/>
+
+                                        <!-- Remove parameter button -->
+                                        <Button Grid.Column="5"
+                                                Command="{Binding RemoveCommand}"
+                                                ToolTip.Tip="Remove parameter"
+                                                Padding="5,3"
+                                                Margin="3,0,0,0"
+                                                VerticalAlignment="Center">
+                                            <mi:MaterialIcon Kind="Close" Width="11" Height="11"/>
+                                        </Button>
+
+                                    </Grid>
+
+                                    <!-- Rename consequence warning — visible when user is editing the name -->
+                                    <TextBlock Text="{Binding RenameWarning}"
+                                               IsVisible="{Binding HasRenameWarning}"
+                                               Foreground="{DynamicResource CrfWarningBrush}"
+                                               FontSize="10"
+                                               Opacity="0.9"
+                                               TextWrapping="Wrap"
+                                               Margin="6,1,6,2"/>
+
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                </ScrollViewer>
+            </DockPanel>
+        </Grid>
+
+    </DockPanel>
+
+</UserControl>

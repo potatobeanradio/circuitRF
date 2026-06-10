@@ -39,9 +39,101 @@ At startup, the constructor auto-opens one `Untitled-Schematic-1` scratch tab so
 on an editable canvas. The welcome message is "circuitRF ready." (not "Create a New Schematic to get
 started" — the schematic is already open).
 
-### No save in step 1
-Save, materialize, the plan dialog, close/quit prompts, and autosave are steps 2+. Closing a scratch
-tab in step 1 loses it silently. This is a known, intentional limitation — note it, don't fix it here.
+### Materialize + SavePlanDialog (Phase 6h Step 2 — done)
+
+**`SchematicDocument.Materialize(string filePath)`** — `internal` method that sets `FilePath` and clears
+`IsDirty`. The one-way scratch→materialized transition. Also used to clear dirty on re-save of materialized
+docs. `FilePath` now has `private set` (was readonly in step 1).
+
+**`SavePlan` / `SavePlanBuilder`** (`src/Ui/Schematic/SavePlan.cs`) — framework-free plan model and builder.
+`SavePlanBuilder(currentWorkspacePath, workspaceParentDir, scratchDocs).Build(mode, overrides)` produces
+`SavePlan { WorkspaceStep?, IReadOnlyList<CellStep>, IReadOnlyList<SaveStep> }`. De-duplicates cell steps
+by name. `SchematicHasAnalyses` returns false (TODO 6e hook for analysis→TestBench detection). `SaveMode`:
+`EachOwnCell` (default) / `AllInOneCell`.
+
+**`SavePlanExecutor.ExecuteFileOps(SavePlan, existingWorkspaceDir?)`** (`SavePlanExecutor.cs`) — framework-free
+static method; creates workspace/.cws, cell folders/.ccell (sets IsTestBench), writes .csch files, sets
+PrimarySchematic in .ccell, calls `Materialize` on each doc. Returns list of all files written.
+
+**`WorkspaceViewModel.ExecuteSavePlan(SavePlan)`** — calls `SavePlanExecutor.ExecuteFileOps`, updates
+`CurrentWorkspacePath` + `_lastWorkspaceParentDir` (if new workspace), moves docs from `_scratchDocs` to
+`_openDocsByPath`, re-wires project tree, calls `Refresh()`, reports all written paths via `Messages.Success`.
+
+**`WorkspaceViewModel.SaveAllDocumentsCommand`** (`[RelayCommand] async Task SaveAllDocuments(Window? owner)`)
+— the new ⌘S/Ctrl+S handler:
+1. Dirty scratch docs → `SavePlanBuilder.Build` → `SavePlanDialog.ShowDialog<SavePlan?>` → on confirm, `ExecuteSavePlan`
+2. Dirty materialized docs → `SchematicPersistence.SaveToFile` + `Materialize` directly
+3. `WriteWorkspaceFile` if workspace exists
+- Returns "Nothing to save" info if nothing is dirty.
+
+**`SavePlanDialog`** (`src/Ui/Views/Dialogs/SavePlanDialog.axaml(.cs)`) — HIG plan dialog:
+- Title "Save your work" / subtitle "circuitRF will create the following and save your documents."
+- Mode toggle (`EachOwnCellRadio` / `AllInOneCellRadio` + `SharedCellNameBox`) visible when cells will be created
+- Plan table (`PlanRowsPanel` StackPanel): workspace rows (FolderOutline icon), cell rows (Folder icon + TestBench
+  badge), save rows (FileOutline icon + primary badge). Rows built programmatically in code-behind.
+- Inline `NameValidator` errors per editable row (OrangeRed text below each row).
+- **Save All** (`SaveAllButton`, `IsDefault=True`, `HorizontalContentAlignment=Center`) / **Cancel** (`IsCancel=True`)
+- Returns confirmed `SavePlan` or null on cancel via `ShowDialog<SavePlan?>`.
+
+**⌘S/Ctrl+S routing:** `WorkspaceWindow.axaml` binds both `NativeMenuItem` and `KeyBinding` for ⌘S/Ctrl+S
+to `SaveAllDocumentsCommand`. `SaveWorkspaceAsCommand` remains bound to ⌘⇧S/Ctrl+Shift+S. Menu item now
+reads "Save All" (macOS NativeMenu + in-window Menu).
+
+**Scope fence (step 2):** into-cell Save-All only. Close/quit prompts, autosave, and loose/plain-file tiers
+are step 3.
+
+### Three-tier save + close/quit prompts + autosave/recovery (Phase 6h Step 3 — done)
+
+**Tier 2 — loose Known File (`SaveLooseSchematicCommand`, bound to File → "Save Schematic As…"):**
+`SaveLooseToWorkspace(doc, owner)` shows a file picker → writes `.csch` → atomically updates `.cws`
+(`WorkspacePersistence.SaveToFileAtomic`) adding the path to `CwsFile.KnownFiles` → scratch→materialized
+transition (`_scratchDocs.Remove`, `_recovery.ClearDoc`, `doc.Materialize`, `_openDocsByPath[fp] = doc`).
+
+**Tier 3 — no workspace (`SaveLooseNoWorkspace`):** `SaveChangesDialog` with "Create Workspace…" /
+"Save as File" / Cancel. "Create Workspace…" routes to the full plan dialog (same as ⌘S). "Save as
+File" → `SaveLoosePlainFile` (file picker, plain `.csch`, no workspace registration,
+`_recovery.ClearDoc`).
+
+**Close/quit prompts:**
+- **Tab close** — `CircuitRfDockFactory.CloseDockableConfirm: Func<IDockable, Task<bool>>?` wired in
+  constructor; `CloseDockable` is `async void` override: awaits hook, returns without calling base on
+  cancel. `ConfirmCloseDockable` shows `SaveChangesDialog` per dirty `SchematicDocument`.
+- **Window close / quit** — `WorkspaceWindow.OnClosing` async override: `e.Cancel = true`, await
+  `PromptSaveBeforeClose`, then `_vm.OnCleanExit(); _closingConfirmed = true; Close()`.
+- **NewWorkspace / OpenWorkspace / OpenRecentWorkspace** — `HasAnyDirtyWork()` guard; on dirty,
+  `PromptSaveBeforeClose` (Save All / Don't Save / Cancel); Cancel aborts the navigation.
+- **`PromptSaveBeforeClose`** — collects dirty scratch + dirty materialized; single dialog message;
+  Save → plan dialog for scratch + direct write for materialized; DontSave → proceed; Cancel → false.
+
+**`SaveChangesDialog`** (`src/Ui/Views/Dialogs/SaveChangesDialog.axaml(.cs)`) — now configurable:
+constructor accepts `message`, `saveLabel`, `dontSaveLabel`, `cancelLabel`; `Close(Result)` on each
+button so both `ShowDialog` and `ShowDialog<T>` return correctly. `SizeToContent="WidthAndHeight"`.
+
+**Autosave/recovery — `RecoveryManager`** (`src/Ui/Schematic/RecoveryManager.cs`, framework-free):
+- **Session dir:** `LocalApplicationData/circuitRF/recovery/<12-char-hex-guid>/` (created lazily).
+- **`AutoSave(doc)`** — atomic `.csch` write (temp + `File.Move(..., overwrite: true)`); silently
+  swallows I/O errors (autosave must never interrupt editing).
+- **`ClearDoc(doc)`** — removes one recovery file when a doc is cleanly saved/materialized. Prunes
+  empty session dir.
+- **`ClearSession()`** — removes entire session dir on clean exit.
+- **`FindPriorSessions(currentSessionDir)`** / **`LoadSession(sessionDir)`** / **`DeletePriorSession`**
+  — discovery + deserialize for restore offer.
+
+**Wiring in `WorkspaceViewModel`:**
+- `RecoveryManager _recovery` initialized in constructor.
+- `StartAutosaveTimer()` — `DispatcherTimer` (30 s interval) → `AutoSaveAll()`.
+- `AutoSaveAll()` — iterates `_scratchDocs.Where(IsDirty)`, calls `_recovery.AutoSave`.
+- `CheckForRecovery()` (async void) — deferred via `Dispatcher.UIThread.Post(..., Background)`;
+  finds prior sessions; shows restore dialog; on accept: opens recovered docs as new scratch tabs;
+  on decline: calls `DeletePriorSession`.
+- `OnCleanExit()` — stops timer, calls `_recovery.ClearSession()`. Called before confirming quit.
+- `_recovery.ClearDoc` at every materialization point: `ExecuteSavePlan` (per save step),
+  `SaveLooseToWorkspace`, `SaveLoosePlainFile`.
+- `OnDockableClosed` (subscribed to `_factory.DockableClosed`) — removes closed docs from
+  `_scratchDocs` and `_openDocsByPath`.
+
+**Scratch-only invariant:** autosave never touches materialized docs. Once a doc is materialized
+(removed from `_scratchDocs`), no recovery file is created or offered for it.
 
 ---
 
@@ -229,10 +321,10 @@ Every tree-node command delegates to this interface so all open/create/reveal op
 OrdinalIgnoreCase) tracks open docs by absolute path. `ActivateIfOpen(absPath)` checks before opening;
 activates the existing tab if found. Users can close a tab and reopen from the tree without issue.
 
-**Double-click open paths (real vs. stub):**
+**Double-click open paths:**
 - `.csym` → `SymbolPersistence.LoadFromFile` + `EditableSymbol.FromSymbol` + `SymbolEditorDocument` (real)
 - `.csch` → `SchematicPersistence.LoadFromFile` + `SchematicViewModel` + `SchematicDocument` (real)
-- cell node → placeholder `StubDocument` (real cell editor is step 6)
+- cell node → `CellParameterEditorDocument` (real, step 6 — see below)
 - `.clay`, other view-file types, data displays, color themes → no-op
 
 **Make Primary** — reads `.ccell` from `../..` of the view file path, sets the correct `PrimarySchematic` /
@@ -253,6 +345,83 @@ Linux `xdg-open <parent-dir>`.  Platform detected via `RuntimeInformation.IsOSPl
 - New Layout → `IsEnabled=False` (greyed, v2)
 
 `RevealLabel` on the VM is platform-aware ("Reveal in Finder" / "Reveal in Explorer" / "Reveal in File Manager").
+
+## Cell-parameter editor (Phase 6g Step 6 — done)
+
+**Purpose:** edits the cell's **declared parameter interface** in its `.ccell` — add / remove / rename rows +
+defaults (Name / Default / Unit / Dimension / ShowOnSchematic). NOT instance values. The delta vs. the instance
+editor (`ParameterEditorViewModel`): rows are add/remove/rename-able; Name is editable.
+
+### Edit model (framework-free)
+**`CellParameterEditModel`** (`src/Ui/Schematic/CellParameterEditModel.cs`) — wraps a `CcellFile` + `.ccell`
+path. `IReadOnlyList<CcellParameter> Parameters` (read view); `internal List<CcellParameter> MutableParameters`
+(command access); `Save()` writes `.ccell`; `NotifyChanged()` fires `Changed` event so the VM rebuilds rows.
+
+### Commands (framework-free, `src/Ui/Commands/Cell/`)
+- **`AddCellParameterCommand`** — appends; Undo removes by reference.
+- **`RemoveCellParameterCommand`** — records insertion index; Undo re-inserts at saved index.
+- **`SetCellParameterCommand`** — stores full old/new snapshot for Name, Default, Unit, Dimension, Show.
+  Covers rename, default edit, unit/dimension/show changes. Both Execute and Undo persist + notify.
+
+### ViewModel (`src/Ui/ViewModels/CellParameterEditorViewModel.cs`)
+Owns its own `UndoRedoStack` (per the per-document-undo rule). Subscribes to `_editModel.Changed`;
+`RebuildRows()` clears + recreates `ObservableCollection<CellParameterRowViewModel>` on every mutation or undo.
+`AddParameterCommand` generates a unique `ParamN` name. `UndoCommand`/`RedoCommand` delegate to own stack.
+
+### Row VM (`src/Ui/ViewModels/CellParameterRowViewModel.cs`)
+Staged Name (editable), Default, Unit, Dimension, ShowOnSchematic. Commit methods called from code-behind
+(LostFocus/Enter for TextBoxes; SelectionChanged for ComboBoxes). `partial void OnStagedNameChanged`:
+shows `RenameWarning` while name diverges from model. `partial void OnShowOnSchematicChanged`: auto-commits.
+`CommitName` validates `[A-Za-z_][A-Za-z0-9_]*`; reverts on invalid. `CommitDimension` resets unit to first
+valid option for the new dimension. `AllDimensions` = `Enum.GetValues<UnitDimension>()` (static array).
+
+### Document (`src/Ui/Schematic/CellParameterEditorDocument.cs`)
+`Document + IUndoableDocument` — `UndoRedo => ViewModel.UndoRedo`. Keyed by cell folder path in
+`WorkspaceViewModel._openDocsByPath`. Workspace undo routing routes to its stack while active.
+
+### View (`src/Ui/Views/Content/CellParameterEditorView.axaml(.cs)`)
+`x:DataType="CellParameterEditorDocument"`. Layout: header (cell name + "Parameters" label), column-header
+row, scrollable `ItemsControl` (rows), footer (Add Parameter button). `Grid.IsSharedSizeScope="True"` on the
+outer container aligns header columns with row columns (`CpName`, `CpUnit`, `CpDim`, `CpShow`, `CpRemove`).
+Code-behind: `_suppressUnitCommit` + `_suppressDimCommit` flags prevent re-entrant SelectionChanged commits.
+DataTemplate registered in `App.axaml`.
+
+### Wiring
+`WorkspaceViewModel.OpenOrActivateCellPlaceholder` (step 4 stub) replaced: loads `.ccell` via
+`CellPersistence`, creates `CellParameterEditModel` + `CellParameterEditorViewModel` + `CellParameterEditorDocument`,
+opens via `_factory.OpenDocument`, keyed by cell folder path in `_openDocsByPath`. Dedup/activate already open.
+
+**Scope fence:** cell-parameter editor only — no instance-value migration, no `.cws` work (step 7).
+
+## .cws lifecycle (Phase 6g Step 7 — done)
+
+**Atomic writes everywhere:** All `.cws` writes use `WorkspacePersistence.SaveToFileAtomic` (temp-rename).
+Callers: `NewWorkspace`, `WriteWorkspaceFile`, `SavePlanExecutor.ExecuteFileOps`, `SaveLooseToWorkspace`.
+`SaveToFile` (non-atomic) remains only in test helpers.
+
+**Corruption-tolerant open:** `TryLoadCws(string cwsPath)` — loads `.cws`, logs `Messages.Warning` on any
+exception, returns `new CwsFile()`. Both `OpenWorkspace` and `OpenRecentWorkspace` call it. Tree content
+is always populated by `WorkspaceScanner` (filesystem is truth, scanner's own `TryLoadCws` handles corruption).
+"No `.cws` → not a workspace" gate (file-exists check) retained; a corrupt-but-present `.cws` degrades to
+defaults, never rejects the open.
+
+**Real `WriteWorkspaceFile`:** Loads existing `.cws` to preserve `KnownFiles` + `LibraryRefs` (authoritative
+on disk), updates `ColorSchemeName` + `TreeViewState`, writes atomically. `DockLayout` stays null in v1
+(`Dock.Serializer` not referenced). `silent` param suppresses success message on debounce/exit flush.
+
+**Debounced autosave:** `ScheduleCwsSave()` resets a 3-second `DispatcherTimer`; on tick, writes silently.
+`SubscribeToFilterState()` hooks `ProjectTreeFilterState.PropertyChanged → ScheduleCwsSave()`, tracking the
+current tool instance across `CreateDefaultLayout()` replacements (called in constructor, `NewWorkspace`,
+`ResetLayout`, `ExecuteSavePlan`). Pan/zoom never touches a `.cws` field — no write there.
+`OnCleanExit` stops timers, flushes `.cws` synchronously, then clears recovery cache.
+
+**Tree view-state in `.cws` (`CwsTreeViewState`):** 7 bool filter flags; `Ordering` string (v1 = null,
+reserved for future ordering UI). Written by `WriteWorkspaceFile`; restored on open via `ApplyTreeViewState`
+(unsubscribes debounce handler during restore to avoid spurious write). `TreeViewState` is
+`JsonIgnore(WhenWritingNull)` — null written as nothing; missing on read → `null` → defaults applied.
+
+**`MemberFiles` removed:** Deleted from `CwsFile`. Old `.cws` files with `member_files` still load (System.Text.Json
+ignores unknown fields by default with `PropertyNameCaseInsensitive = true`).
 
 ## Project Tree VIEW (Phase 6g Step 3 — done)
 

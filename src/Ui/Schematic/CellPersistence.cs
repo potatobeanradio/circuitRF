@@ -26,6 +26,15 @@ public sealed class CcellParameter
     public string        Unit              { get; set; } = "";
     public UnitDimension Dimension         { get; set; } = UnitDimension.None;
     public bool          ShowOnSchematic   { get; set; } = true;
+
+    public CcellParameter Clone() => new()
+    {
+        Name              = Name,
+        DefaultExpression = DefaultExpression,
+        Unit              = Unit,
+        Dimension         = Dimension,
+        ShowOnSchematic   = ShowOnSchematic,
+    };
 }
 
 /// <summary>

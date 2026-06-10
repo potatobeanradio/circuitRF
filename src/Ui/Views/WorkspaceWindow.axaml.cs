@@ -6,9 +6,13 @@ using CircuitRF.Ui.ViewModels;
 
 namespace CircuitRF.Ui.Views;
 
+
 public partial class WorkspaceWindow : Window
 {
     private WorkspaceViewModel? _vm;
+    // Set to true once the user confirms a close/quit prompt so the second Close() call
+    // (re-triggered after saving) bypasses the prompt check.
+    private bool _closingConfirmed;
 
     // The "Open Recent" NativeMenuItem declared in XAML. Looked up by walking the
     // NativeMenu tree the first time it's needed.  Using the XAML-declared instance
@@ -49,6 +53,24 @@ public partial class WorkspaceWindow : Window
         Avalonia.Threading.Dispatcher.UIThread.Post(
             () => (App.Current as App)?.NotifyWindowCountChanged(),
             Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    protected override async void OnClosing(WindowClosingEventArgs e)
+    {
+        base.OnClosing(e);
+
+        if (_closingConfirmed) return; // second pass after user confirmed — allow through
+        if (_vm is null || !_vm.HasAnyDirtyWork()) return; // nothing dirty — allow through
+
+        e.Cancel = true; // block the close until the prompt resolves
+
+        bool proceed = await _vm.PromptSaveBeforeClose(this, "closing");
+        if (proceed)
+        {
+            _vm.OnCleanExit();
+            _closingConfirmed = true;
+            Close(); // re-trigger; this time _closingConfirmed = true so it passes through
+        }
     }
 
     // About menu item click (used for the in-window Help menu on Windows/Linux).

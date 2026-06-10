@@ -1,6 +1,6 @@
 # circuitRF — Workspace & Project Tree Design
 
-**Status:** Step 5 + fixes done · **Date:** 2026-06-09 · **Phase:** 6g (post-symbol-editor)
+**Status:** Steps 1–7 done · project-tree arc complete · **Date:** 2026-06-09 · **Phase:** 6g (post-symbol-editor)
 
 Specifies the **workspace model** (filesystem structure), the **Project Tree** (the tree view that reads it),
 the **cell reference model** (how a placed component resolves to a cell's primary symbol — the linkage that

@@ -28,9 +28,9 @@ public sealed class SchematicDocument : Document, IUndoableDocument
 
     /// <summary>
     /// Absolute on-disk path of the .csch file, or null for a scratch document.
-    /// Materialization (step 2) will set this once; null = scratch for now.
+    /// Set once at materialization (step 2); null = scratch.
     /// </summary>
-    public string? FilePath { get; }
+    public string? FilePath { get; private set; }
 
     /// <summary>True when this document has no on-disk path yet (scratch mode).</summary>
     public bool IsScratch => FilePath is null;
@@ -85,5 +85,19 @@ public sealed class SchematicDocument : Document, IUndoableDocument
             if (e.PropertyName == nameof(SchematicViewModel.RenderModel))
                 OnPropertyChanged(nameof(Model));
         };
+    }
+
+    // ── Materialization ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Transitions this scratch document to materialized: sets its on-disk path and
+    /// clears the dirty flag. Called by the plan executor (L2) after the .csch is written.
+    /// After this call IsScratch is false and the tab title loses its bullet.
+    /// Must only be called once per document (from scratch to materialized is one-way).
+    /// </summary>
+    internal void Materialize(string filePath)
+    {
+        FilePath = filePath;
+        IsDirty  = false;
     }
 }
