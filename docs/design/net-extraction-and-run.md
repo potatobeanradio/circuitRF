@@ -170,13 +170,40 @@ This oracle is a **permanent test**, not a one-time check — it guards every fu
 1. **The extractor core (headless):** `SchematicEditModel → Design model`, reusing
    `ComputeConnectivityGeometry` for union-find; net naming (ground/label/port/auto-stable); terminal-order
    emission. Framework-free, unit-testable with hand-built edit models. **No file IO, no engine, no UI yet.**
+   **DONE (Phase 6e Step 1, 2026-06-09)** — `src/Ui/Schematic/NetExtractor.cs`;
+   19 gate tests in `tests/Ui.Tests/NetExtractorLayer{1,2,3}Tests.cs`; all 829 tests green.
 2. **`.cnl` emission + the oracle:** emit `.cnl` text; build the **extraction oracle** (hero `.csch` →
    extract → equivalent to authored `.cnl`; topology + terminal-order + DataSet equivalence). This is the
    correctness gate — land it early.
+   **DONE (Phase 6e Step 2, 2026-06-09)** — `src/Core/Netlist/CnlWriter.cs` (TestBench → .cnl, inverse
+   of CnlReader; round-trips all instance types, typed analyses, measurements, raw directives); 7 L1
+   round-trip tests in `tests/Core.Tests/Netlist/CnlWriterTests.cs`; 3 oracle tests in
+   `tests/Ui.Tests/ExtractionOracleTests.cs` (L2 topology equivalence + transposition failure + L3
+   DataSet equivalence); all 839 tests green.
 3. **The Units glyph↔ASCII normalization** (§5) — small but mandatory before a real run.
+   **DONE (Phase 6e Step 3, 2026-06-09)** — `src/Core/Expressions/UnitNormalizer.cs`
+   (`ToEngineUnit`: Ω→Ohm, µ/μ→u, composed with prefixes; ASCII units unchanged; None/empty→empty;
+   table-uncovered units emit as-is without crash); applied at the single extraction emit point in
+   `NetExtractor.EmitInstance`; 30 gate tests in `tests/Core.Tests/Expressions/UnitNormalizerTests.cs`;
+   all 880 tests green.
 4. **`netlist.cnl` write** (§3): workspace root / scratch dir, overwrite, provenance header.
+   **DONE (Phase 6e Step 4, 2026-06-09)** — `WorkspaceViewModel.WriteNetlist` (private helper):
+   resolves destination (workspace root when `CurrentWorkspacePath` set, else
+   `RecoveryManager.SessionDir`); calls `NetExtractor.Extract` → `CnlWriter.Write` with provenance
+   header (`; netlist.cnl — generated from TestBench "<name>" at <ISO-8601 UTC>`); atomic write
+   (temp + `File.Move` overwrite). `RunAnalysis` command wired: extracts the active
+   `SchematicDocument`, calls `WriteNetlist`, posts the path as a clickable `Messages.Success`,
+   surfaces any extraction conflicts as `Messages.Warning`. No engine run (step 5). All 880 tests green.
 5. **Run wiring** (§5): the Run command → extract → engine → DataSet; Messages reporting; error surfacing.
    (Scratch run writes to the scratch dir.)
+   **DONE (Phase 6e Step 5, 2026-06-09)** — `src/Ui/Schematic/SchematicRunService.cs` (headless
+   `RunNetlist(path) → RunResult`; dispatches typed analyses: HB/Loadpull/LoadpullPursuit/ParametricSweep/
+   SParameterAnalysis; raw S-param directives parsed from `RawDirectives`; DC noted but deferred;
+   engine exceptions captured as EngineError, never thrown). `WorkspaceViewModel.RunAnalysis` is now
+   `async Task`: writes netlist → posts clickable path → runs service on background thread → posts
+   Success/NoAnalysis/EngineError message → holds DataSets in `_lastRunDataSets` for Phase 7.
+   `StopAnalysis` stays informational (no CancellationToken in the engines — runs to completion).
+   4 gate tests in `tests/Ui.Tests/SchematicRunServiceTests.cs`; all 884 tests green.
 6. **Disable-state + directives polish:** Open/Short emission; analysis/measurement directive emission from
    the schematic; multi-analysis testbenches.
 

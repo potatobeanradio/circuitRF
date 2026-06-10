@@ -13,6 +13,9 @@ behavior) the engine have their own notes.
   `NodeMap`), resolving parameters/variables and numbering nodes.
 - **Expression engine:** tokenizer → Pratt parser → AST → evaluator. Serves variables, cell
   parameters, the SDD, and measurements.
+- **`UnitNormalizer`** (`Expressions/UnitNormalizer.cs`): `ToEngineUnit(editorUnit)` maps editor glyph
+  unit strings (Ω, µ) to ASCII engine spellings (Ohm, u). Called at the extraction boundary only — do
+  not scatter; editor glyphs and the `Units` table are both unchanged.
 - **`ComponentModel`** base + `Devices/` (the numeric behaviors; their stamping/evaluation contract
   is detailed in `data-model.md` §5 and exercised by the engine).
 
@@ -53,9 +56,16 @@ behavior) the engine have their own notes.
 - Numbering is stable + unique; the fill-reducing permutation for the solve is the **engine's** job,
   not the elaborator's.
 
-## `.cnl` reader
+## `.cnl` reader + writer
 - Vendor-neutral hierarchical netlist; maps directly onto the design layer. JSON carries the same
   logical model.
+- `CnlReader` (existing) parses `.cnl` text to `TestBench`.
+- `CnlWriter` (Phase 6e Step 2, `src/Core/Netlist/CnlWriter.cs`) is the exact inverse: emits a
+  `TestBench` as `.cnl` text that `CnlReader` round-trips back to an equivalent `TestBench`.
+  Handles: variables, standard instances (R/L/C/Port/SnP…), SDD (equation format), Z_Port (Z[i,j]=
+  format + N-or-N+1 rule), Tuner (skips synthetic TunerName), typed analyses (HB/Loadpull/etc.),
+  measurements, and raw directives verbatim. Gate: 7 round-trip tests in
+  `tests/Core.Tests/Netlist/CnlWriterTests.cs`, all green.
 - **Skip unknown header/comment lines** so real-world exports import cleanly; committed fixtures are
   clean `.cnl`.
 - The **VendorA importer** (a separate front-end, Phase 2) translates legacy `if…then…else…endif`

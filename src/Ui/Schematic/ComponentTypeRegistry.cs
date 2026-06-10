@@ -100,6 +100,26 @@ public static class ComponentTypeRegistry
     public static string InstancePrefix(SymbolKind kind) => Get(kind).InstancePrefix;
 
     /// <summary>
+    /// Engine type-reference string for a given SymbolKind — what goes in the .cnl Reference field
+    /// and into <see cref="Instance.Reference"/>. Differs from <see cref="DisplayName(SymbolKind)"/>
+    /// for FetSdd ("FET" vs "SDD"), ZPort ("Z" vs "Z_Port"), ToneSource ("VTone" vs "V_1Tone").
+    /// </summary>
+    public static string EngineReference(SymbolKind kind, int portCount = 0) => kind switch
+    {
+        SymbolKind.Resistor      => "R",
+        SymbolKind.Inductor      => "L",
+        SymbolKind.Capacitor     => "C",
+        SymbolKind.VoltageSource => "V",
+        SymbolKind.ToneSource    => "V_1Tone",
+        SymbolKind.Port          => "Port",
+        SymbolKind.FetSdd        => "SDD",
+        SymbolKind.Sdd           => "SDD",
+        SymbolKind.ZPort         => "Z_Port",
+        SymbolKind.Ground        => "GND",
+        _                        => Get(kind).DisplayName,
+    };
+
+    /// <summary>
     /// Default parameter template for a freshly-placed component of the given type and port count.
     /// Each entry carries the parameter name, a blank default expression, unit, and whether
     /// it shows on the schematic. This is the single source of truth for "what params does a

@@ -4,6 +4,117 @@ Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`, the interact
 `docs/design/ui-design.md`, and the architecture/firewall note `docs/design/ui-architecture.md`. The UI is
 how people drive the engine; it must never become the source of truth for simulation.
 
+## Run service + RunAnalysis wiring (Phase 6e Step 5 — done)
+
+`src/Ui/Schematic/SchematicRunService.cs` — headless `static RunNetlist(path) → RunResult`.
+Mirrors the CLI engine chain exactly: `CnlReader.ReadFile → new Elaborator(lib).Elaborate(tb)` →
+dispatch each declared analysis → collect `DataSet`s. Never throws — all engine exceptions are
+captured into `RunStatus.EngineError`.
+
+**Analysis dispatch:**
+- Typed: `SParameterAnalysis` (freq array from `FrequencySpec`), `HarmonicBalanceAnalysis`
+  (`HbEngine.Resolve` + `new HbEngine(nl, tb).Run(p).DataSet`), `LoadpullAnalysis`
+  (`LoadpullEngine.Resolve` + `Run`), `LoadpullPursuitAnalysis` (`LoadpullPursuitEngine.Resolve` +
+  `new LoadpullPursuitEngine(lpEngine).Run`), `ParametricSweepAnalysis` (`ParametricSweepEngine.Run`).
+  `DcAnalysis`: deferred (noted in message).
+- Raw `type=sparam` directives from `RawDirectives`: parsed for `start/stop/step` with optional
+  frequency-unit tokens (`GHz`, `MHz`, `kHz`, `Hz`); dispatched to `SParameterEngine.Run`.
+
+**`WorkspaceViewModel.RunAnalysis`** (now `async Task`):
+1. `WriteNetlist` → posts clickable path + extraction warnings.
+2. `await Task.Run(() => SchematicRunService.RunNetlist(path))` — engine on background thread.
+3. Posts `Messages.Success` / `Messages.Info` (NoAnalysis) / `Messages.Error` (EngineError).
+4. Holds `_lastRunDataSets: IReadOnlyList<DataSet>` for Phase 7 (not plotted here).
+
+**`StopAnalysis`**: informational stub — engines have no `CancellationToken` in v1; run completes.
+
+**Scope fence:** Run → DataSet + reporting only. No results visualisation (Phase 7), no
+analysis-authoring UI, no new engine code.
+
+Gate: 4 tests in `tests/Ui.Tests/SchematicRunServiceTests.cs`; all 884 tests green.
+
+---
+
+## Net extractor (Phase 6e Step 1 — done)
+
+`src/Ui/Schematic/NetExtractor.cs` — headless, framework-free `SchematicEditModel → TestBench` pass.
+
+**Key invariants:**
+- **Reuses `ComputeConnectivityGeometry`** (now `internal`) as the single source of connectivity: wire
+  vertex hash, auto-dot T-junctions (`AutoDotKeys`), and dot-gated crossing predicate (`IsCrossingAtDot`).
+  The extractor consumes these outputs; it does NOT re-implement T-junction or crossing logic.
+- **Connection = exact on-`P` equality** — union-find is keyed by integer P-cells
+  `(long)Math.Round(x/GridSize)`, not floating-point tolerance.
+- **Same-name label union (§2.1.6):** labels with the same name union all their nets, even across
+  physically-disjoint wires. `FindLabelNetKey` uses vertex-exact first, then `PointOnSegment` with
+  `GridSize/2` tolerance for mid-segment labels.
+- **Terminal order is the contract:** `NetBindings[k]` = net at terminal k (symbol order). Walk
+  `SymbolPortDefs.For(Symbol, PortCount)` in order. Never transpose; FetSdd is [gate, drain, source].
+- **ZPort N-or-N+1 rule:** signal pins → `NetBindings`; "ref" pin → `RefNetBinding` (null if "0").
+- **Port special case:** schematic shows 1 pin; emits `NetBindings = [sigNet, "0"]`.
+- **`ComponentTypeRegistry.EngineReference`** (new): maps SymbolKind → engine type string — differs
+  from `DisplayName` for FetSdd ("FET"→"SDD"), ZPort ("Z"→"Z_Port"), ToneSource ("VTone"→"V_1Tone").
+- **Ground skipped** (not emitted as instance); Open/Short honored.
+- **Units glyph→ASCII normalization** applied at `EmitInstance` via `UnitNormalizer.ToEngineUnit`:
+  editor glyphs (Ω, µ) are converted to ASCII engine spellings (Ohm, u) when building
+  `ParameterAssignment.Unit` — the single crossing point. Editor glyphs and the engine `Units`
+  table are both **unchanged**; only the emitted unit string is normalized.
+
+Gate tests: `tests/Ui.Tests/NetExtractorLayer{1,2,3}Tests.cs` (19 tests, all green).
+
+## Units glyph→ASCII normalization (Phase 6e Step 3 — done)
+
+`src/Core/Expressions/UnitNormalizer.cs` — framework-free (no Avalonia, no Skia); lives in `src/Core`
+so it is reachable from both `src/Core` and `src/Ui`.
+
+**Rule:** convert at the boundary, once. The editor thinks in glyphs; the engine `Units` table is
+ASCII-keyed (`Ohm`, `u`). `UnitNormalizer.ToEngineUnit(editorUnit)` is the one place the conversion
+happens — called from `NetExtractor.EmitInstance` when building `ParameterAssignment` overrides.
+
+**Substitutions (compose with any SI prefix):**
+- `Ω` (U+03A9) → `Ohm`: `kΩ→kOhm`, `MΩ→MOhm`, `GΩ→GOhm`, `mΩ→mOhm`
+- `µ` (U+00B5 MICRO SIGN) → `u`: `µH→uH`, `µF→uF`, `µV→uV`, `µA→uA`, `µW→uW`, `µm→um`
+- `μ` (U+03BC GREEK MU) → `u`: defensive, handles alternate keyboard/font input
+- Already-ASCII units (`nH`, `pF`, `Hz`, `deg`, `mil`, …) pass through unchanged
+- `"None"` / empty → `""` (no unit emitted)
+- Table-uncovered units (`dBm`, `V`, `A`, `W`, `kV`, `cm`, `mOhm`) emit as-is without crashing
+
+Gate: 30 tests in `tests/Core.Tests/Expressions/UnitNormalizerTests.cs`, all green.
+
+## Extraction oracle (Phase 6e Step 2 — done)
+
+`src/Core/Netlist/CnlWriter.cs` — framework-free `TestBench → .cnl` text (inverse of `CnlReader`).
+`tests/Ui.Tests/ExtractionOracleTests.cs` — 3 oracle tests:
+- **L2 topology:** `NetExtractor.Extract` → `TestBench_extracted` topology ≡ hand-authored TestBench
+  (partition-set comparison, name-agnostic). Transposition test FAILS the oracle (proves it has teeth).
+- **L3 DataSet:** both extracted + authored run through `Elaborator + SParameterEngine`; DataSets match
+  within 1e-9 tolerance.
+
+The oracle is the **permanent correctness gate** for all future extraction changes.
+
+## netlist.cnl write (Phase 6e Step 4 — done)
+
+`WorkspaceViewModel.WriteNetlist(SchematicEditModel, string testBenchName)` — private helper;
+framework-free except for `Directory.CreateDirectory` + `File.Move`.
+
+**Destination rule:**
+- Workspace open (`CurrentWorkspacePath != null`) → `Path.GetDirectoryName(CurrentWorkspacePath)/netlist.cnl`
+  (workspace root directory).
+- No workspace (scratch) → `RecoveryManager.SessionDir/netlist.cnl` (scratch-session dir, created lazily).
+
+**Write flow:** `NetExtractor.Extract(model, name)` → `CnlWriter.Write(tb, header)` with provenance
+header `; netlist.cnl — generated from TestBench "<name>" at <ISO-8601 UTC>` → atomic write
+(temp path + `File.Move(..., overwrite: true)`).
+
+**`RunAnalysis` command** (Step 4 wiring): resolves the active `SchematicDocument`, calls
+`WriteNetlist`, posts `Messages.Success(path, path)` (clickable link) for the written path,
+and posts `Messages.Warning` for each extraction conflict. **No engine run** — step 5 adds that.
+
+Scope fence: one `netlist.cnl` overwritten each run; generated artifact, not saved-project state;
+`.csch` is the source of truth.
+
+---
+
 ## Scratch documents + New Schematic (Phase 6h Step 1 — done)
 
 **Scratch = in-memory, no path, dirty, tree-invisible.** A scratch `SchematicDocument` is a normal

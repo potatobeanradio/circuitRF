@@ -556,9 +556,9 @@ public sealed class SchematicEditModel
         => ((long)Math.Round(x / GridSize), (long)Math.Round(y / GridSize));
 
     /// <summary>Geometry derived for the connectivity pass: vertex hashes, auto-junction points
-    /// (3+ segment meetings with a vertex), and a crossing predicate. Shared so the render model
-    /// and the live drag preview agree.</summary>
-    private readonly record struct ConnectivityGeometry(
+    /// (3+ segment meetings with a vertex), and a crossing predicate. Shared so the render model,
+    /// the live drag preview, and the net extractor (6e) agree.</summary>
+    internal readonly record struct ConnectivityGeometry(
         HashSet<(long, long)> WirePointHash,
         Dictionary<(long, long), int> ConPointCounts,
         HashSet<(long, long)> AutoDotKeys,
@@ -576,7 +576,7 @@ public sealed class SchematicEditModel
     /// instead of SymbolPortDefs for the connectivity port-position pass.
     /// Null (default) is safe — callers that don't need cell-ref connectivity can omit it.
     /// </param>
-    private ConnectivityGeometry ComputeConnectivityGeometry(
+    internal ConnectivityGeometry ComputeConnectivityGeometry(
         Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
     {
         // Hash of all wire vertex positions → fast port-connection detection.

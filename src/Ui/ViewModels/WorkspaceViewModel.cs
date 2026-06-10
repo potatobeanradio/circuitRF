@@ -13,6 +13,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using CircuitRF.Core.Netlist;
+using RfCore.Data;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Schematic;
@@ -84,6 +86,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     // ---- Window title --------------------------------------------------------
 
     [ObservableProperty] private string _windowTitle = "circuitRF";
+
+    // ---- Last-run DataSets (held for Phase 7) --------------------------------
+    // Populated by RunAnalysis after a successful engine run; visualised in Phase 7.
+    private IReadOnlyList<DataSet> _lastRunDataSets = [];
     [ObservableProperty] private string? _currentWorkspacePath;
 
     // Last-used parent directory for the New Workspace dialog (in-memory, not persisted).
@@ -632,8 +638,113 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
     // ---- Simulate commands ---------------------------------------------------
 
-    [RelayCommand] private void RunAnalysis()  { Messages.Warning("Run: no TestBench configured yet (6e)."); }
-    [RelayCommand] private void StopAnalysis() { Messages.Info("Stop: no analysis running."); }
+    /// <summary>
+    /// Extracts the active schematic, writes netlist.cnl, then runs the engine chain
+    /// (CnlReader → Elaborator → analysis engine → DataSet) on a background thread.
+    /// Reports progress and results via Messages; holds DataSets for Phase 7.
+    /// </summary>
+    [RelayCommand]
+    private async Task RunAnalysis()
+    {
+        var activeDoc = _factory.DocumentDock?.ActiveDockable as SchematicDocument;
+        if (activeDoc is null)
+        {
+            Messages.Warning("Run: no schematic is active.");
+            return;
+        }
+
+        var testBenchName = activeDoc.Id;
+
+        // Step 1: extract + write netlist.cnl (synchronous — fast).
+        string netlistPath;
+        try
+        {
+            IReadOnlyList<string> conflicts;
+            (netlistPath, conflicts) = WriteNetlist(activeDoc.ViewModel.EditModel, testBenchName);
+            foreach (var conflict in conflicts)
+                Messages.Warning($"Extraction: {conflict}");
+            Messages.Success($"Netlist written: {netlistPath}", netlistPath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Netlist write failed: {ex.Message}");
+            return;
+        }
+
+        // Step 2: run the engine on a background thread so the UI stays responsive.
+        Messages.Info($"Running '{testBenchName}'…");
+        RunResult result;
+        try
+        {
+            result = await Task.Run(() => SchematicRunService.RunNetlist(netlistPath));
+        }
+        catch (Exception ex)
+        {
+            // Defensive — RunNetlist never throws, but guard anyway.
+            Messages.Error($"Run failed unexpectedly: {ex.Message}");
+            return;
+        }
+
+        // Step 3: surface the result.
+        switch (result.Status)
+        {
+            case RunStatus.NoAnalysis:
+                Messages.Info(result.StatusMessage);
+                break;
+            case RunStatus.EngineError:
+                Messages.Error(result.StatusMessage);
+                break;
+            case RunStatus.Success:
+                Messages.Success(result.StatusMessage);
+                break;
+        }
+
+        // Hold DataSets for Phase 7 visualisation.
+        _lastRunDataSets = result.DataSets;
+    }
+
+    [RelayCommand]
+    private void StopAnalysis()
+    {
+        // Engine instances created by RunAnalysis are synchronous and do not expose
+        // CancellationToken.  Stop is informational for v1 — the run will complete.
+        Messages.Info("Stop: engine runs to completion (no cancellation support in v1).");
+    }
+
+    // ── Netlist write (Phase 6e Step 4) ──────────────────────────────────────
+
+    /// <summary>
+    /// Extracts <paramref name="model"/> and writes one netlist.cnl (overwritten each
+    /// run) to the workspace root when a workspace is open, or to the RecoveryManager
+    /// scratch-session dir when no workspace is open. Atomic write (temp + rename).
+    /// </summary>
+    /// <returns>The absolute path written and any non-fatal extraction conflicts.</returns>
+    private (string Path, IReadOnlyList<string> Conflicts) WriteNetlist(
+        SchematicEditModel model, string testBenchName)
+    {
+        // Resolve destination: workspace root or scratch-session dir.
+        string destDir;
+        if (CurrentWorkspacePath is not null)
+            destDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        else
+        {
+            destDir = _recovery.SessionDir;
+            Directory.CreateDirectory(destDir); // session dir is created lazily
+        }
+
+        var targetPath = Path.Combine(destDir, "netlist.cnl");
+        var tmpPath    = targetPath + ".tmp";
+
+        var result = NetExtractor.Extract(model, testBenchName);
+        var header = $"netlist.cnl — generated from TestBench \"{testBenchName}\"" +
+                     $" at {DateTime.UtcNow:O}";
+        var text = CnlWriter.Write(result.TestBench, header);
+
+        File.WriteAllText(tmpPath, text, System.Text.Encoding.UTF8);
+        File.Move(tmpPath, targetPath, overwrite: true);
+
+        return (targetPath, result.Conflicts);
+    }
 
     // ---- Help ----------------------------------------------------------------
 
