@@ -310,8 +310,21 @@ public static class CnlWriter
 
     private static string FormatSParameterAnalysis(SParameterAnalysis sp)
     {
-        // No typed parser in CnlReader for s-param yet; emit as a raw-compatible line.
-        var f = sp.Freq;
-        return $"analysis {sp.Name} type=sparam start={f.Start.ToString(CultureInfo.InvariantCulture)} stop={f.Stop.ToString(CultureInfo.InvariantCulture)} step={f.Step.ToString(CultureInfo.InvariantCulture)}";
+        // Emit one "analysis" line per segment, all with the same name.
+        // A single-segment analysis emits exactly one line (the common case).
+        var lines = new StringBuilder();
+        foreach (var f in sp.Sweeps)
+        {
+            var line = new StringBuilder($"analysis {sp.Name} type=sparam");
+            if (f.Kind == SweepKind.Log) line.Append(" log");
+            line.Append($" start={f.StartExpr} stop={f.StopExpr}");
+            if (f.Mode == FreqSpecMode.PointCount)
+                line.Append($" npts={f.NumPoints}");
+            else
+                line.Append($" step={f.StepExpr}");
+            if (lines.Length > 0) lines.Append('\n');
+            lines.Append(line);
+        }
+        return lines.ToString();
     }
 }

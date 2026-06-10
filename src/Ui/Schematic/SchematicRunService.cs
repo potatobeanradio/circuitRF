@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
 using CircuitRF.Engine.HarmonicBalance;
@@ -141,9 +142,10 @@ public static class SchematicRunService
         {
             case SParameterAnalysis spa:
             {
-                var freqs = BuildFreqArray(spa.Freq);
+                var freqs = spa.Expand(nl.ResolvedGlobals);
                 notes.Add($"S-param '{spa.Name}': {freqs.Length} pts, " +
-                          $"{spa.Freq.Start / 1e9:G4}–{spa.Freq.Stop / 1e9:G4} GHz");
+                          $"{freqs[0] / 1e9:G4}–{freqs[^1] / 1e9:G4} GHz " +
+                          $"({spa.Sweeps.Count} segment(s))");
                 return SParameterEngine.Run(nl, freqs);
             }
 
@@ -284,8 +286,9 @@ public static class SchematicRunService
 
     // ── Frequency array builders ──────────────────────────────────────────────
 
-    private static double[] BuildFreqArray(FrequencySpec freq)
-        => BuildFreqArrayFromBounds(freq.Start, freq.Stop, freq.Step);
+    private static double[] BuildFreqArray(FrequencySpec freq,
+        IReadOnlyDictionary<string, Value>? globals = null)
+        => freq.Expand(globals);
 
     private static double[] BuildFreqArrayFromBounds(double start, double stop, double step)
     {

@@ -1,0 +1,92 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.SaveAsTemplateDialog"
+        Title="Save as Template"
+        Width="420"
+        SizeToContent="Height"
+        MinHeight="280"
+        MaxHeight="580"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="20,16,20,16">
+
+        <!-- Template name -->
+        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,10">
+            <TextBlock Text="Template name"
+                       FontSize="11"
+                       Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+            <TextBox x:Name="NameBox"
+                     FontSize="12"
+                     MaxLength="200"
+                     KeyDown="OnKeyDown"/>
+            <TextBlock x:Name="ValidationMessage"
+                       FontSize="11"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- Description -->
+        <StackPanel Grid.Row="1" Spacing="4" Margin="0,0,0,10">
+            <TextBlock Text="Description (optional)"
+                       FontSize="11"
+                       Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+            <TextBox x:Name="DescriptionBox"
+                     FontSize="12"
+                     MaxLength="500"/>
+        </StackPanel>
+
+        <!-- Preview label -->
+        <TextBlock Grid.Row="2"
+                   x:Name="PreviewHeader"
+                   FontSize="11"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource SystemBaseMediumHighColor}"
+                   Margin="0,0,0,4"/>
+
+        <!-- Preview list -->
+        <Border Grid.Row="3"
+                BorderBrush="{DynamicResource SystemBaseLowColor}"
+                BorderThickness="1"
+                CornerRadius="3"
+                Margin="0,0,0,14"
+                MinHeight="52"
+                MaxHeight="180">
+            <ScrollViewer>
+                <ItemsControl x:Name="PreviewList" Margin="6,4">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}"
+                                       FontSize="11"
+                                       Margin="0,1"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8">
+            <Button Content="Cancel"
+                    Width="80"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"
+                    IsCancel="True"/>
+            <Button x:Name="SaveButton"
+                    Content="Save"
+                    Width="80"
+                    IsDefault="True"
+                    Classes="accent"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"
+                    Click="OnSaveClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

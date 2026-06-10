@@ -89,12 +89,32 @@ public sealed class CnlReader
             // If this is a type=hb directive, parse it into a typed HarmonicBalanceAnalysis.
             if (TryParseHbDirective(rawLine, out var hbAnalysis))
                 tb.Analyses.Add(hbAnalysis!);
+            else if (TryParseDcDirective(rawLine, out var dcAnalysis))
+                tb.Analyses.Add(dcAnalysis!);
             else if (TryParseLoadpullPursuitDirective(rawLine, _sourceDirectory, out var lppAnalysis))
                 tb.Analyses.Add(lppAnalysis!);
             else if (TryParseLoadpullDirective(rawLine, _sourceDirectory, out var lpAnalysis))
                 tb.Analyses.Add(lpAnalysis!);
             else if (TryParseParametricSweepDirective(rawLine, out var psAnalysis))
                 tb.Analyses.Add(psAnalysis!);
+            else if (TryParseSParamDirective(rawLine, out var spAnalysis))
+            {
+                // Multi-segment: merge consecutive segments with the same analysis name.
+                var existing = tb.Analyses
+                    .OfType<SParameterAnalysis>()
+                    .LastOrDefault(a => a.Name == spAnalysis!.Name);
+                if (existing is not null)
+                {
+                    int idx = tb.Analyses.IndexOf(existing);
+                    var merged = new SParameterAnalysis(
+                        existing.Name,
+                        [.. existing.Sweeps, .. spAnalysis!.Sweeps]);
+                    merged.Enabled = existing.Enabled;
+                    tb.Analyses[idx] = merged;
+                }
+                else
+                    tb.Analyses.Add(spAnalysis!);
+            }
             else
                 tb.RawDirectives.Add(new RawDirective("analysis", rawLine));
             return true;
@@ -162,18 +182,43 @@ public sealed class CnlReader
 
     private static bool TryParseMeasurementLine(string rawLine, TestBench tb)
     {
-        // Format: "Name = expression [; comment]"
+        // Format: "Name = expression [unit] [; comment]"
         int eq = rawLine.IndexOf('=');
         if (eq <= 0) return false;
         var name = rawLine[..eq].Trim();
         if (!IsIdentifier(name)) return false;
-        var expr = rawLine[(eq + 1)..].Trim();
+        var rest = rawLine[(eq + 1)..].Trim();
         // Strip trailing semicolon comment
-        int semi = expr.IndexOf(';');
-        if (semi >= 0) expr = expr[..semi].Trim();
-        tb.Measurements.Add(new Measurement(name, expr));
+        int semi = rest.IndexOf(';');
+        if (semi >= 0) rest = rest[..semi].Trim();
+
+        // Extract optional trailing unit token — a bare word that follows the expression.
+        // Valid units are single tokens like "dB", "V", "dBm", "%", "GHz", etc.
+        string expr = rest;
+        string? unit = null;
+        int lastSpace = rest.LastIndexOf(' ');
+        if (lastSpace >= 0)
+        {
+            var candidate = rest[(lastSpace + 1)..];
+            if (IsMeasurementUnit(candidate))
+            {
+                unit = candidate;
+                expr = rest[..lastSpace].Trim();
+            }
+        }
+
+        tb.Measurements.Add(new Measurement(name, expr, unit));
         return true;
     }
+
+    /// <summary>
+    /// Returns true when <paramref name="s"/> looks like a measurement unit token
+    /// (a simple word containing only letters, digits, and '%', starting with a letter or '%').
+    /// </summary>
+    private static bool IsMeasurementUnit(string s) =>
+        s.Length > 0 &&
+        (char.IsLetter(s[0]) || s[0] == '%') &&
+        s.All(c => char.IsLetterOrDigit(c) || c == '%');
 
     private static bool IsVariableAssignment(string line)
     {
@@ -676,6 +721,36 @@ public sealed class CnlReader
     // ── Loadpull analysis directive parser ────────────────────────────────────
 
     /// <summary>
+    /// Attempts to parse a "Name type=dc ..." directive into a <see cref="DcAnalysis"/>.
+    /// Returns false if it is not a type=dc directive.
+    /// </summary>
+    private static bool TryParseDcDirective(string rawLine, out DcAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+
+        string analysisName = tokens[0];
+        bool isDc = false;
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq > 0)
+            {
+                string key = tokens[i][..eq];
+                string val = tokens[i][(eq + 1)..];
+                if (key.Equals("type", StringComparison.OrdinalIgnoreCase) &&
+                    val.Equals("dc", StringComparison.OrdinalIgnoreCase))
+                    isDc = true;
+            }
+        }
+
+        if (!isDc) return false;
+        result = new DcAnalysis(analysisName);
+        return true;
+    }
+
+    /// <summary>
     /// Attempts to parse a "Name type=loadpull_pursuit key=value ..." directive.
     /// Returns false if it is not a type=loadpull_pursuit directive.
     /// </summary>
@@ -802,6 +877,179 @@ public sealed class CnlReader
             SourceDirectory   = sourceDirectory,
         };
         return true;
+    }
+
+    // ── S-parameter analysis directive parser ─────────────────────────────────
+
+    /// <summary>
+    /// Attempts to parse a "Name type=sparam [log] start=expr stop=expr (step=expr | npts=N)" directive
+    /// into a typed <see cref="SParameterAnalysis"/> with one sweep segment.
+    /// Returns false if it is not a type=sparam directive.
+    ///
+    /// Supported key=value pairs:
+    ///   start, stop          — expression strings (Hz) or value + optional unit token (GHz/MHz/kHz/Hz)
+    ///   step                 — step-size expression (Hz) or value + optional unit token → StepSize mode
+    ///   npts                 — integer point count → PointCount mode
+    ///   log                  — bare keyword or log=true → SweepKind.Log
+    ///
+    /// When both step and npts are absent, defaults to step=1e8 (100 MHz) to match legacy behaviour.
+    /// </summary>
+    private static bool TryParseSParamDirective(string rawLine,
+        out CircuitRF.Core.Design.SParameterAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+
+        string analysisName = tokens[0];
+
+        // Collect key=value pairs and bare keywords.
+        var kv   = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var bare = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq > 0)
+            {
+                string key = tokens[i][..eq];
+                string val = tokens[i][(eq + 1)..];
+                // Strip surrounding quotes
+                if (val.Length >= 2 && val[0] == '"' && val[^1] == '"')
+                    val = val[1..^1];
+                kv[key] = val;
+            }
+            else
+            {
+                bare.Add(tokens[i]);
+            }
+        }
+
+        if (!kv.TryGetValue("type", out var typeVal) ||
+            !typeVal.Equals("sparam", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Resolve optional frequency-unit suffix: "1 GHz" → "1e9"
+        // When a key's value is a plain number and the NEXT token is a unit keyword, consume it.
+        // (Not applicable here because TokeniseLine splits on whitespace — the unit is a separate
+        //  token. We handle this by re-scanning tokens after the key=value pairs.)
+        string startExpr = NormalizeFreqExpr(kv.GetValueOrDefault("start", "1e9"),
+                                              tokens, kv.Keys, "start");
+        string stopExpr  = NormalizeFreqExpr(kv.GetValueOrDefault("stop",  "10e9"),
+                                              tokens, kv.Keys, "stop");
+
+        // Detect kind: bare "log" keyword OR log=true key.
+        bool isLog = bare.Contains("log") ||
+                     (kv.TryGetValue("log", out var logVal) &&
+                      logVal.Equals("true", StringComparison.OrdinalIgnoreCase));
+        var kind = isLog ? SweepKind.Log : SweepKind.Linear;
+
+        // Detect mode: npts → PointCount; step → StepSize; default → StepSize 1e8.
+        FrequencySpec freqSpec;
+        if (kv.TryGetValue("npts", out var nptsStr) &&
+            int.TryParse(nptsStr, out int npts) && npts >= 1)
+        {
+            freqSpec = new FrequencySpec(startExpr, stopExpr, npts, kind);
+        }
+        else
+        {
+            string stepExpr = NormalizeFreqExpr(kv.GetValueOrDefault("step", "1e8"),
+                                                 tokens, kv.Keys, "step");
+            freqSpec = new FrequencySpec(startExpr, stopExpr, stepExpr, kind);
+        }
+
+        result = new CircuitRF.Core.Design.SParameterAnalysis(analysisName, freqSpec);
+        return true;
+    }
+
+    /// <summary>
+    /// Normalizes a frequency expression string, applying a unit scale when the expression
+    /// is a plain numeric literal followed by a unit token in the token list.
+    ///
+    /// E.g., tokens "start=1" followed by "GHz" → returns "1e9".
+    /// If the expression already looks like "1e9" (scientific or no unit), returns it as-is.
+    /// For non-literal expressions (e.g., "2*f0"), returns them unchanged.
+    /// </summary>
+    private static string NormalizeFreqExpr(string valStr,
+        IReadOnlyList<string> tokens,
+        IEnumerable<string>   usedKeys,
+        string                keyName)
+    {
+        // Try direct numeric → check if the next non-key token after "keyName=valStr" is a unit
+        double rawVal = 0;
+        bool   isNum  = double.TryParse(valStr, System.Globalization.NumberStyles.Float,
+                                         System.Globalization.CultureInfo.InvariantCulture, out rawVal);
+
+        if (isNum)
+        {
+            // Look for a bare unit token immediately after "keyName=..." in the token stream.
+            string? unitToken = FindUnitAfterKey(tokens, keyName, valStr);
+            if (unitToken is null) return valStr;  // no unit → bare literal
+
+            double scale = unitToken.ToUpperInvariant() switch
+            {
+                "GHZ" => 1e9,
+                "MHZ" => 1e6,
+                "KHZ" => 1e3,
+                "HZ"  => 1.0,
+                _     => 0.0,
+            };
+            if (scale == 0.0) return valStr;
+
+            double hz = rawVal * scale;
+            return hz.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        // Handle fused form: "1GHz", "500MHz", "1kHz", "500Hz".
+        // Check longest suffix first so "kHz" wins over "Hz".
+        foreach (var unit in new[] { "GHz", "MHz", "kHz", "Hz" })
+        {
+            if (!valStr.EndsWith(unit, System.StringComparison.OrdinalIgnoreCase)) continue;
+            string numPart = valStr[..^unit.Length];
+            if (numPart.Length == 0) continue;
+            if (!double.TryParse(numPart, System.Globalization.NumberStyles.Float,
+                                  System.Globalization.CultureInfo.InvariantCulture, out double fusedVal)) continue;
+            double fusedScale = unit.ToUpperInvariant() switch
+            {
+                "GHZ" => 1e9,
+                "MHZ" => 1e6,
+                "KHZ" => 1e3,
+                "HZ"  => 1.0,
+                _     => 0.0,
+            };
+            if (fusedScale > 0)
+                return (fusedVal * fusedScale).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return valStr;  // non-literal expression — return as-is
+    }
+
+    private static readonly HashSet<string> _freqUnits =
+        new(["GHz", "MHz", "kHz", "Hz"], StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Scans <paramref name="tokens"/> for the token matching "key=val" and returns the
+    /// immediately-following token if it is a frequency-unit keyword; otherwise null.
+    /// Also handles split form: "key=", then val as a separate token, then unit.
+    /// </summary>
+    private static string? FindUnitAfterKey(IReadOnlyList<string> tokens,
+                                             string key, string val)
+    {
+        for (int i = 0; i < tokens.Count - 1; i++)
+        {
+            var tok = tokens[i];
+            // Match "key=val" in one token
+            if (tok.Equals($"{key}={val}", StringComparison.OrdinalIgnoreCase) &&
+                i + 1 < tokens.Count &&
+                _freqUnits.Contains(tokens[i + 1]))
+                return tokens[i + 1];
+            // Match split: tok == "key=" and next == val and next+1 == unit
+            if (tok.Equals($"{key}=", StringComparison.OrdinalIgnoreCase) &&
+                i + 1 < tokens.Count && tokens[i + 1] == val &&
+                i + 2 < tokens.Count && _freqUnits.Contains(tokens[i + 2]))
+                return tokens[i + 2];
+        }
+        return null;
     }
 
     // ── HB analysis directive parser ─────────────────────────────────────────

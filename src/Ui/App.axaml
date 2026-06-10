@@ -10,6 +10,7 @@
              xmlns:cv="using:CircuitRF.Ui.Views.Content"
              xmlns:schemDoc="using:CircuitRF.Ui.Schematic"
              xmlns:mv="using:CircuitRF.Ui.Views.Messages"
+             xmlns:av="using:CircuitRF.Ui.Views.Analyses"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:dockCtrl="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
@@ -39,6 +40,9 @@
         </DataTemplate>
         <DataTemplate DataType="{x:Type dockVm:PropertiesTool}">
             <propv:PropertiesView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type dockVm:AnalysesTool}">
+            <av:AnalysesToolView/>
         </DataTemplate>
         <DataTemplate DataType="{x:Type dockVm:MessagesTool}">
             <mv:MessagesView/>
@@ -156,6 +160,10 @@
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
         </Style>
         <Style Selector="CheckBox">
+            <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBox">
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>

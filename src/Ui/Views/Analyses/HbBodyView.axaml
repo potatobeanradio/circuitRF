@@ -1,0 +1,231 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Analyses.HbBodyView"
+             x:DataType="vm:HbBodyViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Button.hb-btn">
+            <Setter Property="Background"     Value="Transparent"/>
+            <Setter Property="BorderBrush"    Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"   Value="3"/>
+            <Setter Property="Padding"        Value="8,2"/>
+            <Setter Property="MinWidth"       Value="0"/>
+            <Setter Property="FontSize"       Value="11"/>
+            <Setter Property="Margin"         Value="0,0,2,0"/>
+        </Style>
+        <Style Selector="Button.hb-btn.active">
+            <Setter Property="Background"  Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="Foreground"  Value="{DynamicResource SystemRegionColor}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+        </Style>
+        <!-- Unit combo: compact. No Padding override — let the Fluent template handle it. -->
+        <Style Selector="ComboBox.unit-combo">
+            <Setter Property="MinWidth"  Value="60"/>
+            <Setter Property="MaxWidth"  Value="68"/>
+            <Setter Property="FontSize"  Value="9"/>
+            <Setter Property="Margin"    Value="3,0,0,0"/>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- ScrollViewer keeps the dialog within MaxHeight when Advanced is expanded -->
+    <ScrollViewer MaxHeight="380"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+
+        <StackPanel Spacing="10" Margin="0,0,4,0">
+
+            <!-- ── Basic: Tone + Max harmonics ─────────────────────────────── -->
+            <!-- Max harmonics is a small integer — give it a fixed narrow column -->
+            <Grid ColumnDefinitions="*,76" ColumnSpacing="10">
+
+                <!-- Tone (f₀ or Tone 1) with unit combo -->
+                <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding ToneLabel}"
+                               FontSize="10" Opacity="0.6"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Text="{Binding ToneCoeff, Mode=TwoWay}"
+                                 FontSize="11"/>
+                        <ComboBox Grid.Column="1"
+                                  Classes="unit-combo"
+                                  ItemsSource="{x:Static vm:HbBodyViewModel.FreqUnits}"
+                                  SelectedItem="{Binding ToneUnit, Mode=TwoWay}"/>
+                    </Grid>
+                    <TextBlock Text="{Binding TonePreview}"
+                               FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+
+                <!-- Max harmonics -->
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Max harmonics"
+                               FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding MaxHarmonicExpr, Mode=TwoWay}"
+                             FontSize="11"/>
+                    <TextBlock Text="{Binding MaxHarmonicPreview}"
+                               FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+
+            </Grid>
+
+            <!-- ── Single / Multi-tone toggle ─────────────────────────────── -->
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="Tones:"
+                           FontSize="11"
+                           VerticalAlignment="Center"
+                           Opacity="0.75"/>
+                <Button Content="Single"
+                        Classes="hb-btn"
+                        Classes.active="{Binding IsSingleTone}"
+                        Command="{Binding SetSingleToneCommand}"/>
+                <Button Content="Multi"
+                        Classes="hb-btn"
+                        Classes.active="{Binding IsMultiTone}"
+                        Command="{Binding SetMultiToneCommand}"/>
+            </StackPanel>
+
+            <!-- ── Multi-tone extra fields (appear when Multi is active) ───── -->
+            <StackPanel IsVisible="{Binding IsMultiTone}" Spacing="8">
+                <!-- Max mix order is also a small integer — same narrow fixed column -->
+                <Grid ColumnDefinitions="*,76" ColumnSpacing="10">
+
+                    <!-- Tone 2 with unit combo -->
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Tone 2"
+                                   FontSize="10" Opacity="0.6"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Text="{Binding Tone2Coeff, Mode=TwoWay}"
+                                     FontSize="11"/>
+                            <ComboBox Grid.Column="1"
+                                      Classes="unit-combo"
+                                      ItemsSource="{x:Static vm:HbBodyViewModel.FreqUnits}"
+                                      SelectedItem="{Binding Tone2Unit, Mode=TwoWay}"/>
+                        </Grid>
+                        <TextBlock Text="{Binding Tone2Preview}"
+                                   FontSize="10" Opacity="0.55"/>
+                    </StackPanel>
+
+                    <!-- Max mix order -->
+                    <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Text="Max mix order"
+                                   FontSize="10" Opacity="0.6"/>
+                        <TextBox Text="{Binding MaxMixOrderExpr, Mode=TwoWay}"
+                                 FontSize="11"/>
+                        <TextBlock Text="{Binding MaxMixOrderPreview}"
+                                   FontSize="10" Opacity="0.55"/>
+                    </StackPanel>
+
+                </Grid>
+            </StackPanel>
+
+            <!-- ── Separator before Advanced ──────────────────────────────── -->
+            <Separator Opacity="0.3"/>
+
+            <!-- ── Advanced expander (collapsed by default) ─────────────────── -->
+            <Expander Header="Advanced"
+                      IsExpanded="{Binding AdvancedExpanded, Mode=TwoWay}"
+                      FontSize="11">
+
+                <StackPanel Spacing="8" Margin="0,8,0,0">
+
+                    <!-- Row 1: FFT oversample + Tolerance -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="FFT oversample"
+                                       FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding FftOverSampleExpr, Mode=TwoWay}"
+                                     FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Tolerance"
+                                       FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding TolExpr, Mode=TwoWay}"
+                                     FontSize="11"/>
+                            <TextBlock Text="{Binding TolPreview}"
+                                       FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Row 2: Drive stepping + Guard harmonic -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Drive stepping"
+                                       FontSize="10" Opacity="0.6"/>
+                            <ComboBox ItemsSource="{x:Static vm:HbBodyViewModel.DriveSteppingOptions}"
+                                      SelectedItem="{Binding DriveSteppingExpr, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Guard harmonic"
+                                       FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding GuardHarmonicExpr, Mode=TwoWay}"
+                                     FontSize="11"/>
+                            <TextBlock Text="{Binding GuardHarmonicPreview}"
+                                       FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Row 3: Newton λ + Max iterations -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Newton step λ"
+                                       FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding LambdaExpr, Mode=TwoWay}"
+                                     FontSize="11"/>
+                            <TextBlock Text="{Binding LambdaPreview}"
+                                       FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Max iterations"
+                                       FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding MaxIterExpr, Mode=TwoWay}"
+                                     FontSize="11"/>
+                            <TextBlock Text="{Binding MaxIterPreview}"
+                                       FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- ── Parametric sweep ──────────────────────────────────── -->
+                    <StackPanel Spacing="6">
+                        <CheckBox Content="Parametric sweep"
+                                  IsChecked="{Binding SweepEnabled, Mode=TwoWay}"
+                                  FontSize="11"/>
+                        <StackPanel IsVisible="{Binding SweepEnabled}" Spacing="6">
+                            <!-- Variable name -->
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Variable"
+                                           FontSize="10" Opacity="0.6"/>
+                                <TextBox Text="{Binding SweepVarName, Mode=TwoWay}"
+                                         FontSize="11"
+                                         PlaceholderText="e.g. Pin"/>
+                            </StackPanel>
+                            <!-- Start / Stop / Step (3-column, no units — parametric sweep is dimensionless) -->
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="Start" FontSize="10" Opacity="0.6"/>
+                                    <TextBox Text="{Binding SweepStartExpr, Mode=TwoWay}" FontSize="11"/>
+                                    <TextBlock Text="{Binding SweepStartPreview}" FontSize="10" Opacity="0.55"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="Stop" FontSize="10" Opacity="0.6"/>
+                                    <TextBox Text="{Binding SweepStopExpr, Mode=TwoWay}" FontSize="11"/>
+                                    <TextBlock Text="{Binding SweepStopPreview}" FontSize="10" Opacity="0.55"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="2">
+                                    <TextBlock Text="Step" FontSize="10" Opacity="0.6"/>
+                                    <TextBox Text="{Binding SweepStepExpr, Mode=TwoWay}" FontSize="11"/>
+                                    <TextBlock Text="{Binding SweepStepPreview}" FontSize="10" Opacity="0.55"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+
+                </StackPanel>
+            </Expander>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

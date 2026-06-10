@@ -155,6 +155,14 @@ public static class NetExtractor
             if (inst is not null) tb.Instances.Add(inst);
         }
 
+        // ── Layer 4: carry enabled analyses + all measurements ──────────────────
+        foreach (var analysis in model.Analyses)
+            if (analysis.Enabled)
+                tb.Analyses.Add(analysis);
+
+        foreach (var measurement in model.Measurements)
+            tb.Measurements.Add(measurement);
+
         return new ExtractionResult(tb, conflicts);
     }
 

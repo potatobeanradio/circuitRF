@@ -1,0 +1,126 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sch="using:CircuitRF.Ui.Schematic"
+        x:Class="CircuitRF.Ui.Views.Dialogs.InsertFromTemplateDialog"
+        Title="Insert from Template"
+        Width="480"
+        SizeToContent="Height"
+        MinHeight="320"
+        MaxHeight="600"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="20,16,20,16">
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0"
+                   Text="Templates"
+                   FontWeight="SemiBold"
+                   FontSize="13"
+                   Margin="0,0,0,8"/>
+
+        <!-- Template list -->
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource SystemBaseLowColor}"
+                BorderThickness="1"
+                CornerRadius="3"
+                Margin="0,0,0,8"
+                MinHeight="80"
+                MaxHeight="200">
+            <Grid>
+                <!-- Empty state -->
+                <TextBlock x:Name="EmptyState"
+                           Text="No templates saved yet."
+                           FontSize="12"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           IsVisible="False"/>
+                <!-- List -->
+                <ListBox x:Name="TemplateList"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         SelectionChanged="OnTemplateSelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="sch:AnalysisTemplate">
+                            <StackPanel Margin="2,2">
+                                <TextBlock Text="{Binding Name}"
+                                           FontSize="12"
+                                           FontWeight="Medium"/>
+                                <TextBlock Text="{Binding Description}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- Selected-template preview + manage row -->
+        <StackPanel Grid.Row="2"
+                    x:Name="PreviewSection"
+                    IsVisible="False"
+                    Margin="0,0,0,12"
+                    Spacing="6">
+
+            <TextBlock x:Name="PreviewHeader"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+
+            <Border BorderBrush="{DynamicResource SystemBaseLowColor}"
+                    BorderThickness="1"
+                    CornerRadius="3"
+                    MaxHeight="120">
+                <ScrollViewer>
+                    <ItemsControl x:Name="AnalysisPreview" Margin="6,4">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}"
+                                           FontSize="11"
+                                           Margin="0,1"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Manage row: delete -->
+            <Button x:Name="DeleteButton"
+                    Content="Delete template"
+                    FontSize="11"
+                    Padding="8,3"
+                    Background="Transparent"
+                    BorderThickness="1"
+                    HorizontalAlignment="Left"
+                    Click="OnDeleteClick"/>
+
+        </StackPanel>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8">
+            <Button Content="Cancel"
+                    Width="80"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"
+                    IsCancel="True"/>
+            <Button x:Name="InsertButton"
+                    Content="Insert"
+                    Width="80"
+                    IsDefault="True"
+                    Classes="accent"
+                    IsEnabled="False"
+                    FontSize="12"
+                    HorizontalContentAlignment="Center"
+                    Click="OnInsertClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

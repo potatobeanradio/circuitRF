@@ -1,0 +1,182 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Analyses.SpBodyView"
+             x:DataType="vm:SpBodyViewModel"
+             x:Name="SpBodyViewRoot">
+
+    <UserControl.Styles>
+        <!-- Toggle buttons for mode (Step/Points) and kind (Linear/Log) -->
+        <Style Selector="Button.seg-btn">
+            <Setter Property="Background"    Value="Transparent"/>
+            <Setter Property="BorderBrush"   Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"  Value="3"/>
+            <Setter Property="Padding"       Value="5,1"/>
+            <Setter Property="MinWidth"      Value="0"/>
+            <Setter Property="FontSize"      Value="11"/>
+            <Setter Property="Margin"        Value="0,0,2,0"/>
+        </Style>
+        <Style Selector="Button.seg-btn.active">
+            <Setter Property="Background"    Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="Foreground"    Value="{DynamicResource SystemRegionColor}"/>
+            <Setter Property="BorderBrush"   Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="FontWeight"    Value="SemiBold"/>
+        </Style>
+        <!-- Unit combo: compact. No Padding override — let the Fluent template handle it. -->
+        <Style Selector="ComboBox.unit-combo">
+            <Setter Property="MinWidth"     Value="60"/>
+            <Setter Property="MaxWidth"     Value="68"/>
+            <Setter Property="FontSize"     Value="9"/>
+            <Setter Property="Margin"       Value="3,0,0,0"/>
+        </Style>
+    </UserControl.Styles>
+
+    <StackPanel Spacing="8">
+
+        <!-- Header: label + Add segment button -->
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="Frequency sweep segments"
+                       FontSize="12" FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+            <Button Grid.Column="1"
+                    Content="+ Segment"
+                    Command="{Binding AddSegmentCommand}"
+                    FontSize="11"
+                    Padding="8,3"
+                    HorizontalContentAlignment="Center"/>
+        </Grid>
+
+        <!-- Segment rows -->
+        <ScrollViewer MaxHeight="280"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Segments}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FrequencySpecViewModel">
+                        <Border Padding="8,7"
+                                Background="{DynamicResource SystemChromeLowColor}"
+                                CornerRadius="4"
+                                Margin="0,0,0,4">
+                            <Grid ColumnDefinitions="*,*,Auto,Auto,24">
+
+                                <!-- Start -->
+                                <StackPanel Grid.Column="0"
+                                            Spacing="2"
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Top">
+                                    <TextBlock Text="Start"
+                                               FontSize="10" Opacity="0.6"/>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBox Text="{Binding StartCoeff, Mode=TwoWay}"
+                                                 FontSize="11"/>
+                                        <ComboBox Grid.Column="1"
+                                                  Classes="unit-combo"
+                                                  ItemsSource="{x:Static vm:FrequencySpecViewModel.FreqUnits}"
+                                                  SelectedItem="{Binding StartUnit, Mode=TwoWay}"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding StartPreview}"
+                                               FontSize="10" Opacity="0.55"/>
+                                </StackPanel>
+
+                                <!-- Stop -->
+                                <StackPanel Grid.Column="1"
+                                            Spacing="2"
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Top">
+                                    <TextBlock Text="Stop"
+                                               FontSize="10" Opacity="0.6"/>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBox Text="{Binding StopCoeff, Mode=TwoWay}"
+                                                 FontSize="11"/>
+                                        <ComboBox Grid.Column="1"
+                                                  Classes="unit-combo"
+                                                  ItemsSource="{x:Static vm:FrequencySpecViewModel.FreqUnits}"
+                                                  SelectedItem="{Binding StopUnit, Mode=TwoWay}"/>
+                                    </Grid>
+                                    <TextBlock Text="{Binding StopPreview}"
+                                               FontSize="10" Opacity="0.55"/>
+                                </StackPanel>
+
+                                <!-- Step / Points mode toggle + value field -->
+                                <StackPanel Grid.Column="2"
+                                            Spacing="2"
+                                            Margin="0,0,8,0"
+                                            VerticalAlignment="Top"
+                                            MinWidth="120">
+                                    <StackPanel Orientation="Horizontal" Spacing="0">
+                                        <Button Content="Step"
+                                                Classes="seg-btn"
+                                                Classes.active="{Binding IsStepMode}"
+                                                Command="{Binding SetModeStepCommand}"/>
+                                        <Button Content="Points"
+                                                Classes="seg-btn"
+                                                Classes.active="{Binding IsPointsMode}"
+                                                Command="{Binding SetModePointsCommand}"/>
+                                    </StackPanel>
+                                    <!-- Step value + unit combo (Step mode) -->
+                                    <Grid ColumnDefinitions="*,Auto"
+                                          IsVisible="{Binding IsStepMode}">
+                                        <TextBox Text="{Binding StepCoeff, Mode=TwoWay}"
+                                                 FontSize="11"/>
+                                        <ComboBox Grid.Column="1"
+                                                  Classes="unit-combo"
+                                                  ItemsSource="{x:Static vm:FrequencySpecViewModel.FreqUnits}"
+                                                  SelectedItem="{Binding StepUnit, Mode=TwoWay}"/>
+                                    </Grid>
+                                    <TextBlock IsVisible="{Binding IsStepMode}"
+                                               Text="{Binding StepPreview}"
+                                               FontSize="10" Opacity="0.55"/>
+                                    <!-- Points value (Points mode) -->
+                                    <TextBox IsVisible="{Binding IsPointsMode}"
+                                             Text="{Binding NumPointsExpr, Mode=TwoWay}"
+                                             FontSize="11"/>
+                                    <TextBlock IsVisible="{Binding IsPointsMode}"
+                                               Text="{Binding NumPointsPreview}"
+                                               FontSize="10" Opacity="0.55"/>
+                                </StackPanel>
+
+                                <!-- Linear / Log sweep kind toggle -->
+                                <StackPanel Grid.Column="3"
+                                            Spacing="2"
+                                            Margin="0,0,4,0"
+                                            VerticalAlignment="Top">
+                                    <TextBlock Text="Sweep"
+                                               FontSize="10" Opacity="0.6"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="0">
+                                        <Button Content="Lin"
+                                                Classes="seg-btn"
+                                                Classes.active="{Binding IsLinear}"
+                                                Command="{Binding SetKindLinearCommand}"/>
+                                        <Button Content="Log"
+                                                Classes="seg-btn"
+                                                Classes.active="{Binding IsLog}"
+                                                Command="{Binding SetKindLogCommand}"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- Remove row -->
+                                <Button Grid.Column="4"
+                                        Command="{Binding RemoveCommand}"
+                                        VerticalAlignment="Center"
+                                        ToolTip.Tip="Remove this segment"
+                                        Padding="3,3"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        FontSize="13"
+                                        Content="×"/>
+
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <TextBlock Text="Multiple segments produce a combined frequency array."
+                   FontSize="10" Opacity="0.55"
+                   TextWrapping="Wrap"/>
+
+    </StackPanel>
+
+</UserControl>

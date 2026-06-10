@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.ViewModels"
+        xmlns:av="using:CircuitRF.Ui.Views.Analyses"
+        x:Class="CircuitRF.Ui.Views.Dialogs.SetupAnalysesDialog"
+        x:DataType="vm:AnalysesListViewModel"
+        Title="Setup Analyses"
+        Width="520" Height="420"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="0">
+
+        <!-- Analyses list — same VM, modal host -->
+        <av:AnalysesListView Grid.Row="0"
+                             DataContext="{Binding}"/>
+
+        <!-- Close button -->
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="12,8">
+            <Button Content="Close"
+                    IsDefault="True"
+                    IsCancel="True"
+                    HorizontalContentAlignment="Center"
+                    Padding="20,6"
+                    Click="OnCloseClick"/>
+        </StackPanel>
+
+    </Grid>
+
+</Window>

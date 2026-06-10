@@ -1,0 +1,152 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:analyses="using:CircuitRF.Ui.Views.Analyses"
+        x:Class="CircuitRF.Ui.Views.Dialogs.AnalysisEditorDialog"
+        Title="Add Analysis"
+        Width="520"
+        SizeToContent="Height"
+        MinHeight="200"
+        MaxHeight="650"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="10">
+
+            <!-- Dialog title -->
+            <TextBlock x:Name="DialogTitle"
+                       Text="Add Analysis"
+                       FontSize="15"
+                       FontWeight="SemiBold"/>
+
+            <!-- Type picker -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Type:"
+                           FontSize="12"
+                           Opacity="0.75"/>
+                <!-- WrapPanel so long labels wrap gracefully at narrow widths -->
+                <WrapPanel Orientation="Horizontal">
+                    <RadioButton x:Name="DcRadio"
+                                 Content="DC"
+                                 GroupName="AnalysisType"
+                                 FontSize="12"
+                                 Margin="0,0,16,4"
+                                 IsCheckedChanged="OnTypeRadioChanged"/>
+                    <RadioButton x:Name="SpRadio"
+                                 Content="S-Parameter"
+                                 GroupName="AnalysisType"
+                                 FontSize="12"
+                                 Margin="0,0,16,4"
+                                 IsCheckedChanged="OnTypeRadioChanged"/>
+                    <RadioButton x:Name="HbRadio"
+                                 Content="Harmonic Balance"
+                                 GroupName="AnalysisType"
+                                 FontSize="12"
+                                 Margin="0,0,24,4"
+                                 IsCheckedChanged="OnTypeRadioChanged"/>
+                    <RadioButton x:Name="LpRadio"
+                                 Content="Load Pull"
+                                 GroupName="AnalysisType"
+                                 FontSize="12"
+                                 IsEnabled="False"
+                                 Opacity="0.45"
+                                 Margin="0,0,16,4">
+                        <ToolTip.Tip>Load Pull authoring is coming in a future version.</ToolTip.Tip>
+                    </RadioButton>
+                    <RadioButton x:Name="LppRadio"
+                                 Content="LP Pursuit"
+                                 GroupName="AnalysisType"
+                                 FontSize="12"
+                                 IsEnabled="False"
+                                 Opacity="0.45"
+                                 Margin="0,0,0,4">
+                        <ToolTip.Tip>LP Pursuit authoring is coming in a future version.</ToolTip.Tip>
+                    </RadioButton>
+                </WrapPanel>
+            </StackPanel>
+
+            <!-- Name + Enabled -->
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                <TextBlock Grid.Row="0" Grid.Column="0"
+                           Text="Name:"
+                           FontSize="12"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0"/>
+                <TextBox   Grid.Row="0" Grid.Column="1"
+                           x:Name="NameBox"
+                           FontSize="12"
+                           MaxLength="64"
+                           TextChanged="OnNameChanged"/>
+                <TextBlock Grid.Row="1" Grid.Column="1"
+                           x:Name="NameErrorLabel"
+                           FontSize="11"
+                           Foreground="{DynamicResource CrfWarningBrush}"
+                           IsVisible="False"
+                           TextWrapping="Wrap"
+                           Margin="0,2,0,0"/>
+                <CheckBox  Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                           x:Name="EnabledCheck"
+                           Content="Enabled"
+                           FontSize="12"
+                           IsChecked="True"
+                           Margin="0,6,0,0"/>
+            </Grid>
+
+            <!-- ── DC body ──────────────────────────────────────────────────────── -->
+            <Border x:Name="DcBodyPanel"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="12,10">
+                <TextBlock Text="Operating point — no additional configuration required."
+                           FontSize="12"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                           TextWrapping="Wrap"/>
+            </Border>
+
+            <!-- ── S-Parameter body ─────────────────────────────────────────────── -->
+            <Border x:Name="SpBodyPanel"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="10,10"
+                    IsVisible="False">
+                <analyses:SpBodyView x:Name="SpBodyViewControl"/>
+            </Border>
+
+            <!-- ── Harmonic Balance body ─────────────────────────────────────────── -->
+            <Border x:Name="HbBodyPanel"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="10,10"
+                    IsVisible="False">
+                <analyses:HbBodyView x:Name="HbBodyViewControl"/>
+            </Border>
+
+        </StackPanel>
+
+        <!-- Buttons (HIG: Cancel then OK, right-aligned, centered labels) -->
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,14,0,0">
+            <Button Content="Cancel"
+                    Width="80"
+                    FontSize="12"
+                    IsCancel="True"
+                    HorizontalContentAlignment="Center"
+                    Click="OnCancelClick"/>
+            <Button x:Name="OkButton"
+                    Content="OK"
+                    Width="80"
+                    FontSize="12"
+                    IsDefault="True"
+                    IsEnabled="False"
+                    HorizontalContentAlignment="Center"
+                    Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+
+</Window>

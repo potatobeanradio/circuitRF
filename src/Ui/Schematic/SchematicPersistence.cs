@@ -29,6 +29,11 @@ public sealed class CschFile
     public List<CschDot>        Dots          { get; set; } = [];
     public List<CschCanvasObject> CanvasObjects { get; set; } = [];
     public CschViewState        View          { get; set; } = new();
+
+    // Absent in old files → null → loaded as empty (graceful within-version load).
+    // Written only when non-empty to keep analysis-free .csch files compact.
+    public List<CschAnalysis>?    Analyses     { get; set; }
+    public List<CschMeasurement>? Measurements { get; set; }
 }
 
 public sealed class CschComponent
@@ -256,6 +261,12 @@ public static class SchematicPersistence
         foreach (var obj in m.CanvasObjects)
             file.CanvasObjects.Add(ToCanvasObjectRecord(obj));
 
+        // Analyses + measurements via the shared encoder (§5.4).
+        if (m.Analyses.Count > 0)
+            file.Analyses = m.Analyses.Select(AnalysisSerialization.ToDto).ToList();
+        if (m.Measurements.Count > 0)
+            file.Measurements = m.Measurements.Select(AnalysisSerialization.ToDto).ToList();
+
         return file;
     }
 
@@ -312,6 +323,17 @@ public static class SchematicPersistence
             var obj = FromCanvasObjectRecord(co, directory);
             if (obj is not null) m.CanvasObjects.Add(obj);
         }
+
+        // Analyses + measurements via the shared encoder (§5.4); absent → empty (graceful load).
+        if (file.Analyses is not null)
+            foreach (var dto in file.Analyses)
+            {
+                var a = AnalysisSerialization.FromDto(dto);
+                if (a is not null) m.Analyses.Add(a);
+            }
+        if (file.Measurements is not null)
+            foreach (var dto in file.Measurements)
+                m.Measurements.Add(AnalysisSerialization.FromDto(dto));
 
         return m;
     }

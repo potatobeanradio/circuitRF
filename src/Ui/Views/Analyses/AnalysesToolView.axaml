@@ -1,0 +1,11 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:av="using:CircuitRF.Ui.Views.Analyses"
+             x:Class="CircuitRF.Ui.Views.Analyses.AnalysesToolView"
+             x:DataType="dockVm:AnalysesTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <av:AnalysesListView DataContext="{Binding ListVm}"/>
+
+</UserControl>

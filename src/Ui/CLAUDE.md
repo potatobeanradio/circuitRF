@@ -4,6 +4,178 @@ Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`, the interact
 `docs/design/ui-design.md`, and the architecture/firewall note `docs/design/ui-architecture.md`. The UI is
 how people drive the engine; it must never become the source of truth for simulation.
 
+## Extraction carries enabled analyses + run executes them (Phase 6e Step 6 — done)
+
+**`NetExtractor.Extract`** now carries the schematic's authored analyses + measurements into the emitted
+`TestBench`: layer 4 copies `model.Analyses` (enabled filter: `Analysis.Enabled`) + `model.Measurements`
+into `tb.Analyses`/`tb.Measurements`. The `Enabled` flag lives on the `Analysis` base class and is persisted
+in `.csch` (`CschAnalysis.Enabled`), so it round-trips and gates extraction automatically.
+
+**SP multi-segment → one flat freq array:** `CnlWriter` emits one `analysis Name type=sparam` line per
+segment (same analysis name). `CnlReader` now merges consecutive segments with the same name into a single
+`SParameterAnalysis` with all sweeps. At engine time, `SParameterAnalysis.Expand()` unions all segment
+points into one sorted/deduped `double[]`.
+
+**CnlReader additions (round-trip-exact for all v1 typed analyses):**
+- `TryParseDcDirective`: `analysis Name type=dc` → typed `DcAnalysis` (was falling through to raw directive).
+- Multi-segment SP merge: consecutive `analysis N type=sparam` lines with same name collapsed into one.
+- `TryParseMeasurementLine`: extracts trailing unit token — `measure Name = expr unit` round-trips unit.
+  `IsMeasurementUnit` detects bare-word units (`dB`, `V`, `%`, `dBm`, …) without false-positive on expressions.
+
+**Run flow (no new engine code):** `RunAnalysis` → `WriteNetlist` (now includes analyses) → `RunNetlist`
+dispatches typed analyses. "No analysis" message appears only when all analyses are disabled or none exist.
+
+Gate: 8 new tests (5 `NetExtractorAnalysesTests` + 3 `CnlWriterTests`); all 977 tests green; firewall green.
+
+---
+
+## Analysis reuse: copy/paste + .canl templates (Phase 6e Step 5 — done)
+
+**One serializer (§5.4):** clipboard + `.canl` + `.csch` all use `AnalysisSerialization.Serialize/Deserialize`
+(for clipboard/`.canl`) and `ToDto/FromDto` (for `.csch`). Never write a second encoder.
+
+**Copy/paste:** `AnalysesListViewModel.CopyCommand` / `CopyAllCommand` / `PasteCommand` — multi-select supported;
+`PasteAnalysesCommand` appends with intra-paste collision resolution (`{name} copy`, `{name} copy 2`, …),
+undoable; §5.1 unresolved-ref surfacing via `AnalysisPreviewHelper` (≈ unknown: f0).
+
+**Templates (`.canl`):** `AnalysisSerialization.SerializeCanl/DeserializeCanl` + `CanlFile` DTO wrap the same
+analysis DTOs with `Name` + optional `Description`. `TemplateManager` (framework-free, `src/Ui/Schematic/`) loads
+the resolution chain workspace→user (`LocalApplicationData/circuitRF/templates/`), saves atomically, checks
+existence, deletes.
+
+**Save as Template dialog** (`src/Ui/Views/Dialogs/SaveAsTemplateDialog.axaml`): name (validated via
+`NameValidator`) + description + read-only preview list of analyses to be saved + collision guard (overwrite confirm
+via `SaveChangesDialog`). Saves to workspace templates dir when a workspace is open, user templates dir otherwise.
+Reports path via `_schematicVm.MessageSink?.Success(path, path)`.
+
+**Insert from Template dialog** (`src/Ui/Views/Dialogs/InsertFromTemplateDialog.axaml`): lists all `.canl` from
+the resolution chain; selected template shows preview; Delete button (minimal Manage). On Insert, appends via
+`PasteAnalysesCommand` (same collision resolution + §5.1 surfacing).
+
+**Workspace dir tracking:** `WorkspaceViewModel.OnCurrentWorkspacePathChanged` → `AnalysesTool.SetWorkspaceDir(dir)`
+→ `AnalysesListViewModel.SetWorkspaceDir` — workspace dir flows into template commands so they target the workspace
+templates dir when a workspace is open.
+
+**`SaveChangesDialog`** now supports `dontSaveLabel: null` to show only 2 buttons (Save + Cancel).
+
+**TextBox vertical centering (HIG):** global `<Style Selector="TextBox">` in `App.axaml` sets
+`VerticalContentAlignment="Center"` — applies to all TextBoxes app-wide.
+
+**Double-click to edit:** `AnalysesListView.axaml.cs :: OnRowDoubleTapped` calls `vm.EditCommand.ExecuteAsync(window)`.
+
+Gate: 956 tests green (5 new `.canl` round-trip tests in `AnalysisSerializationTests`); firewall green.
+
+---
+
+## Analysis Add/Edit dialog — Layer 1 (Phase 6e Step 4 — Layer 1 done)
+
+**`src/Ui/Views/Dialogs/AnalysisEditorDialog.axaml(.cs)`** — HIG Add/Edit dialog. Returns
+`Analysis?` via `ShowDialog<Analysis?>`. Static `ShowAsync(owner, vm, isEdit)` factory handles
+null-owner fallback (same `ResolveOwner` pattern). Code-behind driven (no `x:DataType`).
+
+**Layout:** title | type picker (WrapPanel RadioButtons: DC · S-Parameter · Harmonic Balance;
+Load Pull · LP Pursuit greyed + "coming soon" tooltip) | Name TextBox + inline validation |
+Enabled CheckBox | swappable body panel | Cancel / OK (IsDefault, centered labels, gated on
+CanCommit).
+
+**Body panels (IsVisible by type):**
+- `DcBodyPanel` — "Operating point — no additional configuration required." (DC is the novice path)
+- `SpBodyPanel` — Layer 1 placeholder ("Default: 1–10 GHz, 101 pts"); Layer 2 replaces with segment sub-list
+- `HbBodyPanel` — Layer 1 placeholder ("Default: f₀ = 1 GHz, 7 harmonics"); Layer 3 replaces with full form
+
+**`AnalysisEditorViewModel`** (`src/Ui/ViewModels/AnalysisEditorViewModel.cs`) — staging VM:
+- `AnalysisKind` enum (DC/SP/HB), `Type`, `Name`, `Enabled`, `NameError`, `CanCommit`
+- `SpBody: SpBodyViewModel` / `HbBody: HbBodyViewModel` — per-type body VMs
+- `ComputePreview(string expression)` — delegates to `AnalysisPreviewHelper` (§4.3, no fork)
+- `BuildAnalysis()` — builds the staged `Analysis` on OK; null on validation failure
+- `NextFreeName(kind, existing)` — generates "DC1"/"SP1"/"HB1", lowest free
+
+**`AnalysisPreviewHelper`** (`src/Ui/ViewModels/AnalysisPreviewHelper.cs`) — static helper
+reusing `DesignScope.Build + new Evaluator().Eval`, swallow-errors → empty, bare-number/blank
+gates. Shared across all analysis-editor expression fields (SP segment Start/Stop in L2, HB
+Tone/MaxHarm in L3).
+
+**`SpBodyViewModel`** / **`HbBodyViewModel`** (`src/Ui/ViewModels/`) — sealed partial
+`ObservableObject` stubs; `BuildSweeps()` / `BuildAnalysis()` return sensible defaults in L1.
+L2 adds segments collection + commands to `SpBodyViewModel`. L3 adds all HB fields to
+`HbBodyViewModel`. Both have `FromAnalysis` factory for the edit path.
+
+**`AddAnalysisCommand`** / **`EditAnalysisCommand`** (`src/Ui/Commands/Analysis/`) — undoable
+mutations. Add appends at count; Undo removes by reference. Edit stores old/new + index; Undo
+restores original.
+
+**Wiring:** `AnalysesListViewModel.Add(Window?)` / `Edit(Window?)` are now `async Task` commands.
+`AnalysesListView.axaml` passes `CommandParameter="{Binding $parent[Window]}"` on all Add/Edit
+buttons (toolbar + empty-state). `SetupAnalysesDialog` continues to work (same VM, modal host).
+
+Gate: `dotnet build` / `dotnet test` green, all 951 tests pass, firewall green.
+
+---
+
+## Analyses panel + modal (Phase 6e Step 3 — done)
+
+**`src/Ui/ViewModels/AnalysisRowViewModel.cs`** — wraps one `Analysis`; exposes `Enabled` (routes through
+`EnableAnalysisCommand`), `Name`, `TypeLabel` ("DC"/"SP"/"HB"), `Summary` (one-liner with SI-suffixed
+frequency; raw expression string for non-literal values).
+
+**`src/Ui/ViewModels/AnalysesListViewModel.cs`** — `ObservableCollection<AnalysisRowViewModel>` for the
+active schematic. `SetActiveSchematic(vm?)` rebinds on tab switch. Commands: Add/Edit (placeholder
+no-ops — step 4 builds the real form), Remove, Duplicate (name-collision resolved: "{name} copy", then
+"{name} copy 2", …), MoveUp, MoveDown. All mutations route through `SchematicViewModel.Execute` → undo
+stack → marks document dirty. `NoActiveSchematic` / `IsEmpty` flags drive the two empty states.
+
+**`src/Ui/ViewModels/Dock/AnalysesTool.cs`** — Dock `Tool` wrapping `AnalysesListViewModel`; Id = "Analyses".
+Placed in the lower-left `propertiesDock` alongside `PropertiesTool` in `CircuitRfDockFactory`.
+
+**Commands** (`src/Ui/Commands/Analysis/`):
+- `EnableAnalysisCommand` — toggles `Analysis.Enabled`; undoable.
+- `RemoveAnalysisCommand` — removes + records insertion index for undo re-insert.
+- `DuplicateAnalysisCommand` — switch-expression clone for DC/SP/HB; `ResolveName` resolves collisions.
+- `MoveAnalysisCommand` — swaps adjacent items; Execute/Undo swap in opposite directions.
+
+**Views** (`src/Ui/Views/Analyses/`):
+- `AnalysesListView.axaml` — toolbar + three-state body (no-schematic / empty-list / rows); rows show
+  Enabled checkbox + TypeLabel badge + Name + Summary. Footer "Analyses run in listed order." when non-empty.
+- `AnalysesToolView.axaml` — thin dock wrapper: `AnalysesListView DataContext="{Binding ListVm}"`.
+
+**Dialog** (`src/Ui/Views/Dialogs/SetupAnalysesDialog.axaml`):
+- Modal host for the **same** `AnalysesListViewModel` the dock uses (one VM, two hosts).
+- Opened via `WorkspaceViewModel.SetupAnalysesCommand` (`Window? owner` → `ResolveOwner`).
+- Bound in Simulate menu: NativeMenuItem + in-window MenuItem, both with "Setup Analyses…" label.
+
+**Active-schematic tracking**: `WorkspaceViewModel.OnDocumentDockPropertyChanged` calls
+`_factory.AnalysesTool?.SetActiveSchematic(activeVm)` after the PropertiesTool call — same pattern.
+
+**`Analysis.Enabled`** added to `Core.Design.Analysis` base class (`bool Enabled { get; set; } = true`).
+Persisted in `CschAnalysis.Enabled`; existing files without the field default to `true` on load.
+
+Gate: 22 tests in `tests/Ui.Tests/AnalysesListViewModelTests.cs`; all 951 tests green; firewall green.
+
+---
+
+## Analysis persistence + shared encoder (Phase 6e Step 2 — done)
+
+**`src/Ui/Schematic/AnalysisSerialization.cs`** — the **one encoder** (§5.4) for `Analysis` +
+`Measurement` lists.  Three destinations reuse it; never write a second encoder:
+- **`.csch`** (now): `CschFile.Analyses` + `CschFile.Measurements` populated via `AnalysisSerialization.ToDto/FromDto`.
+- **Clipboard** (step 5): `AnalysisSerialization.Serialize(analyses, measurements) → json`.
+- **`.canl` templates** (step 5): same `Serialize/Deserialize`.
+
+**DTOs** (in `AnalysisSerialization.cs`): `CschAnalysis` (flat, type-discriminated by `Type: "dc"/"sp"/"hb"`),
+`CschFrequencySpec`, `CschMeasurement`.  Enum-as-string, WhenWritingNull, Id never persisted.
+Unknown type tags are silently skipped on load (forward-compat for loadpull/pursuit).
+
+**`SchematicEditModel`** now carries `Analyses: List<Analysis>` + `Measurements: List<Measurement>`.
+`CschFile` gains `Analyses: List<CschAnalysis>?` + `Measurements: List<CschMeasurement>?` (null =
+omitted in file; absent on read = empty — old files load cleanly).
+
+**`SavePlanBuilder.SchematicHasAnalyses`** returns `model.Analyses.Count > 0` (was `false`), so a
+schematic carrying analyses sets `IsTestBench = true` on its cell step.
+
+Gate: 19 new tests in `tests/Ui.Tests/AnalysisSerializationTests.cs`; all 929 tests green; firewall green.
+
+---
+
 ## Run service + RunAnalysis wiring (Phase 6e Step 5 — done)
 
 `src/Ui/Schematic/SchematicRunService.cs` — headless `static RunNetlist(path) → RunResult`.

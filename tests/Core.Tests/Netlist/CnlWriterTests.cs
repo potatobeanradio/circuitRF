@@ -1,3 +1,4 @@
+using System.Linq;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
 using Xunit;
@@ -60,10 +61,12 @@ public class CnlWriterTests
         Assert.Equal("IL", m.Name);
         Assert.Equal("dB(S(2,1))", m.Expression);
 
-        // Raw directive
-        var rd = Assert.Single(tb2.RawDirectives);
-        Assert.Equal("analysis", rd.Kind);
-        Assert.Equal("SP type=sparam start=1GHz stop=3GHz step=1GHz", rd.RawLine);
+        // Raw S-param directive is promoted to typed SParameterAnalysis on re-read
+        Assert.Empty(tb2.RawDirectives);
+        var spa = Assert.Single(tb2.Analyses) as SParameterAnalysis;
+        Assert.NotNull(spa);
+        Assert.Equal("SP", spa.Name);
+        Assert.Single(spa.Sweeps);
     }
 
     // ── Test 2: SDD instance round-trip ─────────────────────────────────────
@@ -208,6 +211,84 @@ public class CnlWriterTests
         Assert.Contains(inst.Overrides, ov => ov.Name == "NumPorts" && ov.Expression == "2");
         Assert.Contains(inst.Overrides, ov => ov.Name == "File");
         Assert.Contains(inst.Overrides, ov => ov.Name == "Type");
+    }
+
+    // ── Test 7: DcAnalysis round-trip ─────────────────────────────────────────
+
+    [Fact]
+    public void DcAnalysis_RoundTrip()
+    {
+        var tb = new TestBench("test");
+        tb.Analyses.Add(new DcAnalysis("DC1"));
+
+        var tb2 = RoundTrip(tb);
+
+        var dc = Assert.Single(tb2.Analyses) as DcAnalysis;
+        Assert.NotNull(dc);
+        Assert.Equal("DC1", dc.Name);
+    }
+
+    // ── Test 8: SParameterAnalysis multi-segment round-trip ───────────────────
+
+    [Fact]
+    public void SParameterAnalysis_MultiSegment_RoundTrip()
+    {
+        var tb = new TestBench("test");
+        tb.Analyses.Add(new SParameterAnalysis("SP1",
+            new List<FrequencySpec>
+            {
+                new FrequencySpec("1e9", "5e9", 41),
+                new FrequencySpec("5e9", "10e9", 51),
+            }));
+
+        // CnlWriter emits two "analysis SP1 type=sparam" lines.
+        var text = CnlWriter.Write(tb);
+        var lines = text.Split('\n', System.StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Count(l => l.TrimStart().StartsWith("analysis SP1")));
+
+        // CnlReader merges both lines back into one SParameterAnalysis with 2 segments.
+        var tb2 = RoundTrip(tb);
+
+        var sp = Assert.Single(tb2.Analyses) as SParameterAnalysis;
+        Assert.NotNull(sp);
+        Assert.Equal("SP1", sp.Name);
+        Assert.Equal(2, sp.Sweeps.Count);
+        Assert.Equal(FreqSpecMode.PointCount, sp.Sweeps[0].Mode);
+        Assert.Equal(41, sp.Sweeps[0].NumPoints);
+        Assert.Equal(FreqSpecMode.PointCount, sp.Sweeps[1].Mode);
+        Assert.Equal(51, sp.Sweeps[1].NumPoints);
+    }
+
+    // ── Test 9: Measurement with unit round-trips ─────────────────────────────
+
+    [Fact]
+    public void Measurement_WithUnit_RoundTrip()
+    {
+        var tb = new TestBench("test");
+        tb.Measurements.Add(new Measurement("Pout", "pout()", "dBm"));
+        tb.Measurements.Add(new Measurement("IL",   "dB(S(2,1))", "dB"));
+        tb.Measurements.Add(new Measurement("PAE",  "pae()", "%"));
+        tb.Measurements.Add(new Measurement("Gain", "S21"));   // no unit
+
+        var tb2 = RoundTrip(tb);
+
+        Assert.Equal(4, tb2.Measurements.Count);
+
+        var pout = tb2.Measurements.First(m => m.Name == "Pout");
+        Assert.Equal("pout()", pout.Expression);
+        Assert.Equal("dBm",    pout.Unit);
+
+        var il = tb2.Measurements.First(m => m.Name == "IL");
+        Assert.Equal("dB(S(2,1))", il.Expression);
+        Assert.Equal("dB",         il.Unit);
+
+        var pae = tb2.Measurements.First(m => m.Name == "PAE");
+        Assert.Equal("pae()", pae.Expression);
+        Assert.Equal("%",     pae.Unit);
+
+        var gain = tb2.Measurements.First(m => m.Name == "Gain");
+        Assert.Equal("S21", gain.Expression);
+        Assert.Null(gain.Unit);
     }
 
     // ── Assertion helpers ────────────────────────────────────────────────────

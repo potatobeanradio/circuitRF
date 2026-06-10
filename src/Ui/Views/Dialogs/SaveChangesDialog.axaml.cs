@@ -14,18 +14,21 @@ public partial class SaveChangesDialog : Window
 
     /// <param name="message">Body text shown in the dialog.</param>
     /// <param name="saveLabel">Label for the primary (Save/default) button. Default "Save".</param>
-    /// <param name="dontSaveLabel">Label for the secondary button. Default "Don't Save".</param>
+    /// <param name="dontSaveLabel">Label for the secondary button. Null = hide the button entirely.</param>
     /// <param name="cancelLabel">Label for the cancel button. Default "Cancel".</param>
     public SaveChangesDialog(
-        string message,
-        string saveLabel    = "Save",
-        string dontSaveLabel = "Don't Save",
-        string cancelLabel  = "Cancel") : this()
+        string  message,
+        string  saveLabel     = "Save",
+        string? dontSaveLabel = "Don't Save",
+        string  cancelLabel   = "Cancel") : this()
     {
-        MessageText.Text       = message;
-        SaveButton.Content     = saveLabel;
-        DontSaveButton.Content = dontSaveLabel;
-        CancelButton.Content   = cancelLabel;
+        MessageText.Text     = message;
+        SaveButton.Content   = saveLabel;
+        CancelButton.Content = cancelLabel;
+        if (dontSaveLabel is null)
+            DontSaveButton.IsVisible = false;
+        else
+            DontSaveButton.Content = dontSaveLabel;
     }
 
     private void OnCancelClick(object? sender, RoutedEventArgs e)

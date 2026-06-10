@@ -37,12 +37,14 @@ public class CircuitRfDockFactory : Factory
     public MessagesTool?     MessagesTool     { get; private set; }
     public ProjectTreeTool?  ProjectTreeTool  { get; private set; }
     public PropertiesTool?   PropertiesTool   { get; private set; }
+    public AnalysesTool?     AnalysesTool     { get; private set; }
 
     public override IRootDock CreateLayout()
     {
         // ── Create dockable items ──────────────────────────────────────────────
         ProjectTreeTool = new ProjectTreeTool();
         PropertiesTool  = new PropertiesTool();
+        AnalysesTool    = new AnalysesTool();
         var properties  = PropertiesTool;
         MessagesTool    = new MessagesTool();
         var welcome     = new StubDocument("Welcome", StubDocument.StubKind.Welcome);
@@ -76,7 +78,7 @@ public class CircuitRfDockFactory : Factory
             Title            = "PropertiesPane",
             Proportion       = 0.50,
             ActiveDockable   = properties,
-            VisibleDockables = CreateList<IDockable>(properties),
+            VisibleDockables = CreateList<IDockable>(properties, AnalysesTool),
             Alignment        = Alignment.Left,
             GripMode         = GripMode.Visible,
         };

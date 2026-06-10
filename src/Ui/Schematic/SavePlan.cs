@@ -68,8 +68,8 @@ public sealed class SavePlanBuilder
         _scratchDocs          = scratchDocs;
     }
 
-    // TODO 6e: detect analysis directives when the analysis model is added.
-    private static bool SchematicHasAnalyses(SchematicEditModel model) => false;
+    private static bool SchematicHasAnalyses(SchematicEditModel model)
+        => model.Analyses.Count > 0;
 
     /// <summary>
     /// Returns the next free Untitled-Workspace-N name for the workspace parent dir.

@@ -1,3 +1,5 @@
+using CircuitRF.Core.Design;
+
 namespace CircuitRF.Ui.Schematic;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -415,6 +417,10 @@ public sealed class SchematicEditModel
     public List<EditableNetLabel>   NetLabels    { get; } = new();
     public List<EditableDot>        Dots         { get; } = new();
     public List<EditableCanvasObject> CanvasObjects { get; } = new();
+
+    // ── Analysis authoring (persisted in .csch) ───────────────────────────────
+    public List<Analysis>    Analyses     { get; } = new();
+    public List<Measurement> Measurements { get; } = new();
 
     public double GridSize          { get; set; } = 100.0;
     public bool   GridSnap          { get; set; } = true;

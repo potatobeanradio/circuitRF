@@ -1,3 +1,5 @@
+using System.Linq;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine;
@@ -24,6 +26,7 @@ return args[0].ToLowerInvariant() switch
 static int RunSparam(string[] args)
 {
     string? input = null, output = null;
+    bool    freqExplicit = false;
     double  start  = 1e9, stop = 10e9, step = 1e8;
 
     for (int i = 0; i < args.Length; i++)
@@ -31,7 +34,7 @@ static int RunSparam(string[] args)
         switch (args[i])
         {
             case "--freq" when i + 1 < args.Length:
-                // --freq start:stop:step (Hz) or start:stop:N (N points)
+                freqExplicit = true;
                 var parts = args[++i].Split(':');
                 if (parts.Length == 3)
                 {
@@ -67,16 +70,28 @@ static int RunSparam(string[] args)
         var (lib, tb) = CnlReader.ReadFile(input);
         var nl = new Elaborator(lib).Elaborate(tb);
 
-        // Build frequency array
-        var freqs = BuildFreqArray(start, stop, step);
-        Console.Error.WriteLine(
-            $"S-parameter analysis: {freqs.Length} points, " +
-            $"{start/1e9:G4}–{stop/1e9:G4} GHz");
+        // Prefer typed SParameterAnalysis from the netlist unless --freq was explicitly given.
+        double[] freqs;
+        var spa = tb.Analyses.OfType<SParameterAnalysis>().FirstOrDefault();
+        if (spa is not null && !freqExplicit)
+        {
+            freqs = spa.Expand(nl.ResolvedGlobals);
+            Console.Error.WriteLine(
+                $"S-parameter analysis '{spa.Name}': {freqs.Length} points, " +
+                $"{freqs[0]/1e9:G4}–{freqs[^1]/1e9:G4} GHz " +
+                $"({spa.Sweeps.Count} segment(s))");
+        }
+        else
+        {
+            freqs = BuildFreqArray(start, stop, step);
+            Console.Error.WriteLine(
+                $"S-parameter analysis: {freqs.Length} points, " +
+                $"{start/1e9:G4}–{stop/1e9:G4} GHz");
+        }
 
         var ds  = SParameterEngine.Run(nl, freqs);
         var snp = RfCore.Data.DataSetBuilder.ToSnp(ds);
 
-        // Write Touchstone
         var outPath = output ?? Path.ChangeExtension(input, $".s{snp.Ports}p");
         TouchstoneIO.WriteFile(snp, outPath);
         Console.WriteLine($"Wrote {outPath}");

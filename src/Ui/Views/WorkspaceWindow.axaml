@@ -78,6 +78,8 @@
             <NativeMenuItem Header="Simulate">
                 <NativeMenuItem.Menu>
                     <NativeMenu>
+                        <NativeMenuItem Header="Setup Analyses…" Command="{Binding SetupAnalysesCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Run"  Command="{Binding RunAnalysisCommand}"  Gesture="Meta+R"/>
                         <NativeMenuItem Header="Stop" Command="{Binding StopAnalysisCommand}" Gesture="Meta+OemPeriod"/>
                     </NativeMenu>
@@ -251,6 +253,12 @@
             </MenuItem>
 
             <MenuItem Header="_Simulate" Padding="8,4">
+                <MenuItem Header="Setup _Analyses…"
+                          Command="{Binding SetupAnalysesCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulleted" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
                 <MenuItem Header="_Run"
                           Command="{Binding RunAnalysisCommand}"
                           InputGesture="Ctrl+R">

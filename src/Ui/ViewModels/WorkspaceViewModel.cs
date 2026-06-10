@@ -131,6 +131,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             else
                 tree.ClearWorkspace();
         }
+
+        _factory.AnalysesTool?.SetWorkspaceDir(dir);
     }
 
     // ---- Constructor ---------------------------------------------------------
@@ -709,6 +711,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         // Engine instances created by RunAnalysis are synchronous and do not expose
         // CancellationToken.  Stop is informational for v1 — the run will complete.
         Messages.Info("Stop: engine runs to completion (no cancellation support in v1).");
+    }
+
+    /// <summary>
+    /// Opens the "Setup Analyses…" modal dialog — the same <see cref="AnalysesListViewModel"/>
+    /// the dock panel uses, so mutations in either host affect the same schematic.
+    /// </summary>
+    [RelayCommand]
+    private async Task SetupAnalyses(Window? owner)
+    {
+        var listVm = _factory.AnalysesTool?.ListVm;
+        if (listVm is null) return;
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+        var dialog = new Views.Dialogs.SetupAnalysesDialog(listVm);
+        await dialog.ShowDialog(window);
     }
 
     // ── Netlist write (Phase 6e Step 4) ──────────────────────────────────────
@@ -1317,9 +1334,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
         var activeDockable = _factory.DocumentDock?.ActiveDockable;
 
-        // Properties panel — tracks only schematics.
+        // Properties + Analyses panels — track only schematics.
         var activeVm = activeDockable is SchematicDocument schDoc ? schDoc.ViewModel : null;
         _factory.PropertiesTool?.SetActiveSchematic(activeVm);
+        _factory.AnalysesTool?.SetActiveSchematic(activeVm);
 
         // Undo routing — follows any IUndoableDocument for main-window tabs.
         SetActiveUndoTarget(activeDockable as IUndoableDocument);

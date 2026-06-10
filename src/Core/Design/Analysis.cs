@@ -1,3 +1,7 @@
+using System.Collections.Generic;
+using System.Globalization;
+using CircuitRF.Core.Expressions;
+
 namespace CircuitRF.Core.Design;
 
 // ── Analysis hierarchy (data-model §4) ───────────────────────────────────────
@@ -7,15 +11,54 @@ namespace CircuitRF.Core.Design;
 
 public abstract class Analysis(string name)
 {
-    public string          Name   { get; } = name;
-    public List<SweepSpec> Sweeps { get; } = [];
+    public string          Name       { get; } = name;
+    /// <summary>When false, the analysis stays configured but is skipped at run time.</summary>
+    public bool            Enabled    { get; set; } = true;
+    // Parametric sweep axes wrapping this analysis (unused stubs; reserved for ParametricSweepAnalysis).
+    // Renamed from "Sweeps" to "SweepAxes" so SParameterAnalysis.Sweeps is unambiguous.
+    public List<SweepSpec> SweepAxes  { get; } = [];
 }
 
 public sealed class DcAnalysis(string name) : Analysis(name);
 
-public sealed class SParameterAnalysis(string name, FrequencySpec freq) : Analysis(name)
+/// <summary>
+/// S-parameter analysis. Carries one or more frequency-sweep segments; at engine time all
+/// segments are unioned into a single sorted/deduped flat frequency array via <see cref="Expand"/>.
+/// </summary>
+public sealed class SParameterAnalysis : Analysis
 {
-    public FrequencySpec Freq { get; } = freq;
+    /// <summary>Ordered list of frequency-sweep segments. At least one segment is required.</summary>
+    public IReadOnlyList<FrequencySpec> Sweeps { get; }
+
+    // ── Single-segment convenience constructor (backward compat) ──────────────
+    public SParameterAnalysis(string name, FrequencySpec freq) : base(name)
+        => Sweeps = [freq];
+
+    // ── Multi-segment constructor ─────────────────────────────────────────────
+    public SParameterAnalysis(string name, IReadOnlyList<FrequencySpec> sweeps) : base(name)
+    {
+        if (sweeps.Count < 1)
+            throw new ArgumentException("SParameterAnalysis requires at least one FrequencySpec.", nameof(sweeps));
+        Sweeps = sweeps;
+    }
+
+    // ── Backward-compat: single-segment via the old Freq property ─────────────
+    /// <summary>Returns the first segment. Use <see cref="Sweeps"/> when there may be multiple.</summary>
+    public FrequencySpec Freq => Sweeps[0];
+
+    // ── Whole-analysis expand: union all segments into one sorted/deduped array ─
+    /// <summary>
+    /// Expands all <see cref="Sweeps"/> segments, unions their points, and returns a single
+    /// sorted, deduplicated <c>double[]</c> — the flat frequency array the engine expects.
+    /// </summary>
+    public double[] Expand(IReadOnlyDictionary<string, Value>? globals = null)
+    {
+        var all = new SortedSet<double>();
+        foreach (var seg in Sweeps)
+            foreach (var f in seg.Expand(globals))
+                all.Add(f);
+        return [.. all];
+    }
 }
 
 /// <summary>
@@ -160,6 +203,9 @@ public sealed class ParametricSweepAnalysis(
 
 public enum SweepKind { Linear, Log }
 
+/// <summary>Whether a <see cref="FrequencySpec"/> segment is defined by step size or point count.</summary>
+public enum FreqSpecMode { StepSize, PointCount }
+
 public sealed class SweepSpec(string variable, double start, double stop, double step, SweepKind kind = SweepKind.Linear)
 {
     public string    Variable { get; } = variable;
@@ -169,12 +215,143 @@ public sealed class SweepSpec(string variable, double start, double stop, double
     public SweepKind Kind     { get; } = kind;
 }
 
-public sealed class FrequencySpec(double start, double stop, double step, SweepKind kind = SweepKind.Linear)
+/// <summary>
+/// One frequency-sweep segment: Start/Stop expressed as raw expression strings (so
+/// <c>stop = "2*f0"</c> works), plus either a step-size expression or a point count.
+/// Call <see cref="Expand"/> to resolve expressions and produce the concrete double[] array.
+/// </summary>
+public sealed class FrequencySpec
 {
-    public double    Start { get; } = start;
-    public double    Stop  { get; } = stop;
-    public double    Step  { get; } = step;
-    public SweepKind Kind  { get; } = kind;
+    // ── Stored intent (what the user typed) ───────────────────────────────────
+    public string       StartExpr { get; }
+    public string       StopExpr  { get; }
+    /// <summary>Step-size expression (Hz). Non-empty in <see cref="FreqSpecMode.StepSize"/> mode only.</summary>
+    public string       StepExpr  { get; }
+    /// <summary>Number of points. Non-null in <see cref="FreqSpecMode.PointCount"/> mode only. ≥ 1.</summary>
+    public int?         NumPoints { get; }
+    public FreqSpecMode Mode      { get; }
+    public SweepKind    Kind      { get; }
+
+    // ── StepSize constructor (expression strings) ─────────────────────────────
+    public FrequencySpec(string startExpr, string stopExpr, string stepExpr,
+                         SweepKind kind = SweepKind.Linear)
+    {
+        StartExpr = startExpr;
+        StopExpr  = stopExpr;
+        StepExpr  = stepExpr;
+        Mode      = FreqSpecMode.StepSize;
+        Kind      = kind;
+    }
+
+    // ── PointCount constructor ────────────────────────────────────────────────
+    public FrequencySpec(string startExpr, string stopExpr, int numPoints,
+                         SweepKind kind = SweepKind.Linear)
+    {
+        if (numPoints < 1)
+            throw new ArgumentOutOfRangeException(nameof(numPoints), "NumPoints must be ≥ 1");
+        StartExpr = startExpr;
+        StopExpr  = stopExpr;
+        StepExpr  = "";
+        NumPoints = numPoints;
+        Mode      = FreqSpecMode.PointCount;
+        Kind      = kind;
+    }
+
+    // ── Backward-compat (doubles → expression strings, StepSize) ─────────────
+    public FrequencySpec(double start, double stop, double step,
+                         SweepKind kind = SweepKind.Linear)
+        : this(start.ToString("R", CultureInfo.InvariantCulture),
+               stop.ToString("R", CultureInfo.InvariantCulture),
+               step.ToString("R", CultureInfo.InvariantCulture),
+               kind) { }
+
+    // ── Expand: resolve expressions → concrete freq-point array ──────────────
+
+    /// <summary>
+    /// Resolves <see cref="StartExpr"/>/<see cref="StopExpr"/>/<see cref="StepExpr"/> against
+    /// <paramref name="globals"/> (may be null for pure-literal expressions) and returns the
+    /// concrete double[] of frequency points this segment covers.
+    /// </summary>
+    public double[] Expand(IReadOnlyDictionary<string, Value>? globals = null)
+    {
+        double start = ResolveExpr(StartExpr, globals);
+        double stop  = ResolveExpr(StopExpr,  globals);
+
+        if (Mode == FreqSpecMode.PointCount)
+        {
+            int n = NumPoints!.Value;
+            return Kind == SweepKind.Log
+                ? LogSpace(start, stop, n)
+                : LinSpace(start, stop, n);
+        }
+
+        // StepSize mode
+        double step = ResolveExpr(StepExpr, globals);
+        return Kind == SweepKind.Log
+            ? LogStepSpace(start, stop, step)
+            : LinearStepSpace(start, stop, step);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static double ResolveExpr(string expr, IReadOnlyDictionary<string, Value>? globals)
+    {
+        // Fast path: plain numeric literal (covers the common "1e9", "1000000000" cases)
+        if (double.TryParse(expr,
+                NumberStyles.Float | NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture, out var d))
+            return d;
+
+        // Full expression path: bind Real globals into a scope and evaluate
+        var scope = new Scope("freq");
+        if (globals is not null)
+            foreach (var (k, v) in globals)
+                if (v.Kind == ValueKind.Real)
+                    scope.Bind(k, v.AsReal().ToString("R", CultureInfo.InvariantCulture));
+
+        return new Evaluator().Eval(expr, scope).AsReal();
+    }
+
+    // N points linearly spaced [start, stop]
+    private static double[] LinSpace(double start, double stop, int n)
+    {
+        if (n == 1) return [start];
+        var pts = new double[n];
+        for (int i = 0; i < n; i++)
+            pts[i] = start + (stop - start) * i / (n - 1);
+        return pts;
+    }
+
+    // N points log-spaced [start, stop]
+    private static double[] LogSpace(double start, double stop, int n)
+    {
+        if (n == 1) return [start];
+        var pts = new double[n];
+        double logRatio = Math.Log10(stop / start);
+        for (int i = 0; i < n; i++)
+            pts[i] = start * Math.Pow(10, logRatio * i / (n - 1));
+        return pts;
+    }
+
+    // Linear additive step sweep
+    private static double[] LinearStepSpace(double start, double stop, double step)
+    {
+        if (step <= 0) step = (stop - start) / 100.0;
+        var list = new List<double>();
+        for (double f = start; f <= stop + step * 1e-9; f += step)
+            list.Add(f);
+        return [.. list];
+    }
+
+    // Log sweep: step = multiplicative ratio per step (> 1). If ≤ 1, falls back to 100 log-pts.
+    private static double[] LogStepSpace(double start, double stop, double step)
+    {
+        if (step <= 1.0) return LogSpace(start, stop, 100);
+        var list = new List<double>();
+        for (double f = start; f <= stop * (1.0 + 1e-9); f *= step)
+            list.Add(f);
+        return [.. list];
+    }
 }
 
 // ── Measurement (declared on TestBench) ──────────────────────────────────────

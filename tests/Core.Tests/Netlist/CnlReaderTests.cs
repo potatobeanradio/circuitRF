@@ -112,10 +112,12 @@ public class CnlReaderTests
     public void PiNetwork_RawDirectivesPreserved()
     {
         var (lib, tb) = CnlReader.ReadFile(FixturePath("pi_network.cnl"));
-        // measure lines are now promoted to typed Measurement, so only the analysis raw directive remains
-        var rd = Assert.Single(tb.RawDirectives);
-        Assert.Equal("analysis", rd.Kind);
-        Assert.Contains("sparam", rd.RawLine);
+        // type=sparam is now promoted to a typed SParameterAnalysis, not a RawDirective
+        Assert.Empty(tb.RawDirectives);
+        var spa = Assert.Single(tb.Analyses) as SParameterAnalysis;
+        Assert.NotNull(spa);
+        Assert.Equal("SP", spa.Name);
+        Assert.Single(spa.Sweeps);
         // measure promoted to Measurements collection
         var m = Assert.Single(tb.Measurements);
         Assert.Equal("InsertionLoss", m.Name);
@@ -303,14 +305,16 @@ public class CnlReaderTests
     }
 
     [Fact]
-    public void InlineRead_RawDirectivesRoundTrip()
+    public void InlineRead_SParamPromotedToTyped()
     {
         var src = "analysis SP type=sparam start=1 GHz\nmeasure Gain = dB(S(2,1))\n";
         var (_, tb) = new CnlReader().Read(src);
-        // measure lines are promoted to typed Measurements; only the analysis raw directive remains
-        var rd = Assert.Single(tb.RawDirectives);
-        Assert.Equal("analysis", rd.Kind);
-        Assert.Equal("SP type=sparam start=1 GHz", rd.RawLine);
+        // type=sparam is now promoted to a typed SParameterAnalysis, not a RawDirective
+        Assert.Empty(tb.RawDirectives);
+        var spa = Assert.Single(tb.Analyses) as SParameterAnalysis;
+        Assert.NotNull(spa);
+        Assert.Equal("SP", spa.Name);
+        Assert.Single(spa.Sweeps);
         // measure promoted
         var m = Assert.Single(tb.Measurements);
         Assert.Equal("Gain",       m.Name);
