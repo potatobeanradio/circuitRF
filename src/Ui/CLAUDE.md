@@ -231,17 +231,76 @@ Gate: all 1037 tests green; firewall green.
   snapped to `EditModel.SnapToGrid`. Ghost is invalidated each tick → ghost (with pins) follows the cursor.
 - **`DragLeaveEvent` handler** (`OnPaletteDragLeave`) added — clears `overlay.Ghost` when drag exits canvas.
 - **`OnPaletteDrop`** clears the ghost at the top before processing.
-- **`[DnD]` instrumentation** via `Console.Error.WriteLine` at all four stages: threshold crossing in
-  `PaletteTile.OnTilePointerMoved`, `DoDragDropAsync` return, `DragOver` entry, and `Drop` entry. Read stderr
-  when running the app to confirm which stages fire (diagnoses hit-test / format-mismatch / editContext issues).
 
-**Grid tightening + subtle border (L3):**
-- `PaletteTile.axaml`: tile `StackPanel` margin `3` → `2 3 2 3` (2 px left/right) — slot width 72 px (was 74).
-  Column rule: `floor(availableWidth / 72)`.
-- `Button` unarmed: `BorderThickness=1` / `BorderBrush={DynamicResource DockBorderSubtleBrush}` /
-  `CornerRadius=3` (subtle HIG-consistent border, fully theme-aware).
-- `Button.armed` override adds `BorderBrush={DynamicResource SystemAccentColor}` so the accent fill and border
-  match — the definition border never fights the armed highlight.
+**Grid tightening + subtle border (L3, superseded by Fix v2 below):**
+Tile `StackPanel` margin tweak to `2 3 2 3` — 1 px change, imperceptible. `Button` gains `BorderThickness=1` /
+`BorderBrush=DockBorderSubtleBrush` / `CornerRadius=3`.
+
+Gate: all 1042 tests green; firewall green.
+
+---
+
+## Library Palette — DnD root-cause fix + real grid tightening (Fix v2 — done)
+
+**Root cause (Button-eats-drag):** `Button` captures the pointer on `PointerPressed` and handles the
+press→move gesture for its own click mechanic. The tile's drag-source handlers lived on the outer `UserControl`,
+which never received an owned press→threshold gesture because the `Button` already owned the pointer. Result:
+`DoDragDropAsync` was never called, no `DragOver` fired, no ghost appeared, no drop landed.
+
+**Fix — single pointer owner:**
+- **`PaletteTile.axaml`** — `Button` replaced by a plain `Border` (`x:Name="TileGlyph"`). The `Border` is not
+  a button control and does not capture the pointer. `Classes.armed` moves to the `Border`. Styles use
+  `Border#TileGlyph` selectors: `SystemBaseLowColor` 1 px border (unarmed), `:pointerover` tint
+  (`SystemChromeMediumColor`), `.armed` accent background + border, `.armed:pointerover` light accent.
+  No `Command` attribute — arm is handled in code-behind.
+- **`PaletteTile.axaml.cs`** — three handlers on the `UserControl` (events bubble from the `Border`):
+  - `PointerPressed`: record `_pressArgs`, set `_dragOccurred = false`. No capture.
+  - `PointerMoved`: detect 5 px threshold; set `_dragOccurred = true`, clear `_pressArgs`, call
+    `DoDragDropAsync(savedArgs, transfer, Copy)`.
+  - `PointerReleased`: if `_pressArgs` is still set (no drag) → call `vm.ArmCommand.Execute(null)` (arm toggle).
+  All `Console.Error` `[DnD]` instrumentation removed.
+- **`SchematicCanvas.cs`** — all `Console.Error.WriteLine` DnD logs removed from `OnPaletteDragOver` and
+  `OnPaletteDrop`. Canvas-side drop handling was already correct.
+
+**Real grid tightening:**
+- `StackPanel Width="60"` (was 68), `Margin="1 2 1 2"` (was 2 3 2 3) → slot = 62 px (was ~74 px; visibly tighter).
+- `Border` 52×52 px (was `Button` 60×60), glyph 44×44 (was 50×50). Column rule: `floor(availableWidth / 62)`.
+- Border brush `SystemBaseLowColor` (guaranteed system resource, resolves in all Avalonia themes; renders visibly).
+
+**Key gotcha (do not reintroduce):** never wrap the tile glyph in a `Button` or any pointer-capturing control.
+`Button` (and `ToggleButton`) capture the pointer on press — this consumes the press→move gesture before
+`DoDragDropAsync` can be called, silently killing the drag. Use a plain `Border` or `Panel` for the clickable
+area and handle arm + drag entirely in pointer handlers on the `UserControl`.
+
+Gate: all 1042 tests green; firewall green.
+
+---
+
+## Library Palette — macOS DnD crash fix + visible border (DnD crash fix — done)
+
+**Root cause (macOS NSPasteboard crash):** `DataFormat.CreateInProcessFormat<T>(...)` is an in-process-only
+format. On macOS, a real system drag goes through NSPasteboard — but an in-process format writes nothing to
+it. AppKit detects a drag image with 0 pasteboard items and throws an uncaught NSException → app terminates.
+The crash trace: `NSDraggingSession … 'There are 0 items on the pasteboard, but 1 drag images'`.
+
+**Fix — text pasteboard format (mirrors SchematicClipboard):**
+- **`PaletteDragPayload.cs`** — the `Format = DataFormat.CreateInProcessFormat<...>` field is **removed**.
+  Instead the record adds `Serialize() → "circuitrf-palette:{Kind}:{PortCount}"` and
+  `static bool TryParse(string?, out PaletteDragPayload)` that accepts **only** strings with the
+  `circuitrf-palette:` prefix (foreign-text guard — random text drags are ignored silently).
+- **`PaletteTile.OnTilePointerMoved`** — `transferItem.Set(DataFormat.Text, payload.Serialize())` instead
+  of the in-process format. Everything else unchanged.
+- **`SchematicCanvas.OnPaletteDragOver` / `OnPaletteDrop`** — reads `TryGetRaw(DataFormat.Text)`, calls
+  `TryParse`; strings without the prefix → `DragDropEffects.None` / ignored.
+
+**Tile border visibility fix:** `SystemBaseLowColor` (~12% opacity) replaced with `SystemBaseMediumLowColor`
+(~38%) in `PaletteTile.axaml` → tile borders are now visibly readable in light and dark without fighting
+the armed accent.
+
+**Critical rule — palette DnD must use a platform pasteboard format:**
+`DataFormat.Text` (or a `DataFormat.CreateBytesPlatformFormat` bytes format) writes to the native pasteboard.
+`DataFormat.CreateInProcessFormat<T>` does NOT — it crashes macOS system DnD. The working pattern for DnD
+payloads is a prefix-guarded serialized string on `DataFormat.Text`, exactly like `SchematicClipboard`.
 
 Gate: all 1042 tests green; firewall green.
 

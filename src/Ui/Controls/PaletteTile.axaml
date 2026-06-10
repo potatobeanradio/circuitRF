@@ -7,19 +7,25 @@
              x:DataType="dockVm:PaletteTileVm">
 
     <UserControl.Styles>
-        <!-- Subtle 1px definition border for all unarmed tiles (HIG) -->
-        <Style Selector="Button">
-            <Setter Property="BorderBrush" Value="{DynamicResource DockBorderSubtleBrush}"/>
+        <!-- Subtle 1px definition border for all unarmed tiles (HIG).
+             SystemBaseMediumLowColor (~38% opacity) is visibly readable against the panel background
+             in both light and dark; SystemBaseLowColor (~12%) is too faint to see. -->
+        <Style Selector="Border#TileGlyph">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseMediumLowColor}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Border#TileGlyph:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeMediumColor}"/>
         </Style>
         <!-- Armed: accent background + matching border so definition border doesn't fight the highlight -->
-        <Style Selector="Button.armed">
+        <Style Selector="Border#TileGlyph.armed">
             <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
-            <Setter Property="Foreground" Value="{DynamicResource SystemAccentColorLight3}"/>
         </Style>
-        <Style Selector="Button.armed:pointerover /template/ ContentPresenter">
+        <Style Selector="Border#TileGlyph.armed:pointerover">
             <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}"/>
         </Style>
     </UserControl.Styles>
@@ -32,27 +38,26 @@
         </StackPanel>
     </ToolTip.Tip>
 
-    <!-- Tile: square button + caption below. Width=68 + Margin 2px H gives 72px slot (width-driven column rule). -->
-    <StackPanel Spacing="3" HorizontalAlignment="Center" Width="68" Margin="2 3 2 3">
+    <!-- Tile: square glyph border + caption below. Width=60 + Margin 2px H gives 62px slot (width-driven column rule).
+         The Border is the single pointer owner: PointerReleased-without-drag = arm; PointerMoved-past-threshold = DnD. -->
+    <StackPanel Spacing="3" HorizontalAlignment="Center" Width="60" Margin="1 2 1 2">
 
-        <!-- Square glyph button — Command + armed visual class -->
-        <Button Width="60"
-                Height="60"
+        <!-- Square glyph border — single pointer owner for both arm (click) and drag-and-drop -->
+        <Border x:Name="TileGlyph"
+                Width="52"
+                Height="52"
                 Padding="4"
-                HorizontalContentAlignment="Center"
-                VerticalContentAlignment="Center"
                 HorizontalAlignment="Center"
-                Command="{Binding ArmCommand}"
                 Classes.armed="{Binding #TileRoot.IsArmed}">
-            <ctrl:PaletteGlyphControl Kind="{Binding Item.Kind}" Width="50" Height="50"/>
-        </Button>
+            <ctrl:PaletteGlyphControl Kind="{Binding Item.Kind}" Width="44" Height="44"/>
+        </Border>
 
         <!-- Type label underneath — DisplayName, truncated if long -->
         <TextBlock Text="{Binding Item.DisplayName}"
                    FontSize="10"
                    TextAlignment="Center"
                    TextTrimming="CharacterEllipsis"
-                   MaxWidth="68"
+                   MaxWidth="60"
                    HorizontalAlignment="Center"/>
     </StackPanel>
 

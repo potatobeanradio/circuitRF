@@ -11,7 +11,8 @@ namespace CircuitRF.Ui.Controls;
 /// Square tile showing a SymbolKind's glyph + DisplayName caption.
 /// DataContext = <see cref="PaletteTileVm"/>.
 /// IsArmed: driven by the palette VM while placement is armed.
-/// Drag source: pointer-move beyond threshold starts a DnD operation carrying <see cref="PaletteDragPayload"/>.
+/// Single pointer owner: PointerReleased-without-drag = arm toggle; PointerMoved-past-threshold = DnD.
+/// No nested Button — the Button-eats-drag gotcha is avoided by using a plain Border.
 /// </summary>
 public partial class PaletteTile : UserControl
 {
@@ -29,7 +30,8 @@ public partial class PaletteTile : UserControl
     // ── Drag source state ─────────────────────────────────────────────────────
 
     private PointerPressedEventArgs? _pressArgs;
-    private const double DragThreshold = 5.0;
+    private bool                     _dragOccurred;
+    private const double             DragThreshold = 5.0;
 
     public PaletteTile()
     {
@@ -42,7 +44,10 @@ public partial class PaletteTile : UserControl
     private void OnTilePointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
-            _pressArgs = e;
+        {
+            _pressArgs    = e;
+            _dragOccurred = false;
+        }
     }
 
     private async void OnTilePointerMoved(object? sender, PointerEventArgs e)
@@ -57,21 +62,27 @@ public partial class PaletteTile : UserControl
         var delta = e.GetPosition(this) - _pressArgs.GetPosition(this);
         if (Math.Sqrt(delta.X * delta.X + delta.Y * delta.Y) < DragThreshold) return;
 
-        Console.Error.WriteLine($"[DnD] drag threshold crossed for {vm.Item.Kind} portCount={vm.Item.PortCount}");
-
         var savedArgs = _pressArgs;
-        _pressArgs = null;          // clear before await — prevents re-entry
+        _pressArgs    = null;   // clear before await — prevents re-entry
+        _dragOccurred = true;
 
+        var payload = new PaletteDragPayload(vm.Item.Kind, vm.Item.PortCount);
         var transferItem = new DataTransferItem();
-        transferItem.Set(PaletteDragPayload.Format,
-                         new PaletteDragPayload(vm.Item.Kind, vm.Item.PortCount));
+        transferItem.Set(DataFormat.Text, payload.Serialize());
         var transfer = new DataTransfer();
         transfer.Add(transferItem);
 
-        var effect = await DragDrop.DoDragDropAsync(savedArgs, transfer, DragDropEffects.Copy);
-        Console.Error.WriteLine($"[DnD] DoDragDropAsync returned effect={effect}");
+        await DragDrop.DoDragDropAsync(savedArgs, transfer, DragDropEffects.Copy);
     }
 
     private void OnTilePointerReleased(object? sender, PointerReleasedEventArgs e)
-        => _pressArgs = null;
+    {
+        // PointerMoved clears _pressArgs when a drag starts, so wasPress=false after a drag.
+        bool wasPress = _pressArgs is not null && !_dragOccurred;
+        _pressArgs    = null;
+        _dragOccurred = false;
+
+        if (wasPress && DataContext is PaletteTileVm vm)
+            vm.ArmCommand.Execute(null);
+    }
 }

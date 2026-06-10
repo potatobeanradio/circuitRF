@@ -65,7 +65,7 @@
 
             <!-- Width-driven reflow grid:
                  columns = max(1, floor(availableWidth / tileWidth)) arises naturally from WrapPanel
-                 with fixed-width tiles (68px tile + 6px margin = 74px per slot).
+                 with fixed-width tiles (60px tile + 2px margin = 62px per slot).
                  Vertical scroll only; horizontal scroll disabled so WrapPanel measures correctly. -->
             <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto"

@@ -85,13 +85,17 @@ Each item is a **square button** showing the component's **symbol glyph only**:
   tile with padding, centered. Honors the active color theme (symbol-line role).
 - **Type label underneath** — the registry `DisplayName` (e.g. "R", "TLIN", "VTone") as the tile caption —
   the searchable, novice-friendly identity (a bare glyph is ambiguous to newcomers).
-- **Armed state** — when a tile's placement is armed, the button renders **depressed/highlighted** (accent
+- **Armed state** — when a tile's placement is armed, the glyph border renders **highlighted** (accent
   background + matching border); only one tile armed at a time.
-- **Unarmed subtle border** — a 1 px `DockBorderSubtleBrush` border with `CornerRadius=3` gives each tile
+- **Unarmed subtle border** — a 1 px `SystemBaseLowColor` border with `CornerRadius=3` gives each tile
   visual definition without fighting the accent highlight. Armed state overrides `BorderBrush` to the accent
   color so the definition border never competes with the highlight.
-- **Tighter horizontal gap** — tile `Margin="2 3 2 3"` (2 px left/right, 3 px top/bottom) gives a slot
-  width of 72 px (was 74 px). Column rule: `floor(availableWidth / 72)`.
+- **Tile metrics** — `StackPanel Width="60"`, `Margin="1 2 1 2"` (1 px left/right, 2 px top/bottom),
+  `Border` 52×52 px, glyph 44×44 px. Slot width = 62 px. Column rule: `floor(availableWidth / 62)`.
+- **Single pointer owner** — the tile `Border` owns all pointer interaction. `PointerReleased`-without-drag =
+  arm toggle; `PointerMoved`-past-threshold = `DoDragDropAsync`. No nested `Button` — a `Button` captures the
+  pointer on press and consumes the press→move gesture before `DoDragDropAsync` can start (the Button-eats-drag
+  gotcha). The `UserControl` registers all three handlers on itself so they receive bubbled events from the border.
 - **Tooltip** — full display name + category (and maybe a one-line description) on hover.
 
 ---
@@ -223,8 +227,9 @@ is documented for users. *(Doc deliverables tracked with the build.)*
    non-interactive grid first.~~ **Done (step 2).** `PaletteGlyphControl` (`src/Ui/Controls/`) — Skia
    `ICustomDrawOperation` control; `BuiltInSymbols.Primitives(kind).Primitives` → `SymbolGeometry.ComputeBb`
    → auto-scale+center (12% padding) → `SchematicRenderer.DrawSymbol`; transparent bg; subscribes to
-   `ThemeService`. `PaletteTile` UserControl (`src/Ui/Controls/`) — square `Button` + glyph + `DisplayName`
-   caption + `IsArmed` styled property (step 4 drives it). `PaletteTool` (`src/Ui/ViewModels/Dock/`) + inert
+   `ThemeService`. `PaletteTile` UserControl (`src/Ui/Controls/`) — `Border` 52×52 + glyph 44×44 + `DisplayName`
+   caption + `IsArmed` styled property (step 4 drives it). No nested `Button` — the `Border` is the single pointer
+   owner (arm on release, DnD on move-past-threshold). `PaletteTool` (`src/Ui/ViewModels/Dock/`) + inert
    `PaletteToolView` (`src/Ui/Views/Palette/`) — `ItemsControl`+`WrapPanel` bound to `LibraryCatalog.AllItems`,
    tabs alongside Project Tree. All 1037 tests green; firewall green.
 3. ~~**Layout + header** (§4/§5): width-driven column count, scroll, dock tool + tear-off; category ComboBox +
@@ -273,12 +278,31 @@ is documented for users. *(Doc deliverables tracked with the build.)*
    `SymbolPortDefs.For(ghost.Symbol, ghost.PortCount)` → `LocalToPixel`. Rotation moves pins correctly.
    **(L2 DnD)** `OnPaletteDragOver` now extracts the payload via `TryGetRaw` and sets `_editContext.Overlay`
    ghost at snapped world position → ghost (with pins) follows during drag. `DragLeaveEvent` handler clears the
-   ghost. `OnPaletteDrop` clears the ghost before processing. `Console.Error` `[DnD]` instrumentation added at
-   all four stages (threshold/DoDragDropAsync/DragOver/Drop) to aid diagnosis if DnD events fail to reach
-   the canvas at runtime. **(L3 grid)** `PaletteTile` margin changed to `2 3 2 3` (72 px slot, was 74 px);
-   `Button` gains `BorderThickness=1` / `BorderBrush=DockBorderSubtleBrush` / `CornerRadius=3`; armed state
-   overrides `BorderBrush` to accent color so definition border never fights highlight. 1042 tests green;
-   firewall green.
+   ghost. `OnPaletteDrop` clears the ghost before processing. `[DnD]` instrumentation added temporarily at all
+   four stages (threshold/DoDragDropAsync/DragOver/Drop). **(L3 grid)** 1px margin tweak (imperceptible).
+   1042 tests green; firewall green.
+7. ~~**DnD root-cause fix + real grid tightening** (Fix v2).~~ **Done.** **(L1 DnD)** `Button` replaced by
+   plain `Border` — the `Button.PointerCapture` was consuming the press→move gesture before the `UserControl`'s
+   drag handlers could call `DoDragDropAsync` (Button-eats-drag). `PaletteTile` is now the single pointer owner:
+   `PointerPressed` records the press without capturing; `PointerMoved` past 5 px threshold calls
+   `DoDragDropAsync`; `PointerReleased` without a prior drag calls `vm.ArmCommand.Execute(null)` (arm toggle).
+   All `Console.Error` `[DnD]` logs removed from tile + canvas. **(L2 grid)** Tile slot reduced to 62 px
+   (`StackPanel Width="60"`, `Margin="1 2 1 2"`, `Border` 52×52, glyph 44×44); subtle border uses
+   `SystemBaseLowColor` (guaranteed system resource); hover tint `SystemChromeMediumColor`; `:pointerover` pseudo-
+   class on the `Border` for hover state; armed accent unchanged. 1042 tests green; firewall green.
+8. ~~**macOS DnD crash fix + visible border** (DnD crash fix).~~ **Done.** **(L1 macOS crash)**
+   `PaletteDragPayload.Format = DataFormat.CreateInProcessFormat<PaletteDragPayload>(...)` was an in-process-only
+   format — on macOS it leaves nothing on NSPasteboard so AppKit raises `'0 items on the pasteboard, but 1 drag
+   images'` → uncaught NSException → crash. Fix: `PaletteDragPayload` now carries a text serialization:
+   `Serialize()` → `"circuitrf-palette:{Kind}:{PortCount}"` and `TryParse(string?, out PaletteDragPayload)` that
+   accepts only strings with the `circuitrf-palette:` prefix (foreign-text guard). The static `Format` field is
+   removed. Drag source (`PaletteTile.OnTilePointerMoved`) sets `DataFormat.Text` to `payload.Serialize()`.
+   Drop target (`SchematicCanvas.OnPaletteDragOver` / `OnPaletteDrop`) reads `DataFormat.Text` via
+   `TryGetRaw(DataFormat.Text)` and calls `TryParse`; strings that don't parse (foreign drags) → `DragDropEffects.None`.
+   This mirrors the established `SchematicClipboard` pattern (`DataFormat.Text` = JSON). **Rule:** always use
+   `DataFormat.Text` (or another platform pasteboard format) for DnD payloads — in-process formats crash macOS
+   system DnD. **(L2 border)** `SystemBaseLowColor` (~12% opacity) replaced with `SystemBaseMediumLowColor` (~38%)
+   — visibly readable in light and dark without fighting the armed accent. 1042 tests green; firewall green.
 
 Steps 1–3 stand up a visible (inert) Palette; 4 is the core placement; 5 adds DnD; 6 documents. The
 connectivity-union-on-commit (step 4) must **reuse** the existing on-`P` union — no second connectivity path.

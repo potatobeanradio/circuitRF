@@ -645,10 +645,17 @@ public sealed class SchematicCanvas : Control
 
     private void OnPaletteDragOver(object? sender, DragEventArgs e)
     {
-        bool hasFormat = e.DataTransfer.Formats.Contains(PaletteDragPayload.Format);
-        Console.Error.WriteLine($"[DnD] DragOver fired — hasFormat={hasFormat} editContext={_editContext is not null}");
+        // Accept only text drops whose content parses as our palette payload (prefix-guarded).
+        // Foreign text drops (random files, browser drags, etc.) are silently rejected.
+        PaletteDragPayload? p = null;
+        foreach (var item in e.DataTransfer.Items)
+        {
+            if (item.TryGetRaw(DataFormat.Text) is string text
+                && PaletteDragPayload.TryParse(text, out var found))
+            { p = found; break; }
+        }
 
-        if (!hasFormat)
+        if (p is null)
         {
             e.DragEffects = DragDropEffects.None;
             return;
@@ -660,21 +667,14 @@ public sealed class SchematicCanvas : Control
         // Show the placement ghost following the drag cursor.
         if (_editContext is not null)
         {
-            PaletteDragPayload? p = null;
-            foreach (var item in e.DataTransfer.Items)
-                if (item.TryGetRaw(PaletteDragPayload.Format) is PaletteDragPayload found) { p = found; break; }
-
-            if (p is not null)
+            var pos  = e.GetPosition(this);
+            double sx = _editContext.EditModel.SnapToGrid(ScreenToWorldX(pos.X));
+            double sy = _editContext.EditModel.SnapToGrid(ScreenToWorldY(pos.Y));
+            _editContext.Overlay = _editContext.Overlay with
             {
-                var pos  = e.GetPosition(this);
-                double sx = _editContext.EditModel.SnapToGrid(ScreenToWorldX(pos.X));
-                double sy = _editContext.EditModel.SnapToGrid(ScreenToWorldY(pos.Y));
-                _editContext.Overlay = _editContext.Overlay with
-                {
-                    Ghost = new PlacementGhost(sx, sy, p.Kind, _editContext.CurrentPlacementRotation, false, p.PortCount),
-                };
-                InvalidateVisual();
-            }
+                Ghost = new PlacementGhost(sx, sy, p.Kind, _editContext.CurrentPlacementRotation, false, p.PortCount),
+            };
+            InvalidateVisual();
         }
     }
 
@@ -687,8 +687,6 @@ public sealed class SchematicCanvas : Control
 
     private void OnPaletteDrop(object? sender, DragEventArgs e)
     {
-        Console.Error.WriteLine($"[DnD] Drop fired — editContext={_editContext is not null}");
-
         // Clear drag ghost regardless of outcome.
         if (_editContext is not null)
             _editContext.Overlay = _editContext.Overlay with { Ghost = null };
@@ -697,10 +695,10 @@ public sealed class SchematicCanvas : Control
         PaletteDragPayload? payload = null;
         foreach (var item in e.DataTransfer.Items)
         {
-            if (item.TryGetRaw(PaletteDragPayload.Format) is PaletteDragPayload p)
+            if (item.TryGetRaw(DataFormat.Text) is string text
+                && PaletteDragPayload.TryParse(text, out var p))
             { payload = p; break; }
         }
-        Console.Error.WriteLine($"[DnD] payload={payload?.Kind} TryGetRaw succeeded={payload is not null}");
         if (payload is null) return;
 
         var pos      = e.GetPosition(this);
@@ -708,7 +706,6 @@ public sealed class SchematicCanvas : Control
         double wy    = ScreenToWorldY(pos.Y);
         var rotation = _editContext.CurrentPlacementRotation;
 
-        Console.Error.WriteLine($"[DnD] calling CommitPlacement kind={payload.Kind} wx={wx:F0} wy={wy:F0}");
         _editContext.CommitPlacement(payload.Kind, payload.PortCount, rotation, wx, wy);
         e.Handled = true;
         InvalidateVisual();
