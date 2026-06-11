@@ -612,7 +612,12 @@ public sealed class SchematicCanvas : Control
             return;
         }
 
-        _editContext.OnKeyDown(e.Key, e.KeyModifiers);
+        // Delegate to VM for Delete, R, nudge, Enter, and other canvas-specific keys.
+        // Esc/S/W/F/Z are owned by the View-level tunnel handler (OnViewKeyDownTunnel) and
+        // will already be marked handled before this bubble handler fires, so the VM won't
+        // re-process them.
+        if (_editContext.OnKeyDown(e.Key, e.KeyModifiers))
+            e.Handled = true;
         InvalidateVisual();
     }
 

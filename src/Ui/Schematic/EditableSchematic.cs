@@ -112,6 +112,14 @@ public sealed class EditableComponent
     public bool           MirrorX      { get; set; }
     public DisableState   Disable      { get; set; } = DisableState.None;
     public List<EditableParameter> Parameters   { get; } = new();
+    /// <summary>
+    /// Port indices that are explicitly detached. A detached port is geometrically coincident
+    /// with a wire/pin but treated as unconnected (first persistent connectivity override).
+    /// Persisted in .csch. Clears on the component's next move (lifecycle in MoveCommand).
+    /// </summary>
+    public HashSet<int>   DetachedPorts { get; } = new();
+    /// <summary>True when port <paramref name="portIndex"/> is explicitly detached.</summary>
+    public bool IsPortDetached(int portIndex) => DetachedPorts.Contains(portIndex);
     /// <summary>Per-label world-offset from default position. Index matches Labels list (0=type,1=name,2+=params).</summary>
     public List<(double DX, double DY)> LabelOffsets { get; } = new();
 
@@ -181,13 +189,23 @@ public sealed class EditableComponent
                 cellRefPrimitives = resolvedSym.Primitives;
                 ports = resolvedSym.Pins.Select(pin =>
                 {
-                    var (wx, wy) = SchematicGeometry.LocalToWorld(
-                        (float)pin.LocalX, (float)pin.LocalY, X, Y, Rotation, MirrorX);
-                    bool conn = isPointConnected?.Invoke(wx, wy) ?? false;
+                    PortConnectionState state;
+                    if (IsPortDetached(pin.PortIndex))
+                    {
+                        state = PortConnectionState.Unconnected;
+                    }
+                    else
+                    {
+                        var (wx, wy) = SchematicGeometry.LocalToWorld(
+                            (float)pin.LocalX, (float)pin.LocalY, X, Y, Rotation, MirrorX);
+                        state = (isPointConnected?.Invoke(wx, wy) ?? false)
+                            ? PortConnectionState.Connected
+                            : PortConnectionState.Unconnected;
+                    }
                     return new SchematicPortDef(
                         pin.Name ?? $"P{pin.PortIndex + 1}",
                         (float)pin.LocalX, (float)pin.LocalY,
-                        conn ? PortConnectionState.Connected : PortConnectionState.Unconnected);
+                        state);
                 }).ToList();
             }
             else
@@ -199,12 +217,21 @@ public sealed class EditableComponent
         else
         {
             var portDefs = SymbolPortDefs.For(Symbol, PortCount);
-            ports = portDefs.Select((p, _) =>
+            ports = portDefs.Select((p, i) =>
             {
-                var (wx, wy) = SchematicGeometry.LocalToWorld(p.LocalX, p.LocalY, X, Y, Rotation, MirrorX);
-                bool conn = isPointConnected?.Invoke(wx, wy) ?? false;
-                return new SchematicPortDef(p.Name, p.LocalX, p.LocalY,
-                    conn ? PortConnectionState.Connected : PortConnectionState.Unconnected);
+                PortConnectionState state;
+                if (IsPortDetached(i))
+                {
+                    state = PortConnectionState.Unconnected;
+                }
+                else
+                {
+                    var (wx, wy) = SchematicGeometry.LocalToWorld(p.LocalX, p.LocalY, X, Y, Rotation, MirrorX);
+                    state = (isPointConnected?.Invoke(wx, wy) ?? false)
+                        ? PortConnectionState.Connected
+                        : PortConnectionState.Unconnected;
+                }
+                return new SchematicPortDef(p.Name, p.LocalX, p.LocalY, state);
             }).ToList();
         }
 
@@ -326,6 +353,7 @@ public sealed class EditableComponent
         };
         foreach (var p in Parameters)    c.Parameters.Add(p.Clone());
         foreach (var o in LabelOffsets) c.LabelOffsets.Add(o);
+        foreach (var d in DetachedPorts) c.DetachedPorts.Add(d);
         return c;
     }
 }
@@ -470,11 +498,15 @@ public sealed class SchematicEditModel
         // a shared helper so the live dot preview during drags reuses the identical logic.
         var cg = ComputeConnectivityGeometry(cellRefResolutions);
 
-        // IsConnected for a port: O(1) hash lookup; rare fallback to segment scan on miss.
+        // IsConnected for a port: O(1) hash check against conPointCounts.
+        // A port is connected when at least one OTHER endpoint (another port or a wire vertex)
+        // shares its P-cell (count >= 2 — the port itself contributes 1, so >=2 means something
+        // else is there). Fallback handles port on a wire body interior (not at any endpoint).
         bool IsConnected(double wx, double wy)
         {
-            if (cg.WirePointHash.Contains(QuantKey(wx, wy))) return true;
-            // Fallback: mid-segment connection (port lands on a wire body, not just endpoints).
+            var key = QuantKey(wx, wy);
+            if (cg.ConPointCounts.TryGetValue(key, out int cnt) && cnt >= 2) return true;
+            // Fallback: port on wire body interior (not at any vertex/endpoint).
             foreach (var w in Wires)
             {
                 var pts = w.Points;
@@ -621,6 +653,7 @@ public sealed class SchematicEditModel
                 {
                     foreach (var pin in sym.Pins)
                     {
+                        if (comp.IsPortDetached(pin.PortIndex)) continue;
                         var (px, py) = SchematicGeometry.LocalToWorld(
                             (float)pin.LocalX, (float)pin.LocalY,
                             comp.X, comp.Y, comp.Rotation, comp.MirrorX);
@@ -636,6 +669,7 @@ public sealed class SchematicEditModel
                 int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
                 for (int pi = 0; pi < nPins; pi++)
                 {
+                    if (comp.IsPortDetached(pi)) continue;
                     var (px, py) = comp.GetPortWorldCoord(pi);
                     AddConPoint(px, py);
                 }
@@ -782,6 +816,69 @@ public sealed class SchematicEditModel
                 else if (s.Wi != firstWi) return true;   // two distinct wires cross here
             }
             return false;
+        }
+
+        // ── Port-coincidence dots ─────────────────────────────────────────────
+        // Emit a junction dot wherever a component port coincides with another
+        // connection endpoint (another port, a wire vertex, or a wire body interior).
+        // Skips P-cells already covered by a wire auto-dot (no double-dots). O(N) via
+        // the already-built segment cell-hash and conPointCounts.
+        var portDotSeen = new HashSet<(long, long)>();
+
+        void AddPortDot(double px, double py)
+        {
+            var pdKey = QuantKey(px, py);
+            if (autoDotKeys.Contains(pdKey)) return;   // already covered by wire auto-dot
+            if (!portDotSeen.Add(pdKey)) return;        // already processed this P-cell
+
+            // Case 1: another endpoint (port or wire vertex) shares the P-cell.
+            bool connected = conPointCounts.TryGetValue(pdKey, out int pdCnt) && pdCnt >= 2;
+
+            // Case 2: port lands on a wire body interior (P-cell has no wire vertex).
+            if (!connected)
+            {
+                var ck = ((long)Math.Floor(px / SegCell), (long)Math.Floor(py / SegCell));
+                if (segIndex.TryGetValue(ck, out var cands))
+                    foreach (int si in cands)
+                    {
+                        var s = segList[si];
+                        if (SchematicGeometry.PointOnSegmentInterior(
+                                px, py, s.ax, s.ay, s.bx, s.by, ConnectTolerance))
+                        { connected = true; break; }
+                    }
+            }
+
+            if (!connected) return;
+            autoDotKeys.Add(pdKey);
+            autoDotPts.Add((px, py));
+        }
+
+        foreach (var comp in Components)
+        {
+            if (comp.CellRef is not null)
+            {
+                if (cellRefResolutions is not null
+                    && cellRefResolutions.TryGetValue(comp.Id, out var pdRes)
+                    && pdRes is { State: CellSymbolState.Resolved, Symbol: { } pdSym })
+                {
+                    foreach (var pin in pdSym.Pins)
+                    {
+                        if (comp.IsPortDetached(pin.PortIndex)) continue;
+                        var (px, py) = SchematicGeometry.LocalToWorld(
+                            (float)pin.LocalX, (float)pin.LocalY,
+                            comp.X, comp.Y, comp.Rotation, comp.MirrorX);
+                        AddPortDot(px, py);
+                    }
+                }
+                continue;
+            }
+            int nDotPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
+            for (int pi = 0; pi < nDotPins; pi++)
+            {
+                if (comp.IsPortDetached(pi)) continue;
+                var (px, py) = comp.GetPortWorldCoord(pi);
+                AddPortDot(px, py);
+            }
         }
 
         return new ConnectivityGeometry(wirePointHash, conPointCounts, autoDotKeys, autoDotPts, IsCrossingAtDot);

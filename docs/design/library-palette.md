@@ -143,7 +143,11 @@ part can be dropped into **any** schematic in view (tabbed or torn-off).
   transform used by `DrawPortMarkers`.
 - **Rotate** — `R` / `Ctrl-R` rotates the ghost (the placement rotation) before commit.
 - **Cancel** — `Esc` cancels the placement (ghost disappears, tile un-depresses); also clicking the armed tile
-  again cancels.
+  again cancels. **Implementation note:** the armed state lives in `PlacementService.Pending` (app-level), NOT
+  in the canvas VM's `ActiveTool` enum. Esc must call `PlacementService.Disarm()` to clear `Pending`; setting
+  `ActiveTool = Select` alone leaves `Pending` non-null and the tile highlighted. `SchematicViewModel.
+  SetSelectTool()` disarms the service (no-op when `Pending` is already null) so every path that calls
+  `SetSelectTool()` — Esc, tool button, and inline-edit cancel — all disarm in one pass.
 - **Commit** — clicking in the schematic **places** a component instance at the snapped cursor position with
   the current rotation. **On commit, connectivity is resolved**: pins landing on a wire or another pin
   **union** into those nets (reuse the on-`P` union logic from `ComputeConnectivityGeometry` / the extraction
@@ -303,6 +307,22 @@ is documented for users. *(Doc deliverables tracked with the build.)*
    `DataFormat.Text` (or another platform pasteboard format) for DnD payloads — in-process formats crash macOS
    system DnD. **(L2 border)** `SystemBaseLowColor` (~12% opacity) replaced with `SystemBaseMediumLowColor` (~38%)
    — visibly readable in light and dark without fighting the armed accent. 1042 tests green; firewall green.
+
+9. ~~**Tile border fix + T-junction drag-follow** (Border+DragFollow — done).~~ **(A border)** Root cause:
+   `{DynamicResource SystemBaseMediumLowColor}` resolves to a `Color` struct, NOT a `SolidColorBrush`. Avalonia's
+   `Background` has an implicit `Color`→`Brush` conversion; `BorderBrush` does not, so the assignment silently
+   produced no visible border regardless of which `*Color` key was tried. Fix: define
+   `<SolidColorBrush x:Key="CrfTileBorderBrush" Color="#55808080"/>` in `App.axaml` (33% opacity neutral gray —
+   reads against both light and dark panel backgrounds) and point `PaletteTile.axaml`'s `BorderBrush` at
+   `{DynamicResource CrfTileBorderBrush}`. `BorderThickness=1`, `CornerRadius=3`. The Color-vs-Brush gotcha is
+   documented in `src/Ui/CLAUDE.md`. **(B T-junction drag)** A component pin placed on a wire's mid-span
+   (T-junction) was detected as connected at placement but did NOT carry the wire on drag — the follow logic in
+   `UpdateConnectedWireEndpointsLive` and `CommitDragAsCommand`'s `followWireSnaps` block only checked wire
+   endpoints (`orig[0]`/`orig[^1]`). Fix: after the endpoint check, both paths now scan wire segment interiors
+   with `PointOnSegmentInterior` + `ConnectTolerance` and, when a match is found, re-route the wire through the
+   new port position via `RouteBodyFollow` (see `placement-connectivity-and-drag-follow.md`). The re-route is
+   folded into the same `MoveCommand` — one Undo restores component + every followed wire. Reuses the single
+   connectivity predicate and mirrors `RouteStem`. 1038 tests green; firewall green.
 
 Steps 1–3 stand up a visible (inert) Palette; 4 is the core placement; 5 adds DnD; 6 documents. The
 connectivity-union-on-commit (step 4) must **reuse** the existing on-`P` union — no second connectivity path.

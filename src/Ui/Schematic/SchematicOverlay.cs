@@ -60,6 +60,13 @@ public sealed record class SchematicOverlay
     public IReadOnlyDictionary<string, IReadOnlyList<(double X, double Y)>>? WireDragPoints { get; init; }
 
     /// <summary>
+    /// Synthetic wire routes drawn as live preview during a pin-on-pin separation drag.
+    /// These wires do not exist in the model yet — they will be committed as real wires on
+    /// drag-end. Non-null only while such a drag is in progress.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<(double X, double Y)>>? PinOnPinPreviewWires { get; init; }
+
+    /// <summary>
     /// Live connection dots during an active drag, recomputed from the moving geometry. When
     /// non-null the renderer draws these INSTEAD of SchematicModel.ConnectionDots, so junction
     /// dots (T-junctions, crossings) follow the drag instead of lagging at their pre-drag spots.

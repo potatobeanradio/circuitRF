@@ -4,6 +4,47 @@ Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`, the interact
 `docs/design/ui-design.md`, and the architecture/firewall note `docs/design/ui-architecture.md`. The UI is
 how people drive the engine; it must never become the source of truth for simulation.
 
+---
+
+## Keyboard shortcut routing — focus-independent tunnel handler (SchematicView + SymbolEditorView)
+
+**The problem:** Toolbar `Button` clicks steal keyboard focus from the canvas. `Window.KeyBindings`
+(e.g. `<KeyBinding Gesture="Escape" Command="{Binding DisarmPlacementCommand}"/>`) are processed
+**before** visual-tree routing begins and always mark `e.Handled = true`. A plain `protected override
+OnKeyDown` on the `UserControl` is registered without `handledEventsToo`, so it is silently skipped after
+the Window KeyBinding runs. A `KeyDown +=` handler on the canvas is also skipped (canvas is not in the
+bubble path from a sibling toolbar button).
+
+**The fix — one authoritative tunnel handler per editor view:**
+```csharp
+// In the UserControl constructor:
+this.AddHandler(
+    InputElement.KeyDownEvent,
+    OnViewKeyDownTunnel,
+    RoutingStrategies.Tunnel,
+    handledEventsToo: true);
+```
+
+- `RoutingStrategies.Tunnel` fires **before** the focused element processes the key, so the View claims
+  Esc/S/W/F/Z first and marks them handled — the canvas's bubble handler then naturally skips them (no
+  double-processing).
+- `handledEventsToo: true` fires even when `e.Handled` is already `true` (the Window KeyBinding pre-mark).
+- Gate with `IsKeyboardFocusWithin` so the handler is a no-op when focus is on a different panel
+  (Properties, Project Tree, etc.).
+- Gate with `InlineEditBox.IsKeyboardFocusWithin` (schematic) so the inline TextBox keeps its own
+  Esc/Enter behaviour.
+
+**Schematic editor** (`SchematicView`): owns Esc (→ SetSelectTool or Selection.Clear), S, W, Z, F.
+**Symbol editor** (`SymbolEditorView`): owns Esc (delegates to `vm.OnKeyDown` which handles text/pin/general
+modes), S (→ SetActiveToolCommand "Select"), F (→ ZoomToFit).
+
+**Do NOT add a `protected override OnKeyDown` on these views** — it is a dead path after a toolbar click
+and causes double-handling if the tunnel handler is also present. The tunnel handler IS the single
+authoritative path; the canvas's `KeyDown` handler remains for canvas-specific keys (Ctrl+C/X/V, F5,
+Delete, R, nudge).
+
+---
+
 ## Library Palette — catalog metadata + LibraryCatalog projection (Step 1 — done, updated for multi-category)
 
 **`ComponentTypeRegistry`** (Avalonia-free, `src/Ui/Schematic/ComponentTypeRegistry.cs`) carries
@@ -145,7 +186,7 @@ Gate: all 1037 tests green; firewall green.
 - **`SchematicViewModel.SetPlacementService`** — subscribes to `Pending`. When `Pending` non-null: activates `Tool.Place` with correct symbol/rotation/portCount on THIS canvas (also clears conflicting drag/wire state). When same kind but rotation changes: patches `Overlay.Ghost` in-place (preserves X/Y). When `Pending` null: calls `SetSelectTool()`. Called at all 4 document-creation sites in `WorkspaceViewModel`.
 - **R/Shift-R rotation** — when `ActiveTool == Tool.Place` and `_placementService` is set, routes through `PlacementService.Rotate()` so ALL open canvases update simultaneously. Falls back to direct `RotateSelection` for keyboard-initiated placement (P key).
 - **Cursor** — `Tool.Place` now maps to `StandardCursorType.Cross` in `SchematicCanvas.UpdateCursor`.
-- **Esc** — canvas `OnKeyDown` passes Esc to VM → `SetSelectTool()` locally; window-level `DisarmPlacementCommand` also fires → `PlacementService.Disarm()` → all other canvases exit Place mode.
+- **Esc** — canvas `OnKeyDown` passes Esc to VM → `SetSelectTool()` locally; `SetSelectTool()` also calls `PlacementService.Disarm()` (if `ActiveTool` was `Tool.Place`) → `Pending = null` → all canvases exit Place mode + tile un-highlights. **Critical gotcha:** the ARM state lives in `PlacementService.Pending`, NOT in the VM's `ActiveTool` enum. Setting `ActiveTool = Select` alone leaves `Pending` non-null — the tile stays highlighted and other canvases stay armed. Always clear via `Disarm()`. The feedback-loop guard: `Disarm()` is called *after* `ActiveTool` is set to `Select`, so `OnSvcPropertyChanged(Pending=null)` sees `ActiveTool != Tool.Place` and does not re-enter. `Disarm()` when `Pending` is already null is a no-op (CommunityToolkit.MVVM `SetProperty` no-change guard).
 
 **Commit + stay-armed + MRU (L3):**
 - **Stay-armed** — `HandlePlacePress` does not call `SetSelectTool()` after commit; `Tool.Place` persists; ghost continues from cursor.
@@ -303,6 +344,159 @@ the armed accent.
 payloads is a prefix-guarded serialized string on `DataFormat.Text`, exactly like `SchematicClipboard`.
 
 Gate: all 1042 tests green; firewall green.
+
+---
+
+## Library Palette — tile border fix + T-junction drag-follow (BorderAndDragFollow — done)
+
+### Color-vs-Brush on BorderBrush (GOTCHA — do NOT reintroduce)
+`BorderBrush` requires a **Brush** object. `{DynamicResource System*Color}` keys (including
+`SystemBaseLowColor`, `SystemBaseMediumLowColor`, etc.) resolve to a `Color` struct, NOT a
+`SolidColorBrush`. Avalonia's `Background` property has an implicit `Color`→`Brush` conversion;
+`BorderBrush` does **not** — the assignment silently produces no border regardless of which `*Color` key
+is used, no error is raised. **Rule:** always use a `SolidColorBrush` application resource for
+`BorderBrush`. `CrfTileBorderBrush` (`#55808080`, 33% opacity neutral gray, defined in `App.axaml`) is
+the palette tile border resource. Do NOT reference `System*Color` keys on `BorderBrush` anywhere.
+
+### Pin-on-wire-body drag-follow (T-junction follow — done)
+When a component pin is placed on a wire's mid-span (T-junction), both the live drag path and the commit
+path now re-route that wire so the connection survives the move:
+- **Detection:** `PointOnSegmentInterior` + `ConnectTolerance` — the same single connectivity predicate
+  used by `BuildRenderModel.IsConnected`. No second predicate.
+- **Re-route:** `RouteBodyFollow(orig, nx, ny)` in `SchematicViewModel` — routes `orig[0] → P' → orig[^1]`
+  via two `OrthogonalRoute` legs stitched at the new port position, then `SimplifyWirePoints`. Mirrors
+  `RouteStem` (the wire-segment stem-follow re-route); do NOT invent a parallel re-router.
+- **Undo:** folded into the same `MoveCommand` (`followWireSnaps`) so one Undo restores the component and
+  every followed wire. Mirrors the existing endpoint-follow.
+- **Perf:** O(N × S); only checks `_dragUnselectedWirePoints` (snapshotted at drag-start). No O(N²) scan.
+- `BuildPortMoves` was fixed to pass `cs.Component.PortCount` to `SymbolPortDefs.For` (was using default=2,
+  which silently gave wrong ports for variadic Sdd/ZPort components).
+
+See `docs/design/placement-connectivity-and-drag-follow.md` for the full design note.
+
+Gate: all 1038 tests green; firewall green.
+
+---
+
+## Pin-on-pin connectivity detection (PinOnPinConnectivity — done)
+
+**Root cause:** `BuildRenderModel.IsConnected` was checking only `WirePointHash` (wire vertices). Two
+component ports coincident with no wire both reported Unconnected; no junction dot appeared.
+
+**Fix — single connectivity source extended to ports:**
+- **`IsConnected`** now uses `conPointCounts >= 2`: the tested port contributes 1 to its P-cell's count;
+  `cnt >= 2` means something else (another port OR a wire vertex) is also there → connected.
+  The wire-body fallback scan (`PointOnSegment`) is unchanged for the rare port-on-wire-body case.
+- **Port-coincidence dot pass** added at the end of `ComputeConnectivityGeometry`: after the wire
+  auto-dot loop, iterates all component ports and emits a junction dot at any P-cell where
+  `conPointCounts >= 2` OR `PointOnSegmentInterior` (port on wire body). Skips cells already covered
+  by a wire auto-dot (no double-dots). Uses the same `segList`/`segIndex` and `QuantKey` already built
+  in that pass — O(N), no new data structures.
+
+**"Exclude self" invariant:** `conPointCounts[key] >= 2` is the correct threshold because every port
+contributes exactly 1 to its own P-cell. A lone port has count = 1, so `>= 2` requires at least one
+other endpoint. Do not use `> 0` here — that would mark a lone port as connected to itself.
+
+**No double-dots:** `autoDotKeys.Contains(key)` skip in the port-coincidence pass ensures a P-cell
+already covered by a wire T-junction or corner auto-dot never gets a second dot.
+
+**Oracle (permanent):** `PinOnPinConnectivityTests.cs` — three headless assertions:
+- `PinOnPin_BothPortsConnected_ExactlyOneDot`: two coincident ports → Connected + one dot.
+- `PinOnWireVertex_PortConnected_Control`: port on wire vertex → Connected (was already correct).
+- `LonePort_StaysUnconnected_NoDot`: lone port → Unconnected / no dot (anti-over-connect guard).
+
+Gate: all 1041 tests green; firewall green.
+
+---
+
+## Drag invariant — auto-wire on pin-on-pin separation (DragInvariant Layer 3 — done)
+
+The governing invariant ("a connection, once made, survives any drag") now covers all four cases:
+
+**Case 2 (pin-on-pin → auto-wire):** When a component drag separates two pins that were in direct contact
+(no wire between them), an auto-wire is created so the connection becomes a wired contact rather than
+breaking.
+
+**Implementation in `SchematicViewModel`:**
+- **`PinOnPinContact` record struct** — snapshot of a pin-on-pin contact at drag start: `(StationaryX,
+  StationaryY, MovingCompId, MovingPortIndex)`.
+- **`_dragPinOnPinContacts: List<PinOnPinContact>?`** — cleared in `ClearDragState`; populated in
+  `SnapshotDragStartPositions`.
+- **Snapshot (`SnapshotDragStartPositions`):** after building `_dragUnselectedWirePoints`, iterates all
+  moving component ports; skips ports already on a wire (Case 1 — handled by follow-wires); records each
+  coincident pair with an unselected port. O(moving ports × wires × unselected ports).
+- **Live preview (`UpdateDragOverlay`):** for each contact whose moving port has separated from the
+  stationary pin, inserts a synthetic route keyed `"pop-preview-N"` into `wireOverrides` — the renderer
+  draws it as a live preview wire throughout the drag. `wireOverrides ??= new()` handles the component-
+  drag-only case (no wire drag in progress).
+- **Commit (`CommitDragAsCommand`):** for each separated contact, builds an `EditableWire` via
+  `WireGeometry.OrthogonalRoute(stationaryPin → movingPinEndPos)` and wraps it in a `PlaceWireCommand`.
+  Auto-wires are chained onto the `MoveCommand` via `new CompositeCommand(finalCmd, wc)`. One Undo
+  removes every auto-wire AND restores the component to its pre-drag position.
+- **No-wire if still coincident:** both the preview and commit skip contacts where the drag kept the
+  pins touching (drag that lands them on the same P-cell forms no wire).
+
+**Key invariants:**
+- Reuses `WireGeometry.OrthogonalRoute` (the same routing primitive as Case 1 follow-wires).
+- Reuses `CoincidentPoints`/`ConnectTolerance` — no second connectivity predicate.
+- `autoWireCmds` and `mergeCmd` are mutually exclusive (`mergeCmd` requires `compSnaps.Count == 0`).
+- Does not drag the stationary component — only a wire is formed (no rigid coupling).
+
+**Oracle (permanent):** `DragInvariantOracleTests.cs` — all four cases green:
+- `Case1a_ComponentDrag_WireEndpointFollowsPin_StaysConnected`: endpoint follow.
+- `Case1b_ComponentDrag_TJunctionBodyFollowsPin_StaysConnected`: T-junction body follow.
+- `Case2_ComponentDrag_PinOnPinSeparates_AutoWireConnectsBothPins`: auto-wire on separation.
+- `Case3_WireDrag_ConnectedEndpointStaysPinnedToComponentPin_StaysConnected`: wire drag pin pinned.
+
+Design doc: `docs/design/placement-connectivity-and-drag-follow.md` (rev 5).
+
+Gate: all 588 tests green; firewall green.
+
+---
+
+## Drag invariant — shared-point rule (DragFollowSharedPoint — done)
+
+**Case 4 (shared-point disambiguation):** When a moving pin starts coincident with BOTH a stationary
+component pin AND a wire endpoint (three things at one point), the stationary connection wins —
+the wire endpoint must NOT follow the moving pin. A new auto-wire forms to keep the moving component connected.
+
+**Root cause (two faults):**
+1. `UpdateConnectedWireEndpointsLive` and the follow block in `CommitDragAsCommand` matched a wire
+   endpoint to the moving port's ORIGINAL position via `CoincidentPoints(orig[k], ox, oy)`. A wire
+   ending at the shared point coincided with the moving pin's start position, causing the endpoint to
+   follow the moving component off the stationary pin.
+2. `SnapshotDragStartPositions` skipped pin-on-pin recording when the moving port was "already on a
+   wire" (`onWire` guard). This suppressed the compensating auto-wire even though the wire was not
+   actually going to follow (fault 1 mis-attributed the follow).
+
+**Fix in `SchematicViewModel`:**
+- **`IsPointHeldByStationaryPin(x, y)`** — new private helper; returns true if any UNSELECTED component
+  port coincides with (x, y) within `ConnectTolerance`. Handles selected/unselected correctly: dragging
+  a component that owns the wire endpoint is unselected-free at that point, so the follow still works.
+- **`UpdateConnectedWireEndpointsLive`** — added `&& !IsPointHeldByStationaryPin(orig[k].X, orig[k].Y)`
+  guard to both endpoint-follow checks. Wire endpoint stays pinned when a stationary pin holds the same point.
+- **`CommitDragAsCommand` follow block** — same `IsPointHeldByStationaryPin` guard on both endpoints.
+- **`SnapshotDragStartPositions`** `onWire` skip — changed from `if (onWire) continue` to
+  `if (onWire && !IsPointHeldByStationaryPin(wx, wy)) continue`. The pin-on-pin contact is now recorded
+  (and the auto-wire formed) even when a wire endpoint is present, if a stationary pin also holds the point.
+
+**Key invariant:** a wire endpoint held by a stationary (unselected) pin is treated as pinned, exactly
+like the wire-drag `IsWireEndpointConnectedToUnselected` pinning rule. A moving pin merely starting
+coincident there does not override a stationary connection.
+
+**Preserved cases:**
+- Case 1a (genuine endpoint follow): no stationary pin at the endpoint → `IsPointHeldByStationaryPin`
+  returns false → follow proceeds unchanged.
+- Case 2 (pin-on-pin, no wire at shared point): `onWire = false` → pin-on-pin recording unchanged.
+- Case 3 (wire drag): unchanged — the stationary-pin guard is in the component-drag paths only.
+
+**Oracle (permanent):** `DragInvariantOracleTests.cs` `Case4_SharedPoint_WireStaysOnStationaryPin_AutoWireConnectsMovingComponent`:
+C1–C2 wire + C3 pin-on-pin on C1-bottom → drag C3 away → wire endpoint stays at C1-bottom, new
+auto-wire (0,200)→(0,400) forms, C1/C2/C3 all Connected.
+
+Design doc: `docs/design/placement-connectivity-and-drag-follow.md` (rev 6).
+
+Gate: all 589 tests green; firewall green.
 
 ---
 
@@ -1212,6 +1406,23 @@ Two **collinear** wires (same line) whose spans overlap or abut are redundant an
 Each segment drag commits as a single `MoveCommand` with a `WireMoveSnapshot` (old points → new points), undoable. Live preview uses `SchematicOverlay.WireDragPoints` — no `BuildRenderModel()` per tick.
 
 **Selection model**: `_selectedSegment: (string WireId, int SegmentIndex)?` in `SchematicViewModel` tracks the segment selection separately from `SchematicSelection` (which holds whole-object IDs). `SchematicOverlay.SelectedWireSegment` carries it to the renderer. Rubber-band selection still selects whole wires (`HitKind.Wire` from `TestRect`), not individual segments.
+
+### Esc-key contract (both schematic and symbol editors)
+**Rule:** Esc cancels whatever is in progress and returns to the Select tool. With nothing in progress (idle in Select), Esc clears the selection. Same semantics in both editors.
+
+**Schematic (`SchematicViewModel.OnKeyDown` + `SchematicView.axaml.cs.OnKeyDown`):**
+- `HasActiveOperation` is true when any non-Select tool is active, or a drag/rubber-band/segment-drag/inline-edit is in progress in Select mode.
+- `if (HasActiveOperation) SetSelectTool(); else Selection.Clear();`
+- `SetSelectTool()` sets `ActiveTool = Select`, calls `CancelCurrentOp()` (clears ghost/wire/drag state), then calls `_placementService?.Disarm()` if the previous tool was `Tool.Place`.
+- **ARM-lives-in-PlacementService gotcha:** `ActiveTool = Select` alone does NOT disarm an ARMed palette item. The arm state lives in `PlacementService.Pending`. Always call `Disarm()` when leaving `Tool.Place` — `SetSelectTool()` does this automatically since the fix.
+- Inline-edit Esc: `OnInlineEditKeyDown` calls `CancelInlineEdit()` + `DismissInlineEditBox()` + `SetSelectTool()`.
+
+**Symbol editor (`SymbolEditorViewModel.OnKeyDown`):**
+- Text-typing Esc → `CancelOp(); ActiveTool = Select`.
+- Pin Esc → `ActiveTool = Select` (triggers `OnActiveToolChanged` which resets pin state).
+- Any other in-progress op Esc → `CancelOp(); ActiveTool = Select`.
+- Idle Esc → `ClearSelection()`.
+- No `PlacementService` in the symbol editor — no Disarm needed.
 
 ### Wire draw-mode cursor and finish gestures (Phase 6d)
 - Wire tool cursor: `StandardCursorType.Cross` (reverts to Default when tool changes away from Wire).

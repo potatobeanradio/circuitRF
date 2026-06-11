@@ -73,6 +73,12 @@
              updated on ThemeService.ThemeChanged so tree warning nodes follow the active theme. -->
         <SolidColorBrush x:Key="CrfWarningBrush" Color="#CE4A24"/>
 
+        <!-- Palette tile definition border: semitransparent neutral gray so it reads against
+             the panel in both light and dark without fighting the armed accent color.
+             BorderBrush requires a Brush; System*Color keys resolve to Color (not Brush) and
+             may silently fail to render on BorderBrush — always use a SolidColorBrush resource. -->
+        <SolidColorBrush x:Key="CrfTileBorderBrush" Color="#55808080"/>
+
 <!-- Converters registered as application-level resources so all views can use them -->
         <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
         <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>

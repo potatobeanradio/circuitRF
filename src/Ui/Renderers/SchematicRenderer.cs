@@ -152,8 +152,42 @@ public static class SchematicRenderer
             }
         }
 
+        // ── Pin-on-pin separation preview wires (synthetic — not yet in model) ─
+        var popPreviews = overlay?.PinOnPinPreviewWires;
+        if (popPreviews is not null)
+        {
+            foreach (var pts in popPreviews)
+            {
+                if (pts.Count < 2) continue;
+                wirePath.Rewind();
+                var (px0, py0) = ToPixel(pts[0].X, pts[0].Y, panX, panY, zoom);
+                wirePath.MoveTo(px0, py0);
+                for (int pi = 1; pi < pts.Count; pi++)
+                {
+                    var (px, py) = ToPixel(pts[pi].X, pts[pi].Y, panX, panY, zoom);
+                    wirePath.LineTo(px, py);
+                }
+                canvas.DrawPath(wirePath, wirePaint);
+            }
+        }
+
         // ── Components ────────────────────────────────────────────────────────
         var compDragPos = overlay?.ComponentDragPositions;
+
+        // Live dot key set for real-time port-connection suppression.
+        // Uses overlay dots when dragging (live-recomputed geometry) so a port whose world
+        // position coincides with a junction dot during a drag renders as connected (no red box),
+        // even though the stale render model may still show it as Unconnected.
+        // Uses model dots at rest (they agree with the model port states, so no visual change).
+        var liveDotSrc = overlay?.ConnectionDotsOverride ?? model.ConnectionDots;
+        HashSet<(long, long)>? liveDotKeys = null;
+        if (liveDotSrc.Count > 0)
+        {
+            double gs = model.GridSize;
+            liveDotKeys = new HashSet<(long, long)>(liveDotSrc.Count);
+            foreach (var d in liveDotSrc)
+                liveDotKeys.Add(((long)Math.Round(d.X / gs), (long)Math.Round(d.Y / gs)));
+        }
 
         foreach (int ci in visComps)
         {
@@ -218,7 +252,7 @@ public static class SchematicRenderer
 
             if (!isSimplified)
             {
-                DrawPortMarkers(canvas, c, cx, cy, panX, panY, zoom, unconnPaint, connPinPaint);
+                DrawPortMarkers(canvas, c, cx, cy, panX, panY, zoom, unconnPaint, connPinPaint, liveDotKeys, model.GridSize);
                 (double DX, double DY)? lblDrag = null;
                 if (overlay?.LabelDragOffsets is { } ldo && ldo.TryGetValue(c.Id, out var ld))
                     lblDrag = ld;
@@ -593,7 +627,8 @@ public static class SchematicRenderer
         SKCanvas canvas, SchematicComponent c,
         double compX, double compY,          // explicit world position (may differ during drag)
         double panX, double panY, double zoom,
-        SKPaint unconnPaint, SKPaint connPaint)
+        SKPaint unconnPaint, SKPaint connPaint,
+        HashSet<(long, long)>? liveDotKeys = null, double gridSize = 100.0)
     {
         float boxHalf  = (float)Math.Max(3.0, zoom * PortBoxHalf);
         float connHalf = (float)Math.Max(2.0, zoom * ConnDotHalf);
@@ -602,7 +637,18 @@ public static class SchematicRenderer
         {
             var (px, py) = LocalToPixel(port.LocalX, port.LocalY, compX, compY, c.Rotation, c.MirrorX, panX, panY, zoom);
 
-            if (port.State == PortConnectionState.Unconnected)
+            bool isConnected = port.State == PortConnectionState.Connected;
+            // Live override: if a junction dot exists at this port's current world position
+            // (e.g. pin-on-pin or pin-on-wire during a drag), treat the port as connected so
+            // no red unconnected box appears where a dot is already drawn.
+            if (!isConnected && liveDotKeys is not null)
+            {
+                var (wx, wy) = SchematicGeometry.LocalToWorld(port.LocalX, port.LocalY, compX, compY, c.Rotation, c.MirrorX);
+                isConnected = liveDotKeys.Contains(
+                    ((long)Math.Round(wx / gridSize), (long)Math.Round(wy / gridSize)));
+            }
+
+            if (!isConnected)
                 canvas.DrawRect(SKRect.Create(px - boxHalf, py - boxHalf, boxHalf * 2, boxHalf * 2), unconnPaint);
             else
                 canvas.DrawRect(SKRect.Create(px - connHalf, py - connHalf, connHalf * 2, connHalf * 2), connPaint);

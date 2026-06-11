@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -16,7 +17,7 @@ namespace CircuitRF.Ui.Schematic;
 
 public sealed class CschFile
 {
-    public int    FormatVersion { get; set; } = 1;
+    public int    FormatVersion { get; set; } = 2;
     public string CellName      { get; set; } = "";
     public double GridSize           { get; set; } = 100.0;
     public bool   GridSnap           { get; set; } = true;
@@ -68,6 +69,11 @@ public sealed class CschComponent
     /// Null for built-in components. Omitted from file when null (WhenWritingNull).
     /// </summary>
     public string? CellRef { get; set; }
+
+    /// <summary>
+    /// Explicitly detached port indices. Omitted (null) when empty — the common case.
+    /// </summary>
+    public List<int>? DetachedPorts { get; set; }
 }
 
 public sealed class CschParameter
@@ -161,7 +167,7 @@ public sealed class CschViewState
 /// </summary>
 public static class SchematicPersistence
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
 
     private static readonly JsonSerializerOptions _jsonOpts = new()
     {
@@ -241,6 +247,7 @@ public static class SchematicPersistence
             if (!c.ShowTypeLabel)    cc.ShowTypeLabel    = false;
             if (!c.ShowInstanceName) cc.ShowInstanceName = false;
             if (c.CellRef is not null) cc.CellRef = c.CellRef;
+            if (c.DetachedPorts.Count > 0) cc.DetachedPorts = c.DetachedPorts.OrderBy(i => i).ToList();
             file.Components.Add(cc);
         }
 
@@ -299,6 +306,8 @@ public static class SchematicPersistence
             if (cc.ShowTypeLabel    is bool stl) c.ShowTypeLabel    = stl;
             if (cc.ShowInstanceName is bool sin) c.ShowInstanceName = sin;
             if (cc.CellRef is not null) c.CellRef = cc.CellRef;
+            if (cc.DetachedPorts is not null)
+                foreach (var idx in cc.DetachedPorts) c.DetachedPorts.Add(idx);
             m.Components.Add(c);
         }
 

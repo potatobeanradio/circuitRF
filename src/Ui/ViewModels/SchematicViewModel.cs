@@ -60,12 +60,20 @@ public sealed partial class SchematicViewModel : ObservableObject
         public required bool EndPinned   { get; init; }   // endpoint N-1 connected to unselected?
     }
 
+    // Layer 3: pin-on-pin contact snapshot — records stationary pins that were coincident with
+    // a moving port at drag start (no wire). On separation the commit auto-creates a wire.
+    private readonly record struct PinOnPinContact(
+        double StationaryX, double StationaryY,   // world coords of the fixed unselected pin
+        string MovingCompId,                       // which selected component has the moving pin
+        int    MovingPortIndex);                   // port index on that component
+
     private bool   _isDragging;
     private double _dragStartWorldX, _dragStartWorldY;
     private Dictionary<string, (double X, double Y)>?                _dragStartCompPositions;
     private Dictionary<string, WireDragInfo>?                        _dragWireInfo;
     private Dictionary<string, IReadOnlyList<(double X, double Y)>>? _dragUnselectedWirePoints;
     private Dictionary<string, (double X, double Y)>?                _dragStartObjPositions;
+    private List<PinOnPinContact>?                                    _dragPinOnPinContacts;
 
     // Rubber-band state
     private bool   _isRubberBanding;
@@ -192,8 +200,29 @@ public sealed partial class SchematicViewModel : ObservableObject
     // Callback invoked with world (x0,y0,x1,y1) when a zoom-box is completed; set by SchematicCanvas.
     public Action<double, double, double, double>? ZoomToRectCallback { get; set; }
 
+    /// <summary>
+    /// True when the user is performing an action that Escape should cancel:
+    /// any non-Select tool is active, or a drag / rubber-band / segment-drag /
+    /// inline text edit is in progress inside Select mode.
+    /// False means the user is idle in Select mode — Escape should deselect.
+    /// </summary>
+    public bool HasActiveOperation =>
+        ActiveTool != Tool.Select
+        || IsInlineEditing
+        || _isDragging
+        || _isRubberBanding
+        || _isSegmentDrag;
+
     [RelayCommand]
-    public void SetSelectTool()  { ActiveTool = Tool.Select;  CancelCurrentOp(); }
+    public void SetSelectTool()
+    {
+        bool wasPlacing = ActiveTool == Tool.Place;
+        ActiveTool = Tool.Select;
+        CancelCurrentOp();
+        // Disarm after ActiveTool is already Select so OnSvcPropertyChanged sees a non-Place
+        // tool and does not re-enter. Disarm() is a no-op when Pending is already null.
+        if (wasPlacing) _placementService?.Disarm();
+    }
     [RelayCommand]
     public void SetPanTool()     { ActiveTool = Tool.Pan;     CancelCurrentOp(); }
     [RelayCommand]
@@ -324,40 +353,45 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     // ── Keyboard ──────────────────────────────────────────────────────────────
 
-    public void OnKeyDown(Key key, KeyModifiers modifiers)
+    /// <summary>Returns true if the key was consumed; false means the event should continue routing.</summary>
+    public bool OnKeyDown(Key key, KeyModifiers modifiers)
     {
         bool ctrl = (modifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
         switch (key)
         {
-            case Key.Escape: SetSelectTool(); Selection.Clear(); break;
+            case Key.Escape:
+                if (HasActiveOperation) SetSelectTool();
+                else Selection.Clear();
+                return true;
             // A2: Enter finishes the in-progress wire (KEEP what's drawn) and returns to Select.
             case Key.Return:
                 if (ActiveTool == Tool.Wire) { FinishWire(); ActiveTool = Tool.Select; }
-                break;
-            case Key.S when !ctrl: SetSelectTool(); break;
-            case Key.W when !ctrl: SetWireTool(); break;
-            case Key.Z when !ctrl: SetZoomBoxTool(); break;
-            case Key.F5: BeginMoveLabels(); break;
-            case Key.Delete: case Key.Back: DeleteSelection(); break;
+                return true;
+            case Key.S when !ctrl: SetSelectTool(); return true;
+            case Key.W when !ctrl: SetWireTool();   return true;
+            case Key.Z when !ctrl: SetZoomBoxTool(); return true;
+            case Key.F5: BeginMoveLabels(); return true;
+            case Key.Delete: case Key.Back: DeleteSelection(); return true;
             case Key.R when !modifiers.HasFlag(KeyModifiers.Shift):
                 if (ActiveTool == Tool.Place && _placementService is not null)
                     _placementService.Rotate(false);
                 else
                     RotateSelection(clockwise: false);
-                break;
+                return true;
             case Key.R when modifiers.HasFlag(KeyModifiers.Shift):
                 if (ActiveTool == Tool.Place && _placementService is not null)
                     _placementService.Rotate(true);
                 else
                     RotateSelection(clockwise: true);
-                break;
-            case Key.M when !modifiers.HasFlag(KeyModifiers.Shift): MirrorSelection(horizontal: true);  break;
-            case Key.M when  modifiers.HasFlag(KeyModifiers.Shift): MirrorSelection(horizontal: false); break;
-            case Key.A when ctrl: SelectAll(); break;
-            case Key.Up:    NudgeSelection(0,  -GridStep(modifiers)); break;
-            case Key.Down:  NudgeSelection(0,   GridStep(modifiers)); break;
-            case Key.Left:  NudgeSelection(-GridStep(modifiers), 0); break;
-            case Key.Right: NudgeSelection( GridStep(modifiers), 0); break;
+                return true;
+            case Key.M when !modifiers.HasFlag(KeyModifiers.Shift): MirrorSelection(horizontal: true);  return true;
+            case Key.M when  modifiers.HasFlag(KeyModifiers.Shift): MirrorSelection(horizontal: false); return true;
+            case Key.A when ctrl: SelectAll(); return true;
+            case Key.Up:    NudgeSelection(0,  -GridStep(modifiers)); return true;
+            case Key.Down:  NudgeSelection(0,   GridStep(modifiers)); return true;
+            case Key.Left:  NudgeSelection(-GridStep(modifiers), 0);  return true;
+            case Key.Right: NudgeSelection( GridStep(modifiers), 0);  return true;
+            default: return false;
         }
     }
 
@@ -651,6 +685,59 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (wire.Points.Count < 2) continue;
             _dragUnselectedWirePoints[wire.Id] = wire.Points.ToList();
         }
+
+        // Layer 3: detect pin-on-pin contacts between selected component ports and unselected
+        // component ports (no wire between them). These auto-form a wire if the drag separates them.
+        _dragPinOnPinContacts = [];
+        if (_dragStartCompPositions.Count > 0)
+        {
+            const double tol = SchematicEditModel.ConnectTolerance;
+            foreach (var (selId, start) in _dragStartCompPositions)
+            {
+                var selComp = EditModel.FindComponent(selId);
+                if (selComp is null) continue;
+                var selPorts = SymbolPortDefs.For(selComp.Symbol, selComp.PortCount);
+                for (int pi = 0; pi < selPorts.Length; pi++)
+                {
+                    if (selComp.IsPortDetached(pi)) continue;
+                    var (wx, wy) = SchematicGeometry.LocalToWorld(
+                        selPorts[pi].LocalX, selPorts[pi].LocalY,
+                        start.X, start.Y, selComp.Rotation, selComp.MirrorX);
+
+                    // Skip ports already on a wire — those are Case 1 (wire follows the port).
+                    // Exception: if a stationary pin ALSO holds this point, the wire won't follow
+                    // the moving port (stationary wins the shared point), so we still need to record
+                    // the pin-on-pin contact to create the auto-wire on separation.
+                    bool onWire = false;
+                    foreach (var w in EditModel.Wires)
+                    {
+                        foreach (var pt in w.Points)
+                            if (SchematicGeometry.CoincidentPoints(wx, wy, pt.X, pt.Y, tol)) { onWire = true; break; }
+                        if (onWire) break;
+                        for (int k = 0; k < w.Points.Count - 1 && !onWire; k++)
+                            if (SchematicGeometry.PointOnSegmentInterior(
+                                    wx, wy, w.Points[k].X, w.Points[k].Y, w.Points[k + 1].X, w.Points[k + 1].Y, tol))
+                                onWire = true;
+                    }
+                    // True Case 1 (wire legitimately follows) only when the point is NOT also held
+                    // by a stationary pin — if it is, the wire stays put and an auto-wire is needed.
+                    if (onWire && !IsPointHeldByStationaryPin(wx, wy)) continue;
+
+                    // Record coincidence with each unselected component port
+                    foreach (var other in EditModel.Components)
+                    {
+                        if (Selection.IsSelected(other.Id)) continue;
+                        var otherPorts = SymbolPortDefs.For(other.Symbol, other.PortCount);
+                        for (int opi = 0; opi < otherPorts.Length; opi++)
+                        {
+                            var (ox, oy) = other.GetPortWorldCoord(opi);
+                            if (SchematicGeometry.CoincidentPoints(wx, wy, ox, oy, tol))
+                                _dragPinOnPinContacts.Add(new PinOnPinContact(ox, oy, selId, pi));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -739,6 +826,27 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (segIdx == 0 && !startPinned)         ConstrainEndpoint(0);
         if (segIdx == n - 2 && !endPinned)       ConstrainEndpoint(n - 1);
         return (min, max);
+    }
+
+    /// <summary>
+    /// Returns true if (x, y) coincides with any UNSELECTED (stationary) component port.
+    /// Used by the shared-point disambiguation rule: a wire endpoint held by a stationary pin
+    /// must NOT follow a moving pin that merely started coincident at that point.
+    /// </summary>
+    private bool IsPointHeldByStationaryPin(double x, double y)
+    {
+        const double tol = SchematicEditModel.ConnectTolerance;
+        foreach (var comp in EditModel.Components)
+        {
+            if (Selection.IsSelected(comp.Id)) continue;
+            int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
+            for (int pi = 0; pi < nPins; pi++)
+            {
+                var (px, py) = comp.GetPortWorldCoord(pi);
+                if (SchematicGeometry.CoincidentPoints(x, y, px, py, tol)) return true;
+            }
+        }
+        return false;
     }
 
     private bool IsWireEndpointConnectedToUnselected(EditableWire wire, int ptIdx)
@@ -951,6 +1059,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
             for (int pi = 0; pi < portDefs.Length; pi++)
             {
+                if (comp.IsPortDetached(pi)) continue;
                 var (ox, oy) = SchematicGeometry.LocalToWorld(
                     portDefs[pi].LocalX, portDefs[pi].LocalY,
                     start.X, start.Y, comp.Rotation, comp.MirrorX);
@@ -974,13 +1083,36 @@ public sealed partial class SchematicViewModel : ObservableObject
 
             foreach (var (ox, oy, nx, ny) in portMoves)
             {
-                if (SchematicGeometry.CoincidentPoints(orig[0].X, orig[0].Y, ox, oy, tol))
+                // Shared-point rule: a wire endpoint held by a stationary pin must NOT follow
+                // a moving pin that merely started coincident there (stationary wins).
+                if (SchematicGeometry.CoincidentPoints(orig[0].X, orig[0].Y, ox, oy, tol)
+                    && !IsPointHeldByStationaryPin(orig[0].X, orig[0].Y))
                 { newSX = nx; newSY = ny; changed = true; }
-                if (SchematicGeometry.CoincidentPoints(orig[^1].X, orig[^1].Y, ox, oy, tol))
+                if (SchematicGeometry.CoincidentPoints(orig[^1].X, orig[^1].Y, ox, oy, tol)
+                    && !IsPointHeldByStationaryPin(orig[^1].X, orig[^1].Y))
                 { newEX = nx; newEY = ny; changed = true; }
             }
 
-            if (changed) ApplyOrthoRoute(wire, newSX, newSY, newEX, newEY);
+            if (changed) { ApplyOrthoRoute(wire, newSX, newSY, newEX, newEY); continue; }
+
+            // T-junction body-follow: port on wire segment interior → route wire through P'
+            bool bodyFollowed = false;
+            foreach (var (ox, oy, nx, ny) in portMoves)
+            {
+                if (bodyFollowed) break;
+                const double tol2 = SchematicEditModel.ConnectTolerance;
+                for (int si = 0; si < orig.Count - 1 && !bodyFollowed; si++)
+                {
+                    if (SchematicGeometry.PointOnSegmentInterior(
+                            ox, oy, orig[si].X, orig[si].Y, orig[si + 1].X, orig[si + 1].Y, tol2))
+                    {
+                        var newRoute = SimplifyWirePoints(RouteBodyFollow(orig, nx, ny));
+                        wire.Points.Clear();
+                        wire.Points.AddRange(newRoute);
+                        bodyFollowed = true;
+                    }
+                }
+            }
         }
     }
 
@@ -1052,15 +1184,64 @@ public sealed partial class SchematicViewModel : ObservableObject
 
                 foreach (var (ox, oy, nx, ny) in portMoves)
                 {
-                    if (SchematicGeometry.CoincidentPoints(orig[0].X, orig[0].Y, ox, oy, tol))
+                    // Shared-point rule: a wire endpoint held by a stationary pin must NOT follow
+                    // a moving pin that merely started coincident there (stationary wins).
+                    if (SchematicGeometry.CoincidentPoints(orig[0].X, orig[0].Y, ox, oy, tol)
+                        && !IsPointHeldByStationaryPin(orig[0].X, orig[0].Y))
                     { newSX = nx; newSY = ny; changed = true; }
-                    if (SchematicGeometry.CoincidentPoints(orig[^1].X, orig[^1].Y, ox, oy, tol))
+                    if (SchematicGeometry.CoincidentPoints(orig[^1].X, orig[^1].Y, ox, oy, tol)
+                        && !IsPointHeldByStationaryPin(orig[^1].X, orig[^1].Y))
                     { newEX = nx; newEY = ny; changed = true; }
                 }
 
-                if (!changed) continue;
-                var newRoute = WireGeometry.OrthogonalRoute(newSX, newSY, newEX, newEY);
-                followWireSnaps.Add(new WireMoveSnapshot(wire, orig, newRoute));
+                if (changed)
+                {
+                    followWireSnaps.Add(new WireMoveSnapshot(wire, orig,
+                        WireGeometry.OrthogonalRoute(newSX, newSY, newEX, newEY)));
+                    continue;
+                }
+
+                // T-junction body-follow: port on wire segment interior → route wire through P'
+                foreach (var (ox, oy, nx, ny) in portMoves)
+                {
+                    bool found = false;
+                    const double tol2 = SchematicEditModel.ConnectTolerance;
+                    for (int si = 0; si < orig.Count - 1 && !found; si++)
+                    {
+                        if (SchematicGeometry.PointOnSegmentInterior(
+                                ox, oy, orig[si].X, orig[si].Y, orig[si + 1].X, orig[si + 1].Y, tol2))
+                        {
+                            followWireSnaps.Add(new WireMoveSnapshot(wire, orig,
+                                SimplifyWirePoints(RouteBodyFollow(orig, nx, ny))));
+                            found = true;
+                        }
+                    }
+                    if (found) break;
+                }
+            }
+        }
+
+        // Layer 3: build PlaceWireCommands for pin-on-pin contacts that separated during drag
+        var autoWireCmds = new List<PlaceWireCommand>();
+        if (_dragPinOnPinContacts is { Count: > 0 } && compSnaps.Count > 0)
+        {
+            const double tol = SchematicEditModel.ConnectTolerance;
+            foreach (var contact in _dragPinOnPinContacts)
+            {
+                var snap = compSnaps.FirstOrDefault(s => s.Component.Id == contact.MovingCompId);
+                if (snap.Component is null) continue;
+                var portDefs = SymbolPortDefs.For(snap.Component.Symbol, snap.Component.PortCount);
+                if (contact.MovingPortIndex >= portDefs.Length) continue;
+                var (nx, ny) = SchematicGeometry.LocalToWorld(
+                    portDefs[contact.MovingPortIndex].LocalX,
+                    portDefs[contact.MovingPortIndex].LocalY,
+                    snap.EndX, snap.EndY, snap.Component.Rotation, snap.Component.MirrorX);
+                if (SchematicGeometry.CoincidentPoints(nx, ny, contact.StationaryX, contact.StationaryY, tol))
+                    continue; // still coincident — no wire needed
+                var newWire = new EditableWire();
+                newWire.Points.AddRange(WireGeometry.OrthogonalRoute(
+                    contact.StationaryX, contact.StationaryY, nx, ny));
+                autoWireCmds.Add(new PlaceWireCommand(EditModel, newWire));
             }
         }
 
@@ -1075,6 +1256,16 @@ public sealed partial class SchematicViewModel : ObservableObject
                 snap.Wire, snap.EndPoints, EditModel.Wires.IndexOf(snap.Wire), excludeIds);
         }
 
+        // Lifecycle: for each component that actually moved and has detached ports, snapshot and clear.
+        var detachClears = new List<ComponentDetachClearSnapshot>();
+        foreach (var snap in compSnaps)
+        {
+            if (snap.Component.DetachedPorts.Count > 0 &&
+                (snap.StartX != snap.EndX || snap.StartY != snap.EndY))
+                detachClears.Add(new ComponentDetachClearSnapshot(
+                    snap.Component, new HashSet<int>(snap.Component.DetachedPorts)));
+        }
+
         // Restore everything to start state so MoveCommand.Execute() applies cleanly
         foreach (var s in compSnaps)    { s.Component.X = s.StartX; s.Component.Y = s.StartY; }
         foreach (var s in selWireSnaps) RestoreWirePoints(s.Wire, s.StartPoints);
@@ -1082,17 +1273,23 @@ public sealed partial class SchematicViewModel : ObservableObject
         foreach (var s in followWireSnaps) RestoreWirePoints(s.Wire, s.StartPoints);
 
         var allWireSnaps = selWireSnaps.Concat(followWireSnaps).ToList();
-        var moveCmd = new MoveCommand(EditModel, compSnaps, allWireSnaps, objSnaps);
+        var moveCmd = new MoveCommand(EditModel, compSnaps, allWireSnaps, objSnaps,
+            detachClears: detachClears.Count > 0 ? detachClears : null);
+
+        // Chain auto-wires (always empty when mergeCmd is set — mergeCmd requires compSnaps.Count==0)
+        IUiCommand finalCmd = moveCmd;
+        foreach (var wc in autoWireCmds)
+            finalCmd = new CompositeCommand(finalCmd, wc);
 
         if (mergeCmd is not null)
         {
-            Execute(new CompositeCommand(moveCmd, mergeCmd));
+            Execute(new CompositeCommand(finalCmd, mergeCmd));
             Selection.SelectOne(mergeCmd.MergedWireId);
             Selection.ClearSegmentsSilent();
         }
         else
         {
-            Execute(moveCmd);
+            Execute(finalCmd);
         }
     }
 
@@ -1129,9 +1326,10 @@ public sealed partial class SchematicViewModel : ObservableObject
         var moves = new List<(double, double, double, double)>();
         foreach (var cs in compSnaps)
         {
-            var portDefs = SymbolPortDefs.For(cs.Component.Symbol);
+            var portDefs = SymbolPortDefs.For(cs.Component.Symbol, cs.Component.PortCount);
             for (int pi = 0; pi < portDefs.Length; pi++)
             {
+                if (cs.Component.IsPortDetached(pi)) continue;
                 var (ox, oy) = SchematicGeometry.LocalToWorld(
                     portDefs[pi].LocalX, portDefs[pi].LocalY,
                     cs.StartX, cs.StartY, cs.Component.Rotation, cs.Component.MirrorX);
@@ -1202,6 +1400,29 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
         }
 
+        // Layer 3: live preview wires for separating pin-on-pin contacts
+        List<IReadOnlyList<(double X, double Y)>>? popPreviews = null;
+        if (_dragPinOnPinContacts is { Count: > 0 } && _dragStartCompPositions is { Count: > 0 })
+        {
+            const double tol = SchematicEditModel.ConnectTolerance;
+            foreach (var contact in _dragPinOnPinContacts)
+            {
+                var comp = EditModel.FindComponent(contact.MovingCompId);
+                if (comp is null) continue;
+                var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+                if (contact.MovingPortIndex >= portDefs.Length) continue;
+                var (nx, ny) = SchematicGeometry.LocalToWorld(
+                    portDefs[contact.MovingPortIndex].LocalX,
+                    portDefs[contact.MovingPortIndex].LocalY,
+                    comp.X, comp.Y, comp.Rotation, comp.MirrorX);
+                if (SchematicGeometry.CoincidentPoints(nx, ny, contact.StationaryX, contact.StationaryY, tol))
+                    continue;
+                popPreviews ??= [];
+                popPreviews.Add(WireGeometry.OrthogonalRoute(
+                    contact.StationaryX, contact.StationaryY, nx, ny));
+            }
+        }
+
         // Push overlay update — canvas watches Overlay property change → InvalidateVisual().
         // No BuildRenderModel() call.
         Overlay = new SchematicOverlay
@@ -1212,6 +1433,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireSegments   = Selection.GetSelectedSegments(EditModel).ToHashSet(),
             ComponentDragPositions = compOverrides,
             WireDragPoints         = wireOverrides,
+            PinOnPinPreviewWires   = popPreviews,
             ConnectionDotsOverride = LiveConnectionDots(),
         };
     }
@@ -1233,6 +1455,22 @@ public sealed partial class SchematicViewModel : ObservableObject
         _dragWireInfo             = null;
         _dragUnselectedWirePoints = null;
         _dragStartObjPositions    = null;
+        _dragPinOnPinContacts     = null;
+    }
+
+    /// <summary>
+    /// Headless oracle entry point: commits a drag of the current Selection by (dx, dy).
+    /// Runs the identical commit path a real UI drag uses (snapshot + commit, no axis lock).
+    /// For use only by oracle tests; not part of the normal UI interaction flow.
+    /// </summary>
+    internal void SimulateDragCommit(double dx, double dy)
+    {
+        _dragStartWorldX = 0;
+        _dragStartWorldY = 0;
+        SnapshotDragStartPositions();
+        _isDragging = true;
+        CommitDragAsCommand(dx, dy, KeyModifiers.None);
+        ClearDragState();
     }
 
     // ── Per-segment wire drag (B2–B5) ─────────────────────────────────────────
@@ -1409,6 +1647,25 @@ public sealed partial class SchematicViewModel : ObservableObject
         return stem.JunctionAtStart
             ? WireGeometry.OrthogonalRoute(jx, jy, stem.FarPt.X, stem.FarPt.Y)
             : WireGeometry.OrthogonalRoute(stem.FarPt.X, stem.FarPt.Y, jx, jy);
+    }
+
+    /// <summary>
+    /// Re-routes a wire whose INTERIOR contains a T-junction component pin that has moved.
+    /// Keeps both wire endpoints (orig[0] and orig[^1]) fixed; routes from the start endpoint
+    /// to the new pin position, then on to the end endpoint (two OrthogonalRoute legs stitched
+    /// through P'). After <see cref="SimplifyWirePoints"/>, collinear segments are merged, so a
+    /// port that stays on the wire axis just gives back a straight wire. Mirrors RouteStem.
+    /// </summary>
+    private static IReadOnlyList<(double X, double Y)> RouteBodyFollow(
+        IReadOnlyList<(double X, double Y)> orig, double nx, double ny)
+    {
+        var toJunction   = WireGeometry.OrthogonalRoute(orig[0].X, orig[0].Y, nx, ny);
+        var fromJunction = WireGeometry.OrthogonalRoute(nx, ny, orig[^1].X, orig[^1].Y);
+        // Stitch: toJunction ends at P'; fromJunction starts at P' — skip that duplicate point.
+        var combined = new List<(double, double)>(toJunction.Count + fromJunction.Count - 1);
+        combined.AddRange(toJunction);
+        for (int i = 1; i < fromJunction.Count; i++) combined.Add(fromJunction[i]);
+        return combined;
     }
 
     /// <summary>
@@ -1920,8 +2177,14 @@ public sealed partial class SchematicViewModel : ObservableObject
         }
         if (compSnaps.Count > 0 || objSnaps.Count > 0)
         {
+            var detachClears = compSnaps
+                .Where(s => s.Component.DetachedPorts.Count > 0)
+                .Select(s => new ComponentDetachClearSnapshot(s.Component, new HashSet<int>(s.Component.DetachedPorts)))
+                .ToList();
+
             var sw = Stopwatch.StartNew();
-            Execute(new MoveCommand(EditModel, compSnaps, [], objSnaps));
+            Execute(new MoveCommand(EditModel, compSnaps, [], objSnaps,
+                detachClears: detachClears.Count > 0 ? detachClears : null));
             sw.Stop();
             // RebuildRenderModel() runs inside Execute → NotifyChanged.
             // Report to diagnostics so the measured rebuild time can be observed.
@@ -2017,6 +2280,18 @@ public sealed partial class SchematicViewModel : ObservableObject
             : state;
 
         Execute(new SetDisableStateCommand(EditModel, ids, targetState));
+    }
+
+    /// <summary>
+    /// Marks every port of every selected component as detached (the sanctioned in-place detach).
+    /// Detached ports render unconnected, are excluded from net extraction, and make no wires
+    /// follow during a subsequent drag. Undoable; clears on the component's next move.
+    /// </summary>
+    public void DisconnectSelection()
+    {
+        var ids = Selection.GetSelectedComponentIds(EditModel);
+        if (ids.Count == 0) return;
+        Execute(new DisconnectCommand(EditModel, ids));
     }
 
     public void SelectIfUnselected(string id)

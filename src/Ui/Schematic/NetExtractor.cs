@@ -25,14 +25,29 @@ public static class NetExtractor
 
         var uf = new UnionFind();
 
+        // Detached-port synthetic keys — each detached port gets a unique key that can never
+        // be produced by QK() for any finite schematic coordinate, so it will never union with
+        // the geometric P-cell it overlaps.  Its root is added to AssignNetNames explicitly so
+        // it receives an auto-name like "n3" rather than silently falling through to "0".
+        var detachedKeys = new Dictionary<(string CompId, int PortIndex), (long, long)>();
+        long detachedSeq  = 0;
+        void AddDetachedKey(string compId, int pi)
+        {
+            long s  = detachedSeq++;
+            var dk  = (long.MinValue + s, s);   // x ≈ -9.2e18: unreachable by real P-cells
+            detachedKeys[(compId, pi)] = dk;
+            uf.Add(dk);
+        }
+
         // ── Layer 1: union-find over on-P connection points ─────────────────
 
-        // Seed: all component pins.
+        // Seed: all component pins.  Detached ports get synthetic keys; others get P-cells.
         foreach (var comp in model.Components)
         {
             var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
             for (int pi = 0; pi < portDefs.Length; pi++)
             {
+                if (comp.IsPortDetached(pi)) { AddDetachedKey(comp.Id, pi); continue; }
                 var (px, py) = comp.GetPortWorldCoord(pi);
                 uf.Add(QK(px, py));
             }
@@ -102,16 +117,22 @@ public static class NetExtractor
             }
         }
 
-        // Short disable: union all terminal P-cells of shorted components.
+        // Short disable: union all non-detached terminal P-cells of shorted components.
         foreach (var comp in model.Components)
         {
             if (comp.Disable != DisableState.Short) continue;
             var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
             if (portDefs.Length < 2) continue;
-            var (x0, y0) = comp.GetPortWorldCoord(0);
+            // Find the first non-detached port as the union anchor; skip all detached ports.
+            int firstNd = -1;
+            for (int pi = 0; pi < portDefs.Length; pi++)
+                if (!comp.IsPortDetached(pi)) { firstNd = pi; break; }
+            if (firstNd < 0) continue;  // all ports detached — nothing to short
+            var (x0, y0) = comp.GetPortWorldCoord(firstNd);
             var key0 = QK(x0, y0);
-            for (int pi = 1; pi < portDefs.Length; pi++)
+            for (int pi = firstNd + 1; pi < portDefs.Length; pi++)
             {
+                if (comp.IsPortDetached(pi)) continue;
                 var (px, py) = comp.GetPortWorldCoord(pi);
                 uf.Union(key0, QK(px, py));
             }
@@ -139,7 +160,7 @@ public static class NetExtractor
         // ── Layer 2: assign stable net names ────────────────────────────────
 
         var conflicts = new List<string>();
-        var netNames = AssignNetNames(uf, QK, gs, model, labelNetKeys, conflicts);
+        var netNames = AssignNetNames(uf, QK, gs, model, labelNetKeys, conflicts, detachedKeys.Values);
 
         // ── Layer 3: emit TestBench ──────────────────────────────────────────
 
@@ -151,7 +172,7 @@ public static class NetExtractor
             if (comp.Symbol == SymbolKind.Ground) continue;
             if (comp.CellRef is not null) continue; // hierarchical extraction deferred to step 2
 
-            var inst = EmitInstance(comp, uf, QK, netNames);
+            var inst = EmitInstance(comp, uf, QK, netNames, detachedKeys);
             if (inst is not null) tb.Instances.Add(inst);
         }
 
@@ -209,7 +230,8 @@ public static class NetExtractor
         double gs,
         SchematicEditModel model,
         Dictionary<EditableNetLabel, (long, long)?> labelNetKeys,
-        List<string> conflicts)
+        List<string> conflicts,
+        IEnumerable<(long, long)>? extraRoots = null)
     {
         var rootToName = new Dictionary<(long, long), string>();
 
@@ -266,6 +288,19 @@ public static class NetExtractor
                 orderedRoots.Add(root);
         }
 
+        // Detached-port unique keys: their roots never appear in the component/wire P-cell scan
+        // above, so add them explicitly to ensure they receive auto-names (not fall through to "0").
+        if (extraRoots is not null)
+        {
+            foreach (var dk in extraRoots)
+            {
+                if (!uf.Contains(dk)) continue;
+                var root = uf.Find(dk);
+                if (!rootToName.ContainsKey(root) && seen.Add(root))
+                    orderedRoots.Add(root);
+            }
+        }
+
         int idx = 1;
         foreach (var root in orderedRoots)
             rootToName[root] = $"n{idx++}";
@@ -289,11 +324,20 @@ public static class NetExtractor
         return names.TryGetValue(root, out var n) ? n : "0";
     }
 
+    /// <summary>Net name for a specific union-find key, or "0" if the key is absent.</summary>
+    private static string NetAtKey(UnionFind uf, Dictionary<(long, long), string> names, (long, long) key)
+    {
+        if (!uf.Contains(key)) return "0";
+        var root = uf.Find(key);
+        return names.TryGetValue(root, out var n) ? n : "0";
+    }
+
     private static Instance? EmitInstance(
         EditableComponent comp,
         UnionFind uf,
         Func<double, double, (long, long)> QK,
-        Dictionary<(long, long), string> netNames)
+        Dictionary<(long, long), string> netNames,
+        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys)
     {
         var reference = ComponentTypeRegistry.EngineReference(comp.Symbol, comp.PortCount);
         var portDefs  = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
@@ -305,6 +349,15 @@ public static class NetExtractor
             })
             .ToList();
 
+        // Look up the net for port pi at world (px, py).
+        // Detached ports use their synthetic key so they never share a net with their P-cell.
+        string NetForPort(int pi, double px, double py)
+        {
+            if (comp.IsPortDetached(pi) && detachedKeys.TryGetValue((comp.Id, pi), out var dk))
+                return NetAtKey(uf, netNames, dk);
+            return NetAt(uf, QK, netNames, px, py);
+        }
+
         // ZPort: N signal pins + 1 "ref" pin → NetBindings[0..N-1] + RefNetBinding.
         if (comp.Symbol == SymbolKind.ZPort)
         {
@@ -313,7 +366,7 @@ public static class NetExtractor
             for (int pi = 0; pi < portDefs.Length; pi++)
             {
                 var (px, py) = comp.GetPortWorldCoord(pi);
-                var net = NetAt(uf, QK, netNames, px, py);
+                var net = NetForPort(pi, px, py);
                 if (portDefs[pi].Name == "ref")
                     refNet = net == "0" ? null : net;
                 else
@@ -327,7 +380,7 @@ public static class NetExtractor
         if (comp.Symbol == SymbolKind.Port)
         {
             var (px, py) = comp.GetPortWorldCoord(0);
-            var sigNet = NetAt(uf, QK, netNames, px, py);
+            var sigNet = NetForPort(0, px, py);
             return new Instance(comp.InstanceName, reference, [sigNet, "0"], overrides);
         }
 
@@ -336,7 +389,7 @@ public static class NetExtractor
         for (int pi = 0; pi < portDefs.Length; pi++)
         {
             var (px, py) = comp.GetPortWorldCoord(pi);
-            nets.Add(NetAt(uf, QK, netNames, px, py));
+            nets.Add(NetForPort(pi, px, py));
         }
         return new Instance(comp.InstanceName, reference, nets, overrides);
     }

@@ -1,6 +1,8 @@
 using System.IO;
+using System.Linq;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.ViewModels;
 
 namespace CircuitRF.Ui.Tests;
 
@@ -120,7 +122,7 @@ public class CschRoundTripTests
     {
         var m    = BuildModel();
         string j = SchematicPersistence.Serialize(m, "Test", 0, 0, 1);
-        string broken = j.Replace("\"FormatVersion\": 1", "\"FormatVersion\": 999");
+        string broken = j.Replace("\"FormatVersion\": 2", "\"FormatVersion\": 999");
         Assert.Throws<InvalidDataException>(() => SchematicPersistence.Deserialize(broken));
     }
 
@@ -174,5 +176,71 @@ public class CschRoundTripTests
         // Connection points are NOT on author grid (they go to P=100, not p=5).
         Assert.Equal(100.0, m.SnapToGrid(60.0),    1e-9);
         Assert.Equal(60.0,  m.SnapToAuthorGrid(60.0), 1e-9);
+    }
+
+    // ── DetachedPorts persistence (L1 gate) ──────────────────────────────────
+
+    [Fact]
+    public void DetachedPorts_Empty_OmittedFromJson()
+    {
+        var m = new SchematicEditModel();
+        m.Components.Add(new EditableComponent { InstanceName = "R1", Symbol = SymbolKind.Resistor });
+        string json = SchematicPersistence.Serialize(m);
+        // Empty set must not write the field.
+        Assert.DoesNotContain("DetachedPorts", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DetachedPorts_NonEmpty_RoundTrips()
+    {
+        var m = new SchematicEditModel();
+        var comp = new EditableComponent { InstanceName = "R1", Symbol = SymbolKind.Resistor };
+        comp.DetachedPorts.Add(0);
+        comp.DetachedPorts.Add(1);
+        m.Components.Add(comp);
+
+        string json = SchematicPersistence.Serialize(m);
+        var (restored, _, _) = SchematicPersistence.Deserialize(json);
+
+        var r = restored.Components.First(c => c.InstanceName == "R1");
+        Assert.Equal(2, r.DetachedPorts.Count);
+        Assert.Contains(0, r.DetachedPorts);
+        Assert.Contains(1, r.DetachedPorts);
+    }
+
+    [Fact]
+    public void DetachedPorts_Clone_CopiesSet()
+    {
+        var comp = new EditableComponent { InstanceName = "R1", Symbol = SymbolKind.Resistor };
+        comp.DetachedPorts.Add(0);
+
+        var clone = comp.Clone();
+        Assert.Single(clone.DetachedPorts);
+        Assert.Contains(0, clone.DetachedPorts);
+
+        // Mutating the clone does not affect the original.
+        clone.DetachedPorts.Add(1);
+        Assert.Single(comp.DetachedPorts);
+    }
+
+    [Fact]
+    public void DisconnectCommand_SetsAllPorts_AndUndoRestores()
+    {
+        var model = new SchematicEditModel();
+        var comp  = new EditableComponent { InstanceName = "R1", Symbol = SymbolKind.Resistor };
+        model.Components.Add(comp);
+
+        var vm = new SchematicViewModel(model);
+        vm.Selection.SelectOne(comp.Id);
+        vm.DisconnectSelection();
+
+        // After disconnect: all 2 resistor ports are detached.
+        Assert.Equal(2, comp.DetachedPorts.Count);
+        Assert.True(comp.IsPortDetached(0));
+        Assert.True(comp.IsPortDetached(1));
+
+        // Undo: DetachedPorts cleared back to empty.
+        vm.UndoRedo.Undo();
+        Assert.Empty(comp.DetachedPorts);
     }
 }

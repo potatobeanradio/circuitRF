@@ -7,20 +7,12 @@
              x:DataType="dockVm:PaletteTileVm">
 
     <UserControl.Styles>
-        <!-- Subtle 1px definition border for all unarmed tiles (HIG).
-             SystemBaseMediumLowColor (~38% opacity) is visibly readable against the panel background
-             in both light and dark; SystemBaseLowColor (~12%) is too faint to see. -->
-        <Style Selector="Border#TileGlyph">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseMediumLowColor}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="3"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
+        <!-- Hover + armed states only. The BASE border is set as DIRECT ATTRIBUTES on the
+             Border element below (not via a selector) so it always renders — a Border#name
+             selector Setter for BorderBrush was not taking effect. Armed/hover override here. -->
         <Style Selector="Border#TileGlyph:pointerover">
             <Setter Property="Background" Value="{DynamicResource SystemChromeMediumColor}"/>
         </Style>
-        <!-- Armed: accent background + matching border so definition border doesn't fight the highlight -->
         <Style Selector="Border#TileGlyph.armed">
             <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
@@ -42,12 +34,18 @@
          The Border is the single pointer owner: PointerReleased-without-drag = arm; PointerMoved-past-threshold = DnD. -->
     <StackPanel Spacing="3" HorizontalAlignment="Center" Width="60" Margin="1 2 1 2">
 
-        <!-- Square glyph border — single pointer owner for both arm (click) and drag-and-drop -->
+        <!-- Square glyph border — single pointer owner for both arm (click) and drag-and-drop.
+             Border properties are DIRECT ATTRIBUTES (not style setters) so they always render. -->
         <Border x:Name="TileGlyph"
                 Width="52"
                 Height="52"
                 Padding="4"
                 HorizontalAlignment="Center"
+                Background="Transparent"
+                BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="3"
+                Cursor="Hand"
                 Classes.armed="{Binding #TileRoot.IsArmed}">
             <ctrl:PaletteGlyphControl Kind="{Binding Item.Kind}" Width="44" Height="44"/>
         </Border>

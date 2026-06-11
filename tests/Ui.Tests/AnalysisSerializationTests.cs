@@ -413,7 +413,7 @@ public sealed class CschAnalysisRoundTripTests
     {
         const string oldJson = """
             {
-              "formatVersion": 1,
+              "formatVersion": 2,
               "cellName": "old_cell",
               "gridSize": 100.0,
               "gridSnap": true,

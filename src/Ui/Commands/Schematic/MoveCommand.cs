@@ -33,17 +33,26 @@ internal readonly record struct DotMoveSnapshot(
     double EndX,   double EndY);
 
 /// <summary>
+/// Records the detached-port set for one component at the moment a move is committed.
+/// MoveCommand.Execute clears the set; MoveCommand.Undo restores it.
+/// </summary>
+internal readonly record struct ComponentDetachClearSnapshot(
+    EditableComponent Component,
+    HashSet<int> PriorDetachedPorts);
+
+/// <summary>
 /// Moves a selection of components, wires, canvas objects, and/or wire endpoints.
 /// Records start and end positions; Execute() = apply end; Undo() = restore start.
 /// </summary>
 internal sealed class MoveCommand : IUiCommand
 {
-    private readonly SchematicEditModel                   _model;
-    private readonly List<ComponentMoveSnapshot>          _comps;
-    private readonly List<WireMoveSnapshot>               _wires;
-    private readonly List<CanvasObjectMoveSnapshot>       _cobjs;
-    private readonly List<WireEndpointMoveSnapshot>       _endPts;
-    private readonly List<DotMoveSnapshot>                _dots;
+    private readonly SchematicEditModel                     _model;
+    private readonly List<ComponentMoveSnapshot>            _comps;
+    private readonly List<WireMoveSnapshot>                 _wires;
+    private readonly List<CanvasObjectMoveSnapshot>         _cobjs;
+    private readonly List<WireEndpointMoveSnapshot>         _endPts;
+    private readonly List<DotMoveSnapshot>                  _dots;
+    private readonly List<ComponentDetachClearSnapshot>     _detachClears;
 
     public string Description => "Move";
 
@@ -53,23 +62,26 @@ internal sealed class MoveCommand : IUiCommand
         List<WireMoveSnapshot> wires,
         List<CanvasObjectMoveSnapshot> cobjs,
         List<WireEndpointMoveSnapshot>? endPts = null,
-        List<DotMoveSnapshot>? dots = null)
+        List<DotMoveSnapshot>? dots = null,
+        List<ComponentDetachClearSnapshot>? detachClears = null)
     {
-        _model  = model;
-        _comps  = comps;
-        _wires  = wires;
-        _cobjs  = cobjs;
-        _endPts = endPts ?? [];
-        _dots   = dots ?? [];
+        _model        = model;
+        _comps        = comps;
+        _wires        = wires;
+        _cobjs        = cobjs;
+        _endPts       = endPts ?? [];
+        _dots         = dots ?? [];
+        _detachClears = detachClears ?? [];
     }
 
     public void Execute()
     {
-        foreach (var s in _comps)  { s.Component.X = s.EndX; s.Component.Y = s.EndY; }
-        foreach (var s in _wires)  ApplyWirePoints(s.Wire, s.EndPoints);
-        foreach (var s in _cobjs)  { s.Object.X = s.EndX; s.Object.Y = s.EndY; }
-        foreach (var s in _endPts) ApplyEndpoint(s, end: true);
-        foreach (var s in _dots)   { s.Dot.X = s.EndX; s.Dot.Y = s.EndY; }
+        foreach (var s in _comps)         { s.Component.X = s.EndX; s.Component.Y = s.EndY; }
+        foreach (var s in _wires)         ApplyWirePoints(s.Wire, s.EndPoints);
+        foreach (var s in _cobjs)         { s.Object.X = s.EndX; s.Object.Y = s.EndY; }
+        foreach (var s in _endPts)        ApplyEndpoint(s, end: true);
+        foreach (var s in _dots)          { s.Dot.X = s.EndX; s.Dot.Y = s.EndY; }
+        foreach (var s in _detachClears)  s.Component.DetachedPorts.Clear();
         _model.NotifyChanged();
     }
 
@@ -80,6 +92,12 @@ internal sealed class MoveCommand : IUiCommand
         foreach (var s in _cobjs)  { s.Object.X = s.StartX; s.Object.Y = s.StartY; }
         foreach (var s in _endPts) ApplyEndpoint(s, end: false);
         foreach (var s in _dots)   { s.Dot.X = s.StartX; s.Dot.Y = s.StartY; }
+        foreach (var s in _detachClears)
+        {
+            s.Component.DetachedPorts.Clear();
+            foreach (var pi in s.PriorDetachedPorts)
+                s.Component.DetachedPorts.Add(pi);
+        }
         _model.NotifyChanged();
     }
 

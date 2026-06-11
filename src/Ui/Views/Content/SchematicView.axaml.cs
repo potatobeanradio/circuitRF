@@ -62,6 +62,15 @@ public partial class SchematicView : UserControl
             OnInlineEditWheel,
             RoutingStrategies.Tunnel);
 
+        // Focus-independent shortcut handler.  Window.KeyBindings marks Escape handled before
+        // visual-tree routing begins, so a plain OnKeyDown override never fires after a toolbar
+        // click.  Tunnel + handledEventsToo:true lets us intercept the key regardless.
+        this.AddHandler(
+            InputElement.KeyDownEvent,
+            OnViewKeyDownTunnel,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
+
         // Clipboard shortcuts (async; must be handled here, not in the canvas)
         SchematicCanvasCtrl.ClipboardCopyRequested  += async (_, _) => await OnClipboardCopy();
         SchematicCanvasCtrl.ClipboardCutRequested   += async (_, _) => await OnClipboardCut();
@@ -130,13 +139,17 @@ public partial class SchematicView : UserControl
     private SchematicViewModel? Vm =>
         (DataContext as SchematicDocument)?.ViewModel;
 
-    // ── Global schematic key handling (works regardless of which toolbar item is focused) ──
+    // ── Global schematic key handling (focus-independent via tunnel) ──────────────
 
-    protected override void OnKeyDown(KeyEventArgs e)
+    // Tunnel handler registered in constructor with handledEventsToo:true.
+    // Fires whenever focus is inside this UserControl regardless of which child holds it,
+    // and regardless of whether the Window-level Escape KeyBinding already marked the event handled.
+    private void OnViewKeyDownTunnel(object? sender, KeyEventArgs e)
     {
-        base.OnKeyDown(e);
-        if (e.Handled || InlineEditBox.IsVisible) return;
-        if (Vm is null) return;
+        if (!IsKeyboardFocusWithin) return;               // focus not inside this view — skip
+        if (InlineEditBox.IsKeyboardFocusWithin) return;  // inline TextBox owns its own Esc/Enter
+        var vm = Vm;
+        if (vm is null) return;
 
         bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
         if (ctrl) return;
@@ -144,18 +157,23 @@ public partial class SchematicView : UserControl
         switch (e.Key)
         {
             case Key.Escape:
-                Vm.SetSelectTool();
-                Vm.Selection.Clear();
+                if (vm.HasActiveOperation) vm.SetSelectTool();
+                else vm.Selection.Clear();
                 SchematicCanvasCtrl.InvalidateVisual();
                 e.Handled = true;
                 break;
             case Key.S:
-                Vm.SetSelectTool();
+                vm.SetSelectTool();
                 SchematicCanvasCtrl.InvalidateVisual();
                 e.Handled = true;
                 break;
             case Key.W:
-                Vm.SetWireTool();
+                vm.SetWireTool();
+                SchematicCanvasCtrl.InvalidateVisual();
+                e.Handled = true;
+                break;
+            case Key.Z:
+                vm.SetZoomBoxTool();
                 SchematicCanvasCtrl.InvalidateVisual();
                 e.Handled = true;
                 break;
@@ -327,10 +345,7 @@ public partial class SchematicView : UserControl
         Vm?.RotateSelection(clockwise: false);
 
     private void OnCtxDisconnect(object? sender, RoutedEventArgs e)
-    {
-        // Disconnect all wires connected to selected components — deferred command
-        // TODO: implement DisconnectCommand in Phase 6d follow-up
-    }
+        => Vm?.DisconnectSelection();
 
     private void OnCtxMoveLabels(object? sender, RoutedEventArgs e)  => Vm?.BeginMoveLabels();
     private void OnCtxResetLabels(object? sender, RoutedEventArgs e) => Vm?.ResetLabelOffsets();
@@ -755,6 +770,7 @@ public partial class SchematicView : UserControl
         {
             Vm.CancelInlineEdit();
             DismissInlineEditBox();
+            Vm.SetSelectTool();
             e.Handled = true;
         }
     }

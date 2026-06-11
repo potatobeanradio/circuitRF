@@ -456,7 +456,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
         // Text typing mode — intercept keys before general handlers.
         if (_isTypingText)
         {
-            if (key == Key.Escape)                           { CancelOp(); return; }
+            if (key == Key.Escape)                           { CancelOp(); ActiveTool = Tool.Select; return; }
             if (key == Key.Enter || key == Key.Return)       { CommitText(); return; }
             if (key == Key.Back && _textBuffer.Length > 0)  { _textBuffer = _textBuffer[..^1]; RebuildOverlay(); }
             return;
@@ -478,10 +478,8 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
             }
             if (key == Key.Escape)
             {
-                _selectedPinIndex = null;
-                _isPinDragging    = false;
-                _pinLiveDx        = 0; _pinLiveDy = 0;
-                RebuildOverlay();
+                // OnActiveToolChanged will reset all pin state and rebuild the overlay.
+                ActiveTool = Tool.Select;
             }
             return;
         }
@@ -499,10 +497,13 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
 
         if (key == Key.Escape)
         {
-            if (_isDrawingTwoPoint || _drawPoints.Count > 0 || _isDragging || _isRubberBanding)
-                CancelOp();
-            else
-                ClearSelection();
+            bool hasActiveOp = ActiveTool != Tool.Select
+                            || _isDrawingTwoPoint
+                            || _drawPoints.Count > 0
+                            || _isDragging
+                            || _isRubberBanding;
+            if (hasActiveOp) { CancelOp(); ActiveTool = Tool.Select; }
+            else ClearSelection();
             return;
         }
 
