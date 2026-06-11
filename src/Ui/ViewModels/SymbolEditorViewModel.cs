@@ -28,7 +28,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     {
         Select,
         Line, Polyline, Rect, RoundedRect, Circle, Ellipse, Arc, Triangle, Polygon,
-        QuadCurve, CubicCurve, Sine, HalfWave, Text,
+        QuadCurve, CubicCurve, Sine, ExpTaper, Text,
         Pin,
     }
 
@@ -53,18 +53,19 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     // ── Symbol metadata (port count + lock) ──────────────────────────────────
 
     /// <summary>
-    /// Number of ports this symbol can map pins to.
-    /// Synced from EditableSymbol.PortCount; changes are propagated back.
+    /// When non-null, this symbol is cell-bound and the cell declares this many ports (read-only).
+    /// When null, this is an orphan/scratch symbol — effective port count = Pins.Count.
     /// </summary>
-    [ObservableProperty] private int _portCount;
+    public int? ExternalPortCount => EditableSymbol.ExternalPortCount;
 
-    partial void OnPortCountChanged(int value)
-    {
-        if (IsLocked) return;
-        value = Math.Max(0, value);
-        EditableSymbol.PortCount = value;
-        EditableSymbol.NotifyChanged();
-    }
+    /// <summary>
+    /// Label shown in the metadata bar: "Ports: N".
+    /// Cell-bound: N = ExternalPortCount.  Orphan: N = Pins.Count.
+    /// </summary>
+    public string PortsLabel =>
+        EditableSymbol.ExternalPortCount is { } ext
+            ? $"Ports: {ext}"
+            : $"Ports: {EditableSymbol.Pins.Count}";
 
     /// <summary>True for built-in / system symbols; the editor opens them read-only.</summary>
     [ObservableProperty] private bool _isLocked;
@@ -96,6 +97,13 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
 
     [ObservableProperty] private Symbol?              _renderSymbol;
     [ObservableProperty] private SymbolEditorOverlay  _overlay = SymbolEditorOverlay.Empty;
+
+    /// <summary>
+    /// During a resize, the live-scaled transient clone of the selected primitive; null otherwise.
+    /// Set before <see cref="Overlay"/> so the inspector can read it synchronously
+    /// when it reacts to the <see cref="Overlay"/> PropertyChanged notification.
+    /// </summary>
+    public SymbolPrimitive? ResizeLivePrimitive { get; private set; }
 
     // ── Primitive selection ───────────────────────────────────────────────────
 
@@ -212,7 +220,6 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     public SymbolEditorViewModel(EditableSymbol editableSymbol)
     {
         EditableSymbol = editableSymbol;
-        _portCount     = editableSymbol.PortCount;
         _isLocked      = !editableSymbol.UserEditable;
 
         UndoCommand = new RelayCommand(() => _undoRedo.Undo(), () => _undoRedo.CanUndo);
@@ -252,7 +259,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
         SaveSymbolCommand   = new AsyncRelayCommand<Window?>(SaveSymbolAsync);
         SaveSymbolAsCommand = new AsyncRelayCommand<Window?>(SaveSymbolAsAsync);
 
-        EditableSymbol.Changed += (_, _) => RebuildRenderSnapshot();
+        EditableSymbol.Changed += (_, _) => { RebuildRenderSnapshot(); OnPropertyChanged(nameof(PortsLabel)); };
         RebuildRenderSnapshot();
     }
 
@@ -308,8 +315,9 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
             };
 
         // Resize handle: bottom-right of single selected prim's bbox.
+        // During resize, build a transient scaled clone as the live preview primitive.
         (double X, double Y)? resizeHandle = null;
-        (double X0, double Y0, double X1, double Y1)? resizePreviewBb = null;
+        SymbolPrimitive? resizeLivePrim = null;
         if (!IsLocked && ActiveTool == Tool.Select && _selection.Count == 1 && !_isDragging && !_isRubberBanding)
         {
             int idx = _selection.First();
@@ -318,9 +326,26 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                 var (bx0, by0, bx1, by1) = SymbolGeometry.BboxOf(EditableSymbol.Primitives[idx]);
                 resizeHandle = (bx1, by1);
                 if (_isResizing)
-                    resizePreviewBb = (_resizeBbX0, _resizeBbY0, _resizeLiveX1, _resizeLiveY1);
+                {
+                    double origW = _resizeBbX1 - _resizeBbX0;
+                    double origH = _resizeBbY1 - _resizeBbY0;
+                    if (Math.Abs(origW) > 1e-9 && Math.Abs(origH) > 1e-9)
+                    {
+                        double sx = (_resizeLiveX1 - _resizeBbX0) / origW;
+                        double sy = (_resizeLiveY1 - _resizeBbY0) / origH;
+                        if (Math.Abs(sx) > 1e-6 && Math.Abs(sy) > 1e-6)
+                        {
+                            var clone = SymbolGeometry.Clone(EditableSymbol.Primitives[idx]);
+                            SymbolGeometry.ScaleBy(clone, _resizeBbX0, _resizeBbY0, sx, sy);
+                            resizeLivePrim = clone;
+                        }
+                    }
+                }
             }
         }
+
+        // Set before Overlay so the inspector reads the correct value when reacting to Overlay changes.
+        ResizeLivePrimitive = resizeLivePrim;
 
         Overlay = new SymbolEditorOverlay
         {
@@ -330,12 +355,11 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                 ? (Math.Min(_rbStartX, _rbCurX), Math.Min(_rbStartY, _rbCurY),
                    Math.Max(_rbStartX, _rbCurX), Math.Max(_rbStartY, _rbCurY))
                 : null,
-            InProgressPrimitive = inProgress,
+            InProgressPrimitive = inProgress ?? resizeLivePrim,
             SelectedPinIndices  = _selectedPins.ToHashSet(),
             PinLiveDragOffset   = (_pinLiveDx, _pinLiveDy),
             UnmappedPortIndices = ComputeUnmappedPorts(),
             ResizeHandle        = resizeHandle,
-            ResizePreviewBb     = resizePreviewBb,
         };
     }
 
@@ -649,6 +673,41 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
             return;
         }
 
+        // Arrow keys — nudge selected primitives (p=5) and/or pins (P=100).
+        if (!IsLocked && ActiveTool == Tool.Select &&
+            (key == Key.Left || key == Key.Right || key == Key.Up || key == Key.Down))
+        {
+            bool hasPrims = _selection.Any(i => i >= 0 && i < EditableSymbol.Primitives.Count);
+            bool hasPins  = _selectedPins.Any(i => i >= 0 && i < EditableSymbol.Pins.Count);
+            if (hasPrims || hasPins)
+            {
+                double adx = key == Key.Left ? -SmallGrid : key == Key.Right ? SmallGrid : 0;
+                double ady = key == Key.Up   ? -SmallGrid : key == Key.Down  ? SmallGrid : 0;
+                double pdx = key == Key.Left ? -PinGrid   : key == Key.Right ? PinGrid   : 0;
+                double pdy = key == Key.Up   ? -PinGrid   : key == Key.Down  ? PinGrid   : 0;
+
+                IUiCommand? cmd = null;
+                if (hasPrims)
+                {
+                    var prims = _selection
+                        .Where(i => i >= 0 && i < EditableSymbol.Primitives.Count)
+                        .Select(i => EditableSymbol.Primitives[i]).ToList();
+                    cmd = new MoveSymbolPrimitivesCommand(EditableSymbol, prims, adx, ady);
+                }
+                if (hasPins)
+                {
+                    var moves = _selectedPins
+                        .Where(i => i >= 0 && i < EditableSymbol.Pins.Count)
+                        .Select(i => EditableSymbol.Pins[i])
+                        .Select(p => (p, SnapToConnectionGrid(p.LocalX + pdx), SnapToConnectionGrid(p.LocalY + pdy)));
+                    var pinCmd = new MoveMultipleSymbolPinsCommand(EditableSymbol, moves);
+                    cmd = cmd is null ? pinCmd : new CompositeCommand(cmd, pinCmd);
+                }
+                if (cmd is not null) { Execute(cmd); RebuildOverlay(); }
+            }
+            return;
+        }
+
         // Pin tool key handling — only Escape remains (select/move/delete now live in Select).
         if (ActiveTool == Tool.Pin)
         {
@@ -849,20 +908,23 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
 
     private int NextUnmappedPortIndex()
     {
-        if (PortCount <= 0) return 0;
+        var ext = EditableSymbol.ExternalPortCount;
+        if (ext is null or <= 0)
+            return EditableSymbol.Pins.Count; // orphan: auto-increment port indices
         var mapped = EditableSymbol.Pins.Select(p => p.PortIndex).ToHashSet();
-        for (int i = 0; i < PortCount; i++)
+        for (int i = 0; i < ext; i++)
             if (!mapped.Contains(i))
                 return i;
-        return 0; // all ports mapped — default to 0 (user can remap)
+        return EditableSymbol.Pins.Count; // all declared ports mapped
     }
 
     private IReadOnlyList<int> ComputeUnmappedPorts()
     {
-        if (PortCount <= 0) return [];
+        var ext = EditableSymbol.ExternalPortCount;
+        if (ext is null or <= 0) return []; // orphan or 0-port cell → no warning
         var mapped = EditableSymbol.Pins.Select(p => p.PortIndex).ToHashSet();
         var result = new List<int>();
-        for (int i = 0; i < PortCount; i++)
+        for (int i = 0; i < ext; i++)
             if (!mapped.Contains(i))
                 result.Add(i);
         return result;
@@ -873,7 +935,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     private static bool IsTwoPointDragTool(Tool t) => t is
         Tool.Line or Tool.Rect or Tool.RoundedRect or
         Tool.Circle or Tool.Ellipse or Tool.Arc or
-        Tool.Sine or Tool.HalfWave;
+        Tool.Sine or Tool.ExpTaper;
 
     private static bool IsMultiPointTool(Tool t) => t is
         Tool.Polyline or Tool.Polygon or Tool.Triangle or
@@ -1006,18 +1068,18 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                 };
             }
 
-            case Tool.HalfWave:
+            case Tool.ExpTaper:
             {
                 double adx = Math.Abs(dx), ady = Math.Abs(dy);
                 bool horizontal = adx >= ady;
                 double length = Math.Max(horizontal ? adx : ady, SmallGrid * 2);
-                double amp    = Math.Max(horizontal ? ady / 2 : adx / 2, SmallGrid);
-                return new HalfWavePrimitive
+                double wide   = Math.Max(horizontal ? ady : adx, SmallGrid * 2);
+                return new ExponentialTaperPrimitive
                 {
                     ColorRole = role, StrokeTier = tier,
                     Cx = (x1 + x2) / 2, Cy = (y1 + y2) / 2,
-                    Length = length, Amp = amp,
-                    Axis   = horizontal ? SineAxis.Horizontal : SineAxis.Vertical,
+                    L  = length, W1 = wide, W2 = Math.Max(wide / 4.0, SmallGrid),
+                    Axis = horizontal ? SineAxis.Horizontal : SineAxis.Vertical,
                 };
             }
 

@@ -317,7 +317,7 @@ public static class SchematicRenderer
         SchematicRenderTheme theme,
         SKPaint? overridePaint = null)
     {
-        // Rotation in degrees for angle-bearing primitives (Arc, Sine, HalfWave).
+        // Rotation in degrees for angle-bearing primitives (Arc, Sine).
         double rotDeg = rotation switch
         {
             SymbolRotation.R90  =>  90.0,
@@ -374,9 +374,9 @@ public static class SchematicRenderer
                 PolygonPrimitive     pg => (pg.ColorRole, pg.StrokeTier, pg.Filled),
                 QuadCurvePrimitive   qc => (qc.ColorRole, qc.StrokeTier, false),
                 CubicCurvePrimitive  cc => (cc.ColorRole, cc.StrokeTier, false),
-                SinePrimitive        s  => (s.ColorRole,  s.StrokeTier,  false),
-                HalfWavePrimitive    hw => (hw.ColorRole, hw.StrokeTier, false),
-                _                      => (SymbolColorRole.SymbolLine, SymbolStrokeTier.Normal, false),
+                SinePrimitive              s  => (s.ColorRole,  s.StrokeTier,  false),
+                ExponentialTaperPrimitive  et => (et.ColorRole, et.StrokeTier, et.Filled),
+                _                             => (SymbolColorRole.SymbolLine, SymbolStrokeTier.Normal, false),
             };
 
             // Ghost mode: skip everything except SymbolLine (preserves parity with the
@@ -391,7 +391,8 @@ public static class SchematicRenderer
             };
             float sw = overridePaint is not null
                 ? overridePaint.StrokeWidth
-                : (float)Math.Max(1.0, zoom * (info.tier == SymbolStrokeTier.Normal ? 3.0 : 1.5));
+                : (float)Math.Max(1.0, zoom * (info.tier == SymbolStrokeTier.Thick ? 5.0
+                                             : info.tier == SymbolStrokeTier.Normal ? 3.0 : 1.5));
 
             using var paint = new SKPaint
             {
@@ -533,7 +534,7 @@ public static class SchematicRenderer
 
                 case SinePrimitive s:
                 {
-                    const int N = 32;
+                    int N = Math.Max((int)Math.Ceiling(s.Cycles * Math.Max(s.PtsPerCycle, 1)), 2);
                     using var path = new SKPath();
                     for (int k = 0; k <= N; k++)
                     {
@@ -556,30 +557,43 @@ public static class SchematicRenderer
                     break;
                 }
 
-                case HalfWavePrimitive hw:
+                case ExponentialTaperPrimitive et:
                 {
-                    const int N = 16;
+                    if (et.L <= 0) break;
+                    int N = Math.Max(et.NumPts, 2);
+                    double wRatio = (et.W1 > 0 && et.W2 > 0) ? et.W2 / et.W1 : 1.0;
                     using var path = new SKPath();
+                    // Top outline (t: 0→1)
                     for (int k = 0; k <= N; k++)
                     {
                         double t = (double)k / N;
+                        double w = et.W1 * Math.Pow(wRatio, t);
                         double lx, ly;
-                        if (hw.Axis == SineAxis.Horizontal)
-                        {
-                            lx = hw.Cx + (t - 0.5) * hw.Length;
-                            ly = hw.Cy + hw.Amp * Math.Sin(Math.PI * t);
-                        }
+                        if (et.Axis == SineAxis.Horizontal)
+                        { lx = et.Cx + (t - 0.5) * et.L;  ly = et.Cy - w * 0.5; }
                         else
-                        {
-                            ly = hw.Cy + (t - 0.5) * hw.Length;
-                            lx = hw.Cx + hw.Amp * Math.Sin(Math.PI * t);
-                        }
+                        { ly = et.Cy + (t - 0.5) * et.L;  lx = et.Cx - w * 0.5; }
                         var (px, py) = LP(lx, ly);
                         if (k == 0) path.MoveTo(px, py); else path.LineTo(px, py);
                     }
+                    // Bottom outline (t: 1→0)
+                    for (int k = N; k >= 0; k--)
+                    {
+                        double t = (double)k / N;
+                        double w = et.W1 * Math.Pow(wRatio, t);
+                        double lx, ly;
+                        if (et.Axis == SineAxis.Horizontal)
+                        { lx = et.Cx + (t - 0.5) * et.L;  ly = et.Cy + w * 0.5; }
+                        else
+                        { ly = et.Cy + (t - 0.5) * et.L;  lx = et.Cx + w * 0.5; }
+                        var (px, py) = LP(lx, ly);
+                        path.LineTo(px, py);
+                    }
+                    path.Close();
                     canvas.DrawPath(path, paint);
                     break;
                 }
+
             }
         }
     }

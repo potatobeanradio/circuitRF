@@ -98,7 +98,11 @@
                             CommandParameter="Line"
                             ToolTip.Tip="Line — click and drag"
                             Padding="6,3">
-                        <TextBlock Text="Line" FontSize="11"/>
+                        <!-- diagonal line, slightly downward left→right — coords in 16×16 px space -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent" StrokeLineCap="Round"
+                              Data="M 1,6 L 15,10"/>
                     </Button>
 
                     <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
@@ -108,7 +112,11 @@
                             CommandParameter="Polyline"
                             ToolTip.Tip="Polyline — click points; Enter or double-click to finish"
                             Padding="6,3">
-                        <TextBlock Text="PLine" FontSize="11"/>
+                        <!-- 4-point zigzag -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent" StrokeLineCap="Round"
+                              Data="M 1,11 L 5,5 L 10,11 L 15,6"/>
                     </Button>
 
                     <!-- Separator -->
@@ -124,7 +132,10 @@
                             CommandParameter="Rect"
                             ToolTip.Tip="Rectangle — drag corner to corner"
                             Padding="6,3">
-                        <TextBlock Text="Rect" FontSize="11"/>
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent"
+                              Data="M 1,3 H 15 V 13 H 1 Z"/>
                     </Button>
 
                     <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
@@ -134,7 +145,10 @@
                             CommandParameter="RoundedRect"
                             ToolTip.Tip="Rounded Rectangle — drag corner to corner"
                             Padding="6,3">
-                        <TextBlock Text="RRect" FontSize="11"/>
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent"
+                              Data="M 3,3 H 13 Q 15,3 15,5 V 11 Q 15,13 13,13 H 3 Q 1,13 1,11 V 5 Q 1,3 3,3 Z"/>
                     </Button>
 
                     <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
@@ -144,7 +158,11 @@
                             CommandParameter="Circle"
                             ToolTip.Tip="Circle — drag from centre"
                             Padding="6,3">
-                        <TextBlock Text="Circ" FontSize="11"/>
+                        <!-- circle cx=8 cy=8 r=6, two semicircles -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent"
+                              Data="M 2,8 A 6,6 0 0 1 14,8 A 6,6 0 0 1 2,8 Z"/>
                     </Button>
 
                     <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
@@ -154,7 +172,11 @@
                             CommandParameter="Ellipse"
                             ToolTip.Tip="Ellipse — drag bounding box"
                             Padding="6,3">
-                        <TextBlock Text="Ell" FontSize="11"/>
+                        <!-- wider-than-tall ellipse cx=8 cy=8 rx=7 ry=4 -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent"
+                              Data="M 1,8 A 7,4 0 0 1 15,8 A 7,4 0 0 1 1,8 Z"/>
                     </Button>
 
                     <!-- Separator -->
@@ -170,7 +192,11 @@
                             CommandParameter="Arc"
                             ToolTip.Tip="Arc — drag from centre; 270° sweep"
                             Padding="6,3">
-                        <TextBlock Text="Arc" FontSize="11"/>
+                        <!-- ~270° open arc, center (8,8) r=6 -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent" StrokeLineCap="Round"
+                              Data="M 8,2 A 6,6 0 1 1 2,8"/>
                     </Button>
 
                     <!-- Separator -->
@@ -186,7 +212,10 @@
                             CommandParameter="Triangle"
                             ToolTip.Tip="Triangle — click 3 points (auto-commits)"
                             Padding="6,3">
-                        <TextBlock Text="Tri" FontSize="11"/>
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent"
+                              Data="M 8,2 L 15,14 L 1,14 Z"/>
                     </Button>
 
                     <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
@@ -196,7 +225,11 @@
                             CommandParameter="Polygon"
                             ToolTip.Tip="Polygon — click points; Enter or double-click to close"
                             Padding="6,3">
-                        <TextBlock Text="Poly" FontSize="11"/>
+                        <!-- 5-sided polygon, center (8,8) r=6 -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent"
+                              Data="M 8,2 L 14,6 L 12,13 L 4,13 L 2,6 Z"/>
                     </Button>
 
                     <!-- Separator -->
@@ -212,7 +245,11 @@
                             CommandParameter="QuadCurve"
                             ToolTip.Tip="Quadratic Bézier — click start, control, end (3 points)"
                             Padding="6,3">
-                        <TextBlock Text="QBez" FontSize="11"/>
+                        <!-- upward arch -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent" StrokeLineCap="Round"
+                              Data="M 1,13 Q 8,2 15,13"/>
                     </Button>
 
                     <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
@@ -222,7 +259,11 @@
                             CommandParameter="CubicCurve"
                             ToolTip.Tip="Cubic Bézier — click start, ctrl1, ctrl2, end (4 points)"
                             Padding="6,3">
-                        <TextBlock Text="CBez" FontSize="11"/>
+                        <!-- S-curve -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent" StrokeLineCap="Round"
+                              Data="M 1,13 C 5,2 11,14 15,3"/>
                     </Button>
 
                     <!-- Separator -->
@@ -238,17 +279,26 @@
                             CommandParameter="Sine"
                             ToolTip.Tip="Sine wave — drag to set length and amplitude"
                             Padding="6,3">
-                        <TextBlock Text="Sine" FontSize="11"/>
+                        <!-- one full sine period via cubic bezier approximation -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="1.5" Fill="Transparent" StrokeLineCap="Round"
+                              Data="M 1,8 C 3,2 5,2 8,8 C 11,14 13,14 15,8"/>
                     </Button>
 
                     <Button Classes.ToolActive="{Binding ViewModel.ActiveTool,
                                 Converter={StaticResource EnumEqualsBool},
-                                ConverterParameter=HalfWave}"
+                                ConverterParameter=ExpTaper}"
                             Command="{Binding ViewModel.SetActiveToolCommand}"
-                            CommandParameter="HalfWave"
-                            ToolTip.Tip="Half-wave — drag to set length and amplitude"
+                            CommandParameter="ExpTaper"
+                            ToolTip.Tip="Exponential taper — drag to set length and start width"
                             Padding="6,3">
-                        <TextBlock Text="½Wav" FontSize="11"/>
+                        <!-- filled taper: wide left, narrow right, exponential profile -->
+                        <Path Width="16" Height="16" VerticalAlignment="Center"
+                              Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              StrokeThickness="0.5"
+                              Fill="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                              Data="M 1,2 C 6,2 11,5 15,7 L 15,9 C 11,11 6,14 1,14 Z"/>
                     </Button>
 
                     <!-- Separator -->
@@ -334,6 +384,16 @@
                         <TextBlock Text="Thin" FontSize="11"/>
                     </Button>
 
+                    <Button Classes.ToolActive="{Binding ViewModel.CurrentStrokeTier,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=Thick}"
+                            Command="{Binding ViewModel.SetCurrentStrokeTierCommand}"
+                            CommandParameter="Thick"
+                            ToolTip.Tip="Thick stroke weight"
+                            Padding="6,3">
+                        <TextBlock Text="Thick" FontSize="11"/>
+                    </Button>
+
                     <!-- Separator -->
                     <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                             Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
@@ -393,18 +453,11 @@
                 <Border Width="1" Height="14"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
-                <!-- Port count -->
-                <TextBlock Text="Ports:" FontSize="11" VerticalAlignment="Center"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                <TextBox x:Name="PortCountBox"
-                         Width="48"
-                         MaxLength="4"
-                         IsEnabled="{Binding ViewModel.IsEditable}"
-                         VerticalAlignment="Center"
-                         TextAlignment="Center"
-                         FontSize="11"
-                         Padding="4,1"
-                         ToolTip.Tip="Number of ports this symbol maps pins to"/>
+                <!-- Port count (read-only; cell-bound = cell authority, orphan = pin count) -->
+                <TextBlock Text="{Binding ViewModel.PortsLabel}"
+                           FontSize="11" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           ToolTip.Tip="Port count — cell-bound symbols show the cell's declared port count (read-only); orphan symbols show pin count"/>
 
                 <Border Width="1" Height="14"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>

@@ -941,6 +941,67 @@ button so both `ShowDialog` and `ShowDialog<T>` return correctly. `SizeToContent
 
 ---
 
+## Scratch symbols + New Symbol on launch (ScratchSymbol — done)
+
+**New Symbol on launch** (On-launch = New Symbol) now opens a scratch symbol immediately — no workspace or
+cell required. The lifecycle mirrors scratch schematics at the document level.
+
+### SymbolEditorDocument scratch identity
+- `FilePath: string?` — null for scratch; set to the on-disk `.csym` path for materialized docs.
+- `IsScratch => FilePath is null` — computed.
+- `IsDirty: bool` — the VM's `IsDirty` (`[ObservableProperty]`) is the **single source of truth**;
+  `SymbolEditorDocument` subscribes to `ViewModel.PropertyChanged` for `IsDirty` changes and mirrors it.
+  **Do NOT double-track** — only the document subscribes to the VM, not the reverse.
+- Tab title = `"• " + baseTitle` when `IsDirty`; plain title when clean.
+- `Materialize(string filePath)` — sets `FilePath`, sets `ViewModel.CurrentSymbolPath`, sets `ViewModel.IsDirty = false`.
+  IsDirty on the document clears via the PropertyChanged subscription.
+
+### WorkspaceViewModel scratch symbol tracking
+- `_scratchSymbols: List<SymbolEditorDocument>` — open scratch symbol docs. Not in `_openDocsByPath`.
+- `NewScratchSymbol()` — creates `EditableSymbol { UserEditable = true }` → `SymbolEditorViewModel` →
+  `SymbolEditorDocument(title, vm)` (null FilePath), wires `vm.SymbolSaved += OnSymbolSaved`,
+  adds to `_scratchSymbols`, opens via `_factory.OpenDocument`.
+- `NextScratchSymbolTitle()` — lowest free `"Untitled-Symbol-N"` across `_scratchSymbols` + open symbol docs.
+- `OnDockableClosed`: removes from `_scratchSymbols` (mirrors `_scratchDocs.Remove` for schematics).
+- Both workspace-reset paths (`NewWorkspace`, `OpenWorkspace`) call `_scratchSymbols.Clear()`.
+
+### Launch action
+`ExecuteLaunchActionAsync(NewSymbol)` → `_factory.RemoveWelcomeStub(); NewScratchSymbol();`
+(was: fall back to Welcome + info message).
+
+### Save-target offer dialog (⌘S with scratch symbol active)
+`SaveAllDocuments` SingleDoc branch routes `SymbolEditorDocument` through `SaveSingleSymbolDocument`:
+- **Scratch** → `SaveScratchSymbol(doc, window)` shows `SaveChangesDialog` with:
+  - **"Save to Cell…"** (workspace open): `InputNameDialog` for cell name → `CellFolder.CreateCellFolder` +
+    `SubFolderPath(ViewType.Symbol)` → `SymbolPersistence.SaveToFile` → `doc.Materialize` → move from
+    `_scratchSymbols` to `_openDocsByPath` → `OnSymbolSaved` (cache invalidation) → tree refresh.
+    Cell name = symbol filename (e.g., cell "MyFET" → `MyFET/symbol/MyFET.csym`).
+    No workspace: routes to "Save as File" branch instead.
+  - **"Save as File"** (orphan): delegates to `vm.SaveSymbolAsCommand.ExecuteAsync(window)` (file picker +
+    `PerformSave`), then calls `doc.Materialize(pathAfter)` + moves to `_openDocsByPath`.
+    No workspace registration, no tree entry — bare .csym.
+  - **Cancel**: no-op.
+- **Materialized** → `vm.SaveSymbolCommand.ExecuteAsync(window)` (existing path, already works).
+
+### Full dirty-work coverage (Layer 5)
+- `HasAnyDirtyWork()`: includes `_scratchSymbols.Any(IsDirty)` and materialized symbol docs.
+- `ConfirmCloseDockable`: added branch for dirty `SymbolEditorDocument` (same Save/Don't Save/Cancel
+  pattern as schematics; Save → `SaveSingleSymbolDocument`; returns `!symDoc.IsDirty` so Cancel in
+  the save-target dialog also cancels the close).
+- `SaveAllDocuments` AllDocs scope: iterates `dirtyScratchSymbols` (per-doc offer dialog) and
+  `dirtyMaterializedSymbols` (direct VM save).
+- `PromptSaveBeforeClose`: includes dirty scratch + materialized symbol docs in total count and save path.
+
+### Recovery / autosave
+**Deferred for v1.** Scratch symbols are lost on crash in v1. `AutoSaveAll` / `CheckForRecovery` cover
+only `_scratchDocs`. Extending to `_scratchSymbols` is a straightforward follow-up.
+
+### v2 deferred items
+- Full `SavePlan`/cell-wizard for symbols (AllInOneCell mode, TestBench detection, plan dialog).
+- "Save to Cell" when no workspace: currently routes to "Save as File"; v2 should offer workspace creation.
+
+---
+
 ## New Workspace dialog + Open Workspace + Recent Workspaces (Phase 6g Step 5 fix 5)
 
 **File → New Workspace uses `NewWorkspaceDialog`** (`src/Ui/Views/Dialogs/NewWorkspaceDialog.axaml(.cs)`),

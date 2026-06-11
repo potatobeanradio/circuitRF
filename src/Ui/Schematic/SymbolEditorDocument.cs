@@ -6,18 +6,83 @@ namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
 /// Dock Document representing an open Symbol Editor session.
-/// Hosted as a dockable document tab; the same ViewModel can also be
-/// displayed in a tear-off <see cref="Views.SymbolEditorWindow"/>.
+/// A scratch document has <see cref="FilePath"/> == null: it is in-memory only,
+/// dirty from creation, and invisible to the project tree.
+/// A materialized document has a real on-disk path (set at save time).
 /// </summary>
 public sealed class SymbolEditorDocument : Document, IUndoableDocument
 {
+    private readonly string _baseTitle;
+
     public SymbolEditorViewModel ViewModel { get; }
     public UndoRedoStack         UndoRedo  => ViewModel.UndoRedo;
 
-    public SymbolEditorDocument(string title, SymbolEditorViewModel viewModel)
+    // ── Scratch / dirty identity ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Absolute on-disk path of the .csym file, or null for a scratch document.
+    /// Set once at materialization; null = scratch.
+    /// </summary>
+    public string? FilePath { get; private set; }
+
+    /// <summary>True when this document has no on-disk path yet (scratch mode).</summary>
+    public bool IsScratch => FilePath is null;
+
+    private bool _isDirty;
+
+    /// <summary>
+    /// True when the document has unsaved content.
+    /// The VM is the source of truth for dirty state; the document reflects it.
+    /// </summary>
+    public bool IsDirty
     {
-        Id    = title;
-        Title = title;
-        ViewModel = viewModel;
+        get => _isDirty;
+        private set
+        {
+            if (_isDirty == value) return;
+            _isDirty = value;
+            Title = _isDirty ? $"• {_baseTitle}" : _baseTitle;
+        }
+    }
+
+    // ── Constructor ──────────────────────────────────────────────────────────
+
+    /// <param name="title">Display name / base title for the tab.</param>
+    /// <param name="viewModel">The symbol editor view model.</param>
+    /// <param name="filePath">
+    /// Absolute path of the .csym file on disk, or null for a scratch (in-memory) document.
+    /// </param>
+    public SymbolEditorDocument(string title, SymbolEditorViewModel viewModel, string? filePath = null)
+    {
+        _baseTitle = title;
+        Id         = title;
+        Title      = title;
+        FilePath   = filePath;
+        ViewModel  = viewModel;
+        _isDirty   = false;
+
+        // VM is the source of truth for IsDirty; document reflects it so the tab
+        // bullet and VM dirty state stay in lock-step without double-tracking.
+        ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(SymbolEditorViewModel.IsDirty))
+                IsDirty = ViewModel.IsDirty;
+        };
+    }
+
+    // ── Materialization ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Transitions this scratch document to materialized: sets its on-disk path and
+    /// clears the dirty flag (on both the document and the VM).
+    /// Called after the .csym is written to disk.
+    /// Must only be called once per document (scratch → materialized is one-way).
+    /// </summary>
+    internal void Materialize(string filePath)
+    {
+        FilePath                    = filePath;
+        ViewModel.CurrentSymbolPath = filePath;
+        ViewModel.IsDirty           = false;
+        // IsDirty on the document updates via the PropertyChanged subscription above.
     }
 }

@@ -146,7 +146,7 @@
                                    FontSize="11" Padding="4,2"/>
                 </Grid>
 
-                <!-- ── Sine fields: Amp, Cycles, Length, Axis ─────────────────────────── -->
+                <!-- ── Sine fields: Amp, Cycles, Length, PtsPerCycle, Axis ──────────── -->
                 <StackPanel IsVisible="{Binding ShowSineFields}" Spacing="4">
                     <Grid ColumnDefinitions="56,*">
                         <TextBlock Grid.Column="0" Text="Amp" VerticalAlignment="Center" FontSize="11"
@@ -173,6 +173,15 @@
                                        FontSize="11" Padding="4,2"/>
                     </Grid>
                     <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Pts/Cyc" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   ToolTip.Tip="Sample points per full cycle — renderer uses ceil(Cycles × PtsPerCycle)"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldPtsPerCycle, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="1" Maximum="200" Increment="5" FormatString="0"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
                         <TextBlock Grid.Column="0" Text="Axis" VerticalAlignment="Center" FontSize="11"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                         <ComboBox Grid.Column="1"
@@ -183,22 +192,41 @@
                     </Grid>
                 </StackPanel>
 
-                <!-- ── HalfWave fields: Amp, Length, Axis ─────────────────────────────── -->
-                <StackPanel IsVisible="{Binding ShowHalfWaveFields}" Spacing="4">
+                <!-- ── ExpTaper fields: W1, W2, L, NumPts, Axis ──────────────────────── -->
+                <StackPanel IsVisible="{Binding ShowExpTaperFields}" Spacing="4">
                     <Grid ColumnDefinitions="56,*">
-                        <TextBlock Grid.Column="0" Text="Amp" VerticalAlignment="Center" FontSize="11"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBlock Grid.Column="0" Text="W1" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   ToolTip.Tip="Width at the start (wide) end"/>
                         <NumericUpDown Grid.Column="1"
-                                       Value="{Binding FieldAmp, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
-                                       Minimum="0.001" Increment="5" FormatString="0.##"
+                                       Value="{Binding FieldW1, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="1" Increment="5" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="W2" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   ToolTip.Tip="Width at the end (narrow) end"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldW2, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="1" Increment="5" FormatString="0.##"
                                        FontSize="11" Padding="4,2"/>
                     </Grid>
                     <Grid ColumnDefinitions="56,*">
                         <TextBlock Grid.Column="0" Text="Length" VerticalAlignment="Center" FontSize="11"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                         <NumericUpDown Grid.Column="1"
-                                       Value="{Binding FieldLength, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Value="{Binding FieldExpL, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
                                        Minimum="1" Increment="10" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="NumPts" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   ToolTip.Tip="Sample points per outline side (minimum 2)"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldNumPts, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="2" Maximum="200" Increment="5" FormatString="0"
                                        FontSize="11" Padding="4,2"/>
                     </Grid>
                     <Grid ColumnDefinitions="56,*">

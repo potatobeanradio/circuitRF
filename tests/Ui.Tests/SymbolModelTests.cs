@@ -66,10 +66,10 @@ public class SymbolModelConstructionTests
             new PolygonPrimitive    { ColorRole = SymbolColorRole.SymbolLine, Points = [[0,0],[1,0],[0.5,1]] },
             new QuadCurvePrimitive  { ColorRole = SymbolColorRole.SymbolLine, P0X = 0, P0Y = 0, CtrlX = 5, CtrlY = -5, P2X = 10, P2Y = 0 },
             new CubicCurvePrimitive { ColorRole = SymbolColorRole.SymbolLine, P0X = 0, P0Y = 0, C1X = 3, C1Y = -3, C2X = 7, C2Y = -3, P3X = 10, P3Y = 0 },
-            new SinePrimitive       { ColorRole = SymbolColorRole.SymbolLine, Cx = 0, Cy = 0, Amp = 10, Cycles = 1, Length = 40, Axis = SineAxis.Horizontal },
-            new HalfWavePrimitive   { ColorRole = SymbolColorRole.SymbolLine, Cx = 0, Cy = 0, Amp = 10, Length = 30, Axis = SineAxis.Vertical },
-            new TextPrimitive       { Content = "Z", AnchorX = 0, AnchorY = 0, FontSize = 12, FontStyle = SymbolFontStyle.Regular },
-            new BitmapPrimitive     { ImagePathRef = "ref.png", X = 0, Y = 0, W = 100, H = 100, Opacity = 0.8, Locked = true },
+            new SinePrimitive             { ColorRole = SymbolColorRole.SymbolLine, Cx = 0, Cy = 0, Amp = 10, Cycles = 1, Length = 40, Axis = SineAxis.Horizontal },
+            new ExponentialTaperPrimitive { ColorRole = SymbolColorRole.SymbolLine, Cx = 0, Cy = 0, W1 = 60, W2 = 15, L = 100, Axis = SineAxis.Horizontal },
+            new TextPrimitive             { Content = "Z", AnchorX = 0, AnchorY = 0, FontSize = 12, FontStyle = SymbolFontStyle.Regular },
+            new BitmapPrimitive           { ImagePathRef = "ref.png", X = 0, Y = 0, W = 100, H = 100, Opacity = 0.8, Locked = true },
         };
         Assert.Equal(14, prims.Length);
     }
@@ -247,10 +247,10 @@ public class CsymRoundTripTests
                 ColorRole = SymbolColorRole.SymbolLine, StrokeTier = SymbolStrokeTier.Normal,
                 Cx = 0, Cy = 0, Amp = 22, Cycles = 1, Length = 70, Axis = SineAxis.Horizontal,
             },
-            new HalfWavePrimitive
+            new ExponentialTaperPrimitive
             {
                 ColorRole = SymbolColorRole.SymbolLine, StrokeTier = SymbolStrokeTier.Normal,
-                Cx = 0, Cy = 0, Amp = 15, Length = 40, Axis = SineAxis.Vertical,
+                Cx = 10, Cy = 5, W1 = 60, W2 = 15, L = 100, NumPts = 20, Filled = false, Axis = SineAxis.Horizontal,
             },
             new TextPrimitive
             {
@@ -361,11 +361,14 @@ public class CsymRoundTripTests
         Assert.Equal(sorig.Cycles, srest.Cycles, 1e-9);
         Assert.Equal(sorig.Axis,   srest.Axis);
 
-        // HalfWave: axis vertical
-        var hworig = (HalfWavePrimitive)original.Primitives[12];
-        var hwrest = (HalfWavePrimitive)restored.Primitives[12];
-        Assert.Equal(SineAxis.Vertical, hwrest.Axis);
-        Assert.Equal(hworig.Amp, hwrest.Amp, 1e-9);
+        // ExponentialTaper: W1, W2, L, Axis
+        var etorig = (ExponentialTaperPrimitive)original.Primitives[12];
+        var etrest = (ExponentialTaperPrimitive)restored.Primitives[12];
+        Assert.Equal(etorig.W1,   etrest.W1,   1e-9);
+        Assert.Equal(etorig.W2,   etrest.W2,   1e-9);
+        Assert.Equal(etorig.L,    etrest.L,    1e-9);
+        Assert.Equal(etorig.NumPts, etrest.NumPts);
+        Assert.Equal(etorig.Axis, etrest.Axis);
 
         // Text: content, font style
         var torig = (TextPrimitive)original.Primitives[13];
@@ -414,8 +417,8 @@ public class CsymRoundTripTests
     {
         var sym  = BuildTestSymbol();
         string j = SymbolPersistence.Serialize(sym);
-        // Corrupt the version
-        string broken = j.Replace("\"FormatVersion\": 1", "\"FormatVersion\": 99");
+        string current = $"\"FormatVersion\": {SymbolPersistence.CurrentFormatVersion}";
+        string broken  = j.Replace(current, "\"FormatVersion\": 9999");
         Assert.Throws<InvalidDataException>(() => SymbolPersistence.Deserialize(broken));
     }
 
@@ -424,7 +427,8 @@ public class CsymRoundTripTests
     {
         var sym  = BuildTestSymbol();
         string j = SymbolPersistence.Serialize(sym);
-        string broken = j.Replace("\"FormatVersion\": 1", "\"FormatVersion\": 7");
+        string current = $"\"FormatVersion\": {SymbolPersistence.CurrentFormatVersion}";
+        string broken  = j.Replace(current, "\"FormatVersion\": 7");
         var ex = Assert.Throws<InvalidDataException>(() => SymbolPersistence.Deserialize(broken));
         Assert.Contains("7",    ex.Message);
         Assert.Contains($"{SymbolPersistence.CurrentFormatVersion}", ex.Message);

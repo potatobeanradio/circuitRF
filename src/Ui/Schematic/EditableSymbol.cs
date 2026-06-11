@@ -16,10 +16,20 @@ public sealed class EditableSymbol
 
     /// <summary>
     /// Number of ports this symbol can map pins to.
-    /// Set on load; author can adjust it from the editor.
-    /// Must be ≥ 1 for a symbol with at least one port.
+    /// Carried from the .csym file; used by ToSymbol() for persistence.
+    /// NOT author-editable from the UI — use ExternalPortCount for the cell-declared authority.
     /// </summary>
     public int  PortCount    { get; set; } = 1;
+
+    /// <summary>
+    /// When non-null, this symbol is cell-bound: the cell declares this many ports and the
+    /// editor shows the count read-only.  Unmapped-port warnings fire when pin count is less
+    /// than ExternalPortCount.
+    /// When null, this is an orphan/scratch symbol — effective port count = Pins.Count, no
+    /// unmapped warning.
+    /// Not serialized; set by the editor's open path.
+    /// </summary>
+    public int? ExternalPortCount { get; set; }
 
     /// <summary>
     /// False for built-in / system symbols — the editor opens them read-only.

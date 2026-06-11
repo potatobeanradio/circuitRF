@@ -59,7 +59,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     // Tracked here for enumeration by save/rebuild operations (steps 2+).
     // NOTE (step 1): entries are not removed when a scratch tab is closed — that
     // cleanup and the close-prompt are added in step 2/3.
-    private readonly List<SchematicDocument> _scratchDocs = [];
+    private readonly List<SchematicDocument>    _scratchDocs    = [];
+    private readonly List<SymbolEditorDocument> _scratchSymbols = [];
 
     [ObservableProperty] private IRootDock? _layout;
 
@@ -282,8 +283,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
                 break;
 
             case LaunchAction.NewSymbol:
-                // A blank symbol editor requires a cell folder; fall back to Welcome.
-                Messages.Info("New Symbol on launch requires a workspace and cell. Open or create a workspace first.");
+                _factory.RemoveWelcomeStub();
+                NewScratchSymbol();
                 break;
 
             case LaunchAction.NewDataDisplay:
@@ -329,6 +330,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             SetActiveUndoTarget(null);
             _openDocsByPath.Clear();
             _scratchDocs.Clear();
+            _scratchSymbols.Clear();
             CurrentWorkspacePath = cwsPath;
 
             var newLayout = _factory.CreateDefaultLayout();
@@ -584,6 +586,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         SetActiveUndoTarget(null);
         _openDocsByPath.Clear();
         _scratchDocs.Clear();
+        _scratchSymbols.Clear();
         CurrentWorkspacePath = cwsPath;
 
         var newLayout = _factory.CreateDefaultLayout();
@@ -1101,6 +1104,46 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         }
     }
 
+    // ---- New Symbol (scratch) ------------------------------------------------
+
+    /// <summary>
+    /// Creates an in-memory scratch symbol tab immediately, with no workspace or
+    /// cell required. Save/materialize happen on first ⌘S.
+    /// </summary>
+    private void NewScratchSymbol()
+    {
+        var title    = NextScratchSymbolTitle();
+        var editable = new EditableSymbol { UserEditable = true };
+        var vm       = new SymbolEditorViewModel(editable);
+        vm.SymbolSaved += OnSymbolSaved;
+        var doc = new SymbolEditorDocument(title, vm);  // filePath = null → scratch
+        _scratchSymbols.Add(doc);
+        _factory.OpenDocument(doc);
+    }
+
+    /// <summary>
+    /// Returns the lowest free "Untitled-Symbol-N" title across all current scratch
+    /// and path-keyed open symbol editor documents.
+    /// </summary>
+    private string NextScratchSymbolTitle()
+    {
+        const string prefix = "Untitled-Symbol-";
+
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in _scratchSymbols)
+            used.Add(d.Id);
+        foreach (var d in _openDocsByPath.Values)
+            if (d is SymbolEditorDocument sd)
+                used.Add(sd.Id);
+
+        for (int n = 1; ; n++)
+        {
+            var candidate = $"{prefix}{n}";
+            if (!used.Contains(candidate))
+                return candidate;
+        }
+    }
+
     // ---- Symbol Editor commands ---------------------------------------------
 
     /// <summary>Opens the Symbol Editor docked on a built-in Resistor symbol (read-only).</summary>
@@ -1151,7 +1194,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             var editable = EditableSymbol.FromSymbol(symbol);
             editable.UserEditable = true;  // user file — editable
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = path };
-            var doc = new SymbolEditorDocument(Path.GetFileNameWithoutExtension(path), vm);
+            var doc = new SymbolEditorDocument(Path.GetFileNameWithoutExtension(path), vm, path);
             _factory.OpenDocument(doc);
             Messages.Success($"Opened: {path}");
         }
@@ -1195,10 +1238,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         {
             var symbol   = SymbolPersistence.LoadFromFile(absolutePath);
             var editable = EditableSymbol.FromSymbol(symbol);
-            editable.UserEditable = true;
+            editable.UserEditable     = true;
+            editable.ExternalPortCount = TryCellPortCount(absolutePath, symbol);
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = absolutePath };
             vm.SymbolSaved += OnSymbolSaved;
-            var doc = new SymbolEditorDocument(Path.GetFileNameWithoutExtension(absolutePath), vm);
+            var doc = new SymbolEditorDocument(Path.GetFileNameWithoutExtension(absolutePath), vm, absolutePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
             Messages.Success($"Opened: {absolutePath}");
@@ -1207,6 +1251,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         {
             Messages.Error($"Failed to open symbol: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Returns symbol.PortCount when the .csym lives under a cell folder (grandparent has a .ccell),
+    /// otherwise null (orphan symbol — no external port authority).
+    /// </summary>
+    private static int? TryCellPortCount(string csymPath, Symbol symbol)
+    {
+        var symbolDir = Path.GetDirectoryName(csymPath);
+        if (symbolDir is null) return null;
+        var cellDir = Path.GetDirectoryName(symbolDir);
+        if (cellDir is null) return null;
+        return File.Exists(Path.Combine(cellDir, CellFolder.CcellFileName))
+            ? symbol.PortCount
+            : null;
     }
 
     private void OpenOrActivateSchematic(string absolutePath)
@@ -1518,7 +1577,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             var editable = new EditableSymbol { UserEditable = true };
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = filePath };
             vm.SymbolSaved += OnSymbolSaved;
-            var doc = new SymbolEditorDocument(name, vm);
+            var doc = new SymbolEditorDocument(name, vm, filePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;
 
@@ -1719,39 +1778,59 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     // Shown before any dockable is removed. Returns true = proceed, false = cancel.
     private async Task<bool> ConfirmCloseDockable(IDockable dockable)
     {
-        if (dockable is not SchematicDocument doc || !doc.IsDirty)
-            return true; // clean doc — no prompt needed
-
         var window = ResolveOwner(null);
         if (window is null) return true;
 
-        var dlg = new Views.Dialogs.SaveChangesDialog(
-            $"Save '{doc.Id}' before closing?");
-        await dlg.ShowDialog(window);
-
-        switch (dlg.Result)
+        // Schematic document.
+        if (dockable is SchematicDocument doc && doc.IsDirty)
         {
-            case SaveChangesResult.Cancel:
-                return false;
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{doc.Id}' before closing?");
+            await dlg.ShowDialog(window);
 
-            case SaveChangesResult.DontSave:
-                return true; // discard — caller fires DockableClosed then base.CloseDockable
-
-            case SaveChangesResult.Save:
-                bool saved = await SaveSingleDocument(doc, window);
-                return saved; // if save failed/cancelled, cancel the close too
-
-            default: return false;
+            return dlg.Result switch
+            {
+                SaveChangesResult.Cancel   => false,
+                SaveChangesResult.DontSave => true,
+                SaveChangesResult.Save     => await SaveSingleDocument(doc, window),
+                _                          => false,
+            };
         }
+
+        // Symbol editor document.
+        if (dockable is SymbolEditorDocument symDoc && symDoc.IsDirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{symDoc.Id}' before closing?");
+            await dlg.ShowDialog(window);
+
+            switch (dlg.Result)
+            {
+                case SaveChangesResult.Cancel:
+                    return false;
+                case SaveChangesResult.DontSave:
+                    return true;
+                case SaveChangesResult.Save:
+                    await SaveSingleSymbolDocument(symDoc, window);
+                    // Cancel in the save-target dialog counts as "save cancelled" → cancel close.
+                    return !symDoc.IsDirty;
+                default:
+                    return false;
+            }
+        }
+
+        return true; // clean doc — no prompt needed
     }
 
     // Fires after confirm and before base.CloseDockable removes the dockable from the layout.
-    // Clean up tracking so _scratchDocs and _openDocsByPath stay consistent.
+    // Clean up tracking so _scratchDocs, _scratchSymbols, and _openDocsByPath stay consistent.
     private void OnDockableClosed(IDockable dockable)
     {
-        // Remove from scratch-docs list for any document type.
+        // Remove from scratch-docs lists for any document type.
         if (dockable is SchematicDocument scratchCandidate)
             _scratchDocs.Remove(scratchCandidate);
+        if (dockable is SymbolEditorDocument scratchSymbol)
+            _scratchSymbols.Remove(scratchSymbol);
 
         // Remove any _openDocsByPath entry whose value is this dockable (reference equality),
         // regardless of document type — fixes reopen after close for symbol, schematic, and cell docs.
@@ -1791,20 +1870,40 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             return;
         }
 
+        // SingleDoc scope for an active symbol editor — scratch → offer dialog; materialized → PerformSave.
+        if (ActiveSaveScope == SaveScope.SingleDoc &&
+            _factory.DocumentDock?.ActiveDockable is SymbolEditorDocument singleSymDoc)
+        {
+            if (!singleSymDoc.IsDirty)
+            {
+                Messages.Info("Nothing to save.");
+                return;
+            }
+            await SaveSingleSymbolDocument(singleSymDoc, window);
+            return;
+        }
+
         // AllDocs scope: save every dirty document.
         var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
         var dirtyMaterialized = _openDocsByPath.Values
             .OfType<SchematicDocument>()
             .Where(d => d.IsDirty && !d.IsScratch)
             .ToList();
+        var dirtyScratchSymbols = _scratchSymbols.Where(d => d.IsDirty).ToList();
+        var dirtyMaterializedSymbols = _openDocsByPath.Values
+            .OfType<SymbolEditorDocument>()
+            .Where(d => d.IsDirty && !d.IsScratch)
+            .ToList();
 
-        if (dirtyScratch.Count == 0 && dirtyMaterialized.Count == 0)
+        bool anyDirty = dirtyScratch.Count > 0 || dirtyMaterialized.Count > 0
+                     || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0;
+        if (!anyDirty)
         {
             Messages.Info("Nothing to save.");
             return;
         }
 
-        // Scratch docs → plan dialog → execute
+        // Scratch schematic docs → plan dialog → execute
         if (dirtyScratch.Count > 0)
         {
             var builder     = new SavePlanBuilder(
@@ -1818,7 +1917,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             ExecuteSavePlan(confirmedPlan);
         }
 
-        // Already-materialized dirty docs — write directly.
+        // Already-materialized dirty schematic docs — write directly.
         foreach (var doc in dirtyMaterialized)
         {
             if (doc.FilePath is null) continue;
@@ -1833,6 +1932,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
                 Messages.Error($"Failed to save '{doc.Id}': {ex.Message}");
             }
         }
+
+        // Scratch symbol docs — per-doc offer dialog.
+        foreach (var symDoc in dirtyScratchSymbols)
+            await SaveScratchSymbol(symDoc, window);
+
+        // Already-materialized dirty symbol docs — write directly via VM.
+        foreach (var symDoc in dirtyMaterializedSymbols)
+            await symDoc.ViewModel.SaveSymbolCommand.ExecuteAsync(window);
 
         // Keep .cws current if we have a workspace.
         if (CurrentWorkspacePath is not null)
@@ -1896,7 +2003,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     /// <summary>True when any open document has unsaved content.</summary>
     public bool HasAnyDirtyWork()
         => _scratchDocs.Any(d => d.IsDirty)
-        || _openDocsByPath.Values.OfType<SchematicDocument>().Any(d => d.IsDirty);
+        || _openDocsByPath.Values.OfType<SchematicDocument>().Any(d => d.IsDirty)
+        || _scratchSymbols.Any(d => d.IsDirty)
+        || _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d => d.IsDirty);
 
     /// <summary>
     /// Shows Save / Don't Save / Cancel for dirty work before a close/quit/open action.
@@ -1909,12 +2018,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             .OfType<SchematicDocument>()
             .Where(d => d.IsDirty && !d.IsScratch)
             .ToList();
+        var dirtyScratchSymbols = _scratchSymbols.Where(d => d.IsDirty).ToList();
+        var dirtyMatSymbols     = _openDocsByPath.Values
+            .OfType<SymbolEditorDocument>()
+            .Where(d => d.IsDirty && !d.IsScratch)
+            .ToList();
 
-        int total = dirtyScratch.Count + dirtyMat.Count;
+        int total = dirtyScratch.Count + dirtyMat.Count
+                  + dirtyScratchSymbols.Count + dirtyMatSymbols.Count;
         if (total == 0) return true;
 
+        // Build a concise message naming the single doc or giving the count.
+        string firstId = dirtyScratch.Count > 0         ? dirtyScratch[0].Id
+                       : dirtyScratchSymbols.Count > 0   ? dirtyScratchSymbols[0].Id
+                       : dirtyMat.Count > 0              ? dirtyMat[0].Id
+                       :                                   dirtyMatSymbols[0].Id;
         string msg = total == 1
-            ? $"Save '{(dirtyScratch.Count > 0 ? dirtyScratch[0].Id : dirtyMat[0].Id)}' before {context}?"
+            ? $"Save '{firstId}' before {context}?"
             : $"You have {total} unsaved document(s). Save before {context}?";
 
         var dlg = new Views.Dialogs.SaveChangesDialog(msg, saveLabel: "Save All", cancelLabel: "Cancel");
@@ -1929,7 +2049,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
                 return true; // discard everything — caller proceeds
 
             case SaveChangesResult.Save:
-                // Scratch → plan dialog.
+                // Scratch schematics → plan dialog.
                 if (dirtyScratch.Count > 0)
                 {
                     var builder  = new SavePlanBuilder(CurrentWorkspacePath, _lastWorkspaceParentDir,
@@ -1940,7 +2060,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
                     if (confirmed is null) return false; // plan cancelled → abort
                     ExecuteSavePlan(confirmed);
                 }
-                // Materialized dirty → direct write.
+                // Materialized dirty schematics → direct write.
                 foreach (var doc in dirtyMat)
                 {
                     if (doc.FilePath is null) continue;
@@ -1954,6 +2074,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
                         Messages.Error($"Failed to save '{doc.Id}': {ex.Message}");
                     }
                 }
+                // Scratch symbols → per-doc offer dialog (same as AllDocs scope).
+                foreach (var symDoc in dirtyScratchSymbols)
+                    await SaveScratchSymbol(symDoc, owner);
+                // Materialized dirty symbols → write directly via VM.
+                foreach (var symDoc in dirtyMatSymbols)
+                    await symDoc.ViewModel.SaveSymbolCommand.ExecuteAsync(owner);
                 return true;
 
             default: return false;
@@ -2220,6 +2346,125 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         {
             Messages.Error($"Save failed: {ex.Message}");
         }
+    }
+
+    // ---- Save scratch symbol (Layer 4) ---------------------------------------
+
+    /// <summary>
+    /// Routes ⌘S for a single SymbolEditorDocument.
+    /// Scratch → two-option offer dialog ("Save to Cell…" / "Save as File").
+    /// Materialized → VM's existing SaveSymbolCommand (writes to CurrentSymbolPath).
+    /// </summary>
+    private async Task SaveSingleSymbolDocument(SymbolEditorDocument doc, Window window)
+    {
+        if (doc.IsScratch)
+            await SaveScratchSymbol(doc, window);
+        else
+            await doc.ViewModel.SaveSymbolCommand.ExecuteAsync(window);
+    }
+
+    /// <summary>
+    /// Shows the two-option offer dialog for a scratch symbol and dispatches to the
+    /// chosen path: "Save to Cell…" (cell + symbol/ subfolder) or "Save as File" (orphan .csym).
+    /// </summary>
+    private async Task SaveScratchSymbol(SymbolEditorDocument doc, Window window)
+    {
+        var offerDialog = new Views.Dialogs.SaveChangesDialog(
+            "Save this symbol to a cell, or as a standalone file?",
+            saveLabel:     "Save to Cell…",
+            dontSaveLabel: "Save as File",
+            cancelLabel:   "Cancel");
+        await offerDialog.ShowDialog(window);
+
+        switch (offerDialog.Result)
+        {
+            case SaveChangesResult.Save:  // "Save to Cell…"
+                if (CurrentWorkspacePath is not null)
+                    await SaveScratchSymbolToCell(doc, window);
+                else
+                    await SaveScratchSymbolAsFile(doc, window);  // no workspace — fall through to file
+                break;
+
+            case SaveChangesResult.DontSave:  // "Save as File"
+                await SaveScratchSymbolAsFile(doc, window);
+                break;
+        }
+        // Cancel → no-op.
+    }
+
+    /// <summary>
+    /// "Save to Cell…" branch: prompts for a cell name, creates the cell folder if needed,
+    /// writes the .csym into cell/symbol/, and materializes the document.
+    /// </summary>
+    private async Task SaveScratchSymbolToCell(SymbolEditorDocument doc, Window window)
+    {
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        var dialog   = new InputNameDialog("Save to Cell", "Cell name:");
+        var cellName = await dialog.ShowDialog<string?>(window);
+        if (cellName is null) return;
+
+        var reason = NameValidator.Validate(cellName);
+        if (reason is not null)
+        {
+            Messages.Error($"Invalid cell name: {reason}");
+            return;
+        }
+
+        var cellDir   = Path.Combine(workspaceDir, cellName);
+        var symbolDir = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
+        var ext       = CellFolder.ViewExtension(ViewType.Symbol);
+        var filePath  = Path.Combine(symbolDir, cellName + ext);
+
+        if (File.Exists(filePath))
+        {
+            Messages.Error($"Symbol '{cellName}{ext}' already exists in cell '{cellName}'.");
+            return;
+        }
+
+        try
+        {
+            // Create cell folder + symbol subfolder (idempotent if cell already exists).
+            if (!Directory.Exists(cellDir))
+                CellFolder.CreateCellFolder(workspaceDir, cellName);
+            else if (!Directory.Exists(symbolDir))
+                Directory.CreateDirectory(symbolDir);
+
+            SymbolPersistence.SaveToFile(filePath, doc.ViewModel.EditableSymbol.ToSymbol());
+
+            _scratchSymbols.Remove(doc);
+            doc.Materialize(filePath);
+            _openDocsByPath[filePath] = doc;
+
+            OnSymbolSaved(filePath);
+            _factory.ProjectTreeTool?.Refresh();
+            Messages.Success($"Saved to cell '{cellName}':\n  {filePath}", filePath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to save symbol: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// "Save as File" branch: shows the file picker via the VM's existing SaveSymbolAsCommand,
+    /// then materializes the document so it is no longer tracked as scratch.
+    /// </summary>
+    private async Task SaveScratchSymbolAsFile(SymbolEditorDocument doc, Window window)
+    {
+        var pathBefore = doc.ViewModel.CurrentSymbolPath;
+        await doc.ViewModel.SaveSymbolAsCommand.ExecuteAsync(window);
+        var pathAfter = doc.ViewModel.CurrentSymbolPath;
+
+        if (pathAfter is null || pathAfter == pathBefore) return;  // user cancelled the picker
+
+        // PerformSave already set vm.CurrentSymbolPath + vm.IsDirty=false + fired SymbolSaved.
+        // Complete the scratch → materialized transition on the document.
+        _scratchSymbols.Remove(doc);
+        doc.Materialize(pathAfter);
+        _openDocsByPath[pathAfter] = doc;
+
+        Messages.Success($"Saved:\n  {pathAfter}", pathAfter);
     }
 
     // ---- Quit ----------------------------------------------------------------

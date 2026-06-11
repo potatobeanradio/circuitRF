@@ -67,12 +67,6 @@ public sealed record class SymbolEditorOverlay
     /// </summary>
     public (double X, double Y)? ResizeHandle { get; init; }
 
-    /// <summary>
-    /// Live resize preview bbox in symbol-local coordinates.
-    /// Non-null only while a resize drag is in progress.
-    /// </summary>
-    public (double X0, double Y0, double X1, double Y1)? ResizePreviewBb { get; init; }
-
     // ── Statics ───────────────────────────────────────────────────────────────
 
     private static readonly HashSet<int> s_emptyInts  = [];

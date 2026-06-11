@@ -56,7 +56,7 @@ public sealed class CsymPin
 /// </summary>
 public static class SymbolPersistence
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 5;
 
     private static readonly JsonSerializerOptions _jsonOpts = new()
     {

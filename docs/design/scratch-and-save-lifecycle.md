@@ -236,10 +236,60 @@ hardens `.cws`; 7 adds crash safety.
 
 ---
 
-## 8. Open / deferred
+## 8. Scratch symbols
+
+New Symbol on launch (On-launch = New Symbol) opens a **scratch symbol** immediately — no workspace or cell
+required. The lifecycle mirrors scratch schematics at the document level.
+
+### 8.1 Scratch symbol lifecycle
+
+- **`SymbolEditorDocument`** gains `FilePath?` / `IsScratch` / `IsDirty` (the VM's `IsDirty` is the single
+  source of truth; the document subscribes via `PropertyChanged` so they stay in lock-step without
+  double-tracking) and `Materialize(path)` (one-way scratch → materialized transition).
+- **`WorkspaceViewModel._scratchSymbols`** (`List<SymbolEditorDocument>`) tracks open scratch symbols in
+  parallel with `_scratchDocs`.
+- **`NewScratchSymbol()`** creates `EditableSymbol { UserEditable = true }` → `SymbolEditorViewModel` →
+  `SymbolEditorDocument(title, vm)` (null FilePath), wires `SymbolSaved`, adds to `_scratchSymbols`,
+  opens via `_factory.OpenDocument`.
+- **`NextScratchSymbolTitle()`** returns the lowest free `"Untitled-Symbol-N"` across open scratch and
+  path-keyed symbol docs.
+
+### 8.2 Save-target offer dialog
+
+When the user saves a scratch symbol (⌘S with the symbol tab active), a **two-option dialog** appears:
+
+- **"Save to Cell…"** (workspace open): prompts for a cell name (InputNameDialog), creates the cell folder
+  and `symbol/` subfolder via `CellFolder.CreateCellFolder` / `SubFolderPath(ViewType.Symbol)`, writes
+  the .csym, materializes the document (moves from `_scratchSymbols` to `_openDocsByPath`), refreshes the
+  tree. The symbol filename = the cell name.
+  - No workspace: routes to "Save as File" (same as "Save as File" branch below).
+- **"Save as File"** (orphan): delegates to the existing `vm.SaveSymbolAsCommand` (file picker →
+  `PerformSave`), then materializes the doc. No workspace registration, no tree entry — a bare .csym.
+- **Cancel**: no-op; document stays scratch/dirty.
+
+Full cell-wizard parity (Save-Plan dialog for symbols, AllInOneCell mode, etc.) is **deferred to v2**.
+The simple two-option dialog is the v1 path.
+
+### 8.3 Close / quit / Save-All
+
+`HasAnyDirtyWork`, `ConfirmCloseDockable`, `SaveAllDocuments` (AllDocs scope), and `PromptSaveBeforeClose`
+all include dirty scratch and dirty materialized symbol documents — same protection as schematics.
+
+### 8.4 Recovery / autosave for scratch symbols
+
+**Deferred for v1.** Scratch symbols are lost on crash in v1 (same caveat schematics had before recovery
+was added). The `AutoSaveAll` / `CheckForRecovery` machinery covers only `_scratchDocs` (schematics);
+extending it to `_scratchSymbols` is a straightforward follow-up.
+
+---
+
+## 9. Open / deferred
 - **Scratch simulation data/results persistence + surfacing** — deferred to the next phase (this doc fixes only
   that scratch sim writes `netlist.cnl` to the scratch-session recovery working dir).
 - **Full per-document autosave** of *materialized* files (v1 autosaves only dirty **scratch** work).
 - **Recovery UX depth** (multiple stale sessions, partial restore) — v1 offers once, discard on decline.
 - **Tracked location persistence** — the last-used New-Workspace location is **in-memory only** (not persisted
   across launches; Recent Workspaces persists instead — see the workspace-open fixes).
+- **Scratch symbol autosave/recovery** — deferred; see §8.4.
+- **Full Save-Plan/cell-wizard for symbols** (AllInOneCell mode, TestBench detection for symbols) — deferred
+  to v2; the v1 two-option offer dialog covers the common case.

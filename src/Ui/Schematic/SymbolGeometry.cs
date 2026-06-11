@@ -158,9 +158,9 @@ public static class SymbolGeometry
                 return InsideExpandedRect(lx, ly, (x0+x1)*0.5, (y0+y1)*0.5, (x1-x0)*0.5, (y1-y0)*0.5, tol);
             }
 
-            case HalfWavePrimitive hw:
+            case ExponentialTaperPrimitive et:
             {
-                var (x0, y0, x1, y1) = BboxOf(hw);
+                var (x0, y0, x1, y1) = BboxOf(et);
                 return InsideExpandedRect(lx, ly, (x0+x1)*0.5, (y0+y1)*0.5, (x1-x0)*0.5, (y1-y0)*0.5, tol);
             }
 
@@ -233,8 +233,8 @@ public static class SymbolGeometry
             case SinePrimitive s:
                 s.Cx += dx; s.Cy += dy; break;
 
-            case HalfWavePrimitive hw:
-                hw.Cx += dx; hw.Cy += dy; break;
+            case ExponentialTaperPrimitive et:
+                et.Cx += dx; et.Cy += dy; break;
 
             case TextPrimitive t:
                 t.AnchorX += dx; t.AnchorY += dy; break;
@@ -301,9 +301,9 @@ public static class SymbolGeometry
                 (s.Cx, s.Cy) = R(s.Cx, s.Cy);
                 s.Axis = s.Axis == SineAxis.Horizontal ? SineAxis.Vertical : SineAxis.Horizontal;
                 break;
-            case HalfWavePrimitive hw:
-                (hw.Cx, hw.Cy) = R(hw.Cx, hw.Cy);
-                hw.Axis = hw.Axis == SineAxis.Horizontal ? SineAxis.Vertical : SineAxis.Horizontal;
+            case ExponentialTaperPrimitive et:
+                (et.Cx, et.Cy) = R(et.Cx, et.Cy);
+                et.Axis = et.Axis == SineAxis.Horizontal ? SineAxis.Vertical : SineAxis.Horizontal;
                 break;
             case TextPrimitive t:
                 (t.AnchorX, t.AnchorY) = R(t.AnchorX, t.AnchorY);
@@ -391,10 +391,20 @@ public static class SymbolGeometry
                 s.Length = Math.Abs(s.Length * (s.Axis == SineAxis.Horizontal ? sx : sy));
                 s.Amp    = Math.Abs(s.Amp    * (s.Axis == SineAxis.Horizontal ? sy : sx));
                 break;
-            case HalfWavePrimitive hw:
-                hw.Cx = S(hw.Cx, refX, sx); hw.Cy = S(hw.Cy, refY, sy);
-                hw.Length = Math.Abs(hw.Length * (hw.Axis == SineAxis.Horizontal ? sx : sy));
-                hw.Amp    = Math.Abs(hw.Amp    * (hw.Axis == SineAxis.Horizontal ? sy : sx));
+            case ExponentialTaperPrimitive et:
+                et.Cx = S(et.Cx, refX, sx); et.Cy = S(et.Cy, refY, sy);
+                if (et.Axis == SineAxis.Horizontal)
+                {
+                    et.L  = Math.Abs(et.L  * sx);
+                    et.W1 = Math.Abs(et.W1 * sy);
+                    et.W2 = Math.Abs(et.W2 * sy);
+                }
+                else
+                {
+                    et.L  = Math.Abs(et.L  * sy);
+                    et.W1 = Math.Abs(et.W1 * sx);
+                    et.W2 = Math.Abs(et.W2 * sx);
+                }
                 break;
             case TextPrimitive t:
                 t.AnchorX = S(t.AnchorX, refX, sx);
@@ -402,6 +412,63 @@ public static class SymbolGeometry
                 break;
         }
     }
+
+    // ── Clone — transient copy for live previews ─────────────────────────────
+
+    /// <summary>
+    /// Returns a detached copy of <paramref name="prim"/> suitable for use as a transient
+    /// live-resize/drag preview.  Mutations to the clone do not affect the original.
+    /// </summary>
+    public static SymbolPrimitive Clone(SymbolPrimitive prim) => prim switch
+    {
+        LinePrimitive l => new LinePrimitive
+            { ColorRole = l.ColorRole, StrokeTier = l.StrokeTier,
+              X1 = l.X1, Y1 = l.Y1, X2 = l.X2, Y2 = l.Y2 },
+        PolylinePrimitive pl => new PolylinePrimitive
+            { ColorRole = pl.ColorRole, StrokeTier = pl.StrokeTier,
+              Points = pl.Points.Select(p => new double[] { p[0], p[1] }).ToList() },
+        RectPrimitive r => new RectPrimitive
+            { ColorRole = r.ColorRole, StrokeTier = r.StrokeTier, Filled = r.Filled,
+              Cx = r.Cx, Cy = r.Cy, W = r.W, H = r.H },
+        RoundedRectPrimitive rr => new RoundedRectPrimitive
+            { ColorRole = rr.ColorRole, StrokeTier = rr.StrokeTier, Filled = rr.Filled,
+              Cx = rr.Cx, Cy = rr.Cy, W = rr.W, H = rr.H, Radius = rr.Radius },
+        CirclePrimitive c => new CirclePrimitive
+            { ColorRole = c.ColorRole, StrokeTier = c.StrokeTier, Filled = c.Filled,
+              Cx = c.Cx, Cy = c.Cy, R = c.R },
+        EllipsePrimitive e => new EllipsePrimitive
+            { ColorRole = e.ColorRole, StrokeTier = e.StrokeTier, Filled = e.Filled,
+              Cx = e.Cx, Cy = e.Cy, Rx = e.Rx, Ry = e.Ry },
+        ArcPrimitive a => new ArcPrimitive
+            { ColorRole = a.ColorRole, StrokeTier = a.StrokeTier,
+              Cx = a.Cx, Cy = a.Cy, R = a.R, StartDeg = a.StartDeg, SweepDeg = a.SweepDeg },
+        PolygonPrimitive pg => new PolygonPrimitive
+            { ColorRole = pg.ColorRole, StrokeTier = pg.StrokeTier, Filled = pg.Filled,
+              Points = pg.Points.Select(p => new double[] { p[0], p[1] }).ToList() },
+        QuadCurvePrimitive qc => new QuadCurvePrimitive
+            { ColorRole = qc.ColorRole, StrokeTier = qc.StrokeTier,
+              P0X = qc.P0X, P0Y = qc.P0Y, CtrlX = qc.CtrlX, CtrlY = qc.CtrlY,
+              P2X = qc.P2X, P2Y = qc.P2Y },
+        CubicCurvePrimitive cc => new CubicCurvePrimitive
+            { ColorRole = cc.ColorRole, StrokeTier = cc.StrokeTier,
+              P0X = cc.P0X, P0Y = cc.P0Y, C1X = cc.C1X, C1Y = cc.C1Y,
+              C2X = cc.C2X, C2Y = cc.C2Y, P3X = cc.P3X, P3Y = cc.P3Y },
+        SinePrimitive s => new SinePrimitive
+            { ColorRole = s.ColorRole, StrokeTier = s.StrokeTier,
+              Cx = s.Cx, Cy = s.Cy, Amp = s.Amp, Cycles = s.Cycles, Length = s.Length,
+              PtsPerCycle = s.PtsPerCycle, Axis = s.Axis },
+        ExponentialTaperPrimitive et => new ExponentialTaperPrimitive
+            { ColorRole = et.ColorRole, StrokeTier = et.StrokeTier, Filled = et.Filled,
+              Cx = et.Cx, Cy = et.Cy, W1 = et.W1, W2 = et.W2, L = et.L,
+              NumPts = et.NumPts, Axis = et.Axis },
+        TextPrimitive t => new TextPrimitive
+            { Content = t.Content, AnchorX = t.AnchorX, AnchorY = t.AnchorY,
+              FontSize = t.FontSize, FontStyle = t.FontStyle, Align = t.Align },
+        BitmapPrimitive bm => new BitmapPrimitive
+            { ImagePathRef = bm.ImagePathRef, X = bm.X, Y = bm.Y, W = bm.W, H = bm.H,
+              Opacity = bm.Opacity, Locked = bm.Locked },
+        _ => throw new ArgumentOutOfRangeException(nameof(prim), $"Unknown primitive type {prim.GetType().Name}"),
+    };
 
     // ── StrokeTierOf — nullable stroke tier for any primitive ─────────────────
 
@@ -422,9 +489,9 @@ public static class SymbolGeometry
         PolygonPrimitive     pg => pg.StrokeTier,
         QuadCurvePrimitive   qc => qc.StrokeTier,
         CubicCurvePrimitive  cc => cc.StrokeTier,
-        SinePrimitive        s  => s.StrokeTier,
-        HalfWavePrimitive    hw => hw.StrokeTier,
-        _                      => null,
+        SinePrimitive              s  => s.StrokeTier,
+        ExponentialTaperPrimitive  et => et.StrokeTier,
+        _                             => null,
     };
 
     // ── Geometry helpers (private) ─────────────────────────────────────────────
@@ -538,7 +605,7 @@ public static class SymbolGeometry
     ///   Circle/Ellipse: axis-aligned box around the full ellipse.
     ///   Arc: axis-aligned box around the full containing circle (conservative).
     ///   QuadCurve/CubicCurve: convex hull of control polygon (conservative).
-    ///   Sine/HalfWave: (cx ± length/2, cy ± amp).
+    ///   Sine: (cx ± length/2, cy ± amp).
     ///   Text/Bitmap: skipped (no geometric extent known without font metrics).
     /// </summary>
     public static (double MinX, double MinY, double MaxX, double MaxY) ComputeBb(
@@ -619,25 +686,20 @@ public static class SymbolGeometry
 
                 case SinePrimitive s:
                     if (s.Axis == SineAxis.Horizontal)
-                    {
                         ExpandRect(s.Cx, s.Cy, s.Length * 0.5, s.Amp);
-                    }
                     else
-                    {
                         ExpandRect(s.Cx, s.Cy, s.Amp, s.Length * 0.5);
-                    }
                     break;
 
-                case HalfWavePrimitive hw:
-                    if (hw.Axis == SineAxis.Horizontal)
-                    {
-                        ExpandRect(hw.Cx, hw.Cy, hw.Length * 0.5, hw.Amp);
-                    }
+                case ExponentialTaperPrimitive et:
+                {
+                    double halfW = Math.Max(et.W1, et.W2) * 0.5;
+                    if (et.Axis == SineAxis.Horizontal)
+                        ExpandRect(et.Cx, et.Cy, et.L * 0.5, halfW);
                     else
-                    {
-                        ExpandRect(hw.Cx, hw.Cy, hw.Amp, hw.Length * 0.5);
-                    }
+                        ExpandRect(et.Cx, et.Cy, halfW, et.L * 0.5);
                     break;
+                }
 
                 // Text and Bitmap: no geometric extent without font metrics / image size.
                 // Intentionally skipped — callers must add their own guard if needed.

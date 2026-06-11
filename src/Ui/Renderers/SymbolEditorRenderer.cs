@@ -345,22 +345,6 @@ internal static class SymbolEditorRenderer
             }
         }
 
-        // Resize preview bbox (dashed outline while gripper-dragging).
-        if (overlay.ResizePreviewBb.HasValue)
-        {
-            var (rx0, ry0, rx1, ry1) = overlay.ResizePreviewBb.Value;
-            float px0 = (float)((rx0 - panX) * zoom), py0 = (float)((ry0 - panY) * zoom);
-            float px1 = (float)((rx1 - panX) * zoom), py1 = (float)((ry1 - panY) * zoom);
-            using var previewStroke = new SKPaint
-            {
-                IsAntialias = true,  Style = SKPaintStyle.Stroke,
-                StrokeWidth = (float)Math.Max(1.0, zoom * 1.5),
-                Color       = theme.SelectionBox,
-                PathEffect  = SKPathEffect.CreateDash([5f, 3f], 0f),
-            };
-            canvas.DrawRect(SKRect.Create(px0, py0, px1 - px0, py1 - py0), previewStroke);
-        }
-
         // Resize gripper handle — small filled accent square at bottom-right.
         if (overlay.ResizeHandle.HasValue)
         {

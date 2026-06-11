@@ -44,7 +44,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     [ObservableProperty] private bool _showCornerRadius;
     [ObservableProperty] private bool _showArcAngles;
     [ObservableProperty] private bool _showSineFields;
-    [ObservableProperty] private bool _showHalfWaveFields;
+    [ObservableProperty] private bool _showExpTaperFields;
     [ObservableProperty] private bool _showQuadCurve;
     [ObservableProperty] private bool _showCubicCurve;
     [ObservableProperty] private bool _showFilled;
@@ -66,31 +66,31 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     partial void OnFieldY2Changed(double oldValue, double newValue) => ApplyDouble("Y2", oldValue, newValue,
         _prim is LinePrimitive p ? v => p.Y2 = v : null);
 
-    // ── Cx / Cy (shared by Rect, RoundedRect, Circle, Ellipse, Arc, Sine, HalfWave) ──
+    // ── Cx / Cy (shared by Rect, RoundedRect, Circle, Ellipse, Arc, Sine) ──────
 
     [ObservableProperty] private double _fieldCx;
     [ObservableProperty] private double _fieldCy;
 
     partial void OnFieldCxChanged(double oldValue, double newValue) => ApplyDouble("Cx", oldValue, newValue,
         _prim switch {
-            RectPrimitive        p => v => p.Cx = v,
-            RoundedRectPrimitive p => v => p.Cx = v,
-            CirclePrimitive      p => v => p.Cx = v,
-            EllipsePrimitive     p => v => p.Cx = v,
-            ArcPrimitive         p => v => p.Cx = v,
-            SinePrimitive        p => v => p.Cx = v,
-            HalfWavePrimitive    p => v => p.Cx = v,
+            RectPrimitive             p => v => p.Cx = v,
+            RoundedRectPrimitive      p => v => p.Cx = v,
+            CirclePrimitive           p => v => p.Cx = v,
+            EllipsePrimitive          p => v => p.Cx = v,
+            ArcPrimitive              p => v => p.Cx = v,
+            SinePrimitive             p => v => p.Cx = v,
+            ExponentialTaperPrimitive p => v => p.Cx = v,
             _ => null,
         });
     partial void OnFieldCyChanged(double oldValue, double newValue) => ApplyDouble("Cy", oldValue, newValue,
         _prim switch {
-            RectPrimitive        p => v => p.Cy = v,
-            RoundedRectPrimitive p => v => p.Cy = v,
-            CirclePrimitive      p => v => p.Cy = v,
-            EllipsePrimitive     p => v => p.Cy = v,
-            ArcPrimitive         p => v => p.Cy = v,
-            SinePrimitive        p => v => p.Cy = v,
-            HalfWavePrimitive    p => v => p.Cy = v,
+            RectPrimitive             p => v => p.Cy = v,
+            RoundedRectPrimitive      p => v => p.Cy = v,
+            CirclePrimitive           p => v => p.Cy = v,
+            EllipsePrimitive          p => v => p.Cy = v,
+            ArcPrimitive              p => v => p.Cy = v,
+            SinePrimitive             p => v => p.Cy = v,
+            ExponentialTaperPrimitive p => v => p.Cy = v,
             _ => null,
         });
 
@@ -150,37 +150,64 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     partial void OnFieldSweepDegChanged(double oldValue, double newValue) => ApplyDouble("SweepDeg", oldValue, newValue,
         _prim is ArcPrimitive p ? v => p.SweepDeg = v : null);
 
-    // ── Sine/HalfWave shared fields ───────────────────────────────────────────
+    // ── Sine fields ───────────────────────────────────────────────────────────
 
     [ObservableProperty] private double   _fieldAmp;
     [ObservableProperty] private double   _fieldCycles;
     [ObservableProperty] private double   _fieldLength;
     [ObservableProperty] private SineAxis _fieldAxis;
+    [ObservableProperty] private int      _fieldPtsPerCycle;
 
     partial void OnFieldAmpChanged(double oldValue, double newValue) => ApplyDouble("Amp", oldValue, newValue,
-        _prim switch {
-            SinePrimitive     p => v => p.Amp = v,
-            HalfWavePrimitive p => v => p.Amp = v,
-            _ => null,
-        });
+        _prim is SinePrimitive p ? v => p.Amp = v : null);
     partial void OnFieldCyclesChanged(double oldValue, double newValue) => ApplyDouble("Cycles", oldValue, newValue,
         _prim is SinePrimitive p ? v => p.Cycles = v : null);
     partial void OnFieldLengthChanged(double oldValue, double newValue) => ApplyDouble("Length", oldValue, newValue,
-        _prim switch {
-            SinePrimitive     p => v => p.Length = v,
-            HalfWavePrimitive p => v => p.Length = v,
-            _ => null,
-        });
+        _prim is SinePrimitive p ? v => p.Length = v : null);
+    partial void OnFieldPtsPerCycleChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _prim is not SinePrimitive sp || _vm is null || oldValue == newValue) return;
+        int clamped = Math.Max(newValue, 1);
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<int>(_vm.EditableSymbol, "PtsPerCycle", oldValue, clamped,
+            v => sp.PtsPerCycle = v));
+    }
     partial void OnFieldAxisChanged(SineAxis oldValue, SineAxis newValue)
     {
-        if (_isRefreshing || _prim is null || _vm is null || oldValue == newValue) return;
-        Action<SineAxis>? apply = _prim switch {
-            SinePrimitive     p => v => p.Axis = v,
-            HalfWavePrimitive p => v => p.Axis = v,
-            _ => null,
-        };
-        if (apply is not null)
-            _vm.Execute(new SetSymbolPrimitiveFieldCommand<SineAxis>(_vm.EditableSymbol, "Axis", oldValue, newValue, apply));
+        if (_isRefreshing || _prim is not SinePrimitive sp || _vm is null || oldValue == newValue) return;
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<SineAxis>(_vm.EditableSymbol, "Axis", oldValue, newValue,
+            v => sp.Axis = v));
+    }
+
+    // ── ExponentialTaper fields ───────────────────────────────────────────────
+
+    [ObservableProperty] private double _fieldW1;
+    [ObservableProperty] private double _fieldW2;
+    [ObservableProperty] private double _fieldExpL;
+    [ObservableProperty] private int    _fieldNumPts;
+
+    partial void OnFieldW1Changed(double oldValue, double newValue)
+    {
+        if (_isRefreshing || _prim is not ExponentialTaperPrimitive et || _vm is null) return;
+        double clamped = Math.Max(newValue, 1.0);
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<double>(_vm.EditableSymbol, "W1", oldValue, clamped, v => et.W1 = v));
+    }
+    partial void OnFieldW2Changed(double oldValue, double newValue)
+    {
+        if (_isRefreshing || _prim is not ExponentialTaperPrimitive et || _vm is null) return;
+        double clamped = Math.Max(newValue, 1.0);
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<double>(_vm.EditableSymbol, "W2", oldValue, clamped, v => et.W2 = v));
+    }
+    partial void OnFieldExpLChanged(double oldValue, double newValue)
+    {
+        if (_isRefreshing || _prim is not ExponentialTaperPrimitive et || _vm is null) return;
+        double clamped = Math.Max(newValue, 1.0);
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<double>(_vm.EditableSymbol, "L", oldValue, clamped, v => et.L = v));
+    }
+    partial void OnFieldNumPtsChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _prim is not ExponentialTaperPrimitive et || _vm is null || oldValue == newValue) return;
+        int clamped = Math.Max(newValue, 2);
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<int>(_vm.EditableSymbol, "NumPts", oldValue, clamped, v => et.NumPts = v));
     }
 
     // ── Filled checkbox (Rect, RoundedRect, Circle, Ellipse, Polygon) ─────────
@@ -191,11 +218,12 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     {
         if (_isRefreshing || _prim is null || _vm is null || oldValue == newValue) return;
         Action<bool>? apply = _prim switch {
-            RectPrimitive        p => v => p.Filled = v,
-            RoundedRectPrimitive p => v => p.Filled = v,
-            CirclePrimitive      p => v => p.Filled = v,
-            EllipsePrimitive     p => v => p.Filled = v,
-            PolygonPrimitive     p => v => p.Filled = v,
+            RectPrimitive             p => v => p.Filled = v,
+            RoundedRectPrimitive      p => v => p.Filled = v,
+            CirclePrimitive           p => v => p.Filled = v,
+            EllipsePrimitive          p => v => p.Filled = v,
+            PolygonPrimitive          p => v => p.Filled = v,
+            ExponentialTaperPrimitive p => v => p.Filled = v,
             _ => null,
         };
         if (apply is not null)
@@ -210,18 +238,18 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     {
         if (_isRefreshing || _prim is null || _vm is null || oldValue == newValue) return;
         Action<SymbolStrokeTier>? apply = _prim switch {
-            LinePrimitive        p => v => p.StrokeTier = v,
-            PolylinePrimitive    p => v => p.StrokeTier = v,
-            RectPrimitive        p => v => p.StrokeTier = v,
-            RoundedRectPrimitive p => v => p.StrokeTier = v,
-            CirclePrimitive      p => v => p.StrokeTier = v,
-            EllipsePrimitive     p => v => p.StrokeTier = v,
-            ArcPrimitive         p => v => p.StrokeTier = v,
-            PolygonPrimitive     p => v => p.StrokeTier = v,
-            QuadCurvePrimitive   p => v => p.StrokeTier = v,
-            CubicCurvePrimitive  p => v => p.StrokeTier = v,
-            SinePrimitive        p => v => p.StrokeTier = v,
-            HalfWavePrimitive    p => v => p.StrokeTier = v,
+            LinePrimitive             p => v => p.StrokeTier = v,
+            PolylinePrimitive         p => v => p.StrokeTier = v,
+            RectPrimitive             p => v => p.StrokeTier = v,
+            RoundedRectPrimitive      p => v => p.StrokeTier = v,
+            CirclePrimitive           p => v => p.StrokeTier = v,
+            EllipsePrimitive          p => v => p.StrokeTier = v,
+            ArcPrimitive              p => v => p.StrokeTier = v,
+            PolygonPrimitive          p => v => p.StrokeTier = v,
+            QuadCurvePrimitive        p => v => p.StrokeTier = v,
+            CubicCurvePrimitive       p => v => p.StrokeTier = v,
+            SinePrimitive             p => v => p.StrokeTier = v,
+            ExponentialTaperPrimitive p => v => p.StrokeTier = v,
             _ => null,
         };
         if (apply is not null)
@@ -391,7 +419,11 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         {
             int pi = overlay.SelectedPinIndex;
             if (pi < _vm.EditableSymbol.Pins.Count)
-            { SetPinView(_vm.EditableSymbol.Pins[pi]); return; }
+            {
+                var (pdx, pdy) = overlay.PinLiveDragOffset;
+                SetPinView(_vm.EditableSymbol.Pins[pi], pdx, pdy);
+                return;
+            }
         }
 
         if (selected.Count != 1) { SetEmpty("Select a single primitive to inspect."); return; }
@@ -400,11 +432,37 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         if (idx < 0 || idx >= _vm.EditableSymbol.Primitives.Count)
         { SetEmpty("Select a single primitive to inspect."); return; }
 
-        var incoming = _vm.EditableSymbol.Primitives[idx];
-        bool switching = incoming != _prim || _primIdx != idx;
-        _prim    = incoming;
+        // Always track the original for the switching check (prevents focus loss during live ops).
+        var original = _vm.EditableSymbol.Primitives[idx];
+        bool switching = original != _prim || _primIdx != idx;
+        _prim    = original;
         _primIdx = idx;
-        SetPrimView(_prim, switching);
+
+        // Determine which primitive to read values from:
+        // - resize in progress → use the live-scaled clone from the VM
+        // - drag in progress   → translate a clone by the live delta
+        // - otherwise          → use the original directly
+        SymbolPrimitive readFrom;
+        if (_vm.ResizeLivePrimitive is { } resizePrev)
+        {
+            readFrom = resizePrev;
+        }
+        else
+        {
+            var (dx, dy) = overlay.LiveDragOffset;
+            if (dx != 0 || dy != 0)
+            {
+                var translated = SymbolGeometry.Clone(original);
+                SymbolGeometry.TranslateBy(translated, dx, dy);
+                readFrom = translated;
+            }
+            else
+            {
+                readFrom = original;
+            }
+        }
+
+        SetPrimView(readFrom, switching);
     }
 
     private void SetEmpty(string msg)
@@ -418,7 +476,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
 
     private int _lastPinIndex = -1;
 
-    private void SetPinView(SymbolPin pin)
+    private void SetPinView(SymbolPin pin, double offsetX = 0, double offsetY = 0)
     {
         int pi = _vm!.Overlay.SelectedPinIndex;
         bool switching = !IsPinSelected || pi != _lastPinIndex;
@@ -429,8 +487,8 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         TypeName      = "Pin";
         if (switching) HideAllGroups();
         IsPinSelected = true;
-        PinX          = pin.LocalX;
-        PinY          = pin.LocalY;
+        PinX          = pin.LocalX + offsetX;
+        PinY          = pin.LocalY + offsetY;
         PinPortIndex  = pin.PortIndex;
         PolylineCoords.Clear();
         _isRefreshing = false;
@@ -458,9 +516,9 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
             PolygonPrimitive     => "Polygon",
             QuadCurvePrimitive   => "Quad Bézier",
             CubicCurvePrimitive  => "Cubic Bézier",
-            SinePrimitive        => "Sine Wave",
-            HalfWavePrimitive    => "Half Wave",
-            TextPrimitive        => "Text",
+            SinePrimitive             => "Sine Wave",
+            ExponentialTaperPrimitive => "Exp. Taper",
+            TextPrimitive             => "Text",
             BitmapPrimitive      => "Bitmap",
             _                    => prim.GetType().Name,
         };
@@ -545,15 +603,17 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
                 ShowCxCy = true; FieldCx = s.Cx; FieldCy = s.Cy;
                 ShowSineFields = true;
                 FieldAmp = s.Amp; FieldCycles = s.Cycles;
-                FieldLength = s.Length; FieldAxis = s.Axis;
+                FieldLength = s.Length; FieldPtsPerCycle = s.PtsPerCycle; FieldAxis = s.Axis;
                 ShowStrokeTier = true; StrokeTier = s.StrokeTier;
                 break;
 
-            case HalfWavePrimitive hw:
-                ShowCxCy = true; FieldCx = hw.Cx; FieldCy = hw.Cy;
-                ShowHalfWaveFields = true;
-                FieldAmp = hw.Amp; FieldLength = hw.Length; FieldAxis = hw.Axis;
-                ShowStrokeTier = true; StrokeTier = hw.StrokeTier;
+            case ExponentialTaperPrimitive et:
+                ShowCxCy = true; FieldCx = et.Cx; FieldCy = et.Cy;
+                ShowExpTaperFields = true;
+                FieldW1 = et.W1; FieldW2 = et.W2; FieldExpL = et.L; FieldNumPts = et.NumPts;
+                FieldAxis = et.Axis;
+                ShowFilled = true; FieldFilled = et.Filled;
+                ShowStrokeTier = true; StrokeTier = et.StrokeTier;
                 break;
 
             case TextPrimitive t:
@@ -579,7 +639,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         ShowCornerRadius   = false;
         ShowArcAngles      = false;
         ShowSineFields     = false;
-        ShowHalfWaveFields = false;
+        ShowExpTaperFields = false;
         ShowQuadCurve      = false;
         ShowCubicCurve     = false;
         ShowFilled         = false;

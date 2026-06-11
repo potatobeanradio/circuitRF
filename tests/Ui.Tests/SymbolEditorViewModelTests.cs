@@ -292,7 +292,7 @@ public class PlaceSymbolPrimitiveCommandTests
         Assert.Contains(SymbolEditorViewModel.Tool.QuadCurve,   tools);
         Assert.Contains(SymbolEditorViewModel.Tool.CubicCurve,  tools);
         Assert.Contains(SymbolEditorViewModel.Tool.Sine,        tools);
-        Assert.Contains(SymbolEditorViewModel.Tool.HalfWave,    tools);
+        Assert.Contains(SymbolEditorViewModel.Tool.ExpTaper,   tools);
         Assert.Contains(SymbolEditorViewModel.Tool.Text,        tools);
     }
 }

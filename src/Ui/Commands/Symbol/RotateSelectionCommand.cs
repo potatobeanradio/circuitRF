@@ -192,11 +192,11 @@ internal sealed class RotateSelectionCommand : IUiCommand
                 var axis = s.Axis;
                 return () => { s.Cx = cx; s.Cy = cy; s.Axis = axis; };
             }
-            case HalfWavePrimitive hw:
+            case ExponentialTaperPrimitive et:
             {
-                double cx = hw.Cx, cy = hw.Cy;
-                var axis = hw.Axis;
-                return () => { hw.Cx = cx; hw.Cy = cy; hw.Axis = axis; };
+                double cx = et.Cx, cy = et.Cy;
+                var axis = et.Axis;
+                return () => { et.Cx = cx; et.Cy = cy; et.Axis = axis; };
             }
             case TextPrimitive t:
             {

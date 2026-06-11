@@ -11,8 +11,8 @@ namespace CircuitRF.Ui.Schematic;
 
 public enum SymbolColorRole  { SymbolLine, SymbolText, SymbolPlus }
 public enum SymbolFontStyle  { Regular, Bold, Italic, Condensed }
-/// <summary>Named stroke-width tiers in local units: Normal≈6 / Thin≈3.</summary>
-public enum SymbolStrokeTier { Normal, Thin }
+/// <summary>Named stroke-width tiers in local units: Thick≈9 / Normal≈6 / Thin≈3.</summary>
+public enum SymbolStrokeTier { Normal, Thin, Thick }
 public enum SineAxis         { Horizontal, Vertical }
 public enum SymbolTextAlign  { Left, Center, Right }
 
@@ -29,10 +29,10 @@ public enum SymbolTextAlign  { Left, Center, Right }
 [JsonDerivedType(typeof(PolygonPrimitive),     "Polygon")]
 [JsonDerivedType(typeof(QuadCurvePrimitive),   "QuadCurve")]
 [JsonDerivedType(typeof(CubicCurvePrimitive),  "CubicCurve")]
-[JsonDerivedType(typeof(SinePrimitive),        "Sine")]
-[JsonDerivedType(typeof(HalfWavePrimitive),    "HalfWave")]
-[JsonDerivedType(typeof(TextPrimitive),        "Text")]
-[JsonDerivedType(typeof(BitmapPrimitive),      "Bitmap")]
+[JsonDerivedType(typeof(SinePrimitive),             "Sine")]
+[JsonDerivedType(typeof(ExponentialTaperPrimitive), "ExpTaper")]
+[JsonDerivedType(typeof(TextPrimitive),             "Text")]
+[JsonDerivedType(typeof(BitmapPrimitive),           "Bitmap")]
 public abstract class SymbolPrimitive { }
 
 // ── Line ─────────────────────────────────────────────────────────────────────
@@ -177,29 +177,44 @@ public sealed class CubicCurvePrimitive : SymbolPrimitive
 
 public sealed class SinePrimitive : SymbolPrimitive
 {
-    public SymbolColorRole  ColorRole  { get; set; }
-    public SymbolStrokeTier StrokeTier { get; set; }
+    public SymbolColorRole  ColorRole   { get; set; }
+    public SymbolStrokeTier StrokeTier  { get; set; }
     /// <summary>Center of the wave's bounding span.</summary>
-    public double   Cx     { get; set; }
-    public double   Cy     { get; set; }
-    public double   Amp    { get; set; }
-    public double   Cycles { get; set; }
-    public double   Length { get; set; }
+    public double   Cx         { get; set; }
+    public double   Cy         { get; set; }
+    public double   Amp        { get; set; }
+    public double   Cycles     { get; set; }
+    public double   Length     { get; set; }
+    /// <summary>
+    /// Sample points per full cycle.  Renderer uses ceil(Cycles * PtsPerCycle) segments.
+    /// Minimum effective value is 1; renderer clamps to at least 2 total segments.
+    /// </summary>
+    public int      PtsPerCycle { get; set; } = 20;
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
-    public SineAxis Axis   { get; set; }
+    public SineAxis Axis       { get; set; }
 }
 
-// ── HalfWave (single half-sine) ───────────────────────────────────────────────
+// ── ExponentialTaper ─────────────────────────────────────────────────────────
+// Width profile: w(x) = W1 · (W2/W1)^(x/L), rendered as a closed filled polygon.
+// Cx/Cy is the center of the taper; L is the total length along the taper axis.
 
-public sealed class HalfWavePrimitive : SymbolPrimitive
+public sealed class ExponentialTaperPrimitive : SymbolPrimitive
 {
     public SymbolColorRole  ColorRole  { get; set; }
     public SymbolStrokeTier StrokeTier { get; set; }
-    public double   Cx     { get; set; }
-    public double   Cy     { get; set; }
-    public double   Amp    { get; set; }
-    public double   Length { get; set; }
+    public bool   Filled   { get; set; }
+    /// <summary>Center of the taper in local coords.</summary>
+    public double Cx       { get; set; }
+    public double Cy       { get; set; }
+    /// <summary>Width at the start (x=0) end.</summary>
+    public double W1       { get; set; } = 60.0;
+    /// <summary>Width at the end (x=L) end.</summary>
+    public double W2       { get; set; } = 15.0;
+    /// <summary>Length along the taper axis.</summary>
+    public double L        { get; set; } = 100.0;
+    /// <summary>Sample points per outline side; minimum 2.</summary>
+    public int    NumPts   { get; set; } = 20;
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public SineAxis Axis   { get; set; }
