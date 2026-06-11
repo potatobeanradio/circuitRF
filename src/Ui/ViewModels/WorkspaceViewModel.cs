@@ -63,6 +63,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
     [ObservableProperty] private IRootDock? _layout;
 
+    // Exposed so WorkspaceWindow.axaml can bind DockControl.Factory — required for float/tear-off.
+    public IFactory DockFactory => _factory;
+
     // ---- Infrastructure ------------------------------------------------------
 
     public IMessageSink Messages { get; }
@@ -130,6 +133,27 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
     // Fired (on UI thread) after any push or clear so the NativeMenu code-behind can rebuild.
     public event Action? RecentWorkspacesChanged;
+
+    // ---- Save scope (drives "Save All" vs "Save" menu label) ----------------
+
+    /// <summary>Whether ⌘S/Ctrl+S should save all documents or only the active one.</summary>
+    public enum SaveScope { AllDocs, SingleDoc }
+
+    [ObservableProperty] private SaveScope _activeSaveScope = SaveScope.AllDocs;
+
+    /// <summary>Menu label for the primary save action; bound by both the in-window menu and
+    /// updated on the NativeMenu via <see cref="SaveScopeChanged"/>.</summary>
+    public string SaveMenuHeader => ActiveSaveScope == SaveScope.SingleDoc ? "Save" : "Save All";
+
+    /// <summary>Fired after <see cref="ActiveSaveScope"/> changes so the NativeMenu code-behind
+    /// can update the macOS menu bar label (same pattern as RecentWorkspacesChanged).</summary>
+    public event Action? SaveScopeChanged;
+
+    partial void OnActiveSaveScopeChanged(SaveScope value)
+    {
+        OnPropertyChanged(nameof(SaveMenuHeader));
+        SaveScopeChanged?.Invoke();
+    }
 
     partial void OnCurrentWorkspacePathChanged(string? value)
     {
@@ -255,10 +279,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             _factory.PaletteTool?.SetPlacementService(PlacementService);
             _factory.PaletteTool?.SetMru(_recentlyPlaced);
 
-            // CreateDefaultLayout replaced ProjectTreeTool with a fresh instance — re-wire it.
+            // CreateDefaultLayout replaced all tool instances and the DocumentDock — re-wire them.
             _factory.ProjectTreeTool?.SetActions(this);
             SubscribeToFilterState();
             _factory.ProjectTreeTool?.SetWorkspace(workspaceDir);
+
+            // Re-subscribe to the new DocumentDock (instance replaced by CreateDefaultLayout).
+            if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged newNpc)
+                newNpc.PropertyChanged += OnDocumentDockPropertyChanged;
 
             PushRecent(cwsPath);
             Messages.Clear();
@@ -300,21 +328,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             return;
         }
 
-        // Update tracked location to the parent of the opened workspace folder.
-        _lastWorkspaceParentDir = Path.GetDirectoryName(workspaceDir) ?? _lastWorkspaceParentDir;
-
-        CurrentWorkspacePath = cwsPath;
-
-        var cws = TryLoadCws(cwsPath);
-        if (cws.ColorSchemeName is { } schemeName)
-        {
-            try { ThemeService.Active = ThemeResolver.Resolve(schemeName, workspaceDir); }
-            catch { }
-        }
-        ApplyTreeViewState(cws.TreeViewState);
-
-        PushRecent(cwsPath);
-        Messages.Success($"Opened: {cwsPath}");
+        SwitchToWorkspace(cwsPath);
     }
 
     [RelayCommand]
@@ -376,6 +390,72 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
                 };
             }
 
+            // Persist documents currently open in the main DocumentDock.
+            // Scratch docs (no path) and the welcome stub are never persisted.
+            var dockables = _factory.DocumentDock?.VisibleDockables;
+            if (dockables is not null)
+            {
+                var wsDir    = Path.GetDirectoryName(path)!;
+                var docsList = new List<CwsOpenDocument>();
+                int order    = 0;
+                foreach (var dockable in dockables)
+                {
+                    string? docPath = null;
+                    string? kind    = null;
+
+                    if (dockable is SchematicDocument sd && sd.FilePath is not null)
+                    {
+                        docPath = sd.FilePath;
+                        kind    = "schematic";
+                    }
+                    else if (dockable is SymbolEditorDocument syed &&
+                             syed.ViewModel.CurrentSymbolPath is not null)
+                    {
+                        docPath = syed.ViewModel.CurrentSymbolPath;
+                        kind    = "symbol";
+                    }
+                    else if (dockable is CellParameterEditorDocument cpd)
+                    {
+                        // Derive cell folder path from the .ccell path stored in the edit model.
+                        docPath = Path.GetDirectoryName(cpd.ViewModel.EditModel.CcellPath);
+                        kind    = "cell";
+                    }
+
+                    if (docPath is null || kind is null) continue;
+
+                    string stored;
+                    try   { stored = Path.GetRelativePath(wsDir, docPath); }
+                    catch { stored = docPath; }
+                    docsList.Add(new CwsOpenDocument { Path = stored, Kind = kind, TabOrder = order++ });
+                }
+                ws.OpenDocuments = docsList.Count > 0 ? docsList : null;
+
+                // Persist active document path so the same tab is focused on restore.
+                var active = _factory.DocumentDock?.ActiveDockable;
+                string? activePath = null;
+                if (active is SchematicDocument asd && asd.FilePath is not null)
+                {
+                    try   { activePath = Path.GetRelativePath(wsDir, asd.FilePath); }
+                    catch { activePath = asd.FilePath; }
+                }
+                else if (active is SymbolEditorDocument asyed &&
+                         asyed.ViewModel.CurrentSymbolPath is not null)
+                {
+                    try   { activePath = Path.GetRelativePath(wsDir, asyed.ViewModel.CurrentSymbolPath); }
+                    catch { activePath = asyed.ViewModel.CurrentSymbolPath; }
+                }
+                else if (active is CellParameterEditorDocument acpd)
+                {
+                    var cellPath = Path.GetDirectoryName(acpd.ViewModel.EditModel.CcellPath);
+                    if (cellPath is not null)
+                    {
+                        try   { activePath = Path.GetRelativePath(wsDir, cellPath); }
+                        catch { activePath = cellPath; }
+                    }
+                }
+                ws.ActiveDocumentPath = activePath;
+            }
+
             WorkspacePersistence.SaveToFileAtomic(path, ws);
             if (!silent)
                 Messages.Success($"Saved: {path}", path);
@@ -430,6 +510,93 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
         _cwsSaveTimer.Stop();
         _cwsSaveTimer.Start();
+    }
+
+    /// <summary>
+    /// Replaces the current session with the workspace at <paramref name="cwsPath"/>.
+    /// Caller must have already prompted for and handled any dirty documents.
+    /// Clears open docs, installs a fresh Dock layout, re-wires tools, restores theme,
+    /// tree state, and the persisted open-document list.
+    /// </summary>
+    private void SwitchToWorkspace(string cwsPath)
+    {
+        var workspaceDir = Path.GetDirectoryName(cwsPath)!;
+        _lastWorkspaceParentDir = Path.GetDirectoryName(workspaceDir) ?? _lastWorkspaceParentDir;
+
+        SetActiveUndoTarget(null);
+        _openDocsByPath.Clear();
+        _scratchDocs.Clear();
+        CurrentWorkspacePath = cwsPath;
+
+        var newLayout = _factory.CreateDefaultLayout();
+        _factory.InitLayout(newLayout);
+        Layout = newLayout;
+        _factory.PaletteTool?.SetPlacementService(PlacementService);
+        _factory.PaletteTool?.SetMru(_recentlyPlaced);
+
+        // CreateDefaultLayout replaced all tool instances and the DocumentDock — re-wire them.
+        _factory.ProjectTreeTool?.SetActions(this);
+        SubscribeToFilterState();
+        _factory.ProjectTreeTool?.SetWorkspace(workspaceDir);
+
+        // Re-subscribe to the new DocumentDock (instance replaced by CreateDefaultLayout).
+        if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged newNpc)
+            newNpc.PropertyChanged += OnDocumentDockPropertyChanged;
+
+        var cws = TryLoadCws(cwsPath);
+        if (cws.ColorSchemeName is { } schemeName)
+        {
+            try { ThemeService.Active = ThemeResolver.Resolve(schemeName, workspaceDir); }
+            catch { }
+        }
+        ApplyTreeViewState(cws.TreeViewState);
+        RestoreOpenDocuments(cws, workspaceDir);
+
+        PushRecent(cwsPath);
+        Messages.Clear();
+        Messages.Success($"Opened: {cwsPath}");
+    }
+
+    /// <summary>
+    /// Re-opens the documents listed in <paramref name="cws"/> into the current DocumentDock.
+    /// Removes the welcome stub first (so the restored tabs are the only content).
+    /// No-op when <see cref="CwsFile.OpenDocuments"/> is null or empty.
+    /// </summary>
+    private void RestoreOpenDocuments(CwsFile cws, string workspaceDir)
+    {
+        if (cws.OpenDocuments is not { Count: > 0 } docs) return;
+
+        _factory.RemoveWelcomeStub();
+
+        foreach (var entry in docs.OrderBy(d => d.TabOrder))
+        {
+            var absPath = Path.IsPathRooted(entry.Path)
+                ? entry.Path
+                : Path.GetFullPath(Path.Combine(workspaceDir, entry.Path));
+
+            switch (entry.Kind)
+            {
+                case "schematic" when File.Exists(absPath):
+                    OpenOrActivateSchematic(absPath);
+                    break;
+                case "symbol" when File.Exists(absPath):
+                    OpenOrActivateSymbol(absPath);
+                    break;
+                case "cell" when Directory.Exists(absPath):
+                    OpenOrActivateCellPlaceholder(absPath, Path.GetFileName(absPath));
+                    break;
+            }
+        }
+
+        // Restore the previously active tab.
+        if (cws.ActiveDocumentPath is { } activePath)
+        {
+            var absActive = Path.IsPathRooted(activePath)
+                ? activePath
+                : Path.GetFullPath(Path.Combine(workspaceDir, activePath));
+            if (_openDocsByPath.TryGetValue(absActive, out var activeDoc))
+                _factory.SetActiveDockable(activeDoc);
+        }
     }
 
     /// <summary>
@@ -504,20 +671,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             return;
         }
 
-        var workspaceDir = Path.GetDirectoryName(cwsPath)!;
-        _lastWorkspaceParentDir = Path.GetDirectoryName(workspaceDir) ?? _lastWorkspaceParentDir;
-        CurrentWorkspacePath = cwsPath;
-
-        var cws = TryLoadCws(cwsPath);
-        if (cws.ColorSchemeName is { } schemeName)
-        {
-            try { ThemeService.Active = ThemeResolver.Resolve(schemeName, workspaceDir); }
-            catch { }
-        }
-        ApplyTreeViewState(cws.TreeViewState);
-
-        PushRecent(cwsPath);
-        Messages.Success($"Opened: {cwsPath}");
+        SwitchToWorkspace(cwsPath);
     }
 
     /// <summary>Empty the Recent Workspaces list and save.</summary>
@@ -664,7 +818,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     [RelayCommand]
     private void ResetLayout()
     {
-        var newLayout = _factory.CreateDefaultLayout();
+        // Preserve documents: re-host the existing DocumentDock and tool instances
+        // into a fresh proportional skeleton.  Documents, active tab, and per-document
+        // selection are kept; only panel positions/proportions are restored.
+        var newLayout = _factory.CreateLayoutPreservingContent();
         _factory.InitLayout(newLayout);
         Layout = newLayout;
         _factory.PaletteTool?.SetPlacementService(PlacementService);
@@ -860,7 +1017,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         var vm    = new SchematicViewModel(model, Messages);
         vm.SetPlacementService(PlacementService);
         vm.ComponentPlaced += OnComponentPlaced;
-        // filePath = null → scratch; IsScratch = true, IsDirty = true, Title = "• <title>"
+        // filePath = null → scratch; IsScratch = true, IsDirty = false (starts clean), Title = "<title>"
         var doc   = new SchematicDocument(title, vm) { Messages = Messages };
 
         _scratchDocs.Add(doc);
@@ -1405,6 +1562,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         // Undo routing — follows any IUndoableDocument for main-window tabs.
         SetActiveUndoTarget(activeDockable as IUndoableDocument);
 
+        // Save-scope: "Save" when a document tab is active, "Save All" otherwise.
+        ActiveSaveScope = activeDockable is IUndoableDocument
+            ? SaveScope.SingleDoc
+            : SaveScope.AllDocs;
+
         // A dockable may have just been floated into a Dock-generated HostWindow.
         // Defer one frame (Background) so the HostWindow is fully shown before we scan.
         Avalonia.Threading.Dispatcher.UIThread.Post(
@@ -1503,8 +1665,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     // Shown before any dockable is removed. Returns true = proceed, false = cancel.
     private async Task<bool> ConfirmCloseDockable(IDockable dockable)
     {
-        if (dockable is not SchematicDocument doc || (!doc.IsScratch && !doc.IsDirty))
-            return true; // not a dirty doc — clean close, no prompt needed
+        if (dockable is not SchematicDocument doc || !doc.IsDirty)
+            return true; // clean doc — no prompt needed
 
         var window = ResolveOwner(null);
         if (window is null) return true;
@@ -1550,8 +1712,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     // ---- Save All documents (⌘S / Ctrl+S) ----------------------------------
 
     /// <summary>
-    /// Routes ⌘S/Ctrl+S: scratch docs through the SavePlan dialog, already-materialized
-    /// dirty docs saved directly to their file path, then writes the .cws if we have one.
+    /// Routes ⌘S/Ctrl+S.  When a document tab is active (SingleDoc scope) saves only that
+    /// document.  When a tool panel is active (AllDocs scope) saves all dirty documents and
+    /// updates the .cws.
     /// </summary>
     [RelayCommand]
     private async Task SaveAllDocuments(Window? owner)
@@ -1559,6 +1722,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         var window = ResolveOwner(owner);
         if (window is null) return;
 
+        // SingleDoc scope: save only the active document.
+        if (ActiveSaveScope == SaveScope.SingleDoc &&
+            _factory.DocumentDock?.ActiveDockable is SchematicDocument singleDoc)
+        {
+            if (!singleDoc.IsDirty)
+            {
+                Messages.Info("Nothing to save.");
+                return;
+            }
+            await SaveSingleDocument(singleDoc, window);
+            if (CurrentWorkspacePath is not null)
+                WriteWorkspaceFile(CurrentWorkspacePath);
+            return;
+        }
+
+        // AllDocs scope: save every dirty document.
         var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
         var dirtyMaterialized = _openDocsByPath.Values
             .OfType<SchematicDocument>()
@@ -1885,7 +2064,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         var result = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title             = "Save Schematic",
-            SuggestedFileName = doc.Id + ".csch",
+            SuggestedFileName = doc.Id,
             DefaultExtension  = "csch",
             FileTypeChoices   =
             [
@@ -1961,7 +2140,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         var result = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title             = "Save Schematic",
-            SuggestedFileName = doc.Id + ".csch",
+            SuggestedFileName = doc.Id,
             DefaultExtension  = "csch",
             FileTypeChoices   =
             [

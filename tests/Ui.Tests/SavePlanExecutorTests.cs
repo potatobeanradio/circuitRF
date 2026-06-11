@@ -36,7 +36,7 @@ public class SavePlanExecutorTests
         var doc       = MakeScratch("Untitled-Schematic-1");
 
         Assert.True(doc.IsScratch);
-        Assert.True(doc.IsDirty);
+        Assert.False(doc.IsDirty); // scratch starts clean — dirty only after first edit
 
         var builder = new SavePlanBuilder(null, parentDir, new[] { doc });
         var plan    = builder.Build();

@@ -15,9 +15,9 @@ public partial class InputNameDialog : Window
 
     public InputNameDialog(string title, string prompt) : this()
     {
-        Title             = title;
-        PromptLabel.Text  = prompt;
-        NameBox.Focus();
+        Title            = title;
+        PromptLabel.Text = prompt;
+        Opened += (_, _) => { NameBox.Focus(); NameBox.SelectAll(); };
     }
 
     private void OnOkClick(object? sender, RoutedEventArgs e) => TryCommit();

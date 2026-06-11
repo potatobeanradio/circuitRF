@@ -3,6 +3,7 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using CircuitRF.Ui.ViewModels;
+using Dock.Avalonia.Controls;
 
 namespace CircuitRF.Ui.Views;
 
@@ -21,20 +22,30 @@ public partial class WorkspaceWindow : Window
     // mutations are properly synced to NSMenuItem/NSMenu at runtime.
     private NativeMenuItem? _openRecentNativeItem;
 
+    // The "Save All" NativeMenuItem — header is updated to "Save" when a document is active.
+    private NativeMenuItem? _saveNativeItem;
+
     public WorkspaceWindow()
     {
         InitializeComponent();
+        // Belt-and-suspenders: also set HostWindowFactory directly on the control so
+        // both Dock dispatch paths (factory locator and DockControl) produce a HostWindow.
+        MainDockControl.HostWindowFactory = () => new HostWindow();
     }
 
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
         if (_vm is not null)
+        {
             _vm.RecentWorkspacesChanged -= RebuildNativeRecentMenu;
+            _vm.SaveScopeChanged        -= UpdateNativeSaveHeader;
+        }
         _vm = DataContext as WorkspaceViewModel;
         if (_vm is not null)
         {
             _vm.RecentWorkspacesChanged += RebuildNativeRecentMenu;
+            _vm.SaveScopeChanged        += UpdateNativeSaveHeader;
             RebuildNativeRecentMenu();
         }
     }
@@ -45,6 +56,7 @@ public partial class WorkspaceWindow : Window
         (App.Current as App)?.NotifyWindowCountChanged();
         // AppKit has now built the native menu from the XAML — safe to find and populate.
         RebuildNativeRecentMenu();
+        UpdateNativeSaveHeader();
     }
 
     protected override void OnClosed(EventArgs e)
@@ -77,6 +89,38 @@ public partial class WorkspaceWindow : Window
     private async void OnAboutMenuItemClick(object? sender, RoutedEventArgs e)
     {
         await new Dialogs.AboutWindow().ShowDialog(this);
+    }
+
+    // ---- NativeMenu "Save All" / "Save" header (macOS native menu bar) ------
+
+    private void EnsureSaveNativeItem()
+    {
+        if (_saveNativeItem is not null) return;
+
+        var rootMenu = NativeMenu.GetMenu(this);
+        if (rootMenu is null) return;
+
+        foreach (var top in rootMenu.Items)
+        {
+            if (top is not NativeMenuItem fileItem || fileItem.Header != "File") continue;
+            if (fileItem.Menu is null) break;
+            foreach (var sub in fileItem.Menu.Items)
+            {
+                if (sub is NativeMenuItem ni && ni.Header == "Save All")
+                {
+                    _saveNativeItem = ni;
+                    return;
+                }
+            }
+            break;
+        }
+    }
+
+    private void UpdateNativeSaveHeader()
+    {
+        EnsureSaveNativeItem();
+        if (_saveNativeItem is null || _vm is null) return;
+        _saveNativeItem.Header = _vm.SaveMenuHeader;
     }
 
     // ---- NativeMenu "Open Recent" (macOS native menu bar) -------------------

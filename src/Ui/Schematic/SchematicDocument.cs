@@ -68,9 +68,9 @@ public sealed class SchematicDocument : Document, IUndoableDocument
         FilePath   = filePath;
         ViewModel  = viewModel;
 
-        // Scratch is dirty from creation; on-disk starts clean.
-        _isDirty = IsScratch;
-        Title    = _isDirty ? $"• {_baseTitle}" : _baseTitle;
+        // Both scratch and on-disk documents start clean; first undoable edit makes them dirty.
+        _isDirty = false;
+        Title    = _baseTitle;
 
         // Any edit on a non-scratch doc makes it dirty (first undo-able action recorded).
         ViewModel.UndoRedo.PropertyChanged += (_, e) =>

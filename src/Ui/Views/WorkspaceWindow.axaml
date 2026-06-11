@@ -155,7 +155,7 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="BookOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
-                <MenuItem Header="Save _All"
+                <MenuItem Header="{Binding SaveMenuHeader}"
                           Command="{Binding SaveAllDocumentsCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+S">
@@ -393,7 +393,9 @@
         <!-- RUNTIME NOTE: DockControl requires Dock.Avalonia styles to be loaded in
              App.axaml (see <StyleInclude Source="avares://Dock.Avalonia/..."/>).
              If the layout renders as blank panels, verify the style path. -->
-        <dock:DockControl Layout="{Binding Layout}"/>
+        <dock:DockControl x:Name="MainDockControl"
+                          Layout="{Binding Layout}"
+                          Factory="{Binding DockFactory}"/>
 
     </DockPanel>
 </Window>

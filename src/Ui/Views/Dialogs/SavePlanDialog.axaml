@@ -2,11 +2,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CircuitRF.Ui.Views.Dialogs.SavePlanDialog"
         Title="Save your work"
-        Width="560"
+        Width="600"
+        MinWidth="480"
         SizeToContent="Height"
         MinHeight="200"
         MaxHeight="700"
-        CanResize="False"
+        CanResize="True"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 

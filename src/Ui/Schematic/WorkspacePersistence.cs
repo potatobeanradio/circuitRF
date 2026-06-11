@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace CircuitRF.Ui.Schematic;
 
-// ── .cws workspace manifest — rev 1 ──────────────────────────────────────────
+// ── .cws workspace manifest — rev 2 ──────────────────────────────────────────
 // A workspace is the collection of files that make up a project:
 //   - member_files: relative paths to .csch / .cdd / .csym / .cnl etc.
 //   - library_refs: paths to library manifests (.clib)
@@ -13,6 +13,22 @@ namespace CircuitRF.Ui.Schematic;
 //   - format_version: reject on mismatch
 //   - references, never embedded payloads
 //   - relative paths preferred
+
+/// <summary>
+/// One open document entry persisted in .cws — path, kind, and tab order.
+/// Restored when the workspace is next opened.
+/// </summary>
+public sealed class CwsOpenDocument
+{
+    /// <summary>Relative (preferred) or absolute path to the document file or cell folder.</summary>
+    public string Path { get; set; } = "";
+
+    /// <summary>"schematic" (.csch), "symbol" (.csym), or "cell" (cell folder).</summary>
+    public string Kind { get; set; } = "schematic";
+
+    /// <summary>Zero-based tab order used to restore the original tab sequence.</summary>
+    public int TabOrder { get; set; }
+}
 
 /// <summary>
 /// Tree view-state persisted in .cws — filter category flags + ordering preference.
@@ -36,7 +52,7 @@ public sealed class CwsTreeViewState
 
 public sealed class CwsFile
 {
-    public int FormatVersion { get; set; } = 1;
+    public int FormatVersion { get; set; } = 2;
 
     /// <summary>
     /// Relative or absolute paths to external library folders (or legacy .clib manifest files).
@@ -71,6 +87,21 @@ public sealed class CwsFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CwsTreeViewState? TreeViewState { get; set; }
+
+    /// <summary>
+    /// Documents open in the main DocumentDock when the workspace was last saved.
+    /// Null or empty means no documents to restore (welcome stub is shown).
+    /// Scratch documents are never persisted here.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CwsOpenDocument>? OpenDocuments { get; set; }
+
+    /// <summary>
+    /// Relative (preferred) or absolute path of the active document when the workspace
+    /// was last saved.  Null when no named document was active.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ActiveDocumentPath { get; set; }
 }
 
 /// <summary>
@@ -79,7 +110,7 @@ public sealed class CwsFile
 /// </summary>
 public static class WorkspacePersistence
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {

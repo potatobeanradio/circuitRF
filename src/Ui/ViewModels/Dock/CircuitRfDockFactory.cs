@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Dock.Avalonia.Controls;
 using Dock.Model.Controls;
 using Dock.Model.Core;
 using Dock.Model.Mvvm;
@@ -41,6 +42,14 @@ public class CircuitRfDockFactory : Factory
     public PropertiesTool?   PropertiesTool   { get; private set; }
     public AnalysesTool?     AnalysesTool     { get; private set; }
     public PaletteTool?      PaletteTool      { get; private set; }
+
+    public CircuitRfDockFactory()
+    {
+        // Required for tab tear-off: tells Dock what window type to create when a tab
+        // is dragged outside the DockControl bounds.  DockControl.HostWindowFactory
+        // is also set in WorkspaceWindow code-behind (belt-and-suspenders).
+        DefaultHostWindowLocator = () => new HostWindow();
+    }
 
     public override IRootDock CreateLayout()
     {
@@ -193,8 +202,125 @@ public class CircuitRfDockFactory : Factory
     }
 
     /// <summary>
-    /// Re-creates the default layout. Called by View → Reset Layout.
-    /// The caller must replace WorkspaceViewModel.Layout with the returned IRootDock.
+    /// Removes the welcome stub tab synchronously, bypassing the async confirm hook.
+    /// Called by RestoreOpenDocuments before re-opening a workspace's saved documents.
+    /// No-op if no welcome stub is present.
+    /// </summary>
+    public void RemoveWelcomeStub()
+    {
+        if (_documentDock is null) return;
+        var stub = _documentDock.VisibleDockables?.OfType<StubDocument>().FirstOrDefault();
+        if (stub is not null)
+            base.CloseDockable(stub); // bypass async confirm hook — welcome stub is never dirty
+    }
+
+    /// <summary>
+    /// Full reset — creates fresh tool instances and a welcome stub DocumentDock.
+    /// Used by New Workspace to start a completely clean session.
     /// </summary>
     public IRootDock CreateDefaultLayout() => CreateLayout();
+
+    /// <summary>
+    /// Geometry-only reset — rebuilds the default proportional skeleton while
+    /// re-hosting the EXISTING <see cref="DocumentDock"/> (with all open tabs,
+    /// active tab, and selection intact) and the existing tool instances.
+    /// Used by View → Reset Layout so document content is never discarded.
+    /// Falls back to <see cref="CreateLayout"/> if no layout has been initialized yet.
+    /// </summary>
+    public IRootDock CreateLayoutPreservingContent()
+    {
+        // No existing content to preserve — do a full create.
+        if (_documentDock is null)
+            return CreateLayout();
+
+        // Keep existing tool instances so their VM state (active schematic,
+        // workspace binding, etc.) is not reset.
+        ProjectTreeTool ??= new ProjectTreeTool();
+        PropertiesTool  ??= new PropertiesTool();
+        AnalysesTool    ??= new AnalysesTool();
+        PaletteTool     ??= new PaletteTool();
+        MessagesTool    ??= new MessagesTool();
+
+        var projectTreeDock = new ToolDock
+        {
+            Id               = "ProjectTreePane",
+            Title            = "ProjectTreePane",
+            Proportion       = 0.65,
+            ActiveDockable   = ProjectTreeTool,
+            VisibleDockables = CreateList<IDockable>(ProjectTreeTool, PaletteTool),
+            Alignment        = Alignment.Left,
+            GripMode         = GripMode.Visible,
+        };
+
+        var propertiesDock = new ToolDock
+        {
+            Id               = "PropertiesPane",
+            Title            = "PropertiesPane",
+            Proportion       = 0.35,
+            ActiveDockable   = PropertiesTool,
+            VisibleDockables = CreateList<IDockable>(PropertiesTool, AnalysesTool),
+            Alignment        = Alignment.Left,
+            GripMode         = GripMode.Visible,
+        };
+
+        var leftColumn = new ProportionalDock
+        {
+            Id               = "LeftColumn",
+            Title            = "LeftColumn",
+            Proportion       = 0.20,
+            Orientation      = Orientation.Vertical,
+            ActiveDockable   = ProjectTreeTool,
+            VisibleDockables = CreateList<IDockable>(
+                projectTreeDock,
+                new ProportionalDockSplitter(),
+                propertiesDock),
+        };
+
+        var messagesDock = new ToolDock
+        {
+            Id               = "MessagesPane",
+            Title            = "MessagesPane",
+            Proportion       = 0.20,
+            ActiveDockable   = MessagesTool,
+            VisibleDockables = CreateList<IDockable>(MessagesTool),
+            Alignment        = Alignment.Bottom,
+            GripMode         = GripMode.Visible,
+        };
+
+        // Re-use the existing DocumentDock — its documents, active tab, and
+        // per-document selection state are all preserved.
+        var rightColumn = new ProportionalDock
+        {
+            Id               = "RightColumn",
+            Title            = "RightColumn",
+            Orientation      = Orientation.Vertical,
+            ActiveDockable   = _documentDock,
+            VisibleDockables = CreateList<IDockable>(
+                _documentDock,
+                new ProportionalDockSplitter(),
+                messagesDock),
+        };
+
+        var outerLayout = new ProportionalDock
+        {
+            Id               = "OuterLayout",
+            Title            = "OuterLayout",
+            Orientation      = Orientation.Horizontal,
+            ActiveDockable   = _documentDock,
+            VisibleDockables = CreateList<IDockable>(
+                leftColumn,
+                new ProportionalDockSplitter(),
+                rightColumn),
+        };
+
+        var root = CreateRootDock();
+        root.Id               = "Root";
+        root.Title            = "Root";
+        root.IsCollapsable    = false;
+        root.VisibleDockables = CreateList<IDockable>(outerLayout);
+        root.ActiveDockable   = outerLayout;
+        root.DefaultDockable  = outerLayout;
+
+        return root;
+    }
 }

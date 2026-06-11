@@ -382,3 +382,15 @@ cell-driven open (the deferred 4c-later items); 6–7 complete authoring + works
 - **Automatic instance-value migration on cell-parameter rename/remove** — v1 surfaces the consequence (§7).
 - **Registry → `.ccell`-loader mechanical migration** (§6) — sequenced with step 5.
 - **`.cdd` / unviewable-type open** — deferred until the owning viewer exists (§3.5).
+- **Torn-off window position persistence (v2)** — v1 persists the open-document set in `.cws` and restores
+  torn-off documents as TABS on workspace open. v2: also persist which documents are floated plus each host
+  window's bounds (X/Y/W/H), and reconstruct the floats at their saved positions on open. Scoping (≈half a
+  focused session for a basic version, up to a full session with edge cases): L1 — add float flag + window
+  bounds to the `.cws` `OpenDocuments` schema and write them (enumerate `_wiredHostWindows`; `Window.Position`
+  / `Width` / `Height` give geometry) — small, lands clean. L2 — INSTRUMENT-FIRST the programmatic
+  float-to-bounds on open (prove the Dock float API places a doc at a given rectangle before building the
+  restore loop; the programmatic path is fiddlier than the drag gesture and may need a deferred/post-layout
+  pass like `TryWireHostWindowsUndo`). L3 — the restore loop + an OFF-SCREEN GUARD that clamps restored
+  windows to a currently-visible monitor (a doc saved on a now-disconnected display must not vanish).
+  Edge cases that push toward a full session: multiple tabs sharing one torn-off window, multi-monitor
+  coordinates, and a float window that was itself re-docked into a split. See `docs/v2-backlog.md`.
