@@ -21,6 +21,7 @@ public partial class App : Application
 {
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private bool _isShuttingDown;
+    private bool _launchHandled;
 
     // macOS: 1×1 transparent background window that keeps the menu bar alive
     // when no workspace window is open (standard macOS behaviour).
@@ -56,8 +57,11 @@ public partial class App : Application
 
         // Wire CrfWarningBrush to the active color theme so Project Tree warning nodes
         // use System.Warning from the theme rather than a literal color value.
+        // Also keeps ThemeService.CurrentVariant in sync so ClipboardRenderPolicy.FollowSystem works.
         UpdateCrfWarningBrush();
         ThemeService.ThemeChanged += (_, _) =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(UpdateCrfWarningBrush);
+        ActualThemeVariantChanged += (_, _) =>
             Avalonia.Threading.Dispatcher.UIThread.Post(UpdateCrfWarningBrush);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -98,17 +102,24 @@ public partial class App : Application
             {
                 // Load workspace files on startup (Windows/Linux).
                 // For now: just show the window; workspace loading is a stub in 6b.
+                // Launch action skipped — startup file args take precedence.
                 firstWindow.Show();
             }
             else if (OperatingSystem.IsMacOS())
             {
+                firstWindow.Show();
+                var launchVm = (WorkspaceViewModel)firstWindow.DataContext!;
                 Avalonia.Threading.Dispatcher.UIThread.Post(
-                    ShowFirstWindowIfNeeded,
+                    () => { if (!_launchHandled) { _launchHandled = true; ApplyLaunchSettings(launchVm); } },
                     Avalonia.Threading.DispatcherPriority.Background);
             }
             else
             {
                 firstWindow.Show();
+                var launchVm = (WorkspaceViewModel)firstWindow.DataContext!;
+                Avalonia.Threading.Dispatcher.UIThread.Post(
+                    () => ApplyLaunchSettings(launchVm),
+                    Avalonia.Threading.DispatcherPriority.Background);
             }
 
             // Apple Events (macOS Finder double-click).
@@ -119,23 +130,23 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    private void ShowFirstWindowIfNeeded()
+    private static async void ApplyLaunchSettings(WorkspaceViewModel vm)
     {
-        // Called at Background priority on macOS — if an Apple Event fires first,
-        // OnActivated will have shown the window. Otherwise, show it blank.
-        if (_desktop?.Windows.OfType<WorkspaceWindow>().Any() != true)
+        try
         {
-            // No window shown yet; show a blank workspace.
-            var w = new WorkspaceWindow { DataContext = new WorkspaceViewModel() };
-            if (_desktop is not null) _desktop.MainWindow = w;
-            w.Show();
+            var prefs = AppPreferencesIo.Load();
+            vm.ApplyLaunchPane(prefs.LaunchPane ?? LaunchPane.Palette);
+            await vm.ExecuteLaunchActionAsync(prefs.LaunchAction ?? LaunchAction.Welcome);
         }
+        catch { /* non-critical — fall back to default startup state */ }
     }
 
     private void OnActivated(ActivatedEventArgs e, WorkspaceWindow firstWindow)
     {
         if (e.Kind != ActivationKind.File) return;
         if (e is not FileActivatedEventArgs fileArgs) return;
+        // Startup file open suppresses the launch action (fires before Background priority runs).
+        _launchHandled = true;
         // Show the first window if not yet visible.
         if (!firstWindow.IsVisible)
             firstWindow.Show();
@@ -283,6 +294,10 @@ public partial class App : Application
         var variant = ActualThemeVariant == ThemeVariant.Dark
             ? ColorVariant.Dark
             : ColorVariant.Light;
+
+        // Keep ClipboardRenderPolicy.FollowSystem in sync with the OS variant.
+        ThemeService.CurrentVariant = variant;
+
         var rgba  = ThemeService.Active.Resolve(ColorRole.SystemWarning, variant);
         var color = Color.FromArgb(rgba.A, rgba.R, rgba.G, rgba.B);
         if (Resources.TryGetResource("CrfWarningBrush", null, out var res)

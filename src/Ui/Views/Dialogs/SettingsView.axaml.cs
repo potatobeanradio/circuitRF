@@ -17,6 +17,9 @@ public partial class SettingsView : Window
 
     private readonly string? _workspaceDirPath;
 
+    // Guard: prevents recursive writes during programmatic ComboBox population.
+    private bool _updatingGeneral;
+
     // Snapshot of ThemeService.Active taken on open — restored by Cancel/Revert.
     private ColorTheme _originalTheme;
 
@@ -46,8 +49,60 @@ public partial class SettingsView : Window
 
     private void OnLoaded(object? sender, RoutedEventArgs e)
     {
+        LoadGeneralPrefs();
         PopulateThemeCombo();
         LoadThemeIntoEditor(ThemeService.Active);
+    }
+
+    // ── General tab ──────────────────────────────────────────────────────────
+
+    private void LoadGeneralPrefs()
+    {
+        _updatingGeneral = true;
+        try
+        {
+            var prefs = AppPreferencesIo.Load();
+
+            LaunchActionCombo.ItemsSource = new[]
+            {
+                "Welcome", "New Schematic", "New Workspace", "Open Workspace",
+                "New Data Display", "New Symbol",
+            };
+            LaunchActionCombo.SelectedIndex = (int)(prefs.LaunchAction ?? LaunchAction.Welcome);
+
+            LaunchPaneCombo.ItemsSource   = new[] { "Project Tree", "Palette" };
+            LaunchPaneCombo.SelectedIndex = (int)(prefs.LaunchPane ?? LaunchPane.Palette);
+
+            CopyColorCombo.ItemsSource   = new[] { "Follow System", "Force Light", "Force Dark" };
+            CopyColorCombo.SelectedIndex = (int)(prefs.CopyColorMode ?? CopyColorMode.FollowSystem);
+
+            TransparentBgCheck.IsChecked = prefs.CopyTransparentBackground ?? true;
+        }
+        finally { _updatingGeneral = false; }
+    }
+
+    private void OnLaunchSettingChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p =>
+        {
+            if (LaunchActionCombo.SelectedIndex >= 0)
+                p.LaunchAction = (LaunchAction)LaunchActionCombo.SelectedIndex;
+            if (LaunchPaneCombo.SelectedIndex >= 0)
+                p.LaunchPane = (LaunchPane)LaunchPaneCombo.SelectedIndex;
+        });
+    }
+
+    private void OnCopyColorChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingGeneral || CopyColorCombo.SelectedIndex < 0) return;
+        AppPreferencesIo.Update(p => p.CopyColorMode = (CopyColorMode)CopyColorCombo.SelectedIndex);
+    }
+
+    private void OnTransparentBgChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p => p.CopyTransparentBackground = TransparentBgCheck.IsChecked);
     }
 
     // ── Theme combo ──────────────────────────────────────────────────────────
@@ -57,14 +112,46 @@ public partial class SettingsView : Window
         _updating = true;
         try
         {
-            var names = ThemeResolver.DiscoverThemeNames(_workspaceDirPath);
-            ThemeCombo.ItemsSource = names;
-
+            var names = ThemeResolver.DiscoverThemeNames(_workspaceDirPath).ToList();
             var activeName = ThemeService.Active.Name;
-            var idx = names.ToList().IndexOf(activeName);
-            ThemeCombo.SelectedIndex = idx >= 0 ? idx : 0;
+            var idx = names.IndexOf(activeName);
+
+            if (idx >= 0 && !DiffersFromPreset(ThemeService.Active))
+            {
+                // Active theme matches the discovered preset exactly.
+                ThemeCombo.ItemsSource = names;
+                ThemeCombo.SelectedIndex = idx;
+            }
+            else
+            {
+                // Active colors differ from any preset (or preset name unknown) — show as "Custom".
+                if (!names.Contains("Custom", StringComparer.OrdinalIgnoreCase))
+                    names.Insert(0, "Custom");
+                ThemeCombo.ItemsSource = names;
+                ThemeCombo.SelectedItem = "Custom";
+            }
         }
         finally { _updating = false; }
+    }
+
+    /// <summary>
+    /// Returns true if the active theme's colors differ from its named preset.
+    /// A name that resolves to a different preset (e.g. unsaved "Custom" falls back to built-in)
+    /// is treated as differing. Compares all ColorRole.All for both Light and Dark variants.
+    /// </summary>
+    private bool DiffersFromPreset(ColorTheme active)
+    {
+        var preset = ThemeResolver.Resolve(active.Name, _workspaceDirPath);
+        if (!string.Equals(preset.Name, active.Name, StringComparison.OrdinalIgnoreCase))
+            return true;  // resolver returned a fallback — name not found in any source
+        foreach (var role in ColorRole.All)
+        {
+            if (active.Resolve(role, ColorVariant.Light) != preset.Resolve(role, ColorVariant.Light))
+                return true;
+            if (active.Resolve(role, ColorVariant.Dark)  != preset.Resolve(role, ColorVariant.Dark))
+                return true;
+        }
+        return false;
     }
 
     private void OnThemeComboChanged(object? sender, SelectionChangedEventArgs e)
@@ -105,6 +192,7 @@ public partial class SettingsView : Window
         [ColorRole.SchematicBackground]        = "Background",
         [ColorRole.SchematicGrid]              = "Grid",
         [ColorRole.SchematicWire]              = "Wire",
+        [ColorRole.SchematicWireRouting]       = "Wire Routing",
         [ColorRole.SchematicNodeLabelText]     = "Node Label Text",
         [ColorRole.SchematicInstanceNameText]  = "Instance Name Text",
         [ColorRole.SchematicParameterNameText] = "Parameter Text",
@@ -189,10 +277,60 @@ public partial class SettingsView : Window
         ApplyCurrentSliders();
     }
 
+    // ── RGBA integer edit boxes ──────────────────────────────────────────────
+
+    private void OnRgbaBoxLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox box) ApplyRgbaBox(box);
+    }
+
+    private void OnRgbaBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox box) return;
+        if (e.Key == Key.Return)  { ApplyRgbaBox(box);  e.Handled = true; }
+        else if (e.Key == Key.Escape) { RevertBox(box); e.Handled = true; }
+    }
+
+    private void ApplyRgbaBox(TextBox box)
+    {
+        if (_updating) return;
+        if (!int.TryParse(box.Text, out int val)) { RevertBox(box); return; }
+        val = Math.Clamp(val, 0, 255);
+        var slider = BoxToSlider(box);
+        if (slider is null) { RevertBox(box); return; }
+        box.Text = val.ToString();   // normalize (removes leading zeros etc.)
+        slider.Value = val;          // → OnSliderChanged → ApplyCurrentSliders → full sync
+    }
+
+    private void RevertBox(TextBox box)
+    {
+        if (_updating) return;
+        var slider = BoxToSlider(box);
+        if (slider is not null) box.Text = ((int)slider.Value).ToString();
+    }
+
+    private Slider? BoxToSlider(TextBox box) => box.Name switch
+    {
+        "LabelR" => SliderR,
+        "LabelG" => SliderG,
+        "LabelB" => SliderB,
+        "LabelA" => SliderA,
+        _        => null,
+    };
+
     private void OnHexLostFocus(object? sender, RoutedEventArgs e) => ParseAndApplyHex();
     private void OnHexKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Return) ParseAndApplyHex();
+        if (e.Key == Key.Return)
+        {
+            ParseAndApplyHex();
+            e.Handled = true;   // prevent Return from reaching the window default button
+        }
+        else if (e.Key == Key.Escape)
+        {
+            RefreshEditor();    // revert hex display to the current working-map color
+            e.Handled = true;
+        }
     }
 
     private void ParseAndApplyHex()
@@ -300,7 +438,7 @@ public partial class SettingsView : Window
             ThemeService.Active = theme;
 
             // Persist as user preference.
-            AppPreferencesIo.Save(new AppPreferences { ActiveThemeName = name });
+            AppPreferencesIo.Update(p => p.ActiveThemeName = name);
 
             // Ensure name appears in combo.
             var names = ThemeResolver.DiscoverThemeNames(_workspaceDirPath).ToList();
@@ -340,11 +478,25 @@ public partial class SettingsView : Window
     {
         // Persist the current active theme as the user preference.
         var activeName = ThemeService.Active.Name;
-        AppPreferencesIo.Save(new AppPreferences
-        {
-            ActiveThemeName = activeName != "Default" ? activeName : null,
-        });
+        AppPreferencesIo.Update(p => p.ActiveThemeName = activeName != "Default" ? activeName : null);
         Close();
+    }
+
+    // ── Color picker (double-tap role) ───────────────────────────────────────
+
+    private async void OnRoleDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (RoleList.SelectedItem is not RoleRowModel row) return;
+        var map     = SelectedVariant == ColorVariant.Dark ? _workingDark : _workingLight;
+        var current = map.GetValueOrDefault(row.Role, new Rgba(128, 128, 128));
+
+        var dialog = new ColorPickerDialog(current);
+        var result = await dialog.ShowDialog<Rgba?>(this);
+        if (result is { } picked)
+        {
+            SetSlidersFromRgba(picked);
+            ApplyRgbaToActiveRole(picked);
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

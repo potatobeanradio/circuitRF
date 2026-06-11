@@ -9,6 +9,7 @@ public static class ColorRole
     public const string SchematicBackground        = "Schematic.Background";
     public const string SchematicGrid              = "Schematic.Grid";
     public const string SchematicWire              = "Schematic.Wire";
+    public const string SchematicWireRouting       = "Schematic.WireRouting";
     public const string SchematicNodeLabelText     = "Schematic.NodeLabelText";
     public const string SchematicInstanceNameText  = "Schematic.InstanceNameText";
     public const string SchematicParameterNameText = "Schematic.ParameterNameText";
@@ -22,7 +23,7 @@ public static class ColorRole
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
-        SchematicBackground, SchematicGrid, SchematicWire,
+        SchematicBackground, SchematicGrid, SchematicWire, SchematicWireRouting,
         SchematicNodeLabelText, SchematicInstanceNameText,
         SchematicParameterNameText, SchematicComponentNameText,
         SchematicConnectedPin, SchematicWireJunctionDot,

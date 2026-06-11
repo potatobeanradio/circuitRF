@@ -813,10 +813,35 @@ keyed by absolute path) and is NOT shown in the project tree (the tree reflects 
 - Bound to File → New Schematic in the macOS NativeMenu (`Meta+Shift+N`) and in-window Menu
   (`Ctrl+Shift+N`). **New Cell (workspace-required) has no keyboard shortcut** — it was displaced.
 
-### Launch state
-At startup, the constructor auto-opens one `Untitled-Schematic-1` scratch tab so the app lands directly
-on an editable canvas. The welcome message is "circuitRF ready." (not "Create a New Schematic to get
-started" — the schematic is already open).
+### Launch state and action ownership
+
+The `WorkspaceViewModel` constructor does **not** open any document. `CreateLayout()` already installs a
+Welcome stub in the DocumentDock, so the app always lands on Welcome by default.
+
+`ExecuteLaunchActionAsync(LaunchAction)` is called once at Background priority after the first window is
+shown (from `App.axaml.cs ApplyLaunchSettings`). It is the **sole owner** of the initial document:
+
+| Action         | Behavior                                                                                  |
+|----------------|-------------------------------------------------------------------------------------------|
+| `Welcome`      | Leave the Welcome stub; add nothing. **This is the default.**                             |
+| `NewSchematic` | `RemoveWelcomeStub()` then `NewScratchSchematic()`.                                       |
+| `NewWorkspace` | Show New Workspace dialog; on success, `RemoveWelcomeStub()` (from `CreateDefaultLayout`). If cancelled, Welcome stays. |
+| `OpenWorkspace`| Show folder picker; on success, `RemoveWelcomeStub()` (no-op if `RestoreOpenDocuments` already removed it). If cancelled, Welcome stays. |
+| `NewSymbol`    | Fall back to Welcome + `Messages.Info` (no blank-symbol path without a cell).             |
+| `NewDataDisplay`| Fall back to Welcome + `Messages.Info` (not yet implemented).                            |
+
+**Enum order:** `Welcome` is first (value 0 = default). `AppPreferences.LaunchAction` defaults to
+`Welcome` in both `App.axaml.cs` and `SettingsView.LoadGeneralPrefs`.
+
+Command-line file args still override (the `startupPaths.Length > 0` gate in `App.axaml.cs` skips
+`ApplyLaunchSettings` entirely).
+
+**macOS startup path:** On macOS (no file args), `firstWindow.Show()` and `ApplyLaunchSettings` are
+called inline in `OnFrameworkInitializationCompleted` — NOT deferred to a `ShowFirstWindowIfNeeded`
+helper (which has been removed; its guard on `_desktop.Windows` was always false because `firstWindow`
+is added to `_desktop.Windows` by assignment to `MainWindow`, before `Show()`). The `_launchHandled`
+flag (`bool`, default false) makes a startup Finder file-open take precedence: `OnActivated` sets it
+true before the Background-priority `ApplyLaunchSettings` post runs, so the launch action is skipped.
 
 ### Materialize + SavePlanDialog (Phase 6h Step 2 — done)
 

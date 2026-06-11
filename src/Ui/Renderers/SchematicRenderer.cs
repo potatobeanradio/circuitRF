@@ -870,7 +870,7 @@ public static class SchematicRenderer
             {
                 IsAntialias = true, Style = SKPaintStyle.Stroke,
                 StrokeWidth = (float)Math.Max(1.0, zoom * 4),
-                Color       = theme.WirePreview,
+                Color       = theme.WireRouting,
                 PathEffect  = SKPathEffect.CreateDash([8f, 4f], 0f),
             };
             for (int i = 0; i < pts2.Count - 1; i++)

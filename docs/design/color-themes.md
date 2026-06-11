@@ -123,6 +123,30 @@ hardcoded `Light`/`Dark` statics. Change it from *source of truth* to *projectio
    (workspace → user → Assets), edit-forks-to-custom, save custom `.ccolor`, `SettingsView` color editor with
    live preview.
 
+## ColorPicker control theme
+
+`ColorPickerDialog` hosts `Avalonia.Controls.ColorPicker 12.0.3`'s `ColorView` control.
+The theme include **must** appear in `App.axaml Application.Styles`:
+
+```xml
+<StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml"/>
+```
+
+Notes:
+- Extension is `.xaml` (not `.axaml`) — that is the actual embedded resource name in the 12.0.3 DLL.
+- Place after the Dock Fluent theme; order within `Application.Styles` does not otherwise matter.
+- Without this include, `ColorView` instantiates with no template and renders blank.
+
+## Hex field behavior
+
+The `HexBox` in `SettingsView` is an **editable input** (standard color-picker UX):
+- **Return** — applies the typed hex code to the active role; `e.Handled = true` prevents Return
+  from reaching the window's default button (which would otherwise close Settings).
+- **Escape** — reverts the hex display to the current working-map color via `RefreshEditor()`;
+  `e.Handled = true`.
+- **LostFocus** — applies the hex code (same as Return, no `e.Handled` needed on focus loss).
+- Format: `RRGGBBAA` (8 hex digits). A 6-digit input is treated as fully opaque (`AA = FF`).
+
 ## Open items
 - Exact `.ccolor` JSON schema (settle at Layer 1 implementation).
 - User themes directory location (app config dir — confirm per-OS path with the preferences store).

@@ -113,7 +113,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
     // ---- Recent Workspaces (persisted in AppPreferences) --------------------
 
-    private readonly AppPreferences _preferences;
     private readonly List<string> _recentWorkspaces;
 
     // ---- Recently-Placed MRU (persisted in AppPreferences) ------------------
@@ -199,9 +198,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             npc.PropertyChanged += OnDocumentDockPropertyChanged;
 
         // Load persisted preferences and seed the recent lists.
-        _preferences      = AppPreferencesIo.Load();
-        _recentWorkspaces = new List<string>(_preferences.RecentWorkspaces ?? []);
-        _recentlyPlaced   = ParseMruPlaced(_preferences.RecentlyPlaced);
+        var prefs         = AppPreferencesIo.Load();
+        _recentWorkspaces = new List<string>(prefs.RecentWorkspaces ?? []);
+        _recentlyPlaced   = ParseMruPlaced(prefs.RecentlyPlaced);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         RebuildRecentMenuItems();
 
@@ -219,8 +218,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         Avalonia.Threading.Dispatcher.UIThread.Post(
             CheckForRecovery, Avalonia.Threading.DispatcherPriority.Background);
 
-        // Auto-open one scratch schematic so the app lands directly on an editable canvas.
-        NewScratchSchematic();
         Messages.Info("circuitRF ready.");
     }
 
@@ -234,6 +231,67 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         parameter
         ?? (Avalonia.Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)
            ?.Windows.FirstOrDefault(w => ReferenceEquals(w.DataContext, this));
+
+    /// <summary>
+    /// Switches the left ToolDock's active tab to the specified launch pane.
+    /// Called once after the window is shown; a no-op if the dock isn't ready.
+    /// </summary>
+    public void ApplyLaunchPane(LaunchPane pane)
+    {
+        IDockable? target = pane == LaunchPane.Palette
+            ? (IDockable?)_factory.PaletteTool
+            : _factory.ProjectTreeTool;
+        if (target is not null)
+            _factory.SetActiveDockable(target);
+    }
+
+    /// <summary>
+    /// Executes the stored launch action. Called once after window show when no files
+    /// were passed as startup arguments. The launch action OWNS the initial document;
+    /// the Welcome stub (created by CreateLayout) is removed for every action except Welcome.
+    /// For NewWorkspace/OpenWorkspace, RemoveWelcomeStub is only called on success so a
+    /// cancelled dialog leaves Welcome showing rather than an empty dock.
+    /// </summary>
+    public async Task ExecuteLaunchActionAsync(LaunchAction action)
+    {
+        switch (action)
+        {
+            case LaunchAction.Welcome:
+                // Leave the Welcome stub showing; add nothing.
+                break;
+
+            case LaunchAction.NewSchematic:
+                _factory.RemoveWelcomeStub();
+                NewScratchSchematic();
+                break;
+
+            case LaunchAction.NewWorkspace:
+                await NewWorkspace(null);
+                // NewWorkspace calls CreateDefaultLayout (new Welcome stub) on success;
+                // remove it only when the workspace was actually created (not cancelled).
+                if (CurrentWorkspacePath is not null)
+                    _factory.RemoveWelcomeStub();
+                break;
+
+            case LaunchAction.OpenWorkspace:
+                await OpenWorkspace(null);
+                // RemoveWelcomeStub is a no-op if RestoreOpenDocuments already removed it.
+                // Called only on success so a cancelled picker leaves Welcome showing.
+                if (CurrentWorkspacePath is not null)
+                    _factory.RemoveWelcomeStub();
+                break;
+
+            case LaunchAction.NewSymbol:
+                // A blank symbol editor requires a cell folder; fall back to Welcome.
+                Messages.Info("New Symbol on launch requires a workspace and cell. Open or create a workspace first.");
+                break;
+
+            case LaunchAction.NewDataDisplay:
+                // Data Display is not yet implemented; fall back to Welcome.
+                Messages.Info("Data Display is not yet available. Select another On-launch action in Settings.");
+                break;
+        }
+    }
 
     // ---- File commands -------------------------------------------------------
 
@@ -698,10 +756,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
     private void SaveRecent()
     {
-        _preferences.RecentWorkspaces = _recentWorkspaces.Count > 0
-            ? new List<string>(_recentWorkspaces)
-            : null;
-        AppPreferencesIo.Save(_preferences);
+        var list = _recentWorkspaces.Count > 0 ? new List<string>(_recentWorkspaces) : null;
+        AppPreferencesIo.Update(p => p.RecentWorkspaces = list);
     }
 
     // ── Recently-Placed MRU ──────────────────────────────────────────────────
@@ -726,10 +782,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
 
-        _preferences.RecentlyPlaced = _recentlyPlaced.Count > 0
-            ? _recentlyPlaced.Select(k => k.ToString()).ToList()
-            : null;
-        AppPreferencesIo.Save(_preferences);
+        var list = _recentlyPlaced.Count > 0 ? _recentlyPlaced.Select(k => k.ToString()).ToList() : null;
+        AppPreferencesIo.Update(p => p.RecentlyPlaced = list);
     }
 
     // Rebuilds the in-window menu ObservableCollection and fires RecentWorkspacesChanged

@@ -68,6 +68,12 @@
       "b": 243,
       "a": 255
     },
+    "Schematic.WireRouting": {
+      "r": 164,
+      "g": 63,
+      "b": 129,
+      "a": 255
+    },
     "System.Warning": {
       "r": 206,
       "g": 74,
@@ -140,6 +146,12 @@
       "r": 138,
       "g": 120,
       "b": 255,
+      "a": 255
+    },
+    "Schematic.WireRouting": {
+      "r": 214,
+      "g": 122,
+      "b": 178,
       "a": 255
     },
     "System.Warning": {

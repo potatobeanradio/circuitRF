@@ -10,114 +10,183 @@
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
-    <Grid RowDefinitions="Auto,*,Auto" Margin="14">
+    <Grid RowDefinitions="*,Auto" Margin="14">
 
-        <!-- ── Theme selector row ─────────────────────────────────────────── -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,10">
-            <!-- Variant toggle (right-docked first so it doesn't collapse) -->
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                <RadioButton Name="LightRadio" Content="Light" IsChecked="True"
-                             GroupName="Variant" Click="OnVariantChanged" FontSize="12"/>
-                <RadioButton Name="DarkRadio"  Content="Dark"
-                             GroupName="Variant" Click="OnVariantChanged" FontSize="12"/>
-            </StackPanel>
+        <!-- ── Tabs ───────────────────────────────────────────────────────── -->
+        <TabControl Grid.Row="0">
 
-            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <TextBlock Text="Color Theme:" VerticalAlignment="Center" FontSize="12"/>
-                <ComboBox Name="ThemeCombo" FontSize="12" MinWidth="140"
-                          SelectionChanged="OnThemeComboChanged"/>
-                <Button Name="SaveThemeButton" Content="Save Theme…" FontSize="12"
-                        Click="OnSaveThemeClick" Padding="8,4"/>
-            </StackPanel>
-        </DockPanel>
+            <!-- ── General tab ────────────────────────────────────────────── -->
+            <TabItem Header="General">
+                <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="0">
 
-        <!-- ── Main editor panel ──────────────────────────────────────────── -->
-        <Grid Grid.Row="1" ColumnDefinitions="200,10,*">
+                        <!-- On Launch section -->
+                        <TextBlock Text="On Launch" FontSize="11" FontWeight="SemiBold"
+                                   Opacity="0.55" Margin="0,0,0,6"/>
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto"
+                              Margin="0,0,0,20">
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Action:" VerticalAlignment="Center" FontSize="12"/>
+                            <ComboBox  Grid.Row="0" Grid.Column="1"
+                                       Name="LaunchActionCombo" FontSize="12" MinWidth="180"
+                                       HorizontalAlignment="Left"
+                                       SelectionChanged="OnLaunchSettingChanged"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0"
+                                       Text="Focus pane:" VerticalAlignment="Center" FontSize="12"/>
+                            <ComboBox  Grid.Row="2" Grid.Column="1"
+                                       Name="LaunchPaneCombo" FontSize="12" MinWidth="180"
+                                       HorizontalAlignment="Left"
+                                       SelectionChanged="OnLaunchSettingChanged"/>
+                        </Grid>
 
-            <!-- Role list -->
-            <Border Grid.Column="0"
-                    BorderBrush="{DynamicResource ThemeBorderMidBrush}"
-                    BorderThickness="1"
-                    CornerRadius="4"
-                    ClipToBounds="True">
-                <ListBox Name="RoleList"
-                         SelectionMode="Single"
-                         SelectionChanged="OnRoleSelected"
-                         FontSize="11.5"
-                         Padding="2">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="dialogs:RoleRowModel">
-                            <StackPanel Orientation="Horizontal" Spacing="7" Margin="2,1">
-                                <Rectangle Width="14" Height="14" RadiusX="2" RadiusY="2"
-                                           VerticalAlignment="Center">
-                                    <Rectangle.Fill>
-                                        <SolidColorBrush Color="{Binding SwatchColor}"/>
-                                    </Rectangle.Fill>
-                                </Rectangle>
-                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
+                        <!-- Copy / Export section -->
+                        <TextBlock Text="Copy / Export" FontSize="11" FontWeight="SemiBold"
+                                   Opacity="0.55" Margin="0,0,0,6"/>
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="0"
+                                       Text="Copy color:" VerticalAlignment="Center" FontSize="12"/>
+                            <ComboBox  Grid.Row="0" Grid.Column="1"
+                                       Name="CopyColorCombo" FontSize="12" MinWidth="180"
+                                       HorizontalAlignment="Left"
+                                       SelectionChanged="OnCopyColorChanged"/>
+                            <CheckBox  Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Name="TransparentBgCheck"
+                                       Content="Transparent background" FontSize="12"
+                                       IsCheckedChanged="OnTransparentBgChanged"/>
+                        </Grid>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ── Color Theme tab ────────────────────────────────────────── -->
+            <TabItem Header="Color Theme">
+                <Grid RowDefinitions="Auto,*" Margin="0,8,0,0">
+
+                    <!-- Theme selector row -->
+                    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                        <!-- Variant toggle (right-docked first so it doesn't collapse) -->
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <RadioButton Name="LightRadio" Content="Light" IsChecked="True"
+                                         GroupName="Variant" Click="OnVariantChanged" FontSize="12"/>
+                            <RadioButton Name="DarkRadio"  Content="Dark"
+                                         GroupName="Variant" Click="OnVariantChanged" FontSize="12"/>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="Color Theme:" VerticalAlignment="Center" FontSize="12"/>
+                            <ComboBox Name="ThemeCombo" FontSize="12" MinWidth="140"
+                                      SelectionChanged="OnThemeComboChanged"/>
+                            <Button Name="SaveThemeButton" Content="Save Theme…" FontSize="12"
+                                    Click="OnSaveThemeClick" Padding="8,4"/>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <!-- Main editor panel -->
+                    <Grid Grid.Row="1" ColumnDefinitions="200,10,*">
+
+                        <!-- Role list -->
+                        <Border Grid.Column="0"
+                                BorderBrush="{DynamicResource ThemeBorderMidBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                ClipToBounds="True">
+                            <ListBox Name="RoleList"
+                                     SelectionMode="Single"
+                                     SelectionChanged="OnRoleSelected"
+                                     DoubleTapped="OnRoleDoubleTapped"
+                                     FontSize="11.5"
+                                     Padding="2">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="dialogs:RoleRowModel">
+                                        <StackPanel Orientation="Horizontal" Spacing="7" Margin="2,1">
+                                            <Rectangle Width="14" Height="14" RadiusX="2" RadiusY="2"
+                                                       VerticalAlignment="Center">
+                                                <Rectangle.Fill>
+                                                    <SolidColorBrush Color="{Binding SwatchColor}"/>
+                                                </Rectangle.Fill>
+                                            </Rectangle>
+                                            <TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+
+                        <!-- Color editor (right panel) -->
+                        <StackPanel Grid.Column="2" Spacing="10">
+
+                            <!-- Color preview swatch -->
+                            <Border CornerRadius="4" ClipToBounds="True" Height="40">
+                                <Rectangle Name="ColorPreviewRect"/>
+                            </Border>
+
+                            <!-- RGBA sliders + linked integer edit boxes -->
+                            <Grid ColumnDefinitions="14,*,46" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="R" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+                                <Slider    Grid.Row="0" Grid.Column="1" Name="SliderR" Minimum="0" Maximum="255"
+                                           IsSnapToTickEnabled="True" TickFrequency="1"
+                                           ValueChanged="OnSliderChanged" Margin="6,0"/>
+                                <TextBox   Grid.Row="0" Grid.Column="2" Name="LabelR"
+                                           FontSize="12" Width="42" MaxLength="3" TextAlignment="Center"
+                                           HorizontalAlignment="Center"
+                                           FontFamily="Courier New,Consolas,monospace"
+                                           LostFocus="OnRgbaBoxLostFocus" KeyDown="OnRgbaBoxKeyDown"/>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="G" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+                                <Slider    Grid.Row="1" Grid.Column="1" Name="SliderG" Minimum="0" Maximum="255"
+                                           IsSnapToTickEnabled="True" TickFrequency="1"
+                                           ValueChanged="OnSliderChanged" Margin="6,0"/>
+                                <TextBox   Grid.Row="1" Grid.Column="2" Name="LabelG"
+                                           FontSize="12" Width="42" MaxLength="3" TextAlignment="Center"
+                                           HorizontalAlignment="Center"
+                                           FontFamily="Courier New,Consolas,monospace"
+                                           LostFocus="OnRgbaBoxLostFocus" KeyDown="OnRgbaBoxKeyDown"/>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="B" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+                                <Slider    Grid.Row="2" Grid.Column="1" Name="SliderB" Minimum="0" Maximum="255"
+                                           IsSnapToTickEnabled="True" TickFrequency="1"
+                                           ValueChanged="OnSliderChanged" Margin="6,0"/>
+                                <TextBox   Grid.Row="2" Grid.Column="2" Name="LabelB"
+                                           FontSize="12" Width="42" MaxLength="3" TextAlignment="Center"
+                                           HorizontalAlignment="Center"
+                                           FontFamily="Courier New,Consolas,monospace"
+                                           LostFocus="OnRgbaBoxLostFocus" KeyDown="OnRgbaBoxKeyDown"/>
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="A" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
+                                <Slider    Grid.Row="3" Grid.Column="1" Name="SliderA" Minimum="0" Maximum="255"
+                                           IsSnapToTickEnabled="True" TickFrequency="1"
+                                           ValueChanged="OnSliderChanged" Margin="6,0"/>
+                                <TextBox   Grid.Row="3" Grid.Column="2" Name="LabelA"
+                                           FontSize="12" Width="42" MaxLength="3" TextAlignment="Center"
+                                           HorizontalAlignment="Center"
+                                           FontFamily="Courier New,Consolas,monospace"
+                                           LostFocus="OnRgbaBoxLostFocus" KeyDown="OnRgbaBoxKeyDown"/>
+
+                            </Grid>
+
+                            <!-- Hex input -->
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="#" VerticalAlignment="Center" FontSize="12" FontWeight="Medium" Width="14"/>
+                                <TextBox Name="HexBox" FontSize="12" Width="88" MaxLength="8"
+                                         LostFocus="OnHexLostFocus" KeyDown="OnHexKeyDown"
+                                         FontFamily="Courier New,Consolas,monospace"/>
                             </StackPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-            </Border>
 
-            <!-- Color editor (right panel) -->
-            <StackPanel Grid.Column="2" Spacing="10">
+                            <!-- Role path label -->
+                            <TextBlock Name="RoleNameLabel" FontSize="10.5" Opacity="0.5"/>
 
-                <!-- Color preview swatch -->
-                <Border CornerRadius="4" ClipToBounds="True" Height="50">
-                    <Rectangle Name="ColorPreviewRect"/>
-                </Border>
-
-                <!-- RGBA sliders -->
-                <Grid ColumnDefinitions="14,*,36" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="7">
-
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="R" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
-                    <Slider    Grid.Row="0" Grid.Column="1" Name="SliderR" Minimum="0" Maximum="255"
-                               IsSnapToTickEnabled="True" TickFrequency="1"
-                               ValueChanged="OnSliderChanged" Margin="6,0"/>
-                    <TextBlock Grid.Row="0" Grid.Column="2" Name="LabelR" Text="0"
-                               VerticalAlignment="Center" FontSize="12" TextAlignment="Right"/>
-
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="G" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
-                    <Slider    Grid.Row="1" Grid.Column="1" Name="SliderG" Minimum="0" Maximum="255"
-                               IsSnapToTickEnabled="True" TickFrequency="1"
-                               ValueChanged="OnSliderChanged" Margin="6,0"/>
-                    <TextBlock Grid.Row="1" Grid.Column="2" Name="LabelG" Text="0"
-                               VerticalAlignment="Center" FontSize="12" TextAlignment="Right"/>
-
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="B" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
-                    <Slider    Grid.Row="2" Grid.Column="1" Name="SliderB" Minimum="0" Maximum="255"
-                               IsSnapToTickEnabled="True" TickFrequency="1"
-                               ValueChanged="OnSliderChanged" Margin="6,0"/>
-                    <TextBlock Grid.Row="2" Grid.Column="2" Name="LabelB" Text="0"
-                               VerticalAlignment="Center" FontSize="12" TextAlignment="Right"/>
-
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="A" VerticalAlignment="Center" FontSize="12" FontWeight="Medium"/>
-                    <Slider    Grid.Row="3" Grid.Column="1" Name="SliderA" Minimum="0" Maximum="255"
-                               IsSnapToTickEnabled="True" TickFrequency="1"
-                               ValueChanged="OnSliderChanged" Margin="6,0"/>
-                    <TextBlock Grid.Row="3" Grid.Column="2" Name="LabelA" Text="255"
-                               VerticalAlignment="Center" FontSize="12" TextAlignment="Right"/>
+                        </StackPanel>
+                    </Grid>
 
                 </Grid>
+            </TabItem>
 
-                <!-- Hex input -->
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="#" VerticalAlignment="Center" FontSize="12" FontWeight="Medium" Width="14"/>
-                    <TextBox Name="HexBox" FontSize="12" Width="88" MaxLength="8"
-                             LostFocus="OnHexLostFocus" KeyDown="OnHexKeyDown"
-                             FontFamily="Courier New,Consolas,monospace"/>
-                </StackPanel>
+        </TabControl>
 
-                <!-- Role path label -->
-                <TextBlock Name="RoleNameLabel" FontSize="10.5" Opacity="0.5"/>
-
-            </StackPanel>
-        </Grid>
-
-        <!-- ── Footer buttons ─────────────────────────────────────────────── -->
-        <DockPanel Grid.Row="2" Margin="0,10,0,0">
+        <!-- ── Footer buttons (shared across all tabs) ────────────────────── -->
+        <DockPanel Grid.Row="1" Margin="0,10,0,0">
             <Button DockPanel.Dock="Left" Content="Revert" FontSize="12"
                     Click="OnRevertClick" Padding="8,4"/>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">

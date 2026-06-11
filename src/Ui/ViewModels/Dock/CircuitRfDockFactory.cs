@@ -36,6 +36,10 @@ public class CircuitRfDockFactory : Factory
     private IDocumentDock? _documentDock;
     public IDocumentDock? DocumentDock => _documentDock;
 
+    // Expose the left project-tree ToolDock so launch-pane focus can be applied after layout init.
+    private IToolDock? _projectTreeDock;
+    public IToolDock? ProjectTreeDock => _projectTreeDock;
+
     // Expose the dock tools so WorkspaceViewModel can access the message sink and properties panel.
     public MessagesTool?     MessagesTool     { get; private set; }
     public ProjectTreeTool?  ProjectTreeTool  { get; private set; }
@@ -93,6 +97,7 @@ public class CircuitRfDockFactory : Factory
             Alignment        = Alignment.Left,
             GripMode         = GripMode.Visible,
         };
+        _projectTreeDock = projectTreeDock;
 
         var propertiesDock = new ToolDock
         {
@@ -251,6 +256,7 @@ public class CircuitRfDockFactory : Factory
             Alignment        = Alignment.Left,
             GripMode         = GripMode.Visible,
         };
+        _projectTreeDock = projectTreeDock;
 
         var propertiesDock = new ToolDock
         {

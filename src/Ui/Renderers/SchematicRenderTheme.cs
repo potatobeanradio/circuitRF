@@ -34,7 +34,7 @@ public sealed class SchematicRenderTheme
     public SKColor RubberBandStroke  { get; init; }
     public SKColor RubberBandFill    { get; init; }
     public SKColor GhostBody         { get; init; }
-    public SKColor WirePreview       { get; init; }
+    public SKColor WireRouting       { get; init; }
     public SKColor DisabledGlyph     { get; init; }
 
     // ── Projection factory (L2) ───────────────────────────────────────────────
@@ -76,7 +76,7 @@ public sealed class SchematicRenderTheme
             RubberBandStroke = isLight ? new SKColor(  0, 120, 215, 200) : new SKColor( 70, 160, 255, 200),
             RubberBandFill   = isLight ? new SKColor(  0, 120, 215,  28) : new SKColor( 70, 160, 255,  35),
             GhostBody        = isLight ? new SKColor(  0, 100, 180, 120) : new SKColor( 80, 180, 255, 130),
-            WirePreview      = isLight ? new SKColor(  0, 140,  60, 200) : new SKColor( 60, 200, 100, 220),
+            WireRouting      = SK(ColorRole.SchematicWireRouting),
             DisabledGlyph    = isLight ? new SKColor(200,  60,  60, 160) : new SKColor(240,  80,  80, 160),
         };
     }
@@ -113,7 +113,7 @@ public sealed class SchematicRenderTheme
         RubberBandStroke  = accent.WithAlpha(200),
         RubberBandFill    = accent.WithAlpha(35),
         GhostBody         = GhostBody,
-        WirePreview       = WirePreview,
+        WireRouting       = WireRouting,
         DisabledGlyph     = DisabledGlyph,
     };
 }

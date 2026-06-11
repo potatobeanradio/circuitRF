@@ -118,6 +118,12 @@
              Resolved from Dock.Avalonia.Themes.Fluent 12.0.0.2 package. -->
         <StyleInclude Source="avares://Dock.Avalonia.Themes.Fluent/DockFluentTheme.axaml"/>
 
+        <!-- Avalonia.Controls.ColorPicker Fluent theme (12.0.3).
+             Required for ColorView/ColorPicker controls to render with templates.
+             Path verified from embedded resources in Avalonia.Controls.ColorPicker.dll:
+             Avalonia.Controls.ColorPicker.Themes.Fluent.Fluent.xaml -->
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml"/>
+
         <!-- Document bodies: use Dock's NON-deferred (cached) content template.
              The default 'DockDocumentControlSingleContentTemplate' wraps each document body in a
              DeferredContentControl that realizes content on a background-priority timeline. In our

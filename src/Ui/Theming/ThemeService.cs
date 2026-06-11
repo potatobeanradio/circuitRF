@@ -22,4 +22,11 @@ public static class ThemeService
     }
 
     public static event EventHandler? ThemeChanged;
+
+    /// <summary>
+    /// The current OS/system color variant (Light or Dark).
+    /// Set by App on startup and on <c>OnActualThemeVariantChanged</c> so that
+    /// <see cref="ClipboardRenderPolicy"/> can resolve FollowSystem without an Avalonia dependency.
+    /// </summary>
+    public static ColorVariant CurrentVariant { get; set; } = ColorVariant.Light;
 }

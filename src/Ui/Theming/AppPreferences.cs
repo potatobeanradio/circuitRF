@@ -6,6 +6,9 @@ using System.Text.Json.Serialization;
 
 namespace CircuitRF.Ui.Theming;
 
+public enum LaunchAction { Welcome, NewSchematic, NewWorkspace, OpenWorkspace, NewDataDisplay, NewSymbol }
+public enum LaunchPane   { ProjectTree, Palette }
+
 public sealed class AppPreferences
 {
     [JsonPropertyName("active_theme_name")]
@@ -21,6 +24,24 @@ public sealed class AppPreferences
     [JsonPropertyName("recently_placed")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? RecentlyPlaced { get; set; }
+
+    // Clipboard render policy — null means use the default (FollowSystem / transparent).
+    [JsonPropertyName("copy_color_mode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CopyColorMode? CopyColorMode { get; set; }
+
+    [JsonPropertyName("copy_transparent_background")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? CopyTransparentBackground { get; set; }
+
+    // Launch behavior — null means use defaults (NewSchematic / Palette).
+    [JsonPropertyName("launch_action")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LaunchAction? LaunchAction { get; set; }
+
+    [JsonPropertyName("launch_pane")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public LaunchPane? LaunchPane { get; set; }
 }
 
 public static class AppPreferencesIo
@@ -57,5 +78,13 @@ public static class AppPreferencesIo
             File.WriteAllText(PrefsPath, JsonSerializer.Serialize(prefs, JsonOpts));
         }
         catch { /* non-critical — preference loss is recoverable */ }
+    }
+
+    /// <summary>Load → mutate → save in one step so partial writes never clobber other fields.</summary>
+    public static void Update(Action<AppPreferences> mutate)
+    {
+        var prefs = Load();
+        mutate(prefs);
+        Save(prefs);
     }
 }

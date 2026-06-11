@@ -6,6 +6,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.Theming;
 using SkiaSharp;
 
 namespace CircuitRF.Ui.Clipboard;
@@ -34,28 +35,23 @@ public static class SchematicClipboard
     /// Copies the given selection to the system clipboard.
     /// Places JSON text + SVG vector + PNG raster on the clipboard simultaneously so
     /// receiving apps can pick the richest representation they understand.
+    /// Color variant and background transparency are read from <see cref="ClipboardRenderPolicy"/>.
     /// </summary>
-    /// <param name="useTransparentBackground">
-    /// When true, renders with a transparent background instead of the theme background color.
-    /// Effective for SVG and PNG; PDF viewers may render transparency as white.
-    /// Will be wired to a user preference in a future release.
-    /// </param>
-    /// <param name="excludeGrid">
-    /// When true, omits the background grid from all rendered clipboard formats.
-    /// Will be wired to a user preference in a future release.
-    /// </param>
     public static async Task CopyAsync(
         IClipboard clipboard,
         IReadOnlyList<EditableComponent>    components,
         IReadOnlyList<EditableWire>         wires,
         IReadOnlyList<EditableCanvasObject> canvasObjects,
-        double gridSize = 100.0,
-        bool useTransparentBackground = true,
-        bool excludeGrid = true)
+        double gridSize = 100.0)
     {
         if (components.Count == 0 && wires.Count == 0 && canvasObjects.Count == 0) return;
 
         string json = SchematicPersistence.SerializeSelection(components, wires, canvasObjects, gridSize);
+
+        // Resolve render policy once for this copy operation.
+        var (variant, transparent) = ClipboardRenderPolicy.Resolve();
+        var renderTheme = SchematicRenderTheme.FromTheme(ThemeService.Active, variant);
+        const bool excludeGrid = true;
 
         var item = new DataTransferItem();
 
@@ -65,17 +61,17 @@ public static class SchematicClipboard
             // com.adobe.pdf UTI (macOS): Keynote, Preview, Pages, etc.
             // application/pdf (Windows): recognised by some viewers; EMF would be the true
             //   Windows vector format (see splotRF WindowsClipboard.cs — future work).
-            byte[]? pdf = TryRenderToPdf(components, wires, useTransparentBackground, excludeGrid);
+            byte[]? pdf = TryRenderToPdf(components, wires, renderTheme, transparent, excludeGrid);
             if (pdf is not null)
                 item.Set(OperatingSystem.IsWindows() ? PdfNativeWinFormat : PdfNativeMacFormat, pdf);
 
             // SVG vector: public.svg-image UTI (macOS/Linux) — Illustrator, Inkscape, etc.
-            string? svg = TryRenderToSvg(components, wires, useTransparentBackground, excludeGrid);
+            string? svg = TryRenderToSvg(components, wires, renderTheme, transparent, excludeGrid);
             if (svg is not null && !OperatingSystem.IsWindows())
                 item.Set(SvgNativeFormat, Encoding.UTF8.GetBytes(svg));
 
             // PNG bitmap: universal raster fallback (Keynote, Pages, Word, etc.).
-            Bitmap? bmp = TryRenderToAvaloniaImage(components, wires, useTransparentBackground, excludeGrid);
+            Bitmap? bmp = TryRenderToAvaloniaImage(components, wires, renderTheme, transparent, excludeGrid);
             if (bmp is not null)
                 item.Set(DataFormat.Bitmap, bmp);
         }
@@ -183,8 +179,9 @@ public static class SchematicClipboard
     private static byte[]? TryRenderToPdf(
         IReadOnlyList<EditableComponent> components,
         IReadOnlyList<EditableWire>      wires,
-        bool useTransparentBackground,
-        bool excludeGrid)
+        SchematicRenderTheme             theme,
+        bool                             useTransparentBackground,
+        bool                             excludeGrid)
     {
         try
         {
@@ -204,7 +201,7 @@ public static class SchematicClipboard
             using var doc    = SKDocument.CreatePdf(stream, metadata);
             var canvas = doc.BeginPage(pxW, pxH);
             SchematicRenderer.Draw(canvas, ((int)pxW, (int)pxH), rm, idx, panX, panY, zoom,
-                SchematicRenderTheme.Light, showFps: false,
+                theme, showFps: false,
                 useTransparentBackground: useTransparentBackground,
                 excludeGrid: excludeGrid);
             doc.EndPage();
@@ -218,8 +215,9 @@ public static class SchematicClipboard
     private static string? TryRenderToSvg(
         IReadOnlyList<EditableComponent> components,
         IReadOnlyList<EditableWire>      wires,
-        bool useTransparentBackground,
-        bool excludeGrid)
+        SchematicRenderTheme             theme,
+        bool                             useTransparentBackground,
+        bool                             excludeGrid)
     {
         try
         {
@@ -237,7 +235,7 @@ public static class SchematicClipboard
             using var stream = new SKDynamicMemoryWStream();
             using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, pxW, pxH), stream))
                 SchematicRenderer.Draw(canvas, (pxW, pxH), rm, idx, panX, panY, zoom,
-                    SchematicRenderTheme.Light, showFps: false,
+                    theme, showFps: false,
                     useTransparentBackground: useTransparentBackground,
                     excludeGrid: excludeGrid);
             return Encoding.UTF8.GetString(stream.DetachAsData().ToArray());
@@ -253,8 +251,9 @@ public static class SchematicClipboard
     private static Bitmap? TryRenderToAvaloniaImage(
         IReadOnlyList<EditableComponent> components,
         IReadOnlyList<EditableWire>      wires,
-        bool useTransparentBackground,
-        bool excludeGrid)
+        SchematicRenderTheme             theme,
+        bool                             useTransparentBackground,
+        bool                             excludeGrid)
     {
         try
         {
@@ -273,7 +272,7 @@ public static class SchematicClipboard
             using var skBmp  = new SKBitmap(pxW, pxH, SKColorType.Rgba8888, SKAlphaType.Premul);
             using var canvas = new SKCanvas(skBmp);
             SchematicRenderer.Draw(canvas, (pxW, pxH), rm, idx, panX, panY, zoom,
-                SchematicRenderTheme.Light, showFps: false,
+                theme, showFps: false,
                 useTransparentBackground: useTransparentBackground,
                 excludeGrid: excludeGrid);
 
