@@ -1181,7 +1181,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     public async Task NewCellAsync(ProjectTreeNodeViewModel parentNode)
     {
         var parentDir  = parentNode.AbsolutePath;
-        var mainWindow = GetMainWindow();
+        var mainWindow = ResolveOwner(null);
         if (mainWindow is null) return;
 
         var dialog = new InputNameDialog("New Cell", "Cell name:");
@@ -1225,7 +1225,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     {
         if (CurrentWorkspacePath is null) return;
         var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
-        var mainWindow   = GetMainWindow();
+        var mainWindow   = ResolveOwner(null);
         if (mainWindow is null) return;
 
         var dialog = new InputNameDialog("New Cell", "Cell name:");
@@ -1270,7 +1270,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             return;
         }
 
-        var mainWindow = GetMainWindow();
+        var mainWindow = ResolveOwner(null);
         if (mainWindow is null) return;
 
         var dialog = new InputNameDialog("New Symbol", "Symbol file name (without extension):");
@@ -1331,7 +1331,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             return;
         }
 
-        var mainWindow = GetMainWindow();
+        var mainWindow = ResolveOwner(null);
         if (mainWindow is null) return;
 
         var dialog = new InputNameDialog("New Schematic", "Schematic file name (without extension):");
@@ -1379,10 +1379,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    /// <summary>Returns the main workspace window, or null if not available.</summary>
-    private Window? GetMainWindow()
-        => (App.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
-
     // ---- Active-document tracking (Properties region) ───────────────────────
 
     private void OnDocumentDockPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -1391,10 +1387,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
         var activeDockable = _factory.DocumentDock?.ActiveDockable;
 
-        // Properties + Analyses panels — track only schematics.
-        var activeVm = activeDockable is SchematicDocument schDoc ? schDoc.ViewModel : null;
-        _factory.PropertiesTool?.SetActiveSchematic(activeVm);
-        _factory.AnalysesTool?.SetActiveSchematic(activeVm);
+        // Properties panel — route to schematic or symbol-editor inspector.
+        if (activeDockable is SymbolEditorDocument symDoc)
+        {
+            _factory.PropertiesTool?.SetActiveSymbolEditor(symDoc.ViewModel);
+        }
+        else
+        {
+            var activeVm = activeDockable is SchematicDocument schDoc ? schDoc.ViewModel : null;
+            _factory.PropertiesTool?.SetActiveSchematic(activeVm);
+        }
+
+        // Analyses panel — tracks only schematics.
+        var schematicVm = activeDockable is SchematicDocument sd ? sd.ViewModel : null;
+        _factory.AnalysesTool?.SetActiveSchematic(schematicVm);
 
         // Undo routing — follows any IUndoableDocument for main-window tabs.
         SetActiveUndoTarget(activeDockable as IUndoableDocument);
@@ -1527,10 +1533,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     // Clean up tracking so _scratchDocs and _openDocsByPath stay consistent.
     private void OnDockableClosed(IDockable dockable)
     {
-        if (dockable is not SchematicDocument doc) return;
-        _scratchDocs.Remove(doc);
-        if (doc.FilePath is not null)
-            _openDocsByPath.Remove(doc.FilePath);
+        // Remove from scratch-docs list for any document type.
+        if (dockable is SchematicDocument scratchCandidate)
+            _scratchDocs.Remove(scratchCandidate);
+
+        // Remove any _openDocsByPath entry whose value is this dockable (reference equality),
+        // regardless of document type — fixes reopen after close for symbol, schematic, and cell docs.
+        var keysToRemove = _openDocsByPath
+            .Where(kvp => ReferenceEquals(kvp.Value, dockable))
+            .Select(kvp => kvp.Key)
+            .ToList();
+        foreach (var key in keysToRemove)
+            _openDocsByPath.Remove(key);
     }
 
     // ---- Save All documents (⌘S / Ctrl+S) ----------------------------------

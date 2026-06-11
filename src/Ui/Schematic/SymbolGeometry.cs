@@ -9,9 +9,11 @@ namespace CircuitRF.Ui.Schematic;
 /// </summary>
 public static class SymbolGeometry
 {
-    private const double Fallback    = 200.0;
-    private const double MinHalfSize = 5.0;   // minimum half-size for a degenerate primitive bbox
-    private const double TextHalf    = 30.0;  // approximate half-extent for text/bitmap anchors
+    private const double Fallback        = 200.0;
+    private const double MinHalfSize     = 5.0;   // minimum half-size for a degenerate primitive bbox
+    private const double TextAdvance     = 0.58;  // average advance factor (chars × em → world width)
+    private const double TextAscentFrac  = 0.75;  // fraction of FontSize above baseline
+    private const double TextDescentFrac = 0.25;  // fraction of FontSize below baseline
 
     // ── BboxOf — single-primitive AABB ───────────────────────────────────────────
 
@@ -22,14 +24,28 @@ public static class SymbolGeometry
     /// </summary>
     public static (double MinX, double MinY, double MaxX, double MaxY) BboxOf(SymbolPrimitive prim)
     {
-        // Text/Bitmap are skipped by ComputeBb; handle them here with a fixed extent.
+        // Text/Bitmap are skipped by ComputeBb; handle them here with a font-aware extent.
         double ax, ay, bx, by;
         switch (prim)
         {
             case TextPrimitive t:
-                ax = t.AnchorX - TextHalf; ay = t.AnchorY - TextHalf;
-                bx = t.AnchorX + TextHalf; by = t.AnchorY + TextHalf;
+            {
+                double halfW = t.Content is { Length: > 0 } c
+                    ? c.Length * t.FontSize * TextAdvance * 0.5
+                    : t.FontSize * TextAdvance;
+                double ascent  = t.FontSize * TextAscentFrac;
+                double descent = t.FontSize * TextDescentFrac;
+                // Horizontal extent shifts with alignment anchor.
+                double left = t.Align switch
+                {
+                    SymbolTextAlign.Center => t.AnchorX - halfW,
+                    SymbolTextAlign.Right  => t.AnchorX - halfW * 2,
+                    _                      => t.AnchorX,
+                };
+                ax = left;          ay = t.AnchorY - ascent;
+                bx = left + halfW * 2; by = t.AnchorY + descent;
                 break;
+            }
             case BitmapPrimitive bm:
                 ax = bm.X; ay = bm.Y; bx = bm.X + bm.W; by = bm.Y + bm.H;
                 break;
@@ -96,10 +112,18 @@ public static class SymbolGeometry
 
             case EllipsePrimitive e:
             {
-                // Approximate: use avg radius for hit-test
-                double avgR = (e.Rx + e.Ry) * 0.5;
-                double dist = Math.Sqrt((lx - e.Cx) * (lx - e.Cx) + (ly - e.Cy) * (ly - e.Cy));
-                return e.Filled ? dist <= avgR + tol : Math.Abs(dist - avgR) <= tol;
+                if (e.Rx <= 0 || e.Ry <= 0) return false;
+                double dx = lx - e.Cx, dy = ly - e.Cy;
+                // Outer ellipse expanded by tol on each axis.
+                double fox = e.Rx + tol, foy = e.Ry + tol;
+                double fOuter = (dx / fox) * (dx / fox) + (dy / foy) * (dy / foy);
+                if (fOuter > 1.0) return false; // outside outer boundary
+                if (e.Filled) return true;
+                // Unfilled: also require point is outside the shrunk inner ellipse.
+                double rix = Math.Max(e.Rx - tol, 0.0), riy = Math.Max(e.Ry - tol, 0.0);
+                if (rix <= 0 || riy <= 0) return true; // ellipse thinner than 2*tol → whole interior hits
+                double fInner = (dx / rix) * (dx / rix) + (dy / riy) * (dy / riy);
+                return fInner >= 1.0;
             }
 
             case ArcPrimitive a:
@@ -141,8 +165,11 @@ public static class SymbolGeometry
             }
 
             case TextPrimitive t:
-                return Math.Abs(lx - t.AnchorX) <= TextHalf + tol
-                    && Math.Abs(ly - t.AnchorY) <= TextHalf + tol;
+            {
+                var (tbx0, tby0, tbx1, tby1) = BboxOf(t);
+                return lx >= tbx0 - tol && lx <= tbx1 + tol
+                    && ly >= tby0 - tol && ly <= tby1 + tol;
+            }
 
             case BitmapPrimitive bm:
                 return lx >= bm.X - tol && lx <= bm.X + bm.W + tol
@@ -216,6 +243,189 @@ public static class SymbolGeometry
                 bm.X += dx; bm.Y += dy; break;
         }
     }
+
+    // ── RotateBy90 — 90° CW in screen (Y-down) coords about symbol origin ────────
+
+    /// <summary>
+    /// Rotates all control points of <paramref name="prim"/> 90° clockwise in screen (Y-down)
+    /// coordinates about the symbol origin (0, 0): x' = −y, y' = x.
+    /// Called by <see cref="Commands.Symbol.RotateSelectionCommand"/> in Execute and (×3) in Undo.
+    /// </summary>
+    public static void RotateBy90(SymbolPrimitive prim)
+    {
+        static (double nx, double ny) R(double x, double y) => (-y, x);
+
+        switch (prim)
+        {
+            case LinePrimitive l:
+                (l.X1, l.Y1) = R(l.X1, l.Y1);
+                (l.X2, l.Y2) = R(l.X2, l.Y2);
+                break;
+            case PolylinePrimitive pl:
+                foreach (var pt in pl.Points) { (pt[0], pt[1]) = R(pt[0], pt[1]); }
+                break;
+            case RectPrimitive r:
+                (r.Cx, r.Cy) = R(r.Cx, r.Cy);
+                (r.W, r.H)   = (r.H, r.W);
+                break;
+            case RoundedRectPrimitive rr:
+                (rr.Cx, rr.Cy) = R(rr.Cx, rr.Cy);
+                (rr.W, rr.H)   = (rr.H, rr.W);
+                break;
+            case CirclePrimitive c:
+                (c.Cx, c.Cy) = R(c.Cx, c.Cy);
+                break;
+            case EllipsePrimitive e:
+                (e.Cx, e.Cy) = R(e.Cx, e.Cy);
+                (e.Rx, e.Ry) = (e.Ry, e.Rx);
+                break;
+            case ArcPrimitive a:
+                (a.Cx, a.Cy) = R(a.Cx, a.Cy);
+                a.StartDeg   = ((a.StartDeg + 90.0) % 360.0 + 360.0) % 360.0;
+                break;
+            case PolygonPrimitive pg:
+                foreach (var pt in pg.Points) { (pt[0], pt[1]) = R(pt[0], pt[1]); }
+                break;
+            case QuadCurvePrimitive qc:
+                (qc.P0X,   qc.P0Y)   = R(qc.P0X,   qc.P0Y);
+                (qc.CtrlX, qc.CtrlY) = R(qc.CtrlX, qc.CtrlY);
+                (qc.P2X,   qc.P2Y)   = R(qc.P2X,   qc.P2Y);
+                break;
+            case CubicCurvePrimitive cc:
+                (cc.P0X, cc.P0Y) = R(cc.P0X, cc.P0Y);
+                (cc.C1X, cc.C1Y) = R(cc.C1X, cc.C1Y);
+                (cc.C2X, cc.C2Y) = R(cc.C2X, cc.C2Y);
+                (cc.P3X, cc.P3Y) = R(cc.P3X, cc.P3Y);
+                break;
+            case SinePrimitive s:
+                (s.Cx, s.Cy) = R(s.Cx, s.Cy);
+                s.Axis = s.Axis == SineAxis.Horizontal ? SineAxis.Vertical : SineAxis.Horizontal;
+                break;
+            case HalfWavePrimitive hw:
+                (hw.Cx, hw.Cy) = R(hw.Cx, hw.Cy);
+                hw.Axis = hw.Axis == SineAxis.Horizontal ? SineAxis.Vertical : SineAxis.Horizontal;
+                break;
+            case TextPrimitive t:
+                (t.AnchorX, t.AnchorY) = R(t.AnchorX, t.AnchorY);
+                break;
+            case BitmapPrimitive bm:
+                (bm.X, bm.Y) = R(bm.X, bm.Y);
+                break;
+        }
+    }
+
+    // ── RotateBy90About — 90° CW about an arbitrary anchor ───────────────────
+
+    /// <summary>
+    /// Rotates all control points of <paramref name="prim"/> 90° clockwise in screen (Y-down)
+    /// coordinates about the point (ax, ay): translate to origin → <see cref="RotateBy90"/> → translate back.
+    /// Called by <see cref="Commands.Symbol.RotateSelectionCommand"/> with the selection bbox center.
+    /// </summary>
+    public static void RotateBy90About(SymbolPrimitive prim, double ax, double ay)
+    {
+        TranslateBy(prim, -ax, -ay);
+        RotateBy90(prim);
+        TranslateBy(prim, ax, ay);
+    }
+
+    // ── ScaleBy — scale about a reference point ───────────────────────────────
+
+    /// <summary>
+    /// Scales all control points of <paramref name="prim"/> about the reference point
+    /// (refX, refY) by factors (sx, sy).  Used by
+    /// <see cref="Commands.Symbol.ResizeSymbolPrimitiveCommand"/>.
+    /// </summary>
+    public static void ScaleBy(SymbolPrimitive prim, double refX, double refY, double sx, double sy)
+    {
+        static double S(double v, double r, double s) => r + (v - r) * s;
+
+        switch (prim)
+        {
+            case LinePrimitive l:
+                l.X1 = S(l.X1, refX, sx); l.Y1 = S(l.Y1, refY, sy);
+                l.X2 = S(l.X2, refX, sx); l.Y2 = S(l.Y2, refY, sy);
+                break;
+            case PolylinePrimitive pl:
+                foreach (var p in pl.Points)
+                { p[0] = S(p[0], refX, sx); p[1] = S(p[1], refY, sy); }
+                break;
+            case RectPrimitive r:
+                r.Cx = S(r.Cx, refX, sx); r.Cy = S(r.Cy, refY, sy);
+                r.W  = Math.Abs(r.W * sx); r.H  = Math.Abs(r.H * sy);
+                break;
+            case RoundedRectPrimitive rr:
+                rr.Cx = S(rr.Cx, refX, sx); rr.Cy = S(rr.Cy, refY, sy);
+                rr.W  = Math.Abs(rr.W * sx); rr.H  = Math.Abs(rr.H * sy);
+                rr.Radius = Math.Min(rr.Radius * Math.Min(sx, sy),
+                                     Math.Min(rr.W, rr.H) * 0.4);
+                break;
+            case CirclePrimitive c:
+                c.Cx = S(c.Cx, refX, sx); c.Cy = S(c.Cy, refY, sy);
+                c.R  = Math.Abs(c.R * Math.Sqrt(sx * sy));
+                break;
+            case EllipsePrimitive e:
+                e.Cx = S(e.Cx, refX, sx); e.Cy = S(e.Cy, refY, sy);
+                e.Rx = Math.Abs(e.Rx * sx); e.Ry = Math.Abs(e.Ry * sy);
+                break;
+            case ArcPrimitive a:
+                a.Cx = S(a.Cx, refX, sx); a.Cy = S(a.Cy, refY, sy);
+                a.R  = Math.Abs(a.R * Math.Sqrt(sx * sy));
+                break;
+            case PolygonPrimitive pg:
+                foreach (var p in pg.Points)
+                { p[0] = S(p[0], refX, sx); p[1] = S(p[1], refY, sy); }
+                break;
+            case QuadCurvePrimitive qc:
+                qc.P0X   = S(qc.P0X,   refX, sx); qc.P0Y   = S(qc.P0Y,   refY, sy);
+                qc.CtrlX = S(qc.CtrlX, refX, sx); qc.CtrlY = S(qc.CtrlY, refY, sy);
+                qc.P2X   = S(qc.P2X,   refX, sx); qc.P2Y   = S(qc.P2Y,   refY, sy);
+                break;
+            case CubicCurvePrimitive cc:
+                cc.P0X = S(cc.P0X, refX, sx); cc.P0Y = S(cc.P0Y, refY, sy);
+                cc.C1X = S(cc.C1X, refX, sx); cc.C1Y = S(cc.C1Y, refY, sy);
+                cc.C2X = S(cc.C2X, refX, sx); cc.C2Y = S(cc.C2Y, refY, sy);
+                cc.P3X = S(cc.P3X, refX, sx); cc.P3Y = S(cc.P3Y, refY, sy);
+                break;
+            case SinePrimitive s:
+                s.Cx = S(s.Cx, refX, sx); s.Cy = S(s.Cy, refY, sy);
+                s.Length = Math.Abs(s.Length * (s.Axis == SineAxis.Horizontal ? sx : sy));
+                s.Amp    = Math.Abs(s.Amp    * (s.Axis == SineAxis.Horizontal ? sy : sx));
+                break;
+            case HalfWavePrimitive hw:
+                hw.Cx = S(hw.Cx, refX, sx); hw.Cy = S(hw.Cy, refY, sy);
+                hw.Length = Math.Abs(hw.Length * (hw.Axis == SineAxis.Horizontal ? sx : sy));
+                hw.Amp    = Math.Abs(hw.Amp    * (hw.Axis == SineAxis.Horizontal ? sy : sx));
+                break;
+            case TextPrimitive t:
+                t.AnchorX = S(t.AnchorX, refX, sx);
+                t.AnchorY = S(t.AnchorY, refY, sy);
+                break;
+        }
+    }
+
+    // ── StrokeTierOf — nullable stroke tier for any primitive ─────────────────
+
+    /// <summary>
+    /// Returns the <see cref="SymbolStrokeTier"/> of <paramref name="prim"/>, or
+    /// <c>null</c> for primitives that have no stroke (e.g. Text, Bitmap).
+    /// Used to derive linewidth-aware hit tolerances.
+    /// </summary>
+    public static SymbolStrokeTier? StrokeTierOf(SymbolPrimitive prim) => prim switch
+    {
+        LinePrimitive        l  => l.StrokeTier,
+        PolylinePrimitive    pl => pl.StrokeTier,
+        RectPrimitive        r  => r.StrokeTier,
+        RoundedRectPrimitive rr => rr.StrokeTier,
+        CirclePrimitive      c  => c.StrokeTier,
+        EllipsePrimitive     e  => e.StrokeTier,
+        ArcPrimitive         a  => a.StrokeTier,
+        PolygonPrimitive     pg => pg.StrokeTier,
+        QuadCurvePrimitive   qc => qc.StrokeTier,
+        CubicCurvePrimitive  cc => cc.StrokeTier,
+        SinePrimitive        s  => s.StrokeTier,
+        HalfWavePrimitive    hw => hw.StrokeTier,
+        _                      => null,
+    };
 
     // ── Geometry helpers (private) ─────────────────────────────────────────────
 

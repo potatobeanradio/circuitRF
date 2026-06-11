@@ -85,6 +85,7 @@ public partial class App : Application
             {
                 DataContext = new WorkspaceViewModel(),
             };
+            desktop.MainWindow = firstWindow;
 
             WireAboutMenuItem();
 
@@ -126,6 +127,7 @@ public partial class App : Application
         {
             // No window shown yet; show a blank workspace.
             var w = new WorkspaceWindow { DataContext = new WorkspaceViewModel() };
+            if (_desktop is not null) _desktop.MainWindow = w;
             w.Show();
         }
     }

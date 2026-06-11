@@ -37,10 +37,14 @@ public sealed record class SymbolEditorOverlay
 
     // ── Pin tool state ────────────────────────────────────────────────────────
 
+    /// <summary>Indices into EditableSymbol.Pins that are currently selected (any count).</summary>
+    public IReadOnlySet<int> SelectedPinIndices { get; init; } = s_emptyInts;
+
     /// <summary>
-    /// Index into EditableSymbol.Pins of the currently selected pin, or -1 if none.
+    /// Returns the single selected pin's index, or -1 when zero or more than one pin is selected.
+    /// Used by the inspector and per-pin operations that require exactly one pin.
     /// </summary>
-    public int SelectedPinIndex { get; init; } = -1;
+    public int SelectedPinIndex => SelectedPinIndices.Count == 1 ? SelectedPinIndices.First() : -1;
 
     /// <summary>
     /// Live drag delta for the selected pin (symbol-local, snapped to P=100).
@@ -54,6 +58,20 @@ public sealed record class SymbolEditorOverlay
     /// Never an error — unmapped = open circuit (§3).
     /// </summary>
     public IReadOnlyList<int> UnmappedPortIndices { get; init; } = s_emptyPorts;
+
+    // ── Resize gripper (single-selection only) ────────────────────────────────
+
+    /// <summary>
+    /// Position of the resize gripper handle (bottom-right of the selected primitive's bbox),
+    /// in symbol-local coordinates.  Non-null only when exactly one resizable primitive is selected.
+    /// </summary>
+    public (double X, double Y)? ResizeHandle { get; init; }
+
+    /// <summary>
+    /// Live resize preview bbox in symbol-local coordinates.
+    /// Non-null only while a resize drag is in progress.
+    /// </summary>
+    public (double X0, double Y0, double X1, double Y1)? ResizePreviewBb { get; init; }
 
     // ── Statics ───────────────────────────────────────────────────────────────
 

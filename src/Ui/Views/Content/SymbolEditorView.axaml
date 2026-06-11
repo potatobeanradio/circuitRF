@@ -57,7 +57,7 @@
                 BorderThickness="0,0,0,1"
                 Padding="4,2">
 
-            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Disabled">
                 <StackPanel Orientation="Horizontal" Spacing="2">
 
@@ -279,9 +279,29 @@
                             Command="{Binding ViewModel.SetActiveToolCommand}"
                             CommandParameter="Pin"
                             IsEnabled="{Binding ViewModel.IsEditable}"
-                            ToolTip.Tip="Pin — click to place; click existing pin to move/select"
+                            ToolTip.Tip="Pin — click empty space to place; use Select tool to move, delete, or rotate pins  (P)"
                             Padding="6,3">
                         <mi:MaterialIcon Kind="MapMarker" Width="16" Height="16"/>
+                    </Button>
+
+                    <!-- Separator -->
+                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                    <!-- ── Grid snap + Rotate ─────────────────────────────── -->
+
+                    <ToggleButton IsChecked="{Binding ViewModel.GridSnap, Mode=TwoWay}"
+                                  IsEnabled="{Binding ViewModel.IsEditable}"
+                                  ToolTip.Tip="Snap to Grid  (G)"
+                                  Padding="6,3">
+                        <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
+                    </ToggleButton>
+
+                    <Button Command="{Binding ViewModel.RotateSelectionCommand}"
+                            IsEnabled="{Binding ViewModel.IsEditable}"
+                            ToolTip.Tip="Rotate Selection 90° CW about origin  (R)"
+                            Padding="6,3">
+                        <mi:MaterialIcon Kind="RotateRight" Width="16" Height="16"/>
                     </Button>
 
                     <!-- Separator -->
@@ -313,30 +333,6 @@
                             Padding="6,3">
                         <TextBlock Text="Thin" FontSize="11"/>
                     </Button>
-
-                    <!-- Separator -->
-                    <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
-                            Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
-
-                    <!-- ── Font controls (for Text tool) ──────────────────── -->
-
-                    <TextBlock Text="Font:" VerticalAlignment="Center"
-                               Margin="2,0,4,0" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                               FontSize="11"/>
-
-                    <NumericUpDown Value="{Binding ViewModel.CurrentFontSize, Mode=TwoWay}"
-                                   Minimum="4" Maximum="200" Increment="1"
-                                   FormatString="0"
-                                   Width="64"
-                                   VerticalAlignment="Center"
-                                   ToolTip.Tip="Font size (local symbol units)"/>
-
-                    <ComboBox ItemsSource="{x:Static vm:SymbolEditorViewModel.FontStyleOptions}"
-                              SelectedItem="{Binding ViewModel.CurrentFontStyle, Mode=TwoWay}"
-                              Width="95"
-                              VerticalAlignment="Center"
-                              Margin="2,0,0,0"
-                              ToolTip.Tip="Font style.  'Condensed' falls back to Light — IBM Plex Sans has no condensed variant (§7.3)."/>
 
                     <!-- Separator -->
                     <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
@@ -400,13 +396,15 @@
                 <!-- Port count -->
                 <TextBlock Text="Ports:" FontSize="11" VerticalAlignment="Center"
                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                <NumericUpDown Value="{Binding ViewModel.PortCount, Mode=TwoWay}"
-                               Minimum="0" Maximum="64" Increment="1"
-                               FormatString="0"
-                               Width="60"
-                               IsEnabled="{Binding ViewModel.IsEditable}"
-                               VerticalAlignment="Center"
-                               ToolTip.Tip="Number of ports this symbol maps pins to"/>
+                <TextBox x:Name="PortCountBox"
+                         Width="48"
+                         MaxLength="4"
+                         IsEnabled="{Binding ViewModel.IsEditable}"
+                         VerticalAlignment="Center"
+                         TextAlignment="Center"
+                         FontSize="11"
+                         Padding="4,1"
+                         ToolTip.Tip="Number of ports this symbol maps pins to"/>
 
                 <Border Width="1" Height="14"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>

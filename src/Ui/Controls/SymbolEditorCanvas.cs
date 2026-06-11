@@ -42,6 +42,7 @@ public sealed class SymbolEditorCanvas : Control
             if (_viewModel is not null)
             {
                 _viewModel.PropertyChanged += OnVmPropertyChanged;
+                _viewModel.CanvasZoom = _zoom;
                 SyncFromVm();
                 UpdateCursor();
             }
@@ -195,6 +196,8 @@ public sealed class SymbolEditorCanvas : Control
         double cy = (bbMinY + bbMaxY) * 0.5;
         _panX = cx - Bounds.Width  / (2.0 * _zoom);
         _panY = cy - Bounds.Height / (2.0 * _zoom);
+        if (_viewModel is not null)
+            _viewModel.CanvasZoom = _zoom;
     }
 
     // ── World ↔ screen ─────────────────────────────────────────────────────
@@ -228,6 +231,7 @@ public sealed class SymbolEditorCanvas : Control
             _viewModel.OnPointerPressed(
                 ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y), e.KeyModifiers, e.ClickCount);
             e.Pointer.Capture(this);
+            InvalidateVisual();
         }
     }
 
@@ -245,6 +249,7 @@ public sealed class SymbolEditorCanvas : Control
 
         bool leftDown = e.GetCurrentPoint(this).Properties.IsLeftButtonPressed;
         _viewModel?.OnPointerMoved(ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y), leftDown);
+        InvalidateVisual();
     }
 
     private void OnPointerReleased(object? _, PointerReleasedEventArgs e)
@@ -262,6 +267,7 @@ public sealed class SymbolEditorCanvas : Control
             var pos = e.GetPosition(this);
             _viewModel.OnPointerReleased(ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y));
             e.Pointer.Capture(null);
+            InvalidateVisual();
         }
     }
 
@@ -290,6 +296,7 @@ public sealed class SymbolEditorCanvas : Control
         _zoom = Math.Clamp(_zoom / fac, MinZoom, MaxZoom);
         _panX = wx - pos.X / _zoom;
         _panY = wy - pos.Y / _zoom;
+        if (_viewModel is not null) _viewModel.CanvasZoom = _zoom;
         InvalidateVisual();
         e.Handled = true;
     }

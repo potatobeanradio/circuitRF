@@ -1,0 +1,455 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:conv="using:CircuitRF.Ui.Converters"
+             x:Class="CircuitRF.Ui.Views.Properties.SymbolPrimitiveInspectorView"
+             x:DataType="vm:SymbolPrimitiveInspectorViewModel">
+
+    <Grid RowDefinitions="*">
+
+        <!-- Empty state -->
+        <TextBlock IsVisible="{Binding IsEmptyState}"
+                   Text="{Binding EmptyMessage}"
+                   Foreground="{DynamicResource SystemBaseMediumColor}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   TextWrapping="Wrap"
+                   Margin="8"
+                   FontSize="11"
+                   Opacity="0.5"/>
+
+        <!-- Active state: scrollable field list -->
+        <ScrollViewer IsVisible="{Binding IsNotEmptyState}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="6,4" Spacing="4">
+
+                <!-- Type header -->
+                <TextBlock Text="{Binding TypeName}"
+                           FontWeight="SemiBold"
+                           FontSize="13"
+                           Margin="0,2,0,4"/>
+
+                <!-- ── Line coords: X1,Y1 then X2,Y2 ─────────────────────────────────── -->
+                <StackPanel IsVisible="{Binding ShowLineCoords}" Spacing="4">
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="X1" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldX1, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="Y1" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding FieldY1, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="X2" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldX2, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="Y2" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding FieldY2, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- ── Cx / Cy ───────────────────────────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowCxCy}" ColumnDefinitions="36,*,6,36,*">
+                    <TextBlock Grid.Column="0" Text="Cx" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="1"
+                                   Value="{Binding FieldCx, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   ShowButtonSpinner="False" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                    <TextBlock Grid.Column="3" Text="Cy" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="4"
+                                   Value="{Binding FieldCy, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   ShowButtonSpinner="False" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── W / H ─────────────────────────────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowWH}" ColumnDefinitions="36,*,6,36,*">
+                    <TextBlock Grid.Column="0" Text="W" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="1"
+                                   Value="{Binding FieldW, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   ShowButtonSpinner="False" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                    <TextBlock Grid.Column="3" Text="H" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="4"
+                                   Value="{Binding FieldH, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   ShowButtonSpinner="False" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── R (Circle / Arc) ──────────────────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowRadius}" ColumnDefinitions="56,*">
+                    <TextBlock Grid.Column="0" Text="R" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="1"
+                                   Value="{Binding FieldRadius, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   Minimum="0.001" Increment="5" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── Rx / Ry (Ellipse) ─────────────────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowRxRy}" ColumnDefinitions="36,*,6,36,*">
+                    <TextBlock Grid.Column="0" Text="Rx" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="1"
+                                   Value="{Binding FieldRx, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   ShowButtonSpinner="False" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                    <TextBlock Grid.Column="3" Text="Ry" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="4"
+                                   Value="{Binding FieldRy, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   ShowButtonSpinner="False" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── Corner radius (RoundedRect) ──────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowCornerRadius}" ColumnDefinitions="56,*">
+                    <TextBlock Grid.Column="0" Text="Corner R" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="1"
+                                   Value="{Binding FieldCornerRadius, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   Minimum="0" Increment="5" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── Arc angles ─────────────────────────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowArcAngles}" ColumnDefinitions="44,*,6,52,*">
+                    <TextBlock Grid.Column="0" Text="Start°" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="1"
+                                   Value="{Binding FieldStartDeg, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   ShowButtonSpinner="False" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                    <TextBlock Grid.Column="3" Text="Sweep°" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="4"
+                                   Value="{Binding FieldSweepDeg, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   ShowButtonSpinner="False" FormatString="0.##"
+                                   FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── Sine fields: Amp, Cycles, Length, Axis ─────────────────────────── -->
+                <StackPanel IsVisible="{Binding ShowSineFields}" Spacing="4">
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Amp" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldAmp, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="0.001" Increment="5" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Cycles" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldCycles, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="0.25" Increment="0.5" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Length" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldLength, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="1" Increment="10" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Axis" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{x:Static vm:SymbolPrimitiveInspectorViewModel.AxisOptions}"
+                                  SelectedItem="{Binding FieldAxis, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- ── HalfWave fields: Amp, Length, Axis ─────────────────────────────── -->
+                <StackPanel IsVisible="{Binding ShowHalfWaveFields}" Spacing="4">
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Amp" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldAmp, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="0.001" Increment="5" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Length" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldLength, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="1" Increment="10" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Axis" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{x:Static vm:SymbolPrimitiveInspectorViewModel.AxisOptions}"
+                                  SelectedItem="{Binding FieldAxis, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- ── Quad Bézier: P0, Ctrl, P2 ─────────────────────────────────────── -->
+                <StackPanel IsVisible="{Binding ShowQuadCurve}" Spacing="4">
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="P0X" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldP0X, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="P0Y" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding FieldP0Y, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="CX" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldCtrlX, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="CY" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding FieldCtrlY, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="P2X" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldP2X, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="P2Y" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding FieldP2Y, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- ── Cubic Bézier: P0, C1, C2, P3 ──────────────────────────────────── -->
+                <StackPanel IsVisible="{Binding ShowCubicCurve}" Spacing="4">
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="P0X" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldP0X, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="P0Y" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding FieldP0Y, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="C1X" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldC1X, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="C1Y" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding FieldC1Y, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="C2X" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldC2X, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="C2Y" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding FieldC2Y, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="P3X" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding FieldP3X, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="P3Y" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding FieldP3Y, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- ── Filled (checkbox) ─────────────────────────────────────────────── -->
+                <CheckBox IsVisible="{Binding ShowFilled}"
+                          Content="Filled"
+                          IsChecked="{Binding FieldFilled, Mode=TwoWay}"
+                          FontSize="11" Padding="0,2"/>
+
+                <!-- ── Stroke tier (ComboBox) ────────────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowStrokeTier}" ColumnDefinitions="56,*">
+                    <TextBlock Grid.Column="0" Text="Stroke" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{x:Static vm:SymbolPrimitiveInspectorViewModel.StrokeTierOptions}"
+                              SelectedItem="{Binding StrokeTier, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch"
+                              FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── Text fields ───────────────────────────────────────────────────── -->
+                <StackPanel IsVisible="{Binding IsTextPrimitive}" Spacing="4">
+
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Content" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBox Grid.Column="1"
+                                 Text="{Binding TextContent, Mode=TwoWay}"
+                                 FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="AX" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding TextAnchorX, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="AY" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding TextAnchorY, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Font size" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding TextFontSize, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="1" Maximum="500" Increment="1"
+                                       FormatString="0" FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Style" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{x:Static vm:SymbolPrimitiveInspectorViewModel.FontStyleOptions}"
+                                  SelectedItem="{Binding TextFontStyle, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Align" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{x:Static vm:SymbolPrimitiveInspectorViewModel.AlignOptions}"
+                                  SelectedItem="{Binding TextAlign, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                </StackPanel>
+
+                <!-- ── Pin view ──────────────────────────────────────────────────────── -->
+                <StackPanel IsVisible="{Binding IsPinSelected}" Spacing="4">
+
+                    <Grid ColumnDefinitions="36,*,6,36,*">
+                        <TextBlock Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding PinX, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                        <TextBlock Grid.Column="3" Text="Y" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="4"
+                                       Value="{Binding PinY, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       ShowButtonSpinner="False" FormatString="0.##"
+                                       FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Port" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding PinPortIndex, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                       Minimum="0" Increment="1" ShowButtonSpinner="False"
+                                       FormatString="0" FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                </StackPanel>
+
+                <!-- ── Polyline / Polygon coord list (virtualized) ─────────────────── -->
+                <StackPanel IsVisible="{Binding ShowPolylineCoords}" Spacing="2">
+                    <TextBlock Text="Points" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,2"/>
+                    <ListBox ItemsSource="{Binding PolylineCoords}"
+                             MaxHeight="160"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PolylineCoordRowViewModel">
+                                <Grid ColumnDefinitions="28,*,6,*">
+                                    <TextBlock Grid.Column="0" Text="{Binding Label}"
+                                               FontSize="10"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                               VerticalAlignment="Center"/>
+                                    <NumericUpDown Grid.Column="1"
+                                                   Value="{Binding X, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                                   ShowButtonSpinner="False" FormatString="0.##"
+                                                   FontSize="11" Padding="4,2"/>
+                                    <NumericUpDown Grid.Column="3"
+                                                   Value="{Binding Y, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                                   ShowButtonSpinner="False" FormatString="0.##"
+                                                   FontSize="11" Padding="4,2"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </Grid>
+</UserControl>

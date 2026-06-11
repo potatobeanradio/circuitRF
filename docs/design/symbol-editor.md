@@ -1,6 +1,6 @@
 # circuitRF — Symbol Editor & Symbol Model Design
 
-**Status:** Draft (rev 1) for review · **Date:** 2026-06-08 · **Phase:** 6f (symbol editor + standard library)
+**Status:** Draft (rev 2) · **Date:** 2026-06-10 · **Phase:** 6f (symbol editor + standard library) + cleanup sprint (13 layers)
 
 Specifies (1) the **symbol model** — upgrading symbols from hardcoded line-segment arrays to a real
 primitive model that is data, not code; (2) the **Symbol Editor** that authors them; (3) the **standard
@@ -358,7 +358,7 @@ workspace / project file) records which `.csym` is **primary** and the `UserEdit
      - Locked gate: built-in symbols (`OpenSymbolEditorDocked/Window`) marked `UserEditable = false` →
        `SymbolEditorViewModel.IsLocked = true` → all mutation paths gated; edit tools disabled in toolbar;
        cross cursor reverts to arrow; "Read-only" indicator shown in metadata bar.
-     - Metadata bar in `SymbolEditorView`: dirty indicator (●), file path, port count `NumericUpDown`, Save/Save-As buttons.
+     - Metadata bar in `SymbolEditorView`: dirty indicator (●), file path, port count plain integer `TextBox` (no spinner; digit-only; empty → 0; two-way sync via code-behind), Save/Save-As buttons.
      - **Hard deferred at 4c time; now resolved:** live schematic update and cell-ref rendering
        delivered in Phase 6g Step 5 (`CellSymbolResolver`, `CellRefState` render dispatch,
        `SymbolSaved` event + `TriggerRebuild`). Still deferred: cell-driven double-click open,
@@ -373,3 +373,93 @@ workspace / project file) records which `.csym` is **primary** and the `UserEdit
 Steps 1–3 give correct, richer standard-library art on a real model; 4–5 give the editor; 6–7 the lock and
 auto-gen; 8 the v1 pin-move safety. Each lands behind the firewall (model framework-free; SkiaSharp only in
 the renderer below `src/Ui`).
+
+---
+
+## 12. Cleanup sprint — 13 layers (rev 2, 2026-06-10)
+
+Post-6f cleanup hardening all editor subsystems to match the schematic editor's quality bar.
+
+| Layer | Area | What changed |
+|-------|------|-------------|
+| 1 | Live-drag invalidate | `InvalidateVisual()` called on every pointer-move in drag and pin-drag paths (was deferred until release) |
+| 2 | Hit-test accuracy | Ellipse hit-test replaced with concentric-ellipses formula; arc/circle unchanged |
+| 3 | Undo target routing | Instrumented — already correct; no code change |
+| 4 | Pin-drag invalidate | Instrumented — already correct via Layer 1 fix |
+| 5 | Snap toggle | `GridSnap` bool property; G key; ToggleButton in toolbar; `SnapToP` respects toggle; pins always on P=100 |
+| 6 | Rotate | `RotateSelectionCommand` + `RotateBy90About` in `SymbolGeometry`; R key + toolbar button; rotates 90° CW about bbox CENTER (matches schematic in-place rotation); center is rotation-invariant so N×90°=identity; pins rotate with full precision (no per-step snap) — grid-aligned selections keep pins on P=100 with no drift; non-grid-aligned pins may snap on rotate (Undo reverses exactly) |
+| 7 | Text bbox | `BboxOf(TextPrimitive)` now font-size + length aware; accounts for `Align` |
+| 8 | Wire-style selection highlight | Re-strokes actual primitive geometry with semi-transparent accent paint; matches schematic editor selection style |
+| 9 | Font toolbar | Removed redundant Font-size NumericUpDown and Font-style ComboBox from toolbar (moved to inspector pane) |
+| 10 | `OnDockableClosed` | Fixed stale `_openDocsByPath` entries for symbol editor tabs (used `ReferenceEquals` scan) |
+| 11a | Inspector routing | `PropertiesTool.SetActiveSymbolEditor`; `WorkspaceViewModel` routes on tab switch; `SymbolPrimitiveInspectorViewModel` created |
+| 11b | Inspector position | X/Y editable fields commit via `MoveSymbolPrimitivesCommand` |
+| 11c | Inspector polyline | Read-only coord list for `PolylinePrimitive` / `PolygonPrimitive` |
+| 11d | Inspector text | Content/FontSize/FontStyle editable via `SetTextPrimitiveCommand` |
+| 12 | Resize gripper | Bottom-right handle; Shift=aspect lock; `ResizeSymbolPrimitiveCommand` (undoable); rendered as small accent square |
+| 13 | Save-As folder | `SaveSymbolAsAsync` now seeds the file picker to the current file's directory |
+
+### Cleanup sprint — round 2 (rev 3, 2026-06-11)
+
+| Layer | Area | What changed |
+|-------|------|-------------|
+| 5 | Port-count box | Replaced `NumericUpDown` with plain `TextBox` (`PortCountBox`); digit-only input via tunnel `TextInputEvent`; paste stripped in `TextChanged`; empty → 0; two-way sync via code-behind (`_portCountVm` + `_portCountChanging` guard); no spinners |
+| 6 | Toolbar + selection highlight | Toolbar `ScrollViewer` `HorizontalScrollBarVisibility` changed from `Auto` → `Disabled` (no scrollbar at any width); selection outline stroke (layer 8 paint) confirmed matching schematic wire-select style (`SelectionBox.WithAlpha(120)`, `StrokeJoin.Round`, `StrokeCap.Round`, `DrawSymbol` reuse); Text keeps correct bbox box |
+
+### Key invariants reinforced
+- Pins snap exclusively to P=100 (`SnapToConnectionGrid`); art grid toggle never affects pin coordinates.
+- Every mutation is undoable on the document's own `UndoRedoStack`; `NotifyChanged()` in both Execute and Undo.
+- `SymbolGeometry` and `SymbolPrimitiveInspectorViewModel` are framework-free (no Avalonia types).
+- `DrawSymbol` is shared — selection highlight re-uses `SchematicRenderer.DrawSymbol` with `overridePaint`.
+- Firewall green — no Avalonia reference in Core, Engine, Cli, or RfCore.
+
+### Pin pick tolerance and gesture model (PinSelectCorrectFix — done)
+**Root cause confirmed by instrumentation:** pins snap to P=100 on placement. A click that placed a pin can
+land up to ~70 world units (diagonal) from the resulting grid point, so the old 12-px-only tolerance (~17
+world units at default zoom) was unreachable from the pin's own placement click.
+
+**`HitTestPin` tolerance:**
+```
+double tol = Math.Max(12.0 / Math.Max(CanvasZoom, 1e-6), PinGrid * 0.5);
+```
+- `PinGrid * 0.5` = 50 world units — covers a full half-cell in every direction, which is exactly the
+  worst-case distance from a placement click to the snapped pin position.
+- `12.0 / CanvasZoom` ensures the pick radius is never smaller than 12 screen-pixels when zoomed in.
+- Because pins are always ≥ `PinGrid` apart, a `PinGrid/2` radius is unambiguous: at most one pin's
+  half-cell contains any click. **Use `PinGrid * 0.5`, never a literal `50`** — `PinGrid` is the
+  single named constant; if P changes the floor scales automatically.
+
+**Tool ownership (PinToolOwnership — done):**
+- **Pin tool = place only.** `PinToolPress` has two gestures: click empty space → place a new pin
+  at `SnapToConnectionGrid(lx/ly)`, becomes selected; click an existing pin → select it (inspector
+  shows it), no drag. Pin tool never initiates a drag.
+- **Select tool owns pin manipulation.** `SelectToolPress` hit-tests pins *before* primitives. A pin
+  hit sets `_selectedPinIndex`, `_isPinDragging = true`, and grabs `_pinGrabX/_pinGrabY`. Drag lives
+  in the Select branch of `OnPointerMoved`; commit lives in the Select branch of `OnPointerReleased`.
+  Clicking a non-pin clears `_selectedPinIndex` so primitive selection deselects any pin.
+- **Delta-from-grab math (correct):** `destX = SnapToConnectionGrid(_pinOrigX + (lx − _pinGrabX))`;
+  `_pinLiveDx = destX − _pinOrigX`. Never snap the absolute cursor position.
+- **Delete (Del/Backspace) and R (rotate 90° CW)** fire whenever `_selectedPinIndex.HasValue`,
+  regardless of whether the active tool is Pin or Select.
+- **v1:** pin selection is independent of primitive selection; no mixed multi-select.
+
+### Pin selection feedback (PinSelectFeedbackFix — done)
+
+**Root cause confirmed:** selection was working all along (transcript: 2nd click → HIT i=0 →
+selIdx=0). The problem was invisible feedback — a selected pin looked identical to an unselected
+one, and the inspector pin fields were uneditable-looking.
+
+**Selection ring (`SymbolEditorRenderer.DrawPinMarkers`):**
+For the selected pin (`i == selIdx`), two additional circles are drawn before the pin dot:
+- **Halo fill** — `theme.SelectionBox` at 30-alpha, radius `r + 6f` screen-px.
+- **Ring stroke** — `theme.SelectionBox`, 2 px stroke, same radius.
+The ring is drawn behind the dot so the dot sits inside the halo. All unselected pins remain unchanged.
+Ring tracks the live drag offset via the same `drawX/drawY` calculation as the dot.
+
+**Inspector Pin panel (editable — `SymbolPrimitiveInspectorView.axaml`):**
+Pin X / Y and Port are already bound TwoWay to `PinX`, `PinY`, `PinPortIndex` in
+`SymbolPrimitiveInspectorViewModel`, which commit through `MoveSymbolPinCommand` (P-snapped) and
+`RemapSymbolPinCommand`. Port field uses `ShowButtonSpinner="False"` (integer box, HIG: no spinner).
+
+**Instrumentation removed:** all `[PIN]` `Console.Error.WriteLine` lines removed from
+`SymbolEditorRenderer`, `SymbolEditorViewModel`, and `SymbolEditorCanvas`.

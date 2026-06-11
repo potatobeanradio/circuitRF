@@ -159,34 +159,45 @@ internal static class SymbolEditorRenderer
     {
         if (pins.Count == 0) return;
 
-        float r       = (float)Math.Max(3.0, zoom * 5.0);
-        float strokeW = (float)Math.Max(1.0, zoom * 1.5);
+        float r        = (float)Math.Max(3.0, zoom * 5.0);
+        float strokeW  = (float)Math.Max(1.0, zoom * 1.5);
         float fontSize = (float)Math.Max(8.0, zoom * 12.0);
 
-        int    selIdx        = overlay.SelectedPinIndex;
-        var (pinDx, pinDy)  = overlay.PinLiveDragOffset;
+        var selPins        = overlay.SelectedPinIndices;
+        var (pinDx, pinDy) = overlay.PinLiveDragOffset;
 
-        using var fillNormal   = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Fill,
+        using var fillNormal   = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
                                                Color = theme.ConnectedPin };
-        using var fillSelected = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Fill,
+        using var fillSelected = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
                                                Color = theme.SelectionBox };
-        using var strokeNormal = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Stroke,
+        using var strokeNormal = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke,
                                                StrokeWidth = strokeW, Color = theme.Wire };
-        using var strokeSel    = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Stroke,
+        using var strokeSel    = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke,
                                                StrokeWidth = strokeW * 1.5f, Color = theme.SelectionBox };
-        using var textPaint    = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Fill,
+        using var ringFill     = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
+                                               Color = theme.SelectionBox.WithAlpha(30) };
+        using var ringStroke   = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke,
+                                               StrokeWidth = 2f, Color = theme.SelectionBox };
+        using var textPaint    = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
                                                Color = theme.ComponentNameText };
         using var labelFont    = new SKFont(SkiaFonts.PlexBold, fontSize);
 
         for (int i = 0; i < pins.Count; i++)
         {
             var pin  = pins[i];
-            bool sel = (i == selIdx);
+            bool sel = selPins.Contains(i);
             double drawX = pin.LocalX + (sel ? pinDx : 0);
             double drawY = pin.LocalY + (sel ? pinDy : 0);
 
             float sx = (float)((drawX - panX) * zoom);
             float sy = (float)((drawY - panY) * zoom);
+
+            // Selection ring — drawn behind the pin dot so the dot sits inside the halo.
+            if (sel)
+            {
+                canvas.DrawCircle(sx, sy, r + 6f, ringFill);
+                canvas.DrawCircle(sx, sy, r + 6f, ringStroke);
+            }
 
             canvas.DrawCircle(sx, sy, r, sel ? fillSelected : fillNormal);
             canvas.DrawCircle(sx, sy, r, sel ? strokeSel    : strokeNormal);
@@ -197,19 +208,23 @@ internal static class SymbolEditorRenderer
                             SKTextAlign.Left, labelFont, textPaint);
         }
 
-        // Ghost circle at drag destination (when a pin is being dragged).
-        if (selIdx >= 0 && selIdx < pins.Count && (pinDx != 0 || pinDy != 0))
+        // Ghost circle at drag destination for each selected pin being dragged.
+        if ((pinDx != 0 || pinDy != 0) && selPins.Count > 0)
         {
-            var p   = pins[selIdx];
-            float gx = (float)((p.LocalX + pinDx - panX) * zoom);
-            float gy = (float)((p.LocalY + pinDy - panY) * zoom);
             using var ghostPaint = new SKPaint
             {
                 IsAntialias = true, Style = SKPaintStyle.Stroke,
                 StrokeWidth = strokeW, Color = theme.GhostBody,
                 PathEffect  = SKPathEffect.CreateDash([4f, 3f], 0f),
             };
-            canvas.DrawCircle(gx, gy, r, ghostPaint);
+            foreach (int si in selPins)
+            {
+                if (si < 0 || si >= pins.Count) continue;
+                var p  = pins[si];
+                float gx = (float)((p.LocalX + pinDx - panX) * zoom);
+                float gy = (float)((p.LocalY + pinDy - panY) * zoom);
+                canvas.DrawCircle(gx, gy, r, ghostPaint);
+            }
         }
     }
 
@@ -271,9 +286,20 @@ internal static class SymbolEditorRenderer
 
         if (selected.Count > 0)
         {
+            // Wire-style re-stroke: thick semi-transparent accent painted over the primitive's
+            // own geometry — mirrors SchematicRenderer wire-selection paint.
+            using var selPaint = new SKPaint
+            {
+                IsAntialias = true, Style = SKPaintStyle.Stroke,
+                StrokeWidth = (float)Math.Max(6.0, zoom * 8.0),
+                Color       = theme.SelectionBox.WithAlpha(120),
+                StrokeJoin  = SKStrokeJoin.Round,
+                StrokeCap   = SKStrokeCap.Round,
+            };
+            // Box highlight kept for Text primitives and for the fill background.
             using var boxStroke = new SKPaint
             {
-                IsAntialias = true,  Style = SKPaintStyle.Stroke,
+                IsAntialias = true, Style = SKPaintStyle.Stroke,
                 StrokeWidth = (float)Math.Max(1.0, zoom * 1.5),
                 Color       = theme.SelectionBox,
                 PathEffect  = SKPathEffect.CreateDash([4f, 4f], 0f),
@@ -287,21 +313,74 @@ internal static class SymbolEditorRenderer
             foreach (int idx in selected)
             {
                 if (idx < 0 || idx >= symbol.Primitives.Count) continue;
-                var (bx0, by0, bx1, by1) = SymbolGeometry.BboxOf(symbol.Primitives[idx]);
+                var prim = symbol.Primitives[idx];
 
-                bx0 += dx; by0 += dy; bx1 += dx; by1 += dy;
-
-                float sx0 = (float)((bx0 - panX) * zoom);
-                float sy0 = (float)((by0 - panY) * zoom);
-                float sx1 = (float)((bx1 - panX) * zoom);
-                float sy1 = (float)((by1 - panY) * zoom);
-
-                float margin = (float)Math.Max(2.0, zoom * 4.0);
-                var rect = SKRect.Create(sx0 - margin, sy0 - margin,
-                                         sx1 - sx0 + 2 * margin, sy1 - sy0 + 2 * margin);
-                canvas.DrawRect(rect, boxFill);
-                canvas.DrawRect(rect, boxStroke);
+                if (prim is TextPrimitive)
+                {
+                    // Text: corrected bbox box highlight (Layer 7).
+                    var (bx0, by0, bx1, by1) = SymbolGeometry.BboxOf(prim);
+                    bx0 += dx; by0 += dy; bx1 += dx; by1 += dy;
+                    float sx0 = (float)((bx0 - panX) * zoom);
+                    float sy0 = (float)((by0 - panY) * zoom);
+                    float sx1 = (float)((bx1 - panX) * zoom);
+                    float sy1 = (float)((by1 - panY) * zoom);
+                    float margin = (float)Math.Max(2.0, zoom * 2.0);
+                    var rect = SKRect.Create(sx0 - margin, sy0 - margin,
+                                             sx1 - sx0 + 2 * margin, sy1 - sy0 + 2 * margin);
+                    canvas.DrawRect(rect, boxFill);
+                    canvas.DrawRect(rect, boxStroke);
+                }
+                else
+                {
+                    // All other primitives: re-stroke actual geometry with selection accent.
+                    // Shift panX/panY so the overlay tracks the live-drag offset.
+                    SchematicRenderer.DrawSymbol(
+                        canvas, [prim],
+                        compX: 0, compY: 0,
+                        rotation: SymbolRotation.R0, mirrorX: false,
+                        panX: panX - dx, panY: panY - dy, zoom: zoom,
+                        theme: theme,
+                        overridePaint: selPaint);
+                }
             }
+        }
+
+        // Resize preview bbox (dashed outline while gripper-dragging).
+        if (overlay.ResizePreviewBb.HasValue)
+        {
+            var (rx0, ry0, rx1, ry1) = overlay.ResizePreviewBb.Value;
+            float px0 = (float)((rx0 - panX) * zoom), py0 = (float)((ry0 - panY) * zoom);
+            float px1 = (float)((rx1 - panX) * zoom), py1 = (float)((ry1 - panY) * zoom);
+            using var previewStroke = new SKPaint
+            {
+                IsAntialias = true,  Style = SKPaintStyle.Stroke,
+                StrokeWidth = (float)Math.Max(1.0, zoom * 1.5),
+                Color       = theme.SelectionBox,
+                PathEffect  = SKPathEffect.CreateDash([5f, 3f], 0f),
+            };
+            canvas.DrawRect(SKRect.Create(px0, py0, px1 - px0, py1 - py0), previewStroke);
+        }
+
+        // Resize gripper handle — small filled accent square at bottom-right.
+        if (overlay.ResizeHandle.HasValue)
+        {
+            var (hx, hy) = overlay.ResizeHandle.Value;
+            float ghx = (float)((hx - panX) * zoom);
+            float ghy = (float)((hy - panY) * zoom);
+            float gs  = (float)Math.Max(4f, zoom * 6.0);
+            using var gripFill = new SKPaint
+            {
+                IsAntialias = false, Style = SKPaintStyle.Fill,
+                Color       = theme.SelectionBox,
+            };
+            using var gripStroke = new SKPaint
+            {
+                IsAntialias = false, Style = SKPaintStyle.Stroke,
+                StrokeWidth = 1f,   Color = theme.Background,
+            };
+            var gripRect = SKRect.Create(ghx - gs * 0.5f, ghy - gs * 0.5f, gs, gs);
+            canvas.DrawRect(gripRect, gripFill);
+            canvas.DrawRect(gripRect, gripStroke);
         }
 
         if (overlay.RubberBand.HasValue)
