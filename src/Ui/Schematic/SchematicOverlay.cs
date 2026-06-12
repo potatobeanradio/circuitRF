@@ -108,4 +108,8 @@ public sealed record PlacementGhost(
     SymbolKind    Symbol,
     SymbolRotation Rotation,
     bool          MirrorX,
-    int           PortCount = 2);
+    int           PortCount = 2,
+    /// <summary>Non-null when dragging a resolved cell: draws the real symbol primitives instead of the Generic box.</summary>
+    IReadOnlyList<SymbolPrimitive>? ResolvedPrimitives = null,
+    /// <summary>Non-null when dragging a resolved cell: uses the real pins for port markers.</summary>
+    IReadOnlyList<SymbolPin>?      ResolvedPins        = null);

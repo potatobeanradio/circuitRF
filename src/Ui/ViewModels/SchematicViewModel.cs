@@ -86,11 +86,13 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     private bool   _isDragging;
     private double _dragStartWorldX, _dragStartWorldY;
-    private Dictionary<string, (double X, double Y)>?                _dragStartCompPositions;
-    private Dictionary<string, WireDragInfo>?                        _dragWireInfo;
-    private Dictionary<string, IReadOnlyList<(double X, double Y)>>? _dragUnselectedWirePoints;
-    private Dictionary<string, (double X, double Y)>?                _dragStartObjPositions;
-    private List<PinOnPinContact>?                                    _dragPinOnPinContacts;
+    private Dictionary<string, (double X, double Y)>?                                                 _dragStartCompPositions;
+    private Dictionary<string, WireDragInfo>?                                                         _dragWireInfo;
+    private Dictionary<string, IReadOnlyList<(double X, double Y)>>?                                  _dragUnselectedWirePoints;
+    private Dictionary<string, (double X, double Y)>?                                                 _dragStartObjPositions;
+    private List<PinOnPinContact>?                                                                     _dragPinOnPinContacts;
+    // Snapshot of every component's pin geometry at drag start — avoids per-frame resolver calls.
+    private Dictionary<string, IReadOnlyList<(float LocalX, float LocalY, int PortIndex)>>?           _dragPortDefs;
 
     // Canvas-object resize-gripper state
     private bool   _isObjResizing;
@@ -819,6 +821,12 @@ public sealed partial class SchematicViewModel : ObservableObject
             _dragUnselectedWirePoints[wire.Id] = wire.Points.ToList();
         }
 
+        // Snapshot pin geometry for ALL components — used by per-frame helpers to avoid per-frame
+        // resolver calls (per the perf rule; unselected comps needed for IsPointHeldByStationaryPin).
+        _dragPortDefs = new Dictionary<string, IReadOnlyList<(float, float, int)>>(EditModel.Components.Count);
+        foreach (var comp in EditModel.Components)
+            _dragPortDefs[comp.Id] = EditModel.PortDefsOf(comp);
+
         // Layer 3: detect pin-on-pin contacts between selected component ports and unselected
         // component ports (no wire between them). These auto-form a wire if the drag separates them.
         _dragPinOnPinContacts = [];
@@ -829,12 +837,13 @@ public sealed partial class SchematicViewModel : ObservableObject
             {
                 var selComp = EditModel.FindComponent(selId);
                 if (selComp is null) continue;
-                var selPorts = SymbolPortDefs.For(selComp.Symbol, selComp.PortCount);
-                for (int pi = 0; pi < selPorts.Length; pi++)
+                var selDefs = _dragPortDefs[selId];
+                for (int pi = 0; pi < selDefs.Count; pi++)
                 {
-                    if (selComp.IsPortDetached(pi)) continue;
+                    var selDef = selDefs[pi];
+                    if (selComp.IsPortDetached(selDef.PortIndex)) continue;
                     var (wx, wy) = SchematicGeometry.LocalToWorld(
-                        selPorts[pi].LocalX, selPorts[pi].LocalY,
+                        selDef.LocalX, selDef.LocalY,
                         start.X, start.Y, selComp.Rotation, selComp.MirrorX);
 
                     // Skip ports already on a wire — those are Case 1 (wire follows the port).
@@ -856,14 +865,16 @@ public sealed partial class SchematicViewModel : ObservableObject
                     // by a stationary pin — if it is, the wire stays put and an auto-wire is needed.
                     if (onWire && !IsPointHeldByStationaryPin(wx, wy)) continue;
 
-                    // Record coincidence with each unselected component port
+                    // Record coincidence with each unselected component port (pi = slot into selDefs)
                     foreach (var other in EditModel.Components)
                     {
                         if (Selection.IsSelected(other.Id)) continue;
-                        var otherPorts = SymbolPortDefs.For(other.Symbol, other.PortCount);
-                        for (int opi = 0; opi < otherPorts.Length; opi++)
+                        var otherDefs = _dragPortDefs[other.Id];
+                        for (int opi = 0; opi < otherDefs.Count; opi++)
                         {
-                            var (ox, oy) = other.GetPortWorldCoord(opi);
+                            var oDef = otherDefs[opi];
+                            if (other.IsPortDetached(oDef.PortIndex)) continue;
+                            var (ox, oy) = EditModel.PortWorldOf(other, oDef);
                             if (SchematicGeometry.CoincidentPoints(wx, wy, ox, oy, tol))
                                 _dragPinOnPinContacts.Add(new PinOnPinContact(ox, oy, selId, pi));
                         }
@@ -894,10 +905,10 @@ public sealed partial class SchematicViewModel : ObservableObject
         foreach (var comp in EditModel.Components)
         {
             if (Selection.IsSelected(comp.Id)) continue;
-            int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
-            for (int pi = 0; pi < nPins; pi++)
+            foreach (var def in EditModel.PortDefsOf(comp))
             {
-                var (px, py) = comp.GetPortWorldCoord(pi);
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (px, py) = EditModel.PortWorldOf(comp, def);
                 if (SchematicGeometry.CoincidentPoints(wx, wy, px, py, tol)) return true;   // port → pin
             }
         }
@@ -972,10 +983,13 @@ public sealed partial class SchematicViewModel : ObservableObject
         foreach (var comp in EditModel.Components)
         {
             if (Selection.IsSelected(comp.Id)) continue;
-            int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
-            for (int pi = 0; pi < nPins; pi++)
+            var defs = _dragPortDefs is not null && _dragPortDefs.TryGetValue(comp.Id, out var snapped)
+                ? snapped
+                : EditModel.PortDefsOf(comp);
+            foreach (var def in defs)
             {
-                var (px, py) = comp.GetPortWorldCoord(pi);
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (px, py) = EditModel.PortWorldOf(comp, def);
                 if (SchematicGeometry.CoincidentPoints(x, y, px, py, tol)) return true;
             }
         }
@@ -991,10 +1005,10 @@ public sealed partial class SchematicViewModel : ObservableObject
         foreach (var comp in EditModel.Components)
         {
             if (Selection.IsSelected(comp.Id)) continue;
-            int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
-            for (int pi = 0; pi < nPins; pi++)
+            foreach (var def in EditModel.PortDefsOf(comp))
             {
-                var (px, py) = comp.GetPortWorldCoord(pi);
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (px, py) = EditModel.PortWorldOf(comp, def);
                 if (SchematicGeometry.CoincidentPoints(wx, wy, px, py, tol)) return true;
             }
         }
@@ -1183,21 +1197,24 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (_dragStartCompPositions is null || _dragUnselectedWirePoints is null) return;
         const double tol = 8.0;
 
-        // Build map: original port world position → current (new) port world position
+        // Build map: original port world position → current (new) port world position.
+        // Use the drag-start snapshot to avoid per-frame resolver calls (perf rule).
         var portMoves = new List<(double Ox, double Oy, double Nx, double Ny)>();
         foreach (var (id, start) in _dragStartCompPositions)
         {
             var comp = EditModel.FindComponent(id);
             if (comp is null) continue;
-            var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
-            for (int pi = 0; pi < portDefs.Length; pi++)
+            var defs = _dragPortDefs is not null && _dragPortDefs.TryGetValue(id, out var snapped)
+                ? snapped
+                : EditModel.PortDefsOf(comp);
+            foreach (var def in defs)
             {
-                if (comp.IsPortDetached(pi)) continue;
+                if (comp.IsPortDetached(def.PortIndex)) continue;
                 var (ox, oy) = SchematicGeometry.LocalToWorld(
-                    portDefs[pi].LocalX, portDefs[pi].LocalY,
+                    def.LocalX, def.LocalY,
                     start.X, start.Y, comp.Rotation, comp.MirrorX);
                 var (nx, ny) = SchematicGeometry.LocalToWorld(
-                    portDefs[pi].LocalX, portDefs[pi].LocalY,
+                    def.LocalX, def.LocalY,
                     comp.X, comp.Y, comp.Rotation, comp.MirrorX);
                 portMoves.Add((ox, oy, nx, ny));
             }
@@ -1354,7 +1371,8 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
         }
 
-        // Layer 3: build PlaceWireCommands for pin-on-pin contacts that separated during drag
+        // Layer 3: build PlaceWireCommands for pin-on-pin contacts that separated during drag.
+        // MovingPortIndex is the slot into the snapshotted PortDefsOf array (set at drag start).
         var autoWireCmds = new List<PlaceWireCommand>();
         if (_dragPinOnPinContacts is { Count: > 0 } && compSnaps.Count > 0)
         {
@@ -1363,11 +1381,13 @@ public sealed partial class SchematicViewModel : ObservableObject
             {
                 var snap = compSnaps.FirstOrDefault(s => s.Component.Id == contact.MovingCompId);
                 if (snap.Component is null) continue;
-                var portDefs = SymbolPortDefs.For(snap.Component.Symbol, snap.Component.PortCount);
-                if (contact.MovingPortIndex >= portDefs.Length) continue;
+                var defs = _dragPortDefs is not null && _dragPortDefs.TryGetValue(snap.Component.Id, out var snapDefs)
+                    ? snapDefs
+                    : EditModel.PortDefsOf(snap.Component);
+                if (contact.MovingPortIndex >= defs.Count) continue;
+                var def = defs[contact.MovingPortIndex];
                 var (nx, ny) = SchematicGeometry.LocalToWorld(
-                    portDefs[contact.MovingPortIndex].LocalX,
-                    portDefs[contact.MovingPortIndex].LocalY,
+                    def.LocalX, def.LocalY,
                     snap.EndX, snap.EndY, snap.Component.Rotation, snap.Component.MirrorX);
                 if (SchematicGeometry.CoincidentPoints(nx, ny, contact.StationaryX, contact.StationaryY, tol))
                     continue; // still coincident — no wire needed
@@ -1453,21 +1473,20 @@ public sealed partial class SchematicViewModel : ObservableObject
         return info.StartPoints; // both pinned — no change
     }
 
-    private static List<(double Ox, double Oy, double Nx, double Ny)> BuildPortMoves(
+    private List<(double Ox, double Oy, double Nx, double Ny)> BuildPortMoves(
         List<ComponentMoveSnapshot> compSnaps)
     {
         var moves = new List<(double, double, double, double)>();
         foreach (var cs in compSnaps)
         {
-            var portDefs = SymbolPortDefs.For(cs.Component.Symbol, cs.Component.PortCount);
-            for (int pi = 0; pi < portDefs.Length; pi++)
+            foreach (var def in EditModel.PortDefsOf(cs.Component))
             {
-                if (cs.Component.IsPortDetached(pi)) continue;
+                if (cs.Component.IsPortDetached(def.PortIndex)) continue;
                 var (ox, oy) = SchematicGeometry.LocalToWorld(
-                    portDefs[pi].LocalX, portDefs[pi].LocalY,
+                    def.LocalX, def.LocalY,
                     cs.StartX, cs.StartY, cs.Component.Rotation, cs.Component.MirrorX);
                 var (nx, ny) = SchematicGeometry.LocalToWorld(
-                    portDefs[pi].LocalX, portDefs[pi].LocalY,
+                    def.LocalX, def.LocalY,
                     cs.EndX, cs.EndY, cs.Component.Rotation, cs.Component.MirrorX);
                 moves.Add((ox, oy, nx, ny));
             }
@@ -1533,7 +1552,8 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
         }
 
-        // Layer 3: live preview wires for separating pin-on-pin contacts
+        // Layer 3: live preview wires for separating pin-on-pin contacts.
+        // MovingPortIndex is the slot into the snapshotted PortDefsOf array; use snapshot for perf.
         List<IReadOnlyList<(double X, double Y)>>? popPreviews = null;
         if (_dragPinOnPinContacts is { Count: > 0 } && _dragStartCompPositions is { Count: > 0 })
         {
@@ -1542,11 +1562,13 @@ public sealed partial class SchematicViewModel : ObservableObject
             {
                 var comp = EditModel.FindComponent(contact.MovingCompId);
                 if (comp is null) continue;
-                var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
-                if (contact.MovingPortIndex >= portDefs.Length) continue;
+                var defs = _dragPortDefs is not null && _dragPortDefs.TryGetValue(contact.MovingCompId, out var snapDefs)
+                    ? snapDefs
+                    : EditModel.PortDefsOf(comp);
+                if (contact.MovingPortIndex >= defs.Count) continue;
+                var def = defs[contact.MovingPortIndex];
                 var (nx, ny) = SchematicGeometry.LocalToWorld(
-                    portDefs[contact.MovingPortIndex].LocalX,
-                    portDefs[contact.MovingPortIndex].LocalY,
+                    def.LocalX, def.LocalY,
                     comp.X, comp.Y, comp.Rotation, comp.MirrorX);
                 if (SchematicGeometry.CoincidentPoints(nx, ny, contact.StationaryX, contact.StationaryY, tol))
                     continue;
@@ -1612,6 +1634,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         _dragUnselectedWirePoints = null;
         _dragStartObjPositions    = null;
         _dragPinOnPinContacts     = null;
+        _dragPortDefs             = null;
         _isObjResizing            = false;
         _resizeObjId              = null;
     }

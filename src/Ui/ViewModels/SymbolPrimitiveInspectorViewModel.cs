@@ -388,8 +388,10 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         int pi = _vm.Overlay.SelectedPinIndex;
         if (pi < 0 || pi >= _vm.EditableSymbol.Pins.Count) return;
         var pin = _vm.EditableSymbol.Pins[pi];
-        if (newValue == pin.PortIndex) return;
-        _vm.Execute(new RemapSymbolPinCommand(_vm.EditableSymbol, pin, newValue));
+        int zeroBasedIndex = newValue - 1;
+        if (zeroBasedIndex < 0) return;
+        if (zeroBasedIndex == pin.PortIndex) return;
+        _vm.Execute(new RemapSymbolPinCommand(_vm.EditableSymbol, pin, zeroBasedIndex));
     }
 
     // ── Polyline coord list (Layer 3) ─────────────────────────────────────────
@@ -497,7 +499,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         IsPinSelected = true;
         PinX          = pin.LocalX + offsetX;
         PinY          = pin.LocalY + offsetY;
-        PinPortIndex  = pin.PortIndex;
+        PinPortIndex  = pin.PortIndex + 1;
         PolylineCoords.Clear();
         _isRefreshing = false;
     }

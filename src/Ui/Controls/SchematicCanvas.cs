@@ -763,17 +763,39 @@ public sealed class SchematicCanvas : Control
         e.DragEffects = DragDropEffects.Copy;
         e.Handled     = true;
 
-        // Show a generic box ghost following the drag cursor.
+        // Show a ghost following the drag cursor — resolved symbol when available, neutral box on fallback.
         if (_editContext is not null)
         {
-            var pos  = e.GetPosition(this);
-            double sx = _editContext.EditModel.SnapToGrid(ScreenToWorldX(pos.X));
-            double sy = _editContext.EditModel.SnapToGrid(ScreenToWorldY(pos.Y));
-            _editContext.Overlay = _editContext.Overlay with
+            var pos      = e.GetPosition(this);
+            double sx    = _editContext.EditModel.SnapToGrid(ScreenToWorldX(pos.X));
+            double sy    = _editContext.EditModel.SnapToGrid(ScreenToWorldY(pos.Y));
+            var rotation = _editContext.CurrentPlacementRotation;
+
+            PlacementGhost ghost;
+            var schDir = _editContext.EditModel.SchematicDirectory;
+            if (schDir is not null)
             {
-                Ghost = new PlacementGhost(sx, sy, SymbolKind.Generic,
-                    _editContext.CurrentPlacementRotation, false, 2),
-            };
+                try
+                {
+                    var cellRef    = Path.GetRelativePath(schDir, payload.CellAbsPath);
+                    var resolution = CellSymbolResolver.Resolve(cellRef, schDir);
+                    if (resolution.State == CellSymbolState.Resolved && resolution.Symbol is { } sym)
+                        ghost = new PlacementGhost(sx, sy, SymbolKind.Generic, rotation, false,
+                            sym.PortCount, sym.Primitives, sym.Pins);
+                    else
+                        ghost = new PlacementGhost(sx, sy, SymbolKind.Generic, rotation, false, 2);
+                }
+                catch
+                {
+                    ghost = new PlacementGhost(sx, sy, SymbolKind.Generic, rotation, false, 2);
+                }
+            }
+            else
+            {
+                ghost = new PlacementGhost(sx, sy, SymbolKind.Generic, rotation, false, 2);
+            }
+
+            _editContext.Overlay = _editContext.Overlay with { Ghost = ghost };
             InvalidateVisual();
         }
     }

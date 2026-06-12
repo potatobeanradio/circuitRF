@@ -3,6 +3,8 @@
 Two small, independent fixes surfaced while testing cell placement. Neither is functional-critical
 (placement and connectivity are fixed elsewhere) — these are correctness/polish.
 
+**Status: COMPLETED 2026-06-12**
+
 **Firewall:** UI layer only; keep `SymbolPortDefs`/registry/model framework-free.
 
 ---
@@ -86,3 +88,19 @@ connectivity is unchanged.
 ## Exit / report
 State: how the ghost carries/draws the resolved symbol and the fallback; the 1-based↔0-based
 conversion point and every surface updated; and confirmation the `.csym` round-trips unchanged.
+
+## Implementation notes
+
+### Files changed
+1. `src/Ui/Schematic/SchematicOverlay.cs` — `PlacementGhost` extended with `ResolvedPrimitives: IReadOnlyList<SymbolPrimitive>?` and `ResolvedPins: IReadOnlyList<SymbolPin>?` (both nullable, default null; all existing call sites unchanged).
+2. `src/Ui/Controls/SchematicCanvas.cs` — `OnCellDragOver`: when `SchematicDirectory != null`, calls `CellSymbolResolver.Resolve` and on `Resolved` passes `sym.Primitives`/`sym.Pins` into the ghost; falls back to neutral 2-port `Generic` box on `NotFound`/`PrimaryMissing`/null directory/exception.
+3. `src/Ui/Renderers/SchematicRenderer.cs` — ghost draw section: uses `ghost.ResolvedPrimitives ?? BuiltInSymbols.Primitives(ghost.Symbol).Primitives` for the body; iterates `ghost.ResolvedPins` (if non-null) for port markers, otherwise falls back to `SymbolPortDefs.For`.
+4. `src/Ui/ViewModels/SymbolPrimitiveInspectorViewModel.cs` — `SetPinView`: `PinPortIndex = pin.PortIndex + 1`; `OnPinPortIndexChanged`: converts `newValue - 1` to 0-based before passing to `RemapSymbolPinCommand`; clamps `< 0` and no-change guards updated.
+5. `src/Ui/Views/Properties/SymbolPrimitiveInspectorView.axaml` — PinPortIndex `NumericUpDown` `Minimum` changed from `0` to `1`.
+
+### Renderer/editor surfaces already 1-based (no change needed)
+- `SymbolEditorRenderer` line 246: pin marker label `$"P{pin.PortIndex + 1}"` — already 1-based.
+- `DrawUnmappedPortPanel` line 312: `$"  Port {pi + 1} → open circuit"` — already 1-based.
+
+### Round-trip verification
+`.csym` storage is unchanged — `PortIndex` is 0-based throughout persistence. The conversion happens only in `SetPinView` (read: +1) and `OnPinPortIndexChanged` (write: −1), both at the inspector boundary.

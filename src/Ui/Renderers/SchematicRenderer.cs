@@ -990,7 +990,9 @@ public static class SchematicRenderer
                 Color       = theme.GhostBody,
                 PathEffect  = SKPathEffect.CreateDash([6f, 3f], 0f),
             };
-            DrawSymbol(canvas, BuiltInSymbols.Primitives(ghost.Symbol).Primitives,
+            var ghostPrimitives = ghost.ResolvedPrimitives
+                ?? BuiltInSymbols.Primitives(ghost.Symbol).Primitives;
+            DrawSymbol(canvas, ghostPrimitives,
                 ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom,
                 theme, ghostPaint);
 
@@ -1002,10 +1004,21 @@ public static class SchematicRenderer
                 StrokeWidth = (float)Math.Max(1.0, zoom * 2),
                 Color       = theme.GhostBody,
             };
-            foreach (var (_, lx, ly) in SymbolPortDefs.For(ghost.Symbol, ghost.PortCount))
+            if (ghost.ResolvedPins is { } resolvedPins)
             {
-                var (px, py) = LocalToPixel(lx, ly, ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom);
-                canvas.DrawRect(SKRect.Create(px - ghostBoxHalf, py - ghostBoxHalf, ghostBoxHalf * 2, ghostBoxHalf * 2), ghostPortPaint);
+                foreach (var pin in resolvedPins)
+                {
+                    var (px, py) = LocalToPixel(pin.LocalX, pin.LocalY, ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom);
+                    canvas.DrawRect(SKRect.Create(px - ghostBoxHalf, py - ghostBoxHalf, ghostBoxHalf * 2, ghostBoxHalf * 2), ghostPortPaint);
+                }
+            }
+            else
+            {
+                foreach (var (_, lx, ly) in SymbolPortDefs.For(ghost.Symbol, ghost.PortCount))
+                {
+                    var (px, py) = LocalToPixel(lx, ly, ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom);
+                    canvas.DrawRect(SKRect.Create(px - ghostBoxHalf, py - ghostBoxHalf, ghostBoxHalf * 2, ghostBoxHalf * 2), ghostPortPaint);
+                }
             }
         }
 

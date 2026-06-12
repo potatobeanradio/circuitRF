@@ -608,6 +608,71 @@ public sealed class SchematicEditModel
         return result;
     }
 
+    // ── Cell-ref-aware pin-geometry accessor (single source of truth) ────────────
+
+    /// <summary>
+    /// Single source of a component's pin geometry. Cell-ref-aware:
+    ///   CellRef + Resolved  → resolved .csym Symbol.Pins (via <paramref name="cellRefResolutions"/> or CellSymbolResolver)
+    ///   CellRef + NotFound/PrimaryMissing → empty (matches the no-pins render)
+    ///   built-in            → SymbolPortDefs.For(Symbol, PortCount), PortIndex = slot
+    /// Per-frame callers should use a pre-built snapshot to avoid per-frame resolver calls.
+    /// </summary>
+    internal IReadOnlyList<(float LocalX, float LocalY, int PortIndex)> PortDefsOf(
+        EditableComponent comp,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
+    {
+        if (comp.CellRef is not null)
+        {
+            CellSymbolResolution? res = null;
+            if (cellRefResolutions is not null)
+                cellRefResolutions.TryGetValue(comp.Id, out res);
+            else if (SchematicDirectory is not null)
+                res = CellSymbolResolver.Resolve(comp.CellRef, SchematicDirectory);
+
+            if (res is { State: CellSymbolState.Resolved, Symbol: { } sym })
+            {
+                var pins = sym.Pins;
+                var r = new (float LocalX, float LocalY, int PortIndex)[pins.Count];
+                for (int i = 0; i < pins.Count; i++)
+                    r[i] = ((float)pins[i].LocalX, (float)pins[i].LocalY, pins[i].PortIndex);
+                return r;
+            }
+            return [];
+        }
+
+        var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+        var result   = new (float LocalX, float LocalY, int PortIndex)[portDefs.Length];
+        for (int i = 0; i < portDefs.Length; i++)
+            result[i] = (portDefs[i].LocalX, portDefs[i].LocalY, i);
+        return result;
+    }
+
+    /// <summary>World coords of one pin def for a component (applies LocalToWorld with rotation/mirror).</summary>
+    internal (double X, double Y) PortWorldOf(
+        EditableComponent comp,
+        (float LocalX, float LocalY, int PortIndex) def)
+        => SchematicGeometry.LocalToWorld(def.LocalX, def.LocalY, comp.X, comp.Y, comp.Rotation, comp.MirrorX);
+
+    /// <summary>
+    /// Resolved symbol primitives for a cell-ref component (Resolved state), or null for built-ins
+    /// or unresolved cell-refs. Null for a cell-ref means NotFound/PrimaryMissing — the caller
+    /// should use placeholder bounds, consistent with what the renderer draws.
+    /// </summary>
+    internal IReadOnlyList<SymbolPrimitive>? EffectivePrimitivesOf(
+        EditableComponent comp,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
+    {
+        if (comp.CellRef is null) return null;
+
+        CellSymbolResolution? res = null;
+        if (cellRefResolutions is not null)
+            cellRefResolutions.TryGetValue(comp.Id, out res);
+        else if (SchematicDirectory is not null)
+            res = CellSymbolResolver.Resolve(comp.CellRef, SchematicDirectory);
+
+        return res is { State: CellSymbolState.Resolved, Symbol: { } sym } ? sym.Primitives : null;
+    }
+
     // ── Connectivity helpers (shared by BuildRenderModel and the live dot preview) ──
 
     /// <summary>Quantize a point to the connection-grid cell (P = GridSize).
@@ -666,35 +731,11 @@ public sealed class SchematicEditModel
         }
         foreach (var comp in Components)
         {
-            if (comp.CellRef is not null)
+            foreach (var def in PortDefsOf(comp, cellRefResolutions))
             {
-                // Cell-reference component: use resolved symbol pins if available.
-                if (cellRefResolutions is not null
-                    && cellRefResolutions.TryGetValue(comp.Id, out var res)
-                    && res is { State: CellSymbolState.Resolved, Symbol: { } sym })
-                {
-                    foreach (var pin in sym.Pins)
-                    {
-                        if (comp.IsPortDetached(pin.PortIndex)) continue;
-                        var (px, py) = SchematicGeometry.LocalToWorld(
-                            (float)pin.LocalX, (float)pin.LocalY,
-                            comp.X, comp.Y, comp.Rotation, comp.MirrorX);
-                        AddConPoint(px, py);
-                    }
-                }
-                // NotFound / PrimaryMissing: no pin geometry — nothing to add.
-            }
-            else
-            {
-                // Built-in component: existing path.
-                // Use the actual schematic pin count (N+1 for variadic), not just PortCount (N).
-                int nPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
-                for (int pi = 0; pi < nPins; pi++)
-                {
-                    if (comp.IsPortDetached(pi)) continue;
-                    var (px, py) = comp.GetPortWorldCoord(pi);
-                    AddConPoint(px, py);
-                }
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (px, py) = PortWorldOf(comp, def);
+                AddConPoint(px, py);
             }
         }
 
@@ -877,28 +918,10 @@ public sealed class SchematicEditModel
 
         foreach (var comp in Components)
         {
-            if (comp.CellRef is not null)
+            foreach (var def in PortDefsOf(comp, cellRefResolutions))
             {
-                if (cellRefResolutions is not null
-                    && cellRefResolutions.TryGetValue(comp.Id, out var pdRes)
-                    && pdRes is { State: CellSymbolState.Resolved, Symbol: { } pdSym })
-                {
-                    foreach (var pin in pdSym.Pins)
-                    {
-                        if (comp.IsPortDetached(pin.PortIndex)) continue;
-                        var (px, py) = SchematicGeometry.LocalToWorld(
-                            (float)pin.LocalX, (float)pin.LocalY,
-                            comp.X, comp.Y, comp.Rotation, comp.MirrorX);
-                        AddPortDot(px, py);
-                    }
-                }
-                continue;
-            }
-            int nDotPins = SymbolPortDefs.For(comp.Symbol, comp.PortCount).Length;
-            for (int pi = 0; pi < nDotPins; pi++)
-            {
-                if (comp.IsPortDetached(pi)) continue;
-                var (px, py) = comp.GetPortWorldCoord(pi);
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (px, py) = PortWorldOf(comp, def);
                 AddPortDot(px, py);
             }
         }

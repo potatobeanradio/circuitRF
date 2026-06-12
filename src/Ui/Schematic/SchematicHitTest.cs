@@ -78,7 +78,7 @@ public static class SchematicHitTest
         {
             if (i >= editModel.Components.Count) continue;
             var comp = editModel.Components[i];
-            var (gMinX, gMinY, gMaxX, gMaxY) = GetCompGlyphBb(comp);
+            var (gMinX, gMinY, gMaxX, gMaxY) = GetCompGlyphBb(comp, editModel);
             if (worldX >= gMinX && worldX <= gMaxX && worldY >= gMinY && worldY <= gMaxY)
                 return new HitResult(HitKind.Component, comp.Id);
         }
@@ -230,7 +230,7 @@ public static class SchematicHitTest
         {
             if (i >= editModel.Components.Count) continue;
             var comp = editModel.Components[i];
-            var (gMinX, gMinY, gMaxX, gMaxY) = GetCompGlyphBb(comp);
+            var (gMinX, gMinY, gMaxX, gMaxY) = GetCompGlyphBb(comp, editModel);
             if (Fits(gMinX, gMinY, gMaxX, gMaxY))
                 results.Add(new HitResult(HitKind.Component, comp.Id));
         }
@@ -277,9 +277,10 @@ public static class SchematicHitTest
             var comp = editModel.FindComponent(hit.Id);
             if (comp is null) continue;
 
-            for (int pi = 0; pi < comp.PortCount; pi++)
+            foreach (var def in editModel.PortDefsOf(comp))
             {
-                var (cpx, cpy) = comp.GetPortWorldCoord(pi);
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (cpx, cpy) = editModel.PortWorldOf(comp, def);
 
                 foreach (var wire in editModel.Wires)
                 {
@@ -300,9 +301,10 @@ public static class SchematicHitTest
                     foreach (var other in editModel.Components)
                     {
                         if (selected.Contains(other.Id)) continue;
-                        for (int opi = 0; opi < other.PortCount; opi++)
+                        foreach (var oDef in editModel.PortDefsOf(other))
                         {
-                            var (opx, opy) = other.GetPortWorldCoord(opi);
+                            if (other.IsPortDetached(oDef.PortIndex)) continue;
+                            var (opx, opy) = editModel.PortWorldOf(other, oDef);
                             if (!SchematicGeometry.CoincidentPoints(otherX, otherY, opx, opy, tol)) continue;
                             if (selected.Add(other.Id))
                                 result.Add(new HitResult(HitKind.Component, other.Id));
@@ -354,14 +356,17 @@ public static class SchematicHitTest
 
         foreach (var comp in editModel.Components)
         {
-            for (int pi = 0; pi < comp.PortCount; pi++)
+            var defs = editModel.PortDefsOf(comp);
+            for (int slot = 0; slot < defs.Count; slot++)
             {
-                var (px, py) = comp.GetPortWorldCoord(pi);
+                var def = defs[slot];
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (px, py) = editModel.PortWorldOf(comp, def);
                 double d = SchematicGeometry.DistanceSq(worldX, worldY, px, py);
                 if (d < bestDist && d <= tolerance * tolerance)
                 {
                     bestDist = d; bestId = comp.Id;
-                    bestPort = pi; bestX = px; bestY = py;
+                    bestPort = slot; bestX = px; bestY = py;
                 }
             }
         }
@@ -469,6 +474,17 @@ public static class SchematicHitTest
         return false;
     }
 
-    private static (double MinX, double MinY, double MaxX, double MaxY) GetCompGlyphBb(EditableComponent comp)
-        => comp.ComputeGlyphBb();
+    private static (double MinX, double MinY, double MaxX, double MaxY) GetCompGlyphBb(
+        EditableComponent comp, SchematicEditModel editModel)
+    {
+        if (comp.CellRef is not null)
+        {
+            var prims = editModel.EffectivePrimitivesOf(comp);
+            if (prims is not null)
+                return comp.ComputeGlyphBb(prims);
+            // NotFound / PrimaryMissing — placeholder bounds (matches renderer)
+            return (comp.X - 160, comp.Y - 60, comp.X + 160, comp.Y + 60);
+        }
+        return comp.ComputeGlyphBb();
+    }
 }

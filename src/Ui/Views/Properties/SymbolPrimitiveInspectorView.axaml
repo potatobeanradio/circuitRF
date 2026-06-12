@@ -454,7 +454,7 @@
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                         <NumericUpDown Grid.Column="1"
                                        Value="{Binding PinPortIndex, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
-                                       Minimum="0" Increment="1" ShowButtonSpinner="False"
+                                       Minimum="1" Increment="1" ShowButtonSpinner="False"
                                        FormatString="0" FontSize="11" Padding="4,2"/>
                     </Grid>
 
