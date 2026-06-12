@@ -15,6 +15,7 @@ public enum SymbolKind
     ToneSource,
     Ground,
     Term,
+    Pin,
     FetSdd,
     Sdd,
     ZPort,

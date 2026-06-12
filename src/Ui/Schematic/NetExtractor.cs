@@ -15,7 +15,18 @@ public static class NetExtractor
     /// <param name="Conflicts">
     /// Non-fatal naming conflicts, e.g. two different label names on the same physical net.
     /// </param>
-    public sealed record ExtractionResult(TestBench TestBench, IReadOnlyList<string> Conflicts);
+    public sealed record ExtractionResult(TestBench TestBench, IReadOnlyList<string> Conflicts)
+    {
+        /// <summary>
+        /// Cell interface port names derived from Pin components, in ascending Num order.
+        /// Differential pairs (Polarity=Plus/Minus sharing the same Num) each contribute two
+        /// entries: "{base}+" then "{base}-". Single-ended Pins contribute one entry: Name or
+        /// "P{Num}". Empty when no Pins are present (testbench-style schematics).
+        /// These names are the values that must appear in <see cref="CircuitRF.Core.Design.Cell.Ports"/>
+        /// for the elaborator's positional parentNetMap binding to work correctly.
+        /// </summary>
+        public IReadOnlyList<string> CellPorts { get; init; } = [];
+    }
 
     public static ExtractionResult Extract(SchematicEditModel model, string testBenchName = "tb")
     {
@@ -157,10 +168,23 @@ public static class NetExtractor
             }
         }
 
+        // ── Collect Pin info (before name assignment so Pin nets get port names) ───
+        // Each Pin is an interface terminal: Num (1-based) + optional Name + optional Polarity.
+        // Polarity "Plus"/"Minus" (same Num) forms a differential pair; absent/other = single-ended.
+
+        var pinInfos = CollectPinInfos(model, uf, QK);
+
+        // Build pin→portName map: applied between net-label names and auto-names so that
+        // the net at each Pin position is named after the port (enabling elaborator binding).
+        var pinNetNameMap = BuildPinNetNameMap(pinInfos, uf);
+
         // ── Layer 2: assign stable net names ────────────────────────────────
 
         var conflicts = new List<string>();
-        var netNames = AssignNetNames(uf, QK, gs, model, labelNetKeys, conflicts, detachedKeys.Values);
+        var netNames = AssignNetNames(uf, QK, gs, model, labelNetKeys, conflicts, detachedKeys.Values, pinNetNameMap);
+
+        // ── Compute CellPorts + conformance warnings ─────────────────────────
+        var cellPorts = BuildCellPorts(pinInfos, conflicts);
 
         // ── Layer 3: emit TestBench ──────────────────────────────────────────
 
@@ -185,6 +209,7 @@ public static class NetExtractor
         {
             if (comp.Disable is DisableState.Open or DisableState.Short) continue;
             if (comp.Symbol == SymbolKind.Ground) continue;
+            if (comp.Symbol == SymbolKind.Pin)    continue; // Pin is a connectivity marker — not a netlist component
             if (comp.CellRef is not null) continue; // hierarchical extraction deferred to step 2
 
             var inst = EmitInstance(comp, uf, QK, netNames, detachedKeys);
@@ -199,7 +224,7 @@ public static class NetExtractor
         foreach (var measurement in model.Measurements)
             tb.Measurements.Add(measurement);
 
-        return new ExtractionResult(tb, conflicts);
+        return new ExtractionResult(tb, conflicts) { CellPorts = cellPorts };
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
@@ -246,7 +271,8 @@ public static class NetExtractor
         SchematicEditModel model,
         Dictionary<EditableNetLabel, (long, long)?> labelNetKeys,
         List<string> conflicts,
-        IEnumerable<(long, long)>? extraRoots = null)
+        IEnumerable<(long, long)>? extraRoots = null,
+        IReadOnlyDictionary<(long, long), string>? pinNetNameMap = null)
     {
         var rootToName = new Dictionary<(long, long), string>();
 
@@ -274,6 +300,19 @@ public static class NetExtractor
             }
             else
                 rootToName[root] = lbl.Name;
+        }
+
+        // Pin port names — applied after labels so an explicit net label beats the port name,
+        // but before auto-names so Pin-connected nets get their port identity for the elaborator.
+        if (pinNetNameMap is not null)
+        {
+            foreach (var (key, portName) in pinNetNameMap)
+            {
+                if (!uf.Contains(key)) continue;
+                var root = uf.Find(key);
+                if (!rootToName.ContainsKey(root))
+                    rootToName[root] = portName;
+            }
         }
 
         // Auto-names: deterministic stable order — component list order, then pin index.
@@ -401,6 +440,135 @@ public static class NetExtractor
             nets.Add(NetForPort(pi, px, py));
         }
         return new Instance(comp.InstanceName, reference, nets, overrides);
+    }
+
+    // ── Pin helpers ──────────────────────────────────────────────────────────
+
+    private readonly record struct PinInfo(int Num, string Name, string Polarity, (long, long) Key);
+
+    /// <summary>
+    /// Collects all valid Pin instances from the schematic: those with a positive Num and a
+    /// connected (non-detached) port that is in the union-find.
+    /// </summary>
+    private static List<PinInfo> CollectPinInfos(
+        SchematicEditModel model,
+        UnionFind uf,
+        Func<double, double, (long, long)> QK)
+    {
+        var infos = new List<PinInfo>();
+        foreach (var comp in model.Components)
+        {
+            if (comp.Symbol != SymbolKind.Pin) continue;
+            if (comp.IsPortDetached(0)) continue;
+
+            var numParam  = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
+            var nameParam = comp.Parameters.FirstOrDefault(p => p.Name == "Name");
+            var polParam  = comp.Parameters.FirstOrDefault(p => p.Name == "Polarity");
+
+            if (!int.TryParse(numParam?.Expression ?? "0", out int num) || num <= 0) continue;
+
+            var (px, py) = comp.GetPortWorldCoord(0);
+            var k = QK(px, py);
+            if (!uf.Contains(k)) continue;
+
+            infos.Add(new PinInfo(
+                num,
+                nameParam?.Expression?.Trim() ?? "",
+                polParam?.Expression?.Trim() ?? "",
+                k));
+        }
+        return infos;
+    }
+
+    /// <summary>
+    /// Builds a map from each Pin's union-find key to its port name string.
+    /// Single-ended Pin: port name = Name (if non-empty) else "P{Num}".
+    /// Differential pair (Polarity=Plus and Polarity=Minus, same Num): "{base}+" / "{base}-".
+    /// </summary>
+    private static IReadOnlyDictionary<(long, long), string> BuildPinNetNameMap(
+        List<PinInfo> pinInfos,
+        UnionFind uf)
+    {
+        var map = new Dictionary<(long, long), string>();
+        foreach (var pin in pinInfos)
+        {
+            var root = uf.Find(pin.Key);
+            if (map.ContainsKey(root)) continue; // first one wins for net-name priority
+
+            string baseName = pin.Name.Length > 0 ? pin.Name : $"P{pin.Num}";
+            string portName = pin.Polarity.Equals("Plus",  StringComparison.OrdinalIgnoreCase) ? baseName + "+" :
+                              pin.Polarity.Equals("Minus", StringComparison.OrdinalIgnoreCase) ? baseName + "-" :
+                              baseName;
+
+            map[root] = portName;
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// Builds the ordered CellPorts list from PinInfos. Sorts by Num; differential pairs
+    /// (Polarity Plus/Minus sharing a Num) contribute "{base}+" then "{base}-" in that order.
+    /// Adds conformance conflict messages for duplicate non-differential Nums and Num gaps.
+    /// </summary>
+    private static IReadOnlyList<string> BuildCellPorts(List<PinInfo> pinInfos, List<string> conflicts)
+    {
+        if (pinInfos.Count == 0) return [];
+
+        // Group by Num.
+        var byNum = pinInfos
+            .GroupBy(p => p.Num)
+            .OrderBy(g => g.Key)
+            .ToList();
+
+        var ports = new List<string>();
+
+        foreach (var grp in byNum)
+        {
+            int num = grp.Key;
+            var items = grp.ToList();
+
+            var plusItem  = items.FirstOrDefault(p => p.Polarity.Equals("Plus",  StringComparison.OrdinalIgnoreCase));
+            var minusItem = items.FirstOrDefault(p => p.Polarity.Equals("Minus", StringComparison.OrdinalIgnoreCase));
+
+            bool isDiff = plusItem.Key != default && minusItem.Key != default;
+
+            if (isDiff)
+            {
+                string baseName = plusItem.Name.Length > 0 ? plusItem.Name :
+                                  minusItem.Name.Length > 0 ? minusItem.Name :
+                                  $"P{num}";
+                // Strip trailing + or - from the Name if the user set it that way.
+                if (baseName.EndsWith('+') || baseName.EndsWith('-'))
+                    baseName = baseName[..^1];
+                ports.Add(baseName + "+");
+                ports.Add(baseName + "-");
+
+                // Extra items beyond the pair = conflict.
+                int extras = items.Count - 2;
+                if (extras > 0)
+                    conflicts.Add($"Pin Num={num} has {items.Count} Pins; differential pair expects exactly 2.");
+            }
+            else
+            {
+                if (items.Count > 1)
+                    conflicts.Add($"Duplicate Pin Num={num} ({items.Count} Pins share this number).");
+
+                var first = items[0];
+                string portName = first.Name.Length > 0 ? first.Name : $"P{num}";
+                ports.Add(portName);
+            }
+        }
+
+        // Check for gaps in the Num sequence (1, 2, 3, …).
+        var nums = byNum.Select(g => g.Key).ToHashSet();
+        int maxNum = byNum[^1].Key;
+        for (int i = 1; i < maxNum; i++)
+        {
+            if (!nums.Contains(i))
+                conflicts.Add($"Pin Num={i} is missing (gap in sequence 1..{maxNum}).");
+        }
+
+        return ports;
     }
 
     // ── Union-Find ───────────────────────────────────────────────────────────

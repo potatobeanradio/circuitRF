@@ -121,6 +121,13 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Terminals,
             SearchTerms: ["Term", "T", "port", "sparam", "termination"],
             IsCommon: true),
+        // Pin: interface terminal — connectivity only, no electrical model.
+        // Num/Name labels identify the port; type and instance-name labels suppressed (Num shows instead).
+        [SymbolKind.Pin]           = new("Pin",   "Pin",
+            DefaultShowTypeLabel: false, DefaultShowInstanceName: false,
+            Category: ComponentCategory.Terminals,
+            SearchTerms: ["Pin", "P", "io", "terminal", "interface", "port"],
+            IsCommon: true),
         [SymbolKind.FetSdd]        = new("FET",   "X",
             Category: ComponentCategory.Other,
             SearchTerms: ["FET", "SDD", "FetSDD", "transistor", "nonlinear"]),
@@ -174,6 +181,7 @@ public static class ComponentTypeRegistry
         SymbolKind.VoltageSource => "V",
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
+        SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
         SymbolKind.FetSdd        => "SDD",
         SymbolKind.Sdd           => "SDD",
         SymbolKind.ZPort         => "Z_Port",
@@ -238,6 +246,15 @@ public static class ComponentTypeRegistry
                 return [new("Num", "1",  "",  true,  UnitDimension.None),
                         new("Z",   "50", "Ω", true,  UnitDimension.Resistance)];
 
+            // Pin: Num (interface port index, auto-assigned) + optional Name (port label).
+            // Num is auto-assigned at placement (CommitPlacement overrides the "1" placeholder).
+            // Name defaults to "" (empty); extraction uses "P{Num}" when Name is blank.
+            // Polarity (not in DefaultParameters) may be set via the parameter editor to
+            // "Plus" or "Minus" to form a differential port pair sharing the same Num.
+            case SymbolKind.Pin:
+                return [new("Num",  "1", "", true,  UnitDimension.None),
+                        new("Name", "",  "", false, UnitDimension.None)];
+
             // Ground/FetSdd/Generic need no default parameters.
             default: return [];
         }
@@ -275,6 +292,7 @@ public static class ComponentTypeRegistry
             case "GND":    kind = SymbolKind.Ground;        return true;
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;
+            case "PIN":    kind = SymbolKind.Pin;           return true;
             case "FET":
             case "SDD":
             case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default

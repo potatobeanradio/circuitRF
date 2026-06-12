@@ -149,6 +149,11 @@ public sealed class Elaborator
                     : $"{instancePathPrefix}.{localNet}";
             }
 
+            // Pin is a connectivity marker only — the extractor already named the net after the
+            // port and the parentNetMap handles the binding. Nothing to stamp or recurse into.
+            if (inst.Reference.Equals("Pin", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             if (ComponentModelFactory.IsPrimitive(inst.Reference))
             {
                 // Primitive — resolve nodes and parameters first; model creation may need params (e.g. SnP).

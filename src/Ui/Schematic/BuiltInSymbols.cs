@@ -22,6 +22,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _toneSrc      = BuildToneSource();
     private static readonly Symbol _ground       = BuildGround();
     private static readonly Symbol _term         = BuildTerm();
+    private static readonly Symbol _pin          = BuildPin();
     private static readonly Symbol _fetSdd       = BuildFetSdd();
     private static readonly Symbol _zport        = BuildZPort();
     private static readonly Symbol _sdd          = BuildSdd();
@@ -40,6 +41,7 @@ public static class BuiltInSymbols
         SymbolKind.ToneSource    => _toneSrc,
         SymbolKind.Ground        => _ground,
         SymbolKind.Term          => _term,
+        SymbolKind.Pin           => _pin,
         SymbolKind.FetSdd        => _fetSdd,
         SymbolKind.ZPort         => _zport,
         SymbolKind.Sdd           => _sdd,
@@ -200,6 +202,16 @@ public static class BuiltInSymbols
                 0,  95,   0, 110),
         L(    0, +120,    0, +200),         // "−" lead from box bottom
     ], SymbolKind.Term);
+
+    // ── Pin — interface terminal: short lead + open flag square ─────────────────
+    // Pin at (0,-200) — the schematic connection point (lead tip).
+    // A short vertical lead descends into a small open-square "flag" body.
+    // The Num label (shown via parameters) identifies which cell interface port this is.
+
+    private static Symbol BuildPin() => Sym([
+        L(0, -200,  0, -100),          // lead from pin to flag body
+        RRect(0, -50, 100, 100, 10),   // open square flag: center (0,-50), 100×100
+    ], SymbolKind.Pin);
 
     // ── Ground — stem + filled downward triangle (Core Graphics style) ────────
     // Pins: (0,0) — the connection point at the top of the symbol.

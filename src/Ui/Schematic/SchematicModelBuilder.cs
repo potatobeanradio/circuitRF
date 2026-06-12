@@ -372,6 +372,8 @@ public static class SchematicModelBuilder
             // Term: two pins — "+" signal at (0,-200) and "−" reference at (0,+200).
             SymbolKind.Term   => [new SchematicPortDef("+", 0, -200, p0),
                                   new SchematicPortDef("−", 0, +200, p1)],
+            // Pin: one connection terminal at the lead tip — carries the interface port number.
+            SymbolKind.Pin    => [new SchematicPortDef("1", 0, -200, p0)],
             // FetSdd: horizontal box, pins unchanged
             SymbolKind.FetSdd => [
                 new SchematicPortDef("gate",   -200, 0,    p0),

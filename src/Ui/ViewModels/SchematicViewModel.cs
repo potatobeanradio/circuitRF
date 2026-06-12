@@ -2227,6 +2227,13 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (numParam != null)
                 numParam.Expression = NextFreeTermNum(EditModel).ToString();
         }
+        // Auto-assign next-free Num for Pin — same pattern as Term.
+        if (kind == SymbolKind.Pin)
+        {
+            var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
+            if (numParam != null)
+                numParam.Expression = NextFreePinNum(EditModel).ToString();
+        }
 
         Execute(new PlaceComponentCommand(EditModel, comp));
         Selection.SelectOne(comp.Id);
@@ -2250,6 +2257,19 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         var used = model.Components
             .Where(c => c.Symbol == SymbolKind.Term)
+            .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Num"))
+            .Where(p => p != null && int.TryParse(p!.Expression, out _))
+            .Select(p => int.Parse(p!.Expression))
+            .ToHashSet();
+        int num = 1;
+        while (used.Contains(num)) num++;
+        return num;
+    }
+
+    private static int NextFreePinNum(SchematicEditModel model)
+    {
+        var used = model.Components
+            .Where(c => c.Symbol == SymbolKind.Pin)
             .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Num"))
             .Where(p => p != null && int.TryParse(p!.Expression, out _))
             .Select(p => int.Parse(p!.Expression))

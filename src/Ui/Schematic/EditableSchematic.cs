@@ -56,6 +56,8 @@ public static class SymbolPortDefs
             // Term: two terminals — "+" (signal, index 0) and "−" (reference, index 1).
             // Pin order is the contract: NetBindings[0]=+ net, NetBindings[1]=− net.
             case SymbolKind.Term:    return [("+", 0f, -200f), ("−", 0f, +200f)];
+            // Pin: one connection terminal at the lead tip.
+            case SymbolKind.Pin:     return [("1", 0f, -200f)];
             case SymbolKind.FetSdd:  return [("gate",   -200f,   0f),
                                              ("drain",   200f, -100f),
                                              ("source",  200f,  100f)];
