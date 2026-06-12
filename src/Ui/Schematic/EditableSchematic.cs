@@ -239,14 +239,20 @@ public sealed class EditableComponent
             }).ToList();
         }
 
-        // Labels in display order: type (from registry), instance name, then ShowOnSchematic params.
+        // Labels in display order: type, instance name, then ShowOnSchematic params.
         // ShowTypeLabel/ShowInstanceName suppress the respective label (stored as ""); renderer skips empty strings.
-        // GND suppression is now driven by the registry default (DefaultShowTypeLabel=false,
-        // DefaultShowInstanceName=false on Ground), seeded into these flags at placement — no hardcoded check.
+        // For cell-reference components the type label is the cell folder name (derived from CellRef —
+        // single source of truth, never a separate persisted field that could drift).
+        // For built-ins the type label comes from the component registry.
         // Param format: "<Name> = <Expression> <Unit>" (spaces around =; unit omitted when empty).
+        string typeLabel = ShowTypeLabel
+            ? (CellRef is not null
+                ? Path.GetFileName(CellRef.TrimEnd('/', '\\'))
+                : ComponentTypeRegistry.DisplayName(Symbol, PortCount))
+            : "";
         var labels = new List<string>
         {
-            ShowTypeLabel    ? ComponentTypeRegistry.DisplayName(Symbol, PortCount) : "",
+            typeLabel,
             ShowInstanceName ? InstanceName : "",
         };
         foreach (var p in Parameters)

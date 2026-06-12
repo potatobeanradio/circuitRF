@@ -225,12 +225,17 @@ public sealed class SchematicCanvas : Control
         ((IResourceHost)this).ResourcesChanged += (_, _) => InvalidateVisual();
         LayoutUpdated += OnLayoutUpdated;
 
-        // Palette DnD drop target — accept only circuitrf/palette-item; ignore everything else.
-        // Image file DnD handlers are registered AFTER so they fire only when palette rejects.
+        // DnD drop targets registered in priority order:
+        //   1. Palette (circuitrf-palette: prefix)
+        //   2. Cell (circuitrf-cell: prefix)  ← new
+        //   3. Image files (foreign file drops)
+        // Each handler marks e.Handled=true on accept, stopping lower-priority handlers.
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent,  OnPaletteDragOver);
         AddHandler(DragDrop.DropEvent,      OnPaletteDrop);
         AddHandler(DragDrop.DragLeaveEvent, OnPaletteDragLeave);
+        AddHandler(DragDrop.DragOverEvent,  OnCellDragOver);
+        AddHandler(DragDrop.DropEvent,      OnCellDrop);
         AddHandler(DragDrop.DragOverEvent,  OnImageFileDragOver);
         AddHandler(DragDrop.DropEvent,      OnImageFileDrop);
     }
@@ -734,9 +739,74 @@ public sealed class SchematicCanvas : Control
         InvalidateVisual();
     }
 
+    // ── Cell DnD drop target ──────────────────────────────────────────────────
+    // Fires after the palette handlers (palette marks e.Handled on accept).
+    // Cell drags carry the circuitrf-cell: prefix; palette and image drags do not parse.
+    // DragLeave is handled by the existing OnPaletteDragLeave (clears ghost for all drags).
+
+    private void OnCellDragOver(object? sender, DragEventArgs e)
+    {
+        CellDragPayload? payload = null;
+        foreach (var item in e.DataTransfer.Items)
+        {
+            if (item.TryGetRaw(DataFormat.Text) is string text
+                && CellDragPayload.TryParse(text, out var found))
+            { payload = found; break; }
+        }
+
+        if (payload is null)
+        {
+            e.DragEffects = DragDropEffects.None;
+            return;
+        }
+
+        e.DragEffects = DragDropEffects.Copy;
+        e.Handled     = true;
+
+        // Show a generic box ghost following the drag cursor.
+        if (_editContext is not null)
+        {
+            var pos  = e.GetPosition(this);
+            double sx = _editContext.EditModel.SnapToGrid(ScreenToWorldX(pos.X));
+            double sy = _editContext.EditModel.SnapToGrid(ScreenToWorldY(pos.Y));
+            _editContext.Overlay = _editContext.Overlay with
+            {
+                Ghost = new PlacementGhost(sx, sy, SymbolKind.Generic,
+                    _editContext.CurrentPlacementRotation, false, 2),
+            };
+            InvalidateVisual();
+        }
+    }
+
+    private async void OnCellDrop(object? sender, DragEventArgs e)
+    {
+        // Clear ghost before processing so it disappears on any outcome.
+        if (_editContext is not null)
+            _editContext.Overlay = _editContext.Overlay with { Ghost = null };
+
+        if (_editContext is null) return;
+        CellDragPayload? payload = null;
+        foreach (var item in e.DataTransfer.Items)
+        {
+            if (item.TryGetRaw(DataFormat.Text) is string text
+                && CellDragPayload.TryParse(text, out var p))
+            { payload = p; break; }
+        }
+        if (payload is null) return;
+
+        var pos      = e.GetPosition(this);
+        double wx    = ScreenToWorldX(pos.X);
+        double wy    = ScreenToWorldY(pos.Y);
+        var rotation = _editContext.CurrentPlacementRotation;
+
+        await _editContext.CommitCellPlacementAsync(payload.CellAbsPath, wx, wy, rotation);
+        e.Handled = true;
+        InvalidateVisual();
+    }
+
     // ── Image file DnD ────────────────────────────────────────────────────────
-    // Fires AFTER the palette handlers; palette pre-marks e.Handled=true on palette accepts,
-    // so the file handlers only run when the palette rejected the drag.
+    // Fires AFTER the palette and cell handlers; cell handler marks e.Handled=true on accept,
+    // so the file handlers only run when both palette and cell rejected the drag.
 
     private void OnImageFileDragOver(object? _, DragEventArgs e)
     {

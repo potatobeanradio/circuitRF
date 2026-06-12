@@ -85,6 +85,7 @@ public partial class SchematicView : UserControl
         {
             _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
             _subscribedVm.Selection.Changed -= OnSelectionChanged;
+            _subscribedVm.AutoGenSymbolCallback = null;
             _subscribedVm = null;
         }
 
@@ -96,9 +97,23 @@ public partial class SchematicView : UserControl
             _subscribedVm = vm;
             vm.PropertyChanged += OnViewModelPropertyChanged;
             vm.Selection.Changed += OnSelectionChanged;
+            vm.AutoGenSymbolCallback = ShowAutoGenPromptAsync;
             UpdateToolButtonStates();
             UpdateDisableButtonStates();
         }
+    }
+
+    private async Task<bool> ShowAutoGenPromptAsync(string cellName)
+    {
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return false;
+        var dialog = new SaveChangesDialog(
+            $"A symbol for \"{cellName}\" has not been created. Do you want one to be auto-generated?",
+            saveLabel: "Yes",
+            dontSaveLabel: null,
+            cancelLabel: "No");
+        var result = await dialog.ShowDialog<SaveChangesResult>(owner);
+        return result == SaveChangesResult.Save;
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -294,16 +309,17 @@ public partial class SchematicView : UserControl
             return;
         }
 
-        // Push In only enabled for hierarchy cells (not primitives yet — v1 deferred)
+        // Push Into is deferred (no-op); shown only for cell-reference components.
         CtxPushIn.IsEnabled = false;
 
         var id   = SchematicCanvasCtrl.ContextMenuTargetId;
         var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
 
         // GND is a special symbol — hide the items that have no meaning for it.
-        bool isGnd = comp?.Symbol == SymbolKind.Ground;
+        bool isGnd  = comp?.Symbol == SymbolKind.Ground;
+        bool isCell = comp?.CellRef is not null;
         CtxEditParameters.IsVisible  = !isGnd;
-        CtxPushIn.IsVisible          = !isGnd;
+        CtxPushIn.IsVisible          = isCell;   // only cell-reference instances have Push Into
         CtxSep1.IsVisible            = !isGnd;
         CtxMoveLabels.IsVisible      = !isGnd;
         CtxResetLabels.IsVisible     = !isGnd;

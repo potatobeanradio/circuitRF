@@ -275,7 +275,10 @@ will hand-tune some art in the symbol editor once it exists.)
 
 ## 9. Auto-generator (from the owner's spec)
 
-When the user requests it, circuitRF auto-generates a symbol for a cell:
+The auto-generator is invoked two ways: (a) explicitly, by a "Rebuild Symbol Automatically" menu
+command (§11 step 7); and (b) at **cell-placement time** — when a user drops a symbol-less cell into a
+schematic and accepts the auto-generate prompt (see the place-cells design / Brief J). Both call the
+same generator. circuitRF auto-generates a symbol for a cell:
 - **Outer rectangle**, with a **slightly inset inner rectangle** drawn at a **thinner** stroke width.
 - **Odd port numbers down the left edge** (1, 3, 5, …), **even port numbers down the right edge** (2, 4, 6,
   …), descending. **Port-number text inside the inner rectangle**, near each port.

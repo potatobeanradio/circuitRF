@@ -188,7 +188,15 @@ public static class SchematicPersistence
 
     public static void SaveToFile(string path, SchematicEditModel model, string cellName = "",
                                   double panX = 0, double panY = 0, double zoom = 1.0)
-        => File.WriteAllText(path, Serialize(model, cellName, panX, panY, zoom));
+    {
+        File.WriteAllText(path, Serialize(model, cellName, panX, panY, zoom));
+        // A model saved to a path now has a known on-disk location. Record its directory so
+        // CellRef relative-path resolution works — mirrors what LoadFromFile does on open.
+        // Without this, a schematic created via New Schematic keeps SchematicDirectory = null
+        // for its whole session (saving alone never reloaded it), so cell placement — which needs
+        // the base dir to compute and resolve CellRef — aborted silently at its first guard.
+        model.SchematicDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
+    }
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
