@@ -463,3 +463,39 @@ Pin X / Y and Port are already bound TwoWay to `PinX`, `PinY`, `PinPortIndex` in
 
 **Instrumentation removed:** all `[PIN]` `Console.Error.WriteLine` lines removed from
 `SymbolEditorRenderer`, `SymbolEditorViewModel`, and `SymbolEditorCanvas`.
+
+### Cleanup sprint — round 3, Layer 1: Symbol clipboard (done)
+
+**Root cause:** `WorkspaceViewModel.Copy/Cut/Paste` were empty stubs. `SymbolEditorCanvas` had no
+clipboard events. No `SymbolClipboard` existed. Copy/cut/paste never worked.
+
+**Implementation:**
+- **`SymbolClipboard`** (`src/Ui/Clipboard/SymbolClipboard.cs`) — `CopyAsync`/`PasteAsync` helpers.
+  Format: JSON text via `SymbolPrimitive` polymorphic serialization + `CsymPin` list, guarded by the
+  `"circuitrf/symbol-clipboard-v1"` marker (foreign text silently ignored). Paste offsets primitives
+  by one P=100 grid cell (via `SymbolGeometry.TranslateBy`); pins are P-snapped after offset.
+  Image formats (PDF/SVG/PNG) **not shipped in v1** — JSON-only; see `SchematicClipboard` for that pattern.
+- **`PasteSymbolSelectionCommand`** (`src/Ui/Commands/Symbol/`) — undoable; appends primitives/pins,
+  calls `onPasted(primIndices, pinIndices)` callback so the canvas selection updates immediately.
+- **`SymbolEditorCanvas`** — three `ClipboardCopyRequested/CutRequested/PasteRequested` events raised
+  from `OnKeyDown` on Ctrl/Cmd+C/X/V (mirrors `SchematicCanvas`).
+- **`SymbolEditorView.axaml.cs`** — wires the three events to async handlers that call
+  `doc.ViewModel.ClipboardCopyAsync/PasteAsync(clipboard)` (mirrors `SchematicView`).
+- **`SymbolEditorViewModel`** — `ClipboardCopyAsync(IClipboard, cut=false)` and `ClipboardPasteAsync(IClipboard)`
+  public methods; reads `_selection` / `_selectedPins`, delegates to `SymbolClipboard`.
+  Cut = copy then `DeleteSymbolPrimitivesCommand` + `DeleteMultipleSymbolPinsCommand`.
+- **`SchematicViewModel`** — `ClipboardCopyAsync` / `ClipboardPasteAsync` public methods, factoring out
+  the copy/paste logic that was private in `SchematicView.axaml.cs` (so Edit menu works for schematics too).
+- **`WorkspaceViewModel`** — `Copy`/`Cut`/`Paste` commands changed from empty `void` stubs to `async Task`
+  methods that route to the active document (SymbolEditorDocument or SchematicDocument) via the new VM
+  methods. `GetClipboard()` obtains `IClipboard` via `ResolveOwner` + `TopLevel.GetTopLevel`.
+
+**Key invariants:**
+- Clipboard format guarded by marker — foreign text is silently ignored.
+- Paste is undoable via `PasteSymbolSelectionCommand` (one undo removes all pasted items).
+- Cut = copy then delete (existing delete commands, already undoable).
+- Pasted items are immediately selected (onPasted callback).
+- Pins always P-snapped after offset.
+- Works via Ctrl/Cmd+C/X/V on canvas AND via Edit menu.
+
+**Gate:** build green, 1076 tests pass, firewall clean.

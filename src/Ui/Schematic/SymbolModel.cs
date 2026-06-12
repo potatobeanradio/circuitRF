@@ -16,6 +16,9 @@ public enum SymbolStrokeTier { Normal, Thin, Thick }
 public enum SineAxis         { Horizontal, Vertical }
 public enum SymbolTextAlign  { Left, Center, Right }
 
+/// <summary>Tri-state snap mode for symbol-editor art.  Pins ALWAYS snap to P=100 regardless.</summary>
+public enum SnapMode { ConnectionGrid, FineGrid, None }
+
 // ── Primitive base ────────────────────────────────────────────────────────────
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]

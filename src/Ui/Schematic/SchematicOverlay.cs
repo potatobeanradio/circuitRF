@@ -82,6 +82,22 @@ public sealed record class SchematicOverlay
     /// </summary>
     public IReadOnlyDictionary<string, (double DX, double DY)>? LabelDragOffsets { get; init; }
 
+    // ── Canvas-object drag / resize overrides ─────────────────────────────────
+
+    /// <summary>
+    /// Per-canvas-object live position and size during an active drag or resize, keyed by object Id.
+    /// Values are (TopLeftX, TopLeftY, Width, Height) in world coords — same convention as SchematicBitmap.
+    /// Non-null only while a drag or resize is in progress. DrawBitmaps reads these instead of the
+    /// stale RenderModel values so bitmaps track the cursor live without a full BuildRenderModel per tick.
+    /// </summary>
+    public IReadOnlyDictionary<string, (double X, double Y, double W, double H)>? CanvasObjectDragPositions { get; init; }
+
+    /// <summary>
+    /// World position of the resize gripper handle (bottom-right corner) for the single selected bitmap.
+    /// Non-null only when exactly one bitmap canvas object is selected and the Select tool is active.
+    /// </summary>
+    public (double X, double Y)? CanvasObjectGripperPos { get; init; }
+
     private static readonly HashSet<string> HashSetEmpty = new();
 }
 

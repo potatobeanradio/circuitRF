@@ -1,13 +1,18 @@
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Platform;
+using Avalonia.Platform.Storage;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using CircuitRF.Ui.Diagnostics;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
@@ -90,6 +95,7 @@ public sealed class SchematicCanvas : Control
             {
                 _editContext.PropertyChanged += OnVmPropertyChanged;
                 _editContext.ZoomToRectCallback = ZoomToRect;
+                _editContext.CanvasZoom = _zoom;
                 SyncFromVm();
                 UpdateCursor();
             }
@@ -220,10 +226,13 @@ public sealed class SchematicCanvas : Control
         LayoutUpdated += OnLayoutUpdated;
 
         // Palette DnD drop target — accept only circuitrf/palette-item; ignore everything else.
+        // Image file DnD handlers are registered AFTER so they fire only when palette rejects.
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent,  OnPaletteDragOver);
         AddHandler(DragDrop.DropEvent,      OnPaletteDrop);
         AddHandler(DragDrop.DragLeaveEvent, OnPaletteDragLeave);
+        AddHandler(DragDrop.DragOverEvent,  OnImageFileDragOver);
+        AddHandler(DragDrop.DropEvent,      OnImageFileDrop);
     }
 
     private void OnLayoutUpdated(object? sender, EventArgs e)
@@ -313,9 +322,16 @@ public sealed class SchematicCanvas : Control
         double scaledH = worldH * _zoom;
         _panX = _model.BbMinX - (canvasW  - scaledW) / (2 * _zoom);
         _panY = _model.BbMinY - (canvasH - scaledH) / (2 * _zoom);
+        if (_editContext is not null) _editContext.CanvasZoom = _zoom;
     }
 
-    public void ZoomToPage() { _panX = 0; _panY = 0; _zoom = 1.0; InvalidateVisual(); ViewportChanged?.Invoke(this, EventArgs.Empty); }
+    public void ZoomToPage()
+    {
+        _panX = 0; _panY = 0; _zoom = 1.0;
+        if (_editContext is not null) _editContext.CanvasZoom = _zoom;
+        InvalidateVisual();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     private void ZoomToRect(double x0, double y0, double x1, double y1)
     {
@@ -330,6 +346,7 @@ public sealed class SchematicCanvas : Control
         double cy = (y0 + y1) / 2.0;
         _panX = cx - Bounds.Width  / (2.0 * _zoom);
         _panY = cy - Bounds.Height / (2.0 * _zoom);
+        if (_editContext is not null) _editContext.CanvasZoom = _zoom;
         InvalidateVisual();
         ViewportChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -636,6 +653,7 @@ public sealed class SchematicCanvas : Control
         _zoom = Math.Clamp(_zoom / factor, MinZoom, MaxZoom);
         _panX = wx - canvasPos.X / _zoom;
         _panY = wy - canvasPos.Y / _zoom;
+        if (_editContext is not null) _editContext.CanvasZoom = _zoom;
         InvalidateVisual();
         ViewportChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -714,6 +732,65 @@ public sealed class SchematicCanvas : Control
         _editContext.CommitPlacement(payload.Kind, payload.PortCount, rotation, wx, wy);
         e.Handled = true;
         InvalidateVisual();
+    }
+
+    // ── Image file DnD ────────────────────────────────────────────────────────
+    // Fires AFTER the palette handlers; palette pre-marks e.Handled=true on palette accepts,
+    // so the file handlers only run when the palette rejected the drag.
+
+    private void OnImageFileDragOver(object? _, DragEventArgs e)
+    {
+        DropDiagnostics.Dump("SchematicCanvas.DragOver", e);
+        if (TryExtractImagePath(e) is not null)
+        { e.DragEffects = DragDropEffects.Copy; e.Handled = true; }
+        else
+            e.DragEffects = DragDropEffects.None;
+    }
+
+    private void OnImageFileDrop(object? _, DragEventArgs e)
+    {
+        DropDiagnostics.Dump("SchematicCanvas.Drop", e);
+        var path = TryExtractImagePath(e);
+        if (path is null || _editContext is null) return;
+        var pos = e.GetPosition(this);
+        _editContext.DropBitmap(path, ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y));
+        e.Handled = true;
+        InvalidateVisual();
+    }
+
+    // The OS surfaces a dropped file under DataFormat.File. The payload TYPE varies by platform:
+    // macOS (Avalonia.Native) returns a SINGLE IStorageItem; other backends may return an
+    // IEnumerable<IStorageItem>. Handle both, plus a bare path string, defensively.
+    private static string? TryExtractImagePath(DragEventArgs e)
+    {
+        foreach (var item in e.DataTransfer.Items)
+        {
+            var raw = item.TryGetRaw(DataFormat.File);
+
+            string? path = raw switch
+            {
+                IStorageItem single             => single.Path?.LocalPath,
+                IEnumerable<IStorageItem> files => files.FirstOrDefault()?.Path?.LocalPath,
+                string s                        => s,
+                _                               => null,
+            };
+
+            if (path is not null && IsImageExtension(path)) return path;
+        }
+        return null;
+    }
+
+    private static bool IsImageExtension(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return ext.Equals(".png",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".jpg",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".bmp",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".gif",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".tiff", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".tif",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".webp", StringComparison.OrdinalIgnoreCase);
     }
 
     // ── ICustomDrawOperation ──────────────────────────────────────────────────

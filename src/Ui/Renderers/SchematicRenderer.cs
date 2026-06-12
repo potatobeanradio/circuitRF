@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using CircuitRF.Ui.Schematic;
 using SkiaSharp;
@@ -27,6 +28,38 @@ public static class SchematicRenderer
     private const double LabelBaseY       = SchematicComponent.LabelBaseY;
     private const double LabelWorldHeight = SchematicComponent.LabelWorldHeight;
     private const double LabelWorldStep   = SchematicComponent.LabelWorldStep;
+
+    // ── Bitmap image cache ─────────────────────────────────────────────────────
+    // null value = path tried and failed (broken ref); avoids repeated I/O each frame.
+    private static readonly ConcurrentDictionary<string, SKBitmap?> _bitmapCache =
+        new(StringComparer.Ordinal);
+
+    private static SKBitmap? LoadCachedBitmap(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        return _bitmapCache.GetOrAdd(path, static p =>
+        {
+            try   { return SKBitmap.Decode(p); }
+            catch { return null; }
+        });
+    }
+
+    public static void InvalidateBitmapCache(string? path)
+    {
+        if (!string.IsNullOrEmpty(path))
+            _bitmapCache.TryRemove(path, out _);
+    }
+
+    /// <summary>
+    /// Returns the native pixel dimensions of the image at <paramref name="path"/> via the shared
+    /// decode cache, or null if the path is empty/unreadable. Used to size a freshly-dropped bitmap
+    /// to its true aspect ratio (avoids skew from a hardcoded W/H).
+    /// </summary>
+    public static (int Width, int Height)? TryGetBitmapPixelSize(string path)
+    {
+        var bmp = LoadCachedBitmap(path);
+        return bmp is null ? null : (bmp.Width, bmp.Height);
+    }
 
     public static void Draw(
         SKCanvas canvas,
@@ -96,6 +129,10 @@ public static class SchematicRenderer
         using var paramNamePaint  = new SKPaint { IsAntialias = true,  Color = theme.ParameterNameText };
         using var netLabelFont    = new SKFont(SkiaFonts.PlexItalic,  Math.Max(4f, (float)(zoom * 65.0)));
         using var netLabelPaint   = new SKPaint { IsAntialias = true,  Color = theme.NetLabelText };
+
+        // ── Bitmaps (canvas objects, drawn behind wires and components) ──────────
+        if (!isLod && model.Bitmaps.Count > 0)
+            DrawBitmaps(canvas, model.Bitmaps, overlay?.CanvasObjectDragPositions, panX, panY, zoom, theme);
 
         // ── Wires ─────────────────────────────────────────────────────────────
         float unconnEndHalf = (float)Math.Max(3.0, zoom * PortBoxHalf);
@@ -331,8 +368,54 @@ public static class SchematicRenderer
 
         foreach (var prim in primitives)
         {
-            // Bitmap — deferred (step 5/7).
-            if (prim is BitmapPrimitive) continue;
+            // Bitmap — skip in ghost mode; otherwise load and draw with component transform.
+            if (prim is BitmapPrimitive bmp)
+            {
+                if (overridePaint is not null) continue;
+
+                var (px0, py0) = LP(bmp.X,              bmp.Y);
+                var (px1, py1) = LP(bmp.X + bmp.W,      bmp.Y);
+                var (px2, py2) = LP(bmp.X,              bmp.Y + bmp.H);
+
+                float pixW = (float)Math.Sqrt((px1 - px0) * (px1 - px0) + (py1 - py0) * (py1 - py0));
+                float pixH = (float)Math.Sqrt((px2 - px0) * (px2 - px0) + (py2 - py0) * (py2 - py0));
+                if (pixW < 2 || pixH < 2) continue;
+
+                var skBmp = LoadCachedBitmap(bmp.ImagePathRef);
+                if (skBmp is null)
+                {
+                    // Broken link: dashed quad outline + X diagonals
+                    var (px3, py3) = LP(bmp.X + bmp.W, bmp.Y + bmp.H);
+                    using var dashEffect = SKPathEffect.CreateDash(new float[] { 6f, 4f }, 0);
+                    using var bp = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f, Color = theme.Warning.WithAlpha(180), PathEffect = dashEffect };
+                    using var outline = new SKPath();
+                    outline.MoveTo(px0, py0); outline.LineTo(px1, py1);
+                    outline.LineTo(px3, py3); outline.LineTo(px2, py2);
+                    outline.Close();
+                    canvas.DrawPath(outline, bp);
+                    bp.PathEffect = null;
+                    bp.StrokeWidth = 1f;
+                    canvas.DrawLine(px0, py0, px3, py3, bp);
+                    canvas.DrawLine(px1, py1, px2, py2, bp);
+                }
+                else
+                {
+                    byte alpha = (byte)Math.Clamp(bmp.Opacity * 255, 0, 255);
+                    using var bmpPaint = new SKPaint { IsAntialias = true, Color = SKColors.White.WithAlpha(alpha) };
+                    // Affine matrix: maps bitmap pixel coords → screen pixel coords.
+                    // (0,0)→(px0,py0),  (srcW,0)→(px1,py1),  (0,srcH)→(px2,py2)
+                    float srcW = skBmp.Width, srcH = skBmp.Height;
+                    var mat = new SKMatrix(
+                        scaleX: (px1 - px0) / srcW,  skewX:  (px2 - px0) / srcH,  transX: px0,
+                        skewY:  (py1 - py0) / srcW,  scaleY: (py2 - py0) / srcH,  transY: py0,
+                        persp0: 0, persp1: 0, persp2: 1);
+                    int save = canvas.Save();
+                    canvas.Concat(mat);
+                    canvas.DrawBitmap(skBmp, 0, 0, bmpPaint);
+                    canvas.RestoreToCount(save);
+                }
+                continue;
+            }
 
             // TextPrimitive — separate paint model (no StrokeTier; font-driven).
             if (prim is TextPrimitive txt)
@@ -926,6 +1009,62 @@ public static class SchematicRenderer
             }
         }
 
+        // Canvas-object selection boxes and resize gripper.
+        if (!isLod && overlay.SelectedCanvasObjIds.Count > 0)
+        {
+            using var bmSelDash = SKPathEffect.CreateDash([6f, 4f], 0f);
+            using var bmSelStroke = new SKPaint
+            {
+                IsAntialias = true, Style = SKPaintStyle.Stroke,
+                StrokeWidth = (float)Math.Max(1.0, zoom * 3),
+                Color       = theme.SelectionBox,
+                PathEffect  = bmSelDash,
+            };
+            using var bmSelFill = new SKPaint
+            {
+                IsAntialias = false, Style = SKPaintStyle.Fill,
+                Color       = theme.SelectionFill,
+            };
+
+            foreach (var bm in model.Bitmaps)
+            {
+                if (!overlay.SelectedCanvasObjIds.Contains(bm.Id)) continue;
+                double wx, wy, ww, wh;
+                if (overlay.CanvasObjectDragPositions is not null &&
+                    overlay.CanvasObjectDragPositions.TryGetValue(bm.Id, out var ov))
+                    (wx, wy, ww, wh) = (ov.X, ov.Y, ov.W, ov.H);
+                else
+                    (wx, wy, ww, wh) = (bm.X, bm.Y, bm.Width, bm.Height);
+
+                const float bmPad = 2f;
+                var (ax, ay) = ToPixel(wx,      wy,      panX, panY, zoom);
+                var (bx, by) = ToPixel(wx + ww, wy + wh, panX, panY, zoom);
+                var rect = SKRect.Create(ax - bmPad, ay - bmPad, bx - ax + bmPad * 2, by - ay + bmPad * 2);
+                canvas.DrawRect(rect, bmSelFill);
+                canvas.DrawRect(rect, bmSelStroke);
+            }
+        }
+
+        // Resize gripper handle — small filled accent square at bottom-right of single selected bitmap.
+        if (!isLod && overlay.CanvasObjectGripperPos is { } grip)
+        {
+            var (ghx, ghy) = ToPixel(grip.X, grip.Y, panX, panY, zoom);
+            float gs = (float)Math.Max(4f, zoom * 6.0);
+            using var gripFill = new SKPaint
+            {
+                IsAntialias = false, Style = SKPaintStyle.Fill,
+                Color       = theme.SelectionBox,
+            };
+            using var gripStroke = new SKPaint
+            {
+                IsAntialias = false, Style = SKPaintStyle.Stroke,
+                StrokeWidth = 1f,   Color = theme.Background,
+            };
+            var gripRect = SKRect.Create(ghx - gs * 0.5f, ghy - gs * 0.5f, gs, gs);
+            canvas.DrawRect(gripRect, gripFill);
+            canvas.DrawRect(gripRect, gripStroke);
+        }
+
         // Rubber-band — solid outline for window (L→R), dashed for crossing (R→L)
         if (overlay.RubberBand is { } rb)
         {
@@ -1016,6 +1155,61 @@ public static class SchematicRenderer
 
         canvas.DrawRect(SKRect.Create(x - 4f, y - 12f, textW + 10f, 16f), bgPaint);
         canvas.DrawText(text, x, y, SKTextAlign.Left, font, textPaint);
+    }
+
+    // ── Canvas-object rendering ───────────────────────────────────────────────
+
+    private static void DrawBitmaps(
+        SKCanvas canvas,
+        IReadOnlyList<SchematicBitmap> bitmaps,
+        IReadOnlyDictionary<string, (double X, double Y, double W, double H)>? overrides,
+        double panX, double panY, double zoom,
+        SchematicRenderTheme theme)
+    {
+        foreach (var bm in bitmaps)
+        {
+            double wx, wy, ww, wh;
+            if (overrides is not null && overrides.TryGetValue(bm.Id, out var ov))
+                (wx, wy, ww, wh) = (ov.X, ov.Y, ov.W, ov.H);
+            else
+                (wx, wy, ww, wh) = (bm.X, bm.Y, bm.Width, bm.Height);
+
+            var (px0, py0) = ToPixel(wx,        wy,        panX, panY, zoom);
+            var (px1, py1) = ToPixel(wx + ww,   wy + wh,   panX, panY, zoom);
+            float pixW = px1 - px0;
+            float pixH = py1 - py0;
+            if (pixW < 2 || pixH < 2) continue;
+
+            var skBmp = LoadCachedBitmap(bm.ImagePath);
+            if (skBmp is null)
+            {
+                DrawBrokenBitmapBox(canvas, px0, py0, pixW, pixH, theme);
+            }
+            else
+            {
+                byte alpha = (byte)Math.Clamp(bm.Opacity * 255, 0, 255);
+                using var paint = new SKPaint { IsAntialias = true, Color = SKColors.White.WithAlpha(alpha) };
+                canvas.DrawBitmap(skBmp, new SKRect(px0, py0, px1, py1), paint);
+            }
+        }
+    }
+
+    private static void DrawBrokenBitmapBox(
+        SKCanvas canvas, float x, float y, float w, float h,
+        SchematicRenderTheme theme)
+    {
+        using var dashEffect = SKPathEffect.CreateDash(new float[] { 6f, 4f }, 0);
+        using var strokePaint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = 1.5f, Color = theme.Warning.WithAlpha(180),
+            PathEffect = dashEffect,
+        };
+        canvas.DrawRect(SKRect.Create(x, y, w, h), strokePaint);
+        strokePaint.PathEffect = null;
+        strokePaint.StrokeWidth = 1f;
+        canvas.DrawLine(x,     y,     x + w, y + h, strokePaint);
+        canvas.DrawLine(x + w, y,     x,     y + h, strokePaint);
     }
 
     // ── Transform helpers ─────────────────────────────────────────────────────

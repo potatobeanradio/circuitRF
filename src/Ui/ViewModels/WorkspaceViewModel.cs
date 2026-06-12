@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input.Platform;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -862,13 +863,36 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         }
     }
 
-    // Cut / Copy / Paste / Select All — no-ops at the window level.
-    // Each active control (TextBox, SchematicCanvas) handles clipboard natively via its own
-    // key routing.  These stubs satisfy NativeMenuItem Command bindings without interfering.
-    [RelayCommand] private void Cut()       { }
-    [RelayCommand] private void Copy()      { }
-    [RelayCommand] private void Paste()     { }
+    // Cut / Copy / Paste — route to the active document's clipboard implementation.
+    // The canvas key handler (Ctrl/Cmd+C/X/V) is the primary path; these menu commands
+    // provide the Edit-menu path so both work identically.
+    [RelayCommand] private async Task Cut()   => await InvokeClipboardAsync(cut: true,  paste: false);
+    [RelayCommand] private async Task Copy()  => await InvokeClipboardAsync(cut: false, paste: false);
+    [RelayCommand] private async Task Paste() => await InvokeClipboardAsync(cut: false, paste: true);
     [RelayCommand] private void SelectAll() { }
+
+    private async Task InvokeClipboardAsync(bool cut, bool paste)
+    {
+        var clipboard = GetClipboard();
+        if (clipboard is null) return;
+        var active = _factory.DocumentDock?.ActiveDockable;
+        if (active is SymbolEditorDocument symDoc)
+        {
+            if (paste) await symDoc.ViewModel.ClipboardPasteAsync(clipboard);
+            else       await symDoc.ViewModel.ClipboardCopyAsync(clipboard, cut);
+        }
+        else if (active is SchematicDocument schDoc)
+        {
+            if (paste) await schDoc.ViewModel.ClipboardPasteAsync(clipboard);
+            else       await schDoc.ViewModel.ClipboardCopyAsync(clipboard, cut);
+        }
+    }
+
+    private IClipboard? GetClipboard()
+    {
+        var window = ResolveOwner(null);
+        return window is not null ? TopLevel.GetTopLevel(window)?.Clipboard : null;
+    }
 
     // ---- View commands -------------------------------------------------------
 

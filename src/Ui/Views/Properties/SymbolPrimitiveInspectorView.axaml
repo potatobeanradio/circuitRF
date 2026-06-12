@@ -420,6 +420,17 @@
 
                 </StackPanel>
 
+                <!-- ── Bitmap: Opacity ──────────────────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowBitmapFields}" ColumnDefinitions="56,*">
+                    <TextBlock Grid.Column="0" Text="Opacity" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <NumericUpDown Grid.Column="1"
+                                   Value="{Binding FieldBitmapOpacity, Mode=TwoWay, Converter={x:Static conv:NumericFieldConverter.Instance}}"
+                                   Minimum="0" Maximum="1" Increment="0.05"
+                                   ShowButtonSpinner="False" FormatString="0.00"
+                                   FontSize="11" Padding="4,2"/>
+                </Grid>
+
                 <!-- ── Pin view ──────────────────────────────────────────────────────── -->
                 <StackPanel IsVisible="{Binding IsPinSelected}" Spacing="4">
 

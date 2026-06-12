@@ -1,3 +1,4 @@
+using System.Linq;
 using CircuitRF.Ui.Schematic;
 using SkiaSharp;
 
@@ -32,9 +33,30 @@ internal static class SymbolEditorRenderer
 
         if (symbol is null) return;
 
+        // A bitmap that is being live-dragged or live-resized is redrawn at its live position by
+        // the overlay pass below; suppress it in the base pass so the committed image doesn't show
+        // underneath the moving/resizing preview. (Vector primitives are re-STROKED on top so they
+        // don't need suppression; only the opaque bitmap image would double up.)
+        int liveBitmapIdx = -1;
+        {
+            var (ddx, ddy) = overlay.LiveDragOffset;
+            bool dragging  = ddx != 0 || ddy != 0;
+            bool resizing  = overlay.InProgressPrimitive is BitmapPrimitive;
+            if ((dragging || resizing) && overlay.SelectedIndices.Count == 1)
+            {
+                int sel = overlay.SelectedIndices.First();
+                if (sel >= 0 && sel < symbol.Primitives.Count && symbol.Primitives[sel] is BitmapPrimitive)
+                    liveBitmapIdx = sel;
+            }
+        }
+
         // Draw the symbol at local origin, no rotation, using the editor pan/zoom.
+        // When a bitmap is live (drag/resize), draw everything except that one primitive.
+        IReadOnlyList<SymbolPrimitive> basePrims = liveBitmapIdx < 0
+            ? symbol.Primitives
+            : symbol.Primitives.Where((_, i) => i != liveBitmapIdx).ToList();
         SchematicRenderer.DrawSymbol(
-            canvas, symbol.Primitives,
+            canvas, basePrims,
             compX: 0, compY: 0,
             rotation: SymbolRotation.R0, mirrorX: false,
             panX: panX, panY: panY, zoom: zoom,
@@ -44,23 +66,38 @@ internal static class SymbolEditorRenderer
         DrawPinMarkers(canvas, symbol.Pins, overlay, panX, panY, zoom, theme);
 
         // Draw in-progress primitive as a ghost/preview (dashed, semi-transparent).
+        // A BitmapPrimitive preview (live resize) is drawn as a real image so the user sees the
+        // resized picture, not a dashed outline — DrawSymbol skips bitmaps when an overridePaint
+        // is set, so it must be called WITHOUT one for the image to render.
         if (overlay.InProgressPrimitive is { } inProg)
         {
-            using var ghostPaint = new SKPaint
+            if (inProg is BitmapPrimitive)
             {
-                IsAntialias = true,
-                Style       = SKPaintStyle.Stroke,
-                Color       = theme.GhostBody,
-                StrokeWidth = (float)Math.Max(1.5, zoom * 3.0),
-                PathEffect  = SKPathEffect.CreateDash([8f, 4f], 0f),
-            };
-            SchematicRenderer.DrawSymbol(
-                canvas, [inProg],
-                compX: 0, compY: 0,
-                rotation: SymbolRotation.R0, mirrorX: false,
-                panX: panX, panY: panY, zoom: zoom,
-                theme: theme,
-                overridePaint: ghostPaint);
+                SchematicRenderer.DrawSymbol(
+                    canvas, [inProg],
+                    compX: 0, compY: 0,
+                    rotation: SymbolRotation.R0, mirrorX: false,
+                    panX: panX, panY: panY, zoom: zoom,
+                    theme: theme);
+            }
+            else
+            {
+                using var ghostPaint = new SKPaint
+                {
+                    IsAntialias = true,
+                    Style       = SKPaintStyle.Stroke,
+                    Color       = theme.GhostBody,
+                    StrokeWidth = (float)Math.Max(1.5, zoom * 3.0),
+                    PathEffect  = SKPathEffect.CreateDash([8f, 4f], 0f),
+                };
+                SchematicRenderer.DrawSymbol(
+                    canvas, [inProg],
+                    compX: 0, compY: 0,
+                    rotation: SymbolRotation.R0, mirrorX: false,
+                    panX: panX, panY: panY, zoom: zoom,
+                    theme: theme,
+                    overridePaint: ghostPaint);
+            }
         }
 
         // Draw selection overlay.
@@ -329,6 +366,35 @@ internal static class SymbolEditorRenderer
                                              sx1 - sx0 + 2 * margin, sy1 - sy0 + 2 * margin);
                     canvas.DrawRect(rect, boxFill);
                     canvas.DrawRect(rect, boxStroke);
+                }
+                else if (prim is BitmapPrimitive)
+                {
+                    // Bitmap selection. Three cases:
+                    //   • live RESIZE  → the scaled image is drawn by the InProgressPrimitive block
+                    //     above; here we only need the selection outline (skip re-drawing the image).
+                    //   • live DRAG    → the committed image was suppressed in the base pass, so draw
+                    //     the image at the live offset (no override paint — DrawSymbol skips bitmaps
+                    //     when one is set), then outline it.
+                    //   • at rest      → the base pass already drew the image; just outline it.
+                    bool resizingThis = overlay.InProgressPrimitive is BitmapPrimitive;
+                    if (!resizingThis && (dx != 0 || dy != 0))
+                        SchematicRenderer.DrawSymbol(
+                            canvas, [prim],
+                            compX: 0, compY: 0,
+                            rotation: SymbolRotation.R0, mirrorX: false,
+                            panX: panX - dx, panY: panY - dy, zoom: zoom,
+                            theme: theme);
+
+                    if (!resizingThis)
+                    {
+                        var (bx0, by0, bx1, by1) = SymbolGeometry.BboxOf(prim);
+                        bx0 += dx; by0 += dy; bx1 += dx; by1 += dy;
+                        float sx0 = (float)((bx0 - panX) * zoom);
+                        float sy0 = (float)((by0 - panY) * zoom);
+                        float sx1 = (float)((bx1 - panX) * zoom);
+                        float sy1 = (float)((by1 - panY) * zoom);
+                        canvas.DrawRect(SKRect.Create(sx0, sy0, sx1 - sx0, sy1 - sy0), boxStroke);
+                    }
                 }
                 else
                 {

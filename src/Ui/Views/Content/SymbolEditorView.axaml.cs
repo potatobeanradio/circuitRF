@@ -1,6 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Schematic;
 
@@ -20,13 +22,15 @@ public partial class SymbolEditorView : UserControl
             OnViewKeyDownTunnel,
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
+
+        // Clipboard shortcuts (async; handled here, not in the canvas — mirrors SchematicView).
+        SymbolEditorCanvasCtrl.ClipboardCopyRequested  += async (_, _) => await OnClipboardCopy();
+        SymbolEditorCanvasCtrl.ClipboardCutRequested   += async (_, _) => await OnClipboardCut();
+        SymbolEditorCanvasCtrl.ClipboardPasteRequested += async (_, _) => await OnClipboardPaste();
     }
 
     private void OnZoomToFit(object? sender, RoutedEventArgs e)
-    {
-        if (this.FindControl<SymbolEditorCanvas>("SymbolEditorCanvasCtrl") is { } canvas)
-            canvas.ZoomToFit();
-    }
+        => SymbolEditorCanvasCtrl.ZoomToFit();
 
     // ── Keyboard shortcuts ────────────────────────────────────────────────────
 
@@ -38,6 +42,10 @@ public partial class SymbolEditorView : UserControl
 
         bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
         if (ctrl) return;
+
+        // While the user is typing a text primitive, suppress all global shortcuts except
+        // Escape (which commits/cancels) — characters must reach OnTextInput unobstructed.
+        if (vm.IsTypingText && e.Key != Key.Escape) return;
 
         switch (e.Key)
         {
@@ -51,10 +59,76 @@ public partial class SymbolEditorView : UserControl
                 e.Handled = true;
                 break;
             case Key.F:
-                if (this.FindControl<SymbolEditorCanvas>("SymbolEditorCanvasCtrl") is { } canvas)
-                    canvas.ZoomToFit();
+                SymbolEditorCanvasCtrl.ZoomToFit();
                 e.Handled = true;
                 break;
         }
+    }
+
+    // ── Clipboard (Ctrl+C / Ctrl+X / Ctrl+V) ─────────────────────────────────
+
+    private async Task OnClipboardCopy()
+    {
+        if (DataContext is not SymbolEditorDocument doc) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+        await doc.ViewModel.ClipboardCopyAsync(clipboard);
+    }
+
+    private async Task OnClipboardCut()
+    {
+        if (DataContext is not SymbolEditorDocument doc) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+        await doc.ViewModel.ClipboardCopyAsync(clipboard, cut: true);
+    }
+
+    private async Task OnClipboardPaste()
+    {
+        if (DataContext is not SymbolEditorDocument doc) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+        await doc.ViewModel.ClipboardPasteAsync(clipboard);
+    }
+
+    // ── Bitmap context menu ───────────────────────────────────────────────────
+
+    private void OnBitmapContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (SymbolEditorCanvasCtrl.BitmapContextPrimIdx < 0)
+            e.Cancel = true;
+    }
+
+    private async void OnCtxBitmapResolvePath(object? sender, RoutedEventArgs e)
+    {
+        var vm = (DataContext as SymbolEditorDocument)?.ViewModel;
+        if (vm is null) return;
+        int primIdx = SymbolEditorCanvasCtrl.BitmapContextPrimIdx;
+        if (primIdx < 0) return;
+
+        var picker = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (picker is null) return;
+        var files = await picker.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Resolve Bitmap Path",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Image Files")
+                {
+                    Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.tiff", "*.tif", "*.webp" }
+                }
+            }
+        });
+        if (files.Count > 0)
+            vm.ResolveBitmapPath(primIdx, files[0].Path.LocalPath);
+    }
+
+    private void OnCtxBitmapRefreshCache(object? sender, RoutedEventArgs e)
+    {
+        var vm = (DataContext as SymbolEditorDocument)?.ViewModel;
+        if (vm is null) return;
+        vm.RefreshBitmapCache(SymbolEditorCanvasCtrl.BitmapContextPrimIdx);
+        SymbolEditorCanvasCtrl.InvalidateVisual();
     }
 }

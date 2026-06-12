@@ -223,6 +223,39 @@ public class CschRoundTripTests
         Assert.Single(comp.DetachedPorts);
     }
 
+    // ── Layer 5 bitmap canvas-object (sub-gate 4) ────────────────────────────
+
+    [Fact]
+    public void CanvasObject_Bitmap_RoundTrips()
+    {
+        var m = new SchematicEditModel();
+        m.CanvasObjects.Add(new EditableBitmap
+        {
+            ImagePath    = "/tmp/test_img.png",
+            X            = 400.0,
+            Y            = 300.0,
+            Width        = 500.0,
+            Height       = 350.0,
+            Transparency = 0.25,
+            ZOrder       = 3,
+            IsLocked     = true,
+        });
+
+        string json = SchematicPersistence.Serialize(m);
+        var (restored, _, _) = SchematicPersistence.Deserialize(json);
+
+        Assert.Single(restored.CanvasObjects);
+        var bm = Assert.IsType<EditableBitmap>(restored.CanvasObjects[0]);
+        Assert.Equal("/tmp/test_img.png", bm.ImagePath);
+        Assert.Equal(400.0, bm.X,            1e-9);
+        Assert.Equal(300.0, bm.Y,            1e-9);
+        Assert.Equal(500.0, bm.Width,        1e-9);
+        Assert.Equal(350.0, bm.Height,       1e-9);
+        Assert.Equal(0.25,  bm.Transparency, 1e-9);
+        Assert.Equal(3,     bm.ZOrder);
+        Assert.True(bm.IsLocked);
+    }
+
     [Fact]
     public void DisconnectCommand_SetsAllPorts_AndUndoRestores()
     {

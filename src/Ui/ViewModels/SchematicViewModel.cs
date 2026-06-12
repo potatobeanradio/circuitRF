@@ -1,10 +1,13 @@
 using System.Diagnostics;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Messages;
+using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.ViewModels;
@@ -74,6 +77,11 @@ public sealed partial class SchematicViewModel : ObservableObject
     private Dictionary<string, IReadOnlyList<(double X, double Y)>>? _dragUnselectedWirePoints;
     private Dictionary<string, (double X, double Y)>?                _dragStartObjPositions;
     private List<PinOnPinContact>?                                    _dragPinOnPinContacts;
+
+    // Canvas-object resize-gripper state
+    private bool   _isObjResizing;
+    private string? _resizeObjId;
+    private double  _resizeObjOrigX, _resizeObjOrigY, _resizeObjOrigW, _resizeObjOrigH;
 
     // Rubber-band state
     private bool   _isRubberBanding;
@@ -178,20 +186,32 @@ public sealed partial class SchematicViewModel : ObservableObject
         var selObjs  = Selection.GetSelectedCanvasObjectIds(EditModel).ToHashSet();
         var selSegs  = Selection.GetSelectedSegments(EditModel).ToHashSet();
 
+        // Resize gripper: bottom-right corner of single selected bitmap (idle select only).
+        (double X, double Y)? gripperPos = null;
+        if (!_isDragging && !_isObjResizing && !_isRubberBanding
+            && ActiveTool == Tool.Select && selObjs.Count == 1)
+        {
+            var selId = selObjs.First();
+            var obj   = EditModel.FindCanvasObject(selId);
+            if (obj is EditableBitmap)
+                gripperPos = (obj.X + obj.Width / 2, obj.Y + obj.Height / 2);
+        }
+
         Overlay = new SchematicOverlay
         {
-            SelectedComponentIds = selComps,
-            SelectedWireIds      = selWires,
-            SelectedCanvasObjIds = selObjs,
-            SelectedWireSegments = selSegs,
-            WirePreview          = _wirePoints.Count > 0 ? _wirePoints.ToList() : null,
-            Ghost                = ActiveTool == Tool.Place
+            SelectedComponentIds    = selComps,
+            SelectedWireIds         = selWires,
+            SelectedCanvasObjIds    = selObjs,
+            SelectedWireSegments    = selSegs,
+            WirePreview             = _wirePoints.Count > 0 ? _wirePoints.ToList() : null,
+            Ghost                   = ActiveTool == Tool.Place
                 ? new PlacementGhost(0, 0, _placementSymbol, _placementRot, _placementMirrorX, _placementPortCount)
                 : null,
-            RubberBand           = _isRubberBanding ? Overlay.RubberBand : null,
-            LabelDragOffsets     = ActiveTool == Tool.MoveLabels && _moveLabelPhase == MoveLabelPhase.Moving
+            RubberBand              = _isRubberBanding ? Overlay.RubberBand : null,
+            LabelDragOffsets        = ActiveTool == Tool.MoveLabels && _moveLabelPhase == MoveLabelPhase.Moving
                 ? Overlay.LabelDragOffsets
                 : null,
+            CanvasObjectGripperPos  = gripperPos,
         };
     }
 
@@ -199,6 +219,9 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     // Callback invoked with world (x0,y0,x1,y1) when a zoom-box is completed; set by SchematicCanvas.
     public Action<double, double, double, double>? ZoomToRectCallback { get; set; }
+
+    /// <summary>Current canvas zoom level. Set by SchematicCanvas; used for gripper hit-test sizing.</summary>
+    public double CanvasZoom { get; set; } = 1.0;
 
     /// <summary>
     /// True when the user is performing an action that Escape should cancel:
@@ -211,7 +234,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         || IsInlineEditing
         || _isDragging
         || _isRubberBanding
-        || _isSegmentDrag;
+        || _isSegmentDrag
+        || _isObjResizing;
 
     [RelayCommand]
     public void SetSelectTool()
@@ -436,9 +460,39 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     // ── Select tool ───────────────────────────────────────────────────────────
 
+    // Returns true when (wx,wy) is within the canvas-object gripper handle.
+    private bool HitTestCanvasObjectGripper(double wx, double wy)
+    {
+        if (Overlay.CanvasObjectGripperPos is not { } h) return false;
+        double halfSize = 7.0 / Math.Max(CanvasZoom, 1e-6);
+        return Math.Abs(wx - h.X) <= halfSize && Math.Abs(wy - h.Y) <= halfSize;
+    }
+
     private void HandleSelectPress(double wx, double wy, bool shift, double sx, double sy)
     {
         if (RenderModel is null || SpatialIndex is null) return;
+
+        // Check canvas-object resize gripper FIRST when a single bitmap is selected.
+        if (!shift)
+        {
+            var selObjs = Selection.GetSelectedCanvasObjectIds(EditModel);
+            if (selObjs.Count == 1 && HitTestCanvasObjectGripper(wx, wy))
+            {
+                var bm = EditModel.FindCanvasObject(selObjs.First()) as EditableBitmap;
+                if (bm is not null)
+                {
+                    _isObjResizing   = true;
+                    _resizeObjId     = bm.Id;
+                    _resizeObjOrigX  = bm.X;
+                    _resizeObjOrigY  = bm.Y;
+                    _resizeObjOrigW  = bm.Width;
+                    _resizeObjOrigH  = bm.Height;
+                    RebuildOverlay();
+                    return;
+                }
+            }
+        }
+
         var hit = SchematicHitTest.Test(EditModel, RenderModel, SpatialIndex, wx, wy);
 
         // B1: Per-segment click — selects just that segment (not the whole wire).
@@ -507,12 +561,47 @@ public sealed partial class SchematicViewModel : ObservableObject
         }
     }
 
+    private void HandleObjResizeDrag(double wx, double wy)
+    {
+        if (_resizeObjId is null) return;
+        var obj = EditModel.FindCanvasObject(_resizeObjId) as EditableBitmap;
+        if (obj is null) return;
+
+        // Top-left anchor stays fixed; we move the bottom-right corner.
+        double anchorX = _resizeObjOrigX - _resizeObjOrigW / 2.0;
+        double anchorY = _resizeObjOrigY - _resizeObjOrigH / 2.0;
+        if (_resizeObjOrigW < 1e-9 || _resizeObjOrigH < 1e-9) return;
+
+        // Aspect-locked scale: use the smaller of |sx|,|sy| (mirrors SymbolGeometry.ScaleBy for bitmaps).
+        double sx = (wx - anchorX) / _resizeObjOrigW;
+        double sy = (wy - anchorY) / _resizeObjOrigH;
+        double s  = Math.Max(Math.Min(Math.Abs(sx), Math.Abs(sy)), 1e-3);
+
+        // Snap W to author grid; derive H from exact aspect ratio.
+        double newW = Math.Max(EditModel.SnapToAuthorGrid(_resizeObjOrigW * s), EditModel.AuthorGridSize);
+        double newH = newW / _resizeObjOrigW * _resizeObjOrigH;
+
+        obj.Width  = newW;
+        obj.Height = newH;
+        obj.X      = anchorX + newW / 2.0;
+        obj.Y      = anchorY + newH / 2.0;
+
+        UpdateDragOverlay();
+    }
+
     private void HandleSelectDrag(double wx, double wy, KeyModifiers modifiers)
     {
         // B4: Segment drag takes priority — perpendicular-only live preview.
         if (_segmentDragWireId is not null && _segmentDragStartPoints is not null)
         {
             HandleSegmentDragLive(wx, wy);
+            return;
+        }
+
+        // Canvas-object resize.
+        if (_isObjResizing)
+        {
+            HandleObjResizeDrag(wx, wy);
             return;
         }
 
@@ -627,6 +716,13 @@ public sealed partial class SchematicViewModel : ObservableObject
             return;
         }
 
+        // Commit canvas-object resize.
+        if (_isObjResizing)
+        {
+            CommitObjResize();
+            return;
+        }
+
         if (_isDragging)
         {
             CommitDragAsCommand(wx, wy, modifiers);
@@ -634,6 +730,29 @@ public sealed partial class SchematicViewModel : ObservableObject
             // which also calls RebuildOverlay() — so drag overrides are cleared by the full rebuild.
         }
         ClearDragState();
+    }
+
+    private void CommitObjResize()
+    {
+        _isObjResizing = false;
+        var obj = EditModel.FindCanvasObject(_resizeObjId!) as EditableBitmap;
+        _resizeObjId = null;
+        if (obj is null) { RebuildOverlay(); return; }
+
+        bool changed = Math.Abs(obj.Width - _resizeObjOrigW) > 0.1 || Math.Abs(obj.Height - _resizeObjOrigH) > 0.1;
+        if (changed)
+        {
+            // Restore obj to original so the command captures the correct before/after.
+            double newX = obj.X, newY = obj.Y, newW = obj.Width, newH = obj.Height;
+            obj.X = _resizeObjOrigX; obj.Y = _resizeObjOrigY;
+            obj.Width = _resizeObjOrigW; obj.Height = _resizeObjOrigH;
+            Execute(new Commands.Schematic.ResizeCanvasObjectCommand(EditModel, obj, newX, newY, newW, newH));
+            // Execute → NotifyChanged → RebuildRenderModel → RebuildOverlay (clears override automatically).
+        }
+        else
+        {
+            RebuildOverlay();
+        }
     }
 
     private void FinishRubberBand(double wx, double wy)
@@ -1423,18 +1542,41 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
         }
 
+        // Canvas-object position + size overrides (drag and resize paths).
+        Dictionary<string, (double X, double Y, double W, double H)>? objOverrides = null;
+        if (_isObjResizing && _resizeObjId is not null)
+        {
+            var bm = EditModel.FindCanvasObject(_resizeObjId);
+            if (bm is not null)
+                objOverrides = new(1)
+                {
+                    [_resizeObjId] = (bm.X - bm.Width / 2.0, bm.Y - bm.Height / 2.0, bm.Width, bm.Height)
+                };
+        }
+        else if (_dragStartObjPositions is { Count: > 0 })
+        {
+            objOverrides = new(_dragStartObjPositions.Count);
+            foreach (var id in _dragStartObjPositions.Keys)
+            {
+                var bm = EditModel.FindCanvasObject(id);
+                if (bm is not null)
+                    objOverrides[id] = (bm.X - bm.Width / 2.0, bm.Y - bm.Height / 2.0, bm.Width, bm.Height);
+            }
+        }
+
         // Push overlay update — canvas watches Overlay property change → InvalidateVisual().
         // No BuildRenderModel() call.
         Overlay = new SchematicOverlay
         {
-            SelectedComponentIds   = Selection.GetSelectedComponentIds(EditModel).ToHashSet(),
-            SelectedWireIds        = Selection.GetSelectedWireIds(EditModel).ToHashSet(),
-            SelectedCanvasObjIds   = Selection.GetSelectedCanvasObjectIds(EditModel).ToHashSet(),
-            SelectedWireSegments   = Selection.GetSelectedSegments(EditModel).ToHashSet(),
-            ComponentDragPositions = compOverrides,
-            WireDragPoints         = wireOverrides,
-            PinOnPinPreviewWires   = popPreviews,
-            ConnectionDotsOverride = LiveConnectionDots(),
+            SelectedComponentIds     = Selection.GetSelectedComponentIds(EditModel).ToHashSet(),
+            SelectedWireIds          = Selection.GetSelectedWireIds(EditModel).ToHashSet(),
+            SelectedCanvasObjIds     = Selection.GetSelectedCanvasObjectIds(EditModel).ToHashSet(),
+            SelectedWireSegments     = Selection.GetSelectedSegments(EditModel).ToHashSet(),
+            ComponentDragPositions   = compOverrides,
+            WireDragPoints           = wireOverrides,
+            PinOnPinPreviewWires     = popPreviews,
+            ConnectionDotsOverride   = LiveConnectionDots(),
+            CanvasObjectDragPositions = objOverrides,
         };
     }
 
@@ -1456,6 +1598,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         _dragUnselectedWirePoints = null;
         _dragStartObjPositions    = null;
         _dragPinOnPinContacts     = null;
+        _isObjResizing            = false;
+        _resizeObjId              = null;
     }
 
     /// <summary>
@@ -2520,6 +2664,31 @@ public sealed partial class SchematicViewModel : ObservableObject
         Execute(new PlaceDotCommand(EditModel, new EditableDot { X = cx, Y = cy }));
     }
 
+    public void DropBitmap(string path, double worldX, double worldY)
+    {
+        if (string.IsNullOrEmpty(path)) return;
+
+        // Size to the image's native aspect ratio (fit ~300 world units on the long edge)
+        // so non-3:2 images are not skewed. Falls back to 300×200 if the file can't be decoded.
+        const double fit = 300.0;
+        double w = 300.0, h = 200.0;
+        if (SchematicRenderer.TryGetBitmapPixelSize(path) is { } px && px.Width > 0 && px.Height > 0)
+        {
+            if (px.Width >= px.Height) { w = fit; h = fit * px.Height / px.Width; }
+            else                       { h = fit; w = fit * px.Width  / px.Height; }
+        }
+
+        var bm = new EditableBitmap
+        {
+            ImagePath = path,
+            X         = EditModel.SnapToGrid(worldX),
+            Y         = EditModel.SnapToGrid(worldY),
+            Width     = w,
+            Height    = h,
+        };
+        Execute(new PlaceCanvasObjectCommand(EditModel, bm));
+    }
+
     public void FinishCurrentWire() => FinishWire();
     public bool IsDrawingWire => _wirePoints.Count > 0;
 
@@ -2573,6 +2742,23 @@ public sealed partial class SchematicViewModel : ObservableObject
                     if (!_dragUnselectedWirePoints.TryGetValue(wire.Id, out var orig)) continue;
                     RestoreWirePoints(wire, orig);
                 }
+            if (_dragStartObjPositions is not null)
+                foreach (var (id, start) in _dragStartObjPositions)
+                {
+                    var obj = EditModel.FindCanvasObject(id);
+                    if (obj is not null) { obj.X = start.X; obj.Y = start.Y; }
+                }
+        }
+
+        // Restore bitmap dimensions if a resize was in progress (dimensions were mutated live).
+        if (_isObjResizing && _resizeObjId is not null)
+        {
+            var obj = EditModel.FindCanvasObject(_resizeObjId);
+            if (obj is not null)
+            {
+                obj.X = _resizeObjOrigX; obj.Y = _resizeObjOrigY;
+                obj.Width = _resizeObjOrigW; obj.Height = _resizeObjOrigH;
+            }
         }
 
         if (_wirePoints.Count > 0) { _wirePoints.Clear(); RebuildOverlay(); }
@@ -2584,7 +2770,55 @@ public sealed partial class SchematicViewModel : ObservableObject
         // Clear drag overrides and segment highlight so the renderer falls back to model positions.
         Overlay = Overlay with { RubberBand = null, WirePreview = null, Ghost = null,
                                  ComponentDragPositions = null, WireDragPoints = null,
-                                 LabelDragOffsets = null,
+                                 LabelDragOffsets = null, CanvasObjectDragPositions = null,
                                  SelectedWireSegments = SchematicOverlay.EmptySegments };
+    }
+
+    // ── Clipboard ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Copies (or cuts) the current selection to the system clipboard.
+    /// Mirrors the logic in SchematicView.axaml.cs CopySelectionToClipboardAsync so the
+    /// Edit menu can invoke it without going through the canvas.
+    /// </summary>
+    public async Task ClipboardCopyAsync(IClipboard clipboard, bool cut = false)
+    {
+        var comps = Selection.GetSelectedComponentIds(EditModel)
+            .Select(id => EditModel.FindComponent(id)).OfType<EditableComponent>().ToList();
+        var wires = Selection.GetSelectedWireIds(EditModel)
+            .Select(id => EditModel.FindWire(id)).OfType<EditableWire>().ToList();
+        var objs  = Selection.GetSelectedCanvasObjectIds(EditModel)
+            .Select(id => EditModel.FindCanvasObject(id)).OfType<EditableCanvasObject>().ToList();
+
+        // Per-segment selection: each segment becomes a 2-point wire.
+        var wholeWireIds = new HashSet<string>(wires.Select(w => w.Id));
+        foreach (var (wireId, segIdx) in Selection.GetSelectedSegments(EditModel))
+        {
+            if (wholeWireIds.Contains(wireId)) continue;
+            var srcWire = EditModel.FindWire(wireId);
+            if (srcWire is null || segIdx >= srcWire.Points.Count - 1) continue;
+            var segWire = new EditableWire();
+            segWire.Points.Add(srcWire.Points[segIdx]);
+            segWire.Points.Add(srcWire.Points[segIdx + 1]);
+            wires.Add(segWire);
+        }
+
+        if (comps.Count == 0 && wires.Count == 0 && objs.Count == 0) return;
+        await SchematicClipboard.CopyAsync(clipboard, comps, wires, objs, EditModel.GridSize);
+        if (cut) DeleteSelection();
+    }
+
+    /// <summary>Pastes from the system clipboard into the schematic (undoable).</summary>
+    public async Task ClipboardPasteAsync(IClipboard clipboard)
+    {
+        var result = await SchematicClipboard.PasteAsync(clipboard);
+        if (result is null) return;
+        var (comps, wires, cobjs, srcGrid) = result.Value;
+        if (comps.Count == 0 && wires.Count == 0 && cobjs.Count == 0) return;
+        Execute(new SchematicPasteCommand(
+            EditModel, comps, wires, cobjs,
+            ids => Selection.SetAll(ids),
+            sourceGridSize: srcGrid,
+            messageSink: _messageSink));
     }
 }

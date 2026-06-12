@@ -410,6 +410,10 @@ public static class SymbolGeometry
                 t.AnchorX = S(t.AnchorX, refX, sx);
                 t.AnchorY = S(t.AnchorY, refY, sy);
                 break;
+            case BitmapPrimitive bm:
+                bm.X = S(bm.X, refX, sx); bm.Y = S(bm.Y, refY, sy);
+                bm.W = Math.Abs(bm.W * sx); bm.H = Math.Abs(bm.H * sy);
+                break;
         }
     }
 

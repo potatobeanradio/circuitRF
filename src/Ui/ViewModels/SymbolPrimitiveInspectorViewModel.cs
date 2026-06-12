@@ -49,6 +49,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     [ObservableProperty] private bool _showCubicCurve;
     [ObservableProperty] private bool _showFilled;
     [ObservableProperty] private bool _showStrokeTier;
+    [ObservableProperty] private bool _showBitmapFields;
 
     // ── Line coords ───────────────────────────────────────────────────────────
 
@@ -229,6 +230,13 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         if (apply is not null)
             _vm.Execute(new SetSymbolPrimitiveFieldCommand<bool>(_vm.EditableSymbol, "Filled", oldValue, newValue, apply));
     }
+
+    // ── Bitmap: Opacity ───────────────────────────────────────────────────────
+
+    [ObservableProperty] private double _fieldBitmapOpacity;
+
+    partial void OnFieldBitmapOpacityChanged(double oldValue, double newValue) => ApplyDouble("Opacity", oldValue, newValue,
+        _prim is BitmapPrimitive p ? v => p.Opacity = v : null);
 
     // ── Stroke tier (all stroked primitives) ──────────────────────────────────
 
@@ -624,6 +632,11 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
                 TextFontStyle = t.FontStyle;
                 TextAlign     = t.Align;
                 break;
+
+            case BitmapPrimitive bmp:
+                ShowBitmapFields   = true;
+                FieldBitmapOpacity = bmp.Opacity;
+                break;
         }
 
         _isRefreshing = false;
@@ -646,6 +659,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         ShowStrokeTier     = false;
         IsTextPrimitive    = false;
         ShowPolylineCoords = false;
+        ShowBitmapFields   = false;
         IsPinSelected      = false;
         PolylineCoords.Clear();
     }

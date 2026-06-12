@@ -1,10 +1,13 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
+using CircuitRF.Ui.Clipboard;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Symbol;
+using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.ViewModels;
@@ -135,6 +138,8 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     // ── Text draw state ───────────────────────────────────────────────────────
 
     private bool   _isTypingText;
+    /// <summary>True while a text primitive is being typed; key handlers read this to suppress shortcuts.</summary>
+    public  bool   IsTypingText => _isTypingText;
     private double _textAnchorX, _textAnchorY;
     private string _textBuffer = "";
 
@@ -188,13 +193,36 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     public double CanvasZoom { get; set; } = 1.0;
 
     /// <summary>
-    /// When true (default), art-primitive draw/move operations snap to the fine grid p=5.
-    /// Pins ALWAYS snap to the connection grid P=100 regardless of this toggle.
+    /// Tri-state snap for art primitives.  Pins ALWAYS snap to P=100 regardless.
+    /// ConnectionGrid = snap to P=100, FineGrid = snap to p=5, None = free.
     /// </summary>
-    [ObservableProperty] private bool _gridSnap = true;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SnapModeTooltip))]
+    private SnapMode _snapMode = SnapMode.FineGrid;
 
-    private double SnapToP(double v)
-        => GridSnap ? Math.Round(v / SmallGrid) * SmallGrid : v;
+    public string SnapModeTooltip => SnapMode switch
+    {
+        SnapMode.ConnectionGrid => "Snap: Connection Grid  (G)",
+        SnapMode.FineGrid       => "Snap: Fine Grid  (G)",
+        _                       => "Snap: Off  (G)",
+    };
+
+    [RelayCommand]
+    private void CycleSnapMode()
+    {
+        SnapMode = SnapMode switch
+        {
+            SnapMode.ConnectionGrid => SnapMode.FineGrid,
+            SnapMode.FineGrid       => SnapMode.None,
+            _                       => SnapMode.ConnectionGrid,
+        };
+    }
+
+    private double SnapToP(double v) => SnapMode switch
+    {
+        SnapMode.ConnectionGrid => Math.Round(v / PinGrid)   * PinGrid,
+        SnapMode.FineGrid       => Math.Round(v / SmallGrid) * SmallGrid,
+        _                       => v,
+    };
 
     private static double SnapToConnectionGrid(double v)
         => Math.Round(v / PinGrid) * PinGrid;
@@ -621,10 +649,10 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
             return;
         }
 
-        // G key — toggle snap-to-grid (art grid only; pins always snap to P).
+        // G key — cycle snap mode (art only; pins always snap to P).
         if (key == Key.G && (mods & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
         {
-            GridSnap = !GridSnap; return;
+            CycleSnapMode(); return;
         }
 
         // R key — rotate selected pins (any tool) and/or selected primitives (Select tool)
@@ -763,7 +791,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                 _resizeBbX0    = x0; _resizeBbY0 = y0;
                 _resizeBbX1    = x1; _resizeBbY1 = y1;
                 _resizeLiveX1  = x1; _resizeLiveY1 = y1;
-                _resizeShift   = shift;
+                _resizeShift   = shift || EditableSymbol.Primitives[idx] is BitmapPrimitive;
                 RebuildOverlay();
                 return;
             }
@@ -1300,5 +1328,137 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
         CurrentSymbolPath = path;
         IsDirty           = false;
         SymbolSaved?.Invoke(path);
+    }
+
+    // ── Clipboard ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Copies (or cuts) the current selection to the system clipboard as symbol JSON.
+    /// No-op if nothing is selected or the symbol is locked.
+    /// </summary>
+    /// <summary>
+    /// Creates a <see cref="BitmapPrimitive"/> at the given local coordinates from a file dropped on the canvas.
+    /// No-ops if <paramref name="path"/> is null/empty or the symbol is locked.
+    /// </summary>
+    public void DropBitmap(string path, double worldX, double worldY)
+    {
+        if (IsLocked || string.IsNullOrEmpty(path)) return;
+
+        // Size to the image's native aspect ratio (fit ~200 world units on the long edge)
+        // so non-4:3 images are not skewed. Falls back to 200×150 if the file can't be decoded.
+        const double fit = 200.0;
+        double w = 200.0, h = 150.0;
+        if (SchematicRenderer.TryGetBitmapPixelSize(path) is { } px && px.Width > 0 && px.Height > 0)
+        {
+            if (px.Width >= px.Height) { w = fit; h = fit * px.Height / px.Width; }
+            else                       { h = fit; w = fit * px.Width  / px.Height; }
+        }
+
+        var prim = new BitmapPrimitive
+        {
+            ImagePathRef = path,
+            X   = SnapToP(worldX),
+            Y   = SnapToP(worldY),
+            W   = w,
+            H   = h,
+            Opacity = 1.0,
+        };
+        Execute(new PlaceSymbolPrimitiveCommand(EditableSymbol, prim));
+        RebuildOverlay();
+    }
+
+    // ── Bitmap context-menu actions ───────────────────────────────────────────
+
+    /// <summary>Right-click hit-test: returns the target if a BitmapPrimitive is under (lx,ly).</summary>
+    public (int PrimIdx, string Path, bool IsBroken)? OnPointerRightPressed(double lx, double ly)
+    {
+        int idx = HitTestTopmost(lx, ly);
+        if (idx < 0) return null;
+        if (EditableSymbol.Primitives[idx] is not BitmapPrimitive bmp) return null;
+        bool isBroken = string.IsNullOrEmpty(bmp.ImagePathRef) || !File.Exists(bmp.ImagePathRef);
+        return (idx, bmp.ImagePathRef, isBroken);
+    }
+
+    public void ResolveBitmapPath(int primIdx, string newPath)
+    {
+        if (IsLocked || primIdx < 0 || primIdx >= EditableSymbol.Primitives.Count) return;
+        if (EditableSymbol.Primitives[primIdx] is not BitmapPrimitive bmp) return;
+        SchematicRenderer.InvalidateBitmapCache(bmp.ImagePathRef);
+        Execute(new SetSymbolPrimitiveFieldCommand<string>(
+            EditableSymbol, "Resolve Bitmap Path", bmp.ImagePathRef, newPath,
+            v => bmp.ImagePathRef = v));
+    }
+
+    public void RefreshBitmapCache(int primIdx)
+    {
+        if (primIdx < 0 || primIdx >= EditableSymbol.Primitives.Count) return;
+        if (EditableSymbol.Primitives[primIdx] is not BitmapPrimitive bmp) return;
+        SchematicRenderer.InvalidateBitmapCache(bmp.ImagePathRef);
+        RebuildOverlay();
+    }
+
+    public async Task ClipboardCopyAsync(IClipboard clipboard, bool cut = false)
+    {
+        var prims = _selection
+            .Where(i => i >= 0 && i < EditableSymbol.Primitives.Count)
+            .Select(i => EditableSymbol.Primitives[i])
+            .ToList();
+        var pins = _selectedPins
+            .Where(i => i >= 0 && i < EditableSymbol.Pins.Count)
+            .Select(i => EditableSymbol.Pins[i])
+            .ToList();
+
+        if (prims.Count == 0 && pins.Count == 0) return;
+
+        await SymbolClipboard.CopyAsync(clipboard, prims, pins);
+
+        if (cut && !IsLocked)
+        {
+            bool acted = false;
+            if (_selectedPins.Count > 0)
+            {
+                var pinsToDelete = _selectedPins
+                    .Where(i => i >= 0 && i < EditableSymbol.Pins.Count)
+                    .Select(i => EditableSymbol.Pins[i]).ToList();
+                if (pinsToDelete.Count > 0)
+                {
+                    Execute(new DeleteMultipleSymbolPinsCommand(EditableSymbol, pinsToDelete));
+                    _selectedPins.Clear();
+                    acted = true;
+                }
+            }
+            if (_selection.Count > 0)
+            {
+                Execute(new DeleteSymbolPrimitivesCommand(EditableSymbol, _selection.ToList()));
+                _selection.Clear();
+                acted = true;
+            }
+            if (acted) RebuildOverlay();
+        }
+    }
+
+    /// <summary>
+    /// Pastes from the system clipboard into the symbol (undoable).
+    /// No-op if the clipboard contains no recognized symbol payload or the symbol is locked.
+    /// </summary>
+    public async Task ClipboardPasteAsync(IClipboard clipboard)
+    {
+        if (IsLocked) return;
+
+        var result = await SymbolClipboard.PasteAsync(clipboard);
+        if (result is null) return;
+        var (prims, pins, _) = result.Value;
+        if (prims.Count == 0 && pins.Count == 0) return;
+
+        Execute(new PasteSymbolSelectionCommand(
+            EditableSymbol, prims, pins,
+            (primIndices, pinIndices) =>
+            {
+                _selection.Clear();
+                foreach (var i in primIndices) _selection.Add(i);
+                _selectedPins.Clear();
+                foreach (var i in pinIndices) _selectedPins.Add(i);
+            }));
+        RebuildOverlay();
     }
 }

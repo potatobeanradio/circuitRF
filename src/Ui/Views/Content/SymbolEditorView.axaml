@@ -47,6 +47,42 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Snap button — ConnectionGrid: opaque accent bg (same strength as ToolActive) -->
+        <Style Selector="Button.snap-connection">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.snap-connection /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.snap-connection:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Snap button — FineGrid: semi-transparent accent bg -->
+        <Style Selector="Button.snap-fine /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.4"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.snap-fine:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.65"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- snap-none: no custom style — default button appearance signals snap is off -->
     </UserControl.Styles>
 
     <DockPanel>
@@ -338,14 +374,20 @@
                     <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                             Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
-                    <!-- ── Grid snap + Rotate ─────────────────────────────── -->
+                    <!-- ── Snap mode + Rotate ─────────────────────────────── -->
 
-                    <ToggleButton IsChecked="{Binding ViewModel.GridSnap, Mode=TwoWay}"
-                                  IsEnabled="{Binding ViewModel.IsEditable}"
-                                  ToolTip.Tip="Snap to Grid  (G)"
-                                  Padding="6,3">
+                    <Button Command="{Binding ViewModel.CycleSnapModeCommand}"
+                            IsEnabled="{Binding ViewModel.IsEditable}"
+                            Classes.snap-connection="{Binding ViewModel.SnapMode,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=ConnectionGrid}"
+                            Classes.snap-fine="{Binding ViewModel.SnapMode,
+                                Converter={StaticResource EnumEqualsBool},
+                                ConverterParameter=FineGrid}"
+                            ToolTip.Tip="{Binding ViewModel.SnapModeTooltip}"
+                            Padding="6,3">
                         <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
-                    </ToggleButton>
+                    </Button>
 
                     <Button Command="{Binding ViewModel.RotateSelectionCommand}"
                             IsEnabled="{Binding ViewModel.IsEditable}"
@@ -488,7 +530,14 @@
         <!-- ── Canvas ──────────────────────────────────────────────────────── -->
         <ctrl:SymbolEditorCanvas x:Name="SymbolEditorCanvasCtrl"
                                  ViewModel="{Binding ViewModel}"
-                                 ClipToBounds="True"/>
+                                 ClipToBounds="True">
+            <ctrl:SymbolEditorCanvas.ContextMenu>
+                <ContextMenu Opening="OnBitmapContextMenuOpening">
+                    <MenuItem x:Name="CtxBitmapResolvePath" Header="Resolve Path…"  Click="OnCtxBitmapResolvePath"/>
+                    <MenuItem x:Name="CtxBitmapRefreshCache" Header="Refresh Cache" Click="OnCtxBitmapRefreshCache"/>
+                </ContextMenu>
+            </ctrl:SymbolEditorCanvas.ContextMenu>
+        </ctrl:SymbolEditorCanvas>
 
     </DockPanel>
 </UserControl>

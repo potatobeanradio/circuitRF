@@ -536,6 +536,17 @@ public sealed class SchematicEditModel
         var wires = Wires.Select(w => w.ToRenderWire(IsEndpointConnected)).ToList();
         var dots  = AssembleConnectionDots(cg);
         var netLabels = NetLabels.Select(l => new SchematicNetLabel { Id = l.Id, X = l.X, Y = l.Y, Name = l.Name }).ToList();
+        var bitmaps   = CanvasObjects
+            .OfType<EditableBitmap>()
+            .OrderBy(b => b.ZOrder)
+            .Select(b => new SchematicBitmap(
+                b.Id,
+                b.ImagePath,
+                b.X - b.Width  / 2.0,
+                b.Y - b.Height / 2.0,
+                b.Width, b.Height,
+                1.0 - b.Transparency))
+            .ToList();
 
         double minX = double.MaxValue, minY = double.MaxValue;
         double maxX = double.MinValue, maxY = double.MinValue;
@@ -559,6 +570,7 @@ public sealed class SchematicEditModel
             Wires          = wires,
             ConnectionDots = dots,
             NetLabels      = netLabels,
+            Bitmaps        = bitmaps,
             GridSize       = GridSize,
             BbMinX = minX - 200, BbMinY = minY - 200,
             BbMaxX = maxX + 200, BbMaxY = maxY + 200,

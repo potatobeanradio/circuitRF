@@ -1,11 +1,16 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Platform;
+using Avalonia.Platform.Storage;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Styling;
+using CircuitRF.Ui.Diagnostics;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
@@ -83,9 +88,21 @@ public sealed class SymbolEditorCanvas : Control
     private double _panY;
     private double _zoom = 1.0;
 
-    private const double ZoomFactor = 1.15;
-    private const double MinZoom    = 0.02;
-    private const double MaxZoom    = 50.0;
+    private const double ZoomFactor          = 1.15;
+    private const double MinZoom             = 0.02;
+    private const double MaxZoom             = 100.0;
+    private const double DefaultNewSymbolZoom = 2.0;   // 200 px per grid square for blank symbols
+
+    // ── Bitmap context-menu target ────────────────────────────────────────────
+    // Set on right-click by OnPointerPressed; read by SymbolEditorView.OnBitmapContextMenuOpening.
+    // −1 means no bitmap under the pointer; Avalonia cancels the ContextMenu in that case.
+    public int BitmapContextPrimIdx { get; private set; } = -1;
+
+    // ── Clipboard events (async work handled by SymbolEditorView code-behind) ────
+
+    public event EventHandler? ClipboardCopyRequested;
+    public event EventHandler? ClipboardCutRequested;
+    public event EventHandler? ClipboardPasteRequested;
 
     // ── Pan state ─────────────────────────────────────────────────────────────
 
@@ -114,6 +131,11 @@ public sealed class SymbolEditorCanvas : Control
         TextInput           += OnTextInput;
         ((IResourceHost)this).ResourcesChanged += (_, _) => InvalidateVisual();
         LayoutUpdated += OnLayoutUpdated;
+
+        // Image file drop target — accepts image files from the OS, ignores everything else.
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnImageFileDragOver);
+        AddHandler(DragDrop.DropEvent,     OnImageFileDrop);
     }
 
     private void OnLayoutUpdated(object? sender, EventArgs e)
@@ -180,10 +202,15 @@ public sealed class SymbolEditorCanvas : Control
         if (_renderSymbol is null || Bounds.Width < 1 || Bounds.Height < 1) return;
         var (bbMinX, bbMinY, bbMaxX, bbMaxY) = SymbolGeometry.ComputeBb(_renderSymbol.Primitives);
 
-        // Fall back to a default view if the symbol has no geometric primitives.
+        // Blank/new symbol — use a larger default zoom centered at the origin so the
+        // editing area is immediately comfortable (200 px per connection-grid square).
         if (bbMinX >= bbMaxX || bbMinY >= bbMaxY)
         {
-            bbMinX = -300; bbMinY = -300; bbMaxX = 300; bbMaxY = 300;
+            _zoom = DefaultNewSymbolZoom;
+            _panX = -Bounds.Width  / (2.0 * _zoom);
+            _panY = -Bounds.Height / (2.0 * _zoom);
+            if (_viewModel is not null) _viewModel.CanvasZoom = _zoom;
+            return;
         }
 
         const double pad = 0.1;
@@ -221,6 +248,20 @@ public sealed class SymbolEditorCanvas : Control
             _panDragStartPanY   = _panY;
             e.Pointer.Capture(this);
             Cursor = new Cursor(StandardCursorType.Hand);
+            return;
+        }
+
+        // Right click → hit-test for bitmap context menu; Avalonia opens ContextMenu on release.
+        if (props.IsRightButtonPressed)
+        {
+            BitmapContextPrimIdx = -1;
+            if (_viewModel is not null)
+            {
+                double wx = ScreenToWorldX(pos.X);
+                double wy = ScreenToWorldY(pos.Y);
+                var result = _viewModel.OnPointerRightPressed(wx, wy);
+                if (result.HasValue) BitmapContextPrimIdx = result.Value.PrimIdx;
+            }
             return;
         }
 
@@ -273,11 +314,23 @@ public sealed class SymbolEditorCanvas : Control
 
     private void OnKeyDown(object? _, KeyEventArgs e)
     {
-        // F key: zoom to fit.
-        if (e.Key == Key.F && (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
+        // F key: zoom to fit — suppressed while typing text so 'f' reaches the text buffer.
+        if (e.Key == Key.F
+            && (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0
+            && _viewModel?.IsTypingText != true)
         {
             ZoomToFit(); e.Handled = true; return;
         }
+
+        // Clipboard shortcuts — raised so code-behind can do the async clipboard work.
+        bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        if (ctrl)
+        {
+            if (e.Key == Key.C) { ClipboardCopyRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+            if (e.Key == Key.X) { ClipboardCutRequested?.Invoke(this, EventArgs.Empty);  e.Handled = true; return; }
+            if (e.Key == Key.V) { ClipboardPasteRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+        }
+
         _viewModel?.OnKeyDown(e.Key, e.KeyModifiers);
     }
 
@@ -299,6 +352,63 @@ public sealed class SymbolEditorCanvas : Control
         if (_viewModel is not null) _viewModel.CanvasZoom = _zoom;
         InvalidateVisual();
         e.Handled = true;
+    }
+
+    // ── Image file DnD ───────────────────────────────────────────────────────
+
+    private void OnImageFileDragOver(object? _, DragEventArgs e)
+    {
+        DropDiagnostics.Dump("SymbolEditorCanvas.DragOver", e);
+        if (TryExtractImagePath(e) is not null)
+        { e.DragEffects = DragDropEffects.Copy; e.Handled = true; }
+        else
+            e.DragEffects = DragDropEffects.None;
+    }
+
+    private void OnImageFileDrop(object? _, DragEventArgs e)
+    {
+        DropDiagnostics.Dump("SymbolEditorCanvas.Drop", e);
+        var path = TryExtractImagePath(e);
+        if (path is null || _viewModel is null) return;
+        var pos = e.GetPosition(this);
+        _viewModel.DropBitmap(path, ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y));
+        e.Handled = true;
+        InvalidateVisual();
+    }
+
+    // The OS surfaces a dropped file under DataFormat.File. The payload TYPE varies by platform:
+    // macOS (Avalonia.Native) returns a SINGLE IStorageItem; other backends may return an
+    // IEnumerable<IStorageItem>. Handle both, plus a bare path string, defensively.
+    private static string? TryExtractImagePath(DragEventArgs e)
+    {
+        foreach (var item in e.DataTransfer.Items)
+        {
+            var raw = item.TryGetRaw(DataFormat.File);
+
+            string? path = raw switch
+            {
+                IStorageItem single             => single.Path?.LocalPath,
+                IEnumerable<IStorageItem> files => files.FirstOrDefault()?.Path?.LocalPath,
+                string s                        => s,
+                _                               => null,
+            };
+
+            if (path is not null && IsImageExtension(path)) return path;
+        }
+        return null;
+    }
+
+    private static bool IsImageExtension(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return ext.Equals(".png",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".jpg",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".bmp",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".gif",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".tiff", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".tif",  StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".webp", StringComparison.OrdinalIgnoreCase);
     }
 
     // ── ICustomDrawOperation ──────────────────────────────────────────────────
