@@ -4,6 +4,7 @@ using CSparse.Double.Factorization;
 using CSparse.Ordering;
 using CSparse.Storage;
 using CircuitRF.Core;
+using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Engine;
@@ -108,6 +109,8 @@ public sealed class NonlinearDcEngine
         foreach (var ec in nl.Components)
         {
             if (ec.Model.Kind != ModelKind.Linear) continue;
+            // Term/Port branches are driven ports for S-parameter analysis only; inert in DC.
+            if (ec.Model is PortModel or TermModel) continue;
             try { ec.Model.Stamp(mna, ec, omega: 0.0); }
             catch (NotImplementedException) { }
         }

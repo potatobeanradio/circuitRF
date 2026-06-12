@@ -3,6 +3,7 @@ using CircuitRF.Core.Devices;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Elaboration;
 using System.Text.RegularExpressions;
+using System.Linq;
 
 namespace CircuitRF.Core.Elaboration;
 
@@ -57,6 +58,9 @@ public sealed class Elaborator
             }
             catch { /* skip variables that cannot resolve (e.g. forward refs) */ }
         }
+
+        // Layer-3 linter: check top-level Terms for Num consistency.
+        LintTopLevelTerms(netlist);
 
         return netlist;
     }
@@ -152,7 +156,14 @@ public sealed class Elaborator
             // Pin is a connectivity marker only — the extractor already named the net after the
             // port and the parentNetMap handles the binding. Nothing to stamp or recurse into.
             if (inst.Reference.Equals("Pin", StringComparison.OrdinalIgnoreCase))
+            {
+                // Layer-3 linter: a Pin at the testbench top has no effect (no parent to bind to).
+                if (instancePathPrefix.Length == 0)
+                    netlist.AddWarning(
+                        $"Pin '{childPath}' is at the testbench top level and has no effect; " +
+                        $"Pins belong inside cell schematics to realize interface ports.");
                 continue;
+            }
 
             if (ComponentModelFactory.IsPrimitive(inst.Reference))
             {
@@ -177,6 +188,13 @@ public sealed class Elaborator
                     int nBias  = netlist.Nodes.GetOrAssign($"__tuner_{childPath}_bias");
                     resolvedNodes = [..resolvedNodes, nBlock, nBias];
                 }
+
+                // Layer-2 + Layer-3 linter: a Term/Port inside an instantiated sub-cell is a
+                // design error — it will be treated as inert and never become an S-param port.
+                if ((model is PortModel or TermModel) && instancePathPrefix.Length > 0)
+                    netlist.AddWarning(
+                        $"Term '{childPath}' is inside an instantiated cell and was ignored; " +
+                        $"use a Pin for cell interfaces and place Terms only in the testbench.");
 
                 var ec = new ElaboratedComponent(inst.Reference, childPath, resolvedNodes, resolvedParams, model)
                          { ReferenceNode = refNode };
@@ -444,5 +462,52 @@ public sealed class Elaborator
             if (c != null) return c;
         }
         return null;
+    }
+
+    // ── Layer-3 linter ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Checks top-level Term/Port components for duplicate or missing port Num values.
+    /// Top-level = InstancePath with no dot (not inside an instantiated sub-cell).
+    /// Warnings are added to <paramref name="netlist"/> and emitted to Console.Error.
+    /// </summary>
+    private static void LintTopLevelTerms(ElaboratedNetlist netlist)
+    {
+        var topTerms = netlist.Components
+            .Where(ec => (ec.Model is PortModel or TermModel) && !ec.InstancePath.Contains('.'))
+            .ToList();
+
+        if (topTerms.Count == 0) return;
+
+        var numToPath = new Dictionary<int, string>();
+        foreach (var ec in topTerms)
+        {
+            if (!ec.Parameters.TryGetValue("Num", out var v))
+            {
+                netlist.AddWarning(
+                    $"Term '{ec.InstancePath}' has no Num parameter and will be ignored by S-parameter analysis; add Num=<index>.");
+                continue;
+            }
+
+            int num = (int)v.AsReal();
+            if (numToPath.TryGetValue(num, out var existing))
+                netlist.AddWarning(
+                    $"Duplicate S-parameter port Num={num} on Terms '{existing}' and '{ec.InstancePath}'; port assignment is ambiguous.");
+            else
+                numToPath[num] = ec.InstancePath;
+        }
+
+        // Check for gaps in the port numbering (e.g. {1,3} is missing 2).
+        if (numToPath.Count > 0)
+        {
+            int maxNum = numToPath.Keys.Max();
+            for (int n = 1; n <= maxNum; n++)
+            {
+                if (!numToPath.ContainsKey(n))
+                    netlist.AddWarning(
+                        $"S-parameter port Num={n} is missing; Terms are numbered " +
+                        $"{string.Join(", ", numToPath.Keys.OrderBy(k => k))}.");
+            }
+        }
     }
 }

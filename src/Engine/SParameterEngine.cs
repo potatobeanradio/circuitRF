@@ -41,7 +41,8 @@ public static class SParameterEngine
         var (ports, branchLabels) = CollectPortsAndBranchLabels(netlist, nonGroundNodes);
         if (ports.Count == 0)
             throw new InvalidOperationException(
-                "S-parameter analysis requires at least one Port or Term component.");
+                "S-parameter analysis requires at least one Port or Term component at the testbench top level. " +
+                "Place Term components (Num=1, Z=50 Ohm) directly in the testbench, not inside sub-cells.");
         int N = ports.Count;
 
         var mna          = new MnaSystem(nonGroundNodes);
@@ -148,13 +149,19 @@ public static class SParameterEngine
     /// <summary>
     /// Stamp all components (two-phase: non-mutual first so InductorModel.LastBranchIndex
     /// is set before MutualInductanceModel reads it).
+    /// Buried Term/Port components (dotted InstancePath = inside a sub-cell) are silently
+    /// skipped — they are inert and never become driven ports (Layer 2 scoping rule).
     /// </summary>
     private static void StampAll(MnaSystem mna, ElaboratedNetlist netlist, double omega)
     {
         mna.Reset();
         foreach (var ec in netlist.Components)
-            if (ec.Model is not MutualInductanceModel)
-                ec.Model.Stamp(mna, ec, omega);
+        {
+            if (ec.Model is MutualInductanceModel) continue;
+            // Buried Term/Port: a Term/Port inside a sub-cell is inert even in S-param analysis.
+            if ((ec.Model is PortModel or TermModel) && ec.InstancePath.Contains('.')) continue;
+            ec.Model.Stamp(mna, ec, omega);
+        }
         foreach (var ec in netlist.Components)
             if (ec.Model is MutualInductanceModel)
                 ec.Model.Stamp(mna, ec, omega);
@@ -216,6 +223,8 @@ public static class SParameterEngine
         foreach (var ec in netlist.Components)
         {
             if (ec.Model is MutualInductanceModel) continue;
+            // Buried Term/Port: skip in the preliminary stamp pass (Layer 2 scoping rule).
+            if ((ec.Model is PortModel or TermModel) && ec.InstancePath.Contains('.')) continue;
             int before = tempMna.BranchCount;
             ec.Model.Stamp(tempMna, ec, 1.0);
             for (int b = before; b < tempMna.BranchCount; b++)
@@ -229,6 +238,8 @@ public static class SParameterEngine
         var ports = new List<PortEntry>();
         foreach (var ec in netlist.Components)
         {
+            // Only top-level Term/Port components (no dot in path) become S-param ports.
+            if ((ec.Model is PortModel or TermModel) && ec.InstancePath.Contains('.')) continue;
             if (ec.Model is PortModel pm)
                 ports.Add(new PortEntry(GetPortNum(ec), GetZ0(ec), pm.LastBranchIndex));
             else if (ec.Model is TermModel tm)

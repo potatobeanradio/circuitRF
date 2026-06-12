@@ -362,6 +362,8 @@ public sealed class HbLinearExtractor
         {
             if (ec.IsNonlinear)       continue;  // linear partition only
             if (ec.Model is MutualInductanceModel) continue;
+            // Term/Port branches are driven ports for S-parameter analysis only; inert in HB.
+            if (ec.Model is PortModel or TermModel) continue;
 
             if (zeroDrive && IsVoltageOrToneSource(ec))
                 ec.Model.Stamp(new ZeroDriveMna(mna), ec, omega);

@@ -40,4 +40,17 @@ public sealed class ElaboratedNetlist
     }
 
     internal void SetResolvedGlobal(string name, Value val) => _resolvedGlobals[name] = val;
+
+    /// <summary>
+    /// Design-rule warnings emitted during elaboration (buried Terms, duplicate Num, etc.).
+    /// Also written to Console.Error for headless runs.
+    /// </summary>
+    public IReadOnlyList<string> Warnings => _warnings;
+    private readonly List<string> _warnings = [];
+
+    internal void AddWarning(string message)
+    {
+        _warnings.Add(message);
+        Console.Error.WriteLine($"[circuitRF] {message}");
+    }
 }

@@ -259,15 +259,25 @@ A parametric sweep wrapping the analysis (data-model §4) adds its sweep axis ac
 
 ## 9. S-parameter extraction & renormalization
 
-Ports are declared by `Port`/`Term` components, each carrying a port number and a reference impedance `Z0_k` (optionally complex). Extraction, at each frequency:
+Ports are declared by `Port`/`Term` components, each carrying a port number and a reference impedance `Z0_k` (optionally complex).
 
-1. **Identify the port nodes** from the `Port`/`Term` components.
+**Scoping rule (Brief H):** `Port`/`Term` branches are **driven ports only in the S-parameter (driven-port) analysis, and only at the analysis's top schematic** (single-segment `InstancePath`, i.e. no `.`). Specifically:
+
+- **In DC/AC/HB:** `Port`/`Term` components are **inert** — they contribute no branch, no short, no load to the MNA. A `Port` at a DC-biased node does not short or load it.
+- **In S-parameter analysis:** `Port`/`Term` components stamp their 0 V driven branch **only when at the testbench top** (`InstancePath` has no `.`). A `Port`/`Term` inside an instantiated sub-cell (dotted path) is also inert and emits a design-rule warning.
+- **Reusable cells must use Pins, never Terms.** The linter (run at elaboration) flags Terms in sub-cells. See `docs/design/ports-pins-and-terms.md`.
+
+`Z0_k` is the **normalization impedance for the S-definition**, not a physical resistor stamped into the network.
+
+Extraction, at each frequency:
+
+1. **Identify the port nodes** from top-level `Port`/`Term` components (`InstancePath` with no `.`).
 2. **Extract the port network matrix.** With the MNA factorized at this frequency (§6), excite each port in turn and read the response, giving the port **Y-matrix** — **Y is the default extraction** (the prototype's `CalculateAdmittanceMatrix` approach), chosen because the HB engine reuses the *same* extraction for its Newton-update admittance (§10); one routine serves both paths. The **Z-matrix** (dual excitation) is coded as the conditioning fallback for topologies where Y is singular/ill-conditioned (a series-open network has finite Y but a shunt-short network has finite Z). The factorization is reused across the `N` port excitations.
 3. **Convert and renormalize via RfCore.** Hand the port Y- (or Z-) matrix to RfCore, which converts to **S** and renormalizes to each port's reference impedance `Z0_k`, using the **power-wave formula for complex `Z0`** (data-model §6). circuitRF does not reimplement this; it is the splotRF/RfCore network math.
 
-The port reference impedance `Z0_k` is the **normalization impedance for the S-definition**, not a physical resistor stamped into the network — so the extracted S-parameters are the network's own, defined against `Z0_k`. (Terminated/loaded responses, when wanted, are obtained by including explicit termination components in the circuit.)
-
 For Hero 1 this is the whole path: a 4-port RLC network with an embedded SNP block → MNA per frequency → port Y-matrix → RfCore Y→S at the port `Z0`s → `S` cube → Touchstone, compared against the 4-port reference to `< 1e-6` (PRD §4).
+
+Cross-reference: `docs/design/ports-pins-and-terms.md` §"The scoping rule".
 
 ---
 
