@@ -27,4 +27,16 @@ public interface ITreeActions
 
     /// <summary>New Schematic on cell node — prompts for name, creates .csch, opens tab, Refresh.</summary>
     Task NewSchematicAsync(ProjectTreeNodeViewModel cellNode);
+
+    /// <summary>Register a file or directory path as a Known File in the workspace .cws.</summary>
+    void AddKnownFile(string path);
+
+    /// <summary>Open a Known File with the OS default handler.</summary>
+    void OpenExternal(ProjectTreeNodeViewModel node);
+
+    /// <summary>Copy a Known File into the workspace folder and re-point the .cws reference.</summary>
+    void CopyToWorkspace(ProjectTreeNodeViewModel node);
+
+    /// <summary>Remove the Known File reference from .cws (does NOT delete the file on disk).</summary>
+    void RemoveKnownFile(ProjectTreeNodeViewModel node);
 }

@@ -158,6 +158,9 @@ public static class WorkspaceScanner
         string ext = Path.GetExtension(file).ToLowerInvariant();
         NodeKind kind = ext switch
         {
+            ".csym"   => NodeKind.ViewFile,
+            ".csch"   => NodeKind.ViewFile,
+            ".clay"   => NodeKind.ViewFile,
             ".cdd"    => NodeKind.DataDisplayFile,
             ".ccolor" => NodeKind.ColorThemeFile,
             _         => NodeKind.OtherFile,
@@ -211,10 +214,12 @@ public static class WorkspaceScanner
         string resolved = ResolveRef(kfRef, workspaceRoot);
         string name = FileName(resolved);
         if (string.IsNullOrEmpty(name)) name = kfRef;
-        bool exists = File.Exists(resolved);
+        bool isDir  = Directory.Exists(resolved);
+        bool exists = isDir || File.Exists(resolved);
         return new ProjectTreeNode(
             NodeKind.KnownFile, name, resolved, Rel(resolved, workspaceRoot),
-            warningReason: exists ? null : $"File not found: {kfRef}");
+            warningReason: exists ? null : $"Known File path not found: {kfRef}",
+            isDirectory: isDir);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

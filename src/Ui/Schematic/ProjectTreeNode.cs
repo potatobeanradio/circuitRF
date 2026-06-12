@@ -96,6 +96,12 @@ public sealed class ProjectTreeNode
 
     // ── Construction ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// True for a <see cref="NodeKind.KnownFile"/> whose path is a directory (not a file).
+    /// Drives the folder-vs-file icon and the label/tooltip display in the tree.
+    /// </summary>
+    public bool IsDirectory { get; }
+
     public ProjectTreeNode(
         NodeKind kind,
         string   name,
@@ -103,7 +109,8 @@ public sealed class ProjectTreeNode
         string   relativePath,
         bool     isPrimary     = false,
         bool     isTestBench   = false,
-        string?  warningReason = null)
+        string?  warningReason = null,
+        bool     isDirectory   = false)
     {
         Kind          = kind;
         Name          = name;
@@ -112,6 +119,7 @@ public sealed class ProjectTreeNode
         IsPrimary     = isPrimary;
         IsTestBench   = isTestBench;
         WarningReason = warningReason;
+        IsDirectory   = isDirectory;
     }
 
     /// <summary>Appends a child.  Called only by <see cref="WorkspaceScanner"/>.</summary>

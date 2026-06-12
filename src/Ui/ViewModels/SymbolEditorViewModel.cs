@@ -153,10 +153,14 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
 
     // ── Resize gripper state ─────────────────────────────────────────────────
 
+    private enum ResizeCorner { None, BottomRight, TopLeft }
+
     private bool   _isResizing;
     private int    _resizePrimIdx = -1;
     private double _resizeBbX0, _resizeBbY0, _resizeBbX1, _resizeBbY1; // original bbox
-    private double _resizeLiveX1, _resizeLiveY1;                         // tracked bottom-right
+    private double _resizeLiveX1, _resizeLiveY1;                         // tracked bottom-right (BR handle)
+    private double _resizeLiveX0, _resizeLiveY0;                         // tracked top-left (TL handle)
+    private bool   _resizeCornerIsTL;                                     // which corner is being dragged
     private bool   _resizeShift;
 
     // ── Selected-pin port remap ───────────────────────────────────────────────
@@ -342,31 +346,65 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                 Align     = SymbolTextAlign.Left,
             };
 
-        // Resize handle: bottom-right of single selected prim's bbox.
-        // During resize, build a transient scaled clone as the live preview primitive.
-        (double X, double Y)? resizeHandle = null;
+        // Resize handles: BR and TL corners of single selected prim's bbox.
+        // Layer 3: Text primitives show no grippers.
+        // Layer 1 fix: during resize, both handles track the live-scaled clone's bbox.
+        (double X, double Y)? resizeHandle   = null;
+        (double X, double Y)? resizeHandleTL = null;
         SymbolPrimitive? resizeLivePrim = null;
         if (!IsLocked && ActiveTool == Tool.Select && _selection.Count == 1 && !_isDragging && !_isRubberBanding)
         {
             int idx = _selection.First();
             if (idx >= 0 && idx < EditableSymbol.Primitives.Count)
             {
-                var (bx0, by0, bx1, by1) = SymbolGeometry.BboxOf(EditableSymbol.Primitives[idx]);
-                resizeHandle = (bx1, by1);
-                if (_isResizing)
+                var committedPrim = EditableSymbol.Primitives[idx];
+                if (committedPrim is not TextPrimitive)  // Layer 3: no grippers for Text
                 {
-                    double origW = _resizeBbX1 - _resizeBbX0;
-                    double origH = _resizeBbY1 - _resizeBbY0;
-                    if (Math.Abs(origW) > 1e-9 && Math.Abs(origH) > 1e-9)
+                    if (_isResizing)
                     {
-                        double sx = (_resizeLiveX1 - _resizeBbX0) / origW;
-                        double sy = (_resizeLiveY1 - _resizeBbY0) / origH;
-                        if (Math.Abs(sx) > 1e-6 && Math.Abs(sy) > 1e-6)
+                        double origW = _resizeBbX1 - _resizeBbX0;
+                        double origH = _resizeBbY1 - _resizeBbY0;
+                        if (Math.Abs(origW) > 1e-9 && Math.Abs(origH) > 1e-9)
                         {
-                            var clone = SymbolGeometry.Clone(EditableSymbol.Primitives[idx]);
-                            SymbolGeometry.ScaleBy(clone, _resizeBbX0, _resizeBbY0, sx, sy);
-                            resizeLivePrim = clone;
+                            double sx, sy, anchorX, anchorY;
+                            if (_resizeCornerIsTL)
+                            {
+                                sx      = (_resizeBbX1 - _resizeLiveX0) / origW;
+                                sy      = (_resizeBbY1 - _resizeLiveY0) / origH;
+                                anchorX = _resizeBbX1;
+                                anchorY = _resizeBbY1;
+                            }
+                            else
+                            {
+                                sx      = (_resizeLiveX1 - _resizeBbX0) / origW;
+                                sy      = (_resizeLiveY1 - _resizeBbY0) / origH;
+                                anchorX = _resizeBbX0;
+                                anchorY = _resizeBbY0;
+                            }
+                            if (Math.Abs(sx) > 1e-6 && Math.Abs(sy) > 1e-6)
+                            {
+                                var clone = SymbolGeometry.Clone(committedPrim);
+                                SymbolGeometry.ScaleBy(clone, anchorX, anchorY, sx, sy);
+                                resizeLivePrim = clone;
+                                // Both handles from the live bbox (Layer 1 fix)
+                                var (lx0, ly0, lx1, ly1) = SymbolGeometry.BboxOf(resizeLivePrim);
+                                resizeHandle   = (lx1, ly1);
+                                resizeHandleTL = (lx0, ly0);
+                            }
                         }
+                        // Fallback if scale is degenerate: committed bbox
+                        if (resizeLivePrim is null)
+                        {
+                            var (bx0, by0, bx1, by1) = SymbolGeometry.BboxOf(committedPrim);
+                            resizeHandle   = (bx1, by1);
+                            resizeHandleTL = (bx0, by0);
+                        }
+                    }
+                    else
+                    {
+                        var (bx0, by0, bx1, by1) = SymbolGeometry.BboxOf(committedPrim);
+                        resizeHandle   = (bx1, by1);
+                        resizeHandleTL = (bx0, by0);
                     }
                 }
             }
@@ -388,6 +426,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
             PinLiveDragOffset   = (_pinLiveDx, _pinLiveDy),
             UnmappedPortIndices = ComputeUnmappedPorts(),
             ResizeHandle        = resizeHandle,
+            ResizeHandleTopLeft = resizeHandleTL,
         };
     }
 
@@ -462,12 +501,26 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
             {
                 double nx = SnapToP(lx);
                 double ny = SnapToP(ly);
-                if (_resizeShift)
+                double origW = _resizeBbX1 - _resizeBbX0;
+                double origH = _resizeBbY1 - _resizeBbY0;
+                if (_resizeCornerIsTL)
                 {
-                    // Aspect-ratio lock: scale bottom-right uniformly from top-left anchor.
-                    double origW = _resizeBbX1 - _resizeBbX0;
-                    double origH = _resizeBbY1 - _resizeBbY0;
-                    if (origW > 1e-9 && origH > 1e-9)
+                    // TL handle: anchor = BR, move = TL.
+                    if (_resizeShift && origW > 1e-9 && origH > 1e-9)
+                    {
+                        double sx = (_resizeBbX1 - nx) / origW;
+                        double sy = (_resizeBbY1 - ny) / origH;
+                        double s  = Math.Min(Math.Abs(sx), Math.Abs(sy));
+                        nx = _resizeBbX1 - origW * s;
+                        ny = _resizeBbY1 - origH * s;
+                    }
+                    _resizeLiveX0 = nx;
+                    _resizeLiveY0 = ny;
+                }
+                else
+                {
+                    // BR handle: anchor = TL, move = BR.
+                    if (_resizeShift && origW > 1e-9 && origH > 1e-9)
                     {
                         double sx = (nx - _resizeBbX0) / origW;
                         double sy = (ny - _resizeBbY0) / origH;
@@ -475,9 +528,9 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                         nx = _resizeBbX0 + origW * s;
                         ny = _resizeBbY0 + origH * s;
                     }
+                    _resizeLiveX1 = nx;
+                    _resizeLiveY1 = ny;
                 }
-                _resizeLiveX1 = nx;
-                _resizeLiveY1 = ny;
                 RebuildOverlay();
                 return;
             }
@@ -543,19 +596,36 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                 _isResizing = false;
                 double origW = _resizeBbX1 - _resizeBbX0;
                 double origH = _resizeBbY1 - _resizeBbY0;
-                double newW  = _resizeLiveX1 - _resizeBbX0;
-                double newH  = _resizeLiveY1 - _resizeBbY0;
-                if (!IsLocked && Math.Abs(origW) > 1e-9 && Math.Abs(origH) > 1e-9
-                              && (Math.Abs(newW - origW) > 0.1 || Math.Abs(newH - origH) > 0.1))
+                if (!IsLocked && Math.Abs(origW) > 1e-9 && Math.Abs(origH) > 1e-9)
                 {
-                    double sx = newW / origW;
-                    double sy = newH / origH;
-                    if (Math.Abs(sx) > 1e-6 && Math.Abs(sy) > 1e-6
+                    double sx, sy, refX, refY;
+                    bool changed;
+                    if (_resizeCornerIsTL)
+                    {
+                        // TL handle: anchor = BR corner, moving = TL corner.
+                        sx      = (_resizeBbX1 - _resizeLiveX0) / origW;
+                        sy      = (_resizeBbY1 - _resizeLiveY0) / origH;
+                        refX    = _resizeBbX1;
+                        refY    = _resizeBbY1;
+                        changed = Math.Abs(_resizeLiveX0 - _resizeBbX0) > 0.1
+                               || Math.Abs(_resizeLiveY0 - _resizeBbY0) > 0.1;
+                    }
+                    else
+                    {
+                        // BR handle: anchor = TL corner, moving = BR corner.
+                        sx      = (_resizeLiveX1 - _resizeBbX0) / origW;
+                        sy      = (_resizeLiveY1 - _resizeBbY0) / origH;
+                        refX    = _resizeBbX0;
+                        refY    = _resizeBbY0;
+                        changed = Math.Abs(_resizeLiveX1 - _resizeBbX1) > 0.1
+                               || Math.Abs(_resizeLiveY1 - _resizeBbY1) > 0.1;
+                    }
+                    if (changed && Math.Abs(sx) > 1e-6 && Math.Abs(sy) > 1e-6
                         && _resizePrimIdx >= 0 && _resizePrimIdx < EditableSymbol.Primitives.Count)
                     {
                         Execute(new Commands.Symbol.ResizeSymbolPrimitiveCommand(
                             EditableSymbol, EditableSymbol.Primitives[_resizePrimIdx],
-                            _resizeBbX0, _resizeBbY0, sx, sy));
+                            refX, refY, sx, sy));
                     }
                 }
                 RebuildOverlay();
@@ -780,18 +850,22 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
         bool shift = (mods & KeyModifiers.Shift) != 0;
 
         // Check gripper first so a resize drag doesn't accidentally move the prim.
-        if (!IsLocked && HitTestGripper(lx, ly) && _selection.Count == 1)
+        var gripCorner = !IsLocked && _selection.Count == 1
+            ? HitTestGripper(lx, ly) : ResizeCorner.None;
+        if (gripCorner != ResizeCorner.None)
         {
             int idx = _selection.First();
             if (idx >= 0 && idx < EditableSymbol.Primitives.Count)
             {
                 var (x0, y0, x1, y1) = SymbolGeometry.BboxOf(EditableSymbol.Primitives[idx]);
-                _isResizing    = true;
-                _resizePrimIdx = idx;
-                _resizeBbX0    = x0; _resizeBbY0 = y0;
-                _resizeBbX1    = x1; _resizeBbY1 = y1;
-                _resizeLiveX1  = x1; _resizeLiveY1 = y1;
-                _resizeShift   = shift || EditableSymbol.Primitives[idx] is BitmapPrimitive;
+                _isResizing       = true;
+                _resizePrimIdx    = idx;
+                _resizeBbX0       = x0; _resizeBbY0 = y0;
+                _resizeBbX1       = x1; _resizeBbY1 = y1;
+                _resizeCornerIsTL = gripCorner == ResizeCorner.TopLeft;
+                _resizeLiveX1     = x1; _resizeLiveY1 = y1; // BR tracking (used when !_resizeCornerIsTL)
+                _resizeLiveX0     = x0; _resizeLiveY0 = y0; // TL tracking (used when  _resizeCornerIsTL)
+                _resizeShift      = shift || EditableSymbol.Primitives[idx] is BitmapPrimitive;
                 RebuildOverlay();
                 return;
             }
@@ -1222,13 +1296,23 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
         return -1;
     }
 
-    private bool HitTestGripper(double lx, double ly)
+    private ResizeCorner HitTestGripper(double lx, double ly)
     {
-        if (Overlay.ResizeHandle is not { } h) return false;
         // 7 screen-px gripper half-size converted to world units.
         double halfSize = 7.0 / Math.Max(CanvasZoom, 1e-6);
-        double dx = lx - h.X, dy = ly - h.Y;
-        return Math.Abs(dx) <= halfSize && Math.Abs(dy) <= halfSize;
+        if (Overlay.ResizeHandle is { } br)
+        {
+            double dx = lx - br.X, dy = ly - br.Y;
+            if (Math.Abs(dx) <= halfSize && Math.Abs(dy) <= halfSize)
+                return ResizeCorner.BottomRight;
+        }
+        if (Overlay.ResizeHandleTopLeft is { } tl)
+        {
+            double dx = lx - tl.X, dy = ly - tl.Y;
+            if (Math.Abs(dx) <= halfSize && Math.Abs(dy) <= halfSize)
+                return ResizeCorner.TopLeft;
+        }
+        return ResizeCorner.None;
     }
 
     private void UpdateRubberBandSelection()
@@ -1273,6 +1357,8 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
         _pinLiveDx         = 0; _pinLiveDy = 0;
         _isResizing        = false;
         _resizePrimIdx     = -1;
+        _resizeCornerIsTL  = false;
+        _resizeLiveX0      = 0; _resizeLiveY0 = 0;
         RebuildOverlay();
     }
 

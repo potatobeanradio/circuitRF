@@ -88,6 +88,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     private System.ComponentModel.PropertyChangedEventHandler? _filterStateHandler;
     private ProjectTreeFilterState? _subscribedFilterState;
 
+    // Track the currently-subscribed ProjectTreeTool for SelectedItem changes (inspector).
+    private System.ComponentModel.PropertyChangedEventHandler? _treeSelectionHandler;
+    private ProjectTreeTool? _subscribedTreeTool;
+    private CellParameterEditModel? _treeInspectorCellModel;
+
     // ---- Per-document undo routing ------------------------------------------
 
     // The active editable document; null when no undoable document is active.
@@ -191,6 +196,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         // the moment SetWorkspace builds the first VM tree.
         _factory.ProjectTreeTool?.SetActions(this);
         SubscribeToFilterState();
+        SubscribeToTreeSelection();
 
         Messages = _factory.MessagesTool
             ?? throw new InvalidOperationException("DockFactory must expose MessagesTool.");
@@ -343,6 +349,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             // CreateDefaultLayout replaced all tool instances and the DocumentDock — re-wire them.
             _factory.ProjectTreeTool?.SetActions(this);
             SubscribeToFilterState();
+            SubscribeToTreeSelection();
             _factory.ProjectTreeTool?.SetWorkspace(workspaceDir);
 
             // Re-subscribe to the new DocumentDock (instance replaced by CreateDefaultLayout).
@@ -599,6 +606,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         // CreateDefaultLayout replaced all tool instances and the DocumentDock — re-wire them.
         _factory.ProjectTreeTool?.SetActions(this);
         SubscribeToFilterState();
+        SubscribeToTreeSelection();
         _factory.ProjectTreeTool?.SetWorkspace(workspaceDir);
 
         // Re-subscribe to the new DocumentDock (instance replaced by CreateDefaultLayout).
@@ -908,6 +916,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         SubscribeToFilterState();
+        SubscribeToTreeSelection();
         Messages.Info("Layout reset to default.");
     }
 
@@ -1218,7 +1227,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             var editable = EditableSymbol.FromSymbol(symbol);
             editable.UserEditable = true;  // user file — editable
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = path };
-            var doc = new SymbolEditorDocument(Path.GetFileNameWithoutExtension(path), vm, path);
+            var doc = new SymbolEditorDocument(Path.GetFileName(path), vm, path);
             _factory.OpenDocument(doc);
             Messages.Success($"Opened: {path}");
         }
@@ -1266,7 +1275,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             editable.ExternalPortCount = TryCellPortCount(absolutePath, symbol);
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = absolutePath };
             vm.SymbolSaved += OnSymbolSaved;
-            var doc = new SymbolEditorDocument(Path.GetFileNameWithoutExtension(absolutePath), vm, absolutePath);
+            var doc = new SymbolEditorDocument(Path.GetFileName(absolutePath), vm, absolutePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
             Messages.Success($"Opened: {absolutePath}");
@@ -1278,18 +1287,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     }
 
     /// <summary>
-    /// Returns symbol.PortCount when the .csym lives under a cell folder (grandparent has a .ccell),
+    /// Returns the NumPorts declared in the .ccell when the .csym lives under a cell folder,
     /// otherwise null (orphan symbol — no external port authority).
+    /// The .ccell is the authority for port count; the symbol's own PortCount is ignored.
     /// </summary>
     private static int? TryCellPortCount(string csymPath, Symbol symbol)
     {
         var symbolDir = Path.GetDirectoryName(csymPath);
         if (symbolDir is null) return null;
-        var cellDir = Path.GetDirectoryName(symbolDir);
+        var cellDir   = Path.GetDirectoryName(symbolDir);
         if (cellDir is null) return null;
-        return File.Exists(Path.Combine(cellDir, CellFolder.CcellFileName))
-            ? symbol.PortCount
-            : null;
+        var ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        if (!File.Exists(ccellPath)) return null;
+        try   { return CellPersistence.LoadFromFile(ccellPath).NumPorts; }
+        catch { return null; }
     }
 
     private void OpenOrActivateSchematic(string absolutePath)
@@ -1298,13 +1309,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
         try
         {
-            var (editModel, _, cellName) = SchematicPersistence.LoadFromFile(absolutePath);
+            var (editModel, _, _) = SchematicPersistence.LoadFromFile(absolutePath);
             var vm  = new SchematicViewModel(editModel, Messages);
             vm.SetPlacementService(PlacementService);
             vm.ComponentPlaced += OnComponentPlaced;
-            var title = string.IsNullOrWhiteSpace(cellName)
-                ? Path.GetFileNameWithoutExtension(absolutePath)
-                : cellName;
+            var title = Path.GetFileName(absolutePath);
             var doc = new SchematicDocument(title, vm, absolutePath) { Messages = Messages };
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
@@ -1331,6 +1340,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         {
             var file      = CellPersistence.LoadFromFile(ccellPath);
             var editModel = new CellParameterEditModel(ccellPath, file);
+            editModel.PrimarySymbolChanged += OnCellPrimarySymbolChanged;
+            editModel.PortCountChanged     += OnCellPortCountChanged;
             var vm        = new CellParameterEditorViewModel(cellName, editModel);
             var doc       = new CellParameterEditorDocument(cellName, vm);
             _factory.OpenDocument(doc);
@@ -1405,6 +1416,95 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
     // ── Live-update helpers (cell-ref resolver + schematic rebuild) ──────────
 
     /// <summary>
+    /// Fired by <see cref="CellParameterEditModel.PrimarySymbolChanged"/> when the user (or undo)
+    /// changes the primary symbol via the cell editor. Mirrors MakePrimary symbol invalidation.
+    /// </summary>
+    private void OnCellPrimarySymbolChanged(string cellDir)
+    {
+        CellSymbolResolver.Invalidate(cellDir);
+        RebuildOpenSchematics();
+        _factory.ProjectTreeTool?.Refresh();
+    }
+
+    /// <summary>
+    /// Fired by <see cref="CellParameterEditModel.PortCountChanged"/> when the user (or undo)
+    /// changes the port count via the cell editor. Invalidates the cell-symbol resolver so
+    /// cell-ref components in open schematics re-resolve with the new port count.
+    /// </summary>
+    private void OnCellPortCountChanged(string cellDir)
+    {
+        CellSymbolResolver.Invalidate(cellDir);
+        RebuildOpenSchematics();
+    }
+
+    /// <summary>
+    /// Subscribes to the current ProjectTreeTool's PropertyChanged to watch SelectedItem.
+    /// Mirrors <see cref="SubscribeToFilterState"/> — unsubscribes from the old tool instance
+    /// before subscribing to the new one.  Call after SetActions / CreateDefaultLayout.
+    /// </summary>
+    private void SubscribeToTreeSelection()
+    {
+        var newTool = _factory.ProjectTreeTool;
+        if (ReferenceEquals(newTool, _subscribedTreeTool)) return;
+
+        if (_subscribedTreeTool is not null && _treeSelectionHandler is not null)
+            _subscribedTreeTool.PropertyChanged -= _treeSelectionHandler;
+
+        _subscribedTreeTool = newTool;
+        if (newTool is not null)
+        {
+            _treeSelectionHandler ??= (_, e) =>
+            {
+                if (e.PropertyName is nameof(ProjectTreeTool.SelectedItem))
+                    OnProjectTreeSelectionChanged();
+            };
+            newTool.PropertyChanged += _treeSelectionHandler;
+        }
+    }
+
+    /// <summary>
+    /// Called when ProjectTreeTool.SelectedItem changes. When a cell node is selected,
+    /// loads its .ccell and pushes a CellParameterEditorViewModel into the Properties inspector.
+    /// </summary>
+    private void OnProjectTreeSelectionChanged()
+    {
+        var selected = _factory.ProjectTreeTool?.SelectedItem;
+
+        // Clean up the previous ephemeral inspector model.
+        if (_treeInspectorCellModel is not null)
+        {
+            _treeInspectorCellModel.PrimarySymbolChanged -= OnCellPrimarySymbolChanged;
+            _treeInspectorCellModel.PortCountChanged     -= OnCellPortCountChanged;
+            _treeInspectorCellModel = null;
+        }
+
+        if (selected?.Kind != NodeKind.Cell)
+        {
+            // Don't clobber the inspector when a cell document tab is active.
+            if (_factory.DocumentDock?.ActiveDockable is not CellParameterEditorDocument)
+                _factory.PropertiesTool?.SetActiveCell(null);
+            return;
+        }
+
+        var cellDir   = selected.AbsolutePath;
+        var ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        if (!File.Exists(ccellPath)) return;
+
+        try
+        {
+            var file      = CellPersistence.LoadFromFile(ccellPath);
+            var editModel = new CellParameterEditModel(ccellPath, file);
+            editModel.PrimarySymbolChanged += OnCellPrimarySymbolChanged;
+            editModel.PortCountChanged     += OnCellPortCountChanged;
+            _treeInspectorCellModel = editModel;
+
+            var vm = new CellParameterEditorViewModel(selected.Name, editModel);
+            _factory.PropertiesTool?.SetActiveCell(vm);
+        }
+        catch { /* don't surface inspector errors for tree clicks */ }
+    }
+
+    /// <summary>
     /// Invalidates the cell-symbol resolver cache for the cell that owns <paramref name="savedSymPath"/>
     /// and triggers a render-model rebuild on all open schematics.
     /// Call after any .csym save or Make-Primary change that affects a symbol view.
@@ -1467,6 +1567,107 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         {
             Messages.Error($"Reveal failed: {ex.Message}");
         }
+    }
+
+    // ── Known File actions ────────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public void AddKnownFile(string path)
+    {
+        if (CurrentWorkspacePath is null) return;
+        CwsFile cws;
+        try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
+        catch { cws = new CwsFile(); }
+
+        if (!cws.KnownFiles.Contains(path, StringComparer.OrdinalIgnoreCase))
+        {
+            cws.KnownFiles.Add(path);
+            WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
+        }
+        _factory.ProjectTreeTool?.Refresh();
+    }
+
+    /// <inheritdoc/>
+    public void OpenExternal(ProjectTreeNodeViewModel node)
+    {
+        var path = node.AbsolutePath;
+        try
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                Process.Start(new ProcessStartInfo("open", new[] { path }) { UseShellExecute = false });
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            else
+                Process.Start(new ProcessStartInfo("xdg-open", path) { UseShellExecute = false });
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Open failed: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc/>
+    public void CopyToWorkspace(ProjectTreeNodeViewModel node)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var sourcePath   = node.AbsolutePath;
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        if (Directory.Exists(sourcePath))
+        {
+            Messages.Info("Copy to Workspace is not supported for directories in v1.");
+            return;
+        }
+
+        var dest = ResolveNonConflictingDestination(workspaceDir, Path.GetFileName(sourcePath));
+
+        try { File.Copy(sourcePath, dest); }
+        catch (Exception ex) { Messages.Error($"Copy failed: {ex.Message}"); return; }
+
+        // Update the Known File reference in .cws to point to the new in-workspace path.
+        CwsFile cws;
+        try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
+        catch { cws = new CwsFile(); }
+
+        int idx = cws.KnownFiles.FindIndex(
+            p => string.Equals(p, sourcePath, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0)
+            cws.KnownFiles[idx] = dest;
+        else
+            cws.KnownFiles.Add(dest);
+
+        WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Success($"Copied to workspace:\n  {dest}");
+    }
+
+    /// <inheritdoc/>
+    public void RemoveKnownFile(ProjectTreeNodeViewModel node)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var path = node.AbsolutePath;
+        CwsFile cws;
+        try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
+        catch { cws = new CwsFile(); }
+
+        cws.KnownFiles.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Info($"Reference removed (file not deleted):\n  {path}");
+    }
+
+    private static string ResolveNonConflictingDestination(string dir, string fileName)
+    {
+        string dest = Path.Combine(dir, fileName);
+        if (!File.Exists(dest)) return dest;
+        string stem = Path.GetFileNameWithoutExtension(fileName);
+        string ext  = Path.GetExtension(fileName);
+        for (int n = 1; n <= 99; n++)
+        {
+            dest = Path.Combine(dir, $"{stem} ({n}){ext}");
+            if (!File.Exists(dest)) return dest;
+        }
+        return Path.Combine(dir, $"{stem} (99){ext}");
     }
 
     // ── Creation actions ──────────────────────────────────────────────────────
@@ -1601,7 +1802,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             var editable = new EditableSymbol { UserEditable = true };
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = filePath };
             vm.SymbolSaved += OnSymbolSaved;
-            var doc = new SymbolEditorDocument(name, vm, filePath);
+            var doc = new SymbolEditorDocument(name + ext, vm, filePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;
 
@@ -1659,7 +1860,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             var vm  = new SchematicViewModel(emptyModel, Messages);
             vm.SetPlacementService(PlacementService);
             vm.ComponentPlaced += OnComponentPlaced;
-            var doc = new SchematicDocument(name, vm, filePath) { Messages = Messages };
+            var doc = new SchematicDocument(name + ext, vm, filePath) { Messages = Messages };
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;
 
@@ -1681,10 +1882,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
 
         var activeDockable = _factory.DocumentDock?.ActiveDockable;
 
-        // Properties panel — route to schematic or symbol-editor inspector.
+        // Properties panel — route to schematic, symbol-editor, or cell inspector.
         if (activeDockable is SymbolEditorDocument symDoc)
         {
             _factory.PropertiesTool?.SetActiveSymbolEditor(symDoc.ViewModel);
+        }
+        else if (activeDockable is CellParameterEditorDocument cpd)
+        {
+            _factory.PropertiesTool?.SetActiveCell(cpd.ViewModel);
         }
         else
         {
@@ -1856,6 +2061,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
         if (dockable is SymbolEditorDocument scratchSymbol)
             _scratchSymbols.Remove(scratchSymbol);
 
+        // Unsubscribe from cell edit model events to prevent memory leaks.
+        if (dockable is CellParameterEditorDocument cellDoc)
+        {
+            cellDoc.ViewModel.EditModel.PrimarySymbolChanged -= OnCellPrimarySymbolChanged;
+            cellDoc.ViewModel.EditModel.PortCountChanged     -= OnCellPortCountChanged;
+        }
+
         // Remove any _openDocsByPath entry whose value is this dockable (reference equality),
         // regardless of document type — fixes reopen after close for symbol, schematic, and cell docs.
         var keysToRemove = _openDocsByPath
@@ -2002,6 +2214,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions
             CurrentWorkspacePath    = cwsPath;
             _factory.ProjectTreeTool?.SetActions(this);
             SubscribeToFilterState();
+            SubscribeToTreeSelection();
             _factory.ProjectTreeTool?.SetWorkspace(newWsDir);
             PushRecent(cwsPath);
         }

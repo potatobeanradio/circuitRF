@@ -71,6 +71,13 @@ public sealed class CcellFile
 
     /// <summary>True when this cell's schematic carries analyses and measurements.</summary>
     public bool IsTestBench { get; set; }
+
+    /// <summary>
+    /// Number of electrical ports this cell exposes to instantiating parents.
+    /// Default 0 so existing alpha .ccell files (which omit this field) load cleanly.
+    /// The primary symbol's ExternalPortCount is fed from this value, not the other way around.
+    /// </summary>
+    public int NumPorts { get; set; }
 }
 
 // ── Serializer ────────────────────────────────────────────────────────────────

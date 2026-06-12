@@ -3,14 +3,16 @@
              xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
              xmlns:param="using:CircuitRF.Ui.Views.ParameterEditor"
              xmlns:symInsp="using:CircuitRF.Ui.Views.Properties"
+             xmlns:body="using:CircuitRF.Ui.Views.Content"
              x:Class="CircuitRF.Ui.Views.Properties.PropertiesView"
              x:DataType="vm:PropertiesTool"
              Background="{DynamicResource SystemChromeLowColor}">
 
     <Grid RowDefinitions="Auto,*">
 
+        <!-- Header: text changes by selection type — "Cell" / "Component" / "Symbol" / "Properties" -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="4,4,4,2">
-            <TextBlock Text="Properties" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
         </StackPanel>
 
         <Grid Grid.Row="1"
@@ -22,15 +24,20 @@
                 <symInsp:SymbolPrimitiveInspectorView DataContext="{Binding SymbolInspectorVm}"/>
             </Panel>
 
+            <!-- Cell Properties Inspector (shown when a cell node or document is active) -->
+            <Panel IsVisible="{Binding IsCellActive}">
+                <body:CellParameterBodyView DataContext="{Binding CellEditorVm}"/>
+            </Panel>
+
             <!--
                 COEXISTENCE_FLAG: "content-switch" (default) — parameter editor when one non-Ground
                 component is selected, palette placeholder otherwise. To switch to "stack" (show both
                 simultaneously), replace this Grid with a StackPanel and remove the IsVisible toggles.
             -->
-            <Grid IsVisible="{Binding !IsSymbolEditorActive}">
+            <Grid IsVisible="{Binding IsSchematicContextActive}">
 
-                <!-- Palette placeholder (shown when no single non-Ground component is selected) -->
-                <TextBlock Text="Component Palette (6c)"
+                <!-- Placeholder (hidden when cell or specific component is active) -->
+                <TextBlock Text="Select object to inspect its properties."
                            IsVisible="{Binding EditorVm.IsEmptyState}"
                            Foreground="{DynamicResource SystemBaseMediumColor}"
                            HorizontalAlignment="Center"

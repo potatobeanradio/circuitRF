@@ -59,13 +59,19 @@ public sealed record class SymbolEditorOverlay
     /// </summary>
     public IReadOnlyList<int> UnmappedPortIndices { get; init; } = s_emptyPorts;
 
-    // ── Resize gripper (single-selection only) ────────────────────────────────
+    // ── Resize grippers (single-selection only) ───────────────────────────────
 
     /// <summary>
-    /// Position of the resize gripper handle (bottom-right of the selected primitive's bbox),
-    /// in symbol-local coordinates.  Non-null only when exactly one resizable primitive is selected.
+    /// Position of the bottom-right resize gripper handle, in symbol-local coordinates.
+    /// Non-null only when exactly one resizable (non-Text) primitive is selected.
     /// </summary>
     public (double X, double Y)? ResizeHandle { get; init; }
+
+    /// <summary>
+    /// Position of the top-left resize gripper handle, in symbol-local coordinates.
+    /// Non-null only when exactly one resizable (non-Text) primitive is selected.
+    /// </summary>
+    public (double X, double Y)? ResizeHandleTopLeft { get; init; }
 
     // ── Statics ───────────────────────────────────────────────────────────────
 

@@ -70,6 +70,12 @@ public partial class ProjectTreeTool : Tool
     [RelayCommand]
     private Task NewCellInWorkspace() => _actions?.NewCellInWorkspaceAsync() ?? Task.CompletedTask;
 
+    /// <summary>
+    /// Register a file or directory path as a Known File in the workspace .cws.
+    /// Called by the tree drag-drop handler in ProjectTreeView.axaml.cs.
+    /// </summary>
+    public void AddKnownFile(string path) => _actions?.AddKnownFile(path);
+
     // ── Workspace wiring ──────────────────────────────────────────────────────
 
     /// <summary>

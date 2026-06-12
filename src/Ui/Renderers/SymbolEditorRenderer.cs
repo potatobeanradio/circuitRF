@@ -25,11 +25,14 @@ internal static class SymbolEditorRenderer
         Symbol? symbol,
         SymbolEditorOverlay overlay,
         double panX, double panY, double zoom,
-        SchematicRenderTheme theme)
+        SchematicRenderTheme theme,
+        bool useTransparentBackground = false,
+        bool excludeGrid = false)
     {
-        canvas.Clear(theme.Background);
+        canvas.Clear(useTransparentBackground ? SKColors.Transparent : theme.Background);
 
-        DrawGrid(canvas, size, panX, panY, zoom, theme);
+        if (!excludeGrid)
+            DrawGrid(canvas, size, panX, panY, zoom, theme);
 
         if (symbol is null) return;
 
@@ -411,27 +414,21 @@ internal static class SymbolEditorRenderer
             }
         }
 
-        // Resize gripper handle — small filled accent square at bottom-right.
-        if (overlay.ResizeHandle.HasValue)
+        // Resize gripper handles — small filled accent squares at the active corners.
+        void DrawGrip((double X, double Y) p)
         {
-            var (hx, hy) = overlay.ResizeHandle.Value;
-            float ghx = (float)((hx - panX) * zoom);
-            float ghy = (float)((hy - panY) * zoom);
+            float ghx = (float)((p.X - panX) * zoom);
+            float ghy = (float)((p.Y - panY) * zoom);
             float gs  = (float)Math.Max(4f, zoom * 6.0);
-            using var gripFill = new SKPaint
-            {
-                IsAntialias = false, Style = SKPaintStyle.Fill,
-                Color       = theme.SelectionBox,
-            };
-            using var gripStroke = new SKPaint
-            {
-                IsAntialias = false, Style = SKPaintStyle.Stroke,
-                StrokeWidth = 1f,   Color = theme.Background,
-            };
+            using var gripFill   = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill,   Color = theme.SelectionBox };
+            using var gripStroke = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 1f, Color = theme.Background };
             var gripRect = SKRect.Create(ghx - gs * 0.5f, ghy - gs * 0.5f, gs, gs);
             canvas.DrawRect(gripRect, gripFill);
             canvas.DrawRect(gripRect, gripStroke);
         }
+
+        if (overlay.ResizeHandle.HasValue)        DrawGrip(overlay.ResizeHandle.Value);
+        if (overlay.ResizeHandleTopLeft.HasValue) DrawGrip(overlay.ResizeHandleTopLeft.Value);
 
         if (overlay.RubberBand.HasValue)
         {

@@ -32,12 +32,30 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     // ── Identity / model data (read from the node — never re-derived here) ────
 
     public NodeKind  Kind          => _node.Kind;
-    public string    Name          => _node.Name;
     public bool      IsPrimary     => _node.IsPrimary;
     public bool      IsTestBench   => _node.IsTestBench;
     public string?   WarningReason => _node.WarningReason;
     public string    RelativePath  => _node.RelativePath;
     public string    AbsolutePath  => _node.AbsolutePath;
+
+    /// <summary>
+    /// Display name shown in the tree label.
+    /// Known File directories show their relative path so the user can tell
+    /// them apart when two dirs share the same folder name.
+    /// All other nodes show the raw scanner name.
+    /// </summary>
+    public string Name => (Kind == NodeKind.KnownFile && _node.IsDirectory)
+        ? _node.RelativePath
+        : _node.Name;
+
+    /// <summary>
+    /// Path shown in the node tooltip.
+    /// Known File directories show the absolute path (the label already shows relative).
+    /// All other nodes show the relative path.
+    /// </summary>
+    public string TooltipPath => (Kind == NodeKind.KnownFile && _node.IsDirectory)
+        ? _node.AbsolutePath
+        : _node.RelativePath;
 
     // ── Computed display properties (bind → render; never re-derive flags) ────
 
@@ -45,7 +63,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public bool IsBold    => IsPrimary;
     public bool IsItalic  => IsWarning;
 
-    /// <summary>Material icon glyph — combines Kind + IsTestBench.</summary>
+    /// <summary>Material icon glyph — combines Kind + IsTestBench + directory flag.</summary>
     public MaterialIconKind IconKind => (Kind, IsTestBench) switch
     {
         (NodeKind.Workspace,       _)     => MaterialIconKind.Folder,
@@ -57,7 +75,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.ViewFile,        _)     => MaterialIconKind.FileOutline,
         (NodeKind.DataDisplayFile, _)     => MaterialIconKind.ChartLine,
         (NodeKind.ColorThemeFile,  _)     => MaterialIconKind.Palette,
-        (NodeKind.KnownFile,       _)     => MaterialIconKind.FileOutline,
+        (NodeKind.KnownFile,       _)     => _node.IsDirectory
+                                                ? MaterialIconKind.FolderOutline
+                                                : MaterialIconKind.FileOutline,
         (NodeKind.KnownFilesGroup, _)     => MaterialIconKind.FolderOutline,
         (NodeKind.UserFolder,      _)     => MaterialIconKind.Folder,
         (NodeKind.OtherFile,       _)     => MaterialIconKind.FileOutline,
@@ -68,7 +88,18 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     public bool IsViewFile           => Kind == NodeKind.ViewFile;
     public bool IsCell               => Kind == NodeKind.Cell;
+    public bool IsKnownFile          => Kind == NodeKind.KnownFile;
     public bool IsWorkspaceOrLibrary => Kind is NodeKind.Workspace or NodeKind.Library;
+
+    /// <summary>
+    /// True when this Known File's path is inside the workspace root.
+    /// A relative path that doesn't start with ".." and isn't rooted is inside.
+    /// Used to disable Copy-to-Workspace for already-in-workspace files.
+    /// </summary>
+    public bool IsInsideWorkspace =>
+        !RelativePath.StartsWith("..", StringComparison.Ordinal)
+        && !Path.IsPathRooted(RelativePath);
+
     public bool CanReveal            => Kind is NodeKind.ViewFile
                                           or NodeKind.CellViewFolder
                                           or NodeKind.Cell
@@ -105,6 +136,15 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>New Schematic on cell nodes.</summary>
     public IAsyncRelayCommand NewSchematicCommand { get; }
+
+    /// <summary>Open Known File with the OS default handler.</summary>
+    public IRelayCommand OpenExternalCommand { get; }
+
+    /// <summary>Copy an external Known File into the workspace and re-point the reference.</summary>
+    public IRelayCommand CopyToWorkspaceCommand { get; }
+
+    /// <summary>Remove the Known File reference from .cws (does NOT delete the file on disk).</summary>
+    public IRelayCommand RemoveKnownFileCommand { get; }
 
     // ── Tree state ─────────────────────────────────────────────────────────────
 
@@ -177,6 +217,18 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         NewSchematicCommand = new AsyncRelayCommand(
             () => _actions?.NewSchematicAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsCell);
+
+        OpenExternalCommand = new RelayCommand(
+            () => _actions?.OpenExternal(this),
+            () => _actions is not null && IsKnownFile && !IsWarning);
+
+        CopyToWorkspaceCommand = new RelayCommand(
+            () => _actions?.CopyToWorkspace(this),
+            () => _actions is not null && IsKnownFile && !IsWarning && !IsInsideWorkspace);
+
+        RemoveKnownFileCommand = new RelayCommand(
+            () => _actions?.RemoveKnownFile(this),
+            () => _actions is not null && IsKnownFile);
     }
 
     // ── Filter ─────────────────────────────────────────────────────────────────

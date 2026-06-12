@@ -20,16 +20,6 @@ namespace CircuitRF.Ui.Clipboard;
 /// </summary>
 public static class SchematicClipboard
 {
-    // "com.adobe.pdf" is the macOS UTI recognised by Keynote, Preview, Pages, etc.
-    // On Windows, Office apps don't recognise that UTI, so use the IANA MIME type instead.
-    private static readonly DataFormat<byte[]> PdfNativeMacFormat =
-        DataFormat.CreateBytesPlatformFormat("com.adobe.pdf");
-    private static readonly DataFormat<byte[]> PdfNativeWinFormat =
-        DataFormat.CreateBytesPlatformFormat("application/pdf");
-
-    // "public.svg-image" is the macOS/Linux UTI for Illustrator, Inkscape, Keynote (Catalina+).
-    private static readonly DataFormat<byte[]> SvgNativeFormat =
-        DataFormat.CreateBytesPlatformFormat("public.svg-image");
 
     /// <summary>
     /// Copies the given selection to the system clipboard.
@@ -61,17 +51,17 @@ public static class SchematicClipboard
             // com.adobe.pdf UTI (macOS): Keynote, Preview, Pages, etc.
             // application/pdf (Windows): recognised by some viewers; EMF would be the true
             //   Windows vector format (see splotRF WindowsClipboard.cs — future work).
-            byte[]? pdf = TryRenderToPdf(components, wires, renderTheme, transparent, excludeGrid);
+            byte[]? pdf = TryRenderToPdf(components, wires, canvasObjects, renderTheme, transparent, excludeGrid);
             if (pdf is not null)
-                item.Set(OperatingSystem.IsWindows() ? PdfNativeWinFormat : PdfNativeMacFormat, pdf);
+                item.Set(OperatingSystem.IsWindows() ? ClipboardFormats.PdfNativeWinFormat : ClipboardFormats.PdfNativeMacFormat, pdf);
 
             // SVG vector: public.svg-image UTI (macOS/Linux) — Illustrator, Inkscape, etc.
-            string? svg = TryRenderToSvg(components, wires, renderTheme, transparent, excludeGrid);
+            string? svg = TryRenderToSvg(components, wires, canvasObjects, renderTheme, transparent, excludeGrid);
             if (svg is not null && !OperatingSystem.IsWindows())
-                item.Set(SvgNativeFormat, Encoding.UTF8.GetBytes(svg));
+                item.Set(ClipboardFormats.SvgNativeFormat, Encoding.UTF8.GetBytes(svg));
 
             // PNG bitmap: universal raster fallback (Keynote, Pages, Word, etc.).
-            Bitmap? bmp = TryRenderToAvaloniaImage(components, wires, renderTheme, transparent, excludeGrid);
+            Bitmap? bmp = TryRenderToAvaloniaImage(components, wires, canvasObjects, renderTheme, transparent, excludeGrid);
             if (bmp is not null)
                 item.Set(DataFormat.Bitmap, bmp);
         }
@@ -155,20 +145,52 @@ public static class SchematicClipboard
     /// <summary>
     /// Builds a transient render model from the selection, computing bounding box.
     /// Returns null if the selection has no visible geometry.
+    /// Includes canvas objects (bitmaps) so the exported image contains them; also unions
+    /// their rects into the bbox so bitmap-only selections produce a correctly-sized page.
     /// </summary>
-    private static (SchematicModel Rm, SchematicSpatialIndex Idx, double WorldW, double WorldH)?
+    private static (SchematicModel Rm, SchematicSpatialIndex Idx,
+                    double WorldW, double WorldH, double BbMinX, double BbMinY)?
         BuildSelectionModel(
-            IReadOnlyList<EditableComponent> components,
-            IReadOnlyList<EditableWire>      wires)
+            IReadOnlyList<EditableComponent>    components,
+            IReadOnlyList<EditableWire>         wires,
+            IReadOnlyList<EditableCanvasObject> canvasObjects)
     {
         var tmp = new SchematicEditModel { GridSize = 100 };
-        foreach (var c in components) tmp.Components.Add(c);
-        foreach (var w in wires)      tmp.Wires.Add(w);
+        foreach (var c in components)    tmp.Components.Add(c);
+        foreach (var w in wires)         tmp.Wires.Add(w);
+        foreach (var obj in canvasObjects) tmp.CanvasObjects.Add(obj);
         var (rm, idx) = tmp.BuildRenderModel();
-        double worldW = rm.BbMaxX - rm.BbMinX;
-        double worldH = rm.BbMaxY - rm.BbMinY;
+
+        // Start with the render model's bbox (derived from components + wires).
+        // For bitmap-only selections the render model uses a dummy fallback extent,
+        // so we recompute from scratch when there are no comps/wires.
+        bool hasCompWire = components.Count > 0 || wires.Count > 0;
+        double bbMinX, bbMinY, bbMaxX, bbMaxY;
+        if (hasCompWire)
+        {
+            bbMinX = rm.BbMinX; bbMinY = rm.BbMinY;
+            bbMaxX = rm.BbMaxX; bbMaxY = rm.BbMaxY;
+        }
+        else
+        {
+            bbMinX = bbMinY = double.MaxValue;
+            bbMaxX = bbMaxY = double.MinValue;
+        }
+
+        // Union every bitmap rect so their positions are included in the page bounds.
+        foreach (var bm in rm.Bitmaps)
+        {
+            if (bm.X             < bbMinX) bbMinX = bm.X;
+            if (bm.Y             < bbMinY) bbMinY = bm.Y;
+            if (bm.X + bm.Width  > bbMaxX) bbMaxX = bm.X + bm.Width;
+            if (bm.Y + bm.Height > bbMaxY) bbMaxY = bm.Y + bm.Height;
+        }
+
+        if (bbMinX == double.MaxValue) return null; // nothing to render
+        double worldW = bbMaxX - bbMinX;
+        double worldH = bbMaxY - bbMinY;
         if (worldW < 1 || worldH < 1) return null;
-        return (rm, idx, worldW, worldH);
+        return (rm, idx, worldW, worldH, bbMinX, bbMinY);
     }
 
     /// <summary>
@@ -177,24 +199,25 @@ public static class SchematicClipboard
     /// Note: PDF viewers may render a transparent background as white regardless of the flag.
     /// </summary>
     private static byte[]? TryRenderToPdf(
-        IReadOnlyList<EditableComponent> components,
-        IReadOnlyList<EditableWire>      wires,
-        SchematicRenderTheme             theme,
-        bool                             useTransparentBackground,
-        bool                             excludeGrid)
+        IReadOnlyList<EditableComponent>    components,
+        IReadOnlyList<EditableWire>         wires,
+        IReadOnlyList<EditableCanvasObject> canvasObjects,
+        SchematicRenderTheme                theme,
+        bool                                useTransparentBackground,
+        bool                                excludeGrid)
     {
         try
         {
-            var m = BuildSelectionModel(components, wires);
+            var m = BuildSelectionModel(components, wires, canvasObjects);
             if (m is null) return null;
-            var (rm, idx, worldW, worldH) = m.Value;
+            var (rm, idx, worldW, worldH, bbMinX, bbMinY) = m.Value;
 
             const double pad = 0.15;
             double zoom = Math.Min(720.0 / (worldW * (1 + 2 * pad)), 540.0 / (worldH * (1 + 2 * pad)));
             float pxW = Math.Clamp((float)Math.Ceiling(worldW * zoom * (1 + 2 * pad)), 80, 720);
             float pxH = Math.Clamp((float)Math.Ceiling(worldH * zoom * (1 + 2 * pad)), 80, 540);
-            double panX = rm.BbMinX - worldW * pad;
-            double panY = rm.BbMinY - worldH * pad;
+            double panX = bbMinX - worldW * pad;
+            double panY = bbMinY - worldH * pad;
 
             var metadata = new SKDocumentPdfMetadata { Creator = "circuitRF" };
             using var stream = new SKDynamicMemoryWStream();
@@ -213,24 +236,25 @@ public static class SchematicClipboard
 
     /// <summary>Renders selection to an SVG string using SkiaSharp's SVG canvas.</summary>
     private static string? TryRenderToSvg(
-        IReadOnlyList<EditableComponent> components,
-        IReadOnlyList<EditableWire>      wires,
-        SchematicRenderTheme             theme,
-        bool                             useTransparentBackground,
-        bool                             excludeGrid)
+        IReadOnlyList<EditableComponent>    components,
+        IReadOnlyList<EditableWire>         wires,
+        IReadOnlyList<EditableCanvasObject> canvasObjects,
+        SchematicRenderTheme                theme,
+        bool                                useTransparentBackground,
+        bool                                excludeGrid)
     {
         try
         {
-            var m = BuildSelectionModel(components, wires);
+            var m = BuildSelectionModel(components, wires, canvasObjects);
             if (m is null) return null;
-            var (rm, idx, worldW, worldH) = m.Value;
+            var (rm, idx, worldW, worldH, bbMinX, bbMinY) = m.Value;
 
             const double pad = 0.15;
             double zoom = Math.Min(800.0 / (worldW * (1 + 2 * pad)), 800.0 / (worldH * (1 + 2 * pad)));
             int pxW = Math.Clamp((int)Math.Ceiling(worldW * zoom * (1 + 2 * pad)), 80, 2400);
             int pxH = Math.Clamp((int)Math.Ceiling(worldH * zoom * (1 + 2 * pad)), 80, 2400);
-            double panX = rm.BbMinX - worldW * pad;
-            double panY = rm.BbMinY - worldH * pad;
+            double panX = bbMinX - worldW * pad;
+            double panY = bbMinY - worldH * pad;
 
             using var stream = new SKDynamicMemoryWStream();
             using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, pxW, pxH), stream))
@@ -249,25 +273,26 @@ public static class SchematicClipboard
     /// PNG preserves alpha; apps that don't support transparency may render the background as black.
     /// </summary>
     private static Bitmap? TryRenderToAvaloniaImage(
-        IReadOnlyList<EditableComponent> components,
-        IReadOnlyList<EditableWire>      wires,
-        SchematicRenderTheme             theme,
-        bool                             useTransparentBackground,
-        bool                             excludeGrid)
+        IReadOnlyList<EditableComponent>    components,
+        IReadOnlyList<EditableWire>         wires,
+        IReadOnlyList<EditableCanvasObject> canvasObjects,
+        SchematicRenderTheme                theme,
+        bool                                useTransparentBackground,
+        bool                                excludeGrid)
     {
         try
         {
-            var m = BuildSelectionModel(components, wires);
+            var m = BuildSelectionModel(components, wires, canvasObjects);
             if (m is null) return null;
-            var (rm, idx, worldW, worldH) = m.Value;
+            var (rm, idx, worldW, worldH, bbMinX, bbMinY) = m.Value;
 
             const double pad   = 0.15;
             const int    maxPx = 1200;
             double zoom = Math.Min(maxPx / (worldW * (1 + 2 * pad)), maxPx / (worldH * (1 + 2 * pad)));
             int pxW = Math.Clamp((int)Math.Ceiling(worldW * zoom * (1 + 2 * pad)), 80, maxPx);
             int pxH = Math.Clamp((int)Math.Ceiling(worldH * zoom * (1 + 2 * pad)), 80, maxPx);
-            double panX = rm.BbMinX - worldW * pad;
-            double panY = rm.BbMinY - worldH * pad;
+            double panX = bbMinX - worldW * pad;
+            double panY = bbMinY - worldH * pad;
 
             using var skBmp  = new SKBitmap(pxW, pxH, SKColorType.Rgba8888, SKAlphaType.Premul);
             using var canvas = new SKCanvas(skBmp);
@@ -283,4 +308,22 @@ public static class SchematicClipboard
         }
         catch { return null; }
     }
+}
+
+/// <summary>
+/// Shared clipboard format identifiers used by both SchematicClipboard and SymbolClipboard.
+/// Centralised here so the UTI strings are not duplicated.
+/// </summary>
+internal static class ClipboardFormats
+{
+    // "com.adobe.pdf" is the macOS UTI recognised by Keynote, Preview, Pages, etc.
+    // On Windows, Office apps don't recognise that UTI, so use the IANA MIME type instead.
+    internal static readonly DataFormat<byte[]> PdfNativeMacFormat =
+        DataFormat.CreateBytesPlatformFormat("com.adobe.pdf");
+    internal static readonly DataFormat<byte[]> PdfNativeWinFormat =
+        DataFormat.CreateBytesPlatformFormat("application/pdf");
+
+    // "public.svg-image" is the macOS/Linux UTI for Illustrator, Inkscape, Keynote (Catalina+).
+    internal static readonly DataFormat<byte[]> SvgNativeFormat =
+        DataFormat.CreateBytesPlatformFormat("public.svg-image");
 }

@@ -84,10 +84,12 @@ public static class SymbolPersistence
         var file = JsonSerializer.Deserialize<CsymFile>(json, _jsonOpts)
             ?? throw new InvalidDataException("Failed to deserialize .csym file.");
 
-        if (file.FormatVersion != CurrentFormatVersion)
+        if (file.FormatVersion > CurrentFormatVersion)
             throw new InvalidDataException(
-                $".csym format_version {file.FormatVersion} does not match " +
-                $"expected {CurrentFormatVersion}. Regenerate the file.");
+                $".csym format_version {file.FormatVersion} is newer than " +
+                $"expected {CurrentFormatVersion}. Update the application.");
+        // Versions < CurrentFormatVersion are accepted; fields added in later versions
+        // default gracefully (e.g. PortCount defaults to 0 → falls back to pin count).
 
         return FromFileModel(file);
     }

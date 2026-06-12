@@ -1,0 +1,197 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Content.CellParameterBodyView"
+             x:DataType="vm:CellParameterEditorViewModel">
+
+    <DockPanel>
+
+        <!-- ── Primaries + Ports ─────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                <Grid.Styles>
+                    <Style Selector="TextBlock.label">
+                        <Setter Property="FontSize" Value="11"/>
+                        <Setter Property="VerticalAlignment" Value="Center"/>
+                        <Setter Property="Margin" Value="0,2,8,2"/>
+                        <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+                        <Setter Property="MinWidth" Value="110"/>
+                    </Style>
+                </Grid.Styles>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Primary Schematic" Classes="label"/>
+                <ComboBox Grid.Row="0" Grid.Column="1"
+                          ItemsSource="{Binding AvailableSchematics}"
+                          SelectedItem="{Binding SelectedPrimarySchematic}"
+                          FontSize="11"
+                          Padding="4,2"
+                          Margin="0,2"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Primary Symbol" Classes="label"/>
+                <ComboBox Grid.Row="1" Grid.Column="1"
+                          ItemsSource="{Binding AvailableSymbols}"
+                          SelectedItem="{Binding SelectedPrimarySymbol}"
+                          FontSize="11"
+                          Padding="4,2"
+                          Margin="0,2"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Ports" Classes="label"/>
+                <NumericUpDown Grid.Row="2" Grid.Column="1"
+                               Value="{Binding NumPorts, Mode=TwoWay}"
+                               Minimum="0"
+                               Maximum="64"
+                               Increment="1"
+                               FormatString="0"
+                               FontSize="11"
+                               Padding="4,2"
+                               Margin="0,2"
+                               ToolTip.Tip="Number of ports this cell exposes to instantiating parents"/>
+            </Grid>
+        </Border>
+
+        <!-- ── Footer: Add Parameter ────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Bottom"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="6,5">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <Button Content="＋ Add Parameter"
+                        Command="{Binding AddParameterCommand}"
+                        FontSize="11"
+                        Padding="8,3"/>
+            </StackPanel>
+        </Border>
+
+        <!-- ── Main area: column headers + scrollable rows ──────────────────── -->
+        <Grid Grid.IsSharedSizeScope="True">
+
+            <!-- Empty-state placeholder -->
+            <TextBlock IsVisible="{Binding HasNoParameters}"
+                       Text="No parameters defined. Click ＋ Add Parameter to add one."
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       FontSize="11"
+                       Opacity="0.6"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="240"/>
+
+            <!-- Header + rows -->
+            <DockPanel IsVisible="{Binding HasParameters}">
+
+                <!-- Column headers -->
+                <Grid DockPanel.Dock="Top" Margin="4,4,4,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="CpName"   Width="Auto" MinWidth="60"/>
+                        <ColumnDefinition Width="*"                               MinWidth="60"/>
+                        <ColumnDefinition SharedSizeGroup="CpUnit"   Width="Auto" MinWidth="60"/>
+                        <ColumnDefinition SharedSizeGroup="CpDim"    Width="Auto" MinWidth="80"/>
+                        <ColumnDefinition SharedSizeGroup="CpShow"   Width="Auto"/>
+                        <ColumnDefinition SharedSizeGroup="CpRemove" Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Name"      FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="4,0,6,0"/>
+                    <TextBlock Grid.Column="1" Text="Default"   FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="4,0,0,0"/>
+                    <TextBlock Grid.Column="2" Text="Unit"      FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="4,0,0,0"/>
+                    <TextBlock Grid.Column="3" Text="Dimension" FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="4,0,0,0"/>
+                    <TextBlock Grid.Column="4" Text="Show"      FontSize="10" Foreground="{DynamicResource SystemBaseMediumColor}" Margin="6,0,2,0"/>
+                </Grid>
+
+                <!-- Scrollable rows -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+
+                    <ItemsControl ItemsSource="{Binding Rows}"
+                                  Margin="4,0,4,4">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CellParameterRowViewModel">
+                                <StackPanel Margin="0,1,0,0">
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition SharedSizeGroup="CpName"   Width="Auto" MinWidth="60"/>
+                                            <ColumnDefinition Width="*"                               MinWidth="60"/>
+                                            <ColumnDefinition SharedSizeGroup="CpUnit"   Width="Auto" MinWidth="60"/>
+                                            <ColumnDefinition SharedSizeGroup="CpDim"    Width="Auto" MinWidth="80"/>
+                                            <ColumnDefinition SharedSizeGroup="CpShow"   Width="Auto"/>
+                                            <ColumnDefinition SharedSizeGroup="CpRemove" Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBox Grid.Column="0"
+                                                 Text="{Binding StagedName}"
+                                                 FontSize="11"
+                                                 Padding="4,3"
+                                                 MinWidth="60"
+                                                 VerticalAlignment="Center"
+                                                 LostFocus="OnNameLostFocus"
+                                                 KeyDown="OnNameKeyDown"/>
+
+                                        <TextBox Grid.Column="1"
+                                                 Text="{Binding StagedDefault}"
+                                                 FontSize="11"
+                                                 Padding="4,3"
+                                                 VerticalAlignment="Center"
+                                                 Margin="3,0,0,0"
+                                                 LostFocus="OnDefaultLostFocus"
+                                                 KeyDown="OnDefaultKeyDown"/>
+
+                                        <ComboBox Grid.Column="2"
+                                                  ItemsSource="{Binding UnitOptions}"
+                                                  SelectedItem="{Binding StagedUnit}"
+                                                  FontSize="11"
+                                                  Padding="4,3"
+                                                  MinWidth="60"
+                                                  Margin="3,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  SelectionChanged="OnUnitSelectionChanged"/>
+
+                                        <ComboBox Grid.Column="3"
+                                                  ItemsSource="{Binding AllDimensions}"
+                                                  SelectedItem="{Binding StagedDimension}"
+                                                  FontSize="11"
+                                                  Padding="4,3"
+                                                  MinWidth="80"
+                                                  Margin="3,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  SelectionChanged="OnDimensionSelectionChanged"/>
+
+                                        <CheckBox Grid.Column="4"
+                                                  IsChecked="{Binding ShowOnSchematic}"
+                                                  ToolTip.Tip="Show on schematic"
+                                                  Margin="6,0,2,0"
+                                                  VerticalAlignment="Center"/>
+
+                                        <Button Grid.Column="5"
+                                                Command="{Binding RemoveCommand}"
+                                                ToolTip.Tip="Remove parameter"
+                                                Padding="5,3"
+                                                Margin="3,0,0,0"
+                                                VerticalAlignment="Center">
+                                            <mi:MaterialIcon Kind="Close" Width="11" Height="11"/>
+                                        </Button>
+
+                                    </Grid>
+
+                                    <TextBlock Text="{Binding RenameWarning}"
+                                               IsVisible="{Binding HasRenameWarning}"
+                                               Foreground="{DynamicResource CrfWarningBrush}"
+                                               FontSize="10"
+                                               Opacity="0.9"
+                                               TextWrapping="Wrap"
+                                               Margin="6,1,6,2"/>
+
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                </ScrollViewer>
+            </DockPanel>
+        </Grid>
+
+    </DockPanel>
+
+</UserControl>
