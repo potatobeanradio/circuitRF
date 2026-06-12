@@ -26,7 +26,7 @@ public class RegistryPaletteMetadataTests
     [InlineData(SymbolKind.VoltageSource, ComponentCategory.Sources)]
     [InlineData(SymbolKind.ToneSource,    ComponentCategory.Sources)]
     [InlineData(SymbolKind.Ground,        ComponentCategory.Terminals)]
-    [InlineData(SymbolKind.Port,          ComponentCategory.Terminals)]
+    [InlineData(SymbolKind.Term,          ComponentCategory.Terminals)]
     [InlineData(SymbolKind.FetSdd,        ComponentCategory.Other)]
     [InlineData(SymbolKind.Sdd,           ComponentCategory.Other)]
     [InlineData(SymbolKind.ZPort,         ComponentCategory.Other)]
@@ -43,7 +43,7 @@ public class RegistryPaletteMetadataTests
     [InlineData(SymbolKind.VoltageSource, true)]
     [InlineData(SymbolKind.ToneSource,    true)]
     [InlineData(SymbolKind.Ground,        true)]
-    [InlineData(SymbolKind.Port,          true)]
+    [InlineData(SymbolKind.Term,          true)]
     [InlineData(SymbolKind.FetSdd,        false)]
     [InlineData(SymbolKind.Sdd,           false)]
     [InlineData(SymbolKind.ZPort,         false)]
@@ -193,7 +193,7 @@ public class LibraryCatalogTests
             .Select(i => i.Kind)
             .ToHashSet();
         Assert.Contains(SymbolKind.Ground, terminals);
-        Assert.Contains(SymbolKind.Port,   terminals);
+        Assert.Contains(SymbolKind.Term,   terminals);
     }
 
     // ── ByCategory ────────────────────────────────────────────────────────────

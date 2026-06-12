@@ -18,13 +18,15 @@ namespace CircuitRF.Ui.Tests;
 ///   Port:P2  n2 0  Num=2 Z=50
 ///
 /// Schematic layout (GridSize=100, all coordinates in world units):
-///   P1 at (100, 200) → signal pin at (100, 0)
-///   R1 at (300, 200) → pin0 at (300, 0), pin1 at (300, 400)
-///   C1 at (200, 600) → pin0 at (200, 400), pin1 at (200, 800)
-///   G1 at (200, 800) → ground pin at (200, 800)
-///   P2 at (500, 600) → signal pin at (500, 400)
-///   Wire W1: (100,0)→(300,0)    [P1.signal – R1.pin0  → net n1]
-///   Wire W2: (200,400)→(500,400)[C1.pin0 – R1.pin1 – P2.signal → net n2]
+///   P1  at (100, 200) R0 → "+" at (100,  0), "−" at (100, 400)
+///   R1  at (300, 200)    → pin0 at (300, 0),  pin1 at (300, 400)
+///   C1  at (200, 600)    → pin0 at (200, 400), pin1 at (200, 800)
+///   G1  at (200, 800)    → ground pin at (200, 800)    [grounds C1.pin1]
+///   GP1 at (100, 400)    → ground pin at (100, 400)    [grounds P1."−"]
+///   P2  at (500, 600) R0 → "+" at (500, 400), "−" at (500, 800)
+///   GP2 at (500, 800)    → ground pin at (500, 800)    [grounds P2."−"]
+///   Wire W1: (100,0)→(300,0)     [P1."+" – R1.pin0 → net n1]
+///   Wire W2: (200,400)→(300,400)→(500,400) [C1.pin0 – R1.pin1 – P2."+" → net n2]
 /// </summary>
 public class ExtractionOracleTests
 {
@@ -37,18 +39,21 @@ public class ExtractionOracleTests
         return w;
     }
 
-    private static EditableComponent Port(string name, double x, double y, int num)
+    private static EditableComponent Term(string name, double x, double y, int num)
     {
         var c = new EditableComponent
         {
             InstanceName = name,
-            Symbol       = SymbolKind.Port,
+            Symbol       = SymbolKind.Term,
             X = x, Y = y,
         };
         c.Parameters.Add(new EditableParameter { Name = "Num", Expression = num.ToString() });
         c.Parameters.Add(new EditableParameter { Name = "Z",   Expression = "50" });
         return c;
     }
+
+    private static EditableComponent Ground(string name, double x, double y)
+        => new() { InstanceName = name, Symbol = SymbolKind.Ground, X = x, Y = y };
 
     private static EditableComponent Resistor(string name, double x, double y, string r,
         SymbolRotation rotation = SymbolRotation.R0)
@@ -77,23 +82,20 @@ public class ExtractionOracleTests
     {
         var model = new SchematicEditModel();
 
-        // Components
-        model.Components.Add(Port("P1",     100, 200, num: 1));
+        // Terms: "+" at local(0,-200), "−" at local(0,+200) (R0 rotation).
+        model.Components.Add(Term("P1", 100, 200, num: 1));   // "+" at (100,0), "−" at (100,400)
         model.Components.Add(Resistor("R1", 300, 200, "50",
             transposeR1 ? SymbolRotation.R180 : SymbolRotation.R0));
         model.Components.Add(Capacitor("C1", 200, 600, "1e-12"));
-        model.Components.Add(new EditableComponent
-        {
-            InstanceName = "G1",
-            Symbol       = SymbolKind.Ground,
-            X = 200, Y = 800,
-        });
-        model.Components.Add(Port("P2", 500, 600, num: 2));
+        model.Components.Add(Ground("G1",  200, 800));         // grounds C1.pin1 at (200,800)
+        model.Components.Add(Ground("GP1", 100, 400));         // grounds P1."−" at (100,400)
+        model.Components.Add(Term("P2", 500, 600, num: 2));   // "+" at (500,400), "−" at (500,800)
+        model.Components.Add(Ground("GP2", 500, 800));         // grounds P2."−" at (500,800)
 
-        // Wire W1: P1.signal(100,0) → R1.pin0(300,0)
+        // Wire W1: P1."+"(100,0) → R1.pin0(300,0)
         model.Wires.Add(Wire((100, 0), (300, 0)));
 
-        // Wire W2: C1.pin0(200,400) → R1.pin1(300,400) → P2.signal(500,400)
+        // Wire W2: C1.pin0(200,400) → R1.pin1(300,400) → P2."+"(500,400)
         model.Wires.Add(Wire((200, 400), (300, 400), (500, 400)));
 
         return model;

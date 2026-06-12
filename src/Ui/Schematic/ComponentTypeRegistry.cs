@@ -117,9 +117,9 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Terminals,
             SearchTerms: ["GND", "Ground", "gnd", "reference"],
             IsCommon: true),
-        [SymbolKind.Port]          = new("Port",  "P",
+        [SymbolKind.Term]          = new("Term",  "Term",
             Category: ComponentCategory.Terminals,
-            SearchTerms: ["Port", "P", "port", "terminal"],
+            SearchTerms: ["Term", "T", "port", "sparam", "termination"],
             IsCommon: true),
         [SymbolKind.FetSdd]        = new("FET",   "X",
             Category: ComponentCategory.Other,
@@ -173,7 +173,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Capacitor     => "C",
         SymbolKind.VoltageSource => "V",
         SymbolKind.ToneSource    => "V_1Tone",
-        SymbolKind.Port          => "Port",
+        SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.FetSdd        => "SDD",
         SymbolKind.Sdd           => "SDD",
         SymbolKind.ZPort         => "Z_Port",
@@ -231,7 +231,14 @@ public static class ComponentTypeRegistry
                 return [new("NumPorts", $"{n}", "", false, UnitDimension.None)];
             }
 
-            // Ground/Port/FetSdd/Generic need no default parameters.
+            // Term: Num (port index, auto-assigned at placement) + Z (reference impedance).
+            // DefaultParameters emits Num="1" as a placeholder; CommitPlacement overwrites it
+            // with the next-free integer among existing Terms in the schematic.
+            case SymbolKind.Term:
+                return [new("Num", "1",  "",  true,  UnitDimension.None),
+                        new("Z",   "50", "Ω", true,  UnitDimension.Resistance)];
+
+            // Ground/FetSdd/Generic need no default parameters.
             default: return [];
         }
     }
@@ -240,7 +247,7 @@ public static class ComponentTypeRegistry
     /// Parses a short type code (case-insensitive) to a SymbolKind and, for variadic-port types,
     /// the parsed port count N.
     ///
-    /// Canonical codes: R, L, C, V, VTone, GND, Port/P, FET/SDD/FetSDD, Z{N}P (any N ≥ 1),
+    /// Canonical codes: R, L, C, V, VTone, GND, Term/T, FET/SDD/FetSDD, Z{N}P (any N ≥ 1),
     /// SDD{N} (any N ≥ 1), X.
     ///
     /// <list type="bullet">
@@ -266,8 +273,8 @@ public static class ComponentTypeRegistry
             case "V":      kind = SymbolKind.VoltageSource; return true;
             case "VTONE":  kind = SymbolKind.ToneSource;    return true;
             case "GND":    kind = SymbolKind.Ground;        return true;
-            case "PORT":
-            case "P":      kind = SymbolKind.Port;          return true;
+            case "TERM":
+            case "T":      kind = SymbolKind.Term;          return true;
             case "FET":
             case "SDD":
             case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default

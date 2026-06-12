@@ -115,10 +115,10 @@
                     <mi:MaterialIcon Kind="ArrowCollapseDown" Width="16" Height="16"/>
                 </Button>
 
-                <!-- Port symbol -->
+                <!-- Term (S-param port) -->
                 <Button x:Name="PlacePortBtn"
-                        Click="OnPlacePort"
-                        ToolTip.Tip="Place Port"
+                        Click="OnPlaceTerm"
+                        ToolTip.Tip="Place Term"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="SquareCircle" Width="16" Height="16"/>
                 </Button>

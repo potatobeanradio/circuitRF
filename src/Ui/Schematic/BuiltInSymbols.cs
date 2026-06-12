@@ -1,5 +1,5 @@
 // Single source of symbol geometry for all built-in symbol kinds.
-// 2-terminal symbols (R/L/C/V/Tone/Port/GND) are VERTICAL: pins (0,∓200), leads on x=0.
+// 2-terminal symbols (R/L/C/V/Tone/Term/GND) are VERTICAL: pins (0,∓200), leads on x=0.
 // Box symbols (FET/ZPort/Sdd/Generic) stay HORIZONTAL: ports left/right.
 // Geometry spec: docs/design/standard-library-symbols.md
 //
@@ -21,7 +21,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _voltSrc      = BuildVoltageSource();
     private static readonly Symbol _toneSrc      = BuildToneSource();
     private static readonly Symbol _ground       = BuildGround();
-    private static readonly Symbol _port         = BuildPort();
+    private static readonly Symbol _term         = BuildTerm();
     private static readonly Symbol _fetSdd       = BuildFetSdd();
     private static readonly Symbol _zport        = BuildZPort();
     private static readonly Symbol _sdd          = BuildSdd();
@@ -39,7 +39,7 @@ public static class BuiltInSymbols
         SymbolKind.VoltageSource => _voltSrc,
         SymbolKind.ToneSource    => _toneSrc,
         SymbolKind.Ground        => _ground,
-        SymbolKind.Port          => _port,
+        SymbolKind.Term          => _term,
         SymbolKind.FetSdd        => _fetSdd,
         SymbolKind.ZPort         => _zport,
         SymbolKind.Sdd           => _sdd,
@@ -186,18 +186,20 @@ public static class BuiltInSymbols
         Sine(0,    0,  22,    1,   70, SineAxis.Horizontal),  // AC mark
     ], SymbolKind.ToneSource);
 
-    // ── Port / Term — resistor-in-box, single signal pin ─────────────────────
-    // Pins: (0,-200) top (signal). Bottom of box = implicit reference.
+    // ── Term — resistor-in-box, "+" (signal) and "−" (reference) pins ───────────
+    // Pins: (0,-200) top "+" signal, (0,+200) bottom "−" reference.
+    // Single-ended: wire "−" to Ground. Differential: wire across two DUT nodes.
 
-    private static Symbol BuildPort() => Sym([
-        L(    0, -200,    0, -110),         // signal lead into box
+    private static Symbol BuildTerm() => Sym([
+        L(    0, -200,    0, -110),         // "+" lead into box top
         RRect(0,    0,  110,  240,   12),   // frame box (y∈[-120,+120])
         PLine(  0,-110,   0, -80,           // internal zigzag (termination R)
                25, -65, -25, -35,
                25,  -5, -25,  25,
                25,  55, -25,  80,
                 0,  95,   0, 110),
-    ], SymbolKind.Port);
+        L(    0, +120,    0, +200),         // "−" lead from box bottom
+    ], SymbolKind.Term);
 
     // ── Ground — stem + filled downward triangle (Core Graphics style) ────────
     // Pins: (0,0) — the connection point at the top of the symbol.

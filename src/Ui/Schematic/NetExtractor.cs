@@ -166,6 +166,21 @@ public static class NetExtractor
 
         var tb = new TestBench(testBenchName);
 
+        // Validate Term Num uniqueness before emitting.
+        var termNums = new Dictionary<int, string>(); // Num → first InstanceName
+        foreach (var comp in model.Components)
+        {
+            if (comp.Symbol != SymbolKind.Term) continue;
+            var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
+            if (numParam != null && int.TryParse(numParam.Expression, out int num))
+            {
+                if (termNums.TryGetValue(num, out var first))
+                    conflicts.Add($"Duplicate Term Num={num} on \"{comp.InstanceName}\" (first: \"{first}\")");
+                else
+                    termNums[num] = comp.InstanceName;
+            }
+        }
+
         foreach (var comp in model.Components)
         {
             if (comp.Disable is DisableState.Open or DisableState.Short) continue;
@@ -376,15 +391,9 @@ public static class NetExtractor
                    { RefNetBinding = refNet };
         }
 
-        // Port: schematic shows 1 pin (signal); engine needs 2 nets [signal, "0"].
-        if (comp.Symbol == SymbolKind.Port)
-        {
-            var (px, py) = comp.GetPortWorldCoord(0);
-            var sigNet = NetForPort(0, px, py);
-            return new Instance(comp.InstanceName, reference, [sigNet, "0"], overrides);
-        }
-
-        // All other built-in primitives: emit terminals in symbol order.
+        // All built-in primitives: emit terminals in symbol order.
+        // Term has two real pins (+ and −); NetBindings = [+ net, − net].
+        // Single-ended use: user wires − to GND → Nodes[1] = 0.
         var nets = new List<string>(portDefs.Length);
         for (int pi = 0; pi < portDefs.Length; pi++)
         {

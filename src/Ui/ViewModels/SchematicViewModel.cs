@@ -2218,6 +2218,16 @@ public sealed partial class SchematicViewModel : ObservableObject
         foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, resolvedPortCount))
             comp.Parameters.Add(new EditableParameter
                 { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
+
+        // Auto-assign next-free Num for Term (Num placeholder "1" from DefaultParameters is
+        // overwritten here with the actual next-free integer among existing Terms).
+        if (kind == SymbolKind.Term)
+        {
+            var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
+            if (numParam != null)
+                numParam.Expression = NextFreeTermNum(EditModel).ToString();
+        }
+
         Execute(new PlaceComponentCommand(EditModel, comp));
         Selection.SelectOne(comp.Id);
         ComponentPlaced?.Invoke(kind);
@@ -2235,6 +2245,19 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     private string GenerateInstanceName(SymbolKind symbol)
         => SchematicEditModel.NextAvailableName(EditModel.Components, symbol);
+
+    private static int NextFreeTermNum(SchematicEditModel model)
+    {
+        var used = model.Components
+            .Where(c => c.Symbol == SymbolKind.Term)
+            .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Num"))
+            .Where(p => p != null && int.TryParse(p!.Expression, out _))
+            .Select(p => int.Parse(p!.Expression))
+            .ToHashSet();
+        int num = 1;
+        while (used.Contains(num)) num++;
+        return num;
+    }
 
     // ── Edit actions ──────────────────────────────────────────────────────────
 

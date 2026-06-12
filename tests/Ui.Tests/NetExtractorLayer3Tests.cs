@@ -31,34 +31,40 @@ public class NetExtractorLayer3Tests
     // ── Test 1: small circuit — Reference, InstanceName, NetBindings ─────────
 
     [Fact]
-    public void SmallCircuit_PortRGround_CorrectInstancesAndBindings()
+    public void SmallCircuit_TermRGround_CorrectInstancesAndBindings()
     {
         var model = new SchematicEditModel();
 
-        // Port P1 at (0,200): pin "1" at local(0,-200) → world (0,0).
+        // Term P1 at (0,200) R0: "+" at local(0,-200)→world(0,0), "−" at local(0,+200)→world(0,400).
         model.Components.Add(new EditableComponent
-            { InstanceName = "P1", Symbol = SymbolKind.Port, X = 0, Y = 200 });
+            { InstanceName = "P1", Symbol = SymbolKind.Term, X = 0, Y = 200 });
 
-        // R1 at (0,600): port0=(0,400), port1=(0,800).
-        model.Components.Add(Resistor("R1", 0, 600));
+        // R1 at (0,1000): port0=(0,800), port1=(0,1200).  (Placed lower to avoid "−" conflict.)
+        model.Components.Add(Resistor("R1", 0, 1000));
 
-        // Ground at (0,800): port0=(0,800) — coincides with R1.port1.
+        // GND_ref at (0,400): grounds P1."−" at (0,400).
         model.Components.Add(new EditableComponent
-            { InstanceName = "GND1", Symbol = SymbolKind.Ground, X = 0, Y = 800 });
+            { InstanceName = "GND_ref", Symbol = SymbolKind.Ground, X = 0, Y = 400 });
 
-        // Wire (0,0)→(0,400) connects P1.pin0 to R1.port0.
-        model.Wires.Add(Wire((0, 0), (0, 400)));
+        // GND1 at (0,1200): grounds R1.port1 at (0,1200).
+        model.Components.Add(new EditableComponent
+            { InstanceName = "GND1", Symbol = SymbolKind.Ground, X = 0, Y = 1200 });
+
+        // Wire (0,0)→(0,800) connects P1."+" to R1.port0.
+        model.Wires.Add(Wire((0, 0), (0, 800)));
 
         var result = NetExtractor.Extract(model);
 
-        // Ground component is NOT emitted as an instance.
+        // Ground components are NOT emitted as instances.
+        Assert.DoesNotContain(result.TestBench.Instances, i => i.InstanceName == "GND_ref");
         Assert.DoesNotContain(result.TestBench.Instances, i => i.InstanceName == "GND1");
 
-        // Port emitted with Reference="Port".
+        // Term emitted with Reference="Port" (engine Reference is unchanged).
         var p1 = Inst(result, "P1");
         Assert.Equal("Port", p1.Reference);
-        // Port always has 2 NetBindings: [signal, "0"].
+        // Term has 2 NetBindings: ["+" net, "−" net].
         Assert.Equal(2, p1.NetBindings.Count);
+        // "−" pin is grounded → NetBindings[1] == "0".
         Assert.Equal("0", p1.NetBindings[1]);
 
         // Resistor emitted with Reference="R".
@@ -66,7 +72,7 @@ public class NetExtractorLayer3Tests
         Assert.Equal("R", r1.Reference);
         Assert.Equal(2, r1.NetBindings.Count);
 
-        // P1 signal and R1 port0 are on the same net (wired together).
+        // P1."+" and R1.port0 are on the same net (wired together).
         Assert.Equal(p1.NetBindings[0], r1.NetBindings[0]);
 
         // R1 port1 is ground.

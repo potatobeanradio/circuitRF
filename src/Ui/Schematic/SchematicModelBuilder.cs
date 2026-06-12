@@ -142,9 +142,9 @@ public static class SchematicModelBuilder
         components.Add(MakeComponent("Zload", SymbolKind.ZPort, 5 * pitch, signalY,
             SymbolRotation.R0, [("Z[1,1]", "160", "ohm")], portCount: 1));
 
-        // P2: vertical Port at R270 → single pin at local(0,-200) R270 → world(-200,0) = left side
-        components.Add(MakeComponent("P2", SymbolKind.Port, 6 * pitch, signalY,
-            SymbolRotation.R270));
+        // Term P2: R270 → "+" pin at world(-200,0) = signal, "−" pin at world(+200,0) = ref.
+        components.Add(MakeComponent("P2", SymbolKind.Term, 6 * pitch, signalY,
+            SymbolRotation.R270, [("Num", "2", ""), ("Z", "50", "Ω")]));
 
         // ── Gate bias (vertical stack above signal path, x = gateNodeX = 3*pitch-200) ──
 
@@ -369,8 +369,9 @@ public static class SchematicModelBuilder
         {
             // Ground: single pin at local origin (unchanged)
             SymbolKind.Ground => [new SchematicPortDef("1", 0, 0, p0)],
-            // Port: single pin at local top (0,-200) — vertical; rotated by renderer
-            SymbolKind.Port   => [new SchematicPortDef("1", 0, -200, p0)],
+            // Term: two pins — "+" signal at (0,-200) and "−" reference at (0,+200).
+            SymbolKind.Term   => [new SchematicPortDef("+", 0, -200, p0),
+                                  new SchematicPortDef("−", 0, +200, p1)],
             // FetSdd: horizontal box, pins unchanged
             SymbolKind.FetSdd => [
                 new SchematicPortDef("gate",   -200, 0,    p0),
@@ -417,7 +418,7 @@ public static class SchematicModelBuilder
         SymbolKind.VoltageSource => "V",
         SymbolKind.ToneSource    => "V1T",
         SymbolKind.Ground        => "GND",
-        SymbolKind.Port          => "P",
+        SymbolKind.Term          => "Term",
         SymbolKind.FetSdd        => "X",
         SymbolKind.ZPort         => "Z",
         _                        => "X",

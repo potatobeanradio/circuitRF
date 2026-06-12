@@ -121,7 +121,7 @@ public partial class SchematicView : UserControl
         PlaceGroundBtn.Classes.Set("ToolActive",
             tool == SchematicViewModel.Tool.Place && vm?.PlacementSymbol == SymbolKind.Ground);
         PlacePortBtn.Classes.Set("ToolActive",
-            tool == SchematicViewModel.Tool.Place && vm?.PlacementSymbol == SymbolKind.Port);
+            tool == SchematicViewModel.Tool.Place && vm?.PlacementSymbol == SymbolKind.Term);
     }
 
     private void UpdateDisableButtonStates()
@@ -215,9 +215,9 @@ public partial class SchematicView : UserControl
         SchematicCanvasCtrl.Focus();
     }
 
-    private void OnPlacePort(object? sender, RoutedEventArgs e)
+    private void OnPlaceTerm(object? sender, RoutedEventArgs e)
     {
-        Vm?.BeginPlacement(SymbolKind.Port);
+        Vm?.BeginPlacement(SymbolKind.Term);
         SchematicCanvasCtrl.Focus();
     }
 

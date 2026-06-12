@@ -14,7 +14,7 @@ public enum SymbolKind
     VoltageSource,
     ToneSource,
     Ground,
-    Port,
+    Term,
     FetSdd,
     Sdd,
     ZPort,
