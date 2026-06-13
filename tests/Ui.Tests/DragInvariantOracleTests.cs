@@ -215,4 +215,53 @@ public class DragInvariantOracleTests
         Assert.True(newWire.Points.Any(p => Near(p.X, 0) && Near(p.Y, 400)),
             "Auto-wire must have an endpoint at C3-new-top (0,400)");
     }
+
+    // ── Case 5 — wire drag; merge must not bury a component port ─────────────
+
+    /// <summary>
+    /// Regression oracle for the merge-buries-port bug (fixed).
+    ///
+    /// Geometry:
+    ///   R  = MakeResistor(0,-200) → port1 (bottom) at P = (0,0).
+    ///   Wh = wire [(0,0),(400,0)] — horizontal from P rightward.
+    ///   Wv = wire [(0,0),(0,400)] — vertical from P downward.
+    ///
+    /// Action: select Wv; drag dx=+200.
+    ///
+    /// Invariant: Wh is unchanged; R's port1 stays Connected — the merge did not
+    /// normalize the shared junction at P out of existence.
+    /// </summary>
+    [Fact]
+    public void Case5_WireDrag_MergeMustNotBuryComponentPort()
+    {
+        var model = new SchematicEditModel();
+        var r  = MakeResistor(0, -200);    // port1 (bottom) at (0,0)
+        var wh = new EditableWire();
+        var wv = new EditableWire();
+        wh.Points.AddRange([(0.0, 0.0), (400.0,   0.0)]);
+        wv.Points.AddRange([(0.0, 0.0), (  0.0, 400.0)]);
+        model.Components.Add(r);
+        model.Wires.Add(wh);
+        model.Wires.Add(wv);
+
+        var vm = new SchematicViewModel(model);
+        vm.Selection.SelectOne(wv.Id);
+        vm.SimulateDragCommit(dx: 200, dy: 0);   // Wv moves right; merge must not drop (0,0) from the net
+
+        var (render, _) = model.BuildRenderModel();
+        var rR = render.Components.First(c => c.Id == r.Id);
+
+        // R's port1 must remain Connected — merge did not normalize away the junction.
+        Assert.Equal(PortConnectionState.Connected, rR.Ports[1].State);
+
+        // Both wires still exist — the merge was suppressed.
+        Assert.Equal(2, model.Wires.Count);
+
+        // Wh is unchanged: still (0,0) → (400,0).
+        var origWh = model.Wires.First(w => w.Id == wh.Id);
+        Assert.True(Near(origWh.Points[0].X, 0)    && Near(origWh.Points[0].Y, 0),
+            $"Wh start must stay at (0,0), got ({origWh.Points[0].X},{origWh.Points[0].Y})");
+        Assert.True(Near(origWh.Points[^1].X, 400) && Near(origWh.Points[^1].Y, 0),
+            $"Wh end must stay at (400,0), got ({origWh.Points[^1].X},{origWh.Points[^1].Y})");
+    }
 }

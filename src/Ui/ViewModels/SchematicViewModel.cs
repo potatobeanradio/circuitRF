@@ -1076,6 +1076,25 @@ public sealed partial class SchematicViewModel : ObservableObject
     }
 
     /// <summary>
+    /// True if (x, y) coincides with any component/cell PORT (cell-ref-aware via PortDefsOf, so a
+    /// placed cell's resolved pins are honoured). Used to suppress a wire-merge whose joint is a
+    /// port: the merge can normalize the joint vertex away and disconnect the port. Detached ports
+    /// are not connections, so they do not suppress.
+    /// </summary>
+    private bool JointCoincidesWithPort(double x, double y)
+    {
+        const double tol = 8.0;
+        foreach (var comp in EditModel.Components)
+            foreach (var def in EditModel.PortDefsOf(comp))
+            {
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (px, py) = EditModel.PortWorldOf(comp, def);
+                if (SchematicGeometry.CoincidentPoints(x, y, px, py, tol)) return true;
+            }
+        return false;
+    }
+
+    /// <summary>
     /// Returns the unique other wire whose endpoint is coincident with (x, y) within tol.
     /// Returns null if zero or two-or-more other wires match (no junction or 3+ junction).
     /// Wires in <paramref name="excludeIds"/> are skipped (moved wires, follow-wires).
@@ -1147,6 +1166,15 @@ public sealed partial class SchematicViewModel : ObservableObject
         // THIRD wire's segment interior, that point is a T-junction. Merging would bury that endpoint
         // and silently break the connection — so suppress the merge and keep them separate.
         if (JointLiesOnThirdWireBody(joint.X, joint.Y, wire.Id, target.Id))
+            return null;
+
+        // Likewise, never bury a component/cell PORT. When two wires meet at a port (e.g. a wire to
+        // the component plus a wire dropping off the same pin), merging them can build a back-tracking
+        // path whose shared joint NormalizePoints then collapses as a collinear interior vertex —
+        // silently dropping the port off the wire and disconnecting it. The rubber-band invariant: a
+        // connection must never break from a drag/merge. Keep the wires separate; both stay anchored
+        // to the port, which is the correct net node anyway.
+        if (JointCoincidesWithPort(joint.X, joint.Y))
             return null;
 
         var mergedPts = WireGeometry.TryBuildMergedPoints(endPoints, target.Points, tol);
@@ -1802,6 +1830,12 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (!startOn && !endOn) continue;
             var junction = startOn ? p0 : pN;
             var far      = startOn ? pN : p0;
+            // A wire whose junction sits on a stationary component/cell pin is anchored there by
+            // that pin — following the dragged segment would drag this wire off the pin and break
+            // the pin's connection (the rubber-band invariant). Leave it put: the dragged vertex
+            // moving away then lands on this wire's body (forming a fresh T) or stays joined via a
+            // shared endpoint, so nothing is orphaned.
+            if (JointCoincidesWithPort(junction.X, junction.Y)) continue;
             stems.Add(new StemFollow(w, startOn, junction, far, w.Points.ToList()));
         }
         return stems;

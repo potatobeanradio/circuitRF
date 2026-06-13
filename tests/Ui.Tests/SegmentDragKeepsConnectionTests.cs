@@ -21,6 +21,10 @@ public class SegmentDragKeepsConnectionTests
         return w;
     }
 
+    // Resistor at (cx, cy).  Port 0 → world (cx, cy-200).  Port 1 → world (cx, cy+200).
+    private static EditableComponent MakeResistor(double cx, double cy)
+        => new() { Symbol = SymbolKind.Resistor, X = cx, Y = cy, InstanceName = "R?" };
+
     private static (SchematicEditModel Model, SchematicViewModel Vm, UndoRedoStack Undo) MakeVm(
         params EditableWire[] wires)
     {
@@ -169,5 +173,58 @@ public class SegmentDragKeepsConnectionTests
 
         // v1 connection preserved as a T at the clamped y; v2 preserved via its (now shared) endpoint.
         Assert.True(HasDotAt(vm, 0, 40), "the connection to the tall wire is preserved at the clamp");
+    }
+
+    // ── Stem anchored at a component pin must not be dragged off it ───────────
+
+    /// <summary>
+    /// Regression oracle for the pin-stem drag bug (fixed).
+    ///
+    /// Geometry:
+    ///   RL via MakeResistor(0,-200)   → port1 (bottom) at PL=(0,0).
+    ///   RR via MakeResistor(400,-200) → port1 (bottom) at PR=(400,0).
+    ///   Wh = wire [(0,0),(400,0)]              — PL → PR.
+    ///   Wv = wire [(0,0),(400,0),(400,400)]    — the L: top at PL, corner at PR, drop down.
+    ///
+    /// Action: drag Wv's vertical drop (segment index 1) leftward to x=300.
+    ///
+    /// Invariant: Wh's endpoint at PR is a component pin — it must NOT be treated
+    /// as a free stem and dragged to (300,0). RR's port1 stays Connected.
+    /// </summary>
+    [Fact]
+    public void StemAnchoredAtComponentPin_MustNotBeDraggedOff()
+    {
+        var model = new SchematicEditModel { GridSnap = false };
+        var rL = MakeResistor(0,   -200);   // port1 at (0,  0)
+        var rR = MakeResistor(400, -200);   // port1 at (400,0)
+        model.Components.Add(rL);
+        model.Components.Add(rR);
+
+        var wh = new EditableWire();
+        wh.Points.AddRange([(0.0, 0.0), (400.0,   0.0)]);
+        model.Wires.Add(wh);
+
+        var wv = new EditableWire();
+        wv.Points.AddRange([(0.0, 0.0), (400.0, 0.0), (400.0, 400.0)]);
+        model.Wires.Add(wv);
+
+        var vm = new SchematicViewModel(model);
+
+        // Drag Wv's vertical drop segment (at x=400, from y=0 to y=400) leftward.
+        DragSegment(vm, 400, 200, 300, 200);
+
+        // RR's port1 (pin at PR=(400,0)) must remain Connected — the stem was not dragged off.
+        var (render, _) = model.BuildRenderModel();
+        var rRR = render.Components.First(c => c.Id == rR.Id);
+        Assert.Equal(PortConnectionState.Connected, rRR.Ports[1].State);
+
+        // Wh must not have been dragged: still (0,0) → (400,0).
+        var origWh = model.FindWire(wh.Id)!;
+        Assert.True(System.Math.Abs(origWh.Points[0].X -   0) < 1.0 &&
+                    System.Math.Abs(origWh.Points[0].Y -   0) < 1.0,
+            $"Wh start must stay at (0,0), got ({origWh.Points[0].X},{origWh.Points[0].Y})");
+        Assert.True(System.Math.Abs(origWh.Points[^1].X - 400) < 1.0 &&
+                    System.Math.Abs(origWh.Points[^1].Y -   0) < 1.0,
+            $"Wh end must stay at (400,0), got ({origWh.Points[^1].X},{origWh.Points[^1].Y})");
     }
 }
