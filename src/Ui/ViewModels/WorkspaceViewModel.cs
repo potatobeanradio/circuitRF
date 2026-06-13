@@ -14,6 +14,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
 using Dock.Model.Core;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
 using RfCore.Data;
 using CircuitRF.Ui.Commands;
@@ -32,7 +33,7 @@ namespace CircuitRF.Ui.ViewModels;
 /// directly — it always builds/edits the design layer, then asks the engine to elaborate
 /// and run (6e). For 6b this is the frame: layout + commands wired but stubbed.
 /// </summary>
-public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarchyHost
+public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarchyHost, ICellResolver
 {
     // ---- Dock layout ---------------------------------------------------------
 
@@ -1071,6 +1072,51 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         await dialog.ShowDialog(window);
     }
 
+    /// <summary>
+    /// Extracts the active schematic and writes netlist.cnl (no analysis is run), then opens it
+    /// in the OS default editor. Enabled only when a schematic document is active. Not undoable.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanGenerateNetlist))]
+    private void GenerateNetlist()
+    {
+        if (_factory.DocumentDock?.ActiveDockable is not SchematicDocument activeDoc)
+            return; // CanExecute guards this; defensive.
+
+        var testBenchName = activeDoc.Id;
+
+        string netlistPath;
+        try
+        {
+            IReadOnlyList<string> conflicts;
+            // ActiveViewModel = the cell currently being viewed (base schematic, or a pushed-in
+            // sub-cell). WYSIWYG: generate a netlist for what the user is looking at.
+            (netlistPath, conflicts) = WriteNetlist(activeDoc.ActiveViewModel.EditModel, testBenchName);
+            foreach (var conflict in conflicts)
+                Messages.Warning($"Extraction: {conflict}");
+            Messages.Success($"Netlist written: {netlistPath}", netlistPath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Netlist write failed: {ex.Message}");
+            return;
+        }
+
+        // Open in the OS default editor (no analysis).
+        // TryOpenExternal returns false when the OS has no registered handler for .cnl.
+        try
+        {
+            if (!TryOpenExternal(netlistPath))
+                Messages.Warning(
+                    "No external editor is configured for .cnl files. " +
+                    "Associate an application with .cnl in your system settings " +
+                    "to open netlist files automatically.");
+        }
+        catch (Exception ex) { Messages.Warning($"Could not open netlist externally: {ex.Message}"); }
+    }
+
+    private bool CanGenerateNetlist()
+        => _factory.DocumentDock?.ActiveDockable is SchematicDocument;
+
     // ── Netlist write (Phase 6e Step 4) ──────────────────────────────────────
 
     /// <summary>
@@ -1095,15 +1141,57 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var targetPath = Path.Combine(destDir, "netlist.cnl");
         var tmpPath    = targetPath + ".tmp";
 
-        var result = NetExtractor.Extract(model, testBenchName);
+        var result = NetExtractor.Extract(model, testBenchName, cells: this);
         var header = $"netlist.cnl — generated from TestBench \"{testBenchName}\"" +
                      $" at {DateTime.UtcNow:O}";
-        var text = CnlWriter.Write(result.TestBench, header);
+        var text = CnlWriter.Write(result.TestBench, result.Library, header);
 
         File.WriteAllText(tmpPath, text, System.Text.Encoding.UTF8);
         File.Move(tmpPath, targetPath, overwrite: true);
 
         return (targetPath, result.Conflicts);
+    }
+
+    // ── ICellResolver implementation ──────────────────────────────────────────
+
+    /// <summary>
+    /// ICellResolver — resolves a cell instance to its primary schematic (WYSIWYG: the shared
+    /// in-memory session if the cell is open anywhere, else the primary .csch from disk) plus the
+    /// cell's declared parameter interface. Returns null when unresolvable (scratch parent with no
+    /// directory, missing cell, or no primary schematic) — the extractor skips the instance.
+    /// </summary>
+    public CellResolution? Resolve(EditableComponent cellInstance, SchematicEditModel containingModel)
+    {
+        var primaryPath = HierarchyResolver.ResolvePrimaryPath(cellInstance, containingModel);
+        if (primaryPath is null) return null;
+
+        // Memory-else-disk. GetOrCreateSession returns the shared session VM (registry) or loads
+        // the .csch from disk and wires it up — SchematicDirectory is set exactly as Open/Push-In
+        // do, so nested cell instance resolution works and unsaved edits are visible.
+        var schematic = GetOrCreateSession(primaryPath).EditModel;
+
+        // primaryPath = …/<cell>/schematic/<file>.csch → cell dir is two levels up.
+        var cellDir  = Path.GetDirectoryName(Path.GetDirectoryName(primaryPath))!;
+        var cellName = Path.GetFileName(cellDir);
+
+        IReadOnlyList<ParameterDeclaration> parameters = [];
+        var ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        if (File.Exists(ccellPath))
+        {
+            try
+            {
+                parameters = CellPersistence.LoadFromFile(ccellPath).Parameters
+                    .Select(p => new ParameterDeclaration(
+                        p.Name,
+                        p.DefaultExpression,
+                        string.IsNullOrEmpty(p.Unit) ? null : p.Unit,
+                        hidden: !p.ShowOnSchematic))
+                    .ToList();
+            }
+            catch { /* malformed .ccell → no declared params; instance overrides still apply */ }
+        }
+
+        return new CellResolution(cellName, schematic, parameters);
     }
 
     // ---- Help ----------------------------------------------------------------
@@ -1939,20 +2027,65 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <inheritdoc/>
     public void OpenExternal(ProjectTreeNodeViewModel node)
     {
-        var path = node.AbsolutePath;
-        try
+        try { OpenPathExternal(node.AbsolutePath); }
+        catch (Exception ex) { Messages.Error($"Open failed: {ex.Message}"); }
+    }
+
+    /// <summary>Opens <paramref name="path"/> with the OS default application.</summary>
+    private static void OpenPathExternal(string path)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            Process.Start(new ProcessStartInfo("open", new[] { path }) { UseShellExecute = false });
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        else
+            Process.Start(new ProcessStartInfo("xdg-open", path) { UseShellExecute = false });
+    }
+
+    /// <summary>
+    /// Opens <paramref name="path"/> with the OS default application and returns whether a
+    /// registered handler was found. Redirects stderr on macOS/Linux to suppress OS-level
+    /// error messages to the terminal when no app is associated with the file type.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> if the OS located a handler; <c>false</c> if no application is registered
+    /// for the file extension (e.g. macOS kLSApplicationNotFoundErr, Linux xdg-open exit 4).
+    /// </returns>
+    private static bool TryOpenExternal(string path)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                Process.Start(new ProcessStartInfo("open", new[] { path }) { UseShellExecute = false });
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-            else
-                Process.Start(new ProcessStartInfo("xdg-open", path) { UseShellExecute = false });
+            // Redirect stderr so the "No application knows how to open…" OS message doesn't
+            // appear in the terminal; we surface it ourselves via the message panel instead.
+            var psi = new ProcessStartInfo("open", new[] { path })
+            {
+                UseShellExecute        = false,
+                RedirectStandardError  = true,
+            };
+            using var proc = Process.Start(psi);
+            if (proc is null) return false;
+            bool exited = proc.WaitForExit(3000); // open returns in < 100 ms normally
+            return exited && proc.ExitCode == 0;
         }
-        catch (Exception ex)
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            Messages.Error($"Open failed: {ex.Message}");
+            // UseShellExecute = true shows the "Open With" dialog or throws Win32Exception
+            // when there is truly no handler — the caller's catch handles that case.
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            return true;
         }
+
+        // Linux / other: xdg-open exits with 4 when no handler is registered.
+        var lpsi = new ProcessStartInfo("xdg-open", path)
+        {
+            UseShellExecute       = false,
+            RedirectStandardError = true,
+        };
+        using var lproc = Process.Start(lpsi);
+        if (lproc is null) return false;
+        bool lexited = lproc.WaitForExit(3000);
+        return lexited && lproc.ExitCode == 0;
     }
 
     /// <inheritdoc/>
@@ -2261,6 +2394,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Hierarchy commands depend on the active schematic document + its selection.
         RewireHierarchySubscriptions();
+
+        // Generate Netlist is enabled only when a schematic document is active.
+        GenerateNetlistCommand.NotifyCanExecuteChanged();
 
         // A dockable may have just been floated into a Dock-generated HostWindow.
         // Defer one frame (Background) so the HostWindow is fully shown before we scan.

@@ -26,9 +26,44 @@ public static class NetExtractor
         /// for the elaborator's positional parentNetMap binding to work correctly.
         /// </summary>
         public IReadOnlyList<string> CellPorts { get; init; } = [];
+
+        /// <summary>
+        /// Library of Cell definitions built by recursively extracting cell-instance schematics.
+        /// Empty for flat schematics (no cell instances) or when no resolver is provided.
+        /// Cells are ordered leaf-first so <c>define</c>-before-use is satisfied.
+        /// </summary>
+        public Library Library { get; init; } = new("netlist");
     }
 
-    public static ExtractionResult Extract(SchematicEditModel model, string testBenchName = "tb")
+    public static ExtractionResult Extract(
+        SchematicEditModel model, string testBenchName = "tb", ICellResolver? cells = null)
+    {
+        var lib        = new Library("netlist");
+        var conflicts  = new List<string>();
+        var inProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var (instances, cellPorts) = ExtractModel(model, cells, lib, inProgress, conflicts);
+
+        var tb = new TestBench(testBenchName);
+        tb.Instances.AddRange(instances);
+
+        // Analyses + measurements attach to the TOP testbench only (data-model §2.1 invariant).
+        foreach (var analysis in model.Analyses)
+            if (analysis.Enabled) tb.Analyses.Add(analysis);
+        foreach (var measurement in model.Measurements)
+            tb.Measurements.Add(measurement);
+
+        return new ExtractionResult(tb, conflicts) { CellPorts = cellPorts, Library = lib };
+    }
+
+    // ── Per-model extraction pipeline (shared by top and sub-cells) ─────────
+
+    private static (List<Instance> Instances, IReadOnlyList<string> CellPorts) ExtractModel(
+        SchematicEditModel model,
+        ICellResolver?      cells,
+        Library             lib,
+        HashSet<string>     inProgress,
+        List<string>        conflicts)
     {
         double gs = model.GridSize;
         (long, long) QK(double x, double y) =>
@@ -169,9 +204,6 @@ public static class NetExtractor
         }
 
         // ── Collect Pin info (before name assignment so Pin nets get port names) ───
-        // Each Pin is an interface terminal: Num (1-based) + optional Name + optional Polarity.
-        // Polarity "Plus"/"Minus" (same Num) forms a differential pair; absent/other = single-ended.
-
         var pinInfos = CollectPinInfos(model, uf, QK);
 
         // Build pin→portName map: applied between net-label names and auto-names so that
@@ -180,15 +212,14 @@ public static class NetExtractor
 
         // ── Layer 2: assign stable net names ────────────────────────────────
 
-        var conflicts = new List<string>();
         var netNames = AssignNetNames(uf, QK, gs, model, labelNetKeys, conflicts, detachedKeys.Values, pinNetNameMap);
 
         // ── Compute CellPorts + conformance warnings ─────────────────────────
         var cellPorts = BuildCellPorts(pinInfos, conflicts);
 
-        // ── Layer 3: emit TestBench ──────────────────────────────────────────
+        // ── Layer 3: emit instances ──────────────────────────────────────────
 
-        var tb = new TestBench(testBenchName);
+        var instances = new List<Instance>();
 
         // Validate Term Num uniqueness before emitting.
         var termNums = new Dictionary<int, string>(); // Num → first InstanceName
@@ -209,25 +240,119 @@ public static class NetExtractor
         {
             if (comp.Disable is DisableState.Open or DisableState.Short) continue;
             if (comp.Symbol == SymbolKind.Ground) continue;
-            if (comp.Symbol == SymbolKind.Pin)    continue; // Pin is a connectivity marker — not a netlist component
-            if (comp.CellRef is not null) continue; // hierarchical extraction deferred to step 2
+            if (comp.Symbol == SymbolKind.Pin)    continue;
+
+            if (comp.CellRef is not null)
+            {
+                var ci = EmitCellInstance(comp, model, uf, QK, netNames, detachedKeys,
+                                          cells, lib, inProgress, conflicts);
+                if (ci is not null) instances.Add(ci);
+                continue;
+            }
 
             var inst = EmitInstance(comp, uf, QK, netNames, detachedKeys);
-            if (inst is not null) tb.Instances.Add(inst);
+            if (inst is not null) instances.Add(inst);
         }
 
-        // ── Layer 4: carry enabled analyses + all measurements ──────────────────
-        foreach (var analysis in model.Analyses)
-            if (analysis.Enabled)
-                tb.Analyses.Add(analysis);
-
-        foreach (var measurement in model.Measurements)
-            tb.Measurements.Add(measurement);
-
-        return new ExtractionResult(tb, conflicts) { CellPorts = cellPorts };
+        return (instances, cellPorts);
     }
 
-    // ── Private helpers ──────────────────────────────────────────────────────
+    // ── Cell instance emission ───────────────────────────────────────────────
+
+    private static Instance? EmitCellInstance(
+        EditableComponent comp,
+        SchematicEditModel model,
+        UnionFind uf,
+        Func<double, double, (long, long)> QK,
+        Dictionary<(long, long), string> netNames,
+        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys,
+        ICellResolver? cells,
+        Library lib,
+        HashSet<string> inProgress,
+        List<string> conflicts)
+    {
+        if (cells is null) return null;   // flat caller / no resolver — skip silently (back-compat)
+
+        var res = cells.Resolve(comp, model);
+        if (res is null)
+        {
+            conflicts.Add($"Cell instance '{comp.InstanceName}' (cell '{comp.CellRef}') has no " +
+                          $"primary schematic; skipped.");
+            return null;
+        }
+
+        var cellName = res.CellName;
+
+        // Cycle guard: a cell currently being extracted up the stack instantiates itself.
+        if (inProgress.Contains(cellName))
+        {
+            conflicts.Add($"Cell '{cellName}' instantiates itself (cycle); " +
+                          $"instance '{comp.InstanceName}' skipped.");
+            return null;
+        }
+
+        // Build the cell once (dedupe by name); children are added before parents → leaf-first lib.
+        if (lib.Find(cellName) is null)
+        {
+            inProgress.Add(cellName);
+            var (subInstances, subPorts) = ExtractModel(res.Schematic, cells, lib, inProgress, conflicts);
+            var cell = new Cell(cellName);
+            cell.Ports.AddRange(subPorts);
+            cell.Instances.AddRange(subInstances);
+            foreach (var p in res.Parameters) cell.Parameters.Add(p);
+            lib.Cells.Add(cell);
+            inProgress.Remove(cellName);
+        }
+
+        var cellDef  = lib.Find(cellName)!;
+        var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+
+        // BINDING CONTRACT GUARD: symbol port count must equal the cell's interface-pin count.
+        if (cellDef.Ports.Count != portDefs.Length)
+        {
+            conflicts.Add($"Cell '{cellName}' instance '{comp.InstanceName}': symbol exposes " +
+                          $"{portDefs.Length} port(s) but the cell defines {cellDef.Ports.Count} " +
+                          $"interface pin(s); skipped.");
+            return null;
+        }
+
+        // NetBindings = parent net at each symbol port, in symbol-port order (== Cell.Ports order).
+        var nets = new List<string>(portDefs.Length);
+        for (int pi = 0; pi < portDefs.Length; pi++)
+        {
+            var (px, py) = comp.GetPortWorldCoord(pi);
+            nets.Add(NetForPort(comp, pi, px, py, uf, QK, netNames, detachedKeys));
+        }
+
+        var overrides = comp.Parameters
+            .Select(p =>
+            {
+                var unit = UnitNormalizer.ToEngineUnit(p.Unit);
+                return new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null);
+            })
+            .ToList();
+
+        return new Instance(comp.InstanceName, cellName, nets, overrides);
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Net name for port <paramref name="pi"/> of <paramref name="comp"/> at world (px, py).
+    /// Detached ports use their synthetic key so they never share a net with their P-cell.
+    /// Shared by EmitInstance (primitives) and EmitCellInstance.
+    /// </summary>
+    private static string NetForPort(
+        EditableComponent comp, int pi, double px, double py,
+        UnionFind uf,
+        Func<double, double, (long, long)> QK,
+        Dictionary<(long, long), string> netNames,
+        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys)
+    {
+        if (comp.IsPortDetached(pi) && detachedKeys.TryGetValue((comp.Id, pi), out var dk))
+            return NetAtKey(uf, netNames, dk);
+        return NetAt(uf, QK, netNames, px, py);
+    }
 
     /// <summary>
     /// Find the union-find key for a net label at (lx, ly).
@@ -403,15 +528,6 @@ public static class NetExtractor
             })
             .ToList();
 
-        // Look up the net for port pi at world (px, py).
-        // Detached ports use their synthetic key so they never share a net with their P-cell.
-        string NetForPort(int pi, double px, double py)
-        {
-            if (comp.IsPortDetached(pi) && detachedKeys.TryGetValue((comp.Id, pi), out var dk))
-                return NetAtKey(uf, netNames, dk);
-            return NetAt(uf, QK, netNames, px, py);
-        }
-
         // ZPort: N signal pins + 1 "ref" pin → NetBindings[0..N-1] + RefNetBinding.
         if (comp.Symbol == SymbolKind.ZPort)
         {
@@ -420,7 +536,7 @@ public static class NetExtractor
             for (int pi = 0; pi < portDefs.Length; pi++)
             {
                 var (px, py) = comp.GetPortWorldCoord(pi);
-                var net = NetForPort(pi, px, py);
+                var net = NetForPort(comp, pi, px, py, uf, QK, netNames, detachedKeys);
                 if (portDefs[pi].Name == "ref")
                     refNet = net == "0" ? null : net;
                 else
@@ -431,13 +547,11 @@ public static class NetExtractor
         }
 
         // All built-in primitives: emit terminals in symbol order.
-        // Term has two real pins (+ and −); NetBindings = [+ net, − net].
-        // Single-ended use: user wires − to GND → Nodes[1] = 0.
         var nets = new List<string>(portDefs.Length);
         for (int pi = 0; pi < portDefs.Length; pi++)
         {
             var (px, py) = comp.GetPortWorldCoord(pi);
-            nets.Add(NetForPort(pi, px, py));
+            nets.Add(NetForPort(comp, pi, px, py, uf, QK, netNames, detachedKeys));
         }
         return new Instance(comp.InstanceName, reference, nets, overrides);
     }
@@ -571,7 +685,7 @@ public static class NetExtractor
         return ports;
     }
 
-    // ── Union-Find ───────────────────────────────────────────────────────────
+    // ── Union-Find ───────────────────────────────────────────────────────────────
 
     private sealed class UnionFind
     {

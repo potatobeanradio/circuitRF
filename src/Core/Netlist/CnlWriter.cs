@@ -11,14 +11,15 @@ namespace CircuitRF.Core.Netlist;
 /// </summary>
 public static class CnlWriter
 {
-    /// <summary>
-    /// Writes <paramref name="tb"/> to a <c>.cnl</c> string.
-    /// </summary>
-    /// <param name="tb">The TestBench to emit.</param>
-    /// <param name="header">
-    /// Optional provenance comment emitted as a <c>; header</c> line at the top.
-    /// </param>
+    /// <summary>Writes a flat TestBench (no cell definitions).</summary>
     public static string Write(TestBench tb, string? header = null)
+        => Write(tb, null, header);
+
+    /// <summary>
+    /// Writes <paramref name="tb"/> plus the cell definitions in <paramref name="library"/> as
+    /// <c>define … end</c> blocks (emitted before the top-level content, leaf-first as supplied).
+    /// </summary>
+    public static string Write(TestBench tb, Library? library, string? header = null)
     {
         var sb = new StringBuilder();
 
@@ -26,6 +27,16 @@ public static class CnlWriter
         {
             sb.AppendLine($"; {header}");
             sb.AppendLine();
+        }
+
+        // Cell definitions first (define-before-use; reader is order-independent)
+        if (library is { Cells.Count: > 0 })
+        {
+            foreach (var cell in library.Cells)
+            {
+                AppendCell(sb, cell);
+                sb.AppendLine();
+            }
         }
 
         // Global variables: name = expr [unit]
@@ -69,6 +80,28 @@ public static class CnlWriter
 
     private static bool HasDirectives(TestBench tb)
         => tb.Analyses.Count > 0 || tb.Measurements.Count > 0 || tb.RawDirectives.Count > 0;
+
+    // ── Cell-block emission ───────────────────────────────────────────────────
+
+    private static void AppendCell(StringBuilder sb, Cell cell)
+    {
+        sb.Append("define ").Append(cell.Name)
+          .Append(" (").Append(string.Join(' ', cell.Ports)).Append(')').AppendLine();
+
+        if (cell.Parameters.Count > 0)
+            sb.Append("  parameters ")
+              .AppendLine(string.Join("  ", cell.Parameters.Select(FormatParamDecl)));
+
+        foreach (var inst in cell.Instances)
+            sb.Append("  ").AppendLine(FormatInstance(inst));
+
+        sb.Append("end ").AppendLine(cell.Name);
+    }
+
+    private static string FormatParamDecl(ParameterDeclaration pd)
+        => string.IsNullOrEmpty(pd.Unit)
+            ? $"{pd.Name}={pd.DefaultExpression}"
+            : $"{pd.Name}={pd.DefaultExpression} {pd.Unit}";
 
     // ── Variable emission ─────────────────────────────────────────────────────
 

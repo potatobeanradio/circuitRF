@@ -83,6 +83,7 @@
                 <NativeMenuItem.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="Setup Analyses…" Command="{Binding SetupAnalysesCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Generate Netlist" Command="{Binding GenerateNetlistCommand}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Run"  Command="{Binding RunAnalysisCommand}"  Gesture="Meta+R"/>
                         <NativeMenuItem Header="Stop" Command="{Binding StopAnalysisCommand}" Gesture="Meta+OemPeriod"/>
@@ -277,6 +278,10 @@
                           Command="{Binding SetupAnalysesCommand}"
                           CommandParameter="{Binding $parent[Window]}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulleted" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Generate Netlist"
+                          Command="{Binding GenerateNetlistCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="_Run"
