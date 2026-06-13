@@ -277,7 +277,7 @@
                         ToolTip.Tip="Push Into Cell  (Ctrl+])"
                         IsEnabled="False"
                         Padding="6,3">
-                    <mi:MaterialIcon Kind="ArrowRight" Width="16" Height="16"/>
+                    <mi:MaterialIcon Kind="ArrowDown" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Pop Out -->
@@ -287,7 +287,7 @@
                         ToolTip.Tip="Pop Out  (Ctrl+[)"
                         IsEnabled="False"
                         Padding="6,3">
-                    <mi:MaterialIcon Kind="ArrowLeft" Width="16" Height="16"/>
+                    <mi:MaterialIcon Kind="ArrowUp" Width="16" Height="16"/>
                 </Button>
 
                 <!-- Separator -->
