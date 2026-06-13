@@ -94,6 +94,14 @@ public sealed partial class SchematicViewModel : ObservableObject
     // Snapshot of every component's pin geometry at drag start — avoids per-frame resolver calls.
     private Dictionary<string, IReadOnlyList<(float LocalX, float LocalY, int PortIndex)>>?           _dragPortDefs;
 
+    // Whole-wire drag slide clamp: when a selected FREE wire is translated (grabbed by an endpoint),
+    // a stationary connection tapping its BODY (another wire's endpoint, or a component/cell port)
+    // must not slide off the end. These bound the shared (dx,dy) so every such tap stays on the
+    // wire's body — the wire slides under its taps and stops when an endpoint reaches one. Computed
+    // at press from the start geometry; (±∞) ⇒ no body tap, no clamp.
+    private double _wireSlideMinDx = double.NegativeInfinity, _wireSlideMaxDx = double.PositiveInfinity;
+    private double _wireSlideMinDy = double.NegativeInfinity, _wireSlideMaxDy = double.PositiveInfinity;
+
     // Canvas-object resize-gripper state
     private bool   _isObjResizing;
     private string? _resizeObjId;
@@ -121,11 +129,25 @@ public sealed partial class SchematicViewModel : ObservableObject
     // the stationary crossed wire) so a cross connection is not broken by the move.
     private List<(EditableDot Dot, double StartX, double StartY)>? _segmentDragCrossDots;
 
+    // Stationary component/cell PINS that sat on the dragged segment's interior at press. When the
+    // segment moves off such a pin, an auto-wire stub is formed from the pin to the moved wire so the
+    // pin's connection survives the move (rubber-band invariant) — the segment-drag analogue of the
+    // pin-on-pin auto-wire (Case 2). Captured at press from the original geometry; fixed world coords.
+    private List<(double X, double Y)>? _segmentDragInteriorPorts;
+
     // Allowed range of the perpendicular drag delta when an endpoint slides along a parallel wire:
     // the drag is clamped so the endpoint never slides off the end of a connected wire (which would
     // break the connection). Intersection across sliding endpoints ⇒ stops at the shorter wire's end.
     private double _segSlideMin = double.NegativeInfinity;
     private double _segSlideMax = double.PositiveInfinity;
+
+    // Option 2 slide-vs-bow: when a dragged segment's outer endpoint sits on a component/cell PORT
+    // that also lies on a collinear wire PARALLEL to the drag, that endpoint can either slide along
+    // the wire (into a clean T) or bow (stay pinned), depending on the live drag direction. Captured
+    // at press as the parallel wire's extent along the drag axis; resolved per-frame in
+    // HandleSegmentDragLive so dragging toward the wire slides and dragging away bows (never locks).
+    private (double Lo, double Hi)? _segStartSlideExtent;
+    private (double Lo, double Hi)? _segEndSlideExtent;
 
     /// <summary>A wire T-ed onto the dragged segment: which end is the junction, plus the
     /// original junction/far endpoints and the original full point list (for snapshot/restore).</summary>
@@ -535,6 +557,15 @@ public sealed partial class SchematicViewModel : ObservableObject
                 // Clamp the slide so a connected endpoint can't run off the end of its wire.
                 (_segSlideMin, _segSlideMax) = ComputeSlideClamp(
                     wire, hit.SubIndex, dragIsVertical, _segmentDragStartPinned, _segmentDragEndPinned);
+                // Slide-vs-bow (Option 2): record, for each PINNED outer endpoint, the extent of a
+                // collinear parallel wire it could slide along when that endpoint is a port. Resolved
+                // per-frame in HandleSegmentDragLive (slide toward the wire, bow away).
+                _segStartSlideExtent = _segmentDragStartPinned
+                    ? TrySlideablePortExtent(wire.Points[0].X, wire.Points[0].Y, dragIsVertical)
+                    : null;
+                _segEndSlideExtent = _segmentDragEndPinned
+                    ? TrySlideablePortExtent(wire.Points[^1].X, wire.Points[^1].Y, dragIsVertical)
+                    : null;
                 // Wires connected ON the dragged segment must follow it (§5.1) so their connection
                 // never breaks — detect now, against the original geometry. A segment vertex that is
                 // a pinned outer endpoint is held fixed (does not move), so followers there are
@@ -546,6 +577,9 @@ public sealed partial class SchematicViewModel : ObservableObject
                 _segmentDragStems = FindStemsOnSegment(hit.Id, segA, segB, aMoves, bMoves);
                 // User crossing-dots on this segment ride along so the cross stays connected.
                 _segmentDragCrossDots = FindDotsOnSegment(segA, segB);
+                // Stationary pins on the dragged segment's interior: if the drag moves the segment
+                // off them, an auto-wire stub forms to keep each one connected (Case 2 analogue).
+                _segmentDragInteriorPorts = FindPortsOnSegmentInterior(segA, segB);
                 _isDragging      = false;
                 _dragStartWorldX = wx;
                 _dragStartWorldY = wy;
@@ -661,6 +695,8 @@ public sealed partial class SchematicViewModel : ObservableObject
 
         // Shift: axis-lock to dominant direction. Components always stay on grid (no Ctrl bypass).
         var (dx, dy) = ApplyDragAxisLock(rawDx, rawDy, modifiers);
+        // Clamp so a wire grabbed by its endpoint can't slide a body-tap off its end.
+        (dx, dy) = ApplyWireSlideClamp(dx, dy);
 
         // Move selected components
         if (_dragStartCompPositions is not null)
@@ -882,6 +918,21 @@ public sealed partial class SchematicViewModel : ObservableObject
                 }
             }
         }
+
+        // Whole-wire slide clamp: bound the shared drag delta so a stationary tap on any dragged
+        // FREE wire's body never slides off the end (rubber-band invariant). Pinned wires re-route
+        // instead of translating rigidly, so they're excluded. Intersect across all free wires.
+        _wireSlideMinDx = double.NegativeInfinity; _wireSlideMaxDx = double.PositiveInfinity;
+        _wireSlideMinDy = double.NegativeInfinity; _wireSlideMaxDy = double.PositiveInfinity;
+        foreach (var (_, info) in _dragWireInfo)
+        {
+            if (info.StartPinned || info.EndPinned) continue;
+            var (loDx, hiDx, loDy, hiDy) = ComputeWireSlideClamp(info.StartPoints);
+            _wireSlideMinDx = Math.Max(_wireSlideMinDx, loDx);
+            _wireSlideMaxDx = Math.Min(_wireSlideMaxDx, hiDx);
+            _wireSlideMinDy = Math.Max(_wireSlideMinDy, loDy);
+            _wireSlideMaxDy = Math.Min(_wireSlideMaxDy, hiDy);
+        }
     }
 
     /// <summary>
@@ -970,6 +1021,41 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (segIdx == 0 && !startPinned)         ConstrainEndpoint(0);
         if (segIdx == n - 2 && !endPinned)       ConstrainEndpoint(n - 1);
         return (min, max);
+    }
+
+    /// <summary>
+    /// If (wx,wy) is a stationary component/cell PORT that also lies on a wire whose body runs
+    /// PARALLEL to the drag axis, returns that wire's extent along the drag axis (union over all such
+    /// wires). This is the configuration where a dragged segment's port endpoint can slide along the
+    /// wire into a clean T instead of bowing into an overlapping L. Endpoint-inclusive: a wire that
+    /// merely ends at the port still offers a one-sided slide into its body. Returns null when the
+    /// point is not a port, or no parallel wire passes through it.
+    /// </summary>
+    private (double Lo, double Hi)? TrySlideablePortExtent(double wx, double wy, bool dragIsVertical)
+    {
+        const double tol = 8.0;
+        if (!JointCoincidesWithPort(wx, wy)) return null;
+
+        double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+        bool found = false;
+        foreach (var other in EditModel.Wires)
+        {
+            if (other.Id == _segmentDragWireId) continue;
+            var pts = other.Points;
+            for (int k = 0; k < pts.Count - 1; k++)
+            {
+                bool segVertical = Math.Abs(pts[k + 1].X - pts[k].X) < Math.Abs(pts[k + 1].Y - pts[k].Y);
+                if (segVertical != dragIsVertical) continue;                 // need a body parallel to the drag
+                if (!SchematicGeometry.PointOnSegment(
+                        wx, wy, pts[k].X, pts[k].Y, pts[k + 1].X, pts[k + 1].Y, tol)) continue;
+                double slo = dragIsVertical ? Math.Min(pts[k].Y, pts[k + 1].Y) : Math.Min(pts[k].X, pts[k + 1].X);
+                double shi = dragIsVertical ? Math.Max(pts[k].Y, pts[k + 1].Y) : Math.Max(pts[k].X, pts[k + 1].X);
+                lo = Math.Min(lo, slo);
+                hi = Math.Max(hi, shi);
+                found = true;
+            }
+        }
+        return found ? (lo, hi) : null;
     }
 
     /// <summary>
@@ -1297,6 +1383,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     private void CommitDragAsCommand(double wx, double wy, KeyModifiers modifiers)
     {
         var (dx, dy) = ApplyDragAxisLock(wx - _dragStartWorldX, wy - _dragStartWorldY, modifiers);
+        (dx, dy) = ApplyWireSlideClamp(dx, dy);   // keep body-taps on a wire grabbed by its endpoint
 
         var compSnaps      = new List<ComponentMoveSnapshot>();
         var selWireSnaps   = new List<WireMoveSnapshot>();
@@ -1665,6 +1752,85 @@ public sealed partial class SchematicViewModel : ObservableObject
         _dragPortDefs             = null;
         _isObjResizing            = false;
         _resizeObjId              = null;
+        _wireSlideMinDx = double.NegativeInfinity; _wireSlideMaxDx = double.PositiveInfinity;
+        _wireSlideMinDy = double.NegativeInfinity; _wireSlideMaxDy = double.PositiveInfinity;
+    }
+
+    /// <summary>
+    /// Clamps a whole-wire drag delta to the slide bounds computed at press, so a stationary tap on
+    /// a dragged free wire's body never slides off the end. No-op (±∞ bounds) when no dragged wire
+    /// has such a tap. An over-constrained axis (lo &gt; hi) collapses to 0 — no motion on that axis.
+    /// </summary>
+    private (double DX, double DY) ApplyWireSlideClamp(double dx, double dy)
+    {
+        double cx = _wireSlideMinDx > _wireSlideMaxDx ? 0.0 : Math.Clamp(dx, _wireSlideMinDx, _wireSlideMaxDx);
+        double cy = _wireSlideMinDy > _wireSlideMaxDy ? 0.0 : Math.Clamp(dy, _wireSlideMinDy, _wireSlideMaxDy);
+        return (cx, cy);
+    }
+
+    /// <summary>
+    /// Slide bounds for rigidly translating <paramref name="startPoints"/> (a free wire) such that
+    /// every STATIONARY tap on its body stays on the wire — another (unselected) wire's endpoint
+    /// T-ing onto it, or an unselected component/cell port lying on it. For an axis-aligned tapped
+    /// segment the perpendicular delta is pinned (≈ the tap stays on the line) and the parallel delta
+    /// is bounded to the segment's extent (the tap stops at an endpoint). Returns (±∞) when the wire
+    /// has no body tap. Cell-ref-aware via PortDefsOf; detached ports are not connections.
+    /// </summary>
+    private (double MinDx, double MaxDx, double MinDy, double MaxDy) ComputeWireSlideClamp(
+        IReadOnlyList<(double X, double Y)> startPoints)
+    {
+        const double tol = SchematicEditModel.ConnectTolerance;
+        double minDx = double.NegativeInfinity, maxDx = double.PositiveInfinity;
+        double minDy = double.NegativeInfinity, maxDy = double.PositiveInfinity;
+
+        for (int k = 0; k < startPoints.Count - 1; k++)
+        {
+            var a = startPoints[k];
+            var b = startPoints[k + 1];
+            bool vertical = Math.Abs(b.X - a.X) < Math.Abs(b.Y - a.Y);
+            double lo = vertical ? Math.Min(a.Y, b.Y) : Math.Min(a.X, b.X);
+            double hi = vertical ? Math.Max(a.Y, b.Y) : Math.Max(a.X, b.X);
+
+            void AddTap(double jx, double jy)
+            {
+                if (vertical)
+                {
+                    minDx = Math.Max(minDx, jx - a.X); maxDx = Math.Min(maxDx, jx - a.X);   // pin ⊥ (x)
+                    minDy = Math.Max(minDy, jy - hi);  maxDy = Math.Min(maxDy, jy - lo);    // bound ∥ (y)
+                }
+                else
+                {
+                    minDy = Math.Max(minDy, jy - a.Y); maxDy = Math.Min(maxDy, jy - a.Y);   // pin ⊥ (y)
+                    minDx = Math.Max(minDx, jx - hi);  maxDx = Math.Min(maxDx, jx - lo);    // bound ∥ (x)
+                }
+            }
+
+            // (a) Unselected wires' endpoints tapping this segment's interior (T-junctions).
+            foreach (var other in EditModel.Wires)
+            {
+                if (Selection.IsSelected(other.Id) || other.Points.Count == 0) continue;
+                int last = other.Points.Count - 1;
+                var p0 = other.Points[0];
+                var pN = other.Points[last];
+                if (SchematicGeometry.PointOnSegmentInterior(p0.X, p0.Y, a.X, a.Y, b.X, b.Y, tol))
+                    AddTap(p0.X, p0.Y);
+                if (last != 0 && SchematicGeometry.PointOnSegmentInterior(pN.X, pN.Y, a.X, a.Y, b.X, b.Y, tol))
+                    AddTap(pN.X, pN.Y);
+            }
+            // (b) Unselected component/cell ports lying on this segment's interior.
+            foreach (var comp in EditModel.Components)
+            {
+                if (Selection.IsSelected(comp.Id)) continue;
+                foreach (var def in EditModel.PortDefsOf(comp))
+                {
+                    if (comp.IsPortDetached(def.PortIndex)) continue;
+                    var (px, py) = EditModel.PortWorldOf(comp, def);
+                    if (SchematicGeometry.PointOnSegmentInterior(px, py, a.X, a.Y, b.X, b.Y, tol))
+                        AddTap(px, py);
+                }
+            }
+        }
+        return (minDx, maxDx, minDy, maxDy);
     }
 
     /// <summary>
@@ -1691,8 +1857,11 @@ public sealed partial class SchematicViewModel : ObservableObject
         _segmentDragStartPoints = null;
         _segmentDragStems       = null;
         _segmentDragCrossDots   = null;
+        _segmentDragInteriorPorts = null;
         _segSlideMin            = double.NegativeInfinity;
         _segSlideMax            = double.PositiveInfinity;
+        _segStartSlideExtent    = null;
+        _segEndSlideExtent      = null;
     }
 
     /// <summary>Sequence-equal comparison of two wire point lists (exact, within float epsilon).</summary>
@@ -1729,30 +1898,51 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (i >= pts.Count - 1) return;
 
         bool isHoriz = IsSegmentHorizontal(pts[i], pts[i + 1]);
+        int  n       = pts.Count;
 
-        // Constrain to perpendicular axis, snap (B2), then clamp so a sliding endpoint can't run
-        // off the end of its connected wire (never break a connection).
-        double dx, dy;
-        if (isHoriz)
+        // Proposed perpendicular delta (axis-constrained + grid-snapped), before clamping. The whole
+        // dragged segment translates by this amount along the perpendicular axis.
+        double proposed = isHoriz
+            ? EditModel.SnapToGrid(pts[i].Y + rawDy) - pts[i].Y
+            : EditModel.SnapToGrid(pts[i].X + rawDx) - pts[i].X;
+
+        // Per-frame slide-vs-bow (Option 2). Start from the press-time pin flags and slide clamp.
+        // For a PORT endpoint overlapping a parallel collinear wire: while the drag keeps the
+        // endpoint within that wire's extent it SLIDES into a clean T (un-pin + clamp to the wire);
+        // once the drag would push it past the wire's end it BOWS (stays pinned, no clamp). Deciding
+        // this live — rather than at press — is what lets dragging toward the wire slide and dragging
+        // away bow, with no locking and no overlapping L.
+        bool   effStartPinned = _segmentDragStartPinned;
+        bool   effEndPinned   = _segmentDragEndPinned;
+        double clampLo = _segSlideMin, clampHi = _segSlideMax;
+
+        void ResolveSlide((double Lo, double Hi)? ext, int ptIdx, ref bool effPinned)
         {
-            double rawY = pts[i].Y + rawDy;
-            dy = EditModel.SnapToGrid(rawY) - pts[i].Y;
-            dy = Math.Clamp(dy, _segSlideMin, _segSlideMax);
-            dx = 0;
+            if (ext is not { } se) return;
+            double e   = isHoriz ? pts[ptIdx].Y : pts[ptIdx].X;
+            double iLo = Math.Min(se.Lo - e, se.Hi - e);
+            double iHi = Math.Max(se.Lo - e, se.Hi - e);
+            const double eps = 1e-6;
+            if (proposed >= iLo - eps && proposed <= iHi + eps)
+            {
+                effPinned = false;                       // on the wire → slide into a clean T
+                clampLo = Math.Max(clampLo, iLo);
+                clampHi = Math.Min(clampHi, iHi);
+            }
+            // else: off the wire's end → keep pinned (bow); this wire contributes no clamp.
         }
-        else
-        {
-            double rawX = pts[i].X + rawDx;
-            dx = EditModel.SnapToGrid(rawX) - pts[i].X;
-            dx = Math.Clamp(dx, _segSlideMin, _segSlideMax);
-            dy = 0;
-        }
+        ResolveSlide(_segStartSlideExtent, 0,     ref effStartPinned);
+        ResolveSlide(_segEndSlideExtent,   n - 1, ref effEndPinned);
+
+        double clamped = Math.Clamp(proposed, clampLo, clampHi);
+        double dx = isHoriz ? 0 : clamped;
+        double dy = isHoriz ? clamped : 0;
 
         // Simplify LIVE (same cleanup as commit) so redundant collinear runs / zero-length jogs are
         // collapsed as the drag brings geometry back into line — otherwise segments (and their
         // junction dots) appear stacked exactly over existing ones, which reads as a bug.
         var newPts = SimplifyWirePoints(ComputeSegmentDragPoints(pts, i, dx, dy,
-            _segmentDragStartPinned, _segmentDragEndPinned));
+            effStartPinned, effEndPinned));
 
         wire.Points.Clear();
         wire.Points.AddRange(newPts);
@@ -1797,6 +1987,9 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireIds      = Selection.GetSelectedWireIds(EditModel).ToHashSet(),
             SelectedCanvasObjIds = Selection.GetSelectedCanvasObjectIds(EditModel).ToHashSet(),
             WireDragPoints       = wireDragPoints,
+            // Preview the auto-wire stub(s) to any interior pin the segment has moved off of (the
+            // real wire is created at commit; this mirrors the pin-on-pin preview, Case 2).
+            PinOnPinPreviewWires = BuildInteriorPortStubs(wire.Points),
             ConnectionDotsOverride = LiveConnectionDots(),
         };
     }
@@ -1854,6 +2047,27 @@ public sealed partial class SchematicViewModel : ObservableObject
         return list;
     }
 
+    /// <summary>Stationary component/cell PINS lying strictly on the dragged segment's interior
+    /// (cell-ref-aware via PortDefsOf). As the segment moves the wire must keep passing through each
+    /// one or the pin's connection breaks (rubber-band invariant). Endpoint coincidences are excluded
+    /// — a pin at a moving outer vertex is handled by endpoint pinning. Detached ports are skipped
+    /// (they are not connections).</summary>
+    private List<(double X, double Y)> FindPortsOnSegmentInterior(
+        (double X, double Y) a, (double X, double Y) b)
+    {
+        var list = new List<(double X, double Y)>();
+        foreach (var comp in EditModel.Components)
+            foreach (var def in EditModel.PortDefsOf(comp))
+            {
+                if (comp.IsPortDetached(def.PortIndex)) continue;
+                var (px, py) = EditModel.PortWorldOf(comp, def);
+                if (SchematicGeometry.PointOnSegmentInterior(
+                        px, py, a.X, a.Y, b.X, b.Y, SchematicEditModel.ConnectTolerance))
+                    list.Add((px, py));
+            }
+        return list;
+    }
+
     /// <summary>Re-routes a stem after its junction endpoint moves by the perpendicular delta,
     /// keeping the far end fixed and the wire orthogonal (preserving point order).</summary>
     private static IReadOnlyList<(double X, double Y)> RouteStem(StemFollow stem, double dx, double dy)
@@ -1881,6 +2095,59 @@ public sealed partial class SchematicViewModel : ObservableObject
         combined.AddRange(toJunction);
         for (int i = 1; i < fromJunction.Count; i++) combined.Add(fromJunction[i]);
         return combined;
+    }
+
+    /// <summary>
+    /// Returns the point on polyline <paramref name="pts"/> nearest to (px,py): the closest
+    /// perpendicular projection onto any segment, clamped to that segment's ends.
+    /// </summary>
+    private static (double X, double Y) NearestPointOnWire(
+        IReadOnlyList<(double X, double Y)> pts, double px, double py)
+    {
+        double bestDsq = double.PositiveInfinity;
+        (double X, double Y) best = pts.Count > 0 ? pts[0] : (px, py);
+        for (int k = 0; k < pts.Count - 1; k++)
+        {
+            var (ax, ay) = pts[k];
+            var (bx, by) = pts[k + 1];
+            double dx = bx - ax, dy = by - ay;
+            double lenSq = dx * dx + dy * dy;
+            double t = lenSq < 1e-10 ? 0.0 : Math.Clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0.0, 1.0);
+            double cx = ax + t * dx, cy = ay + t * dy;
+            double dsq = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+            if (dsq < bestDsq) { bestDsq = dsq; best = (cx, cy); }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// Builds an auto-wire stub from each stationary interior pin (recorded at press) to the moved
+    /// dragged <paramref name="wirePoints"/>, for every pin the wire no longer passes through. Each
+    /// stub is an orthogonal route from the pin to the nearest point on the wire, so the pin stays
+    /// connected after the segment moves off it — the segment-drag analogue of the pin-on-pin
+    /// auto-wire (Case 2). Returns null when no stub is needed. Used for both the live preview and
+    /// the committed wires, so they agree exactly.
+    /// </summary>
+    private List<IReadOnlyList<(double X, double Y)>>? BuildInteriorPortStubs(
+        IReadOnlyList<(double X, double Y)> wirePoints)
+    {
+        if (_segmentDragInteriorPorts is not { Count: > 0 } || wirePoints.Count < 2) return null;
+        const double tol = SchematicEditModel.ConnectTolerance;
+        List<IReadOnlyList<(double X, double Y)>>? stubs = null;
+        foreach (var (px, py) in _segmentDragInteriorPorts)
+        {
+            // Still on the (moved) wire? then the tap survived — no stub needed.
+            bool onWire = false;
+            for (int k = 0; k < wirePoints.Count - 1 && !onWire; k++)
+                if (SchematicGeometry.PointOnSegment(px, py,
+                        wirePoints[k].X, wirePoints[k].Y, wirePoints[k + 1].X, wirePoints[k + 1].Y, tol))
+                    onWire = true;
+            if (onWire) continue;
+            var (nx, ny) = NearestPointOnWire(wirePoints, px, py);
+            if (SchematicGeometry.CoincidentPoints(px, py, nx, ny, tol)) continue;   // degenerate
+            (stubs ??= []).Add(WireGeometry.OrthogonalRoute(px, py, nx, ny));
+        }
+        return stubs;
     }
 
     /// <summary>
@@ -1938,15 +2205,28 @@ public sealed partial class SchematicViewModel : ObservableObject
         wireSnaps.Insert(0, new WireMoveSnapshot(wire, _segmentDragStartPoints, endPoints));
         var moveCmd = new MoveCommand(EditModel, [], wireSnaps, [], dots: dotSnaps);
 
+        // Auto-wire stubs: any stationary pin that sat on the dragged segment's interior and is no
+        // longer on the moved wire gets a connector stub so its connection survives (Case 2 analogue).
+        var stubCmds = new List<PlaceWireCommand>();
+        if (BuildInteriorPortStubs(endPoints) is { } stubs)
+            foreach (var route in stubs)
+            {
+                var stubWire = new EditableWire();
+                stubWire.Points.AddRange(route);
+                stubCmds.Add(new PlaceWireCommand(EditModel, stubWire));
+            }
+
+        // Compose: move (+ stems/dots) first, then the endpoint merge (if any) so it sees correct
+        // wire indices, then the stub wires last (independent new geometry). One Undo reverts all.
+        IUiCommand finalCmd = moveCmd;
+        if (mergeCmd is not null) finalCmd = new CompositeCommand(finalCmd, mergeCmd);
+        foreach (var sc in stubCmds) finalCmd = new CompositeCommand(finalCmd, sc);
+
+        Execute(finalCmd);
         if (mergeCmd is not null)
         {
-            Execute(new CompositeCommand(moveCmd, mergeCmd));
             Selection.SelectOne(mergeCmd.MergedWireId);
             Selection.ClearSegmentsSilent();
-        }
-        else
-        {
-            Execute(moveCmd);
         }
     }
 

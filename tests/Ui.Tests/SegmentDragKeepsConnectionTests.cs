@@ -227,4 +227,163 @@ public class SegmentDragKeepsConnectionTests
                     System.Math.Abs(origWh.Points[^1].Y -   0) < 1.0,
             $"Wh end must stay at (400,0), got ({origWh.Points[^1].X},{origWh.Points[^1].Y})");
     }
+
+    // ── Option 2 slide-vs-bow: a wire dropping off a port slides into a clean T (no overlap) ──
+
+    /// <summary>
+    /// Dragging a wire whose top sits on a component pin TOWARD a collinear wire on that pin slides
+    /// the top along the wire into a clean T — a straight 2-point wire, no overlapping L, connection
+    /// preserved. (Pre-fix this pinned at the pin and bowed into a 3-point L overlapping Wh.)
+    /// </summary>
+    [Fact]
+    public void DraggingPortWireTowardCollinearWire_SlidesIntoCleanT_NoOverlap()
+    {
+        var model = new SchematicEditModel { GridSnap = false };
+        var rL = MakeResistor(0,   -200);   // port1 at PL=(0,0)
+        var rR = MakeResistor(400, -200);   // port1 at PR=(400,0)
+        model.Components.Add(rL);
+        model.Components.Add(rR);
+        var wh = MakeWire((0, 0), (400, 0));      // PL → PR
+        var wv = MakeWire((0, 0), (0, 400));      // vertical drop from PL
+        model.Wires.Add(wh);
+        model.Wires.Add(wv);
+        var vm = new SchematicViewModel(model);
+
+        // Drag Wv's vertical segment fully right (toward PR): it slides along Wh, no bow.
+        DragSegment(vm, 0, 200, 400, 200);
+
+        var rWv = model.FindWire(wv.Id)!;
+        Assert.Equal(2, rWv.Points.Count);   // clean vertical — no overlapping horizontal leg
+        Assert.True(System.Math.Abs(rWv.Points[0].X - 400) < 1.0 && System.Math.Abs(rWv.Points[0].Y) < 1.0,
+            $"Wv top should have slid onto PR (400,0), got ({rWv.Points[0].X},{rWv.Points[0].Y})");
+        Assert.Equal(new System.Collections.Generic.List<(double, double)> { (0, 0), (400, 0) },
+            model.FindWire(wh.Id)!.Points);   // Wh unchanged
+        Assert.True(HasDotAt(vm, 400, 0), "a clean T forms at PR");
+    }
+
+    /// <summary>
+    /// Dragging the same port wire AWAY from the collinear wire bows it (stays pinned at the pin):
+    /// no lock, connection preserved, no overlap (the bow goes the empty direction). Guards against
+    /// a future "always slide" change that would lock the away-direction drag.
+    /// </summary>
+    [Fact]
+    public void DraggingPortWireAwayFromCollinearWire_Bows_StaysConnected()
+    {
+        var model = new SchematicEditModel { GridSnap = false };
+        var rL = MakeResistor(0,   -200);   // port1 at PL=(0,0)
+        var rR = MakeResistor(400, -200);   // port1 at (400,0)
+        model.Components.Add(rL);
+        model.Components.Add(rR);
+        var wh = MakeWire((0, 0), (400, 0));      // PL → PR (extends RIGHT from PL)
+        var wv = MakeWire((0, 0), (0, 400));      // vertical drop from PL
+        model.Wires.Add(wh);
+        model.Wires.Add(wv);
+        var vm = new SchematicViewModel(model);
+
+        // Drag Wv LEFT — away from Wh (which extends right). It must bow, not lock, not slide.
+        DragSegment(vm, 0, 200, -100, 200);
+
+        var rWv = model.FindWire(wv.Id)!;
+        Assert.True(rWv.Points.Count >= 3, "dragging away from the collinear wire bows into an L (not locked)");
+        Assert.True(rWv.Points.Any(p => System.Math.Abs(p.X) < 1.0 && System.Math.Abs(p.Y) < 1.0),
+            "Wv must still touch PL (0,0) — the pin connection is preserved");
+        Assert.Equal(new System.Collections.Generic.List<(double, double)> { (0, 0), (400, 0) },
+            model.FindWire(wh.Id)!.Points);   // Wh unchanged
+
+        var (render, _) = model.BuildRenderModel();
+        var rRL = render.Components.First(c => c.Id == rL.Id);
+        Assert.Equal(PortConnectionState.Connected, rRL.Ports[1].State);   // PL stays connected
+    }
+
+    // ── A component pin on the dragged wire's BODY: an auto-stub keeps it connected (Option B) ──
+
+    /// <summary>
+    /// Reported repro: an inductor with horizontal pins (right pin RP), and a vertical wire Wv that
+    /// passes THROUGH RP on its body (extends above and below it). Dragging Wv perpendicular (to the
+    /// right) moves the wire off RP cleanly, and an auto-wire STUB forms from RP to the moved wire so
+    /// RP stays connected (the segment-drag analogue of the pin-on-pin auto-wire). Pre-fix the wire
+    /// translated freely and RP disconnected (the segment pinning logic only inspected wire
+    /// endpoints, never a pin on the wire's interior).
+    /// </summary>
+    [Fact]
+    public void DraggingWireWithPinOnItsBody_AutoFormsStubToKeepPinConnected()
+    {
+        var model = new SchematicEditModel { GridSnap = false };
+        // Resistor rotated 90° → its port0 (local (0,-200)) lands at world (X+200, Y).
+        // Place at (-200,0) so RP = port0 = (0,0) — like a horizontal-pin inductor's right pin.
+        var r = new EditableComponent
+        {
+            Symbol = SymbolKind.Resistor, X = -200, Y = 0,
+            Rotation = SymbolRotation.R90, InstanceName = "L1",
+        };
+        model.Components.Add(r);
+        var wv = MakeWire((0, -300), (0, 300));   // vertical wire through RP=(0,0) on its body
+        model.Wires.Add(wv);
+        var vm = new SchematicViewModel(model);
+        Assert.True(HasDotAt(vm, 0, 0), "precondition: RP sits on Wv's body → T-junction dot");
+
+        // Drag Wv's segment to the right; Wv moves cleanly and a stub auto-forms back to RP.
+        DragSegment(vm, 0, 100, 100, 100);
+
+        // The dragged wire is a clean 2-point vertical at the new x — it did NOT bow back.
+        var rWv = model.FindWire(wv.Id)!;
+        Assert.Equal(2, rWv.Points.Count);
+        Assert.True(System.Math.Abs(rWv.Points[0].X - 100) < 1.0, "Wv moved cleanly to x=100");
+
+        // A new stub wire connects RP=(0,0) to the moved wire at (100,0).
+        Assert.Equal(2, model.Wires.Count);
+        var stub = model.Wires.First(w => w.Id != wv.Id);
+        Assert.Contains(stub.Points, p => System.Math.Abs(p.X) < 1.0 && System.Math.Abs(p.Y) < 1.0);   // touches RP
+        Assert.Contains(stub.Points, p => System.Math.Abs(p.X - 100) < 1.0 && System.Math.Abs(p.Y) < 1.0); // meets Wv
+
+        // RP stays connected via the stub, with a dot at the pin.
+        var (render, _) = model.BuildRenderModel();
+        var rr = render.Components.First(c => c.Id == r.Id);
+        Assert.Equal(PortConnectionState.Connected, rr.Ports[0].State);
+        Assert.True(HasDotAt(vm, 0, 0), "the pin connection survives the drag (via the stub)");
+    }
+
+    // ── Whole-wire drag (grabbed by an endpoint): the slide clamps so a body-tap can't fall off ──
+
+    /// <summary>
+    /// Reported repro: a vertical wire Wv with a stationary connection tapping its midpoint (here a
+    /// component pin at (0,0), like the T-junction a horizontal wire would make). Grabbing Wv by an
+    /// ENDPOINT (the whole-wire free-translation path, not the segment-drag path) and dragging it
+    /// ALONG its axis must stop the slide when an endpoint reaches the tap — it must never slide the
+    /// wire off the connection. Pre-fix the free-translation path ignored body taps and Wv slid off.
+    /// </summary>
+    [Fact]
+    public void DraggingWireByEndpointAlongAxis_ClampsSoBodyTapStaysOn()
+    {
+        var model = new SchematicEditModel { GridSnap = false };
+        // Resistor R90 at (-200,0) → port0 at world (0,0): a pin tapping Wv's midpoint.
+        var r = new EditableComponent
+        {
+            Symbol = SymbolKind.Resistor, X = -200, Y = 0,
+            Rotation = SymbolRotation.R90, InstanceName = "R1",
+        };
+        model.Components.Add(r);
+        var wv = MakeWire((0, -200), (0, 200));   // vertical; pin sits at (0,0) on its body
+        model.Wires.Add(wv);
+        var vm = new SchematicViewModel(model);
+        Assert.True(HasDotAt(vm, 0, 0), "precondition: pin taps Wv's body → T-junction dot");
+
+        // Grab Wv by its TOP endpoint (0,-200) and drag DOWN by 300, overshooting the tap at (0,0).
+        DragSegment(vm, 0, -200, 0, 100);
+
+        // The slide stops when the top endpoint reaches the tap (0,0): Wv = [(0,0),(0,400)] — it did
+        // NOT translate the full 300 to (0,100)/(0,500), which would have left the pin behind.
+        var rWv = model.FindWire(wv.Id)!;
+        Assert.Single(model.Wires);                 // no merge, no extra wire
+        Assert.Equal(2, rWv.Points.Count);
+        var top = rWv.Points.OrderBy(p => p.Y).First();
+        Assert.True(System.Math.Abs(top.X) < 1.0 && System.Math.Abs(top.Y) < 1.0,
+            $"top endpoint should clamp to the tap (0,0), got ({top.X},{top.Y})");
+
+        // The pin stays connected (now at Wv's endpoint), with a dot at (0,0).
+        var (render, _) = model.BuildRenderModel();
+        var rr = render.Components.First(c => c.Id == r.Id);
+        Assert.Equal(PortConnectionState.Connected, rr.Ports[0].State);
+        Assert.True(HasDotAt(vm, 0, 0), "the tap connection survives the clamped slide");
+    }
 }
