@@ -155,6 +155,15 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         set { if (_isExpanded != value) { _isExpanded = value; OnPropertyChanged(); } }
     }
 
+    // True when the cell has a dirty (unsaved) editing session.
+    // Set by WorkspaceViewModel when any session for this cell's .csch changes dirty state.
+    private bool _isDirty;
+    public bool IsDirty
+    {
+        get => _isDirty;
+        set { if (_isDirty != value) { _isDirty = value; OnPropertyChanged(); } }
+    }
+
     // All children (unfiltered) — used for expand-state collection before refresh.
     public ObservableCollection<ProjectTreeNodeViewModel> Children { get; }
 

@@ -13,6 +13,12 @@ public sealed partial class UndoRedoStack : ObservableObject
     private readonly Stack<IUiCommand> _undoStack = new();
     private readonly Stack<IUiCommand> _redoStack = new();
 
+    // The command on top of the undo stack at the last save (MarkSaved); null = "saved at the
+    // empty stack".  Dirty (IsModified) means the current top differs from this marker, so it
+    // clears on undo back to the saved position and re-dirties on any edit after a save
+    // (Execute clears the redo stack, so divergent branches are handled correctly).
+    private IUiCommand? _savedCommand;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(UndoDescription))]
     private bool _canUndo;
@@ -20,6 +26,14 @@ public sealed partial class UndoRedoStack : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RedoDescription))]
     private bool _canRedo;
+
+    /// <summary>
+    /// True when the current undo position differs from the last-saved position.
+    /// This is the document "dirty" signal: it goes true on edit, false on undo back to the
+    /// saved baseline, and false again immediately after <see cref="MarkSaved"/>.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isModified;
 
     public string UndoDescription => _undoStack.TryPeek(out var cmd)
         ? $"Undo \"{cmd.Description}\""
@@ -59,6 +73,18 @@ public sealed partial class UndoRedoStack : ObservableObject
     {
         _undoStack.Clear();
         _redoStack.Clear();
+        _savedCommand = null;
+        Refresh();
+    }
+
+    /// <summary>
+    /// Records the current undo position as the clean baseline (call after the document has been
+    /// written to disk).  <see cref="IsModified"/> becomes false now, true again on the next edit,
+    /// and false again if the user undoes back to this exact position.
+    /// </summary>
+    public void MarkSaved()
+    {
+        _savedCommand = _undoStack.Count > 0 ? _undoStack.Peek() : null;
         Refresh();
     }
 
@@ -66,6 +92,8 @@ public sealed partial class UndoRedoStack : ObservableObject
     {
         CanUndo = _undoStack.Count > 0;
         CanRedo = _redoStack.Count > 0;
+        var top = _undoStack.Count > 0 ? _undoStack.Peek() : null;
+        IsModified = !ReferenceEquals(top, _savedCommand);
         OnPropertyChanged(nameof(UndoDescription));
         OnPropertyChanged(nameof(RedoDescription));
     }

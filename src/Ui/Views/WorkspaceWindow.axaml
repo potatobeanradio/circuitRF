@@ -71,6 +71,10 @@
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Open Symbol Editor (docked)" Command="{Binding OpenSymbolEditorDockedCommand}"/>
                         <NativeMenuItem Header="Open Symbol Editor (window)" Command="{Binding OpenSymbolEditorWindowCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Push Into Cell"       Command="{Binding HierarchyPushInCommand}"       Gesture="Meta+OemCloseBrackets"/>
+                        <NativeMenuItem Header="Pop Out"              Command="{Binding HierarchyPopOutCommand}"       Gesture="Meta+OemOpenBrackets"/>
+                        <NativeMenuItem Header="Open Cell in New Tab" Command="{Binding HierarchyOpenInNewTabCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -250,6 +254,21 @@
                 <MenuItem Header="Open Symbol Editor (_window)"
                           Command="{Binding OpenSymbolEditorWindowCommand}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="PencilBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Push _Into Cell"
+                          Command="{Binding HierarchyPushInCommand}"
+                          InputGesture="Ctrl+OemCloseBrackets">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ArrowRight" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Pop _Out"
+                          Command="{Binding HierarchyPopOutCommand}"
+                          InputGesture="Ctrl+OemOpenBrackets">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ArrowLeft" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open Cell in _New Tab"
+                          Command="{Binding HierarchyOpenInNewTabCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="OpenInNew" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 

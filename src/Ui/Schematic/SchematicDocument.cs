@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
 using Dock.Model.Mvvm.Controls;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Messages;
@@ -10,19 +14,169 @@ namespace CircuitRF.Ui.Schematic;
 /// A scratch document has <see cref="FilePath"/> == null: it is in-memory only,
 /// dirty from creation, and invisible to the project tree.
 /// A materialized document has a real on-disk path (set at save time, step 2+).
+///
+/// A document holds a navigation stack of frames; the view renders the active (top) frame's
+/// session VM.  Push In / Pop Out change which frame is active without opening a new tab.
 /// </summary>
 public sealed class SchematicDocument : Document, IUndoableDocument
 {
+    // ── Navigation frame ──────────────────────────────────────────────────────
+
+    private readonly record struct NavFrame(SchematicViewModel Session, string Label);
+
+    private readonly List<NavFrame> _frames;
+
+    /// <summary>
+    /// The current navigation depth: 0 = at the base cell, N = N levels pushed in.
+    /// </summary>
+    public int NavDepth => _frames.Count - 1;
+
+    /// <summary>True when there is at least one level to pop back to.</summary>
+    public bool CanPopOut => NavDepth > 0;
+
+    /// <summary>
+    /// The session VM the canvas should render and bind to.
+    /// Equals <see cref="ViewModel"/> when at the base level; advances into sub-cells on Push In.
+    /// </summary>
+    public SchematicViewModel ActiveViewModel => _frames[^1].Session;
+
+    /// <summary>Read-only view of the frame stack; index 0 = base. Used by the breadcrumb (hier4).</summary>
+    public IReadOnlyList<(SchematicViewModel Session, string Label)> NavFrames
+        => _frames.Select(f => (f.Session, f.Label)).ToList();
+
+    /// <summary>
+    /// Ordered breadcrumb items for the hier4 breadcrumb bar.
+    /// Rebuilt on every <see cref="PushIn"/>, <see cref="PopOut"/>, or <see cref="PopTo"/>.
+    /// The last item has <see cref="BreadcrumbItem.IsCurrent"/> = true; all others are clickable.
+    /// </summary>
+    public IReadOnlyList<BreadcrumbItem> Breadcrumbs
+    {
+        get
+        {
+            var items = new List<BreadcrumbItem>(_frames.Count);
+            for (int i = 0; i < _frames.Count; i++)
+                items.Add(new BreadcrumbItem(i, _frames[i].Label, i == _frames.Count - 1));
+            return items;
+        }
+    }
+
+    /// <summary>Raised whenever the active frame changes (push, pop, popTo).</summary>
+    public event EventHandler? ActiveViewModelChanged;
+
+    // ── Active-VM subscriptions ────────────────────────────────────────────────
+
+    private SchematicViewModel? _activeSubscribedVm;
+
+    private void OnActiveUndoRedoChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(UndoRedoStack.IsModified))
+            IsDirty = ActiveViewModel.UndoRedo.IsModified;
+    }
+
+    private void OnActiveVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SchematicViewModel.RenderModel))
+            OnPropertyChanged(nameof(Model));
+    }
+
+    private void RebindActiveVm(SchematicViewModel newVm)
+    {
+        if (_activeSubscribedVm is not null)
+        {
+            _activeSubscribedVm.UndoRedo.PropertyChanged -= OnActiveUndoRedoChanged;
+            _activeSubscribedVm.PropertyChanged           -= OnActiveVmPropertyChanged;
+        }
+
+        _activeSubscribedVm = newVm;
+        newVm.UndoRedo.PropertyChanged += OnActiveUndoRedoChanged;
+        newVm.PropertyChanged           += OnActiveVmPropertyChanged;
+
+        // Recompute dirty and title from the new active session.
+        _isDirty = newVm.UndoRedo.IsModified;
+        UpdateTitle();
+    }
+
+    // ── Navigation ops ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pushes a sub-cell session onto the navigation stack; the tab now renders it.
+    /// <paramref name="label"/> is the instance designator (e.g. "X1") shown in the breadcrumb.
+    /// </summary>
+    public void PushIn(SchematicViewModel session, string label)
+    {
+        _frames.Add(new NavFrame(session, label));
+        RebindActiveVm(session);
+        RaiseRetargetEvents();
+    }
+
+    /// <summary>
+    /// Pops the top frame and returns the popped session (for retirement).
+    /// Returns null when already at the base level.
+    /// </summary>
+    public SchematicViewModel? PopOut()
+    {
+        if (!CanPopOut) return null;
+        var popped = _frames[^1].Session;
+        _frames.RemoveAt(_frames.Count - 1);
+        RebindActiveVm(ActiveViewModel);
+        RaiseRetargetEvents();
+        return popped;
+    }
+
+    /// <summary>
+    /// Pops down to <paramref name="frameIndex"/> (clamped; 0 = base) and returns the popped
+    /// sessions in pop order (outermost first).  Used by the breadcrumb (hier4).
+    /// </summary>
+    public IReadOnlyList<SchematicViewModel> PopTo(int frameIndex)
+    {
+        frameIndex = Math.Clamp(frameIndex, 0, _frames.Count - 1);
+        var popped = new List<SchematicViewModel>();
+        while (_frames.Count - 1 > frameIndex)
+        {
+            popped.Add(_frames[^1].Session);
+            _frames.RemoveAt(_frames.Count - 1);
+        }
+        if (popped.Count > 0)
+        {
+            RebindActiveVm(ActiveViewModel);
+            RaiseRetargetEvents();
+        }
+        return popped;
+    }
+
+    private void RaiseRetargetEvents()
+    {
+        OnPropertyChanged(nameof(Model));
+        OnPropertyChanged(nameof(ActiveViewModel));
+        OnPropertyChanged(nameof(NavDepth));
+        OnPropertyChanged(nameof(CanPopOut));
+        OnPropertyChanged(nameof(NavFrames));
+        OnPropertyChanged(nameof(Breadcrumbs));
+        ActiveViewModelChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ── Base title + dirty ───────────────────────────────────────────────────
+
     private readonly string _baseTitle;
 
+    /// <summary>The base session VM (what the document was opened on); never changes.</summary>
     public SchematicViewModel ViewModel { get; }
-    public UndoRedoStack      UndoRedo  => ViewModel.UndoRedo;
+
+    /// <summary>
+    /// The undo stack the workspace's global Undo/Redo routes through. Must follow the ACTIVE
+    /// frame, not the base — otherwise Undo/Redo operate on the top-level cell while the user is
+    /// pushed into a sub-cell (the reported bug). Changes on every Push In / Pop Out / Pop To.
+    /// </summary>
+    public UndoRedoStack UndoRedo => ActiveViewModel.UndoRedo;
 
     /// <summary>Message sink for posting save/error messages; null if no sink was provided at construction.</summary>
     public IMessageSink? Messages { get; init; }
 
-    /// <summary>Current render snapshot (convenience alias for canvas binding).</summary>
-    public SchematicModel? Model => ViewModel.RenderModel;
+    /// <summary>Workspace-level hierarchy service for Push In / Pop Out / Open Cell in New Tab. Injected at creation; null in tests.</summary>
+    public IHierarchyHost? Hierarchy { get; init; }
+
+    /// <summary>Current render snapshot from the active session (convenience alias for canvas binding).</summary>
+    public SchematicModel? Model => ActiveViewModel.RenderModel;
 
     // ── Scratch / dirty identity ───────────────────────────────────────────────
 
@@ -38,9 +192,8 @@ public sealed class SchematicDocument : Document, IUndoableDocument
     private bool _isDirty;
 
     /// <summary>
-    /// True when the document has unsaved content.
-    /// Scratch documents start dirty and remain dirty in step 1 (no save path yet).
-    /// On-disk documents become dirty on the first undoable edit.
+    /// True when the active session has unsaved content.
+    /// Driven by the active frame's <c>UndoRedoStack.CanUndo</c>; recomputed on every retarget.
     /// </summary>
     public bool IsDirty
     {
@@ -49,15 +202,20 @@ public sealed class SchematicDocument : Document, IUndoableDocument
         {
             if (_isDirty == value) return;
             _isDirty = value;
-            // Reflect dirty state in the tab title with a leading bullet.
-            Title = _isDirty ? $"• {_baseTitle}" : _baseTitle;
+            UpdateTitle();
         }
+    }
+
+    private void UpdateTitle()
+    {
+        string activeLabel = NavDepth == 0 ? _baseTitle : _frames[^1].Label;
+        Title = _isDirty ? $"• {activeLabel}" : activeLabel;
     }
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
     /// <param name="cellName">Display name / base title for the tab.</param>
-    /// <param name="viewModel">The schematic view model.</param>
+    /// <param name="viewModel">The schematic view model (base session).</param>
     /// <param name="filePath">
     /// Absolute path of the .csch file on disk, or null for a scratch (in-memory) document.
     /// </param>
@@ -68,23 +226,15 @@ public sealed class SchematicDocument : Document, IUndoableDocument
         FilePath   = filePath;
         ViewModel  = viewModel;
 
-        // Both scratch and on-disk documents start clean; first undoable edit makes them dirty.
+        // Initialize the frame stack with the base frame.
+        _frames = new List<NavFrame> { new(viewModel, cellName) };
+
+        // Start clean; first undoable edit on the active VM makes this dirty.
         _isDirty = false;
         Title    = _baseTitle;
 
-        // Any edit on a non-scratch doc makes it dirty (first undo-able action recorded).
-        ViewModel.UndoRedo.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName is nameof(UndoRedoStack.CanUndo) && ViewModel.UndoRedo.CanUndo)
-                IsDirty = true;
-        };
-
-        // Keep the Model property change notification alive so bindings update.
-        ViewModel.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(SchematicViewModel.RenderModel))
-                OnPropertyChanged(nameof(Model));
-        };
+        // Wire up the initial active-VM subscriptions.
+        RebindActiveVm(viewModel);
     }
 
     // ── Materialization ───────────────────────────────────────────────────────
@@ -100,4 +250,14 @@ public sealed class SchematicDocument : Document, IUndoableDocument
         FilePath = filePath;
         IsDirty  = false;
     }
+}
+
+/// <summary>
+/// Single item in the hierarchy breadcrumb bar shown by <see cref="SchematicDocument.Breadcrumbs"/>.
+/// Promoted to top-level so Avalonia compiled bindings can reference it via <c>x:DataType</c>.
+/// </summary>
+public sealed record BreadcrumbItem(int FrameIndex, string Text, bool IsCurrent)
+{
+    /// <summary>True for all crumbs except the first (base) one; drives separator glyph visibility.</summary>
+    public bool IsNotFirst => FrameIndex > 0;
 }

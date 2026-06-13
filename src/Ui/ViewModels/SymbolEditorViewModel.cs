@@ -286,6 +286,9 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
         {
             if (e.PropertyName is nameof(UndoRedoStack.CanUndo)) UndoCommand.NotifyCanExecuteChanged();
             if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) RedoCommand.NotifyCanExecuteChanged();
+            // Dirty mirrors the stack's saved baseline: it clears on undo back to the last save and
+            // re-dirties on the next edit (matches SchematicDocument and the project-tree cell).
+            if (e.PropertyName is nameof(UndoRedoStack.IsModified)) IsDirty = !IsLocked && _undoRedo.IsModified;
         };
 
         SaveSymbolCommand   = new AsyncRelayCommand<Window?>(SaveSymbolAsync);
@@ -298,14 +301,10 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     // ── Command execution ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Execute a command on the undo stack.
-    /// Marks the symbol dirty (if not locked) so the save affordance shows.
+    /// Execute a command on the undo stack.  Dirty state follows <see cref="UndoRedoStack.IsModified"/>
+    /// (wired in the constructor), so it clears on undo back to the saved baseline.
     /// </summary>
-    public void Execute(IUiCommand cmd)
-    {
-        _undoRedo.Execute(cmd);
-        if (!IsLocked) IsDirty = true;
-    }
+    public void Execute(IUiCommand cmd) => _undoRedo.Execute(cmd);
 
     // ── Text input (from canvas TextInput event) ──────────────────────────────
 
@@ -1412,7 +1411,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     {
         SymbolPersistence.SaveToFile(path, EditableSymbol.ToSymbol());
         CurrentSymbolPath = path;
-        IsDirty           = false;
+        _undoRedo.MarkSaved();   // record the clean baseline → IsModified false → IsDirty false
         SymbolSaved?.Invoke(path);
     }
 

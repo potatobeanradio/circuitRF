@@ -107,7 +107,7 @@
                              the bound collection is empty). -->
                         <TreeDataTemplate x:DataType="ptvm:ProjectTreeNodeViewModel"
                                           ItemsSource="{Binding FilteredChildren}">
-                            <Grid ColumnDefinitions="Auto,*">
+                            <Grid ColumnDefinitions="Auto,Auto,*">
                                 <!-- Per-kind icon (NodeKind + IsTestBench → MaterialIconKind) -->
                                 <mi:MaterialIcon Grid.Column="0"
                                                 Kind="{Binding IconKind}"
@@ -115,9 +115,18 @@
                                                 Margin="0,0,4,0"
                                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
 
+                                <!-- Dirty bullet: shown on Cell nodes with an unsaved editing session. -->
+                                <TextBlock Grid.Column="1"
+                                           Text="•"
+                                           FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,2,0"
+                                           Foreground="{DynamicResource SystemAccentColor}"
+                                           IsVisible="{Binding IsDirty}"/>
+
                                 <!-- Name: bold for IsPrimary, italic + warning-color for IsWarning.
                                      Tooltip: WarningReason first (if warning), then RelativePath. -->
-                                <TextBlock Grid.Column="1"
+                                <TextBlock Grid.Column="2"
                                            Text="{Binding Name}"
                                            FontSize="12"
                                            Classes.pt-bold="{Binding IsBold}"

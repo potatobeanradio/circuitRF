@@ -5,6 +5,11 @@ namespace CircuitRF.Ui.Views;
 
 public partial class SymbolEditorWindow : Window
 {
+    public SymbolEditorWindow()
+    {
+        InitializeComponent();
+    }
+
     public SymbolEditorWindow(SymbolEditorDocument document)
     {
         InitializeComponent();

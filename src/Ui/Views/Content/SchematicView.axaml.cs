@@ -30,8 +30,11 @@ public partial class SchematicView : UserControl
     // Computed once at construction — update SkiaFonts.PlexRegular to switch fonts.
     private readonly double _fontAscenderRatio;
 
-    // Tracks the VM we're currently subscribed to so we can unsubscribe on DataContext change.
+    // Tracks the VM we're currently subscribed to so we can unsubscribe on retarget.
     private SchematicViewModel? _subscribedVm;
+
+    // Tracks the SchematicDocument we're subscribed to for ActiveViewModelChanged.
+    private SchematicDocument? _subscribedDoc;
 
     public SchematicView()
     {
@@ -81,21 +84,46 @@ public partial class SchematicView : UserControl
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
+        // Unsubscribe from the previous document's ActiveViewModelChanged event.
+        if (_subscribedDoc is not null)
+        {
+            _subscribedDoc.ActiveViewModelChanged -= OnActiveViewModelChanged;
+            _subscribedDoc = null;
+        }
+
+        RebindActiveViewModel();
+
+        // Subscribe to the new document's ActiveViewModelChanged event.
+        if (DataContext is SchematicDocument doc)
+        {
+            _subscribedDoc = doc;
+            doc.ActiveViewModelChanged += OnActiveViewModelChanged;
+        }
+    }
+
+    private void OnActiveViewModelChanged(object? sender, EventArgs e)
+    {
+        RebindActiveViewModel();
+        SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    private void RebindActiveViewModel()
+    {
         if (_subscribedVm is not null)
         {
-            _subscribedVm.PropertyChanged -= OnViewModelPropertyChanged;
+            _subscribedVm.PropertyChanged   -= OnViewModelPropertyChanged;
             _subscribedVm.Selection.Changed -= OnSelectionChanged;
             _subscribedVm.AutoGenSymbolCallback = null;
             _subscribedVm = null;
         }
 
-        var vm = DataContext is SchematicDocument doc ? doc.ViewModel : null;
+        var vm = DataContext is SchematicDocument doc ? doc.ActiveViewModel : null;
         SchematicCanvasCtrl.EditContext = vm;
 
         if (vm is not null)
         {
             _subscribedVm = vm;
-            vm.PropertyChanged += OnViewModelPropertyChanged;
+            vm.PropertyChanged   += OnViewModelPropertyChanged;
             vm.Selection.Changed += OnSelectionChanged;
             vm.AutoGenSymbolCallback = ShowAutoGenPromptAsync;
             UpdateToolButtonStates();
@@ -149,10 +177,22 @@ public partial class SchematicView : UserControl
         DeleteBtn.IsEnabled       = hasSelection;
         DisableOpenBtn.IsEnabled  = hasSelection;
         DisableShortBtn.IsEnabled = hasSelection;
+
+        // Push In: enabled when exactly one cell-instance is selected and has a resolvable schematic.
+        var doc  = DataContext as SchematicDocument;
+        var vm   = Vm;
+        EditableComponent? singleComp = null;
+        if (vm?.Selection.Ids.Count == 1)
+            singleComp = vm.EditModel.FindComponent(vm.Selection.Ids.First());
+        PushInBtn.IsEnabled = singleComp?.CellRef is not null
+                              && (doc?.Hierarchy?.CanPushInto(singleComp, vm?.EditModel, out _) ?? false);
+
+        // Pop Out: enabled whenever the doc nav stack has depth > 0.
+        PopOutBtn.IsEnabled = doc?.CanPopOut ?? false;
     }
 
     private SchematicViewModel? Vm =>
-        (DataContext as SchematicDocument)?.ViewModel;
+        (DataContext as SchematicDocument)?.ActiveViewModel;
 
     // ── Global schematic key handling (focus-independent via tunnel) ──────────────
 
@@ -167,7 +207,31 @@ public partial class SchematicView : UserControl
         if (vm is null) return;
 
         bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
-        if (ctrl) return;
+        if (ctrl)
+        {
+            // Push Into Cell: Ctrl/⌘+]
+            if (e.Key == Key.OemCloseBrackets)
+            {
+                var doc  = DataContext as SchematicDocument;
+                var comp = vm.Selection.Ids.Count == 1
+                    ? vm.EditModel.FindComponent(vm.Selection.Ids.First()) : null;
+                if (doc is not null && comp?.CellRef is not null
+                    && doc.Hierarchy?.CanPushInto(comp, vm.EditModel, out _) == true)
+                    doc.Hierarchy.PushIntoCell(doc, comp);
+                e.Handled = true;
+                return;
+            }
+            // Pop Out: Ctrl/⌘+[
+            if (e.Key == Key.OemOpenBrackets)
+            {
+                var doc = DataContext as SchematicDocument;
+                if (doc?.CanPopOut == true)
+                    doc.Hierarchy?.PopOutOf(doc);
+                e.Handled = true;
+                return;
+            }
+            return;
+        }
 
         switch (e.Key)
         {
@@ -252,6 +316,42 @@ public partial class SchematicView : UserControl
             vm.GridSnap = tb.IsChecked == true;
     }
 
+    // ── Hierarchy toolbar ─────────────────────────────────────────────────────
+
+    private void OnToolbarPushIn(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SchematicDocument doc || Vm is null) return;
+        var comp = Vm.Selection.Ids.Count == 1
+            ? Vm.EditModel.FindComponent(Vm.Selection.Ids.First()) : null;
+        if (comp is null) return;
+        doc.Hierarchy?.PushIntoCell(doc, comp);
+        SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    private void OnToolbarPopOut(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SchematicDocument doc) return;
+        doc.Hierarchy?.PopOutOf(doc);
+        SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    // ── Breadcrumb bar ────────────────────────────────────────────────────────
+
+    private void OnPopToTop(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SchematicDocument doc) return;
+        doc.Hierarchy?.PopToLevel(doc, 0);
+        SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    private void OnBreadcrumbClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SchematicDocument doc || sender is not Button btn) return;
+        if (btn.Tag is int frameIndex)
+            doc.Hierarchy?.PopToLevel(doc, frameIndex);
+        SchematicCanvasCtrl.InvalidateVisual();
+    }
+
     // ── Disable state ─────────────────────────────────────────────────────────
 
     private void OnDisableOpen(object? sender, RoutedEventArgs e)  => Vm?.DisableSelection(DisableState.Open);
@@ -309,9 +409,6 @@ public partial class SchematicView : UserControl
             return;
         }
 
-        // Push Into is deferred (no-op); shown only for cell-reference components.
-        CtxPushIn.IsEnabled = false;
-
         var id   = SchematicCanvasCtrl.ContextMenuTargetId;
         var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
 
@@ -319,12 +416,32 @@ public partial class SchematicView : UserControl
         bool isGnd  = comp?.Symbol == SymbolKind.Ground;
         bool isCell = comp?.CellRef is not null;
         CtxEditParameters.IsVisible  = !isGnd;
-        CtxPushIn.IsVisible          = isCell;   // only cell-reference instances have Push Into
         CtxSep1.IsVisible            = !isGnd;
         CtxMoveLabels.IsVisible      = !isGnd;
         CtxResetLabels.IsVisible     = !isGnd;
         CtxLabelsSubMenu.IsVisible   = !isGnd;
         CtxSep2.IsVisible            = !isGnd;
+
+        CtxPushIn.IsVisible      = isCell;
+        CtxOpenInNewTab.IsVisible = isCell;
+        if (isCell && comp is not null)
+        {
+            var doc      = DataContext as SchematicDocument;
+            string? reason = null;
+            bool can = doc?.Hierarchy?.CanPushInto(comp, Vm?.EditModel, out reason) ?? false;
+            CtxPushIn.IsEnabled       = can;
+            CtxOpenInNewTab.IsEnabled = can;
+            if (!can && reason is not null)
+            {
+                ToolTip.SetTip(CtxPushIn,      reason);
+                ToolTip.SetTip(CtxOpenInNewTab, reason);
+            }
+            else
+            {
+                ToolTip.SetTip(CtxPushIn,      null);
+                ToolTip.SetTip(CtxOpenInNewTab, null);
+            }
+        }
 
         // Reflect the target component's current label-visibility state via eye icons.
         bool typeLabelVisible    = comp?.ShowTypeLabel    ?? true;
@@ -354,7 +471,21 @@ public partial class SchematicView : UserControl
 
     private void OnCtxPushIn(object? sender, RoutedEventArgs e)
     {
-        // Hierarchy navigation — deferred to Phase 6e
+        if (DataContext is not SchematicDocument doc) return;
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (comp is null) return;
+        doc.Hierarchy?.PushIntoCell(doc, comp);
+        SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    private void OnCtxOpenInNewTab(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SchematicDocument doc) return;
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (comp is null) return;
+        doc.Hierarchy?.OpenCellInNewTab(doc, comp);
     }
 
     private void OnCtxRotate(object? sender, RoutedEventArgs e) =>
@@ -407,7 +538,7 @@ public partial class SchematicView : UserControl
         var (comps, wires, cobjs, srcGrid) = result.Value;
         if (comps.Count == 0 && wires.Count == 0 && cobjs.Count == 0) return;
 
-        var vm = doc.ViewModel;
+        var vm = doc.ActiveViewModel;
         vm.Execute(new SchematicPasteCommand(
             vm.EditModel, comps, wires, cobjs,
             ids => vm.Selection.SetAll(ids),
@@ -417,7 +548,7 @@ public partial class SchematicView : UserControl
 
     private async Task CopySelectionToClipboardAsync(SchematicDocument doc, IClipboard clipboard, bool cut)
     {
-        var vm    = doc.ViewModel;
+        var vm    = doc.ActiveViewModel;
         var model = vm.EditModel;
 
         var comps = vm.Selection.GetSelectedComponentIds(model)

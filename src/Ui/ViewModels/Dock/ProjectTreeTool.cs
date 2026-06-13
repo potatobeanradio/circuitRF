@@ -117,6 +117,34 @@ public partial class ProjectTreeTool : Tool
         RebuildVmTree(expandedPaths);
     }
 
+    // ── Dirty-cell notifications ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Sets (or clears) the dirty indicator on the cell node that owns <paramref name="cellAbsDir"/>.
+    /// Called by WorkspaceViewModel when a session for that cell's .csch changes dirty state.
+    /// No-op when the cell node is not present in the tree (workspace not loaded or different workspace).
+    /// </summary>
+    public void SetCellDirty(string cellAbsDir, bool isDirty)
+    {
+        if (RootItems.Count == 0) return;
+        var node = FindNodeByPath(RootItems[0], cellAbsDir);
+        if (node is { Kind: NodeKind.Cell })
+            node.IsDirty = isDirty;
+    }
+
+    private static ProjectTreeNodeViewModel? FindNodeByPath(
+        ProjectTreeNodeViewModel root, string absPath)
+    {
+        if (string.Equals(root.AbsolutePath, absPath, StringComparison.OrdinalIgnoreCase))
+            return root;
+        foreach (var child in root.Children)
+        {
+            var found = FindNodeByPath(child, absPath);
+            if (found is not null) return found;
+        }
+        return null;
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private void RebuildVmTree(HashSet<string> expandedPaths)

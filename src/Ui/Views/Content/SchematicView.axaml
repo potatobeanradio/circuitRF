@@ -51,6 +51,41 @@
         <Style Selector="Button.SelectionBtn:disabled /template/ ContentPresenter">
             <Setter Property="Opacity" Value="0.35"/>
         </Style>
+
+        <!-- ── Breadcrumb bar styles ──────────────────────────────────────── -->
+        <!-- Base style: flat, transparent, accent foreground for clickable crumbs -->
+        <Style Selector="Button.BreadcrumbBtn">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="3,1"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Foreground">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.BreadcrumbBtn /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.BreadcrumbBtn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemListLowColor}"/>
+        </Style>
+        <!-- Current crumb: bold, base foreground, non-interactive -->
+        <Style Selector="Button.BreadcrumbBtn.BreadcrumbCurrent">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseHighColor}"/>
+        </Style>
+        <Style Selector="Button.BreadcrumbBtn.BreadcrumbCurrent /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.BreadcrumbBtn.BreadcrumbCurrent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.BreadcrumbBtn:disabled /template/ ContentPresenter">
+            <Setter Property="Opacity" Value="1"/>
+        </Style>
     </UserControl.Styles>
 
     <DockPanel>
@@ -235,6 +270,30 @@
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                <!-- Push Into Cell -->
+                <Button x:Name="PushInBtn"
+                        Classes="SelectionBtn"
+                        Click="OnToolbarPushIn"
+                        ToolTip.Tip="Push Into Cell  (Ctrl+])"
+                        IsEnabled="False"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="ArrowRight" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Pop Out -->
+                <Button x:Name="PopOutBtn"
+                        Classes="SelectionBtn"
+                        Click="OnToolbarPopOut"
+                        ToolTip.Tip="Pop Out  (Ctrl+[)"
+                        IsEnabled="False"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="ArrowLeft" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                 <!-- FPS readout -->
                 <TextBlock x:Name="FpsText"
                            VerticalAlignment="Center"
@@ -242,6 +301,62 @@
                            FontFamily="Monospace"
                            Foreground="{DynamicResource SystemBaseMediumColor}"
                            Opacity="0.8"/>
+
+            </StackPanel>
+        </Border>
+
+        <!-- ── Breadcrumb bar — visible only when pushed in (CanPopOut) ─────── -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding CanPopOut}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,1">
+            <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+
+                <!-- Pop to Top button -->
+                <Button x:Name="PopToTopBtn"
+                        Click="OnPopToTop"
+                        ToolTip.Tip="Pop to Top"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="4,2"
+                        VerticalAlignment="Center">
+                    <mi:MaterialIcon Kind="Home" Width="13" Height="13"/>
+                </Button>
+
+                <!-- Divider between Pop to Top and crumb list -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,2"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Crumb list -->
+                <ItemsControl x:Name="BreadcrumbItems"
+                              ItemsSource="{Binding Breadcrumbs}"
+                              VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="schemDoc:BreadcrumbItem">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <!-- Separator glyph before non-first crumbs -->
+                                <TextBlock Text=" ▸ "
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                                           IsVisible="{Binding IsNotFirst}"/>
+                                <!-- Crumb button: flat/link style, bold+inert when current -->
+                                <Button Classes="BreadcrumbBtn"
+                                        Classes.BreadcrumbCurrent="{Binding IsCurrent}"
+                                        IsEnabled="{Binding !IsCurrent}"
+                                        Content="{Binding Text}"
+                                        Tag="{Binding FrameIndex}"
+                                        Click="OnBreadcrumbClick"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
 
             </StackPanel>
         </Border>
@@ -271,6 +386,15 @@
                                   Click="OnCtxPushIn">
                             <MenuItem.Icon>
                                 <mi:MaterialIcon Kind="ArrowRight" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
+                        <MenuItem x:Name="CtxOpenInNewTab"
+                                  Header="Open Cell in New Tab"
+                                  IsVisible="False"
+                                  Click="OnCtxOpenInNewTab">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="OpenInNew" Width="14" Height="14"/>
                             </MenuItem.Icon>
                         </MenuItem>
 

@@ -82,7 +82,7 @@ public sealed class SymbolEditorDocument : Document, IUndoableDocument
     {
         FilePath                    = filePath;
         ViewModel.CurrentSymbolPath = filePath;
-        ViewModel.IsDirty           = false;
+        ViewModel.UndoRedo.MarkSaved();   // clean baseline → ViewModel.IsModified/IsDirty false
         // IsDirty on the document updates via the PropertyChanged subscription above.
     }
 }
