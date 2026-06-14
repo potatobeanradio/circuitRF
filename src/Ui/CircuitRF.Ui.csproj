@@ -85,6 +85,13 @@
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
     <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.4" />
 
+    <!-- SVG→EMF conversion for the Windows clipboard (CF_ENHMETAFILE for Word/PowerPoint).
+         Unconditional so it compiles on all platforms; every execution path is guarded by
+         OperatingSystem.IsWindows() at runtime. Transitively brings System.Drawing.Common
+         (used by WindowsClipboard.SvgToEmfHandle), so System.Drawing.Imaging compiles
+         cross-platform. -->
+    <PackageReference Include="Svg" Version="3.4.7" />
+
     <!-- Dock: AvaloniaUI docking library — regions, tear-out, re-dock -->
     <!-- NOTE: Verify Dock.Avalonia styles path at runtime; see CircuitRfDockFactory.cs -->
     <PackageReference Include="Dock.Avalonia" Version="12.0.0.2" />

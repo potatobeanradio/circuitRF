@@ -15,8 +15,9 @@ namespace CircuitRF.Ui.Clipboard;
 /// System-clipboard helper for schematic objects.
 /// Primary format: JSON text (cross-platform, roundtrips perfectly).
 /// Rich formats: SVG vector (macOS/Linux cross-app) + PNG raster bitmap (universal fallback).
-/// On Windows, CF_ENHMETAFILE (EMF) is omitted here — it requires System.Drawing.Imaging and
-/// Svg.NET (see splotRF's WindowsClipboard.cs for that pattern; add those packages to unlock it).
+/// On Windows, all formats — including CF_ENHMETAFILE (vector EMF for Word/PowerPoint) — are written
+/// in one P/Invoke session via WindowsClipboard, bypassing Avalonia. macOS/Linux use Avalonia's
+/// DataTransfer (PDF/SVG native UTIs + PNG + text).
 /// </summary>
 public static class SchematicClipboard
 {
@@ -34,55 +35,62 @@ public static class SchematicClipboard
         IReadOnlyList<EditableCanvasObject> canvasObjects,
         double gridSize = 100.0,
         IReadOnlyList<EditableNetLabel>?    netLabels = null,
-        string?                             schematicDirectory = null)
+        string?                             schematicDirectory = null,
+        IntPtr                              ownerHwnd = default)
     {
         if (components.Count == 0 && wires.Count == 0 && canvasObjects.Count == 0) return;
 
         string json = SchematicPersistence.SerializeSelection(components, wires, canvasObjects, gridSize);
 
-        // Resolve render policy once for this copy operation.
         var (variant, transparent) = ClipboardRenderPolicy.Resolve();
         var renderTheme = SchematicRenderTheme.FromTheme(ThemeService.Active, variant);
         const bool excludeGrid = true;
 
-        var item = new DataTransferItem();
-
+        // Rich formats are best-effort; JSON text is always present as the fallback.
+        byte[]?                          pdf = null;
+        (string Svg, float W, float H)?  svg = null;
+        Bitmap?                          bmp = null;
         try
         {
-            // PDF: platform-native format first — richest vector representation.
-            // com.adobe.pdf UTI (macOS): Keynote, Preview, Pages, etc.
-            // application/pdf (Windows): recognised by some viewers; EMF would be the true
-            //   Windows vector format (see splotRF WindowsClipboard.cs — future work).
-            byte[]? pdf = TryRenderToPdf(components, wires, canvasObjects, renderTheme, transparent, excludeGrid, netLabels, schematicDirectory);
-            if (pdf is not null)
-                item.Set(OperatingSystem.IsWindows() ? ClipboardFormats.PdfNativeWinFormat : ClipboardFormats.PdfNativeMacFormat, pdf);
-
-            // SVG vector: public.svg-image UTI (macOS/Linux) — Illustrator, Inkscape, etc.
-            string? svg = TryRenderToSvg(components, wires, canvasObjects, renderTheme, transparent, excludeGrid, netLabels, schematicDirectory);
-            if (svg is not null && !OperatingSystem.IsWindows())
-                item.Set(ClipboardFormats.SvgNativeFormat, Encoding.UTF8.GetBytes(svg));
-
-            // PNG bitmap: universal raster fallback (Keynote, Pages, Word, etc.).
-            Bitmap? bmp = TryRenderToAvaloniaImage(components, wires, canvasObjects, renderTheme, transparent, excludeGrid, netLabels, schematicDirectory);
-            if (bmp is not null)
-                item.Set(DataFormat.Bitmap, bmp);
+            pdf = TryRenderToPdf(components, wires, canvasObjects, renderTheme, transparent, excludeGrid, netLabels, schematicDirectory);
+            svg = TryRenderToSvg(components, wires, canvasObjects, renderTheme, transparent, excludeGrid, netLabels, schematicDirectory);
+            bmp = TryRenderToAvaloniaImage(components, wires, canvasObjects, renderTheme, transparent, excludeGrid, netLabels, schematicDirectory);
         }
-        catch { /* rich formats are best-effort; JSON is always present */ }
+        catch { /* best-effort */ }
 
-        item.Set(DataFormat.Text, json);                               // JSON — primary / always
+        // ── Windows: bypass Avalonia, write all formats (incl. CF_ENHMETAFILE) in ONE P/Invoke
+        //    session. Avalonia's SetDataAsync calls EmptyClipboard and keeps clipboard ownership,
+        //    so a second session to add EMF would fail. See WindowsClipboard.cs for the full why. ──
+        if (OperatingSystem.IsWindows())
+        {
+            // circuitRF sizes the SVG per-selection (no fixed page). The EMF frame matches the SVG's
+            // own dimensions, scaled so the longest side is a sane on-paste size — vector stays crisp.
+            float pageW = 0f, pageH = 0f;
+            if (svg is { } s)
+            {
+                const float maxSide = 720f;   // ≈10in at 72pt/in — Word/PowerPoint-friendly default
+                float scale = MathF.Min(1f, maxSide / MathF.Max(s.W, s.H));
+                pageW = s.W * scale;
+                pageH = s.H * scale;
+            }
+            WindowsClipboard.SetClipboard(ownerHwnd, pdf, svg?.Svg, json, bmp, pageW, pageH);
+            return;
+        }
+
+        // ── macOS / Linux: Avalonia cross-platform clipboard (native PDF/SVG UTIs + PNG + text). ──
+        var item = new DataTransferItem();
+        if (pdf is not null)
+            item.Set(ClipboardFormats.PdfNativeMacFormat, pdf);
+        if (svg is { } sv)
+            item.Set(ClipboardFormats.SvgNativeFormat, Encoding.UTF8.GetBytes(sv.Svg));
+        if (bmp is not null)
+            item.Set(DataFormat.Bitmap, bmp);
+        item.Set(DataFormat.Text, json);
 
         var transfer = new DataTransfer();
         transfer.Add(item);
-
-        try
-        {
-            await clipboard.SetDataAsync(transfer);
-        }
-        catch
-        {
-            // Fall back to plain-text clipboard if DataTransfer is not supported.
-            await clipboard.SetTextAsync(json);
-        }
+        try { await clipboard.SetDataAsync(transfer); }
+        catch { await clipboard.SetTextAsync(json); }
     }
 
     /// <summary>
@@ -256,7 +264,7 @@ public static class SchematicClipboard
     }
 
     /// <summary>Renders selection to an SVG string using SkiaSharp's SVG canvas.</summary>
-    private static string? TryRenderToSvg(
+    private static (string Svg, float W, float H)? TryRenderToSvg(
         IReadOnlyList<EditableComponent>    components,
         IReadOnlyList<EditableWire>         wires,
         IReadOnlyList<EditableCanvasObject> canvasObjects,
@@ -285,7 +293,7 @@ public static class SchematicClipboard
                     theme, showFps: false,
                     useTransparentBackground: useTransparentBackground,
                     excludeGrid: excludeGrid);
-            return Encoding.UTF8.GetString(stream.DetachAsData().ToArray());
+            return (Encoding.UTF8.GetString(stream.DetachAsData().ToArray()), (float)pxW, (float)pxH);
         }
         catch { return null; }
     }

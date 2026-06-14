@@ -562,8 +562,9 @@ public partial class SchematicView : UserControl
         var netLabels = model.NetLabels
             .Where(n => n.IsAnchored && wholeWireIds.Contains(n.OwnerWireId))
             .ToList();
+        IntPtr ownerHwnd = TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
         await SchematicClipboard.CopyAsync(clipboard, comps, wires, objs, model.GridSize,
-                                           netLabels, model.SchematicDirectory);
+                                           netLabels, model.SchematicDirectory, ownerHwnd);
         if (cut) vm.DeleteSelection();
     }
 
