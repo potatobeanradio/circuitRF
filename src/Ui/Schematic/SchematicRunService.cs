@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
@@ -18,17 +19,25 @@ namespace CircuitRF.Ui.Schematic;
 public enum RunStatus { Success, NoAnalysis, EngineError }
 
 /// <summary>
+/// A named DataSet produced by one analysis in a run.
+/// </summary>
+public sealed record AnalysisResult(string Name, DataSet Data);
+
+/// <summary>
 /// Result returned by <see cref="SchematicRunService.RunNetlist"/>: status, message, and
-/// the collected DataSets (held for Phase 7 visualisation — not plotted here).
+/// the collected per-analysis results (held for Phase 7 visualisation — not plotted here).
 /// </summary>
 public sealed class RunResult(
-    RunStatus             status,
-    string                statusMessage,
-    IReadOnlyList<DataSet>? dataSets = null)
+    RunStatus                        status,
+    string                           statusMessage,
+    IReadOnlyList<AnalysisResult>?   results = null)
 {
-    public RunStatus               Status        { get; } = status;
-    public string                  StatusMessage { get; } = statusMessage;
-    public IReadOnlyList<DataSet>  DataSets      { get; } = dataSets ?? [];
+    public RunStatus                       Status        { get; } = status;
+    public string                          StatusMessage { get; } = statusMessage;
+    public IReadOnlyList<AnalysisResult>   Results       { get; } = results ?? [];
+
+    // Convenience: callers that only need the DataSets (unchanged from Phase 6e).
+    public IReadOnlyList<DataSet> DataSets => Results.Select(r => r.Data).ToList();
 }
 
 /// <summary>
@@ -78,16 +87,18 @@ public static class SchematicRunService
         }
 
         // ── 4. Dispatch each analysis ──────────────────────────────────────────
-        var dataSets = new List<DataSet>();
-        var notes    = new List<string>();
-        var errors   = new List<string>();
+        var results   = new List<AnalysisResult>();
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var notes     = new List<string>();
+        var errors    = new List<string>();
 
         foreach (var analysis in tb.Analyses)
         {
             try
             {
                 var ds = RunTypedAnalysis(analysis, nl, tb, lib, notes);
-                if (ds is not null) dataSets.Add(ds);
+                if (ds is not null)
+                    results.Add(new AnalysisResult(DeduplicateName(analysis.Name, usedNames), ds));
             }
             catch (Exception ex)
             {
@@ -100,8 +111,9 @@ public static class SchematicRunService
             if (raw.Kind != "analysis") continue;
             try
             {
+                var rawName = FirstToken(raw.RawLine);
                 if (TryRunRawSparam(raw.RawLine, nl, notes, out var ds) && ds is not null)
-                    dataSets.Add(ds);
+                    results.Add(new AnalysisResult(DeduplicateName(rawName, usedNames), ds));
             }
             catch (Exception ex)
             {
@@ -111,11 +123,11 @@ public static class SchematicRunService
         }
 
         // ── 5. Build outcome ───────────────────────────────────────────────────
-        if (errors.Count > 0 && dataSets.Count == 0)
+        if (errors.Count > 0 && results.Count == 0)
             return new RunResult(RunStatus.EngineError,
                 string.Join("; ", errors));
 
-        if (dataSets.Count == 0)
+        if (results.Count == 0)
             return new RunResult(RunStatus.NoAnalysis,
                 "No supported analysis dispatched.");
 
@@ -125,8 +137,8 @@ public static class SchematicRunService
 
         var summary = allNotes.Count > 0
             ? string.Join("; ", allNotes)
-            : $"{dataSets.Count} analysis run(s) complete";
-        return new RunResult(RunStatus.Success, summary, dataSets);
+            : $"{results.Count} analysis run(s) complete";
+        return new RunResult(RunStatus.Success, summary, results);
     }
 
     // ── Typed analysis dispatch ───────────────────────────────────────────────
@@ -303,5 +315,15 @@ public static class SchematicRunService
     {
         int sp = s.IndexOf(' ');
         return sp < 0 ? s : s[..sp];
+    }
+
+    // Within-run duplicate-name guard: appends _2, _3, … until the name is unique.
+    private static string DeduplicateName(string name, HashSet<string> used)
+    {
+        if (used.Add(name)) return name;
+        int n = 2;
+        string candidate;
+        do { candidate = $"{name}_{n++}"; } while (!used.Add(candidate));
+        return candidate;
     }
 }

@@ -2144,3 +2144,36 @@ Each `EditableParameter` carries a `Dimension` field (seeded at placement, type-
 All edits (expression, unit, ShowOnSchematic, instance name, label visibility) go through `SchematicViewModel.Execute`,
 which wraps in `DotRevalidationCommand`. No-change guard in every commit method. `SetParameterVisibilityCommand`
 (new in Phase 6) notifies in both Execute and Undo, consistent with all other mutation commands.
+
+---
+
+## Phase 7.0 deliverable — COMPLETE
+
+**Per-run `.npy` results writer** — writes each run's `DataSet`s to disk so a future Data Display UI can
+address them without re-running the simulation.
+
+**New files:**
+- `src/Ui/Schematic/RunResultsWriter.cs` — framework-free static class (no Avalonia); `SchematicKey`,
+  `OwnerIdentity`, `WriteResults`.
+- `tests/Ui.Tests/RunResultsWriterTests.cs` — 9 tests covering key derivation (4 cases) and `WriteResults`
+  (5 cases: happy path, stale-clear, collision warning, same-owner re-run, empty skip).
+- `tests/Engine.Tests/Export/NpyRoundTripAllAnalysesTests.cs` — 7 round-trip tests (S-param Hero 1 × 3,
+  Loadpull Hero 3 × 4) ensuring `DataSetExporter → DataSetImporter` is lossless for every analysis type.
+
+**Naming rule (LOCKED):** `<baseDir>/results/<schematicKey>/<analysisName>.npy`
+- Cell-homed sole view: `<cellName>` (e.g. `Amp`)
+- Cell-homed multi-view: `<cellName>.<viewStem>` (e.g. `Amp.tb2`)
+- Loose file: file stem
+- Scratch: `Sanitize(scratchId)`
+
+**Collision guard:** `.source` marker file in the results dir; warns and skips if owned by a different cell.
+
+**Within-run dedup:** `_2`, `_3`, … suffix appended when multiple analyses share a name in one run.
+
+**`RunResult` change:** `IReadOnlyList<DataSet>?` replaced by `IReadOnlyList<AnalysisResult>?` (record
+`AnalysisResult(string Name, DataSet Data)`). `RunResult.DataSets` convenience property preserves existing callers.
+
+**`WorkspaceViewModel` hook:** calls `RunResultsWriter.WriteResults` in the `RunStatus.Success` branch of
+`RunAnalysis`, using `baseDir = Path.GetDirectoryName(netlistPath)`.
+
+Gate: Firewall 4/4 · Core 254/254 · Ui 721/721 · Engine 225/225 — all green.

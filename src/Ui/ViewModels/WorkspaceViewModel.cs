@@ -1001,10 +1001,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Step 1: extract + write netlist.cnl (synchronous — fast).
         string netlistPath;
+        string baseDir;
         try
         {
             IReadOnlyList<string> conflicts;
             (netlistPath, conflicts) = WriteNetlist(activeDoc.ViewModel.EditModel, testBenchName);
+            baseDir = Path.GetDirectoryName(netlistPath)!;
             foreach (var conflict in conflicts)
                 Messages.Warning($"Extraction: {conflict}");
             Messages.Success("Wrote netlist", netlistPath);
@@ -1040,6 +1042,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 break;
             case RunStatus.Success:
                 Messages.Success(result.StatusMessage);
+                RunResultsWriter.WriteResults(
+                    baseDir,
+                    RunResultsWriter.SchematicKey(activeDoc.FilePath, activeDoc.Id),
+                    RunResultsWriter.OwnerIdentity(activeDoc.FilePath, activeDoc.Id),
+                    result.Results,
+                    Messages);
                 break;
         }
 

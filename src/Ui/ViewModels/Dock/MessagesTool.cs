@@ -54,26 +54,30 @@ public partial class MessagesTool : Tool, IMessageSink
     [RelayCommand]
     private static void RevealFile(string? filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return;
+        if (string.IsNullOrWhiteSpace(filePath)) return;
+
+        bool isDir  = Directory.Exists(filePath);
+        bool isFile = !isDir && File.Exists(filePath);
+        if (!isDir && !isFile) return;
 
         try
         {
             if (OperatingSystem.IsMacOS())
             {
-                // open -R reveals the file in Finder with it selected.
-                Process.Start("open", $"-R \"{filePath}\"");
+                // -R selects a file; bare open opens a directory.
+                Process.Start("open", isFile ? $"-R \"{filePath}\"" : $"\"{filePath}\"");
             }
             else if (OperatingSystem.IsWindows())
             {
-                // /select highlights the file; explorer.exe is in PATH on Windows.
-                Process.Start("explorer.exe", $"/select,\"{filePath}\"");
+                // /select highlights a file; bare path opens a directory.
+                Process.Start("explorer.exe", isFile ? $"/select,\"{filePath}\"" : $"\"{filePath}\"");
             }
             else
             {
-                // Linux: xdg-open on the containing directory.
-                var dir = Path.GetDirectoryName(filePath);
-                if (!string.IsNullOrEmpty(dir))
-                    Process.Start("xdg-open", dir);
+                // Linux: xdg-open on the directory (or containing directory for files).
+                var target = isDir ? filePath : Path.GetDirectoryName(filePath);
+                if (!string.IsNullOrEmpty(target))
+                    Process.Start("xdg-open", target);
             }
         }
         catch { /* Non-critical: ignore if the reveal fails. */ }

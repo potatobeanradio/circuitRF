@@ -121,6 +121,35 @@ function of *what varies in this plot right now*:
 Detailed in sub-phase 7.2 (it is a 7.2 concern; recorded here so the trace identity model carries the
 components separately from the start).
 
+### 2.8 Plot Inspector — the AnalysisEditor × splotRF-PlotInspector merge
+The Data Display's property editor **merges two existing UIs** (locked direction):
+- **Function + panel-feel from splotRF's `PlotInspectorView`:** a **live, docked, per-plot properties
+  inspector** (not a modal dialog). Plot-level row (plot Type / Freq unit / table Font), an **Add Trace**
+  action, a scrollable **trace-card list**, per-card add/remove, **immediate redraw on every edit**,
+  color-swatch combos and Material-icon combos (marker shape, secondary-axis arrow, trash). Every change
+  re-renders the plot at once — the inspector is always-available, not an OK/Cancel modal.
+- **Visual language from circuitRF's `AnalysisEditorDialog` + body views:** circuitRF theme brushes
+  (`SystemRegion`/`SystemChrome*`/`SystemBase*`, `CrfWarningBrush`), **opacity-tiered labels** (~0.6 field
+  labels, ~0.55 secondary/preview text), **segmented `.active` toggle buttons** for mode-like choices
+  (in place of plain combos where a 2–3-way toggle reads better), **rounded section/row borders** (the
+  splotRF `traceCard` becomes a circuitRF rounded row), an **Advanced expander** for less-common controls,
+  **live `≈` preview** under any field that takes an expression, compact dense spacing, IBM Plex, HIG.
+- **Per-trace-kind card bodies (locked).** A trace card is to a plot what an analysis body is to the
+  Analyses editor: the card's body is **swapped by trace kind**. A normal line/marker/table trace today;
+  a **contour trace** (7.4) is just another card kind with its own body (metric @ constant other-metric,
+  level set, Γ/Z). Build the inspector so trace-kind → card-body is the extension point — this is the
+  AnalysisEditorDialog typed-body pattern applied to traces, and it is what makes 7.4 additive rather than
+  a rewrite.
+- **Net:** keep splotRF's *interaction model and trace-card density*; restyle it in circuitRF's *visual
+  idiom* so it sits next to the Analyses editor as a sibling. The trace **data picker** inside each card is
+  the DataSet/cube seam (becomes axis-role assignment in 7.2/7.3); 7.1 ports the inspector chrome with the
+  picker still SNP/Touchstone-backed.
+- **Surface = dual, like Analyses (locked).** The inspector content is **one reusable view** hosted in
+  **both** (a) a **per-plot fly-out** on the plot container (splotRF's feel — the primary, always-at-hand
+  affordance) **and** (b) the docked **Properties** tool, which shows the selected plot's inspector — exactly
+  mirroring how the Analyses editor is available both docked and as its own window. Author the inspector as a
+  self-contained `UserControl` + VM so neither host owns it; both just present it.
+
 ### 2.6 Architectural firewall (unchanged, applies here)
 The Data Display is **UI** — it lives in `src/Ui` and may use Avalonia/Skia. `DataSet`/`DataCube`/
 `DataSetImporter` are RfCore (no Avalonia). Any contour/spline **math** is framework-free and belongs in
@@ -165,18 +194,55 @@ analysis type (S-param, HB, parametric sweep, loadpull).
 same-name-cell collision produces the warn Message and does not clobber the other cell's results.
 **Note:** no display UI in 7.0 — this is the data-path spine only.
 
-### 7.1 — Data Display document shell (the port)
-**Goal:** splotRF's Data Display canvas living inside circuitRF as a **tear-off document** — empty canvas,
-multiple plot containers, pan/zoom, tabs, layout persistence. No simulation data yet (Touchstone-only or
-empty is fine for this sub-phase).
-**Deliverables:** port `Plot`/`Trace`/`Axes`/`Marker` models, the renderers (`PlotRenderer`,
-`AxesRenderer`, `TableRenderer`, trace/marker renderers), and the container/inspector view models; host
-them in a Dock **document** that tears off like `SchematicDocument`/`SymbolEditorDocument`; retarget fonts
-**DejaVu → IBM Plex** (`SkiaFonts`); define + wire the `.cdd` layout-persistence file.
-**Gate:** open a Data Display tab, author plots, tear it off, save + reload layout faithfully (to `.cdd`);
-renders match splotRF visually (modulo font).
-**Open Q:** how a free-floating display is created/owned in the Dock model (menu/command, not tied to the
-active schematic).
+### 7.1 — Data Display document shell (the splotRF port)
+Port splotRF's Data Display into circuitRF as a tear-off Dock **document**. **Porting substrate (confirmed
+— the port is low-risk):** both apps are on **Avalonia 12.0.3** (circuitRF csproj: "match splotRF versions"
+— no 11→12 migration); **Material.Icons.Avalonia 3.0.2** is already referenced (splotRF's inspector icons
+port as-is); **Dock.Avalonia 12** tear-off is already wired (`DefaultHostWindowLocator`/`HostWindow`);
+`CircuitRfDockFactory.OpenDocument(Document)` adds any document to the center DocumentDock; a document's
+view resolves via an explicit `<DataTemplate DataType=...>` in `App.axaml` (as `SchematicDocument` →
+`SchematicView`); `StubKind.DataDisplay` is already reserved. The port is: copy splotRF files → rename
+namespace `splotRF` → `CircuitRF.Ui.DataDisplay` (views under `CircuitRF.Ui.Views.DataDisplay`) → retarget
+fonts (DejaVu → IBM Plex) + colors (RenderTheme → circuitRF ColorTheme) → integrate as a Dock document →
+swap data source (7.2). Firewall: it is all UI (`src/Ui`), may use Avalonia/Skia.
+
+**This is large — build in steps, brief one at a time:**
+
+#### 7.1a — Dock document shell + empty canvas (de-risk the integration first)
+New `DataDisplayDocument : Document` (clone `SymbolEditorDocument`'s `FilePath?`/`IsScratch`/`IsDirty`/
+`Materialize` surface) wrapping a new `DataDisplayViewModel`; a **New Data Display** command in
+`WorkspaceViewModel` (next to New Schematic/New Symbol) that constructs it and calls
+`_factory.OpenDocument`; a placeholder `DataDisplayView` (empty canvas, "add a plot" affordance); the
+`App.axaml` DataTemplate mapping; track open displays for save/close participation. No plots/renderers yet.
+**Gate:** New Data Display opens a tab, tears off into its own window, re-docks, closes cleanly.
+
+#### 7.1b — Plot model + renderers (Rect first), Touchstone-sourced, fonts→Plex
+Port `Plot`/`Trace`/`Axes`/`Marker`/`Misc` + renderers (`PlotRenderer`/`AxesRenderer`/`TableRenderer`/
+trace+marker renderers/`RenderTheme`/`SkiaFonts`) and a `PlotControl`. Render ONE Rect plot from a loaded
+Touchstone/`.npy` onto the canvas. Retarget `SkiaFonts` to IBM Plex and `RenderTheme` to circuitRF colors.
+(This is the heaviest step.) **Gate:** a Rect S21(dB) trace from a file renders correctly in a plot.
+
+#### 7.1c — Multi-plot canvas: containers (add/move/resize), tabs, pan/zoom, Smith/Polar/Table
+Port `DataDisplayView(VM)`/`PlotContainerView(VM)`/`DisplayWindow(VM)`/`TabView`. Multiple draggable/
+resizable plot containers on the canvas, tabs, pan/zoom, and the remaining plot types (Smith/Polar/Table).
+**Gate:** author several plots of each type on a multi-tab canvas; pan/zoom; matches splotRF behavior.
+
+#### 7.1d — Plot Inspector (the merge, §2.8)
+Port `PlotInspectorView(VM)` + `TraceRowViewModel` + item VMs (`ColorItem`/`MarkerTypeItem`/`YAxisItem`/
+`TraceDataItem`), **restyled to the §2.8 merge** (circuitRF visual language over splotRF function/feel).
+Data picker stays SNP/Touchstone-backed (DataSet seam is 7.2). Settle the inspector *surface* (Properties
+dock vs fly-out vs in-document panel). **Gate:** select a plot → live inspector edits (type, traces,
+style, color, markers, Z0) redraw immediately; visual idiom matches the Analyses editor.
+
+#### 7.1e — `.cdd` layout persistence
+Port `DataDisplayConfig` → the `.cdd` model (System.Text.Json, `[JsonStringEnumConverter]`, nullable/
+defaulted fields, `format_version` reject-on-mismatch — mirror `project-file-formats.md`). Save/Open the
+authored display; wire document dirty/save into the existing Save/close-prompt machinery; register `.cdd`.
+**Gate:** author a display, save `.cdd`, reload faithfully (tabs/plots/traces/markers/axes/sources);
+tear-off window placement round-trips.
+
+**Open Q (7.1d):** inspector surface (see §2.8). **Open Q (7.1e):** `.cdd` registration in
+`project-file-formats.md` / workspace `.cws`.
 
 ### 7.2 — DataSet as the trace data source (1-D parity)
 **Goal:** retarget the trace data binding from SNP-only to the unified DataSet source library; reach
@@ -261,8 +327,9 @@ so 7.1 persistence is designed to not preclude it.
 
 - **7.0:** RESOLVED — `results/<schematicKey>/<analysisName>.npy`, one DataSet per analysis,
   detect-and-warn on same-name-cell collision (Option A), scratch → recovery-session results dir.
-- **7.1:** `.cdd` registration in `project-file-formats.md` / workspace; how a free-floating display is
-  created/owned in Dock.
+- **7.1:** RESOLVED — re-sliced into 7.1a–7.1e (§3). Inspector surface = dual (per-plot fly-out +
+  Properties dock, §2.8); per-trace-kind card bodies; Material.Icons.Avalonia reused. Remaining: `.cdd`
+  registration in `project-file-formats.md` / `.cws` (7.1e detail).
 - **7.3:** family-sweep guardrail policy (default cap, over-cap behavior).
 - **7.4:** spline storage (trace-owned cache vs first-class `LoadpullSurface`); which FOMs are first-class;
   how "constant other-metric = value" is specified in the UI; contour level-set specification. **All gated
