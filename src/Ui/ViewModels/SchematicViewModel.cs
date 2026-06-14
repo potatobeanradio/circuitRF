@@ -3194,11 +3194,14 @@ public sealed partial class SchematicViewModel : ObservableObject
                 }
                 else
                 {
-                    // Use the placement coordinates as-is: the perpendicular gap was computed
-                    // from the wire's exact position in ClassifySegmentAt, so grid-snapping
-                    // the perpendicular axis would round it back onto the wire.
-                    Execute(new PlaceNetLabelCommand(EditModel,
-                        new EditableNetLabel { Name = newVal, X = worldX, Y = worldY }));
+                    // Anchor the new label to the double-clicked wire (targetId): project the placement
+                    // point onto its nearest segment so the label rides that segment. The perpendicular
+                    // gap from ClassifySegmentAt is captured as the anchor's world offset.
+                    var newLabel  = new EditableNetLabel { Name = newVal, X = worldX, Y = worldY };
+                    var ownerWire = EditModel.FindWire(targetId ?? "");
+                    if (ownerWire is not null && ownerWire.Points.Count >= 2)
+                        newLabel.AnchorToWire(ownerWire, worldX, worldY);
+                    Execute(new PlaceNetLabelCommand(EditModel, newLabel));
                 }
                 break;
             }

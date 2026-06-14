@@ -415,13 +415,57 @@ public sealed class EditableWire
 
 // ── Net label ────────────────────────────────────────────────────────────────
 
-/// <summary>A user-placed net label (§4.4). Stored for 6e extraction.</summary>
+/// <summary>A user-placed net label (§4.4), anchored to the wire it was created on. Its draw position
+/// (X,Y) is DERIVED from the owner wire's geometry each build (see RecomputePosition).</summary>
 public sealed class EditableNetLabel
 {
     public string Id   { get; } = Guid.NewGuid().ToString("N")[..12];
-    public double X    { get; set; }
+    public double X    { get; set; }   // DERIVED draw origin (recomputed from the anchor each build)
     public double Y    { get; set; }
     public string Name { get; set; } = "";
+
+    // ── Wire anchor (source of truth for position) ──
+    public string OwnerWireId  { get; set; } = "";
+    public int    SegmentIndex { get; set; }
+    public double AlongT       { get; set; }   // foot parameter on the segment, 0..1
+    public double OffsetX      { get; set; }   // world offset foot → draw origin (the perpendicular gap)
+    public double OffsetY      { get; set; }
+
+    public bool IsAnchored => OwnerWireId.Length > 0;
+
+    /// <summary>Anchors this label to <paramref name="wire"/> by projecting (px,py) onto its nearest
+    /// segment: stores SegmentIndex + AlongT (foot parameter) and the residual as a world offset.</summary>
+    public void AnchorToWire(EditableWire wire, double px, double py)
+    {
+        OwnerWireId = wire.Id;
+        var pts = wire.Points;
+        int bestSeg = 0; double bestT = 0, bestDsq = double.PositiveInfinity, fx = px, fy = py;
+        for (int i = 0; i < pts.Count - 1; i++)
+        {
+            var (ax, ay) = pts[i]; var (bx, by) = pts[i + 1];
+            double dx = bx - ax, dy = by - ay, lenSq = dx * dx + dy * dy;
+            double t  = lenSq < 1e-10 ? 0 : Math.Clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1);
+            double cx = ax + t * dx, cy = ay + t * dy;
+            double dsq = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+            if (dsq < bestDsq) { bestDsq = dsq; bestSeg = i; bestT = t; fx = cx; fy = cy; }
+        }
+        SegmentIndex = bestSeg; AlongT = bestT;
+        OffsetX = px - fx; OffsetY = py - fy;
+        X = px; Y = py;
+    }
+
+    /// <summary>Recomputes X,Y from the owner wire's current segment geometry. Returns false when the
+    /// stored SegmentIndex no longer exists (the wire was shortened) — caller treats it as an orphan
+    /// and skips it.</summary>
+    public bool RecomputePosition(EditableWire wire)
+    {
+        var pts = wire.Points;
+        if (SegmentIndex < 0 || SegmentIndex >= pts.Count - 1) return false;
+        var (ax, ay) = pts[SegmentIndex]; var (bx, by) = pts[SegmentIndex + 1];
+        double fx = ax + AlongT * (bx - ax), fy = ay + AlongT * (by - ay);
+        X = fx + OffsetX; Y = fy + OffsetY;
+        return true;
+    }
 }
 
 // ── Junction dot ─────────────────────────────────────────────────────────────
@@ -545,7 +589,17 @@ public sealed class SchematicEditModel
         }).ToList();
         var wires = Wires.Select(w => w.ToRenderWire(IsEndpointConnected)).ToList();
         var dots  = AssembleConnectionDots(cg);
-        var netLabels = NetLabels.Select(l => new SchematicNetLabel { Id = l.Id, X = l.X, Y = l.Y, Name = l.Name }).ToList();
+        var netLabels = new List<SchematicNetLabel>(NetLabels.Count);
+        foreach (var l in NetLabels)
+        {
+            if (l.IsAnchored)
+            {
+                var ow = FindWire(l.OwnerWireId);
+                if (ow is null || !l.RecomputePosition(ow))
+                    continue;   // orphan (owner gone / segment shortened) — not rendered; Brief 2 removes it
+            }
+            netLabels.Add(new SchematicNetLabel { Id = l.Id, X = l.X, Y = l.Y, Name = l.Name });
+        }
         var bitmaps   = CanvasObjects
             .OfType<EditableBitmap>()
             .OrderBy(b => b.ZOrder)

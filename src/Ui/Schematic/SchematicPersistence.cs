@@ -99,6 +99,13 @@ public sealed class CschNetLabel
     public double X    { get; set; }
     public double Y    { get; set; }
     public string Name { get; set; } = "";
+
+    // Wire anchor. OwnerWireIndex null ⇒ legacy/unanchored (omitted from file when null).
+    public int?   OwnerWireIndex { get; set; }
+    public int    SegmentIndex   { get; set; }
+    public double AlongT         { get; set; }
+    public double OffsetX        { get; set; }
+    public double OffsetY        { get; set; }
 }
 
 public sealed class CschDot
@@ -268,7 +275,21 @@ public static class SchematicPersistence
         }
 
         foreach (var n in m.NetLabels)
-            file.NetLabels.Add(new CschNetLabel { X = n.X, Y = n.Y, Name = n.Name });
+        {
+            int? ownerIdx = null;
+            if (n.IsAnchored)
+            {
+                int idx = m.Wires.FindIndex(w => w.Id == n.OwnerWireId);
+                if (idx >= 0) ownerIdx = idx;
+            }
+            file.NetLabels.Add(new CschNetLabel
+            {
+                X = n.X, Y = n.Y, Name = n.Name,
+                OwnerWireIndex = ownerIdx,
+                SegmentIndex   = n.SegmentIndex, AlongT = n.AlongT,
+                OffsetX        = n.OffsetX, OffsetY = n.OffsetY,
+            });
+        }
 
         foreach (var d in m.Dots)
             file.Dots.Add(new CschDot { X = d.X, Y = d.Y });
@@ -330,7 +351,18 @@ public static class SchematicPersistence
         }
 
         foreach (var n in file.NetLabels)
-            m.NetLabels.Add(new EditableNetLabel { X = n.X, Y = n.Y, Name = n.Name });
+        {
+            var lbl = new EditableNetLabel { X = n.X, Y = n.Y, Name = n.Name };
+            if (n.OwnerWireIndex is int wi && wi >= 0 && wi < m.Wires.Count)
+            {
+                lbl.OwnerWireId  = m.Wires[wi].Id;
+                lbl.SegmentIndex = n.SegmentIndex;
+                lbl.AlongT       = n.AlongT;
+                lbl.OffsetX      = n.OffsetX;
+                lbl.OffsetY      = n.OffsetY;
+            }
+            m.NetLabels.Add(lbl);
+        }
 
         foreach (var d in file.Dots)
             m.Dots.Add(new EditableDot { X = d.X, Y = d.Y });
