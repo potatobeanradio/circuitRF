@@ -1021,6 +1021,83 @@ public sealed class SchematicEditModel
         return invalid;
     }
 
+    /// <summary>Snapshot of a net label's anchor before revalidation changed it (for undo).</summary>
+    public readonly record struct NetLabelAnchorSnap(
+        EditableNetLabel Label,
+        string OwnerWireId, int SegmentIndex, double AlongT,
+        double OffsetX, double OffsetY, double X, double Y);
+
+    /// <summary>What a net-label revalidation pass changed (for undo by the wrapping command).</summary>
+    public readonly record struct NetLabelRevalidation(
+        List<(EditableNetLabel Label, int Index)> Removed,
+        List<NetLabelAnchorSnap> Reanchored);
+
+    /// <summary>First wire whose body passes through (px,py) within <paramref name="tol"/>, else null.</summary>
+    public EditableWire? WireUnderPoint(double px, double py, double tol)
+    {
+        foreach (var w in Wires)
+        {
+            var pts = w.Points;
+            for (int i = 0; i < pts.Count - 1; i++)
+                if (SchematicGeometry.PointOnSegment(px, py, pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y, tol))
+                    return w;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Re-enforces the net-label invariant after a geometry edit (no label hangs unassigned):
+    ///  • valid anchor (owner exists, segment in range) → untouched (BuildRenderModel keeps X,Y fresh);
+    ///  • owner exists but segment renumbered/shortened → re-anchor on the same wire at the current draw point;
+    ///  • owner gone (deleted / merged / split) → re-home to a wire under the label's foot if one exists
+    ///    (merge &amp; split preserve geometry, so the foot still lands on the surviving wire), else remove it.
+    /// Returns the changes so the wrapping command can undo them. Mutates in place.
+    /// </summary>
+    public NetLabelRevalidation RevalidateNetLabels()
+    {
+        List<(EditableNetLabel, int)> removed    = [];
+        List<NetLabelAnchorSnap>      reanchored = [];
+
+        for (int i = NetLabels.Count - 1; i >= 0; i--)
+        {
+            var l = NetLabels[i];
+            if (!l.IsAnchored) continue;   // legacy free label — leave alone
+
+            var owner = FindWire(l.OwnerWireId);
+            if (owner is not null && l.SegmentIndex >= 0 && l.SegmentIndex < owner.Points.Count - 1)
+                continue;                  // valid anchor — no change needed
+
+            var snap = new NetLabelAnchorSnap(
+                l, l.OwnerWireId, l.SegmentIndex, l.AlongT, l.OffsetX, l.OffsetY, l.X, l.Y);
+
+            if (owner is not null)
+            {
+                // Owner exists but its segment list changed under the label — re-anchor on it,
+                // keeping the label's current draw position.
+                l.AnchorToWire(owner, l.X, l.Y);
+                reanchored.Add(snap);
+                continue;
+            }
+
+            // Owner gone. Re-home to a wire coincident with the label's foot (merge/split keep geometry);
+            // if the foot lies on no wire, the node is gone → remove the label.
+            double footX = l.X - l.OffsetX, footY = l.Y - l.OffsetY;
+            var host = WireUnderPoint(footX, footY, ConnectTolerance);
+            if (host is not null)
+            {
+                l.AnchorToWire(host, l.X, l.Y);
+                reanchored.Add(snap);
+            }
+            else
+            {
+                removed.Add((l, i));
+                NetLabels.RemoveAt(i);
+            }
+        }
+
+        return new NetLabelRevalidation(removed, reanchored);
+    }
+
     /// <summary>
     /// Computes just the connection dots from the current geometry — the same result as
     /// BuildRenderModel's ConnectionDots, without building the full render model. Used for the

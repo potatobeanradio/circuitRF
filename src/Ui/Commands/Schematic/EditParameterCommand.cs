@@ -78,3 +78,76 @@ internal sealed class RenameNetLabelCommand : IUiCommand
     public void Execute() { _label.Name = _newName; _model.NotifyChanged(); }
     public void Undo()    { _label.Name = _oldName; _model.NotifyChanged(); }
 }
+
+/// <summary>
+/// Moves a net label to a new wire anchor (re-anchors + optionally renames in one undoable step).
+/// Used when the user double-clicks a different wire in the same net to reposition the label.
+/// </summary>
+internal sealed class MoveNetLabelAnchorCommand : IUiCommand
+{
+    private readonly SchematicEditModel _model;
+    private readonly EditableNetLabel   _label;
+
+    // Old full state
+    private readonly string _oldName, _oldOwnerWireId;
+    private readonly int    _oldSegmentIndex;
+    private readonly double _oldAlongT, _oldOffsetX, _oldOffsetY, _oldX, _oldY;
+
+    // New full state (computed at construction via AnchorToWire on a temp label)
+    private readonly string _newName, _newOwnerWireId;
+    private readonly int    _newSegmentIndex;
+    private readonly double _newAlongT, _newOffsetX, _newOffsetY, _newX, _newY;
+
+    public string Description => $"Move net label '{_oldName}'";
+
+    public MoveNetLabelAnchorCommand(
+        SchematicEditModel model,
+        EditableNetLabel   label,
+        string             newName,
+        EditableWire?      newOwnerWire,
+        double             worldX,
+        double             worldY)
+    {
+        _model = model;
+        _label = label;
+
+        _oldName         = label.Name;
+        _oldOwnerWireId  = label.OwnerWireId;
+        _oldSegmentIndex = label.SegmentIndex;
+        _oldAlongT       = label.AlongT;
+        _oldOffsetX      = label.OffsetX;
+        _oldOffsetY      = label.OffsetY;
+        _oldX            = label.X;
+        _oldY            = label.Y;
+
+        _newName = newName;
+
+        // Compute new anchor by re-anchoring a temporary label — reuses AnchorToWire math.
+        var tmp = new EditableNetLabel { X = worldX, Y = worldY };
+        if (newOwnerWire is not null && newOwnerWire.Points.Count >= 2)
+            tmp.AnchorToWire(newOwnerWire, worldX, worldY);
+        _newOwnerWireId  = tmp.OwnerWireId;
+        _newSegmentIndex = tmp.SegmentIndex;
+        _newAlongT       = tmp.AlongT;
+        _newOffsetX      = tmp.OffsetX;
+        _newOffsetY      = tmp.OffsetY;
+        _newX            = tmp.X;
+        _newY            = tmp.Y;
+    }
+
+    public void Execute() => Apply(_newName, _newOwnerWireId, _newSegmentIndex, _newAlongT, _newOffsetX, _newOffsetY, _newX, _newY);
+    public void Undo()    => Apply(_oldName, _oldOwnerWireId, _oldSegmentIndex, _oldAlongT, _oldOffsetX, _oldOffsetY, _oldX, _oldY);
+
+    private void Apply(string name, string wireId, int seg, double t, double ox, double oy, double x, double y)
+    {
+        _label.Name         = name;
+        _label.OwnerWireId  = wireId;
+        _label.SegmentIndex = seg;
+        _label.AlongT       = t;
+        _label.OffsetX      = ox;
+        _label.OffsetY      = oy;
+        _label.X            = x;
+        _label.Y            = y;
+        _model.NotifyChanged();
+    }
+}

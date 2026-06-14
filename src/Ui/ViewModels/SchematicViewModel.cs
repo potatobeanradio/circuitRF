@@ -201,6 +201,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     private string?           _inlineEditTargetId;
     private EditableParameter? _inlineEditParam;
     private EditableNetLabel?  _inlineEditExistingNetLabel;
+    private bool               _inlineEditMoveLabel;   // true when existing label found via node search, not proximity
     private double             _inlineEditWorldX, _inlineEditWorldY;
 
     // ── Constructor ───────────────────────────────────────────────────────────
@@ -221,7 +222,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     // Every edit is wrapped so the junction-dot invariant (§5.1) is re-enforced as part of the
     // same undoable command: any user dot whose 4-way crossing dissolved is removed, and one Undo
     // restores both the geometry and the dot. No-op when there are no dots / no crossing changed.
-    public void Execute(IUiCommand cmd) => _undoRedo.Execute(new DotRevalidationCommand(EditModel, cmd));
+    public void Execute(IUiCommand cmd) => _undoRedo.Execute(new DotRevalidationCommand(EditModel, cmd, _messageSink));
 
     // ── Render model rebuild ──────────────────────────────────────────────────
 
@@ -1801,6 +1802,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireSegments     = Selection.GetSelectedSegments(EditModel).ToHashSet(),
             ComponentDragPositions   = compOverrides,
             WireDragPoints           = wireOverrides,
+            NetLabelDragPositions    = BuildNetLabelDragPositions(wireOverrides),
             PinOnPinPreviewWires     = popPreviews,
             ConnectionDotsOverride   = LiveConnectionDots(),
             CanvasObjectDragPositions = objOverrides,
@@ -1816,6 +1818,30 @@ public sealed partial class SchematicViewModel : ObservableObject
         => (EditModel.Wires.Count + EditModel.Components.Count) <= LiveDotMaxObjects
             ? EditModel.ComputeConnectionDots()
             : null;
+
+    /// <summary>
+    /// Live draw positions for anchored net labels whose owner wire is among <paramref name="livePts"/>
+    /// (the drag's live wire points), computed from the moving segment geometry so labels track their
+    /// wire during a drag. Null when no anchored label sits on a dragged wire.
+    /// </summary>
+    private IReadOnlyDictionary<string, (double X, double Y)>? BuildNetLabelDragPositions(
+        IReadOnlyDictionary<string, IReadOnlyList<(double X, double Y)>>? livePts)
+    {
+        if (livePts is null || livePts.Count == 0 || EditModel.NetLabels.Count == 0) return null;
+        Dictionary<string, (double X, double Y)>? result = null;
+        foreach (var lbl in EditModel.NetLabels)
+        {
+            if (!lbl.IsAnchored) continue;
+            if (!livePts.TryGetValue(lbl.OwnerWireId, out var pts)) continue;
+            if (lbl.SegmentIndex < 0 || lbl.SegmentIndex >= pts.Count - 1) continue;
+            var (ax, ay) = pts[lbl.SegmentIndex];
+            var (bx, by) = pts[lbl.SegmentIndex + 1];
+            double fx = ax + lbl.AlongT * (bx - ax);
+            double fy = ay + lbl.AlongT * (by - ay);
+            (result ??= [])[lbl.Id] = (fx + lbl.OffsetX, fy + lbl.OffsetY);
+        }
+        return result;
+    }
 
     private void ClearDragState()
     {
@@ -2063,6 +2089,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireIds      = Selection.GetSelectedWireIds(EditModel).ToHashSet(),
             SelectedCanvasObjIds = Selection.GetSelectedCanvasObjectIds(EditModel).ToHashSet(),
             WireDragPoints       = wireDragPoints,
+            NetLabelDragPositions = BuildNetLabelDragPositions(wireDragPoints),
             // Preview the auto-wire stub(s) to any interior pin the segment has moved off of (the
             // real wire is created at commit; this mirrors the pin-on-pin preview, Case 2).
             PinOnPinPreviewWires = BuildInteriorPortStubs(wire.Points),
@@ -3062,7 +3089,25 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         var existing = EditModel.NetLabels.FirstOrDefault(l =>
             Math.Abs(l.X - worldX) < 150 && Math.Abs(l.Y - worldY) < 80);
+        // One label per electrical node: if the clicked wire's node already carries a label —
+        // here, or elsewhere on the node via a T-junction / crossing — edit THAT label instead of
+        // creating a second one. Makes a duplicate impossible by construction.
+        bool moveLabel = false;
+        if (existing is null)
+        {
+            var nodeLabel = NetExtractor.FindNodeLabel(EditModel, wireId);
+            if (nodeLabel is not null)
+            {
+                // The label lives elsewhere on this net — inform the user, then let them edit or
+                // rename it. Committing will also move the label to the double-clicked segment.
+                _messageSink?.Info(
+                    $"Net already named '{nodeLabel.Name}' — editing here moves the label to this wire.");
+                existing  = nodeLabel;
+                moveLabel = true;
+            }
+        }
         _inlineEditExistingNetLabel = existing;
+        _inlineEditMoveLabel        = moveLabel;
         _inlineEditWorldX = worldX;
         _inlineEditWorldY = worldY;
         SetInlineEdit(InlineEditKind.WireNetLabel, wireId, existing?.Name ?? "", screenX, screenY);
@@ -3103,6 +3148,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         var targetId   = _inlineEditTargetId;
         var param      = _inlineEditParam;
         var label      = _inlineEditExistingNetLabel;
+        var moveLabel  = _inlineEditMoveLabel;
         var worldX     = _inlineEditWorldX;
         var worldY     = _inlineEditWorldY;
         string newVal  = InlineEditValue.Trim();
@@ -3189,8 +3235,17 @@ public sealed partial class SchematicViewModel : ObservableObject
                 }
                 if (label is not null)
                 {
-                    if (newVal != label.Name)
+                    if (moveLabel)
+                    {
+                        // User double-clicked a different wire in the same net — move the label
+                        // to the clicked segment (re-anchor) and rename if the name changed.
+                        var ownerWire = EditModel.FindWire(targetId ?? "");
+                        Execute(new MoveNetLabelAnchorCommand(EditModel, label, newVal, ownerWire, worldX, worldY));
+                    }
+                    else if (newVal != label.Name)
+                    {
                         Execute(new RenameNetLabelCommand(EditModel, label, newVal));
+                    }
                 }
                 else
                 {
@@ -3215,6 +3270,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         _inlineEditTargetId         = null;
         _inlineEditParam            = null;
         _inlineEditExistingNetLabel = null;
+        _inlineEditMoveLabel        = false;
         InlineEditValue             = "";
     }
 

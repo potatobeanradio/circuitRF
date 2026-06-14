@@ -99,69 +99,9 @@ public static class NetExtractor
             }
         }
 
-        // Seed + union: wire vertices; consecutive vertices of one wire = one net.
-        foreach (var wire in model.Wires)
-        {
-            var pts = wire.Points;
-            if (pts.Count == 0) continue;
-            var first = QK(pts[0].X, pts[0].Y);
-            uf.Add(first);
-            for (int i = 1; i < pts.Count; i++)
-            {
-                var next = QK(pts[i].X, pts[i].Y);
-                uf.Add(next);
-                uf.Union(first, next);
-                first = next;
-            }
-        }
-
-        // T-junctions and crossing predicate from the single source of connectivity truth.
-        var cg = model.ComputeConnectivityGeometry();
-
-        // T-junction unions: auto-dot key is a wire endpoint that lies on another wire's interior.
-        // Union the auto-dot key with every wire whose interior it lies on.
-        foreach (var autoDotKey in cg.AutoDotKeys)
-        {
-            double wx = autoDotKey.Item1 * gs;
-            double wy = autoDotKey.Item2 * gs;
-            foreach (var wire in model.Wires)
-            {
-                var pts = wire.Points;
-                for (int i = 0; i < pts.Count - 1; i++)
-                {
-                    if (SchematicGeometry.PointOnSegmentInterior(wx, wy,
-                            pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y,
-                            SchematicEditModel.ConnectTolerance))
-                    {
-                        uf.Union(autoDotKey, QK(pts[i].X, pts[i].Y));
-                        break;
-                    }
-                }
-            }
-        }
-
-        // User-dot crossing unions: dot-gated 4-way crossing connects the two wires.
-        foreach (var dot in model.Dots)
-        {
-            if (!cg.IsCrossingAtDot(dot.X, dot.Y)) continue;
-            (long, long)? firstKey = null;
-            foreach (var wire in model.Wires)
-            {
-                var pts = wire.Points;
-                bool onInterior = false;
-                for (int i = 0; i < pts.Count - 1 && !onInterior; i++)
-                {
-                    if (SchematicGeometry.PointOnSegmentInterior(dot.X, dot.Y,
-                            pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y,
-                            SchematicEditModel.ConnectTolerance))
-                        onInterior = true;
-                }
-                if (!onInterior) continue;
-                var wireKey = QK(pts[0].X, pts[0].Y);
-                if (firstKey is null) firstKey = wireKey;
-                else uf.Union(firstKey.Value, wireKey);
-            }
-        }
+        // Geometric connectivity (wire vertices + T-junctions + crossing dots), shared with the
+        // editor's one-label-per-node rule so the two never disagree.
+        AddGeometricUnions(model, QK, uf);
 
         // Short disable: union all non-detached terminal P-cells of shorted components.
         foreach (var comp in model.Components)
@@ -333,6 +273,142 @@ public static class NetExtractor
             .ToList();
 
         return new Instance(comp.InstanceName, cellName, nets, overrides);
+    }
+
+    // ── Shared geometric union helper ────────────────────────────────────────────
+
+    /// <summary>
+    /// Adds the GEOMETRIC connectivity unions to <paramref name="uf"/>: wire-vertex chains, T-junction
+    /// auto-dots, and user-dot 4-way crossings — all from ComputeConnectivityGeometry, the single source
+    /// of connectivity truth. Shared by ExtractModel and FindNodeLabel so the editor's one-label-per-node
+    /// rule matches extraction. Does not seed component pins, shorts, or label unions; callers add those.
+    /// </summary>
+    private static void AddGeometricUnions(
+        SchematicEditModel model, Func<double, double, (long, long)> QK, UnionFind uf)
+    {
+        // Wire vertices; consecutive vertices of one wire = one net.
+        foreach (var wire in model.Wires)
+        {
+            var pts = wire.Points;
+            if (pts.Count == 0) continue;
+            var first = QK(pts[0].X, pts[0].Y);
+            uf.Add(first);
+            for (int i = 1; i < pts.Count; i++)
+            {
+                var next = QK(pts[i].X, pts[i].Y);
+                uf.Add(next);
+                uf.Union(first, next);
+                first = next;
+            }
+        }
+
+        var cg = model.ComputeConnectivityGeometry();
+
+        // T-junction unions: an auto-dot key (a wire endpoint on another wire's interior) unions with it.
+        foreach (var autoDotKey in cg.AutoDotKeys)
+        {
+            double wx = autoDotKey.Item1 * model.GridSize;
+            double wy = autoDotKey.Item2 * model.GridSize;
+            foreach (var wire in model.Wires)
+            {
+                var pts = wire.Points;
+                for (int i = 0; i < pts.Count - 1; i++)
+                {
+                    if (SchematicGeometry.PointOnSegmentInterior(wx, wy,
+                            pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y,
+                            SchematicEditModel.ConnectTolerance))
+                    {
+                        uf.Union(autoDotKey, QK(pts[i].X, pts[i].Y));
+                        break;
+                    }
+                }
+            }
+        }
+
+        // User-dot crossing unions: a dot-gated 4-way crossing connects the wires through it.
+        foreach (var dot in model.Dots)
+        {
+            if (!cg.IsCrossingAtDot(dot.X, dot.Y)) continue;
+            (long, long)? firstKey = null;
+            foreach (var wire in model.Wires)
+            {
+                var pts = wire.Points;
+                bool onInterior = false;
+                for (int i = 0; i < pts.Count - 1 && !onInterior; i++)
+                    if (SchematicGeometry.PointOnSegmentInterior(dot.X, dot.Y,
+                            pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y,
+                            SchematicEditModel.ConnectTolerance))
+                        onInterior = true;
+                if (!onInterior) continue;
+                var wireKey = QK(pts[0].X, pts[0].Y);
+                if (firstKey is null) firstKey = wireKey;
+                else uf.Union(firstKey.Value, wireKey);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Groups the model's net labels by physical node (wires connected via shared vertices, T-junctions,
+    /// or dot crossings — the same connectivity as extraction). Returns ONLY nodes carrying more than one
+    /// label — the merge set the editor must collapse. Each group is in NetLabels (creation) order, so
+    /// element [0] is the label to keep.
+    /// </summary>
+    public static List<List<EditableNetLabel>> LabelsSharingNode(SchematicEditModel model)
+    {
+        var result = new List<List<EditableNetLabel>>();
+        if (model.NetLabels.Count < 2) return result;
+
+        double gs = model.GridSize;
+        (long, long) QK(double x, double y) => ((long)Math.Round(x / gs), (long)Math.Round(y / gs));
+
+        var uf = new UnionFind();
+        AddGeometricUnions(model, QK, uf);
+
+        var byRoot = new Dictionary<(long, long), List<EditableNetLabel>>();
+        foreach (var lbl in model.NetLabels)
+        {
+            var k = FindLabelNetKey(uf, QK, gs, model, lbl.X, lbl.Y);
+            if (k is null || !uf.Contains(k.Value)) continue;
+            var root = uf.Find(k.Value);
+            if (!byRoot.TryGetValue(root, out var list)) byRoot[root] = list = [];
+            list.Add(lbl);
+        }
+
+        foreach (var g in byRoot.Values)
+            if (g.Count > 1) result.Add(g);
+        return result;
+    }
+
+    /// <summary>
+    /// Returns a net label already present on the same electrical node as wire <paramref name="wireId"/>
+    /// (connected via shared vertices, T-junctions, or dot crossings), excluding the label whose Id is
+    /// <paramref name="exceptId"/>; null if the node carries no other label. Uses the same connectivity
+    /// as extraction. The editor uses this to keep at most one label per node.
+    /// </summary>
+    public static EditableNetLabel? FindNodeLabel(
+        SchematicEditModel model, string wireId, string? exceptId = null)
+    {
+        var target = model.FindWire(wireId);
+        if (target is null || target.Points.Count == 0) return null;
+
+        double gs = model.GridSize;
+        (long, long) QK(double x, double y) => ((long)Math.Round(x / gs), (long)Math.Round(y / gs));
+
+        var uf = new UnionFind();
+        AddGeometricUnions(model, QK, uf);
+
+        var targetKey = QK(target.Points[0].X, target.Points[0].Y);
+        if (!uf.Contains(targetKey)) return null;
+        var targetRoot = uf.Find(targetKey);
+
+        foreach (var lbl in model.NetLabels)
+        {
+            if (exceptId is not null && lbl.Id == exceptId) continue;
+            var k = FindLabelNetKey(uf, QK, gs, model, lbl.X, lbl.Y);
+            if (k is null || !uf.Contains(k.Value)) continue;
+            if (uf.Find(k.Value) == targetRoot) return lbl;
+        }
+        return null;
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────────

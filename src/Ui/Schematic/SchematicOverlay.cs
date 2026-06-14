@@ -60,6 +60,13 @@ public sealed record class SchematicOverlay
     public IReadOnlyDictionary<string, IReadOnlyList<(double X, double Y)>>? WireDragPoints { get; init; }
 
     /// <summary>
+    /// Per-net-label world draw position during an active drag, keyed by label Id. Computed from the
+    /// drag's live wire points (WireDragPoints) so anchored labels track their wire instead of lagging
+    /// at their pre-drag spot. Non-null only while a drag that moves a labeled wire is in progress.
+    /// </summary>
+    public IReadOnlyDictionary<string, (double X, double Y)>? NetLabelDragPositions { get; init; }
+
+    /// <summary>
     /// Synthetic wire routes drawn as live preview during a pin-on-pin separation drag.
     /// These wires do not exist in the model yet — they will be committed as real wires on
     /// drag-end. Non-null only while such a drag is in progress.

@@ -321,9 +321,13 @@ public static class SchematicRenderer
         {
             foreach (var lbl in model.NetLabels)
             {
-                if (lbl.X < vpMinX - 200 || lbl.X > vpMaxX + 200 ||
-                    lbl.Y < vpMinY - 50  || lbl.Y > vpMaxY + 50) continue;
-                var (lx, ly) = ToPixel(lbl.X, lbl.Y, panX, panY, zoom);
+                // Live drag: track the wire via the overlay override; else use the committed position.
+                double lwx = lbl.X, lwy = lbl.Y;
+                if (overlay?.NetLabelDragPositions is { } nlp && nlp.TryGetValue(lbl.Id, out var op))
+                    (lwx, lwy) = op;
+                if (lwx < vpMinX - 200 || lwx > vpMaxX + 200 ||
+                    lwy < vpMinY - 50  || lwy > vpMaxY + 50) continue;
+                var (lx, ly) = ToPixel(lwx, lwy, panX, panY, zoom);
                 canvas.DrawText(lbl.Name, lx, ly, SKTextAlign.Left, netLabelFont, netLabelPaint);
             }
         }
