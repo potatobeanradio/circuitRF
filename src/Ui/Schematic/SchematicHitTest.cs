@@ -408,6 +408,15 @@ public static class SchematicHitTest
             }
         }
 
+        // Whole-net wire expansion (crossing only): a crossing select touching ANY wire grabs every
+        // wire on the same electrical node — shared vertices, T-junctions, dot crossings — so the
+        // entire net's wire segments are selected, not just the wires the rect physically crossed.
+        var wireSeeds = result.Where(h => h.Kind == HitKind.Wire).Select(h => h.Id).ToList();
+        if (wireSeeds.Count > 0)
+            foreach (var wid in NetExtractor.ConnectedWireIds(editModel, wireSeeds))
+                if (selected.Add(wid))
+                    result.Add(new HitResult(HitKind.Wire, wid));
+
         return result;
     }
 

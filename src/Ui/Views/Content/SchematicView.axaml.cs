@@ -205,7 +205,25 @@ public partial class SchematicView : UserControl
     private void OnViewKeyDownTunnel(object? sender, KeyEventArgs e)
     {
         if (!IsKeyboardFocusWithin) return;               // focus not inside this view — skip
-        if (InlineEditBox.IsKeyboardFocusWithin) return;  // inline TextBox owns its own Esc/Enter
+
+        // The inline edit box owns its own typing and Enter. Escape is special: the Window-level
+        // Escape KeyBinding (DisarmPlacementCommand) marks the event Handled before the TextBox's
+        // bubble KeyDown (OnInlineEditKeyDown) can run, so the box's own Escape branch never fires —
+        // leaving the box open and letting the deferred LostFocus commit MOVE a net label. This tunnel
+        // handler is registered handledEventsToo:true, so intercept Escape HERE to guarantee a full
+        // cancel (the net label must not move) and to close the box. Other keys fall through to the box.
+        if (InlineEditBox.IsKeyboardFocusWithin)
+        {
+            if (e.Key == Key.Escape && Vm is not null)
+            {
+                Vm.CancelInlineEdit();   // kind → None: any deferred MaybeDismissInlineEdit/Commit is a no-op
+                DismissInlineEditBox();  // IsVisible = false → MaybeDismissInlineEdit early-returns
+                Vm.SetSelectTool();
+                e.Handled = true;
+            }
+            return;                       // box owns Enter + typing; only Escape needs handling here
+        }
+
         var vm = Vm;
         if (vm is null) return;
 

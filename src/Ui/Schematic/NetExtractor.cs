@@ -411,6 +411,48 @@ public static class NetExtractor
         return null;
     }
 
+    /// <summary>
+    /// Returns every wire id on the same electrical node(s) as <paramref name="seedWireIds"/>: the full
+    /// set of wires connected via shared vertices, T-junctions, and dot crossings (the same geometric
+    /// connectivity as extraction). Seed ids that exist in the model are always included. A wire is one
+    /// node end-to-end (AddGeometricUnions chains a wire's vertices into a single root), so this returns
+    /// the connected-wire set for the touched net. Used by the crossing rubber-band to grab a whole net
+    /// from a single touched wire.
+    /// </summary>
+    public static HashSet<string> ConnectedWireIds(SchematicEditModel model, IEnumerable<string> seedWireIds)
+    {
+        var result = new HashSet<string>();
+        foreach (var id in seedWireIds)
+            if (model.FindWire(id) is not null) result.Add(id);
+        if (result.Count == 0 || model.Wires.Count == 0) return result;
+
+        double gs = model.GridSize;
+        (long, long) QK(double x, double y) => ((long)Math.Round(x / gs), (long)Math.Round(y / gs));
+
+        var uf = new UnionFind();
+        AddGeometricUnions(model, QK, uf);
+
+        // A wire's first-vertex root identifies its net node; wires sharing a node share the root.
+        var seedRoots = new HashSet<(long, long)>();
+        foreach (var id in result)
+        {
+            var w = model.FindWire(id);
+            if (w is null || w.Points.Count == 0) continue;
+            var k = QK(w.Points[0].X, w.Points[0].Y);
+            if (uf.Contains(k)) seedRoots.Add(uf.Find(k));
+        }
+        if (seedRoots.Count == 0) return result;
+
+        foreach (var w in model.Wires)
+        {
+            if (w.Points.Count == 0) continue;
+            var k = QK(w.Points[0].X, w.Points[0].Y);
+            if (uf.Contains(k) && seedRoots.Contains(uf.Find(k)))
+                result.Add(w.Id);
+        }
+        return result;
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────────────
 
     /// <summary>
