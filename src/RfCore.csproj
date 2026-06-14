@@ -7,9 +7,10 @@
     <AssemblyName>RfCore</AssemblyName>
   </PropertyGroup>
 
-  <!-- splotRF needs access to internal SNP helpers (CreateBroken, RefreshFrom) -->
+  <!-- splotRF and circuitRF need access to internal SNP helpers (CreateBroken, RefreshFrom) -->
   <ItemGroup>
     <InternalsVisibleTo Include="splotRF" />
+    <InternalsVisibleTo Include="CircuitRF.Ui" />
     <InternalsVisibleTo Include="RfCore.Tests" />
   </ItemGroup>
 
