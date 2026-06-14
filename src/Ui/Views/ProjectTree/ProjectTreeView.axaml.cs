@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
@@ -14,11 +15,18 @@ namespace CircuitRF.Ui.Views.ProjectTree;
 
 public partial class ProjectTreeView : UserControl
 {
-    // ── Cell drag source state ─────────────────────────────────────────────────
+    // ── Cell drag source state + double-click tracking ────────────────────────
 
-    private PointerPressedEventArgs? _cellPressArgs;
-    private Point                    _cellPressPos;
-    private const double             DragThreshold = 5.0;
+    private PointerPressedEventArgs?     _cellPressArgs;
+    private Point                        _cellPressPos;
+    private const double                 DragThreshold = 5.0;
+
+    // Manual double-click detection — avoids Avalonia's DoubleTapped ~200ms
+    // single-tap confirmation delay by tracking two rapid PointerPressed events
+    // on the same node ourselves.
+    private ProjectTreeNodeViewModel? _lastPressVm;
+    private long                      _lastPressTick;        // Environment.TickCount64
+    private const int                 DoubleClickMs = 400;
 
     public ProjectTreeView()
     {
@@ -41,7 +49,29 @@ public partial class ProjectTreeView : UserControl
     {
         _cellPressArgs = null;
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-        if (GetCellNodeFromSource(e.Source as Visual) is null) return;
+
+        var source = e.Source as Visual;
+
+        // Clicks on the expander ToggleButton (disclosure triangle) are for expand/collapse only —
+        // exclude them from double-click activation tracking so rapid expand→collapse doesn't
+        // accidentally open a document.
+        if (IsOnExpander(source)) return;
+
+        // Double-click detection: two left-presses on the same node within DoubleClickMs.
+        var vm   = GetAnyNodeFromSource(source);
+        var tick = Environment.TickCount64;
+        if (vm is not null && vm == _lastPressVm && tick - _lastPressTick <= DoubleClickMs)
+        {
+            _lastPressVm   = null;       // reset so a third click doesn't re-fire
+            _lastPressTick = 0;
+            vm.ActivateCommand.Execute(null);
+            return;
+        }
+        _lastPressVm   = vm;
+        _lastPressTick = tick;
+
+        // Cell DnD source capture (unchanged).
+        if (GetCellNodeFromSource(source) is null) return;
         _cellPressArgs = e;
         _cellPressPos  = e.GetPosition(this);
     }
@@ -74,6 +104,33 @@ public partial class ProjectTreeView : UserControl
 
     private void OnTreePointerReleased(object? sender, PointerReleasedEventArgs e)
         => _cellPressArgs = null;
+
+    // Returns true when the visual is on the expander ToggleButton (the disclosure triangle),
+    // so we can exclude those clicks from double-click activation tracking.
+    private static bool IsOnExpander(Visual? source)
+    {
+        var v = source;
+        while (v is not null)
+        {
+            if (v is ToggleButton) return true;
+            if (v is TreeViewItem)  return false;   // reached row content — not the expander
+            v = v.GetVisualParent();
+        }
+        return false;
+    }
+
+    // Walk upward to the nearest TreeViewItem with any ProjectTreeNodeViewModel.
+    private static ProjectTreeNodeViewModel? GetAnyNodeFromSource(Visual? source)
+    {
+        var v = source;
+        while (v is not null)
+        {
+            if (v is TreeViewItem { DataContext: ProjectTreeNodeViewModel vm })
+                return vm;
+            v = v.GetVisualParent();
+        }
+        return null;
+    }
 
     // Walk the visual tree upward from the event source to find a cell TreeViewItem.
     private static ProjectTreeNodeViewModel? GetCellNodeFromSource(Visual? source)
@@ -185,15 +242,7 @@ public partial class ProjectTreeView : UserControl
             _refreshPending = false;
             if (DataContext is ProjectTreeTool tool)
                 tool.Refresh();
-        }, Avalonia.Threading.DispatcherPriority.Background);
+        }, Avalonia.Threading.DispatcherPriority.ApplicationIdle);
     }
 
-    // ── Double-click → open/activate the selected node ────────────────────────
-
-    private void OnTreeDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        if (DataContext is not ProjectTreeTool tool) return;
-        if (tool.SelectedItem is not ProjectTreeNodeViewModel node) return;
-        node.ActivateCommand.Execute(null);
-    }
 }

@@ -77,8 +77,17 @@
             <ScrollViewer IsVisible="{Binding HasWorkspace}">
                 <TreeView x:Name="TheTreeView"
                           ItemsSource="{Binding TopLevelItems}"
-                          SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
-                          DoubleTapped="OnTreeDoubleTapped">
+                          SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+
+                    <TreeView.Resources>
+                        <!-- Shadow the Fluent theme's pressed/hover-pressed brushes for selected items
+                             so the accent highlight stays stable — no grey flash when clicking or
+                             hovering over an already-selected tree node. -->
+                        <SolidColorBrush x:Key="TreeViewItemBackgroundSelectedPressed"
+                                         Color="{DynamicResource SystemAccentColor}"/>
+                        <SolidColorBrush x:Key="TreeViewItemBackgroundSelectedPointerOver"
+                                         Color="{DynamicResource SystemAccentColor}"/>
+                    </TreeView.Resources>
 
                     <TreeView.Styles>
                         <!-- Bind tree-item expansion to the VM's IsExpanded for refresh-state persistence.
@@ -107,7 +116,7 @@
                              the bound collection is empty). -->
                         <TreeDataTemplate x:DataType="ptvm:ProjectTreeNodeViewModel"
                                           ItemsSource="{Binding FilteredChildren}">
-                            <Grid ColumnDefinitions="Auto,Auto,*">
+                            <Grid ColumnDefinitions="Auto,Auto,*" Background="Transparent">
                                 <!-- Per-kind icon (NodeKind + IsTestBench → MaterialIconKind) -->
                                 <mi:MaterialIcon Grid.Column="0"
                                                 Kind="{Binding IconKind}"
