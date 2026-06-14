@@ -222,17 +222,45 @@ trace+marker renderers/`RenderTheme`/`SkiaFonts`) and a `PlotControl`. Render ON
 Touchstone/`.npy` onto the canvas. Retarget `SkiaFonts` to IBM Plex and `RenderTheme` to circuitRF colors.
 (This is the heaviest step.) **Gate:** a Rect S21(dB) trace from a file renders correctly in a plot.
 
-#### 7.1c — Multi-plot canvas: containers (add/move/resize), tabs, pan/zoom, Smith/Polar/Table
-Port `DataDisplayView(VM)`/`PlotContainerView(VM)`/`DisplayWindow(VM)`/`TabView`. Multiple draggable/
-resizable plot containers on the canvas, tabs, pan/zoom, and the remaining plot types (Smith/Polar/Table).
-**Gate:** author several plots of each type on a multi-tab canvas; pan/zoom; matches splotRF behavior.
+#### 7.1c — Port the splotRF Data Display engine into the document (P1: faithful-first)
+**Strategy (locked — P1).** splotRF's canvas/container/`PlotControl`/inspector are one tightly-coupled
+engine: the container (`PlotContainerViewModel`) *owns* its `PlotInspectorViewModel`; the full `PlotControl`
+bundles pan/zoom + markers + the inspector flyout; the container view subscribes to all of it; pan/zoom
+lives up in `DataDisplayViewModel`; move/resize push undo commands; and the container geometry carries
+subtle complex-plot viewport / label-strip math (`TopLabelExtraLogical`/`BottomLabelExtraLogical` mirror
+the renderer formulas). Stripping it to a skeleton would re-derive that math and invite bugs, so port it
+**as intact as possible, splotRF-styled** — get a working multi-plot / multi-tab canvas first, *then*
+restyle the inspector (7.1d). **Markers and `.cdd` persistence are the only deferrals** (markers → 7.1d;
+persistence → 7.1e). Build in compile-and-run-gated slices:
+- **7.1c-1 — VM layer.** Port the view-model stack → namespace `CircuitRF.Ui.DataDisplay.ViewModels`:
+  `PlotViewModel`, `PlotContainerViewModel`, `DataDisplayViewModel` (the canvas VM — distinct from the
+  7.1a *document* VM), `TabViewModel`, `DisplayWindowViewModel`, `PlotInspectorViewModel`,
+  `TraceRowViewModel`, `SnpLibraryViewModel`, `LabelStripViewModel`, the item VMs
+  (`ColorItem`/`MarkerTypeItem`/`YAxisItem`/`TraceDataItem`/combo-item/`ComplexStringHelper`), plus
+  `UndoRedo` and `AppSettings(ViewModel)`. Keep SNP-backed data (DataSet seam is 7.2). Marker-VM members
+  may be ported but left unwired until 7.1d. **Gate:** builds green; design-instance/smoke coverage where
+  practical.
+- **7.1c-2 — controls.** Grow the 7.1b render-only `PlotControl` into the interactive control by porting
+  splotRF's `PlotControl` (pan/zoom, scroll-zoom, context menu, double-tap-to-inspect, the inspector
+  flyout); port `AxisLabelControl` + `DragSelectOverlay`. **Fix the `canvas.Clear()` from 7.1b** — replace
+  with splotRF's no-Clear discipline (the Skia lease is the shared scene canvas; clearing wipes sibling
+  plots). Defer the marker *interaction* handlers (leave clearly-marked seams, filled in 7.1d).
+  **Gate:** builds; a single plot pans/zooms; multiple plots composite without wiping each other.
+- **7.1c-3 — views + wire-up.** Port `DataDisplayView` (ItemsControl+Canvas of containers),
+  `PlotContainerView` (move/resize/select code-behind), the `DisplayWindow` chrome + **tabs**
+  (`TabHeaderView` / tab strip) folded into `DataDisplayDocument`, `AxesLimitsView` / `AxesLabelsFlyout`,
+  and the splotRF-styled `PlotInspectorView`. Replace the 7.1b single-PlotControl harness. **Gate:**
+  add/move/resize/select/delete plots of each type (Rect/Smith/Polar/Table) across multiple tabs; pan/zoom;
+  the (splotRF-styled) inspector edits a plot live. Behavior matches splotRF.
 
-#### 7.1d — Plot Inspector (the merge, §2.8)
-Port `PlotInspectorView(VM)` + `TraceRowViewModel` + item VMs (`ColorItem`/`MarkerTypeItem`/`YAxisItem`/
-`TraceDataItem`), **restyled to the §2.8 merge** (circuitRF visual language over splotRF function/feel).
-Data picker stays SNP/Touchstone-backed (DataSet seam is 7.2). Settle the inspector *surface* (Properties
-dock vs fly-out vs in-document panel). **Gate:** select a plot → live inspector edits (type, traces,
-style, color, markers, Z0) redraw immediately; visual idiom matches the Analyses editor.
+#### 7.1d — Restyle the inspector to the §2.8 merge + the marker system
+With the engine working (7.1c, splotRF-styled), apply the circuitRF **visual restyle** to the inspector
+(per-trace-kind card bodies, theme brushes, segmented toggles, opacity-tiered labels, IBM Plex — §2.8) and
+add the **dual surface** (per-plot fly-out **and** Properties dock — one reusable view). Port the **marker
+system** here: `Marker` interaction in `PlotControl`, `MarkerInfoBox(View/VM)`, `MarkerEditorView`, marker
+add/move/select + info boxes (the 7.1c-2 seams). Data picker stays SNP/Touchstone-backed (DataSet seam is
+7.2). **Gate:** inspector visual idiom matches the Analyses editor and is reachable from both fly-out and
+Properties dock; markers add/move/read correctly; every edit redraws live.
 
 #### 7.1e — `.cdd` layout persistence
 Port `DataDisplayConfig` → the `.cdd` model (System.Text.Json, `[JsonStringEnumConverter]`, nullable/
@@ -327,9 +355,11 @@ so 7.1 persistence is designed to not preclude it.
 
 - **7.0:** RESOLVED — `results/<schematicKey>/<analysisName>.npy`, one DataSet per analysis,
   detect-and-warn on same-name-cell collision (Option A), scratch → recovery-session results dir.
-- **7.1:** RESOLVED — re-sliced into 7.1a–7.1e (§3). Inspector surface = dual (per-plot fly-out +
-  Properties dock, §2.8); per-trace-kind card bodies; Material.Icons.Avalonia reused. Remaining: `.cdd`
-  registration in `project-file-formats.md` / `.cws` (7.1e detail).
+- **7.1:** RESOLVED — re-sliced into 7.1a–7.1e (§3). **Port strategy = P1 (faithful-first):** port the
+  coupled engine splotRF-styled (7.1c, sliced VM→controls→views), then restyle the inspector + add markers
+  (7.1d). Inspector surface = dual (per-plot fly-out + Properties dock, §2.8); per-trace-kind card bodies;
+  Material.Icons.Avalonia reused. Remaining: `.cdd` registration in `project-file-formats.md` / `.cws`
+  (7.1e detail).
 - **7.3:** family-sweep guardrail policy (default cap, over-cap behavior).
 - **7.4:** spline storage (trace-owned cache vs first-class `LoadpullSurface`); which FOMs are first-class;
   how "constant other-metric = value" is specified in the UI; contour level-set specification. **All gated

@@ -1,5 +1,11 @@
 # UI (Avalonia) — local conventions
 
+Phase 7.1c-1 — COMPLETE: splotRF view-model stack faithfully ported to `src/Ui/DataDisplay/ViewModels/` (namespace `CircuitRF.Ui.DataDisplay.ViewModels`); 21 VM files created; 3 model files added (`AppSettings.cs`, `DataDisplayConfig.cs`, `UndoRedo.cs`); `DataDisplayDocumentViewModel` rename complete; `RfCore.csproj` extended with `InternalsVisibleTo CircuitRF.Ui` for `SNP.CreateBroken`/`RefreshFrom`; `DisplayWindowViewModel.PerformCopy` stubbed (`// TODO 7.x`); build green 0W/0E; smoke tests pass.
+
+Phase 7.1b — COMPLETE: splotRF plot model (`Misc`, `Axes`, `Marker`, `Plot`, `Trace`) + Skia renderers (`RenderTheme`, `PlotRenderer`, `AxesRenderer`, `TraceRenderer_MarkerRenderer`, `TableRenderer`) ported to `src/Ui/DataDisplay/`; font seam retargeted to IBM Plex (`SkiaFonts.PlexRegular`/`PlexBold`); color seam picks `RenderTheme.Light`/`Dark` from `ActualThemeVariant`; render-only `PlotControl` in `src/Ui/DataDisplay/Controls/`; demo `InsertDemoPlot` harness seeds a synthetic S21-in-dB Rect plot; build green.
+
+Phase 7.1a — COMPLETE: `DataDisplayDocument`/`DataDisplayViewModel` (`src/Ui/DataDisplay/`), `DataDisplayView` (`src/Ui/Views/DataDisplay/`), `NewDataDisplayCommand` on `WorkspaceViewModel`, DataTemplate in `App.axaml`. New Data Display opens an `Untitled-Display-N` tab with an empty placeholder canvas; tears off and re-docks; closes cleanly; Ctrl+Shift+D / ⌘⇧D shortcut wired.
+
 Standing instructions for `src/Ui`. Read with the root `CLAUDE.md`, the interaction spec
 `docs/design/ui-design.md`, and the architecture/firewall note `docs/design/ui-architecture.md`. The UI is
 how people drive the engine; it must never become the source of truth for simulation.

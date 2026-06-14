@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dd="using:CircuitRF.Ui.DataDisplay"
+             xmlns:plotctl="using:CircuitRF.Ui.DataDisplay.Controls"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.DataDisplayView"
+             x:DataType="dd:DataDisplayDocument">
+
+    <!-- Full-bleed canvas surface matching other document bodies. -->
+    <Grid Background="{DynamicResource SystemChromeLowColor}">
+
+        <!-- PlotControl fills the canvas when a plot exists. TEMP 7.1b -->
+        <plotctl:PlotControl Plot="{Binding ViewModel.CurrentPlot}"
+                             IsVisible="{Binding ViewModel.HasPlots}"/>
+
+        <!-- Empty-state hint shown when no plot is loaded. -->
+        <StackPanel HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="12"
+                    IsVisible="{Binding !ViewModel.HasPlots}">
+            <mi:MaterialIcon Kind="ChartScatterPlot"
+                             Width="48" Height="48"
+                             HorizontalAlignment="Center"
+                             Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            <TextBlock Text="Empty data display"
+                       FontSize="13"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       HorizontalAlignment="Center"/>
+            <!-- TEMP 7.1b — dev affordance to seed synthetic demo plot; removed in 7.1c -->
+            <Button Content="Insert Demo Plot"
+                    HorizontalAlignment="Center"
+                    Command="{Binding ViewModel.InsertDemoPlotCommand}"/>
+        </StackPanel>
+
+    </Grid>
+
+</UserControl>

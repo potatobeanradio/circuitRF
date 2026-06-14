@@ -26,7 +26,8 @@
                 <NativeMenuItem.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="New Workspace"   Command="{Binding NewWorkspaceCommand}"      CommandParameter="{Binding $parent[Window]}" Gesture="Meta+N"/>
-                        <NativeMenuItem Header="New Schematic"   Command="{Binding NewScratchSchematicCommand}"                                            Gesture="Meta+Shift+N"/>
+                        <NativeMenuItem Header="New Schematic"    Command="{Binding NewScratchSchematicCommand}"                                            Gesture="Meta+Shift+N"/>
+                        <NativeMenuItem Header="New Data Display" Command="{Binding NewDataDisplayCommand}"                                               Gesture="Meta+Shift+D"/>
                         <NativeMenuItem Header="New Cell"        Command="{Binding NewCellInWorkspaceCommand}"/>
                         <NativeMenuItem Header="Open Workspace…" Command="{Binding OpenWorkspaceCommand}"      CommandParameter="{Binding $parent[Window]}" Gesture="Meta+O"/>
                         <NativeMenuItem Header="Open Recent">
@@ -99,6 +100,8 @@
         <KeyBinding Gesture="Meta+N"        Command="{Binding NewWorkspaceCommand}"          CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+Shift+N"  Command="{Binding NewScratchSchematicCommand}"/>
         <KeyBinding Gesture="Meta+Shift+N"  Command="{Binding NewScratchSchematicCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+D"  Command="{Binding NewDataDisplayCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+D"  Command="{Binding NewDataDisplayCommand}"/>
         <KeyBinding Gesture="Ctrl+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Meta+O"        Command="{Binding OpenWorkspaceCommand}"  CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+S"        Command="{Binding SaveAllDocumentsCommand}" CommandParameter="{Binding $parent[Window]}"/>
@@ -138,6 +141,11 @@
                           Command="{Binding NewScratchSchematicCommand}"
                           InputGesture="Ctrl+Shift+N">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New _Data Display"
+                          Command="{Binding NewDataDisplayCommand}"
+                          InputGesture="Ctrl+Shift+D">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="New _Cell"
                           Command="{Binding NewCellInWorkspaceCommand}">

@@ -18,6 +18,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
 using RfCore.Data;
 using CircuitRF.Ui.Commands;
+using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
@@ -67,8 +68,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // Tracked here for enumeration by save/rebuild operations (steps 2+).
     // NOTE (step 1): entries are not removed when a scratch tab is closed — that
     // cleanup and the close-prompt are added in step 2/3.
-    private readonly List<SchematicDocument>    _scratchDocs    = [];
-    private readonly List<SymbolEditorDocument> _scratchSymbols = [];
+    private readonly List<SchematicDocument>    _scratchDocs         = [];
+    private readonly List<SymbolEditorDocument> _scratchSymbols      = [];
+    private readonly List<DataDisplayDocument>  _scratchDataDisplays = [];
 
     [ObservableProperty] private IRootDock? _layout;
 
@@ -300,8 +302,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 break;
 
             case LaunchAction.NewDataDisplay:
-                // Data Display is not yet implemented; fall back to Welcome.
-                Messages.Info("Data Display is not yet available. Select another On-launch action in Settings.");
+                _factory.RemoveWelcomeStub();
+                NewDataDisplay();
                 break;
         }
     }
@@ -343,6 +345,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _openDocsByPath.Clear();
             _scratchDocs.Clear();
             _scratchSymbols.Clear();
+            _scratchDataDisplays.Clear();
             _registry.Clear();
             CurrentWorkspacePath = cwsPath;
 
@@ -601,6 +604,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _openDocsByPath.Clear();
         _scratchDocs.Clear();
         _scratchSymbols.Clear();
+        _scratchDataDisplays.Clear();
         _registry.Clear();
         CurrentWorkspacePath = cwsPath;
 
@@ -1306,6 +1310,45 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         foreach (var d in _openDocsByPath.Values)
             if (d is SymbolEditorDocument sd)
                 used.Add(sd.Id);
+
+        for (int n = 1; ; n++)
+        {
+            var candidate = $"{prefix}{n}";
+            if (!used.Contains(candidate))
+                return candidate;
+        }
+    }
+
+    // ---- Data Display commands ----------------------------------------------
+
+    /// <summary>
+    /// Creates a scratch Data Display tab immediately.
+    /// Always enabled; no workspace required (scratch-first, same as New Schematic/Symbol).
+    /// </summary>
+    [RelayCommand]
+    private void NewDataDisplay()
+    {
+        var title = NextDataDisplayTitle();
+        var vm    = new DataDisplayDocumentViewModel();
+        var doc   = new DataDisplayDocument(title, vm);
+        _scratchDataDisplays.Add(doc);
+        _factory.OpenDocument(doc);
+    }
+
+    /// <summary>
+    /// Returns the lowest free "Untitled-Display-N" title across all current scratch
+    /// and path-keyed open data display documents.
+    /// </summary>
+    private string NextDataDisplayTitle()
+    {
+        const string prefix = "Untitled-Display-";
+
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in _scratchDataDisplays)
+            used.Add(d.Id);
+        foreach (var d in _openDocsByPath.Values)
+            if (d is DataDisplayDocument dd)
+                used.Add(dd.Id);
 
         for (int n = 1; ; n++)
         {
@@ -2596,6 +2639,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchDocs.Remove(scratchCandidate);
         if (dockable is SymbolEditorDocument scratchSymbol)
             _scratchSymbols.Remove(scratchSymbol);
+        if (dockable is DataDisplayDocument scratchDisplay)
+            _scratchDataDisplays.Remove(scratchDisplay);
 
         // Unsubscribe from cell edit model events to prevent memory leaks.
         if (dockable is CellParameterEditorDocument cellDoc)
