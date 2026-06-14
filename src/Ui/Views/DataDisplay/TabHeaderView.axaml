@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.TabHeaderView"
+             x:DataType="vm:TabViewModel">
+
+    <!--
+        Tab header: label + close button.
+        Double-clicking the label sets IsEditingName=true, swapping the
+        TextBlock for an editable TextBox.  Enter / Escape / LostFocus
+        confirms the new name.  The × button fires CloseTabCommand.
+    -->
+    <StackPanel Orientation="Horizontal"
+                Spacing="2"
+                VerticalAlignment="Center">
+
+        <!-- Name area: TextBlock (normal) overlaid with TextBox (editing) -->
+        <Panel MinWidth="60">
+
+            <TextBlock x:Name="TabNameText"
+                       Text="{Binding Name}"
+                       IsVisible="{Binding !IsEditingName}"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       Padding="4,0"
+                       DoubleTapped="OnNameTextDoubleTapped"/>
+
+            <TextBox x:Name="TabNameEdit"
+                     Text="{Binding Name, Mode=TwoWay}"
+                     IsVisible="{Binding IsEditingName}"
+                     VerticalAlignment="Center"
+                     MinWidth="60"
+                     Padding="2,0"
+                     LostFocus="OnNameEditLostFocus"
+                     KeyDown="OnNameEditKeyDown"/>
+
+        </Panel>
+
+        <!-- Close button -->
+        <Button Command="{Binding CloseTabCommand}"
+                ToolTip.Tip="Close tab"
+                Padding="2"
+                Width="18"
+                Height="18"
+                VerticalAlignment="Center"
+                Background="Transparent"
+                BorderThickness="0">
+            <mi:MaterialIcon Kind="Close" Width="12" Height="12"/>
+        </Button>
+
+    </StackPanel>
+
+</UserControl>

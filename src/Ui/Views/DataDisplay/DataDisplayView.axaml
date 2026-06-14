@@ -2,20 +2,169 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dd="using:CircuitRF.Ui.DataDisplay"
              xmlns:v="using:CircuitRF.Ui.Views.DataDisplay"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             xmlns:mi="using:Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.DataDisplay.DataDisplayView"
              x:DataType="dd:DataDisplayDocument">
 
-    <!-- Full-bleed canvas surface matching other document bodies. -->
-    <Grid>
-        <!-- Active tab's canvas fills the document area. -->
-        <v:PlotCanvasView DataContext="{Binding ViewModel.Window.ActiveTab}"/>
+    <!-- Data-Display document key bindings (Ctrl and Meta variants for cross-platform). -->
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Shift+A"  Command="{Binding ViewModel.Window.AddPlotCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+A"  Command="{Binding ViewModel.Window.AddPlotCommand}"/>
+        <KeyBinding Gesture="Ctrl+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
+        <KeyBinding Gesture="Meta+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
+        <KeyBinding Gesture="Delete"        Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+D"  Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+D"  Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
+        <KeyBinding Gesture="Ctrl+OemPlus"  Command="{Binding ViewModel.Window.ZoomInCommand}"/>
+        <KeyBinding Gesture="Meta+OemPlus"  Command="{Binding ViewModel.Window.ZoomInCommand}"/>
+        <KeyBinding Gesture="Ctrl+OemMinus" Command="{Binding ViewModel.Window.ZoomOutCommand}"/>
+        <KeyBinding Gesture="Meta+OemMinus" Command="{Binding ViewModel.Window.ZoomOutCommand}"/>
+        <KeyBinding Gesture="Ctrl+D1"       Command="{Binding ViewModel.Window.ActualSizeCommand}"/>
+        <KeyBinding Gesture="Meta+D1"       Command="{Binding ViewModel.Window.ActualSizeCommand}"/>
+        <KeyBinding Gesture="Ctrl+D0"       Command="{Binding ViewModel.Window.FitAllCommand}"/>
+        <KeyBinding Gesture="Meta+D0"       Command="{Binding ViewModel.Window.FitAllCommand}"/>
+        <KeyBinding Gesture="Ctrl+Z"        Command="{Binding ViewModel.Window.UndoCommand}"/>
+        <KeyBinding Gesture="Meta+Z"        Command="{Binding ViewModel.Window.UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z"  Command="{Binding ViewModel.Window.RedoCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+Z"  Command="{Binding ViewModel.Window.RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y"        Command="{Binding ViewModel.Window.RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+L"        Command="{Binding ViewModel.Window.OpenFileCommand}"/>
+        <KeyBinding Gesture="Meta+L"        Command="{Binding ViewModel.Window.OpenFileCommand}"/>
+    </UserControl.KeyBindings>
 
-        <!-- TEMP 3a — replaced by the toolbar in 3b -->
-        <Button Content="Add Plot"
-                HorizontalAlignment="Right"
-                VerticalAlignment="Top"
-                Margin="8"
-                Command="{Binding ViewModel.Window.AddPlotCommand}"/>
-    </Grid>
+    <DockPanel>
+
+        <!-- ── In-document toolbar ─────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,2">
+            <StackPanel Orientation="Horizontal" Spacing="2" Classes="Toolbar">
+
+                <Button Command="{Binding ViewModel.Window.AddPlotCommand}"
+                        ToolTip.Tip="Add Plot  (Ctrl+Shift+A)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/>
+                </Button>
+
+                <Button Command="{Binding ViewModel.Window.NewTabCommand}"
+                        ToolTip.Tip="New Tab  (Ctrl+T)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="TabPlus" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <Button Command="{Binding ViewModel.Window.ZoomInCommand}"
+                        ToolTip.Tip="Zoom In  (Ctrl++)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
+                </Button>
+
+                <Button Command="{Binding ViewModel.Window.ZoomOutCommand}"
+                        ToolTip.Tip="Zoom Out  (Ctrl+-)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="MagnifyMinusOutline" Width="16" Height="16"/>
+                </Button>
+
+                <Button Command="{Binding ViewModel.Window.ActualSizeCommand}"
+                        ToolTip.Tip="Actual Size  (Ctrl+1)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                </Button>
+
+                <Button Command="{Binding ViewModel.Window.FitAllCommand}"
+                        ToolTip.Tip="Fit All  (Ctrl+0)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <Button Command="{Binding ViewModel.Window.UndoCommand}"
+                        ToolTip.Tip="Undo  (Ctrl+Z)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="Undo" Width="16" Height="16"/>
+                </Button>
+
+                <Button Command="{Binding ViewModel.Window.RedoCommand}"
+                        ToolTip.Tip="Redo  (Ctrl+Shift+Z)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="Redo" Width="16" Height="16"/>
+                </Button>
+
+            </StackPanel>
+        </Border>
+
+        <!-- ── Main content: library | splitter | tabs + inspector ──────────── -->
+        <Grid ColumnDefinitions="180,4,*">
+
+            <!-- Left: SNP library panel -->
+            <v:SnpLibraryView Grid.Column="0"
+                              DataContext="{Binding ViewModel.Window.SnpLibrary}"/>
+
+            <GridSplitter Grid.Column="1"
+                          Background="{DynamicResource SystemBaseLowColor}"
+                          ResizeDirection="Columns"/>
+
+            <!-- Right: tab control + optional docked inspector -->
+            <Grid Grid.Column="2" ColumnDefinitions="*,Auto">
+
+                <!--
+                    TabControl.  Each tab owns an independent PlotCanvasView
+                    (zoom, plots, marker info-boxes).  ContentTemplate is
+                    applied lazily — the content for each tab is created on
+                    first activation and kept alive as long as the tab exists.
+                    TabHeaderView handles double-click rename and close.
+                -->
+                <TabControl Grid.Column="0"
+                            TabStripPlacement="Bottom"
+                            ItemsSource="{Binding ViewModel.Window.Tabs}"
+                            SelectedItem="{Binding ViewModel.Window.ActiveTab, Mode=TwoWay}">
+
+                    <TabControl.Styles>
+                        <Style Selector="TabItem">
+                            <Setter Property="MinHeight" Value="25"/>
+                            <Setter Property="Padding" Value="5,2,2,2"/>
+                            <Setter Property="VerticalContentAlignment" Value="Center"/>
+                        </Style>
+                    </TabControl.Styles>
+
+                    <TabControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TabViewModel">
+                            <v:TabHeaderView DataContext="{Binding .}"/>
+                        </DataTemplate>
+                    </TabControl.ItemTemplate>
+
+                    <TabControl.ContentTemplate>
+                        <DataTemplate x:DataType="vm:TabViewModel">
+                            <v:PlotCanvasView DataContext="{Binding .}"/>
+                        </DataTemplate>
+                    </TabControl.ContentTemplate>
+
+                </TabControl>
+
+                <!-- Docked inspector panel (right column, outside TabControl).
+                     Outer border gates on IsInspectorOpen; inner gates on HasSingleSelection
+                     so the panel area collapses when no single plot is selected. -->
+                <Border Grid.Column="1"
+                        IsVisible="{Binding ViewModel.Window.IsInspectorOpen}"
+                        BorderBrush="{DynamicResource SystemBaseLowColor}"
+                        BorderThickness="1,0,0,0">
+                    <Border IsVisible="{Binding ViewModel.Window.HasSingleSelection}">
+                        <v:PlotInspectorView DataContext="{Binding ViewModel.Window.ActiveInspector}"/>
+                    </Border>
+                </Border>
+
+            </Grid>
+
+        </Grid>
+
+    </DockPanel>
 
 </UserControl>

@@ -8,6 +8,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using Avalonia.Platform.Storage;
 using RfCore;
 
@@ -42,6 +43,13 @@ public partial class SnpLibraryViewModel : ViewModelBase
     /// as a live getter over DataDisplay.CurrentConfigPath.
     /// </summary>
     public Func<string?>? GetConfigDirectoryFunc { get; set; }
+
+    /// <summary>
+    /// Command bound to the library header's import button.
+    /// Set by the document container to Window.OpenFileCommand so the button
+    /// opens the Touchstone file picker without the view needing a Window reference.
+    /// </summary>
+    public ICommand? ImportCommand { get; internal set; }
 
     // ---- Public API -------------------------------------------------------
 
