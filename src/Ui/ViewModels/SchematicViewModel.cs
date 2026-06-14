@@ -39,8 +39,32 @@ public sealed partial class SchematicViewModel : ObservableObject
     public enum Tool { Select, Pan, Wire, Place, ZoomBox, MoveLabels }
 
     [ObservableProperty] private Tool   _activeTool  = Tool.Select;
-    [ObservableProperty] private bool   _gridSnap    = true;
     [ObservableProperty] private bool   _keepConnect = true;
+
+    /// <summary>
+    /// Tri-state grid for the F5 label move (mirrors the Symbol Editor):
+    /// ConnectionGrid = snap to the connection grid (P), FineGrid = snap to the fine grid (p), None = free.
+    /// </summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SnapModeTooltip))]
+    private SnapMode _snapMode = SnapMode.FineGrid;   // default preserves today's behaviour (fine-grid snap)
+
+    public string SnapModeTooltip => SnapMode switch
+    {
+        SnapMode.ConnectionGrid => "Snap: Connection Grid  (G)",
+        SnapMode.FineGrid       => "Snap: Fine Grid  (G)",
+        _                       => "Snap: Off  (G)",
+    };
+
+    /// <summary>Cycles P → p → none → P (same order as the Symbol Editor).</summary>
+    public void CycleSnapMode()
+    {
+        SnapMode = SnapMode switch
+        {
+            SnapMode.ConnectionGrid => SnapMode.FineGrid,
+            SnapMode.FineGrid       => SnapMode.None,
+            _                       => SnapMode.ConnectionGrid,
+        };
+    }
 
     private SymbolKind     _placementSymbol;
     private SymbolRotation _placementRot;
@@ -435,13 +459,13 @@ public sealed partial class SchematicViewModel : ObservableObject
             case Key.F5: BeginMoveLabels(); return true;
             case Key.Delete: case Key.Back: DeleteSelection(); return true;
             case Key.R when !modifiers.HasFlag(KeyModifiers.Shift):
-                if (ActiveTool == Tool.Place && _placementService is not null)
+                if (ActiveTool == Tool.Place && _placementService?.Pending is not null)
                     _placementService.Rotate(false);
                 else
                     RotateSelection(clockwise: false);
                 return true;
             case Key.R when modifiers.HasFlag(KeyModifiers.Shift):
-                if (ActiveTool == Tool.Place && _placementService is not null)
+                if (ActiveTool == Tool.Place && _placementService?.Pending is not null)
                     _placementService.Rotate(true);
                 else
                     RotateSelection(clockwise: true);
@@ -531,7 +555,11 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
         }
 
-        var hit = SchematicHitTest.Test(EditModel, RenderModel, SpatialIndex, wx, wy);
+        // Cyclic click-through: build the top→bottom stack (labels excluded — B9) and pick the next
+        // object under the cursor when the current single selection is already in the stack; otherwise
+        // the topmost. Shift acts on the topmost only (no cycling).
+        var stack = SchematicHitTest.TestStack(EditModel, RenderModel, SpatialIndex, wx, wy, includeLabels: false);
+        var hit   = PickClickThrough(stack, shift);
 
         // B1: Per-segment click — selects just that segment (not the whole wire).
         if (hit.Kind == SchematicHitTest.HitKind.WireSegment)
@@ -609,6 +637,54 @@ public sealed partial class SchematicViewModel : ObservableObject
             _dragStartWorldY = wy;
             SnapshotDragStartPositions();
         }
+    }
+
+    /// <summary>
+    /// Chooses the click target from the top→bottom stack. Non-shift: if exactly one object (or one
+    /// segment) is currently selected AND it is in the stack, return the next entry (cyclic); otherwise
+    /// the topmost. Shift: always the topmost (toggle semantics are applied by the caller). Empty stack
+    /// → a None hit (caller starts a rubber-band).
+    /// </summary>
+    internal SchematicHitTest.HitResult PickClickThrough(
+        IReadOnlyList<SchematicHitTest.HitResult> stack, bool shift)
+    {
+        if (stack.Count == 0) return new SchematicHitTest.HitResult(SchematicHitTest.HitKind.None, "");
+        if (shift)            return stack[0];
+
+        int cur = CurrentSelectionIndexInStack(stack);
+        return cur >= 0 ? stack[(cur + 1) % stack.Count] : stack[0];
+    }
+
+    /// <summary>
+    /// Index in the stack of the single currently-selected object/segment, or -1 if the selection is
+    /// empty, multiple, or not present in the stack. A whole-object selection matches any non-segment
+    /// stack entry with the same Id (Component / CanvasObject / Dot / NetLabel / whole-wire endpoint);
+    /// a segment selection matches the WireSegment entry with the same wire Id + segment index.
+    /// </summary>
+    internal int CurrentSelectionIndexInStack(IReadOnlyList<SchematicHitTest.HitResult> stack)
+    {
+        int objCount = Selection.Ids.Count;
+        var segs     = Selection.GetSelectedSegments(EditModel);
+        if (objCount + segs.Count != 1) return -1;
+
+        if (objCount == 1)
+        {
+            string id = Selection.Ids.First();
+            for (int i = 0; i < stack.Count; i++)
+            {
+                if (stack[i].Kind == SchematicHitTest.HitKind.WireSegment) continue; // segment ≠ whole-object
+                if (stack[i].Id == id) return i;
+            }
+        }
+        else
+        {
+            var s = segs[0];
+            for (int i = 0; i < stack.Count; i++)
+                if (stack[i].Kind == SchematicHitTest.HitKind.WireSegment
+                    && stack[i].Id == s.WireId && stack[i].SubIndex == s.SegmentIndex)
+                    return i;
+        }
+        return -1;
     }
 
     private void HandleObjResizeDrag(double wx, double wy)
@@ -2361,16 +2437,14 @@ public sealed partial class SchematicViewModel : ObservableObject
     private void HandleMoveLabelMove(double wx, double wy, KeyModifiers modifiers)
     {
         if (_moveLabelPhase != MoveLabelPhase.Moving || _moveLabelComps.Count == 0) return;
-        var (dx, dy) = ComputeLabelDelta(wx - _moveLabelRefX, wy - _moveLabelRefY,
-                                         modifiers, EditModel.AuthorGridSize);
+        var (dx, dy) = ComputeLabelDelta(wx - _moveLabelRefX, wy - _moveLabelRefY, modifiers);
         var dict = _moveLabelComps.ToDictionary(c => c.Id, _ => (DX: dx, DY: dy));
         Overlay = Overlay with { LabelDragOffsets = dict };
     }
 
     private void CommitMoveLabels(double wx, double wy, KeyModifiers modifiers)
     {
-        var (dx, dy) = ComputeLabelDelta(wx - _moveLabelRefX, wy - _moveLabelRefY,
-                                         modifiers, EditModel.AuthorGridSize);
+        var (dx, dy) = ComputeLabelDelta(wx - _moveLabelRefX, wy - _moveLabelRefY, modifiers);
         var snaps = _moveLabelComps.Select(c =>
         {
             int labelCount = 2 + c.Parameters.Count(p => p.ShowOnSchematic);
@@ -2398,36 +2472,33 @@ public sealed partial class SchematicViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Applies grid-snap and axis-lock rules to a raw label drag delta.
-    /// Default: snaps both axes to the nearest grid multiple.
-    /// Ctrl held: free movement, no snap.
-    /// Shift held: locks to the dominant axis first, then grid-snaps the free axis (unless Ctrl).
+    /// Applies the schematic SnapMode + Shift axis-lock to a raw label drag delta.
+    /// SnapMode.None → free; FineGrid → snap to AuthorGridSize (p); ConnectionGrid → snap to GridSize (P).
+    /// Ctrl forces free movement regardless of SnapMode. Shift locks to the dominant axis first.
     /// </summary>
-    private static (double DX, double DY) ComputeLabelDelta(
-        double rawDx, double rawDy, KeyModifiers modifiers, double gridSize)
+    private (double DX, double DY) ComputeLabelDelta(double rawDx, double rawDy, KeyModifiers modifiers)
     {
         bool ctrl  = (modifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
         bool shift = modifiers.HasFlag(KeyModifiers.Shift);
 
-        double dx = rawDx;
-        double dy = rawDy;
-
-        // Shift: constrain to the dominant axis; zero out the minor axis.
+        double dx = rawDx, dy = rawDy;
         if (shift)
         {
-            if (Math.Abs(rawDy) >= Math.Abs(rawDx))
-                dx = 0;   // predominantly vertical — lock X
-            else
-                dy = 0;   // predominantly horizontal — lock Y
+            if (Math.Abs(rawDy) >= Math.Abs(rawDx)) dx = 0;   // predominantly vertical — lock X
+            else                                    dy = 0;   // predominantly horizontal — lock Y
         }
 
-        // Grid snap (Ctrl overrides).
-        if (!ctrl && gridSize > 0)
+        double grid = SnapMode switch
         {
-            dx = Math.Round(dx / gridSize) * gridSize;
-            dy = Math.Round(dy / gridSize) * gridSize;
+            SnapMode.ConnectionGrid => EditModel.GridSize,        // P
+            SnapMode.FineGrid       => EditModel.AuthorGridSize,  // p
+            _                       => 0,                          // None → no snap
+        };
+        if (!ctrl && grid > 0)
+        {
+            dx = Math.Round(dx / grid) * grid;
+            dy = Math.Round(dy / grid) * grid;
         }
-
         return (dx, dy);
     }
 
@@ -3072,7 +3143,19 @@ public sealed partial class SchematicViewModel : ObservableObject
                     foreach (var dp in ComponentTypeRegistry.DefaultParameters(newKind, portCount))
                         newComp.Parameters.Add(new EditableParameter
                             { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
+                    // Auto-assign the next-free Num so a type-change to Pin/Term never duplicates an existing number.
+                    if (newKind == SymbolKind.Term)
+                    {
+                        var np = newComp.Parameters.FirstOrDefault(p => p.Name == "Num");
+                        if (np is not null) np.Expression = NextFreeTermNum(EditModel).ToString();
+                    }
+                    else if (newKind == SymbolKind.Pin)
+                    {
+                        var np = newComp.Parameters.FirstOrDefault(p => p.Name == "Num");
+                        if (np is not null) np.Expression = NextFreePinNum(EditModel).ToString();
+                    }
                     Execute(new ChangeComponentTypeCommand(EditModel, comp, newComp));
+
                 }
                 break;
             }
@@ -3096,7 +3179,14 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
             case InlineEditKind.WireNetLabel:
             {
-                if (newVal.Length == 0) break;
+                if (newVal.Length == 0)
+                {
+                    // Cleared: delete the existing label (node reverts to its implicit name, nothing rendered).
+                    // Nothing to do when there was no label (empty new label was never placed).
+                    if (label is not null)
+                        Execute(new DeleteCommand(EditModel, new[] { label.Id }));
+                    break;
+                }
                 if (label is not null)
                 {
                     if (newVal != label.Name)

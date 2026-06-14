@@ -12,7 +12,7 @@ namespace CircuitRF.Ui.Schematic;
 /// </summary>
 public sealed class SymbolEditorDocument : Document, IUndoableDocument
 {
-    private readonly string _baseTitle;
+    private string _baseTitle;
 
     public SymbolEditorViewModel ViewModel { get; }
     public UndoRedoStack         UndoRedo  => ViewModel.UndoRedo;
@@ -67,7 +67,18 @@ public sealed class SymbolEditorDocument : Document, IUndoableDocument
         {
             if (e.PropertyName is nameof(SymbolEditorViewModel.IsDirty))
                 IsDirty = ViewModel.IsDirty;
+            else if (e.PropertyName is nameof(SymbolEditorViewModel.CurrentSymbolPath))
+                SyncTitleToPath();
         };
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private void SyncTitleToPath()
+    {
+        if (ViewModel.CurrentSymbolPath is not { } path) return;
+        _baseTitle = System.IO.Path.GetFileName(path);
+        Title = _isDirty ? $"• {_baseTitle}" : _baseTitle;
     }
 
     // ── Materialization ──────────────────────────────────────────────────────

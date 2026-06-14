@@ -15,6 +15,7 @@ public enum SymbolFontStyle  { Regular, Bold, Italic, Condensed }
 public enum SymbolStrokeTier { Normal, Thin, Thick }
 public enum SineAxis         { Horizontal, Vertical }
 public enum SymbolTextAlign  { Left, Center, Right }
+public enum SymbolTextVAlign { Baseline, Top, Middle, Bottom }
 
 /// <summary>Tri-state snap mode for symbol-editor art.  Pins ALWAYS snap to P=100 regardless.</summary>
 public enum SnapMode { ConnectionGrid, FineGrid, None }
@@ -237,6 +238,20 @@ public sealed class TextPrimitive : SymbolPrimitive
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public SymbolTextAlign Align     { get; set; }
+
+    // ── NEW (default values preserve legacy rendering for old .csym files) ──
+    /// <summary>Vertical anchor reference. Baseline = legacy behaviour (anchor on the text baseline).</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SymbolTextVAlign VAlign { get; set; } = SymbolTextVAlign.Baseline;
+
+    /// <summary>In-place orientation; the box spins about its center. Default R0.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SymbolRotation Rotation { get; set; } = SymbolRotation.R0;
+
+    /// <summary>When true, a rotated cell instance in the schematic auto-flips this text 180° as
+    /// needed so it never renders upside-down/mirrored. When false (default), it rotates rigidly with
+    /// the instance. The symbol editor always shows the literal authored rotation regardless.</summary>
+    public bool ForceReadable { get; set; }
 }
 
 // ── Bitmap (reference/tracing artwork) ───────────────────────────────────────

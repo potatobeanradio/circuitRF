@@ -48,19 +48,23 @@ public sealed partial class AnalysesListViewModel : ObservableObject
     /// <summary>True when no schematic is active (neutral "open a schematic" state).</summary>
     [ObservableProperty] private bool _noActiveSchematic = true;
 
+    /// <summary>Header text — filename of the active schematic, or "Analyses" when none/unsaved.</summary>
+    [ObservableProperty] private string _headerLabel = "Analyses";
+
     /// <summary>True when a schematic is active but has no analyses (HIG empty state).</summary>
     public bool IsEmpty => !NoActiveSchematic && Rows.Count == 0;
 
     // ── Active-schematic binding ──────────────────────────────────────────────
 
     /// <summary>Called by the dock tool (and modal host) when the active schematic changes.</summary>
-    public void SetActiveSchematic(SchematicViewModel? vm)
+    public void SetActiveSchematic(SchematicViewModel? vm, string? schematicName = null)
     {
         if (_schematicVm is not null)
             _schematicVm.EditModel.Changed -= OnModelChanged;
 
         _schematicVm      = vm;
         NoActiveSchematic = vm is null;
+        HeaderLabel       = string.IsNullOrEmpty(schematicName) ? "Analyses" : schematicName;
 
         if (vm is not null)
             vm.EditModel.Changed += OnModelChanged;

@@ -55,6 +55,17 @@
                                        IsCheckedChanged="OnTransparentBgChanged"/>
                         </Grid>
 
+                        <!-- Messages section -->
+                        <TextBlock Text="Messages" FontSize="11" FontWeight="SemiBold"
+                                   Opacity="0.55" Margin="0,20,0,6"/>
+                        <Grid ColumnDefinitions="130,*">
+                            <TextBlock Grid.Column="0" Text="Timestamps:"
+                                       VerticalAlignment="Center" FontSize="12"/>
+                            <ComboBox  Grid.Column="1" Name="MsgTimestampCombo"
+                                       FontSize="12" MinWidth="180" HorizontalAlignment="Left"
+                                       SelectionChanged="OnMsgTimestampChanged"/>
+                        </Grid>
+
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

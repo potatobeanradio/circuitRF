@@ -55,6 +55,9 @@ public partial class App : Application
         if (prefs.ActiveThemeName is { } savedTheme)
             ThemeService.Active = ThemeResolver.Resolve(savedTheme);
 
+        CircuitRF.Ui.Messages.MessageDisplay.Mode =
+            prefs.MessageTimestamp ?? CircuitRF.Ui.Messages.MessageTimestampMode.Time;
+
         // Wire CrfWarningBrush to the active color theme so Project Tree warning nodes
         // use System.Warning from the theme rather than a literal color value.
         // Also keeps ThemeService.CurrentVariant in sync so ClipboardRenderPolicy.FollowSystem works.

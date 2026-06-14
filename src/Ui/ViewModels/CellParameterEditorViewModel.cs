@@ -20,7 +20,7 @@ namespace CircuitRF.Ui.ViewModels;
 /// </summary>
 public sealed partial class CellParameterEditorViewModel : ObservableObject
 {
-    private const string NoneOption = "(none)";
+    private const string NoneOption = "(none specified)";
 
     private readonly CellParameterEditModel _editModel;
 
@@ -46,21 +46,21 @@ public sealed partial class CellParameterEditorViewModel : ObservableObject
 
     // ── Primary Schematic / Symbol combo data ─────────────────────────────────
 
-    /// <summary>Available .csch filenames for the cell, prefixed by "(none)".</summary>
+    /// <summary>Available .csch filenames for the cell, prefixed by "(none specified)".</summary>
     [ObservableProperty] private IReadOnlyList<string> _availableSchematics = [NoneOption];
 
-    /// <summary>Available .csym filenames for the cell, prefixed by "(none)".</summary>
+    /// <summary>Available .csym filenames for the cell, prefixed by "(none specified)".</summary>
     [ObservableProperty] private IReadOnlyList<string> _availableSymbols = [NoneOption];
 
     /// <summary>
     /// Selected primary schematic combo value. Setting fires an undoable command.
-    /// "(none)" maps to null in .ccell.
+    /// "(none specified)" maps to null in .ccell.
     /// </summary>
     [ObservableProperty] private string _selectedPrimarySchematic = NoneOption;
 
     /// <summary>
     /// Selected primary symbol combo value. Setting fires an undoable command.
-    /// "(none)" maps to null in .ccell.
+    /// "(none specified)" maps to null in .ccell.
     /// </summary>
     [ObservableProperty] private string _selectedPrimarySymbol = NoneOption;
 
@@ -170,7 +170,7 @@ public sealed partial class CellParameterEditorViewModel : ObservableObject
     /// The available files are stable for the editor's lifetime, so this is called ONCE at
     /// construction — NEVER on parameter edits.  Reassigning the ItemsSource on every model
     /// change made the ComboBox transiently null its SelectedItem, whose write-back escaped
-    /// the suppression window and fired a spurious "set primary to (none)" command that wiped
+    /// the suppression window and fired a spurious "set primary to (none specified)" command that wiped
     /// the saved primary (the persistence bug).
     /// </summary>
     private void BuildAvailableFileLists()

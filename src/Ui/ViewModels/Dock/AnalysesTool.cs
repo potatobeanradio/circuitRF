@@ -20,7 +20,8 @@ public sealed partial class AnalysesTool : Tool
     }
 
     /// <summary>Called by WorkspaceViewModel when the active schematic document changes.</summary>
-    public void SetActiveSchematic(SchematicViewModel? vm) => ListVm.SetActiveSchematic(vm);
+    public void SetActiveSchematic(SchematicViewModel? vm, string? schematicName = null)
+        => ListVm.SetActiveSchematic(vm, schematicName);
 
     /// <summary>Called by WorkspaceViewModel when the open workspace changes (or is cleared).</summary>
     public void SetWorkspaceDir(string? workspaceDir) => ListVm.SetWorkspaceDir(workspaceDir);

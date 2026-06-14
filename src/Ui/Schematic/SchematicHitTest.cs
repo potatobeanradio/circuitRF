@@ -57,7 +57,8 @@ public static class SchematicHitTest
         SchematicModel      renderModel,
         SchematicSpatialIndex index,
         double worldX, double worldY,
-        double hitRadius = DefaultHitRadius)
+        double hitRadius = DefaultHitRadius,
+        bool includeLabels = true)
     {
         double half = hitRadius;
         var candComps = new HashSet<int>();
@@ -66,11 +67,14 @@ public static class SchematicHitTest
                             candComps, candWires);
 
         // ── 1. Text label zones (highest Z) ──────────────────────────────────
-        foreach (int i in candComps.OrderByDescending(x => x))
+        if (includeLabels)
         {
-            if (i >= editModel.Components.Count) continue;
-            var textHit = TestComponentLabels(editModel.Components[i], worldX, worldY);
-            if (textHit.Kind != HitKind.None) return textHit;
+            foreach (int i in candComps.OrderByDescending(x => x))
+            {
+                if (i >= editModel.Components.Count) continue;
+                var textHit = TestComponentLabels(editModel.Components[i], worldX, worldY);
+                if (textHit.Kind != HitKind.None) return textHit;
+            }
         }
 
         // ── 2. Component symbol glyphs ────────────────────────────────────────
@@ -143,6 +147,96 @@ public static class SchematicHitTest
         }
 
         return new HitResult(HitKind.None, "");
+    }
+
+    /// <summary>
+    /// Returns every selectable object under (worldX, worldY), ordered top→bottom (same Z-priority
+    /// as <see cref="Test"/>), at most one entry per object. Used for cyclic click-through selection.
+    /// Labels are excluded unless includeLabels is true (left-click selection ignores labels — B9).
+    /// Each wire contributes a single entry: a WireEndpoint (whole-wire) hit when the point is near an
+    /// endpoint, otherwise the WireSegment under the point.
+    /// </summary>
+    public static IReadOnlyList<HitResult> TestStack(
+        SchematicEditModel    editModel,
+        SchematicModel        renderModel,
+        SchematicSpatialIndex index,
+        double worldX, double worldY,
+        double hitRadius = DefaultHitRadius,
+        bool   includeLabels = false)
+    {
+        double half = hitRadius;
+        var candComps = new HashSet<int>();
+        var candWires = new HashSet<int>();
+        index.QueryViewport(worldX - half, worldY - half, worldX + half, worldY + half,
+                            candComps, candWires);
+
+        var results = new List<HitResult>();
+
+        // 1. Labels (only if requested) — topmost.
+        if (includeLabels)
+            foreach (int i in candComps.OrderByDescending(x => x))
+            {
+                if (i >= editModel.Components.Count) continue;
+                var th = TestComponentLabels(editModel.Components[i], worldX, worldY);
+                if (th.Kind != HitKind.None) results.Add(th);
+            }
+
+        // 2. Component glyphs (descending index = topmost first).
+        foreach (int i in candComps.OrderByDescending(x => x))
+        {
+            if (i >= editModel.Components.Count) continue;
+            var comp = editModel.Components[i];
+            var (gMinX, gMinY, gMaxX, gMaxY) = GetCompGlyphBb(comp, editModel);
+            if (worldX >= gMinX && worldX <= gMaxX && worldY >= gMinY && worldY <= gMaxY)
+                results.Add(new HitResult(HitKind.Component, comp.Id));
+        }
+
+        // 3. Canvas objects (topmost first).
+        for (int i = editModel.CanvasObjects.Count - 1; i >= 0; i--)
+        {
+            var obj = editModel.CanvasObjects[i];
+            if (obj.IsLocked) continue;
+            var bb = obj.GetBoundingBox();
+            if (worldX >= bb.MinX && worldX <= bb.MaxX && worldY >= bb.MinY && worldY <= bb.MaxY)
+                results.Add(new HitResult(HitKind.CanvasObject, obj.Id));
+        }
+
+        // 4. Wires — one entry per wire (endpoint → whole-wire; else the segment under the point).
+        foreach (int i in candWires.OrderByDescending(x => x))
+        {
+            if (i >= editModel.Wires.Count) continue;
+            var wire = editModel.Wires[i];
+            var pts  = wire.Points;
+            if (pts.Count == 0) continue;
+
+            if (SchematicGeometry.CoincidentPoints(worldX, worldY, pts[0].X, pts[0].Y, EndpointHitTol))
+            { results.Add(new HitResult(HitKind.WireEndpoint, wire.Id, SubIndex: 0)); continue; }
+
+            int last = pts.Count - 1;
+            if (SchematicGeometry.CoincidentPoints(worldX, worldY, pts[last].X, pts[last].Y, EndpointHitTol))
+            { results.Add(new HitResult(HitKind.WireEndpoint, wire.Id, SubIndex: last)); continue; }
+
+            for (int pi = 0; pi < pts.Count - 1; pi++)
+                if (SchematicGeometry.PointOnSegment(
+                        worldX, worldY, pts[pi].X, pts[pi].Y, pts[pi + 1].X, pts[pi + 1].Y, WireHitTol))
+                { results.Add(new HitResult(HitKind.WireSegment, wire.Id, SubIndex: pi)); break; }
+        }
+
+        // 5. Dots.
+        foreach (var dot in editModel.Dots)
+            if (SchematicGeometry.CoincidentPoints(worldX, worldY, dot.X, dot.Y, hitRadius))
+                results.Add(new HitResult(HitKind.Dot, dot.Id));
+
+        // 6. Net labels.
+        foreach (var lbl in editModel.NetLabels)
+        {
+            if (worldY < lbl.Y - NetLabelAboveBaseline || worldY > lbl.Y + NetLabelBelowBaseline) continue;
+            double right = lbl.X + lbl.Name.Length * NetLabelCharWidth;
+            if (worldX >= lbl.X - 8 && worldX <= right + 8)
+                results.Add(new HitResult(HitKind.NetLabel, lbl.Id));
+        }
+
+        return results;
     }
 
     private static HitResult TestComponentLabels(EditableComponent comp, double wx, double wy)

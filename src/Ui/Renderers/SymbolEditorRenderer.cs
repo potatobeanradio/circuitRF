@@ -36,11 +36,11 @@ internal static class SymbolEditorRenderer
 
         if (symbol is null) return;
 
-        // A bitmap that is being live-dragged or live-resized is redrawn at its live position by
-        // the overlay pass below; suppress it in the base pass so the committed image doesn't show
-        // underneath the moving/resizing preview. (Vector primitives are re-STROKED on top so they
-        // don't need suppression; only the opaque bitmap image would double up.)
-        int liveBitmapIdx = -1;
+        // Primitives the OVERLAY pass redraws at the live position; suppress their committed copies in the
+        // base pass so they don't appear twice (old + moving):
+        //  • a live-dragged/resized bitmap (opaque image would double up), and
+        //  • any live-dragged text (glyphs are re-drawn at the offset by the selection overlay).
+        var suppressed = new HashSet<int>();
         {
             var (ddx, ddy) = overlay.LiveDragOffset;
             bool dragging  = ddx != 0 || ddy != 0;
@@ -49,15 +49,17 @@ internal static class SymbolEditorRenderer
             {
                 int sel = overlay.SelectedIndices.First();
                 if (sel >= 0 && sel < symbol.Primitives.Count && symbol.Primitives[sel] is BitmapPrimitive)
-                    liveBitmapIdx = sel;
+                    suppressed.Add(sel);
             }
+            if (dragging)
+                foreach (int sel in overlay.SelectedIndices)
+                    if (sel >= 0 && sel < symbol.Primitives.Count && symbol.Primitives[sel] is TextPrimitive)
+                        suppressed.Add(sel);
         }
 
-        // Draw the symbol at local origin, no rotation, using the editor pan/zoom.
-        // When a bitmap is live (drag/resize), draw everything except that one primitive.
-        IReadOnlyList<SymbolPrimitive> basePrims = liveBitmapIdx < 0
+        IReadOnlyList<SymbolPrimitive> basePrims = suppressed.Count == 0
             ? symbol.Primitives
-            : symbol.Primitives.Where((_, i) => i != liveBitmapIdx).ToList();
+            : symbol.Primitives.Where((_, i) => !suppressed.Contains(i)).ToList();
         SchematicRenderer.DrawSymbol(
             canvas, basePrims,
             compX: 0, compY: 0,
@@ -268,6 +270,40 @@ internal static class SymbolEditorRenderer
         }
     }
 
+    /// <summary>
+    /// Draws plain pin markers — filled dot + port label — at the editor's on-screen scale, with no
+    /// selection/overlay state. Shared by the symbol clipboard export (PDF/SVG/PNG) so exported images
+    /// match the editor. Keep the r / strokeW / fontSize formulas in sync with DrawPinMarkers.
+    /// </summary>
+    internal static void DrawPinMarkersPlain(
+        SKCanvas canvas, IReadOnlyList<SymbolPin> pins,
+        double panX, double panY, double zoom, SchematicRenderTheme theme)
+    {
+        if (pins.Count == 0) return;
+
+        float r        = (float)Math.Max(3.0, zoom * 5.0);
+        float strokeW  = (float)Math.Max(1.0, zoom * 1.5);
+        float fontSize = (float)Math.Max(8.0, zoom * 12.0);
+
+        using var fill      = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
+                                            Color = theme.ConnectedPin };
+        using var stroke    = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke,
+                                            StrokeWidth = strokeW, Color = theme.Wire };
+        using var textPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
+                                            Color = theme.ComponentNameText };
+        using var labelFont = new SKFont(SkiaFonts.PlexBold, fontSize);
+
+        foreach (var pin in pins)
+        {
+            float sx = (float)((pin.LocalX - panX) * zoom);
+            float sy = (float)((pin.LocalY - panY) * zoom);
+            canvas.DrawCircle(sx, sy, r, fill);
+            canvas.DrawCircle(sx, sy, r, stroke);
+            string lbl = pin.Name is { Length: > 0 } n ? n : $"P{pin.PortIndex + 1}";
+            canvas.DrawText(lbl, sx + r + 2, sy + fontSize * 0.35f, SKTextAlign.Left, labelFont, textPaint);
+        }
+    }
+
     // ── Unmapped port info panel ──────────────────────────────────────────────
 
     private static void DrawUnmappedPortPanel(
@@ -336,18 +372,13 @@ internal static class SymbolEditorRenderer
                 StrokeJoin  = SKStrokeJoin.Round,
                 StrokeCap   = SKStrokeCap.Round,
             };
-            // Box highlight kept for Text primitives and for the fill background.
+            // Box highlight for the bitmap outline.
             using var boxStroke = new SKPaint
             {
                 IsAntialias = true, Style = SKPaintStyle.Stroke,
                 StrokeWidth = (float)Math.Max(1.0, zoom * 1.5),
                 Color       = theme.SelectionBox,
                 PathEffect  = SKPathEffect.CreateDash([4f, 4f], 0f),
-            };
-            using var boxFill = new SKPaint
-            {
-                IsAntialias = false, Style = SKPaintStyle.Fill,
-                Color       = theme.SelectionFill,
             };
 
             foreach (int idx in selected)
@@ -357,18 +388,20 @@ internal static class SymbolEditorRenderer
 
                 if (prim is TextPrimitive)
                 {
-                    // Text: corrected bbox box highlight (Layer 7).
-                    var (bx0, by0, bx1, by1) = SymbolGeometry.BboxOf(prim);
-                    bx0 += dx; by0 += dy; bx1 += dx; by1 += dy;
-                    float sx0 = (float)((bx0 - panX) * zoom);
-                    float sy0 = (float)((by0 - panY) * zoom);
-                    float sx1 = (float)((bx1 - panX) * zoom);
-                    float sy1 = (float)((by1 - panY) * zoom);
-                    float margin = (float)Math.Max(2.0, zoom * 2.0);
-                    var rect = SKRect.Create(sx0 - margin, sy0 - margin,
-                                             sx1 - sx0 + 2 * margin, sy1 - sy0 + 2 * margin);
-                    canvas.DrawRect(rect, boxFill);
-                    canvas.DrawRect(rect, boxStroke);
+                    // Re-draw the glyphs in the selection accent at the live-drag offset: moves the text
+                    // live during a drag and signals selection by colour — no dashed box.
+                    using var selText = new SKPaint
+                    {
+                        IsAntialias = true, Style = SKPaintStyle.Fill,
+                        Color       = theme.SelectionBox,
+                    };
+                    SchematicRenderer.DrawSymbol(
+                        canvas, [prim],
+                        compX: 0, compY: 0,
+                        rotation: SymbolRotation.R0, mirrorX: false,
+                        panX: panX - dx, panY: panY - dy, zoom: zoom,
+                        theme: theme,
+                        overridePaint: selText);
                 }
                 else if (prim is BitmapPrimitive)
                 {

@@ -7,6 +7,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.Views.Dialogs;
@@ -77,6 +78,9 @@ public partial class SettingsView : Window
             CopyColorCombo.SelectedIndex = (int)(prefs.CopyColorMode ?? CopyColorMode.FollowSystem);
 
             TransparentBgCheck.IsChecked = prefs.CopyTransparentBackground ?? true;
+
+            MsgTimestampCombo.ItemsSource   = new[] { "Time", "Date + Time", "Hidden" };
+            MsgTimestampCombo.SelectedIndex = (int)(prefs.MessageTimestamp ?? MessageTimestampMode.Time);
         }
         finally { _updatingGeneral = false; }
     }
@@ -103,6 +107,14 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.CopyTransparentBackground = TransparentBgCheck.IsChecked);
+    }
+
+    private void OnMsgTimestampChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingGeneral || MsgTimestampCombo.SelectedIndex < 0) return;
+        var mode = (MessageTimestampMode)MsgTimestampCombo.SelectedIndex;
+        AppPreferencesIo.Update(p => p.MessageTimestamp = mode);
+        MessageDisplay.Mode = mode;   // live
     }
 
     // ── Theme combo ──────────────────────────────────────────────────────────

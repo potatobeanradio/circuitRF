@@ -98,6 +98,15 @@ public sealed class SymbolEditorCanvas : Control
     // −1 means no bitmap under the pointer; Avalonia cancels the ContextMenu in that case.
     public int BitmapContextPrimIdx { get; private set; } = -1;
 
+    // ── Viewport public API (used by the inline edit box to position itself) ────
+
+    public double CurrentZoom => _zoom;
+
+    public (double X, double Y) WorldToScreen(double wx, double wy)
+        => ((wx - _panX) * _zoom, (wy - _panY) * _zoom);
+
+    public event EventHandler? ViewportChanged;
+
     // ── Clipboard events (async work handled by SymbolEditorView code-behind) ────
 
     public event EventHandler? ClipboardCopyRequested;
@@ -145,6 +154,7 @@ public sealed class SymbolEditorCanvas : Control
             _needsInitialFit = false;
             LayoutUpdated -= OnLayoutUpdated;
             ZoomToFitInternal();
+            ViewportChanged?.Invoke(this, EventArgs.Empty);
             InvalidateVisual();
         }
     }
@@ -194,6 +204,7 @@ public sealed class SymbolEditorCanvas : Control
     public void ZoomToFit()
     {
         ZoomToFitInternal();
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
     }
 
@@ -201,6 +212,15 @@ public sealed class SymbolEditorCanvas : Control
     {
         if (_renderSymbol is null || Bounds.Width < 1 || Bounds.Height < 1) return;
         var (bbMinX, bbMinY, bbMaxX, bbMaxY) = SymbolGeometry.ComputeBb(_renderSymbol.Primitives);
+        // Include pins so they're framed too (and so a pins-only symbol isn't treated as blank).
+        const double pinPad = 10.0;   // world units: pin dot + a little label room
+        foreach (var p in _renderSymbol.Pins)
+        {
+            bbMinX = Math.Min(bbMinX, p.LocalX - pinPad);
+            bbMinY = Math.Min(bbMinY, p.LocalY - pinPad);
+            bbMaxX = Math.Max(bbMaxX, p.LocalX + pinPad);
+            bbMaxY = Math.Max(bbMaxY, p.LocalY + pinPad);
+        }
 
         // Blank/new symbol — use a larger default zoom centered at the origin so the
         // editing area is immediately comfortable (200 px per connection-grid square).
@@ -284,6 +304,7 @@ public sealed class SymbolEditorCanvas : Control
         {
             _panX = _panDragStartPanX - (pos.X - _panDragStartScreen.X) / _zoom;
             _panY = _panDragStartPanY - (pos.Y - _panDragStartScreen.Y) / _zoom;
+            ViewportChanged?.Invoke(this, EventArgs.Empty);
             InvalidateVisual();
             return;
         }
@@ -350,6 +371,7 @@ public sealed class SymbolEditorCanvas : Control
         _panX = wx - pos.X / _zoom;
         _panY = wy - pos.Y / _zoom;
         if (_viewModel is not null) _viewModel.CanvasZoom = _zoom;
+        ViewportChanged?.Invoke(this, EventArgs.Empty);
         InvalidateVisual();
         e.Handled = true;
     }

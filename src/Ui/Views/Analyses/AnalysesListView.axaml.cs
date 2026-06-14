@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using CircuitRF.Ui.ViewModels;
 
@@ -8,6 +9,11 @@ namespace CircuitRF.Ui.Views.Analyses;
 public partial class AnalysesListView : UserControl
 {
     public AnalysesListView() => InitializeComponent();
+
+    private void OnHelp(object? sender, RoutedEventArgs e)
+    {
+        // TODO: open Analyses help. Stub for now.
+    }
 
     // ── Selection ─────────────────────────────────────────────────────────────
 

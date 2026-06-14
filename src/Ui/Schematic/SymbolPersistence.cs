@@ -56,7 +56,7 @@ public sealed class CsymPin
 /// </summary>
 public static class SymbolPersistence
 {
-    public const int CurrentFormatVersion = 5;
+    public const int CurrentFormatVersion = 6;   // was 5: TextPrimitive VAlign/Rotation/ForceReadable
 
     private static readonly JsonSerializerOptions _jsonOpts = new()
     {
@@ -75,7 +75,7 @@ public static class SymbolPersistence
     }
 
     public static void SaveToFile(string path, Symbol symbol, double gridSize = 100.0)
-        => File.WriteAllText(path, Serialize(symbol, gridSize));
+        => AtomicFile.WriteAllText(path, Serialize(symbol, gridSize));
 
     // ── Read ──────────────────────────────────────────────────────────────────
 

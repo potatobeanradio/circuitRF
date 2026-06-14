@@ -237,6 +237,7 @@
         <Style Selector="TextBox">
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource TextControlSelectionHighlightColor}"/>
         </Style>
         <Style Selector="MenuItem">
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>

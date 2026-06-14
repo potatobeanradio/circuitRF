@@ -1,3 +1,5 @@
+using System.Threading.Tasks;
+
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
@@ -12,4 +14,11 @@ public interface IHierarchyHost
     void PopOutOf(SchematicDocument doc);
     void PopToLevel(SchematicDocument doc, int frameIndex);
     void OpenCellInNewTab(SchematicDocument fromDoc, EditableComponent comp);
+
+    /// <summary>
+    /// Saves <paramref name="doc"/> with the same behaviour as ⌘S single-doc scope:
+    /// materialized → writes to its known path; scratch → the Save-to-Cell plan dialog.
+    /// Registers the file/session and refreshes the project tree. The host resolves the owner window.
+    /// </summary>
+    Task SaveSchematicDocumentAsync(SchematicDocument doc);
 }

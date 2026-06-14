@@ -52,6 +52,42 @@
             <Setter Property="Opacity" Value="0.35"/>
         </Style>
 
+        <!-- Snap button — ConnectionGrid: opaque accent bg (same strength as ToolActive) -->
+        <Style Selector="Button.snap-connection">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.snap-connection /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.snap-connection:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Snap button — FineGrid: semi-transparent accent bg -->
+        <Style Selector="Button.snap-fine /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.4"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.snap-fine:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <SolidColorBrush Color="{DynamicResource SystemAccentColor}" Opacity="0.65"/>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- snap-none: no custom style — default button appearance signals snap is off -->
+
         <!-- ── Breadcrumb bar styles ──────────────────────────────────────── -->
         <!-- Base style: flat, transparent, accent foreground for clickable crumbs -->
         <Style Selector="Button.BreadcrumbBtn">
@@ -220,14 +256,13 @@
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
-                <!-- Grid Snap toggle -->
-                <ToggleButton x:Name="GridSnapToggle"
-                              IsChecked="True"
-                              Click="OnGridSnapToggle"
-                              ToolTip.Tip="Snap to Grid"
-                              Padding="6,3">
+                <!-- Grid Snap tri-state (none / p / P) -->
+                <Button x:Name="SnapModeBtn"
+                        Click="OnCycleSnapMode"
+                        ToolTip.Tip="Snap: Fine Grid  (G)"
+                        Padding="6,3">
                     <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
-                </ToggleButton>
+                </Button>
 
                 <!-- Separator -->
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"

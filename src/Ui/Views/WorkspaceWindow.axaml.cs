@@ -1,8 +1,13 @@
 using System;
 using System.IO;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using CircuitRF.Ui.ViewModels;
+using CircuitRF.Ui.Views.Content;
+using CircuitRF.Ui.Views.Palette;
 using Dock.Avalonia.Controls;
 
 namespace CircuitRF.Ui.Views;
@@ -31,6 +36,32 @@ public partial class WorkspaceWindow : Window
         // Belt-and-suspenders: also set HostWindowFactory directly on the control so
         // both Dock dispatch paths (factory locator and DockControl) produce a HostWindow.
         MainDockControl.HostWindowFactory = () => new HostWindow();
+        AddHandler(InputElement.KeyDownEvent, OnWindowKeyDownTunnel, RoutingStrategies.Tunnel);
+    }
+
+    // While a placement is armed, R / Shift+R rotate the ghost regardless of which control has focus
+    // (palette tile, canvas, …). Scoped to the schematic-placement context so it never steals R from
+    // the Symbol Editor (rotate primitive), a text field, or other panels. Tunnel = fires before the
+    // SchematicView tunnel and the canvas bubble, so it wins when armed and they don't double-rotate.
+    private void OnWindowKeyDownTunnel(object? sender, KeyEventArgs e)
+    {
+        if (_vm is null || _vm.PlacementService.Pending is null) return;  // only when armed
+        if (e.Key != Key.R) return;
+        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0) return;  // leave ⌘/Ctrl+R alone
+        if (!IsPlacementKeyContext(FocusManager?.GetFocusedElement())) return;
+
+        _vm.PlacementService.Rotate(clockwise: e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+        e.Handled = true;
+    }
+
+    // True only when focus is inside a schematic editor or the Library Palette (and not a text field),
+    // i.e. the contexts where R-as-rotate-the-ghost is the intended meaning.
+    private static bool IsPlacementKeyContext(IInputElement? focused)
+    {
+        if (focused is TextBox) return false;            // typing — don't steal R
+        if (focused is not Visual v) return false;
+        return v.FindAncestorOfType<SchematicView>()   is not null
+            || v.FindAncestorOfType<PaletteToolView>() is not null;
     }
 
     protected override void OnDataContextChanged(EventArgs e)

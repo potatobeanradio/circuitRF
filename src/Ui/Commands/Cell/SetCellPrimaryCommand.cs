@@ -14,8 +14,8 @@ internal sealed class SetCellPrimaryCommand : IUiCommand
     private readonly string?               _oldValue;
 
     public string Description => _isSymbol
-        ? $"Set primary symbol to {_newValue ?? "(none)"}"
-        : $"Set primary schematic to {_newValue ?? "(none)"}";
+        ? $"Set primary symbol to {_newValue ?? "(none specified)"}"
+        : $"Set primary schematic to {_newValue ?? "(none specified)"}";
 
     public SetCellPrimaryCommand(CellParameterEditModel model, bool isSymbol, string? newValue)
     {

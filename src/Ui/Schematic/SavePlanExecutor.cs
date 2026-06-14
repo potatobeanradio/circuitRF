@@ -86,7 +86,7 @@ public static class SavePlanExecutor
             }
 
             // ── Scratch → materialized transition ─────────────────────────────
-            saveStep.Document.Materialize(filePath);
+            saveStep.Document.Materialize(filePath, cellName: saveStep.TargetCellName);
         }
 
         return written;

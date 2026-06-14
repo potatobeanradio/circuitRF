@@ -130,11 +130,7 @@ public static class WorkspacePersistence
     /// A crash mid-write leaves the old file intact (never a half-written .cws).
     /// </summary>
     public static void SaveToFileAtomic(string path, CwsFile ws)
-    {
-        var tmp = path + ".tmp";
-        File.WriteAllText(tmp, Serialize(ws));
-        File.Move(tmp, path, overwrite: true);
-    }
+        => AtomicFile.WriteAllText(path, Serialize(ws));
 
     public static CwsFile Deserialize(string json)
     {

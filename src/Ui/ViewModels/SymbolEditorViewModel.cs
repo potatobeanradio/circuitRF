@@ -70,6 +70,39 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
             ? $"Ports: {ext}"
             : $"Ports: {EditableSymbol.Pins.Count}";
 
+    /// <summary>
+    /// Updates the cell-declared external port count — e.g. after the owning cell's .ccell NumPorts
+    /// changed in the cell editor while this tab was inactive. Refreshes the Ports label and the
+    /// unmapped-port overlay. No-op when unchanged. Does NOT dirty the document (ExternalPortCount is
+    /// cell authority, not symbol data, and is not serialized).
+    /// </summary>
+    public void SetExternalPortCount(int? count)
+    {
+        if (EditableSymbol.ExternalPortCount == count) return;
+        EditableSymbol.ExternalPortCount = count;
+        OnPropertyChanged(nameof(ExternalPortCount));
+        OnPropertyChanged(nameof(PortsLabel));
+        RebuildOverlay();   // unmapped-port warnings depend on ExternalPortCount
+    }
+
+    /// <summary>
+    /// Re-reads NumPorts from the owning cell's .ccell and calls <see cref="SetExternalPortCount"/>.
+    /// Called on window/view activation to pick up changes made in the cell editor while this tab
+    /// was inactive. No-op for orphan symbols (no .ccell) or when the value is unchanged.
+    /// </summary>
+    public void RefreshPortCountFromDisk()
+    {
+        if (CurrentSymbolPath is not { } sp) return;
+        var symbolDir = Path.GetDirectoryName(sp);
+        if (symbolDir is null) return;
+        var cellDir = Path.GetDirectoryName(symbolDir);
+        if (cellDir is null) return;
+        var ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        if (!File.Exists(ccellPath)) return;
+        try { SetExternalPortCount(CellPersistence.LoadFromFile(ccellPath).NumPorts); }
+        catch { }
+    }
+
     /// <summary>True for built-in / system symbols; the editor opens them read-only.</summary>
     [ObservableProperty] private bool _isLocked;
 
@@ -188,6 +221,14 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     // Connection / pin grid: P = 100 local units (1 connection-grid square).
     private const double PinGrid   = 100.0;
 
+    // ── Inline text edit request ──────────────────────────────────────────────
+
+    /// <summary>Payload raised on double-click of a text primitive; the view opens an inline editor.</summary>
+    public readonly record struct TextEditRequest(int Index, double WorldX, double WorldY,
+                                                  string Content, double FontSize);
+
+    public event Action<TextEditRequest>? TextEditRequested;
+
     // ── Canvas zoom (set by SymbolEditorCanvas; used to convert screen-px tolerances) ──
 
     /// <summary>
@@ -230,6 +271,14 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
 
     private static double SnapToConnectionGrid(double v)
         => Math.Round(v / PinGrid) * PinGrid;
+
+    private (double X, double Y)? SingleSelectedTextAnchor()
+    {
+        if (_selection.Count != 1) return null;
+        int idx = _selection.First();
+        if (idx < 0 || idx >= EditableSymbol.Primitives.Count) return null;
+        return EditableSymbol.Primitives[idx] is TextPrimitive t ? (t.AnchorX, t.AnchorY) : null;
+    }
 
     // ── Toolbar commands ─────────────────────────────────────────────────────
 
@@ -306,12 +355,26 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     /// </summary>
     public void Execute(IUiCommand cmd) => _undoRedo.Execute(cmd);
 
+    /// <summary>Commits an inline text edit (undoable). No-op when locked, unchanged, or the index is
+    /// stale / not a TextPrimitive.</summary>
+    public void CommitTextEdit(int index, string newContent)
+    {
+        if (IsLocked || index < 0 || index >= EditableSymbol.Primitives.Count) return;
+        if (EditableSymbol.Primitives[index] is not TextPrimitive tp) return;
+        if (tp.Content == newContent) return;
+        Execute(new SetTextPrimitiveCommand(EditableSymbol, tp, newContent, tp.FontSize, tp.FontStyle));
+    }
+
     // ── Text input (from canvas TextInput event) ──────────────────────────────
 
     public void OnTextInput(string text)
     {
         if (!_isTypingText || string.IsNullOrEmpty(text)) return;
-        _textBuffer += text;
+        // Backspace/Delete/Enter/Tab arrive here as control chars on some platforms and would render
+        // as tofu (□). Deletion is handled in OnKeyDown (Key.Back); keep only printable text here.
+        string printable = new string(text.Where(c => !char.IsControl(c)).ToArray());
+        if (printable.Length == 0) return;
+        _textBuffer += printable;
         RebuildOverlay();
     }
 
@@ -343,6 +406,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                 FontSize  = CurrentFontSize,
                 FontStyle = CurrentFontStyle,
                 Align     = SymbolTextAlign.Left,
+                VAlign    = SymbolTextVAlign.Top,
             };
 
         // Resize handles: BR and TL corners of single selected prim's bbox.
@@ -435,7 +499,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     {
         if (ActiveTool == Tool.Select)
         {
-            SelectToolPress(lx, ly, mods);
+            SelectToolPress(lx, ly, mods, clickCount);
             return;
         }
 
@@ -553,6 +617,14 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                     _liveDy = SnapToConnectionGrid(ly - _dragStartLocalY);
                     _pinLiveDx = _liveDx;
                     _pinLiveDy = _liveDy;
+                }
+                else if (SingleSelectedTextAnchor() is { } ta)
+                {
+                    // Text: snap the (Align,VAlign) ANCHOR to absolute grid coordinates so the corner lands
+                    // on grid intersections — not in grid-sized steps relative to an off-grid start (which
+                    // is what a rotate/resize leaves the anchor as).
+                    _liveDx = SnapToP(ta.X + (lx - _dragStartLocalX)) - ta.X;
+                    _liveDy = SnapToP(ta.Y + (ly - _dragStartLocalY)) - ta.Y;
                 }
                 else
                 {
@@ -844,8 +916,24 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
 
     // ── Select-tool helpers ───────────────────────────────────────────────────
 
-    private void SelectToolPress(double lx, double ly, KeyModifiers mods)
+    private void SelectToolPress(double lx, double ly, KeyModifiers mods, int clickCount = 1)
     {
+        // Double-click a text primitive → request inline content edit (handled by the view).
+        if (clickCount >= 2 && !IsLocked)
+        {
+            int th = HitTestTopmost(lx, ly);
+            if (th >= 0 && EditableSymbol.Primitives[th] is TextPrimitive tp)
+            {
+                _selection.Clear();
+                _selectedPins.Clear();
+                _selection.Add(th);
+                RebuildOverlay();
+                var (bx0, by0, _, _) = SymbolGeometry.BboxOf(tp);
+                TextEditRequested?.Invoke(new TextEditRequest(th, bx0, by0, tp.Content, tp.FontSize));
+                return;
+            }
+        }
+
         bool shift = (mods & KeyModifiers.Shift) != 0;
 
         // Check gripper first so a resize drag doesn't accidentally move the prim.
@@ -989,10 +1077,11 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
 
     private int HitTestPin(double lx, double ly)
     {
-        // Pick radius = max(12 screen-px, half pin grid). Half-grid floor ensures a
-        // click anywhere inside the grid cell that placed the pin selects it, making
-        // the pick radius commensurate with the placement snap (P=100 → floor = 50).
-        double tol  = Math.Max(12.0 / Math.Max(CanvasZoom, 1e-6), PinGrid * 0.5);
+        // Hit radius = glyph radius + 4 screen-px, converted to local units.
+        // Glyph radius mirrors the renderer formula: max(3, zoom*5) px → 5 local units.
+        // The 4 px margin is constant in screen space: just beyond the visible dot edge.
+        double glyphR = Math.Max(3.0, CanvasZoom * 5.0);
+        double tol    = (glyphR + 4.0) / Math.Max(CanvasZoom, 1e-6);
         var    pins = EditableSymbol.Pins;
         double minDist = double.MaxValue;
         int    minIdx  = -1;
@@ -1089,6 +1178,7 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
                 FontSize  = CurrentFontSize,
                 FontStyle = CurrentFontStyle,
                 Align     = SymbolTextAlign.Left,
+                VAlign    = SymbolTextVAlign.Top,
             }));
         _isTypingText = false;
         _textBuffer   = "";

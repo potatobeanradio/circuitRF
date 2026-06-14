@@ -24,8 +24,10 @@ public partial class SavePlanDialog : Window
 
     private string _workspaceName = "";
     private string _sharedCellName = "";
-    private readonly Dictionary<string, string>    _cellNameOverrides = new();
-    private readonly Dictionary<string, TextBlock> _errorLabels       = new();
+    private readonly Dictionary<string, string>    _cellNameOverrides    = new();
+    private readonly Dictionary<string, TextBlock> _errorLabels          = new();
+    private readonly Dictionary<string, TextBlock> _saveLocationLabels   = new();
+    private readonly Dictionary<string, TextBlock> _saveNameLabels       = new();
 
     // ── Constructor ────────────────────────────────────────────────────────────
 
@@ -102,6 +104,8 @@ public partial class SavePlanDialog : Window
     private void RebuildRows(SavePlan plan)
     {
         _errorLabels.Clear();
+        _saveLocationLabels.Clear();
+        _saveNameLabels.Clear();
         PlanRowsPanel.Children.Clear();
 
         // Column header.
@@ -187,7 +191,17 @@ public partial class SavePlanDialog : Window
         {
             var v = nameBox.Text?.Trim() ?? "";
             if (_mode == SaveMode.EachOwnCell)
+            {
                 _cellNameOverrides[docId] = v;
+                if (_saveLocationLabels.TryGetValue(docId, out var locLabel))
+                {
+                    var newDest = $"{v}/schematic/";
+                    locLabel.Text = Elide(newDest);
+                    ToolTip.SetTip(locLabel, newDest);
+                }
+                if (_saveNameLabels.TryGetValue(docId, out var nameLabel))
+                    nameLabel.Text = $"{v}.csch";
+            }
             SetError(docId, NameValidator.Validate(v));
             UpdateSaveAllEnabled();
         };
@@ -211,12 +225,15 @@ public partial class SavePlanDialog : Window
         return container;
     }
 
-    private static StackPanel BuildSaveRow(SaveStep saveStep)
+    private StackPanel BuildSaveRow(SaveStep saveStep)
     {
         var container = new StackPanel { Margin = new Thickness(0, 2, 0, 2) };
         var dest      = $"{saveStep.TargetCellName}/schematic/";
         var grid      = BuildRowGrid(MaterialIconKind.FileOutline, "Save",
                                      Elide(dest), dest);
+
+        // Track the location TextBlock (grid child index 2) for live cell-name updates.
+        _saveLocationLabels[saveStep.Document.Id] = (TextBlock)grid.Children[2];
 
         var nameLabel = new TextBlock
         {
@@ -225,6 +242,9 @@ public partial class SavePlanDialog : Window
         };
         Grid.SetColumn(nameLabel, 3);
         grid.Children.Add(nameLabel);
+
+        // Track the name TextBlock (grid child index 3) for live cell-name updates.
+        _saveNameLabels[saveStep.Document.Id] = nameLabel;
 
         if (saveStep.IsPrimary)
         {

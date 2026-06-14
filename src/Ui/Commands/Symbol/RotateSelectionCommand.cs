@@ -87,9 +87,11 @@ internal sealed class RotateSelectionCommand : IUiCommand
         double minX = double.MaxValue, minY = double.MaxValue;
         double maxX = double.MinValue, maxY = double.MinValue;
 
-        if (prims.Count > 0)
+        // Use BboxOf per-primitive, NOT ComputeBb: ComputeBb skips Text/Bitmap, which would collapse a
+        // text-only selection's pivot to the origin and fling the text across the canvas on rotate.
+        foreach (var prim in prims)
         {
-            var (bx0, by0, bx1, by1) = SymbolGeometry.ComputeBb(prims);
+            var (bx0, by0, bx1, by1) = SymbolGeometry.BboxOf(prim);
             if (bx0 < minX) minX = bx0;
             if (by0 < minY) minY = by0;
             if (bx1 > maxX) maxX = bx1;
@@ -201,7 +203,8 @@ internal sealed class RotateSelectionCommand : IUiCommand
             case TextPrimitive t:
             {
                 double anx = t.AnchorX, any = t.AnchorY;
-                return () => { t.AnchorX = anx; t.AnchorY = any; };
+                var rot = t.Rotation;
+                return () => { t.AnchorX = anx; t.AnchorY = any; t.Rotation = rot; };
             }
             case BitmapPrimitive bm:
             {

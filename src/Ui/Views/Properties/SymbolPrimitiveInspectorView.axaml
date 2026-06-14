@@ -418,6 +418,33 @@
                                   FontSize="11" Padding="4,2"/>
                     </Grid>
 
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="VAlign" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   ToolTip.Tip="Vertical anchor. With Align this is the (horizontal, vertical) anchor point used for snapping. Baseline = legacy text behaviour."/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{x:Static vm:SymbolPrimitiveInspectorViewModel.VAlignOptions}"
+                                  SelectedItem="{Binding TextVAlign, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Rotation" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   ToolTip.Tip="Literal text rotation in the editor (R0/R90/R180/R270). The R key also steps this."/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{x:Static vm:SymbolPrimitiveInspectorViewModel.RotationOptions}"
+                                  SelectedItem="{Binding TextRotation, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                    <CheckBox Content="Force readable"
+                              IsChecked="{Binding TextForceReadable, Mode=TwoWay}"
+                              FontSize="11" Padding="0,2"
+                              ToolTip.Tip="When a schematic instance is rotated upside-down/back-to-front, auto-flip this text 180° so it stays right-way-up. Off = rotates rigidly with the symbol."/>
+
                 </StackPanel>
 
                 <!-- ── Bitmap: Opacity ──────────────────────────────────────────────── -->

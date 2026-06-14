@@ -146,6 +146,17 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>Remove the Known File reference from .cws (does NOT delete the file on disk).</summary>
     public IRelayCommand RemoveKnownFileCommand { get; }
 
+    /// <summary>Open this cell's primary schematic in a Content tab.</summary>
+    public IRelayCommand OpenSchematicCommand { get; }
+
+    /// <summary>Open this cell's primary symbol in a Content tab.</summary>
+    public IRelayCommand OpenSymbolCommand { get; }
+
+    // ── Primary-view availability (computed once at construction for cell nodes) ──
+
+    public bool CanOpenSchematic { get; }
+    public bool CanOpenSymbol    { get; }
+
     // ── Tree state ─────────────────────────────────────────────────────────────
 
     private bool _isExpanded;
@@ -194,6 +205,15 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         _isExpanded = node.Kind == NodeKind.Workspace
             || (expandedPaths?.Contains(node.AbsolutePath) ?? false);
 
+        // Resolve primary-view availability for cell nodes (a couple of Directory.GetFiles calls).
+        if (node.Kind == NodeKind.Cell)
+        {
+            CanOpenSchematic = CellFolder.ResolvePrimary(node.AbsolutePath, ViewType.Schematic).State
+                is PrimaryState.SoleFile or PrimaryState.NamedPresent;
+            CanOpenSymbol = CellFolder.ResolvePrimary(node.AbsolutePath, ViewType.Symbol).State
+                is PrimaryState.SoleFile or PrimaryState.NamedPresent;
+        }
+
         // Build child VMs recursively; each child applies the same filter state.
         Children = new ObservableCollection<ProjectTreeNodeViewModel>(
             node.Children.Select(c => new ProjectTreeNodeViewModel(c, filter, expandedPaths, actions)));
@@ -238,6 +258,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         RemoveKnownFileCommand = new RelayCommand(
             () => _actions?.RemoveKnownFile(this),
             () => _actions is not null && IsKnownFile);
+
+        OpenSchematicCommand = new RelayCommand(
+            () => _actions?.OpenCellSchematic(this),
+            () => _actions is not null && IsCell && CanOpenSchematic);
+
+        OpenSymbolCommand = new RelayCommand(
+            () => _actions?.OpenCellSymbol(this),
+            () => _actions is not null && IsCell && CanOpenSymbol);
     }
 
     // ── Filter ─────────────────────────────────────────────────────────────────

@@ -1,15 +1,72 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.ViewModels;
 
 namespace CircuitRF.Ui.Views.Content;
 
 public partial class SymbolEditorView : UserControl
 {
+    // ── Port-count refresh on activation ─────────────────────────────────────────
+    // Mirrors ProjectTreeView's on-focus refresh pattern.
+    // Two triggers cover all three scenarios:
+    //   1. Tab-switch in the main window → WorkspaceViewModel.OnDocumentDockPropertyChanged (always first)
+    //   2. App window / torn-off host window gains OS focus → OnHostWindowActivated
+    //   3. User clicks from a tool panel back to the canvas (same window) → OnViewGotFocus
+
+    private Window? _attachedWindow;
+    private bool    _portRefreshPending;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _attachedWindow = TopLevel.GetTopLevel(this) as Window;
+        if (_attachedWindow is not null)
+            _attachedWindow.Activated += OnHostWindowActivated;
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        if (_attachedWindow is not null)
+        {
+            _attachedWindow.Activated -= OnHostWindowActivated;
+            _attachedWindow = null;
+        }
+    }
+
+    // Window (main or torn-off host) gains OS focus.
+    private void OnHostWindowActivated(object? sender, EventArgs e) => SchedulePortRefresh();
+
+    // Focus enters this view from a sibling panel (Properties, Project Tree, etc.).
+    private void OnViewGotFocus(object? sender, RoutedEventArgs e) => SchedulePortRefresh();
+
+    // Debounced port-count re-read.  SetExternalPortCount has its own no-op guard so
+    // extra calls are cheap; the flag prevents redundant Background-queue entries.
+    private void SchedulePortRefresh()
+    {
+        if (_portRefreshPending) return;
+        _portRefreshPending = true;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _portRefreshPending = false;
+            (DataContext as SymbolEditorDocument)?.ViewModel.RefreshPortCountFromDisk();
+        }, Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    // ── Inline text edit state ────────────────────────────────────────────────────
+
+    private SymbolEditorViewModel? _subscribedVm;
+    private SymbolEditorViewModel.TextEditRequest? _editReq;
+
+    // ── Constructor ───────────────────────────────────────────────────────────────
+
     public SymbolEditorView()
     {
         InitializeComponent();
@@ -23,10 +80,21 @@ public partial class SymbolEditorView : UserControl
             RoutingStrategies.Tunnel,
             handledEventsToo: true);
 
+        // Bubble GotFocus: fires when focus enters this view from outside (tool panel → canvas).
+        // Debounced via _portRefreshPending so rapid intra-view focus moves coalesce to one read.
+        this.AddHandler(
+            InputElement.GotFocusEvent,
+            OnViewGotFocus,
+            RoutingStrategies.Bubble);
+
         // Clipboard shortcuts (async; handled here, not in the canvas — mirrors SchematicView).
         SymbolEditorCanvasCtrl.ClipboardCopyRequested  += async (_, _) => await OnClipboardCopy();
         SymbolEditorCanvasCtrl.ClipboardCutRequested   += async (_, _) => await OnClipboardCut();
         SymbolEditorCanvasCtrl.ClipboardPasteRequested += async (_, _) => await OnClipboardPaste();
+
+        // Inline text edit — subscribe to VM events and viewport changes.
+        DataContextChanged += OnDataContextChanged;
+        SymbolEditorCanvasCtrl.ViewportChanged += (_, _) => RepositionInlineEditBox();
     }
 
     private void OnZoomToFit(object? sender, RoutedEventArgs e)
@@ -36,6 +104,7 @@ public partial class SymbolEditorView : UserControl
 
     private void OnViewKeyDownTunnel(object? sender, KeyEventArgs e)
     {
+        if (InlineEditBox.IsKeyboardFocusWithin) return;   // inline box owns its own Enter/Esc
         if (!IsKeyboardFocusWithin) return;
         var vm = (DataContext as SymbolEditorDocument)?.ViewModel;
         if (vm is null) return;
@@ -89,6 +158,65 @@ public partial class SymbolEditorView : UserControl
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null) return;
         await doc.ViewModel.ClipboardPasteAsync(clipboard);
+    }
+
+    // ── Inline text edit ──────────────────────────────────────────────────────
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (_subscribedVm is not null) _subscribedVm.TextEditRequested -= OnTextEditRequested;
+        _subscribedVm = (DataContext as SymbolEditorDocument)?.ViewModel;
+        if (_subscribedVm is not null) _subscribedVm.TextEditRequested += OnTextEditRequested;
+    }
+
+    private void OnTextEditRequested(SymbolEditorViewModel.TextEditRequest req)
+    {
+        _editReq = req;
+        double zoom = SymbolEditorCanvasCtrl.CurrentZoom;
+        InlineEditBox.FontSize = Math.Max(zoom * req.FontSize, 9.0);
+        var (sx, sy) = SymbolEditorCanvasCtrl.WorldToScreen(req.WorldX, req.WorldY);
+        InlineEditBox.Margin = new Thickness(sx - 4, sy - 2, 0, 0);
+        InlineEditBox.Text   = req.Content;
+        InlineEditBox.IsVisible = true;
+        Dispatcher.UIThread.Post(
+            () => { InlineEditBox.Focus(); InlineEditBox.SelectAll(); },
+            DispatcherPriority.Input);
+    }
+
+    private void RepositionInlineEditBox()
+    {
+        if (!InlineEditBox.IsVisible || _editReq is not { } req) return;
+        double zoom = SymbolEditorCanvasCtrl.CurrentZoom;
+        InlineEditBox.FontSize = Math.Max(zoom * req.FontSize, 9.0);
+        var (sx, sy) = SymbolEditorCanvasCtrl.WorldToScreen(req.WorldX, req.WorldY);
+        InlineEditBox.Margin = new Thickness(sx - 4, sy - 2, 0, 0);
+    }
+
+    private void OnInlineEditKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.Return or Key.Enter) { CommitInlineEdit(); e.Handled = true; }
+        else if (e.Key == Key.Escape)         { DismissInlineEdit(); e.Handled = true; }
+    }
+
+    private void OnInlineEditLostFocus(object? sender, RoutedEventArgs e)
+        => Dispatcher.UIThread.Post(() =>
+        {
+            if (InlineEditBox.IsVisible && !InlineEditBox.IsKeyboardFocusWithin) CommitInlineEdit();
+        }, DispatcherPriority.Background);
+
+    private void CommitInlineEdit()
+    {
+        if (_editReq is not { } req) { DismissInlineEdit(); return; }
+        string text = InlineEditBox.Text ?? "";
+        DismissInlineEdit();
+        (DataContext as SymbolEditorDocument)?.ViewModel.CommitTextEdit(req.Index, text);
+    }
+
+    private void DismissInlineEdit()
+    {
+        _editReq = null;
+        InlineEditBox.IsVisible = false;
+        SymbolEditorCanvasCtrl.Focus();
     }
 
     // ── Bitmap context menu ───────────────────────────────────────────────────

@@ -39,4 +39,10 @@ public interface ITreeActions
 
     /// <summary>Remove the Known File reference from .cws (does NOT delete the file on disk).</summary>
     void RemoveKnownFile(ProjectTreeNodeViewModel node);
+
+    /// <summary>Open (or activate) the cell's primary schematic in a Content tab.</summary>
+    void OpenCellSchematic(ProjectTreeNodeViewModel cellNode);
+
+    /// <summary>Open (or activate) the cell's primary symbol in a Content tab.</summary>
+    void OpenCellSymbol(ProjectTreeNodeViewModel cellNode);
 }

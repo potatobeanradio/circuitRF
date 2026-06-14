@@ -105,7 +105,7 @@ public static class CellPersistence
         => JsonSerializer.Serialize(cell, _jsonOpts);
 
     public static void SaveToFile(string path, CcellFile cell)
-        => File.WriteAllText(path, Serialize(cell));
+        => AtomicFile.WriteAllText(path, Serialize(cell));
 
     // ── Read ──────────────────────────────────────────────────────────────────
 

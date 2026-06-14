@@ -527,17 +527,28 @@
             </StackPanel>
         </Border>
 
-        <!-- ── Canvas ──────────────────────────────────────────────────────── -->
-        <ctrl:SymbolEditorCanvas x:Name="SymbolEditorCanvasCtrl"
-                                 ViewModel="{Binding ViewModel}"
-                                 ClipToBounds="True">
-            <ctrl:SymbolEditorCanvas.ContextMenu>
-                <ContextMenu Opening="OnBitmapContextMenuOpening">
-                    <MenuItem x:Name="CtxBitmapResolvePath" Header="Resolve Path…"  Click="OnCtxBitmapResolvePath"/>
-                    <MenuItem x:Name="CtxBitmapRefreshCache" Header="Refresh Cache" Click="OnCtxBitmapRefreshCache"/>
-                </ContextMenu>
-            </ctrl:SymbolEditorCanvas.ContextMenu>
-        </ctrl:SymbolEditorCanvas>
+        <!-- ── Canvas + inline text-edit overlay ─────────────────────────── -->
+        <Panel>
+            <ctrl:SymbolEditorCanvas x:Name="SymbolEditorCanvasCtrl"
+                                     ViewModel="{Binding ViewModel}"
+                                     ClipToBounds="True">
+                <ctrl:SymbolEditorCanvas.ContextMenu>
+                    <ContextMenu Opening="OnBitmapContextMenuOpening">
+                        <MenuItem x:Name="CtxBitmapResolvePath" Header="Resolve Path…"  Click="OnCtxBitmapResolvePath"/>
+                        <MenuItem x:Name="CtxBitmapRefreshCache" Header="Refresh Cache" Click="OnCtxBitmapRefreshCache"/>
+                    </ContextMenu>
+                </ctrl:SymbolEditorCanvas.ContextMenu>
+            </ctrl:SymbolEditorCanvas>
+
+            <TextBox x:Name="InlineEditBox"
+                     IsVisible="False"
+                     HorizontalAlignment="Left" VerticalAlignment="Top"
+                     Padding="4,2" BorderThickness="1"
+                     FontFamily="IBM Plex Sans, sans-serif"
+                     AcceptsReturn="False"
+                     KeyDown="OnInlineEditKeyDown"
+                     LostFocus="OnInlineEditLostFocus"/>
+        </Panel>
 
     </DockPanel>
 </UserControl>

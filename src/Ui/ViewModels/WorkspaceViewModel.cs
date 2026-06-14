@@ -77,7 +77,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ---- Infrastructure ------------------------------------------------------
 
-    public IMessageSink Messages { get; }
+    public IMessageSink Messages => _factory.MessagesTool
+        ?? throw new InvalidOperationException("DockFactory must expose MessagesTool.");
 
     // ---- Autosave / recovery -------------------------------------------------
 
@@ -204,9 +205,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _factory.ProjectTreeTool?.SetActions(this);
         SubscribeToFilterState();
         SubscribeToTreeSelection();
-
-        Messages = _factory.MessagesTool
-            ?? throw new InvalidOperationException("DockFactory must expose MessagesTool.");
 
         // Notify PropertiesTool when the active document tab changes (active schematic tracking).
         if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged npc)
@@ -534,7 +532,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             WorkspacePersistence.SaveToFileAtomic(path, ws);
             if (!silent)
-                Messages.Success($"Saved: {path}", path);
+                Messages.Success("Saved", path);
         }
         catch (Exception ex)
         {
@@ -633,7 +631,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         PushRecent(cwsPath);
         Messages.Clear();
-        Messages.Success($"Opened: {cwsPath}");
+        Messages.Info("Opened", cwsPath);
     }
 
     /// <summary>
@@ -1009,7 +1007,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             (netlistPath, conflicts) = WriteNetlist(activeDoc.ViewModel.EditModel, testBenchName);
             foreach (var conflict in conflicts)
                 Messages.Warning($"Extraction: {conflict}");
-            Messages.Success($"Netlist written: {netlistPath}", netlistPath);
+            Messages.Success("Wrote netlist", netlistPath);
         }
         catch (Exception ex)
         {
@@ -1093,7 +1091,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             (netlistPath, conflicts) = WriteNetlist(activeDoc.ActiveViewModel.EditModel, testBenchName);
             foreach (var conflict in conflicts)
                 Messages.Warning($"Extraction: {conflict}");
-            Messages.Success($"Netlist written: {netlistPath}", netlistPath);
+            Messages.Success("Wrote netlist", netlistPath);
         }
         catch (Exception ex)
         {
@@ -1106,12 +1104,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try
         {
             if (!TryOpenExternal(netlistPath))
-                Messages.Warning(
-                    "No external editor is configured for .cnl files. " +
-                    "Associate an application with .cnl in your system settings " +
-                    "to open netlist files automatically.");
+                Messages.Warning("Couldn't open externally: no .cnl handler configured", netlistPath);
         }
-        catch (Exception ex) { Messages.Warning($"Could not open netlist externally: {ex.Message}"); }
+        catch (Exception ex) { Messages.Warning($"Couldn't open externally: {ex.Message}", netlistPath); }
     }
 
     private bool CanGenerateNetlist()
@@ -1364,7 +1359,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = path };
             var doc = new SymbolEditorDocument(Path.GetFileName(path), vm, path);
             _factory.OpenDocument(doc);
-            Messages.Success($"Opened: {path}");
+            Messages.Info("Opened", path);
         }
         catch (Exception ex)
         {
@@ -1377,6 +1372,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // ── Open / activate (dedup by absolute path) ──────────────────────────────
 
     /// <inheritdoc/>
+    public void OpenCellSchematic(ProjectTreeNodeViewModel cellNode) => OpenCellPrimary(cellNode, ViewType.Schematic);
+    public void OpenCellSymbol(ProjectTreeNodeViewModel cellNode)    => OpenCellPrimary(cellNode, ViewType.Symbol);
+
+    private void OpenCellPrimary(ProjectTreeNodeViewModel cellNode, ViewType viewType)
+    {
+        var cellDir = cellNode.AbsolutePath;
+        var pr      = CellFolder.ResolvePrimary(cellDir, viewType);
+        if (pr.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || pr.ResolvedName is null)
+        {
+            var what = viewType == ViewType.Schematic ? "schematic" : "symbol";
+            Messages.Info($"Cell '{Path.GetFileName(cellDir)}' has no primary {what}.");
+            return;
+        }
+        var path = Path.Combine(CellFolder.SubFolderPath(cellDir, viewType), pr.ResolvedName);
+        if (viewType == ViewType.Schematic) OpenOrActivateSchematic(path);
+        else                                OpenOrActivateSymbol(path);
+    }
+
     public void OpenNode(ProjectTreeNodeViewModel node)
     {
         switch (node.Kind)
@@ -1407,14 +1420,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var symbol   = SymbolPersistence.LoadFromFile(absolutePath);
             var editable = EditableSymbol.FromSymbol(symbol);
             editable.UserEditable     = true;
-            editable.ExternalPortCount = TryCellPortCount(absolutePath, symbol);
+            editable.ExternalPortCount = TryCellPortCount(absolutePath);
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = absolutePath };
             vm.SymbolSaved += OnSymbolSaved;
             var doc = new SymbolEditorDocument(Path.GetFileName(absolutePath), vm, absolutePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
             HookSymbolCellDirty(doc);
-            Messages.Success($"Opened: {absolutePath}");
+            Messages.Info("Opened", absolutePath);
         }
         catch (Exception ex)
         {
@@ -1427,7 +1440,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// otherwise null (orphan symbol — no external port authority).
     /// The .ccell is the authority for port count; the symbol's own PortCount is ignored.
     /// </summary>
-    private static int? TryCellPortCount(string csymPath, Symbol symbol)
+    private static int? TryCellPortCount(string csymPath)
     {
         var symbolDir = Path.GetDirectoryName(csymPath);
         if (symbolDir is null) return null;
@@ -1450,7 +1463,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var doc   = new SchematicDocument(title, vm, absolutePath) { Messages = Messages, Hierarchy = this };
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
-            Messages.Success($"Opened: {absolutePath}");
+            Messages.Info("Opened", absolutePath);
         }
         catch (Exception ex)
         {
@@ -1479,6 +1492,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var doc       = new CellParameterEditorDocument(cellName, vm);
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
+            Messages.Info("Opened", ccellPath);
         }
         catch (Exception ex)
         {
@@ -1538,7 +1552,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 RebuildOpenSchematics();
             }
 
-            Messages.Success($"'{filename}' is now the primary view.");
+            Messages.Success("Made primary", ccellPath);
         }
         catch (Exception ex)
         {
@@ -1789,6 +1803,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var path = HierarchyResolver.ResolvePrimaryPath(comp, fromDoc.ActiveViewModel.EditModel);
         if (path is null) return;
         OpenOrActivateSchematic(path);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveSchematicDocumentAsync(SchematicDocument doc)
+    {
+        var window = ResolveOwner(null);
+        if (window is null) return;
+
+        if (!doc.IsDirty)
+        {
+            Messages.Info("Nothing to save.");
+            return;
+        }
+
+        await SaveSingleDocument(doc, window);
+
+        // ⌘S single-doc parity: refresh the .cws open-doc snapshot silently.
+        if (CurrentWorkspacePath is not null)
+            WriteWorkspaceFile(CurrentWorkspacePath, silent: true);
     }
 
     // ── RelayCommands for app-menu / keyboard (CanExecute managed here) ───────
@@ -2120,7 +2153,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
         _factory.ProjectTreeTool?.Refresh();
-        Messages.Success($"Copied to workspace:\n  {dest}");
+        Messages.Success("Copied", dest);
     }
 
     /// <inheritdoc/>
@@ -2183,7 +2216,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             CellFolder.CreateCellFolder(parentDir, name);
             _factory.ProjectTreeTool?.Refresh();
-            Messages.Success($"Cell '{name}' created.");
+            Messages.Success("Created", Path.Combine(newCellDir, CellFolder.CcellFileName));
         }
         catch (Exception ex)
         {
@@ -2227,7 +2260,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             CellFolder.CreateCellFolder(workspaceDir, name);
             _factory.ProjectTreeTool?.Refresh();
-            Messages.Success($"Cell '{name}' created.");
+            Messages.Success("Created", Path.Combine(newCellDir, CellFolder.CcellFileName));
         }
         catch (Exception ex)
         {
@@ -2289,7 +2322,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _openDocsByPath[filePath] = doc;
             HookSymbolCellDirty(doc);
 
-            Messages.Success($"Symbol '{name}{ext}' created and opened.");
+            Messages.Success("Created", filePath);
         }
         catch (Exception ex)
         {
@@ -2347,7 +2380,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;
 
-            Messages.Success($"Schematic '{name}{ext}' created and opened.");
+            Messages.Success("Created", filePath);
         }
         catch (Exception ex)
         {
@@ -2369,6 +2402,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (activeDockable is SymbolEditorDocument symDoc)
         {
             _factory.PropertiesTool?.SetActiveSymbolEditor(symDoc.ViewModel);
+            // Ports indicator may be stale if the owning cell's .ccell NumPorts changed in the cell
+            // editor while this tab was inactive — re-read it on activation.
+            if (symDoc.ViewModel.CurrentSymbolPath is { } sp)
+                symDoc.ViewModel.SetExternalPortCount(TryCellPortCount(sp));
         }
         else if (activeDockable is CellParameterEditorDocument cpd)
         {
@@ -2382,7 +2419,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Analyses panel — tracks only schematics.
         var schematicVm = activeDockable is SchematicDocument sd ? sd.ViewModel : null;
-        _factory.AnalysesTool?.SetActiveSchematic(schematicVm);
+        string? schName = activeDockable is SchematicDocument sdName && sdName.FilePath is { } fp
+            ? System.IO.Path.GetFileName(fp) : null;
+        _factory.AnalysesTool?.SetActiveSchematic(schematicVm, schName);
 
         // Undo routing — follows any IUndoableDocument for main-window tabs.
         SetActiveUndoTarget(activeDockable as IUndoableDocument);
@@ -2584,113 +2623,119 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var window = ResolveOwner(owner);
         if (window is null) return;
 
-        // SingleDoc scope: save only the active document.
-        if (ActiveSaveScope == SaveScope.SingleDoc &&
-            _factory.DocumentDock?.ActiveDockable is SchematicDocument singleDoc)
+        try
         {
-            if (!singleDoc.IsDirty)
+            // SingleDoc scope: save only the active document.
+            if (ActiveSaveScope == SaveScope.SingleDoc &&
+                _factory.DocumentDock?.ActiveDockable is SchematicDocument singleDoc)
+            {
+                if (!singleDoc.IsDirty)
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                await SaveSingleDocument(singleDoc, window);
+                return;
+            }
+
+            // SingleDoc scope for an active symbol editor — scratch → offer dialog; materialized → PerformSave.
+            if (ActiveSaveScope == SaveScope.SingleDoc &&
+                _factory.DocumentDock?.ActiveDockable is SymbolEditorDocument singleSymDoc)
+            {
+                if (!singleSymDoc.IsDirty)
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                await SaveSingleSymbolDocument(singleSymDoc, window);
+                return;
+            }
+
+            // AllDocs scope: save every dirty document.
+            var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
+            var dirtyMaterialized = _openDocsByPath.Values
+                .OfType<SchematicDocument>()
+                .Where(d => d.IsDirty && !d.IsScratch)
+                .ToList();
+            var dirtyScratchSymbols = _scratchSymbols.Where(d => d.IsDirty).ToList();
+            var dirtyMaterializedSymbols = _openDocsByPath.Values
+                .OfType<SymbolEditorDocument>()
+                .Where(d => d.IsDirty && !d.IsScratch)
+                .ToList();
+
+            bool anyDirty = dirtyScratch.Count > 0 || dirtyMaterialized.Count > 0
+                         || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0;
+            if (!anyDirty)
             {
                 Messages.Info("Nothing to save.");
                 return;
             }
-            await SaveSingleDocument(singleDoc, window);
+
+            // Scratch schematic docs → plan dialog → execute
+            if (dirtyScratch.Count > 0)
+            {
+                var builder     = new SavePlanBuilder(
+                    CurrentWorkspacePath, _lastWorkspaceParentDir, dirtyScratch.AsReadOnly());
+                var initialPlan = builder.Build();
+
+                var confirmedPlan = await new Views.Dialogs.SavePlanDialog(initialPlan, builder)
+                    .ShowDialog<SavePlan?>(window);
+                if (confirmedPlan is null) return;  // user cancelled
+
+                ExecuteSavePlan(confirmedPlan);
+            }
+
+            // Already-materialized dirty schematic docs — write directly.
+            foreach (var doc in dirtyMaterialized)
+            {
+                if (doc.FilePath is null) continue;
+                try
+                {
+                    SchematicPersistence.SaveToFile(doc.FilePath, doc.ViewModel.EditModel, doc.Id);
+                    doc.Materialize(doc.FilePath);  // clears dirty (FilePath unchanged)
+                    NotifySessionSaved(doc.FilePath);
+                    Messages.Success("Saved", doc.FilePath);
+                }
+                catch (Exception ex)
+                {
+                    Messages.Error($"Failed to save '{doc.Id}': {ex.Message}");
+                }
+            }
+
+            // Dirty sessions with no open tab (orphaned by a prior "Don't Save" close or hier2+ pop-out).
+            foreach (var sessionPath in _registry.GetOrphanedDirtyPaths(IsSessionReferenced))
+            {
+                if (!_registry.TryGet(sessionPath, out var sessionVm)) continue;
+                try
+                {
+                    var cellName = Path.GetFileNameWithoutExtension(sessionPath);
+                    SchematicPersistence.SaveToFile(sessionPath, sessionVm!.EditModel, cellName);
+                    NotifySessionSaved(sessionPath);
+                    Messages.Success("Saved", sessionPath);
+                }
+                catch (Exception ex)
+                {
+                    Messages.Error($"Failed to save session '{sessionPath}': {ex.Message}");
+                }
+            }
+
+            // Scratch symbol docs — per-doc offer dialog.
+            foreach (var symDoc in dirtyScratchSymbols)
+                await SaveScratchSymbol(symDoc, window);
+
+            // Already-materialized dirty symbol docs — write directly via VM.
+            foreach (var symDoc in dirtyMaterializedSymbols)
+                await SaveMaterializedSymbolDoc(symDoc, window);
+        }
+        finally
+        {
+            // Save All always refreshes the .cws (open-doc snapshot + tree state) when a workspace
+            // is open — even when nothing was dirty, and even when no documents are open (null list).
+            // For single-doc saves the .cws is still written (persists open-doc list) but silently:
+            // the user only asked to save one file, so the .cws message would be noise.
             if (CurrentWorkspacePath is not null)
-                WriteWorkspaceFile(CurrentWorkspacePath);
-            return;
+                WriteWorkspaceFile(CurrentWorkspacePath, silent: ActiveSaveScope != SaveScope.AllDocs);
         }
-
-        // SingleDoc scope for an active symbol editor — scratch → offer dialog; materialized → PerformSave.
-        if (ActiveSaveScope == SaveScope.SingleDoc &&
-            _factory.DocumentDock?.ActiveDockable is SymbolEditorDocument singleSymDoc)
-        {
-            if (!singleSymDoc.IsDirty)
-            {
-                Messages.Info("Nothing to save.");
-                return;
-            }
-            await SaveSingleSymbolDocument(singleSymDoc, window);
-            return;
-        }
-
-        // AllDocs scope: save every dirty document.
-        var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
-        var dirtyMaterialized = _openDocsByPath.Values
-            .OfType<SchematicDocument>()
-            .Where(d => d.IsDirty && !d.IsScratch)
-            .ToList();
-        var dirtyScratchSymbols = _scratchSymbols.Where(d => d.IsDirty).ToList();
-        var dirtyMaterializedSymbols = _openDocsByPath.Values
-            .OfType<SymbolEditorDocument>()
-            .Where(d => d.IsDirty && !d.IsScratch)
-            .ToList();
-
-        bool anyDirty = dirtyScratch.Count > 0 || dirtyMaterialized.Count > 0
-                     || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0;
-        if (!anyDirty)
-        {
-            Messages.Info("Nothing to save.");
-            return;
-        }
-
-        // Scratch schematic docs → plan dialog → execute
-        if (dirtyScratch.Count > 0)
-        {
-            var builder     = new SavePlanBuilder(
-                CurrentWorkspacePath, _lastWorkspaceParentDir, dirtyScratch.AsReadOnly());
-            var initialPlan = builder.Build();
-
-            var confirmedPlan = await new Views.Dialogs.SavePlanDialog(initialPlan, builder)
-                .ShowDialog<SavePlan?>(window);
-            if (confirmedPlan is null) return;  // user cancelled
-
-            ExecuteSavePlan(confirmedPlan);
-        }
-
-        // Already-materialized dirty schematic docs — write directly.
-        foreach (var doc in dirtyMaterialized)
-        {
-            if (doc.FilePath is null) continue;
-            try
-            {
-                SchematicPersistence.SaveToFile(doc.FilePath, doc.ViewModel.EditModel, doc.Id);
-                doc.Materialize(doc.FilePath);  // clears dirty (FilePath unchanged)
-                NotifySessionSaved(doc.FilePath);
-                Messages.Success($"Saved: {doc.FilePath}", doc.FilePath);
-            }
-            catch (Exception ex)
-            {
-                Messages.Error($"Failed to save '{doc.Id}': {ex.Message}");
-            }
-        }
-
-        // Dirty sessions with no open tab (orphaned by a prior "Don't Save" close or hier2+ pop-out).
-        foreach (var sessionPath in _registry.GetOrphanedDirtyPaths(IsSessionReferenced))
-        {
-            if (!_registry.TryGet(sessionPath, out var sessionVm)) continue;
-            try
-            {
-                var cellName = Path.GetFileNameWithoutExtension(sessionPath);
-                SchematicPersistence.SaveToFile(sessionPath, sessionVm!.EditModel, cellName);
-                NotifySessionSaved(sessionPath);
-                Messages.Success($"Saved: {sessionPath}", sessionPath);
-            }
-            catch (Exception ex)
-            {
-                Messages.Error($"Failed to save session '{sessionPath}': {ex.Message}");
-            }
-        }
-
-        // Scratch symbol docs — per-doc offer dialog.
-        foreach (var symDoc in dirtyScratchSymbols)
-            await SaveScratchSymbol(symDoc, window);
-
-        // Already-materialized dirty symbol docs — write directly via VM.
-        foreach (var symDoc in dirtyMaterializedSymbols)
-            await symDoc.ViewModel.SaveSymbolCommand.ExecuteAsync(window);
-
-        // Keep .cws current if we have a workspace.
-        if (CurrentWorkspacePath is not null)
-            WriteWorkspaceFile(CurrentWorkspacePath);
     }
 
     /// <summary>
@@ -2747,8 +2792,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // ── Refresh tree + report ─────────────────────────────────────────────
         _factory.ProjectTreeTool?.Refresh();
 
-        var paths  = string.Join("\n", written.Select(p => $"  {p}"));
-        Messages.Success($"Saved {written.Count} file(s):\n{paths}");
+        foreach (var p in written)
+            Messages.Success("Saved", p);
     }
 
     // ---- Close / quit prompt helpers -----------------------------------------
@@ -2825,6 +2870,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         SchematicPersistence.SaveToFile(doc.FilePath, doc.ViewModel.EditModel, doc.Id);
                         doc.Materialize(doc.FilePath);
                         NotifySessionSaved(doc.FilePath);
+                        Messages.Success("Saved", doc.FilePath);
                     }
                     catch (Exception ex)
                     {
@@ -2840,6 +2886,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         var cellName = Path.GetFileNameWithoutExtension(sessionPath);
                         SchematicPersistence.SaveToFile(sessionPath, sessionVm!.EditModel, cellName);
                         NotifySessionSaved(sessionPath);
+                        Messages.Success("Saved", sessionPath);
                     }
                     catch (Exception ex)
                     {
@@ -2851,7 +2898,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     await SaveScratchSymbol(symDoc, owner);
                 // Materialized dirty symbols → write directly via VM.
                 foreach (var symDoc in dirtyMatSymbols)
-                    await symDoc.ViewModel.SaveSymbolCommand.ExecuteAsync(owner);
+                    await SaveMaterializedSymbolDoc(symDoc, owner);
                 return true;
 
             default: return false;
@@ -2882,7 +2929,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             SchematicPersistence.SaveToFile(doc.FilePath, doc.ViewModel.EditModel, doc.Id);
             doc.Materialize(doc.FilePath);
             NotifySessionSaved(doc.FilePath);
-            Messages.Success($"Saved: {doc.FilePath}", doc.FilePath);
+            Messages.Success("Saved", doc.FilePath);
             return true;
         }
         catch (Exception ex)
@@ -3049,7 +3096,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             NotifySessionSaved(filePath);
 
             _factory.ProjectTreeTool?.Refresh();
-            Messages.Success($"Saved and registered as Known File:\n  {filePath}");
+            Messages.Success("Saved", filePath);
         }
         catch (Exception ex)
         {
@@ -3117,7 +3164,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             RegisterSession(filePath, doc.ViewModel);
             NotifySessionSaved(filePath);
 
-            Messages.Success($"Saved:\n  {filePath}");
+            Messages.Success("Saved", filePath);
         }
         catch (Exception ex)
         {
@@ -3137,7 +3184,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (doc.IsScratch)
             await SaveScratchSymbol(doc, window);
         else
-            await doc.ViewModel.SaveSymbolCommand.ExecuteAsync(window);
+            await SaveMaterializedSymbolDoc(doc, window);
+    }
+
+    /// <summary>Saves an already-materialized symbol via its VM command and logs one "Saved" message.</summary>
+    private async Task SaveMaterializedSymbolDoc(SymbolEditorDocument doc, Window owner)
+    {
+        var path = doc.ViewModel.CurrentSymbolPath;
+        await doc.ViewModel.SaveSymbolCommand.ExecuteAsync(owner);
+        if (path is not null && !doc.IsDirty)   // dirty cleared ⇒ save succeeded
+            Messages.Success("Saved", path);
     }
 
     /// <summary>
@@ -3215,7 +3271,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             OnSymbolSaved(filePath);
             _factory.ProjectTreeTool?.Refresh();
-            Messages.Success($"Saved to cell '{cellName}':\n  {filePath}", filePath);
+            Messages.Success("Saved", filePath);
         }
         catch (Exception ex)
         {
@@ -3241,7 +3297,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         doc.Materialize(pathAfter);
         _openDocsByPath[pathAfter] = doc;
 
-        Messages.Success($"Saved:\n  {pathAfter}", pathAfter);
+        Messages.Success("Saved", pathAfter);
     }
 
     // ---- Quit ----------------------------------------------------------------

@@ -157,7 +157,7 @@ public sealed class SchematicDocument : Document, IUndoableDocument
 
     // ── Base title + dirty ───────────────────────────────────────────────────
 
-    private readonly string _baseTitle;
+    private string _baseTitle;
 
     /// <summary>The base session VM (what the document was opened on); never changes.</summary>
     public SchematicViewModel ViewModel { get; }
@@ -245,10 +245,15 @@ public sealed class SchematicDocument : Document, IUndoableDocument
     /// After this call IsScratch is false and the tab title loses its bullet.
     /// Must only be called once per document (from scratch to materialized is one-way).
     /// </summary>
-    internal void Materialize(string filePath)
+    internal void Materialize(string filePath, string? cellName = null)
     {
         FilePath = filePath;
-        IsDirty  = false;
+        if (cellName is not null && cellName != _baseTitle)
+        {
+            _baseTitle = cellName;
+            Id         = cellName;
+        }
+        IsDirty = false; // triggers UpdateTitle() which now uses the updated _baseTitle
     }
 }
 

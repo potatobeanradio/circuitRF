@@ -128,6 +128,7 @@ public partial class SchematicView : UserControl
             vm.AutoGenSymbolCallback = ShowAutoGenPromptAsync;
             UpdateToolButtonStates();
             UpdateDisableButtonStates();
+            UpdateSnapModeButton();
         }
     }
 
@@ -149,6 +150,8 @@ public partial class SchematicView : UserControl
         if (e.PropertyName is nameof(SchematicViewModel.ActiveTool)
                            or nameof(SchematicViewModel.PlacementSymbol))
             UpdateToolButtonStates();
+        if (e.PropertyName == nameof(SchematicViewModel.SnapMode))
+            UpdateSnapModeButton();
     }
 
     private void OnSelectionChanged(object? sender, EventArgs e) => UpdateDisableButtonStates();
@@ -260,6 +263,11 @@ public partial class SchematicView : UserControl
                 SchematicCanvasCtrl.ZoomToFit();
                 e.Handled = true;
                 break;
+            case Key.G:
+                vm.CycleSnapMode();
+                UpdateSnapModeButton();
+                e.Handled = true;
+                break;
         }
     }
 
@@ -308,12 +316,21 @@ public partial class SchematicView : UserControl
     private void OnMirrorV(object? sender, RoutedEventArgs e)    => Vm?.MirrorSelection(horizontal: false);
     private void OnDelete(object? sender, RoutedEventArgs e)     => Vm?.DeleteSelection();
 
-    // ── Grid snap toggle ──────────────────────────────────────────────────────
+    // ── Grid snap tri-state ───────────────────────────────────────────────────
 
-    private void OnGridSnapToggle(object? sender, RoutedEventArgs e)
+    private void OnCycleSnapMode(object? sender, RoutedEventArgs e)
     {
-        if (Vm is { } vm && sender is ToggleButton tb)
-            vm.GridSnap = tb.IsChecked == true;
+        Vm?.CycleSnapMode();
+        UpdateSnapModeButton();
+        SchematicCanvasCtrl.Focus();
+    }
+
+    private void UpdateSnapModeButton()
+    {
+        var mode = Vm?.SnapMode ?? SnapMode.FineGrid;
+        SnapModeBtn.Classes.Set("snap-connection", mode == SnapMode.ConnectionGrid);
+        SnapModeBtn.Classes.Set("snap-fine",       mode == SnapMode.FineGrid);
+        ToolTip.SetTip(SnapModeBtn, Vm?.SnapModeTooltip ?? "Snap: Off  (G)");
     }
 
     // ── Hierarchy toolbar ─────────────────────────────────────────────────────
@@ -362,40 +379,8 @@ public partial class SchematicView : UserControl
     private async void OnSaveCsch(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SchematicDocument doc) return;
-        var window = TopLevel.GetTopLevel(this) as Window;
-        if (window is null) return;
-
-        var result = await window.StorageProvider.SaveFilePickerAsync(
-            new Avalonia.Platform.Storage.FilePickerSaveOptions
-            {
-                Title             = "Save Schematic",
-                SuggestedFileName = doc.Id ?? "schematic",
-                DefaultExtension  = "csch",
-                FileTypeChoices   = new[]
-                {
-                    new Avalonia.Platform.Storage.FilePickerFileType("circuitRF Schematic")
-                        { Patterns = new[] { "*.csch" } },
-                },
-            });
-
-        if (result is null) return;
-        string savePath = result.Path.LocalPath;
-        try
-        {
-            SchematicPersistence.SaveToFile(
-                savePath,
-                doc.ViewModel.EditModel,
-                doc.Id ?? "unnamed",
-                doc.ViewModel.EditModel.ViewPanX,
-                doc.ViewModel.EditModel.ViewPanY,
-                doc.ViewModel.EditModel.ViewZoom);
-            doc.Messages?.Success($"Saved: {savePath}", savePath);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Save failed: {ex.Message}");
-            doc.Messages?.Error($"Save failed: {ex.Message}");
-        }
+        if (doc.Hierarchy is { } host)
+            await host.SaveSchematicDocumentAsync(doc);
     }
 
     // ── Context menu ──────────────────────────────────────────────────────────

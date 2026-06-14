@@ -30,20 +30,14 @@ public static class SymbolGeometry
         {
             case TextPrimitive t:
             {
-                double halfW = t.Content is { Length: > 0 } c
-                    ? c.Length * t.FontSize * TextAdvance * 0.5
-                    : t.FontSize * TextAdvance;
-                double ascent  = t.FontSize * TextAscentFrac;
-                double descent = t.FontSize * TextDescentFrac;
-                // Horizontal extent shifts with alignment anchor.
-                double left = t.Align switch
-                {
-                    SymbolTextAlign.Center => t.AnchorX - halfW,
-                    SymbolTextAlign.Right  => t.AnchorX - halfW * 2,
-                    _                      => t.AnchorX,
-                };
-                ax = left;          ay = t.AnchorY - ascent;
-                bx = left + halfW * 2; by = t.AnchorY + descent;
+                var (tcx, tcy) = TextCenter(t);
+                var (tw, th)   = TextBoxSize(t);
+                // R90/R270 swap the footprint.
+                bool swap = t.Rotation is SymbolRotation.R90 or SymbolRotation.R270;
+                double halfW = (swap ? th : tw) * 0.5;
+                double halfH = (swap ? tw : th) * 0.5;
+                ax = tcx - halfW; ay = tcy - halfH;
+                bx = tcx + halfW; by = tcy + halfH;
                 break;
             }
             case BitmapPrimitive bm:
@@ -62,6 +56,73 @@ public static class SymbolGeometry
         double hw = Math.Max((bx - ax) * 0.5, MinHalfSize);
         double hh = Math.Max((by - ay) * 0.5, MinHalfSize);
         return (cx - hw, cy - hh, cx + hw, cy + hh);
+    }
+
+    // ── Text geometry helpers ─────────────────────────────────────────────────────
+
+    /// <summary>Unrotated text box size (W = content advance, H = ascent+descent), font-approximated.</summary>
+    public static (double W, double H) TextBoxSize(TextPrimitive t)
+    {
+        double w = t.Content is { Length: > 0 } c
+            ? c.Length * t.FontSize * TextAdvance
+            : t.FontSize * TextAdvance * 2;          // empty: same minimum as old BboxOf (halfW*2)
+        double h = t.FontSize * (TextAscentFrac + TextDescentFrac);
+        return (w, h);
+    }
+
+    /// <summary>Anchor offset from box center in the UNROTATED text frame (screen Y-down).</summary>
+    private static (double ox, double oy) TextAnchorOffset(TextPrimitive t)
+    {
+        var (w, h) = TextBoxSize(t);
+        double ox = t.Align switch
+        {
+            SymbolTextAlign.Center => 0.0,
+            SymbolTextAlign.Right  => +w * 0.5,
+            _                      => -w * 0.5,      // Left
+        };
+        double oy = t.VAlign switch
+        {
+            SymbolTextVAlign.Top    => -h * 0.5,
+            SymbolTextVAlign.Middle =>  0.0,
+            SymbolTextVAlign.Bottom => +h * 0.5,
+            _                       => -h * 0.5 + t.FontSize * TextAscentFrac,  // Baseline (legacy)
+        };
+        return (ox, oy);
+    }
+
+    // CW 90° steps in screen (Y-down) coords — matches RotateBy90's R(x,y)=(−y,x).
+    private static (double x, double y) RotStep(double x, double y, SymbolRotation r) => r switch
+    {
+        SymbolRotation.R90  => (-y,  x),
+        SymbolRotation.R180 => (-x, -y),
+        SymbolRotation.R270 => ( y, -x),
+        _                   => ( x,  y),
+    };
+
+    /// <summary>The text box center C, derived from the anchor: C = Anchor − Rot(θ, anchorOffset).</summary>
+    public static (double cx, double cy) TextCenter(TextPrimitive t)
+    {
+        var (ox, oy) = TextAnchorOffset(t);
+        var (rx, ry) = RotStep(ox, oy, t.Rotation);
+        return (t.AnchorX - rx, t.AnchorY - ry);
+    }
+
+    /// <summary>Baseline Y offset from the text box center, in LOCAL units (screen Y-down, +down).
+    /// The renderer draws text centered at the box center, so it shifts the baseline by this to
+    /// vertically center the glyph box.</summary>
+    public static double TextBaselineDyFromCenter(TextPrimitive t)
+    {
+        var (_, h) = TextBoxSize(t);
+        return t.FontSize * TextAscentFrac - h * 0.5;   // ascent below top; box centered at 0
+    }
+
+    /// <summary>Sets AnchorX/Y so the box center is (cx, cy): Anchor = C + Rot(θ, anchorOffset).</summary>
+    public static void SetTextCenter(TextPrimitive t, double cx, double cy)
+    {
+        var (ox, oy) = TextAnchorOffset(t);
+        var (rx, ry) = RotStep(ox, oy, t.Rotation);
+        t.AnchorX = cx + rx;
+        t.AnchorY = cy + ry;
     }
 
     // ── HitTest — per-primitive click test ───────────────────────────────────────
@@ -307,6 +368,13 @@ public static class SymbolGeometry
                 break;
             case TextPrimitive t:
                 (t.AnchorX, t.AnchorY) = R(t.AnchorX, t.AnchorY);
+                t.Rotation = t.Rotation switch
+                {
+                    SymbolRotation.R0   => SymbolRotation.R90,
+                    SymbolRotation.R90  => SymbolRotation.R180,
+                    SymbolRotation.R180 => SymbolRotation.R270,
+                    _                   => SymbolRotation.R0,
+                };
                 break;
             case BitmapPrimitive bm:
                 (bm.X, bm.Y) = R(bm.X, bm.Y);
@@ -467,7 +535,8 @@ public static class SymbolGeometry
               NumPts = et.NumPts, Axis = et.Axis },
         TextPrimitive t => new TextPrimitive
             { Content = t.Content, AnchorX = t.AnchorX, AnchorY = t.AnchorY,
-              FontSize = t.FontSize, FontStyle = t.FontStyle, Align = t.Align },
+              FontSize = t.FontSize, FontStyle = t.FontStyle, Align = t.Align,
+              VAlign = t.VAlign, Rotation = t.Rotation, ForceReadable = t.ForceReadable },
         BitmapPrimitive bm => new BitmapPrimitive
             { ImagePathRef = bm.ImagePathRef, X = bm.X, Y = bm.Y, W = bm.W, H = bm.H,
               Opacity = bm.Opacity, Locked = bm.Locked },

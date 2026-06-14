@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CircuitRF.Ui.Messages;
 
 namespace CircuitRF.Ui.Theming;
 
@@ -42,6 +43,11 @@ public sealed class AppPreferences
     [JsonPropertyName("launch_pane")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LaunchPane? LaunchPane { get; set; }
+
+    // Message timestamp display — null means default (Time). Serialized as a number, like the others.
+    [JsonPropertyName("message_timestamp")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public MessageTimestampMode? MessageTimestamp { get; set; }
 }
 
 public static class AppPreferencesIo

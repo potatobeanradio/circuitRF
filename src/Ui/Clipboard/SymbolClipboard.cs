@@ -77,10 +77,27 @@ public static class SymbolClipboard
         var (variant, transparent) = ClipboardRenderPolicy.Resolve();
         var renderTheme = SchematicRenderTheme.FromTheme(ThemeService.Active, variant);
 
-        // Compute bbox from the selected primitives for page sizing.
-        var (bbMinX, bbMinY, bbMaxX, bbMaxY) = SymbolGeometry.ComputeBb(primitives);
-        double worldW = bbMaxX - bbMinX;
-        double worldH = bbMaxY - bbMinY;
+        // Page bounds from primitives AND pins, so pins (which can sit outside the primitive bbox,
+        // e.g. on stubs) aren't clipped. pinMargin covers the pin dot; the 15% render pad in each
+        // helper absorbs the port label. Handles primitive-free (pins-only) selections too.
+        double bbMinX = double.MaxValue, bbMinY = double.MaxValue,
+               bbMaxX = double.MinValue, bbMaxY = double.MinValue;
+        if (primitives.Count > 0)
+        {
+            var (p0, q0, p1, q1) = SymbolGeometry.ComputeBb(primitives);
+            bbMinX = p0; bbMinY = q0; bbMaxX = p1; bbMaxY = q1;
+        }
+        const double pinMargin = 12.0;
+        foreach (var pin in pins)
+        {
+            bbMinX = Math.Min(bbMinX, pin.LocalX - pinMargin);
+            bbMinY = Math.Min(bbMinY, pin.LocalY - pinMargin);
+            bbMaxX = Math.Max(bbMaxX, pin.LocalX + pinMargin);
+            bbMaxY = Math.Max(bbMaxY, pin.LocalY + pinMargin);
+        }
+        bool hasBounds = bbMinX != double.MaxValue;
+        double worldW = hasBounds ? bbMaxX - bbMinX : 0;
+        double worldH = hasBounds ? bbMaxY - bbMinY : 0;
 
         var item = new DataTransferItem();
 
@@ -88,15 +105,15 @@ public static class SymbolClipboard
         {
             if (worldW >= 1 && worldH >= 1)
             {
-                byte[]? pdf = TryRenderToPdf(primitives, bbMinX, bbMinY, worldW, worldH, renderTheme, transparent);
+                byte[]? pdf = TryRenderToPdf(primitives, pins, bbMinX, bbMinY, worldW, worldH, renderTheme, transparent);
                 if (pdf is not null)
                     item.Set(OperatingSystem.IsWindows() ? ClipboardFormats.PdfNativeWinFormat : ClipboardFormats.PdfNativeMacFormat, pdf);
 
-                string? svg = TryRenderToSvg(primitives, bbMinX, bbMinY, worldW, worldH, renderTheme, transparent);
+                string? svg = TryRenderToSvg(primitives, pins, bbMinX, bbMinY, worldW, worldH, renderTheme, transparent);
                 if (svg is not null && !OperatingSystem.IsWindows())
                     item.Set(ClipboardFormats.SvgNativeFormat, Encoding.UTF8.GetBytes(svg));
 
-                Bitmap? bmp = TryRenderToAvaloniaImage(primitives, bbMinX, bbMinY, worldW, worldH, renderTheme, transparent);
+                Bitmap? bmp = TryRenderToAvaloniaImage(primitives, pins, bbMinX, bbMinY, worldW, worldH, renderTheme, transparent);
                 if (bmp is not null)
                     item.Set(DataFormat.Bitmap, bmp);
             }
@@ -161,6 +178,7 @@ public static class SymbolClipboard
     private static void RenderSymbol(
         SKCanvas                       canvas,
         IReadOnlyList<SymbolPrimitive> primitives,
+        IReadOnlyList<SymbolPin>       pins,
         double panX, double panY, double zoom,
         SchematicRenderTheme           theme,
         bool                           useTransparentBackground)
@@ -172,10 +190,13 @@ public static class SymbolClipboard
             rotation: SymbolRotation.R0, mirrorX: false,
             panX: panX, panY: panY, zoom: zoom,
             theme: theme);
+        // Pins: same dot + port-label rendering and scale as the editor, so exports match screen.
+        SymbolEditorRenderer.DrawPinMarkersPlain(canvas, pins, panX, panY, zoom, theme);
     }
 
     private static byte[]? TryRenderToPdf(
         IReadOnlyList<SymbolPrimitive> primitives,
+        IReadOnlyList<SymbolPin>       pins,
         double bbMinX, double bbMinY, double worldW, double worldH,
         SchematicRenderTheme           theme,
         bool                           useTransparentBackground)
@@ -193,7 +214,7 @@ public static class SymbolClipboard
             using var stream = new SKDynamicMemoryWStream();
             using var doc    = SKDocument.CreatePdf(stream, metadata);
             var canvas = doc.BeginPage(pxW, pxH);
-            RenderSymbol(canvas, primitives, panX, panY, zoom, theme, useTransparentBackground);
+            RenderSymbol(canvas, primitives, pins, panX, panY, zoom, theme, useTransparentBackground);
             doc.EndPage();
             doc.Close();
             return stream.DetachAsData().ToArray();
@@ -203,6 +224,7 @@ public static class SymbolClipboard
 
     private static string? TryRenderToSvg(
         IReadOnlyList<SymbolPrimitive> primitives,
+        IReadOnlyList<SymbolPin>       pins,
         double bbMinX, double bbMinY, double worldW, double worldH,
         SchematicRenderTheme           theme,
         bool                           useTransparentBackground)
@@ -218,7 +240,7 @@ public static class SymbolClipboard
 
             using var stream = new SKDynamicMemoryWStream();
             using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, pxW, pxH), stream))
-                RenderSymbol(canvas, primitives, panX, panY, zoom, theme, useTransparentBackground);
+                RenderSymbol(canvas, primitives, pins, panX, panY, zoom, theme, useTransparentBackground);
             return Encoding.UTF8.GetString(stream.DetachAsData().ToArray());
         }
         catch { return null; }
@@ -226,6 +248,7 @@ public static class SymbolClipboard
 
     private static Bitmap? TryRenderToAvaloniaImage(
         IReadOnlyList<SymbolPrimitive> primitives,
+        IReadOnlyList<SymbolPin>       pins,
         double bbMinX, double bbMinY, double worldW, double worldH,
         SchematicRenderTheme           theme,
         bool                           useTransparentBackground)
@@ -242,7 +265,7 @@ public static class SymbolClipboard
 
             using var skBmp  = new SKBitmap(pxW, pxH, SKColorType.Rgba8888, SKAlphaType.Premul);
             using var canvas = new SKCanvas(skBmp);
-            RenderSymbol(canvas, primitives, panX, panY, zoom, theme, useTransparentBackground);
+            RenderSymbol(canvas, primitives, pins, panX, panY, zoom, theme, useTransparentBackground);
 
             using var skData = skBmp.Encode(SKEncodedImageFormat.Png, 100);
             if (skData is null) return null;

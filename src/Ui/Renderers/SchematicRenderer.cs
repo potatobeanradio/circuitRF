@@ -261,7 +261,8 @@ public static class SchematicRenderer
             if (c.CellRefState is CellSymbolState.Resolved && c.CellRefPrimitives is not null)
             {
                 DrawSymbol(canvas, c.CellRefPrimitives,
-                    cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme);
+                    cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme,
+                    applyForceReadable: true);
             }
             else if (c.CellRefState is CellSymbolState.NotFound)
             {
@@ -279,7 +280,8 @@ public static class SchematicRenderer
                 // Plus-role primitives (e.g. VoltageSource +/−) are inside the same primitive list,
                 // so the separate ForSymbolPlusSegments path is gone.
                 DrawSymbol(canvas, BuiltInSymbols.Primitives(c.Symbol).Primitives,
-                    cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme);
+                    cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme,
+                    applyForceReadable: true);
                 DrawVariadicPortLeads(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
             }
 
@@ -352,7 +354,8 @@ public static class SchematicRenderer
         SymbolRotation rotation, bool mirrorX,
         double panX, double panY, double zoom,
         SchematicRenderTheme theme,
-        SKPaint? overridePaint = null)
+        SKPaint? overridePaint = null,
+        bool applyForceReadable = false)      // true only for schematic component instances
     {
         // Rotation in degrees for angle-bearing primitives (Arc, Sine).
         double rotDeg = rotation switch
@@ -417,30 +420,80 @@ public static class SchematicRenderer
                 continue;
             }
 
-            // TextPrimitive — separate paint model (no StrokeTier; font-driven).
+            // TextPrimitive — drawn centered at its box center, rotated in place.
             if (prim is TextPrimitive txt)
             {
-                // In ghost mode draw text with the ghost color; otherwise use SymbolLine
-                // (SymbolText role falls back to SymbolLine — no dedicated theme field yet).
                 SKColor textColor = overridePaint?.Color ?? theme.SymbolLine;
                 SKTypeface typeface = txt.FontStyle switch
                 {
                     SymbolFontStyle.Bold      => SkiaFonts.PlexBold,
                     SymbolFontStyle.Italic    => SkiaFonts.PlexItalic,
-                    SymbolFontStyle.Condensed => SkiaFonts.PlexLight,  // graceful fallback (§7.3)
+                    SymbolFontStyle.Condensed => SkiaFonts.PlexLight,
                     _                         => SkiaFonts.PlexRegular,
                 };
                 float fontSize = Math.Max(1f, (float)(txt.FontSize * zoom));
                 using var font   = new SKFont(typeface, fontSize);
                 using var tPaint = new SKPaint { IsAntialias = true, Color = textColor };
-                var (ax, ay) = LP(txt.AnchorX, txt.AnchorY);
-                SKTextAlign align = txt.Align switch
+
+                // Net glyph angle = component rotation + the text's own rotation (CW, screen Y-down).
+                double textRotDeg = txt.Rotation switch
                 {
-                    SymbolTextAlign.Center => SKTextAlign.Center,
-                    SymbolTextAlign.Right  => SKTextAlign.Right,
-                    _                      => SKTextAlign.Left,
+                    SymbolRotation.R90  =>  90.0,
+                    SymbolRotation.R180 => 180.0,
+                    SymbolRotation.R270 => 270.0,
+                    _                   =>   0.0,
                 };
-                canvas.DrawText(txt.Content, ax, ay, align, font, tPaint);
+                double netDeg = rotDeg + textRotDeg;
+
+                // Actual font metrics (px at this zoom) so the (Align,VAlign) corner lands EXACTLY on the
+                // primitive's anchor, instead of the estimated box width that drifts with string length.
+                font.GetFontMetrics(out var fm);
+                float ascPx  = -fm.Ascent;                     // distance above baseline (px)
+                float descPx =  fm.Descent;                    // distance below baseline (px)
+                float boxHpx =  ascPx + descPx;
+                float awPx   =  font.MeasureText(txt.Content);  // real advance width (px)
+
+                // Anchor offset from the box centre, unrotated text frame, WORLD units.
+                double ox = txt.Align switch
+                {
+                    SymbolTextAlign.Center => 0.0,
+                    SymbolTextAlign.Right  => +awPx * 0.5 / zoom,
+                    _                      => -awPx * 0.5 / zoom,   // Left
+                };
+                double oy = txt.VAlign switch
+                {
+                    SymbolTextVAlign.Top    => -boxHpx * 0.5 / zoom,
+                    SymbolTextVAlign.Middle =>  0.0,
+                    SymbolTextVAlign.Bottom => +boxHpx * 0.5 / zoom,
+                    _                       => (-boxHpx * 0.5 + ascPx) / zoom,   // Baseline (legacy)
+                };
+
+                // Local box centre = Anchor − Rot(textRotation, offset); LP then applies the component
+                // rotation/mirror/pan/zoom, so mirrored/rotated instances stay correct.
+                var (orx, ory) = txt.Rotation switch
+                {
+                    SymbolRotation.R90  => (-oy,  ox),
+                    SymbolRotation.R180 => (-ox, -oy),
+                    SymbolRotation.R270 => ( oy, -ox),
+                    _                   => ( ox,  oy),
+                };
+                var (cxp, cyp) = LP(txt.AnchorX - orx, txt.AnchorY - ory);
+
+                // Readability auto-flip — schematic instances only, opt-in per text. Flip 180° about the
+                // box centre (centred draw keeps it in place). Default ForceReadable=false ⇒ rigid.
+                if (applyForceReadable && txt.ForceReadable)
+                {
+                    double n = ((netDeg % 360.0) + 360.0) % 360.0;
+                    if (n > 90.0 && n <= 270.0) netDeg += 180.0;
+                }
+
+                float baselineDy = (ascPx - descPx) * 0.5f;   // baseline offset from box centre (px)
+
+                int save = canvas.Save();
+                canvas.Translate(cxp, cyp);
+                canvas.RotateDegrees((float)netDeg);
+                canvas.DrawText(txt.Content, 0f, baselineDy, SKTextAlign.Center, font, tPaint);
+                canvas.RestoreToCount(save);
                 continue;
             }
 

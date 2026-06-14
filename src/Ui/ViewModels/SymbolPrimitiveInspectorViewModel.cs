@@ -23,6 +23,8 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     public static SineAxis[]         AxisOptions       { get; } = Enum.GetValues<SineAxis>();
     public static SymbolTextAlign[]  AlignOptions      { get; } = Enum.GetValues<SymbolTextAlign>();
     public static SymbolFontStyle[]  FontStyleOptions  { get; } = Enum.GetValues<SymbolFontStyle>();
+    public static SymbolTextVAlign[] VAlignOptions     { get; } = Enum.GetValues<SymbolTextVAlign>();
+    public static SymbolRotation[]   RotationOptions   { get; } = Enum.GetValues<SymbolRotation>();
 
     // ── Empty / header state ──────────────────────────────────────────────────
 
@@ -325,6 +327,9 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     [ObservableProperty] private double          _textFontSize;
     [ObservableProperty] private SymbolFontStyle _textFontStyle;
     [ObservableProperty] private SymbolTextAlign _textAlign;
+    [ObservableProperty] private SymbolTextVAlign _textVAlign;
+    [ObservableProperty] private SymbolRotation   _textRotation;
+    [ObservableProperty] private bool             _textForceReadable;
 
     partial void OnTextContentChanged(string? oldValue, string newValue)
     {
@@ -349,6 +354,24 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     {
         if (_isRefreshing || _prim is not TextPrimitive tp || _vm is null || oldValue == newValue) return;
         _vm.Execute(new SetSymbolPrimitiveFieldCommand<SymbolTextAlign>(_vm.EditableSymbol, "Align", oldValue, newValue, v => tp.Align = v));
+    }
+    partial void OnTextVAlignChanged(SymbolTextVAlign oldValue, SymbolTextVAlign newValue)
+    {
+        if (_isRefreshing || _prim is not TextPrimitive tp || _vm is null || oldValue == newValue) return;
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<SymbolTextVAlign>(
+            _vm.EditableSymbol, "VAlign", oldValue, newValue, v => tp.VAlign = v));
+    }
+    partial void OnTextRotationChanged(SymbolRotation oldValue, SymbolRotation newValue)
+    {
+        if (_isRefreshing || _prim is not TextPrimitive tp || _vm is null || oldValue == newValue) return;
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<SymbolRotation>(
+            _vm.EditableSymbol, "Rotation", oldValue, newValue, v => tp.Rotation = v));
+    }
+    partial void OnTextForceReadableChanged(bool oldValue, bool newValue)
+    {
+        if (_isRefreshing || _prim is not TextPrimitive tp || _vm is null || oldValue == newValue) return;
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<bool>(
+            _vm.EditableSymbol, "ForceReadable", oldValue, newValue, v => tp.ForceReadable = v));
     }
 
     // ── Pin view (Layer 4) ────────────────────────────────────────────────────
@@ -633,6 +656,9 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
                 TextFontSize  = t.FontSize;
                 TextFontStyle = t.FontStyle;
                 TextAlign     = t.Align;
+                TextVAlign        = t.VAlign;
+                TextRotation      = t.Rotation;
+                TextForceReadable = t.ForceReadable;
                 break;
 
             case BitmapPrimitive bmp:
