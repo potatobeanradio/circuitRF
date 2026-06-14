@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.MarkerInfoBoxView"
+             x:DataType="vm:MarkerInfoBoxViewModel"
+             Width="{Binding BoxWidth}"
+             Height="{Binding BoxHeight}"
+             Background="Transparent">
+
+    <!--
+        Background="Transparent" is required for Avalonia hit-testing.
+        Without a non-null background, a UserControl with no visual children
+        is not hit-testable, so pointer events (drag, double-tap) would fall through.
+        The actual box is rendered entirely in Skia via ICustomDrawOperation.
+        Width/Height are set from MeasureInfoBox() so hit bounds match the Skia box.
+        Cursor=Hand signals the box is draggable.
+    -->
+
+</UserControl>

@@ -7,11 +7,15 @@
              x:DataType="dd:DataDisplayDocument">
 
     <!-- Full-bleed canvas surface matching other document bodies. -->
-    <Grid Background="{DynamicResource SystemChromeLowColor}">
+    <Grid x:Name="ContentGrid" Background="{DynamicResource SystemChromeLowColor}">
 
-        <!-- PlotControl fills the canvas when a plot exists. TEMP 7.1b -->
-        <plotctl:PlotControl Plot="{Binding ViewModel.CurrentPlot}"
-                             IsVisible="{Binding ViewModel.HasPlots}"/>
+        <!-- PlotControl fills the canvas when a plot exists. -->
+        <plotctl:PlotControl x:Name="ThePlotControl"
+                             Plot="{Binding ViewModel.CurrentPlot}"
+                             IsVisible="{Binding ViewModel.HasPlots}"
+                             EnablePanning="True"
+                             ZoomFactor="1.15"
+                             DoubleTapped="OnPlotControlDoubleTapped"/>
 
         <!-- Empty-state hint shown when no plot is loaded. -->
         <StackPanel HorizontalAlignment="Center"

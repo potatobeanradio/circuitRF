@@ -1,0 +1,140 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             x:DataType="vm:AxesLimitsViewModel"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.AxesLimitsView"
+             Width="300">
+
+    <Border Background="{DynamicResource SystemChromeMediumLowColor}"
+            CornerRadius="8"
+            Padding="12">
+        <StackPanel Spacing="8">
+
+            <TextBlock Text="Axes Limits"
+                       FontWeight="SemiBold"
+                       FontSize="13"
+                       HorizontalAlignment="Center"/>
+
+            <Separator/>
+
+            <!-- ── X Axis ─────────────────────────────────── -->
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="X Axis"
+                               FontWeight="SemiBold"
+                               FontSize="11"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding XUnitLabel}"
+                               FontSize="10"
+                               Opacity="0.7"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+                <CheckBox Grid.Column="1"
+                          IsChecked="{Binding XAutoscale, Mode=TwoWay}"
+                          Content="Autoscale"
+                          FontSize="11"
+                          VerticalAlignment="Center"/>
+            </Grid>
+            <Grid ColumnDefinitions="32,*,8,32,*"
+                  IsEnabled="{Binding XFieldsEnabled}">
+                <TextBlock Grid.Column="0" Text="Min"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+                <TextBox   Grid.Column="1"
+                           Text="{Binding XMinText, Mode=TwoWay}"
+                           FontSize="11"
+                           Height="24"
+                           Padding="4,2"/>
+                <TextBlock Grid.Column="3" Text="Max"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+                <TextBox   Grid.Column="4"
+                           Text="{Binding XMaxText, Mode=TwoWay}"
+                           FontSize="11"
+                           Height="24"
+                           Padding="4,2"/>
+            </Grid>
+
+            <Separator/>
+
+            <!-- ── Y Axis (primary left) ──────────────────── -->
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0"
+                           Text="Y Axis"
+                           FontWeight="SemiBold"
+                           FontSize="11"
+                           VerticalAlignment="Center"/>
+                <CheckBox Grid.Column="1"
+                          IsChecked="{Binding YAutoscale, Mode=TwoWay}"
+                          Content="Autoscale"
+                          FontSize="11"
+                          VerticalAlignment="Center"/>
+            </Grid>
+            <Grid ColumnDefinitions="32,*,8,32,*"
+                  IsEnabled="{Binding YFieldsEnabled}">
+                <TextBlock Grid.Column="0" Text="Min"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+                <TextBox   Grid.Column="1"
+                           Text="{Binding YMinText, Mode=TwoWay}"
+                           FontSize="11"
+                           Height="24"
+                           Padding="4,2"/>
+                <TextBlock Grid.Column="3" Text="Max"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+                <TextBox   Grid.Column="4"
+                           Text="{Binding YMaxText, Mode=TwoWay}"
+                           FontSize="11"
+                           Height="24"
+                           Padding="4,2"/>
+            </Grid>
+
+            <!-- ── Y2 Axis (secondary right, Rect only) ───── -->
+            <Separator IsVisible="{Binding ShowY2}"/>
+
+            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding ShowY2}">
+                <TextBlock Grid.Column="0"
+                           Text="Y2 Axis (Right)"
+                           FontWeight="SemiBold"
+                           FontSize="11"
+                           VerticalAlignment="Center"/>
+                <CheckBox Grid.Column="1"
+                          IsChecked="{Binding Y2Autoscale, Mode=TwoWay}"
+                          Content="Autoscale"
+                          FontSize="11"
+                          VerticalAlignment="Center"/>
+            </Grid>
+            <Grid ColumnDefinitions="32,*,8,32,*"
+                  IsEnabled="{Binding Y2FieldsEnabled}"
+                  IsVisible="{Binding ShowY2}">
+                <TextBlock Grid.Column="0" Text="Min"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+                <TextBox   Grid.Column="1"
+                           Text="{Binding Y2MinText, Mode=TwoWay}"
+                           FontSize="11"
+                           Height="24"
+                           Padding="4,2"/>
+                <TextBlock Grid.Column="3" Text="Max"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+                <TextBox   Grid.Column="4"
+                           Text="{Binding Y2MaxText, Mode=TwoWay}"
+                           FontSize="11"
+                           Height="24"
+                           Padding="4,2"/>
+            </Grid>
+
+            <Separator/>
+
+            <Button Content="Close"
+                    Command="{Binding CloseCommand}"
+                    HorizontalAlignment="Center"
+                    HorizontalContentAlignment="Center"
+                    Width="50"/>
+
+        </StackPanel>
+    </Border>
+
+</UserControl>

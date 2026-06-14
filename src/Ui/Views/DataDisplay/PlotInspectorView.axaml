@@ -1,0 +1,428 @@
+
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             xmlns:cv="using:CircuitRF.Ui.DataDisplay.Converters"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+             x:DataType="vm:PlotInspectorViewModel"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.PlotInspectorView"
+             Width="430">
+
+    <Design.DataContext>
+        <x:Static Member="vm:PlotInspectorViewModel.DesignInstance"/>
+    </Design.DataContext>
+
+    <UserControl.Resources>
+        <cv:DoubleToDecimalConverter x:Key="D2D"/>
+        <sys:Double x:Key="FontSize">10</sys:Double>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="Slider">
+            <Setter Property="Height" Value="35"/>
+            <Setter Property="Margin"    Value="10,0,10,0"/>
+            <Setter Property="IsSnapToTickEnabled"    Value="True"/>
+            <Setter Property="TickPlacement"    Value="None"/>
+            <Setter Property="TickFrequency"    Value="0.1"/>
+            <Setter Property="VerticalAlignment"    Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Foreground"        Value="{DynamicResource SystemBaseMediumHighColor}"/>
+        </Style>
+
+        <Style Selector="ComboBoxItem:disabled">
+            <Setter Property="Opacity" Value="0.38"/>
+        </Style>
+        <Style Selector="ComboBoxItem:disabled TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumLowColor}"/>
+        </Style>
+        <Style Selector="TextBlock.brokenSource">
+            <Setter Property="Foreground" Value="{DynamicResource SystemErrorTextColor}"/>
+            <Setter Property="FontStyle"  Value="Italic"/>
+        </Style>
+        <Style Selector="Border.traceCard">
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemBaseLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="5"/>
+            <Setter Property="Padding"         Value="6,5"/>
+            <Setter Property="Margin"          Value="0,0,0,5"/>
+        </Style>
+        <Style Selector="NumericUpDown">
+            <Setter Property="FontSize"                 Value="{StaticResource FontSize}"/>
+            <Setter Property="Height"                   Value="16"/>
+            <Setter Property="MinWidth"                 Value="10"/>
+            <Setter Property="Padding"                  Value="2,0"/>
+            <Setter Property="ShowButtonSpinner"        Value="False"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Border Background="{DynamicResource SystemChromeMediumLowColor}"
+            CornerRadius="8"
+            Padding="10">
+        <StackPanel Spacing="6">
+
+            <!-- ── Title ─────────────────────────────────────────── -->
+            <TextBlock Text="{Binding InspectorTitle}"
+                       FontWeight="SemiBold"
+                       FontSize="13"
+                       HorizontalAlignment="Center"/>
+
+            <!-- ── Plot Type + Freq Units + Add Trace ────────────── -->
+            <Grid ColumnDefinitions="Auto,80,Auto,85,Auto,Auto,*,Auto">
+                <TextBlock Grid.Column="0" Text="Type:"  Classes="label" Margin="0,0,4,0"/>
+                <ComboBox  Grid.Column="1"
+                           ItemsSource="{x:Static vm:PlotInspectorViewModel.AllPlotTypes}"
+                           SelectedItem="{Binding PlotType, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Column="2" Text="Freq:"  Classes="label" Margin="10,0,4,0"/>
+                <ComboBox  Grid.Column="3"
+                           ItemsSource="{x:Static vm:PlotInspectorViewModel.AllFreqUnits}"
+                           SelectedItem="{Binding FreqUnit, Mode=TwoWay}"/>
+
+                <TextBlock Grid.Column="4" Text="Font Size:"  Classes="label" Margin="10,0,4,0"
+                           IsVisible="{Binding IsTablePlot}"/>
+                <NumericUpDown Grid.Column="5"
+                               Value="{Binding FontSize, Mode=TwoWay}"
+                               Minimum="6" Maximum="32" Increment="1"
+                               Width="40"
+                               Padding="5, 5"
+                               FormatString="0"
+                               ShowButtonSpinner="False"
+                               AllowSpin="False"
+                               IsVisible="{Binding IsTablePlot}"
+                               ToolTip.Tip="Table font size"/>
+
+                <Button Grid.Column="7"
+                        Command="{Binding AddTraceCommand}"
+                        ToolTip.Tip="Add trace (clones last, or uses first library SNP)">
+                    <StackPanel Orientation="Horizontal" Spacing="3">
+                        <mi:MaterialIcon Kind="PlusBox" Width="12" Height="12"/>
+                        <TextBlock Text="Trace"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <Separator/>
+
+            <!-- ── Trace list ────────────────────────────────────── -->
+            <ScrollViewer x:Name="TraceScrollViewer"
+                          MaxHeight="420" HorizontalScrollBarVisibility="Disabled">
+                <ScrollViewer.Transitions>
+                    <Transitions>
+                        <VectorTransition Property="Offset" Duration="0:0:0.5" Easing="QuarticEaseOut" />
+                    </Transitions>
+                </ScrollViewer.Transitions>
+                <ItemsControl ItemsSource="{Binding Traces}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:TraceRowViewModel">
+                            <Border Classes="traceCard">
+                                <StackPanel Spacing="1">
+
+                                    <!--
+                                        Row 0: MatrixType | Data combo | [YAxis] | →R
+                                    -->
+                                    <Grid ColumnDefinitions="70,*,95,Auto" RowDefinitions="Auto" ClipToBounds="False">
+
+                                        <ComboBox Grid.Column="0"
+                                                  HorizontalAlignment="Left"
+                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.AllMatrixTypes}"
+                                                  SelectedItem="{Binding MatrixType, Mode=TwoWay}"/>
+
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding AvailableSignals}"
+                                                  SelectedItem="{Binding SelectedSignal, Mode=TwoWay}"
+                                                  PlaceholderText="(load a file…)"
+                                                  Margin="3,0"
+                                                  HorizontalAlignment="Stretch">
+                                            <ComboBox.ItemContainerTheme>
+                                                <ControlTheme TargetType="ComboBoxItem">
+                                                    <Setter Property="IsEnabled"
+                                                            Value="{ReflectionBinding IsEnabled}"/>
+                                                </ControlTheme>
+                                            </ComboBox.ItemContainerTheme>
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:TraceDataItem">
+                                                    <TextBlock Text="{Binding Label}"
+                                                               Classes.brokenSource="{Binding IsBroken}"
+                                                               FontSize="{StaticResource FontSize}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               ToolTip.Tip="{Binding Label}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <ComboBox Grid.Column="2"
+                                                  IsVisible="{Binding IsRectOrTablePlot}"
+                                                  ItemsSource="{Binding AvailableYAxes}"
+                                                  SelectedItem="{Binding SelectedYAxis, Mode=TwoWay}"
+                                                  HorizontalAlignment="Stretch"
+                                                  Margin="3,0,0,0">
+                                            <ComboBox.ItemContainerTheme>
+                                                <ControlTheme TargetType="ComboBoxItem">
+                                                    <Setter Property="IsEnabled"
+                                                            Value="{ReflectionBinding IsEnabled}"/>
+                                                </ControlTheme>
+                                            </ComboBox.ItemContainerTheme>
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:YAxisItem">
+                                                    <TextBlock Text="{Binding Label}" FontSize="{StaticResource FontSize}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <Button Grid.Column="3"
+                                                Command="{Binding ToggleSecondaryAxisCommand}"
+                                                IsVisible="{Binding IsRectPlot}"
+                                                Padding="3,2"
+                                                Margin="5,0,0,0"
+                                                ToolTip.Tip="Toggle right Y axis">
+                                            <mi:MaterialIcon Kind="{Binding SecondaryAxisIcon}"
+                                                             Width="14" Height="14"/>
+                                        </Button>
+                                    </Grid>
+
+                                    <!--
+                                        Row 1: Line | width NUD | slider | color | style
+                                    -->
+                                    <Grid ColumnDefinitions="72,30,*,Auto,Auto" RowDefinitions="Auto" ClipToBounds="False"
+                                    IsVisible="{Binding IsNotTablePlot}">
+
+                                        <CheckBox Grid.Column="0"
+                                                  IsChecked="{Binding LineEnabled, Mode=TwoWay}"
+                                                  Content="Line"
+                                                  MinHeight="0"
+                                                  VerticalAlignment="Center"
+                                                  VerticalContentAlignment="Center"
+                                                  Padding="5,0,0,0"
+                                                  Margin="0,0,0,0"/>
+
+                                        <NumericUpDown Grid.Column="1"
+                                                       Value="{Binding LineWidth,
+                                                           Converter={StaticResource D2D},
+                                                           Mode=TwoWay}"
+                                                       Minimum="0.5" Maximum="5"
+                                                       Increment="0.25"
+                                                       FormatString="F2"
+                                                       IsEnabled="{Binding LineEnabled}"
+                                                       ToolTip.Tip="Line width (px)"/>
+
+                                        <Slider Grid.Column="2"
+                                                Value="{Binding LineWidth, Mode=TwoWay}"
+                                                Minimum="0.5" Maximum="5"
+                                                SmallChange="0.25"
+                                                IsEnabled="{Binding LineEnabled}">
+                                                <Slider.RenderTransform>
+                                                    <TranslateTransform Y="-7.5"/>
+                                                </Slider.RenderTransform>
+                                        </Slider>
+
+                                        <ComboBox Grid.Column="3"
+                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
+                                                  SelectedIndex="{Binding LineColorIndex, Mode=TwoWay}"
+                                                  IsEnabled="{Binding LineEnabled}"
+                                                  Padding="10,0,0,0"
+                                                  Margin="0,0,4,0"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Right">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ColorItem">
+                                                    <Border Width="30" Height="10"
+                                                            Background="{Binding Brush}"
+                                                            CornerRadius="2"
+                                                            ToolTip.Tip="{Binding Name}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <ComboBox Grid.Column="4"
+                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.AllLineTypes}"
+                                                  SelectedItem="{Binding LineType, Mode=TwoWay}"
+                                                  IsEnabled="{Binding LineEnabled}"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Right"/>
+
+                                    </Grid>
+
+                                    <!--
+                                        Row 2: Table number-format controls.
+                                        Visible only when the plot type is Table.
+                                    -->
+                                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,*"
+                                          Margin="0,2,0,0"
+                                          IsVisible="{Binding IsTablePlot}">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="Format:"
+                                                   Classes="label"
+                                                   Margin="0,0,4,0"/>
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.AllPrecisionFormats}"
+                                                  SelectedItem="{Binding FormatString, Mode=TwoWay}"
+                                                  Width="90"
+                                                  ToolTip.Tip="Number format (Auto / Fixed / Scientific)">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Converter={x:Static vm:PrecisionFormatConverter.Instance}}"
+                                                               FontSize="{StaticResource FontSize}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <TextBlock Grid.Column="2"
+                                                   Text="Digits:"
+                                                   Classes="label"
+                                                   Margin="10,0,4,0"/>
+                                        <NumericUpDown Grid.Column="3"
+                                                       Value="{Binding MaximumFractionDigits, Mode=TwoWay}"
+                                                       Minimum="0" Maximum="15" Increment="1"
+                                                       Width="40"
+                                                       FormatString="0"
+                                                       ToolTip.Tip="Maximum decimal digits"/>
+
+                                        <TextBlock Grid.Column="4"
+                                                   Text="Highlight:"
+                                                   Classes="label"
+                                                   Margin="0,0,0,0"
+                                                   HorizontalAlignment="Right"/>
+                                        <ComboBox Grid.Column="5"
+                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
+                                                  SelectedIndex="{Binding LineColorIndex, Mode=TwoWay}"
+                                                  IsEnabled="{Binding LineEnabled}"
+                                                  Padding="10,0,0,0"
+                                                  Margin="0,0,0,0"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Right">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ColorItem">
+                                                    <Border Width="30" Height="10"
+                                                            Background="{Binding Brush}"
+                                                            CornerRadius="2"
+                                                            ToolTip.Tip="{Binding Name}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </Grid>
+
+                                    <!--
+                                        Row 3: Symbol | size NUD | slider | color | shape
+                                        Hidden when the plot type is Table.
+                                    -->
+                                    <Grid ColumnDefinitions="72,30,*,Auto,Auto" RowDefinitions="Auto" ClipToBounds="False"
+                                          IsVisible="{Binding IsNotTablePlot}">
+                                        <CheckBox Grid.Column="0"
+                                                  IsChecked="{Binding MarkerEnabled, Mode=TwoWay}"
+                                                  Content="Symbol"
+                                                  MinHeight="0"
+                                                  VerticalAlignment="Center"
+                                                  VerticalContentAlignment="Center"
+                                                  Padding="5,0,0,0"
+                                                  Margin="0,0,0,0"/>
+
+                                        <NumericUpDown Grid.Column="1"
+                                                       Value="{Binding MarkerSize,
+                                                           Converter={StaticResource D2D},
+                                                           Mode=TwoWay}"
+                                                       Minimum="0.5" Maximum="5"
+                                                       Increment="0.25"
+                                                       FormatString="F2"
+                                                       IsEnabled="{Binding MarkerEnabled}"
+                                                       ToolTip.Tip="Symbol size (px)"/>
+
+                                        <Slider Grid.Column="2"
+                                                Value="{Binding MarkerSize, Mode=TwoWay}"
+                                                Minimum="0.5" Maximum="5"
+                                                SmallChange="0.25"
+                                                IsEnabled="{Binding MarkerEnabled}">
+                                                <Slider.RenderTransform>
+                                                    <TranslateTransform Y="-7.5"/>
+                                                </Slider.RenderTransform>
+                                        </Slider>
+
+                                        <ComboBox Grid.Column="3"
+                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
+                                                  SelectedIndex="{Binding MarkerColorIndex, Mode=TwoWay}"
+                                                  IsEnabled="{Binding MarkerEnabled}"
+                                                  Padding="10,0,0,0"
+                                                  Margin="0,0,4,0"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Right">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ColorItem">
+                                                    <Border Width="30" Height="10"
+                                                            Background="{Binding Brush}"
+                                                            CornerRadius="2"
+                                                            ToolTip.Tip="{Binding Name}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <ComboBox Grid.Column="4"
+                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.AllMarkerTypes}"
+                                                  SelectedItem="{Binding SelectedMarkerTypeItem, Mode=TwoWay}"
+                                                  IsEnabled="{Binding MarkerEnabled}"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Right"
+                                                  Width="68">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:MarkerTypeItem">
+                                                    <mi:MaterialIcon Kind="{Binding Icon}"
+                                                                     Width="10" Height="10"
+                                                                     HorizontalAlignment="Center"
+                                                                     VerticalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </Grid>
+
+                                    <!--
+                                        Row 4: Z0 reference impedance entry.
+                                    -->
+                                    <Grid ColumnDefinitions="25,Auto,*,Auto,Auto" Margin="0,5,0,0">
+                                        <TextBlock Grid.Column="0"
+                                                   Text="Z0:"
+                                                   Classes="label"/>
+                                        <TextBox Grid.Column="1"
+                                                 Text="{Binding Z0String, Mode=TwoWay}"
+                                                 FontSize="{StaticResource FontSize}"
+                                                 Height="20"
+                                                 MinHeight="0"
+                                                 Width="65"
+                                                 Padding="4,3"
+                                                 PlaceholderText="50+j0"
+                                                 HorizontalAlignment="Left"
+                                                 VerticalAlignment="Center"
+                                                 Margin="0,0,5,0"
+                                                 ToolTip.Tip="Reference impedance (all Ports)"/>
+                                        <TextBlock Grid.Column="2"
+                                                   Text="Ω"
+                                                   Classes="label"
+                                                   HorizontalAlignment="Left"/>
+                                        <Button Grid.Column="5"
+                                                Command="{Binding RemoveCommand}"
+                                                Padding="4,2"
+                                                MinWidth="28"
+                                                ToolTip.Tip="Remove this trace">
+                                            <mi:MaterialIcon Kind="TrashCanOutline"
+                                                             Width="14" Height="14"/>
+                                        </Button>
+                                    </Grid>
+
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- ── Footer ────────────────────────────────────────── -->
+            <Separator/>
+            <Button Content="Close"
+                    Command="{Binding CloseCommand}"
+                    HorizontalAlignment="Center"
+                    HorizontalContentAlignment="Center"
+                    Padding="12,4,12,4"
+                    Margin="0,0,0,0" />
+        </StackPanel>
+    </Border>
+</UserControl>

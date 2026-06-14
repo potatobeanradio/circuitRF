@@ -240,26 +240,34 @@ persistence → 7.1e). Build in compile-and-run-gated slices:
   `UndoRedo` and `AppSettings(ViewModel)`. Keep SNP-backed data (DataSet seam is 7.2). Marker-VM members
   may be ported but left unwired until 7.1d. **Gate:** builds green; design-instance/smoke coverage where
   practical.
-- **7.1c-2 — controls.** Grow the 7.1b render-only `PlotControl` into the interactive control by porting
-  splotRF's `PlotControl` (pan/zoom, scroll-zoom, context menu, double-tap-to-inspect, the inspector
-  flyout); port `AxisLabelControl` + `DragSelectOverlay`. **Fix the `canvas.Clear()` from 7.1b** — replace
-  with splotRF's no-Clear discipline (the Skia lease is the shared scene canvas; clearing wipes sibling
-  plots). Defer the marker *interaction* handlers (leave clearly-marked seams, filled in 7.1d).
-  **Gate:** builds; a single plot pans/zooms; multiple plots composite without wiping each other.
-- **7.1c-3 — views + wire-up.** Port `DataDisplayView` (ItemsControl+Canvas of containers),
-  `PlotContainerView` (move/resize/select code-behind), the `DisplayWindow` chrome + **tabs**
-  (`TabHeaderView` / tab strip) folded into `DataDisplayDocument`, `AxesLimitsView` / `AxesLabelsFlyout`,
-  and the splotRF-styled `PlotInspectorView`. Replace the 7.1b single-PlotControl harness. **Gate:**
+- **7.1c-2 — the interactive control + its flyout views.** Grow the 7.1b render-only `PlotControl` into
+  splotRF's interactive control (pan, right-drag secondary pan, scroll-zoom, context menu,
+  double-tap-to-inspect). **Its flyout views travel with it** (the flyouts host them, so they're needed to
+  compile): port `PlotInspectorView` (splotRF-styled — restyle is 7.1d), `AxesLimitsView`, `AxesLabelsFlyout`
+  + their converters; also `AxisLabelControl` + `DragSelectOverlay`. **Fix the `canvas.Clear()` from 7.1b**
+  — adopt splotRF's no-Clear discipline (the Skia lease is the shared scene canvas; clearing wipes sibling
+  plots). **Marker views ride along (compile deps):** `PlotControl`'s context-menu / double-tap hard-reference
+  `MarkerEditorView` + `MarkerInfoBoxView.PopulateMarkerMenu` (and `PlotExporter` for Export/Copy), so those
+  port here too. Marker *code* ships in this slice; the marker **runtime wiring** (container providers + the
+  canvas info-box overlay) completes in 7.1c-3, and splotRF's null-guards keep the single-plot harness safe.
+  Verify on a temporary single-`PlotControl` harness (extend the 7.1b one; `EnablePanning=True`, wire
+  `DoubleTapped`→`HandleDoubleTapAt`). **Gate:** one plot pans/zooms;
+  double-click opens the (splotRF-styled) inspector flyout and edits redraw live; multiple stacked plots
+  composite without wiping each other.
+- **7.1c-3 — the canvas + containers + tabs, wired into the document.** Port `DataDisplayView`
+  (ItemsControl+Canvas of containers), `PlotContainerView` (move/resize/select code-behind + label strips),
+  the `DisplayWindow` chrome + **tabs** (`TabHeaderView` / tab strip) folded into `DataDisplayDocument`
+  (reconcile: the document VM becomes/owns the ported `DisplayWindowViewModel`; remove the 7.1b demo
+  harness). Wire the container providers (selection, marker-index, etc.) to `PlotControl`. **Gate:**
   add/move/resize/select/delete plots of each type (Rect/Smith/Polar/Table) across multiple tabs; pan/zoom;
-  the (splotRF-styled) inspector edits a plot live. Behavior matches splotRF.
+  the (splotRF-styled) inspector edits the selected plot live. Behavior matches splotRF.
 
-#### 7.1d — Restyle the inspector to the §2.8 merge + the marker system
-With the engine working (7.1c, splotRF-styled), apply the circuitRF **visual restyle** to the inspector
-(per-trace-kind card bodies, theme brushes, segmented toggles, opacity-tiered labels, IBM Plex — §2.8) and
-add the **dual surface** (per-plot fly-out **and** Properties dock — one reusable view). Port the **marker
-system** here: `Marker` interaction in `PlotControl`, `MarkerInfoBox(View/VM)`, `MarkerEditorView`, marker
-add/move/select + info boxes (the 7.1c-2 seams). Data picker stays SNP/Touchstone-backed (DataSet seam is
-7.2). **Gate:** inspector visual idiom matches the Analyses editor and is reachable from both fly-out and
+#### 7.1d — Restyle the inspector to the §2.8 merge (+ marker polish)
+Most of the **marker system** lands in 7.1c (code in `PlotControl`/7.1c-2; overlay + provider wiring in
+7.1c-3). 7.1d is therefore primarily the circuitRF **visual restyle** of the inspector (per-trace-kind card
+bodies, theme brushes, segmented toggles, opacity-tiered labels, IBM Plex — §2.8) plus the **dual surface**
+(per-plot fly-out **and** Properties dock — one reusable view), and any remaining marker polish. Data picker
+stays SNP/Touchstone-backed (DataSet seam is 7.2). **Gate:** inspector visual idiom matches the Analyses editor and is reachable from both fly-out and
 Properties dock; markers add/move/read correctly; every edit redraws live.
 
 #### 7.1e — `.cdd` layout persistence

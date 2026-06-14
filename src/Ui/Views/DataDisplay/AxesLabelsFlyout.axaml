@@ -1,0 +1,95 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             x:DataType="vm:AxesLabelsViewModel"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.AxesLabelsFlyout"
+             Width="300">
+
+    <Border Background="{DynamicResource SystemChromeMediumLowColor}"
+            CornerRadius="8"
+            Padding="12">
+        <StackPanel Spacing="8">
+
+            <TextBlock Text="Plot Labels"
+                       FontWeight="SemiBold"
+                       FontSize="13"
+                       HorizontalAlignment="Center"/>
+
+            <Separator/>
+
+            <!-- Title -->
+            <Grid ColumnDefinitions="Auto,*">
+                <CheckBox Grid.Column="0"
+                          IsChecked="{Binding TitleOn, Mode=TwoWay}"
+                          Content="Title"
+                          VerticalAlignment="Center"
+                          Width="80"/>
+                <TextBox  Grid.Column="1"
+                          Text="{Binding Title, Mode=TwoWay}"
+                          IsEnabled="{Binding TitleOn}"
+                          PlaceholderText="Plot title…"
+                          FontSize="11"
+                          Height="24"
+                          Padding="4,2"/>
+            </Grid>
+
+            <!-- X-axis label -->
+            <Grid ColumnDefinitions="Auto,*">
+                <CheckBox Grid.Column="0"
+                          IsChecked="{Binding XLabelOn, Mode=TwoWay}"
+                          Content="X Label"
+                          VerticalAlignment="Center"
+                          Width="80"/>
+                <TextBox  Grid.Column="1"
+                          Text="{Binding XLabel, Mode=TwoWay}"
+                          IsEnabled="{Binding XLabelOn}"
+                          PlaceholderText="X-axis label…"
+                          FontSize="11"
+                          Height="24"
+                          Padding="4,2"/>
+            </Grid>
+
+            <!-- Y-axis label -->
+            <Grid ColumnDefinitions="Auto,*">
+                <CheckBox Grid.Column="0"
+                          IsChecked="{Binding YLabelOn, Mode=TwoWay}"
+                          Content="Y Label"
+                          VerticalAlignment="Center"
+                          Width="80"/>
+                <TextBox  Grid.Column="1"
+                          Text="{Binding YLabel, Mode=TwoWay}"
+                          IsEnabled="{Binding YLabelOn}"
+                          PlaceholderText="Left Y-axis label…"
+                          FontSize="11"
+                          Height="24"
+                          Padding="4,2"/>
+            </Grid>
+
+            <!-- Y2 label -->
+            <Grid ColumnDefinitions="Auto,*">
+                <CheckBox Grid.Column="0"
+                          IsChecked="{Binding Y2LabelOn, Mode=TwoWay}"
+                          Content="Y2 Label"
+                          VerticalAlignment="Center"
+                          Width="80"/>
+                <TextBox  Grid.Column="1"
+                          Text="{Binding Y2Label, Mode=TwoWay}"
+                          IsEnabled="{Binding Y2LabelOn}"
+                          PlaceholderText="Right Y-axis label…"
+                          FontSize="11"
+                          Height="24"
+                          Padding="4,2"/>
+            </Grid>
+
+            <Separator/>
+
+            <Button Content="Close"
+                    Command="{Binding CloseCommand}"
+                    HorizontalAlignment="Center"
+                    HorizontalContentAlignment="Center"
+                    Width="50"/>
+
+        </StackPanel>
+    </Border>
+
+</UserControl>
