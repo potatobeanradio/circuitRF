@@ -254,13 +254,25 @@ persistence → 7.1e). Build in compile-and-run-gated slices:
   `DoubleTapped`→`HandleDoubleTapAt`). **Gate:** one plot pans/zooms;
   double-click opens the (splotRF-styled) inspector flyout and edits redraw live; multiple stacked plots
   composite without wiping each other.
-- **7.1c-3 — the canvas + containers + tabs, wired into the document.** Port `DataDisplayView`
-  (ItemsControl+Canvas of containers), `PlotContainerView` (move/resize/select code-behind + label strips),
-  the `DisplayWindow` chrome + **tabs** (`TabHeaderView` / tab strip) folded into `DataDisplayDocument`
-  (reconcile: the document VM becomes/owns the ported `DisplayWindowViewModel`; remove the 7.1b demo
-  harness). Wire the container providers (selection, marker-index, etc.) to `PlotControl`. **Gate:**
-  add/move/resize/select/delete plots of each type (Rect/Smith/Polar/Table) across multiple tabs; pan/zoom;
-  the (splotRF-styled) inspector edits the selected plot live. Behavior matches splotRF.
+- **7.1c-3 — the canvas + containers, wired into the document (replace the harness).** Split into two:
+  - **7.1c-3a — the real canvas + containers + provider wiring (single tab).** Port the splotRF per-tab
+    canvas (`DataDisplayView` → **rename `PlotCanvasView`** to avoid colliding with circuitRF's document-level
+    `DataDisplayView`) + its interaction code-behind (middle-pan / drag-select / scroll-zoom / background-
+    deselect) + `PlotContainerView` (move/resize/select code-behind + label strips). **Reconcile the VM:**
+    `DataDisplayDocumentViewModel` **owns** a ported `DisplayWindowViewModel` (`Window`) — wrap, don't merge;
+    expose `IsDirty`; remove the 7.1b demo harness. The document view hosts the **active tab's** `PlotCanvasView`
+    (no tab strip yet). **Wire the container providers** (`NextMarkerIndexProvider`/`FindMarkerInfoBoxVmProvider`/
+    `ContainerProvider`/`SelectedMarkersProvider`) to each `PlotControl` so markers + the canvas info-box overlay
+    come alive. **Gate:** add/move/resize/select/delete plots of each type (Rect/Smith/Polar/Table) on one canvas;
+    pan/zoom/drag-select; markers add/move/show info boxes; the (splotRF-styled) inspector flyout edits live.
+  - **7.1c-3b — chrome: tabs + toolbar + library + Load Touchstone + docked inspector.** Port `TabHeaderView`
+    + a `TabControl` (tabs → `PlotCanvasView`); an **in-document toolbar** (Add Plot / New Tab / Zoom / Fit /
+    Undo-Redo — splotRF's View menu re-homed as a toolbar like the Schematic toolbar; the splotRF app menu is
+    dropped, circuitRF's workspace owns it) + the document view's `KeyBindings`; the `SnpLibraryView` panel and
+    **re-enable `OpenFileCommand` (Load Touchstone)** (the file dialog stubbed in 7.1c-1) so plots can be authored
+    from files; and the splotRF docked inspector panel (right column, faithful — §2.8 Properties-dock unification
+    is 7.1d). Save/Open Display (`.cdd`) stays 7.1e. **Gate:** multiple tabs; load a `.sNp` and author plots from
+    it across tabs; toolbar + shortcuts work; behavior matches splotRF.
 
 #### 7.1d — Restyle the inspector to the §2.8 merge (+ marker polish)
 Most of the **marker system** lands in 7.1c (code in `PlotControl`/7.1c-2; overlay + provider wiring in

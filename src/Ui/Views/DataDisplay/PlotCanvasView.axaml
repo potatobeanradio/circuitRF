@@ -1,0 +1,114 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             xmlns:v="using:CircuitRF.Ui.Views.DataDisplay"
+             xmlns:controls="using:CircuitRF.Ui.DataDisplay.Controls"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.PlotCanvasView"
+             x:DataType="vm:TabViewModel">
+
+    <!--
+        PlotCanvasView  —  the interactive canvas for one tab.
+
+        Contains:
+          • PlotCanvas   — ItemsControl with a Canvas panel; positions each
+                           PlotContainerView at ViewLeft/ViewTop from its VM.
+          • InfoBox overlay — sits in the same Grid cell as PlotCanvas so it
+                           renders on top.  Background="{x:Null}" makes it
+                           non-hit-testable so clicks pass through to PlotCanvas.
+          • DragSelectOverlay — rubber-band selection rectangle; IsHitTestVisible=False
+                           so all pointer events fall through to the layers below.
+
+        DataContext is TabViewModel.  Bindings use TabViewModel.DataDisplay.* paths.
+        All canvas interaction (pan, drag-select, scroll zoom) is handled in
+        PlotCanvasView.axaml.cs.
+    -->
+
+    <Grid x:Name="ContentGrid">
+
+        <!--
+            Plot canvas.  ItemsControl with Canvas panel positions each
+            PlotContainerView at the ViewLeft/ViewTop specified by its VM.
+        -->
+        <ItemsControl x:Name="PlotCanvas"
+                      ItemsSource="{Binding DataDisplay.Plots}"
+                      Background="{DynamicResource SystemChromeLowColor}">
+
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+
+            <!--
+                ItemContainerTheme binds zoomed/offset layout from
+                PlotContainerViewModel.ViewLeft/Top/Width/Height.
+                ZIndex brings the selected plot to the front.
+                ReflectionBinding is required because x:DataType in scope
+                is TabViewModel, but runtime DataContext is
+                PlotContainerViewModel.
+            -->
+            <ItemsControl.ItemContainerTheme>
+                <ControlTheme TargetType="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewContainerLeft}"/>
+                    <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                    <Setter Property="Width"       Value="{ReflectionBinding ViewTotalWidth}"/>
+                    <Setter Property="Height"      Value="{ReflectionBinding ViewHeight}"/>
+                    <Setter Property="ZIndex"      Value="{ReflectionBinding ZIndex}"/>
+                </ControlTheme>
+            </ItemsControl.ItemContainerTheme>
+
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PlotContainerViewModel">
+                    <v:PlotContainerView/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+
+        </ItemsControl>
+
+        <!--
+            Marker info-box overlay.  Sits in the same Grid cell as PlotCanvas
+            (Grid stacks elements in the same cell; this one is listed after
+            PlotCanvas so it renders on top).
+
+            Background="{x:Null}" on both the ItemsControl and the inner Canvas
+            makes them non-hit-testable (HitTestCore returns false when Background
+            is null), so right-clicks and left-clicks on empty areas fall through
+            to PlotCanvas.  Each MarkerInfoBoxView has Background="Transparent"
+            and is individually hit-testable.
+
+            ItemsControl is a direct Grid child so Grid gives it the full cell
+            size — the inner Canvas therefore has real non-zero Bounds, which is
+            required for Avalonia to composite the MarkerInfoBoxView children.
+        -->
+        <ItemsControl ItemsSource="{Binding DataDisplay.MarkerInfoBoxes}"
+                      Background="{x:Null}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas Background="{x:Null}"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerTheme>
+                <ControlTheme TargetType="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                    <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                </ControlTheme>
+            </ItemsControl.ItemContainerTheme>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:MarkerInfoBoxViewModel">
+                    <v:MarkerInfoBoxView/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!--
+            Rubber-band drag-selection overlay.  Sits on top of both the
+            PlotCanvas and the InfoBox overlay in the same Grid cell.
+            IsHitTestVisible="False" lets all pointer events pass through
+            to the layers below; the code-behind drives it via SetSelectionRect.
+        -->
+        <controls:DragSelectOverlay x:Name="DragSelectOverlay"
+                                    IsHitTestVisible="False"/>
+
+    </Grid>
+
+</UserControl>

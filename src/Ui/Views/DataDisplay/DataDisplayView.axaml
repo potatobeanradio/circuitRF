@@ -1,41 +1,21 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:dd="using:CircuitRF.Ui.DataDisplay"
-             xmlns:plotctl="using:CircuitRF.Ui.DataDisplay.Controls"
-             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:v="using:CircuitRF.Ui.Views.DataDisplay"
              x:Class="CircuitRF.Ui.Views.DataDisplay.DataDisplayView"
              x:DataType="dd:DataDisplayDocument">
 
     <!-- Full-bleed canvas surface matching other document bodies. -->
-    <Grid x:Name="ContentGrid" Background="{DynamicResource SystemChromeLowColor}">
+    <Grid>
+        <!-- Active tab's canvas fills the document area. -->
+        <v:PlotCanvasView DataContext="{Binding ViewModel.Window.ActiveTab}"/>
 
-        <!-- PlotControl fills the canvas when a plot exists. -->
-        <plotctl:PlotControl x:Name="ThePlotControl"
-                             Plot="{Binding ViewModel.CurrentPlot}"
-                             IsVisible="{Binding ViewModel.HasPlots}"
-                             EnablePanning="True"
-                             ZoomFactor="1.15"
-                             DoubleTapped="OnPlotControlDoubleTapped"/>
-
-        <!-- Empty-state hint shown when no plot is loaded. -->
-        <StackPanel HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Spacing="12"
-                    IsVisible="{Binding !ViewModel.HasPlots}">
-            <mi:MaterialIcon Kind="ChartScatterPlot"
-                             Width="48" Height="48"
-                             HorizontalAlignment="Center"
-                             Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            <TextBlock Text="Empty data display"
-                       FontSize="13"
-                       Foreground="{DynamicResource SystemBaseMediumColor}"
-                       HorizontalAlignment="Center"/>
-            <!-- TEMP 7.1b — dev affordance to seed synthetic demo plot; removed in 7.1c -->
-            <Button Content="Insert Demo Plot"
-                    HorizontalAlignment="Center"
-                    Command="{Binding ViewModel.InsertDemoPlotCommand}"/>
-        </StackPanel>
-
+        <!-- TEMP 3a — replaced by the toolbar in 3b -->
+        <Button Content="Add Plot"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="8"
+                Command="{Binding ViewModel.Window.AddPlotCommand}"/>
     </Grid>
 
 </UserControl>

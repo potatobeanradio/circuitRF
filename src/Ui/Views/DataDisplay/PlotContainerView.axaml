@@ -1,0 +1,127 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             xmlns:cc="using:CircuitRF.Ui.DataDisplay.Controls"
+             x:DataType="vm:PlotContainerViewModel"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.PlotContainerView"
+             ClipToBounds="False">
+
+    <!--
+        Three-column layout:
+          Col 0 (Auto) : per-trace left-Y label strips — outermost first
+          Col 1 (*)    : PlotControl + selection border + resize grip
+          Col 2 (Auto) : per-trace right-Y label strips — outermost last
+
+        The ContentPresenter is sized to ViewTotalWidth × ViewHeight via the
+        ItemContainerTheme in PlotCanvasView.axaml.  The '*' centre column receives
+        exactly ViewWidth pixels (graph area), keeping the graph region constant
+        as traces are added or removed.
+    -->
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ── Left axis label strips ─────────────────────────────────── -->
+        <!--
+            Strips are ordered so that the first trace in LeftLabelStrips
+            is the innermost strip (closest to the plot edge).  A
+            right-to-left StackPanel achieves this: items flow leftward,
+            so index 0 ends up adjacent to the PlotControl.
+        -->
+        <ItemsControl Grid.Column="0"
+                      ItemsSource="{Binding LeftLabelStrips}"
+                      VerticalAlignment="Stretch"
+                      Margin="{Binding LabelStripMargin}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"
+                                FlowDirection="RightToLeft"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:LabelStripViewModel">
+                    <cc:AxisLabelControl
+                        Trace="{Binding Trace}"
+                        IsRightSide="{Binding IsRightSide}"
+                        Width="{Binding StripWidth}"
+                        PlotTheme="{Binding Theme}"
+                        CustomLabel="{Binding CustomLabel}"
+                        ShowFilePrefix="{Binding ShowFilePrefix}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- ── Centre: PlotControl + resize grip ───────────────────────── -->
+        <Panel Grid.Column="1">
+
+            <!-- Plot control — panning disabled; container handles left-drag for moving -->
+            <cc:PlotControl x:Name="MyPlotControl"
+                            Plot="{Binding PlotVM.Plot}"
+                            PlotTheme="{Binding Theme}"
+                            Library="{Binding Library}"
+                            EnablePanning="False"
+                            ZoomFactor="1.15"
+                            Cursor="Arrow"/>
+
+            <!--
+                Resize grip — lower-right corner of the graph area.
+                PointerPressed is marked Handled so the parent Panel's
+                move logic does not also fire.
+            -->
+            <Border x:Name="ResizeHandle"
+                    Width="14" Height="14"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,2,2"
+                    Background="#80808080"
+                    CornerRadius="3"
+                    Cursor="BottomRightCorner"
+                    Opacity="0"
+                    ToolTip.Tip="Drag to resize"/>
+
+        </Panel>
+
+        <!-- ── Selection highlight — spans the full container ──────────── -->
+        <!--
+            No margin: the border wraps everything — label strips (left/right),
+            title space (top), X-axis label space (bottom), and the resize grip.
+        -->
+        <Border Grid.Column="0" Grid.ColumnSpan="3"
+                IsVisible="{Binding IsSelected}"
+                BorderBrush="{DynamicResource SystemAccentColor}"
+                BorderThickness="2"
+                CornerRadius="3"
+                IsHitTestVisible="False"/>
+
+        <!-- ── Right axis label strips ────────────────────────────────── -->
+        <!--
+            Items flow left-to-right: index 0 is the innermost strip.
+        -->
+        <ItemsControl Grid.Column="2"
+                      ItemsSource="{Binding RightLabelStrips}"
+                      VerticalAlignment="Stretch"
+                      Margin="{Binding LabelStripMargin}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:LabelStripViewModel">
+                    <cc:AxisLabelControl
+                        Trace="{Binding Trace}"
+                        IsRightSide="{Binding IsRightSide}"
+                        Width="{Binding StripWidth}"
+                        PlotTheme="{Binding Theme}"
+                        CustomLabel="{Binding CustomLabel}"
+                        ShowFilePrefix="{Binding ShowFilePrefix}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+    </Grid>
+
+</UserControl>
