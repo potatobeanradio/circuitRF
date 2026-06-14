@@ -559,7 +559,11 @@ public partial class SchematicView : UserControl
 
         if (comps.Count == 0 && wires.Count == 0 && objs.Count == 0) return;
 
-        await SchematicClipboard.CopyAsync(clipboard, comps, wires, objs, model.GridSize);
+        var netLabels = model.NetLabels
+            .Where(n => n.IsAnchored && wholeWireIds.Contains(n.OwnerWireId))
+            .ToList();
+        await SchematicClipboard.CopyAsync(clipboard, comps, wires, objs, model.GridSize,
+                                           netLabels, model.SchematicDirectory);
         if (cut) vm.DeleteSelection();
     }
 

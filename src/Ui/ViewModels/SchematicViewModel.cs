@@ -3459,7 +3459,12 @@ public sealed partial class SchematicViewModel : ObservableObject
         }
 
         if (comps.Count == 0 && wires.Count == 0 && objs.Count == 0) return;
-        await SchematicClipboard.CopyAsync(clipboard, comps, wires, objs, EditModel.GridSize);
+
+        var netLabels = EditModel.NetLabels
+            .Where(n => n.IsAnchored && wholeWireIds.Contains(n.OwnerWireId))
+            .ToList();
+        await SchematicClipboard.CopyAsync(clipboard, comps, wires, objs, EditModel.GridSize,
+                                           netLabels, EditModel.SchematicDirectory);
         if (cut) DeleteSelection();
     }
 

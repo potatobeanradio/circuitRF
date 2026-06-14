@@ -32,7 +32,9 @@ public static class SchematicClipboard
         IReadOnlyList<EditableComponent>    components,
         IReadOnlyList<EditableWire>         wires,
         IReadOnlyList<EditableCanvasObject> canvasObjects,
-        double gridSize = 100.0)
+        double gridSize = 100.0,
+        IReadOnlyList<EditableNetLabel>?    netLabels = null,
+        string?                             schematicDirectory = null)
     {
         if (components.Count == 0 && wires.Count == 0 && canvasObjects.Count == 0) return;
 
@@ -51,17 +53,17 @@ public static class SchematicClipboard
             // com.adobe.pdf UTI (macOS): Keynote, Preview, Pages, etc.
             // application/pdf (Windows): recognised by some viewers; EMF would be the true
             //   Windows vector format (see splotRF WindowsClipboard.cs — future work).
-            byte[]? pdf = TryRenderToPdf(components, wires, canvasObjects, renderTheme, transparent, excludeGrid);
+            byte[]? pdf = TryRenderToPdf(components, wires, canvasObjects, renderTheme, transparent, excludeGrid, netLabels, schematicDirectory);
             if (pdf is not null)
                 item.Set(OperatingSystem.IsWindows() ? ClipboardFormats.PdfNativeWinFormat : ClipboardFormats.PdfNativeMacFormat, pdf);
 
             // SVG vector: public.svg-image UTI (macOS/Linux) — Illustrator, Inkscape, etc.
-            string? svg = TryRenderToSvg(components, wires, canvasObjects, renderTheme, transparent, excludeGrid);
+            string? svg = TryRenderToSvg(components, wires, canvasObjects, renderTheme, transparent, excludeGrid, netLabels, schematicDirectory);
             if (svg is not null && !OperatingSystem.IsWindows())
                 item.Set(ClipboardFormats.SvgNativeFormat, Encoding.UTF8.GetBytes(svg));
 
             // PNG bitmap: universal raster fallback (Keynote, Pages, Word, etc.).
-            Bitmap? bmp = TryRenderToAvaloniaImage(components, wires, canvasObjects, renderTheme, transparent, excludeGrid);
+            Bitmap? bmp = TryRenderToAvaloniaImage(components, wires, canvasObjects, renderTheme, transparent, excludeGrid, netLabels, schematicDirectory);
             if (bmp is not null)
                 item.Set(DataFormat.Bitmap, bmp);
         }
@@ -153,12 +155,16 @@ public static class SchematicClipboard
         BuildSelectionModel(
             IReadOnlyList<EditableComponent>    components,
             IReadOnlyList<EditableWire>         wires,
-            IReadOnlyList<EditableCanvasObject> canvasObjects)
+            IReadOnlyList<EditableCanvasObject> canvasObjects,
+            IReadOnlyList<EditableNetLabel>?    netLabels = null,
+            string?                             schematicDirectory = null)
     {
-        var tmp = new SchematicEditModel { GridSize = 100 };
-        foreach (var c in components)    tmp.Components.Add(c);
-        foreach (var w in wires)         tmp.Wires.Add(w);
+        var tmp = new SchematicEditModel { GridSize = 100, SchematicDirectory = schematicDirectory };
+        foreach (var c in components)      tmp.Components.Add(c);
+        foreach (var w in wires)           tmp.Wires.Add(w);
         foreach (var obj in canvasObjects) tmp.CanvasObjects.Add(obj);
+        if (netLabels is not null)
+            foreach (var nl in netLabels)  tmp.NetLabels.Add(nl);
         var (rm, idx) = tmp.BuildRenderModel();
 
         // Start with the render model's bbox (derived from components + wires).
@@ -186,6 +192,19 @@ public static class SchematicClipboard
             if (bm.Y + bm.Height > bbMaxY) bbMaxY = bm.Y + bm.Height;
         }
 
+        // Union net-label text extents so long labels near the selection edge aren't clipped.
+        foreach (var nl in rm.NetLabels)
+        {
+            double left  = nl.X;
+            double right = nl.X + Math.Max(1, nl.Name.Length) * 40.0;
+            double top   = nl.Y - 55.0;
+            double bot   = nl.Y + 20.0;
+            if (left  < bbMinX) bbMinX = left;
+            if (top   < bbMinY) bbMinY = top;
+            if (right > bbMaxX) bbMaxX = right;
+            if (bot   > bbMaxY) bbMaxY = bot;
+        }
+
         if (bbMinX == double.MaxValue) return null; // nothing to render
         double worldW = bbMaxX - bbMinX;
         double worldH = bbMaxY - bbMinY;
@@ -204,11 +223,13 @@ public static class SchematicClipboard
         IReadOnlyList<EditableCanvasObject> canvasObjects,
         SchematicRenderTheme                theme,
         bool                                useTransparentBackground,
-        bool                                excludeGrid)
+        bool                                excludeGrid,
+        IReadOnlyList<EditableNetLabel>?    netLabels = null,
+        string?                             schematicDirectory = null)
     {
         try
         {
-            var m = BuildSelectionModel(components, wires, canvasObjects);
+            var m = BuildSelectionModel(components, wires, canvasObjects, netLabels, schematicDirectory);
             if (m is null) return null;
             var (rm, idx, worldW, worldH, bbMinX, bbMinY) = m.Value;
 
@@ -241,11 +262,13 @@ public static class SchematicClipboard
         IReadOnlyList<EditableCanvasObject> canvasObjects,
         SchematicRenderTheme                theme,
         bool                                useTransparentBackground,
-        bool                                excludeGrid)
+        bool                                excludeGrid,
+        IReadOnlyList<EditableNetLabel>?    netLabels = null,
+        string?                             schematicDirectory = null)
     {
         try
         {
-            var m = BuildSelectionModel(components, wires, canvasObjects);
+            var m = BuildSelectionModel(components, wires, canvasObjects, netLabels, schematicDirectory);
             if (m is null) return null;
             var (rm, idx, worldW, worldH, bbMinX, bbMinY) = m.Value;
 
@@ -278,11 +301,13 @@ public static class SchematicClipboard
         IReadOnlyList<EditableCanvasObject> canvasObjects,
         SchematicRenderTheme                theme,
         bool                                useTransparentBackground,
-        bool                                excludeGrid)
+        bool                                excludeGrid,
+        IReadOnlyList<EditableNetLabel>?    netLabels = null,
+        string?                             schematicDirectory = null)
     {
         try
         {
-            var m = BuildSelectionModel(components, wires, canvasObjects);
+            var m = BuildSelectionModel(components, wires, canvasObjects, netLabels, schematicDirectory);
             if (m is null) return null;
             var (rm, idx, worldW, worldH, bbMinX, bbMinY) = m.Value;
 
