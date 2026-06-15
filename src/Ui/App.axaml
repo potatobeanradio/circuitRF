@@ -84,6 +84,11 @@
              may silently fail to render on BorderBrush — always use a SolidColorBrush resource. -->
         <SolidColorBrush x:Key="CrfTileBorderBrush" Color="#55808080"/>
 
+        <!-- Icon brush: wraps SystemBaseMediumColor as a Brush so it can be assigned to
+             Stroke/BorderBrush properties (which require IBrush, not Color).
+             Defined at Application scope so popup visual trees can reach it. -->
+        <SolidColorBrush x:Key="CrfIconBrush" Color="{DynamicResource SystemBaseMediumColor}"/>
+
 <!-- Converters registered as application-level resources so all views can use them -->
         <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
         <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>

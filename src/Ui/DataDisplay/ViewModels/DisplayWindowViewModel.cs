@@ -234,19 +234,34 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private Func<(double L, double T, double W, double H)>?    _getWindowGeometryAction;
     private Func<Task<string?>>?                               _getClipboardTextAction;
     private Func<DataTransfer, Task>?                          _setClipboardDataAction;
+    // Injected by WorkspaceViewModel: opens the given file as a new document tab.
+    private Func<string, Stream, Task>?                        _openFileAsNewDisplayAction;
 
-    public void SetOpenFileAction(Func<Task> a)                           => _openFileAction           = a;
-    public void SetOpenDataDisplayAction(Func<Task> a)                    => _openDataDisplayAction    = a;
-    public void SetSaveDataDisplayAsAction(Func<Task> a)                  => _saveDataDisplayAsAction  = a;
-    public void SetOpenSettingsAction(Action a)                           => _openSettingsAction       = a;
-    public void SetNewDisplayAction(Action a)                             => _newDisplayAction         = a;
-    public void SetCloseWindowAction(Action a)                            => _closeWindowAction        = a;
-    public void SetQuitApplicationAction(Action a)                        => _quitApplicationAction    = a;
-    public void SetGetCanvasSizeAction(Func<(double, double)> a)          => _getCanvasSizeAction      = a;
+    public void SetOpenFileAction(Func<Task> a)                           => _openFileAction               = a;
+    public void SetOpenDataDisplayAction(Func<Task> a)                    => _openDataDisplayAction        = a;
+    public void SetSaveDataDisplayAsAction(Func<Task> a)                  => _saveDataDisplayAsAction      = a;
+    public void SetOpenSettingsAction(Action a)                           => _openSettingsAction           = a;
+    public void SetNewDisplayAction(Action a)                             => _newDisplayAction             = a;
+    public void SetCloseWindowAction(Action a)                            => _closeWindowAction            = a;
+    public void SetQuitApplicationAction(Action a)                        => _quitApplicationAction        = a;
+    public void SetGetCanvasSizeAction(Func<(double, double)> a)          => _getCanvasSizeAction          = a;
     public void SetGetWindowGeometryAction(Func<(double, double, double, double)> a)
         => _getWindowGeometryAction = a;
-    public void SetGetClipboardTextAction(Func<Task<string?>> a)          => _getClipboardTextAction   = a;
-    public void SetSetClipboardDataAction(Func<DataTransfer, Task> a)     => _setClipboardDataAction   = a;
+    public void SetGetClipboardTextAction(Func<Task<string?>> a)          => _getClipboardTextAction       = a;
+    public void SetSetClipboardDataAction(Func<DataTransfer, Task> a)     => _setClipboardDataAction       = a;
+    public void SetOpenFileAsNewDisplayAction(Func<string, Stream, Task> a) => _openFileAsNewDisplayAction = a;
+
+    /// <summary>
+    /// Opens <paramref name="path"/> as a new document tab via the workspace-injected action.
+    /// Falls back to loading into this document when running outside the workspace (standalone/tests).
+    /// </summary>
+    public async Task OpenFileAsNewDisplayAsync(string path, Stream stream)
+    {
+        if (_openFileAsNewDisplayAction is not null)
+            await _openFileAsNewDisplayAction(path, stream);
+        else
+            await LoadAllAsync(path, stream);
+    }
 
     // ---- Constructor -----------------------------------------------------
 
@@ -544,6 +559,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
         var config = new DataDisplayConfig
         {
+            FormatVersion  = DataDisplayConfig.CurrentFormatVersion,
             WindowLeft     = windowLeft,
             WindowTop      = windowTop,
             WindowWidth    = windowWidth,
@@ -595,6 +611,11 @@ public partial class DisplayWindowViewModel : ViewModelBase
         try { config = JsonSerializer.Deserialize<DataDisplayConfig>(json, DataDisplayViewModel.JsonOpts); }
         catch { return; }
         if (config is null) return;
+
+        if (config.FormatVersion != DataDisplayConfig.CurrentFormatVersion)
+            throw new InvalidDataException(
+                $".cdd format_version {config.FormatVersion} does not match " +
+                $"expected {DataDisplayConfig.CurrentFormatVersion}. Regenerate the file.");
 
         // Build the list of TabConfigs to load.
         List<TabConfig> tabConfigs;

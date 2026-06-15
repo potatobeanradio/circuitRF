@@ -265,10 +265,12 @@ namespace CircuitRF.Ui.DataDisplay
 
             var lines = trace.BuildMarkerBoxLines(marker, freqUnit, showFilePrefix, otherTraces);
 
-            using var probeFont = new SKFont(SkiaFonts.PlexRegular, ts);
+            // Use fallback-aware measure so lines containing ∠ (U+2220) are sized correctly.
+            using var probeFont  = new SKFont(SkiaFonts.PlexRegular,   ts);
+            using var probeFb    = new SKFont(SkiaFonts.DejaVuRegular, ts);
             float maxW = 0f;
             foreach (var (text, _) in lines)
-                maxW = Math.Max(maxW, probeFont.MeasureText(text));
+                maxW = Math.Max(maxW, RendererText.MeasureTextWithFallback(text, probeFont, probeFb));
 
             float boxW = maxW + padding * 2f;
             float boxH = (ts + padding) * lines.Count + padding;
@@ -337,15 +339,16 @@ namespace CircuitRF.Ui.DataDisplay
                 canvas.DrawRect(boxRect, hlPaint);
             }
 
-            // Text lines
+            // Text lines — use per-glyph DejaVu fallback so ∠ (U+2220) renders correctly.
             for (int i = 0; i < lines.Count; i++)
             {
                 var (text, bold) = lines[i];
-                using var font  = new SKFont(bold ? SkiaFonts.PlexBold : SkiaFonts.PlexRegular, ts);
-                using var paint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
+                using var font   = new SKFont(bold ? SkiaFonts.PlexBold     : SkiaFonts.PlexRegular,   ts);
+                using var fontFb = new SKFont(bold ? SkiaFonts.DejaVuBold   : SkiaFonts.DejaVuRegular, ts);
+                using var paint  = new SKPaint { Color = theme.TextColor, IsAntialias = true };
 
                 float y = padding + ts * (i + 0.85f) + i * padding;
-                canvas.DrawText(text, padding, y, SKTextAlign.Left, font, paint);
+                RendererText.DrawLeftTextWithFallback(canvas, text, padding, y, font, fontFb, paint);
             }
         }
 

@@ -68,6 +68,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     private readonly SnpLibraryViewModel? _library;
 
     public event EventHandler? PlotNeedsRedraw;
+    public event EventHandler? PlotStructureChanged;
 
     // ---- Static ItemsSource lists ---------------------------------------
 
@@ -83,6 +84,20 @@ public partial class PlotInspectorViewModel : ViewModelBase
     {
         new MarkerTypeItem(MarkerType.Circle, MaterialIconKind.Circle),
         new MarkerTypeItem(MarkerType.Square, MaterialIconKind.Square),
+    };
+
+    // Merged line-mode options: [Off, Solid, Dashed, …] for the icon-pick.
+    public static IReadOnlyList<LineModeItem> LineModes { get; } =
+        new LineModeItem[] { new(true, default) }
+        .Concat(Enum.GetValues<LineType>().Select(t => new LineModeItem(false, t)))
+        .ToArray();
+
+    // Merged symbol-mode options: [Off, Circle, Square] for the icon-pick.
+    public static IReadOnlyList<SymbolModeItem> SymbolModes { get; } = new[]
+    {
+        new SymbolModeItem(true,  default,          MaterialIconKind.CircleOutline),
+        new SymbolModeItem(false, MarkerType.Circle, MaterialIconKind.Circle),
+        new SymbolModeItem(false, MarkerType.Square, MaterialIconKind.Square),
     };
 
     public static IReadOnlyList<ColorItem> ColorItems { get; } = BuildColorItems();
@@ -120,9 +135,13 @@ public partial class PlotInspectorViewModel : ViewModelBase
     {
         _plot.SetPlotType(value);
         RebuildTraces();
+        OnPropertyChanged(nameof(IsRectPlot));
+        OnPropertyChanged(nameof(IsSmithPlot));
+        OnPropertyChanged(nameof(IsPolarPlot));
         OnPropertyChanged(nameof(IsTablePlot));
         OnPropertyChanged(nameof(InspectorTitle));
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
     }
 
     [ObservableProperty]
@@ -134,7 +153,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
     }
 
-    public bool   IsTablePlot    => _plot.PlotType == PlotType.Table;
+    public bool IsRectPlot  => _plot.PlotType == PlotType.Rect;
+    public bool IsSmithPlot => _plot.PlotType == PlotType.Smith;
+    public bool IsPolarPlot => _plot.PlotType == PlotType.Polar;
+    public bool IsTablePlot => _plot.PlotType == PlotType.Table;
+
     public string InspectorTitle => IsTablePlot ? "Table Properties" : "Plot Properties";
 
     public double FontSize
@@ -162,6 +185,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public IRelayCommand AddTraceCommand { get; }
     public IRelayCommand CloseCommand    { get; }
 
+    // Plot-type set commands (segmented header buttons, §A)
+    public IRelayCommand SetPlotTypeRectCommand  { get; }
+    public IRelayCommand SetPlotTypeSmithCommand { get; }
+    public IRelayCommand SetPlotTypePolarCommand { get; }
+    public IRelayCommand SetPlotTypeTableCommand { get; }
+
     // ---- Constructor ----------------------------------------------------
 
     public PlotInspectorViewModel(
@@ -180,6 +209,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         AddTraceCommand = new RelayCommand(AddTrace, () => CanAddTrace);
         CloseCommand    = new RelayCommand(_closeAction);
+
+        SetPlotTypeRectCommand  = new RelayCommand(() => PlotType = PlotType.Rect);
+        SetPlotTypeSmithCommand = new RelayCommand(() => PlotType = PlotType.Smith);
+        SetPlotTypePolarCommand = new RelayCommand(() => PlotType = PlotType.Polar);
+        SetPlotTypeTableCommand = new RelayCommand(() => PlotType = PlotType.Table);
 
         if (_library != null)
         {
@@ -218,6 +252,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         _plot.Autoscale();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
         RefreshAddCommand();
     }
 
@@ -256,6 +291,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         Traces.Add(new TraceRowViewModel(trace, this));
         RefreshAddCommand();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void RemoveTrace(TraceRowViewModel vm)
@@ -266,6 +302,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         Traces.Remove(vm);
         RefreshAddCommand();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void RebuildAndNotify()
@@ -290,6 +327,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         _plot.SetAxesViewport();
         _plot.Autoscale();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Notify() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);

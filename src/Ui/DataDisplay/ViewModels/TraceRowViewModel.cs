@@ -36,6 +36,9 @@ public partial class TraceRowViewModel : ViewModelBase
     public bool IsTablePlot    => _parent.PlotType == PlotType.Table;
     public bool IsNotTablePlot => _parent.PlotType != PlotType.Table;
 
+    // Standard (line/marker/table) trace body. 7.4 adds IsContourTrace sibling.
+    public bool IsStandardTrace => true;
+
     // ---- Combined data picker (replaces SNP source + Row + Col) ----------
     //
     //  One item per (SNP × matrix-element) plus derived-parameter items for
@@ -149,6 +152,7 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         _trace.Properties.LineEnabled = value;
         _parent.Notify();
+        OnPropertyChanged(nameof(SelectedLineMode));
     }
 
     [ObservableProperty]
@@ -167,6 +171,23 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         _trace.Properties.LineType = value;
         _parent.Notify();
+        OnPropertyChanged(nameof(SelectedLineMode));
+    }
+
+    // Merged line mode: Off or a specific LineType — drives the icon-pick.
+    public LineModeItem? SelectedLineMode
+    {
+        get => !LineEnabled
+            ? PlotInspectorViewModel.LineModes[0]
+            : PlotInspectorViewModel.LineModes.FirstOrDefault(m => !m.IsOff && m.Type == LineType);
+        set
+        {
+            if (value == null) return;
+            if (value.IsOff)
+                LineEnabled = false;
+            else { LineEnabled = true; LineType = value.Type; }
+            OnPropertyChanged();
+        }
     }
 
     [ObservableProperty]
@@ -188,6 +209,7 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         _trace.Properties.MarkerEnabled = value;
         _parent.Notify();
+        OnPropertyChanged(nameof(SelectedSymbolMode));
     }
 
     [ObservableProperty]
@@ -207,6 +229,31 @@ public partial class TraceRowViewModel : ViewModelBase
         if (value == null) return;
         _trace.Properties.MarkerType = value.Value;
         _parent.Notify();
+        OnPropertyChanged(nameof(SelectedSymbolMode));
+    }
+
+    // Merged symbol mode: Off or a specific MarkerType — drives the icon-pick.
+    public SymbolModeItem? SelectedSymbolMode
+    {
+        get
+        {
+            if (!MarkerEnabled) return PlotInspectorViewModel.SymbolModes[0];
+            var shape = SelectedMarkerTypeItem?.Value ?? MarkerType.Circle;
+            return PlotInspectorViewModel.SymbolModes.FirstOrDefault(m => !m.IsOff && m.Shape == shape);
+        }
+        set
+        {
+            if (value == null) return;
+            if (value.IsOff)
+                MarkerEnabled = false;
+            else
+            {
+                MarkerEnabled = true;
+                var item = PlotInspectorViewModel.AllMarkerTypes.FirstOrDefault(m => m.Value == value.Shape);
+                if (item != null) SelectedMarkerTypeItem = item;
+            }
+            OnPropertyChanged();
+        }
     }
 
     [ObservableProperty]

@@ -3,130 +3,225 @@
              xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
              x:Class="CircuitRF.Ui.Views.DataDisplay.MarkerEditorView"
              x:DataType="vm:MarkerEditorViewModel"
-             Width="240"
-             Padding="12">
+             Width="250">
 
     <Design.DataContext>
         <x:Static Member="vm:MarkerEditorViewModel.DesignInstance"/>
     </Design.DataContext>
 
-    <StackPanel Spacing="8">
+    <UserControl.Styles>
+        <!-- ── Opacity-tiered field labels ──────────────────────────────── -->
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize"          Value="10"/>
+            <Setter Property="Opacity"           Value="0.6"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
 
-        <!-- Name -->
-        <StackPanel Spacing="4">
-            <TextBlock Text="Marker Name" FontSize="11" Opacity="0.6"/>
-            <TextBox Text="{Binding Name}" />
-        </StackPanel>
+        <!-- ── Compact TextBox ──────────────────────────────────────────── -->
+        <Style Selector="TextBox">
+            <Setter Property="FontSize"  Value="10"/>
+            <Setter Property="Height"    Value="22"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Padding"   Value="4,1"/>
+        </Style>
 
-        <!-- Frequency — committed to model on Enter, snapped to nearest data point -->
-        <StackPanel Spacing="4">
-            <TextBlock Text="{Binding FreqUnitLabel, StringFormat='Frequency ({0})'}"
-                       FontSize="11" Opacity="0.6"/>
-            <TextBox x:Name="FreqTextBox"
-                     Text="{Binding FreqDisplayText}"
-                     Width="120" HorizontalAlignment="Left"
-                     KeyDown="OnFreqTextBoxKeyDown"/>
-        </StackPanel>
+        <!-- ── Compact ComboBox (no chevron, full-width content) ─────────  -->
+        <Style Selector="ComboBox">
+            <Setter Property="FontSize"                   Value="10"/>
+            <Setter Property="MinHeight"                  Value="0"/>
+            <Setter Property="Padding"                    Value="4,1"/>
+            <Setter Property="Height"                     Value="22"/>
+            <Setter Property="VerticalContentAlignment"   Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ComboBox /template/ PathIcon#DropDownGlyph">
+            <Setter Property="IsVisible" Value="False"/>
+            <Setter Property="Width"     Value="0"/>
+            <Setter Property="MinWidth"  Value="0"/>
+        </Style>
+        <Style Selector="ComboBox /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Grid.ColumnSpan" Value="2"/>
+        </Style>
 
-        <!-- Data value for the marker's own trace (always shown) -->
-        <StackPanel Spacing="4">
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                <SelectableTextBlock Grid.Column="0"
-                                     Text="{Binding OwnDataLine}"
-                                     TextWrapping="Wrap"
-                                     FontSize="11"/>
-                <SelectableTextBlock Grid.Column="1"
-                                     Text="{Binding OwnZ0Line}"
-                                     FontSize="11"/>
+        <!-- ── Compact NumericUpDown ─────────────────────────────────────── -->
+        <Style Selector="NumericUpDown">
+            <Setter Property="FontSize"                 Value="10"/>
+            <Setter Property="Height"                   Value="22"/>
+            <Setter Property="MinWidth"                 Value="10"/>
+            <Setter Property="Padding"                  Value="4,1"/>
+            <Setter Property="ShowButtonSpinner"        Value="False"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+
+        <!-- ── Segmented ToggleButton — idle ─────────────────────────────── -->
+        <Style Selector="ToggleButton.seg-btn">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="3"/>
+            <Setter Property="Padding"         Value="8,3"/>
+            <Setter Property="MinWidth"        Value="0"/>
+            <Setter Property="FontSize"        Value="10"/>
+        </Style>
+        <!-- ── Checked (active) — accent bg + white foreground ───────────── -->
+        <Style Selector="ToggleButton.seg-btn:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="ToggleButton.seg-btn:checked:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/>
+            </Setter>
+        </Style>
+        <Style Selector="ToggleButton.seg-btn:checked:pressed /template/ ContentPresenter">
+            <Setter Property="Background">
+                <SolidColorBrush Color="{DynamicResource SystemAccentColorDark1}"/>
+            </Setter>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- ── Outer inspector card ─────────────────────────────────────────── -->
+    <Border Background="{DynamicResource SystemChromeMediumLowColor}"
+            CornerRadius="8"
+            Padding="10">
+        <StackPanel Spacing="8">
+
+            <!-- Name -->
+            <StackPanel Spacing="3">
+                <TextBlock Text="Marker Name" Classes="label"/>
+                <TextBox Text="{Binding Name}"/>
+            </StackPanel>
+
+            <!-- Frequency — committed on Enter, snapped to nearest data point -->
+            <StackPanel Spacing="3">
+                <TextBlock Text="{Binding FreqUnitLabel, StringFormat='Frequency ({0})'}"
+                           Classes="label"/>
+                <TextBox x:Name="FreqTextBox"
+                         Text="{Binding FreqDisplayText}"
+                         Width="120"
+                         HorizontalAlignment="Left"
+                         KeyDown="OnFreqTextBoxKeyDown"/>
+            </StackPanel>
+
+            <!-- Data readout block — card-styled, read-only live values -->
+            <Border Background="{DynamicResource SystemChromeLowColor}"
+                    BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="8,6">
+                <StackPanel Spacing="2">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                        <SelectableTextBlock Grid.Column="0"
+                                             Text="{Binding OwnDataLine}"
+                                             TextWrapping="Wrap"
+                                             FontSize="11"/>
+                        <SelectableTextBlock Grid.Column="1"
+                                             Text="{Binding OwnZ0Line}"
+                                             FontSize="11"
+                                             Opacity="0.55"/>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding MultiLines}"
+                                  IsVisible="{Binding HasMultiLines}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MultiTraceLineItem">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,2,0,0">
+                                    <SelectableTextBlock Grid.Column="0"
+                                                         Text="{Binding DataText}"
+                                                         TextWrapping="Wrap"
+                                                         FontSize="11"
+                                                         Opacity="0.55"/>
+                                    <SelectableTextBlock Grid.Column="1"
+                                                         Text="{Binding Z0Text}"
+                                                         FontSize="11"
+                                                         Opacity="0.55"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Format / Precision / Digits — one row;
+                 Format Auto-column + gap collapse on Rect plots -->
+            <Grid ColumnDefinitions="Auto,Auto,*,8,Auto">
+                <!-- Format — hidden on Rect (Smith/Polar only) -->
+                <StackPanel Grid.Column="0" Spacing="3"
+                            IsVisible="{Binding ShowFormatSelector}">
+                    <TextBlock Text="Format" Classes="label"/>
+                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllFormats}"
+                              SelectedItem="{Binding MatrixFormat}"
+                              Width="72"/>
+                </StackPanel>
+                <Border Grid.Column="1" Width="8"
+                        IsVisible="{Binding ShowFormatSelector}"/>
+
+                <!-- Precision (Auto / Fixed / Scientific) -->
+                <StackPanel Grid.Column="2" Spacing="3">
+                    <TextBlock Text="Precision" Classes="label"/>
+                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllPrecisionFormats}"
+                              SelectedItem="{Binding FormatString}"
+                              HorizontalAlignment="Stretch">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={x:Static vm:PrecisionFormatConverter.Instance}}"
+                                           FontSize="10"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Digits -->
+                <StackPanel Grid.Column="4" Spacing="3">
+                    <TextBlock Text="Digits" Classes="label"/>
+                    <NumericUpDown Value="{Binding Digits}"
+                                   Minimum="1" Maximum="16"
+                                   Increment="1"
+                                   FormatString="0"
+                                   Width="52"/>
+                </StackPanel>
             </Grid>
-        </StackPanel>
 
-        <!-- Multi-marker: additional row per other trace -->
-        <StackPanel Spacing="4" IsVisible="{Binding HasMultiLines}">
-            <ItemsControl ItemsSource="{Binding MultiLines}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:MultiTraceLineItem">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="0,2,0,0">
-                            <SelectableTextBlock Grid.Column="0"
-                                                 Text="{Binding DataText}"
-                                                 TextWrapping="Wrap"
-                                                 FontSize="11"/>
-                            <SelectableTextBlock Grid.Column="1"
-                                                 Text="{Binding Z0Text}"
-                                                 FontSize="11"/>
-                        </Grid>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </StackPanel>
+            <!-- Normalize (ToggleButton) + Display Size (ComboBox) -->
+            <Grid ColumnDefinitions="*,8,Auto" VerticalAlignment="Bottom">
+                <ToggleButton Grid.Column="0"
+                              Classes="seg-btn"
+                              IsChecked="{Binding UseNormalized, Mode=TwoWay}"
+                              HorizontalAlignment="Left"
+                              ToolTip.Tip="Normalize to reference impedance">
+                    Norm Z
+                </ToggleButton>
 
-        <!-- Format (complex only) | Precision | Digits — all on one row.
-             Format Auto-column + its spacer collapse on Rect plots. -->
-        <Grid ColumnDefinitions="Auto,Auto,*,8,Auto">
-            <!-- Format — hidden on Rect plots where values are always scalar -->
-            <StackPanel Grid.Column="0" Spacing="4" IsVisible="{Binding ShowFormatSelector}">
-                <TextBlock Text="Format" FontSize="11" Opacity="0.6"/>
-                <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllFormats}"
-                          SelectedItem="{Binding MatrixFormat}"
-                          Width="72"/>
+                <StackPanel Grid.Column="2" Spacing="3">
+                    <TextBlock Text="Size" Classes="label"/>
+                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllStyles}"
+                              SelectedItem="{Binding Style}"
+                              Width="68">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={x:Static vm:MarkerStyleConverter.Instance}}"
+                                           FontSize="10"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+            </Grid>
+
+            <!-- Multi-marker / Δ Delta — Rect only -->
+            <StackPanel Orientation="Horizontal" Spacing="4"
+                        IsVisible="{Binding ShowMultiDeltaControls}">
+                <ToggleButton Classes="seg-btn"
+                              IsChecked="{Binding IsMulti, Mode=TwoWay}"
+                              ToolTip.Tip="Multi-marker mode">
+                    Multi
+                </ToggleButton>
+                <ToggleButton Classes="seg-btn"
+                              IsChecked="{Binding IsDelta, Mode=TwoWay}"
+                              ToolTip.Tip="Delta mode">
+                    Δ
+                </ToggleButton>
             </StackPanel>
 
-            <!-- Gap after Format — collapses with Format when hidden -->
-            <Border Grid.Column="1" Width="8" IsVisible="{Binding ShowFormatSelector}"/>
-
-            <!-- Precision (Auto / Fixed / Scientific) -->
-            <StackPanel Grid.Column="2" Spacing="4">
-                <TextBlock Text="Precision" FontSize="11" Opacity="0.6"/>
-                <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllPrecisionFormats}"
-                          SelectedItem="{Binding FormatString}"
-                          HorizontalAlignment="Stretch">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Converter={x:Static vm:PrecisionFormatConverter.Instance}}"/>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-            </StackPanel>
-
-            <!-- Digits — compact, no spinner -->
-            <StackPanel Grid.Column="4" Spacing="4">
-                <TextBlock Text="Digits" FontSize="11" Opacity="0.6"/>
-                <NumericUpDown Value="{Binding Digits}"
-                               Minimum="1" Maximum="16"
-                               Increment="1"
-                               FormatString="0"
-                               ShowButtonSpinner="False"
-                               Width="52"/>
-            </StackPanel>
-        </Grid>
-
-        <!-- Normalize Impedance CheckBox + Size ComboBox on the same row. -->
-        <Grid ColumnDefinitions="*,8,Auto" RowDefinitions="Auto,Auto">
-            <TextBlock Grid.Column="2" Grid.Row="0"
-                       Text="Display Size" FontSize="11" Opacity="0.6"/>
-            <CheckBox Grid.Column="0" Grid.Row="1"
-                      Content="Normalize Impedance"
-                      IsChecked="{Binding UseNormalized}"/>
-            <ComboBox Grid.Column="2" Grid.Row="1"
-                      ItemsSource="{x:Static vm:MarkerEditorViewModel.AllStyles}"
-                      SelectedItem="{Binding Style}"
-                      Width="68">
-                <ComboBox.ItemTemplate>
-                    <DataTemplate>
-                        <TextBlock Text="{Binding Converter={x:Static vm:MarkerStyleConverter.Instance}}"/>
-                    </DataTemplate>
-                </ComboBox.ItemTemplate>
-            </ComboBox>
-        </Grid>
-
-        <!-- Multi-marker / delta — only meaningful on Rect plots -->
-        <StackPanel Spacing="4" IsVisible="{Binding ShowMultiDeltaControls}">
-            <CheckBox Content="Multi-marker"
-                      IsChecked="{Binding IsMulti}"/>
-            <CheckBox Content="Δ Delta mode"
-                      IsChecked="{Binding IsDelta}"/>
         </StackPanel>
-
-    </StackPanel>
+    </Border>
 
 </UserControl>

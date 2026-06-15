@@ -98,6 +98,22 @@
                     <mi:MaterialIcon Kind="Redo" Width="16" Height="16"/>
                 </Button>
 
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <Button Command="{Binding ViewModel.Window.SaveDataDisplayCommand}"
+                        ToolTip.Tip="Save Display (.cdd)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/>
+                </Button>
+
+                <Button Command="{Binding ViewModel.Window.OpenDataDisplayCommand}"
+                        ToolTip.Tip="Open Display (.cdd)"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
+                </Button>
+
             </StackPanel>
         </Border>
 
@@ -156,7 +172,7 @@
                         IsVisible="{Binding ViewModel.Window.IsInspectorOpen}"
                         BorderBrush="{DynamicResource SystemBaseLowColor}"
                         BorderThickness="1,0,0,0">
-                    <Border IsVisible="{Binding ViewModel.Window.HasSingleSelection}">
+                    <Border IsVisible="{Binding ViewModel.Window.HasSingleSelection}" Width="430">
                         <v:PlotInspectorView DataContext="{Binding ViewModel.Window.ActiveInspector}"/>
                     </Border>
                 </Border>

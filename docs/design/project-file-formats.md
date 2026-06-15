@@ -281,7 +281,18 @@ bridge is the one place they cross** — so it must be explicit and tested.
 
 ## Open items
 - Exact JSON schema for each format (settled at implementation of the owning phase: `.csch` 6d, `.csym` 6f,
-  `.cdd` 7, `.cws`/`.clib` 6b/6d) — modeled on splotRF's `DataDisplayConfig.cs` conventions.
+  `.cws`/`.clib` 6b/6d) — modeled on splotRF's `DataDisplayConfig.cs` conventions.
+- **`.cdd` (Phase 7.1e) — SETTLED.** circuitRF Data Display config. System.Text.Json,
+  `JsonStringEnumConverter` (enums as names), references-not-data (source paths only, no embedded SNP data),
+  `FormatVersion` reject-on-mismatch (`CurrentFormatVersion = 1`). Round-trips: tabs (`Tabs` list),
+  active tab index (`ActiveTabIndex`), per-tab canvas zoom/pan (`ZoomLevel`/`ViewOffsetX`/`ViewOffsetY`),
+  placed plot containers (`PlotContainerConfig` with position/size/type/axes), per-plot traces
+  (`TraceConfig` with source path, matrix type, style, markers), per-plot axes zoom (`AxesConfig`).
+  Clipboard paste uses the same `DataDisplayConfig` model (v1 `Plots` list path) and is
+  unaffected by the version check (clipboard is same-session, same version). Window geometry is
+  zeroed for embedded Dock documents (not a floating OS window). `format_version` key is `”FormatVersion”`
+  (PascalCase, no `JsonPropertyName` attribute — matches `.cws`/`.csch` convention). **Out of scope for
+  7.1e:** `.cws` auto-reopening of open Data Displays on workspace load (Dock-document restore, deferred).
 - (Port-index conventions are settled — see “Port-index conventions” above: 1-based user-facing, 0-based
   allowed in the engine, `.cnl` infers from net-node position, extraction emits nets in symbol terminal
   order.)

@@ -107,6 +107,23 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         }
 
         // ============================================================
+        //  AppearanceRevision property — bumped by PlotContainerViewModel
+        //  on every PlotNeedsRedraw so the control re-renders live when
+        //  a trace color or description changes without a full strip rebuild.
+        // ============================================================
+
+        public static readonly DirectProperty<AxisLabelControl, int> AppearanceRevisionProperty =
+            AvaloniaProperty.RegisterDirect<AxisLabelControl, int>(
+                nameof(AppearanceRevision), o => o.AppearanceRevision, (o, v) => o.AppearanceRevision = v);
+
+        private int _appearanceRevision;
+        public int AppearanceRevision
+        {
+            get => _appearanceRevision;
+            set { SetAndRaise(AppearanceRevisionProperty, ref _appearanceRevision, value); InvalidateVisual(); }
+        }
+
+        // ============================================================
         //  Constructor
         // ============================================================
 

@@ -16,6 +16,7 @@ public partial class LabelStripViewModel : ObservableObject
 
     [ObservableProperty] private double      _stripWidth;
     [ObservableProperty] private RenderTheme _theme;
+    [ObservableProperty] private int         _appearanceRevision;
 
     /// <summary>
     /// When non-null, overrides the trace description with a user-defined label.

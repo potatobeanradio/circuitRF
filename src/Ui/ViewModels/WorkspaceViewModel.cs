@@ -103,6 +103,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private ProjectTreeTool? _subscribedTreeTool;
     private CellParameterEditModel? _treeInspectorCellModel;
 
+    // Track the currently-subscribed DisplayWindowViewModel for ActiveInspector changes.
+    private CircuitRF.Ui.DataDisplay.ViewModels.DisplayWindowViewModel? _subscribedDisplayWindow;
+    private System.ComponentModel.PropertyChangedEventHandler? _displayInspectorHandler;
+
     // ---- Per-document undo routing ------------------------------------------
 
     // The active editable document; null when no undoable document is active.
@@ -497,6 +501,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         docPath = Path.GetDirectoryName(cpd.ViewModel.EditModel.CcellPath);
                         kind    = "cell";
                     }
+                    else if (dockable is DataDisplayDocument dd && dd.FilePath is not null)
+                    {
+                        docPath = dd.FilePath;
+                        kind    = "datadisplay";
+                    }
 
                     if (docPath is null || kind is null) continue;
 
@@ -529,6 +538,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         try   { activePath = Path.GetRelativePath(wsDir, cellPath); }
                         catch { activePath = cellPath; }
                     }
+                }
+                else if (active is DataDisplayDocument add && add.FilePath is not null)
+                {
+                    try   { activePath = Path.GetRelativePath(wsDir, add.FilePath); }
+                    catch { activePath = add.FilePath; }
                 }
                 ws.ActiveDocumentPath = activePath;
             }
@@ -665,6 +679,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     break;
                 case "cell" when Directory.Exists(absPath):
                     OpenOrActivateCellPlaceholder(absPath, Path.GetFileName(absPath));
+                    break;
+                case "datadisplay" when File.Exists(absPath):
+                    OpenOrActivateDataDisplay(absPath);
                     break;
             }
         }
@@ -1332,7 +1349,57 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var vm    = new DataDisplayDocumentViewModel();
         var doc   = new DataDisplayDocument(title, vm);
         _scratchDataDisplays.Add(doc);
+        vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
         _factory.OpenDocument(doc);
+    }
+
+    /// <summary>
+    /// Opens a .cdd file as a new Data Display document tab.
+    /// Deduplicates against already-open path-keyed documents.
+    /// Injected into every DisplayWindowViewModel so "Open Display" creates a new tab
+    /// instead of replacing the current document's content.
+    /// </summary>
+    private async Task OpenDataDisplayFromFileAsync(string path, Stream stream)
+        => await OpenOrActivateDataDisplayCoreAsync(Path.GetFullPath(path), stream);
+
+    /// <summary>
+    /// Opens (or activates) a .cdd by absolute path. Used by the restore path and
+    /// tree double-click — fire-and-forget; errors surface via Messages.
+    /// </summary>
+    private void OpenOrActivateDataDisplay(string absPath)
+    {
+        var abs = Path.GetFullPath(absPath);
+        _ = RunAsync();
+        async Task RunAsync()
+        {
+            try   { await OpenOrActivateDataDisplayCoreAsync(abs, stream: null); }
+            catch (InvalidDataException ex) { Messages.Error($"Cannot open Data Display: {ex.Message}"); }
+            catch (Exception ex)            { Messages.Error($"Failed to open Data Display: {ex.Message}"); }
+        }
+    }
+
+    /// <summary>
+    /// Core open-or-activate: dedup, create, inject, open, load (stream or path), materialize.
+    /// Null stream reads the file from disk. Does NOT catch — callers handle errors.
+    /// </summary>
+    private async Task OpenOrActivateDataDisplayCoreAsync(string absPath, Stream? stream)
+    {
+        if (_openDocsByPath.TryGetValue(absPath, out var existing))
+        {
+            _factory.SetActiveDockable(existing);
+            return;
+        }
+
+        string title = Path.GetFileNameWithoutExtension(absPath);
+        var newVm  = new DataDisplayDocumentViewModel();
+        var newDoc = new DataDisplayDocument(title, newVm, filePath: absPath);
+        _openDocsByPath[absPath] = newDoc;
+        newVm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
+        _factory.OpenDocument(newDoc);
+
+        // format_version check throws InvalidDataException on mismatch.
+        await newVm.Window.LoadAllAsync(absPath, stream);
+        newDoc.Materialize(absPath);
     }
 
     /// <summary>
@@ -1418,6 +1485,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
     }
 
+    [RelayCommand]
+    private async Task OpenDataDisplayFile(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var result = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Open Data Display",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("circuitRF Data Display") { Patterns = ["*.cdd"] },
+                new FilePickerFileType("All Files")              { Patterns = ["*.*"] },
+            ],
+        });
+
+        if (result.Count == 0) return;
+
+        try
+        {
+            await using var s = await result[0].OpenReadAsync();
+            await OpenDataDisplayFromFileAsync(result[0].Path.LocalPath, s);
+        }
+        catch (InvalidDataException ex) { Messages.Error($"Cannot open Data Display: {ex.Message}"); }
+        catch (Exception ex)            { Messages.Error($"Failed to open Data Display: {ex.Message}"); }
+    }
+
     // ---- ITreeActions — double-click, context-menu actions ------------------
 
     // ── Open / activate (dedup by absolute path) ──────────────────────────────
@@ -1456,8 +1551,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 OpenOrActivateCellPlaceholder(node.AbsolutePath, node.Name);
                 return;
 
+            case NodeKind.DataDisplayFile:
+                OpenOrActivateDataDisplay(node.AbsolutePath);
+                return;
+
             default:
-                // Folder nodes, data displays, colour themes, etc. → no-op (no viewer yet)
+                // Folder nodes, colour themes, other files → no-op (no viewer yet)
                 return;
         }
     }
@@ -1678,8 +1777,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (selected?.Kind != NodeKind.Cell)
         {
-            // Don't clobber the inspector when a cell document tab is active.
-            if (_factory.DocumentDock?.ActiveDockable is not CellParameterEditorDocument)
+            // Don't clobber the inspector when a cell document tab or data display is active.
+            var activeDockable = _factory.DocumentDock?.ActiveDockable;
+            if (activeDockable is not CellParameterEditorDocument && activeDockable is not DataDisplayDocument)
                 _factory.PropertiesTool?.SetActiveCell(null);
             return;
         }
@@ -2443,15 +2543,48 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ---- Active-document tracking (Properties region) ───────────────────────
 
+    /// <summary>
+    /// Subscribes to the given data display document's <see cref="DisplayWindowViewModel.ActiveInspector"/>
+    /// and routes changes to the Properties dock. Unsubscribes from any previously-subscribed window first.
+    /// Null clears the data display context.
+    /// </summary>
+    private void RouteDataDisplayProperties(DataDisplayDocument? dd)
+    {
+        if (_subscribedDisplayWindow is not null && _displayInspectorHandler is not null)
+            _subscribedDisplayWindow.PropertyChanged -= _displayInspectorHandler;
+        _subscribedDisplayWindow = null;
+
+        if (dd is null)
+        {
+            _factory.PropertiesTool?.SetActiveDataDisplay(null);
+            return;
+        }
+
+        var window = dd.ViewModel.Window;
+        _subscribedDisplayWindow = window;
+        _displayInspectorHandler ??= (_, e) =>
+        {
+            if (e.PropertyName is nameof(CircuitRF.Ui.DataDisplay.ViewModels.DisplayWindowViewModel.ActiveInspector))
+                _factory.PropertiesTool?.SetActiveDataDisplay(_subscribedDisplayWindow?.ActiveInspector);
+        };
+        window.PropertyChanged += _displayInspectorHandler;
+        _factory.PropertiesTool?.SetActiveDataDisplay(window.ActiveInspector);
+    }
+
     private void OnDocumentDockPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != "ActiveDockable") return;
 
         var activeDockable = _factory.DocumentDock?.ActiveDockable;
 
-        // Properties panel — route to schematic, symbol-editor, or cell inspector.
-        if (activeDockable is SymbolEditorDocument symDoc)
+        // Properties panel — route to data display, schematic, symbol-editor, or cell inspector.
+        if (activeDockable is DataDisplayDocument ddDoc)
         {
+            RouteDataDisplayProperties(ddDoc);
+        }
+        else if (activeDockable is SymbolEditorDocument symDoc)
+        {
+            RouteDataDisplayProperties(null);
             _factory.PropertiesTool?.SetActiveSymbolEditor(symDoc.ViewModel);
             // Ports indicator may be stale if the owning cell's .ccell NumPorts changed in the cell
             // editor while this tab was inactive — re-read it on activation.
@@ -2460,10 +2593,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         else if (activeDockable is CellParameterEditorDocument cpd)
         {
+            RouteDataDisplayProperties(null);
             _factory.PropertiesTool?.SetActiveCell(cpd.ViewModel);
         }
         else
         {
+            RouteDataDisplayProperties(null);
             var activeVm = activeDockable is SchematicDocument schDoc ? schDoc.ViewModel : null;
             _factory.PropertiesTool?.SetActiveSchematic(activeVm);
         }

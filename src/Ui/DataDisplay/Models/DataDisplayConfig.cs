@@ -29,6 +29,12 @@ public sealed class TabConfig
 
 public sealed class DataDisplayConfig
 {
+    public const int CurrentFormatVersion = 1;
+
+    // Written on every save; rejected on mismatch (alpha no-back-compat policy).
+    // Default = 1 so clipboard JSON (which omits this field) passes the check.
+    public int FormatVersion { get; set; } = 1;
+
     // v2: multi-tab layout.  Non-empty list takes precedence over legacy fields.
     public List<TabConfig> Tabs { get; set; } = new();
 

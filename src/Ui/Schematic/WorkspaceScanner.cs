@@ -42,6 +42,15 @@ public static class WorkspaceScanner
                 : BuildUserFolderNode(subDir, workspaceRootDir));
         }
 
+        // Loose files at the workspace root (e.g. .cdd, .ccolor) — alphabetical; .cws excluded.
+        foreach (string f in Directory.GetFiles(workspaceRootDir)
+            .OrderBy(fn => Path.GetFileName(fn) ?? fn, StringComparer.OrdinalIgnoreCase))
+        {
+            if (string.Equals(Path.GetFileName(f), CwsFileName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            root.AddChild(BuildFileNode(f, workspaceRootDir));
+        }
+
         // Referenced libraries (from .cws) — alphabetical by ref string
         if (cws.LibraryRefs.Count > 0)
         {

@@ -260,8 +260,16 @@ public partial class PlotContainerViewModel : ViewModelBase
 
         UpdateLabelStrips();
 
-        // Forward redraw requests from the inspector to the view
-        Inspector.PlotNeedsRedraw += (s, e) => PlotNeedsRedraw?.Invoke(this, e);
+        // Forward redraw requests from the inspector to the view; also bump
+        // AppearanceRevision on every strip so AxisLabelControl re-renders live
+        // when a trace color or description changes (no strip rebuild needed).
+        Inspector.PlotNeedsRedraw += (s, e) =>
+        {
+            PlotNeedsRedraw?.Invoke(this, e);
+            foreach (var st in LeftLabelStrips)  st.AppearanceRevision++;
+            foreach (var st in RightLabelStrips) st.AppearanceRevision++;
+        };
+        Inspector.PlotStructureChanged += (s, e) => UpdateLabelStrips();
 
     }
 

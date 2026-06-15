@@ -4,6 +4,7 @@
              xmlns:param="using:CircuitRF.Ui.Views.ParameterEditor"
              xmlns:symInsp="using:CircuitRF.Ui.Views.Properties"
              xmlns:body="using:CircuitRF.Ui.Views.Content"
+             xmlns:ddv="using:CircuitRF.Ui.Views.DataDisplay"
              x:Class="CircuitRF.Ui.Views.Properties.PropertiesView"
              x:DataType="vm:PropertiesTool"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -27,6 +28,13 @@
             <!-- Cell Properties Inspector (shown when a cell node or document is active) -->
             <Panel IsVisible="{Binding IsCellActive}">
                 <body:CellParameterBodyView DataContext="{Binding CellEditorVm}"/>
+            </Panel>
+
+            <!-- Data Display Plot Inspector (shown when a data display is active with a single plot selected) -->
+            <Panel IsVisible="{Binding IsDataDisplayActive}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <ddv:PlotInspectorView DataContext="{Binding PlotInspectorVm}"/>
+                </ScrollViewer>
             </Panel>
 
             <!--

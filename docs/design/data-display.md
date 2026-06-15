@@ -274,13 +274,37 @@ persistence → 7.1e). Build in compile-and-run-gated slices:
     is 7.1d). Save/Open Display (`.cdd`) stays 7.1e. **Gate:** multiple tabs; load a `.sNp` and author plots from
     it across tabs; toolbar + shortcuts work; behavior matches splotRF.
 
-#### 7.1d — Restyle the inspector to the §2.8 merge (+ marker polish)
+#### 7.1d — Restyle the inspector to the §2.8 merge (+ dual surface, marker polish)
 Most of the **marker system** lands in 7.1c (code in `PlotControl`/7.1c-2; overlay + provider wiring in
-7.1c-3). 7.1d is therefore primarily the circuitRF **visual restyle** of the inspector (per-trace-kind card
-bodies, theme brushes, segmented toggles, opacity-tiered labels, IBM Plex — §2.8) plus the **dual surface**
-(per-plot fly-out **and** Properties dock — one reusable view), and any remaining marker polish. Data picker
-stays SNP/Touchstone-backed (DataSet seam is 7.2). **Gate:** inspector visual idiom matches the Analyses editor and is reachable from both fly-out and
-Properties dock; markers add/move/read correctly; every edit redraws live.
+7.1c-3). 7.1d is the circuitRF **visual restyle** of the inspector + the **dual surface**. Idiom reference
+(grounded): `Views/Dialogs/AnalysisEditorDialog.axaml` + `Views/Analyses/SpBodyView.axaml` — segmented
+`Button.seg-btn`/`.active` toggles, opacity-tiered labels (≈0.6 field / ≈0.55 preview), `SystemChromeLowColor`
+rounded rows (`CornerRadius=4`) inside `SystemRegionColor` body cards (`CornerRadius=6`), live `≈`-style
+preview text, `CrfWarningBrush` for errors, FontSize 10/11/12 tiers, inherit the app/dialog default font (same
+as the AnalysisEditor — don't hardcode a divergent family). Sliced:
+- **7.1d-1 — restyle `PlotInspectorView` (owner visual spec).** Apply the idiom to the flyout inspector.
+  **Owner-specified layout:** plot type becomes a **centered segmented glyph-button header row** (Rect/Smith/
+  Polar/Table, `.active` highlights the current type — needs `IsRect/Smith/PolarPlot` flags + `SetPlotType…`
+  commands); the freq combo moves to a second row with the **`+ Trace` button on the left**. **Denser cards:**
+  compact (smaller-font) combos; **MatrixType** → lettered S/Y/Z boxes; **LineType** → drawn line-sample
+  glyphs; **MarkerType** → small shape glyphs; **Line/Symbol** enables → equal-size glyph **toggle buttons**
+  (fixes the checkbox text-width misalignment). Data picker stays SNP/Touchstone (DataSet seam is 7.2). Trace
+  body structured as a per-kind region (the extension point that makes 7.4 contour cards additive). **Gate:**
+  the flyout reads as an AnalysisEditor sibling; every edit still redraws live; all plot types + trace controls
+  work.
+- ~~**7.1d-2 — dual surface (Properties dock).**~~ **COMPLETE.** `PlotInspectorView` hosted in Properties
+  dock as a fourth context (`IsDataDisplayActive` / `PlotInspectorVm` on `PropertiesTool`);
+  `RouteDataDisplayProperties` in `WorkspaceViewModel` subscribes to `DisplayWindowViewModel.ActiveInspector`
+  on activation; tree-selection guard preserves plot inspector when clicking tree nodes. Build 0W/0E; 1206
+  tests pass.
+- **7.1d-3 — marker polish.** ✅ Restyle `MarkerEditorView` to the idiom; tidy marker undo edge-cases. **Gate:**
+  markers add/move/edit/read correctly; the editor matches the inspector idiom.
+  **Phase 7.1d-3 — COMPLETE.** Marker editor restyled to the inspector idiom (7.1d-3a) + stale-marker guard
+  added to `MarkerEditorViewModel` (7.1d-3b): `MarkerIsLive` check guards all nine model-mutating paths
+  (`OnNameChanged`, `OnMatrixFormatChanged`, `OnStyleChanged`, `OnDigitsChanged`, `OnUseNormalizedChanged`,
+  `OnFormatStringChanged`, `OnIsMultiChanged`, `OnIsDeltaChanged`, `CommitFrequency`); edits no-op when the
+  marker has been removed via undo, and resume correctly after redo restores the same instance. Undo coverage
+  intentionally left as-is per owner's MINIMAL decision. Build 0W/0E.
 
 #### 7.1e — `.cdd` layout persistence
 Port `DataDisplayConfig` → the `.cdd` model (System.Text.Json, `[JsonStringEnumConverter]`, nullable/
@@ -389,6 +413,14 @@ so 7.1 persistence is designed to not preclude it.
 
 ## 6. Status
 - Decisions §1 locked (kickoff). Architecture §2 proposed (file-addressed spine).
-- No code yet. Next: confirm §5 7.0/7.1 items, then sub-phase 7.0 (data path + per-run `.npy`).
+- **Phase 7.0 — COMPLETE.** Per-run `.npy` results writer; `RunResultsWriter`; `AnalysisResult` record; 16 new tests.
+- **Phase 7.1a — COMPLETE.** `DataDisplayDocument`/VM/View shell, `NewDataDisplayCommand`, DataTemplate.
+- **Phase 7.1b — COMPLETE.** splotRF plot model + Skia renderers ported, fonts → IBM Plex, render-only `PlotControl`.
+- **Phase 7.1c — COMPLETE.** VM layer, interactive `PlotControl` (pan/zoom/flyouts), canvas + containers + provider wiring, full chrome (tabs/toolbar/library/inspector).
+- **Phase 7.1d-1 — COMPLETE.** `PlotInspectorView` restyle, `PlotTypeGlyphControl`, `IconSelectButton`, accent colors, line glyph, HighlightSelected, trash button, slider fix.
+- **Phase 7.1e — COMPLETE.** `.cdd` layout persistence: `format_version` field (reject-on-mismatch), Save/Open Display dialogs wired in `DataDisplayView.axaml.cs`, Save/Open toolbar buttons. Round-trips active tab, canvas zoom/pan, per-plot axes zoom exactly. Build 0W/0E; 1206 tests pass.
+- **Phase 7.1f — COMPLETE.** Data Display workspace/tree integration: File → "Open Data Display…" menu item (`OpenDataDisplayFileCommand`); `.cws` open-doc persistence (kind `"datadisplay"`) + restore; `WorkspaceScanner.Scan` enumerates loose files at workspace root (`.cdd` → `NodeKind.DataDisplayFile`); `OpenNode` double-click opens `.cdd` in the Content pane via `OpenOrActivateDataDisplay`. Core helper `OpenOrActivateDataDisplayCoreAsync` (stream or path); fire-and-forget wrapper for restore/tree paths. Build 0W/0E; 1206 tests pass.
 - Sub-phase 7.4 (contours) blocked pending the loadpull spline white paper, reference Python, and the
   discussion chat.
+- **Phase 7.1d-2 — COMPLETE.** Properties-dock dual surface for the Data Display inspector. Build 0W/0E; 1206 tests pass.
+- **Next:** Phase 7.1d-3 (marker editor polish).

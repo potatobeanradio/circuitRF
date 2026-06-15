@@ -128,8 +128,10 @@ namespace CircuitRF.Ui.DataDisplay
 
             float fs = layout.RowH / (1 + RowPaddingFraction); // effective font size from row height
 
-            using var regularFont = new SKFont(SkiaFonts.PlexRegular, fs);
-            using var boldFont    = new SKFont(SkiaFonts.PlexBold,    fs);
+            using var regularFont      = new SKFont(SkiaFonts.PlexRegular,    fs);
+            using var boldFont         = new SKFont(SkiaFonts.PlexBold,       fs);
+            using var dejaVuRegular    = new SKFont(SkiaFonts.DejaVuRegular,  fs);
+            using var dejaVuBold       = new SKFont(SkiaFonts.DejaVuBold,     fs);
 
             // Clip to the canvas bounds so text and highlights don't bleed outside the view
             // (especially visible when the user drags the container near a window edge).
@@ -139,8 +141,8 @@ namespace CircuitRF.Ui.DataDisplay
             DrawRowBackgrounds(canvas, canvasSize, layout, theme);
             DrawMarkerHighlights(canvas, layout, plot, theme, selectedMarkers, selectionColor);
             DrawCellBorders(canvas, canvasSize, layout, theme);
-            DrawHeaderRow(canvas, layout, plot, theme, boldFont, regularFont, showFilePrefix);
-            DrawDataRows(canvas, canvasSize, layout, plot, theme, regularFont);
+            DrawHeaderRow(canvas, layout, plot, theme, boldFont, dejaVuBold, regularFont, showFilePrefix);
+            DrawDataRows(canvas, canvasSize, layout, plot, theme, regularFont, dejaVuRegular);
             DrawResizeHandles(canvas, layout, theme);
 
             canvas.Restore();
@@ -244,20 +246,23 @@ namespace CircuitRF.Ui.DataDisplay
         {
             // Measure at unscaled font size so the result is zoom-independent logical units.
             float fs = (float)plot.FontSize;
-            using var regularFont = new SKFont(SkiaFonts.PlexRegular, fs);
-            using var boldFont    = new SKFont(SkiaFonts.PlexBold,    fs);
+            using var regularFont    = new SKFont(SkiaFonts.PlexRegular,   fs);
+            using var boldFont       = new SKFont(SkiaFonts.PlexBold,      fs);
+            using var dejaVuRegular  = new SKFont(SkiaFonts.DejaVuRegular, fs);
 
             double[] freqs = GetSortedFrequencies(plot);
             float maxW = 0;
 
-            // Measure header — freq column includes the sort-direction arrow that is drawn at render time.
-            string sortArrow  = plot.TableViewAscendingSortOrder ? " ▲" : " ▼";
+            // Measure header — freq column omits the glyph arrow (drawn as an SKPath at render time);
+            // reserve fixed space for the drawn triangle instead.
             string headerText = colIndex == 0
-                ? $"Freq ({plot.FreqUnits.Description()}){sortArrow}"
+                ? $"Freq ({plot.FreqUnits.Description()})"
                 : (colIndex - 1 < plot.Traces.Count ? plot.Traces[colIndex - 1].ShortDescription : "");
             maxW = Math.Max(maxW, boldFont.MeasureText(headerText));
+            if (colIndex == 0)
+                maxW += fs * 0.6f + TextCellPaddingX; // space for drawn triangle
 
-            // Measure data rows
+            // Measure data rows — use fallback-aware measure so ∠ cells aren't under-measured.
             foreach (double freq in freqs)
             {
                 string cellText;
@@ -273,7 +278,10 @@ namespace CircuitRF.Ui.DataDisplay
                     if (traceIdx >= plot.Traces.Count) continue;
                     cellText = FormatTraceCell(plot.Traces[traceIdx], freq);
                 }
-                maxW = Math.Max(maxW, regularFont.MeasureText(cellText));
+                maxW = Math.Max(maxW,
+                    colIndex == 0
+                        ? regularFont.MeasureText(cellText)
+                        : RendererText.MeasureTextWithFallback(cellText, regularFont, dejaVuRegular));
             }
 
             // If the trace column has any markers, add space for the right-edge marker glyph.
@@ -479,27 +487,38 @@ namespace CircuitRF.Ui.DataDisplay
         /// <summary>
         /// Draws text in a column cell, respecting horizontal alignment and column padding.
         /// Text is middle-truncated when wider than the available space.
+        /// When <paramref name="fallback"/> is provided and alignment is Left, uses per-glyph
+        /// DejaVu fallback for any code point the primary font lacks (e.g. ∠ U+2220).
         /// <paramref name="paddingX"/> should be <c>layout.ScaledPaddingX</c> (canvas pixels).
         /// </summary>
         private static void DrawClippedText(
-            SKCanvas  canvas, SKFont font, SKPaint paint,
-            string    text,
-            float     colX, float y, float colW,
-            float     paddingX,
-            SKTextAlign align)
+            SKCanvas    canvas, SKFont font, SKPaint paint,
+            string      text,
+            float       colX, float y, float colW,
+            float       paddingX,
+            SKTextAlign align,
+            SKFont?     fallback = null)
         {
             float available = colW - paddingX * 2;
             if (available <= 0) return;
 
             string clipped = TruncateMiddle(font, text, available);
 
-            float x = align switch
+            if (align == SKTextAlign.Left && fallback != null)
             {
-                SKTextAlign.Center => colX + colW / 2f,
-                SKTextAlign.Right  => colX + colW - paddingX,
-                _                  => colX + paddingX,  // Left
-            };
-            canvas.DrawText(clipped, x, y, align, font, paint);
+                RendererText.DrawLeftTextWithFallback(
+                    canvas, clipped, colX + paddingX, y, font, fallback, paint);
+            }
+            else
+            {
+                float x = align switch
+                {
+                    SKTextAlign.Center => colX + colW / 2f,
+                    SKTextAlign.Right  => colX + colW - paddingX,
+                    _                  => colX + paddingX,  // Left
+                };
+                canvas.DrawText(clipped, x, y, align, font, paint);
+            }
         }
 
         // ============================================================
@@ -658,7 +677,7 @@ namespace CircuitRF.Ui.DataDisplay
 
         private static void DrawHeaderRow(
             SKCanvas canvas, TableLayout layout, Plot plot,
-            RenderTheme theme, SKFont boldFont, SKFont regularFont,
+            RenderTheme theme, SKFont boldFont, SKFont dejaVuBold, SKFont regularFont,
             bool showFilePrefix)
         {
             float totalColW = layout.ColX[layout.ColCount - 1] + layout.ColW[layout.ColCount - 1];
@@ -681,19 +700,30 @@ namespace CircuitRF.Ui.DataDisplay
             canvas.DrawLine(0, layout.HeaderH, totalColW, layout.HeaderH, borderPaint);
 
             float textY = layout.HeaderH * HeaderTextVertFraction;
+            float fs    = boldFont.Size;
 
-            // Freq column header — sort-direction arrow shows current order.
-            string sortArrow    = plot.TableViewAscendingSortOrder ? " ▲" : " ▼";
+            // Freq column header — draw text without arrow glyph, then draw triangle as SKPath.
+            string freqHeaderText = $"Freq ({plot.FreqUnits.Description()})";
             DrawClippedText(canvas, boldFont, textPaint,
-                $"Freq ({plot.FreqUnits.Description()}){sortArrow}",
+                freqHeaderText,
                 layout.ColX[0], textY, layout.ColW[0],
-                layout.ScaledPaddingX, CellHeaderHorizAlign);
+                layout.ScaledPaddingX, CellHeaderHorizAlign, dejaVuBold);
+
+            // Drawn sort-direction triangle, positioned just right of the header text.
+            float triSize   = fs * 0.6f;
+            float measuredW = Math.Min(
+                boldFont.MeasureText(freqHeaderText),
+                layout.ColW[0] - layout.ScaledPaddingX * 2);
+            float triCx = layout.ColX[0] + layout.ScaledPaddingX + measuredW + triSize * 0.5f + 2f;
+            float triMidY = layout.HeaderH * 0.5f;
+
+            DrawSortArrow(canvas, plot.TableViewAscendingSortOrder, triCx, triMidY, triSize, textPaint);
 
             // Trace column headers
             for (int ti = 0; ti < plot.Traces.Count; ti++)
             {
-                int   c     = ti + 1;
-                var   trace = plot.Traces[ti];
+                int    c     = ti + 1;
+                var    trace = plot.Traces[ti];
                 string label = showFilePrefix ? trace.Description : trace.ShortDescription;
                 DrawClippedText(canvas, boldFont, textPaint,
                     label, layout.ColX[c], textY, layout.ColW[c],
@@ -701,10 +731,46 @@ namespace CircuitRF.Ui.DataDisplay
             }
         }
 
+        /// <summary>
+        /// Draws a small filled triangle (up = ascending, down = descending) centred at (cx, midY).
+        /// </summary>
+        private static void DrawSortArrow(
+            SKCanvas canvas, bool ascending,
+            float cx, float midY, float size, SKPaint textPaint)
+        {
+            float h = size;
+            float hw = size * 0.5f;
+
+            using var path = new SKPath();
+            if (ascending)
+            {
+                // Upward triangle
+                path.MoveTo(cx,       midY - h * 0.5f);   // apex
+                path.LineTo(cx - hw,  midY + h * 0.5f);   // bottom-left
+                path.LineTo(cx + hw,  midY + h * 0.5f);   // bottom-right
+            }
+            else
+            {
+                // Downward triangle
+                path.MoveTo(cx - hw,  midY - h * 0.5f);   // top-left
+                path.LineTo(cx + hw,  midY - h * 0.5f);   // top-right
+                path.LineTo(cx,       midY + h * 0.5f);   // apex
+            }
+            path.Close();
+
+            using var fillPaint = new SKPaint
+            {
+                Color       = textPaint.Color,
+                Style       = SKPaintStyle.Fill,
+                IsAntialias = true,
+            };
+            canvas.DrawPath(path, fillPaint);
+        }
+
         private static void DrawDataRows(
             SKCanvas canvas, (double W, double H) canvasSize,
             TableLayout layout, Plot plot,
-            RenderTheme theme, SKFont regularFont)
+            RenderTheme theme, SKFont regularFont, SKFont dejaVuRegular)
         {
             using var textPaint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
 
@@ -726,20 +792,20 @@ namespace CircuitRF.Ui.DataDisplay
                 // last row.  The canvas ClipRect (set in Draw) trims any overflow.
                 float textY = rowTop + layout.RowH * CellTextVertFraction;
 
-                // Frequency cell
+                // Frequency cell — numeric only, no special glyphs.
                 DrawClippedText(canvas, regularFont, textPaint,
                     (freq * freqScale).ToString(freqFmt),
                     layout.ColX[0], textY, layout.ColW[0],
                     layout.ScaledPaddingX, CellDataHorizAlign);
 
-                // Trace data cells
+                // Trace data cells — may contain ∠ (U+2220); use DejaVu fallback.
                 for (int ti = 0; ti < plot.Traces.Count; ti++)
                 {
                     int c = ti + 1;
                     DrawClippedText(canvas, regularFont, textPaint,
                         FormatTraceCell(plot.Traces[ti], freq),
                         layout.ColX[c], textY, layout.ColW[c],
-                        layout.ScaledPaddingX, CellDataHorizAlign);
+                        layout.ScaledPaddingX, CellDataHorizAlign, dejaVuRegular);
                 }
             }
         }

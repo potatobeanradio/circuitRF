@@ -38,6 +38,8 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     public event EventHandler? MarkerChanged;
 
+    private bool MarkerIsLive => _parent is not null && _parent.Trace.Markers.Contains(_marker);
+
     // ---- Picker lists ---------------------------------------------------
 
     public static IReadOnlyList<MarkerStyle>     AllStyles          { get; } = Enum.GetValues<MarkerStyle>().ToList();
@@ -51,6 +53,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     partial void OnNameChanged(string value)
     {
+        if (!MarkerIsLive) return;
         _marker.Name = value;
         NotifyParent();
     }
@@ -65,6 +68,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     public void CommitFrequency()
     {
+        if (!MarkerIsLive) return;
         if (!double.TryParse(FreqDisplayText, NumberStyles.Any,
                              CultureInfo.CurrentCulture, out double val))
             return;
@@ -100,6 +104,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     partial void OnMatrixFormatChanged(MatrixFormat value)
     {
+        if (!MarkerIsLive) return;
         _marker.MatrixFormat = value;
         NotifyParent();
     }
@@ -111,6 +116,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     partial void OnStyleChanged(MarkerStyle value)
     {
+        if (!MarkerIsLive) return;
         _marker.Style = value;
         NotifyParent();
     }
@@ -122,6 +128,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     partial void OnDigitsChanged(int value)
     {
+        if (!MarkerIsLive) return;
         _marker.MaximumFractionDigits = Math.Clamp(value, 1, 9);
         NotifyParent();
     }
@@ -133,6 +140,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     partial void OnUseNormalizedChanged(bool value)
     {
+        if (!MarkerIsLive) return;
         _marker.UseNormalizedImpedance = value;
         NotifyParent();
     }
@@ -144,6 +152,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     partial void OnFormatStringChanged(PrecisionFormat value)
     {
+        if (!MarkerIsLive) return;
         _marker.FormatString = value;
         NotifyParent();
     }
@@ -155,6 +164,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     partial void OnIsMultiChanged(bool value)
     {
+        if (!MarkerIsLive) return;
         _marker.IsMulti = value;
         NotifyParent();
         // IsMulti controls whether a vertical line is drawn in the PlotControl.
@@ -167,6 +177,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     partial void OnIsDeltaChanged(bool value)
     {
+        if (!MarkerIsLive) return;
         _marker.IsDelta = value;
         NotifyParent();
     }

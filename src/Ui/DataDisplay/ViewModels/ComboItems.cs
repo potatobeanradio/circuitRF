@@ -12,6 +12,7 @@ using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
 using Material.Icons;
+using RfCore;
 using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
@@ -82,5 +83,34 @@ public sealed class MarkerTypeItem
     {
         Value = value;
         Icon  = icon;
+    }
+}
+
+// ---- LineModeItem ----------------------------------------------------------
+// Merges Line on/off + LineType into a single icon-pick option (§C of brief 7.1d-1-r2).
+// IsOff=true → line disabled; IsOff=false → line enabled with the given Type.
+
+public sealed class LineModeItem
+{
+    public bool     IsOff   { get; }
+    public LineType Type    { get; }
+    public double   Opacity => IsOff ? 0.25 : 1.0;
+
+    public LineModeItem(bool isOff, LineType type) { IsOff = isOff; Type = type; }
+}
+
+// ---- SymbolModeItem --------------------------------------------------------
+// Merges Marker on/off + MarkerType into a single icon-pick option.
+
+public sealed class SymbolModeItem
+{
+    public bool             IsOff   { get; }
+    public MarkerType       Shape   { get; }
+    public MaterialIconKind Icon    { get; }
+    public double           Opacity => IsOff ? 0.25 : 1.0;
+
+    public SymbolModeItem(bool isOff, MarkerType shape, MaterialIconKind icon)
+    {
+        IsOff = isOff; Shape = shape; Icon = icon;
     }
 }
