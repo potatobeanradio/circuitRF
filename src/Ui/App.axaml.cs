@@ -310,6 +310,9 @@ public partial class App : Application
 
     internal bool IsShuttingDown => _isShuttingDown;
 
+    /// <summary>Called by a WorkspaceWindow when a close/quit prompt is cancelled, so a later Quit works.</summary>
+    internal void AbortQuit() => _isShuttingDown = false;
+
     internal void Quit()
     {
         if (_isShuttingDown) return;

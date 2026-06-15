@@ -48,6 +48,8 @@ public static class WorkspaceScanner
         {
             if (string.Equals(Path.GetFileName(f), CwsFileName, StringComparison.OrdinalIgnoreCase))
                 continue;
+            if (IsHiddenTreeFile(f))
+                continue;
             root.AddChild(BuildFileNode(f, workspaceRootDir));
         }
 
@@ -149,7 +151,11 @@ public static class WorkspaceScanner
 
         // Files classified by extension
         foreach (string f in Directory.GetFiles(dir).OrderBy(f => Path.GetFileName(f) ?? f, StringComparer.OrdinalIgnoreCase))
+        {
+            if (IsHiddenTreeFile(f))
+                continue;
             node.AddChild(BuildFileNode(f, workspaceRoot));
+        }
 
         // Sub-folders: cell or user folder (recursive)
         foreach (string subDir in SubDirsSorted(dir))
@@ -232,6 +238,14 @@ public static class WorkspaceScanner
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    // A file the tree hides by default (still shown if the user adds it as a Known File).
+    private static bool IsHiddenTreeFile(string path)
+    {
+        var name = Path.GetFileName(path);
+        return string.Equals(name, ".DS_Store", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(Path.GetExtension(path), ".source", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static CwsFile TryLoadCws(string workspaceRoot)
     {

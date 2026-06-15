@@ -248,6 +248,24 @@ public partial class SnpLibraryViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Reload only the entries whose source file matches one of <paramref name="changedAbsPaths"/>
+    /// (used after a run regenerates .npy results). Files that don't exist are skipped (no missing-file prompt).
+    /// Fires LibraryChanged per reloaded entry so open inspectors rebuild + redraw the affected traces only.</summary>
+    public async Task ReloadChangedAsync(IReadOnlyCollection<string> changedAbsPaths)
+    {
+        if (changedAbsPaths.Count == 0) return;
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in changedAbsPaths) set.Add(Path.GetFullPath(p));
+
+        foreach (var entry in Entries.ToList())   // snapshot: ReloadAsync may mutate state
+        {
+            if (entry.FilePath is not string fp) continue;
+            if (!set.Contains(Path.GetFullPath(fp))) continue;
+            if (!File.Exists(fp)) continue;        // never trigger the FindMissingFileAsync prompt during auto-refresh
+            await ReloadAsync(entry);              // in-place refresh + LibraryChanged
+        }
+    }
+
     /// <summary>Remove an entry from the library (does not delete the file).</summary>
     public void Remove(SnpEntryViewModel entry)
     {

@@ -198,4 +198,53 @@ public class ProjectTreeNodeViewModelTests : IDisposable
         var cellVm = vm.Children.Single(c => c.Kind == NodeKind.Cell);
         Assert.True(cellVm.IsExpanded);
     }
+
+    // ── Context-menu visibility helpers ───────────────────────────────────────
+
+    private static ProjectTreeNodeViewModel MakeVm(NodeKind kind, string absPath)
+    {
+        var node = new ProjectTreeNode(kind, Path.GetFileName(absPath), absPath, absPath);
+        return new ProjectTreeNodeViewModel(node, AllOn());
+    }
+
+    [Theory]
+    [InlineData(NodeKind.DataDisplayFile, true)]
+    [InlineData(NodeKind.OtherFile,       false)]
+    [InlineData(NodeKind.ViewFile,        false)]
+    [InlineData(NodeKind.Cell,            false)]
+    [InlineData(NodeKind.UserFolder,      false)]
+    public void IsDataDisplayFile_CorrectForKind(NodeKind kind, bool expected)
+    {
+        var vm = MakeVm(kind, Path.Combine(_root, "test.cdd"));
+        Assert.Equal(expected, vm.IsDataDisplayFile);
+    }
+
+    [Theory]
+    [InlineData(NodeKind.OtherFile,       "/tmp/x/foo.npy",    true)]
+    [InlineData(NodeKind.UserFolder,      "/tmp/x/results",    true)]
+    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csch",   true)]
+    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csym",   true)]
+    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.clay",   false)]
+    [InlineData(NodeKind.DataDisplayFile, "/tmp/x/disp.cdd",   false)]
+    [InlineData(NodeKind.Cell,            "/tmp/x/Amp",        false)]
+    [InlineData(NodeKind.KnownFile,       "/tmp/x/data.snp",   false)]
+    [InlineData(NodeKind.ColorThemeFile,  "/tmp/x/dark.ccolor",false)]
+    public void IsRemovableFile_CorrectForKindAndExtension(NodeKind kind, string absPath, bool expected)
+    {
+        var vm = MakeVm(kind, absPath);
+        Assert.Equal(expected, vm.IsRemovableFile);
+    }
+
+    [Theory]
+    [InlineData(NodeKind.DataDisplayFile, "/tmp/x/disp.cdd",  true)]
+    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csch",  true)]
+    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csym",  true)]
+    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.clay",  false)]
+    [InlineData(NodeKind.OtherFile,       "/tmp/x/foo.npy",   false)]
+    [InlineData(NodeKind.Cell,            "/tmp/x/Amp",       false)]
+    public void IsOpenableFile_CorrectForKindAndExtension(NodeKind kind, string absPath, bool expected)
+    {
+        var vm = MakeVm(kind, absPath);
+        Assert.Equal(expected, vm.IsOpenableFile);
+    }
 }

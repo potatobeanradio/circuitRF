@@ -78,15 +78,16 @@ public static class RunResultsWriter
     /// Collision-check: if the directory already has a .source from a different owner,
     /// posts a warning and returns without writing.  Clears stale .npy files each run.
     /// I/O failures are caught and posted as warnings — never thrown.
+    /// Returns the absolute paths of .npy files actually written; empty on any early-out.
     /// </summary>
-    public static void WriteResults(
+    public static IReadOnlyList<string> WriteResults(
         string                       baseDir,
         string                       schematicKey,
         string                       ownerIdentity,
         IReadOnlyList<AnalysisResult> results,
         IMessageSink?                messages)
     {
-        if (results.Count == 0) return;
+        if (results.Count == 0) return [];
 
         try
         {
@@ -103,7 +104,7 @@ public static class RunResultsWriter
                         $"results/{schematicKey}/ belongs to a different cell — " +
                         "rename one cell to avoid a results collision",
                         dir);
-                    return;
+                    return [];
                 }
             }
 
@@ -115,19 +116,24 @@ public static class RunResultsWriter
                 File.Delete(stale);
 
             // ── Write each analysis ───────────────────────────────────────────
+            var written = new List<string>(results.Count);
             foreach (var r in results)
             {
                 var npy = Path.Combine(dir, Sanitize(r.Name) + ".npy");
                 DataSetExporter.Export(r.Data, npy, ExportFormat.Npy);
+                written.Add(Path.GetFullPath(npy));
             }
 
             messages?.Success(
                 $"Results written: {schematicKey} ({results.Count} analysis file(s))",
                 dir);
+
+            return written;
         }
         catch (Exception ex)
         {
             messages?.Warning($"Results write failed: {ex.Message}");
+            return [];
         }
     }
 

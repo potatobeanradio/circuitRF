@@ -60,8 +60,9 @@ public partial class DisplayWindowViewModel : ViewModelBase
         // Unsubscribe from the previous active tab's property and undo events.
         if (_subscribedTab?.DataDisplay is { } old)
         {
-            old.PropertyChanged -= OnActiveDisplayPropertyChanged;
+            old.PropertyChanged       -= OnActiveDisplayPropertyChanged;
             old.UndoRedo.StateChanged -= OnUndoRedoStateChanged;
+            old.ContentChanged        -= OnActiveDisplayContentChanged;
         }
 
         _subscribedTab = value;
@@ -69,8 +70,9 @@ public partial class DisplayWindowViewModel : ViewModelBase
         // Subscribe to the new active tab.
         if (value?.DataDisplay is { } dd)
         {
-            dd.PropertyChanged += OnActiveDisplayPropertyChanged;
+            dd.PropertyChanged       += OnActiveDisplayPropertyChanged;
             dd.UndoRedo.StateChanged += OnUndoRedoStateChanged;
+            dd.ContentChanged        += OnActiveDisplayContentChanged;
         }
 
         // Notify bindings that DataDisplay changed.
@@ -87,6 +89,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
     {
         UndoCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
+        RaiseDirtyChanged();
     }
 
     private void OnActiveDisplayPropertyChanged(
@@ -129,6 +132,15 @@ public partial class DisplayWindowViewModel : ViewModelBase
     // fields without requiring a dedicated property-change tracking system.
 
     private string? _baselineConfigJson;
+
+    /// <summary>
+    /// Fired when the document's unsaved state may have changed (content edit, save, or load).
+    /// The hosting DataDisplayDocumentViewModel recomputes IsDirty = HasUnsavedChanges() on this.
+    /// </summary>
+    public event EventHandler? DirtyChanged;
+
+    private void RaiseDirtyChanged() => DirtyChanged?.Invoke(this, EventArgs.Empty);
+    private void OnActiveDisplayContentChanged(object? s, EventArgs e) => RaiseDirtyChanged();
 
     /// <summary>
     /// Returns true when the current display config differs from the last
@@ -575,6 +587,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
         // Update baseline so HasUnsavedChanges() returns false right after saving.
         CaptureBaseline();
+        RaiseDirtyChanged();
     }
 
     /// <summary>
@@ -651,7 +664,10 @@ public partial class DisplayWindowViewModel : ViewModelBase
         // Replace all existing tabs.
         // Unsubscribe from the current active tab before clearing.
         if (_subscribedTab?.DataDisplay is { } old)
-            old.PropertyChanged -= OnActiveDisplayPropertyChanged;
+        {
+            old.PropertyChanged       -= OnActiveDisplayPropertyChanged;
+            old.ContentChanged        -= OnActiveDisplayContentChanged;
+        }
         _subscribedTab = null;
 
         // Discard any tab-level undo history from the previous session.
@@ -680,5 +696,6 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
         // Update baseline so HasUnsavedChanges() returns false right after loading.
         CaptureBaseline();
+        RaiseDirtyChanged();
     }
 }

@@ -101,18 +101,27 @@ public partial class WorkspaceWindow : Window
     protected override async void OnClosing(WindowClosingEventArgs e)
     {
         base.OnClosing(e);
-
-        if (_closingConfirmed) return; // second pass after user confirmed — allow through
-        if (_vm is null || !_vm.HasAnyDirtyWork()) return; // nothing dirty — allow through
-
-        e.Cancel = true; // block the close until the prompt resolves
-
-        bool proceed = await _vm.PromptSaveBeforeClose(this, "closing");
-        if (proceed)
+        if (_closingConfirmed) return;
+        if (_vm is null || !_vm.HasAnyDirtyWork()) return;
+        e.Cancel = true;
+        try
         {
-            _vm.OnCleanExit();
-            _closingConfirmed = true;
-            Close(); // re-trigger; this time _closingConfirmed = true so it passes through
+            if (await _vm.PromptSaveBeforeClose(this, "closing"))
+            {
+                _vm.OnCleanExit();
+                _closingConfirmed = true;
+                Close();
+            }
+            else
+            {
+                // User cancelled: release the app-quit latch so a subsequent Quit isn't silently swallowed.
+                (App.Current as App)?.AbortQuit();
+            }
+        }
+        catch (Exception ex)
+        {
+            _vm.Messages.Error($"Couldn't complete close/save: {ex.Message}");
+            (App.Current as App)?.AbortQuit();
         }
     }
 

@@ -212,6 +212,7 @@
         <!-- Span the content presenter across both grid columns so no gap remains -->
         <Style Selector="ComboBox /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Grid.ColumnSpan" Value="2"/>
+            <Setter Property="Margin"          Value="0"/>
         </Style>
 
         <Style Selector="ComboBoxItem:disabled">
@@ -373,7 +374,8 @@
                                                   PlaceholderText="(load a file…)"
                                                   Margin="0,0,3,0"
                                                   MinWidth="20"
-                                                  HorizontalAlignment="Stretch">
+                                                  HorizontalAlignment="Stretch"
+                                                  HorizontalContentAlignment="Stretch">
                                             <ComboBox.ItemContainerTheme>
                                                 <ControlTheme TargetType="ComboBoxItem">
                                                     <Setter Property="IsEnabled"
@@ -505,7 +507,7 @@
                                         </Grid>
 
                                         <!-- Table number-format controls — visible only for Table plot -->
-                                        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,*"
+                                        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto"
                                               IsVisible="{Binding IsTablePlot}">
 
                                             <TextBlock Grid.Column="0" Text="Format"
@@ -532,26 +534,6 @@
                                                            Width="40"
                                                            FormatString="0"
                                                            ToolTip.Tip="Maximum decimal digits"/>
-
-                                            <TextBlock Grid.Column="4" Text="Highlight"
-                                                       Classes="label"
-                                                       HorizontalAlignment="Right"/>
-                                            <ComboBox Grid.Column="5"
-                                                      ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
-                                                      SelectedIndex="{Binding LineColorIndex, Mode=TwoWay}"
-                                                      IsEnabled="{Binding LineEnabled}"
-                                                      Padding="4,0"
-                                                      VerticalAlignment="Center"
-                                                      HorizontalAlignment="Right">
-                                                <ComboBox.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:ColorItem">
-                                                        <Border Width="34" Height="10"
-                                                                Background="{Binding Brush}"
-                                                                CornerRadius="2"
-                                                                ToolTip.Tip="{Binding Name}"/>
-                                                    </DataTemplate>
-                                                </ComboBox.ItemTemplate>
-                                            </ComboBox>
                                         </Grid>
 
                                         <!-- ── Symbol row ─────────────────────────────────────────
@@ -647,6 +629,22 @@
                                             <TextBlock Grid.Column="2" Text="Ω"
                                                        Classes="label"
                                                        HorizontalAlignment="Left"/>
+                                            <ComboBox Grid.Column="3"
+                                                      ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
+                                                      SelectedIndex="{Binding LineColorIndex, Mode=TwoWay}"
+                                                      IsEnabled="{Binding LineEnabled}"
+                                                      IsVisible="{Binding IsTablePlot}"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      Padding="4,0"
+                                                      ToolTip.Tip="Highlight color">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:ColorItem">
+                                                        <Border Width="34" Height="10" Background="{Binding Brush}" CornerRadius="2"
+                                                                ToolTip.Tip="{Binding Name}"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
 
                                         </Grid>
 

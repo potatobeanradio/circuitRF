@@ -222,7 +222,8 @@ public sealed partial class AnalysesListViewModel : ObservableObject
                 $"A template named \"{result.Name}\" already exists. Overwrite it?",
                 saveLabel:     "Overwrite",
                 dontSaveLabel: null,
-                cancelLabel:   "Cancel");
+                cancelLabel:   "Cancel",
+                title:         "Overwrite Template");
             var cr = await confirm.ShowDialog<SaveChangesResult>(window);
             if (cr != SaveChangesResult.Save) return;
         }

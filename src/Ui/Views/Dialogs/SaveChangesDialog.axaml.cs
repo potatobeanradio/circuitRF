@@ -20,8 +20,10 @@ public partial class SaveChangesDialog : Window
         string  message,
         string  saveLabel     = "Save",
         string? dontSaveLabel = "Don't Save",
-        string  cancelLabel   = "Cancel") : this()
+        string  cancelLabel   = "Cancel",
+        string  title         = "Save Changes") : this()
     {
+        Title                = title;
         MessageText.Text     = message;
         SaveButton.Content   = saveLabel;
         CancelButton.Content = cancelLabel;

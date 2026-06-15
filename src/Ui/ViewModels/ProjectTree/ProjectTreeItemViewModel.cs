@@ -91,6 +91,39 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public bool IsKnownFile          => Kind == NodeKind.KnownFile;
     public bool IsWorkspaceOrLibrary => Kind is NodeKind.Workspace or NodeKind.Library;
 
+    /// <summary>True for .cdd Data Display files — drives "Remove Data Display" context item.</summary>
+    public bool IsDataDisplayFile => Kind == NodeKind.DataDisplayFile;
+
+    /// <summary>
+    /// True for nodes that can be removed via Trash: .csch/.csym view files, results directories
+    /// (UserFolder), and .npy/other files under results dirs (OtherFile).
+    /// NOTE: results dirs and .npy files are classified as UserFolder/OtherFile (no dedicated NodeKind).
+    /// </summary>
+    public bool IsRemovableFile =>
+        (Kind == NodeKind.ViewFile &&
+            Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym")
+        || Kind == NodeKind.OtherFile
+        || Kind == NodeKind.UserFolder;
+
+    /// <summary>True for openable leaf files (.csch / .csym / .cdd) — drives the "Open" context item.</summary>
+    public bool IsOpenableFile =>
+        Kind == NodeKind.DataDisplayFile
+        || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym");
+
+    /// <summary>True when this node has unsaved work — drives the "Save" context item.
+    /// Resolved through the host so it reflects live dirty state when the menu opens.</summary>
+    public bool IsSaveable => _actions?.IsNodeDirty(this) ?? false;
+
+    /// <summary>Context-menu label for the Save action — varies by node kind.</summary>
+    public string SaveHeader => Kind switch
+    {
+        NodeKind.Cell            => "Save Cell",
+        NodeKind.DataDisplayFile => "Save Data Display",
+        NodeKind.ViewFile when Path.GetExtension(AbsolutePath).ToLowerInvariant() == ".csch" => "Save Schematic",
+        NodeKind.ViewFile when Path.GetExtension(AbsolutePath).ToLowerInvariant() == ".csym" => "Save Symbol",
+        _                        => "Save",
+    };
+
     /// <summary>
     /// True when this Known File's path is inside the workspace root.
     /// A relative path that doesn't start with ".." and isn't rooted is inside.
@@ -151,6 +184,18 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>Open this cell's primary symbol in a Content tab.</summary>
     public IRelayCommand OpenSymbolCommand { get; }
+
+    /// <summary>Remove this .cdd Data Display file (moves to Trash). Visible only for DataDisplayFile nodes.</summary>
+    public IRelayCommand RemoveDataDisplayCommand { get; }
+
+    /// <summary>Remove this file or directory (moves to Trash). Visible only for removable file/dir nodes.</summary>
+    public IRelayCommand RemoveFileCommand { get; }
+
+    /// <summary>Remove this cell folder (moves to Trash). Visible only for Cell nodes.</summary>
+    public IAsyncRelayCommand RemoveCellCommand { get; }
+
+    /// <summary>Save this node: cell saves all dirty views; file saves only itself.</summary>
+    public IAsyncRelayCommand SaveCommand { get; }
 
     // ── Primary-view availability (computed once at construction for cell nodes) ──
 
@@ -266,6 +311,21 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         OpenSymbolCommand = new RelayCommand(
             () => _actions?.OpenCellSymbol(this),
             () => _actions is not null && IsCell && CanOpenSymbol);
+
+        RemoveDataDisplayCommand = new RelayCommand(
+            () => _actions?.RemoveDataDisplay(this),
+            () => _actions is not null && IsDataDisplayFile);
+
+        RemoveFileCommand = new RelayCommand(
+            () => _actions?.RemoveFile(this),
+            () => _actions is not null && IsRemovableFile);
+
+        RemoveCellCommand = new AsyncRelayCommand(
+            () => _actions?.RemoveCellAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsCell);
+
+        SaveCommand = new AsyncRelayCommand(
+            () => _actions?.SaveNodeAsync(this) ?? Task.CompletedTask);
     }
 
     // ── Filter ─────────────────────────────────────────────────────────────────

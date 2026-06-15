@@ -207,6 +207,13 @@ public class CircuitRfDockFactory : Factory
     }
 
     /// <summary>
+    /// Closes a dockable immediately, bypassing the async dirty-save confirm hook.
+    /// Used by Remove-to-Trash so the tab closes without a "Save before closing?" dialog
+    /// (the file is going away — saving would be wrong).
+    /// </summary>
+    public void ForceCloseDockable(IDockable dockable) => base.CloseDockable(dockable);
+
+    /// <summary>
     /// Removes the welcome stub tab synchronously, bypassing the async confirm hook.
     /// Called by RestoreOpenDocuments before re-opening a workspace's saved documents.
     /// No-op if no welcome stub is present.

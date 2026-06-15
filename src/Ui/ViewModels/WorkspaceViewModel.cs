@@ -1067,12 +1067,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 break;
             case RunStatus.Success:
                 Messages.Success(result.StatusMessage);
-                RunResultsWriter.WriteResults(
+                var written = RunResultsWriter.WriteResults(
                     baseDir,
                     RunResultsWriter.SchematicKey(activeDoc.FilePath, activeDoc.Id),
                     RunResultsWriter.OwnerIdentity(activeDoc.FilePath, activeDoc.Id),
                     result.Results,
                     Messages);
+                await RefreshOpenDataDisplaysAsync(written);
                 break;
         }
 
@@ -2122,17 +2123,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// marks the cell clean when nothing within it is dirty.  Safe no-op when the directory is
     /// not a cell node in the current tree (see <c>ProjectTreeTool.SetCellDirty</c>).
     /// </summary>
-    private void RefreshCellDirty(string cellDir)
-    {
-        bool dirty =
-            _registry.AllDirtyPaths.Any(p => IsViewInCell(p, cellDir))
-            || _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d =>
-                   d.IsDirty
-                   && d.ViewModel.CurrentSymbolPath is { } sp
-                   && IsViewInCell(sp, cellDir));
+    private bool IsCellDirty(string cellDir) =>
+        _registry.AllDirtyPaths.Any(p => IsViewInCell(p, cellDir))
+        || _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d =>
+               d.IsDirty && d.ViewModel.CurrentSymbolPath is { } sp && IsViewInCell(sp, cellDir));
 
-        _factory.ProjectTreeTool?.SetCellDirty(cellDir, dirty);
-    }
+    private void RefreshCellDirty(string cellDir)
+        => _factory.ProjectTreeTool?.SetCellDirty(cellDir, IsCellDirty(cellDir));
 
     /// <summary>
     /// Subscribes a symbol editor document's dirty state to its owning cell's tree indicator so
@@ -2159,6 +2156,111 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private static bool IsViewInCell(string viewFilePath, string cellDir)
         => CellDirOfView(viewFilePath) is { } c
            && string.Equals(c, cellDir, StringComparison.OrdinalIgnoreCase);
+
+    // ── ITreeActions: dirty detection + per-node save ─────────────────────────
+
+    /// <inheritdoc/>
+    public bool IsNodeDirty(ProjectTreeNodeViewModel node)
+    {
+        switch (node.Kind)
+        {
+            case NodeKind.Cell:
+                return IsCellDirty(node.AbsolutePath);
+            case NodeKind.ViewFile:
+            {
+                var key = Path.GetFullPath(node.AbsolutePath);
+                var ext = Path.GetExtension(key).ToLowerInvariant();
+                if (ext == ".csch")
+                    return _registry.AllDirtyPaths.Any(p =>
+                        string.Equals(Path.GetFullPath(p), key, StringComparison.OrdinalIgnoreCase));
+                if (ext == ".csym")
+                    return _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d =>
+                        d.IsDirty && d.ViewModel.CurrentSymbolPath is { } sp
+                        && string.Equals(Path.GetFullPath(sp), key, StringComparison.OrdinalIgnoreCase));
+                return false;
+            }
+            case NodeKind.DataDisplayFile:
+            {
+                var ddKey = Path.GetFullPath(node.AbsolutePath);
+                return _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d =>
+                    d.FilePath is { } fp
+                    && string.Equals(Path.GetFullPath(fp), ddKey, StringComparison.OrdinalIgnoreCase)
+                    && d.ViewModel.Window.HasUnsavedChanges());
+            }
+            default:
+                return false;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveNodeAsync(ProjectTreeNodeViewModel node)
+    {
+        var owner = ResolveOwner(null);
+        if (owner is null) return;
+
+        switch (node.Kind)
+        {
+            case NodeKind.Cell:
+                await SaveCellViewsAsync(node.AbsolutePath, owner);
+                break;
+            case NodeKind.ViewFile:
+            {
+                var ext = Path.GetExtension(node.AbsolutePath).ToLowerInvariant();
+                if (ext == ".csch")      SaveSchematicByPath(node.AbsolutePath);
+                else if (ext == ".csym") await SaveSymbolByPathAsync(node.AbsolutePath, owner);
+                break;
+            }
+            case NodeKind.DataDisplayFile:
+                await SaveDataDisplayByPathAsync(node.AbsolutePath, owner);
+                break;
+        }
+
+        if (CurrentWorkspacePath is not null)
+            WriteWorkspaceFile(CurrentWorkspacePath, silent: true);
+    }
+
+    private void SaveSchematicByPath(string absPath)
+    {
+        var key = Path.GetFullPath(absPath);
+        if (!_registry.TryGet(key, out var vm) || vm is null || !vm.UndoRedo.IsModified) return;
+        try
+        {
+            SchematicPersistence.SaveToFile(key, vm.EditModel, Path.GetFileNameWithoutExtension(key));
+            NotifySessionSaved(key);
+            Messages.Success("Saved", key);
+        }
+        catch (Exception ex) { Messages.Error($"Failed to save '{key}': {ex.Message}"); }
+    }
+
+    private async Task SaveSymbolByPathAsync(string absPath, Window owner)
+    {
+        var key = Path.GetFullPath(absPath);
+        var doc = _openDocsByPath.Values.OfType<SymbolEditorDocument>().FirstOrDefault(d =>
+            d.ViewModel.CurrentSymbolPath is { } sp
+            && string.Equals(Path.GetFullPath(sp), key, StringComparison.OrdinalIgnoreCase));
+        if (doc is { IsDirty: true }) await SaveMaterializedSymbolDoc(doc, owner);
+    }
+
+    private async Task SaveDataDisplayByPathAsync(string absPath, Window owner)
+    {
+        var key = Path.GetFullPath(absPath);
+        var doc = _openDocsByPath.Values.OfType<DataDisplayDocument>().FirstOrDefault(d =>
+            d.FilePath is { } fp
+            && string.Equals(Path.GetFullPath(fp), key, StringComparison.OrdinalIgnoreCase));
+        if (doc is not null && doc.ViewModel.Window.HasUnsavedChanges())
+            await SaveDataDisplayDoc(doc, owner);
+    }
+
+    private async Task SaveCellViewsAsync(string cellDir, Window owner)
+    {
+        foreach (var p in _registry.AllDirtyPaths.Where(p => IsViewInCell(p, cellDir)).ToList())
+            SaveSchematicByPath(p);
+        foreach (var doc in _openDocsByPath.Values.OfType<SymbolEditorDocument>()
+                     .Where(d => d.IsDirty && d.ViewModel.CurrentSymbolPath is { } sp && IsViewInCell(sp, cellDir))
+                     .ToList())
+            await SaveMaterializedSymbolDoc(doc, owner);
+        RefreshCellDirty(cellDir);
+    }
 
     // ── Reveal in file manager ────────────────────────────────────────────────
 
@@ -2324,6 +2426,125 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
         _factory.ProjectTreeTool?.Refresh();
         Messages.Info($"Reference removed (file not deleted):\n  {path}");
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveCellAsync(ProjectTreeNodeViewModel cellNode)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var workspaceRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        var window = ResolveOwner(null);
+        if (window is null) return;
+
+        int usedIn = CellUsageScanner.CountReferencingCells(workspaceRoot, cellNode.AbsolutePath);
+
+        var msg = $"Remove cell '{cellNode.Name}'?\n\nThis moves the entire cell folder to the Trash/Recycle Bin. There is no in-app undo.";
+        if (usedIn == 1)
+            msg += "\n\n⚠ This cell is used in 1 other cell. Removing it will break that reference.";
+        else if (usedIn > 1)
+            msg += $"\n\n⚠ This cell is used in {usedIn} cells. Removing it will break those references.";
+
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            msg,
+            saveLabel:     "Remove Cell",
+            dontSaveLabel: null,
+            cancelLabel:   "Cancel",
+            title:         "Remove Cell");
+        await dlg.ShowDialog(window);
+        if (dlg.Result != SaveChangesResult.Save) return;
+
+        var cellPath = cellNode.AbsolutePath;
+
+        // Close any open tabs/sessions under the cell dir.
+        var keysToClose = _openDocsByPath
+            .Where(kvp => IsPathOrUnder(kvp.Key, cellPath))
+            .Select(kvp => (kvp.Key, kvp.Value))
+            .ToList();
+
+        foreach (var (key, dockable) in keysToClose)
+        {
+            _factory.ForceCloseDockable(dockable);
+            if (key.EndsWith(".csch", StringComparison.OrdinalIgnoreCase))
+                RetireSessionIfUnreferenced(key);
+        }
+
+        if (!SystemTrash.TryMoveToTrash(cellPath, out var err))
+        {
+            Messages.Error($"Remove cell failed: {err}");
+            return;
+        }
+
+        Messages.Info($"Removed cell (moved to Trash): {cellPath}");
+        _factory.ProjectTreeTool?.Refresh();
+    }
+
+    /// <inheritdoc/>
+    public void RemoveDataDisplay(ProjectTreeNodeViewModel node)
+    {
+        var name = Path.GetFileNameWithoutExtension(node.AbsolutePath);
+        var msg  = $"Remove Data Display '{name}'?\n\nThis moves the file to the Trash/Recycle Bin. There is no in-app undo.";
+        _ = RemoveNodeToTrashAsync(node, msg, "Remove Data Display");
+    }
+
+    /// <inheritdoc/>
+    public void RemoveFile(ProjectTreeNodeViewModel node)
+    {
+        var name = node.Name;
+        var msg  = $"Remove '{name}'?\n\nThis moves it to the Trash/Recycle Bin. There is no in-app undo.";
+        _ = RemoveNodeToTrashAsync(node, msg, "Remove");
+    }
+
+    private async Task RemoveNodeToTrashAsync(ProjectTreeNodeViewModel node, string dialogMessage, string dialogTitle)
+    {
+        var window = ResolveOwner(null);
+        if (window is null) return;
+
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            dialogMessage,
+            saveLabel:     "Remove",
+            dontSaveLabel: null,
+            cancelLabel:   "Cancel",
+            title:         dialogTitle);
+        await dlg.ShowDialog(window);
+        if (dlg.Result != SaveChangesResult.Save) return;
+
+        var path = node.AbsolutePath;
+
+        // Close any open tabs that reference this path (file) or a path under it (directory).
+        // ForceCloseDockable bypasses the dirty-save prompt — the file is going away.
+        var keysToClose = _openDocsByPath
+            .Where(kvp => IsPathOrUnder(kvp.Key, path))
+            .Select(kvp => (kvp.Key, kvp.Value))
+            .ToList();
+
+        foreach (var (key, dockable) in keysToClose)
+        {
+            _factory.ForceCloseDockable(dockable);
+            // OnDockableClosed fires via DockableClosed event and cleans up _openDocsByPath.
+            // For .csch tabs, RetireSessionIfUnreferenced is also called there.
+        }
+
+        if (!SystemTrash.TryMoveToTrash(path, out var err))
+        {
+            Messages.Error($"Remove failed: {err}");
+            return;
+        }
+
+        Messages.Info($"Removed (moved to Trash): {path}");
+        _factory.ProjectTreeTool?.Refresh();
+    }
+
+    // True when candidate is exactly path, or is a file under the directory path.
+    private static bool IsPathOrUnder(string candidate, string dirOrFile)
+    {
+        if (string.Equals(candidate, dirOrFile, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!Directory.Exists(dirOrFile)) return false;
+
+        var rel = Path.GetRelativePath(dirOrFile, candidate);
+        return !rel.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(rel);
     }
 
     private static string ResolveNonConflictingDestination(string dir, string fileName)
@@ -2547,6 +2768,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ---- Active-document tracking (Properties region) ───────────────────────
 
+    private async Task RefreshOpenDataDisplaysAsync(IReadOnlyList<string> changedPaths)
+    {
+        if (changedPaths.Count == 0) return;
+        var displays = _openDocsByPath.Values.OfType<DataDisplayDocument>()
+            .Concat(_scratchDataDisplays);
+        foreach (var dd in displays)
+            await dd.ViewModel.Window.SnpLibrary.ReloadChangedAsync(changedPaths);
+    }
+
     /// <summary>
     /// Subscribes to the given data display document's <see cref="DisplayWindowViewModel.ActiveInspector"/>
     /// and routes changes to the Properties dock. Unsubscribes from any previously-subscribed window first.
@@ -2732,7 +2962,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (dockable is SchematicDocument doc && doc.IsDirty)
         {
             var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{doc.Id}' before closing?");
+                $"Save '{doc.Id}' before closing?",
+                title: "Unsaved Changes");
             await dlg.ShowDialog(window);
 
             return dlg.Result switch
@@ -2748,7 +2979,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (dockable is SymbolEditorDocument symDoc && symDoc.IsDirty)
         {
             var dlg = new Views.Dialogs.SaveChangesDialog(
-                $"Save '{symDoc.Id}' before closing?");
+                $"Save '{symDoc.Id}' before closing?",
+                title: "Unsaved Changes");
             await dlg.ShowDialog(window);
 
             switch (dlg.Result)
@@ -2764,6 +2996,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 default:
                     return false;
             }
+        }
+
+        // Data display document.
+        if (dockable is DataDisplayDocument ddDoc && ddDoc.ViewModel.Window.HasUnsavedChanges())
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{ddDoc.Id}' before closing?",
+                title: "Unsaved Changes");
+            await dlg.ShowDialog(window);
+            return dlg.Result switch
+            {
+                SaveChangesResult.Cancel   => false,
+                SaveChangesResult.DontSave => true,
+                SaveChangesResult.Save     => await SaveDataDisplayDoc(ddDoc, window),
+                _                          => false,
+            };
         }
 
         return true; // clean doc — no prompt needed
@@ -2996,6 +3244,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         || _openDocsByPath.Values.OfType<SchematicDocument>().Any(d => d.IsDirty)
         || _scratchSymbols.Any(d => d.IsDirty)
         || _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d => d.IsDirty)
+        || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges())
+        || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges())
         || HasOrphanedDirtySession();
 
     /// <summary>
@@ -3014,23 +3264,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             .OfType<SymbolEditorDocument>()
             .Where(d => d.IsDirty && !d.IsScratch)
             .ToList();
+        var dirtyScratchDisplays = _scratchDataDisplays
+            .Where(d => d.ViewModel.Window.HasUnsavedChanges()).ToList();
+        var dirtyMatDisplays = _openDocsByPath.Values
+            .OfType<DataDisplayDocument>()
+            .Where(d => d.ViewModel.Window.HasUnsavedChanges()).ToList();
         var dirtyOrphanedSessions = _registry.GetOrphanedDirtyPaths(IsSessionReferenced);
 
         int total = dirtyScratch.Count + dirtyMat.Count
                   + dirtyScratchSymbols.Count + dirtyMatSymbols.Count
+                  + dirtyScratchDisplays.Count + dirtyMatDisplays.Count
                   + dirtyOrphanedSessions.Count;
         if (total == 0) return true;
 
         // Build a concise message naming the single doc or giving the count.
-        string firstId = dirtyScratch.Count > 0         ? dirtyScratch[0].Id
-                       : dirtyScratchSymbols.Count > 0   ? dirtyScratchSymbols[0].Id
-                       : dirtyMat.Count > 0              ? dirtyMat[0].Id
-                       :                                   dirtyMatSymbols[0].Id;
-        string msg = total == 1
+        string? firstId =
+              dirtyScratch.Count          > 0 ? dirtyScratch[0].Id
+            : dirtyScratchSymbols.Count   > 0 ? dirtyScratchSymbols[0].Id
+            : dirtyMat.Count              > 0 ? dirtyMat[0].Id
+            : dirtyMatSymbols.Count       > 0 ? dirtyMatSymbols[0].Id
+            : dirtyMatDisplays.Count      > 0 ? dirtyMatDisplays[0].Id
+            : dirtyScratchDisplays.Count  > 0 ? dirtyScratchDisplays[0].Id
+            : dirtyOrphanedSessions.Count > 0 ? Path.GetFileNameWithoutExtension(dirtyOrphanedSessions[0])
+            : null;
+        string msg = (total == 1 && firstId is not null)
             ? $"Save '{firstId}' before {context}?"
             : $"You have {total} unsaved document(s). Save before {context}?";
 
-        var dlg = new Views.Dialogs.SaveChangesDialog(msg, saveLabel: "Save All", cancelLabel: "Cancel");
+        var dlg = new Views.Dialogs.SaveChangesDialog(msg, saveLabel: "Save All", cancelLabel: "Cancel", title: "Unsaved Changes");
         await dlg.ShowDialog(owner);
 
         switch (dlg.Result)
@@ -3091,6 +3352,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // Materialized dirty symbols → write directly via VM.
                 foreach (var symDoc in dirtyMatSymbols)
                     await SaveMaterializedSymbolDoc(symDoc, owner);
+                // Dirty data displays → save in place (materialized) or via picker (scratch).
+                foreach (var dd in dirtyMatDisplays)
+                    await SaveDataDisplayDoc(dd, owner);
+                foreach (var dd in dirtyScratchDisplays)
+                    await SaveDataDisplayDoc(dd, owner);
                 return true;
 
             default: return false;
@@ -3122,13 +3388,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             doc.Materialize(doc.FilePath);
             NotifySessionSaved(doc.FilePath);
             Messages.Success("Saved", doc.FilePath);
-            return true;
         }
         catch (Exception ex)
         {
             Messages.Error($"Failed to save '{doc.Id}': {ex.Message}");
             return false;
         }
+
+        // Persist every dirty pushed-in sub-cell session in this doc's nav stack to its own .csch.
+        // (Hierarchy edits live in the active frame's shared session, NOT doc.ViewModel.EditModel.)
+        foreach (var (session, _) in doc.NavFrames)
+        {
+            if (ReferenceEquals(session, doc.ViewModel)) continue;   // base handled above
+            if (!session.UndoRedo.IsModified) continue;              // clean frame — skip
+            if (!_registry.TryGetPath(session, out var subPath) || subPath is null) continue;
+            try
+            {
+                var subCellName = Path.GetFileNameWithoutExtension(subPath);
+                SchematicPersistence.SaveToFile(subPath, session.EditModel, subCellName);
+                NotifySessionSaved(subPath);
+                Messages.Success("Saved", subPath);
+            }
+            catch (Exception ex)
+            {
+                Messages.Error($"Failed to save '{subPath}': {ex.Message}");
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Called by WorkspaceWindow.OnClosing on a confirmed clean exit.</summary>
@@ -3196,7 +3483,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             "from a previous session. Restore?",
             saveLabel:     "Restore",
             dontSaveLabel: "Discard",
-            cancelLabel:   "Later");
+            cancelLabel:   "Later",
+            title:         "Restore Documents");
         await dlg.ShowDialog(window);
 
         if (dlg.Result == SaveChangesResult.Save)
@@ -3303,7 +3591,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             "No workspace is open. Save to a workspace for better organization?",
             saveLabel:     "Create Workspace…",
             dontSaveLabel: "Save as File",
-            cancelLabel:   "Cancel");
+            cancelLabel:   "Cancel",
+            title:         "Save Schematic");
         await offerDialog.ShowDialog(owner);
 
         switch (offerDialog.Result)
@@ -3389,6 +3678,39 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// Saves a data display: writes in-place for materialized docs, or shows a .cdd picker
+    /// for scratch docs (then materializes and tracks the result).
+    /// Returns true on success, false when cancelled.
+    /// </summary>
+    private async Task<bool> SaveDataDisplayDoc(DataDisplayDocument dd, Window owner)
+    {
+        var window = dd.ViewModel.Window;
+        if (dd.FilePath is { } path)
+        {
+            await window.SaveAllAsync(path);
+            Messages.Success("Saved", path);
+            return true;
+        }
+
+        var result = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions
+        {
+            Title              = "Save Data Display",
+            SuggestedFileName  = dd.Id,
+            DefaultExtension   = "cdd",
+            FileTypeChoices    = [new Avalonia.Platform.Storage.FilePickerFileType("circuitRF Data Display") { Patterns = ["*.cdd"] }],
+        });
+        if (result is null) return false;
+
+        var picked = Path.GetFullPath(result.Path.LocalPath);
+        await window.SaveAllAsync(picked);
+        _scratchDataDisplays.Remove(dd);
+        dd.Materialize(picked);
+        _openDocsByPath[picked] = dd;
+        Messages.Success("Saved", picked);
+        return true;
+    }
+
+    /// <summary>
     /// Shows the two-option offer dialog for a scratch symbol and dispatches to the
     /// chosen path: "Save to Cell…" (cell + symbol/ subfolder) or "Save as File" (orphan .csym).
     /// </summary>
@@ -3398,7 +3720,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             "Save this symbol to a cell, or as a standalone file?",
             saveLabel:     "Save to Cell…",
             dontSaveLabel: "Save as File",
-            cancelLabel:   "Cancel");
+            cancelLabel:   "Cancel",
+            title:         "Save Symbol");
         await offerDialog.ShowDialog(window);
 
         switch (offerDialog.Result)

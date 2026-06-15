@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -24,6 +25,25 @@ public partial class DataDisplayViewModel : ViewModelBase
     // One manager per tab — each tab has its own independent undo history.
 
     public UndoRedoManager UndoRedo { get; } = new();
+
+    // ---- ContentChanged — fired when the saved config may have changed ----
+    // Consumers (DisplayWindowViewModel) recompute HasUnsavedChanges() on this.
+    // Two channels drive it: undo edits (via UndoRedo.StateChanged) and
+    // inspector/redraw edits (via container PlotNeedsRedraw).
+
+    public event EventHandler? ContentChanged;
+
+    private void RaiseContentChanged() => ContentChanged?.Invoke(this, EventArgs.Empty);
+    private void OnContainerRedraw(object? s, EventArgs e) => RaiseContentChanged();
+
+    private void OnPlotsCollectionChanged(object? s, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+            foreach (PlotContainerViewModel c in e.NewItems) c.PlotNeedsRedraw += OnContainerRedraw;
+        if (e.OldItems is not null)
+            foreach (PlotContainerViewModel c in e.OldItems) c.PlotNeedsRedraw -= OnContainerRedraw;
+        RaiseContentChanged();
+    }
 
     // ---- Collections ------------------------------------------------
 
@@ -347,6 +367,10 @@ public partial class DataDisplayViewModel : ViewModelBase
 
         // Respond immediately to settings changes that require a visual refresh.
         AppSettingsViewModel.Instance.PropertyChanged += OnSettingsPropertyChanged;
+
+        _plots.CollectionChanged += OnPlotsCollectionChanged;
+        UndoRedo.StateChanged    += (_, _) => RaiseContentChanged();
+
         if (addEmptyPlot)
             AddPlot(PlotType.Smith, FreqUnit.GHz);
             if (!selectEmptyPlot)
@@ -806,6 +830,7 @@ public partial class DataDisplayViewModel : ViewModelBase
     /// </summary>
     internal async Task LoadFromTabConfigAsync(TabConfig tabConfig, string configDir)
     {
+        foreach (var c in _plots) c.PlotNeedsRedraw -= OnContainerRedraw;
         _plots.Clear();
         _markerInfoBoxes.Clear();
         RefreshSelection();

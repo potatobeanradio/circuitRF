@@ -141,7 +141,7 @@ public partial class DataDisplayView : UserControl
     {
         var parent = TopLevel.GetTopLevel(this) as Window;
         if (parent is null) return;
-        await new SaveChangesDialog(message, "OK", null, "")
+        await new SaveChangesDialog(message, "OK", null, "", title: "Error")
             .ShowDialog(parent);
     }
 

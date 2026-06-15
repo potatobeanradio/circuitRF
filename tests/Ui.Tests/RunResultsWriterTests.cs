@@ -179,11 +179,41 @@ public sealed class RunResultsWriterTests : IDisposable
         var baseDir = MakeTempDir();
         var sink    = new FakeSink();
 
-        RunResultsWriter.WriteResults(baseDir, "Amp", "owner", Array.Empty<AnalysisResult>(), sink);
+        var written = RunResultsWriter.WriteResults(baseDir, "Amp", "owner", Array.Empty<AnalysisResult>(), sink);
 
+        Assert.Empty(written);
         Assert.False(Directory.Exists(Path.Combine(baseDir, "results")));
         Assert.Empty(sink.Successes);
         Assert.Empty(sink.Warnings);
+    }
+
+    // ── WriteResults — returns written paths ──────────────────────────────────
+
+    [Fact]
+    public void WriteResults_ReturnsWrittenPaths()
+    {
+        var baseDir = MakeTempDir();
+        var key     = "TestAmp";
+        var owner   = "scratch:TestAmp";
+        var sink    = new FakeSink();
+        var results = new[]
+        {
+            new AnalysisResult("SP1", MakeSimpleDataSet("S")),
+            new AnalysisResult("HB1", MakeSimpleDataSet("V")),
+        };
+
+        var written = RunResultsWriter.WriteResults(baseDir, key, owner, results, sink);
+
+        Assert.Equal(2, written.Count);
+        var dir = Path.GetFullPath(Path.Combine(baseDir, "results", key));
+        Assert.Contains(Path.Combine(dir, "SP1.npy"), written);
+        Assert.Contains(Path.Combine(dir, "HB1.npy"), written);
+
+        // Collision skip returns empty list.
+        var otherOwner = "scratch:OtherAmp";
+        var collisionResult = RunResultsWriter.WriteResults(baseDir, key, otherOwner,
+            new[] { new AnalysisResult("SP1", MakeSimpleDataSet("S")) }, sink);
+        Assert.Empty(collisionResult);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

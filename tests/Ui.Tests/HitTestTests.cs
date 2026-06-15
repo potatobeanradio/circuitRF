@@ -314,4 +314,87 @@ public class HitTestTests
 
         Assert.Equal(SchematicHitTest.HitKind.None, hit.Kind);
     }
+
+    // ── Suppressed-label hit-test tests ──────────────────────────────────────
+    // LabelStartOffY=134, LabelRowHeight=72 → row0 centerY=170, row1 centerY=242.
+    // textLeft = comp.X - 165 → click at x ≈ comp.X - 130 is inside the zone.
+
+    [Fact]
+    public void Ground_NoTypeHit()
+    {
+        var edit = new SchematicEditModel();
+        edit.Components.Add(new EditableComponent
+        {
+            InstanceName = "GND1",
+            Symbol       = SymbolKind.Ground,
+            X            = 0,
+            Y            = 0,
+        });
+        var (render, idx) = edit.BuildRenderModel();
+
+        // Click at the type-label row position for a Ground component.
+        var hit = SchematicHitTest.Test(edit, render, idx, -130, 170, includeLabels: true);
+        Assert.NotEqual(SchematicHitTest.HitKind.ComponentType, hit.Kind);
+    }
+
+    [Fact]
+    public void SuppressedTypeLabel_NoTypeHit()
+    {
+        var edit = new SchematicEditModel();
+        edit.Components.Add(new EditableComponent
+        {
+            InstanceName   = "R1",
+            Symbol         = SymbolKind.Resistor,
+            X              = 0,
+            Y              = 0,
+            ShowTypeLabel  = false,
+            ShowInstanceName = true,
+        });
+        var (render, idx) = edit.BuildRenderModel();
+
+        // With ShowTypeLabel=false → no ComponentType hit at row 0.
+        var suppressed = SchematicHitTest.Test(edit, render, idx, -100, 170, includeLabels: true);
+        Assert.NotEqual(SchematicHitTest.HitKind.ComponentType, suppressed.Kind);
+
+        // Regression guard: ShowTypeLabel=true → ComponentType IS returned.
+        edit.Components[0].ShowTypeLabel = true;
+        var (render2, idx2) = edit.BuildRenderModel();
+        var visible = SchematicHitTest.Test(edit, render2, idx2, -100, 170, includeLabels: true);
+        Assert.Equal(SchematicHitTest.HitKind.ComponentType, visible.Kind);
+    }
+
+    [Fact]
+    public void SuppressedInstanceName_NoNameHit()
+    {
+        var edit = new SchematicEditModel();
+        var comp = new EditableComponent
+        {
+            InstanceName     = "R1",
+            Symbol           = SymbolKind.Resistor,
+            X                = 0,
+            Y                = 0,
+            ShowTypeLabel    = true,
+            ShowInstanceName = false,
+        };
+        // Add a shown param so we can verify param-row slot is unaffected.
+        comp.Parameters.Add(new EditableParameter
+        {
+            Name            = "R",
+            Expression      = "50",
+            Unit            = "Ohm",
+            ShowOnSchematic = true,
+        });
+        edit.Components.Add(comp);
+        var (render, idx) = edit.BuildRenderModel();
+
+        // Row 1 (instance name) suppressed → no ComponentName hit at centerY=242.
+        var nameHit = SchematicHitTest.Test(edit, render, idx, -100, 242, includeLabels: true);
+        Assert.NotEqual(SchematicHitTest.HitKind.ComponentName, nameHit.Kind);
+
+        // Param row is row 2 (after suppressed row 1), centerY = 134 + 2*72 + 36 = 314.
+        // It should still produce a ComponentParam hit.
+        var paramHit = SchematicHitTest.Test(edit, render, idx, -100, 314, includeLabels: true);
+        Assert.Equal(SchematicHitTest.HitKind.ComponentParam, paramHit.Kind);
+        Assert.Equal(comp.Id, paramHit.Id);
+    }
 }

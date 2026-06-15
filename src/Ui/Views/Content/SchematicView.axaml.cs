@@ -138,9 +138,10 @@ public partial class SchematicView : UserControl
         if (owner is null) return false;
         var dialog = new SaveChangesDialog(
             $"A symbol for \"{cellName}\" has not been created. Do you want one to be auto-generated?",
-            saveLabel: "Yes",
+            saveLabel:     "Yes",
             dontSaveLabel: null,
-            cancelLabel: "No");
+            cancelLabel:   "No",
+            title:         "Generate Symbol");
         var result = await dialog.ShowDialog<SaveChangesResult>(owner);
         return result == SaveChangesResult.Save;
     }

@@ -258,6 +258,14 @@ public static class SchematicHitTest
         int totalRows = 2 + shownParams.Count;
         for (int row = 0; row < totalRows; row++)
         {
+            bool suppressed = row switch
+            {
+                0 => comp.Symbol == SymbolKind.Ground || !comp.ShowTypeLabel,
+                1 => comp.Symbol == SymbolKind.Ground || !comp.ShowInstanceName,
+                _ => false,
+            };
+            if (suppressed) continue;
+
             var (oDx, oDy) = row < comp.LabelOffsets.Count
                 ? comp.LabelOffsets[row] : (0.0, 0.0);
 

@@ -45,4 +45,19 @@ public interface ITreeActions
 
     /// <summary>Open (or activate) the cell's primary symbol in a Content tab.</summary>
     void OpenCellSymbol(ProjectTreeNodeViewModel cellNode);
+
+    /// <summary>Remove a .cdd Data Display file (moves to Trash). Confirms; no usage check.</summary>
+    void RemoveDataDisplay(ProjectTreeNodeViewModel node);
+
+    /// <summary>Remove a removable file/dir (.csch, .csym, results dir/subdir, .npy) — moves to Trash. Confirms.</summary>
+    void RemoveFile(ProjectTreeNodeViewModel node);
+
+    /// <summary>Remove a cell folder (moves to Trash). Big warning incl. workspace usage count; no in-app undo.</summary>
+    Task RemoveCellAsync(ProjectTreeNodeViewModel cellNode);
+
+    /// <summary>True when this node has unsaved work (drives the "Save" context item's visibility).</summary>
+    bool IsNodeDirty(ProjectTreeNodeViewModel node);
+
+    /// <summary>Save this node: a cell saves all its dirty schematics+symbols; a file saves just itself.</summary>
+    Task SaveNodeAsync(ProjectTreeNodeViewModel node);
 }

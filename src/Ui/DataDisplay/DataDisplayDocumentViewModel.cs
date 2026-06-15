@@ -20,5 +20,6 @@ public sealed partial class DataDisplayDocumentViewModel : ObservableObject
     public DataDisplayDocumentViewModel()
     {
         Window = new DisplayWindowViewModel();
+        Window.DirtyChanged += (_, _) => IsDirty = Window.HasUnsavedChanges();
     }
 }

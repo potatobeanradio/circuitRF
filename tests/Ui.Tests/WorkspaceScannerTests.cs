@@ -349,6 +349,61 @@ public class WorkspaceScannerTests : IDisposable
         Assert.Equal(NodeKind.OtherFile, txt.Kind);
     }
 
+    // ── Hidden files (.DS_Store / .source) ───────────────────────────────────
+
+    [Fact]
+    public void Scan_HiddenFiles_NotVisibleAtRootOrUserFolder()
+    {
+        // Workspace root: a.csch, .DS_Store, x.source, notes.txt
+        string cellDir = MakeCell("MyCell");
+        AddView(cellDir, ViewType.Schematic, "a.csch");
+        File.WriteAllText(Path.Combine(_root, ".DS_Store"), "");
+        File.WriteAllText(Path.Combine(_root, "x.source"), "");
+        File.WriteAllText(Path.Combine(_root, "notes.txt"), "");
+
+        // User folder: same hidden files inside
+        string uf = Path.Combine(_root, "docs");
+        Directory.CreateDirectory(uf);
+        File.WriteAllText(Path.Combine(uf, ".DS_Store"), "");
+        File.WriteAllText(Path.Combine(uf, "readme.source"), "");
+        File.WriteAllText(Path.Combine(uf, "info.txt"), "");
+
+        var tree = WorkspaceScanner.Scan(_root);
+
+        // Root loose files: only notes.txt (not .DS_Store or x.source)
+        var rootFiles = tree.Children.Where(n => n.Kind == NodeKind.OtherFile).Select(n => n.Name).ToList();
+        Assert.Contains("notes.txt", rootFiles);
+        Assert.DoesNotContain(".DS_Store", rootFiles);
+        Assert.DoesNotContain("x.source", rootFiles);
+
+        // User folder: only info.txt
+        var folder = tree.Children.Single(n => n.Name == "docs");
+        var folderFiles = folder.Children.Select(n => n.Name).ToList();
+        Assert.Contains("info.txt", folderFiles);
+        Assert.DoesNotContain(".DS_Store", folderFiles);
+        Assert.DoesNotContain("readme.source", folderFiles);
+    }
+
+    [Fact]
+    public void Scan_HiddenFileInKnownFiles_StillVisible()
+    {
+        // .DS_Store listed explicitly as a Known File → opt-in still works
+        string dsStorePath = Path.Combine(_root, ".DS_Store");
+        File.WriteAllText(dsStorePath, "");
+
+        WriteCws(new CwsFile { KnownFiles = [".DS_Store"] });
+
+        var tree = WorkspaceScanner.Scan(_root);
+
+        // Loose root files: .DS_Store suppressed
+        var rootFiles = tree.Children.Where(n => n.Kind == NodeKind.OtherFile).Select(n => n.Name).ToList();
+        Assert.DoesNotContain(".DS_Store", rootFiles);
+
+        // Known Files group: .DS_Store present
+        var kfGroup = tree.Children.Single(n => n.Kind == NodeKind.KnownFilesGroup);
+        Assert.Contains(".DS_Store", kfGroup.Children.Select(n => n.Name));
+    }
+
     // ── Relative paths ────────────────────────────────────────────────────────
 
     [Fact]

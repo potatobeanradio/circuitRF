@@ -161,35 +161,63 @@
                                 <Grid.ContextMenu>
                                     <ContextMenu>
 
+                                        <!-- Save dirty node — visible only when IsSaveable (resolved at menu-open) -->
+                                        <MenuItem Header="{Binding SaveHeader}"
+                                                  Command="{Binding SaveCommand}"
+                                                  IsVisible="{Binding IsSaveable}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="ContentSave" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
+                                        <!-- Open leaf files (.csch / .csym / .cdd) — same as double-click -->
+                                        <MenuItem Header="Open"
+                                                  Command="{Binding ActivateCommand}"
+                                                  IsVisible="{Binding IsOpenableFile}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="OpenInApp" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
                                         <!-- Known File actions -->
                                         <MenuItem Header="Open External…"
                                                   Command="{Binding OpenExternalCommand}"
-                                                  IsVisible="{Binding IsKnownFile}"/>
+                                                  IsVisible="{Binding IsKnownFile}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="OpenInNew" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="Copy to Workspace"
                                                   Command="{Binding CopyToWorkspaceCommand}"
-                                                  IsVisible="{Binding IsKnownFile}"/>
+                                                  IsVisible="{Binding IsKnownFile}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="Remove Reference"
                                                   Command="{Binding RemoveKnownFileCommand}"
-                                                  IsVisible="{Binding IsKnownFile}"/>
+                                                  IsVisible="{Binding IsKnownFile}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="LinkVariantOff" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <Separator IsVisible="{Binding IsKnownFile}"/>
 
                                         <!-- View file actions (Make Primary + Reveal) -->
                                         <MenuItem Header="Make Primary"
                                                   Command="{Binding MakePrimaryCommand}"
-                                                  IsVisible="{Binding IsViewFile}"/>
+                                                  IsVisible="{Binding IsViewFile}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Star" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
 
                                         <!-- All revealable nodes -->
                                         <MenuItem Header="{Binding RevealLabel}"
                                                   Command="{Binding RevealCommand}"
-                                                  IsVisible="{Binding CanReveal}"/>
+                                                  IsVisible="{Binding CanReveal}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderSearchOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
 
                                         <!-- Cell: open primary views (greyed when no primary of that type exists) -->
                                         <MenuItem Header="Open Schematic"
                                                   Command="{Binding OpenSchematicCommand}"
-                                                  IsVisible="{Binding IsCell}"/>
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FileDocumentOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="Open Symbol"
                                                   Command="{Binding OpenSymbolCommand}"
-                                                  IsVisible="{Binding IsCell}"/>
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="VectorSquare" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
 
                                         <!-- Separator before creation actions -->
                                         <Separator IsVisible="{Binding IsWorkspaceOrLibrary}"/>
@@ -198,21 +226,49 @@
                                         <!-- Workspace / Library node actions -->
                                         <MenuItem Header="New Cell"
                                                   Command="{Binding NewCellCommand}"
-                                                  IsVisible="{Binding IsWorkspaceOrLibrary}"/>
+                                                  IsVisible="{Binding IsWorkspaceOrLibrary}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="IntegratedCircuitChip" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
 
                                         <!-- Cell node actions -->
                                         <MenuItem Header="New Schematic"
                                                   Command="{Binding NewSchematicCommand}"
-                                                  IsVisible="{Binding IsCell}"/>
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FilePlusOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="New Symbol"
                                                   Command="{Binding NewSymbolCommand}"
-                                                  IsVisible="{Binding IsCell}"/>
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="ShapePlusOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="New Layout"
                                                   IsEnabled="False"
-                                                  IsVisible="{Binding IsCell}"/>
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="LayersPlus" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
                                         <MenuItem Header="Edit Parameters"
                                                   Command="{Binding ActivateCommand}"
-                                                  IsVisible="{Binding IsCell}"/>
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Pencil" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
+                                        <!-- Remove to Trash -->
+                                        <MenuItem Header="Remove Data Display"
+                                                  Command="{Binding RemoveDataDisplayCommand}"
+                                                  IsVisible="{Binding IsDataDisplayFile}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Remove"
+                                                  Command="{Binding RemoveFileCommand}"
+                                                  IsVisible="{Binding IsRemovableFile}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator IsVisible="{Binding IsCell}"/>
+                                        <MenuItem Header="Remove Cell"
+                                                  Command="{Binding RemoveCellCommand}"
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
 
                                     </ContextMenu>
                                 </Grid.ContextMenu>

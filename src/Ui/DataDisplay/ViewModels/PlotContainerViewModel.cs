@@ -269,7 +269,12 @@ public partial class PlotContainerViewModel : ViewModelBase
             foreach (var st in LeftLabelStrips)  st.AppearanceRevision++;
             foreach (var st in RightLabelStrips) st.AppearanceRevision++;
         };
-        Inspector.PlotStructureChanged += (s, e) => UpdateLabelStrips();
+        Inspector.PlotStructureChanged += (s, e) =>
+        {
+            UpdateLabelStrips();
+            OnPropertyChanged(nameof(IsSquareAspect));
+            NotifyViewProperties();
+        };
 
     }
 
