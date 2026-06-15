@@ -171,14 +171,76 @@ namespace RfCore.Data
     }
 
     // ================================================================
+    //  Z0Kind  —  classification of a Z0 cube's uniformity and kind
+    // ================================================================
+
+    /// <summary>
+    /// Classification of the per-port reference impedances stored in a <c>Z0</c> cube.
+    /// Used by the Data Display indicator to decide which badge (if any) to show.
+    /// </summary>
+    public enum Z0Kind
+    {
+        /// <summary>All ports share the same real-valued reference impedance (e.g. 50 Ω).</summary>
+        UniformReal,
+        /// <summary>All ports share the same complex reference impedance (e.g. 75−j10 Ω).</summary>
+        UniformComplex,
+        /// <summary>Ports have different reference impedances.</summary>
+        NonUniform,
+    }
+
+    // ================================================================
     //  DataSetBuilder  —  helpers for S-parameter DataSet ↔ SNP
     // ================================================================
 
     public static class DataSetBuilder
     {
+        private const double Z0UniformTol = 1e-9;   // 1 nΩ — negligible for any RF work
+
         /// <summary>
-        /// Wrap an SNP (must be S-type) as a DataSet containing a single
-        /// "S" cube with axes [freq, i, j].
+        /// Build a 1-axis Complex DataCube representing per-port reference impedances.
+        /// Axis name "port", unit "port", 1-based port numbers; values are complex ohms.
+        /// </summary>
+        public static DataCube BuildZ0Cube(Complex[] z0PerPort)
+        {
+            int n        = z0PerPort.Length;
+            var portVals = new double[n];
+            for (int p = 0; p < n; p++) portVals[p] = p + 1;
+            return new DataCube(new[] { new Axis("port", portVals, "port") }, z0PerPort);
+        }
+
+        /// <summary>
+        /// Classify the reference impedances in a Z0 cube: all uniform-real, uniform-complex,
+        /// or non-uniform (different values per port).
+        /// </summary>
+        public static Z0Kind ClassifyZ0(DataCube z0Cube)
+        {
+            var vals = z0Cube.ComplexValues;
+            if (vals.Length == 0) return Z0Kind.UniformReal;
+
+            var first   = vals[0];
+            bool uniform = true;
+            for (int i = 1; i < vals.Length; i++)
+            {
+                if (Math.Abs(vals[i].Real      - first.Real)      > Z0UniformTol ||
+                    Math.Abs(vals[i].Imaginary - first.Imaginary) > Z0UniformTol)
+                {
+                    uniform = false;
+                    break;
+                }
+            }
+            if (!uniform) return Z0Kind.NonUniform;
+
+            bool allReal = true;
+            for (int i = 0; i < vals.Length; i++)
+            {
+                if (Math.Abs(vals[i].Imaginary) > Z0UniformTol) { allReal = false; break; }
+            }
+            return allReal ? Z0Kind.UniformReal : Z0Kind.UniformComplex;
+        }
+
+        /// <summary>
+        /// Wrap an SNP (must be S-type) as a DataSet containing an "S" cube [freq, i, j]
+        /// and a "Z0" cube [port] with per-port complex reference impedances.
         /// Port axis values are 1-based port numbers.
         /// </summary>
         public static DataSet FromSnp(SNP snp)
@@ -211,13 +273,20 @@ namespace RfCore.Data
             var sCube = new DataCube(new[] { freqAxis, iAxis, jAxis }, data);
             var ds    = new DataSet();
             ds.Add("S", sCube);
+
+            // Uniform Z0 cube — every Touchstone-derived S DataSet carries one
+            // so consumers can always rely on "Z0" being present.
+            var z0Vals = new Complex[nPorts];
+            for (int p = 0; p < nPorts; p++) z0Vals[p] = snp.Z0;
+            ds.Add("Z0", BuildZ0Cube(z0Vals));
+
             return ds;
         }
 
         /// <summary>
         /// Extract the "S" cube from a DataSet and reconstruct an SNP for Touchstone I/O.
-        /// The DataSet must contain an "S" cube with axes [freq, i, j].
-        /// Reference impedance is 50Ω real (standard; per-port complex Z0 is not stored in the cube).
+        /// Reads the "Z0" cube for the reference impedance when present; falls back to 50 Ω.
+        /// Non-uniform Z0 is flattened to port-1's value (SNP is uniform-only by design).
         /// </summary>
         public static SNP ToSnp(DataSet ds)
         {
@@ -236,7 +305,27 @@ namespace RfCore.Data
                     mats[fi][i, j] = raw[fi * nPorts * nPorts + i * nPorts + j];
             }
 
-            return new SNP(freqs, mats, MatrixType.S, MatrixFormat.RI, new Complex(50, 0));
+            Complex refZ0;
+            if (ds.Contains("Z0"))
+            {
+                var z0Cube = ds["Z0"];
+                var z0Kind = ClassifyZ0(z0Cube);
+                refZ0 = z0Cube.ComplexValues[0];
+                if (z0Kind == Z0Kind.NonUniform)
+                {
+                    // SNP/Touchstone is uniform-only; use port-1's value and warn.
+                    RFNetwork.Warn(
+                        "ToSnp: DataSet has non-uniform per-port Z0 — SNP/Touchstone supports " +
+                        "only a single reference impedance; using port-1 value " +
+                        $"({refZ0} Ω). A cube-direct path is required for faithful non-uniform handling.");
+                }
+            }
+            else
+            {
+                refZ0 = new Complex(50, 0);   // legacy .npy without Z0 cube
+            }
+
+            return new SNP(freqs, mats, MatrixType.S, MatrixFormat.RI, refZ0);
         }
     }
 }

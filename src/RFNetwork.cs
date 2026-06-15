@@ -61,7 +61,7 @@ namespace RfCore
         /// </summary>
         public static bool ConsoleWarnings { get; set; } = false;
 
-        private static void Warn(string message)
+        internal static void Warn(string message)
         {
             OnWarning?.Invoke(message);
             if (ConsoleWarnings)
