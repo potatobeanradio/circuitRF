@@ -64,8 +64,8 @@ public partial class TraceRowViewModel : ViewModelBase
                && _trace.Col == value.Col && _trace.Derived == DerivedParameters.None);
         if (alreadyApplied) return;
 
-        _trace.Data       = value.Entry.Snp;
-        _trace.SourcePath = value.Entry.Snp.FilePath;
+        _trace.Data       = value.Entry.Snp!;
+        _trace.SourcePath = value.Entry.FilePath;
 
         if (value.Derived != DerivedParameters.None)
         {
@@ -361,11 +361,13 @@ public partial class TraceRowViewModel : ViewModelBase
 
         foreach (var entry in _parent.LibraryEntries)
         {
-            if (entry.Snp.IsEmpty)
+            if (entry.Snp is null) continue;
+            var snp = entry.Snp;  // non-null after guard; local var avoids repeated nullable dereference warnings
+            if (snp.IsEmpty)
             {
                 // Broken entry: add a placeholder item for the trace's current row/col
                 // so the ComboBox shows something (in red/italic) instead of going blank.
-                bool isSource = _trace.Data == entry.Snp;
+                bool isSource = _trace.Data == snp;
                 int row = isSource ? _trace.Row : 0;
                 int col = isSource ? _trace.Col : 0;
                 AvailableSignals.Add(new TraceDataItem(entry, MatrixType, row, col,
@@ -373,11 +375,11 @@ public partial class TraceRowViewModel : ViewModelBase
                 continue;
             }
 
-            int ports = entry.Snp.Ports;
+            int ports = snp.Ports;
 
             // If this entry is the trace's source and row/col is now out of range
             // (file was restored but is smaller than expected), prepend an OOB placeholder.
-            if (_trace.Data == entry.Snp
+            if (_trace.Data == snp
                 && _trace.Derived == DerivedParameters.None
                 && (_trace.Row >= ports || _trace.Col >= ports))
             {
@@ -410,10 +412,10 @@ public partial class TraceRowViewModel : ViewModelBase
             var matchEntry = _parent.LibraryEntries.FirstOrDefault(e => e.Snp == _trace.Data);
             if (matchEntry != null)
             {
-                if (matchEntry.Snp.IsEmpty
+                if (matchEntry.Snp!.IsEmpty
                     || (_trace.Derived == DerivedParameters.None
-                        && (_trace.Row >= matchEntry.Snp.Ports
-                            || _trace.Col >= matchEntry.Snp.Ports)))
+                        && (_trace.Row >= matchEntry.Snp!.Ports
+                            || _trace.Col >= matchEntry.Snp!.Ports)))
                 {
                     // Broken or OOB — select the placeholder item.
                     match = AvailableSignals.FirstOrDefault(s => s.IsBroken && s.Entry == matchEntry);

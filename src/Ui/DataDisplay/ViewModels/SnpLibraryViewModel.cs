@@ -1,5 +1,10 @@
 // ================================================================
-//  SnpLibraryViewModel.cs  —  manages all SNP files loaded in memory
+//  SnpLibraryViewModel.cs  —  manages all data-source files loaded in memory
+//
+//  NAMING DEBT: This class now loads both Touchstone (.sNp) and .npy files.
+//  Each entry carries a DataSet; .npy-with-S exposes a ToSnp SNP for the
+//  existing picker.  Rename to DataSourceLibraryViewModel in 7.2c when the
+//  cube-native trace path + class rename ship.
 // ================================================================
 
 using System;
@@ -11,6 +16,8 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Platform.Storage;
 using RfCore;
+using RfCore.Data;
+using RfCore.Export;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
@@ -47,26 +54,35 @@ public partial class SnpLibraryViewModel : ViewModelBase
     /// <summary>
     /// Command bound to the library header's import button.
     /// Set by the document container to Window.OpenFileCommand so the button
-    /// opens the Touchstone file picker without the view needing a Window reference.
+    /// opens the file picker without the view needing a Window reference.
     /// </summary>
     public ICommand? ImportCommand { get; internal set; }
 
     // ---- Public API -------------------------------------------------------
 
     /// <summary>
-    /// Load a Touchstone file from disk.  If a broken entry with the same path
-    /// already exists it is restored instead of loading a duplicate.
+    /// Load a Touchstone or .npy file from disk.
+    /// Touchstone extensions → TouchstoneIO; .npy → DataSetImporter.
+    /// Broken-entry restore and deduplication apply to both formats.
     /// Silently ignores unrecognised extensions or unparseable files.
     /// </summary>
     public async Task LoadFileAsync(string path)
     {
         path = Path.GetFullPath(path);
-        if (!IsSnpExtension(Path.GetExtension(path))) return;
+        string ext = Path.GetExtension(path);
 
-        // If a broken entry matches this path, restore it instead of adding a duplicate.
+        if (IsNpyExtension(ext))
+        {
+            await LoadNpyAsync(path);
+            return;
+        }
+
+        if (!IsSnpExtension(ext)) return;
+
+        // If a broken Touchstone entry matches this path, restore it.
         var broken = Entries.FirstOrDefault(e =>
-            e.Snp.IsEmpty &&
-            string.Equals(e.Snp.FilePath, path, StringComparison.OrdinalIgnoreCase));
+            e.Kind == SourceKind.Touchstone && e.IsBroken &&
+            string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase));
         if (broken != null)
         {
             await RestoreBrokenEntry(broken, path);
@@ -74,8 +90,8 @@ public partial class SnpLibraryViewModel : ViewModelBase
         }
 
         // Skip normal duplicates
-        if (Entries.Any(e => !e.Snp.IsEmpty &&
-                string.Equals(e.Snp.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+        if (Entries.Any(e => !e.IsBroken &&
+                string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase)))
             return;
 
         SNP? snp;
@@ -89,31 +105,37 @@ public partial class SnpLibraryViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Load a Touchstone file supplied as an <see cref="IStorageFile"/> (e.g. from a
-    /// macOS Apple Event / Finder double-click).  Reads content via
-    /// <see cref="IStorageFile.OpenReadAsync"/> so that security-scoped URL access
-    /// is honoured instead of relying on bare-path I/O.
+    /// Load a Touchstone or .npy file supplied as an <see cref="IStorageFile"/>
+    /// (e.g. from a macOS Apple Event / Finder double-click).
+    /// Touchstone → reads via <see cref="IStorageFile.OpenReadAsync"/> for
+    /// security-scoped URL access.  .npy → uses LocalPath directly.
     /// </summary>
     public async Task LoadFileAsync(IStorageFile file)
     {
         string path = Path.GetFullPath(file.Path.LocalPath);
-        if (!IsSnpExtension(Path.GetExtension(path))) return;
+        string ext  = Path.GetExtension(path);
+
+        if (IsNpyExtension(ext))
+        {
+            await LoadNpyAsync(path);
+            return;
+        }
+
+        if (!IsSnpExtension(ext)) return;
 
         var broken = Entries.FirstOrDefault(e =>
-            e.Snp.IsEmpty &&
-            string.Equals(e.Snp.FilePath, path, StringComparison.OrdinalIgnoreCase));
+            e.Kind == SourceKind.Touchstone && e.IsBroken &&
+            string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase));
         if (broken != null) { await RestoreBrokenEntry(broken, path); return; }
 
-        if (Entries.Any(e => !e.Snp.IsEmpty &&
-                string.Equals(e.Snp.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+        if (Entries.Any(e => !e.IsBroken &&
+                string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase)))
             return;
 
         SNP? snp;
         try
         {
             // Open via the storage API so macOS security-scoped URLs are handled.
-            // TouchstoneIO.Read(TextReader) infers the port count from the file content
-            // when no extension hint is provided.
             using var stream = await file.OpenReadAsync();
             snp = await Task.Run(() =>
             {
@@ -131,36 +153,60 @@ public partial class SnpLibraryViewModel : ViewModelBase
 
     /// <summary>
     /// Add a placeholder entry for a file that could not be found on disk.
+    /// Routes by extension: Touchstone → SNP broken entry; .npy → .npy broken entry.
     /// Does not fire LibraryChanged — the caller is responsible for adding
     /// any associated Trace objects before PlotInspectorViewModels subscribe.
     /// </summary>
     public void AddBrokenEntry(string path)
     {
-        if (Entries.Any(e => string.Equals(e.Snp.FilePath, path,
+        if (Entries.Any(e => string.Equals(e.FilePath, path,
                 StringComparison.OrdinalIgnoreCase)))
             return;
 
-        var snp = SNP.CreateBroken(path);
-        Entries.Add(new SnpEntryViewModel(snp, this));
+        SnpEntryViewModel entry;
+        if (IsNpyExtension(Path.GetExtension(path)))
+        {
+            // Broken .npy: use SNP.CreateBroken so IsBroken returns true,
+            // but store no DataSet (file is missing).
+            entry = new SnpEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this);
+        }
+        else
+        {
+            var snp = SNP.CreateBroken(path);
+            entry = new SnpEntryViewModel(snp, this);
+        }
+
+        Entries.Add(entry);
         UpdateDisplayNames();
         // No LibraryChanged: broken entries have no usable data to rebuild paths with.
     }
 
     /// <summary>
     /// Replace a broken entry's data with a freshly-loaded file.
-    /// Updates the FilePath if the user chose a different location.
+    /// Routes by extension; updates the path if the user chose a different location.
     /// </summary>
     public async Task RestoreBrokenEntry(SnpEntryViewModel entry, string newPath)
     {
-        SNP newData;
-        try { newData = await Task.Run(() => TouchstoneIO.ReadFile(newPath)); }
-        catch { return; }
+        if (entry.Kind == SourceKind.Npy)
+        {
+            DataSet data;
+            try { data = (await Task.Run(() => DataSetImporter.Import(newPath))).DataSet; }
+            catch { return; }
 
-        entry.Snp.FilePath = newPath;
-        entry.Snp.RefreshFrom(newData);
-        entry.NotifyBrokenStateChanged();
-        UpdateDisplayNames();
-        LibraryChanged?.Invoke(this, EventArgs.Empty);
+            entry.RefreshNpy(data, newPath);
+            UpdateDisplayNames();
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        else
+        {
+            SNP newData;
+            try { newData = await Task.Run(() => TouchstoneIO.ReadFile(newPath)); }
+            catch { return; }
+
+            entry.RefreshTouchstone(newData, newPath);
+            UpdateDisplayNames();
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>
@@ -169,26 +215,37 @@ public partial class SnpLibraryViewModel : ViewModelBase
     /// </summary>
     public async Task ReloadAsync(SnpEntryViewModel entry)
     {
-        bool filePresent = !string.IsNullOrEmpty(entry.Snp.FilePath)
-                           && File.Exists(entry.Snp.FilePath);
+        bool filePresent = !string.IsNullOrEmpty(entry.FilePath)
+                           && File.Exists(entry.FilePath);
 
-        if (entry.Snp.IsEmpty || !filePresent)
+        if (entry.IsBroken || !filePresent)
         {
             // Missing file — ask the user to locate it.
             if (FindMissingFileAsync is null) return;
-            string? newPath = await FindMissingFileAsync(entry.Snp.FilePath ?? "");
+            string? newPath = await FindMissingFileAsync(entry.FilePath ?? "");
             if (newPath is null) return;
             await RestoreBrokenEntry(entry, newPath);
             return;
         }
 
-        SNP newData;
-        try { newData = await Task.Run(() => TouchstoneIO.ReadFile(entry.Snp.FilePath!)); }
-        catch { return; }
+        if (entry.Kind == SourceKind.Npy)
+        {
+            DataSet data;
+            try { data = (await Task.Run(() => DataSetImporter.Import(entry.FilePath!))).DataSet; }
+            catch { return; }
 
-        entry.Snp.RefreshFrom(newData);
-        entry.NotifyBrokenStateChanged();
-        LibraryChanged?.Invoke(this, EventArgs.Empty);
+            entry.RefreshNpy(data, entry.FilePath!);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        else
+        {
+            SNP newData;
+            try { newData = await Task.Run(() => TouchstoneIO.ReadFile(entry.FilePath!)); }
+            catch { return; }
+
+            entry.RefreshTouchstone(newData, entry.FilePath!);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>Remove an entry from the library (does not delete the file).</summary>
@@ -204,7 +261,7 @@ public partial class SnpLibraryViewModel : ViewModelBase
     private void UpdateDisplayNames()
     {
         var groups = Entries
-            .GroupBy(e => Path.GetFileName(e.Snp.FilePath ?? "").ToLowerInvariant())
+            .GroupBy(e => Path.GetFileName(e.FilePath ?? "").ToLowerInvariant())
             .ToList();
 
         foreach (var group in groups)
@@ -213,12 +270,12 @@ public partial class SnpLibraryViewModel : ViewModelBase
 
             if (items.Count == 1)
             {
-                items[0].DisplayName = items[0].Snp.FileName;
+                items[0].DisplayName = items[0].FileName ?? items[0].FilePath ?? "";
                 continue;
             }
 
             var segments = items
-                .Select(e => (e.Snp.FilePath ?? "")
+                .Select(e => (e.FilePath ?? "")
                     .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                     .Reverse()
                     .ToArray())
@@ -246,7 +303,46 @@ public partial class SnpLibraryViewModel : ViewModelBase
         }
     }
 
-    // ---- Helpers ----------------------------------------------------------
+    // ---- Private helpers --------------------------------------------------
+
+    private async Task LoadNpyAsync(string path)
+    {
+        // Restore broken .npy entry if present.
+        var broken = Entries.FirstOrDefault(e =>
+            e.Kind == SourceKind.Npy && e.IsBroken &&
+            string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (broken != null)
+        {
+            await RestoreBrokenEntry(broken, path);
+            return;
+        }
+
+        // Skip normal duplicates.
+        if (Entries.Any(e => !e.IsBroken &&
+                string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        DataSet data;
+        try { data = (await Task.Run(() => DataSetImporter.Import(path))).DataSet; }
+        catch { return; }
+
+        SNP? snp = null;
+        if (data.Contains("S"))
+        {
+            try
+            {
+                snp = DataSetBuilder.ToSnp(data);
+                snp.FilePath = path;
+            }
+            catch { snp = null; }
+        }
+
+        Entries.Add(new SnpEntryViewModel(path, data, snp, this));
+        UpdateDisplayNames();
+        LibraryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ---- Extension helpers ------------------------------------------------
 
     private static readonly HashSet<string> _snpExtensions =
         new(StringComparer.OrdinalIgnoreCase)
@@ -255,6 +351,7 @@ public partial class SnpLibraryViewModel : ViewModelBase
         ".s21p", ".s22p", ".s23p", ".s24p",
         ".snp", ".ts" };
 
-    private static bool IsSnpExtension(string ext) =>
-        _snpExtensions.Contains(ext);
+    private static bool IsSnpExtension(string ext) => _snpExtensions.Contains(ext);
+    private static bool IsNpyExtension(string ext)  =>
+        string.Equals(ext, ".npy", StringComparison.OrdinalIgnoreCase);
 }

@@ -178,7 +178,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public bool CanAddTrace =>
         _plot.Traces.Count > 0 ||
-        (_library?.Entries.Any(e => !e.Snp.IsEmpty) ?? false);
+        (_library?.Entries.Any(e => e.Snp is not null && !e.Snp.IsEmpty) ?? false);
 
     // ---- Commands -------------------------------------------------------
 
@@ -228,7 +228,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     {
         // Remove traces whose SNP is no longer present in the library.
         var librarySnps = new System.Collections.Generic.HashSet<SNP>(
-            _library!.Entries.Select(entry => entry.Snp));
+            _library!.Entries.Select(entry => entry.Snp).OfType<SNP>());
 
         var staleVms = Traces
             .Where(rv => rv.Trace.Data is not null && !librarySnps.Contains(rv.Trace.Data))
@@ -274,9 +274,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
             var src = _plot.Traces.Last();
             trace = new Trace(src, incrementColorBy: 1, includeMarkers: false);
         }
-        else if (_library?.Entries.FirstOrDefault(e => !e.Snp.IsEmpty) is { } firstReal)
+        else if (_library?.Entries.FirstOrDefault(e => e.Snp is not null && !e.Snp.IsEmpty) is { } firstReal)
         {
-            var snp = firstReal.Snp;
+            var snp = firstReal.Snp!;
             bool isComplex = _plot.PlotType is PlotType.Smith or PlotType.Polar;
             trace = new Trace(
                 snp, MatrixType.S, 0, 0,

@@ -222,7 +222,7 @@ public partial class MarkerInfoBoxViewModel : ViewModelBase
     // mirrors the library-count heuristic (multiple loaded SNPs).
     public bool ShowFilePrefix =>
         AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-            (_parent.Library?.Entries.Count(e => !e.Snp.IsEmpty) ?? 0) > 1);
+            (_parent.Library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
 
     /// <summary>All traces in the same plot except the one that owns this marker.</summary>
     public IReadOnlyList<Trace> OtherTraces =>

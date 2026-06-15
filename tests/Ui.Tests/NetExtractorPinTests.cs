@@ -222,4 +222,77 @@ public class NetExtractorPinTests
         Assert.Equal("rf+", result.CellPorts[1]);
         Assert.Equal("rf-", result.CellPorts[2]);
     }
+
+    // ── Net-name priority: Pin beats coincident label ───────────────────────────
+
+    [Fact]
+    public void Pin_WithCoincidentLabel_PinNameWins()
+    {
+        // Pin(Num=1, Name="in") at (0,400): port at (0,200).
+        // R1 at (0,400): port0 at (0,200). Label "mylabel" also at (0,200).
+        // Pin owns the net identity — label is silently overridden, no conflict emitted.
+        var model = new SchematicEditModel();
+        model.Components.Add(MakePin(1, "in", y: 400));       // port at (0,200)
+        model.Components.Add(MakeResistor("R1", 0, 400));      // port0 at (0,200)
+        model.NetLabels.Add(new EditableNetLabel { Name = "mylabel", X = 0, Y = 200 });
+
+        var result = NetExtractor.Extract(model);
+
+        var r1Inst = result.TestBench.Instances.First(i => i.InstanceName == "R1");
+        Assert.Equal("in", r1Inst.NetBindings[0]);  // Pin wins over label
+        Assert.Equal("in", result.CellPorts[0]);     // interface port correctly named
+        Assert.DoesNotContain(result.Conflicts, c => c.Contains("mylabel") || c.Contains("conflict"));
+    }
+
+    [Fact]
+    public void Label_WithoutPin_NamesNet()
+    {
+        // Same topology as Pin_WithCoincidentLabel_PinNameWins but no Pin present.
+        // Label wins the fallthrough when no Pin is on the net.
+        var model = new SchematicEditModel();
+        model.Components.Add(MakeResistor("R1", 0, 400));      // port0 at (0,200)
+        model.NetLabels.Add(new EditableNetLabel { Name = "mylabel", X = 0, Y = 200 });
+
+        var result = NetExtractor.Extract(model);
+
+        var r1Inst = result.TestBench.Instances.First(i => i.InstanceName == "R1");
+        Assert.Equal("mylabel", r1Inst.NetBindings[0]); // label wins with no Pin
+        Assert.Empty(result.CellPorts);
+    }
+
+    [Fact]
+    public void TwoDifferentLabels_StillConflict()
+    {
+        // Two labels with different names on the same wired net (no Pin) → conflict still fired.
+        // Regression guard: reordering Pin vs label must not drop the label-vs-label conflict check.
+        var model = new SchematicEditModel();
+        model.Wires.Add(Wire((0, 200), (0, 600)));
+        model.NetLabels.Add(new EditableNetLabel { Name = "foo", X = 0, Y = 200 });
+        model.NetLabels.Add(new EditableNetLabel { Name = "bar", X = 0, Y = 600 });
+
+        var result = NetExtractor.Extract(model);
+
+        Assert.Contains(result.Conflicts, c => c.Contains("foo") && c.Contains("bar"));
+    }
+
+    [Fact]
+    public void Pin_OnGroundNet_Warns()
+    {
+        // Ground at (0,0): port at (0,0). Pin(Num=1,Name="in") at (0,200): port at (0,0).
+        // Same world coordinate → Pin is on the ground net.
+        // Ground still wins ("0"); a "tied to ground" conflict is emitted.
+        var model = new SchematicEditModel();
+        model.Components.Add(new EditableComponent
+        {
+            InstanceName = "GND1",
+            Symbol       = SymbolKind.Ground,
+            X            = 0,
+            Y            = 0,
+        });
+        model.Components.Add(MakePin(1, "in", y: 200)); // port at (0,0)
+
+        var result = NetExtractor.Extract(model);
+
+        Assert.Contains(result.Conflicts, c => c.Contains("tied to ground"));
+    }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using CircuitRF.Core.Design;
 using CircuitRF.Ui.Schematic;
@@ -25,6 +26,14 @@ public class NetExtractorHierarchyTests
     {
         var c = new EditableComponent { Symbol = SymbolKind.Pin, X = cx, Y = cy };
         c.Parameters.Add(new EditableParameter { Name = "Num", Expression = num.ToString() });
+        return c;
+    }
+
+    private static EditableComponent Pin(int num, double cx, double cy, string name)
+    {
+        var c = new EditableComponent { Symbol = SymbolKind.Pin, X = cx, Y = cy };
+        c.Parameters.Add(new EditableParameter { Name = "Num",  Expression = num.ToString() });
+        c.Parameters.Add(new EditableParameter { Name = "Name", Expression = name });
         return c;
     }
 
@@ -274,6 +283,58 @@ public class NetExtractorHierarchyTests
         Assert.Contains(result.Conflicts, c => c.Contains("cycle") || c.Contains("instantiates itself"));
     }
 
+    // ── Test 5b: Pin-vs-label regression (the bug this brief fixes) ──────────
+
+    [Fact]
+    public void CellPinWithCoincidentLabel_BindsThroughToParent()
+    {
+        // Sub-cell: Pin1("in") + R1 + net label "mylabel" all on the same node.
+        // Before fix, "mylabel" shadowed "in" → cell port mismatch → floating internal node.
+        // After fix, Pin wins → net "in" matches Cell.Ports[0] → R1 connects through.
+        var sub = new SchematicEditModel();
+        sub.Components.Add(Pin(1, 0, 200, "in"));   // port at (0,0)
+        sub.Components.Add(Resistor("R1", 0, 400)); // port0=(0,200), port1=(0,600)
+        sub.Components.Add(Pin(2, 0, 800, "out"));  // port at (0,600) — shares with R1.port1
+        sub.Wires.Add(Wire((0, 0), (0, 200)));       // Pin1.port → R1.port0
+        sub.NetLabels.Add(new EditableNetLabel { Name = "mylabel", X = 0, Y = 0 });
+
+        var resolution = new CellResolution("cellFoo", sub, []);
+        var resolver   = Resolver(("cellFoo", resolution));
+
+        // Top-level: X1 is a 2-port cell instance at (0,200); parent nets "a" and "b".
+        var model = new SchematicEditModel();
+        var x1 = new EditableComponent
+        {
+            InstanceName = "X1",
+            Symbol       = SymbolKind.Resistor,
+            CellRef      = "cellFoo",
+            X            = 0,
+            Y            = 200,
+        };
+        model.Components.Add(x1);
+        model.NetLabels.Add(new EditableNetLabel { X = 0, Y = 0,   Name = "a" });
+        model.NetLabels.Add(new EditableNetLabel { X = 0, Y = 400, Name = "b" });
+
+        var result = NetExtractor.Extract(model, "tb", resolver);
+
+        // Library cell has the correct interface — Port names come from Pin Names.
+        var cell = result.Library.Find("cellFoo");
+        Assert.NotNull(cell);
+        Assert.Equal(2, cell.Ports.Count);
+        Assert.Equal("in",  cell.Ports[0]);
+        Assert.Equal("out", cell.Ports[1]);
+
+        // Sub-cell's R1 is on net "in" — not "mylabel" (Pin overrode the label).
+        var r1 = cell.Instances.First(i => i.InstanceName == "R1");
+        Assert.Equal("in",  r1.NetBindings[0]);
+        Assert.Equal("out", r1.NetBindings[1]);
+
+        // Top-level X1 correctly binds to parent nets.
+        var inst = Assert.Single(result.TestBench.Instances);
+        Assert.Equal("a", inst.NetBindings[0]);
+        Assert.Equal("b", inst.NetBindings[1]);
+    }
+
     // ── Test 6: port-count mismatch ───────────────────────────────────────────
 
     [Fact]
@@ -310,5 +371,250 @@ public class NetExtractorHierarchyTests
 
         // The mismatched instance is not emitted.
         Assert.Empty(result.TestBench.Instances);
+    }
+
+    // ── Test 7: resolved cell pins at non-default (horizontal) coordinates ───
+
+    /// <summary>
+    /// The core regression: a cell-ref instance whose .csym pins are at HORIZONTAL offsets
+    /// (local ±200 on X), NOT the built-in vertical default (local 0, ±200).
+    /// Before the fix, extraction used placeholder vertical geometry → wrong world coords →
+    /// wires at (±200, 0) didn't connect → auto-names instead of wire nets.
+    /// After the fix, PortDefsOf reads the resolved .csym pins → correct horizontal coords →
+    /// wires bind → NetBindings = the wire net names.
+    /// </summary>
+    [Fact]
+    public void CellInstance_PortsOnResolvedPins_NetThrough()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(),
+            "crftst_" + System.Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            Directory.CreateDirectory(tempDir);
+            const string cellName = "cell_h";
+            string cellDir = CellFolder.CreateCellFolder(tempDir, cellName);
+
+            // Symbol with HORIZONTAL pins at local (−200, 0) and (+200, 0).
+            // This is deliberately NOT the default vertical (0, ±200) layout.
+            var sym = new Symbol(
+                primitives: [],
+                pins:       [new SymbolPin(-200, 0, portIndex: 0, name: "P1"),
+                             new SymbolPin(+200, 0, portIndex: 1, name: "P2")],
+                portCount: 2);
+            string symPath = Path.Combine(
+                CellFolder.SubFolderPath(cellDir, ViewType.Symbol), $"{cellName}.csym");
+            SymbolPersistence.SaveToFile(symPath, sym);
+
+            // Sub-cell schematic: two interface pins connected by a wire.
+            var sub = new SchematicEditModel();
+            sub.Components.Add(Pin(1, 0, 200, "P1"));  // port at (0, 0)
+            sub.Components.Add(Pin(2, 0, 600, "P2"));  // port at (0, 400)
+            sub.Wires.Add(Wire((0, 0), (0, 400)));
+            var resolver = Resolver((cellName, new CellResolution(cellName, sub, [])));
+
+            // Parent: X1 at (0,0), R0 rotation → horizontal world pins at (−200,0) and (+200,0).
+            var model = new SchematicEditModel();
+            model.SchematicDirectory = tempDir;   // enables CellSymbolResolver path
+            var x1 = new EditableComponent
+            {
+                InstanceName = "X1",
+                Symbol       = SymbolKind.Generic,
+                CellRef      = cellName,
+                X            = 0,
+                Y            = 0,
+            };
+            model.Components.Add(x1);
+
+            // Labels at the HORIZONTAL pin world coords — NOT the default vertical positions.
+            model.NetLabels.Add(new EditableNetLabel { X = -200, Y = 0, Name = "in" });
+            model.NetLabels.Add(new EditableNetLabel { X =  200, Y = 0, Name = "out" });
+
+            var result = NetExtractor.Extract(model, "tb", resolver);
+
+            Assert.Empty(result.Conflicts);
+
+            var cell = result.Library.Find(cellName);
+            Assert.NotNull(cell);
+            Assert.Equal(2, cell.Ports.Count);
+
+            // The instance must bind to the wire nets, not auto-names ("n1", "n2").
+            var inst = Assert.Single(result.TestBench.Instances);
+            Assert.Equal("X1",  inst.InstanceName);
+            Assert.Equal(2,     inst.NetBindings.Count);
+            Assert.Equal("in",  inst.NetBindings[0]);
+            Assert.Equal("out", inst.NetBindings[1]);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+            CellSymbolResolver.InvalidateAll();
+        }
+    }
+
+    // ── Test 8: 3-port cell — no always-2 PortCount guard ────────────────────
+
+    [Fact]
+    public void ThreePortCell_AllPortsBind()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(),
+            "crftst_" + System.Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            Directory.CreateDirectory(tempDir);
+            const string cellName = "cell_3p";
+            string cellDir = CellFolder.CreateCellFolder(tempDir, cellName);
+
+            // 3-port symbol: gate left, drain + source right.
+            var sym = new Symbol(
+                primitives: [],
+                pins:       [new SymbolPin(-200,    0, portIndex: 0, name: "g"),
+                             new SymbolPin( 200, -100, portIndex: 1, name: "d"),
+                             new SymbolPin( 200,  100, portIndex: 2, name: "s")],
+                portCount: 3);
+            string symPath = Path.Combine(
+                CellFolder.SubFolderPath(cellDir, ViewType.Symbol), $"{cellName}.csym");
+            SymbolPersistence.SaveToFile(symPath, sym);
+
+            // Sub-cell has 3 interface pins.
+            var sub = new SchematicEditModel();
+            sub.Components.Add(Pin(1, 0, 200, "g"));   // port at (0,  0)
+            sub.Components.Add(Pin(2, 0, 600, "d"));   // port at (0,400)
+            sub.Components.Add(Pin(3, 0, 1000, "s"));  // port at (0,800)
+            sub.Wires.Add(Wire((0, 0),   (0, 400)));
+            sub.Wires.Add(Wire((0, 400), (0, 800)));
+            var resolver = Resolver((cellName, new CellResolution(cellName, sub, [])));
+
+            // Parent: X1 at (0,0), R0 — world pin coords: (−200,0), (200,−100), (200,100).
+            var model = new SchematicEditModel();
+            model.SchematicDirectory = tempDir;
+            var x1 = new EditableComponent
+            {
+                InstanceName = "X1",
+                Symbol       = SymbolKind.Generic,
+                CellRef      = cellName,
+                X            = 0,
+                Y            = 0,
+            };
+            model.Components.Add(x1);
+            model.NetLabels.Add(new EditableNetLabel { X = -200, Y =    0, Name = "gate" });
+            model.NetLabels.Add(new EditableNetLabel { X =  200, Y = -100, Name = "drain" });
+            model.NetLabels.Add(new EditableNetLabel { X =  200, Y =  100, Name = "source" });
+
+            var result = NetExtractor.Extract(model, "tb", resolver);
+
+            Assert.Empty(result.Conflicts);
+            var inst = Assert.Single(result.TestBench.Instances);
+            Assert.Equal(3, inst.NetBindings.Count);
+            Assert.Equal("gate",   inst.NetBindings[0]);
+            Assert.Equal("drain",  inst.NetBindings[1]);
+            Assert.Equal("source", inst.NetBindings[2]);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+            CellSymbolResolver.InvalidateAll();
+        }
+    }
+
+    // ── Test 9: built-in component unchanged after routing through PortDefsOf ─
+
+    [Fact]
+    public void BuiltInComponent_Unchanged()
+    {
+        // A plain resistor with wires attached — must extract identically after PortDefsOf routing.
+        var model = new SchematicEditModel();
+        model.Components.Add(Resistor("R1", 0, 200));  // pins at (0,0) and (0,400)
+        model.Wires.Add(Wire((0, 0),   (0, 0)));        // degenerate — just ensures node exists
+        model.Wires.Add(Wire((0, 400), (0, 400)));
+        model.NetLabels.Add(new EditableNetLabel { X = 0, Y =   0, Name = "a" });
+        model.NetLabels.Add(new EditableNetLabel { X = 0, Y = 400, Name = "b" });
+
+        var resolver = Resolver();
+        var result   = NetExtractor.Extract(model, "tb", resolver);
+
+        Assert.Empty(result.Conflicts);
+        var r1 = Assert.Single(result.TestBench.Instances);
+        Assert.Equal("R1", r1.InstanceName);
+        Assert.Equal(2, r1.NetBindings.Count);
+        Assert.Equal("a", r1.NetBindings[0]);
+        Assert.Equal("b", r1.NetBindings[1]);
+    }
+
+    // ── Test 10: round-trip — no floating nodes after fix ─────────────────────
+
+    [Fact]
+    public void RoundTrip_CellInstanceBindsThroughWithResolvedPins()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(),
+            "crftst_" + System.Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            Directory.CreateDirectory(tempDir);
+            const string cellName = "cell_rt";
+            string cellDir = CellFolder.CreateCellFolder(tempDir, cellName);
+
+            // 2-port symbol with horizontal pins — identical layout to Test 7.
+            var sym = new Symbol(
+                primitives: [],
+                pins:       [new SymbolPin(-200, 0, portIndex: 0, name: "In"),
+                             new SymbolPin(+200, 0, portIndex: 1, name: "Out")],
+                portCount: 2);
+            SymbolPersistence.SaveToFile(
+                Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Symbol), $"{cellName}.csym"),
+                sym);
+
+            // Sub-cell: R1 between the two interface pins.
+            var sub = new SchematicEditModel();
+            sub.Components.Add(Pin(1, 0, 200, "In"));   // port at (0, 0)
+            sub.Components.Add(Resistor("R1", 0, 400));
+            sub.Components.Add(Pin(2, 0, 600, "Out"));  // port at (0, 400)
+            sub.Wires.Add(Wire((0, 0),   (0, 200)));
+            sub.Wires.Add(Wire((0, 400), (0, 600)));
+
+            var resolver = Resolver((cellName, new CellResolution(cellName, sub, [])));
+
+            // Top-level schematic: X1 between two net-label nodes.
+            var model = new SchematicEditModel();
+            model.SchematicDirectory = tempDir;
+            var x1 = new EditableComponent
+            {
+                InstanceName = "X1",
+                Symbol       = SymbolKind.Generic,
+                CellRef      = cellName,
+                X            = 0,
+                Y            = 0,
+            };
+            model.Components.Add(x1);
+            model.NetLabels.Add(new EditableNetLabel { X = -200, Y = 0, Name = "src" });
+            model.NetLabels.Add(new EditableNetLabel { X =  200, Y = 0, Name = "dst" });
+
+            var result = NetExtractor.Extract(model, "tb", resolver);
+
+            // No conflicts — no floating nodes.
+            Assert.Empty(result.Conflicts);
+
+            // Library contains the cell with correct ports.
+            var cell = result.Library.Find(cellName);
+            Assert.NotNull(cell);
+            Assert.Equal(["In", "Out"], cell.Ports);
+
+            // Top-level instance binds to parent nets — not auto-names.
+            var inst = Assert.Single(result.TestBench.Instances);
+            Assert.Equal("src", inst.NetBindings[0]);
+            Assert.Equal("dst", inst.NetBindings[1]);
+
+            // Sub-cell's R1 sits between the cell interface ports.
+            var r1 = cell.Instances.First(i => i.InstanceName == "R1");
+            Assert.Equal("In",  r1.NetBindings[0]);
+            Assert.Equal("Out", r1.NetBindings[1]);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+            CellSymbolResolver.InvalidateAll();
+        }
     }
 }

@@ -1053,6 +1053,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         // Step 3: surface the result.
+        // Post engine/elaboration warnings first (present on Success and EngineError alike).
+        foreach (var w in result.Warnings)
+            Messages.Warning(w);
+
         switch (result.Status)
         {
             case RunStatus.NoAnalysis:

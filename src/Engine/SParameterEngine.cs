@@ -105,11 +105,12 @@ public static class SParameterEngine
             catch (SingularMatrixException ex) when (canRetry)
             {
                 // IfNecessary path: re-stamp and apply all non-Never regs, then retry.
-                Console.Error.WriteLine(
-                    $"[circuitRF] Regularization engaged at {hz:G4} Hz — matrix was singular " +
-                    $"({ex.Message.Split('\n')[0].TrimEnd()}); retrying with " +
-                    $"conductance={settings.ConductanceRegularization != RegularizationMode.Never} " +
-                    $"inductance={settings.InductanceRegularization != RegularizationMode.Never} regularization.");
+                // Emit once per run (dedup key); full diagnostic detail surfaced to the UI.
+                netlist.AddWarningOnce("sparam-regularization",
+                    $"S-parameter matrix singular — regularization (gmin) applied. Likely floating node(s):\n" +
+                    $"{ex.Message}\n" +
+                    $"(conductance={settings.ConductanceRegularization != RegularizationMode.Never} " +
+                    $"inductance={settings.InductanceRegularization != RegularizationMode.Never})");
 
                 StampAll(mna, netlist, omega);
                 ApplyRegularization(mna, netlist, nonGroundNodes, settings,
@@ -141,7 +142,9 @@ public static class SParameterEngine
 
         var refZ0 = z0PerPort.Length > 0 ? z0PerPort[0] : new Complex(50, 0);
         var snp   = new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
-        return DataSetBuilder.FromSnp(snp);
+        var ds    = DataSetBuilder.FromSnp(snp);            // S cube + uniform Z0 placeholder
+        ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0PerPort)); // overwrite with per-port truth
+        return ds;
     }
 
     // ── Assembly helpers ───────────────────────────────────────────────────────

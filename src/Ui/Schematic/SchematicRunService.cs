@@ -30,11 +30,19 @@ public sealed record AnalysisResult(string Name, DataSet Data);
 public sealed class RunResult(
     RunStatus                        status,
     string                           statusMessage,
-    IReadOnlyList<AnalysisResult>?   results = null)
+    IReadOnlyList<AnalysisResult>?   results  = null,
+    IReadOnlyList<string>?           warnings = null)
 {
     public RunStatus                       Status        { get; } = status;
     public string                          StatusMessage { get; } = statusMessage;
     public IReadOnlyList<AnalysisResult>   Results       { get; } = results ?? [];
+
+    /// <summary>
+    /// Elaboration and engine run-time warnings drained from
+    /// <see cref="CircuitRF.Core.Elaboration.ElaboratedNetlist.Warnings"/>.
+    /// Non-empty even on <see cref="RunStatus.EngineError"/> when the run partially succeeded.
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; } = warnings ?? [];
 
     // Convenience: callers that only need the DataSets (unchanged from Phase 6e).
     public IReadOnlyList<DataSet> DataSets => Results.Select(r => r.Data).ToList();
@@ -123,13 +131,18 @@ public static class SchematicRunService
         }
 
         // ── 5. Build outcome ───────────────────────────────────────────────────
+        // Drain elaboration + engine run-time warnings from the netlist.
+        IReadOnlyList<string> nlWarnings = nl.Warnings.Count > 0
+            ? [.. nl.Warnings]
+            : [];
+
         if (errors.Count > 0 && results.Count == 0)
             return new RunResult(RunStatus.EngineError,
-                string.Join("; ", errors));
+                string.Join("; ", errors), warnings: nlWarnings);
 
         if (results.Count == 0)
             return new RunResult(RunStatus.NoAnalysis,
-                "No supported analysis dispatched.");
+                "No supported analysis dispatched.", warnings: nlWarnings);
 
         var allNotes = new List<string>(notes);
         if (errors.Count > 0)
@@ -138,7 +151,7 @@ public static class SchematicRunService
         var summary = allNotes.Count > 0
             ? string.Join("; ", allNotes)
             : $"{results.Count} analysis run(s) complete";
-        return new RunResult(RunStatus.Success, summary, results);
+        return new RunResult(RunStatus.Success, summary, results, nlWarnings);
     }
 
     // ── Typed analysis dispatch ───────────────────────────────────────────────

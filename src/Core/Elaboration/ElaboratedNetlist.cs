@@ -42,15 +42,27 @@ public sealed class ElaboratedNetlist
     internal void SetResolvedGlobal(string name, Value val) => _resolvedGlobals[name] = val;
 
     /// <summary>
-    /// Design-rule warnings emitted during elaboration (buried Terms, duplicate Num, etc.).
-    /// Also written to Console.Error for headless runs.
+    /// Elaboration and engine run-time warnings (buried Terms, duplicate Num, regularization, HB
+    /// convergence issues, etc.). Also written to Console.Error for headless runs.
     /// </summary>
     public IReadOnlyList<string> Warnings => _warnings;
     private readonly List<string> _warnings = [];
+    private readonly HashSet<string> _seenWarningKeys = new(StringComparer.Ordinal);
 
-    internal void AddWarning(string message)
+    public void AddWarning(string message)
     {
         _warnings.Add(message);
         Console.Error.WriteLine($"[circuitRF] {message}");
+    }
+
+    /// <summary>
+    /// Adds a warning only if <paramref name="key"/> has not been seen in this run.
+    /// Prevents repeated identical warnings (e.g. per-frequency regularization messages)
+    /// from flooding the list — only the first occurrence is recorded.
+    /// </summary>
+    public void AddWarningOnce(string key, string message)
+    {
+        if (_seenWarningKeys.Add(key))
+            AddWarning(message);
     }
 }

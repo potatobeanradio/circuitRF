@@ -206,3 +206,25 @@ handle both `DataKind`s when consuming a cube. *(The on-disk **file format** is 
 see "File-format stability" above: break it freely, just upgrade exporter+importer+splotRF together. The
 lockstep that remains is the in-process API and the requirement that the three serialization sites move
 together — not backward-compatibility with old files.)*
+
+**Shipped (Phase 7.2a) — per-port reference impedance `Z0` cube.** Every S-parameter DataSet carries a
+**`Z0` complex cube** (name `"Z0"`, `DataKind.Complex`) with one axis `Axis("port", [1..n], "port")` (1-based
+port numbers) holding the per-port, possibly-complex reference impedances in complex ohms.
+
+Convention:
+- `Z0.ComplexValues[k]` = impedance of port `k+1` (0-based index, 1-based port number).
+- `DataSetBuilder.FromSnp` writes a **uniform** `Z0` cube (`all entries = snp.Z0`) — Touchstone is uniform by
+  definition; every Touchstone-derived S DataSet now carries a `Z0` cube, so consumers can rely on its presence.
+- `DataSetBuilder.BuildZ0Cube(Complex[] z0PerPort)` builds the cube from a per-port array.
+- `DataSetBuilder.ToSnp` reads the `Z0` cube: uniform → `SNP.Z0 = that value`; absent (legacy `.npy`) → 50 Ω;
+  non-uniform → `SNP.Z0 = port-1 value` + `RFNetwork.Warn(...)`.
+- `SParameterEngine.Run` overwrites the uniform placeholder with the true per-port complex values from
+  `z0PerPort` (already collected via `GetZ0` per Term/Port).
+- `Z0Kind` enum (`UniformReal`, `UniformComplex`, `NonUniform`) and `DataSetBuilder.ClassifyZ0(DataCube)` are
+  headless helpers for the Data Display non-uniform/complex indicator (Phase 7.2e).
+- The `.npy` exporter/importer are generic over `ds.Cubes` — `Z0` round-trips with no change to either.
+- **Lockstep:** splotRF must read the `Z0` cube and (a) renormalize/convert using the per-port
+  `RFNetwork` overloads (already exist) and (b) surface the non-uniform/complex indicator. The splotRF consumer
+  side is a separate lockstep item gated on Phase 7.2 Data Display work.
+
+See `circuitRF/docs/design/data-display.md` §7.2 "Design (RESOLVED)".

@@ -481,7 +481,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         {
             if (_plot is null) return;
             bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-                (_library?.Entries.Where(entry => !entry.Snp.IsEmpty).Count() ?? 0) > 1);
+                (_library?.Entries.Where(entry => entry.Snp is not null && !entry.Snp.IsEmpty).Count() ?? 0) > 1);
             await PlotExporter.ExportAsync(this, _plot, _theme, showFilePrefix, ContainerProvider?.Invoke());
         }
 
@@ -489,7 +489,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         {
             if (_plot is null) return;
             bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-                (_library?.Entries.Count(e => !e.Snp.IsEmpty) ?? 0) > 1);
+                (_library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
             await PlotExporter.CopyPlotToClipboardAsync(
                 this, _plot, _theme, showFilePrefix, ContainerProvider?.Invoke());
         }
@@ -523,7 +523,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         public override void Render(DrawingContext context)
         {
             bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-                (_library?.Entries.Where(e => !e.Snp.IsEmpty).Count() ?? 0) > 1);
+                (_library?.Entries.Where(e => e.Snp is not null && !e.Snp.IsEmpty).Count() ?? 0) > 1);
 
             var selectedMarkers = SelectedMarkersProvider?.Invoke()?.ToHashSet();
             SkiaSharp.SKColor selColor = selectedMarkers?.Count > 0
@@ -1221,7 +1221,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             Action? openEditor = infoVm is null ? null : () => ShowMarkerEditorFlyout(marker);
 
             bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-                (_library?.Entries.Count(e => !e.Snp.IsEmpty) ?? 0) > 1);
+                (_library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
             var menu = new ContextMenu();
             MarkerInfoBoxView.PopulateMarkerMenu(
                 menu, marker, trace, _plot.Traces,
@@ -1403,7 +1403,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (_plot is null) return;
             float zoom = (float)(ContainerProvider?.Invoke()?.ZoomLevel ?? 1.0);
             bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-                (_library?.Entries.Count(e => !e.Snp.IsEmpty) ?? 0) > 1);
+                (_library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
 
             var    sb        = new System.Text.StringBuilder();
             double freqScale = _plot.FreqUnits.Scale();

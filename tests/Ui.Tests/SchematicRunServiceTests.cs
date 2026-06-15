@@ -99,4 +99,67 @@ public sealed class SchematicRunServiceTests
             File.Delete(tmpPath);
         }
     }
+
+    // ── L1e: diagnostics channel — floating node produces non-empty Warnings ──
+
+    [Fact]
+    public void RunNetlist_FloatingNodeFromBuriedTerm_WarningsNonEmpty()
+    {
+        // Same floating-node circuit as EngineDiagnosticsChannelTests T1 but exercised
+        // via SchematicRunService.  RunResult.Warnings must be non-empty and contain
+        // the regularization notice surfaced by SParameterEngine.
+        const string cnl = """
+            Port:P1  n1 0  Num=1  Z=50 Ohm
+            R:R1  n1 0  R=50 Ohm
+            define Sub(A)
+              Term:T_buried  A 0  Num=1  Z=50 Ohm
+            end Sub
+            Sub:X1  n_float
+            analysis SP  type=sparam  start=1 GHz  stop=1 GHz  step=1 GHz
+            """;
+
+        var tmpPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tmpPath, cnl);
+            var result = SchematicRunService.RunNetlist(tmpPath);
+
+            Assert.NotEmpty(result.Warnings);
+            Assert.Contains(result.Warnings,
+                w => w.Contains("regularization", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            File.Delete(tmpPath);
+        }
+    }
+
+    // ── L1f: diagnostics channel — clean netlist yields empty Warnings ────────
+
+    [Fact]
+    public void RunNetlist_CleanNetlist_WarningsEmpty()
+    {
+        // A well-formed 2-port circuit: no floating nodes, no regularization needed.
+        // RunResult.Status must be Success and Warnings must be empty.
+        const string cnl = """
+            Port:P1  n1 0  Num=1  Z=50 Ohm
+            R:R1  n1 n2  R=50 Ohm
+            Port:P2  n2 0  Num=2  Z=50 Ohm
+            analysis SP  type=sparam  start=1 GHz  stop=1 GHz  step=1 GHz
+            """;
+
+        var tmpPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tmpPath, cnl);
+            var result = SchematicRunService.RunNetlist(tmpPath);
+
+            Assert.Equal(RunStatus.Success, result.Status);
+            Assert.Empty(result.Warnings);
+        }
+        finally
+        {
+            File.Delete(tmpPath);
+        }
+    }
 }

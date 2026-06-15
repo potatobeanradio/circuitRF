@@ -71,30 +71,34 @@ public static class NetExtractor
 
         var uf = new UnionFind();
 
+        // Pre-resolve cell-ref symbol geometry for this model (mirrors BuildRenderModel.ResolveAllCellRefs).
+        // Null when SchematicDirectory is not set; GetEffectivePortDefs falls back to SymbolPortDefs in that case.
+        var cellRefResolutions = BuildCellRefResolutions(model);
+
         // Detached-port synthetic keys — each detached port gets a unique key that can never
         // be produced by QK() for any finite schematic coordinate, so it will never union with
         // the geometric P-cell it overlaps.  Its root is added to AssignNetNames explicitly so
         // it receives an auto-name like "n3" rather than silently falling through to "0".
         var detachedKeys = new Dictionary<(string CompId, int PortIndex), (long, long)>();
         long detachedSeq  = 0;
-        void AddDetachedKey(string compId, int pi)
+        void AddDetachedKey(string compId, int portIdx)
         {
             long s  = detachedSeq++;
             var dk  = (long.MinValue + s, s);   // x ≈ -9.2e18: unreachable by real P-cells
-            detachedKeys[(compId, pi)] = dk;
+            detachedKeys[(compId, portIdx)] = dk;
             uf.Add(dk);
         }
 
         // ── Layer 1: union-find over on-P connection points ─────────────────
 
-        // Seed: all component pins.  Detached ports get synthetic keys; others get P-cells.
+        // Seed: all component pins using cell-ref-aware port geometry.
+        // Resolved cell-refs use .csym pin positions; unresolved fall back to SymbolPortDefs.
         foreach (var comp in model.Components)
         {
-            var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
-            for (int pi = 0; pi < portDefs.Length; pi++)
+            foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
             {
-                if (comp.IsPortDetached(pi)) { AddDetachedKey(comp.Id, pi); continue; }
-                var (px, py) = comp.GetPortWorldCoord(pi);
+                if (comp.IsPortDetached(def.PortIndex)) { AddDetachedKey(comp.Id, def.PortIndex); continue; }
+                var (px, py) = model.PortWorldOf(comp, def);
                 uf.Add(QK(px, py));
             }
         }
@@ -107,19 +111,23 @@ public static class NetExtractor
         foreach (var comp in model.Components)
         {
             if (comp.Disable != DisableState.Short) continue;
-            var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
-            if (portDefs.Length < 2) continue;
+            var defs = GetEffectivePortDefs(model, comp, cellRefResolutions);
+            if (defs.Count < 2) continue;
             // Find the first non-detached port as the union anchor; skip all detached ports.
-            int firstNd = -1;
-            for (int pi = 0; pi < portDefs.Length; pi++)
-                if (!comp.IsPortDetached(pi)) { firstNd = pi; break; }
-            if (firstNd < 0) continue;  // all ports detached — nothing to short
-            var (x0, y0) = comp.GetPortWorldCoord(firstNd);
-            var key0 = QK(x0, y0);
-            for (int pi = firstNd + 1; pi < portDefs.Length; pi++)
+            (float LocalX, float LocalY, int PortIndex) firstNd = default;
+            bool foundFirst = false;
+            foreach (var d in defs)
             {
-                if (comp.IsPortDetached(pi)) continue;
-                var (px, py) = comp.GetPortWorldCoord(pi);
+                if (!comp.IsPortDetached(d.PortIndex)) { firstNd = d; foundFirst = true; break; }
+            }
+            if (!foundFirst) continue;  // all ports detached — nothing to short
+            var (x0, y0) = model.PortWorldOf(comp, firstNd);
+            var key0 = QK(x0, y0);
+            foreach (var d in defs)
+            {
+                if (d.PortIndex == firstNd.PortIndex) continue;
+                if (comp.IsPortDetached(d.PortIndex)) continue;
+                var (px, py) = model.PortWorldOf(comp, d);
                 uf.Union(key0, QK(px, py));
             }
         }
@@ -152,7 +160,7 @@ public static class NetExtractor
 
         // ── Layer 2: assign stable net names ────────────────────────────────
 
-        var netNames = AssignNetNames(uf, QK, gs, model, labelNetKeys, conflicts, detachedKeys.Values, pinNetNameMap);
+        var netNames = AssignNetNames(uf, QK, gs, model, labelNetKeys, conflicts, detachedKeys.Values, pinNetNameMap, cellRefResolutions);
 
         // ── Compute CellPorts + conformance warnings ─────────────────────────
         var cellPorts = BuildCellPorts(pinInfos, conflicts);
@@ -185,12 +193,12 @@ public static class NetExtractor
             if (comp.CellRef is not null)
             {
                 var ci = EmitCellInstance(comp, model, uf, QK, netNames, detachedKeys,
-                                          cells, lib, inProgress, conflicts);
+                                          cells, lib, inProgress, conflicts, cellRefResolutions);
                 if (ci is not null) instances.Add(ci);
                 continue;
             }
 
-            var inst = EmitInstance(comp, uf, QK, netNames, detachedKeys);
+            var inst = EmitInstance(comp, model, cellRefResolutions, uf, QK, netNames, detachedKeys);
             if (inst is not null) instances.Add(inst);
         }
 
@@ -209,7 +217,8 @@ public static class NetExtractor
         ICellResolver? cells,
         Library lib,
         HashSet<string> inProgress,
-        List<string> conflicts)
+        List<string> conflicts,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
     {
         if (cells is null) return null;   // flat caller / no resolver — skip silently (back-compat)
 
@@ -244,24 +253,30 @@ public static class NetExtractor
             inProgress.Remove(cellName);
         }
 
-        var cellDef  = lib.Find(cellName)!;
-        var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+        var cellDef = lib.Find(cellName)!;
 
-        // BINDING CONTRACT GUARD: symbol port count must equal the cell's interface-pin count.
-        if (cellDef.Ports.Count != portDefs.Length)
+        // Port geometry: use resolved .csym pins when available; fall back to SymbolPortDefs
+        // for unresolvable cell-refs (SchematicDirectory not set or symbol not found).
+        // Sorted by PortIndex so NetBindings[k] aligns with Cell.Ports[k].
+        var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
+                          .OrderBy(d => d.PortIndex)
+                          .ToList();
+
+        // BINDING CONTRACT GUARD: resolved pin count must equal the cell's interface-pin count.
+        if (cellDef.Ports.Count != pinDefs.Count)
         {
             conflicts.Add($"Cell '{cellName}' instance '{comp.InstanceName}': symbol exposes " +
-                          $"{portDefs.Length} port(s) but the cell defines {cellDef.Ports.Count} " +
+                          $"{pinDefs.Count} port(s) but the cell defines {cellDef.Ports.Count} " +
                           $"interface pin(s); skipped.");
             return null;
         }
 
-        // NetBindings = parent net at each symbol port, in symbol-port order (== Cell.Ports order).
-        var nets = new List<string>(portDefs.Length);
-        for (int pi = 0; pi < portDefs.Length; pi++)
+        // NetBindings = parent net at each pin, in PortIndex order (== Cell.Ports order).
+        var nets = new List<string>(pinDefs.Count);
+        foreach (var def in pinDefs)
         {
-            var (px, py) = comp.GetPortWorldCoord(pi);
-            nets.Add(NetForPort(comp, pi, px, py, uf, QK, netNames, detachedKeys));
+            var (px, py) = model.PortWorldOf(comp, def);
+            nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
         }
 
         var overrides = comp.Parameters
@@ -515,7 +530,8 @@ public static class NetExtractor
         Dictionary<EditableNetLabel, (long, long)?> labelNetKeys,
         List<string> conflicts,
         IEnumerable<(long, long)>? extraRoots = null,
-        IReadOnlyDictionary<(long, long), string>? pinNetNameMap = null)
+        IReadOnlyDictionary<(long, long), string>? pinNetNameMap = null,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
     {
         var rootToName = new Dictionary<(long, long), string>();
 
@@ -545,29 +561,33 @@ public static class NetExtractor
                 rootToName[root] = lbl.Name;
         }
 
-        // Pin port names — applied after labels so an explicit net label beats the port name,
-        // but before auto-names so Pin-connected nets get their port identity for the elaborator.
+        // Pin port names — a Pin OWNS its net's name (beats a coincident label); ground still wins.
         if (pinNetNameMap is not null)
         {
             foreach (var (key, portName) in pinNetNameMap)
             {
                 if (!uf.Contains(key)) continue;
                 var root = uf.Find(key);
-                if (!rootToName.ContainsKey(root))
-                    rootToName[root] = portName;
+                if (rootToName.TryGetValue(root, out var existing) && existing == "0")
+                {
+                    // Pin sits on the ground net — interface can't bind to the parent. Warn, keep "0".
+                    conflicts.Add($"Pin net '{portName}' is tied to ground inside the cell; " +
+                                  $"its interface will not connect to the parent.");
+                    continue;
+                }
+                rootToName[root] = portName;   // override any label/auto name
             }
         }
 
-        // Auto-names: deterministic stable order — component list order, then pin index.
+        // Auto-names: deterministic stable order — component list order, then PortIndex order.
         var seen = new HashSet<(long, long)>();
         var orderedRoots = new List<(long, long)>();
 
         foreach (var comp in model.Components)
         {
-            var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
-            for (int pi = 0; pi < portDefs.Length; pi++)
+            foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
             {
-                var (px, py) = comp.GetPortWorldCoord(pi);
+                var (px, py) = model.PortWorldOf(comp, def);
                 var k = QK(px, py);
                 if (!uf.Contains(k)) continue;
                 var root = uf.Find(k);
@@ -631,12 +651,15 @@ public static class NetExtractor
 
     private static Instance? EmitInstance(
         EditableComponent comp,
+        SchematicEditModel model,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions,
         UnionFind uf,
         Func<double, double, (long, long)> QK,
         Dictionary<(long, long), string> netNames,
         Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys)
     {
         var reference = ComponentTypeRegistry.EngineReference(comp.Symbol, comp.PortCount);
+        // Keep built-in portDefs for ZPort "ref" name detection; geometry goes through PortWorldOf.
         var portDefs  = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
         var overrides = comp.Parameters
             .Select(p =>
@@ -651,11 +674,11 @@ public static class NetExtractor
         {
             var bindings = new List<string>();
             string? refNet = null;
-            for (int pi = 0; pi < portDefs.Length; pi++)
+            foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
             {
-                var (px, py) = comp.GetPortWorldCoord(pi);
-                var net = NetForPort(comp, pi, px, py, uf, QK, netNames, detachedKeys);
-                if (portDefs[pi].Name == "ref")
+                var (px, py) = model.PortWorldOf(comp, def);
+                var net = NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys);
+                if (portDefs[def.PortIndex].Name == "ref")
                     refNet = net == "0" ? null : net;
                 else
                     bindings.Add(net);
@@ -664,14 +687,57 @@ public static class NetExtractor
                    { RefNetBinding = refNet };
         }
 
-        // All built-in primitives: emit terminals in symbol order.
+        // All built-in primitives: emit terminals in PortIndex order.
         var nets = new List<string>(portDefs.Length);
-        for (int pi = 0; pi < portDefs.Length; pi++)
+        foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
         {
-            var (px, py) = comp.GetPortWorldCoord(pi);
-            nets.Add(NetForPort(comp, pi, px, py, uf, QK, netNames, detachedKeys));
+            var (px, py) = model.PortWorldOf(comp, def);
+            nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
         }
         return new Instance(comp.InstanceName, reference, nets, overrides);
+    }
+
+    // ── Cell-ref-aware port geometry helpers ─────────────────────────────────
+
+    /// <summary>
+    /// Builds the per-model cell-ref resolution map (mirrors BuildRenderModel.ResolveAllCellRefs).
+    /// Returns null when <paramref name="model"/>.SchematicDirectory is not set.
+    /// </summary>
+    private static Dictionary<string, CellSymbolResolution>? BuildCellRefResolutions(
+        SchematicEditModel model)
+    {
+        if (model.SchematicDirectory is null) return null;
+        Dictionary<string, CellSymbolResolution>? result = null;
+        foreach (var comp in model.Components)
+        {
+            if (comp.CellRef is null) continue;
+            result ??= new Dictionary<string, CellSymbolResolution>(StringComparer.Ordinal);
+            result[comp.Id] = CellSymbolResolver.Resolve(comp.CellRef, model.SchematicDirectory);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Cell-ref-aware port definitions for a component in PortIndex order.
+    /// Uses resolved .csym pins when available (SchematicDirectory set + symbol found);
+    /// falls back to built-in SymbolPortDefs for unresolvable cell-refs so existing
+    /// schematics without SchematicDirectory set continue to extract correctly.
+    /// For built-in (non-cell-ref) components, PortDefsOf already returns SymbolPortDefs.
+    /// </summary>
+    private static IReadOnlyList<(float LocalX, float LocalY, int PortIndex)> GetEffectivePortDefs(
+        SchematicEditModel model, EditableComponent comp,
+        Dictionary<string, CellSymbolResolution>? resolutions)
+    {
+        var defs = model.PortDefsOf(comp, resolutions);
+        if (defs.Count > 0) return defs;
+
+        // Fallback for unresolvable cell-refs: use built-in placeholder geometry.
+        // This keeps pre-fix behavior for models without SchematicDirectory set.
+        var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+        var result   = new (float LocalX, float LocalY, int PortIndex)[portDefs.Length];
+        for (int i = 0; i < portDefs.Length; i++)
+            result[i] = (portDefs[i].LocalX, portDefs[i].LocalY, i);
+        return result;
     }
 
     // ── Pin helpers ──────────────────────────────────────────────────────────

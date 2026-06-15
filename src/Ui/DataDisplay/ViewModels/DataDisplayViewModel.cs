@@ -859,7 +859,7 @@ public partial class DataDisplayViewModel : ViewModelBase
             if (Library is not null)
             {
                 snp = Library.Entries
-                    .FirstOrDefault(e => string.Equals(e.Snp.FilePath, resolvedPath,
+                    .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
                                          StringComparison.OrdinalIgnoreCase))?.Snp;
 
                 if (snp is null)
@@ -868,14 +868,14 @@ public partial class DataDisplayViewModel : ViewModelBase
                     {
                         await Library.LoadFileAsync(resolvedPath);
                         snp = Library.Entries
-                            .FirstOrDefault(e => string.Equals(e.Snp.FilePath, resolvedPath,
+                            .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
                                                  StringComparison.OrdinalIgnoreCase))?.Snp;
                     }
                     else
                     {
                         Library.AddBrokenEntry(resolvedPath);
                         snp = Library.Entries
-                            .FirstOrDefault(e => string.Equals(e.Snp.FilePath, resolvedPath,
+                            .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
                                                  StringComparison.OrdinalIgnoreCase))?.Snp;
                     }
                 }
@@ -1117,7 +1117,7 @@ public partial class DataDisplayViewModel : ViewModelBase
                 if (Library is not null)
                 {
                     snp = Library.Entries
-                        .FirstOrDefault(e => string.Equals(e.Snp.FilePath, resolvedPath,
+                        .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
                                              StringComparison.OrdinalIgnoreCase))?.Snp;
 
                     if (snp is null)
@@ -1126,14 +1126,14 @@ public partial class DataDisplayViewModel : ViewModelBase
                         {
                             await Library.LoadFileAsync(resolvedPath);
                             snp = Library.Entries
-                                .FirstOrDefault(e => string.Equals(e.Snp.FilePath, resolvedPath,
+                                .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
                                                      StringComparison.OrdinalIgnoreCase))?.Snp;
                         }
                         else
                         {
                             Library.AddBrokenEntry(resolvedPath);
                             snp = Library.Entries
-                                .FirstOrDefault(e => string.Equals(e.Snp.FilePath, resolvedPath,
+                                .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
                                                      StringComparison.OrdinalIgnoreCase))?.Snp;
                         }
                     }

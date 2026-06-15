@@ -74,6 +74,25 @@ S-parameter → `S {freq, i, j}` (Complex). DC → node V + branch I at ω = 0. 
 spectra (see `HarmonicBalance/CLAUDE.md`). Measurements are added to the DataSet as named cubes;
 the engine does not invent its own result type.
 
+## Engine diagnostics channel — firewall-safe, once per run
+Engines surface run-time warnings (S-param regularization, HB non-convergence) via
+`ElaboratedNetlist.AddWarning(message)` and `AddWarningOnce(key, message)` (Core-level;
+`AddWarningOnce` deduplicates by key using a `HashSet`). **The engine never touches
+`IMessageSink` directly** — that is a UI concept, and the UI firewall forbids any UI reference
+in `src/Engine`.
+
+- **`SParameterEngine`** calls `netlist.AddWarningOnce("sparam-regularization", ...)` once per
+  run when the IfNecessary path fires (singular matrix retry). The message includes the
+  `SingularMatrixException` detail, which names the floating node(s).
+- **`HbEngine.Run`** (and `RunTwoTone`) accumulate `ncCount` / `worstRes` / `totalPoints`
+  across ALL sweep points (no-sweep runs use `Enumerable.Repeat(0.0, 1)` so `totalPoints=1`),
+  then emit **one** summary via `AddWarning(...)` after the loop if `ncCount > 0`.
+
+`SchematicRunService` drains `nl.Warnings` after the run (even on `EngineError`) into
+`RunResult.Warnings`; `WorkspaceViewModel.RunAnalysis` posts them to the Messages pane at
+Warning level. Gated by `EngineDiagnosticsChannelTests` (T1: floating node; T2: HB MaxIter=1)
+and by `SchematicRunServiceTests` (L1e/L1f: warnings non-empty / empty).
+
 ## Phase 2 Step 1 deliverable — COMPLETE (2026-05-31)
 
 ### `MnaSystem` — v1 backing store

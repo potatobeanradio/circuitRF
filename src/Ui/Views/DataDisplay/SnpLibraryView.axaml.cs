@@ -44,8 +44,8 @@ public partial class SnpLibraryView : UserControl
 
             // If the dropped file's name matches a broken entry, restore it.
             var broken = vm.Entries.FirstOrDefault(e2 =>
-                e2.Snp.IsEmpty &&
-                string.Equals(Path.GetFileName(e2.Snp.FilePath), droppedName,
+                e2.IsBroken &&
+                string.Equals(Path.GetFileName(e2.FilePath), droppedName,
                               System.StringComparison.OrdinalIgnoreCase));
 
             if (broken != null)

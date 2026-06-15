@@ -423,7 +423,7 @@ namespace CircuitRF.Ui.DataDisplay
                 var  plot           = c.PlotVM.Plot;
                 var  markerBoxes    = c.GetMarkerInfoBoxes();
                 bool showFilePrefix = appSettings.EffectiveShowFilePrefix(
-                    (c.Library?.Entries.Count(e => !e.Snp.IsEmpty) ?? 0) > 1);
+                    (c.Library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
 
                 double sw     = c.LabelStripViewWidth;
                 int    nLeft  = c.LeftLabelStrips.Count;

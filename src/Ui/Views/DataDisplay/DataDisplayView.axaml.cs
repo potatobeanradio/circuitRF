@@ -50,15 +50,21 @@ public partial class DataDisplayView : UserControl
 
         var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title          = "Load Touchstone Files",
+            Title          = "Load Data Files",
             AllowMultiple  = true,
             FileTypeFilter = new[]
             {
+                new FilePickerFileType("Data Files")
+                {
+                    Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
+                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy" }
+                },
                 new FilePickerFileType("Touchstone Files")
                 {
                     Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
                                        "*.s5p", "*.s6p", "*.snp", "*.ts" }
                 },
+                new FilePickerFileType("NumPy Files") { Patterns = new[] { "*.npy" } },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }
         });
@@ -158,11 +164,17 @@ public partial class DataDisplayView : UserControl
             SuggestedStartLocation = suggestedDir,
             FileTypeFilter         = new[]
             {
+                new FilePickerFileType("Data Files")
+                {
+                    Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
+                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy" }
+                },
                 new FilePickerFileType("Touchstone Files")
                 {
                     Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
                                        "*.s5p", "*.s6p", "*.snp", "*.ts" }
                 },
+                new FilePickerFileType("NumPy Files") { Patterns = new[] { "*.npy" } },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }
         });

@@ -394,7 +394,7 @@ public partial class PlotContainerViewModel : ViewModelBase
 
                 // Show filename prefix when settings force it, or when multiple SNPs are loaded.
                 bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-                    (Library?.Entries.Count(e => !e.Snp.IsEmpty) ?? 0) > 1);
+                    (Library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
 
                 var leftTraces  = plot.LeftAxisTraces;
                 var rightTraces = plot.RightAxisTraces;

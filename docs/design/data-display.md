@@ -325,6 +325,76 @@ off cubes; Touchstone overlay via `FromSnp`.
 **Gate:** plot S21 in dB from a run's `.npy` and from a Touchstone file in the same Rect plot; Smith S11;
 a table; markers read correctly. Matches splotRF behavior for the `{freq,i,j}` case.
 
+**Design (RESOLVED — dual-source + per-port reference impedance).**
+- **Dual-source `Trace` (owner-approved).** A `Trace` is backed by either (a) an **SNP** (Touchstone — the
+  existing full S-parameter machinery: S→Y/Z, Z0 renorm, stability circles, Mu/MuPrime/MaxGain, marker
+  impedance) **or** (b) a **DataSet cube** bound as `(source, cube, slice, transform)`. The data-source
+  library (§2.2) decides which per file. The cube path serves HB V/I spectra + measurement traces (1-D after
+  slice; no S-param-specific ops — meaningless for a node voltage) **and** S-cube traces.
+- **Trace identity is stored as components** `(source · analysis · cube/quantity · slice · transform)` (§2.3)
+  regardless of which compute path runs. S-param-only controls (S/Y/Z, Z0, derived/stability) stay gated to the
+  S-cube trace kind — aligns with §2.8 per-trace-kind card bodies.
+- **Per-port reference impedance — the honest single-cube model.** A simulator may produce S referenced to
+  **per-port, possibly complex** terminations (non-uniform normalization). Touchstone (v1.1) is always uniform.
+  Today the `S{freq,i,j}` cube carries **no** Z0 (`DataSetBuilder.ToSnp` fabricates 50 Ω). **Decision:** store
+  `S` **once** in its native normalization **plus a `Z0` complex cube** `{port}` (1-based, length = nPorts;
+  per-port complex reference impedance) — the single source of truth. **Reject** shipping a second `S_50`
+  cube (redundant + lossy-in-the-wrong-direction; renorm is invertible given Z0). Touchstone → a `Z0{port}`
+  cube with all entries equal. *"Renormalized to uniform 50 Ω"* is a **render-time transform**
+  (`RFNetwork.SToS(mat, z0Old[], 50)`), not a stored cube — it becomes a trace transform option.
+- **The math is already per-port-ready (not a gap).** `RFNetwork.SToS`/`SToZ`/`SToY`/`Convert` all have
+  `Complex[]` per-port overloads (general Kurokawa power-wave renorm, per-port complex source AND target);
+  stability already (correctly) renormalizes to a **uniform real** reference internally before computing
+  μ/circles/MaxGain. So non-uniform/complex Z0 is **only** (1) a carrier gap (the `Z0{port}` cube) and (2) a
+  plumbing choice — NOT new RF math. A cube-S-trace computes Z0-dependent ops via the per-matrix per-port
+  overloads directly (element renorm, S→Y/Z, marker impedance); stability = renorm-per-port→uniform-real,
+  then the existing stability formulas. `SNP` stays uniform-only by design (so the uniform case can still
+  reuse the SNP path; only non-uniform sources bypass it).
+- **Always-on indicator + Messages warning (owner-requested safety).** Because S(i,j) IS Z0-dependent (the
+  stored matrix is referenced to the port impedances), a **subtle per-trace badge** appears on **any**
+  scattering (S-type) trace whose source `Z0{port}` is **non-uniform across ports OR complex** (uniform-complex
+  counts — it is also a "this isn't 50 Ω real" footgun; owner-confirmed). The actual per-port Z0 values are
+  surfaced on hover / in the inspector trace card, and the marker impedance line reflects them. A **one-time
+  `Message`** ("Detected non-uniform reference impedance…") fires when such a source is loaded/plotted. Goal:
+  prevent the VendorA-style failure mode where a user forgets the reference and mis-reads Z0-dependent results.
+- **Sequencing.** The `Z0{port}` carrier + the indicator + the Messages warning go in **from the start** (cheap;
+  makes the data honest and protects the user immediately). The uniform case keeps working through the existing
+  SNP path. Wiring the cube-S-trace to compute Z0-dependent ops via the per-port `RFNetwork` overloads (full
+  non-uniform correctness) is an **additive follow-on** so it doesn't bloat the core source-library/picker work.
+- **Producer status (VERIFIED — live latent bug, single-site fix).** `SParameterEngine.Run` **already computes
+  per-port complex Z0 correctly** — each Term/Port carries its own (complex-capable) `Z`, collected into
+  `z0PerPort`, and the S-matrix is built against it via `RFNetwork.YToS(yMat, z0PerPort)`. **But `Run` then
+  discards it:** it collapses the reference to **port 1's** Z0 (`refZ0 = z0PerPort[0]`), stuffs it into a uniform
+  `SNP`, and `FromSnp` stores no Z0 cube. So a user who sets non-uniform/complex Term `Z` **today** gets correct
+  S values but a silently mis-recorded reference (port-1 Z0, then 50 Ω after any round-trip) — the exact footgun
+  the indicator targets, currently *created* by circuitRF. **Fix is small + single-site:** `SParameterEngine.Run`
+  emits a `Z0{port}` cube from the `z0PerPort` it already holds (build the DataSet directly, or via a new
+  `DataSetBuilder` overload that writes S + Z0). The non-uniform path is **testable now** (set per-port Term `Z`),
+  so the indicator + warning have a live trigger. **Fold this producer fix into the 7.2 carrier brief** — it is the
+  same `Z0{port}` cube and also fixes a real correctness bug. (S-param is not swept via `ParametricSweepEngine`
+  today — single producer; if added later, `StackSweepAxis` makes it `Z0{sweep,port}` cleanly.) The consumer reads
+  `Z0{port}` when present and degrades to uniform (single value, else 50 Ω) when absent (e.g. Touchstone via
+  `FromSnp`, which writes a uniform `Z0` cube).
+- **Lockstep.** The `Z0{port}` cube is a **flagged DataSet-API addition** (splotRF must read it too) — recorded
+  in `src/Core/Data/CLAUDE.md` → "Change carefully". On-disk `.npy` round-trips it for free (alpha = break
+  format freely; upgrade exporter+importer+splotRF together).
+- **`Z0` under parametric sweep — two distinct cases (do not conflate).** `StackSweepAxis` prepends the sweep
+  axis to **every** cube, so a swept S-param run yields `S{…sweep…,freq,i,j}` **and** `Z0{…sweep…,port}`.
+  (1) *Z0 as a consequence of an unrelated sweep* (e.g. 2 bias points — Z0 didn't actually change): handled by
+  the **carrier**, not a dialog — the dual-source S-trace pins its sweep indices to locate its `S` slice and
+  applies the **same pins** to `Z0` to recover the `{port}` vector for `ClassifyZ0`/renorm/indicator. We keep
+  the generic stack (**option A: stack then slice-with-pins**) rather than special-casing `Z0` out, because Z0
+  *can* legitimately vary per point (a swept Term `Z`); the redundancy is trivial. `Z0`'s canonical shape is
+  `{port}`; consumers locate the `port` axis **by name** (not position) and operate on a single sweep point.
+  (2) *Z0 as an intentional sweep variable* (sweep a port `Z`, plot `S11 vs Z0`): Z0 becomes an X-axis or a
+  **family** — handled generically by **7.3 axis-role assignment** (Z0 is just another named axis by then), no
+  special work. (Shape contract lands in the 7.2a carrier brief; no swept-S test until an S-param sweep
+  producer exists — see below.)
+- **Brief plan (multiple small briefs):** (a) data-source library `file→DataSet` (+ `Z0{port}` carrier read +
+  uniform-vs-non-uniform detection); (b) `Trace` dual-source + identity components; (c) trace picker for ≤2-D
+  cubes; (d) minimal-label policy §2.7; (e) indicator + Messages warning; (f) follow-on: per-port Z0-dependent
+  compute on cube-S-traces.
+
 ### 7.3 — Multi-dimensional sweep trace dialog
 **Goal:** author traces from cubes with >2 axes via **axis-role assignment**, matching the Analyses-
 Properties UX style.
@@ -339,6 +409,17 @@ warning — see §4).
 **Gate:** from an HB sweep cube (e.g. `V {node,harmonic,Pin}`), plot |V(node,1)| vs Pin; switch X to
 harmonic and make Pin a family; confirm trace count + responsiveness within the guardrail.
 **Open Q:** exact family guardrail policy (default cap, behavior past it).
+**Motivating cases (axis-role assignment is the one generic mechanism for all of these):**
+- **DC curve tracer (coming):** sweep Vgs × Vds → a FET `Id` family — Vds = X, Vgs = family (one trace, N
+  curves). Classic two-axis sweep; the canonical reason families must be first-class.
+- **Swept S-param `Z0` (case 2 from §7.2):** an intentionally-swept port `Z` is just another named axis →
+  assign it X or family like any other. No `Z0`-specific UI.
+- **`Z0` as a sweep *consequence* (case 1 from §7.2) is NOT a 7.3 concern** — it's resolved by the carrier's
+  slice-with-pins; the user never assigns `Z0` a role in that case.
+**Producer note (forward-looking, not 7.3 UI work):** `ParametricSweepEngine.RunInner` currently dispatches
+only HB + nested sweeps. **DC and S-param need inner-analysis dispatch added** to be sweepable (DC for the
+curve-tracer family; S-param for swept-Z0 / bias-swept S). That engine work is separate from the 7.3 dialog and
+gated when those sweeps are actually wired.
 
 ### 7.4 — Loadpull contours (Γ-plane + Z-plane)  ⛔ design gated on white paper + Python
 **Goal:** first-class contour plotting with full user control, form *"Metric at constant value of a
@@ -404,6 +485,15 @@ so 7.1 persistence is designed to not preclude it.
   (7.1d). Inspector surface = dual (per-plot fly-out + Properties dock, §2.8); per-trace-kind card bodies;
   Material.Icons.Avalonia reused. Remaining: `.cdd` registration in `project-file-formats.md` / `.cws`
   (7.1e detail).
+- **7.2:** RESOLVED — **dual-source `Trace`** (SNP-backed Touchstone keeps full S-param machinery; DataSet-cube
+  binding `(source,cube,slice,transform)` for HB/measurements + S-cubes). Per-port (possibly complex) reference
+  impedance carried as a **`Z0{port}` complex cube** (single honest `S` + `Z0`; reject `S_50`/`S`); 50 Ω renorm
+  is a render-time transform. `RFNetwork` per-port overloads already exist — no new RF math. Always-on indicator
+  on scattering traces when Z0 is **non-uniform OR complex** + one-time Messages warning. Carrier+indicator+warning
+  ship first; full non-uniform Z0-dependent compute is an additive follow-on. `Z0{port}` is a flagged DataSet-API
+  addition (`src/Core/Data/CLAUDE.md`). Producer VERIFIED: `SParameterEngine.Run` already computes per-port Z0
+  (`YToS(yMat, z0PerPort)`) but discards it (`refZ0 = z0PerPort[0]` → uniform SNP) — a live latent mis-reference
+  bug; single-site fix folded into the 7.2 carrier brief; testable now. See §7.2 "Design (RESOLVED)".
 - **7.3:** family-sweep guardrail policy (default cap, over-cap behavior).
 - **7.4:** spline storage (trace-owned cache vs first-class `LoadpullSurface`); which FOMs are first-class;
   how "constant other-metric = value" is specified in the UI; contour level-set specification. **All gated
@@ -423,4 +513,7 @@ so 7.1 persistence is designed to not preclude it.
 - Sub-phase 7.4 (contours) blocked pending the loadpull spline white paper, reference Python, and the
   discussion chat.
 - **Phase 7.1d-2 — COMPLETE.** Properties-dock dual surface for the Data Display inspector. Build 0W/0E; 1206 tests pass.
-- **Next:** Phase 7.1d-3 (marker editor polish).
+- **Phase 7.1d-3 — COMPLETE.** Marker editor restyled to the inspector idiom + stale-marker guard in `MarkerEditorViewModel`.
+- **Renderer glyph fix — COMPLETE (pre-7.2 cleanup).** IBM Plex missing-glyph fallback: table sort arrow drawn as an `SKPath`; per-glyph DejaVu fallback for `∠` (and any Plex-missing glyph) in `TableRenderer`/`MarkerRenderer`.
+- **Phase 7.2a — COMPLETE.** `Z0{port}` carrier + producer fix: `DataSetBuilder.BuildZ0Cube`, `ClassifyZ0`, `Z0Kind` enum in `RfCore.Data`; `FromSnp` emits a uniform `Z0` cube on every S DataSet; `ToSnp` reads the cube (non-uniform → port-1 value + `RFNetwork.Warn`; absent → 50 Ω); `SParameterEngine.Run` overwrites the placeholder with the true per-port complex values. Build 0W/0E; full suite passes.
+- **Phase 7.2b — COMPLETE.** Data-source library generalised to load `.npy` alongside Touchstone. `SnpEntryViewModel` adds `SourceKind {Touchstone, Npy}`, nullable `SNP? Snp`, `DataSet? Data`, `string? FilePath` (single path authority). `IsBroken => _snp?.IsEmpty ?? false` — null Snp (cube-only .npy) is NOT broken. Command properties use `{ get; private set; } = null!` so `InitCommands` can assign them. `SnpLibraryViewModel` routes `LoadFileAsync` by extension: Touchstone → existing path; `.npy` → `DataSetImporter.Import` → new `.npy` entry ctor; broken-entry restore + `ReloadAsync` branch on `SourceKind`. `AddBrokenEntry` routes by extension. `.npy`-with-S: `DataSetBuilder.ToSnp(data)` exposes an `SNP` for the existing picker (the S-param gate). `.npy`-without-S: `Snp = null` (cube-only, not pickable until 7.2c). File-picker filter in `DataDisplayView.axaml.cs` updated to "Data Files" (Touchstone + .npy). All `e.Snp.FilePath` → `e.FilePath`; all `e.Snp.IsEmpty` guards updated with null checks. `SnpLibraryView.axaml.cs` drop handler uses `e.IsBroken` + `e.FilePath`. In-place refresh invariant: `RefreshNpy` calls `_snp.RefreshFrom(ToSnp(data))` when live (preserves trace bindings); replaces reference only when broken/null. Naming debt flagged in comments; rename to `DataSource*` deferred to 7.2c. Build 0W/0E; 1211 tests pass. S-param gate met (`.npy`-with-S pickable + plottable via existing SNP machinery). **Next:** Phase 7.2c — cube-native trace path for non-S cubes + identity components + minimal labels + class rename.

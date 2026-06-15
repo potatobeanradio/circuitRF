@@ -266,7 +266,8 @@ public sealed class HbEngine
         // ── DC operating point (Phase-3 NonlinearDcEngine) ─────────────────
         var dcResult = NonlinearDcEngine.Run(_netlist, _settings);
         if (!dcResult.Converged)
-            Console.Error.WriteLine("[HB] Warning: DC operating point did not converge; proceeding with best available.");
+            _netlist.AddWarningOnce("hb-dc-nonconverge",
+                "HB: DC operating point did not converge; proceeding with best available.");
 
         // ── Sweep loop ───────────────────────────────────────────────────────
         bool isSweep    = p.HasSweep;
@@ -274,6 +275,9 @@ public sealed class HbEngine
         var sweepVArr   = new List<Complex[,]>();
         var sweepINlArr = new List<Complex[,]>();
         var trace       = new HbConvergenceTrace();
+        int ncCount      = 0;
+        double worstRes  = 0.0;
+        int totalPoints  = 0;
 
         // C2: Per-branch current accumulator: "instancePath:terminalName" → spectra per sweep point.
         var portCurrentsByBranch = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
@@ -289,6 +293,7 @@ public sealed class HbEngine
 
         foreach (double sweepVal in sweepIterable)
         {
+            totalPoints++;
             if (isSweep) sweepVals.Add(sweepVal);
 
             // Update sweep variable and re-evaluate any sweep-dependent expressions.
@@ -343,10 +348,12 @@ public sealed class HbEngine
 
             if (!solveResult.Converged)
             {
+                ncCount++;
+                double res = solveResult.IterTrace.LastOrDefault()?.ResidualNorm ?? 0.0;
+                if (res > worstRes) worstRes = res;
                 Console.Error.WriteLine(
                     $"[HB] Non-convergence at {p.SweepVarName}={sweepVal}: " +
-                    $"‖F‖={solveResult.IterTrace.LastOrDefault()?.ResidualNorm:E3} " +
-                    $"after {solveResult.Iterations} iterations. " +
+                    $"‖F‖={res:E3} after {solveResult.Iterations} iterations. " +
                     $"Storing best-available result.");
             }
 
@@ -375,6 +382,12 @@ public sealed class HbEngine
             sweepINlArr.Add(solveResult.INl);
             prevV = V;
         }
+
+        // Emit one summarized convergence warning (never per-point spam).
+        if (ncCount > 0)
+            _netlist.AddWarning(
+                $"HB did not converge at {ncCount} of {totalPoints} sweep point(s) " +
+                $"(worst ‖F‖={worstRes:E3}); stored best-available results.");
 
         // Print convergence summary to stderr (primary diagnostic).
         trace.Print();
@@ -441,12 +454,16 @@ public sealed class HbEngine
 
         var dcResult = NonlinearDcEngine.Run(_netlist, _settings);
         if (!dcResult.Converged)
-            Console.Error.WriteLine("[HB2D] Warning: DC operating point did not converge; proceeding with best available.");
+            _netlist.AddWarningOnce("hb-dc-nonconverge",
+                "HB: DC operating point did not converge; proceeding with best available.");
 
         var sweepVals   = new List<double>();
         var sweepVArr   = new List<Complex[,]>();
         var sweepINlArr = new List<Complex[,]>();
         var trace       = new HbConvergenceTrace();
+        int ncCount2D   = 0;
+        double worstRes2D = 0.0;
+        int totalPoints2D = 0;
         Complex[,]? prevV = null;
 
         var portCurrentsByBranch = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
@@ -455,6 +472,7 @@ public sealed class HbEngine
 
         foreach (double sweepVal in p.SweepValues())
         {
+            totalPoints2D++;
             sweepVals.Add(sweepVal);
 
             if (p.SweepVarName is not null)
@@ -474,10 +492,14 @@ public sealed class HbEngine
                 sweepVal, solveResult.Iterations, solveResult.Converged, solveResult.IterTrace));
 
             if (!solveResult.Converged)
+            {
+                ncCount2D++;
+                double res2d = solveResult.IterTrace.LastOrDefault()?.ResidualNorm ?? 0.0;
+                if (res2d > worstRes2D) worstRes2D = res2d;
                 Console.Error.WriteLine(
                     $"[HB2D] Non-convergence at {p.SweepVarName}={sweepVal}: " +
-                    $"‖F‖={solveResult.IterTrace.LastOrDefault()?.ResidualNorm:E3} " +
-                    $"after {solveResult.Iterations} iters. Storing best-available result.");
+                    $"‖F‖={res2d:E3} after {solveResult.Iterations} iters. Storing best-available result.");
+            }
 
             Console.Error.Write($"[HB2D-DC] {p.SweepVarName}={sweepVal:F1}:");
             for (int n = 0; n < N; n++)
@@ -499,6 +521,11 @@ public sealed class HbEngine
             sweepINlArr.Add(solveResult.INl);
             prevV = V;
         }
+
+        if (ncCount2D > 0)
+            _netlist.AddWarning(
+                $"HB (two-tone) did not converge at {ncCount2D} of {totalPoints2D} sweep point(s) " +
+                $"(worst ‖F‖={worstRes2D:E3}); stored best-available results.");
 
         trace.Print();
 
