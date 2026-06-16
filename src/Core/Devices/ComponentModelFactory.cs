@@ -18,7 +18,7 @@ public static class ComponentModelFactory
             { "R",     () => new ResistorModel()       },
             { "C",     () => new CapacitorModel()    },
             { "L",     () => new InductorModel()     },
-            { "V",     () => new VoltageSourceModel() },
+            { "Vdc",   () => new VdcModel() },
             { "Port",  () => new PortModel()          },
             { "Term",  () => new TermModel()          },
             { "Short",  () => new ShortModel()          },
@@ -27,7 +27,7 @@ public static class ComponentModelFactory
 
     // Types that require resolved parameters at construction time.
     private static readonly HashSet<string> _parameterizedTypes =
-        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner" };
+        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone" };
 
     /// <summary>
     /// Returns a new ComponentModel, using resolved parameters when needed.
@@ -49,6 +49,8 @@ public static class ComponentModelFactory
             return CreateToneSourceModel(typeName, parameters);
         if (typeName.Equals("Tuner", StringComparison.OrdinalIgnoreCase))
             return CreateTunerModel(parameters);
+        if (typeName.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
+            return CreateP1ToneModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -294,6 +296,58 @@ public static class ComponentModelFactory
         return new TunerModel(instanceName, harmonicZ, zDefault, hasBiasTee, vbias);
     }
 
+    // ── P1Tone ────────────────────────────────────────────────────────────────
+
+    private static P1ToneModel CreateP1ToneModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        string instanceName = parameters.TryGetValue("P1ToneName", out var nm) && nm.Kind == ValueKind.String
+            ? nm.AsString() : "P1Tone";
+
+        // Z is both the Zdefault (catch-all) and the Z0 for Γ→Z conversion.
+        double z0 = parameters.TryGetValue("Z", out var zv) && zv.Kind == ValueKind.Real
+            ? zv.AsReal() : 50.0;
+        var zDefault = new Complex(z0, 0);
+
+        double pavlDbm = GetReal(parameters, "Pavl",  0.0);
+        double freqHz  = GetReal(parameters, "Freq",  1e9);
+        double phaseDeg = GetReal(parameters, "Phase", 0.0);
+
+        // Collect per-harmonic Z[k] and G[k] entries (same logic as Tuner).
+        var harmonicZ = new Dictionary<int, Complex>();
+        var hasZ      = new HashSet<int>();
+        var hasG      = new HashSet<int>();
+
+        foreach (var kv in parameters)
+        {
+            var mz = RxTunerZ.Match(kv.Key);
+            if (mz.Success)
+            {
+                int k = int.Parse(mz.Groups[1].Value);
+                if (hasG.Contains(k))
+                    throw new InvalidOperationException(
+                        $"P1Tone '{instanceName}': harmonic {k} has both Z[{k}] and G[{k}] — only one allowed.");
+                harmonicZ[k] = ToComplex(kv.Value);
+                hasZ.Add(k);
+                continue;
+            }
+            var mg = RxTunerG.Match(kv.Key);
+            if (mg.Success)
+            {
+                int k = int.Parse(mg.Groups[1].Value);
+                if (hasZ.Contains(k))
+                    throw new InvalidOperationException(
+                        $"P1Tone '{instanceName}': harmonic {k} has both Z[{k}] and G[{k}] — only one allowed.");
+                // Γ → Z: Z = Z0·(1+Γ)/(1−Γ)
+                var gamma = ToComplex(kv.Value);
+                harmonicZ[k] = z0 * (Complex.One + gamma) / (Complex.One - gamma);
+                hasG.Add(k);
+                continue;
+            }
+        }
+
+        return new P1ToneModel(instanceName, harmonicZ, zDefault, pavlDbm, freqHz, phaseDeg);
+    }
+
     private static Complex ToComplex(Value v)
     {
         if (v.Kind == ValueKind.Real)    return new Complex(v.AsReal(), 0);
@@ -301,8 +355,11 @@ public static class ComponentModelFactory
         throw new InvalidOperationException($"Expected numeric value, got {v.Kind}");
     }
 
-    // Regex for I[p,w] parameter names — named groups "p" and "w".
+    // Regex for I[p,w] two-index form — current (w=0) or charge (w=1).
     private static readonly Regex RxCurrentEq = new(@"^I\[(\d+),(\d+)\]$", RegexOptions.Compiled);
+    // Single-index sugar: I[p] → current (w=0); Q[p] → charge (w=1).
+    private static readonly Regex RxCurrentEq1 = new(@"^I\[(\d+)\]$", RegexOptions.Compiled);
+    private static readonly Regex RxChargeEq1  = new(@"^Q\[(\d+)\]$", RegexOptions.Compiled);
     // Regex for unsupported constructs that must hard-error.
     private static readonly Regex RxImplicitEq = new(@"^F\[",  RegexOptions.Compiled);
     private static readonly Regex RxCurrentCtrl = new(@"^C(port)?\[", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -353,30 +410,51 @@ public static class ComponentModelFactory
             // Silently skip noise entries (In, Nc — out of v1 scope, don't affect solve)
             if (RxNoise.IsMatch(key)) continue;
 
+            // Two-index form: I[p,w]
             var m = RxCurrentEq.Match(key);
-            if (!m.Success) continue;  // metadata, numeric params already handled above
+            if (m.Success)
+            {
+                int p = int.Parse(m.Groups[1].Value);
+                int w = int.Parse(m.Groups[2].Value);
+                if (w >= 2)
+                    throw new InvalidOperationException(
+                        $"SDD '{sddName}': weighting w≥2 (H[w]) not supported in v1 (got I[{p},{w}])");
+                ValidateAndBind(key, p, portCount, kv.Value, sddName, w == 0 ? currentAst : chargeAst);
+                continue;
+            }
 
-            int p = int.Parse(m.Groups[1].Value);
-            int w = int.Parse(m.Groups[2].Value);
+            // Single-index sugar: I[p] → current (w=0)
+            var m1 = RxCurrentEq1.Match(key);
+            if (m1.Success)
+            {
+                ValidateAndBind(key, int.Parse(m1.Groups[1].Value), portCount, kv.Value, sddName, currentAst);
+                continue;
+            }
 
-            if (w >= 2)
-                throw new InvalidOperationException(
-                    $"SDD '{sddName}': weighting w≥2 (H[w]) not supported in v1 (got I[{p},{w}])");
+            // Single-index sugar: Q[p] → charge (w=1)
+            var m2 = RxChargeEq1.Match(key);
+            if (m2.Success)
+            {
+                ValidateAndBind(key, int.Parse(m2.Groups[1].Value), portCount, kv.Value, sddName, chargeAst);
+                continue;
+            }
 
-            if (p < 1 || p > portCount)
-                throw new InvalidOperationException(
-                    $"SDD '{sddName}': port index p={p} out of range (1..{portCount}) in I[{p},{w}]");
-
-            if (kv.Value.Kind != ValueKind.String)
-                throw new InvalidOperationException(
-                    $"SDD '{sddName}': I[{p},{w}] must be stored as a String expression, got {kv.Value.Kind}");
-
-            var ast = Parser.Parse(kv.Value.AsString());
-
-            if (w == 0) currentAst[p - 1] = ast;
-            else        chargeAst [p - 1] = ast;  // w == 1: charge equation
+            // key is SddName, SddPortCount, or a resolved numeric param — already handled above
         }
 
         return new SddModel(sddName, portCount, currentAst, chargeAst, numericParams);
+    }
+
+    private static void ValidateAndBind(
+        string key, int p, int portCount, Value val, string sddName, Expr?[] target)
+    {
+        if (p < 1 || p > portCount)
+            throw new InvalidOperationException(
+                $"SDD '{sddName}': equation references port {p} but only {portCount} port(s) of nets were given" +
+                $" (need {p * 2} nets for a {p}-port SDD: p1+ p1− … p{p}+ p{p}−)");
+        if (val.Kind != ValueKind.String)
+            throw new InvalidOperationException(
+                $"SDD '{sddName}': {key} must be stored as a String expression, got {val.Kind}");
+        target[p - 1] = Parser.Parse(val.AsString());
     }
 }

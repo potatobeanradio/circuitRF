@@ -46,6 +46,10 @@ public sealed class Elaborator
             if (ec.Model is MutualInductanceModel m)
                 m.Resolve(netlist, ec);
 
+        // Propagate label provenance from TestBench (top-level names only; no path prefix needed).
+        foreach (var name in tb.LabeledNets)
+            netlist.Nodes.LabeledNames.Add(name);
+
         // Populate ResolvedGlobals — used by the HB engine to resolve analysis directives
         // and re-evaluate sweep-dependent expressions at each sweep step.
         foreach (var v in tb.GlobalVariables)
@@ -174,6 +178,10 @@ public sealed class Elaborator
                                      ?? throw new InvalidOperationException(
                                          $"Failed to create model for primitive '{inst.Reference}' at '{childPath}'");
 
+                if (model is ToneSourceModel tsm)
+                    foreach (var w in tsm.GetZeroHzToneWarnings(childPath))
+                        netlist.AddWarningOnce($"zero-hz-tone:{childPath}", w);
+
                 // Reference node: null RefNetBinding → ground (0); otherwise resolve the named net.
                 var refNode = inst.RefNetBinding is null
                               ? 0
@@ -187,6 +195,13 @@ public sealed class Elaborator
                     int nBlock = netlist.Nodes.GetOrAssign($"__tuner_{childPath}_block");
                     int nBias  = netlist.Nodes.GetOrAssign($"__tuner_{childPath}_bias");
                     resolvedNodes = [..resolvedNodes, nBlock, nBias];
+                }
+
+                // P1Tone: mint one internal node (junction between V-source and Z_Port).
+                if (inst.Reference.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
+                {
+                    int nDrv = netlist.Nodes.GetOrAssign($"__p1tone_{childPath}_drv");
+                    resolvedNodes = [..resolvedNodes, nDrv];
                 }
 
                 // Layer-2 + Layer-3 linter: a Term/Port inside an instantiated sub-cell is a
@@ -236,6 +251,8 @@ public sealed class Elaborator
         if (inst.Reference.Equals("V_1Tone", StringComparison.OrdinalIgnoreCase) ||
             inst.Reference.Equals("V_nTone", StringComparison.OrdinalIgnoreCase))
             return ResolveToneSourceParameters(inst, parentScope);
+        if (inst.Reference.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
+            return ResolveP1ToneParameters(inst, parentScope);
 
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
@@ -265,7 +282,17 @@ public sealed class Elaborator
                 maxIdx = Math.Max(maxIdx, int.Parse(m.Groups[2].Value));
             }
         }
-        result["ZPortCount"] = new Value((double)Math.Max(1, maxIdx));
+        int portCount = Math.Max(1, maxIdx);
+        result["ZPortCount"] = new Value((double)portCount);
+
+        int netCount = inst.NetBindings.Count;
+        if (netCount % 2 != 0)
+            throw new InvalidOperationException(
+                $"Z_Port '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); got {netCount}.");
+        if (netCount != 2 * portCount)
+            throw new InvalidOperationException(
+                $"Z_Port '{inst.InstanceName}': expected {2 * portCount} nets (2 per port: +,−) for a {portCount}-port " +
+                $"(Z[{portCount},{portCount}] present); got {netCount}. Each port needs a +,− net pair.");
 
         foreach (var ov in inst.Overrides)
         {
@@ -380,10 +407,39 @@ public sealed class Elaborator
         }
     }
 
+    // ── P1Tone parameter resolution ───────────────────────────────────────────
+
+    private static readonly Regex RxP1ToneZEntry = new(@"^Z\[(\d+)\]$", RegexOptions.Compiled);
+    private static readonly Regex RxP1ToneGEntry = new(@"^G\[(\d+)\]$", RegexOptions.Compiled);
+
+    private IReadOnlyDictionary<string, Value> ResolveP1ToneParameters(
+        Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        result["P1ToneName"] = new Value(inst.InstanceName);
+
+        foreach (var ov in inst.Overrides)
+        {
+            // Z[k] and G[k] may be complex; store as-is for the factory to parse.
+            if (RxP1ToneZEntry.IsMatch(ov.Name) || RxP1ToneGEntry.IsMatch(ov.Name))
+            {
+                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                catch { /* skip unresolvable */ }
+            }
+            else
+            {
+                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                catch { /* skip unresolvable */ }
+            }
+        }
+
+        return result;
+    }
+
     // Port voltage names in SDD equations — _v1, _v2, … (injected at eval time, not scope vars).
     private static readonly Regex RxPortVoltage = new(@"^_v\d+$", RegexOptions.Compiled);
-    // SDD equation parameter name pattern.
-    private static readonly Regex RxSddEquation = new(@"^[IFCi][^\[]*\[", RegexOptions.Compiled);
+    // SDD equation parameter name pattern — matches I[...], Q[...], F[...], C[...], i[...].
+    private static readonly Regex RxSddEquation = new(@"^[IFCQi][^\[]*\[", RegexOptions.Compiled);
 
     private IReadOnlyDictionary<string, Value> ResolveSddParameters(
         Instance inst,
@@ -392,7 +448,12 @@ public sealed class Elaborator
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
 
         // Port count = half the net count (2N nets in +/− pairs).
-        int portCount = inst.NetBindings.Count / 2;
+        int netCount = inst.NetBindings.Count;
+        if (netCount % 2 != 0)
+            throw new InvalidOperationException(
+                $"SDD '{inst.InstanceName}': expected an even number of nets (2 per port: +,−); " +
+                $"got {netCount}. An SDD<k> needs 2k nets.");
+        int portCount = netCount / 2;
         result["SddPortCount"] = new Value((double)portCount);
         result["SddName"]      = new Value(inst.InstanceName);
 

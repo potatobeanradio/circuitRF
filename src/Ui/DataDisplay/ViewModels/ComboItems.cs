@@ -101,15 +101,18 @@ public sealed class LineModeItem
 
 // ---- CubeTransformItem -----------------------------------------------------
 // Wraps a CubeTransform enum value with a human-readable label.
+// Enabled=false marks cube-only entries that are shown greyed for network traces.
 
 public sealed class CubeTransformItem
 {
     public CubeTransform Transform { get; }
     public string        Label     { get; }
+    public bool          Enabled   { get; }
 
-    public CubeTransformItem(CubeTransform transform)
+    public CubeTransformItem(CubeTransform transform, bool enabled = true)
     {
         Transform = transform;
+        Enabled   = enabled;
         Label = transform switch
         {
             CubeTransform.None  => "None",

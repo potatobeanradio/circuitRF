@@ -250,33 +250,68 @@ namespace CircuitRF.Ui.DataDisplay
             using var boldFont       = new SKFont(SkiaFonts.PlexBold,      fs);
             using var dejaVuRegular  = new SKFont(SkiaFonts.DejaVuRegular, fs);
 
-            double[] freqs = GetSortedFrequencies(plot);
+            bool cubeMode = plot.Traces.Count > 0 && plot.Traces.All(t => t.IsCubeBound);
+            double[] freqs = GetSortedRowAxis(plot);
             float maxW = 0;
 
             // Measure header — freq column omits the glyph arrow (drawn as an SKPath at render time);
             // reserve fixed space for the drawn triangle instead.
-            string headerText = colIndex == 0
-                ? $"Freq ({plot.FreqUnits.Description()})"
-                : (colIndex - 1 < plot.Traces.Count ? plot.Traces[colIndex - 1].ShortDescription : "");
+            string headerText;
+            if (colIndex == 0)
+            {
+                if (cubeMode && plot.Traces.Count > 0)
+                {
+                    var x0 = plot.Traces[0];
+                    if (string.IsNullOrEmpty(x0.CubeXUnit))
+                        headerText = x0.CubeXAxisName;
+                    else if (IsFreqUnit(x0.CubeXUnit))
+                        headerText = $"{x0.CubeXAxisName} ({plot.FreqUnits.Description()})";
+                    else
+                        headerText = $"{x0.CubeXAxisName} ({x0.CubeXUnit})";
+                }
+                else
+                {
+                    headerText = $"Freq ({plot.FreqUnits.Description()})";
+                }
+            }
+            else
+            {
+                if (colIndex - 1 < plot.Traces.Count)
+                {
+                    var t = plot.Traces[colIndex - 1];
+                    headerText = cubeMode ? t.CubeShorthand : t.ShortDescription;
+                }
+                else
+                {
+                    headerText = "";
+                }
+            }
             maxW = Math.Max(maxW, boldFont.MeasureText(headerText));
             if (colIndex == 0)
-                maxW += fs * 0.6f + TextCellPaddingX; // space for drawn triangle
+            {
+                float spaceW = boldFont.MeasureText(" ");
+                maxW += spaceW * 1.5f + fs * 0.6f + TextCellPaddingX; // gap + triangle
+            }
 
             // Measure data rows — use fallback-aware measure so ∠ cells aren't under-measured.
+            string plotFmt = $"{plot.FormatString}{plot.MaximumFractionDigits}";
+            bool cubeFreqAxis = cubeMode && plot.Traces.Count > 0 && IsFreqUnit(plot.Traces[0].CubeXUnit);
             foreach (double freq in freqs)
             {
                 string cellText;
                 if (colIndex == 0)
                 {
-                    double fScaled = freq * plot.FreqUnits.Scale();
-                    string fmt = $"{plot.FormatString}{plot.MaximumFractionDigits}";
-                    cellText = fScaled.ToString(fmt);
+                    cellText = (cubeMode && !cubeFreqAxis)
+                        ? freq.ToString(plotFmt)
+                        : (freq * plot.FreqUnits.Scale()).ToString(plotFmt);
                 }
                 else
                 {
                     int traceIdx = colIndex - 1;
                     if (traceIdx >= plot.Traces.Count) continue;
-                    cellText = FormatTraceCell(plot.Traces[traceIdx], freq);
+                    cellText = cubeMode
+                        ? FormatCubeCellAt(plot.Traces[traceIdx], freq)
+                        : FormatTraceCell(plot.Traces[traceIdx], freq);
                 }
                 maxW = Math.Max(maxW,
                     colIndex == 0
@@ -318,7 +353,7 @@ namespace CircuitRF.Ui.DataDisplay
                 ScaledPaddingX = TextCellPaddingX * zoomLevel,
                 HeaderH       = fs * (1 + RowPaddingFraction * 2),
                 RowH          = fs * (1 + RowPaddingFraction),
-                Frequencies   = GetSortedFrequencies(plot),
+                Frequencies   = GetSortedRowAxis(plot),
                 ScrollIndex   = Math.Max(0, plot.TableViewScrollIndex),
             };
 
@@ -365,6 +400,26 @@ namespace CircuitRF.Ui.DataDisplay
             double[] arr = set.ToArray();
             if (!plot.TableViewAscendingSortOrder)
                 Array.Reverse(arr);
+            return arr;
+        }
+
+        /// <summary>
+        /// Returns the sorted row axis for the table.  When all traces are cube-bound,
+        /// returns the union of their X values (the kept/sweep axis, e.g. Pin values).
+        /// Otherwise falls back to <see cref="GetSortedFrequencies"/>.
+        /// </summary>
+        public static double[] GetSortedRowAxis(Plot plot)
+        {
+            if (!plot.Traces.All(t => t.IsCubeBound))
+                return GetSortedFrequencies(plot);
+
+            var set = new SortedSet<double>();
+            foreach (var t in plot.Traces)
+                if (t.CubeXValues is { } xs)
+                    foreach (var x in xs) set.Add(x);
+
+            double[] arr = set.ToArray();
+            if (!plot.TableViewAscendingSortOrder) Array.Reverse(arr);
             return arr;
         }
 
@@ -431,6 +486,23 @@ namespace CircuitRF.Ui.DataDisplay
                 string fmt = $"{trace.FormatString}{trace.MaximumFractionDigits}";
                 return scalar.ToString(fmt);
             }
+        }
+
+        private static bool IsFreqUnit(string? unit) =>
+            unit is "Hz" or "kHz" or "MHz" or "GHz";
+
+        /// <summary>
+        /// Looks up <paramref name="xValue"/> in <paramref name="trace"/>.CubeXValues and
+        /// returns the post-transform formatted cell string. "NaN" if the value is absent.
+        /// </summary>
+        private static string FormatCubeCellAt(Trace trace, double xValue)
+        {
+            var xs = trace.CubeXValues;
+            if (xs is null) return "NaN";
+            for (int i = 0; i < xs.Count; i++)
+                if (xs[i] == xValue)
+                    return trace.FormatCubeCell(i, trace.FormatString, trace.MaximumFractionDigits);
+            return "NaN";
         }
 
         private static string FormatRI(System.Numerics.Complex c, string fmt)
@@ -702,19 +774,36 @@ namespace CircuitRF.Ui.DataDisplay
             float textY = layout.HeaderH * HeaderTextVertFraction;
             float fs    = boldFont.Size;
 
-            // Freq column header — draw text without arrow glyph, then draw triangle as SKPath.
-            string freqHeaderText = $"Freq ({plot.FreqUnits.Description()})";
+            bool cubeMode = plot.Traces.Count > 0 && plot.Traces.All(t => t.IsCubeBound);
+
+            // Freq / X-axis column header.
+            string col0Header;
+            if (cubeMode && plot.Traces.Count > 0)
+            {
+                var x0 = plot.Traces[0];
+                if (string.IsNullOrEmpty(x0.CubeXUnit))
+                    col0Header = x0.CubeXAxisName;
+                else if (IsFreqUnit(x0.CubeXUnit))
+                    col0Header = $"{x0.CubeXAxisName} ({plot.FreqUnits.Description()})";
+                else
+                    col0Header = $"{x0.CubeXAxisName} ({x0.CubeXUnit})";
+            }
+            else
+            {
+                col0Header = $"Freq ({plot.FreqUnits.Description()})";
+            }
             DrawClippedText(canvas, boldFont, textPaint,
-                freqHeaderText,
+                col0Header,
                 layout.ColX[0], textY, layout.ColW[0],
                 layout.ScaledPaddingX, CellHeaderHorizAlign, dejaVuBold);
 
             // Drawn sort-direction triangle, positioned just right of the header text.
             float triSize   = fs * 0.6f;
             float measuredW = Math.Min(
-                boldFont.MeasureText(freqHeaderText),
+                boldFont.MeasureText(col0Header),
                 layout.ColW[0] - layout.ScaledPaddingX * 2);
-            float triCx = layout.ColX[0] + layout.ScaledPaddingX + measuredW + triSize * 0.5f + 2f;
+            float spaceW = boldFont.MeasureText(" ");
+            float triCx  = layout.ColX[0] + layout.ScaledPaddingX + measuredW + spaceW * 1.5f + triSize * 0.5f;
             float triMidY = layout.HeaderH * 0.5f;
 
             DrawSortArrow(canvas, plot.TableViewAscendingSortOrder, triCx, triMidY, triSize, textPaint);
@@ -724,7 +813,17 @@ namespace CircuitRF.Ui.DataDisplay
             {
                 int    c     = ti + 1;
                 var    trace = plot.Traces[ti];
-                string label = showFilePrefix ? trace.Description : trace.ShortDescription;
+                string label;
+                if (cubeMode)
+                {
+                    label = trace.CubeShorthand;
+                    if (showFilePrefix && trace.SourcePath != null)
+                        label = System.IO.Path.GetFileNameWithoutExtension(trace.SourcePath) + ".." + label;
+                }
+                else
+                {
+                    label = showFilePrefix ? trace.Description : trace.ShortDescription;
+                }
                 DrawClippedText(canvas, boldFont, textPaint,
                     label, layout.ColX[c], textY, layout.ColW[c],
                     layout.ScaledPaddingX, CellHeaderHorizAlign);
@@ -778,6 +877,9 @@ namespace CircuitRF.Ui.DataDisplay
             string freqFmt   = $"{plot.FormatString}{plot.MaximumFractionDigits}";
             float  canvasH   = (float)canvasSize.H;
 
+            bool cubeMode     = plot.Traces.Count > 0 && plot.Traces.All(t => t.IsCubeBound);
+            bool cubeFreqAxis = cubeMode && plot.Traces.Count > 0 && IsFreqUnit(plot.Traces[0].CubeXUnit);
+
             for (int r = 0; r < layout.VisibleRowCount; r++)
             {
                 int absRow = layout.ScrollIndex + r;
@@ -792,9 +894,13 @@ namespace CircuitRF.Ui.DataDisplay
                 // last row.  The canvas ClipRect (set in Draw) trims any overflow.
                 float textY = rowTop + layout.RowH * CellTextVertFraction;
 
-                // Frequency cell — numeric only, no special glyphs.
+                // Column 0: X-axis value.  Frequency cube axes scale to plot FreqUnits;
+                // non-frequency cube axes (Pin/dBm, bias/V) remain unscaled.
+                string col0Text = (cubeMode && !cubeFreqAxis)
+                    ? freq.ToString(freqFmt)
+                    : (freq * freqScale).ToString(freqFmt);
                 DrawClippedText(canvas, regularFont, textPaint,
-                    (freq * freqScale).ToString(freqFmt),
+                    col0Text,
                     layout.ColX[0], textY, layout.ColW[0],
                     layout.ScaledPaddingX, CellDataHorizAlign);
 
@@ -802,8 +908,11 @@ namespace CircuitRF.Ui.DataDisplay
                 for (int ti = 0; ti < plot.Traces.Count; ti++)
                 {
                     int c = ti + 1;
+                    string cellText = cubeMode
+                        ? FormatCubeCellAt(plot.Traces[ti], freq)
+                        : FormatTraceCell(plot.Traces[ti], freq);
                     DrawClippedText(canvas, regularFont, textPaint,
-                        FormatTraceCell(plot.Traces[ti], freq),
+                        cellText,
                         layout.ColX[c], textY, layout.ColW[c],
                         layout.ScaledPaddingX, CellDataHorizAlign, dejaVuRegular);
                 }

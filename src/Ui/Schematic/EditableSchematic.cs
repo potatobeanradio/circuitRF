@@ -1,3 +1,4 @@
+using System.Linq;
 using CircuitRF.Core.Design;
 
 namespace CircuitRF.Ui.Schematic;
@@ -45,8 +46,8 @@ public static class SymbolPortDefs
 
     /// <summary>
     /// Returns port definitions for the given kind and (for variadic types) port count.
-    /// ZPort and Sdd generate <paramref name="portCount"/> pins arranged symmetrically:
-    /// left group = ports 1..⌈N/2⌉ at x=−150, right group = ports ⌈N/2⌉+1..N at x=+150.
+    /// ZPort and Sdd generate 2N pins as differential ± pairs — same generator.
+    /// Pin index order: pin[2(p-1)] = "p+", pin[2(p-1)+1] = "p-".
     /// </summary>
     public static (string Name, float LocalX, float LocalY)[] For(SymbolKind kind, int portCount)
     {
@@ -57,44 +58,66 @@ public static class SymbolPortDefs
             // Term: two terminals — "+" (signal, index 0) and "−" (reference, index 1).
             // Pin order is the contract: NetBindings[0]=+ net, NetBindings[1]=− net.
             case SymbolKind.Term:    return [("+", 0f, -200f), ("−", 0f, +200f)];
-            // Pin: one connection terminal at the lead tip.
-            case SymbolKind.Pin:     return [("1", 0f, -200f)];
+            // Pin: one connection terminal at the lead tip (horizontal, tip on the right).
+            case SymbolKind.Pin:     return [("1", 200f, 0f)];
             case SymbolKind.FetSdd:  return [("gate",   -200f,   0f),
                                              ("drain",   200f, -100f),
                                              ("source",  200f,  100f)];
             case SymbolKind.ZPort:
             case SymbolKind.Sdd:
-                return GeneratePorts(portCount >= 1 ? portCount : 2);
+                return GenerateSddPorts(portCount >= 1 ? portCount : 2);
             default:
                 return [("1", 0f, -200f), ("2", 0f, 200f)];
         }
     }
 
-    // Generates N+1 schematic pins for an N-port ZPort/Sdd:
-    //   N signal ports split left/right + 1 shared reference port on the right.
-    // Convention per ZPortModel: N port nodes (signal) + node 0 (reference/ground).
-    //   Z1P → 2 pins: port "1" left, port "ref" right.
-    //   Z2P → 3 pins: port "1" left, ports "2"+"ref" right.
-    //   ZNP → N+1 pins: ceil(N/2) signal left, floor(N/2) signal + ref right.
-    private static (string Name, float LocalX, float LocalY)[] GeneratePorts(int n)
+    // Generates 2N schematic pins for an N-port SDD/ZPort.
+    // Ports are split left/right: ceil(N/2) ports on the left (x=−200), floor(N/2) on the right (x=+200).
+    // Within each port the "+" pin is above center and "−" is below (portCenter ± 100).
+    // Port centers are spaced 400 apart on each side: centers land on even multiples of 200,
+    // so ± pins always land on ODD multiples of 100 — no P-cell collision via banker's rounding.
+    // N=1 special case: "1+" at (−200,0) left, "1−" at (+200,0) right, both vertically centered.
+    // Pin index order is the NetExtractor contract: pin[2(p-1)] = "p+", pin[2(p-1)+1] = "p-".
+    private static (string Name, float LocalX, float LocalY)[] GenerateSddPorts(int n)
     {
-        int nLeft  = (n + 1) / 2;   // ceil(N/2) signal ports on left
-        int nRight = n / 2 + 1;     // floor(N/2) signal ports + 1 reference on right
-        var ports  = new (string, float, float)[n + 1];
+        if (n == 1)
+            return [("1+", -200f, 0f), ("1-", +200f, 0f)];
 
-        for (int i = 0; i < nLeft; i++)
+        var ports  = new (string, float, float)[2 * n];
+        int nLeft  = (n + 1) / 2;   // ceil — ports 1..nLeft on left
+        int nRight = n       / 2;   // floor — ports nLeft+1..n on right
+        const float portSpacing = 400f;  // port-center pitch — multiple of 200 → pins on odd*100
+        const float halfDiff    = 100f;  // y from port center to each ± pin
+
+        for (int p = 0; p < nLeft; p++)
         {
-            float localY = nLeft > 1 ? (i - (nLeft - 1) * 0.5f) * 200f : 0f;
-            ports[i] = ($"{i + 1}", -200f, localY);
+            float cy = (p - (nLeft - 1) * 0.5f) * portSpacing;
+            int   pn = p + 1;
+            ports[2 * p]     = ($"{pn}+", -200f, cy - halfDiff);
+            ports[2 * p + 1] = ($"{pn}-", -200f, cy + halfDiff);
         }
-        for (int i = 0; i < nRight; i++)
+        for (int q = 0; q < nRight; q++)
         {
-            float localY = nRight > 1 ? (i - (nRight - 1) * 0.5f) * 200f : 0f;
-            bool isRef   = (i == nRight - 1);
-            ports[nLeft + i] = (isRef ? "ref" : $"{nLeft + i + 1}", 200f, localY);
+            float cy = (q - (nRight - 1) * 0.5f) * portSpacing;
+            int   pn = nLeft + q + 1;
+            int   i  = 2 * (nLeft + q);
+            ports[i]     = ($"{pn}+", +200f, cy - halfDiff);
+            ports[i + 1] = ($"{pn}-", +200f, cy + halfDiff);
         }
         return ports;
     }
+
+    /// <summary>
+    /// Returns the N-aware body rect dimensions for an SDD/ZPort symbol.
+    /// Half-height = max|pin Y| + 60 margin; width is fixed at 180 (edges ±90).
+    /// </summary>
+    public static (float W, float HalfH) SddBodyRect(int n)
+    {
+        var ports = For(SymbolKind.Sdd, n);
+        float maxPinY = ports.Length == 0 ? 0f : ports.Max(p => Math.Abs(p.LocalY));
+        return (180f, maxPinY + 60f);
+    }
+
 }
 
 // ── Placed component ─────────────────────────────────────────────────────────
@@ -320,7 +343,7 @@ public sealed class EditableComponent
     public (double MinX, double MinY, double MaxX, double MaxY) ComputeGlyphBb(
         IReadOnlyList<SymbolPrimitive>? overridePrimitives = null)
     {
-        IReadOnlyList<SymbolPrimitive> prims = overridePrimitives ?? BuiltInSymbols.Primitives(Symbol).Primitives;
+        IReadOnlyList<SymbolPrimitive> prims = overridePrimitives ?? BuiltInSymbols.Primitives(Symbol, PortCount).Primitives;
         if (prims.Count == 0) return (X - 160, Y - 60, X + 160, Y + 60);
 
         var (lMinX, lMinY, lMaxX, lMaxY) = SymbolGeometry.ComputeBb(prims);
@@ -1134,9 +1157,8 @@ public sealed class SchematicEditModel
                 ShowTypeLabel    = info.DefaultShowTypeLabel,
                 ShowInstanceName = info.DefaultShowInstanceName,
             };
-            // For variadic types derive N from the type label ("Z1P"→1) — Ports.Count is N+1
-            // (pin count), so using it would select the wrong template and corrupt param mapping.
-            // Fallback to Ports.Count-1 when the type label is absent or hidden.
+            // For variadic types derive N from the type label ("Z1P"→1, "SDD2"→2).
+            // Fallback by pin count: ZPort and SDD both use 2N pins (N = pins/2).
             int portCount = 0;
             if (rc.Symbol is SymbolKind.ZPort or SymbolKind.Sdd)
             {
@@ -1144,7 +1166,7 @@ public sealed class SchematicEditModel
                     ComponentTypeRegistry.TryParseCode(rc.Labels[0], out _, out int parsed) && parsed >= 1)
                     portCount = parsed;
                 else
-                    portCount = Math.Max(1, rc.Ports.Count - 1);
+                    portCount = Math.Max(1, rc.Ports.Count / 2);
             }
             var template = ComponentTypeRegistry.DefaultParameters(rc.Symbol, portCount);
 

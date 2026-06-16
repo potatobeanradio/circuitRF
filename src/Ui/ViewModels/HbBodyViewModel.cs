@@ -65,16 +65,6 @@ public sealed partial class HbBodyViewModel : ObservableObject
     [ObservableProperty] private string _maxIterExpr         = "100";
     [ObservableProperty] private string _maxIterPreview      = "";
 
-    // ── Parametric sweep (optional, inside Advanced) ──────────────────────────
-    [ObservableProperty] private bool   _sweepEnabled    = false;
-    [ObservableProperty] private string _sweepVarName    = "";
-    [ObservableProperty] private string _sweepStartExpr  = "0";
-    [ObservableProperty] private string _sweepStartPreview = "";
-    [ObservableProperty] private string _sweepStopExpr   = "1";
-    [ObservableProperty] private string _sweepStopPreview = "";
-    [ObservableProperty] private string _sweepStepExpr   = "0.1";
-    [ObservableProperty] private string _sweepStepPreview = "";
-
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public HbBodyViewModel(SchematicEditModel model) => _model = model;
@@ -105,9 +95,6 @@ public sealed partial class HbBodyViewModel : ObservableObject
     partial void OnGuardHarmonicExprChanged(string value) => GuardHarmonicPreview = Prev(value);
     partial void OnLambdaExprChanged(string value)        => LambdaPreview        = Prev(value);
     partial void OnMaxIterExprChanged(string value)       => MaxIterPreview       = Prev(value);
-    partial void OnSweepStartExprChanged(string value)    => SweepStartPreview    = Prev(value);
-    partial void OnSweepStopExprChanged(string value)     => SweepStopPreview     = Prev(value);
-    partial void OnSweepStepExprChanged(string value)     => SweepStepPreview     = Prev(value);
 
     private string Prev(string expr) => AnalysisPreviewHelper.ComputePreview(expr, _model);
 
@@ -120,19 +107,11 @@ public sealed partial class HbBodyViewModel : ObservableObject
 
     public HarmonicBalanceAnalysis BuildAnalysis(string name, bool enabled)
     {
-        string? sweepVar   = SweepEnabled && SweepVarName.Trim().Length > 0 ? SweepVarName.Trim() : null;
-        string? sweepStart = sweepVar is not null ? SweepStartExpr : null;
-        string? sweepStop  = sweepVar is not null ? SweepStopExpr  : null;
-        string? sweepStep  = sweepVar is not null ? SweepStepExpr  : null;
-
-        HarmonicBalanceAnalysis analysis;
-
         string toneHz  = FreqUnitHelper.ToHzExpr(ToneCoeff,  ToneUnit);
         string tone2Hz = FreqUnitHelper.ToHzExpr(Tone2Coeff, Tone2Unit);
 
-        if (MultiTone)
-        {
-            analysis = new HarmonicBalanceAnalysis(name)
+        HarmonicBalanceAnalysis analysis = MultiTone
+            ? new HarmonicBalanceAnalysis(name)
             {
                 NumFreqsExpr      = "2",
                 ToneExprs         = [toneHz, tone2Hz],
@@ -144,17 +123,8 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 GuardHarmonicExpr = GuardHarmonicExpr,
                 LambdaExpr        = LambdaExpr,
                 MaxIterExpr       = MaxIterExpr,
-#pragma warning disable CS0618
-                SweepVarName      = sweepVar,
-                SweepStartExpr    = sweepStart,
-                SweepStopExpr     = sweepStop,
-                SweepStepExpr     = sweepStep,
-#pragma warning restore CS0618
-            };
-        }
-        else
-        {
-            analysis = new HarmonicBalanceAnalysis(name)
+            }
+            : new HarmonicBalanceAnalysis(name)
             {
                 ToneExpr          = toneHz,
                 MaxHarmonicExpr   = MaxHarmonicExpr,
@@ -164,14 +134,7 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 GuardHarmonicExpr = GuardHarmonicExpr,
                 LambdaExpr        = LambdaExpr,
                 MaxIterExpr       = MaxIterExpr,
-#pragma warning disable CS0618
-                SweepVarName      = sweepVar,
-                SweepStartExpr    = sweepStart,
-                SweepStopExpr     = sweepStop,
-                SweepStepExpr     = sweepStep,
-#pragma warning restore CS0618
             };
-        }
 
         analysis.Enabled = enabled;
         return analysis;
@@ -209,18 +172,6 @@ public sealed partial class HbBodyViewModel : ObservableObject
         vm.GuardHarmonicExpr = hb.GuardHarmonicExpr;
         vm.LambdaExpr        = hb.LambdaExpr;
         vm.MaxIterExpr       = hb.MaxIterExpr;
-
-        // Sweep (deprecated fields — HB sweep now goes through ParametricSweepAnalysis)
-#pragma warning disable CS0618
-        if (hb.SweepVarName is not null)
-        {
-            vm.SweepEnabled   = true;
-            vm.SweepVarName   = hb.SweepVarName;
-            vm.SweepStartExpr = hb.SweepStartExpr ?? "0";
-            vm.SweepStopExpr  = hb.SweepStopExpr  ?? "1";
-            vm.SweepStepExpr  = hb.SweepStepExpr  ?? "0.1";
-        }
-#pragma warning restore CS0618
 
         return vm;
     }

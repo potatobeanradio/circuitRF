@@ -52,6 +52,9 @@ public partial class TraceRowViewModel : ViewModelBase
     /// <summary>YAxis combo is shown for network-bound Rect/Table; hidden for cube-bound.</summary>
     public bool ShowYAxisCombo => IsRectOrTablePlot && !IsCubeBoundTrace;
 
+    /// <summary>MatrixType (S/Z/Y) combo visible for S-parameter network sources only.</summary>
+    public bool ShowMatrixTypeCombo => !_trace.IsCubeBound && _trace.Data is { } d && !d.IsEmpty;
+
     // ---- Combined data picker (replaces SNP source + Row + Col) ----------
     //
     //  One item per (SNP × matrix-element) plus derived-parameter items for
@@ -67,6 +70,28 @@ public partial class TraceRowViewModel : ViewModelBase
     //  Edits write back to Trace.Slice (name-keyed) and trigger RebuildAndNotify.
 
     public ObservableCollection<AxisRoleRowViewModel> AxisRoles { get; } = new();
+
+    // ---- Node-picker labeled filter (brief node-picker-labeled-filter) ----
+    //
+    //  When __LabeledNodes is present, node axis is filtered to user-labeled nodes only.
+    //  ShowAllNodes = false (default) → filter ON; true → show all.
+    //  Absent __LabeledNodes (hand-written netlist) defaults ShowAllNodes=true.
+
+    [ObservableProperty]
+    private bool _showAllNodes;
+
+    private bool _rebuildingAxisRoles;
+
+    partial void OnShowAllNodesChanged(bool value)
+    {
+        if (!_rebuildingAxisRoles) RebuildAxisRoles();
+    }
+
+    // True when the current cube has a node axis (controls toggle visibility).
+    private bool _hasNodeAxis;
+
+    /// <summary>True when the "Show all nodes" toggle is relevant (cube has a node axis).</summary>
+    public bool ShowAllNodesToggleVisible => IsCubeBoundTrace && _hasNodeAxis;
 
     [ObservableProperty]
     private TraceDataItem? _selectedSignal;
@@ -94,6 +119,8 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowZ0Badge));
         OnPropertyChanged(nameof(Z0BadgeTooltip));
         OnPropertyChanged(nameof(ShowZ0Control));
+        OnPropertyChanged(nameof(ShowZ0Row));
+        OnPropertyChanged(nameof(ShowMatrixTypeCombo));
         OnPropertyChanged(nameof(IsMultiPortNormalization));
         OnPropertyChanged(nameof(IsZ0Editable));
         OnPropertyChanged(nameof(Z0DisabledReason));
@@ -219,6 +246,113 @@ public partial class TraceRowViewModel : ViewModelBase
         _parent.RebuildAndNotify();
     }
 
+    // ---- Unified transform combo (§3+4) ------------------------------------
+    //
+    //  One combo drives both cube-bound and network traces.
+    //  For network traces, CubeTransform is mapped to/from DependentVarFormat.
+    //  TraceTransformItems returns AllCubeTransforms or AllTransformsForNetwork
+    //  depending on the trace type; SelectedTransformItem is kept in sync with
+    //  the trace's actual YAxis/Transform in SyncTransformItem().
+    //
+    //  Implemented manually (not via [ObservableProperty]) so SyncTransformItem()
+    //  can set the backing field directly without triggering the rebuild callback.
+
+    private CubeTransformItem? _selectedTransformItem;
+    private bool _suppressTransformCallback;
+
+    public CubeTransformItem? SelectedTransformItem
+    {
+        get => _selectedTransformItem;
+        set
+        {
+            if (ReferenceEquals(_selectedTransformItem, value)) return;
+            _selectedTransformItem = value;
+            OnPropertyChanged();
+            if (!_suppressTransformCallback)
+                ApplySelectedTransform(value);
+        }
+    }
+
+    private void ApplySelectedTransform(CubeTransformItem? value)
+    {
+        if (value is null || !value.Enabled) return;
+        if (_trace.IsCubeBound)
+        {
+            _trace.Transform = value.Transform;
+            // Recompute the expression from the updated picker state (Transform changed).
+            _trace.Expression = null;
+            _trace.Expression = _trace.BuildPickerExpression();
+        }
+        else
+        {
+            _trace.YAxis = CubeTransformToYAxis(value.Transform);
+        }
+        _parent.RebuildAndNotify();
+    }
+
+    /// <summary>Returns the per-trace transform list: all-enabled for cube, network-filtered otherwise.</summary>
+    public IReadOnlyList<CubeTransformItem> TraceTransformItems =>
+        _trace.IsCubeBound
+            ? PlotInspectorViewModel.AllCubeTransforms
+            : PlotInspectorViewModel.AllTransformsForNetwork;
+
+    /// <summary>
+    /// Syncs SelectedTransformItem to the trace's current YAxis/Transform without triggering
+    /// the rebuild callback. Called from RefreshDescription so the unified combo stays in step
+    /// after the source signal or plot type changes.
+    /// </summary>
+    private void SyncTransformItem()
+    {
+        CubeTransformItem? item;
+        if (_trace.IsCubeBound)
+        {
+            item = PlotInspectorViewModel.AllCubeTransforms
+                .FirstOrDefault(t => t.Transform == _trace.Transform);
+        }
+        else
+        {
+            var ct = YAxisToCubeTransform(_trace.YAxis);
+            item = PlotInspectorViewModel.AllTransformsForNetwork
+                .FirstOrDefault(t => t.Transform == ct);
+        }
+        if (!ReferenceEquals(_selectedTransformItem, item))
+        {
+            _suppressTransformCallback = true;
+            SelectedTransformItem = item;
+            _suppressTransformCallback = false;
+        }
+    }
+
+    private static CubeTransform YAxisToCubeTransform(DependentVarFormat f) => f switch
+    {
+        DependentVarFormat.Db        => CubeTransform.dB20,
+        DependentVarFormat.Mag       => CubeTransform.Mag,
+        DependentVarFormat.Phase     => CubeTransform.Phase,
+        DependentVarFormat.Real      => CubeTransform.Real,
+        DependentVarFormat.Imaginary => CubeTransform.Imag,
+        _                            => CubeTransform.None,   // Complex → None
+    };
+
+    private static DependentVarFormat CubeTransformToYAxis(CubeTransform ct) => ct switch
+    {
+        CubeTransform.dB20  => DependentVarFormat.Db,
+        CubeTransform.Mag   => DependentVarFormat.Mag,
+        CubeTransform.Phase => DependentVarFormat.Phase,
+        CubeTransform.Real  => DependentVarFormat.Real,
+        CubeTransform.Imag  => DependentVarFormat.Imaginary,
+        _                   => DependentVarFormat.Complex,    // None/dB10/dB/Conj → Complex
+    };
+
+    /// <summary>
+    /// Called by PlotInspectorViewModel when the plot Freq unit changes so harmonic
+    /// axis-role pin labels are rebuilt with the new unit.
+    /// </summary>
+    internal void OnFreqUnitChanged()
+    {
+        RebuildAxisRoles();
+        OnPropertyChanged(nameof(AxisRoles));
+    }
+
     // ---- Secondary axis -----------------------------------------------------
 
     [ObservableProperty]
@@ -298,6 +432,9 @@ public partial class TraceRowViewModel : ViewModelBase
         !_trace.IsCubeBound
         && _trace.Derived == DerivedParameters.None
         && _trace.MatrixType == MatrixType.S;
+
+    /// <summary>Gates the entire Z0 row — only S-param (non-cube, non-derived) traces show it.</summary>
+    public bool ShowZ0Row => IsScatteringTrace;
 
     /// <summary>True when the source has non-uniform port normalization — the Z0 box is replaced
     /// by a "Multiple Port Normalization" label; no Override checkbox is shown.</summary>
@@ -538,6 +675,19 @@ public partial class TraceRowViewModel : ViewModelBase
         _selectedCubeTransformItem = PlotInspectorViewModel.AllCubeTransforms
             .FirstOrDefault(t => t.Transform == trace.Transform);
 
+        // Unified transform item — cube or mapped-from-YAxis.
+        if (trace.IsCubeBound)
+        {
+            _selectedTransformItem = PlotInspectorViewModel.AllCubeTransforms
+                .FirstOrDefault(t => t.Transform == trace.Transform);
+        }
+        else
+        {
+            var ct = YAxisToCubeTransform(trace.YAxis);
+            _selectedTransformItem = PlotInspectorViewModel.AllTransformsForNetwork
+                .FirstOrDefault(t => t.Transform == ct);
+        }
+
         RemoveCommand              = new RelayCommand(() => _parent.RemoveTrace(this));
         ToggleSecondaryAxisCommand = new RelayCommand(() => UseSecondaryAxis = !UseSecondaryAxis);
 
@@ -624,7 +774,7 @@ public partial class TraceRowViewModel : ViewModelBase
 
             foreach (var (cubeName, cube) in ds.Cubes)
             {
-                if (cubeName is "S" or "Z0") continue;
+                if (cubeName is "S" or "Z0" || cubeName.StartsWith("__", StringComparison.Ordinal)) continue;
                 int rank = cube.Rank;
                 if (rank <= 0) continue;
 
@@ -695,6 +845,8 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowZ0Badge));
         OnPropertyChanged(nameof(Z0BadgeTooltip));
         OnPropertyChanged(nameof(ShowZ0Control));
+        OnPropertyChanged(nameof(ShowZ0Row));
+        OnPropertyChanged(nameof(ShowMatrixTypeCombo));
         OnPropertyChanged(nameof(IsMultiPortNormalization));
         OnPropertyChanged(nameof(IsZ0Editable));
         OnPropertyChanged(nameof(Z0DisabledReason));
@@ -719,6 +871,13 @@ public partial class TraceRowViewModel : ViewModelBase
     /// </summary>
     private void RebuildAxisRoles()
     {
+        _rebuildingAxisRoles = true;
+        try { RebuildAxisRolesCore(); }
+        finally { _rebuildingAxisRoles = false; }
+    }
+
+    private void RebuildAxisRolesCore()
+    {
         AxisRoles.Clear();
 
         if (!_trace.IsCubeBound || _trace.CubeName is null) return;
@@ -731,36 +890,101 @@ public partial class TraceRowViewModel : ViewModelBase
         var cube  = ds[_trace.CubeName];
         var slice = _trace.Slice;
 
+        // Read labeled-node set from __LabeledNodes side cube.
+        // Null = cube absent (hand-written netlist → default ShowAllNodes=true).
+        // Non-null but empty = schematic ran with no user labels → show nothing (filter ON).
+        HashSet<string>? labeledSet = null;
+        if (ds.Contains("__LabeledNodes"))
+        {
+            var lblCube = ds["__LabeledNodes"];
+            labeledSet = new HashSet<string>(StringComparer.Ordinal);
+            if (lblCube.Axes.Count > 0 && lblCube.Axes[0].Labels is { } lbls)
+                foreach (var l in lbls) labeledSet.Add(l);
+        }
+
+        // Detect whether this cube has a node axis to control toggle visibility.
+        bool hasNode = false;
+        for (int d = 0; d < cube.Axes.Count; d++)
+            if (cube.Axes[d].Name == "node") { hasNode = true; break; }
+
+        if (_hasNodeAxis != hasNode)
+        {
+            _hasNodeAxis = hasNode;
+            OnPropertyChanged(nameof(ShowAllNodesToggleVisible));
+        }
+
+        // Default ShowAllNodes=true when __LabeledNodes is absent (hand-written netlist).
+        if (labeledSet is null && !ShowAllNodes)
+            ShowAllNodes = true;
+
+        bool showAll = ShowAllNodes;
+
         for (int d = 0; d < cube.Rank; d++)
         {
             var axis = cube.Axes[d];
 
             // Find matching slice entry by axis name.
             bool isX   = false;
-            int pinIdx = 0;
+            int  savedTrueIdx = 0;
             if (slice is not null)
             {
                 foreach (var s in slice)
                 {
                     if (s.AxisName == axis.Name)
                     {
-                        isX    = s.Role == AxisRole.KeepAsX;
-                        pinIdx = Math.Clamp(s.Index, 0, Math.Max(0, axis.Length - 1));
+                        isX          = s.Role == AxisRole.KeepAsX;
+                        savedTrueIdx = s.Index;
                         break;
                     }
                 }
             }
 
             // Build label list for the pin combo.
-            var opts = new List<string>(axis.Length);
-            for (int k = 0; k < axis.Length; k++)
-            {
-                opts.Add(axis.Labels is not null && k < axis.Labels.Length
-                    ? axis.Labels[k]
-                    : axis.Values[k].ToString("G3"));
-            }
+            // Frequency axes (unit == "Hz") are formatted in the plot's display FreqUnit.
+            bool axisIsFreq = IsFreqUnit(axis.Unit);
+            FreqUnit plotFreqUnit = _parent.FreqUnit;
 
-            AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit, opts, isX, pinIdx));
+            if (axis.Name == "node" && !showAll && labeledSet is not null)
+            {
+                // Filtered: only show options that are in the labeled set.
+                var filteredOpts    = new List<string>();
+                var filteredIndices = new List<int>();
+
+                for (int k = 0; k < axis.Length; k++)
+                {
+                    string label = axis.Labels is not null && k < axis.Labels.Length
+                        ? axis.Labels[k]
+                        : axis.Values[k].ToString("G3");
+                    if (labeledSet.Contains(label))
+                    {
+                        filteredOpts.Add(label);
+                        filteredIndices.Add(k);
+                    }
+                }
+
+                // Restore display index from the saved true axis index.
+                int displayIdx = filteredIndices.IndexOf(savedTrueIdx);
+                if (displayIdx < 0) displayIdx = 0;
+
+                AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit,
+                    filteredOpts, isX, displayIdx, filteredIndices));
+            }
+            else
+            {
+                // Unfiltered (all options).
+                var opts = new List<string>(axis.Length);
+                for (int k = 0; k < axis.Length; k++)
+                {
+                    if (axis.Labels is not null && k < axis.Labels.Length)
+                        opts.Add(axis.Labels[k]);
+                    else if (axisIsFreq)
+                        opts.Add($"{(axis.Values[k] * plotFreqUnit.Scale()).ToString("G4")} {plotFreqUnit.Description()}");
+                    else
+                        opts.Add(axis.Values[k].ToString("G3"));
+                }
+                int pinIdx = Math.Clamp(savedTrueIdx, 0, Math.Max(0, axis.Length - 1));
+                AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit, opts, isX, pinIdx));
+            }
         }
 
         // Guard: at least one X axis.
@@ -792,7 +1016,7 @@ public partial class TraceRowViewModel : ViewModelBase
             var r = AxisRoles[i];
             slice[i] = new AxisSlice(r.AxisName,
                 r.IsX ? AxisRole.KeepAsX : AxisRole.PinToIndex,
-                r.PinIndex);
+                r.TruePinIndex);
         }
 
         // Guard: if no X survived, fall back to the first axis.
@@ -804,6 +1028,9 @@ public partial class TraceRowViewModel : ViewModelBase
         }
 
         _trace.Slice = slice;
+        // Sync the expression text field to the picker-authored shorthand.
+        _trace.Expression = null;
+        _trace.Expression = _trace.BuildPickerExpression();
         _parent.RebuildAndNotify();
     }
 
@@ -825,8 +1052,52 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowZ0Badge));
         OnPropertyChanged(nameof(Z0BadgeTooltip));
         OnPropertyChanged(nameof(ShowZ0Control));
+        OnPropertyChanged(nameof(ShowZ0Row));
+        OnPropertyChanged(nameof(ShowMatrixTypeCombo));
         OnPropertyChanged(nameof(IsMultiPortNormalization));
         OnPropertyChanged(nameof(IsZ0Editable));
         OnPropertyChanged(nameof(Z0DisabledReason));
+        OnPropertyChanged(nameof(SpecShorthand));
+        OnPropertyChanged(nameof(SpecError));
+        OnPropertyChanged(nameof(HasSpecError));
+        // Unified transform combo: rebuild list and re-sync selection to trace state.
+        OnPropertyChanged(nameof(TraceTransformItems));
+        SyncTransformItem();
     }
+
+    // ---- Inline spec editor (#4) -------------------------------------------
+
+    /// <summary>
+    /// Raw editable text for the spec TextBox: the user's last raw input when
+    /// invalid, or the canonical shorthand when valid. No " &lt;invalid&gt;" suffix
+    /// (that's for the Table column header only).
+    /// </summary>
+    public string SpecShorthand => _trace.IsCubeBound
+        ? (_trace.InvalidSpecText ?? _trace.CubeShorthand)
+        : "";
+
+    /// <summary>Human-readable parse/eval error for the spec hint; empty when valid.</summary>
+    public string SpecError => _trace.ExpressionError ?? "";
+
+    public bool HasSpecError => !string.IsNullOrEmpty(SpecError);
+
+    /// <summary>
+    /// Called from code-behind on Enter / LostFocus to parse and apply the typed spec.
+    /// On success, applies (CubeName, Slice, Transform) and rebuilds the plot.
+    /// On failure, stores the raw text as InvalidSpecText and shows SpecError.
+    /// </summary>
+    public void CommitSpec(string text)
+    {
+        if (!_trace.IsCubeBound) return;
+
+        // Set the expression; TrySetCubeData will validate it during RebuildAndNotify.
+        _trace.Expression      = text;
+        _trace.InvalidSpecText = null;
+        _trace.ExpressionError = null;
+        _parent.RebuildAndNotify();
+        // After rebuild, RefreshDescription fires OnPropertyChanged for SpecShorthand/SpecError/HasSpecError.
+    }
+
+    private static bool IsFreqUnit(string? unit) =>
+        unit is "Hz" or "kHz" or "MHz" or "GHz";
 }

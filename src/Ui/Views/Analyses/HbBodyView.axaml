@@ -187,41 +187,6 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- ── Parametric sweep ──────────────────────────────────── -->
-                    <StackPanel Spacing="6">
-                        <CheckBox Content="Parametric sweep"
-                                  IsChecked="{Binding SweepEnabled, Mode=TwoWay}"
-                                  FontSize="11"/>
-                        <StackPanel IsVisible="{Binding SweepEnabled}" Spacing="6">
-                            <!-- Variable name -->
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="Variable"
-                                           FontSize="10" Opacity="0.6"/>
-                                <TextBox Text="{Binding SweepVarName, Mode=TwoWay}"
-                                         FontSize="11"
-                                         PlaceholderText="e.g. Pin"/>
-                            </StackPanel>
-                            <!-- Start / Stop / Step (3-column, no units — parametric sweep is dimensionless) -->
-                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
-                                <StackPanel Spacing="2">
-                                    <TextBlock Text="Start" FontSize="10" Opacity="0.6"/>
-                                    <TextBox Text="{Binding SweepStartExpr, Mode=TwoWay}" FontSize="11"/>
-                                    <TextBlock Text="{Binding SweepStartPreview}" FontSize="10" Opacity="0.55"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Spacing="2">
-                                    <TextBlock Text="Stop" FontSize="10" Opacity="0.6"/>
-                                    <TextBox Text="{Binding SweepStopExpr, Mode=TwoWay}" FontSize="11"/>
-                                    <TextBlock Text="{Binding SweepStopPreview}" FontSize="10" Opacity="0.55"/>
-                                </StackPanel>
-                                <StackPanel Grid.Column="2" Spacing="2">
-                                    <TextBlock Text="Step" FontSize="10" Opacity="0.6"/>
-                                    <TextBox Text="{Binding SweepStepExpr, Mode=TwoWay}" FontSize="11"/>
-                                    <TextBlock Text="{Binding SweepStepPreview}" FontSize="10" Opacity="0.55"/>
-                                </StackPanel>
-                            </Grid>
-                        </StackPanel>
-                    </StackPanel>
-
                 </StackPanel>
             </Expander>
 

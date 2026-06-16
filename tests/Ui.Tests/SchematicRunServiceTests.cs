@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using CircuitRF.Ui.Schematic;
 using Xunit;
 
@@ -132,6 +133,113 @@ public sealed class SchematicRunServiceTests
         {
             File.Delete(tmpPath);
         }
+    }
+
+    // ── Sweep naming tests (brief-sweep-results-one-file) ─────────────────────
+
+    // S1: single sweep → one result named after the inner analysis, not the sweep wrapper.
+    [Fact]
+    public void SingleSweep_WritesOneResult_NamedAfterInner()
+    {
+        const string cnl = """
+            Port:P1  n1 0  Num=1  Z=50 Ohm
+            R:R1  n1 n2  R=50 Ohm
+            Port:P2  n2 0  Num=2  Z=50 Ohm
+            analysis SP1  type=sparam  start=1 GHz  stop=1 GHz  step=1 GHz
+            analysis SP1_sweep_R  type=parametric_sweep  Var=R_val  Values=10,50,100  Inner=SP1
+            """;
+
+        var tmpPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tmpPath, cnl);
+            var result = SchematicRunService.RunNetlist(tmpPath);
+
+            Assert.Equal(RunStatus.Success, result.Status);
+            Assert.Single(result.Results);
+            Assert.Equal("SP1", result.Results[0].Name);
+        }
+        finally { File.Delete(tmpPath); }
+    }
+
+    // S2: nested sweep (SW_R → SP1) → one result named after the root inner analysis.
+    [Fact]
+    public void NestedSweep_WritesOneResult_NamedAfterRootInner()
+    {
+        const string cnl = """
+            Port:P1  n1 0  Num=1  Z=50 Ohm
+            R:R1  n1 n2  R=50 Ohm
+            Port:P2  n2 0  Num=2  Z=50 Ohm
+            analysis SP1  type=sparam  start=1 GHz  stop=1 GHz  step=1 GHz
+            analysis SW_R   type=parametric_sweep  Var=R_val  Values=10,50  Inner=SP1
+            analysis SW_RR  type=parametric_sweep  Var=R2_val  Values=1,2    Inner=SW_R
+            """;
+
+        var tmpPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tmpPath, cnl);
+            var result = SchematicRunService.RunNetlist(tmpPath);
+
+            Assert.Equal(RunStatus.Success, result.Status);
+            Assert.Single(result.Results);
+            Assert.Equal("SP1", result.Results[0].Name);
+        }
+        finally { File.Delete(tmpPath); }
+    }
+
+    // S3: standalone analysis with no wrapping sweep still runs (regression — skip set is empty).
+    [Fact]
+    public void StandaloneAnalysis_NoSweep_StillRuns()
+    {
+        const string cnl = """
+            Port:P1  n1 0  Num=1  Z=50 Ohm
+            R:R1  n1 n2  R=50 Ohm
+            Port:P2  n2 0  Num=2  Z=50 Ohm
+            analysis SP1  type=sparam  start=1 GHz  stop=1 GHz  step=1 GHz
+            """;
+
+        var tmpPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tmpPath, cnl);
+            var result = SchematicRunService.RunNetlist(tmpPath);
+
+            Assert.Equal(RunStatus.Success, result.Status);
+            Assert.Single(result.Results);
+            Assert.Equal("SP1", result.Results[0].Name);
+        }
+        finally { File.Delete(tmpPath); }
+    }
+
+    // S4: mixed — one standalone analysis + one wrapped analysis → exactly two results,
+    //     one named after the standalone and one named after the inner of the sweep.
+    [Fact]
+    public void MixedAnalyses_StandaloneAndSwept_TwoResults()
+    {
+        const string cnl = """
+            Port:P1  n1 0  Num=1  Z=50 Ohm
+            R:R1  n1 n2  R=50 Ohm
+            Port:P2  n2 0  Num=2  Z=50 Ohm
+            analysis SP1      type=sparam  start=1 GHz  stop=1 GHz  step=1 GHz
+            analysis SP2      type=sparam  start=2 GHz  stop=2 GHz  step=1 GHz
+            analysis SP2_swp  type=parametric_sweep  Var=R_val  Values=10,50  Inner=SP2
+            """;
+
+        var tmpPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tmpPath, cnl);
+            var result = SchematicRunService.RunNetlist(tmpPath);
+
+            Assert.Equal(RunStatus.Success, result.Status);
+            Assert.Equal(2, result.Results.Count);
+            var names = result.Results.Select(r => r.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("SP1", names);
+            Assert.Contains("SP2", names);
+            Assert.DoesNotContain("SP2_swp", names);
+        }
+        finally { File.Delete(tmpPath); }
     }
 
     // ── L1f: diagnostics channel — clean netlist yields empty Warnings ────────

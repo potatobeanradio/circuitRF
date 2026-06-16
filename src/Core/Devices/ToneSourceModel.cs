@@ -62,6 +62,12 @@ public sealed class ToneSourceModel : ComponentModel
         if (Math.Abs(omega) < OmegaTolRads)
         {
             e = new Complex(_currentVdc, 0);
+            for (int i = 0; i < _tones.Length; i++)
+            {
+                double omegaTone = 2.0 * Math.PI * _tones[i].FreqHz;
+                if (Math.Abs(omegaTone) < OmegaTolRads)
+                    e += _currentPhasors[i];
+            }
         }
         else
         {
@@ -77,6 +83,19 @@ public sealed class ToneSourceModel : ComponentModel
             // else e = 0 (short at this frequency — no excitation)
         }
         mna.AddSourceValue(br, e);
+    }
+
+    /// <summary>
+    /// Returns one warning per tone with Freq≈0 Hz that has non-negligible amplitude.
+    /// Called by the Elaborator after construction; routes via <see cref="ElaboratedNetlist.AddWarningOnce"/>.
+    /// </summary>
+    public IReadOnlyList<string> GetZeroHzToneWarnings(string instancePath)
+    {
+        var warnings = new List<string>();
+        for (int i = 0; i < _tones.Length; i++)
+            if (Math.Abs(_tones[i].FreqHz) < 1.0 && _currentPhasors[i].Magnitude > 1e-12)
+                warnings.Add($"'{instancePath}': a tone has Freq=0 — use Vdc for DC bias.");
+        return warnings;
     }
 
     /// <summary>

@@ -5,11 +5,15 @@
 //
 // Framework-free — no Skia / Avalonia references.
 
+using System.Collections.Generic;
+using System.Linq;
+
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
 /// Single source of symbol geometry for all built-in symbol kinds.
-/// Every consumer (renderer, ComputeGlyphBb, ghost preview) reads Primitives(kind).
+/// Every consumer (renderer, ComputeGlyphBb, ghost preview) reads Primitives(kind[, portCount]).
+/// SDD and ZPort use an N-aware body that grows with port count — pass portCount for correct geometry.
 /// </summary>
 public static class BuiltInSymbols
 {
@@ -18,46 +22,69 @@ public static class BuiltInSymbols
     private static readonly Symbol _resistor     = BuildResistor();
     private static readonly Symbol _inductor     = BuildInductor();
     private static readonly Symbol _capacitor    = BuildCapacitor();
-    private static readonly Symbol _voltSrc      = BuildVoltageSource();
+    private static readonly Symbol _vdcSrc       = BuildVdc();
     private static readonly Symbol _toneSrc      = BuildToneSource();
     private static readonly Symbol _ground       = BuildGround();
     private static readonly Symbol _term         = BuildTerm();
     private static readonly Symbol _pin          = BuildPin();
     private static readonly Symbol _fetSdd       = BuildFetSdd();
-    private static readonly Symbol _zport        = BuildZPort();
-    private static readonly Symbol _sdd          = BuildSdd();
     private static readonly Symbol _var          = BuildVar();
     private static readonly Symbol _generic      = BuildGeneric();
+    private static readonly Symbol _p1Tone       = BuildP1Tone();
+
+    // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
+    private static readonly Dictionary<int, Symbol> _sddCache   = new();
+    private static readonly Dictionary<int, Symbol> _zportCache = new();
 
     /// <summary>
     /// Returns the primitive list for a built-in symbol kind.
-    /// Every geometric consumer must call this; the float[] path is gone.
+    /// For SDD/ZPort: uses the default portCount=2. Prefer the portCount overload.
     /// </summary>
-    public static Symbol Primitives(SymbolKind kind) => kind switch
+    public static Symbol Primitives(SymbolKind kind) => Primitives(kind, 2);
+
+    /// <summary>
+    /// Returns the primitive list for a built-in symbol kind.
+    /// For SDD/ZPort: builds an N-aware rounded-rect body sized to the pin span.
+    /// portCount is ignored for other kinds.
+    /// </summary>
+    public static Symbol Primitives(SymbolKind kind, int portCount)
     {
-        SymbolKind.Resistor      => _resistor,
-        SymbolKind.Inductor      => _inductor,
-        SymbolKind.Capacitor     => _capacitor,
-        SymbolKind.VoltageSource => _voltSrc,
-        SymbolKind.ToneSource    => _toneSrc,
-        SymbolKind.Ground        => _ground,
-        SymbolKind.Term          => _term,
-        SymbolKind.Pin           => _pin,
-        SymbolKind.FetSdd        => _fetSdd,
-        SymbolKind.ZPort         => _zport,
-        SymbolKind.Sdd           => _sdd,
-        SymbolKind.Var           => _var,
-        _                        => _generic,
-    };
+        switch (kind)
+        {
+            case SymbolKind.ZPort:
+            {
+                int n = portCount > 0 ? portCount : 2;
+                if (!_zportCache.TryGetValue(n, out var sym))
+                    _zportCache[n] = sym = BuildSddVariadicSymbol(SymbolKind.ZPort, n);
+                return sym;
+            }
+            case SymbolKind.Sdd:
+            {
+                int n = portCount > 0 ? portCount : 2;
+                if (!_sddCache.TryGetValue(n, out var sym))
+                    _sddCache[n] = sym = BuildSddVariadicSymbol(SymbolKind.Sdd, n);
+                return sym;
+            }
+            case SymbolKind.Resistor:   return _resistor;
+            case SymbolKind.Inductor:   return _inductor;
+            case SymbolKind.Capacitor:  return _capacitor;
+            case SymbolKind.Vdc:        return _vdcSrc;
+            case SymbolKind.ToneSource: return _toneSrc;
+            case SymbolKind.Ground:     return _ground;
+            case SymbolKind.Term:       return _term;
+            case SymbolKind.Pin:        return _pin;
+            case SymbolKind.FetSdd:     return _fetSdd;
+            case SymbolKind.Var:        return _var;
+            case SymbolKind.P1Tone:     return _p1Tone;
+            default:                    return _generic;
+        }
+    }
 
     // ── Line helpers ──────────────────────────────────────────────────────────
 
     private static LinePrimitive L(double x1, double y1, double x2, double y2,
                                    SymbolColorRole role = SymbolColorRole.SymbolLine)
         => new(role, SymbolStrokeTier.Normal, x1, y1, x2, y2);
-
-    private static LinePrimitive P(double x1, double y1, double x2, double y2)
-        => new(SymbolColorRole.SymbolPlus, SymbolStrokeTier.Normal, x1, y1, x2, y2);
 
     // ── Curve / shape helpers ─────────────────────────────────────────────────
 
@@ -120,6 +147,13 @@ public static class BuiltInSymbols
                    Cx = cx, Cy = cy, Amp = amp, Cycles = cycles,
                    Length = length, Axis = axis };
 
+    private static TextPrimitive Txt(string content, double ax, double ay,
+                                      double fontSize = 12,
+                                      SymbolTextAlign align = SymbolTextAlign.Center,
+                                      SymbolTextVAlign vAlign = SymbolTextVAlign.Middle)
+        => new() { Content = content, AnchorX = ax, AnchorY = ay,
+                   FontSize = fontSize, Align = align, VAlign = vAlign };
+
     // ── Sym helper ────────────────────────────────────────────────────────────
 
     private static Symbol Sym(IReadOnlyList<SymbolPrimitive> prims, SymbolKind kind, int portCount = 0)
@@ -168,19 +202,21 @@ public static class BuiltInSymbols
         L(   0,   12,   0,  200),           // bottom lead (from curve apex)
     ], SymbolKind.Capacitor);
 
-    // ── Voltage Source — circle + leads + ± marks ─────────────────────────────
+    // ── Vdc — battery symbol: two unequal parallel bars + leads + +/− markers ─
     // Pins: (0,-200) + top / (0,+200) − bottom.
 
-    private static Symbol BuildVoltageSource() => Sym([
-        L(  0, -200,   0,  -60),            // top lead
-        Circ( 0,    0,  60),                 // body circle (stroked)
-        L(  0,   60,   0,  200),            // bottom lead
-        P(-12,  -30,  12,  -30),            // + horizontal
-        P(  0,  -42,   0,  -18),            // + vertical
-        P(-12,   30,  12,   30),            // − bar
-    ], SymbolKind.VoltageSource);
+    private static Symbol BuildVdc() => Sym([
+        L(  0, -200,   0,  -30),            // top lead
+        L(-40,  -30,  40,  -30),            // long bar (+ terminal)
+        L(-20,  -10,  20,   -10),            // short bar
+        L(-40,  10,  40,  10),              // long bar
+        L(-20,   30,  20,   30),            // short bar (− terminal)
+        L(  0,   30,   0,  200),            // bottom lead
+        Txt("+", -25, -100),                // + polarity marker near top lead
+        Txt("−", -25, +100),                // − polarity marker near bottom lead
+    ], SymbolKind.Vdc);
 
-    // ── Tone / AC Source — circle + sine mark + leads ─────────────────────────
+    // ── Tone / AC Source — circle + sine mark + leads + +/− markers ──────────
     // Pins: (0,-200) top / (0,+200) bottom.
 
     private static Symbol BuildToneSource() => Sym([
@@ -188,7 +224,24 @@ public static class BuiltInSymbols
         Circ(  0,    0,  60),                // body circle (stroked)
         L(   0,   60,   0,  200),           // bottom lead
         Sine(0,    0,  22,    1,   70, SineAxis.Horizontal),  // AC mark
+        Txt("+", -25, -130),                // + polarity marker near top lead
+        Txt("−", -25, +130),                // − polarity marker near bottom lead
     ], SymbolKind.ToneSource);
+
+    // ── P1Tone — power source: circle + sine mark + power-arrow chevron + +/− ─
+    // Pins: (0,-200) top (RF) / (0,+200) bottom (reference).
+    // Visually distinct from ToneSource by the upward-pointing chevron (↑) inside the circle.
+
+    private static Symbol BuildP1Tone() => Sym([
+        L(   0, -200,   0,  -60),           // top lead
+        Circ(  0,    0,  60),                // body circle (stroked)
+        L(   0,   60,   0,  200),           // bottom lead
+        Sine(0,   15,  18,    1,   55, SineAxis.Horizontal),  // AC mark (shifted down slightly)
+        L( -20,  -22,   0,  -38),           // chevron left arm  (↑)
+        L(  20,  -22,   0,  -38),           // chevron right arm (↑)
+        Txt("+", -25, -130),                // + polarity marker near top lead
+        Txt("−", -25, +130),                // − polarity marker near bottom lead
+    ], SymbolKind.P1Tone);
 
     // ── Term — resistor-in-box, "+" (signal) and "−" (reference) pins ───────────
     // Pins: (0,-200) top "+" signal, (0,+200) bottom "−" reference.
@@ -203,16 +256,18 @@ public static class BuiltInSymbols
                25,  55, -25,  80,
                 0,  95,   0, 110),
         L(    0, +120,    0, +200),         // "−" lead from box bottom
+        Txt("+", -70, -165),                // + polarity marker near top lead
+        Txt("−", -70, +165),                // − polarity marker near bottom lead
     ], SymbolKind.Term);
 
-    // ── Pin — interface terminal: short lead + open flag square ─────────────────
-    // Pin at (0,-200) — the schematic connection point (lead tip).
-    // A short vertical lead descends into a small open-square "flag" body.
-    // The Num label (shown via parameters) identifies which cell interface port this is.
+    // ── Pin — interface terminal: horizontal hexagon + stem, tip on the right ──
+    // Pin connection point at (200,0) — the lead tip on the right.
+    // Hexagon body centered near origin; stem from hex right vertex (80,0) to tip (200,0).
+    // Num label (shown via parameters) identifies the cell interface port.
 
     private static Symbol BuildPin() => Sym([
-        L(0, -200,  0, -100),          // lead from pin to flag body
-        RRect(0, -50, 100, 100, 10),   // open square flag: center (0,-50), 100×100
+        Poly(false, -40,-50,  40,-50,  80,0,  40,50,  -40,50,  -80,0),  // hexagon body
+        L(80, 0,  200, 0),               // stem from hex right vertex to pin tip
     ], SymbolKind.Pin);
 
     // ── Ground — stem + filled downward triangle (Core Graphics style) ────────
@@ -220,7 +275,9 @@ public static class BuiltInSymbols
 
     private static Symbol BuildGround() => Sym([
         L(  0,   0,   0,  40),             // stem
-        Poly(filled: true, -45,40, 45,40, 0,90),  // downward triangle
+        L(  -45,   40,   45,  40),         // first line
+        L(  -30,   55,   30,  55),         // second line
+        L(  -15,   70,   15,  70),         // third
     ], SymbolKind.Ground);
 
     // ── FET/SDD — box with gate, drain, source (horizontal, unchanged) ────────
@@ -241,35 +298,41 @@ public static class BuiltInSymbols
         L( -30, -50, -20, -60),   // arrow notch 2
     ], SymbolKind.FetSdd);
 
-    // ── ZPort — box + Z-mark (horizontal, static body only) ──────────────────
-    // Port lead stubs drawn dynamically by the renderer per port.
+    // ── SDD / ZPort — N-aware rounded-rect body ───────────────────────────────
+    // Body edges at ±90; port lead stubs drawn dynamically by the renderer.
+    // Port-number/polarity TextPrimitives are part of the per-N symbol.
+    // ZPort no longer carries the "Z" mark; identification is via the type label.
 
-    private static Symbol BuildZPort() => Sym([
-        L(-70,-50,  70,-50),   // top
-        L( 70,-50,  70, 50),   // right
-        L( 70, 50, -70, 50),   // bottom
-        L(-70, 50, -70,-50),   // left
-        L(-40,-30,  40,-30),   // Z top
-        L( 40,-30, -40, 30),   // Z diagonal
-        L(-40, 30,  40, 30),   // Z bottom
-    ], SymbolKind.ZPort);
+    private static Symbol BuildSddVariadicSymbol(SymbolKind kind, int n)
+    {
+        var ports = SymbolPortDefs.For(kind, n);
+        var (w, halfH) = SymbolPortDefs.SddBodyRect(n);
 
-    // ── Sdd — box only (horizontal) ──────────────────────────────────────────
+        var prims = new List<SymbolPrimitive>
+        {
+            RRect(0, 0, w, halfH * 2, 12),
+        };
 
-    private static Symbol BuildSdd() => Sym([
-        L(-80,-50,  80,-50),   // top
-        L( 80,-50,  80, 50),   // right
-        L( 80, 50, -80, 50),   // bottom
-        L(-80, 50, -80,-50),   // left
-    ], SymbolKind.Sdd);
+        foreach (var (name, lx, ly) in ports)
+        {
+            bool isLeft = lx < 0;
+            double ax    = isLeft ? -75.0 : 75.0;
+            prims.Add(Txt(name, ax, ly, fontSize: 10,
+                align: isLeft ? SymbolTextAlign.Left : SymbolTextAlign.Right,
+                vAlign: SymbolTextVAlign.Middle));
+        }
 
-    // ── VAR — port-less box (no leads) ───────────────────────────────────────
+        return Sym(prims, kind, n);
+    }
+
+    // ── VAR — port-less box with "VAR" label ─────────────────────────────────
 
     private static Symbol BuildVar() => Sym([
         L(-80, -60,  80, -60),   // top
         L( 80, -60,  80,  60),   // right
         L( 80,  60, -80,  60),   // bottom
         L(-80,  60, -80, -60),   // left
+        Txt("VAR", 0, 0, fontSize: 24, align: SymbolTextAlign.Center, vAlign: SymbolTextVAlign.Middle),
     ], SymbolKind.Var);
 
     // ── Generic — 2-port box with leads (horizontal fallback) ─────────────────

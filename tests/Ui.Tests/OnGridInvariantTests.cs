@@ -79,7 +79,7 @@ public class OnGridInvariantTests
         PlaceAt(vm, SymbolKind.Resistor,         0,    0);
         PlaceAt(vm, SymbolKind.Capacitor,      600,    0);
         PlaceAt(vm, SymbolKind.Inductor,      1200,    0);
-        PlaceAt(vm, SymbolKind.VoltageSource,    0,  600);
+        PlaceAt(vm, SymbolKind.Vdc,              0,  600);
         PlaceAt(vm, SymbolKind.ToneSource,     600,  600);
         PlaceAt(vm, SymbolKind.Ground,        1200,  600);
         PlaceAt(vm, SymbolKind.Term,             0, 1200);

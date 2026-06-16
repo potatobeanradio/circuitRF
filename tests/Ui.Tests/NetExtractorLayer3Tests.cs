@@ -115,63 +115,65 @@ public class NetExtractorLayer3Tests
         Assert.NotEqual(fet.NetBindings[1], fet.NetBindings[2]);
     }
 
-    // ── Test 3: ZPort with ref=ground → RefNetBinding is null ────────────────
+    // ── Test 3: ZPort "1-" grounded → NetBindings[1]="0", RefNetBinding null ───
 
     [Fact]
-    public void ZPort_RefToGround_RefNetBindingIsNull()
+    public void ZPort_GroundedMinus_2NetBindings()
     {
         var model = new SchematicEditModel();
 
-        // Z1 (1-port) at (0,0): signal pin at (-200,0), ref pin at (200,0).
+        // Z1P at (0,0) N=1 special case: "1+" at world (-200,0), "1-" at world (+200,0).
         var z1 = new EditableComponent
             { InstanceName = "Z1", Symbol = SymbolKind.ZPort, X = 0, Y = 0 };
         z1.Parameters.Add(new EditableParameter { Name = "NumPorts", Expression = "1" });
         model.Components.Add(z1);
 
-        // Ground at (200,0) — coincides with ref pin.
+        // Ground at (+200,0) — coincides with "1-" pin.
         model.Components.Add(new EditableComponent
             { InstanceName = "GND1", Symbol = SymbolKind.Ground, X = 200, Y = 0 });
 
-        // Wire at signal pin so it has a net.
-        model.Wires.Add(Wire((-200, 0), (-200, 200)));
+        // Wire at "1+" pin so it has a net.
+        model.Wires.Add(Wire((-200, 0), (-200, -200)));
 
         var result = NetExtractor.Extract(model);
 
         var zInst = Inst(result, "Z1");
         Assert.Equal("Z_Port", zInst.Reference);
-        Assert.Single(zInst.NetBindings);               // N=1 signal binding
-        Assert.Null(zInst.RefNetBinding);            // ref is ground → null
+        Assert.Equal(2, zInst.NetBindings.Count);    // 2N=2 nets for 1-port
+        Assert.Equal("0", zInst.NetBindings[1]);      // "1-" is grounded
+        Assert.Null(zInst.RefNetBinding);             // RefNetBinding always null
     }
 
-    // ── Test 4: ZPort with ref≠ground → RefNetBinding carries net name ───────
+    // ── Test 4: ZPort "1-" non-ground → NetBindings[1] is non-ground net ─────
 
     [Fact]
-    public void ZPort_RefToNonGround_RefNetBindingSet()
+    public void ZPort_NonGroundMinus_NetBinding1IsNonGround()
     {
         var model = new SchematicEditModel();
 
-        // Z1 (1-port) at (0,0): signal at (-200,0), ref at (200,0).
+        // Z1P at (0,0) N=1 special case: "1+" at (-200,0), "1-" at (+200,0).
         var z1 = new EditableComponent
             { InstanceName = "Z1", Symbol = SymbolKind.ZPort, X = 0, Y = 0 };
         z1.Parameters.Add(new EditableParameter { Name = "NumPorts", Expression = "1" });
         model.Components.Add(z1);
 
-        // Wire at signal pin.
-        model.Wires.Add(Wire((-200, 0), (-200, 200)));
-        // Wire at ref pin — connects to a non-ground net.
+        // Wire at "1+" pin.
+        model.Wires.Add(Wire((-200, 0), (-200, -200)));
+        // Wire at "1-" pin — connects to a non-ground net.
         model.Wires.Add(Wire((200, 0), (200, 200)));
 
-        // Resistor with port0 coincident with ref pin, to stabilise auto-name comparison.
+        // Resistor with port0 coincident with "1-" net to stabilise auto-name comparison.
+        // R_ref at (200,200) → port0 at (200,0) = "1-" world position.
         model.Components.Add(Resistor("R_ref", 200, 200));
 
         var result = NetExtractor.Extract(model);
 
         var zInst = Inst(result, "Z1");
-        Assert.Single(zInst.NetBindings);
-        Assert.NotNull(zInst.RefNetBinding);
-        Assert.NotEqual("0", zInst.RefNetBinding);
-        // RefNetBinding matches R_ref's port0 net (same P-cell as ref pin).
-        Assert.Equal(Inst(result, "R_ref").NetBindings[0], zInst.RefNetBinding);
+        Assert.Equal(2, zInst.NetBindings.Count);
+        Assert.Null(zInst.RefNetBinding);
+        Assert.NotEqual("0", zInst.NetBindings[1]);
+        // NetBindings[1] matches R_ref's port0 net (same node as "1-" pin).
+        Assert.Equal(Inst(result, "R_ref").NetBindings[0], zInst.NetBindings[1]);
     }
 
     // ── Test 5: parameters carried as authored ────────────────────────────────

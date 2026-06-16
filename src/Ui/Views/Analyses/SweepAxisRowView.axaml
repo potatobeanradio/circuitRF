@@ -1,0 +1,151 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Analyses.SweepAxisRowView"
+             x:DataType="vm:SweepAxisRowViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Button.sw-btn">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness"  Value="1"/>
+            <Setter Property="CornerRadius"    Value="3"/>
+            <Setter Property="Padding"         Value="7,2"/>
+            <Setter Property="MinWidth"        Value="0"/>
+            <Setter Property="FontSize"        Value="10"/>
+            <Setter Property="Margin"          Value="0,0,2,0"/>
+        </Style>
+        <Style Selector="Button.sw-btn.active">
+            <Setter Property="Background"  Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="Foreground"  Value="{DynamicResource SystemRegionColor}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- Card-style row -->
+    <Border Background="{DynamicResource SystemAltHighColor}"
+            CornerRadius="4"
+            Padding="10,8"
+            Margin="0,0,0,4">
+
+        <StackPanel Spacing="6">
+
+            <!-- Row 1: Variable name (combo editable) + Lin/Log + remove button -->
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Variable"
+                               FontSize="10" Opacity="0.6"/>
+                    <AutoCompleteBox ItemsSource="{Binding KnownVarNames}"
+                                     Text="{Binding VarName, Mode=TwoWay}"
+                                     FontSize="11"
+                                     FilterMode="Contains"
+                                     MinimumPrefixLength="0"
+                                     PlaceholderText="e.g. Pavl"/>
+                    <TextBlock Text="{Binding VarNameError}"
+                               FontSize="10"
+                               Foreground="{DynamicResource CrfWarningBrush}"
+                               IsVisible="{Binding HasVarNameError}"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <!-- Lin / Log -->
+                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Bottom">
+                    <TextBlock Text="Spacing" FontSize="10" Opacity="0.6"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Lin"
+                                Classes="sw-btn"
+                                Classes.active="{Binding IsLinear}"
+                                Command="{Binding SetLinearCommand}"/>
+                        <Button Content="Log"
+                                Classes="sw-btn"
+                                Classes.active="{Binding IsLog}"
+                                Command="{Binding SetLogCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Remove button (×) — bound via RelayCommand on the parent VM via Tag -->
+                <Button Grid.Column="2"
+                        Content="×"
+                        FontSize="14"
+                        Padding="6,2"
+                        VerticalAlignment="Bottom"
+                        Background="Transparent"
+                        BorderBrush="{DynamicResource SystemBaseMediumLowColor}"
+                        BorderThickness="1"
+                        CornerRadius="3"
+                        Tag="{Binding}"
+                        x:Name="RemoveButton"/>
+
+            </Grid>
+
+            <!-- Row 2: Mode selector (StepSize / PointCount / List) -->
+            <StackPanel Orientation="Horizontal" Spacing="0">
+                <Button Content="Step"
+                        Classes="sw-btn"
+                        Classes.active="{Binding IsStepSize}"
+                        Command="{Binding SetStepSizeCommand}"/>
+                <Button Content="Count"
+                        Classes="sw-btn"
+                        Classes.active="{Binding IsPointCount}"
+                        Command="{Binding SetPointCountCommand}"/>
+                <Button Content="List"
+                        Classes="sw-btn"
+                        Classes.active="{Binding IsList}"
+                        Command="{Binding SetListCommand}"/>
+            </StackPanel>
+
+            <!-- Row 3a: StepSize fields -->
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6"
+                  IsVisible="{Binding IsStepSize}">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Start" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding StartExpr, Mode=TwoWay}" FontSize="11"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Stop" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding StopExpr, Mode=TwoWay}" FontSize="11"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="2">
+                    <TextBlock Text="Step" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding StepOrCountExpr, Mode=TwoWay}" FontSize="11"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Row 3b: PointCount fields -->
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6"
+                  IsVisible="{Binding IsPointCount}">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Start" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding StartExpr, Mode=TwoWay}" FontSize="11"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Stop" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding StopExpr, Mode=TwoWay}" FontSize="11"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="2">
+                    <TextBlock Text="Points" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding StepOrCountExpr, Mode=TwoWay}" FontSize="11"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Row 3c: List field -->
+            <StackPanel Spacing="2" IsVisible="{Binding IsList}">
+                <TextBlock Text="Values (comma-separated)"
+                           FontSize="10" Opacity="0.6"/>
+                <TextBox Text="{Binding ListExpr, Mode=TwoWay}"
+                         FontSize="11"
+                         PlaceholderText="e.g. -20, -15, -10, -5, 0"/>
+            </StackPanel>
+
+            <!-- Row 4: Preview -->
+            <TextBlock Text="{Binding Preview}"
+                       FontSize="10"
+                       Opacity="0.55"
+                       IsVisible="{Binding Preview, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+        </StackPanel>
+    </Border>
+
+</UserControl>

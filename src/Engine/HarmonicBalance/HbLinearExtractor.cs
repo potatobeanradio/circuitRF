@@ -387,7 +387,7 @@ public sealed class HbLinearExtractor
     }
 
     private static bool IsVoltageOrToneSource(ElaboratedComponent ec) =>
-        ec.Model is VoltageSourceModel or ToneSourceModel or TunerModel;
+        ec.Model is VdcModel or ToneSourceModel or TunerModel;
     // TunerModel contains an internal V_1Tone drive (SourceTuner) and a bias supply
     // (both roles) — it must be stamped via ZeroDriveMna in the zeroDrive=true path
     // so its source values are zeroed for the Y_NN extraction. The ZeroDriveMna passes
@@ -544,7 +544,7 @@ public sealed class HbLinearExtractor
                     names[im.LastBranchIndex - _nonGroundCount] = $"L:{ec.InstancePath}";
                     break;
 
-                case VoltageSourceModel vm when vm.LastBranchIndex >= _nonGroundCount:
+                case VdcModel vm when vm.LastBranchIndex >= _nonGroundCount:
                     names[vm.LastBranchIndex - _nonGroundCount] = $"V:{ec.InstancePath}";
                     break;
 

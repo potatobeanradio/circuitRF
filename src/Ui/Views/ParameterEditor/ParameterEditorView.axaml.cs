@@ -27,12 +27,35 @@ public partial class ParameterEditorView : UserControl
         }
     }
 
+    // ── Parameter name TextBox (editable for extensible types; read-only otherwise) ──
+
+    private void OnParamNameLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb && tb.DataContext is ParameterRowViewModel row)
+            row.CommitName();
+    }
+
+    private void OnParamNameKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.Return or Key.Enter)
+        {
+            if (sender is TextBox tb && tb.DataContext is ParameterRowViewModel row)
+            {
+                row.CommitName();
+                e.Handled = true;
+            }
+        }
+    }
+
     // ── Parameter expression TextBox ──────────────────────────────────────────
 
     private void OnParamExprLostFocus(object? sender, RoutedEventArgs e)
     {
         if (sender is TextBox tb && tb.DataContext is ParameterRowViewModel row)
+        {
             row.CommitExpression();
+            Vm?.TriggerResort();
+        }
     }
 
     private void OnParamExprKeyDown(object? sender, KeyEventArgs e)
@@ -42,6 +65,7 @@ public partial class ParameterEditorView : UserControl
             if (sender is TextBox tb && tb.DataContext is ParameterRowViewModel row)
             {
                 row.CommitExpression();
+                Vm?.TriggerResort();
                 e.Handled = true;
             }
         }

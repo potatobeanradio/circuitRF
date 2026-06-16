@@ -1,0 +1,54 @@
+; phantom_nodes.cnl — minimal PA for testing phantom-unit-node fix + Vout2 back-solve
+;
+; Verifies:
+;   1. P1Tone trailing "dBm" unit consumed as unit, not added as net
+;   2. Vdc trailing "V" unit consumed as unit, not added as net
+;   3. Vout2 (linear back-solved node) is non-zero at fundamental after fix
+;
+; User nodes: n1 (P1Tone output), n2 (gate bias), n3 (drain bias),
+;             Vin (FET gate), Vout (FET drain), Vout2 (output filter)
+
+; ---- FET parameters (Hero2 SDD) ----
+Sv=-0.837
+Sc=0.71
+TV0=4.268
+TC=1.507
+th=0.001
+a=0.176
+g=0.089
+lam=0.0012
+B=1130
+
+RFfreq = 2e9
+Pin = -10     ; dBm — swept by SW1 parametric sweep
+
+; ---- RF source: P1Tone at n1 ----
+; "dBm" must be consumed as a unit token, NOT become a phantom "dBm" net
+P1Tone:P1  n1 0  Pavl=Pin dBm  Freq=RFfreq  Z=50
+
+; ---- Gate bias at n2 ----
+; "V" must be consumed as a unit token, NOT become a phantom "V" net
+Vdc:V1  n2 0  Vdc=-3.05 V
+
+; ---- Drain bias at n3 ----
+Vdc:V2  n3 0  Vdc=48 V
+
+; ---- Input network: n1 → Vin (FET gate) ----
+R:Rin       n1 Vin  R=25
+L:Lg_choke  n2 Vin  L=1 uH
+
+; ---- GaN HEMT SDD FET: gate=Vin, drain=Vout ----
+SDD:M1  Vin 0  Vout 0  \
+  I[1,0]=_v1/50  \
+  I[2,0]=(B*TC*tanh(_v2*a*(tanh(g*(TV0 - _v1 + _v2*th + Sc*ln(exp(-(Sv - _v1)/Sc) + 1))) + 1))*ln(exp(-(2*TV0 - 2*_v1 + 2*_v2*th + 2*Sc*ln(exp(-(Sv - _v1)/Sc) + 1))/TC) + 1)*(_v2*lam + 1))/2
+
+; ---- Drain load: choke + output filter (Vout2) ----
+L:Ld_choke  Vout n3    L=1 uH
+C:C2        Vout Vout2  C=1m       ; 1 mF — near-short at 2 GHz
+R:R2        Vout2 0    R=80 Ohm
+
+; ---- HB analysis: single tone at 2 GHz ----
+analysis HB1  type=hb  Tone=RFfreq  MaxHarm=4  Tol=1e-6  DriveStepping=IfNecessary
+
+; ---- Parametric sweep over Pin (single point for the gate test) ----
+analysis SW1  type=parametric_sweep  Var=Pin  Values=-10  Inner=HB1

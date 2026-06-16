@@ -251,6 +251,15 @@ public sealed class HbEngine
         // ── Commensurability check (harmonic-balance.md §3.1) ────────────────
         CheckCommensurability(f0, K);
 
+        // ── Configure P1Tone sources with tone context (must precede extraction) ──
+        foreach (var ec in _netlist.Components)
+        {
+            if (ec.Model is not P1ToneModel p1) continue;
+            double driveHz = ec.Parameters.TryGetValue("Freq", out var fv) && fv.Kind == ValueKind.Real
+                ? fv.AsReal() : f0;
+            p1.SetToneContext(fc: f0, driveFreqHz: driveHz);
+        }
+
         // ── Extract Y_{N×N}(0) and I_src(0) for DC (k=0): real DC admittance + Norton source.
         // ExtractDC throws SingularMatrixException if any interface node is voltage-pinned
         // (ideal inductor + ideal voltage source = zero-impedance DC path).  Fix: add R to chokes.
@@ -355,8 +364,45 @@ public sealed class HbEngine
         var backSolver = new HbLinearBackSolver(
             extractor, f0, K, [solveResult.INl], [bSrcThisPoint], _netlist);
 
+        // Expand V/INl to all user-facing non-ground nodes (brief hb-linear-nodes-in-cube).
+        // Interface nodes use the converged Newton solution directly; linear-only nodes
+        // are recovered via HbLinearBackSolver.  __-prefixed internal mint nodes are excluded.
+        var fullNodeIds = Enumerable.Range(1, _netlist.Nodes.Count - 1)
+            .Where(c => !_netlist.Nodes.NameOf(c).StartsWith("__", StringComparison.Ordinal))
+            .ToArray();
+
+        var ifNodeToIdx = new Dictionary<int, int>(N);
+        for (int n = 0; n < N; n++)
+            ifNodeToIdx[ifNodes[n]] = n;
+
+        int     Nfull     = fullNodeIds.Length;
+        var     Vfull     = new Complex[Nfull, K + 1];
+        var     INlfull   = new Complex[Nfull, K + 1];
+        var     namesFull = new string[Nfull];
+
+        for (int fi = 0; fi < Nfull; fi++)
+        {
+            int c = fullNodeIds[fi];
+            namesFull[fi] = _netlist.Nodes.NameOf(c);
+            if (ifNodeToIdx.TryGetValue(c, out int ifIdx))
+            {
+                for (int k = 0; k <= K; k++)
+                {
+                    Vfull  [fi, k] = V             [ifIdx, k];
+                    INlfull[fi, k] = solveResult.INl[ifIdx, k];
+                }
+            }
+            else
+            {
+                // Linear-only node: back-solve voltage; INl = 0 (no nonlinear current here).
+                for (int k = 0; k <= K; k++)
+                    Vfull[fi, k] = backSolver.GetNodeVoltage(c, k, 0);
+            }
+        }
+
         var ds = BuildSingleToneDataSet(
-            V, solveResult.INl, nodeNames, f0, K, trace, portCurrentsByBranch);
+            Vfull, INlfull, namesFull, f0, K, trace, portCurrentsByBranch,
+            _netlist.Nodes.LabeledNames);
 
         return new HbRunResult(ds, backSolver);
     }
@@ -389,6 +435,16 @@ public sealed class HbEngine
             n < _netlist.Nodes.Count ? _netlist.Nodes.NameOf(n) : $"node{n}").ToArray();
 
         CheckCommensurabilityMultiTone(grid, f1, f2);
+
+        // ── Configure P1Tone sources with tone context (must precede extraction) ──
+        double fcTwoTone = (f1 + f2) / 2.0;
+        foreach (var ec in _netlist.Components)
+        {
+            if (ec.Model is not P1ToneModel p1) continue;
+            double driveHz = ec.Parameters.TryGetValue("Freq", out var fv) && fv.Kind == ValueKind.Real
+                ? fv.AsReal() : f1;
+            p1.SetToneContext(fc: fcTwoTone, driveFreqHz: driveHz);
+        }
 
         // Extract the linear interface per mixing product. A retained rep may have NEGATIVE
         // frequency (e.g. (1,-1) = f1−f2); for a real network Y(−ω)=conj(Y(ω)). We extract at |ω|
@@ -458,7 +514,8 @@ public sealed class HbEngine
         trace.Print();
 
         return BuildTwoToneDataSet(
-            V, solveResult.INl, nodeNames, grid, f1, f2, trace, portCurrentsByBranch);
+            V, solveResult.INl, nodeNames, grid, f1, f2, trace, portCurrentsByBranch,
+            _netlist.Nodes.LabeledNames);
     }
 
     /// <summary>Effective settings with HbMaxIter overridden from the directive's MaxIter.</summary>
@@ -526,22 +583,37 @@ public sealed class HbEngine
         const double Tol = 1.0;  // 1 Hz
         foreach (var ec in _netlist.Components)
         {
-            if (ec.Model is not ToneSourceModel) continue;
-            foreach (var (key, val) in ec.Parameters)
+            if (ec.Model is ToneSourceModel)
             {
-                if (val.Kind != ValueKind.Real) continue;
-                bool isFreqKey = key.Equals("Freq", StringComparison.OrdinalIgnoreCase)
-                              || (key.StartsWith("Freq[", StringComparison.OrdinalIgnoreCase));
-                if (!isFreqKey) continue;
-                double fTone = val.AsReal();
-                if (Math.Abs(fTone) < Tol) continue;  // DC-only entry
+                foreach (var (key, val) in ec.Parameters)
+                {
+                    if (val.Kind != ValueKind.Real) continue;
+                    bool isFreqKey = key.Equals("Freq", StringComparison.OrdinalIgnoreCase)
+                                  || key.StartsWith("Freq[", StringComparison.OrdinalIgnoreCase);
+                    if (!isFreqKey) continue;
+                    double fTone = val.AsReal();
+                    if (Math.Abs(fTone) < Tol) continue;
+
+                    bool onGrid = false;
+                    foreach (var (k1, k2) in grid.All())
+                        if (Math.Abs(k1 * f1 + k2 * f2 - fTone) <= Tol) { onGrid = true; break; }
+                    if (!onGrid)
+                        throw new InvalidOperationException(
+                            $"Commensurability check failed: source '{ec.InstancePath}' {key}={fTone:G6} Hz " +
+                            $"is not on the two-tone grid {{f1={f1:G6}, f2={f2:G6}, MaxMixOrder={grid.MaxMixOrder}}}");
+                }
+            }
+            else if (ec.Model is P1ToneModel p1)
+            {
+                double fTone = p1.FreqHz;
+                if (Math.Abs(fTone) < Tol) continue;
 
                 bool onGrid = false;
                 foreach (var (k1, k2) in grid.All())
                     if (Math.Abs(k1 * f1 + k2 * f2 - fTone) <= Tol) { onGrid = true; break; }
                 if (!onGrid)
                     throw new InvalidOperationException(
-                        $"Commensurability check failed: source '{ec.InstancePath}' {key}={fTone:G6} Hz " +
+                        $"Commensurability check failed: source '{ec.InstancePath}' Freq={fTone:G6} Hz " +
                         $"is not on the two-tone grid {{f1={f1:G6}, f2={f2:G6}, MaxMixOrder={grid.MaxMixOrder}}}");
             }
         }
@@ -833,7 +905,8 @@ public sealed class HbEngine
         double      f0,
         int         K,
         HbConvergenceTrace trace,
-        Dictionary<string, List<Complex[]>> portCurrents)
+        Dictionary<string, List<Complex[]>> portCurrents,
+        HashSet<string>?    labeledNames = null)
     {
         int N  = V.GetLength(0);
         int K1 = K + 1;
@@ -865,6 +938,19 @@ public sealed class HbEngine
         ds.Add("Converged", DataCube.Scalar(conv));
         ds.Add("Residual",  DataCube.Scalar(res));
 
+        // Provenance: which node-axis entries came from a user net label (for the node-picker filter).
+        if (labeledNames is not null)
+        {
+            var labeled = nodeNames.Where(n => labeledNames.Contains(n)).Distinct().ToArray();
+            if (labeled.Length > 0)
+            {
+                var lIdx = Enumerable.Range(0, labeled.Length).Select(i => (double)i).ToArray();
+                ds.Add("__LabeledNodes", new DataCube(
+                    [new Axis("label", lIdx, "", labeled)],
+                    new double[labeled.Length]));
+            }
+        }
+
         foreach (var (branchKey, specList) in portCurrents)
         {
             if (specList.Count == 0) continue;
@@ -893,7 +979,8 @@ public sealed class HbEngine
         double      f1,
         double      f2,
         HbConvergenceTrace trace,
-        Dictionary<string, List<Complex[]>> portCurrentsByBranch)
+        Dictionary<string, List<Complex[]>> portCurrentsByBranch,
+        HashSet<string>?    labeledNames = null)
     {
         int N = V.GetLength(0);
         int M = grid.MixCount;
@@ -936,6 +1023,18 @@ public sealed class HbEngine
         ds.Add("ToneFreqs",    new DataCube([toneAxis], new double[] { f1, f2 }));
         ds.Add("MetaMixOrder", new DataCube([orderAxis], new double[] { grid.MaxMixOrder }));
 
+        if (labeledNames is not null)
+        {
+            var labeled = nodeNames.Where(n => labeledNames.Contains(n)).Distinct().ToArray();
+            if (labeled.Length > 0)
+            {
+                var lIdx = Enumerable.Range(0, labeled.Length).Select(i => (double)i).ToArray();
+                ds.Add("__LabeledNodes", new DataCube(
+                    [new Axis("label", lIdx, "", labeled)],
+                    new double[labeled.Length]));
+            }
+        }
+
         foreach (var (branchKey, specList) in portCurrentsByBranch)
         {
             if (specList.Count == 0) continue;
@@ -956,17 +1055,22 @@ public sealed class HbEngine
 
         foreach (var ec in _netlist.Components)
         {
-            if (ec.Model is not ToneSourceModel tsm) continue;
-            // The ToneSourceModel stores resolved FreqHz values per tone.
-            // Re-check each declared frequency lands on the grid.
-            // (ToneSourceModel doesn't expose FreqHz publicly; we read via parameter dict.)
-            if (!ec.Parameters.TryGetValue("Freq", out var fv) || fv.Kind != ValueKind.Real)
-                continue;
-            double freqHz = fv.AsReal();
+            double freqHz = 0;
+            if (ec.Model is ToneSourceModel)
+            {
+                if (!ec.Parameters.TryGetValue("Freq", out var fv) || fv.Kind != ValueKind.Real) continue;
+                freqHz = fv.AsReal();
+            }
+            else if (ec.Model is P1ToneModel p1)
+            {
+                freqHz = p1.FreqHz;
+            }
+            else continue;
+
             if (freqHz == 0) continue;  // DC-only source, no tone
 
             // Check: freqHz = m * f0 for some integer m in 1..K.
-            double ratio = freqHz / f0;
+            double ratio    = freqHz / f0;
             double nearestK = Math.Round(ratio);
             if (Math.Abs(ratio - nearestK) * f0 > Tol || nearestK < 1 || nearestK > K)
                 throw new InvalidOperationException(

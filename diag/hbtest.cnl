@@ -1,0 +1,14 @@
+Pin = 0
+
+SDD:X1  Vin  Vout  0
+C:C1  Vin  n1  C=1 mF
+L:L1  n2  Vin  L=1 mH
+L:L2  n3  Vout  L=1 mH
+R:R2  Vout2  0  R=80 Ohm
+C:C2  Vout2  Vout  C=1 mF
+P1Tone:P1  n1  0  Pavl=Pin dBm  Z=50 Ohm  Freq=2 GHz  Phase=0 deg  Z[0]=1 Ohm  Z[2]=30 Ohm
+Vdc:V1  n2  0  Vdc=-3.05 V
+Vdc:V2  n3  0  Vdc=48 V
+
+analysis HB1 type=hb Tone=2e9 MaxHarm=5 FFTOverSample=1 Tol=1e-6 DriveStepping=IfNecessary GuardHarmonic=0 Lambda=1 MaxIter=100
+analysis HB1_sweep_Pin type=parametric_sweep Var=Pin Values=10,11,12,13,14,15 Inner=HB1

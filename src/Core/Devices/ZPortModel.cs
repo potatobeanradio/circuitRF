@@ -10,8 +10,8 @@ namespace CircuitRF.Core.Devices;
 /// in the reserved keyword `freq` (Hz), evaluated per stamped frequency.
 ///
 /// Stamped by the Z(ω) branch-current expansion — N branches, one per port.
-/// Reference-node: same N-or-(N+1) convention as SnP (linear-engine §4.1).
-/// For the common 1-port case: 2 nets (n+, n−), 1 branch.
+/// 2N nets ordered as ± pairs: Nodes[2p] = port p+, Nodes[2p+1] = port p−.
+/// Each port has its own independent reference (V_p = V(Nodes[2p]) − V(Nodes[2p+1])).
 ///
 /// Hero 2 usage: per-harmonic source/load terminations with piecewise Z(freq).
 /// </summary>
@@ -41,29 +41,26 @@ public sealed class ZPortModel : ComponentModel
         // Evaluate Z[i,j] at this frequency.
         var z = EvaluateZ(freqHz);
 
-        // Identify port nodes (N nets for N ports; reference = c.ReferenceNode).
-        // Each port has one net (port+); the reference is shared across all ports.
-        int refNode = c.ReferenceNode;  // 0 = ground
-
-        // Allocate N branch-current unknowns, one per port.
+        // 2N nets: Nodes[2p] = port p+, Nodes[2p+1] = port p−. Per-port reference.
         var branches = new int[_portCount];
         for (int p = 0; p < _portCount; p++)
             branches[p] = mna.AddBranch();
 
-        // KCL: each branch current flows from its port+ node to the reference node.
         for (int p = 0; p < _portCount; p++)
         {
-            int nodeP = c.Nodes[p];
-            mna.AddBranchCurrent(branches[p], nodeP, refNode);
+            int nodePlus  = c.Nodes[2 * p];
+            int nodeMinus = c.Nodes[2 * p + 1];
+            mna.AddBranchCurrent(branches[p], nodePlus, nodeMinus);
         }
 
-        // Constraints: V_p - V_ref - Σ_q Z[p+1,q+1] * I_q = 0
+        // Constraints: V_p − V_ref_p − Σ_q Z[p,q]·I_q = 0  (V_ref_p = V(nodeMinus))
         for (int p = 0; p < _portCount; p++)
         {
-            int nodeP = c.Nodes[p];
-            mna.AddConstraint(branches[p], nodeP,    new Complex(+1, 0));
-            if (refNode > 0)
-                mna.AddConstraint(branches[p], refNode, new Complex(-1, 0));
+            int nodePlus  = c.Nodes[2 * p];
+            int nodeMinus = c.Nodes[2 * p + 1];
+            mna.AddConstraint(branches[p], nodePlus,  new Complex(+1, 0));
+            if (nodeMinus > 0)
+                mna.AddConstraint(branches[p], nodeMinus, new Complex(-1, 0));
 
             for (int q = 0; q < _portCount; q++)
                 mna.AddBranchConstraint(branches[p], branches[q], -z[p, q]);

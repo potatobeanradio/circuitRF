@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace CircuitRF.Ui.Schematic;
 
 // ── Item 8: Central component-type metadata registry ─────────────────────────
@@ -37,6 +39,33 @@ public enum UnitDimension
 
 /// <summary>One entry in the default parameter template for a freshly-placed component.</summary>
 public readonly record struct DefaultParam(string Name, string Expression, string Unit, bool ShowOnSchematic, UnitDimension Dimension = UnitDimension.None);
+
+/// <summary>
+/// Describes how the "+" and "−" buttons work for a user-extensible component type.
+/// Each "group" consists of one or more parameters sharing the same integer index (e.g.
+/// Freq[2]/V[2]/Phase[2] for ToneSource tone 2, or Z[0] for P1Tone DC harmonic).
+/// </summary>
+public sealed record IndexedParamGroup(
+    /// <summary>
+    /// Format strings (using {0} for the index) for each name in one group.
+    /// Example: ["Freq[{0}]","V[{0}]","Phase[{0}]"] for ToneSource.
+    /// The first format is the "primary" used by FindTopGroupIndex.
+    /// </summary>
+    string[] NameFormats,
+    /// <summary>Default unit for each format entry (parallel; last value repeated if shorter).</summary>
+    string[] DefaultUnits,
+    /// <summary>ShowOnSchematic default per format entry (parallel; false when shorter).</summary>
+    bool[] ShowOnSchematic,
+    /// <summary>UnitDimension per format entry (parallel; None when shorter).</summary>
+    UnitDimension[] Dimensions,
+    /// <summary>Lowest index that the user may add via "+" (e.g. 0 for P1Tone, 2 for ToneSource).</summary>
+    int FirstAddIndex = 0,
+    /// <summary>Indices that must not be added (reserved/fixed). Null = no skips.</summary>
+    int[]? SkipIndices = null)
+{
+    /// <summary>True if the given index is in the skip set.</summary>
+    public bool IsSkipped(int index) => SkipIndices is not null && SkipIndices.Contains(index);
+}
 
 /// <summary>Display metadata for one component type.</summary>
 public sealed record ComponentTypeInfo(
@@ -102,9 +131,9 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Lumped,
             SearchTerms: ["C", "Capacitor", "cap", "capacitance"],
             IsCommon: true),
-        [SymbolKind.VoltageSource] = new("V",     "V",
+        [SymbolKind.Vdc]           = new("Vdc",   "V",
             Category: ComponentCategory.Sources,
-            SearchTerms: ["V", "VoltageSource", "voltage", "DC", "bias"],
+            SearchTerms: ["Vdc", "DC", "bias", "supply", "voltage", "V"],
             IsCommon: true),
         // NOTE: abbreviation; revisit when palette has richer type
         [SymbolKind.ToneSource]    = new("VTone", "V",
@@ -145,6 +174,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Other,
             SearchTerms: ["VAR", "Variable", "var", "vars", "parameter", "sweep"],
             IsCommon: true),
+        [SymbolKind.P1Tone]        = new("P1Tone", "P",
+            Category: ComponentCategory.Sources,
+            SearchTerms: ["P1Tone", "power", "Pavl", "available power", "RF source", "drive", "harmonic"],
+            IsCommon: true),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -182,7 +215,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Resistor      => "R",
         SymbolKind.Inductor      => "L",
         SymbolKind.Capacitor     => "C",
-        SymbolKind.VoltageSource => "V",
+        SymbolKind.Vdc           => "Vdc",
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
@@ -191,6 +224,7 @@ public static class ComponentTypeRegistry
         SymbolKind.ZPort         => "Z_Port",
         SymbolKind.Ground        => "GND",
         SymbolKind.Var           => "VAR",   // sentinel — never emitted as an Instance; not a factory primitive
+        SymbolKind.P1Tone        => "P1Tone",
         _                        => Get(kind).DisplayName,
     };
 
@@ -209,22 +243,25 @@ public static class ComponentTypeRegistry
     /// the per-port equation arrays are filled in by the user; no registry default beyond port count.
     ///
     /// Parameter names match what the engine/device models expect at elaboration time, with
-    /// one known exception: VoltageSource shows Vac/Freq here while VoltageSourceModel currently
-    /// reads "V" — the schematic params and the model will converge when the model is updated.
     /// </summary>
     public static IReadOnlyList<DefaultParam> DefaultParameters(SymbolKind kind, int portCount)
     {
         switch (kind)
         {
-            case SymbolKind.Resistor:      return [new("R",    "1", "Ω",   true, UnitDimension.Resistance)];
-            case SymbolKind.Inductor:      return [new("L",    "1", "nH",  true, UnitDimension.Inductance)];
-            case SymbolKind.Capacitor:     return [new("C",    "1", "pF",  true, UnitDimension.Capacitance)];
-            // NOTE: VoltageSourceModel currently reads "V"; these names are the intended schematic-layer params.
-            case SymbolKind.VoltageSource: return [new("Vac",  "1", "V",   true, UnitDimension.Voltage),
-                                                   new("Freq", "2", "GHz", true, UnitDimension.Frequency)];
+            case SymbolKind.Resistor:  return [new("R",   "1", "Ω",   true, UnitDimension.Resistance)];
+            case SymbolKind.Inductor:  return [new("L",   "1", "nH",  true, UnitDimension.Inductance)];
+            case SymbolKind.Capacitor: return [new("C",   "1", "pF",  true, UnitDimension.Capacitance)];
+            case SymbolKind.Vdc:       return [new("Vdc", "0", "V",   true, UnitDimension.Voltage)];
             // V and Freq match V_1Tone factory keys (V= amplitude, Freq= frequency in Hz).
-            case SymbolKind.ToneSource:    return [new("V",    "1", "V",   true, UnitDimension.Voltage),
-                                                   new("Freq", "2", "GHz", true, UnitDimension.Frequency)];
+            // Vdc (hidden) provides a DC bias offset on the tone source.
+            case SymbolKind.ToneSource: return [new("V",    "1", "V",   true,  UnitDimension.Voltage),
+                                                new("Freq", "2", "GHz", true,  UnitDimension.Frequency),
+                                                new("Vdc",  "0", "V",   false, UnitDimension.Voltage)];
+            // Pavl/Z/Freq/Phase match P1ToneModel factory keys.
+            case SymbolKind.P1Tone:        return [new("Pavl",  "0",  "dBm", true,  UnitDimension.Power),
+                                                   new("Z",    "50",  "Ω",   true,  UnitDimension.Resistance),
+                                                   new("Freq",  "1",  "GHz", true,  UnitDimension.Frequency),
+                                                   new("Phase", "0",  "deg", false, UnitDimension.Angle)];
 
             case SymbolKind.ZPort:
             {
@@ -295,13 +332,15 @@ public static class ComponentTypeRegistry
             case "R":      kind = SymbolKind.Resistor;      return true;
             case "L":      kind = SymbolKind.Inductor;      return true;
             case "C":      kind = SymbolKind.Capacitor;     return true;
-            case "V":      kind = SymbolKind.VoltageSource; return true;
+            case "V":
+            case "VDC":    kind = SymbolKind.Vdc;           return true;
             case "VTONE":  kind = SymbolKind.ToneSource;    return true;
             case "GND":    kind = SymbolKind.Ground;        return true;
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;
             case "PIN":    kind = SymbolKind.Pin;           return true;
             case "VAR":    kind = SymbolKind.Var;           return true;
+            case "P1TONE": kind = SymbolKind.P1Tone;        return true;
             case "FET":
             case "SDD":
             case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default
@@ -327,4 +366,61 @@ public static class ComponentTypeRegistry
                 return Enum.TryParse(input, ignoreCase: true, out kind);
         }
     }
+
+    /// <summary>
+    /// Returns the indexed-parameter group descriptor for component types whose parameter set
+    /// can be extended by the user via the "+" button in the parameter editor.
+    /// Returns null for ordinary fixed-parameter types (R, L, C, V, Term, Pin, Ground, …).
+    /// </summary>
+    public static IndexedParamGroup? UserParamTemplate(SymbolKind kind) => kind switch
+    {
+        // P1Tone: Z[k] harmonic termination impedances — DC (0), then 2, 3, 4, …  (Z[1] skipped:
+        //         the fundamental is already represented by the scalar "Z" parameter).
+        SymbolKind.P1Tone => new IndexedParamGroup(
+            NameFormats:     ["Z[{0}]"],
+            DefaultUnits:    ["Ω"],
+            ShowOnSchematic: [true],
+            Dimensions:      [UnitDimension.Resistance],
+            FirstAddIndex:   0,
+            SkipIndices:     [1]),
+
+        // ToneSource: each group = Freq[n]/V[n]/Phase[n].  Tones start at 2 (tone 1 is the base
+        //             scalar V/Freq that gets migrated to V[1]/Freq[1] on first add).
+        SymbolKind.ToneSource => new IndexedParamGroup(
+            NameFormats:     ["Freq[{0}]", "V[{0}]", "Phase[{0}]"],
+            DefaultUnits:    ["GHz", "V", "deg"],
+            ShowOnSchematic: [true, true, false],
+            Dimensions:      [UnitDimension.Frequency, UnitDimension.Voltage, UnitDimension.Angle],
+            FirstAddIndex:   2,
+            SkipIndices:     null),
+
+        // ZPort: user adds extra Z[n] scalar params (1D; existing Z[i,j] 2D params are unaffected).
+        SymbolKind.ZPort => new IndexedParamGroup(
+            NameFormats:     ["Z[{0}]"],
+            DefaultUnits:    ["Ω"],
+            ShowOnSchematic: [true],
+            Dimensions:      [UnitDimension.Resistance],
+            FirstAddIndex:   1,
+            SkipIndices:     null),
+
+        // SDD: user adds named I[…] equation slots.
+        SymbolKind.Sdd => new IndexedParamGroup(
+            NameFormats:     ["I[{0}]"],
+            DefaultUnits:    [""],
+            ShowOnSchematic: [true],
+            Dimensions:      [UnitDimension.None],
+            FirstAddIndex:   1,
+            SkipIndices:     null),
+
+        // VAR: user-authored variable rows — adds Var{n} placeholder names.
+        SymbolKind.Var => new IndexedParamGroup(
+            NameFormats:     ["Var{0}"],
+            DefaultUnits:    [""],
+            ShowOnSchematic: [false],
+            Dimensions:      [UnitDimension.None],
+            FirstAddIndex:   1,
+            SkipIndices:     null),
+
+        _ => null,
+    };
 }

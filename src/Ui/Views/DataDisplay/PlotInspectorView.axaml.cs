@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Specialized;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 
 namespace CircuitRF.Ui.Views.DataDisplay;
@@ -72,5 +76,48 @@ public partial class PlotInspectorView : UserControl
         {
             _traceScrollViewer?.Offset = new Vector(0, _traceScrollViewer!.Extent.Height);
         }, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Opens the inspector scrolled to the given trace and focuses its spec TextBox.
+    /// Interim implementation of the Table trace-header double-click (brief §5):
+    /// routes to the inline spec editor instead of just scrolling to the card.
+    /// </summary>
+    public void FocusSpecTextBox(int traceIndex)
+    {
+        if (traceIndex < 0 || _vm is null) return;
+        ScrollToTrace(traceIndex);
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            var targetVm = _vm.Traces.ElementAtOrDefault(traceIndex);
+            if (targetVm is null) return;
+            foreach (var tb in this.GetVisualDescendants().OfType<TextBox>())
+            {
+                if (tb.IsVisible && ReferenceEquals(tb.DataContext, targetVm))
+                {
+                    tb.Focus();
+                    tb.SelectAll();
+                    return;
+                }
+            }
+        }, DispatcherPriority.Render);
+    }
+
+    // ---- Spec editor event handlers (#4) ------------------------------------
+
+    private void OnSpecEditLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb && tb.DataContext is TraceRowViewModel vm)
+            vm.CommitSpec(tb.Text ?? "");
+    }
+
+    private void OnSpecEditKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && sender is TextBox tb && tb.DataContext is TraceRowViewModel vm)
+        {
+            vm.CommitSpec(tb.Text ?? "");
+            e.Handled = true;
+        }
     }
 }

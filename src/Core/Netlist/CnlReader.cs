@@ -320,10 +320,11 @@ public sealed class CnlReader
 
     // Matches SDD-style equation assignments: I[p,w]=, Q[p,w]=, F[p,w]=, C[n]=,
     // Cport[n]=, In[p,w]=, Nc[p,q]= — used for boundary detection.
+    // Single-index forms I[p]= and Q[p]= are also accepted (sugar for I[p,0] and Q[p,1]).
     // Optional whitespace around '=' is allowed (spaced form: I[1,0] = expr).
     // Capture group 3 captures the '=' (to find where the RHS expression starts).
     private static readonly Regex SddAssignmentHeader = new(
-        @"(I|Q|F|In|Nc)\[\d+,\d+\]\s*(=)|(C(?:port)?)\[\d+\]\s*(=)",
+        @"(I|Q|F|In|Nc)\[\d+(,\d+)?\]\s*(=)|(C(?:port)?)\[\d+\]\s*(=)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
@@ -345,16 +346,26 @@ public sealed class CnlReader
         // Find first equation assignment in `rest`.
         int eqStart = FindFirstSddEquation(rest);
 
-        // Everything before the first equation is net names.
+        // Everything before the first equation is net names OR scalar param=value tokens.
+        // Tokens containing '=' are treated as parameter overrides (e.g. Ports=2), not nets.
         var netSection = eqStart >= 0 ? rest[..eqStart].Trim() : rest;
-        var nets       = netSection.Length > 0
-            ? netSection.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).ToList()
-            : new List<string>();
+        var nets       = new List<string>();
+        var overrides  = new List<ParameterAssignment>();
+        if (netSection.Length > 0)
+        {
+            foreach (var tok in netSection.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                int eq = tok.IndexOf('=');
+                if (eq > 0 && eq < tok.Length - 1)
+                    overrides.Add(new ParameterAssignment(tok[..eq], tok[(eq + 1)..], null));
+                else
+                    nets.Add(tok);
+            }
+        }
 
         // Parse equation assignments from the remainder.
-        var overrides = new List<ParameterAssignment>();
         if (eqStart >= 0)
-            overrides = ParseSddEquations(rest[eqStart..]);
+            overrides.AddRange(ParseSddEquations(rest[eqStart..]));
 
         var inst = new Instance(instanceName, "SDD", nets, overrides);
         if (_currentCell is not null)
@@ -456,30 +467,8 @@ public sealed class CnlReader
         if (eqStart >= 0)
             overrides = ParseZPortEquations(rest[eqStart..]);
 
-        // N-or-(N+1) reference-node convention (same as SnP, linear-engine §4.1):
-        // Determine N from the max port index in Z[i,j] overrides.
-        // If nets.Count == N+1: last net is the shared reference; pop it.
-        int portCount = 0;
-        foreach (var ov in overrides)
-        {
-            var zm = System.Text.RegularExpressions.Regex.Match(ov.Name, @"\[(\d+),(\d+)\]");
-            if (zm.Success)
-            {
-                portCount = Math.Max(portCount, int.Parse(zm.Groups[1].Value));
-                portCount = Math.Max(portCount, int.Parse(zm.Groups[2].Value));
-            }
-        }
-        portCount = Math.Max(1, portCount);
-
-        string? refNetBinding = null;
-        if (nets.Count == portCount + 1)
-        {
-            refNetBinding = nets[portCount];
-            nets.RemoveAt(portCount);
-        }
-
-        var inst = new Instance(instanceName, "Z_Port", nets, overrides)
-                   { RefNetBinding = refNetBinding };
+        // 2N nets: port1+, port1−, port2+, port2−, … Arity validated in the Elaborator.
+        var inst = new Instance(instanceName, "Z_Port", nets, overrides);
         if (_currentCell is not null)
             _currentCell.Instances.Add(inst);
         else
@@ -1055,11 +1044,7 @@ public sealed class CnlReader
     // ── HB analysis directive parser ─────────────────────────────────────────
 
     /// <summary>
-    /// Attempts to parse a "Name type=hb key=value ..." analysis directive into a typed
-    /// <see cref="HarmonicBalanceAnalysis"/>. Returns false if it is not a type=hb directive.
-    /// </summary>
-    /// <summary>
-    /// Parses: "Name type=parametric_sweep Var=VarName Values=v1,v2,... Inner=InnerName"
+    /// Parses: "Name type=parametric_sweep Var=VarName (Values=v1,v2,… | Start=… Stop=… (Step=… | Npts=…) [log]) Inner=InnerName"
     /// </summary>
     private static bool TryParseParametricSweepDirective(string rawLine,
         out CircuitRF.Core.Design.ParametricSweepAnalysis? result)
@@ -1069,16 +1054,26 @@ public sealed class CnlReader
         if (tokens.Count < 2) return false;
 
         string analysisName = tokens[0];
-        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Collect key=value pairs and bare keywords (mirrors TryParseSParamDirective).
+        var kv   = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var bare = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         for (int i = 1; i < tokens.Count; i++)
         {
             int eq = tokens[i].IndexOf('=');
-            if (eq <= 0) continue;
-            string key = tokens[i][..eq];
-            string val = tokens[i][(eq + 1)..];
-            if (val.Length >= 2 && val[0] == '"' && val[^1] == '"')
-                val = val[1..^1];
-            kv[key] = val;
+            if (eq > 0)
+            {
+                string key = tokens[i][..eq];
+                string val = tokens[i][(eq + 1)..];
+                if (val.Length >= 2 && val[0] == '"' && val[^1] == '"')
+                    val = val[1..^1];
+                kv[key] = val;
+            }
+            else
+            {
+                bare.Add(tokens[i]);
+            }
         }
 
         if (!kv.TryGetValue("type", out var typeVal) ||
@@ -1089,34 +1084,91 @@ public sealed class CnlReader
             throw new InvalidOperationException(
                 $"Parametric sweep '{analysisName}': missing or empty Var= key.");
 
-        if (!kv.TryGetValue("Values", out var valuesStr) || string.IsNullOrEmpty(valuesStr))
-            throw new InvalidOperationException(
-                $"Parametric sweep '{analysisName}': missing or empty Values= key.");
-
-        double[] values;
-        try
-        {
-            values = valuesStr.Split(',')
-                .Select(s => double.Parse(s.Trim(),
-                    System.Globalization.CultureInfo.InvariantCulture))
-                .ToArray();
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"Parametric sweep '{analysisName}': cannot parse Values='{valuesStr}': {ex.Message}");
-        }
-
-        if (values.Length == 0)
-            throw new InvalidOperationException(
-                $"Parametric sweep '{analysisName}': Values= must contain at least one value.");
-
         if (!kv.TryGetValue("Inner", out var innerName) || string.IsNullOrEmpty(innerName))
             throw new InvalidOperationException(
                 $"Parametric sweep '{analysisName}': missing or empty Inner= key.");
 
-        result = new CircuitRF.Core.Design.ParametricSweepAnalysis(
-            analysisName, varName, values, innerName);
+        // Determine which form is present: Values= (explicit list) or Start=+Stop= (spec form).
+        bool hasValues    = kv.TryGetValue("Values", out var valuesStr) && !string.IsNullOrEmpty(valuesStr);
+        bool hasStart     = kv.TryGetValue("Start",  out var startStr)  && !string.IsNullOrEmpty(startStr);
+        bool hasStop      = kv.TryGetValue("Stop",   out var stopStr)   && !string.IsNullOrEmpty(stopStr);
+
+        if (!hasValues && !(hasStart && hasStop))
+            throw new InvalidOperationException(
+                $"Parametric sweep '{analysisName}': needs Values= or Start=/Stop=.");
+
+        if (hasValues)
+        {
+            // ── Explicit list form (backward-compat) ──────────────────────────
+            double[] values;
+            try
+            {
+                values = valuesStr!.Split(',')
+                    .Select(s => double.Parse(s.Trim(),
+                        System.Globalization.CultureInfo.InvariantCulture))
+                    .ToArray();
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Parametric sweep '{analysisName}': cannot parse Values='{valuesStr}': {ex.Message}");
+            }
+
+            if (values.Length == 0)
+                throw new InvalidOperationException(
+                    $"Parametric sweep '{analysisName}': Values= must contain at least one value.");
+
+            result = new CircuitRF.Core.Design.ParametricSweepAnalysis(
+                analysisName, varName, values, innerName);
+        }
+        else
+        {
+            // ── Start/Stop/Step|Npts spec form ────────────────────────────────
+            if (!double.TryParse(startStr, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double start))
+                throw new InvalidOperationException(
+                    $"Parametric sweep '{analysisName}': cannot parse Start='{startStr}'.");
+            if (!double.TryParse(stopStr, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double stop))
+                throw new InvalidOperationException(
+                    $"Parametric sweep '{analysisName}': cannot parse Stop='{stopStr}'.");
+
+            bool isLog = bare.Contains("log") ||
+                         (kv.TryGetValue("log", out var logVal) &&
+                          logVal.Equals("true", StringComparison.OrdinalIgnoreCase));
+            var kind = isLog ? CircuitRF.Core.Design.SweepKind.Log : CircuitRF.Core.Design.SweepKind.Linear;
+
+            CircuitRF.Core.Design.SweepSpec spec;
+            if (kv.TryGetValue("Npts", out var nptsStr) && !string.IsNullOrEmpty(nptsStr))
+            {
+                if (!int.TryParse(nptsStr, out int npts) || npts < 1)
+                    throw new InvalidOperationException(
+                        $"Parametric sweep '{analysisName}': Npts={nptsStr} must be a positive integer.");
+                spec = new CircuitRF.Core.Design.SweepSpec(start, stop, npts,
+                    CircuitRF.Core.Design.SweepAxisMode.PointCount, kind);
+            }
+            else if (kv.TryGetValue("Step", out var stepStr) && !string.IsNullOrEmpty(stepStr))
+            {
+                if (!double.TryParse(stepStr, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double step))
+                    throw new InvalidOperationException(
+                        $"Parametric sweep '{analysisName}': cannot parse Step='{stepStr}'.");
+                if (step <= 0)
+                    throw new InvalidOperationException(
+                        $"Parametric sweep '{analysisName}': Step= must be > 0 (got {step}).");
+                spec = new CircuitRF.Core.Design.SweepSpec(start, stop, step,
+                    CircuitRF.Core.Design.SweepAxisMode.StepSize, kind);
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Parametric sweep '{analysisName}': Start/Stop form requires Step= or Npts=.");
+            }
+
+            result = new CircuitRF.Core.Design.ParametricSweepAnalysis(
+                analysisName, varName, spec, innerName);
+        }
+
         return true;
     }
 
@@ -1256,6 +1308,10 @@ public sealed class CnlReader
         var typeName     = typeAndName[..colon];
         var instanceName = typeAndName[(colon + 1)..];
 
+        // Legacy V:→Vdc remap for backward compatibility.
+        if (typeName.Equals("V", StringComparison.OrdinalIgnoreCase))
+            typeName = "Vdc";
+
         // SDD lines: delegate to the whitespace-aware SDD parser.
         if (typeName.Equals("SDD", StringComparison.OrdinalIgnoreCase))
         {
@@ -1320,8 +1376,10 @@ public sealed class CnlReader
 
                 string? unit = null;
                 bool isStringLit = pexpr.Length >= 2 && pexpr[0] == '"';
-                // Unit as a separate token: "C=1 uF".
-                if (!isStringLit && i + 1 < tokens.Count && Units.IsKnown(tokens[i + 1]))
+                // Unit as a separate token: "C=1 uF" or "Pavl=Pin dBm" or "Vdc=-3.05 V".
+                // IsRecognizedUnit covers both linear-scale units and identity/measurement
+                // units (V, A, W, dBm, dB, …) that must not leak into the net list.
+                if (!isStringLit && i + 1 < tokens.Count && Units.IsRecognizedUnit(tokens[i + 1]))
                 {
                     unit = tokens[i + 1];
                     i++;
@@ -1341,6 +1399,22 @@ public sealed class CnlReader
                 nets.Add(tok);
             }
             i++;
+        }
+
+        // Legacy V→Vdc param name normalization: if loaded as V: and has V=/Vac= but no Vdc=, rename.
+        if (typeName.Equals("Vdc", StringComparison.OrdinalIgnoreCase) &&
+            !overrides.Any(o => o.Name.Equals("Vdc", StringComparison.OrdinalIgnoreCase)))
+        {
+            for (int j = 0; j < overrides.Count; j++)
+            {
+                var o = overrides[j];
+                if (o.Name.Equals("V", StringComparison.OrdinalIgnoreCase) ||
+                    o.Name.Equals("Vac", StringComparison.OrdinalIgnoreCase))
+                {
+                    overrides[j] = new ParameterAssignment("Vdc", o.Expression, o.Unit);
+                    break;
+                }
+            }
         }
 
         // SnP: validate NumPorts vs net count, extract floating reference if N+1 nets
@@ -1462,7 +1536,10 @@ public sealed class CnlReader
         var m = GluedNumericUnit.Match(s);
         if (!m.Success) return false;
         string u = m.Groups[2].Value;
-        if (!Units.IsKnown(u)) return false;
+        // IsRecognizedUnit covers identity/measurement units (V, A, W, dBm, …) in addition
+        // to linear-scale units, so "48V" and "0dBm" split correctly. The regex already
+        // requires a numeric head, so identifiers like "Pin" and "Vs_mag" never reach here.
+        if (!Units.IsRecognizedUnit(u)) return false;
         value = m.Groups[1].Value;
         unit  = u;
         return true;

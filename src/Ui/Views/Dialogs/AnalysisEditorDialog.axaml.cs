@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
@@ -11,8 +12,9 @@ namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>
 /// Add/Edit Analysis dialog (analysis-authoring.md §4.2).
-/// Returns the committed <see cref="Analysis"/> via <c>ShowDialog&lt;Analysis?&gt;</c>, or null
-/// on Cancel. Open via the static <see cref="ShowAsync"/> factory, which handles null-owner
+/// Returns the committed <see cref="Analysis"/> list via
+/// <c>ShowDialog&lt;IReadOnlyList&lt;Analysis&gt;?&gt;</c>, or null on Cancel.
+/// Open via the static <see cref="ShowAsync"/> factory, which handles null-owner
 /// fall-back using the ResolveOwner pattern from WorkspaceViewModel.
 /// </summary>
 public partial class AnalysisEditorDialog : Window
@@ -42,9 +44,6 @@ public partial class AnalysisEditorDialog : Window
         EnabledCheck.IsChecked = vm.Enabled;
 
         // Propagate VM state changes back to controls.
-        // Name must be synced when OnTypeChanged auto-updates it; use _suppressNameSync to
-        // prevent the TextBox's own TextChanged handler from immediately pushing the same
-        // value back and re-triggering validation unnecessarily.
         vm.PropertyChanged += (_, e) =>
         {
             switch (e.PropertyName)
@@ -115,7 +114,7 @@ public partial class AnalysisEditorDialog : Window
     {
         // Sync Enabled from checkbox before building (name is already synced on each keystroke)
         Vm.Enabled = EnabledCheck.IsChecked == true;
-        var result = Vm.BuildAnalysis();
+        var result = Vm.BuildAnalyses();
         if (result is null) return;
         Close(result);
     }
@@ -127,9 +126,10 @@ public partial class AnalysisEditorDialog : Window
     /// <summary>
     /// Creates and shows the dialog modally. Falls back to the first visible window when
     /// <paramref name="owner"/> is null (handles the macOS NativeMenu null-CommandParameter case).
-    /// Returns the committed <see cref="Analysis"/>, or null on Cancel.
+    /// Returns the committed <see cref="Analysis"/> list, or null on Cancel.
     /// </summary>
-    public static async Task<Analysis?> ShowAsync(Window? owner, AnalysisEditorViewModel vm, bool isEdit = false)
+    public static async Task<IReadOnlyList<Analysis>?> ShowAsync(
+        Window? owner, AnalysisEditorViewModel vm, bool isEdit = false)
     {
         if (owner is null
             && Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -145,6 +145,6 @@ public partial class AnalysisEditorDialog : Window
         if (owner is null) return null;
 
         var dialog = new AnalysisEditorDialog(vm, isEdit);
-        return await dialog.ShowDialog<Analysis?>(owner);
+        return await dialog.ShowDialog<IReadOnlyList<Analysis>?>(owner);
     }
 }

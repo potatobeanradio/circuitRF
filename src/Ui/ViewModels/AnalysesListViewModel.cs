@@ -96,17 +96,24 @@ public sealed partial class AnalysesListViewModel : ObservableObject
         var vm     = new AnalysisEditorViewModel(_schematicVm.EditModel);
         var result = await AnalysisEditorDialog.ShowAsync(owner, vm, isEdit: false);
         if (result is null) return;
-        _schematicVm.Execute(new AddAnalysisCommand(_schematicVm.EditModel, result));
+        _schematicVm.Execute(new AddAnalysesCommand(_schematicVm.EditModel, result));
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
     private async Task Edit(Window? owner)
     {
         if (SelectedRow is null || _schematicVm is null) return;
-        var vm     = new AnalysisEditorViewModel(_schematicVm.EditModel, SelectedRow.Analysis);
+        var vm = new AnalysisEditorViewModel(_schematicVm.EditModel, SelectedRow.Analysis);
+
+        // Collect the old chain before opening the dialog.
+        var oldChainNames = vm.EditingChainNames;
+        var oldChain = _schematicVm.EditModel.Analyses
+            .Where(a => oldChainNames.Contains(a.Name, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
         var result = await AnalysisEditorDialog.ShowAsync(owner, vm, isEdit: true);
         if (result is null) return;
-        _schematicVm.Execute(new EditAnalysisCommand(_schematicVm.EditModel, SelectedRow.Analysis, result));
+        _schematicVm.Execute(new EditAnalysisChainCommand(_schematicVm.EditModel, oldChain, result));
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]

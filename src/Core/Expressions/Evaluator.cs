@@ -217,6 +217,7 @@ public sealed class Evaluator
             "phase_rad" => EvalPhaseRad(cl, scope),
             "polar"     => EvalPolar(cl, scope),
             "dB"        => EvalDB20(cl, scope),     // 20·log10|z|
+            "dB20"      => EvalDB20(cl, scope),     // alias: 20·log10|z|
             "dB10"      => EvalDB10(cl, scope),     // 10·log10|z|
             "dBm"       => EvalDBm(cl, scope),      // 10·log10(|z|/1e-3)
             _           => throw new UnknownFunctionException(cl.Name)
@@ -677,8 +678,12 @@ public sealed class Evaluator
         if (unit is null) return v;
         if (v.Kind == ValueKind.String)
             throw new TypeErrorException($"Cannot apply unit '{unit}' to a String value");
-        var scale = Units.Scale(unit)
-            ?? throw new ExpressionException($"Unknown unit '{unit}'");
+        // Linear-scale units (uF, nH, GHz, …) multiply the value.
+        // Identity/measurement units (V, A, W, dBm, dB, …) carry no scale multiplier:
+        // the value is already in the base unit, so treat them as scale = 1.0.
+        double scale = Units.Scale(unit)
+            ?? (Units.IsRecognizedUnit(unit) ? 1.0
+                : throw new ExpressionException($"Unknown unit '{unit}'"));
         return v.Kind == ValueKind.Real
             ? new Value(v.AsReal() * scale)
             : new Value(v.AsComplex() * scale);

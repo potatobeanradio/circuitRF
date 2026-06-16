@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using CircuitRF.Core.Expressions;
@@ -11,12 +12,9 @@ namespace CircuitRF.Core.Design;
 
 public abstract class Analysis(string name)
 {
-    public string          Name       { get; } = name;
+    public string Name    { get; } = name;
     /// <summary>When false, the analysis stays configured but is skipped at run time.</summary>
-    public bool            Enabled    { get; set; } = true;
-    // Parametric sweep axes wrapping this analysis (unused stubs; reserved for ParametricSweepAnalysis).
-    // Renamed from "Sweeps" to "SweepAxes" so SParameterAnalysis.Sweeps is unambiguous.
-    public List<SweepSpec> SweepAxes  { get; } = [];
+    public bool   Enabled { get; set; } = true;
 }
 
 public sealed class DcAnalysis(string name) : Analysis(name);
@@ -194,18 +192,46 @@ public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name)
 /// Composable parametric sweep that wraps an inner analysis (or another parametric sweep).
 /// Each nesting level prepends one named axis to every cube in the resulting DataSet.
 /// </summary>
-public sealed class ParametricSweepAnalysis(
-    string name,
-    string sweepVarName,
-    double[] sweepValues,
-    string innerAnalysisName) : Analysis(name)
+public sealed class ParametricSweepAnalysis : Analysis
 {
     /// <summary>The global variable to override at each sweep point.</summary>
-    public string   SweepVarName      { get; } = sweepVarName;
-    /// <summary>Explicit list of values to sweep over (ordered, outer→inner).</summary>
-    public double[] SweepValues       { get; } = (double[])sweepValues.Clone();
+    public string    SweepVarName      { get; }
+    /// <summary>Expanded sweep values (ordered, outer→inner). Always populated.</summary>
+    public double[]  SweepValues       { get; }
     /// <summary>Name of the inner analysis (HarmonicBalanceAnalysis or another ParametricSweepAnalysis).</summary>
-    public string   InnerAnalysisName { get; } = innerAnalysisName;
+    public string    InnerAnalysisName { get; }
+    /// <summary>
+    /// Compact spec used to build <see cref="SweepValues"/>. Non-null only when the sweep was
+    /// defined via Start/Stop/Step or Start/Stop/Npts (not an explicit values list). Preserved so
+    /// the .cnl writer can re-emit the compact form on round-trip.
+    /// </summary>
+    public SweepSpec? Spec             { get; }
+
+    /// <summary>Array constructor — used when values are specified as an explicit list.</summary>
+    public ParametricSweepAnalysis(string name, string sweepVarName,
+                                   double[] sweepValues, string innerAnalysisName)
+        : base(name)
+    {
+        SweepVarName      = sweepVarName;
+        SweepValues       = (double[])sweepValues.Clone();
+        InnerAnalysisName = innerAnalysisName;
+    }
+
+    /// <summary>
+    /// Spec constructor — used when the sweep is defined via Start/Stop/Step or Start/Stop/Npts.
+    /// Expands <paramref name="spec"/> into <see cref="SweepValues"/> at construction time and
+    /// retains the spec for round-trip .cnl emission.
+    /// </summary>
+    public ParametricSweepAnalysis(string name, string sweepVarName,
+                                   SweepSpec spec, string innerAnalysisName)
+        : base(name)
+    {
+        SweepVarName      = sweepVarName;
+        Spec              = spec;
+        SweepValues       = SweepExpander.ExpandSweep(spec.Start, spec.Stop,
+                                spec.StepOrCount, spec.Mode, spec.Kind);
+        InnerAnalysisName = innerAnalysisName;
+    }
 }
 
 // ── Supporting types ──────────────────────────────────────────────────────────
@@ -215,13 +241,21 @@ public enum SweepKind { Linear, Log }
 /// <summary>Whether a <see cref="FrequencySpec"/> segment is defined by step size or point count.</summary>
 public enum FreqSpecMode { StepSize, PointCount }
 
-public sealed class SweepSpec(string variable, double start, double stop, double step, SweepKind kind = SweepKind.Linear)
+/// <summary>
+/// Compact spec for a parametric sweep defined by Start/Stop/StepOrCount (not an explicit list).
+/// Stored on <see cref="ParametricSweepAnalysis.Spec"/> so the .cnl writer can re-emit the
+/// compact Start/Stop/Step or Start/Stop/Npts form on round-trip.
+/// </summary>
+public sealed class SweepSpec(double start, double stop, double stepOrCount,
+                               SweepAxisMode mode, SweepKind kind = SweepKind.Linear)
 {
-    public string    Variable { get; } = variable;
-    public double    Start    { get; } = start;
-    public double    Stop     { get; } = stop;
-    public double    Step     { get; } = step;
-    public SweepKind Kind     { get; } = kind;
+    public double        Start        { get; } = start;
+    public double        Stop         { get; } = stop;
+    /// <summary>Step size (StepSize mode) or point count (PointCount mode).</summary>
+    public double        StepOrCount  { get; } = stepOrCount;
+    /// <summary>StepSize or PointCount (never List — use explicit array for list sweeps).</summary>
+    public SweepAxisMode Mode         { get; } = mode;
+    public SweepKind     Kind         { get; } = kind;
 }
 
 /// <summary>

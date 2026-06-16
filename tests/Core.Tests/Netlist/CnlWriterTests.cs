@@ -88,15 +88,15 @@ public class CnlWriterTests
              ("I[2,0]", "_v2*0.02", null)]);
     }
 
-    // ── Test 3: Z_Port instance round-trip (N-or-N+1 rule) ──────────────────
+    // ── Test 3: Z_Port instance round-trip (2N ± pair nets) ────────────────
 
     [Fact]
-    public void ZPortInstance_GroundRef_RoundTrip()
+    public void ZPortInstance_1Port_RoundTrip()
     {
-        // Ground-referenced (N nets, RefNetBinding null): just N signal nets.
+        // 1-port Z_Port: 2 nets (port1+, port1−). RefNetBinding always null.
         var tb = new TestBench("test");
         tb.Instances.Add(new Instance("Zs", "Z_Port",
-            ["n_src"],
+            ["n_src", "0"],
             [new ParameterAssignment("Z[1,1]", "50")]));
 
         var tb2 = RoundTrip(tb);
@@ -104,7 +104,7 @@ public class CnlWriterTests
         var inst = Assert.Single(tb2.Instances);
         Assert.Equal("Zs", inst.InstanceName);
         Assert.Equal("Z_Port", inst.Reference);
-        Assert.Equal(["n_src"], inst.NetBindings.ToList());
+        Assert.Equal(["n_src", "0"], inst.NetBindings.ToList());
         Assert.Null(inst.RefNetBinding);
 
         var ov = Assert.Single(inst.Overrides);
@@ -113,20 +113,23 @@ public class CnlWriterTests
     }
 
     [Fact]
-    public void ZPortInstance_FloatingRef_RoundTrip()
+    public void ZPortInstance_2Port_RoundTrip()
     {
-        // Floating reference (N+1 nets): signal nets + RefNetBinding.
+        // 2-port Z_Port: 4 nets (port1+, port1−, port2+, port2−). Per-port references.
         var tb = new TestBench("test");
-        tb.Instances.Add(new Instance("Zs", "Z_Port",
-            ["n_src"],
-            [new ParameterAssignment("Z[1,1]", "50")])
-        { RefNetBinding = "n_ref" });
+        tb.Instances.Add(new Instance("Z2", "Z_Port",
+            ["a", "n_ref1", "b", "n_ref2"],
+            [new ParameterAssignment("Z[1,1]", "50"),
+             new ParameterAssignment("Z[2,2]", "50"),
+             new ParameterAssignment("Z[1,2]", "0"),
+             new ParameterAssignment("Z[2,1]", "0")]));
 
         var tb2 = RoundTrip(tb);
 
         var inst = Assert.Single(tb2.Instances);
-        Assert.Equal(["n_src"], inst.NetBindings.ToList());
-        Assert.Equal("n_ref", inst.RefNetBinding);
+        Assert.Equal("Z_Port", inst.Reference);
+        Assert.Equal(["a", "n_ref1", "b", "n_ref2"], inst.NetBindings.ToList());
+        Assert.Null(inst.RefNetBinding);
     }
 
     // ── Test 4: HarmonicBalanceAnalysis round-trip ───────────────────────────

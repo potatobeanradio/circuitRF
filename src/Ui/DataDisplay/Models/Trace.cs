@@ -201,10 +201,20 @@ namespace CircuitRF.Ui.DataDisplay
         //  to numeric arrays and injects them via SetCubeData; Trace never
         //  holds a DataSet reference.
 
-        public string?       CubeName  { get; set; }
-        public AxisSlice[]?  Slice     { get; set; }
-        public CubeTransform Transform { get; set; } = CubeTransform.None;
-        public bool          IsCubeBound => CubeName is not null;
+        public string?       CubeName       { get; set; }
+        public AxisSlice[]?  Slice          { get; set; }
+        public CubeTransform Transform      { get; set; } = CubeTransform.None;
+        public string?       InvalidSpecText { get; set; }
+
+        /// <summary>Full element-wise expression string (e.g. <c>mag(V[:, 0, 0]) + mag(V[:, 0, 1])</c>).
+        /// When non-null, the owner resolves via <c>TraceExpression</c> instead of the single-slice path.
+        /// Supersedes CubeName/Slice/Transform for value production.</summary>
+        public string?       Expression      { get; set; }
+
+        /// <summary>Set by the owner when TraceExpression evaluation fails; cleared on success.</summary>
+        public string?       ExpressionError { get; set; }
+
+        public bool          IsCubeBound => CubeName is not null || Expression is not null;
 
         // ---- Per-port source reference impedance (Phase 7.2f) -----------
         //
@@ -228,6 +238,14 @@ namespace CircuitRF.Ui.DataDisplay
         private double[]?  _cubeRealValues;
         private string     _cubeXAxisName = "";
         private string?    _cubeXUnit;
+
+        // ---- Cube data read accessors (for TableRenderer — no recompute) -----
+
+        public IReadOnlyList<double>?  CubeXValues   => _cubeXValues;
+        public IReadOnlyList<Complex>? CubeComplex   => _cubeComplexValues;
+        public IReadOnlyList<double>?  CubeReal      => _cubeRealValues;
+        public string                  CubeXAxisName => _cubeXAxisName;
+        public string?                 CubeXUnit     => _cubeXUnit;
 
         // ---- Markers ----------------------------------------------------
 
@@ -257,15 +275,45 @@ namespace CircuitRF.Ui.DataDisplay
         /// <summary>Short description with no source-file prefix.</summary>
         public string ShortDescription => DescriptionFor(includePrefix: false);
 
+        /// <summary>
+        /// DataCube-shorthand label for use as a Table column header, e.g. <c>V[0, 1, :]</c>.
+        /// Pinned axes show their integer index; the kept (X) axis shows ':'.
+        /// Transform prefix is prepended when non-None (e.g. <c>dB20 V[0, 1, :]</c>).
+        /// Falls back to <see cref="ShortDescription"/> for non-cube traces.
+        /// Note: uses index-form for pinned tokens (the documented fallback).
+        /// </summary>
+        public string CubeShorthand
+        {
+            get
+            {
+                if (InvalidSpecText is not null) return $"{InvalidSpecText} <invalid>";
+                if (Expression is not null)      return Expression;
+                if (!IsCubeBound || Slice is null) return ShortDescription;
+                return BuildPickerExpression();
+            }
+        }
+
+        /// <summary>Computes the function-call shorthand from CubeName/Slice/Transform only,
+        /// ignoring Expression.  Used by the owner to sync Expression after picker edits.</summary>
+        internal string BuildPickerExpression()
+        {
+            if (CubeName is null || Slice is null) return ShortDescription;
+            var parts = Slice.Select(s => s.Role == AxisRole.KeepAsX ? ":" : s.Index.ToString());
+            var inner = string.Join(", ", parts);
+            if (Transform == CubeTransform.None)
+                return $"{CubeName}[{inner}]";
+            return $"{Transform.ToString().ToLowerInvariant()}({CubeName}[{inner}])";
+        }
+
         private string DescriptionFor(bool includePrefix)
         {
             string prefix = includePrefix && SourcePath != null
                 ? System.IO.Path.GetFileNameWithoutExtension(SourcePath) + ".."
                 : "";
 
-            // Cube-bound: minimal label (7.2c-b will refine display names).
+            // Cube-bound: minimal label.
             if (IsCubeBound)
-                return $"{prefix}{CubeName}";
+                return $"{prefix}{Expression ?? CubeName ?? ""}";
 
             if (IsDerived)
                 return Derived == DerivedParameters.MaxGain && YAxis == DependentVarFormat.Db
@@ -320,9 +368,11 @@ namespace CircuitRF.Ui.DataDisplay
             SourcePath        = src.SourcePath;
             ColumnWidth       = src.ColumnWidth;
             // Cube-bound identity fields (Phase 7.2c-a).
-            CubeName           = src.CubeName;
-            Slice              = src.Slice;   // AxisSlice[] is immutable; sharing is safe.
-            Transform          = src.Transform;
+            CubeName        = src.CubeName;
+            Slice           = src.Slice;   // AxisSlice[] is immutable; sharing is safe.
+            Transform       = src.Transform;
+            Expression      = src.Expression;
+            ExpressionError = src.ExpressionError;
             _cubeXValues       = src._cubeXValues;
             _cubeComplexValues = src._cubeComplexValues;
             _cubeRealValues    = src._cubeRealValues;
@@ -870,6 +920,57 @@ namespace CircuitRF.Ui.DataDisplay
                 _                        => val.ToString(fmt),
             };
         }
+
+        /// <summary>
+        /// Formats the cube value at X index <paramref name="i"/> for the Table renderer
+        /// (post-Transform, same transform logic as <see cref="BuildPath"/>).
+        /// Returns "NaN" when out of range or cube data is absent.
+        /// Complex with Transform=None uses mag∠deg (MA) format.
+        /// </summary>
+        public string FormatCubeCell(int i, PrecisionFormat fmt, int fracDigits)
+        {
+            if (InvalidSpecText is not null) return "";
+            if (!IsCubeBound || _cubeXValues is null || i < 0 || i >= _cubeXValues.Length)
+                return "NaN";
+            string f = $"{fmt}{fracDigits}";
+
+            if (_cubeComplexValues is not null)
+            {
+                var z = _cubeComplexValues[i];
+                return Transform switch
+                {
+                    CubeTransform.None  => FormatCubeMA(z, f),
+                    CubeTransform.Conj  => FormatCubeMA(Complex.Conjugate(z), f),
+                    CubeTransform.dB20  => (20.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300))).ToString(f),
+                    CubeTransform.dB10 or CubeTransform.dB
+                                        => (10.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300))).ToString(f),
+                    CubeTransform.Mag   => z.Magnitude.ToString(f),
+                    CubeTransform.Phase => (z.Phase * 180.0 / Math.PI).ToString(f),
+                    CubeTransform.Real  => z.Real.ToString(f),
+                    CubeTransform.Imag  => z.Imaginary.ToString(f),
+                    _                   => z.Magnitude.ToString(f),
+                };
+            }
+
+            if (_cubeRealValues is not null)
+            {
+                double v = _cubeRealValues[i];
+                double y = Transform switch
+                {
+                    CubeTransform.dB20 => 20.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
+                    CubeTransform.dB10 or CubeTransform.dB
+                                       => 10.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
+                    CubeTransform.Mag  => Math.Abs(v),
+                    _                  => v,
+                };
+                return y.ToString(f);
+            }
+
+            return "NaN";
+        }
+
+        private static string FormatCubeMA(Complex c, string fmt)
+            => $"{c.Magnitude.ToString(fmt)}∠{(c.Phase * 180.0 / Math.PI):F1}°";
 
         public string GetMarkerValString(Marker m, bool showFilePrefix = true)
         {

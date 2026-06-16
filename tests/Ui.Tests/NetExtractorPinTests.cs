@@ -77,18 +77,12 @@ public class NetExtractorPinTests
     [Fact]
     public void Pin_NetNamedAfterPort()
     {
-        // Pin(Num=1, Name="in") at (0,200) → port at (0,0).
-        // R1 at (0,100): port0 at (0,-100+100)=(0,0) = R1's top = Pin's connection point.
-        // Wire Pin's port to R1 pin0 directly (same world coord (0,0)).
+        // Pin port is at local (200,0); Pin at (X,Y) connects at world (X+200,Y).
+        // Resistor port0 is at local (0,-200); Resistor at (X,Y) → port0 at world (X,Y-200).
+        // Pin at (-200,200): port at (0,200). R1 at (0,400): port0 at (0,200). They share (0,200).
         var model = new SchematicEditModel();
-        var pin = MakePin(1, "in", y: 200);     // port at (0, 0)
-        var res = MakeResistor("R1", 0, 100);   // port0 at (0, -100) = (0, 100-200) = (0,-100)?
-        // Actually: Resistor at (X=0, Y=100) → port0 at world (0, 100-200) = (0,-100).
-        // That won't connect to pin at (0,0). Let's place pin at (0,400) → port at (0,200)
-        // and resistor at (0,400) → port0 at (0,200). They share (0,200).
-        model = new SchematicEditModel();
-        model.Components.Add(MakePin(1, "in", y: 400));  // port at (0, 200)
-        model.Components.Add(MakeResistor("R1", 0, 400)); // port0 at (0, 200)
+        model.Components.Add(MakePin(1, "in", x: -200, y: 200));  // port at (0, 200)
+        model.Components.Add(MakeResistor("R1", 0, 400));          // port0 at (0, 200)
 
         var result = NetExtractor.Extract(model);
 
@@ -228,12 +222,11 @@ public class NetExtractorPinTests
     [Fact]
     public void Pin_WithCoincidentLabel_PinNameWins()
     {
-        // Pin(Num=1, Name="in") at (0,400): port at (0,200).
-        // R1 at (0,400): port0 at (0,200). Label "mylabel" also at (0,200).
-        // Pin owns the net identity — label is silently overridden, no conflict emitted.
+        // Pin at (-200,200): port at (0,200). R1 at (0,400): port0 at (0,200).
+        // Label "mylabel" also at (0,200). Pin owns the net identity — no conflict.
         var model = new SchematicEditModel();
-        model.Components.Add(MakePin(1, "in", y: 400));       // port at (0,200)
-        model.Components.Add(MakeResistor("R1", 0, 400));      // port0 at (0,200)
+        model.Components.Add(MakePin(1, "in", x: -200, y: 200));  // port at (0,200)
+        model.Components.Add(MakeResistor("R1", 0, 400));           // port0 at (0,200)
         model.NetLabels.Add(new EditableNetLabel { Name = "mylabel", X = 0, Y = 200 });
 
         var result = NetExtractor.Extract(model);
@@ -278,7 +271,7 @@ public class NetExtractorPinTests
     [Fact]
     public void Pin_OnGroundNet_Warns()
     {
-        // Ground at (0,0): port at (0,0). Pin(Num=1,Name="in") at (0,200): port at (0,0).
+        // Ground at (0,0): port at (0,0). Pin at (-200,0): port at (-200+200,0)=(0,0).
         // Same world coordinate → Pin is on the ground net.
         // Ground still wins ("0"); a "tied to ground" conflict is emitted.
         var model = new SchematicEditModel();
@@ -289,7 +282,7 @@ public class NetExtractorPinTests
             X            = 0,
             Y            = 0,
         });
-        model.Components.Add(MakePin(1, "in", y: 200)); // port at (0,0)
+        model.Components.Add(MakePin(1, "in", x: -200, y: 0)); // port at (0,0)
 
         var result = NetExtractor.Extract(model);
 

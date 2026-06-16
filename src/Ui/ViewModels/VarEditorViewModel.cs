@@ -190,7 +190,7 @@ public sealed partial class VarEditorViewModel : ObservableObject, IDisposable
 
         if (!changed) return;
 
-        _schematicVm.Execute(new SetVarParametersCommand(_schematicVm.EditModel, _comp, newParams));
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _comp, newParams));
     }
 
     [RelayCommand]
@@ -198,7 +198,7 @@ public sealed partial class VarEditorViewModel : ObservableObject, IDisposable
     {
         if (_comp is null || _schematicVm is null) return;
         var p = new EditableParameter { Name = GenerateUniqueName(), Expression = "0" };
-        _schematicVm.Execute(new AddVarParameterCommand(_schematicVm.EditModel, _comp, p));
+        _schematicVm.Execute(new AddParameterCommand(_schematicVm.EditModel, _comp, p));
     }
 
     // ── Internal surface for VarRowViewModel ─────────────────────────────────
@@ -211,7 +211,7 @@ public sealed partial class VarEditorViewModel : ObservableObject, IDisposable
         if (_comp is null || _schematicVm is null) return;
         var p = _comp.Parameters.FirstOrDefault(x => ReferenceEquals(x, row.Parameter));
         if (p is null) return;
-        _schematicVm.Execute(new RemoveVarParameterCommand(_schematicVm.EditModel, _comp, p));
+        _schematicVm.Execute(new RemoveParameterCommand(_schematicVm.EditModel, _comp, p));
     }
 
     // ── Rebuild helpers ───────────────────────────────────────────────────────
@@ -314,7 +314,7 @@ public sealed partial class VarRowViewModel : ObservableObject
         string name = StagedName.Trim();
         if (name.Length == 0 || name == Parameter.Name) return;
         _editor.SchematicVm.Execute(
-            new SetVarParamNameCommand(_editor.SchematicVm.EditModel, Parameter, name));
+            new SetParameterNameCommand(_editor.SchematicVm.EditModel, Parameter, name));
     }
 
     public void CommitExpression()

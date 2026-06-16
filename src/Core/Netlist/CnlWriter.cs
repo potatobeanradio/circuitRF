@@ -178,8 +178,8 @@ public static class CnlWriter
     }
 
     /// <summary>
-    /// Z_Port:Name  net1 …  [refnet]  Z[i,j]=expr  …
-    /// RefNetBinding appended after signal nets per the N-or-N+1 rule.
+    /// Z_Port:Name  net1+  net1−  net2+  net2−  …  Z[i,j]=expr  …
+    /// 2N nets in ± pair order; RefNetBinding is always null for Z_Port.
     /// NumPorts is not emitted — implicit from the Z[i,j] matrix size.
     /// </summary>
     private static string FormatZPortInstance(Instance inst)
@@ -338,6 +338,22 @@ public static class CnlWriter
 
     private static string FormatParametricSweepAnalysis(ParametricSweepAnalysis ps)
     {
+        if (ps.Spec is { } spec)
+        {
+            // Compact Start/Stop/Step|Npts form — preserves the user's original intent.
+            var sb = new StringBuilder($"analysis {ps.Name} type=parametric_sweep Var={ps.SweepVarName}");
+            if (spec.Kind == SweepKind.Log) sb.Append(" log");
+            sb.Append($" Start={spec.Start.ToString(CultureInfo.InvariantCulture)}");
+            sb.Append($" Stop={spec.Stop.ToString(CultureInfo.InvariantCulture)}");
+            if (spec.Mode == SweepAxisMode.PointCount)
+                sb.Append($" Npts={(int)Math.Round(spec.StepOrCount)}");
+            else
+                sb.Append($" Step={spec.StepOrCount.ToString(CultureInfo.InvariantCulture)}");
+            sb.Append($" Inner={ps.InnerAnalysisName}");
+            return sb.ToString();
+        }
+
+        // Explicit list form.
         var values = string.Join(",", ps.SweepValues.Select(
             v => v.ToString(CultureInfo.InvariantCulture)));
         return $"analysis {ps.Name} type=parametric_sweep Var={ps.SweepVarName} Values={values} Inner={ps.InnerAnalysisName}";

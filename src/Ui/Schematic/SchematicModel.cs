@@ -11,7 +11,7 @@ public enum SymbolKind
     Resistor,
     Inductor,
     Capacitor,
-    VoltageSource,
+    Vdc,
     ToneSource,
     Ground,
     Term,
@@ -21,6 +21,7 @@ public enum SymbolKind
     ZPort,
     Generic,
     Var,
+    P1Tone,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

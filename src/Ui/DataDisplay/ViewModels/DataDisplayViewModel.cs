@@ -910,7 +910,8 @@ public partial class DataDisplayViewModel : ViewModelBase
                 snp = libEntry?.Snp;
             }
 
-            bool isCubeBound = traceConfig.CubeName is not null && traceConfig.CubeSlice.Count > 0;
+            bool isCubeBound = (traceConfig.CubeName is not null && traceConfig.CubeSlice.Count > 0)
+                            || traceConfig.Expression is not null;
 
             // Network-bound: must have a valid SNP. Cube-bound: must have an entry in the library.
             if (!isCubeBound && snp is null) continue;
@@ -923,11 +924,12 @@ public partial class DataDisplayViewModel : ViewModelBase
                 var placeholderSnp = snp ?? new SNP(new double[] { 1e9 }, 2);
                 trace = new Trace(placeholderSnp, MatrixType.S, 0, 0,
                                   DependentVarFormat.Db, traceConfig.UseSecondaryAxis);
-                trace.CubeName  = traceConfig.CubeName;
-                trace.Transform = traceConfig.CubeTransform;
-                trace.Slice     = traceConfig.CubeSlice
-                    .Select(s => new AxisSlice(s.AxisName, s.Role, s.Index))
-                    .ToArray();
+                trace.CubeName   = traceConfig.CubeName;
+                trace.Transform  = traceConfig.CubeTransform;
+                trace.Slice      = traceConfig.CubeSlice.Count > 0
+                    ? traceConfig.CubeSlice.Select(s => new AxisSlice(s.AxisName, s.Role, s.Index)).ToArray()
+                    : null;
+                trace.Expression = traceConfig.Expression;
             }
             else
             {
@@ -1094,6 +1096,7 @@ public partial class DataDisplayViewModel : ViewModelBase
                       Role     = s.Role,
                       Index    = s.Index,
                   }).ToList(),
+            Expression    = t.Expression,
             Properties       = new TracePropertiesConfig
             {
                 LineEnabled      = t.Properties.LineEnabled,

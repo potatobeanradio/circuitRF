@@ -41,18 +41,19 @@ public class NetExtractorHierarchyTests
         => new() { InstanceName = name, Symbol = SymbolKind.Resistor, X = cx, Y = cy };
 
     /// <summary>
-    /// Build a minimal 2-port sub-cell schematic: Pin1 at (0,200), R at (0,400), Pin2 at (0,600).
-    /// Pin1.port → (0,0); R.port0 → (0,200); R.port1 → (0,600); Pin2.port → (0,400).
-    /// Wires connect Pin1↔R.port0 and R.port1↔Pin2.
+    /// Build a minimal 2-port sub-cell schematic.
+    /// Pin port is at local (200,0); Pin at (X,Y) connects at world (X+200,Y).
+    /// Pin1 at (-200,0) → port at (0,0). Pin2 at (-200,400) → port at (0,400).
+    /// Wires connect Pin1.port↔R.port0 and R.port1↔Pin2.port.
     /// </summary>
     private static SchematicEditModel TwoPortSubCell(string resistorName = "R1")
     {
         var sub = new SchematicEditModel();
-        sub.Components.Add(Pin(1, 0, 200));   // port at (0,0)
+        sub.Components.Add(Pin(1, -200, 0));    // port at (0,0)
         sub.Components.Add(Resistor(resistorName, 0, 400));
-        sub.Components.Add(Pin(2, 0, 600));   // port at (0,400)
-        sub.Wires.Add(Wire((0, 0), (0, 200)));   // Pin1.port → R.port0
-        sub.Wires.Add(Wire((0, 400), (0, 600))); // R.port1 → Pin2.port
+        sub.Components.Add(Pin(2, -200, 400));  // port at (0,400)
+        sub.Wires.Add(Wire((0, 0), (0, 200)));   // Pin1.port → R.port0 at (0,200)
+        sub.Wires.Add(Wire((0, 400), (0, 600))); // Pin2.port → R.port1 at (0,600)
         return sub;
     }
 
@@ -206,11 +207,12 @@ public class NetExtractorHierarchyTests
             Y            = 200,
         };
         subA.Components.Add(innerX);
-        // Two pins so A itself has 2 interface ports
-        subA.Components.Add(Pin(1, 0, 0));    // Pin at (0,0): port at (0,-200) — attach wire
-        subA.Components.Add(Pin(2, 0, 400));  // Pin at (0,400): port at (0,200)
-        subA.Wires.Add(Wire((0, -200), (0, 0)));   // Pin1 → XB.port0
-        subA.Wires.Add(Wire((0, 400), (0, 600)));  // XB.port1 → Pin2
+        // Two pins so A itself has 2 interface ports.
+        // Pin port is at local (200,0); Pin at (X,Y) connects at world (X+200,Y).
+        subA.Components.Add(Pin(1, -200, -200)); // port at (0,-200) → XB.port0 via wire
+        subA.Components.Add(Pin(2, -200,  400)); // port at (0, 400) → XB.port1 via wire
+        subA.Wires.Add(Wire((0, -200), (0, 0)));   // Pin1.port → XB.port0
+        subA.Wires.Add(Wire((0, 400), (0, 600)));  // Pin2.port = XB.port1 = (0,400), coincident
 
         var resA = new CellResolution("cellA", subA, []);
 
@@ -289,13 +291,15 @@ public class NetExtractorHierarchyTests
     public void CellPinWithCoincidentLabel_BindsThroughToParent()
     {
         // Sub-cell: Pin1("in") + R1 + net label "mylabel" all on the same node.
+        // Pin port is at local (200,0); Pin at (X,Y) connects at world (X+200,Y).
+        // Pin1 at (-200,0): port at (0,0). Pin2 at (-200,600): port at (0,600).
         // Before fix, "mylabel" shadowed "in" → cell port mismatch → floating internal node.
         // After fix, Pin wins → net "in" matches Cell.Ports[0] → R1 connects through.
         var sub = new SchematicEditModel();
-        sub.Components.Add(Pin(1, 0, 200, "in"));   // port at (0,0)
-        sub.Components.Add(Resistor("R1", 0, 400)); // port0=(0,200), port1=(0,600)
-        sub.Components.Add(Pin(2, 0, 800, "out"));  // port at (0,600) — shares with R1.port1
-        sub.Wires.Add(Wire((0, 0), (0, 200)));       // Pin1.port → R1.port0
+        sub.Components.Add(Pin(1, -200, 0, "in"));   // port at (0,0)
+        sub.Components.Add(Resistor("R1", 0, 400));  // port0=(0,200), port1=(0,600)
+        sub.Components.Add(Pin(2, -200, 600, "out")); // port at (0,600) — coincident with R1.port1
+        sub.Wires.Add(Wire((0, 0), (0, 200)));        // Pin1.port → R1.port0
         sub.NetLabels.Add(new EditableNetLabel { Name = "mylabel", X = 0, Y = 0 });
 
         var resolution = new CellResolution("cellFoo", sub, []);
@@ -405,10 +409,10 @@ public class NetExtractorHierarchyTests
                 CellFolder.SubFolderPath(cellDir, ViewType.Symbol), $"{cellName}.csym");
             SymbolPersistence.SaveToFile(symPath, sym);
 
-            // Sub-cell schematic: two interface pins connected by a wire.
+            // Sub-cell schematic: two interface pins establishing CellPorts.
             var sub = new SchematicEditModel();
-            sub.Components.Add(Pin(1, 0, 200, "P1"));  // port at (0, 0)
-            sub.Components.Add(Pin(2, 0, 600, "P2"));  // port at (0, 400)
+            sub.Components.Add(Pin(1, -200, 0, "P1"));  // port at (0, 0)
+            sub.Components.Add(Pin(2, -200, 400, "P2")); // port at (0, 400)
             sub.Wires.Add(Wire((0, 0), (0, 400)));
             var resolver = Resolver((cellName, new CellResolution(cellName, sub, [])));
 
@@ -476,11 +480,11 @@ public class NetExtractorHierarchyTests
                 CellFolder.SubFolderPath(cellDir, ViewType.Symbol), $"{cellName}.csym");
             SymbolPersistence.SaveToFile(symPath, sym);
 
-            // Sub-cell has 3 interface pins.
+            // Sub-cell has 3 interface pins establishing CellPorts.
             var sub = new SchematicEditModel();
-            sub.Components.Add(Pin(1, 0, 200, "g"));   // port at (0,  0)
-            sub.Components.Add(Pin(2, 0, 600, "d"));   // port at (0,400)
-            sub.Components.Add(Pin(3, 0, 1000, "s"));  // port at (0,800)
+            sub.Components.Add(Pin(1, -200, 0,   "g")); // port at (0,  0)
+            sub.Components.Add(Pin(2, -200, 400, "d")); // port at (0,400)
+            sub.Components.Add(Pin(3, -200, 800, "s")); // port at (0,800)
             sub.Wires.Add(Wire((0, 0),   (0, 400)));
             sub.Wires.Add(Wire((0, 400), (0, 800)));
             var resolver = Resolver((cellName, new CellResolution(cellName, sub, [])));
@@ -566,12 +570,13 @@ public class NetExtractorHierarchyTests
                 sym);
 
             // Sub-cell: R1 between the two interface pins.
+            // Pin port is at local (200,0); Pin at (X,Y) connects at world (X+200,Y).
             var sub = new SchematicEditModel();
-            sub.Components.Add(Pin(1, 0, 200, "In"));   // port at (0, 0)
+            sub.Components.Add(Pin(1, -200, 0, "In"));   // port at (0, 0)
             sub.Components.Add(Resistor("R1", 0, 400));
-            sub.Components.Add(Pin(2, 0, 600, "Out"));  // port at (0, 400)
-            sub.Wires.Add(Wire((0, 0),   (0, 200)));
-            sub.Wires.Add(Wire((0, 400), (0, 600)));
+            sub.Components.Add(Pin(2, -200, 400, "Out")); // port at (0, 400)
+            sub.Wires.Add(Wire((0, 0),   (0, 200)));     // Pin1.port → R1.port0
+            sub.Wires.Add(Wire((0, 400), (0, 600)));     // Pin2.port → R1.port1
 
             var resolver = Resolver((cellName, new CellResolution(cellName, sub, [])));
 

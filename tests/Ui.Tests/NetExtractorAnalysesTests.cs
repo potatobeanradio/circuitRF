@@ -6,15 +6,16 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// Layer 1 gate — NetExtractor carries enabled analyses + measurements.
-/// Brief §L1: enabled filter, measurements, SP multi-segment.
+/// Layer 1 gate — NetExtractor carries ALL analyses into TestBench.Analyses
+/// (so ParametricSweepEngine can find inner analyses by name).
+/// Dispatch filtering (Enabled=true only) happens in SchematicRunService, not here.
 /// </summary>
 public sealed class NetExtractorAnalysesTests
 {
-    // ── Test 1: only enabled analyses are carried ──────────────────────────────
+    // ── Test 1: all analyses (including disabled) are carried ─────────────────
 
     [Fact]
-    public void Extract_OnlyEnabledAnalyses_Carried()
+    public void Extract_AllAnalysesCarried_IncludingDisabled()
     {
         var model = new SchematicEditModel();
         var a1 = new SParameterAnalysis("SP1",
@@ -26,22 +27,23 @@ public sealed class NetExtractorAnalysesTests
             ToneExpr = "1e9",
             MaxHarmonicExpr = "7",
         };
-        a2.Enabled = false;   // disabled — must NOT be carried
+        a2.Enabled = false; // disabled — now still carried for chain lookup
 
         model.Analyses.Add(a1);
         model.Analyses.Add(a2);
 
         var result = NetExtractor.Extract(model);
 
-        Assert.Single(result.TestBench.Analyses);
-        Assert.IsType<SParameterAnalysis>(result.TestBench.Analyses[0]);
-        Assert.Equal("SP1", result.TestBench.Analyses[0].Name);
+        // Both analyses are in the TestBench now (the run service filters Enabled at dispatch).
+        Assert.Equal(2, result.TestBench.Analyses.Count);
+        Assert.Contains(result.TestBench.Analyses, a => a.Name == "SP1");
+        Assert.Contains(result.TestBench.Analyses, a => a.Name == "HB1");
     }
 
-    // ── Test 2: disabled-only model yields no analyses ─────────────────────────
+    // ── Test 2: disabled-only model → all analyses still carried ──────────────
 
     [Fact]
-    public void Extract_AllDisabled_NoAnalysesCarried()
+    public void Extract_AllDisabled_AllAnalysesCarried()
     {
         var model = new SchematicEditModel();
         var dc = new DcAnalysis("DC1");
@@ -50,7 +52,9 @@ public sealed class NetExtractorAnalysesTests
 
         var result = NetExtractor.Extract(model);
 
-        Assert.Empty(result.TestBench.Analyses);
+        // Now carried (but SchematicRunService will skip it when dispatching).
+        Assert.Single(result.TestBench.Analyses);
+        Assert.Equal("DC1", result.TestBench.Analyses[0].Name);
     }
 
     // ── Test 3: measurements carried regardless of analyses ───────────────────
@@ -76,7 +80,7 @@ public sealed class NetExtractorAnalysesTests
     {
         var model = new SchematicEditModel();
         var sp = new SParameterAnalysis("SP1",
-            new List<FrequencySpec>
+            new System.Collections.Generic.List<FrequencySpec>
             {
                 new FrequencySpec("1e9", "5e9", 41),
                 new FrequencySpec("5e9", "10e9", 51),
@@ -103,7 +107,7 @@ public sealed class NetExtractorAnalysesTests
         var model = new SchematicEditModel();
         // 2 pts in seg1 [1e9, 2e9], 2 pts in seg2 [2e9, 3e9] → union = [1e9, 2e9, 3e9]
         var sp = new SParameterAnalysis("SP1",
-            new List<FrequencySpec>
+            new System.Collections.Generic.List<FrequencySpec>
             {
                 new FrequencySpec("1e9", "2e9", 2),   // PointCount: [1e9, 2e9]
                 new FrequencySpec("2e9", "3e9", 2),   // PointCount: [2e9, 3e9]
@@ -120,5 +124,28 @@ public sealed class NetExtractorAnalysesTests
         Assert.Equal(1e9, freqs[0], 1.0);
         Assert.Equal(2e9, freqs[1], 1.0);
         Assert.Equal(3e9, freqs[2], 1.0);
+    }
+
+    // ── Test 6: ParametricSweepAnalysis chain is fully carried ───────────────
+
+    [Fact]
+    public void Extract_SweepChain_AllMembersCarried()
+    {
+        var model = new SchematicEditModel();
+
+        var hb = new HarmonicBalanceAnalysis("HB1") { ToneExpr = "1e9", MaxHarmonicExpr = "7" };
+        hb.Enabled = false;
+        var sweep = new ParametricSweepAnalysis("HB1_sweep_Pavl", "Pavl",
+            new double[] { -20, -15, -10, -5, 0 }, "HB1");
+        sweep.Enabled = true;
+
+        model.Analyses.Add(hb);
+        model.Analyses.Add(sweep);
+
+        var result = NetExtractor.Extract(model);
+
+        Assert.Equal(2, result.TestBench.Analyses.Count);
+        Assert.Contains(result.TestBench.Analyses, a => a.Name == "HB1");
+        Assert.Contains(result.TestBench.Analyses, a => a.Name == "HB1_sweep_Pavl");
     }
 }

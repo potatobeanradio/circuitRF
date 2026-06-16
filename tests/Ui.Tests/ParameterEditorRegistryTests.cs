@@ -75,11 +75,13 @@ public class ParameterEditorRegistryTests
     public void DefaultParameters_ToneSource_HasVoltageAndFrequencyDimensions()
     {
         var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.ToneSource, 0);
-        Assert.Equal(2, ps.Count);
+        Assert.Equal(3, ps.Count);  // V, Freq, Vdc (hidden)
         Assert.Equal(UnitDimension.Voltage,   ps[0].Dimension);
         Assert.Equal(UnitDimension.Frequency, ps[1].Dimension);
+        Assert.Equal(UnitDimension.Voltage,   ps[2].Dimension);
         Assert.Contains(ps[0].Unit, ComponentTypeRegistry.UnitOptions(UnitDimension.Voltage));
         Assert.Contains(ps[1].Unit, ComponentTypeRegistry.UnitOptions(UnitDimension.Frequency));
+        Assert.False(ps[2].ShowOnSchematic);
     }
 
     [Fact]

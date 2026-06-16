@@ -102,9 +102,16 @@ public partial class PlotInspectorViewModel : ViewModelBase
         new SymbolModeItem(false, MarkerType.Square, MaterialIconKind.Square),
     };
 
-    // Cube transform options for the cube-bound trace row (Phase 7.2c-a).
+    // All cube transform options — every entry enabled (used for cube-bound traces).
     public static IReadOnlyList<CubeTransformItem> AllCubeTransforms { get; } =
         Enum.GetValues<CubeTransform>().Select(t => new CubeTransformItem(t)).ToList();
+
+    // Transform options for network/S-param traces — dB10, dB, Conj are cube-only and disabled.
+    public static IReadOnlyList<CubeTransformItem> AllTransformsForNetwork { get; } =
+        Enum.GetValues<CubeTransform>()
+            .Select(t => new CubeTransformItem(t,
+                enabled: t is not CubeTransform.dB10 and not CubeTransform.dB and not CubeTransform.Conj))
+            .ToList();
 
     public static IReadOnlyList<ColorItem> ColorItems { get; } = BuildColorItems();
 
@@ -156,7 +163,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
     partial void OnFreqUnitChanged(FreqUnit value)
     {
         _plot.FreqUnits = value;
-        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        // Rebuild cube data and axis-role labels so harmonic pin options show the new unit.
+        foreach (var vm in Traces) vm.OnFreqUnitChanged();
+        RebuildAndNotify();
     }
 
     public bool IsRectPlot  => _plot.PlotType == PlotType.Rect;
@@ -381,6 +390,33 @@ public partial class PlotInspectorViewModel : ViewModelBase
         }
 
         DataSet? ds = entry?.Data;
+
+        // ── Expression path (element-wise multi-cube expressions) ─────────────
+        if (t.Expression is not null)
+        {
+            if (ds is null)
+            {
+                t.Points.Clear();
+                return;
+            }
+            if (TraceExpression.TryEvaluate(t.Expression, ds, plotType,
+                    out var xVals, out var cz, out var rz,
+                    out var xName, out var xUnit, out var exprErr))
+            {
+                t.ExpressionError = null;
+                t.InvalidSpecText = null;
+                t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit);
+            }
+            else
+            {
+                t.ExpressionError = exprErr;
+                t.InvalidSpecText = t.Expression;
+                t.Points.Clear();
+            }
+            return;
+        }
+
+        // ── Single-slice path (picker-authored, no Expression) ────────────────
         if (ds is null || t.CubeName is null || !ds.Contains(t.CubeName))
         {
             t.Points.Clear();

@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CircuitRF.Core.Expressions;
@@ -12,20 +13,31 @@ namespace CircuitRF.Ui.ViewModels;
 /// VM for one row in the ParameterEditorView — wraps a single EditableParameter.
 /// Expression/Unit/ShowOnSchematic are staged; the row commits through the command stack.
 /// Also computes the inline "≈ value" preview (parameter-editor.md, "Value preview").
+/// When NameEditable is true (extensible component types), StagedName can be committed
+/// via CommitName().
 /// </summary>
 public sealed partial class ParameterRowViewModel : ObservableObject
 {
-    private readonly EditableParameter _param;
+    private readonly EditableParameter  _param;
     private readonly SchematicViewModel _schematicVm;
-    private readonly SymbolKind _ownerSymbol;
+    private readonly SymbolKind         _ownerSymbol;
+    private readonly EditableComponent? _ownerComp;
     private bool _isRefreshing;
 
-    public string Name => _param.Name;
+    public string Name         => _param.Name;
+    public bool   NameEditable { get; }
+    public bool   NameReadOnly => !NameEditable;
     public string[] UnitOptions { get; }
 
+    [ObservableProperty] private string _stagedName       = "";
     [ObservableProperty] private string _stagedExpression = "";
-    [ObservableProperty] private string _stagedUnit = "";
+    [ObservableProperty] private string _stagedUnit       = "";
     [ObservableProperty] private bool   _showOnSchematic;
+    [ObservableProperty] private string _nameError = "";
+
+    public bool HasNameError => NameError.Length > 0;
+    partial void OnNameErrorChanged(string? oldValue, string newValue)
+        => OnPropertyChanged(nameof(HasNameError));
 
     // ── Value preview ("≈ <evaluated>") ───────────────────────────────────────
     // Subtle grey, non-interactive (the view makes it selectable-but-read-only). Empty string ⇒
@@ -50,20 +62,52 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         RecomputePreview();
     }
 
-    public ParameterRowViewModel(EditableParameter param, SchematicViewModel schematicVm, SymbolKind ownerSymbol)
+    public ParameterRowViewModel(
+        EditableParameter  param,
+        SchematicViewModel schematicVm,
+        SymbolKind         ownerSymbol,
+        EditableComponent? ownerComp = null)
     {
         _param       = param;
         _schematicVm = schematicVm;
         _ownerSymbol = ownerSymbol;
+        _ownerComp   = ownerComp;
         UnitOptions  = ComponentTypeRegistry.UnitOptions(param.Dimension);
+        NameEditable = ComponentTypeRegistry.UserParamTemplate(ownerSymbol) is not null;
 
         _isRefreshing = true;
+        _stagedName       = param.Name;
         _stagedExpression = param.Expression;
         _stagedUnit       = param.Unit;
         _showOnSchematic  = param.ShowOnSchematic;
         _isRefreshing = false;
 
         RecomputePreview();
+    }
+
+    /// <summary>Commit the staged name to the model (no-op if unchanged or invalid).</summary>
+    public void CommitName()
+    {
+        if (_isRefreshing || !NameEditable) return;
+        string name = StagedName.Trim();
+
+        if (name.Length == 0)
+        {
+            NameError = "Name cannot be empty";
+            return;
+        }
+        if (name == _param.Name) { NameError = ""; return; }
+
+        // Duplicate check against sibling params
+        if (_ownerComp is not null &&
+            _ownerComp.Parameters.Any(p => !ReferenceEquals(p, _param) && p.Name == name))
+        {
+            NameError = $"\"{name}\" already exists";
+            return;
+        }
+
+        NameError = "";
+        _schematicVm.Execute(new SetParameterNameCommand(_schematicVm.EditModel, _param, name));
     }
 
     /// <summary>Commit the staged expression to the model (no-op if unchanged).</summary>
@@ -85,9 +129,11 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     public void RefreshFromModel()
     {
         _isRefreshing = true;
+        StagedName       = _param.Name;
         StagedExpression = _param.Expression;   // fires OnStagedExpressionChanged → RecomputePreview
         StagedUnit       = _param.Unit;
         ShowOnSchematic  = _param.ShowOnSchematic;
+        NameError        = "";
         _isRefreshing = false;
         RecomputePreview();   // also recompute in case the expression text was unchanged but a
                               // referenced value elsewhere in the schematic changed

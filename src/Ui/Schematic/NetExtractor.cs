@@ -41,16 +41,21 @@ public static class NetExtractor
         var lib        = new Library("netlist");
         var conflicts  = new List<string>();
         var inProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var labeled    = new HashSet<string>(StringComparer.Ordinal);
 
-        var (instances, cellPorts, topVars) = ExtractModel(model, cells, lib, inProgress, conflicts);
+        var (instances, cellPorts, topVars) = ExtractModel(model, cells, lib, inProgress, conflicts, labeled);
 
         var tb = new TestBench(testBenchName);
         tb.Instances.AddRange(instances);
         tb.GlobalVariables.AddRange(topVars);
+        foreach (var name in labeled)
+            tb.LabeledNets.Add(name);
 
         // Analyses + measurements attach to the TOP testbench only (data-model §2.1 invariant).
+        // All analyses are carried so ParametricSweepEngine can find its inner analysis by name.
+        // Dispatch (in SchematicRunService) skips disabled analyses at run time.
         foreach (var analysis in model.Analyses)
-            if (analysis.Enabled) tb.Analyses.Add(analysis);
+            tb.Analyses.Add(analysis);
         foreach (var measurement in model.Measurements)
             tb.Measurements.Add(measurement);
 
@@ -64,7 +69,8 @@ public static class NetExtractor
         ICellResolver?      cells,
         Library             lib,
         HashSet<string>     inProgress,
-        List<string>        conflicts)
+        List<string>        conflicts,
+        HashSet<string>?    labeledNetsOut = null)
     {
         double gs = model.GridSize;
         (long, long) QK(double x, double y) =>
@@ -161,7 +167,7 @@ public static class NetExtractor
 
         // ── Layer 2: assign stable net names ────────────────────────────────
 
-        var netNames = AssignNetNames(uf, QK, gs, model, labelNetKeys, conflicts, detachedKeys.Values, pinNetNameMap, cellRefResolutions);
+        var netNames = AssignNetNames(uf, QK, gs, model, labelNetKeys, conflicts, detachedKeys.Values, pinNetNameMap, cellRefResolutions, labeledNetsOut);
 
         // ── Compute CellPorts + conformance warnings ─────────────────────────
         var cellPorts = BuildCellPorts(pinInfos, conflicts);
@@ -555,7 +561,8 @@ public static class NetExtractor
         List<string> conflicts,
         IEnumerable<(long, long)>? extraRoots = null,
         IReadOnlyDictionary<(long, long), string>? pinNetNameMap = null,
-        Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions = null,
+        HashSet<string>? labeledNetNames = null)
     {
         var rootToName = new Dictionary<(long, long), string>();
 
@@ -646,6 +653,20 @@ public static class NetExtractor
         foreach (var root in orderedRoots)
             rootToName[root] = $"n{idx++}";
 
+        // Collect net names whose final assigned name still comes from a user-placed label.
+        // A Pin-overridden label (rootToName[root] != lbl.Name) is excluded; ground "0" is also excluded.
+        if (labeledNetNames is not null)
+        {
+            foreach (var lbl in model.NetLabels)
+            {
+                var k = labelNetKeys[lbl];
+                if (k is null || !uf.Contains(k.Value)) continue;
+                var root = uf.Find(k.Value);
+                if (rootToName.TryGetValue(root, out var finalName) && finalName == lbl.Name)
+                    labeledNetNames.Add(finalName);
+            }
+        }
+
         return rootToName;
     }
 
@@ -683,8 +704,10 @@ public static class NetExtractor
         Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys)
     {
         var reference = ComponentTypeRegistry.EngineReference(comp.Symbol, comp.PortCount);
-        // Keep built-in portDefs for ZPort "ref" name detection; geometry goes through PortWorldOf.
-        var portDefs  = SymbolPortDefs.For(comp.Symbol, comp.PortCount);
+        // ToneSource with indexed V[1]/Freq[1] format (NumFreqs present) → use V_nTone factory.
+        if (comp.Symbol == SymbolKind.ToneSource &&
+            comp.Parameters.Any(p => p.Name == "NumFreqs"))
+            reference = "V_nTone";
         var overrides = comp.Parameters
             .Select(p =>
             {
@@ -693,26 +716,8 @@ public static class NetExtractor
             })
             .ToList();
 
-        // ZPort: N signal pins + 1 "ref" pin → NetBindings[0..N-1] + RefNetBinding.
-        if (comp.Symbol == SymbolKind.ZPort)
-        {
-            var bindings = new List<string>();
-            string? refNet = null;
-            foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
-            {
-                var (px, py) = model.PortWorldOf(comp, def);
-                var net = NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys);
-                if (portDefs[def.PortIndex].Name == "ref")
-                    refNet = net == "0" ? null : net;
-                else
-                    bindings.Add(net);
-            }
-            return new Instance(comp.InstanceName, reference, bindings, overrides)
-                   { RefNetBinding = refNet };
-        }
-
         // All built-in primitives: emit terminals in PortIndex order.
-        var nets = new List<string>(portDefs.Length);
+        var nets = new List<string>();
         foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
         {
             var (px, py) = model.PortWorldOf(comp, def);

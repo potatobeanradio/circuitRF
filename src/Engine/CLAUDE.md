@@ -4,6 +4,65 @@ Standing instructions for `src/Engine` (the numeric layer: MNA assembly, linear 
 HB sub-engine in `HarmonicBalance/`). Read with the root `CLAUDE.md`. Design notes:
 `docs/design/linear-engine.md` and `docs/design/harmonic-balance.md`.
 
+## Node-picker labeled filter — `__LabeledNodes` side cube (brief-node-picker-labeled-filter, 2026-06-16)
+
+`HbEngine.BuildSingleToneDataSet` (and `BuildTwoToneDataSet`) emit a `__LabeledNodes` metadata cube when `_netlist.Nodes.LabeledNames` is non-empty. The cube has one axis `label` with `Labels` = the labeled node names that actually appear in the `node` axis; values are all-zeros (unused). The `__` prefix marks it as metadata: the signal list and signal picker skip all `__`-prefixed cubes. Round-trips automatically via the generic DataSet `.npy` exporter.
+
+- Absent `__LabeledNodes` (hand-written CNL, no schematic labels) → picker UI defaults to show-all.
+- Present-but-empty (schematic ran, user tagged nothing) → picker shows nothing (filter ON, empty set).
+- Present-and-non-empty → picker shows only the labeled nodes by default (`ShowAllNodes=false`).
+
+Provenance thread: `NetExtractor.AssignNetNames` → `TestBench.LabeledNets` → `Elaborator` → `NodeMap.LabeledNames` → `HbEngine` → `__LabeledNodes` cube. Gate tests: `HbLabeledNodesCubeTests.cs` (T4, T6).
+
+## Z_Port per-port references — 2N nets, ± pairs (brief-zport-per-port-refs, 2026-06-16)
+
+**Z_Port now uses 2N nets as differential ± pairs with per-port references** (`V_p = V(net[2p]) − V(net[2p+1])`),
+parallel to the SDD — **NOT** the N-or-(N+1) shared-reference convention. That single-shared-reference
+convention still applies to **SnP/TLIN/user freq-models** (unchanged).
+
+- `ZPortModel` no longer reads `ElaboratedComponent.ReferenceNode` (stays at default 0; stamp ignores it).
+- Arity validated in `Elaborator.ResolveZPortParameters`: odd net count → error; netCount ≠ 2·portCount → error.
+- Schematic: ZPort reuses the SDD 2N-pin ± port generator (`GenerateSddPorts` / `GenerateSddVariadicPorts`).
+  `PortCount` = N (signal ports); pin count = 2N; `FromRenderModel` derives ZPort N = pins/2.
+- `linear-engine.md` §4.1/§4.4 note: Z_Port is the exception to the N-or-(N+1) shared-reference rule.
+- CNL format: `Z_Port:Name  n1+ n1−  n2+ n2−  …  Z[i,j]=expr` — 2N nets, no trailing refnet.
+- 9 gate tests: `ZPortArityTests` (Core.Tests), `ZPortPerPortRefTests` (Engine.Tests),
+  `ZPortSymbol_2Port_Has4Pins` + `ZPort_NetExtraction_4Nets` (Ui.Tests).
+
+## HB V cube — full user-node axis (brief hb-linear-nodes-in-cube, 2026-06-16)
+
+The HB `V` cube's `node` axis now includes **all non-ground user-facing nodes** (interface + linear-only), not only the nonlinear-device interface nodes.
+
+- **Interface nodes** (nonlinear-device port nodes): use the converged Newton solution directly.
+- **Linear-only nodes** (connected only to R/L/C/sources, no nonlinear port): recovered via `HbLinearBackSolver.GetNodeVoltage(c, k, 0)`.
+- **`INl`** at linear-only nodes is 0 at all harmonics (no nonlinear device current there). The `V` and `INl` cubes keep the same `node` axis.
+- **`__`-prefixed internal mint nodes** (e.g. `__p1tone_*_drv`, `__tuner_*_block/bias`) are **excluded** to reduce clutter; only user-named nets appear.
+- **Stable order**: nodes emitted in ascending circuit-node-index order (topology-invariant across sweep points — required for `ParametricSweepEngine` axis stacking).
+- **Two-tone** linear-node recovery is a noted follow-up: `RunTwoTone` still emits interface-only nodes (no back-solver there yet).
+- **`ParametricSweepEngine`** is unaffected: each per-point DataSet already carries the full node axis; stacking works unchanged.
+- 5 gate tests: `HbLinearNodeTests` T1–T5 (`tests/Engine.Tests/HarmonicBalance/HbLinearNodeTests.cs`).
+- `Hero2Tests.ExtractVMatrix` updated to filter to interface nodes (using `HbLinearExtractor`) for `RunJacobianDiagnostic` (which needs Newton unknowns only).
+
+## P1ToneModel — single-tone RF power source (brief-sweep-5, 2026-06-16)
+
+`P1ToneModel` (`src/Core/Devices/P1ToneModel.cs`) is the power-domain RF source: available power
+`Pavl` (dBm) behind internal impedance `Z` (Ω, default 50), with optional per-harmonic-band
+terminations `Z[k]`/`G[k]` (same as Tuner).
+
+**Key design points:**
+- Node layout: `[0]` = DUT-facing, `[1]` = reference (ground), `[2]` = minted `__p1tone_<inst>_drv`.
+- Band-assignment rule: `n = roundHalfUp(|f|/f_c)` = `(int)Math.Floor(|f|/f_c + 0.5)`.
+- `f_c` (band-center) set by `SetToneContext(fc, driveFreqHz)` — called by `HbEngine.Run()` /
+  `RunTwoTone()` before extraction. Single-tone: `fc=f0`; two-tone: `fc=(f1+f2)/2`.
+- `|Vs| = sqrt(8·Re(Z_at_fundamental)·Pavl_W)` (matched-load; recomputed in `SetToneContext`).
+- S-param mode (`_fc≤0`): stamps `Z_Port(nExt, nRef, Z[1])` only — no drive branch.
+- HB mode: drive branch `V=Vs@driveFreqHz` at `nDrv→nRef`; `Z_Port(nExt, nDrv, GetZ(ω))`.
+- `HbEngine.CheckCommensurability` and `CheckCommensurabilityMultiTone` check `P1ToneModel.FreqHz`.
+- Factory: `"P1Tone"` added to `_parameterizedTypes`; `CreateP1ToneModel` uses same `RxTunerZ`/`RxTunerG`
+  regex + Γ→Z conversion. `Z` serves as both `Zdefault` and `Z0` for conversion.
+- Elaborator: mints `__p1tone_{childPath}_drv`; dispatches `ResolveP1ToneParameters`.
+- 7 gate tests in `tests/Engine.Tests/HarmonicBalance/P1ToneTests.cs`.
+
 ## HB sweep architecture (Sweep-3 migration, 2026-06-16)
 
 All swept HB results — single-tone and two-tone — come from `ParametricSweepEngine`. The swept

@@ -279,7 +279,7 @@ public static class SchematicRenderer
                 // Body + polarity marks: DrawSymbol dispatches per-primitive to the right paint.
                 // Plus-role primitives (e.g. VoltageSource +/−) are inside the same primitive list,
                 // so the separate ForSymbolPlusSegments path is gone.
-                DrawSymbol(canvas, BuiltInSymbols.Primitives(c.Symbol).Primitives,
+                DrawSymbol(canvas, BuiltInSymbols.Primitives(c.Symbol, c.Ports.Count / 2).Primitives,
                     cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme,
                     applyForceReadable: true);
                 DrawVariadicPortLeads(canvas, c, cx, cy, panX, panY, zoom, bodyPaint);
@@ -755,8 +755,7 @@ public static class SchematicRenderer
     // ── Variadic port lead stubs (ZPort, Sdd) ────────────────────────────────
 
     // Draws stub lines from each port tip to the component body edge.
-    // ZPort body: left edge x=−70, right edge x=+70.
-    // Sdd body:   left edge x=−80, right edge x=+80.
+    // SDD/ZPort body edges are at ±90; port lead stubs run from ±90 to the pin tip at ±200.
     // Ports at LocalX<0 are left ports; ports at LocalX>0 are right ports.
     private static void DrawVariadicPortLeads(
         SKCanvas canvas, SchematicComponent c,
@@ -765,7 +764,7 @@ public static class SchematicRenderer
         SKPaint paint)
     {
         if (c.Symbol is not (SymbolKind.ZPort or SymbolKind.Sdd)) return;
-        float bodyEdge = c.Symbol == SymbolKind.ZPort ? 70f : 80f;
+        const float bodyEdge = 90f;
         foreach (var port in c.Ports)
         {
             float innerX = port.LocalX < 0f ? -bodyEdge : bodyEdge;
@@ -1048,7 +1047,7 @@ public static class SchematicRenderer
                 PathEffect  = SKPathEffect.CreateDash([6f, 3f], 0f),
             };
             var ghostPrimitives = ghost.ResolvedPrimitives
-                ?? BuiltInSymbols.Primitives(ghost.Symbol).Primitives;
+                ?? BuiltInSymbols.Primitives(ghost.Symbol, ghost.PortCount).Primitives;
             DrawSymbol(canvas, ghostPrimitives,
                 ghost.X, ghost.Y, ghost.Rotation, ghost.MirrorX, panX, panY, zoom,
                 theme, ghostPaint);

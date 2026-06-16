@@ -28,6 +28,13 @@ public sealed class TestBench(string name)
     /// Kind = "analysis" or "measure"; RawLine = verbatim remainder after the keyword.
     /// </summary>
     public List<RawDirective> RawDirectives { get; } = [];
+
+    /// <summary>
+    /// Net names that came from a user-placed net label in the schematic (provenance set).
+    /// Populated by NetExtractor; empty for hand-written netlists. Propagated to
+    /// NodeMap.LabeledNames by the Elaborator and persisted in the __LabeledNodes DataCube.
+    /// </summary>
+    public HashSet<string> LabeledNets { get; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>

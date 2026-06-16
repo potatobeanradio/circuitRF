@@ -100,13 +100,27 @@ public static class SchematicRunService
         var notes     = new List<string>();
         var errors    = new List<string>();
 
+        // Names that are wrapped as the inner of a parametric sweep — run only via their sweep.
+        var innerOfSweep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var a in tb.Analyses)
+            if (a is ParametricSweepAnalysis ps && !string.IsNullOrEmpty(ps.InnerAnalysisName))
+                innerOfSweep.Add(ps.InnerAnalysisName);
+
         foreach (var analysis in tb.Analyses)
         {
+            if (!analysis.Enabled) continue;              // disabled — in tb for chain lookup only
+            if (innerOfSweep.Contains(analysis.Name)) continue; // runs only via its wrapping sweep
+
             try
             {
                 var ds = RunTypedAnalysis(analysis, nl, tb, lib, notes);
                 if (ds is not null)
-                    results.Add(new AnalysisResult(DeduplicateName(analysis.Name, usedNames), ds));
+                {
+                    var resultName = analysis is ParametricSweepAnalysis psa
+                        ? RootInnerName(psa, tb)
+                        : analysis.Name;
+                    results.Add(new AnalysisResult(DeduplicateName(resultName, usedNames), ds));
+                }
             }
             catch (Exception ex)
             {
@@ -328,6 +342,16 @@ public static class SchematicRunService
     {
         int sp = s.IndexOf(' ');
         return sp < 0 ? s : s[..sp];
+    }
+
+    // Walks InnerAnalysisName down to the first non-sweep analysis and returns its name.
+    private static string RootInnerName(ParametricSweepAnalysis sweep, TestBench tb)
+    {
+        Analysis? cur = sweep;
+        var guard = 0;
+        while (cur is ParametricSweepAnalysis ps && guard++ < 64)
+            cur = tb.Analyses.FirstOrDefault(a => a.Name == ps.InnerAnalysisName);
+        return cur?.Name ?? sweep.Name;
     }
 
     // Within-run duplicate-name guard: appends _2, _3, … until the name is unique.

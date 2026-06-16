@@ -29,6 +29,17 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     /// <summary>Selectable index labels (Axis.Labels[k] ?? Values[k].ToString("G3")).</summary>
     public IReadOnlyList<string> PinOptions { get; }
 
+    /// <summary>
+    /// Maps display position → true cube-axis index. Non-null only when options are filtered
+    /// (node axis, labeled-only mode). Null = 1:1 mapping (PinIndex IS the cube index).
+    /// </summary>
+    public IReadOnlyList<int>? PinOptionIndices { get; }
+
+    /// <summary>True cube-axis index for the selected option.</summary>
+    public int TruePinIndex => PinOptionIndices is not null && PinOptionIndices.Count > 0
+        ? PinOptionIndices[Math.Clamp(PinIndex, 0, PinOptionIndices.Count - 1)]
+        : PinIndex;
+
     /// <summary>True when this is the only axis (rank-1 cube) — role toggle disabled.</summary>
     public bool IsRoleToggleable => _owner.AxisRoles.Count > 1;
 
@@ -53,14 +64,16 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     internal AxisRoleRowViewModel(TraceRowViewModel owner,
                                    string axisName, string? unit,
                                    IReadOnlyList<string> pinOptions,
-                                   bool isX, int pinIndex)
+                                   bool isX, int pinIndex,
+                                   IReadOnlyList<int>? pinOptionIndices = null)
     {
-        _owner     = owner;
-        AxisName   = axisName;
-        Unit       = unit;
-        PinOptions = pinOptions;
-        _isX       = isX;
-        _pinIndex  = Math.Clamp(pinIndex, 0, Math.Max(0, pinOptions.Count - 1));
+        _owner            = owner;
+        AxisName          = axisName;
+        Unit              = unit;
+        PinOptions        = pinOptions;
+        PinOptionIndices  = pinOptionIndices;
+        _isX              = isX;
+        _pinIndex         = Math.Clamp(pinIndex, 0, Math.Max(0, pinOptions.Count - 1));
     }
 
     // ---- Commands ---------------------------------------------------------

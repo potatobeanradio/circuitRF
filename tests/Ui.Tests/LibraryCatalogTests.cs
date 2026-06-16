@@ -23,7 +23,7 @@ public class RegistryPaletteMetadataTests
     [InlineData(SymbolKind.Resistor,      ComponentCategory.Lumped)]
     [InlineData(SymbolKind.Inductor,      ComponentCategory.Lumped)]
     [InlineData(SymbolKind.Capacitor,     ComponentCategory.Lumped)]
-    [InlineData(SymbolKind.VoltageSource, ComponentCategory.Sources)]
+    [InlineData(SymbolKind.Vdc, ComponentCategory.Sources)]
     [InlineData(SymbolKind.ToneSource,    ComponentCategory.Sources)]
     [InlineData(SymbolKind.Ground,        ComponentCategory.Terminals)]
     [InlineData(SymbolKind.Term,          ComponentCategory.Terminals)]
@@ -40,7 +40,7 @@ public class RegistryPaletteMetadataTests
     [InlineData(SymbolKind.Resistor,      true)]
     [InlineData(SymbolKind.Inductor,      true)]
     [InlineData(SymbolKind.Capacitor,     true)]
-    [InlineData(SymbolKind.VoltageSource, true)]
+    [InlineData(SymbolKind.Vdc, true)]
     [InlineData(SymbolKind.ToneSource,    true)]
     [InlineData(SymbolKind.Ground,        true)]
     [InlineData(SymbolKind.Term,          true)]
@@ -147,7 +147,7 @@ public class LibraryCatalogTests
             var curr = items[i];
             if (prev.Category == curr.Category)
                 Assert.True(
-                    string.Compare(prev.DisplayName, curr.DisplayName, StringComparison.Ordinal) <= 0,
+                    string.Compare(prev.DisplayName, curr.DisplayName, StringComparison.OrdinalIgnoreCase) <= 0,
                     $"Within {curr.Category}: '{prev.DisplayName}' should sort before '{curr.DisplayName}'");
         }
     }
@@ -181,8 +181,8 @@ public class LibraryCatalogTests
             .Where(i => i.Category == ComponentCategory.Sources)
             .Select(i => i.Kind)
             .ToHashSet();
-        Assert.Contains(SymbolKind.VoltageSource, sources);
-        Assert.Contains(SymbolKind.ToneSource,    sources);
+        Assert.Contains(SymbolKind.Vdc,        sources);
+        Assert.Contains(SymbolKind.ToneSource, sources);
     }
 
     [Fact]
@@ -209,8 +209,8 @@ public class LibraryCatalogTests
     public void ByCategory_Sources_ReturnsBothSources()
     {
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Sources).Select(i => i.Kind).ToHashSet();
-        Assert.Contains(SymbolKind.VoltageSource, kinds);
-        Assert.Contains(SymbolKind.ToneSource,    kinds);
+        Assert.Contains(SymbolKind.Vdc,        kinds);
+        Assert.Contains(SymbolKind.ToneSource, kinds);
     }
 
     [Fact]

@@ -320,4 +320,81 @@ public class CnlReaderTests
         Assert.Equal("Gain",       m.Name);
         Assert.Equal("dB(S(2,1))", m.Expression);
     }
+
+    // ── Unit-token phantom-node fix (brief-unit-token-phantom-nodes) ──────────
+
+    [Fact]
+    public void CnlReader_P1Tone_NoPhantomUnitNets()
+    {
+        // "dBm" after Pavl=Pin must be consumed as a unit, not appended as a net.
+        var src = "P1Tone:P1 n1 0  Pavl=Pin dBm  Freq=2e9  Z=50\n";
+        var (_, tb) = new CnlReader().Read(src);
+        var inst = Assert.Single(tb.Instances);
+        Assert.Equal(["n1", "0"], inst.NetBindings);
+        Assert.DoesNotContain("dBm", inst.NetBindings);
+        var pavl = inst.Overrides.FirstOrDefault(o => o.Name == "Pavl");
+        Assert.NotNull(pavl);
+        Assert.Equal("Pin", pavl.Expression);
+        Assert.Equal("dBm", pavl.Unit);
+    }
+
+    [Fact]
+    public void CnlReader_Vdc_NoPhantomUnitNets()
+    {
+        // "V" after Vdc=-3.05 must be consumed as a unit, not appended as a net.
+        var src = "Vdc:V1 n2 0  Vdc=-3.05 V\n";
+        var (_, tb) = new CnlReader().Read(src);
+        var inst = Assert.Single(tb.Instances);
+        Assert.Equal(["n2", "0"], inst.NetBindings);
+        Assert.DoesNotContain("V", inst.NetBindings);
+        var vdc = inst.Overrides.FirstOrDefault(o => o.Name == "Vdc");
+        Assert.NotNull(vdc);
+        Assert.Equal("-3.05", vdc.Expression);
+        Assert.Equal("V", vdc.Unit);
+    }
+
+    [Fact]
+    public void CnlReader_DoesNotEatRealNet()
+    {
+        // "Vout2" in the net section (before any '=') must NOT be swallowed as a unit.
+        // "Ohm" after R=80 IS a unit and must be consumed.
+        var src = "R:R2 Vout2 0  R=80 Ohm\n";
+        var (_, tb) = new CnlReader().Read(src);
+        var inst = Assert.Single(tb.Instances);
+        Assert.Equal(["Vout2", "0"], inst.NetBindings);
+        var r = Assert.Single(inst.Overrides);
+        Assert.Equal("R",    r.Name);
+        Assert.Equal("80",   r.Expression);
+        Assert.Equal("Ohm",  r.Unit);
+    }
+
+    [Fact]
+    public void GluedUnit_StillSafe()
+    {
+        // Glued "48V" and "0dBm" split into value + unit.
+        var srcV = "Vdc:V2 n3 0  Vdc=48V\n";
+        var (_, tbV) = new CnlReader().Read(srcV);
+        var ov = tbV.Instances[0].Overrides.First(o => o.Name == "Vdc");
+        Assert.Equal("48",  ov.Expression);
+        Assert.Equal("V",   ov.Unit);
+
+        var srcDbm = "P1Tone:P1 n1 0  Pavl=0dBm  Freq=2e9  Z=50\n";
+        var (_, tbDbm) = new CnlReader().Read(srcDbm);
+        var pavl = tbDbm.Instances[0].Overrides.First(o => o.Name == "Pavl");
+        Assert.Equal("0",   pavl.Expression);
+        Assert.Equal("dBm", pavl.Unit);
+
+        // Identifier values are never split regardless of content.
+        var srcPin = "P1Tone:P2 n1 0  Pavl=Pin  Freq=2e9  Z=50\n";
+        var (_, tbPin) = new CnlReader().Read(srcPin);
+        var pavlPin = tbPin.Instances[0].Overrides.First(o => o.Name == "Pavl");
+        Assert.Equal("Pin", pavlPin.Expression);
+        Assert.Null(pavlPin.Unit);
+
+        var srcId = "R:Rx a 0  R=Vs_mag\n";
+        var (_, tbId) = new CnlReader().Read(srcId);
+        var rOv = tbId.Instances[0].Overrides.Single();
+        Assert.Equal("Vs_mag", rOv.Expression);
+        Assert.Null(rOv.Unit);
+    }
 }

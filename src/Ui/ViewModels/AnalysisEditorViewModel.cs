@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Design;
 using CircuitRF.Ui.Schematic;
 
@@ -10,12 +12,12 @@ namespace CircuitRF.Ui.ViewModels;
 /// <summary>
 /// Staging VM for the Add/Edit Analysis dialog (analysis-authoring.md §4.2).
 ///
-/// Holds the type selector (DC / S-Parameter / Harmonic Balance), name, enabled flag, and
-/// per-type body VMs. Call <see cref="BuildAnalysis"/> on OK to commit; returns null when
-/// validation fails. The static constructors handle both "Add new" and "Edit existing".
+/// Holds the type selector (DC / S-Parameter / Harmonic Balance), name, enabled flag,
+/// per-type body VMs, and a list of parametric sweep axes.
 ///
-/// Expression preview is available via <see cref="ComputePreview"/> — it reuses the
-/// DesignScope.Build + Evaluator pattern from ParameterRowViewModel with no fork (§4.3).
+/// Call <see cref="BuildAnalyses"/> on OK to commit; returns null when validation fails.
+/// When sweep axes are present the list contains [inner (disabled), …sweeps…, outer (enabled)].
+/// The static constructors handle both "Add new" and "Edit existing" (including chains).
 /// </summary>
 public sealed partial class AnalysisEditorViewModel : ObservableObject
 {
@@ -24,6 +26,10 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     private readonly SchematicEditModel _model;
     private readonly List<string>       _existingNames;
     private readonly string?            _editingName;
+
+    // Names of analyses in the OLD chain that must be removed on edit (inner + old sweeps).
+    // Empty for the Add flow.
+    private readonly List<string> _editingChainNames = [];
 
     // ── Type selection ────────────────────────────────────────────────────────
 
@@ -59,6 +65,22 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     /// <summary>HB body (Layer 3 enriches this stub with all field editing).</summary>
     public HbBodyViewModel HbBody { get; }
 
+    // ── Parametric sweep axes ─────────────────────────────────────────────────
+
+    public ObservableCollection<SweepAxisRowViewModel> SweepAxes { get; } = [];
+
+    [ObservableProperty] private bool _sweepsExpanded = false;
+
+    [RelayCommand]
+    private void AddSweepAxis()
+    {
+        SweepAxes.Add(new SweepAxisRowViewModel(_model));
+        SweepsExpanded = true;
+    }
+
+    [RelayCommand]
+    private void RemoveSweepAxis(SweepAxisRowViewModel row) => SweepAxes.Remove(row);
+
     // ── Constructor: Add new ──────────────────────────────────────────────────
 
     public AnalysisEditorViewModel(SchematicEditModel model, AnalysisKind initialType = AnalysisKind.DC)
@@ -79,28 +101,61 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     {
         _model         = model;
         _existingNames = model.Analyses.Select(a => a.Name).ToList();
-        _editingName   = existing.Name;
-        _name          = existing.Name;
-        _enabled       = existing.Enabled;
 
-        switch (existing)
+        // Resolve the chain: navigate to innermost non-sweep analysis and collect sweeps.
+        var (inner, sweepChain) = ResolveChain(model, existing);
+
+        _editingName = inner.Name;
+        _name        = inner.Name;
+        // Enabled is the outermost analysis's flag (or the inner if no sweeps).
+        _enabled = sweepChain.Count > 0 ? sweepChain[^1].Enabled : inner.Enabled;
+
+        // Track all chain member names so the edit command can remove the old chain.
+        _editingChainNames.Add(inner.Name);
+        _editingChainNames.AddRange(sweepChain.Select(s => s.Name));
+
+        switch (inner)
         {
             case SParameterAnalysis sp:
                 _type  = AnalysisKind.SP;
                 SpBody = SpBodyViewModel.FromAnalysis(sp, model);
                 HbBody = new HbBodyViewModel(model);
                 break;
+
             case HarmonicBalanceAnalysis hb:
                 _type  = AnalysisKind.HB;
                 SpBody = new SpBodyViewModel(model);
                 HbBody = HbBodyViewModel.FromAnalysis(hb, model);
+
+                // Migrate legacy HB sweep fields into a sweep axis row.
+#pragma warning disable CS0618
+                if (hb.SweepVarName is { Length: > 0 } && sweepChain.Count == 0)
+                {
+                    SweepAxes.Add(SweepAxisRowViewModel.FromLegacyHbSweep(
+                        hb.SweepVarName,
+                        hb.SweepStartExpr ?? "0",
+                        hb.SweepStopExpr  ?? "1",
+                        hb.SweepStepExpr  ?? "0.1",
+                        model));
+                    SweepsExpanded = true;
+                }
+#pragma warning restore CS0618
                 break;
+
             default: // DcAnalysis or unknown
                 _type  = AnalysisKind.DC;
                 SpBody = new SpBodyViewModel(model);
                 HbBody = new HbBodyViewModel(model);
                 break;
         }
+
+        // Load existing sweep chain into the rows list (innermost first).
+        foreach (var psa in sweepChain)
+        {
+            SweepAxes.Add(SweepAxisRowViewModel.FromPsa(psa, model));
+            SweepsExpanded = true;
+        }
+
         ValidateName();
     }
 
@@ -195,29 +250,140 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     // ── Build ─────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Returns the staged <see cref="Analysis"/> when validation passes, or null.
-    /// Called by the dialog code-behind on OK.
+    /// Returns the staged analyses when validation passes, or null.
+    /// When no sweep axes are present the list contains a single enabled analysis.
+    /// When N axes are present: [inner (disabled), sweep1 (disabled), …, sweepN (enabled)],
+    /// naming each sweep as <c>&lt;innerName&gt;_sweep_&lt;varName&gt;</c>.
     /// </summary>
-    public Analysis? BuildAnalysis()
+    public IReadOnlyList<Analysis>? BuildAnalyses()
     {
         if (!CanCommit) return null;
         string name = Name.Trim();
 
-        switch (Type)
+        bool hasSweeps = SweepAxes.Count > 0;
+
+        // Build the inner analysis.
+        Analysis? inner = Type switch
         {
-            case AnalysisKind.DC:
-                return new DcAnalysis(name) { Enabled = Enabled };
+            AnalysisKind.DC  => new DcAnalysis(name)           { Enabled = !hasSweeps && Enabled },
+            AnalysisKind.SP  => BuildSp(name, !hasSweeps && Enabled),
+            AnalysisKind.HB  => HbBody.BuildAnalysis(name,      !hasSweeps && Enabled),
+            _                => null,
+        };
+        if (inner is null) return null;
 
-            case AnalysisKind.SP:
-                var sp = new SParameterAnalysis(name, SpBody.BuildSweeps());
-                sp.Enabled = Enabled;
-                return sp;
+        if (!hasSweeps)
+            return [inner];
 
-            case AnalysisKind.HB:
-                return HbBody.BuildAnalysis(name, Enabled);
+        // Build sweep chain (innermost first).
+        var chain = new List<Analysis> { inner };
+        string innerName = name;
 
-            default:
-                return null;
+        for (int i = 0; i < SweepAxes.Count; i++)
+        {
+            var row      = SweepAxes[i];
+            bool isLast  = i == SweepAxes.Count - 1;
+            string varName = row.VarName.Trim();
+            if (varName.Length == 0) return null;
+
+            string sweepName = $"{name}_sweep_{varName}";
+            ParametricSweepAnalysis psa;
+
+            if (row.Mode == SweepAxisMode.List)
+            {
+                double[]? values = row.BuildValues();
+                if (values is null || values.Length == 0) return null;
+                psa = new ParametricSweepAnalysis(sweepName, varName, values, innerName);
+            }
+            else
+            {
+                // StepSize or PointCount — store the compact spec for .cnl round-trip fidelity.
+                var spec = row.BuildSpec();
+                if (spec is null) return null;
+                psa = new ParametricSweepAnalysis(sweepName, varName, spec, innerName);
+                if (psa.SweepValues.Length == 0) return null;
+            }
+
+            psa.Enabled = isLast && Enabled;
+            chain.Add(psa);
+            innerName = sweepName;
         }
+
+        return chain;
+    }
+
+    // ── Chain names for the edit command ─────────────────────────────────────
+
+    /// <summary>
+    /// Names of the analyses in the chain being edited (inner + all wrapping sweeps).
+    /// Empty for the Add flow.  The edit command removes ALL of these and replaces them
+    /// with the result of <see cref="BuildAnalyses"/>.
+    /// </summary>
+    public IReadOnlyList<string> EditingChainNames => _editingChainNames;
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private Analysis? BuildSp(string name, bool enabled)
+    {
+        var sweeps = SpBody.BuildSweeps();
+        var sp = new SParameterAnalysis(name, sweeps);
+        sp.Enabled = enabled;
+        return sp;
+    }
+
+    /// <summary>
+    /// Given the analysis the user selected, finds the innermost non-sweep analysis and
+    /// collects the sweep chain from innermost outward.
+    /// </summary>
+    private static (Analysis Inner, List<ParametricSweepAnalysis> SweepChain)
+        ResolveChain(SchematicEditModel model, Analysis selected)
+    {
+        // Navigate inward if the selected analysis is itself a sweep.
+        var psaStack = new Stack<ParametricSweepAnalysis>();
+        Analysis current = selected;
+        while (current is ParametricSweepAnalysis psa)
+        {
+            psaStack.Push(psa);
+            var next = model.Analyses.FirstOrDefault(
+                a => string.Equals(a.Name, psa.InnerAnalysisName, StringComparison.OrdinalIgnoreCase));
+            if (next is null) break;
+            current = next;
+        }
+        var inner = current;
+
+        // The psaStack is now outermost-first; we want innermost-first for the list.
+        var chainFromOuter = psaStack.ToList(); // stack top = innermost sweep added last
+        // psaStack.Push order is outer→inner as we traverse in→out;
+        // but we traversed from outer→inner, so top is innermost PSA.
+        // Actually: selected was outermost. First iteration pushed selected (outermost).
+        // Next iteration pushed the next inner psa, etc.
+        // So stack top = deepest PSA (= PSA immediately wrapping inner).
+        // For our chain list we want [PSA wrapping inner, ..., outermost PSA].
+        var sweepChain = chainFromOuter; // already innermost-to-outermost? Let's check:
+        // If selected = outer sweep → stack = [outer], current = inner → stack top = outer
+        // If selected = inner-to-outer chain [A→B→inner]:
+        //   iter1: push A (outer), current = B
+        //   iter2: push B, current = inner
+        //   stack (bottom→top): A, B → top = B (immediately wrapping inner) ✓
+        // So stack ToList() = [A, B] = outermost to innermost-sweep → we need reverse
+        sweepChain.Reverse(); // now innermost-sweep to outermost
+
+        // If selected was NOT a sweep, collect sweep analyses wrapping it.
+        if (psaStack.Count == 0)
+        {
+            var wrapping = new List<ParametricSweepAnalysis>();
+            var cursor   = inner;
+            var sweepMap = model.Analyses
+                .OfType<ParametricSweepAnalysis>()
+                .ToDictionary(a => a.InnerAnalysisName, StringComparer.OrdinalIgnoreCase);
+            while (sweepMap.TryGetValue(cursor.Name, out var nextSweep))
+            {
+                wrapping.Add(nextSweep);
+                cursor = nextSweep;
+            }
+            return (inner, wrapping);
+        }
+
+        return (inner, sweepChain);
     }
 }

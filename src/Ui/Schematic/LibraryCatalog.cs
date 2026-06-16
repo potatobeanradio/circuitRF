@@ -95,7 +95,7 @@ public static class LibraryCatalog
                         info.ExtraCategories);
                 })
                 .OrderBy(i => CategorySortKey(i.Category))
-                .ThenBy(i => i.DisplayName)
+                .ThenBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToArray());
 
     private static int CategorySortKey(ComponentCategory c) => c switch

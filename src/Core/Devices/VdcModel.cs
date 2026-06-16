@@ -5,22 +5,16 @@ using CircuitRF.Core.Expressions;
 namespace CircuitRF.Core.Devices;
 
 /// <summary>
-/// Independent DC/AC voltage source (Group 2 branch-current element).
-/// Stamps: Va − Vb = V (branch constraint); branch current flows from Va to Vb.
-/// Parameter: V = voltage (V).
+/// Independent DC voltage source (Group 2 branch-current element).
+/// Stamps Va − Vb = Vdc at ω≈0; stamps Va − Vb = 0 (ideal short) at all other ω.
+/// Parameter: Vdc = DC voltage (V). Alias: V (for backward compatibility).
 /// </summary>
-public sealed class VoltageSourceModel : ComponentModel
+public sealed class VdcModel : ComponentModel
 {
     public override int       PortCount => 1;
     public override ModelKind Kind      => ModelKind.Linear;
 
-    public void Resolve(IReadOnlyDictionary<string, Value> parameters)
-    {
-        if (parameters.TryGetValue("V", out var v) && v.Kind == ValueKind.Real)
-            _voltage = v.AsReal();
-        else if (parameters.TryGetValue("V", out var vc) && vc.Kind == ValueKind.Complex)
-            _voltage = vc.AsComplex().Real;
-    }
+    private const double OmegaTolRads = 1.0;
 
     private double _voltage;
 
@@ -38,21 +32,18 @@ public sealed class VoltageSourceModel : ComponentModel
         int va = c.Nodes[0];
         int vb = c.Nodes[1];
 
-        // Resolve voltage from parameters if not already done.
-        if (c.Parameters.TryGetValue("V", out var param))
-        {
-            _voltage = param.Kind == ValueKind.Real
-                ? param.AsReal()
-                : param.AsComplex().Real;
-        }
+        if (c.Parameters.TryGetValue("Vdc", out var vp))
+            _voltage = vp.Kind == ValueKind.Real ? vp.AsReal() : vp.AsComplex().Real;
+        else if (c.Parameters.TryGetValue("V", out var v))
+            _voltage = v.Kind == ValueKind.Real ? v.AsReal() : v.AsComplex().Real;
 
         int br = mna.AddBranch();
         LastBranchIndex = br;
-        // Constraint row: Va − Vb − V = 0  →  Va − Vb = V
         mna.AddConstraint(br, va, new Complex(+1, 0));
         mna.AddConstraint(br, vb, new Complex(-1, 0));
-        mna.AddSourceValue(br, new Complex(_voltage, 0));
-        // KCL: branch current flows from Va to Vb
         mna.AddBranchCurrent(br, va, vb);
+
+        Complex e = Math.Abs(omega) < OmegaTolRads ? new Complex(_voltage, 0) : Complex.Zero;
+        mna.AddSourceValue(br, e);
     }
 }

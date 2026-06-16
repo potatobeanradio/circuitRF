@@ -176,8 +176,83 @@ i2 ≈ 49.11 mA, i1 = −61 mA, gm ≈ 62.4 mS, gds ≈ −9.45 µS (negative).
 (branch constraint + KCL). Parameter `V=`. Required for bias sources in the DC hero circuit.
 Registered as type `V` in `ComponentModelFactory`.
 
+## Parametric sweep — Start/Stop/Step|Npts (brief-parametric-sweep-stepcount, 2026-06-16)
+
+`SweepExpander` and `SweepAxisMode` moved from `src/Ui/Schematic/` → **`src/Core/Design/SweepExpander.cs`** (no Avalonia deps) so the CNL reader can use them without violating the Core→UI firewall.
+
+`SweepSpec` (in `Analysis.cs`) redesigned: `{ Start, Stop, StepOrCount, Mode: SweepAxisMode, Kind: SweepKind }` — no `Variable` field. `ParametricSweepAnalysis` gains a **spec constructor** that expands eagerly (populates `SweepValues`) and stores `Spec` for `.cnl` round-trip fidelity; the existing array constructor sets `Spec = null`.
+
+**CNL reader** (`TryParseParametricSweepDirective`): now accepts both `Values=v1,v2,…` (list; `Spec=null`) and `Start= Stop= (Step= | Npts=) [log | log=true]` (spec; `Spec` retained). Bare `log` keyword detected via `HashSet<string> bare` (same pattern as SParam parser).
+
+**CNL writer** (`FormatParametricSweepAnalysis`): emits compact `Start= Stop= Step=|Npts=` form when `psa.Spec != null`, falling back to `Values=` list for array-only PSAs.
+
+6 gate tests in `tests/Core.Tests/Netlist/SweepSpecCnlTests.cs`: StartStopStep (121 pts), StartStopNpts (7 pts linspace), Log (4 decades), log=true keyword, Values regression, round-trip compact form. Build 0W/0E; 260 Core.Tests pass.
+
+## Vdc — DC voltage source (brief-vsource-vdc-fix, 2026-06-16)
+
+`VoltageSourceModel` **deleted**; replaced by `VdcModel` (`src/Core/Devices/VdcModel.cs`).
+
+**Root bug:** legacy `V:` CNL lines produced `Vac=` parameter names, but `VoltageSourceModel.Stamp` only read the `"V"` key → voltage silently stamped as 0 V at DC.
+
+**Fix architecture:**
+- `VdcModel` stamps at DC only: `Math.Abs(omega) < OmegaTolRads (1 rad/s)` → stamps `Vdc` value; all other ω → stamps zero. Reads `"Vdc"` param (alias `"V"`). Keeps `LastBranchIndex` for HB linear extractor.
+- **CnlReader backward compat** (`ParseInstanceLine`): if `typeName == "V"` (OrdinalIgnoreCase) → remap to `"Vdc"`. Also normalizes `Vac=` or `V=` param names to `Vdc=` for any `Vdc` instance (if no `Vdc` override already present). Old `.cnl` files with `V:` sources load and simulate correctly with no manual conversion.
+- **`ToneSourceModel`**: fixed 0-Hz tone superposition — at ω=0, now accumulates `_currentVdc` plus all tone phasors whose `FreqHz ≈ 0` into the source voltage. `GetZeroHzToneWarnings(path)` returns a list of warnings (one per zero-Hz tone with non-trivial phasor); called by the Elaborator which routes them into `netlist.AddWarningOnce`.
+- **`HbLinearExtractor`**: updated `VoltageSourceModel` references at lines 390 and 547 → `VdcModel`.
+- **`ComponentModelFactory`**: `"V"` factory entry → `"Vdc"` → `new VdcModel()`.
+
+8 gate tests: 4 Engine.Tests (`tests/Engine.Tests/Devices/VdcComponentTests.cs`) + 4 Ui.Tests (`tests/Ui.Tests/VdcComponentTests.cs`). Build 0W/0E; 1419 total tests pass.
+
 ## VAR variable component — design note
 `NetExtractor` in `src/Ui` routes `SymbolKind.Var` component parameter rows into `Cell.Variables` (sub-cell) or `TestBench.GlobalVariables` (testbench top). No Core change was needed: `Elaborator.BuildGlobalScope` already binds `tb.GlobalVariables` and `BuildCellScope` already binds `cell.Variables`, so per-cell isolation and HB sweepability are automatic. VAR never appears as an `Instance` or `ElaboratedComponent`; its `EngineReference` sentinel is `"VAR"` (not a factory primitive).
+
+## CNL generic instance parser — unit token handling (brief-unit-token-phantom-nodes, 2026-06-16)
+
+The CNL generic instance parser (`ParseInstanceLine` in `CnlReader.cs`) now recognises
+**identity/measurement unit tokens** — `V`, `A`, `W`, `dBm`, `dB`, `kV`, `mV`, etc. — as
+consumable trailing units after a `key=value` param token. Previously, only linear-scale units
+(in the `Units._scales` table) were consumed; tokens like `V` and `dBm` that are absent from that
+table leaked into the net list as phantom "net" entries, shifting all subsequent node indices.
+
+**Root cause fixed:** A P1Tone line `Pavl=Pin dBm` or a Vdc line `Vdc=-3.05 V` placed `dBm`/`V`
+in the net section because `Units.IsKnown` is intentionally linear-scale-only (see `Units.cs`
+comments). The fix adds `Units.IsRecognizedUnit(u)` = `IsKnown(u) || _identityUnits.Contains(u)`,
+where `_identityUnits` is a fixed allow-list of valid-but-identity units. This predicate replaces
+`IsKnown` in both the separate-token path and `TrySplitGluedUnit` in `ParseInstanceLine`.
+
+**Position gate (safety):** the consume check fires **only inside the `key=value` param branch**,
+never in the leading net section. A net token (even one named `V`) can never appear in that
+position, so the single-letter `V` is unambiguous.
+
+**Evaluator:** `Evaluator.ApplyUnit` extended to treat identity/measurement units as scale = 1.0
+(value already in base unit) rather than throwing `Unknown unit`. Linear-scale units are unchanged.
+
+**Node-picker effect:** with phantom nodes removed, the V-cube node axis contains only real
+user-named nets. The existing `__`-prefix filter hides internal engine-minted nodes. No additional
+picker code was needed — the cleanup is fully from the parser fix.
+
+5 gate tests: `CnlReader_P1Tone_NoPhantomUnitNets`, `CnlReader_Vdc_NoPhantomUnitNets`,
+`CnlReader_DoesNotEatRealNet`, `GluedUnit_StillSafe` (in Core.Tests) and
+`Hb_Vout2_NonZeroFundamental` (Engine.Tests — verifies back-solved linear node is non-zero
+after the index-shift bug is eliminated).
+
+## SDD single-index equations + net-arity validation (brief-sdd-single-index-nets, 2026-06-16)
+
+SDD equations accept **single-index** sugar in both `CnlReader` and `ComponentModelFactory`:
+- `I[p]=expr` ≡ `I[p,0]` (port-p current); `Q[p]=expr` ≡ `I[p,1]` (port-p charge).
+- Two-index `I[p,w]` and `I[p,1]` (legacy charge form) still work unchanged.
+
+**CnlReader**: `SddAssignmentHeader` regex extended to `\d+(,\d+)?` — single-index `I[1]=` is now a valid boundary marker, so equation fragments no longer leak into the net list as phantom nodes. `ParseSddLine` also strips any `key=value` tokens in the net section (e.g. `Ports=2`) into parameter overrides rather than treating them as net names.
+
+**Elaborator**: `RxSddEquation` extended to `^[IFCQi][^\[]*\[` to pass `Q[p]` single-index through to the factory. Odd net count (not divisible by 2) now throws: `"SDD '<inst>': expected an even number of nets (2 per port: +,−); got N."` — no more silent `portCount = N/2` truncation.
+
+**Factory**: `RxCurrentEq1 = ^I\[(\d+)\]$` and `RxChargeEq1 = ^Q\[(\d+)\]$` handle single-index forms. The shared `ValidateAndBind` helper gives a clear error when an equation references a port index beyond the net count: `"equation references port P but only K ports of nets were given (need 2P nets for a P-port SDD)"`.
+
+**User-facing correction**: `SDD:X1  Vin 0  Vout 0  I[1]=…  I[2]=…` — 4 nets (each port referenced to ground). `_v1 = V(Vin)−V(0)`, `_v2 = V(Vout)−V(0)`.
+
+**Node-picker (deferred)**: `n1/n2/n3`-style auto-named nodes are real user nets — filtering them from the axis combo requires a scope decision (hide `^n\d+$`? user toggle?). Not implemented here.
+
+7 gate tests: 6 in `tests/Core.Tests/Devices/SddSingleIndexTests.cs` (net/equation split, `I[p]` binds current, `Q[p]` binds charge, two-index regression, odd-net error, port-ref-beyond-nets error) + 1 in `tests/Engine.Tests/HarmonicBalance/SddSingleIndexHbTests.cs` (full HB sweep with single-index SDD, Vout fundamental non-zero, no phantom nodes in axis).
 
 ## Ask before
 - Changing the `.cnl` or JSON format (round-trip + interop).

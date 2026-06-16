@@ -46,7 +46,7 @@ public sealed class CschFrequencySpec
 /// </summary>
 public sealed class CschAnalysis
 {
-    /// <summary>Type tag: "dc" | "sp" | "hb".  Unknown tags are skipped on load.</summary>
+    /// <summary>Type tag: "dc" | "sp" | "hb" | "sweep".  Unknown tags are skipped on load.</summary>
     public string Type    { get; set; } = "";
     public string Name    { get; set; } = "";
     /// <summary>False = skip at run time (VendorC "enabled" pattern). Defaults true; absent on old files → true.</summary>
@@ -71,6 +71,14 @@ public sealed class CschAnalysis
     public string?   SweepStartExpr    { get; set; }
     public string?   SweepStopExpr     { get; set; }
     public string?   SweepStepExpr     { get; set; }
+
+    // ── ParametricSweep ───────────────────────────────────────────────────────
+    /// <summary>The variable name swept (parametric sweep type only).</summary>
+    public string?   PsaVarName        { get; set; }
+    /// <summary>Explicit double array of sweep values (parametric sweep type only).</summary>
+    public double[]? PsaValues         { get; set; }
+    /// <summary>Name of the inner analysis this sweep wraps (parametric sweep type only).</summary>
+    public string?   PsaInnerName      { get; set; }
 }
 
 /// <summary>
@@ -242,6 +250,16 @@ public static class AnalysisSerialization
 #pragma warning restore CS0618
         },
 
+        ParametricSweepAnalysis psa => new CschAnalysis
+        {
+            Type        = "sweep",
+            Name        = psa.Name,
+            Enabled     = psa.Enabled,
+            PsaVarName  = psa.SweepVarName,
+            PsaValues   = psa.SweepValues.Length > 0 ? psa.SweepValues : null,
+            PsaInnerName = psa.InnerAnalysisName,
+        },
+
         // Unknown / v2 types: preserve Type tag + Name so a future version can round-trip them.
         _ => new CschAnalysis { Type = "?", Name = a.Name, Enabled = a.Enabled },
     };
@@ -295,6 +313,10 @@ public static class AnalysisSerialization
             SweepStepExpr     = dto.SweepStepExpr,
 #pragma warning restore CS0618
         },
+
+        "sweep" when dto.PsaVarName is not null && dto.PsaValues is { Length: > 0 } && dto.PsaInnerName is not null =>
+            new ParametricSweepAnalysis(dto.Name, dto.PsaVarName, dto.PsaValues, dto.PsaInnerName)
+            { Enabled = dto.Enabled },
 
         // Unknown type tag (e.g. "loadpull") or empty/malformed: skip gracefully.
         _ => null,

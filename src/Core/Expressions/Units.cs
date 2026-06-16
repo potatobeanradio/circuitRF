@@ -59,4 +59,28 @@ public static class Units
         => _scales.TryGetValue(unit, out var s) ? s : null;
 
     public static bool IsKnown(string unit) => _scales.ContainsKey(unit);
+
+    // Identity/measurement units: valid in netlists but carry no scale multiplier.
+    // Absent from _scales by design (see UnitNormalizer.cs "table-uncovered" comments).
+    private static readonly HashSet<string> _identityUnits = new(StringComparer.Ordinal)
+    {
+        "V",  "kV", "mV", "uV", "nV",     // voltage
+        "A",  "mA", "uA", "nA",            // current
+        "W",  "mW", "uW", "kW",            // power (linear)
+        "dB", "dBm", "dBc", "dBW",         // logarithmic / measurement
+        "nm", "cm",                          // length not in linear table
+        "%",                                 // percentage
+    };
+
+    /// <summary>
+    /// Returns true for any unit token that should be consumed after a "key=value" param
+    /// token: both linear-scale units (<see cref="IsKnown"/>) and identity/measurement
+    /// units (V, A, W, dBm, dB, …) that carry no multiplier but are still valid units.
+    ///
+    /// Only call this when the candidate token follows a "key=value" token (position gate).
+    /// A net token such as "Vout" can never appear in that position, so single-letter "V"
+    /// is unambiguous here.
+    /// </summary>
+    public static bool IsRecognizedUnit(string unit)
+        => IsKnown(unit) || _identityUnits.Contains(unit);
 }

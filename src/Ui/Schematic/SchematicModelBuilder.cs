@@ -31,7 +31,7 @@ public static class SchematicModelBuilder
         const double pitchX = 500.0;  // horizontal spacing (component center to center)
         const double pitchY = 400.0;  // vertical row spacing
 
-        SymbolKind[] kinds = [SymbolKind.Resistor, SymbolKind.Capacitor, SymbolKind.Inductor, SymbolKind.VoltageSource];
+        SymbolKind[] kinds = [SymbolKind.Resistor, SymbolKind.Capacitor, SymbolKind.Inductor, SymbolKind.Vdc];
 
         var components = new List<SchematicComponent>(total);
         var wires      = new List<SchematicWire>(total);
@@ -102,8 +102,8 @@ public static class SchematicModelBuilder
     /// Builds a simplified version of the Hero 2 GaN PA schematic for visual testing.
     /// Signal path (left → right, all at y=0):
     ///   ToneSource(R90) → ZPort → Cap(R90) → FetSdd → Inductor(R90) → ZPort → Port(R270)
-    /// Gate bias (vertical, x=gateNodeX): Inductor(R0) → VoltageSource(R0) → Ground
-    /// Drain bias (vertical, x=drainNodeX): VoltageSource(R0) → Ground
+    /// Gate bias (vertical, x=gateNodeX): Inductor(R0) → Vdc(R0) → Ground
+    /// Drain bias (vertical, x=drainNodeX): Vdc(R0) → Ground
     /// Drive source return: Ground below Vdrive left pin.
     /// </summary>
     public static SchematicModel BuildHero2PA()
@@ -155,8 +155,8 @@ public static class SchematicModelBuilder
             gateNodeX, -biasY, SymbolRotation.R0, [("L", "1", "µH")]));
 
         // Vgate at R0 (vertical native): pin2 at (gateNodeX,-700), pin1 at (gateNodeX,-1100)
-        components.Add(MakeComponent("Vgate", SymbolKind.VoltageSource,
-            gateNodeX, -biasY - 500, SymbolRotation.R0, [("Vac", "-3.05", "V")]));
+        components.Add(MakeComponent("Vgate", SymbolKind.Vdc,
+            gateNodeX, -biasY - 500, SymbolRotation.R0, [("Vdc", "-3.05", "V")]));
 
         components.Add(MakeComponent("GND1", SymbolKind.Ground,
             gateNodeX, -biasY - 1000, SymbolRotation.R0));
@@ -166,8 +166,8 @@ public static class SchematicModelBuilder
         double drainNodeX = Port1X(4 * pitch, 0);  // Lchoke_d left pin x at R90 = 4*pitch - 200
 
         // Vdrain at R0 (vertical): pin1 at (drainNodeX, biasY-100), pin2 at (drainNodeX, biasY+300)
-        components.Add(MakeComponent("Vdrain", SymbolKind.VoltageSource,
-            drainNodeX, biasY + 100, SymbolRotation.R0, [("Vac", "48", "V")]));
+        components.Add(MakeComponent("Vdrain", SymbolKind.Vdc,
+            drainNodeX, biasY + 100, SymbolRotation.R0, [("Vdc", "48", "V")]));
 
         // GND2 below Vdrain
         components.Add(MakeComponent("GND2", SymbolKind.Ground,
@@ -278,7 +278,7 @@ public static class SchematicModelBuilder
 
         var ports = BuildPorts(kind, rot, port0State, port1State, n);
 
-        // Type label uses N directly — ports.Count is N+1 for variadic types.
+        // Type label uses N directly — ports.Count is 2N for both ZPort and SDD.
         var labels = new List<string> { ComponentTypeRegistry.DisplayName(kind, n > 0 ? n : ports.Count), name };
         foreach (var (pName, pExpr, pUnit, show) in merged)
         {
@@ -373,16 +373,16 @@ public static class SchematicModelBuilder
             SymbolKind.Term   => [new SchematicPortDef("+", 0, -200, p0),
                                   new SchematicPortDef("−", 0, +200, p1)],
             // Pin: one connection terminal at the lead tip — carries the interface port number.
-            SymbolKind.Pin    => [new SchematicPortDef("1", 0, -200, p0)],
+            SymbolKind.Pin    => [new SchematicPortDef("1", 200, 0, p0)],
             // FetSdd: horizontal box, pins unchanged
             SymbolKind.FetSdd => [
                 new SchematicPortDef("gate",   -200, 0,    p0),
                 new SchematicPortDef("drain",   200, -100, p1),
                 new SchematicPortDef("source",  200,  100, PortConnectionState.Unconnected),
             ],
-            // Variadic box symbols
-            SymbolKind.ZPort or SymbolKind.Sdd =>
-                GenerateVariadicPorts(portCount > 0 ? portCount : 2),
+            // Variadic box symbols — both use 2N ± pair generator
+            SymbolKind.ZPort => GenerateSddVariadicPorts(portCount > 0 ? portCount : 2),
+            SymbolKind.Sdd   => GenerateSddVariadicPorts(portCount > 0 ? portCount : 2),
             // 2-terminal vertical: pins at local top (0,-200) and bottom (0,+200)
             _ => [
                 new SchematicPortDef("1", 0, -200, p0),
@@ -391,23 +391,29 @@ public static class SchematicModelBuilder
         };
     }
 
-    // Mirrors EditableSchematic.GeneratePorts — N+1 pins: N signal ports + 1 reference.
-    private static IReadOnlyList<SchematicPortDef> GenerateVariadicPorts(int n)
+    // Mirrors EditableSchematic.GenerateSddPorts — 2N pins, left/right port split, same pin-index contract.
+    private static IReadOnlyList<SchematicPortDef> GenerateSddVariadicPorts(int n)
     {
+        var ports  = new SchematicPortDef[2 * n];
         int nLeft  = (n + 1) / 2;
-        int nRight = n / 2 + 1;
-        var ports  = new SchematicPortDef[n + 1];
-        for (int i = 0; i < nLeft; i++)
+        int nRight = n       / 2;
+        const float halfDiff    = 100f;
+        const float portSpacing = 300f;
+
+        for (int p = 0; p < nLeft; p++)
         {
-            float localY = nLeft > 1 ? (i - (nLeft - 1) * 0.5f) * 200f : 0f;
-            ports[i] = new SchematicPortDef($"{i + 1}", -200f, localY, PortConnectionState.Connected);
+            float cy = nLeft == 1 ? 0f : (p - (nLeft - 1) * 0.5f) * portSpacing;
+            int   pn = p + 1;
+            ports[2 * p]     = new SchematicPortDef($"{pn}+", -200f, cy - halfDiff, PortConnectionState.Connected);
+            ports[2 * p + 1] = new SchematicPortDef($"{pn}-", -200f, cy + halfDiff, PortConnectionState.Connected);
         }
-        for (int i = 0; i < nRight; i++)
+        for (int q = 0; q < nRight; q++)
         {
-            float localY = nRight > 1 ? (i - (nRight - 1) * 0.5f) * 200f : 0f;
-            bool isRef   = i == nRight - 1;
-            ports[nLeft + i] = new SchematicPortDef(
-                isRef ? "ref" : $"{nLeft + i + 1}", 200f, localY, PortConnectionState.Connected);
+            float cy = nRight == 1 ? 0f : (q - (nRight - 1) * 0.5f) * portSpacing;
+            int   pn = nLeft + q + 1;
+            int   i  = 2 * (nLeft + q);
+            ports[i]     = new SchematicPortDef($"{pn}+", +200f, cy - halfDiff, PortConnectionState.Connected);
+            ports[i + 1] = new SchematicPortDef($"{pn}-", +200f, cy + halfDiff, PortConnectionState.Connected);
         }
         return ports;
     }
@@ -417,7 +423,7 @@ public static class SchematicModelBuilder
         SymbolKind.Resistor      => "R",
         SymbolKind.Capacitor     => "C",
         SymbolKind.Inductor      => "L",
-        SymbolKind.VoltageSource => "V",
+        SymbolKind.Vdc           => "V",
         SymbolKind.ToneSource    => "V1T",
         SymbolKind.Ground        => "GND",
         SymbolKind.Term          => "Term",
@@ -431,7 +437,7 @@ public static class SchematicModelBuilder
         SymbolKind.Resistor      => [("R",   $"{50 + (idx % 5) * 10}", "ohm")],
         SymbolKind.Capacitor     => [("C",   "1",                        "pF")],
         SymbolKind.Inductor      => [("L",   "1",                        "nH")],
-        SymbolKind.VoltageSource => [("Vac", "1",                        "V"), ("Freq", "", "Hz")],
+        SymbolKind.Vdc           => [("Vdc", "0",                        "V")],
         _                        => [],
     };
 

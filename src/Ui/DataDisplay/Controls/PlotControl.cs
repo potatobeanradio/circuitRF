@@ -164,6 +164,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         // Inspector flyout state
         private Flyout?                  _inspectorFlyout;
         private PlotInspectorViewModel?  _inspectorVm;
+        private PlotInspectorView?       _inspectorView;
 
         // Table column-resize drag state
         private bool   _tableColResizeDragging;
@@ -372,6 +373,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             _inspectorVm.PlotNeedsRedraw += OnInspectorPlotNeedsRedraw;
 
             var view = new PlotInspectorView { DataContext = _inspectorVm };
+            _inspectorView = view;
 
             var (flyoutAnchor, hOffset, vOffset) = ComputeStableAnchor(
                 new Point(Bounds.Width, 0), PlacementMode.RightEdgeAlignedTop);
@@ -1005,7 +1007,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 }
                 else if (hit.Kind == TableHitKind.TraceHeader && hit.HitTrace is not null)
                 {
-                    ShowPlotInspectorAtTrace(hit.HitTrace);
+                    int idx = _plot!.Traces.IndexOf(hit.HitTrace);
+                    ShowPlotInspector(idx);
+                    _inspectorView?.FocusSpecTextBox(idx);
                 }
                 else
                 {

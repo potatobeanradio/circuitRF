@@ -155,8 +155,8 @@ public class Hero2Tests(ITestOutputHelper output)
         // Two operating points.
         double pinLow  = sweepVals[0];
         double pinFail = sweepVals[nSteps - 1];
-        var    VLow    = ExtractVMatrix(ds, 0);
-        var    VFail   = ExtractVMatrix(ds, nSteps - 1);
+        var    VLow    = ExtractVMatrix(ds, 0,          netlist);
+        var    VFail   = ExtractVMatrix(ds, nSteps - 1, netlist);
 
         // ── Low-drive comparison ──────────────────────────────────────────────
         var diagLow = engine.RunJacobianDiagnostic(p, VLow, pinLow);
@@ -557,14 +557,26 @@ public class Hero2Tests(ITestOutputHelper output)
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static Complex[,] ExtractVMatrix(DataSet ds, int sweepIdx)
+    // V cube now contains all user nodes, but RunJacobianDiagnostic needs only the
+    // interface (Newton unknown) nodes.  Filter by looking up the interface node names
+    // via a local HbLinearExtractor on the supplied netlist.
+    private static Complex[,] ExtractVMatrix(DataSet ds, int sweepIdx, ElaboratedNetlist netlist)
     {
-        int N  = ds["V"].Axes[1].Length;
-        int K1 = ds["V"].Axes[2].Length;  // K+1 harmonics (DC through Kf0)
+        var extractor  = new HbLinearExtractor(netlist, AnalysisSettings.Default);
+        var ifNames    = extractor.InterfaceNodes
+            .Select(n => netlist.Nodes.NameOf(n))
+            .ToArray();
+        string[] labels = ds["V"].Axes[1].Labels!;
+        int N  = ifNames.Length;
+        int K1 = ds["V"].Axes[2].Length;
         var mat = new Complex[N, K1];
         for (int n = 0; n < N; n++)
+        {
+            int ni = Array.FindIndex(labels, l =>
+                l.Equals(ifNames[n], StringComparison.Ordinal));
             for (int k = 0; k < K1; k++)
-                mat[n, k] = (Complex)ds["V"][sweepIdx, n, k];
+                mat[n, k] = ni >= 0 ? (Complex)ds["V"][sweepIdx, ni, k] : Complex.Zero;
+        }
         return mat;
     }
 }

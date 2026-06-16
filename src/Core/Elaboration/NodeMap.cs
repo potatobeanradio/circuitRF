@@ -31,4 +31,10 @@ public sealed class NodeMap
     public bool    TryGetIndex(string name, out int index) => _nameToIndex.TryGetValue(name, out index);
     public int     IndexOf(string name)          => _nameToIndex[name];
     public IReadOnlyList<string> AllNames        => _indexToName;
+
+    /// <summary>
+    /// Net names that originated from a user-placed schematic net label (propagated from
+    /// TestBench.LabeledNets by the Elaborator). Empty for hand-written netlists.
+    /// </summary>
+    public HashSet<string> LabeledNames { get; } = new(StringComparer.Ordinal);
 }

@@ -1,7 +1,9 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:analyses="using:CircuitRF.Ui.Views.Analyses"
+        xmlns:vm="using:CircuitRF.Ui.ViewModels"
         x:Class="CircuitRF.Ui.Views.Dialogs.AnalysisEditorDialog"
+        x:DataType="vm:AnalysisEditorViewModel"
         Title="Add Analysis"
         Width="520"
         SizeToContent="Height"
@@ -122,6 +124,35 @@
                     IsVisible="False">
                 <analyses:HbBodyView x:Name="HbBodyViewControl"/>
             </Border>
+
+            <!-- ── Parametric Sweeps section (all analysis types) ──────────────── -->
+            <Expander Header="Parametric Sweeps"
+                      IsExpanded="{Binding SweepsExpanded, Mode=TwoWay}"
+                      FontSize="12">
+
+                <StackPanel Spacing="6" Margin="0,8,0,0">
+
+                    <!-- Axis rows -->
+                    <ItemsControl ItemsSource="{Binding SweepAxes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:SweepAxisRowViewModel">
+                                <analyses:SweepAxisRowView/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Add axis button -->
+                    <Button Content="+ Add sweep axis"
+                            FontSize="11"
+                            Padding="8,4"
+                            Background="Transparent"
+                            BorderBrush="{DynamicResource SystemBaseMediumLowColor}"
+                            BorderThickness="1"
+                            CornerRadius="3"
+                            Command="{Binding AddSweepAxisCommand}"/>
+
+                </StackPanel>
+            </Expander>
 
         </StackPanel>
 

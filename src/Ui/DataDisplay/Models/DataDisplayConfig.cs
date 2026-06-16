@@ -172,6 +172,9 @@ public sealed class TraceConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public CubeTransform         CubeTransform { get; set; } = CubeTransform.None;
 
+    // Expression-mode field. When non-null, supersedes CubeName/CubeSlice/CubeTransform for value production.
+    public string?               Expression    { get; set; }
+
     public TracePropertiesConfig   Properties { get; set; } = new();
     public List<MarkerConfig>      Markers    { get; set; } = new();
 }
