@@ -234,10 +234,12 @@ public static class AnalysisSerialization
             GuardHarmonicExpr = hb.GuardHarmonicExpr,
             LambdaExpr        = hb.LambdaExpr,
             MaxIterExpr       = hb.MaxIterExpr,
+#pragma warning disable CS0618
             SweepVarName      = hb.SweepVarName,
             SweepStartExpr    = hb.SweepStartExpr,
             SweepStopExpr     = hb.SweepStopExpr,
             SweepStepExpr     = hb.SweepStepExpr,
+#pragma warning restore CS0618
         },
 
         // Unknown / v2 types: preserve Type tag + Name so a future version can round-trip them.
@@ -286,10 +288,12 @@ public static class AnalysisSerialization
             GuardHarmonicExpr = dto.GuardHarmonicExpr ?? "0",
             LambdaExpr        = dto.LambdaExpr        ?? "1",
             MaxIterExpr       = dto.MaxIterExpr        ?? "100",
+#pragma warning disable CS0618
             SweepVarName      = dto.SweepVarName,
             SweepStartExpr    = dto.SweepStartExpr,
             SweepStopExpr     = dto.SweepStopExpr,
             SweepStepExpr     = dto.SweepStepExpr,
+#pragma warning restore CS0618
         },
 
         // Unknown type tag (e.g. "loadpull") or empty/malformed: skip gracefully.

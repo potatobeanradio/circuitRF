@@ -51,7 +51,8 @@ public class Hero5GoldenGenerator(ITestOutputHelper output)
         output.WriteLine($"Hero 5: f1={p.ToneFreqsHz[0]/1e9:F4} f2={p.ToneFreqsHz[1]/1e9:F4} GHz, " +
                          $"MaxMixOrder={p.MaxMixOrder}, sweep {p.SweepStart}..{p.SweepStop} step {p.SweepStep} dBm");
 
-        var ds = new HbEngine(netlist, tb).Run(p);
+        var sw = new ParametricSweepAnalysis("SW_auto", p.SweepVarName!, p.SweepValues().ToArray(), hba.Name);
+        var ds = ParametricSweepEngine.Run(sw, lib, tb);
         int maxOrder = (int)Math.Round(ds["MetaMixOrder"].RealValues[0]);
         var grid     = new MixingGrid(maxOrder);
 
@@ -61,7 +62,7 @@ public class Hero5GoldenGenerator(ITestOutputHelper output)
         Assert.True(converged == total,
             $"Some sweep points did not converge ({converged}/{total}). Cannot write golden.");
 
-        string[] names = ds["V"].Axes[0].Labels!;
+        string[] names = ds["V"].Axes[1].Labels!;
         int gateIdx  = Array.FindIndex(names, n => n.Contains("n_gate",  StringComparison.OrdinalIgnoreCase));
         int drainIdx = Array.FindIndex(names, n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
         Assert.True(gateIdx >= 0 && drainIdx >= 0);
@@ -74,20 +75,20 @@ public class Hero5GoldenGenerator(ITestOutputHelper output)
         output.WriteLine("Golden files written to " + dir);
     }
 
-    // Write V golden (node-indexed cube, axes [node, mixIndex, Pin])
+    // Write V golden (node-indexed cube, axes [sweep, node, mixIndex])
     private static void WriteGoldenV(string dir, string filename, string nodeName, string quantity,
         DataSet ds, MixingGrid grid, int nodeIdx)
     {
         WriteGoldenCore(dir, filename, nodeName, quantity, ds, grid,
-            (m, si) => (Complex)ds["V"][nodeIdx, m, si]);
+            (m, si) => (Complex)ds["V"][si, nodeIdx, m]);
     }
 
-    // Write I: branch-current golden (branch cube, axes [mixIndex, Pin])
+    // Write I: branch-current golden (branch cube, axes [sweep, mixIndex])
     private static void WriteGoldenI(string dir, string filename, string nodeName, string quantity,
         DataSet ds, MixingGrid grid, string branchCubeKey)
     {
         WriteGoldenCore(dir, filename, nodeName, quantity, ds, grid,
-            (m, si) => (Complex)ds[branchCubeKey][m, si]);
+            (m, si) => (Complex)ds[branchCubeKey][si, m]);
     }
 
     private static void WriteGoldenCore(string dir, string filename, string nodeName, string quantity,

@@ -1,0 +1,189 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Dialogs.VarEditorView"
+             x:DataType="vm:VarEditorViewModel"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <UserControl.Styles>
+        <!-- Compact TextBox matching inspector idiom -->
+        <Style Selector="TextBox">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <!-- Mode-toggle segmented buttons -->
+        <Style Selector="Button.mode-btn">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Background" Value="{DynamicResource SystemChromeMediumColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfTileBorderBrush}"/>
+        </Style>
+        <Style Selector="Button.mode-btn.active">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="8">
+
+        <!-- ── Row 0: Header — instance name + mode toggle ──────────────────── -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
+                        VerticalAlignment="Center">
+                <TextBlock Text="VAR"
+                           FontWeight="SemiBold"
+                           FontSize="13"
+                           VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding InstanceName}"
+                           FontSize="11"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <!-- Mode toggle -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2"
+                        VerticalAlignment="Center">
+                <Button Content="Text"
+                        Classes="mode-btn"
+                        Classes.active="{Binding IsTextMode}"
+                        Command="{Binding SetTextModeCommand}"
+                        CornerRadius="4,0,0,4"/>
+                <Button Content="Rows"
+                        Classes="mode-btn"
+                        Classes.active="{Binding IsRowsMode}"
+                        Command="{Binding SetRowsModeCommand}"
+                        CornerRadius="0,4,4,0"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ── Row 1: Validation summary (shown when there are errors) ──────── -->
+        <Border Grid.Row="1"
+                IsVisible="{Binding HasValidationErrors}"
+                Background="{DynamicResource SystemChromeMediumColor}"
+                BorderBrush="{DynamicResource CrfWarningBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,4"
+                Margin="0,0,0,4">
+            <TextBlock Text="{Binding ValidationSummary}"
+                       FontSize="10"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- ── Row 2: Editor body — switches between Text and Rows panels ───── -->
+        <Grid Grid.Row="2">
+
+            <!-- Mode A: multi-line text -->
+            <DockPanel IsVisible="{Binding IsTextMode}">
+                <TextBlock DockPanel.Dock="Top"
+                           Text="One variable per line:  name = expression"
+                           FontSize="10"
+                           Opacity="0.55"
+                           Margin="0,0,0,4"/>
+                <TextBox x:Name="TextModeBox"
+                         Text="{Binding TextContent}"
+                         AcceptsReturn="True"
+                         AcceptsTab="False"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         FontFamily="{DynamicResource IBMPlexSans}"
+                         FontSize="11"
+                         Padding="6"
+                         MinHeight="120"
+                         VerticalAlignment="Stretch"
+                         PlaceholderText="Pin = -10&#10;Gain = 2*Pin&#10;# this is a comment"/>
+            </DockPanel>
+
+            <!-- Mode B: row list -->
+            <DockPanel IsVisible="{Binding IsRowsMode}">
+                <TextBlock DockPanel.Dock="Top"
+                           Text="Name · Expression · Unit"
+                           FontSize="10"
+                           Opacity="0.55"
+                           Margin="0,0,0,4"/>
+                <ScrollViewer DockPanel.Dock="Top"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Rows}"
+                                  Grid.IsSharedSizeScope="True">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:VarRowViewModel">
+                                <Grid ColumnDefinitions="Auto,*,60,Auto"
+                                      Margin="0,2">
+                                    <!-- Name -->
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding StagedName}"
+                                             MinWidth="80"
+                                             Margin="0,0,3,0"
+                                             LostFocus="OnRowNameLostFocus"
+                                             KeyDown="OnRowNameKeyDown"
+                                             ToolTip.Tip="Variable name"/>
+                                    <!-- Expression -->
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding StagedExpression}"
+                                             Margin="0,0,3,0"
+                                             LostFocus="OnRowExprLostFocus"
+                                             KeyDown="OnRowExprKeyDown"
+                                             ToolTip.Tip="Expression"/>
+                                    <!-- Unit (free-form text) -->
+                                    <TextBox Grid.Column="2"
+                                             Text="{Binding StagedUnit}"
+                                             Margin="0,0,3,0"
+                                             LostFocus="OnRowUnitLostFocus"
+                                             KeyDown="OnRowUnitKeyDown"
+                                             PlaceholderText="unit"
+                                             ToolTip.Tip="Unit (optional)"/>
+                                    <!-- Remove -->
+                                    <Button Grid.Column="3"
+                                            Command="{Binding RemoveCommand}"
+                                            Content="×"
+                                            FontSize="12"
+                                            Padding="4,0"
+                                            MinHeight="0"
+                                            Height="22"
+                                            VerticalAlignment="Center"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            ToolTip.Tip="Remove variable"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <Button DockPanel.Dock="Top"
+                        Content="+ Add Variable"
+                        Command="{Binding AddRowCommand}"
+                        HorizontalAlignment="Left"
+                        Margin="0,4,0,0"
+                        FontSize="11"
+                        Padding="8,3"
+                        MinHeight="0"/>
+            </DockPanel>
+
+        </Grid>
+
+        <!-- ── Row 3: Footer ─────────────────────────────────────────────────── -->
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,8,0,0"
+                    Spacing="6">
+            <Button Content="Apply"
+                    Command="{Binding ApplyTextCommand}"
+                    IsVisible="{Binding IsTextMode}"
+                    FontSize="11"
+                    Padding="10,4"
+                    MinHeight="0"/>
+            <Button Content="Close"
+                    IsVisible="{Binding ShowClose}"
+                    FontSize="11"
+                    Padding="10,4"
+                    MinHeight="0"
+                    Click="OnCloseClick"/>
+        </StackPanel>
+
+    </Grid>
+</UserControl>

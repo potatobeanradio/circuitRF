@@ -82,10 +82,10 @@ public sealed class CubeTraceTests
         Assert.Equal(0.0,  (double)trace.Points[2].Y, 3);   // 20·log10(1) = 0
     }
 
-    // ---- Test 3: Rank ≥ 3 cube is not offered in the signal picker ---------
+    // ---- Test 3: Rank ≥ 3 cube IS offered (Phase 7.3a: one item per cube) --
 
     [Fact]
-    public async Task CubeTrace_RankGE3_NotOffered()
+    public async Task CubeTrace_RankGE3_Offered()
     {
         var tmpPath = Path.Combine(Path.GetTempPath(), $"crf_rank3_{Guid.NewGuid():N}.npy");
         try
@@ -102,7 +102,6 @@ public sealed class CubeTraceTests
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(tmpPath);
 
-            // One dummy network-bound trace so the inspector has a TraceRowViewModel.
             var snp  = new SNP(new[] { 1e9 }, 2);
             var plot = new Plot(PlotType.Rect, FreqUnit.GHz);
             plot.Traces.Add(new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db));
@@ -110,9 +109,14 @@ public sealed class CubeTraceTests
             var inspector = new PlotInspectorViewModel(plot, () => { }, lib);
             var row       = inspector.Traces[0];
 
-            // No cube-bound signal for the rank-3 "V" cube must be offered.
-            Assert.DoesNotContain(row.AvailableSignals,
-                s => s.IsCubeBound && s.CubeName == "V");
+            // Phase 7.3a: rank-3 IS offered as a single cube-selector item.
+            var item = row.AvailableSignals.FirstOrDefault(s => s.IsCubeBound && s.CubeName == "V");
+            Assert.NotNull(item);
+
+            // The axis-role rows are built from the cube's 3 axes.
+            // AxisRoles is populated when the trace is cube-bound and the lib has the data.
+            // (For a network-bound trace placeholder, AxisRoles is empty until cube is selected.)
+            Assert.Empty(row.AxisRoles);  // no cube selected yet on this placeholder trace
         }
         finally
         {

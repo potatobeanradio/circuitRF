@@ -1356,6 +1356,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var doc   = new DataDisplayDocument(title, vm);
         _scratchDataDisplays.Add(doc);
         vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
+        vm.Window.GetResultsRootAction = GetResultsRoot;
         _factory.OpenDocument(doc);
         WireDataDisplayLibraryEvents(vm);
     }
@@ -1402,6 +1403,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var newDoc = new DataDisplayDocument(title, newVm, filePath: absPath);
         _openDocsByPath[absPath] = newDoc;
         newVm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
+        newVm.Window.GetResultsRootAction = GetResultsRoot;
         _factory.OpenDocument(newDoc);
         WireDataDisplayLibraryEvents(newVm);
 
@@ -1431,6 +1433,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (!used.Contains(candidate))
                 return candidate;
         }
+    }
+
+    private string? GetResultsRoot()
+    {
+        if (CurrentWorkspacePath is not { } cwsPath) return null;
+        var wsDir = Path.GetDirectoryName(cwsPath);
+        return wsDir is not null ? Path.Combine(wsDir, "results") : null;
     }
 
     // ---- Data Display library event wiring (Phase 7.2e) --------------------

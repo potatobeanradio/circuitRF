@@ -389,19 +389,41 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         var cube  = ds[t.CubeName];
         var slice = t.Slice;
-        if (slice is null || slice.Length != cube.Rank)
+        if (slice is null)
         {
             t.Points.Clear();
             return;
         }
 
-        // Build indexer args: Range.All for KeepAsX, int index for PinToIndex.
+        // Build indexer args matched by axis NAME (Phase 7.3a: order-independent).
+        // Missing slice entries default to PinToIndex/0; extra slice entries are ignored.
         var args = new object[cube.Rank];
+        int xDim = -1;
         for (int d = 0; d < cube.Rank; d++)
         {
-            args[d] = slice[d].Role == AxisRole.KeepAsX
-                ? (object)Range.All
-                : (object)Math.Clamp(slice[d].Index, 0, cube.Axes[d].Length - 1);
+            var axName = cube.Axes[d].Name;
+            AxisSlice? found = null;
+            foreach (var s in slice)
+            {
+                if (s.AxisName == axName) { found = s; break; }
+            }
+            if (found?.Role == AxisRole.KeepAsX)
+            {
+                args[d] = Range.All;
+                xDim    = d;
+            }
+            else
+            {
+                int idx = Math.Clamp(found?.Index ?? 0, 0, Math.Max(0, cube.Axes[d].Length - 1));
+                args[d] = idx;
+            }
+        }
+
+        // Fallback: if no axis mapped to X, keep the first axis.
+        if (xDim < 0 && cube.Rank > 0)
+        {
+            args[0] = Range.All;
+            xDim    = 0;
         }
 
         var result = cube[args];

@@ -728,13 +728,24 @@ public partial class SchematicView : UserControl
         // Guard: Ground double-click → do not open (single check, per spec).
         if (comp.Symbol == SymbolKind.Ground) return;
 
+        var owner = TopLevel.GetTopLevel(this) as Window;
+
+        // VAR → dedicated multi-line variable editor (Mode A text paste, Mode B rows).
+        if (comp.Symbol == SymbolKind.Var)
+        {
+            var varVm = new VarEditorViewModel();
+            varVm.SetTarget(Vm, comp, showClose: true);
+            var varDialog = new VarEditorDialog { DataContext = varVm };
+            varDialog.Closed += (_, _) => varVm.Dispose();
+            varDialog.Show(owner!);
+            return;
+        }
+
         var editorVm = new ParameterEditorViewModel();
         editorVm.SetTargetDirect(Vm, comp, showClose: true);
 
         var dialog = new ParameterEditorDialog { DataContext = editorVm };
         dialog.Closed += (_, _) => editorVm.Dispose();
-
-        var owner = TopLevel.GetTopLevel(this) as Window;
 
         // DIALOG_MODAL_FLAG: false = non-modal (default, lets user see schematic update live).
         //                    true  = modal (one-line flip for owner experiment).

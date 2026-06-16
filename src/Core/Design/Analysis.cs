@@ -99,10 +99,19 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
     /// <summary>Max Newton iterations per HB solve before continuation backoff. Default 100.</summary>
     public string MaxIterExpr       { get; init; } = "100";
 
-    // Sweep: null = single point.
+    // Sweep fields — deprecated. Use ParametricSweepAnalysis to sweep HB.
+    // Retained as init-only for .cnl back-compat read; the engine ignores them.
+    [Obsolete("Deprecated — wrap the HB analysis in a ParametricSweepAnalysis to sweep. " +
+              "Retained for .cnl read compatibility; not used by the engine.")]
     public string? SweepVarName  { get; init; }
+    [Obsolete("Deprecated — wrap the HB analysis in a ParametricSweepAnalysis to sweep. " +
+              "Retained for .cnl read compatibility; not used by the engine.")]
     public string? SweepStartExpr{ get; init; }
+    [Obsolete("Deprecated — wrap the HB analysis in a ParametricSweepAnalysis to sweep. " +
+              "Retained for .cnl read compatibility; not used by the engine.")]
     public string? SweepStopExpr { get; init; }
+    [Obsolete("Deprecated — wrap the HB analysis in a ParametricSweepAnalysis to sweep. " +
+              "Retained for .cnl read compatibility; not used by the engine.")]
     public string? SweepStepExpr { get; init; }
 }
 

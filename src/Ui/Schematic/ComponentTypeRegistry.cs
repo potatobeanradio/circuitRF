@@ -141,6 +141,10 @@ public static class ComponentTypeRegistry
         [SymbolKind.Generic]       = new("X",     "X",
             Category: ComponentCategory.Other,
             SearchTerms: ["X", "Generic", "custom", "subcircuit"]),
+        [SymbolKind.Var]           = new("VAR",   "VAR",
+            Category: ComponentCategory.Other,
+            SearchTerms: ["VAR", "Variable", "var", "vars", "parameter", "sweep"],
+            IsCommon: true),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -186,6 +190,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Sdd           => "SDD",
         SymbolKind.ZPort         => "Z_Port",
         SymbolKind.Ground        => "GND",
+        SymbolKind.Var           => "VAR",   // sentinel — never emitted as an Instance; not a factory primitive
         _                        => Get(kind).DisplayName,
     };
 
@@ -255,6 +260,9 @@ public static class ComponentTypeRegistry
                 return [new("Num",  "1", "", true,  UnitDimension.None),
                         new("Name", "",  "", false, UnitDimension.None)];
 
+            // VAR: parameter rows are user-authored variable definitions; freshly placed VAR has no rows.
+            case SymbolKind.Var: return [];
+
             // Ground/FetSdd/Generic need no default parameters.
             default: return [];
         }
@@ -293,6 +301,7 @@ public static class ComponentTypeRegistry
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;
             case "PIN":    kind = SymbolKind.Pin;           return true;
+            case "VAR":    kind = SymbolKind.Var;           return true;
             case "FET":
             case "SDD":
             case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default

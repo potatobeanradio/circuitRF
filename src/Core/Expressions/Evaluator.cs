@@ -260,7 +260,14 @@ public sealed class Evaluator
                 ? nameVal.AsString()
                 : nameVal.ToString();
 
-            var labels  = cube.Axes[0].Labels;
+            // Find the "node" axis by name; sweep axes (from ParametricSweepEngine) are prepended.
+            // Layout: [sweep0, ..., sweepN, node, harmonic/mixIndex]
+            int nodeAxisIdx = -1;
+            for (int a = 0; a < cube.Rank; a++)
+                if (cube.Axes[a].Name == "node") { nodeAxisIdx = a; break; }
+            if (nodeAxisIdx < 0) nodeAxisIdx = 0;  // fallback: single-point, node is first axis
+
+            var labels  = cube.Axes[nodeAxisIdx].Labels;
             int nodeIdx = labels is null ? -1 :
                 Array.FindIndex(labels, s => s.Equals(nodeName, StringComparison.OrdinalIgnoreCase));
 
@@ -274,10 +281,26 @@ public sealed class Evaluator
                     $"{cl.Name}: node '{nodeName}' not found. " +
                     $"Available: [{string.Join(", ", labels ?? [])}]");
 
-            var sliceArgs = new object[cl.Args.Length];
-            sliceArgs[0] = (object)nodeIdx;
-            for (int i = 1; i < cl.Args.Length; i++)
-                sliceArgs[i] = ArgToSliceObj(EvalExpr(cl.Args[i], scope), cl.Name, i);
+            // Build slice: sweep axes get args[2+a]; node gets nodeIdx; harm gets args[1].
+            // Caller convention: V("nodeName", harmSlice, sweepSlice0, sweepSlice1, ...)
+            int numSweepAxes = nodeAxisIdx;
+            var sliceArgs = new object[cube.Rank];
+
+            sliceArgs[nodeAxisIdx] = (object)nodeIdx;
+
+            if (nodeAxisIdx + 1 < cube.Rank)
+                sliceArgs[nodeAxisIdx + 1] = cl.Args.Length > 1
+                    ? ArgToSliceObj(EvalExpr(cl.Args[1], scope), cl.Name, 1)
+                    : (object)Range.All;
+
+            for (int a = 0; a < numSweepAxes; a++)
+            {
+                int argIdx = 2 + a;
+                sliceArgs[a] = argIdx < cl.Args.Length
+                    ? ArgToSliceObj(EvalExpr(cl.Args[argIdx], scope), cl.Name, argIdx)
+                    : (object)Range.All;
+            }
+
             return SliceToValue(cube[sliceArgs]);
         }
 
@@ -306,10 +329,27 @@ public sealed class Evaluator
                 $"{exprName}: branch '{branch}' not found — cube '{cname}' not in DataSet. " +
                 $"Use instance:terminal form (e.g. \"M1:d\") or an IProbe name.");
 
-        var cube      = ds[cname];
-        var sliceArgs = new object[args.Length - 1];
-        for (int i = 1; i < args.Length; i++)
-            sliceArgs[i - 1] = ArgToSliceObj(EvalExpr(args[i], scope), exprName, i);
+        var cube = ds[cname];
+
+        // Branch cube layout: [sweep0, ..., sweepN, harmonic/mixIndex]
+        // Harm/mixIndex axis is always last; sweep axes (from ParametricSweepEngine) are prepended.
+        // Caller convention: I("branch", harmSlice, sweepSlice0, sweepSlice1, ...)
+        int harmAxisIdx  = cube.Rank - 1;
+        int numSweepAxes = harmAxisIdx;
+        var sliceArgs    = new object[cube.Rank];
+
+        sliceArgs[harmAxisIdx] = args.Length > 1
+            ? ArgToSliceObj(EvalExpr(args[1], scope), exprName, 1)
+            : (object)Range.All;
+
+        for (int a = 0; a < numSweepAxes; a++)
+        {
+            int argIdx = 2 + a;
+            sliceArgs[a] = argIdx < args.Length
+                ? ArgToSliceObj(EvalExpr(args[argIdx], scope), exprName, argIdx)
+                : (object)Range.All;
+        }
+
         return SliceToValue(cube[sliceArgs]);
     }
 

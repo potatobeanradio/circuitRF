@@ -48,7 +48,8 @@ public class Hero4Tests(ITestOutputHelper output)
         // Drive up to reach compression of the output stage.
         p = p with { SweepStart = -20, SweepStop = 22, SweepStep = 2 };
 
-        var ds = new HbEngine(netlist, tb).Run(p);
+        var sw = new ParametricSweepAnalysis("SW_auto", p.SweepVarName!, p.SweepValues().ToArray(), hba.Name);
+        var ds = ParametricSweepEngine.Run(sw, lib, tb);
         var sweepVals = ds["Converged"].Axes[0].Values;
 
         int g1 = NodeIdx(ds, "n_gate");
@@ -113,21 +114,21 @@ public class Hero4Tests(ITestOutputHelper output)
     }
 
     private static int NodeIdx(DataSet ds, string name)
-        => Array.FindIndex(ds["V"].Axes[0].Labels!, s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
+        => Array.FindIndex(ds["V"].Axes[1].Labels!, s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
 
     // Pin delivered into a stage at its gate: +½ Re(V_gate · conj(I:device:g)).
     private static double PinW(DataSet ds, int si, string devicePath, int gateNodeIdx)
     {
-        var v = (Complex)ds["V"][gateNodeIdx, 1, si];
-        var i = (Complex)ds[$"I:{devicePath}:g"][1, si];
+        var v = (Complex)ds["V"][si, gateNodeIdx, 1];
+        var i = (Complex)ds[$"I:{devicePath}:g"][si, 1];
         return 0.5 * (v * Complex.Conjugate(i)).Real;
     }
 
     // Pout delivered by a stage at its drain into the external network: −½ Re(V_drain · conj(I:device:d)).
     private static double PoutW(DataSet ds, int si, string devicePath, int drainNodeIdx)
     {
-        var v = (Complex)ds["V"][drainNodeIdx, 1, si];
-        var i = (Complex)ds[$"I:{devicePath}:d"][1, si];
+        var v = (Complex)ds["V"][si, drainNodeIdx, 1];
+        var i = (Complex)ds[$"I:{devicePath}:d"][si, 1];
         return -0.5 * (v * Complex.Conjugate(i)).Real;
     }
 }

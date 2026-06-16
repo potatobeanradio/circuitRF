@@ -27,6 +27,7 @@ public partial class DataDisplayView : UserControl
         win.SetGetCanvasSizeAction(() => win.ActiveTab?.GetCanvasSize() ?? (800.0, 600.0));
         win.SetSaveDataDisplayAsAction(DoSaveDisplayAsAsync);
         win.SetOpenDataDisplayAction(DoOpenDisplayAsync);
+        win.SetLoadRunResultsAction(DoLoadRunResultsAsync);
         // Geometry not persisted — embedded Dock document, not a floating OS window.
         win.SetGetWindowGeometryAction(() => (0, 0, 0, 0));
 
@@ -135,6 +136,37 @@ public partial class DataDisplayView : UserControl
         {
             await ShowErrorAsync($"Could not open display: {ex.Message}");
         }
+    }
+
+    private async Task DoLoadRunResultsAsync()
+    {
+        if (DataContext is not DataDisplayDocument doc) return;
+        var sp = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (sp is null) return;
+
+        IStorageFolder? suggestedStart = null;
+        var resultsRoot = doc.ViewModel.Window.GetResultsRootAction?.Invoke();
+        if (resultsRoot is not null && Directory.Exists(resultsRoot))
+            suggestedStart = await sp.TryGetFolderFromPathAsync(resultsRoot);
+
+        var folders = await sp.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title                  = "Load Run Results",
+            AllowMultiple          = false,
+            SuggestedStartLocation = suggestedStart
+        });
+        if (folders.Count != 1) return;
+
+        var folder = folders[0].Path.LocalPath;
+        var npyFiles = Directory.GetFiles(folder, "*.npy");
+        if (npyFiles.Length == 0)
+        {
+            await ShowErrorAsync($"No .npy results in {folder}");
+            return;
+        }
+
+        foreach (var path in npyFiles)
+            await doc.ViewModel.Window.DataSourceLibrary.LoadFileAsync(path);
     }
 
     private async Task ShowErrorAsync(string message)

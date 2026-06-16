@@ -267,8 +267,10 @@ public static class CnlWriter
         sb.Append($" Lambda={hb.LambdaExpr}");
         sb.Append($" MaxIter={hb.MaxIterExpr}");
 
+#pragma warning disable CS0618
         if (hb.SweepVarName is not null)
             sb.Append($" Sweep=\"{hb.SweepVarName}: {hb.SweepStartExpr} .. {hb.SweepStopExpr} step {hb.SweepStepExpr}\"");
+#pragma warning restore CS0618
 
         return sb.ToString();
     }

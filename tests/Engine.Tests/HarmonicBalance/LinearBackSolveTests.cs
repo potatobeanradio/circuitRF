@@ -46,77 +46,60 @@ public class LinearBackSolveTests(ITestOutputHelper output)
         var netlist   = new Elaborator(lib).Elaborate(tb);
 
         var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var p   = HbEngine.Resolve(hba, netlist.ResolvedGlobals) with { SweepStop = -14.0 };
+        var p   = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
         var result = new HbEngine(netlist, tb).Run(p);
 
         var bs = result.BackSolver;
         Assert.NotNull(bs);
 
-        var sweepVals = result["Converged"].Axes[0].Values;
-        int nSweep    = sweepVals.Length;
-        int K1        = result["V"].Axes[1].Length;   // K+1 harmonics
+        // Single-point result: V is rank-2 [node, harmonic], Converged is rank-0 scalar.
+        int K1 = result["V"].Axes[1].Length;   // K+1 harmonics
         string[] nodeLabels = result["V"].Axes[0].Labels!;
 
         output.WriteLine($"Interface nodes: [{string.Join(", ", nodeLabels)}]");
-        output.WriteLine($"Sweep points: {nSweep}, Harmonics (incl. DC): {K1}");
+        output.WriteLine($"Single-point run, Harmonics (incl. DC): {K1}");
 
         // Mixed tolerance: pass if |err| < relTol·|vCube| + absTol.
-        //
-        // Both tolerances are bounded by Newton convergence quality, not back-solve accuracy:
-        //   relTol = 2e-5  covers the fundamental (k=1) Newton residual at ~loosely-converged
-        //            sweep points (FinalResidual ~9e-7 → ~1.5e-5 relative at the drain).
-        //   absTol = 4e-6 × fundamentalMag  covers higher-harmonic Newton residual (~6e-7
-        //            absolute at k=2, si=5) and the 1e-13 numerical floor for very small harmonics.
-        //
-        // The back-solve IS correct (proven by si=0/si=6 where Newton is tight: relErr=1.9e-11).
-        // The voltage comparison to V_HB is limited by Newton precision at intermediate sweep points.
+        // Both tolerances are bounded by Newton convergence quality, not back-solve accuracy.
         const double RelTol = 2e-5;
         var absTols = new double[nodeLabels.Length];
         for (int ni = 0; ni < nodeLabels.Length; ni++)
-        {
-            double maxFund = 0.0;
-            for (int si2 = 0; si2 < nSweep; si2++)
-                maxFund = Math.Max(maxFund, ((Complex)result["V"][ni, 1, si2]).Magnitude);
-            absTols[ni] = 4e-6 * maxFund;
-        }
+            absTols[ni] = 4e-6 * ((Complex)result["V"][ni, 1]).Magnitude;
 
         int nFail = 0;
 
-        for (int si = 0; si < nSweep; si++)
-        for (int k  = 0; k  < K1;     k++)
+        for (int k = 0; k < K1; k++)
+        for (int ni = 0; ni < nodeLabels.Length; ni++)
         {
-            for (int ni = 0; ni < nodeLabels.Length; ni++)
+            string nodeName = nodeLabels[ni];
+            Complex vCube   = (Complex)result["V"][ni, k];
+
+            if (!bs.TryGetNodeNumber(nodeName, out int circNode))
             {
-                string nodeName = nodeLabels[ni];
-                Complex vCube   = (Complex)result["V"][ni, k, si];
+                output.WriteLine($"  WARN: back-solver has no circuit node for '{nodeName}'");
+                continue;
+            }
 
-                if (!bs.TryGetNodeNumber(nodeName, out int circNode))
-                {
-                    output.WriteLine($"  WARN: back-solver has no circuit node for '{nodeName}'");
-                    continue;
-                }
+            Complex vBack  = bs.GetNodeVoltage(circNode, k, 0);
+            double  absErr = (vBack - vCube).Magnitude;
+            double  thresh = RelTol * vCube.Magnitude + absTols[ni];
 
-                Complex vBack  = bs.GetNodeVoltage(circNode, k, si);
-                double  absErr = (vBack - vCube).Magnitude;
-                double  thresh = RelTol * vCube.Magnitude + absTols[ni];
-
-                if (absErr > thresh)
-                {
-                    nFail++;
-                    double relErr = vCube.Magnitude > 0 ? absErr / vCube.Magnitude : absErr;
-                    output.WriteLine(
-                        $"  FAIL  node={nodeName} k={k} si={si}: " +
-                        $"cube={vCube:G6}  back={vBack:G6}  absErr={absErr:E3}  relErr={relErr:E3}");
-                }
+            if (absErr > thresh)
+            {
+                nFail++;
+                double relErr = vCube.Magnitude > 0 ? absErr / vCube.Magnitude : absErr;
+                output.WriteLine(
+                    $"  FAIL  node={nodeName} k={k}: " +
+                    $"cube={vCube:G6}  back={vBack:G6}  absErr={absErr:E3}  relErr={relErr:E3}");
             }
         }
 
-        // Report fundamental relErr for each node at si=0 (diagnostic for fix-1 quality)
-        output.WriteLine("Fundamental (k=1) relative errors at si=0:");
+        // Report fundamental relErr for each node (diagnostic for fix-1 quality)
+        output.WriteLine("Fundamental (k=1) relative errors:");
         for (int ni = 0; ni < nodeLabels.Length; ni++)
         {
             if (!bs.TryGetNodeNumber(nodeLabels[ni], out int cn)) continue;
-            Complex vC = (Complex)result["V"][ni, 1, 0];
+            Complex vC = (Complex)result["V"][ni, 1];
             Complex vB = bs.GetNodeVoltage(cn, 1, 0);
             double re  = vC.Magnitude > 0 ? (vB - vC).Magnitude / vC.Magnitude : (vB - vC).Magnitude;
             output.WriteLine($"  {nodeLabels[ni]}: relErr={re:E3}");
@@ -142,27 +125,19 @@ public class LinearBackSolveTests(ITestOutputHelper output)
         var dir = Hero2Dir();
 
         // ── Run helper ───────────────────────────────────────────────────────────
-        // Returns max |V_back − V_cube| / |V_cube| for n_drain, k=1, si=1..5
-        // (the warm-started intermediate sweep points, which expose the Newton residual).
+        // Returns max |V_back − V_cube| / |V_cube| for k=1 fundamental at the single operating point.
         static double MaxFundRelErr(HbRunResult result, ILinearBackSolver bs)
         {
             string[] nodeLabels = result["V"].Axes[0].Labels!;
-            int nSweep          = result["Converged"].Axes[0].Values.Length;
-            double maxErr       = 0.0;
-
+            double maxErr = 0.0;
             for (int ni = 0; ni < nodeLabels.Length; ni++)
             {
                 if (!bs.TryGetNodeNumber(nodeLabels[ni], out int cn)) continue;
-                // Only check si=1..5 (warm-started intermediate points — not first/last
-                // which happen to converge tighter in this sweep).
-                for (int si = 1; si < Math.Min(nSweep - 1, 6); si++)
-                {
-                    Complex vC = (Complex)result["V"][ni, 1, si]; // k=1 fundamental
-                    if (vC.Magnitude < 1e-9) continue;           // skip noise-floor values
-                    Complex vB  = bs.GetNodeVoltage(cn, 1, si);
-                    double  rel = (vB - vC).Magnitude / vC.Magnitude;
-                    maxErr = Math.Max(maxErr, rel);
-                }
+                Complex vC = (Complex)result["V"][ni, 1]; // k=1 fundamental, single point
+                if (vC.Magnitude < 1e-9) continue;
+                Complex vB  = bs.GetNodeVoltage(cn, 1, 0);
+                double  rel = (vB - vC).Magnitude / vC.Magnitude;
+                maxErr = Math.Max(maxErr, rel);
             }
             return maxErr;
         }
@@ -171,19 +146,19 @@ public class LinearBackSolveTests(ITestOutputHelper output)
         var (lib1, tb1) = CnlReader.ReadFile(Path.Combine(dir, "hero2.cnl"));
         var netlist1    = new Elaborator(lib1).Elaborate(tb1);
         var hba1        = tb1.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var pLoose      = HbEngine.Resolve(hba1, netlist1.ResolvedGlobals) with { SweepStop = -14.0 };
+        var pLoose      = HbEngine.Resolve(hba1, netlist1.ResolvedGlobals);
         var rLoose      = new HbEngine(netlist1, tb1).Run(pLoose);
         double errLoose = MaxFundRelErr(rLoose, rLoose.BackSolver!);
-        output.WriteLine($"Default Tol ({pLoose.Tol:E1}): max drain-fund relErr at si=1..5 = {errLoose:E3}");
+        output.WriteLine($"Default Tol ({pLoose.Tol:E1}): max fund relErr = {errLoose:E3}");
 
         // ── Tight convergence (Tol=1e-10) ────────────────────────────────────────
         var (lib2, tb2) = CnlReader.ReadFile(Path.Combine(dir, "hero2.cnl"));
         var netlist2    = new Elaborator(lib2).Elaborate(tb2);
         var hba2        = tb2.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var pTight      = HbEngine.Resolve(hba2, netlist2.ResolvedGlobals) with { SweepStop = -14.0, Tol = 1e-10 };
+        var pTight      = HbEngine.Resolve(hba2, netlist2.ResolvedGlobals) with { Tol = 1e-10 };
         var rTight      = new HbEngine(netlist2, tb2).Run(pTight);
         double errTight = MaxFundRelErr(rTight, rTight.BackSolver!);
-        output.WriteLine($"Tight   Tol ({pTight.Tol:E1}): max drain-fund relErr at si=1..5 = {errTight:E3}");
+        output.WriteLine($"Tight   Tol ({pTight.Tol:E1}): max fund relErr = {errTight:E3}");
 
         double improvement = errLoose / errTight;
         output.WriteLine($"Improvement factor: {improvement:F0}× (must be ≥ 100×)");
@@ -205,9 +180,8 @@ public class LinearBackSolveTests(ITestOutputHelper output)
         var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "hero2.cnl"));
         var netlist   = new Elaborator(lib).Elaborate(tb);
 
-        var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var p0  = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
-        var p   = p0 with { SweepStop = p0.SweepStart }; // single sweep point
+        var hba    = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
+        var p      = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
         var result = new HbEngine(netlist, tb).Run(p);
 
         var bs = result.BackSolver!;

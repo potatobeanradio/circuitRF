@@ -48,7 +48,8 @@ public class Hero2MeasurementTests(ITestOutputHelper output)
         var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
         // Keep sweep short (−20..−10 dBm) for test speed; all points should converge
         var p   = HbEngine.Resolve(hba, netlist.ResolvedGlobals) with { SweepStop = -10.0 };
-        var ds  = new HbEngine(netlist, tb).Run(p);
+        var sw  = new ParametricSweepAnalysis("SW_auto", p.SweepVarName!, p.SweepValues().ToArray(), hba.Name);
+        var ds  = ParametricSweepEngine.Run(sw, lib, tb);
 
         // ── Verify all points converged ───────────────────────────────────────
         var sweepVals = ds["Converged"].Axes[0].Values;
@@ -58,7 +59,7 @@ public class Hero2MeasurementTests(ITestOutputHelper output)
                 $"HB not converged at Pin={sweepVals[si]:F1} dBm");
 
         // ── Manual reference ──────────────────────────────────────────────────
-        string[] nodeNames = ds["V"].Axes[0].Labels!;
+        string[] nodeNames = ds["V"].Axes[1].Labels!;
         int drainIdx = Array.FindIndex(nodeNames,
             n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
         Assert.True(drainIdx >= 0, "n_drain not found in V cube labels");
@@ -66,8 +67,8 @@ public class Hero2MeasurementTests(ITestOutputHelper output)
         var refPout = new double[nSweep];
         for (int si = 0; si < nSweep; si++)
         {
-            var vout = (Complex)ds["V"][drainIdx, 1, si];
-            var iout = -(Complex)ds["I:M1:d"][1, si];   // current OUT of port = -(current INTO FET)
+            var vout = (Complex)ds["V"][si, drainIdx, 1];
+            var iout = -(Complex)ds["I:M1:d"][si, 1];   // current OUT of port = -(current INTO FET)
             double pW = 0.5 * (vout * Complex.Conjugate(iout)).Real;
             refPout[si] = 10.0 * Math.Log10(pW * 1000.0);
         }
@@ -78,8 +79,7 @@ public class Hero2MeasurementTests(ITestOutputHelper output)
         tb.Measurements.Add(new Measurement("Pout_dBm",
             "10*log10(real(0.5*HB1.V(\"n_drain\",1,All)*conj(-1*HB1.I(\"M1:d\",1,All)))*1000)"));
 
-        DataSet dsSet = ds;   // implicit HbRunResult → DataSet for the results dict
-        var results = new Dictionary<string, DataSet> { ["HB1"] = dsSet };
+        var results = new Dictionary<string, DataSet> { ["HB1"] = ds };
         var me = new MeasurementEvaluator(tb, netlist, results);
         me.EvaluateInto(ds);
 

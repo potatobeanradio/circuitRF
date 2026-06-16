@@ -443,6 +443,47 @@
                                     <StackPanel Spacing="3"
                                                 IsVisible="{Binding IsStandardTrace}">
 
+                                        <!-- ── Axis-role editor: cube-bound (Phase 7.3a) ─────── -->
+                                        <ItemsControl IsVisible="{Binding IsCubeBoundTrace}"
+                                                      ItemsSource="{Binding AxisRoles}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:AxisRoleRowViewModel">
+                                                    <Grid ColumnDefinitions="70,Auto,Auto,*"
+                                                          Margin="0,0,0,2">
+                                                        <TextBlock Grid.Column="0"
+                                                                   Text="{Binding AxisLabel}"
+                                                                   Classes="label"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   ToolTip.Tip="{Binding AxisLabel}"/>
+                                                        <Button Grid.Column="1"
+                                                                Classes="seg-btn"
+                                                                Classes.active="{Binding IsX}"
+                                                                Command="{Binding SetXCommand}"
+                                                                IsEnabled="{Binding IsRoleToggleable}"
+                                                                Padding="6,2"
+                                                                ToolTip.Tip="Use as X axis">
+                                                            <TextBlock Text="X" FontSize="10"/>
+                                                        </Button>
+                                                        <Button Grid.Column="2"
+                                                                Classes="seg-btn"
+                                                                Classes.active="{Binding IsPinned}"
+                                                                Command="{Binding SetPinnedCommand}"
+                                                                IsEnabled="{Binding IsRoleToggleable}"
+                                                                Padding="6,2"
+                                                                Margin="0,0,4,0"
+                                                                ToolTip.Tip="Pin to a single index">
+                                                            <TextBlock Text="Pin" FontSize="10"/>
+                                                        </Button>
+                                                        <ComboBox Grid.Column="3"
+                                                                  IsVisible="{Binding ShowPinPicker}"
+                                                                  ItemsSource="{Binding PinOptions}"
+                                                                  SelectedIndex="{Binding PinIndex, Mode=TwoWay}"
+                                                                  HorizontalAlignment="Stretch"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
                                         <!-- ── Line row ──────────────────────────────────────────
                                              Cols: 34 (ISB) | * (NUD+slider nested) | 95 (color) | 26 (blank)
                                              Col * contains a nested Grid(30,*) so slider right edge

@@ -248,6 +248,10 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private Func<DataTransfer, Task>?                          _setClipboardDataAction;
     // Injected by WorkspaceViewModel: opens the given file as a new document tab.
     private Func<string, Stream, Task>?                        _openFileAsNewDisplayAction;
+    // Injected by code-behind: opens folder picker scoped to workspace results/.
+    private Func<Task>?                                        _loadRunResultsAction;
+    // Injected by WorkspaceViewModel: returns <workspaceRoot>/results, or null when no workspace.
+    public Func<string?>?                                      GetResultsRootAction { get; set; }
 
     public void SetOpenFileAction(Func<Task> a)                           => _openFileAction               = a;
     public void SetOpenDataDisplayAction(Func<Task> a)                    => _openDataDisplayAction        = a;
@@ -262,6 +266,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
     public void SetGetClipboardTextAction(Func<Task<string?>> a)          => _getClipboardTextAction       = a;
     public void SetSetClipboardDataAction(Func<DataTransfer, Task> a)     => _setClipboardDataAction       = a;
     public void SetOpenFileAsNewDisplayAction(Func<string, Stream, Task> a) => _openFileAsNewDisplayAction = a;
+    public void SetLoadRunResultsAction(Func<Task> a)                     => _loadRunResultsAction         = a;
 
     /// <summary>
     /// Opens <paramref name="path"/> as a new document tab via the workspace-injected action.
@@ -382,6 +387,12 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private async Task OpenFile()
     {
         if (_openFileAction is not null) await _openFileAction();
+    }
+
+    [RelayCommand]
+    private async Task LoadRunResults()
+    {
+        if (_loadRunResultsAction is not null) await _loadRunResultsAction();
     }
 
     [RelayCommand]

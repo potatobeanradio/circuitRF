@@ -74,10 +74,12 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
                 GuardHarmonicExpr = hb.GuardHarmonicExpr,
                 LambdaExpr        = hb.LambdaExpr,
                 MaxIterExpr       = hb.MaxIterExpr,
+#pragma warning disable CS0618
                 SweepVarName      = hb.SweepVarName,
                 SweepStartExpr    = hb.SweepStartExpr,
                 SweepStopExpr     = hb.SweepStopExpr,
                 SweepStepExpr     = hb.SweepStepExpr,
+#pragma warning restore CS0618
             },
 
         _ => throw new NotSupportedException($"Cannot clone analysis type {a.GetType().Name}"),

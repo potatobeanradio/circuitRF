@@ -144,10 +144,12 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 GuardHarmonicExpr = GuardHarmonicExpr,
                 LambdaExpr        = LambdaExpr,
                 MaxIterExpr       = MaxIterExpr,
+#pragma warning disable CS0618
                 SweepVarName      = sweepVar,
                 SweepStartExpr    = sweepStart,
                 SweepStopExpr     = sweepStop,
                 SweepStepExpr     = sweepStep,
+#pragma warning restore CS0618
             };
         }
         else
@@ -162,10 +164,12 @@ public sealed partial class HbBodyViewModel : ObservableObject
                 GuardHarmonicExpr = GuardHarmonicExpr,
                 LambdaExpr        = LambdaExpr,
                 MaxIterExpr       = MaxIterExpr,
+#pragma warning disable CS0618
                 SweepVarName      = sweepVar,
                 SweepStartExpr    = sweepStart,
                 SweepStopExpr     = sweepStop,
                 SweepStepExpr     = sweepStep,
+#pragma warning restore CS0618
             };
         }
 
@@ -206,7 +210,8 @@ public sealed partial class HbBodyViewModel : ObservableObject
         vm.LambdaExpr        = hb.LambdaExpr;
         vm.MaxIterExpr       = hb.MaxIterExpr;
 
-        // Sweep
+        // Sweep (deprecated fields — HB sweep now goes through ParametricSweepAnalysis)
+#pragma warning disable CS0618
         if (hb.SweepVarName is not null)
         {
             vm.SweepEnabled   = true;
@@ -215,6 +220,7 @@ public sealed partial class HbBodyViewModel : ObservableObject
             vm.SweepStopExpr  = hb.SweepStopExpr  ?? "1";
             vm.SweepStepExpr  = hb.SweepStepExpr  ?? "0.1";
         }
+#pragma warning restore CS0618
 
         return vm;
     }

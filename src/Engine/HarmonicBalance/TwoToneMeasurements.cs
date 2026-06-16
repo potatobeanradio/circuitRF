@@ -67,9 +67,16 @@ public static class TwoToneMeasurements
 
     private static int NodeIndex(DataSet ds, string node)
     {
-        var labels = ds["V"].Axes[0].Labels
-            ?? throw new InvalidOperationException(
-                "V cube node axis has no labels — not a valid HB DataSet.");
+        // Find the "node" axis by name (sweep axes are prepended before it).
+        var vCube = ds["V"];
+        int nodeAxisIdx = -1;
+        for (int a = 0; a < vCube.Rank; a++)
+            if (vCube.Axes[a].Name == "node") { nodeAxisIdx = a; break; }
+        if (nodeAxisIdx < 0)
+            throw new InvalidOperationException(
+                "V cube has no axis named 'node' — not a valid HB DataSet.");
+        var labels = vCube.Axes[nodeAxisIdx].Labels
+            ?? throw new InvalidOperationException("V cube node axis has no labels.");
         int idx = Array.FindIndex(labels,
             s => s.Equals(node, StringComparison.Ordinal));
         if (idx < 0)
@@ -84,33 +91,63 @@ public static class TwoToneMeasurements
     /// </summary>
     private static int FindMixIndex(DataSet ds, int k1, int k2)
     {
-        var labels = ds["V"].Axes[1].Labels;
-        if (labels is null) return -1;
-        string target = $"({k1},{k2})";
-        return Array.IndexOf(labels, target);
+        // Find the "mixIndex" axis by name (sweep axes are prepended before it).
+        var vCube = ds["V"];
+        for (int a = 0; a < vCube.Rank; a++)
+        {
+            if (vCube.Axes[a].Name == "mixIndex")
+            {
+                var labels = vCube.Axes[a].Labels;
+                if (labels is null) return -1;
+                string target = $"({k1},{k2})";
+                return Array.IndexOf(labels, target);
+            }
+        }
+        return -1;
     }
 
     // (V, INl) at (k1,k2): direct for a retained rep, else conjugate of the retained partner.
     private static (Complex V, Complex I) PhasorsAt(DataSet ds, int sweepIdx, int n, int k1, int k2)
     {
-        var mixLabels = ds["V"].Axes[1].Labels;
-        if (mixLabels is null)
+        // Find node and mixIndex axis positions by name; sweep axes are prepended before node.
+        var vCube = ds["V"];
+        int nodeAxisIdx = -1, mixAxisIdx = -1;
+        for (int a = 0; a < vCube.Rank; a++)
+        {
+            if (vCube.Axes[a].Name == "node")     nodeAxisIdx = a;
+            if (vCube.Axes[a].Name == "mixIndex") mixAxisIdx  = a;
+        }
+        if (mixAxisIdx < 0)
             throw new InvalidOperationException(
-                "TwoToneMeasurements requires a multi-tone DataSet (mixIndex axis has no Labels — " +
+                "TwoToneMeasurements requires a multi-tone DataSet (no 'mixIndex' axis found — " +
                 "this is a single-tone result).");
 
         int m = FindMixIndex(ds, k1, k2);
         if (m >= 0)
-            return ((Complex)ds["V"][n, m, sweepIdx], (Complex)ds["INl"][n, m, sweepIdx]);
+            return (ReadAt(ds["V"],   vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, m),
+                    ReadAt(ds["INl"],  vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, m));
 
         int mc = FindMixIndex(ds, -k1, -k2);   // conjugate partner in the stored half-plane
         if (mc >= 0)
-            return (Complex.Conjugate((Complex)ds["V"][n, mc, sweepIdx]),
-                    Complex.Conjugate((Complex)ds["INl"][n, mc, sweepIdx]));
+            return (Complex.Conjugate(ReadAt(ds["V"],   vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, mc)),
+                    Complex.Conjugate(ReadAt(ds["INl"],  vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, mc)));
 
         int maxOrder = (int)Math.Round(ds["MetaMixOrder"].RealValues[0]);
         throw new ArgumentException(
             $"Mixing product ({k1},{k2}) and its conjugate are not in the retained set " +
             $"(MaxMixOrder={maxOrder}).");
+    }
+
+    // Build a slice selecting node=n, mixIndex=m, all sweep axes = sweepIdx.
+    private static Complex ReadAt(DataCube cube, int rank, int nodeAxisIdx, int mixAxisIdx,
+        int sweepIdx, int n, int m)
+    {
+        var args = new object[rank];
+        args[nodeAxisIdx] = n;
+        args[mixAxisIdx]  = m;
+        for (int a = 0; a < rank; a++)
+            if (a != nodeAxisIdx && a != mixAxisIdx)
+                args[a] = sweepIdx;
+        return (Complex)cube[args];
     }
 }

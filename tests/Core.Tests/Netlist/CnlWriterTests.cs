@@ -145,10 +145,12 @@ public class CnlWriterTests
             GuardHarmonicExpr = "Guard",
             LambdaExpr        = "1",
             MaxIterExpr       = "100",
+#pragma warning disable CS0618
             SweepVarName      = "Pavl_dbm",
             SweepStartExpr    = "-20",
             SweepStopExpr     = "0",
             SweepStepExpr     = "1",
+#pragma warning restore CS0618
         });
 
         var tb2 = RoundTrip(tb);
@@ -164,10 +166,12 @@ public class CnlWriterTests
         Assert.Equal("Guard", hb.GuardHarmonicExpr);
         Assert.Equal("1", hb.LambdaExpr);
         Assert.Equal("100", hb.MaxIterExpr);
+#pragma warning disable CS0618
         Assert.Equal("Pavl_dbm", hb.SweepVarName);
         Assert.Equal("-20", hb.SweepStartExpr);
         Assert.Equal("0", hb.SweepStopExpr);
         Assert.Equal("1", hb.SweepStepExpr);
+#pragma warning restore CS0618
     }
 
     // ── Test 5: header comment is a comment, not a directive ─────────────────

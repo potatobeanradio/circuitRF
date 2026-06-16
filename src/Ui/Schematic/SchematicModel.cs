@@ -19,7 +19,8 @@ public enum SymbolKind
     FetSdd,
     Sdd,
     ZPort,
-    Generic
+    Generic,
+    Var,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

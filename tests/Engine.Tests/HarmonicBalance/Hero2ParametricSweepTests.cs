@@ -27,6 +27,8 @@ public class Hero2ParametricSweepTests(ITestOutputHelper output)
     // SDD equation uses _v1 (gate voltage) and _v2 (drain voltage) — the standard
     // SDD port-voltage names injected by the evaluator.
     // Simple JFET-like square-law model: Ids = B*(_v1+TV0)^2 * tanh(Sc*_v2) above pinch-off.
+    // Axis layout (new): HB1 is single-point; SW_Pin sweeps Pin (innermost sweep);
+    // SW1 sweeps Vgg (outer sweep). Result V axes: [Vgg, Pin, node, harmonic].
     private const string Cnl = @"
 ; FET model parameters
 TV0 = 3.5
@@ -37,7 +39,7 @@ B   = 0.02
 Vgg = -3.0
 Vdd = 28
 
-; drive level (swept by HB1)
+; drive level
 Pin = -20
 Vs_mag = sqrt(8 * 10^((Pin-30)/10) * 50)
 
@@ -57,11 +59,14 @@ L:Lchoke_d     n_dbias n_drain  L=1  R=0
 ; load
 R:Rload  n_drain 0  R=50
 
-; HB inner analysis: 3-point Pin sweep for test speed
-analysis HB1  type=hb  Tone=2e9  MaxHarm=3  Sweep=""Pin:-20..-18 step 1""  Tol=1e-6
+; HB inner analysis: single-point (no sweep)
+analysis HB1    type=hb              Tone=2e9  MaxHarm=3  Tol=1e-6
+
+; Pin parametric sweep (innermost)
+analysis SW_Pin  type=parametric_sweep  Var=Pin  Values=-20,-19,-18  Inner=HB1
 
 ; outer parametric sweep over Vgg
-analysis SW1  type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2  Inner=HB1
+analysis SW1    type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2    Inner=SW_Pin
 ";
 
     // ── (a) Single-level parametric sweep ──────────────────────────────────────
@@ -77,19 +82,20 @@ analysis SW1  type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2  Inner=HB1
         var vCube = ds["V"];
         output.WriteLine($"V cube rank={vCube.Rank}  axes=[{string.Join(", ", vCube.Axes.Select(a => $"{a.Name}({a.Length})"))}]");
 
-        // Axes: [Vgg(2), node(?), harmonic(4), Pin(3)]
+        // Axes: [Vgg(2), Pin(3), node(?), harmonic(4)]
         Assert.True(vCube.Rank >= 4, $"Expected rank ≥ 4, got {vCube.Rank}");
         Assert.Equal("Vgg", vCube.Axes[0].Name);
         Assert.Equal(2, vCube.Axes[0].Length);
         Assert.Equal(-3.0, vCube.Axes[0].Values[0], 12);
         Assert.Equal(-3.2, vCube.Axes[0].Values[1], 12);
 
-        // Harmonic axis should be last-but-one (before Pin).
-        Assert.Equal("harmonic", vCube.Axes[vCube.Rank - 2].Name);
-        Assert.Equal("Pin", vCube.Axes[vCube.Rank - 1].Name);
-        Assert.Equal(3, vCube.Axes[vCube.Rank - 1].Length);   // 3 Pin points
+        // Sweep axes precede the HB single-point axes.
+        Assert.Equal("Pin",      vCube.Axes[1].Name);
+        Assert.Equal(3,          vCube.Axes[1].Length);   // 3 Pin points
+        Assert.Equal("node",     vCube.Axes[vCube.Rank - 2].Name);
+        Assert.Equal("harmonic", vCube.Axes[vCube.Rank - 1].Name);
 
-        // Branch current cubes also get the Vgg axis prepended.
+        // Branch current cubes also get the Vgg + Pin axes prepended.
         var iDrain = ds["I:M1:d"];
         Assert.Equal("Vgg", iDrain.Axes[0].Name);
         Assert.Equal(2, iDrain.Axes[0].Length);
@@ -127,11 +133,14 @@ L:Lchoke_d     n_dbias n_drain  L=1  R=0
 
 R:Rload  n_drain 0  R=50
 
-; innermost: single Pin point (fastest possible)
-analysis HB1  type=hb  Tone=2e9  MaxHarm=3  Sweep=""Pin:-20..-20 step 1""  Tol=1e-6
+; innermost: HB single-point
+analysis HB1    type=hb              Tone=2e9  MaxHarm=3  Tol=1e-6
 
-; middle: 2 Vdd values  (wraps HB1)
-analysis SW_Vdd  type=parametric_sweep  Var=Vdd  Values=20,28  Inner=HB1
+; Pin sweep (innermost sweep, wraps HB1)
+analysis SW_Pin  type=parametric_sweep  Var=Pin  Values=-20  Inner=HB1
+
+; middle: 2 Vdd values  (wraps SW_Pin)
+analysis SW_Vdd  type=parametric_sweep  Var=Vdd  Values=20,28  Inner=SW_Pin
 
 ; outer: 2 Vgg values  (wraps SW_Vdd)
 analysis SW_Vgg  type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2  Inner=SW_Vdd
@@ -144,7 +153,7 @@ analysis SW_Vgg  type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2  Inner=SW_Vdd
         var vCube = ds["V"];
         output.WriteLine($"V cube rank={vCube.Rank}  axes=[{string.Join(", ", vCube.Axes.Select(a => $"{a.Name}({a.Length})"))}]");
 
-        // Axes: [Vgg(2), Vdd(2), node(?), harmonic(4), Pin(1)]
+        // Axes: [Vgg(2), Vdd(2), Pin(1), node(?), harmonic(4)]
         Assert.True(vCube.Rank >= 5, $"Expected rank ≥ 5, got {vCube.Rank}");
         Assert.Equal("Vgg", vCube.Axes[0].Name);
         Assert.Equal(2, vCube.Axes[0].Length);
@@ -157,9 +166,10 @@ analysis SW_Vgg  type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2  Inner=SW_Vdd
         Assert.Equal(20.0, vCube.Axes[1].Values[0], 12);
         Assert.Equal(28.0, vCube.Axes[1].Values[1], 12);
 
-        // Innermost axes are harmonic + Pin.
-        Assert.Equal("harmonic", vCube.Axes[vCube.Rank - 2].Name);
-        Assert.Equal("Pin", vCube.Axes[vCube.Rank - 1].Name);
+        // Sweep axes precede HB single-point axes; innermost HB axes are node + harmonic.
+        Assert.Equal("Pin",      vCube.Axes[2].Name);
+        Assert.Equal("node",     vCube.Axes[vCube.Rank - 2].Name);
+        Assert.Equal("harmonic", vCube.Axes[vCube.Rank - 1].Name);
 
         output.WriteLine("Two-level (Vgg×Vdd) sweep: V cube structure correct. PASS.");
     }
@@ -177,7 +187,7 @@ analysis SW_Vgg  type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2  Inner=SW_Vdd
         Assert.Equal(2, sw1.SweepValues.Length);
         Assert.Equal(-3.0, sw1.SweepValues[0], 12);
         Assert.Equal(-3.2, sw1.SweepValues[1], 12);
-        Assert.Equal("HB1", sw1.InnerAnalysisName);
+        Assert.Equal("SW_Pin", sw1.InnerAnalysisName);
 
         output.WriteLine("CNL round-trip: SW1 parsed correctly. PASS.");
     }
@@ -193,20 +203,21 @@ analysis SW_Vgg  type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2  Inner=SW_Vdd
         var ds = ParametricSweepEngine.Run(sw1, lib, tb);
 
         var vCube = ds["V"];
-        int nNodes    = vCube.Axes[1].Length;
-        int nHarm     = vCube.Axes[2].Length;
-        int nPin      = vCube.Axes[3].Length;
+        // Axes: [Vgg, Pin, node, harmonic]
+        int nPin   = vCube.Axes[1].Length;
+        int nNodes = vCube.Axes[2].Length;
+        int nHarm  = vCube.Axes[3].Length;
 
-        // Slice to Vgg=0 (-3.0), all remaining axes — should be a rank-3 cube.
+        // Slice to Vgg=0 (-3.0), all remaining axes — should be a rank-3 cube [Pin, node, harm].
         var vAtVgg0 = (DataCube)vCube[0, Range.All, Range.All, Range.All];
         Assert.Equal(3, vAtVgg0.Rank);
-        Assert.Equal(nNodes, vAtVgg0.Axes[0].Length);
+        Assert.Equal(nPin, vAtVgg0.Axes[0].Length);
 
-        // Slice to Vgg=1 (-3.2), drain node, harmonic=1 (fundamental), all Pin.
-        int drainIdx = vCube.Axes[1].Labels is { } lbl && Array.IndexOf(lbl, "n_drain") >= 0
+        // Slice to Vgg=1 (-3.2), all Pin, drain node, harmonic=1 (fundamental) → 1-D over Pin.
+        int drainIdx = vCube.Axes[2].Labels is { } lbl && Array.IndexOf(lbl, "n_drain") >= 0
             ? Array.IndexOf(lbl, "n_drain")
             : 0;
-        var vDrainFund = (DataCube)vCube[1, drainIdx, 1, Range.All];
+        var vDrainFund = (DataCube)vCube[1, Range.All, drainIdx, 1];
         Assert.Equal(1, vDrainFund.Rank);
         Assert.Equal(nPin, vDrainFund.Axes[0].Length);
 
@@ -228,15 +239,15 @@ analysis SW_Vgg  type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2  Inner=SW_Vdd
 
         var ds = ParametricSweepEngine.Run(sw1, lib, tb);
 
-        // I:M1:d axes: [Vgg, harmonic, Pin]
+        // I:M1:d axes: [Vgg, Pin, harmonic]
         var iDrain = ds["I:M1:d"];
         output.WriteLine($"I:M1:d axes: [{string.Join(", ", iDrain.Axes.Select(a => $"{a.Name}({a.Length})"))}]");
 
         Assert.Equal("Vgg", iDrain.Axes[0].Name);
 
         // DC component (harmonic index 0), first Pin point.
-        Complex idc0 = (Complex)iDrain[0, 0, 0];   // Vgg=-3.0, DC, Pin[0]
-        Complex idc1 = (Complex)iDrain[1, 0, 0];   // Vgg=-3.2, DC, Pin[0]
+        Complex idc0 = (Complex)iDrain[0, 0, 0];   // Vgg=-3.0, Pin[0], DC
+        Complex idc1 = (Complex)iDrain[1, 0, 0];   // Vgg=-3.2, Pin[0], DC
 
         output.WriteLine($"Idc(Vgg=-3.0) = {idc0.Real * 1e3:F2} mA");
         output.WriteLine($"Idc(Vgg=-3.2) = {idc1.Real * 1e3:F2} mA");

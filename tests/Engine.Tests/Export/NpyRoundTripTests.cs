@@ -47,8 +47,7 @@ public class NpyRoundTripTests(ITestOutputHelper output) : IDisposable
             var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "hero2.cnl"));
             var netlist = new Elaborator(lib).Elaborate(tb);
             var hba     = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-            var p       = HbEngine.Resolve(hba, netlist.ResolvedGlobals)
-                         with { SweepStop = -14.0, SweepStep = 2.0 };
+            var p       = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
             _result = new HbEngine(netlist, tb).Run(p);
             return _result;
         }

@@ -50,8 +50,8 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
         output.WriteLine($"Running Hero 2: f0={p.ToneHz/1e9:F3} GHz, K={p.MaxHarmonic}, " +
                          $"sweep {p.SweepStart}..{p.SweepStop} step {p.SweepStep} dBm");
 
-        var engine = new HbEngine(netlist, tb);
-        var ds     = engine.Run(p);
+        var sw = new ParametricSweepAnalysis("SW_auto", p.SweepVarName!, p.SweepValues().ToArray(), hba.Name);
+        var ds = ParametricSweepEngine.Run(sw, lib, tb);
 
         var sweepVals = ds["Converged"].Axes[0].Values;
         int total     = sweepVals.Length;
@@ -61,8 +61,8 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
         Assert.True(converged == total,
             $"Some sweep points did not converge ({converged}/{total}). Cannot write golden.");
 
-        // ── Identify interface node indices ────────────────────────────────────
-        var ifNames  = ds["V"].Axes[0].Labels!;
+        // ── Identify interface node indices (node axis is Axes[1] after sweep prepend) ──
+        var ifNames  = ds["V"].Axes[1].Labels!;
         int gateIdx  = Array.FindIndex(ifNames, n => n.Contains("n_gate",  StringComparison.OrdinalIgnoreCase));
         int drainIdx = Array.FindIndex(ifNames, n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
 
@@ -90,8 +90,8 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
         // ── Quick sanity on the DC anchors ────────────────────────────────────
         for (int si = 0; si < total; si++)
         {
-            double vGateDc  = ((System.Numerics.Complex)ds["V"][gateIdx,  0, si]).Real;
-            double vDrainDc = ((System.Numerics.Complex)ds["V"][drainIdx, 0, si]).Real;
+            double vGateDc  = ((System.Numerics.Complex)ds["V"][si, gateIdx,  0]).Real;
+            double vDrainDc = ((System.Numerics.Complex)ds["V"][si, drainIdx, 0]).Real;
             Assert.InRange(vGateDc,  -3.10, -3.00);
             Assert.InRange(vDrainDc,  47.0,  49.0);
         }
@@ -123,7 +123,7 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
             for (int k = 0; k <= K; k++)
             {
                 double freqHz = k * f0;
-                Complex v     = (Complex)ds[cubeName][nodeIdx, k, si];
+                Complex v     = (Complex)ds[cubeName][si, nodeIdx, k];
                 // DC bin: imaginary part is always 0 (real signal).
                 double im = k == 0 ? 0.0 : v.Imaginary;
                 w.WriteLine($"{freqHz.ToString(ci)}; {pIn.ToString(ci)}; " +
@@ -132,7 +132,7 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
         }
     }
 
-    // Branch-current cube has no node axis: indexed [harmonic, Pin]
+    // Branch-current cube axes: [sweep, harmonic] — indexed [si, k]
     private static void WriteBranchGolden(string dir, string filename, string nodeName,
         string quantityDesc, RfCore.Data.DataSet ds, string branchCube, double f0, int K)
     {
@@ -154,7 +154,7 @@ public class Hero2GoldenGenerator(ITestOutputHelper output)
             for (int k = 0; k <= K; k++)
             {
                 double freqHz = k * f0;
-                Complex v     = (Complex)ds[branchCube][k, si];
+                Complex v     = (Complex)ds[branchCube][si, k];
                 double  im    = k == 0 ? 0.0 : v.Imaginary;
                 w.WriteLine($"{freqHz.ToString(ci)}; {pIn.ToString(ci)}; " +
                              $"{v.Real.ToString("G8", ci)}; {im.ToString("G8", ci)}");

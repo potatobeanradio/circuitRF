@@ -41,7 +41,8 @@ public class TwoToneMeasurementsTests(ITestOutputHelper output)
         var netlist   = new Elaborator(lib).Elaborate(tb);
         var hba       = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
         var p         = HbEngine.Resolve(hba, netlist.ResolvedGlobals) with { SweepStop = pavlStop };
-        return new HbEngine(netlist, tb).Run(p);
+        var sw        = new ParametricSweepAnalysis("SW_auto", p.SweepVarName!, p.SweepValues().ToArray(), hba.Name);
+        return ParametricSweepEngine.Run(sw, lib, tb);
     }
 
     [Fact]
@@ -55,20 +56,20 @@ public class TwoToneMeasurementsTests(ITestOutputHelper output)
         var tf = ds["ToneFreqs"].RealValues;
         double f1 = tf[0], f2 = tf[1];
 
-        string[] nodeNames = ds["V"].Axes[0].Labels!;
+        string[] nodeNames = ds["V"].Axes[1].Labels!;
         int drainIdx = Array.FindIndex(nodeNames, s => s.Contains("drain", StringComparison.OrdinalIgnoreCase));
         Assert.True(drainIdx >= 0);
         string drain = nodeNames[drainIdx];
 
         // ── Tone() on a RETAINED rep equals the raw stored phasor. ──
-        var direct = (Complex)ds["V"][drainIdx, grid.IndexOf(2, -1), last];
+        var direct = (Complex)ds["V"][last, drainIdx, grid.IndexOf(2, -1)];
         Assert.Equal(direct, TwoToneMeasurements.Tone(ds, last, drain, 2, -1));
 
         // ── Tone() on a NON-RETAINED rep uses the conjugate of its retained partner. ──
         // (−1,2) is not in the half-plane; its conjugate (1,−2) is.
         Assert.Equal(-1, grid.IndexOf(-1, 2));
         Assert.True(grid.IndexOf(1, -2) >= 0);
-        var conjPartner = Complex.Conjugate((Complex)ds["V"][drainIdx, grid.IndexOf(1, -2), last]);
+        var conjPartner = Complex.Conjugate((Complex)ds["V"][last, drainIdx, grid.IndexOf(1, -2)]);
         var viaSelector = TwoToneMeasurements.Tone(ds, last, drain, -1, 2);
         Assert.Equal(conjPartner.Real,      viaSelector.Real,      1e-12);
         Assert.Equal(conjPartner.Imaginary, viaSelector.Imaginary, 1e-12);

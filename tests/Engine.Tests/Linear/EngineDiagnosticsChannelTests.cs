@@ -73,6 +73,6 @@ public class EngineDiagnosticsChannelTests
             w.Contains("did not converge", StringComparison.OrdinalIgnoreCase));
 
         Assert.NotNull(ncWarn);
-        Assert.Contains("sweep point(s)", ncWarn);
+        Assert.Contains("did not converge", ncWarn);
     }
 }

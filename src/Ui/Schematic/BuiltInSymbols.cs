@@ -26,6 +26,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _fetSdd       = BuildFetSdd();
     private static readonly Symbol _zport        = BuildZPort();
     private static readonly Symbol _sdd          = BuildSdd();
+    private static readonly Symbol _var          = BuildVar();
     private static readonly Symbol _generic      = BuildGeneric();
 
     /// <summary>
@@ -45,6 +46,7 @@ public static class BuiltInSymbols
         SymbolKind.FetSdd        => _fetSdd,
         SymbolKind.ZPort         => _zport,
         SymbolKind.Sdd           => _sdd,
+        SymbolKind.Var           => _var,
         _                        => _generic,
     };
 
@@ -260,6 +262,15 @@ public static class BuiltInSymbols
         L( 80, 50, -80, 50),   // bottom
         L(-80, 50, -80,-50),   // left
     ], SymbolKind.Sdd);
+
+    // ── VAR — port-less box (no leads) ───────────────────────────────────────
+
+    private static Symbol BuildVar() => Sym([
+        L(-80, -60,  80, -60),   // top
+        L( 80, -60,  80,  60),   // right
+        L( 80,  60, -80,  60),   // bottom
+        L(-80,  60, -80, -60),   // left
+    ], SymbolKind.Var);
 
     // ── Generic — 2-port box with leads (horizontal fallback) ─────────────────
 

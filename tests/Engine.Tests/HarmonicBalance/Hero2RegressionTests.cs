@@ -100,10 +100,10 @@ public class Hero2RegressionTests(ITestOutputHelper output)
 
         var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
         var p   = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
-        var engine = new HbEngine(netlist, tb);
-        var ds = engine.Run(p);
+        var sw  = new ParametricSweepAnalysis("SW_auto", p.SweepVarName!, p.SweepValues().ToArray(), hba.Name);
+        var ds  = ParametricSweepEngine.Run(sw, lib, tb);
 
-        string[] ifNames = ds["V"].Axes[0].Labels!;
+        string[] ifNames = ds["V"].Axes[1].Labels!;
         int gateIdx  = Array.FindIndex(ifNames, n => n.Contains("n_gate",  StringComparison.OrdinalIgnoreCase));
         int drainIdx = Array.FindIndex(ifNames, n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
 
@@ -122,12 +122,12 @@ public class Hero2RegressionTests(ITestOutputHelper output)
         for (int si = 0; si < sweepVals.Length; si++)
         {
             double pin    = sweepVals[si];
-            double vGate  = ((Complex)ds["V"][gateIdx,  0, si]).Real;
-            double vDrain = ((Complex)ds["V"][drainIdx, 0, si]).Real;
+            double vGate  = ((Complex)ds["V"][si, gateIdx,  0]).Real;
+            double vDrain = ((Complex)ds["V"][si, drainIdx, 0]).Real;
             Assert.InRange(vGate,  -3.10, -3.00); // ≈ −3.05 V
             Assert.InRange(vDrain,  47.0,  49.0); // ≈  48 V
             output.WriteLine($"Pin={pin,5:F1} dBm:  V_gate={vGate:F4} V  V_drain={vDrain:F4} V  " +
-                             $"I_nl_drain={((Complex)ds["I:M1:d"][0,si]).Real*1e3:F2} mA");
+                             $"I_nl_drain={((Complex)ds["I:M1:d"][si, 0]).Real*1e3:F2} mA");
         }
 
         // ── Gate harmonics k≥2 are near zero (linear gate, no harmonic generation) ──
@@ -137,7 +137,7 @@ public class Hero2RegressionTests(ITestOutputHelper output)
         for (int si = 0; si < sweepVals.Length; si++)
         for (int k = 2; k <= K; k++)
         {
-            double vGateKMag = ((Complex)ds["V"][gateIdx, k, si]).Magnitude;
+            double vGateKMag = ((Complex)ds["V"][si, gateIdx, k]).Magnitude;
             // Gate harmonics k≥2 should be tiny — loose bound (0.1 V) catches gross errors.
             Assert.True(vGateKMag < 0.1,
                 $"Gate harmonic k={k} at Pin={sweepVals[si]:F1} dBm: " +
@@ -149,7 +149,7 @@ public class Hero2RegressionTests(ITestOutputHelper output)
         double prevI = double.MinValue;
         for (int si = 0; si < sweepVals.Length; si++)
         {
-            double iDrain = ((Complex)ds["I:M1:d"][0, si]).Real;
+            double iDrain = ((Complex)ds["I:M1:d"][si, 0]).Real;
             Assert.True(iDrain >= prevI - 0.1e-3,  // allow 0.1 mA noise
                 $"DC drain current did not increase at Pin={sweepVals[si]:F1} dBm: " +
                 $"I_nl[drain,0]={iDrain*1e3:F2} mA, prev={prevI*1e3:F2} mA.");
@@ -168,12 +168,12 @@ public class Hero2RegressionTests(ITestOutputHelper output)
         var (lib, tb) = CnlReader.ReadFile(Path.Combine(dir, "hero2.cnl"));
         var netlist   = new Elaborator(lib).Elaborate(tb);
 
-        var hba    = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var p      = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
-        var engine = new HbEngine(netlist, tb);
-        var ds = engine.Run(p);
+        var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
+        var p   = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
+        var sw  = new ParametricSweepAnalysis("SW_auto", p.SweepVarName!, p.SweepValues().ToArray(), hba.Name);
+        var ds  = ParametricSweepEngine.Run(sw, lib, tb);
 
-        string[] ifNames = ds["V"].Axes[0].Labels!;
+        string[] ifNames = ds["V"].Axes[1].Labels!;
         int gateIdx  = Array.FindIndex(ifNames, n => n.Contains("n_gate",  StringComparison.OrdinalIgnoreCase));
         int drainIdx = Array.FindIndex(ifNames, n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
 
@@ -211,8 +211,8 @@ public class Hero2RegressionTests(ITestOutputHelper output)
                     if (entry is null) continue;
 
                     Complex sim = compareV
-                        ? (Complex)ds["V"][nodeIdx, k, si]
-                        : (Complex)ds[branchCube][k, si];
+                        ? (Complex)ds["V"][si, nodeIdx, k]
+                        : (Complex)ds[branchCube][si, k];
                     double simRe = sim.Real;
                     double simIm = k == 0 ? 0.0 : sim.Imaginary;
 

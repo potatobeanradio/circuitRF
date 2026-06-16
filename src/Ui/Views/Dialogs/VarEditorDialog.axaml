@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.ViewModels"
+        xmlns:d="using:CircuitRF.Ui.Views.Dialogs"
+        x:Class="CircuitRF.Ui.Views.Dialogs.VarEditorDialog"
+        x:DataType="vm:VarEditorViewModel"
+        Title="VAR Variables"
+        Width="400"
+        MinWidth="320"
+        MinHeight="280"
+        SizeToContent="Height"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <!-- Undo/Redo act on the owning schematic's stack (same pattern as ParameterEditorDialog). -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Z"       Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Meta+Z"       Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+Z" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y"       Command="{Binding RedoCommand}"/>
+    </Window.KeyBindings>
+
+    <d:VarEditorView/>
+
+</Window>

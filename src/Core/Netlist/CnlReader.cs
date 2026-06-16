@@ -1149,9 +1149,15 @@ public sealed class CnlReader
             return false;
 
         // Parse the Sweep string if present: "varName: start .. stop step s"
+        // Sweep= on HB is deprecated — use ParametricSweepAnalysis instead.
         string?  sweepVar = null, sweepStart = null, sweepStop = null, sweepStep = null;
         if (kv.TryGetValue("Sweep", out var sweepStr))
+        {
+            Console.Error.WriteLine(
+                $"[CnlReader] HB '{analysisName}': Sweep= is deprecated. " +
+                $"Wrap this analysis in a parametric_sweep to drive sweeps. Sweep= is ignored by the engine.");
             ParseSweepString(sweepStr, out sweepVar, out sweepStart, out sweepStop, out sweepStep);
+        }
 
         // Parse multi-tone fields: NumFreqs and Tone[1..N].
         string numFreqsExpr   = kv.GetValueOrDefault("NumFreqs",      "1");
@@ -1181,10 +1187,12 @@ public sealed class CnlReader
             GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic",   "0"),
             LambdaExpr        = kv.GetValueOrDefault("Lambda",          "1"),
             MaxIterExpr       = kv.GetValueOrDefault("MaxIter",         "100"),
+#pragma warning disable CS0618
             SweepVarName      = sweepVar,
             SweepStartExpr    = sweepStart,
             SweepStopExpr     = sweepStop,
             SweepStepExpr     = sweepStep,
+#pragma warning restore CS0618
         };
         return true;
     }

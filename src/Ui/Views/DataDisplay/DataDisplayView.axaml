@@ -114,6 +114,16 @@
                     <mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
                 </Button>
 
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <Button Command="{Binding ViewModel.Window.LoadRunResultsCommand}"
+                        ToolTip.Tip="Load Run Results…"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="FolderArrowDownOutline" Width="16" Height="16"/>
+                </Button>
+
             </StackPanel>
         </Border>
 

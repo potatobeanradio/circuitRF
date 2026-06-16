@@ -42,10 +42,11 @@ public static class NetExtractor
         var conflicts  = new List<string>();
         var inProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var (instances, cellPorts) = ExtractModel(model, cells, lib, inProgress, conflicts);
+        var (instances, cellPorts, topVars) = ExtractModel(model, cells, lib, inProgress, conflicts);
 
         var tb = new TestBench(testBenchName);
         tb.Instances.AddRange(instances);
+        tb.GlobalVariables.AddRange(topVars);
 
         // Analyses + measurements attach to the TOP testbench only (data-model §2.1 invariant).
         foreach (var analysis in model.Analyses)
@@ -58,7 +59,7 @@ public static class NetExtractor
 
     // ── Per-model extraction pipeline (shared by top and sub-cells) ─────────
 
-    private static (List<Instance> Instances, IReadOnlyList<string> CellPorts) ExtractModel(
+    private static (List<Instance> Instances, IReadOnlyList<string> CellPorts, List<Variable> Variables) ExtractModel(
         SchematicEditModel model,
         ICellResolver?      cells,
         Library             lib,
@@ -189,6 +190,7 @@ public static class NetExtractor
             if (comp.Disable is DisableState.Open or DisableState.Short) continue;
             if (comp.Symbol == SymbolKind.Ground) continue;
             if (comp.Symbol == SymbolKind.Pin)    continue;
+            if (comp.Symbol == SymbolKind.Var)    continue;  // VAR rows routed to Variables, not instances
 
             if (comp.CellRef is not null)
             {
@@ -202,7 +204,28 @@ public static class NetExtractor
             if (inst is not null) instances.Add(inst);
         }
 
-        return (instances, cellPorts);
+        // ── Collect VAR variable definitions for this frame ─────────────────
+        var frameVars    = new List<Variable>();
+        var varNamesSeen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var comp in model.Components)
+        {
+            if (comp.Disable is DisableState.Open or DisableState.Short) continue;
+            if (comp.Symbol != SymbolKind.Var) continue;
+            foreach (var p in comp.Parameters)
+            {
+                if (string.IsNullOrWhiteSpace(p.Name)) continue;
+                var varName = p.Name.Trim();
+                if (!varNamesSeen.Add(varName))
+                {
+                    conflicts.Add($"Variable '{varName}' defined more than once in this cell; first definition kept.");
+                    continue;
+                }
+                string? unit = UnitNormalizer.ToEngineUnit(p.Unit) is { Length: > 0 } u ? u : null;
+                frameVars.Add(new Variable(varName, p.Expression, unit));
+            }
+        }
+
+        return (instances, cellPorts, frameVars);
     }
 
     // ── Cell instance emission ───────────────────────────────────────────────
@@ -244,10 +267,11 @@ public static class NetExtractor
         if (lib.Find(cellName) is null)
         {
             inProgress.Add(cellName);
-            var (subInstances, subPorts) = ExtractModel(res.Schematic, cells, lib, inProgress, conflicts);
+            var (subInstances, subPorts, subVars) = ExtractModel(res.Schematic, cells, lib, inProgress, conflicts);
             var cell = new Cell(cellName);
             cell.Ports.AddRange(subPorts);
             cell.Instances.AddRange(subInstances);
+            cell.Variables.AddRange(subVars);
             foreach (var p in res.Parameters) cell.Parameters.Add(p);
             lib.Cells.Add(cell);
             inProgress.Remove(cellName);

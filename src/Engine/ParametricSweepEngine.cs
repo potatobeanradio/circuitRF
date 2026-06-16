@@ -96,6 +96,12 @@ public static class ParametricSweepEngine
                 var p = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
                 return (DataSet)new HbEngine(netlist, tb, settings).Run(p);
 
+            case SParameterAnalysis spa:
+                return RunSParam(spa, netlist, settings);
+
+            case DcAnalysis dca:
+                return RunDc(dca, netlist, settings);
+
             case ParametricSweepAnalysis psa:
                 // Recursive: outer override already injected in tb.GlobalVariables.
                 // This call re-elaborates for each of its own sweep values on top of that.
@@ -105,7 +111,41 @@ public static class ParametricSweepEngine
                 throw new NotSupportedException(
                     $"ParametricSweepEngine: inner analysis type " +
                     $"'{inner.GetType().Name}' is not supported. " +
-                    $"Supported: HarmonicBalanceAnalysis, ParametricSweepAnalysis.");
+                    $"Supported: HarmonicBalanceAnalysis, SParameterAnalysis, DcAnalysis, ParametricSweepAnalysis.");
         }
+    }
+
+    // ── Per-inner-type helpers ────────────────────────────────────────────────
+
+    private static DataSet RunSParam(
+        SParameterAnalysis spa,
+        ElaboratedNetlist  netlist,
+        AnalysisSettings?  settings)
+    {
+        var freqs = spa.Expand(netlist.ResolvedGlobals);
+        return SParameterEngine.Run(netlist, freqs, settings);
+    }
+
+    private static DataSet RunDc(
+        DcAnalysis        _,
+        ElaboratedNetlist netlist,
+        AnalysisSettings? settings)
+    {
+        var result = NonlinearDcEngine.Run(netlist, settings);
+
+        // Pack node voltages into a V cube with a node axis carrying net names.
+        int nodeCount = result.NodeVoltages.Length;  // non-ground nodes (circuit nodes 1..n)
+        var nodeVals  = new double[nodeCount];
+        var nodeNames = new string[nodeCount];
+        for (int i = 0; i < nodeCount; i++)
+        {
+            nodeVals[i]  = i;
+            nodeNames[i] = netlist.Nodes.NameOf(i + 1);
+        }
+        var nodeAxis = new Axis("node", nodeVals, "", nodeNames);
+
+        var ds = new DataSet();
+        ds.Add("V", new DataCube([nodeAxis], result.NodeVoltages));
+        return ds;
     }
 }

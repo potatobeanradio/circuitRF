@@ -67,10 +67,10 @@ public class Hero5GateTests(ITestOutputHelper output)
 
                     // V uses the node-indexed cube; I: uses the named branch cube (no node index).
                     Complex sim = compareV
-                        ? (Complex)ds["V"][idx, m, si]
+                        ? (Complex)ds["V"][si, idx, m]
                         : lbl == "drain"
-                            ? (Complex)ds["I:M1:d"][m, si]
-                            : (Complex)ds["I:M1:g"][m, si];
+                            ? (Complex)ds["I:M1:d"][si, m]
+                            : (Complex)ds["I:M1:g"][si, m];
                     double simRe = sim.Real;
                     double simIm = m == 0 ? 0.0 : sim.Imaginary;
 
@@ -173,11 +173,12 @@ public class Hero5GateTests(ITestOutputHelper output)
         var p         = HbEngine.Resolve(hba, netlist.ResolvedGlobals)
                         with { SweepStart = start, SweepStop = stop, SweepStep = step };
         if (tol is not null) p = p with { Tol = tol.Value };
-        return new HbEngine(netlist, tb).Run(p);
+        var sw = new ParametricSweepAnalysis("SW_auto", p.SweepVarName!, p.SweepValues().ToArray(), hba.Name);
+        return ParametricSweepEngine.Run(sw, lib, tb);
     }
 
     private static int NodeIdx(DataSet ds, string name)
-        => Array.FindIndex(ds["V"].Axes[0].Labels!, s => s.Contains(name, StringComparison.OrdinalIgnoreCase));
+        => Array.FindIndex(ds["V"].Axes[1].Labels!, s => s.Contains(name, StringComparison.OrdinalIgnoreCase));
 
     private record GoldenRow(int K1, int K2, double FreqHz, double Pave, double Re, double Im);
 

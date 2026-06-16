@@ -176,6 +176,9 @@ i2 ≈ 49.11 mA, i1 = −61 mA, gm ≈ 62.4 mS, gds ≈ −9.45 µS (negative).
 (branch constraint + KCL). Parameter `V=`. Required for bias sources in the DC hero circuit.
 Registered as type `V` in `ComponentModelFactory`.
 
+## VAR variable component — design note
+`NetExtractor` in `src/Ui` routes `SymbolKind.Var` component parameter rows into `Cell.Variables` (sub-cell) or `TestBench.GlobalVariables` (testbench top). No Core change was needed: `Elaborator.BuildGlobalScope` already binds `tb.GlobalVariables` and `BuildCellScope` already binds `cell.Variables`, so per-cell isolation and HB sweepability are automatic. VAR never appears as an `Instance` or `ElaboratedComponent`; its `EngineReference` sentinel is `"VAR"` (not a factory primitive).
+
 ## Ask before
 - Changing the `.cnl` or JSON format (round-trip + interop).
 - Changing the scope/binding rule or the kinded-value model (ripples into the engine and SDD).

@@ -4,6 +4,52 @@ Standing instructions for `src/Engine` (the numeric layer: MNA assembly, linear 
 HB sub-engine in `HarmonicBalance/`). Read with the root `CLAUDE.md`. Design notes:
 `docs/design/linear-engine.md` and `docs/design/harmonic-balance.md`.
 
+## HB sweep architecture (Sweep-3 migration, 2026-06-16)
+
+All swept HB results — single-tone and two-tone — come from `ParametricSweepEngine`. The swept
+axis is **prepended** (first) and named after the sweep variable (e.g. `Pavl_dbm`, `Pin`, `Vgg`).
+HB-internal sweeping is fully retired: `HbEngine.Run` is always single-point, producing
+`V[node, harmonic]` or `V[node, mixIndex]` plus scalar `Converged`/`Residual`.
+
+- **Axis layout after ParametricSweepEngine:** `V[sweep…, node, harmonic]` (single-tone),
+  `V[sweep…, node, mixIndex]` (two-tone); branch `I:*[sweep…, harmonic/mixIndex]`.
+- **Tests and golden generators** were migrated to the parametric path; golden CSV numbers
+  are unchanged.
+- **Exported linear-network payload / back-solver** (`LinearPayload`, `ILinearBackSolver`) is
+  single-point per HB run; a sweep-aware exported payload is a known follow-up.
+- `TwoToneMeasurements` now finds node/mixIndex axes by **name** (not positional), so it works
+  regardless of how many sweep axes are prepended.
+- The `MeasurementEvaluator` V/INl accessor likewise finds the node axis by `Name=="node"`;
+  the I branch accessor treats the last axis as harmonic/mixIndex with sweep axes prepended.
+
+## ParametricSweepEngine inner-analysis dispatch (Sweep Fix 2, 2026-06-15)
+
+`ParametricSweepEngine.RunInner` now dispatches `SParameterAnalysis` and `DcAnalysis` in addition
+to the original `HarmonicBalanceAnalysis` and `ParametricSweepAnalysis`, so any of these can be
+wrapped in nested parametric sweeps (e.g. S-params vs a bias variable, a DC curve-tracer Vds×Vgs).
+
+- **`SParameterAnalysis`:** calls `spa.Expand(netlist.ResolvedGlobals)` to get the flat frequency
+  array, then delegates to `SParameterEngine.Run(netlist, freqs, settings)` and returns its DataSet.
+  The S/Z0 cubes stack cleanly under a prepended sweep axis via `DataSet.StackSweepAxis`.
+- **`DcAnalysis`:** calls `NonlinearDcEngine.Run(netlist, settings)` → `DcResult`; packs node
+  voltages into a `V` DataCube with a `node` axis (node-name labels from `netlist.Nodes.NameOf`).
+  A DC curve-tracer comes from two nested parametric sweeps (Vgs outer, Vds inner) wrapping the
+  inner DC analysis — DC itself produces one operating point per point; the sweep axes supply
+  Vds/Vgs. Gate tests: `tests/Engine.Tests/Parametric/ParametricSweepDcSParamTests.cs` (4 tests).
+- **Loadpull and other engine-owning analyses** remain unsupported in the generic sweep;
+  `default:` still throws `NotSupportedException` with a diagnostic message.
+
+## HB swept-axis naming (Sweep Fix 1, 2026-06-15)
+
+The HB result's swept axis is named after `HbAnalysisParams.SweepVarName` with **unit = ""** (empty
+string). The legacy hardcoded `"Pin"/"dBm"` sentinel has been removed from both `BuildSingleToneDataSet`
+and `BuildTwoToneDataSet`. If `SweepVarName` is null (no-sweep path, which never creates a sweep
+axis anyway), the fallback name `"sweep"` is unreachable in practice.
+
+HB-internal sweep-axis ownership is slated for removal in the parametric-sweep consolidation
+(Briefs 3–4); this fix is the interim de-sentinel so existing HB-internal sweeps stop lying about
+their axis name.
+
 ## S-parameter port formulation — wave path (2026-06-15)
 
 `SParameterEngine` uses a **Z0-terminated power-wave (Norton / Kurokawa) formulation** when all
