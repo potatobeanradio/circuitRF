@@ -34,7 +34,7 @@ public partial class TabViewModel : ViewModelBase
     // DisplayWindowViewModel subscribes in CreateNewTab and calls RemoveTab.
     public event EventHandler? CloseRequested;
 
-    public TabViewModel(SnpLibraryViewModel library, string name = "Tab 1", bool addEmptyPlot = true, bool selectEmptyPlot = false)
+    public TabViewModel(DataSourceLibraryViewModel library, string name = "Tab 1", bool addEmptyPlot = true, bool selectEmptyPlot = false)
     {
         _name       = name;
         DataDisplay = new DataDisplayViewModel(library, addEmptyPlot, selectEmptyPlot);

@@ -1,15 +1,12 @@
 // ================================================================
-//  SnpEntryViewModel.cs  —  one data-source entry in the library panel
-//
-//  NAMING DEBT: This class now holds a DataSet and loads .npy files;
-//  the SNP property is one (S-param) facet of a general DataSet source.
-//  Rename to DataSourceEntryViewModel in 7.2c when the cube-native trace
-//  path + identity components + class rename all ship together.
+//  DataSourceEntryViewModel.cs  —  one data-source entry in the library panel
 // ================================================================
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -22,7 +19,7 @@ namespace CircuitRF.Ui.DataDisplay.ViewModels;
 /// <summary>Distinguishes how this entry was loaded.</summary>
 public enum SourceKind { Touchstone, Npy }
 
-public partial class SnpEntryViewModel : ViewModelBase
+public partial class DataSourceEntryViewModel : ViewModelBase
 {
     private SNP?     _snp;   // null for cube-only .npy (no S cube); broken entries use SNP.CreateBroken
     private DataSet? _data;  // null for broken entries
@@ -30,7 +27,7 @@ public partial class SnpEntryViewModel : ViewModelBase
 
     /// <summary>
     /// The loaded SNP.  Non-null for Touchstone and .npy-with-S sources;
-    /// null for cube-only .npy (no S cube — not pickable until 7.2c).
+    /// null for cube-only .npy (no S cube).
     /// IsEmpty is true for broken entries.
     /// </summary>
     public SNP? Snp => _snp;
@@ -50,7 +47,7 @@ public partial class SnpEntryViewModel : ViewModelBase
     /// <summary>
     /// Display name: just the file name when unique across the library;
     /// a minimum-unique path suffix when two files share the same name.
-    /// Updated by SnpLibraryViewModel.UpdateDisplayNames().
+    /// Updated by DataSourceLibraryViewModel.UpdateDisplayNames().
     /// </summary>
     [ObservableProperty]
     private string _displayName = "";
@@ -58,15 +55,44 @@ public partial class SnpEntryViewModel : ViewModelBase
     /// <summary>True when the underlying file is missing (entry has no usable data).</summary>
     public bool IsBroken => _snp?.IsEmpty ?? false;
 
+    // ---- Z0 classification (Phase 7.2e) ------------------------------------
+
+    /// <summary>Reference-impedance kind of this source's S data, or null when there is no Z0 cube
+    /// (no S data / cube-only non-S source). Computed on load and refresh.</summary>
+    public Z0Kind? Z0Kind { get; private set; }
+
+    /// <summary>True when S results from this source are referenced to a non-uniform or complex Z0
+    /// (the value the user must be reminded about). False for plain uniform-real 50 Ω-style sources.</summary>
+    public bool HasUnusualZ0 => Z0Kind is RfCore.Data.Z0Kind.NonUniform or RfCore.Data.Z0Kind.UniformComplex;
+
+    /// <summary>Per-port reference impedances (index k = port k+1); empty when no Z0 cube.</summary>
+    public IReadOnlyList<Complex> Z0PerPort { get; private set; } = Array.Empty<Complex>();
+
+    private void ClassifyZ0FromData()
+    {
+        if (_data?.Contains("Z0") == true)
+        {
+            Z0Kind    = DataSetBuilder.ClassifyZ0(_data["Z0"]);
+            Z0PerPort = _data["Z0"].ComplexValues;
+        }
+        else
+        {
+            Z0Kind    = null;
+            Z0PerPort = Array.Empty<Complex>();
+        }
+    }
+
+    // ---- Commands ----------------------------------------------------------
+
     public IAsyncRelayCommand RefreshCommand          { get; private set; } = null!;
     public IRelayCommand      RemoveCommand           { get; private set; } = null!;
     public IRelayCommand      RevealInExplorerCommand { get; private set; } = null!;
     public IAsyncRelayCommand CopyPathCommand         { get; private set; } = null!;
     public IAsyncRelayCommand CopyPathRelativeCommand { get; private set; } = null!;
 
-    // ---- Touchstone constructor (as before) --------------------------------
+    // ---- Touchstone constructor --------------------------------------------
 
-    public SnpEntryViewModel(SNP snp, SnpLibraryViewModel library)
+    public DataSourceEntryViewModel(SNP snp, DataSourceLibraryViewModel library)
     {
         Kind       = SourceKind.Touchstone;
         _snp       = snp;
@@ -75,11 +101,12 @@ public partial class SnpEntryViewModel : ViewModelBase
         _displayName = FileName ?? "";
 
         InitCommands(library);
+        ClassifyZ0FromData();
     }
 
     // ---- .npy constructor (DataSet loaded; Snp may be null for cube-only) --
 
-    internal SnpEntryViewModel(string path, DataSet? data, SNP? snp, SnpLibraryViewModel library)
+    internal DataSourceEntryViewModel(string path, DataSet? data, SNP? snp, DataSourceLibraryViewModel library)
     {
         Kind       = SourceKind.Npy;
         _filePath  = path;
@@ -88,11 +115,12 @@ public partial class SnpEntryViewModel : ViewModelBase
         _displayName = FileName ?? "";
 
         InitCommands(library);
+        ClassifyZ0FromData();
     }
 
     // ---- Shared command wiring ---------------------------------------------
 
-    private void InitCommands(SnpLibraryViewModel library)
+    private void InitCommands(DataSourceLibraryViewModel library)
     {
         RefreshCommand = new AsyncRelayCommand(() => library.ReloadAsync(this));
         RemoveCommand  = new RelayCommand(() => library.Remove(this));
@@ -137,7 +165,7 @@ public partial class SnpEntryViewModel : ViewModelBase
         });
     }
 
-    // ---- In-place refresh (called by SnpLibraryViewModel) ------------------
+    // ---- In-place refresh (called by DataSourceLibraryViewModel) -----------
 
     /// <summary>
     /// Refreshes a Touchstone entry in place after reload.
@@ -150,6 +178,7 @@ public partial class SnpEntryViewModel : ViewModelBase
         _filePath = newPath;
         _data = DataSetBuilder.FromSnp(_snp);
         NotifyBrokenStateChanged();
+        ClassifyZ0FromData();
     }
 
     /// <summary>
@@ -186,8 +215,9 @@ public partial class SnpEntryViewModel : ViewModelBase
         }
 
         NotifyBrokenStateChanged();
+        ClassifyZ0FromData();
     }
 
-    /// <summary>Called by SnpLibraryViewModel after an in-place restore.</summary>
+    /// <summary>Called by DataSourceLibraryViewModel after an in-place restore.</summary>
     internal void NotifyBrokenStateChanged() => OnPropertyChanged(nameof(IsBroken));
 }

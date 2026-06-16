@@ -10,7 +10,7 @@ namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
 public sealed class TraceDataItem
 {
-    public SnpEntryViewModel Entry     { get; }
+    public DataSourceEntryViewModel Entry     { get; }
     public int               Row       { get; }
     public int               Col       { get; }
     public DerivedParameters Derived   { get; }
@@ -25,9 +25,16 @@ public sealed class TraceDataItem
     /// </summary>
     public bool IsBroken { get; }
 
+    // ---- Cube-bound discriminator (Phase 7.2c-a) ---------------------------
+
+    /// <summary>True for cube-bound items; false for matrix / derived items.</summary>
+    public bool         IsCubeBound { get; }
+    public string?      CubeName    { get; }
+    public AxisSlice[]? Slice       { get; }
+
     // ---- Matrix element constructor ----------------------------------------
 
-    public TraceDataItem(SnpEntryViewModel entry, MatrixType mt, int row, int col,
+    public TraceDataItem(DataSourceEntryViewModel entry, MatrixType mt, int row, int col,
                          bool omitFilePrefix = false, bool isBroken = false)
     {
         Entry     = entry;
@@ -41,9 +48,26 @@ public sealed class TraceDataItem
         Label = omitFilePrefix ? el : $"{Path.GetFileNameWithoutExtension(entry.DisplayName)}..{el}";
     }
 
+    // ---- Cube-bound constructor (Phase 7.2c-a) -----------------------------
+
+    public TraceDataItem(DataSourceEntryViewModel entry, string cubeName, AxisSlice[] slice,
+                         string label, bool isEnabled = true)
+    {
+        Entry       = entry;
+        Row         = 0;
+        Col         = 0;
+        Derived     = DerivedParameters.None;
+        IsBroken    = false;
+        IsCubeBound = true;
+        CubeName    = cubeName;
+        Slice       = slice;
+        Label       = label;
+        IsEnabled   = isEnabled;
+    }
+
     // ---- Derived parameter constructor -------------------------------------
 
-    public TraceDataItem(SnpEntryViewModel entry, DerivedParameters derived,
+    public TraceDataItem(DataSourceEntryViewModel entry, DerivedParameters derived,
                          PlotType plotType, bool omitFilePrefix = false)
     {
         Entry   = entry;

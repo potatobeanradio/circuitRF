@@ -99,6 +99,33 @@ public sealed class LineModeItem
     public LineModeItem(bool isOff, LineType type) { IsOff = isOff; Type = type; }
 }
 
+// ---- CubeTransformItem -----------------------------------------------------
+// Wraps a CubeTransform enum value with a human-readable label.
+
+public sealed class CubeTransformItem
+{
+    public CubeTransform Transform { get; }
+    public string        Label     { get; }
+
+    public CubeTransformItem(CubeTransform transform)
+    {
+        Transform = transform;
+        Label = transform switch
+        {
+            CubeTransform.None  => "None",
+            CubeTransform.dB20  => "dB20",
+            CubeTransform.dB10  => "dB10",
+            CubeTransform.dB    => "dB",
+            CubeTransform.Mag   => "Mag",
+            CubeTransform.Phase => "Phase°",
+            CubeTransform.Real  => "Real",
+            CubeTransform.Imag  => "Imag",
+            CubeTransform.Conj  => "Conj",
+            _                   => transform.ToString()
+        };
+    }
+}
+
 // ---- SymbolModeItem --------------------------------------------------------
 // Merges Marker on/off + MarkerType into a single icon-pick option.
 

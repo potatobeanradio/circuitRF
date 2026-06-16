@@ -123,6 +123,22 @@ public sealed class AxesConfig
     public double WindowSecondaryHeight { get; set; } =  2;
 }
 
+// ---- Cube-bound persistence (Phase 7.2c-a) ----------------------------------
+
+/// <summary>
+/// Serialisable form of one AxisSlice.  Null CubeName in TraceConfig means
+/// network-bound (old .cdd files load unchanged — no migration required).
+/// </summary>
+public sealed class AxisSliceConfig
+{
+    public string AxisName { get; set; } = "";
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public AxisRole Role { get; set; } = AxisRole.PinToIndex;
+
+    public int Index { get; set; }
+}
+
 public sealed class TraceConfig
 {
     public string?  SourcePath       { get; set; }
@@ -148,6 +164,13 @@ public sealed class TraceConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public PrecisionFormat FormatString          { get; set; } = PrecisionFormat.F;
     public int             MaximumFractionDigits { get; set; } = 3;
+
+    // Cube-bound fields (Phase 7.2c-a). Null = network-bound; loads as before.
+    public string?               CubeName      { get; set; }
+    public List<AxisSliceConfig> CubeSlice     { get; set; } = new();
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public CubeTransform         CubeTransform { get; set; } = CubeTransform.None;
 
     public TracePropertiesConfig   Properties { get; set; } = new();
     public List<MarkerConfig>      Markers    { get; set; } = new();

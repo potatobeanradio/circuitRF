@@ -182,7 +182,18 @@ public sealed class MnaSystem : IMnaContext
         Func<int, string>? branchNamer = null)
     {
         var cs = BuildCscMatrix();
-        _amdPerm ??= AMD.Generate(cs, ColumnOrdering.MinimumDegreeAtA);
+        if (_amdPerm is null)
+        {
+            try { _amdPerm = AMD.Generate(cs, ColumnOrdering.MinimumDegreeAtA); }
+            catch (Exception ex)
+            {
+                // AMD fails on a structurally empty matrix (e.g., all admittances exactly cancel).
+                throw new SingularMatrixException(
+                    "AMD ordering failed — assembled matrix is empty. " +
+                    "Check for exact conductance cancellation (active element canceling port or passive admittance).",
+                    ex);
+            }
+        }
 
         // Pre-solve: find structurally zero rows and columns.
         var zeroRows = FindZeroRows(nodeNamer, branchNamer);

@@ -92,6 +92,22 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         }
 
         // ============================================================
+        //  AutoLabel property — minimal label from TraceLabeler policy
+        //  Used when CustomLabel is null; falls back to ShortDescription
+        // ============================================================
+
+        public static readonly DirectProperty<AxisLabelControl, string?> AutoLabelProperty =
+            AvaloniaProperty.RegisterDirect<AxisLabelControl, string?>(
+                nameof(AutoLabel), o => o.AutoLabel, (o, v) => o.AutoLabel = v);
+
+        private string? _autoLabel;
+        public string? AutoLabel
+        {
+            get => _autoLabel;
+            set { SetAndRaise(AutoLabelProperty, ref _autoLabel, value); InvalidateVisual(); }
+        }
+
+        // ============================================================
         //  PlotTheme property
         // ============================================================
 
@@ -141,11 +157,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (_trace is null) return;
 
             var traceColor = RenderTheme.ToSKColor(_trace.Properties.LineColor);
-            string desc    = ShowFilePrefix ? _trace.Description : _trace.ShortDescription;
+            // Policy priority: AutoLabel (plot-level computed) → ShortDescription (legacy fallback).
+            // ShowFilePrefix is kept for the legacy path when neither override is set.
+            string fallback  = ShowFilePrefix ? _trace.Description : _trace.ShortDescription;
+            string policyText = _autoLabel ?? fallback;
 
             context.Custom(new LabelDrawOperation(
                 new Rect(Bounds.Size),
-                desc,
+                policyText,
                 traceColor,
                 IsRightSide,
                 _theme,

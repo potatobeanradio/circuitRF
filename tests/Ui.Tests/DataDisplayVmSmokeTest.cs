@@ -82,7 +82,7 @@ public sealed class DataDisplayVmSmokeTest
     /// a path not in the library is a silent no-op; LibraryChanged fires for each reloaded entry.
     /// </summary>
     [Fact]
-    public async Task SnpLibraryViewModel_ReloadChanged_OnlyMatching()
+    public async Task DataSourceLibraryViewModel_ReloadChanged_OnlyMatching()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), $"crf_snptest_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
@@ -95,7 +95,7 @@ public sealed class DataDisplayVmSmokeTest
             WriteNpy(pathA, new Complex(0.1, -0.2));
             WriteNpy(pathB, new Complex(0.3, -0.4));
 
-            var lib = new SnpLibraryViewModel();
+            var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(pathA);
             await lib.LoadFileAsync(pathB);
             Assert.Equal(2, lib.Entries.Count);

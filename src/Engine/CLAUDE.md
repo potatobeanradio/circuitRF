@@ -4,6 +4,30 @@ Standing instructions for `src/Engine` (the numeric layer: MNA assembly, linear 
 HB sub-engine in `HarmonicBalance/`). Read with the root `CLAUDE.md`. Design notes:
 `docs/design/linear-engine.md` and `docs/design/harmonic-balance.md`.
 
+## S-parameter port formulation — wave path (2026-06-15)
+
+`SParameterEngine` uses a **Z0-terminated power-wave (Norton / Kurokawa) formulation** when all
+port Z0 references have `Re(Z0) > 1e-12` (the common case).
+
+- **Per port:** stamp conductance `1/Z0` between its nodes via `AddAdmittance` (no branch unknown).
+- **Excitation:** for driven port `j` with unit incident wave `a_j = 1`, inject Norton current
+  `I_j = 2·√(Re Z0_j) / Z0_j` at the port's nodes.
+- **S extraction (Kurokawa):** after solving for port voltages `V_k`:
+  `I_k = (k==j ? I_j : 0) − V_k / Z0_k`, then `b_k = (V_k − conj(Z0_k)·I_k) / (2·√(Re Z0_k))`,
+  `S[k, j] = b_k`. No Y→S inversion step.
+- **Singularity class eliminated:** parallel ports / port-across-short topologies are non-singular
+  by construction — each port contributes a real positive conductance to its node, so the matrix is
+  well-conditioned even when ports share the same node pair.
+- **Regularization** is now a genuine last resort (floating internal nodes, exact admittance
+  cancellation). The `sparam-regularization` warning no longer fires for trivial circuits.
+- **Legacy path** (any port has `Re(Z0) ≤ 0`, e.g. reactive reference impedance): unchanged
+  ideal-0 V-source branch stamping + unit-voltage solve + `RFNetwork.YToS`. HB/DC are unaffected
+  (they already treat Port/Term as inert). `PortEntry` carries both `BranchIndex` (legacy) and
+  `Node0/Node1` (wave).
+
+`MnaSystem.Factorize` wraps `AMD.Generate` to convert `ArgumentNullException` (empty matrix from
+exact conductance cancellation) to `SingularMatrixException`, so the IfNecessary retry path fires.
+
 ## What lives here
 - The **`MnaSystem`** and the stamping API (`AddAdmittance`, `AddBlockAdmittance`, `AddBranch`,
   `AddBranchCurrent`, `AddConstraint`, `AddBranchConstraint`, `AddCurrentInjection`,

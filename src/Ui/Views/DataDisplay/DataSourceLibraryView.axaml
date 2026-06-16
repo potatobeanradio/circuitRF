@@ -2,8 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
              xmlns:mi="using:Material.Icons.Avalonia"
-             x:DataType="vm:SnpLibraryViewModel"
-             x:Class="CircuitRF.Ui.Views.DataDisplay.SnpLibraryView"
+             x:DataType="vm:DataSourceLibraryViewModel"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.DataSourceLibraryView"
              DragDrop.AllowDrop="True">
 
     <UserControl.Styles>
@@ -87,7 +87,7 @@
                       VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding Entries}">
                 <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:SnpEntryViewModel">
+                    <DataTemplate x:DataType="vm:DataSourceEntryViewModel">
                         <Grid ColumnDefinitions="*,22,22"
                               Margin="2,1">
 

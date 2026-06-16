@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -1356,6 +1357,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchDataDisplays.Add(doc);
         vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
         _factory.OpenDocument(doc);
+        WireDataDisplayLibraryEvents(vm);
     }
 
     /// <summary>
@@ -1401,6 +1403,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _openDocsByPath[absPath] = newDoc;
         newVm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
         _factory.OpenDocument(newDoc);
+        WireDataDisplayLibraryEvents(newVm);
 
         // format_version check throws InvalidDataException on mismatch.
         await newVm.Window.LoadAllAsync(absPath, stream);
@@ -1428,6 +1431,30 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (!used.Contains(candidate))
                 return candidate;
         }
+    }
+
+    // ---- Data Display library event wiring (Phase 7.2e) --------------------
+
+    private void WireDataDisplayLibraryEvents(DataDisplayDocumentViewModel docVm)
+    {
+        docVm.Window.DataSourceLibrary.UnusualZ0Detected += OnUnusualZ0Detected;
+    }
+
+    private void OnUnusualZ0Detected(string path, Z0Kind kind, IReadOnlyList<Complex> z0)
+    {
+        var kindLabel = kind == Z0Kind.NonUniform ? "non-uniform" : "complex";
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < z0.Count; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            var z1   = z0[i];
+            string zFmt = Math.Abs(z1.Imaginary) < 1e-12
+                ? $"{z1.Real:G4}Ω"
+                : $"{z1.Real:G4}{(z1.Imaginary >= 0 ? "+" : "")}{z1.Imaginary:G4}jΩ";
+            sb.Append($"port{i + 1}={zFmt}");
+        }
+        var fileName = Path.GetFileName(path);
+        Messages.Warning($"Warning: \"{fileName}\" uses a {kindLabel} reference impedance — S-parameter results depend on it. Per-port Z0: {sb}");
     }
 
     // ---- Symbol Editor commands ---------------------------------------------
@@ -2774,7 +2801,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var displays = _openDocsByPath.Values.OfType<DataDisplayDocument>()
             .Concat(_scratchDataDisplays);
         foreach (var dd in displays)
-            await dd.ViewModel.Window.SnpLibrary.ReloadChangedAsync(changedPaths);
+            await dd.ViewModel.Window.DataSourceLibrary.ReloadChangedAsync(changedPaths);
     }
 
     /// <summary>

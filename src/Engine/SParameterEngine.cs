@@ -11,13 +11,20 @@ namespace CircuitRF.Engine;
 /// <summary>
 /// Runs an S-parameter sweep over a frequency grid (linear-engine §2, §6, §9).
 ///
-/// Per frequency:
-///   1. Stamp all components (independent sources zeroed) into MnaSystem.
-///   2. Apply regularization per <see cref="AnalysisSettings"/> (gmin and/or inductance reg).
-///   3. Factorize once (AMD permutation cached after first call).
-///   4. For each port j: solve with 1 V drive at port j, 0 V at all others.
-///      Read port branch currents → column j of the port Y-matrix.
-///   5. Convert Y → S via RfCore (power-wave, per-port complex Z0).
+/// Two code paths, chosen once per run based on port Z0 values:
+///
+///   WAVE PATH (allPortsResistive — Re(Z0) > 0 for every port, the common case):
+///     Each port stamps a conductance 1/Z0 between its nodes (no branch unknown).
+///     Excitation: current injection 2√(Re Z0)/Z0 at the driven port.
+///     S read directly from port voltages via the power-wave (Kurokawa) formula.
+///     No Y→S inversion step. Parallel ports / port-across-short topologies are
+///     non-singular by construction. Regularization is a genuine last resort.
+///
+///   LEGACY PATH (any port has Re(Z0) ≤ 0, e.g. reactive reference impedance):
+///     Each port stamps an ideal 0 V branch. Unit-voltage excitation at each port.
+///     Y-matrix extracted from branch currents; S = RFNetwork.YToS(Y, z0).
+///     Keeps the legacy singular-matrix behavior for genuinely ill-posed circuits.
+///     HB/DC are never affected (they already treat Port/Term as inert).
 ///
 /// Regularization tri-state (<see cref="RegularizationMode"/>):
 ///   IfNecessary: first attempt with no regularization; if singular, retry with both.
@@ -45,10 +52,13 @@ public static class SParameterEngine
                 "Place Term components (Num=1, Z=50 Ohm) directly in the testbench, not inside sub-cells.");
         int N = ports.Count;
 
-        var mna          = new MnaSystem(nonGroundNodes);
-        var freqCount    = freqsHz.Length;
-        var sMatrices    = new Mat<Complex>[freqCount];
-        var z0PerPort    = ports.Select(p => p.Z0).ToArray();
+        var mna       = new MnaSystem(nonGroundNodes);
+        var freqCount = freqsHz.Length;
+        var sMatrices = new Mat<Complex>[freqCount];
+        var z0PerPort = ports.Select(p => p.Z0).ToArray();
+
+        // Choose path once: wave path when every port Z0 has a positive real part.
+        bool allPortsResistive = z0PerPort.All(z => z.Real > 1e-12);
 
         // ── Build diagnostic namers (used when factorization fails) ───────────
         var nodeTouchers = new Dictionary<int, List<string>>(netlist.Nodes.Count);
@@ -81,10 +91,133 @@ public static class SParameterEngine
         Func<int, string> branchNamer = idx =>
             branchLabels.TryGetValue(idx, out var lbl) ? lbl : $"branch#{idx - nonGroundNodes}";
 
-        // Pre-compute whether IfNecessary retry is possible.
         bool canRetry =
             settings.ConductanceRegularization == RegularizationMode.IfNecessary ||
             settings.InductanceRegularization  == RegularizationMode.IfNecessary;
+
+        if (allPortsResistive)
+            RunWavePath(netlist, freqsHz, settings, ports, N, mna, freqCount, sMatrices,
+                nodeNamer, branchNamer, canRetry);
+        else
+            RunLegacyPath(netlist, freqsHz, settings, ports, N, z0PerPort, mna, freqCount, sMatrices,
+                nodeNamer, branchNamer, canRetry);
+
+        var refZ0 = z0PerPort.Length > 0 ? z0PerPort[0] : new Complex(50, 0);
+        var snp   = new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
+        var ds    = DataSetBuilder.FromSnp(snp);            // S cube + uniform Z0 placeholder
+        ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0PerPort)); // overwrite with per-port truth
+        return ds;
+    }
+
+    // ── Wave path (Re(Z0) > 0 for every port) ─────────────────────────────────
+
+    private static void RunWavePath(
+        ElaboratedNetlist    netlist,
+        double[]             freqsHz,
+        AnalysisSettings     settings,
+        List<PortEntry>      ports,
+        int                  N,
+        MnaSystem            mna,
+        int                  freqCount,
+        Mat<Complex>[]       sMatrices,
+        Func<int, string>    nodeNamer,
+        Func<int, string>    branchNamer,
+        bool                 canRetry)
+    {
+        int nonGroundNodes = mna.NodeCount;
+
+        for (int fi = 0; fi < freqCount; fi++)
+        {
+            double omega = 2.0 * Math.PI * freqsHz[fi];
+
+            // Stamp network (ports contribute conductances, not 0 V branches).
+            StampAll(mna, netlist, omega, skipPorts: true);
+            StampPortConductances(mna, ports, N);
+            ApplyRegularization(mna, netlist, nonGroundNodes, settings, applyIfNecessary: false);
+
+            SparseLU lu;
+            try
+            {
+                lu = mna.Factorize(nodeNamer: nodeNamer, branchNamer: branchNamer);
+            }
+            catch (SingularMatrixException ex) when (canRetry)
+            {
+                // Genuine floating-node case; retry with regularization.
+                netlist.AddWarningOnce("sparam-regularization",
+                    $"S-parameter matrix singular — regularization (gmin) applied. Likely floating node(s):\n" +
+                    $"{ex.Message}\n" +
+                    $"(conductance={settings.ConductanceRegularization != RegularizationMode.Never} " +
+                    $"inductance={settings.InductanceRegularization != RegularizationMode.Never})");
+
+                StampAll(mna, netlist, omega, skipPorts: true);
+                StampPortConductances(mna, ports, N);
+                ApplyRegularization(mna, netlist, nonGroundNodes, settings, applyIfNecessary: true);
+                lu = mna.Factorize(nodeNamer: nodeNamer, branchNamer: branchNamer);
+            }
+
+            var sMatrix = new Mat<Complex>(N, N);
+            var xBuf    = new Complex[mna.Size];
+
+            for (int j = 0; j < N; j++)
+            {
+                // Incident wave (unit a_j = 1): Norton current I_j = 2√(Re Z0_j) / Z0_j.
+                double  sqrtReZ0j = Math.Sqrt(ports[j].Z0.Real);
+                Complex iInj      = 2.0 * sqrtReZ0j / ports[j].Z0;
+
+                // RHS: current injection at the driven port nodes.
+                var b = new Complex[mna.Size];
+                if (ports[j].Node0 > 0) b[ports[j].Node0 - 1] = iInj;
+                if (ports[j].Node1 > 0) b[ports[j].Node1 - 1] = -iInj;
+
+                lu.Solve(b, xBuf);
+
+                // Extract S column j via Kurokawa power-wave formula.
+                // I_k = I_inj(k==j) − V_k/Z0_k  (port current: injection minus conductance draw)
+                // b_k = (V_k − conj(Z0_k)·I_k) / (2√(Re Z0_k))
+                // S[k,j] = b_k  (since a_j = 1)
+                for (int k = 0; k < N; k++)
+                {
+                    double  sqrtReZ0k = Math.Sqrt(ports[k].Z0.Real);
+                    Complex vk        = GetPortVoltage(xBuf, ports[k]);
+                    Complex ik        = (k == j ? iInj : Complex.Zero) - vk / ports[k].Z0;
+                    sMatrix[k, j]     = (vk - Complex.Conjugate(ports[k].Z0) * ik) / (2.0 * sqrtReZ0k);
+                }
+            }
+
+            sMatrices[fi] = sMatrix;
+        }
+    }
+
+    private static void StampPortConductances(MnaSystem mna, List<PortEntry> ports, int N)
+    {
+        for (int j = 0; j < N; j++)
+            mna.AddAdmittance(ports[j].Node0, ports[j].Node1, Complex.One / ports[j].Z0);
+    }
+
+    private static Complex GetPortVoltage(Complex[] x, in PortEntry p)
+    {
+        Complex v0 = p.Node0 > 0 ? x[p.Node0 - 1] : Complex.Zero;
+        Complex v1 = p.Node1 > 0 ? x[p.Node1 - 1] : Complex.Zero;
+        return v0 - v1;
+    }
+
+    // ── Legacy path (any port has Re(Z0) ≤ 0) ─────────────────────────────────
+
+    private static void RunLegacyPath(
+        ElaboratedNetlist    netlist,
+        double[]             freqsHz,
+        AnalysisSettings     settings,
+        List<PortEntry>      ports,
+        int                  N,
+        Complex[]            z0PerPort,
+        MnaSystem            mna,
+        int                  freqCount,
+        Mat<Complex>[]       sMatrices,
+        Func<int, string>    nodeNamer,
+        Func<int, string>    branchNamer,
+        bool                 canRetry)
+    {
+        int nonGroundNodes = mna.NodeCount;
 
         for (int fi = 0; fi < freqCount; fi++)
         {
@@ -105,7 +238,6 @@ public static class SParameterEngine
             catch (SingularMatrixException ex) when (canRetry)
             {
                 // IfNecessary path: re-stamp and apply all non-Never regs, then retry.
-                // Emit once per run (dedup key); full diagnostic detail surfaced to the UI.
                 netlist.AddWarningOnce("sparam-regularization",
                     $"S-parameter matrix singular — regularization (gmin) applied. Likely floating node(s):\n" +
                     $"{ex.Message}\n" +
@@ -139,12 +271,6 @@ public static class SParameterEngine
             // ── Y → S via RfCore (power-wave, per-port complex Z0) ────────────
             sMatrices[fi] = RFNetwork.YToS(yMat, z0PerPort);
         }
-
-        var refZ0 = z0PerPort.Length > 0 ? z0PerPort[0] : new Complex(50, 0);
-        var snp   = new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
-        var ds    = DataSetBuilder.FromSnp(snp);            // S cube + uniform Z0 placeholder
-        ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0PerPort)); // overwrite with per-port truth
-        return ds;
     }
 
     // ── Assembly helpers ───────────────────────────────────────────────────────
@@ -154,15 +280,23 @@ public static class SParameterEngine
     /// is set before MutualInductanceModel reads it).
     /// Buried Term/Port components (dotted InstancePath = inside a sub-cell) are silently
     /// skipped — they are inert and never become driven ports (Layer 2 scoping rule).
+    /// <paramref name="skipPorts"/>: when true (wave path), top-level Port/Term are also skipped
+    /// — they contribute conductances directly in RunWavePath instead of 0 V branches.
     /// </summary>
-    private static void StampAll(MnaSystem mna, ElaboratedNetlist netlist, double omega)
+    private static void StampAll(
+        MnaSystem         mna,
+        ElaboratedNetlist netlist,
+        double            omega,
+        bool              skipPorts = false)
     {
         mna.Reset();
         foreach (var ec in netlist.Components)
         {
             if (ec.Model is MutualInductanceModel) continue;
-            // Buried Term/Port: a Term/Port inside a sub-cell is inert even in S-param analysis.
+            // Buried Term/Port: inert even in S-param analysis.
             if ((ec.Model is PortModel or TermModel) && ec.InstancePath.Contains('.')) continue;
+            // Wave path: ports stamp their own conductances; skip the 0 V branch stamp.
+            if (skipPorts && (ec.Model is PortModel or TermModel)) continue;
             ec.Model.Stamp(mna, ec, omega);
         }
         foreach (var ec in netlist.Components)
@@ -210,7 +344,11 @@ public static class SParameterEngine
 
     // ── Port collection + branch label map ────────────────────────────────────
 
-    private record struct PortEntry(int PortNum, Complex Z0, int BranchIndex);
+    /// <summary>
+    /// Port entry. Node0/Node1 are used by the wave path (conductance + voltage readback).
+    /// BranchIndex is used by the legacy path (unit-voltage drive + current extraction).
+    /// </summary>
+    private record struct PortEntry(int PortNum, Complex Z0, int BranchIndex, int Node0, int Node1);
 
     /// <summary>
     /// Preliminary stamp pass (ω=1) to capture port branch indices and build a
@@ -244,9 +382,9 @@ public static class SParameterEngine
             // Only top-level Term/Port components (no dot in path) become S-param ports.
             if ((ec.Model is PortModel or TermModel) && ec.InstancePath.Contains('.')) continue;
             if (ec.Model is PortModel pm)
-                ports.Add(new PortEntry(GetPortNum(ec), GetZ0(ec), pm.LastBranchIndex));
+                ports.Add(new PortEntry(GetPortNum(ec), GetZ0(ec), pm.LastBranchIndex, ec.Nodes[0], ec.Nodes[1]));
             else if (ec.Model is TermModel tm)
-                ports.Add(new PortEntry(GetPortNum(ec), GetZ0(ec), tm.LastBranchIndex));
+                ports.Add(new PortEntry(GetPortNum(ec), GetZ0(ec), tm.LastBranchIndex, ec.Nodes[0], ec.Nodes[1]));
         }
 
         ports.Sort((a, b) => a.PortNum.CompareTo(b.PortNum));

@@ -29,9 +29,9 @@ namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
 public partial class DisplayWindowViewModel : ViewModelBase
 {
-    // ---- SNP library -------------------------------------------------------
+    // ---- Data source library -----------------------------------------------
 
-    public SnpLibraryViewModel SnpLibrary { get; } = new();
+    public DataSourceLibraryViewModel DataSourceLibrary { get; } = new();
 
     // ---- Window-level undo/redo (tab add / remove) -----------------------
     //
@@ -304,7 +304,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
     private TabViewModel CreateNewTab(string name)
     {
-        var tab = new TabViewModel(SnpLibrary, name, Tabs.Count < 1); // add empty plot only if there's no tabs
+        var tab = new TabViewModel(DataSourceLibrary, name, Tabs.Count < 1); // add empty plot only if there's no tabs
         tab.DataDisplay.Theme = CurrentTheme;
         tab.CloseRequested += (sender, _) => RemoveTab(sender as TabViewModel);
         return tab;

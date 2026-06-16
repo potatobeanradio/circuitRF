@@ -7,9 +7,9 @@ using CircuitRF.Ui.DataDisplay.ViewModels;
 
 namespace CircuitRF.Ui.Views.DataDisplay;
 
-public partial class SnpLibraryView : UserControl
+public partial class DataSourceLibraryView : UserControl
 {
-    public SnpLibraryView()
+    public DataSourceLibraryView()
     {
         InitializeComponent();
 
@@ -35,7 +35,7 @@ public partial class SnpLibraryView : UserControl
     {
         var items = e.DataTransfer.TryGetFiles();
         if (items == null) return;
-        if (DataContext is not SnpLibraryViewModel vm) return;
+        if (DataContext is not DataSourceLibraryViewModel vm) return;
 
         foreach (var item in items.OfType<IStorageFile>())
         {

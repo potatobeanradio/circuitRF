@@ -1,10 +1,5 @@
 // ================================================================
-//  SnpLibraryViewModel.cs  —  manages all data-source files loaded in memory
-//
-//  NAMING DEBT: This class now loads both Touchstone (.sNp) and .npy files.
-//  Each entry carries a DataSet; .npy-with-S exposes a ToSnp SNP for the
-//  existing picker.  Rename to DataSourceLibraryViewModel in 7.2c when the
-//  cube-native trace path + class rename ship.
+//  DataSourceLibraryViewModel.cs  —  manages all data-source files loaded in memory
 // ================================================================
 
 using System;
@@ -12,6 +7,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Avalonia.Platform.Storage;
@@ -21,9 +17,9 @@ using RfCore.Export;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
-public partial class SnpLibraryViewModel : ViewModelBase
+public partial class DataSourceLibraryViewModel : ViewModelBase
 {
-    public ObservableCollection<SnpEntryViewModel> Entries { get; } = new();
+    public ObservableCollection<DataSourceEntryViewModel> Entries { get; } = new();
 
     /// <summary>
     /// Fired after any load, reload, remove, or restore operation.
@@ -31,6 +27,21 @@ public partial class SnpLibraryViewModel : ViewModelBase
     /// path rebuilds when data changes in-place.
     /// </summary>
     public event EventHandler? LibraryChanged;
+
+    /// <summary>Fired once per source path when a source with non-uniform or complex Z0 is loaded.
+    /// Workspace subscribes and posts a one-time warning to the Messages pane.</summary>
+    public event Action<string, Z0Kind, IReadOnlyList<Complex>>? UnusualZ0Detected;
+
+    // Tracks which paths have already triggered the unusual-Z0 warning (per library instance).
+    private readonly HashSet<string> _warnedPaths = new(StringComparer.OrdinalIgnoreCase);
+
+    private void MaybeFireUnusualZ0Warning(DataSourceEntryViewModel entry)
+    {
+        if (!entry.HasUnusualZ0) return;
+        if (entry.FilePath is not string path) return;
+        if (!_warnedPaths.Add(path)) return;
+        UnusualZ0Detected?.Invoke(path, entry.Z0Kind!.Value, entry.Z0PerPort);
+    }
 
     // ---- UI callbacks set from code-behind --------------------------------
 
@@ -99,8 +110,10 @@ public partial class SnpLibraryViewModel : ViewModelBase
         catch { return; }
 
         snp.FilePath = path;
-        Entries.Add(new SnpEntryViewModel(snp, this));
+        var newEntry = new DataSourceEntryViewModel(snp, this);
+        Entries.Add(newEntry);
         UpdateDisplayNames();
+        MaybeFireUnusualZ0Warning(newEntry);
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -146,8 +159,10 @@ public partial class SnpLibraryViewModel : ViewModelBase
         catch { return; }
 
         snp.FilePath = path;
-        Entries.Add(new SnpEntryViewModel(snp, this));
+        var newEntry2 = new DataSourceEntryViewModel(snp, this);
+        Entries.Add(newEntry2);
         UpdateDisplayNames();
+        MaybeFireUnusualZ0Warning(newEntry2);
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -163,17 +178,17 @@ public partial class SnpLibraryViewModel : ViewModelBase
                 StringComparison.OrdinalIgnoreCase)))
             return;
 
-        SnpEntryViewModel entry;
+        DataSourceEntryViewModel entry;
         if (IsNpyExtension(Path.GetExtension(path)))
         {
             // Broken .npy: use SNP.CreateBroken so IsBroken returns true,
             // but store no DataSet (file is missing).
-            entry = new SnpEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this);
+            entry = new DataSourceEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this);
         }
         else
         {
             var snp = SNP.CreateBroken(path);
-            entry = new SnpEntryViewModel(snp, this);
+            entry = new DataSourceEntryViewModel(snp, this);
         }
 
         Entries.Add(entry);
@@ -185,7 +200,7 @@ public partial class SnpLibraryViewModel : ViewModelBase
     /// Replace a broken entry's data with a freshly-loaded file.
     /// Routes by extension; updates the path if the user chose a different location.
     /// </summary>
-    public async Task RestoreBrokenEntry(SnpEntryViewModel entry, string newPath)
+    public async Task RestoreBrokenEntry(DataSourceEntryViewModel entry, string newPath)
     {
         if (entry.Kind == SourceKind.Npy)
         {
@@ -195,6 +210,7 @@ public partial class SnpLibraryViewModel : ViewModelBase
 
             entry.RefreshNpy(data, newPath);
             UpdateDisplayNames();
+            MaybeFireUnusualZ0Warning(entry);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
         else
@@ -205,6 +221,7 @@ public partial class SnpLibraryViewModel : ViewModelBase
 
             entry.RefreshTouchstone(newData, newPath);
             UpdateDisplayNames();
+            MaybeFireUnusualZ0Warning(entry);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -213,7 +230,7 @@ public partial class SnpLibraryViewModel : ViewModelBase
     /// Reload an entry from disk, or prompt the user to find a missing file
     /// when the entry is broken.
     /// </summary>
-    public async Task ReloadAsync(SnpEntryViewModel entry)
+    public async Task ReloadAsync(DataSourceEntryViewModel entry)
     {
         bool filePresent = !string.IsNullOrEmpty(entry.FilePath)
                            && File.Exists(entry.FilePath);
@@ -267,8 +284,9 @@ public partial class SnpLibraryViewModel : ViewModelBase
     }
 
     /// <summary>Remove an entry from the library (does not delete the file).</summary>
-    public void Remove(SnpEntryViewModel entry)
+    public void Remove(DataSourceEntryViewModel entry)
     {
+        if (entry.FilePath is string fp) _warnedPaths.Remove(fp);
         Entries.Remove(entry);
         UpdateDisplayNames();
         LibraryChanged?.Invoke(this, EventArgs.Empty);
@@ -355,8 +373,10 @@ public partial class SnpLibraryViewModel : ViewModelBase
             catch { snp = null; }
         }
 
-        Entries.Add(new SnpEntryViewModel(path, data, snp, this));
+        var npyEntry = new DataSourceEntryViewModel(path, data, snp, this);
+        Entries.Add(npyEntry);
         UpdateDisplayNames();
+        MaybeFireUnusualZ0Warning(npyEntry);
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 

@@ -218,18 +218,18 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         //  Direct Property: Library
         // ============================================================
 
-        public static readonly DirectProperty<PlotControl, SnpLibraryViewModel?> LibraryProperty =
-            AvaloniaProperty.RegisterDirect<PlotControl, SnpLibraryViewModel?>(
+        public static readonly DirectProperty<PlotControl, DataSourceLibraryViewModel?> LibraryProperty =
+            AvaloniaProperty.RegisterDirect<PlotControl, DataSourceLibraryViewModel?>(
                 nameof(Library),
                 o => o.Library,
                 (o, v) => o.Library = v);
 
-        private SnpLibraryViewModel? _library;
+        private DataSourceLibraryViewModel? _library;
 
         /// <summary>
         /// SNP library reference forwarded to the flyout PlotInspectorViewModel.
         /// </summary>
-        public SnpLibraryViewModel? Library
+        public DataSourceLibraryViewModel? Library
         {
             get => _library;
             set => SetAndRaise(LibraryProperty, ref _library, value);

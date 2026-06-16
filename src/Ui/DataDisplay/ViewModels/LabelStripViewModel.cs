@@ -25,6 +25,13 @@ public partial class LabelStripViewModel : ObservableObject
     [ObservableProperty] private string? _customLabel;
 
     /// <summary>
+    /// Minimal label computed at the plot level by <see cref="TraceLabeler.ComputeMinimalLabels"/>.
+    /// Used when <see cref="CustomLabel"/> is null.  If both are null the control falls
+    /// back to <see cref="Trace.ShortDescription"/>.
+    /// </summary>
+    [ObservableProperty] private string? _autoLabel;
+
+    /// <summary>
     /// When true (default), the label includes the source filename prefix.
     /// Set to false when the plot contains only one data source so the prefix
     /// adds no information — mirrors <see cref="Trace.ShortDescription"/>.

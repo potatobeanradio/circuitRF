@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Renderers;
 using SkiaSharp;
 using RfCore;
@@ -560,6 +561,13 @@ namespace CircuitRF.Ui.DataDisplay
                     tickFont.MeasureText(plot.Axes.WindowSecondary.Bottom.ToString($"G{plot.Axes.NumDigitsRightY}")));
                 float rightAnchor = vpRight + lw * 4f + rightTickW + DescriptionStripPad * lw;
 
+                // Compute per-plot minimal labels (same policy as the label-strip controls).
+                bool alwaysSource = AppSettingsViewModel.Instance.AlwaysDisplayDataSourcePrefix;
+                var  allLabels    = TraceLabeler.ComputeMinimalLabels(plot.Traces, alwaysSource);
+                var  labelLookup  = new Dictionary<Trace, string>();
+                for (int i = 0; i < plot.Traces.Count; i++)
+                    labelLookup[plot.Traces[i]] = allLabels[i];
+
                 string yLabel = plot.YLabel;
                 if (!string.IsNullOrEmpty(yLabel))
                 {
@@ -573,7 +581,7 @@ namespace CircuitRF.Ui.DataDisplay
                     for (int i = 0; i < leftTraces.Count; i++)
                     {
                         float cx = leftAnchor - sw * (i + 0.5f);
-                        DrawAt(showFilePrefix ? leftTraces[i].Description : leftTraces[i].ShortDescription,
+                        DrawAt(labelLookup.GetValueOrDefault(leftTraces[i], leftTraces[i].ShortDescription),
                                RenderTheme.ToSKColor(leftTraces[i].Properties.LineColor),
                                cx, false);
                     }
@@ -592,7 +600,7 @@ namespace CircuitRF.Ui.DataDisplay
                     for (int i = 0; i < rightTraces.Count; i++)
                     {
                         float cx = rightAnchor + sw * (i + 0.5f);
-                        DrawAt(showFilePrefix ? rightTraces[i].Description : rightTraces[i].ShortDescription,
+                        DrawAt(labelLookup.GetValueOrDefault(rightTraces[i], rightTraces[i].ShortDescription),
                                RenderTheme.ToSKColor(rightTraces[i].Properties.LineColor),
                                cx, true);
                     }

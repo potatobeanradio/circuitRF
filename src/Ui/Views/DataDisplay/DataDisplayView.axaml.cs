@@ -30,16 +30,16 @@ public partial class DataDisplayView : UserControl
         // Geometry not persisted — embedded Dock document, not a floating OS window.
         win.SetGetWindowGeometryAction(() => (0, 0, 0, 0));
 
-        // Wire SnpLibrary helpers so context-menu and broken-entry operations work.
-        win.SnpLibrary.ImportCommand = win.OpenFileCommand;
+        // Wire DataSourceLibrary helpers so context-menu and broken-entry operations work.
+        win.DataSourceLibrary.ImportCommand = win.OpenFileCommand;
 
-        win.SnpLibrary.CopyToClipboardFunc = async text =>
+        win.DataSourceLibrary.CopyToClipboardFunc = async text =>
         {
             var cb = TopLevel.GetTopLevel(this)?.Clipboard;
             if (cb is not null) await cb.SetTextAsync(text);
         };
 
-        win.SnpLibrary.FindMissingFileAsync = path => FindMissingSnpFileAsync(path);
+        win.DataSourceLibrary.FindMissingFileAsync = path => FindMissingSnpFileAsync(path);
     }
 
     private async Task DoOpenFileAsync()
@@ -70,7 +70,7 @@ public partial class DataDisplayView : UserControl
         });
 
         foreach (var f in files)
-            await doc.ViewModel.Window.SnpLibrary.LoadFileAsync(f.Path.LocalPath);
+            await doc.ViewModel.Window.DataSourceLibrary.LoadFileAsync(f.Path.LocalPath);
     }
 
     private async Task DoSaveDisplayAsAsync()

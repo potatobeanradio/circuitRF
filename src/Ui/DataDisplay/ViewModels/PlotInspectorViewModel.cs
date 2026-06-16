@@ -6,10 +6,12 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Material.Icons;
 using RfCore;
+using RfCore.Data;
 using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
@@ -65,7 +67,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     private readonly Plot                _plot;
     private readonly Action              _closeAction;
-    private readonly SnpLibraryViewModel? _library;
+    private readonly DataSourceLibraryViewModel? _library;
 
     public event EventHandler? PlotNeedsRedraw;
     public event EventHandler? PlotStructureChanged;
@@ -100,6 +102,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
         new SymbolModeItem(false, MarkerType.Square, MaterialIconKind.Square),
     };
 
+    // Cube transform options for the cube-bound trace row (Phase 7.2c-a).
+    public static IReadOnlyList<CubeTransformItem> AllCubeTransforms { get; } =
+        Enum.GetValues<CubeTransform>().Select(t => new CubeTransformItem(t)).ToList();
+
     public static IReadOnlyList<ColorItem> ColorItems { get; } = BuildColorItems();
 
     private static IReadOnlyList<ColorItem> BuildColorItems()
@@ -120,11 +126,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     // ---- Library access (for TraceRowViewModel) -------------------------
 
-    /// <summary>Live collection of loaded SNP entries, forwarded to each trace row.</summary>
-    public ObservableCollection<SnpEntryViewModel> LibraryEntries =>
+    /// <summary>Live collection of loaded data-source entries, forwarded to each trace row.</summary>
+    public ObservableCollection<DataSourceEntryViewModel> LibraryEntries =>
         _library?.Entries ?? _emptyEntries;
 
-    private static readonly ObservableCollection<SnpEntryViewModel> _emptyEntries = new();
+    private static readonly ObservableCollection<DataSourceEntryViewModel> _emptyEntries = new();
 
     // ---- Plot-level properties ------------------------------------------
 
@@ -196,7 +202,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public PlotInspectorViewModel(
         Plot                  plot,
         Action                closeAction,
-        SnpLibraryViewModel?  library = null)
+        DataSourceLibraryViewModel?  library = null)
     {
         _plot        = plot;
         _closeAction = closeAction;
@@ -226,12 +232,23 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     private void OnLibraryChanged(object? sender, EventArgs e)
     {
-        // Remove traces whose SNP is no longer present in the library.
+        // Remove network-bound traces whose SNP is no longer in the library.
         var librarySnps = new System.Collections.Generic.HashSet<SNP>(
             _library!.Entries.Select(entry => entry.Snp).OfType<SNP>());
 
+        // Also track current file paths for cube-bound stale detection.
+        var libraryPaths = new System.Collections.Generic.HashSet<string>(
+            _library.Entries.Select(e2 => e2.FilePath).OfType<string>(),
+            StringComparer.OrdinalIgnoreCase);
+
         var staleVms = Traces
-            .Where(rv => rv.Trace.Data is not null && !librarySnps.Contains(rv.Trace.Data))
+            .Where(rv =>
+            {
+                var t = rv.Trace;
+                return t.IsCubeBound
+                    ? t.SourcePath is null || !libraryPaths.Contains(t.SourcePath)
+                    : t.Data is not null && !librarySnps.Contains(t.Data);
+            })
             .ToList();
 
         foreach (var vm in staleVms)
@@ -243,7 +260,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         // Rebuild paths for remaining traces (handles in-place reload/restore).
         foreach (var t in _plot.Traces)
-            t.BuildPath(_plot.PlotType, _plot.FreqUnits);
+        {
+            if (t.IsCubeBound)
+                TrySetCubeData(t, _library, _plot.PlotType, _plot.FreqUnits);
+            else
+                t.BuildPath(_plot.PlotType, _plot.FreqUnits);
+        }
 
         // Refresh signal ComboBoxes — needed when an entry is restored in-place
         // (no CollectionChanged fires in that case, only LibraryChanged).
@@ -308,10 +330,100 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public void RebuildAndNotify()
     {
         foreach (var t in _plot.Traces)
-            t.BuildPath(_plot.PlotType, _plot.FreqUnits);
+        {
+            if (t.IsCubeBound)
+                TrySetCubeData(t, _library, _plot.PlotType, _plot.FreqUnits);
+            else
+            {
+                // Keep per-port Z0 fresh on network-bound traces (handles in-place reload).
+                RefreshSourceZ0(t, _library);
+                t.BuildPath(_plot.PlotType, _plot.FreqUnits);
+            }
+        }
         _plot.Autoscale();
         foreach (var vm in Traces) vm.RefreshDescription();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Reads the source DataSet's Z0 cube and stamps SourceZ0PerPort / SourceZ0IsUnusual
+    /// on the trace.  No-op for cube-bound traces (handled by TrySetCubeData path).
+    /// </summary>
+    private void RefreshSourceZ0(Trace t, DataSourceLibraryViewModel? library)
+    {
+        if (library is null || t.SourcePath is null) return;
+
+        var entry = library.Entries.FirstOrDefault(e =>
+            string.Equals(e.FilePath, t.SourcePath, StringComparison.OrdinalIgnoreCase));
+
+        if (entry is not null)
+            TraceRowViewModel.StampSourceZ0OnTrace(t, entry);
+    }
+
+    // ---- Cube data resolution (Phase 7.2c-a) ----------------------------
+
+    /// <summary>
+    /// Resolves a cube-bound trace's SourcePath+CubeName+Slice against the library,
+    /// slices the DataCube to 1-D, and calls Trace.SetCubeData.
+    /// If resolution fails (missing entry, missing cube, wrong rank), Points are cleared.
+    /// Static so DataDisplayViewModel can call it during load before an inspector exists.
+    /// </summary>
+    internal static void TrySetCubeData(Trace t, DataSourceLibraryViewModel? library,
+                                        PlotType plotType, FreqUnit freqUnit)
+    {
+        if (!t.IsCubeBound) return;
+
+        DataSourceEntryViewModel? entry = null;
+        if (library is not null && t.SourcePath is not null)
+        {
+            entry = library.Entries.FirstOrDefault(e =>
+                string.Equals(e.FilePath, t.SourcePath, StringComparison.OrdinalIgnoreCase));
+        }
+
+        DataSet? ds = entry?.Data;
+        if (ds is null || t.CubeName is null || !ds.Contains(t.CubeName))
+        {
+            t.Points.Clear();
+            return;
+        }
+
+        var cube  = ds[t.CubeName];
+        var slice = t.Slice;
+        if (slice is null || slice.Length != cube.Rank)
+        {
+            t.Points.Clear();
+            return;
+        }
+
+        // Build indexer args: Range.All for KeepAsX, int index for PinToIndex.
+        var args = new object[cube.Rank];
+        for (int d = 0; d < cube.Rank; d++)
+        {
+            args[d] = slice[d].Role == AxisRole.KeepAsX
+                ? (object)Range.All
+                : (object)Math.Clamp(slice[d].Index, 0, cube.Axes[d].Length - 1);
+        }
+
+        var result = cube[args];
+        if (!result.IsCube)
+        {
+            t.Points.Clear();
+            return;
+        }
+
+        var sliced = result.Cube!;
+        if (sliced.Rank != 1)
+        {
+            t.Points.Clear();
+            return;
+        }
+
+        var xAxis = sliced.Axes[0];
+        Complex[]? complexValues = sliced.DataKind == DataKind.Complex ? sliced.ComplexValues : null;
+        double[]?  realValues    = sliced.DataKind == DataKind.Real    ? sliced.RealValues    : null;
+
+        t.SetCubeData(xAxis.Values, complexValues, realValues,
+                      xAxis.Name, xAxis.Unit, plotType, freqUnit);
     }
 
     /// <summary>

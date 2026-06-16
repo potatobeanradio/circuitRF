@@ -228,7 +228,7 @@ public partial class DataDisplayViewModel : ViewModelBase
     // ---- Shared state propagated to all containers ------------------
 
     private RenderTheme          _theme   = RenderTheme.Light;
-    private SnpLibraryViewModel? _library;
+    private DataSourceLibraryViewModel? _library;
 
     public RenderTheme Theme
     {
@@ -243,7 +243,7 @@ public partial class DataDisplayViewModel : ViewModelBase
         }
     }
 
-    public SnpLibraryViewModel? Library
+    public DataSourceLibraryViewModel? Library
     {
         get => _library;
         set
@@ -359,7 +359,7 @@ public partial class DataDisplayViewModel : ViewModelBase
 
     // ---- Constructor ------------------------------------------------
 
-    public DataDisplayViewModel(SnpLibraryViewModel library, bool addEmptyPlot = true, bool selectEmptyPlot = true)
+    public DataDisplayViewModel(DataSourceLibraryViewModel library, bool addEmptyPlot = true, bool selectEmptyPlot = true)
     {
         _library = library;
         library.LibraryChanged            += (_, _) => OnLibraryEntryCountChanged();
@@ -879,38 +879,63 @@ public partial class DataDisplayViewModel : ViewModelBase
                 ? traceConfig.SourcePath
                 : Path.GetFullPath(Path.Combine(configDir, traceConfig.SourcePath));
 
+            // Look up (or load) the library entry; also grab the SNP for network-bound traces.
+            DataSourceEntryViewModel? libEntry = null;
             SNP? snp = null;
 
             if (Library is not null)
             {
-                snp = Library.Entries
+                libEntry = Library.Entries
                     .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
-                                         StringComparison.OrdinalIgnoreCase))?.Snp;
+                                         StringComparison.OrdinalIgnoreCase));
 
-                if (snp is null)
+                if (libEntry is null)
                 {
                     if (File.Exists(resolvedPath))
                     {
                         await Library.LoadFileAsync(resolvedPath);
-                        snp = Library.Entries
+                        libEntry = Library.Entries
                             .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
-                                                 StringComparison.OrdinalIgnoreCase))?.Snp;
+                                                 StringComparison.OrdinalIgnoreCase));
                     }
                     else
                     {
                         Library.AddBrokenEntry(resolvedPath);
-                        snp = Library.Entries
+                        libEntry = Library.Entries
                             .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
-                                                 StringComparison.OrdinalIgnoreCase))?.Snp;
+                                                 StringComparison.OrdinalIgnoreCase));
                     }
                 }
+
+                snp = libEntry?.Snp;
             }
 
-            if (snp is null) continue;
+            bool isCubeBound = traceConfig.CubeName is not null && traceConfig.CubeSlice.Count > 0;
 
-            var trace = new Trace(snp, traceConfig.MatrixType, traceConfig.Row,
+            // Network-bound: must have a valid SNP. Cube-bound: must have an entry in the library.
+            if (!isCubeBound && snp is null) continue;
+            if (isCubeBound  && libEntry is null) continue;
+
+            Trace trace;
+            if (isCubeBound)
+            {
+                // Use a placeholder SNP (or the actual SNP if the file has one).
+                var placeholderSnp = snp ?? new SNP(new double[] { 1e9 }, 2);
+                trace = new Trace(placeholderSnp, MatrixType.S, 0, 0,
+                                  DependentVarFormat.Db, traceConfig.UseSecondaryAxis);
+                trace.CubeName  = traceConfig.CubeName;
+                trace.Transform = traceConfig.CubeTransform;
+                trace.Slice     = traceConfig.CubeSlice
+                    .Select(s => new AxisSlice(s.AxisName, s.Role, s.Index))
+                    .ToArray();
+            }
+            else
+            {
+                trace = new Trace(snp!, traceConfig.MatrixType, traceConfig.Row,
                                   traceConfig.Col, traceConfig.YAxis, traceConfig.UseSecondaryAxis);
-            trace.Derived               = traceConfig.Derived;
+                trace.Derived = traceConfig.Derived;
+            }
+
             trace.SourcePath            = resolvedPath;
             trace.MatrixFormat          = traceConfig.MatrixFormat;
             trace.ColumnWidth           = traceConfig.ColumnWidth > 0 ? traceConfig.ColumnWidth : 115;
@@ -922,8 +947,12 @@ public partial class DataDisplayViewModel : ViewModelBase
 
             ApplyProperties(traceConfig.Properties, trace.Properties);
 
-            if (!snp.IsEmpty)
+            if (isCubeBound)
+                PlotInspectorViewModel.TrySetCubeData(trace, Library, pc.PlotType, pc.FreqUnit);
+            else if (snp is not null && !snp.IsEmpty)
                 trace.BuildPath(pc.PlotType, pc.FreqUnit);
+
+            if (isCubeBound) { plot.Traces.Add(trace); continue; } // markers not supported yet
 
             foreach (var mc in traceConfig.Markers)
             {
@@ -1028,8 +1057,11 @@ public partial class DataDisplayViewModel : ViewModelBase
 
     internal static TraceConfig BuildTraceConfig(Trace t, string configDir)
     {
-        // Use the SNP's authoritative FilePath; write relative when same directory.
-        string? sourcePath = t.Data?.FilePath ?? t.SourcePath;
+        // For cube-bound, SourcePath is the authority; network-bound uses the SNP's FilePath.
+        string? sourcePath = t.IsCubeBound
+            ? t.SourcePath
+            : (t.Data?.FilePath ?? t.SourcePath);
+
         if (sourcePath != null && !string.IsNullOrEmpty(configDir))
         {
             string? srcDir = Path.GetDirectoryName(sourcePath);
@@ -1051,6 +1083,17 @@ public partial class DataDisplayViewModel : ViewModelBase
             ColumnWidth           = t.ColumnWidth,
             FormatString          = t.FormatString,
             MaximumFractionDigits = t.MaximumFractionDigits,
+            // Cube-bound identity fields (Phase 7.2c-a). Null = network-bound.
+            CubeName      = t.CubeName,
+            CubeTransform = t.Transform,
+            CubeSlice     = t.Slice is null
+                ? new()
+                : t.Slice.Select(s => new AxisSliceConfig
+                  {
+                      AxisName = s.AxisName,
+                      Role     = s.Role,
+                      Index    = s.Index,
+                  }).ToList(),
             Properties       = new TracePropertiesConfig
             {
                 LineEnabled      = t.Properties.LineEnabled,
@@ -1095,7 +1138,7 @@ public partial class DataDisplayViewModel : ViewModelBase
     /// existing plots.  Each pasted plot is offset by <see cref="PasteOffset"/> logical
     /// pixels so it does not land exactly on top of existing content.
     /// Source files that are not already in the library are loaded (or added as broken
-    /// entries when missing) so the SnpLibraryView shows every required path.
+    /// entries when missing) so the DataSourceLibraryView shows every required path.
     /// Returns the list of newly-added containers (used to record a PasteCommand for undo).
     /// </summary>
     public async Task<IReadOnlyList<PlotContainerViewModel>> PasteFromConfigAsync(DataDisplayConfig config)

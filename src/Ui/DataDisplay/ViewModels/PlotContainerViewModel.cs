@@ -57,7 +57,7 @@ public partial class PlotContainerViewModel : ViewModelBase
     // ---- Theme / library (propagated from DataDisplayViewModel) -----
 
     [ObservableProperty] private RenderTheme             _theme   = RenderTheme.Light;
-    [ObservableProperty] private SnpLibraryViewModel?    _library;
+    [ObservableProperty] private DataSourceLibraryViewModel?    _library;
 
     // ---- Derived properties -----------------------------------------
 
@@ -232,7 +232,7 @@ public partial class PlotContainerViewModel : ViewModelBase
 
     // Library is assigned via object-initializer AFTER the constructor body runs,
     // so subscriptions must go here, not in the constructor.
-    partial void OnLibraryChanged(SnpLibraryViewModel? value)
+    partial void OnLibraryChanged(DataSourceLibraryViewModel? value)
     {
         if (value is null) return;
         value.LibraryChanged            += (_, _) => OnLibraryEntryCountChanged();
@@ -401,11 +401,18 @@ public partial class PlotContainerViewModel : ViewModelBase
                 bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
                     (Library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
 
+                // Compute minimal labels over all traces in the plot.
+                bool alwaysSource = AppSettingsViewModel.Instance.AlwaysDisplayDataSourcePrefix;
+                var  allLabels    = TraceLabeler.ComputeMinimalLabels(plot.Traces, alwaysSource);
+                var  labelMap     = new Dictionary<Trace, string>();
+                for (int i = 0; i < plot.Traces.Count; i++)
+                    labelMap[plot.Traces[i]] = allLabels[i];
+
                 var leftTraces  = plot.LeftAxisTraces;
                 var rightTraces = plot.RightAxisTraces;
 
                 // Custom Y label: one strip showing the custom text — no per-trace strips.
-                // No custom label: one strip per trace.
+                // No custom label: one strip per trace, AutoLabel set to the computed minimal label.
                 if (hasCustomY && leftTraces.Count > 0)
                 {
                     LeftLabelStrips.Add(new LabelStripViewModel(leftTraces[0], false, sw, th)
@@ -415,7 +422,10 @@ public partial class PlotContainerViewModel : ViewModelBase
                 {
                     foreach (var t in leftTraces)
                         LeftLabelStrips.Add(new LabelStripViewModel(t, false, sw, th)
-                            { ShowFilePrefix = showFilePrefix });
+                        {
+                            ShowFilePrefix = showFilePrefix,
+                            AutoLabel      = labelMap.GetValueOrDefault(t)
+                        });
                 }
 
                 if (hasCustomY2 && rightTraces.Count > 0)
@@ -427,7 +437,10 @@ public partial class PlotContainerViewModel : ViewModelBase
                 {
                     foreach (var t in rightTraces)
                         RightLabelStrips.Add(new LabelStripViewModel(t, true, sw, th)
-                            { ShowFilePrefix = showFilePrefix });
+                        {
+                            ShowFilePrefix = showFilePrefix,
+                            AutoLabel      = labelMap.GetValueOrDefault(t)
+                        });
                 }
             }
         }

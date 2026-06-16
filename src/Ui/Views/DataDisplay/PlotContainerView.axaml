@@ -49,6 +49,7 @@
                         Width="{Binding StripWidth}"
                         PlotTheme="{Binding Theme}"
                         CustomLabel="{Binding CustomLabel}"
+                        AutoLabel="{Binding AutoLabel}"
                         ShowFilePrefix="{Binding ShowFilePrefix}"
                         AppearanceRevision="{Binding AppearanceRevision}"/>
                 </DataTemplate>
@@ -118,6 +119,7 @@
                         Width="{Binding StripWidth}"
                         PlotTheme="{Binding Theme}"
                         CustomLabel="{Binding CustomLabel}"
+                        AutoLabel="{Binding AutoLabel}"
                         ShowFilePrefix="{Binding ShowFilePrefix}"
                         AppearanceRevision="{Binding AppearanceRevision}"/>
                 </DataTemplate>

@@ -393,9 +393,10 @@
                                             </ComboBox.ItemTemplate>
                                         </ComboBox>
 
+                                        <!-- Y-axis format: network-bound Rect/Table only -->
                                         <ComboBox Grid.Column="2"
                                                   Classes="compact"
-                                                  IsVisible="{Binding IsRectOrTablePlot}"
+                                                  IsVisible="{Binding ShowYAxisCombo}"
                                                   ItemsSource="{Binding AvailableYAxes}"
                                                   SelectedItem="{Binding SelectedYAxis, Mode=TwoWay}"
                                                   HorizontalAlignment="Stretch">
@@ -407,6 +408,20 @@
                                             </ComboBox.ItemContainerTheme>
                                             <ComboBox.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:YAxisItem">
+                                                    <TextBlock Text="{Binding Label}"
+                                                               FontSize="{StaticResource FontSize}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <!-- Cube transform: cube-bound traces only (Phase 7.2c-a) -->
+                                        <ComboBox Grid.Column="2"
+                                                  IsVisible="{Binding IsCubeBoundTrace}"
+                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.AllCubeTransforms}"
+                                                  SelectedItem="{Binding SelectedCubeTransformItem, Mode=TwoWay}"
+                                                  HorizontalAlignment="Stretch">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:CubeTransformItem">
                                                     <TextBlock Text="{Binding Label}"
                                                                FontSize="{StaticResource FontSize}"/>
                                                 </DataTemplate>
@@ -610,43 +625,44 @@
                                         </Grid>
 
                                         <!-- Z0 row -->
-                                        <Grid ColumnDefinitions="Auto,Auto,Auto,*">
+                                        <StackPanel Orientation="Horizontal" Spacing="6"
+                                                    VerticalAlignment="Center">
 
-                                            <TextBlock Grid.Column="0" Text="Z0"
-                                                       Classes="label" Margin="0,0,4,0"/>
-                                            <TextBox   Grid.Column="1"
-                                                       Text="{Binding Z0String, Mode=TwoWay}"
-                                                       FontSize="{StaticResource FontSize}"
-                                                       Height="20"
-                                                       MinHeight="0"
-                                                       Width="65"
-                                                       Padding="4,3"
-                                                       PlaceholderText="50+j0"
-                                                       HorizontalAlignment="Left"
-                                                       VerticalAlignment="Center"
-                                                       Margin="0,0,4,0"
-                                                       ToolTip.Tip="Reference impedance (all Ports)"/>
-                                            <TextBlock Grid.Column="2" Text="Ω"
-                                                       Classes="label"
-                                                       HorizontalAlignment="Left"/>
-                                            <ComboBox Grid.Column="3"
-                                                      ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
-                                                      SelectedIndex="{Binding LineColorIndex, Mode=TwoWay}"
-                                                      IsEnabled="{Binding LineEnabled}"
-                                                      IsVisible="{Binding IsTablePlot}"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      Padding="4,0"
-                                                      ToolTip.Tip="Highlight color">
-                                                <ComboBox.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:ColorItem">
-                                                        <Border Width="34" Height="10" Background="{Binding Brush}" CornerRadius="2"
-                                                                ToolTip.Tip="{Binding Name}"/>
-                                                    </DataTemplate>
-                                                </ComboBox.ItemTemplate>
-                                            </ComboBox>
+                                            <TextBlock Text="Z0"
+                                                       Classes="label" Margin="0,0,0,0"
+                                                       VerticalAlignment="Center"/>
 
-                                        </Grid>
+                                            <!-- Non-uniform: no box, subtle grey label -->
+                                            <TextBlock Text="Multiple Port Normalization"
+                                                       IsVisible="{Binding IsMultiPortNormalization}">
+                                                <TextBlock.Foreground>
+                                                    <SolidColorBrush Color="{DynamicResource SystemBaseMediumColor}" Opacity="0.6"/>
+                                                </TextBlock.Foreground>
+                                            </TextBlock>
+
+                                            <!-- Uniform source: read-only-by-default box + Override checkbox -->
+                                            <StackPanel Orientation="Horizontal" Spacing="6"
+                                                        IsVisible="{Binding ShowZ0Control}"
+                                                        VerticalAlignment="Center">
+                                                <TextBox Text="{Binding Z0String, Mode=TwoWay}"
+                                                         IsEnabled="{Binding IsZ0Editable}"
+                                                         FontSize="{StaticResource FontSize}"
+                                                         Height="20"
+                                                         MinHeight="0"
+                                                         Width="120"
+                                                         Padding="4,3"
+                                                         PlaceholderText="50+j0"
+                                                         VerticalAlignment="Center"/>
+                                                <TextBlock Text="Ω"
+                                                           Classes="label"
+                                                           VerticalAlignment="Center"/>
+                                                <CheckBox Content="Override"
+                                                          IsChecked="{Binding Z0OverrideEnabled, Mode=TwoWay}"
+                                                          VerticalAlignment="Center"
+                                                          FontSize="{StaticResource FontSize}"/>
+                                            </StackPanel>
+
+                                        </StackPanel>
 
                                     </StackPanel>
                                     <!-- end trace body -->

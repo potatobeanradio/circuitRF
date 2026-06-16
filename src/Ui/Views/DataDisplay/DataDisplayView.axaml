@@ -120,9 +120,9 @@
         <!-- ── Main content: library | splitter | tabs + inspector ──────────── -->
         <Grid ColumnDefinitions="180,4,*">
 
-            <!-- Left: SNP library panel -->
-            <v:SnpLibraryView Grid.Column="0"
-                              DataContext="{Binding ViewModel.Window.SnpLibrary}"/>
+            <!-- Left: data-source library panel -->
+            <v:DataSourceLibraryView Grid.Column="0"
+                              DataContext="{Binding ViewModel.Window.DataSourceLibrary}"/>
 
             <GridSplitter Grid.Column="1"
                           Background="{DynamicResource SystemBaseLowColor}"
