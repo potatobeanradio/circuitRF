@@ -445,8 +445,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
             }
             if (found?.Role == AxisRole.KeepAsX)
             {
-                args[d] = Range.All;
-                xDim    = d;
+                args[d] = found.Value.IsNarrowedRange
+                    ? new Range(found.Value.RangeStart, found.Value.RangeEndExclusive)
+                    : Range.All;
+                xDim = d;
             }
             else
             {

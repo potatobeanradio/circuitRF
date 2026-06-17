@@ -101,60 +101,30 @@ namespace CircuitRF.Ui.DataDisplay
                 return false;
             }
 
-            int colonCount = tokens.Count(t => t == ":");
-            if (colonCount != 1)
-            {
-                error = colonCount == 0
-                    ? "Need exactly one ':' to mark the X axis."
-                    : "Too many ':' tokens — only one X axis is allowed.";
-                return false;
-            }
-
             slice = new AxisSlice[tokens.Length];
+            int xCount = 0;
             for (int i = 0; i < tokens.Length; i++)
             {
-                var axis  = cube.Axes[i];
-                string tk = tokens[i];
-
-                if (tk == ":")
+                var axis = cube.Axes[i];
+                var t = SliceTokenParser.Parse(tokens[i], axis.Length, axis.Labels, axis.Name, out error);
+                switch (t.Kind)
                 {
-                    slice[i] = new AxisSlice(axis.Name, AxisRole.KeepAsX, 0);
-                    continue;
+                    case SliceTokenParser.Kind.KeepWhole:
+                        slice[i] = new AxisSlice(axis.Name, AxisRole.KeepAsX, 0); xCount++; break;
+                    case SliceTokenParser.Kind.KeepRange:
+                        slice[i] = new AxisSlice(axis.Name, AxisRole.KeepAsX, t.RangeStart,
+                                                 t.RangeStart, t.RangeEndExclusive); xCount++; break;
+                    case SliceTokenParser.Kind.PinIndex:
+                        slice[i] = new AxisSlice(axis.Name, AxisRole.PinToIndex, t.Index); break;
+                    default:
+                        return false;   // error already set by SliceTokenParser
                 }
+            }
 
-                // Quoted label: "Vout"
-                if (tk.Length >= 2 && tk[0] == '"' && tk[^1] == '"')
-                {
-                    string label = tk[1..^1];
-                    if (axis.Labels is null)
-                    {
-                        error = $"Axis '{axis.Name}' has no labels; use a numeric index.";
-                        return false;
-                    }
-                    int idx = Array.IndexOf(axis.Labels, label);
-                    if (idx < 0)
-                    {
-                        var available = string.Join(", ", axis.Labels);
-                        error = $"No label '{label}' in axis '{axis.Name}'. Labels: {available}.";
-                        return false;
-                    }
-                    slice[i] = new AxisSlice(axis.Name, AxisRole.PinToIndex, idx);
-                    continue;
-                }
-
-                // Integer index.
-                if (int.TryParse(tk, out int index))
-                {
-                    if (index < 0 || index >= axis.Length)
-                    {
-                        error = $"Index {index} out of range for axis '{axis.Name}' (0..{axis.Length - 1}).";
-                        return false;
-                    }
-                    slice[i] = new AxisSlice(axis.Name, AxisRole.PinToIndex, index);
-                    continue;
-                }
-
-                error = $"Cannot parse token '{tk}' for axis '{axis.Name}'.";
+            if (xCount != 1)
+            {
+                error = xCount == 0 ? "Need exactly one X axis (':', 'All', or a range)."
+                                    : "Too many X axes — only one ':'/range is allowed.";
                 return false;
             }
 

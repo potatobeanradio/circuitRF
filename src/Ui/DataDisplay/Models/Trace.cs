@@ -72,8 +72,15 @@ namespace CircuitRF.Ui.DataDisplay
     /// <summary>How a DataCube axis is consumed when building a 1-D trace.</summary>
     public enum AxisRole { PinToIndex, KeepAsX }
 
-    /// <summary>Per-axis slice directive for a cube-bound trace (one entry per cube axis, in axis order).</summary>
-    public readonly record struct AxisSlice(string AxisName, AxisRole Role, int Index);
+    /// <summary>Per-axis slice directive for a cube-bound trace (one entry per cube axis, in axis order).
+    /// For a kept sub-range (KeepAsX + RangeEndExclusive >= 0) the axis is sliced to [RangeStart, RangeEndExclusive)
+    /// (end-exclusive). RangeEndExclusive &lt; 0 means the whole axis (":"/All).</summary>
+    public readonly record struct AxisSlice(
+        string AxisName, AxisRole Role, int Index,
+        int RangeStart = 0, int RangeEndExclusive = -1)   // RangeEndExclusive < 0 ⇒ whole axis
+    {
+        public bool IsNarrowedRange => Role == AxisRole.KeepAsX && RangeEndExclusive >= 0;
+    }
 
     // ============================================================
     //  Trace

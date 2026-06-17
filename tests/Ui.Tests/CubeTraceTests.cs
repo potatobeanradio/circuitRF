@@ -1,9 +1,10 @@
 // ================================================================
-//  CubeTraceTests.cs  —  Phase 7.2c-a gate tests
+//  CubeTraceTests.cs  —  Phase 7.2c-a + Part 1 slice conformance
 //
 //  Verifies that cube-bound traces build points correctly,
 //  rank≥3 cubes are not offered in the signal picker,
-//  and the .cdd round-trip for cube identity fields is intact.
+//  .cdd round-trip is intact, and the new All/"a..b" slice tokens
+//  are accepted by CubeTraceSpecParser (brief-trace-sweep-conformance).
 // ================================================================
 
 using System;
@@ -156,5 +157,119 @@ public sealed class CubeTraceTests
         Assert.Null(nbConfig.CubeName);
         Assert.Empty(nbConfig.CubeSlice);
         Assert.Equal(CubeTransform.None, nbConfig.CubeTransform);
+    }
+}
+
+// ================================================================
+//  CubeSliceConformanceTests  —  Part 1 gate tests
+//  (brief-trace-sweep-conformance.md §1a: All / a..b in CubeTraceSpecParser)
+// ================================================================
+
+public sealed class CubeSliceConformanceTests
+{
+    // "V" cube: [freq(5), node(5), pin(2)] — gives room for 2..3 / 2..4 on axis 0.
+    private static DataSet MakeDs()
+    {
+        var freqAxis = new Axis("freq", new[] { 1e9, 2e9, 3e9, 4e9, 5e9 }, "Hz");
+        var nodeAxis = new Axis("node", new[] { 0.0, 1.0, 2.0, 3.0, 4.0 }, "");
+        var pinAxis  = new Axis("pin",  new[] { -10.0, 0.0 }, "dBm");
+        var data     = new System.Numerics.Complex[5 * 5 * 2];
+        var ds       = new DataSet();
+        ds.Add("V", new DataCube(new[] { freqAxis, nodeAxis, pinAxis }, data));
+        return ds;
+    }
+
+    // Test 1: "All" parses identically to ":"
+    [Fact]
+    public void All_ParsesLikeColon()
+    {
+        var ds = MakeDs();
+        bool ok1 = CubeTraceSpecParser.TryParse("V[:, 4, 1]",   ds, out _, out var s1, out _, out _);
+        bool ok2 = CubeTraceSpecParser.TryParse("V[All, 4, 1]", ds, out _, out var s2, out _, out _);
+
+        Assert.True(ok1);
+        Assert.True(ok2);
+        Assert.Equal(s1![0].Role, s2![0].Role);
+        Assert.Equal(AxisRole.KeepAsX, s2[0].Role);
+        Assert.False(s2[0].IsNarrowedRange);
+    }
+
+    // Test 2: "2..3" → KeepRange with length 1 (end-exclusive)
+    [Fact]
+    public void Range_2_3_LengthOne()
+    {
+        var ds = MakeDs();
+        bool ok = CubeTraceSpecParser.TryParse("V[2..3, 4, 1]", ds, out _, out var slice, out _, out string error);
+
+        Assert.True(ok, error);
+        Assert.NotNull(slice);
+        Assert.Equal(AxisRole.KeepAsX, slice![0].Role);
+        Assert.True(slice[0].IsNarrowedRange);
+        Assert.Equal(2, slice[0].RangeStart);
+        Assert.Equal(3, slice[0].RangeEndExclusive);
+    }
+
+    // Test 3: "2..4" → KeepRange with length 2 (end-exclusive)
+    [Fact]
+    public void Range_2_4_LengthTwo()
+    {
+        var ds = MakeDs();
+        bool ok = CubeTraceSpecParser.TryParse("V[2..4, 4, 1]", ds, out _, out var slice, out _, out string error);
+
+        Assert.True(ok, error);
+        Assert.NotNull(slice);
+        Assert.Equal(AxisRole.KeepAsX, slice![0].Role);
+        Assert.True(slice[0].IsNarrowedRange);
+        Assert.Equal(2, slice[0].RangeStart);
+        Assert.Equal(4, slice[0].RangeEndExclusive);
+    }
+
+    // Test 4: case-insensitive "all" / "ALL"
+    [Fact]
+    public void All_CaseInsensitive()
+    {
+        var ds = MakeDs();
+        bool ok1 = CubeTraceSpecParser.TryParse("V[all, 4, 1]", ds, out _, out var s1, out _, out _);
+        bool ok2 = CubeTraceSpecParser.TryParse("V[ALL, 4, 1]", ds, out _, out var s2, out _, out _);
+
+        Assert.True(ok1);
+        Assert.True(ok2);
+        Assert.Equal(AxisRole.KeepAsX, s1![0].Role);
+        Assert.Equal(AxisRole.KeepAsX, s2![0].Role);
+        Assert.False(s1[0].IsNarrowedRange);
+        Assert.False(s2[0].IsNarrowedRange);
+    }
+
+    // Test 5: "2..2" → empty range error (lo == hiEx, end-exclusive)
+    [Fact]
+    public void Range_EqualEndpoints_Error()
+    {
+        var ds = MakeDs();
+        bool ok = CubeTraceSpecParser.TryParse("V[2..2, 4, 1]", ds, out _, out _, out _, out string error);
+
+        Assert.False(ok);
+        Assert.Contains("empty", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Test 6: "1..0" → empty range error (inverted)
+    [Fact]
+    public void Range_InvertedEndpoints_Error()
+    {
+        var ds = MakeDs();
+        bool ok = CubeTraceSpecParser.TryParse("V[1..0, 4, 1]", ds, out _, out _, out _, out string error);
+
+        Assert.False(ok);
+        Assert.Contains("empty", error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Test 7 (Part 1 #8): "V[:, All, 1]" → two X axes → error
+    [Fact]
+    public void TwoXAxes_Parser_Error()
+    {
+        var ds = MakeDs();
+        bool ok = CubeTraceSpecParser.TryParse("V[:, All, 1]", ds, out _, out _, out _, out string error);
+
+        Assert.False(ok);
+        Assert.Contains("Too many", error, StringComparison.OrdinalIgnoreCase);
     }
 }

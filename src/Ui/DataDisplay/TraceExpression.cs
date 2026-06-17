@@ -126,49 +126,28 @@ public static class TraceExpression
             var args = new object[cube.Rank];
             for (int d = 0; d < tokens.Length; d++)
             {
-                string tk = tokens[d];
-                if (tk == ":")
-                {
-                    args[d] = Range.All;
-                    xDim    = d;
-                    continue;
-                }
                 var axis = cube.Axes[d];
-                if (tk.Length >= 2 && tk[0] == '"' && tk[^1] == '"')
+                var t = SliceTokenParser.Parse(tokens[d], axis.Length, axis.Labels, axis.Name, out error);
+                switch (t.Kind)
                 {
-                    string label = tk[1..^1];
-                    if (axis.Labels is null)
-                    {
-                        error = $"Axis '{axis.Name}' has no labels; use a numeric index.";
-                        return false;
-                    }
-                    int idx = Array.IndexOf(axis.Labels, label);
-                    if (idx < 0)
-                    {
-                        error = $"No label '{label}' in axis '{axis.Name}'.";
-                        return false;
-                    }
-                    args[d] = idx;
-                }
-                else if (int.TryParse(tk, out int intIdx))
-                {
-                    if (intIdx < 0 || intIdx >= axis.Length)
-                    {
-                        error = $"Index {intIdx} out of range for axis '{axis.Name}' (0..{axis.Length - 1}).";
-                        return false;
-                    }
-                    args[d] = intIdx;
-                }
-                else
-                {
-                    error = $"Cannot parse token '{tk}' in '{info.RefStr}'.";
-                    return false;
+                    case SliceTokenParser.Kind.KeepWhole:
+                        args[d] = Range.All;
+                        if (xDim >= 0) { error = $"'{info.RefStr}': more than one X axis."; return false; }
+                        xDim = d; break;
+                    case SliceTokenParser.Kind.KeepRange:
+                        args[d] = new Range(t.RangeStart, t.RangeEndExclusive);
+                        if (xDim >= 0) { error = $"'{info.RefStr}': more than one X axis."; return false; }
+                        xDim = d; break;
+                    case SliceTokenParser.Kind.PinIndex:
+                        args[d] = t.Index; break;
+                    default:
+                        error = $"'{info.RefStr}': {error}"; return false;
                 }
             }
 
             if (xDim < 0)
             {
-                error = $"'{info.RefStr}': no ':' token — exactly one axis must be ':' (the X axis).";
+                error = $"'{info.RefStr}': no X axis — use ':', 'All', or a range.";
                 return false;
             }
 

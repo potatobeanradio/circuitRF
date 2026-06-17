@@ -219,4 +219,38 @@ public sealed class TraceExpressionTests
         Assert.False(ok);
         Assert.Contains("complex", err, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ── Test 9 (Part 1): V[All, 0] evaluates identically to V[:, 0] ─────────
+
+    [Fact]
+    public void Expr_All_AliasForColon()
+    {
+        var ds = MakeDs();
+        bool ok1 = TraceExpression.TryEvaluate("V[:, 0]",   ds, PlotType.Rect,
+            out var x1, out var c1, out _, out _, out _, out _);
+        bool ok2 = TraceExpression.TryEvaluate("V[All, 0]", ds, PlotType.Rect,
+            out var x2, out var c2, out _, out _, out _, out _);
+
+        Assert.True(ok1);
+        Assert.True(ok2);
+        Assert.Equal(x1, x2);
+        Assert.NotNull(c1);
+        Assert.NotNull(c2);
+        Assert.Equal(c1!.Length, c2!.Length);
+        for (int i = 0; i < c1.Length; i++)
+            Assert.Equal(c1[i], c2[i]);
+    }
+
+    // ── Test 10 (Part 1): two X axes in expression → error ───────────────────
+
+    [Fact]
+    public void Expr_TwoXAxes_Error()
+    {
+        var ds = MakeDs();
+        bool ok = TraceExpression.TryEvaluate("V[:, :]", ds, PlotType.Rect,
+            out _, out _, out _, out _, out _, out var error);
+
+        Assert.False(ok);
+        Assert.Contains("more than one X axis", error, StringComparison.OrdinalIgnoreCase);
+    }
 }
