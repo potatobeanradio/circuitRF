@@ -512,6 +512,43 @@ so 7.1 persistence is designed to not preclude it.
 - **Phase 7.1f — COMPLETE.** Data Display workspace/tree integration: File → "Open Data Display…" menu item (`OpenDataDisplayFileCommand`); `.cws` open-doc persistence (kind `"datadisplay"`) + restore; `WorkspaceScanner.Scan` enumerates loose files at workspace root (`.cdd` → `NodeKind.DataDisplayFile`); `OpenNode` double-click opens `.cdd` in the Content pane via `OpenOrActivateDataDisplay`. Core helper `OpenOrActivateDataDisplayCoreAsync` (stream or path); fire-and-forget wrapper for restore/tree paths. Build 0W/0E; 1206 tests pass.
 - Sub-phase 7.4 (contours) blocked pending the loadpull spline white paper, reference Python, and the
   discussion chat.
+
+### Table with multiple X axes (trace-sweep-conformance, 2026-06-17)
+
+The `Table` plot type supports multiple, distinct X axes — one per trace group. Implementation in
+`TableRenderer.BuildColumns` (Part 3 of brief-trace-sweep-conformance):
+
+**Column plan:** `TableRenderer.BuildColumns(plot)` returns `List<TableColumn>` — an explicit ordered
+column plan. Two kinds of column: `XAxis` (the independent variable for a group of adjacent traces)
+and `TraceValue` (one Y column per trace). For each trace an `XAxis` column is emitted immediately to
+its left, UNLESS the immediately preceding trace has exactly the same X identity.
+
+**Adjacent-dedup rule:** two adjacent traces share one `XAxis` column when all three of the following
+hold:
+1. Same axis **name** (`CubeXAxisName` for cube-bound, `"Freq"` for network traces).
+2. Same axis **unit** (`CubeXUnit` for cube-bound, `"Hz"` for network traces).
+3. Same **sorted values and count** (exact `==` on doubles — they come from the same underlying axis
+   array, so toleranced comparison is wrong here).
+
+A non-matching trace between two matching groups breaks the adjacency run; traces A and C sharing X
+but separated by a different-X trace B each get their own `XAxis` column.
+
+**Row count:** each `XAxis` column's `XValues` array sets the row count for its group. The table's
+total row count = max across all groups. A trace shorter than the tallest group shows blank (`""`)
+cells past its last row.
+
+**Sort:** the ascending/descending sort triangle is drawn on **every** `XAxis` column header.
+Clicking any X header flips `plot.TableViewAscendingSortOrder` for the entire table — all X groups
+re-sort together (the toggle is plot-wide, not per-column). `BuildColumns` applies the current sort
+order to each group's `XValues` at plan-build time.
+
+**Copy Table Data:** `TableRenderer.BuildCopyGrid` is the single source of truth for clipboard copy
+and matches the rendered column plan exactly (WYSIWYG: same headers, same column order, blank cells
+where a group is shorter than the table's row count).
+
+**TraceValue column widths** come from `trace.ColumnWidth`; **XAxis column widths** come from
+`plot.ColumnWidth`. Both are resizable by dragging the column header right edge; double-tapping the
+resize handle auto-fits the column.
 - **Phase 7.1d-2 — COMPLETE.** Properties-dock dual surface for the Data Display inspector. Build 0W/0E; 1206 tests pass.
 - **Phase 7.1d-3 — COMPLETE.** Marker editor restyled to the inspector idiom + stale-marker guard in `MarkerEditorViewModel`.
 - **Renderer glyph fix — COMPLETE (pre-7.2 cleanup).** IBM Plex missing-glyph fallback: table sort arrow drawn as an `SKPath`; per-glyph DejaVu fallback for `∠` (and any Plex-missing glyph) in `TableRenderer`/`MarkerRenderer`.

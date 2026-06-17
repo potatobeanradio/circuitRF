@@ -339,6 +339,8 @@ ds["PAE"]; // -> the PAE cube (a 1-D real trace over the swept axis)
 
 Axis/units representation, the swappable backing store, slicing/reduction, and `.mat`/`.npy` export shape (per-cube vs whole-DataSet) are detailed in the data-cube note and `src/Core/Data/CLAUDE.md`.
 
+**Trace spec text box (Data Display).** The Data Display's per-trace spec text box (e.g. `db20 V[0, 1, :]`) accepts the same slice grammar as the accessor layer: `:` / `All` (alias for whole-axis `..`) and `a..b` end-exclusive sub-ranges keep an axis; an integer or `"quoted label"` pins and removes it. Exactly one `:` / `All` / range token (the X axis) is allowed; two kept axes is an error. Ranges are end-exclusive (`2..4` = indices 2,3), matching C#/NumPy and the accessors above. The grammar is implemented in `SliceTokenParser` (shared by `CubeTraceSpecParser` and `TraceExpression` so they can never drift from each other); the semantics are identical to the `ds.V(...)` accessors.
+
 ---
 
 ## 8. Expression engine, variables & cell parameters

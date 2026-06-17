@@ -55,7 +55,9 @@ Harmonic is addressed **by index**: `0`=DC, `1`=fundamental, `2`=2nd, …
 **HB branch currents — by named branch, never by node/net:**
 Current is a **branch** property. The `I:instancePath:terminal` cube in the DataSet is the ONLY
 public current path. Node/net-indexed current (`ds["INl"][nodeIdx, …]`) is an internal diagnostic,
-not a measurement accessor. Named-branch cubes:
+not a measurement accessor. Node-indexed current (`INl`) is stored internally but filtered from the
+trace picker — cubes whose axis set contains `"node"` and whose name is `"I"` or `"INl"` are skipped
+by `TraceRowViewModel.RebuildSignals`; only the `I:<path>:<term>` branch cubes (no `node` axis) are offered. Named-branch cubes:
 - **Single-tone, with sweep:** `I:M1:d` = `{harmonic, Pin}`  (`ds["I:M1:d"][1, si]` = fundamental)
 - **Single-tone, no sweep:** `I:M1:d` = `{harmonic}`         (`ds["I:M1:d"][1]` = fundamental)
 - **Two-tone, with sweep:** `I:M1:d` = `{mixIndex, Pin}`     (`ds["I:M1:d"][m, si]` = mix m)
