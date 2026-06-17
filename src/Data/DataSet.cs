@@ -54,6 +54,12 @@ namespace RfCore.Data
             var result = new DataSet();
             foreach (var key in datasets[0].Cubes.Keys)
             {
+                // Metadata cubes (e.g. __LabeledNodes) are sweep-invariant — pass through, do NOT stack.
+                if (key.StartsWith("__", StringComparison.Ordinal))
+                {
+                    result.Add(key, datasets[0][key]);
+                    continue;
+                }
                 var cubes = new DataCube[datasets.Count];
                 for (int n = 0; n < datasets.Count; n++)
                     cubes[n] = datasets[n][key];
