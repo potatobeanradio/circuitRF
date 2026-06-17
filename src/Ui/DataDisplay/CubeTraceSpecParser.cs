@@ -45,33 +45,53 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             // Parse optional transform + cube name from the prefix.
+            // Accepts two forms:
+            //   CubeName[...]            — no transform
+            //   transform CubeName[...]  — space-separated (legacy spec-box entry)
+            //   transform(CubeName[...]) — function-call form emitted by BuildPickerExpression
             string prefix = text[..bracketPos].Trim();
-            var prefixParts = prefix.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-            if (prefixParts.Length == 0)
+            int parenIdx = prefix.IndexOf('(');
+            if (parenIdx >= 0)
             {
-                error = "Missing cube name.";
-                return false;
-            }
-
-            if (prefixParts.Length == 1)
-            {
-                cubeName  = prefixParts[0];
-                transform = CubeTransform.None;
-            }
-            else if (prefixParts.Length == 2)
-            {
-                if (!TryParseTransform(prefixParts[0], out transform))
+                // Function-call form: "mag(V" → transform="mag", cubeName="V"
+                string rawTransform = prefix[..parenIdx].Trim();
+                cubeName = prefix[(parenIdx + 1)..].Trim();
+                if (!TryParseTransform(rawTransform, out transform))
                 {
-                    error = $"Unknown transform '{prefixParts[0]}'.";
+                    error = $"Unknown transform '{rawTransform}'.";
                     return false;
                 }
-                cubeName = prefixParts[1];
             }
             else
             {
-                error = $"Unexpected tokens before '[': '{prefix}'.";
-                return false;
+                var prefixParts = prefix.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                if (prefixParts.Length == 0)
+                {
+                    error = "Missing cube name.";
+                    return false;
+                }
+
+                if (prefixParts.Length == 1)
+                {
+                    cubeName  = prefixParts[0];
+                    transform = CubeTransform.None;
+                }
+                else if (prefixParts.Length == 2)
+                {
+                    if (!TryParseTransform(prefixParts[0], out transform))
+                    {
+                        error = $"Unknown transform '{prefixParts[0]}'.";
+                        return false;
+                    }
+                    cubeName = prefixParts[1];
+                }
+                else
+                {
+                    error = $"Unexpected tokens before '[': '{prefix}'.";
+                    return false;
+                }
             }
 
             // Validate cube name.
@@ -115,7 +135,7 @@ namespace CircuitRF.Ui.DataDisplay
                         slice[i] = new AxisSlice(axis.Name, AxisRole.KeepAsX, t.RangeStart,
                                                  t.RangeStart, t.RangeEndExclusive); xCount++; break;
                     case SliceTokenParser.Kind.PinIndex:
-                        slice[i] = new AxisSlice(axis.Name, AxisRole.PinToIndex, t.Index); break;
+                        slice[i] = new AxisSlice(axis.Name, AxisRole.PinToIndex, t.Index, Label: t.Label); break;
                     default:
                         return false;   // error already set by SliceTokenParser
                 }

@@ -253,4 +253,19 @@ public sealed class TraceExpressionTests
         Assert.False(ok);
         Assert.Contains("more than one X axis", error, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ── Test 11: real expression on Table is accepted (Fix 2) ─────────────────
+
+    [Fact]
+    public void Expr_RealOnTable_Accepted()
+    {
+        var ds = MakeDs();
+        bool ok = TraceExpression.TryEvaluate(
+            "mag(V[:, 0])", ds, PlotType.Table,
+            out _, out _, out var rz, out _, out _, out var err);
+
+        Assert.True(ok, err);
+        Assert.NotNull(rz);
+        Assert.Equal(3, rz!.Length);
+    }
 }

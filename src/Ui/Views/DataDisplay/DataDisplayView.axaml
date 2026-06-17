@@ -119,7 +119,7 @@
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <Button Command="{Binding ViewModel.Window.LoadRunResultsCommand}"
-                        ToolTip.Tip="Load Run Results…"
+                        ToolTip.Tip="Load Dataset…"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="FolderArrowDownOutline" Width="16" Height="16"/>
                 </Button>

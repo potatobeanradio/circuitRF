@@ -77,7 +77,8 @@ namespace CircuitRF.Ui.DataDisplay
     /// (end-exclusive). RangeEndExclusive &lt; 0 means the whole axis (":"/All).</summary>
     public readonly record struct AxisSlice(
         string AxisName, AxisRole Role, int Index,
-        int RangeStart = 0, int RangeEndExclusive = -1)   // RangeEndExclusive < 0 ⇒ whole axis
+        int RangeStart = 0, int RangeEndExclusive = -1,   // RangeEndExclusive < 0 ⇒ whole axis
+        string Label = "")                                  // net-name label for quoted shorthand; "" ⇒ emit index
     {
         public bool IsNarrowedRange => Role == AxisRole.KeepAsX && RangeEndExclusive >= 0;
     }
@@ -305,7 +306,10 @@ namespace CircuitRF.Ui.DataDisplay
         internal string BuildPickerExpression()
         {
             if (CubeName is null || Slice is null) return ShortDescription;
-            var parts = Slice.Select(s => s.Role == AxisRole.KeepAsX ? ":" : s.Index.ToString());
+            var parts = Slice.Select(s =>
+                s.Role == AxisRole.KeepAsX       ? ":"
+                : !string.IsNullOrEmpty(s.Label) ? $"\"{s.Label}\""
+                :                                   s.Index.ToString());
             var inner = string.Join(", ", parts);
             if (Transform == CubeTransform.None)
                 return $"{CubeName}[{inner}]";

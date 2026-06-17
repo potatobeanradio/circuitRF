@@ -557,22 +557,24 @@
                                             </Grid>
 
                                             <!-- Col 2: color under YAxis column (95 px) -->
-                                            <ComboBox Grid.Column="2"
-                                                      HorizontalAlignment="Stretch"
-                                                      ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
-                                                      SelectedIndex="{Binding LineColorIndex, Mode=TwoWay}"
-                                                      IsEnabled="{Binding LineEnabled}"
-                                                      Padding="4,0"
-                                                      VerticalAlignment="Center">
-                                                <ComboBox.ItemTemplate>
+                                            <ctl:IconSelectButton Grid.Column="2"
+                                                                  HorizontalAlignment="Stretch"
+                                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
+                                                                  SelectedItem="{Binding SelectedLineColor, Mode=TwoWay}"
+                                                                  IsEnabled="{Binding LineEnabled}"
+                                                                  Highlight="False"
+                                                                  HighlightSelected="False"
+                                                                  ToolTip.Tip="Line color">
+                                                <ctl:IconSelectButton.ItemTemplate>
                                                     <DataTemplate x:DataType="vm:ColorItem">
-                                                        <Border Height="10"
-                                                                Background="{Binding Brush}"
-                                                                CornerRadius="2"
+                                                        <Border Background="{Binding Brush}"
+                                                                CornerRadius="3"
+                                                                MinWidth="20" Height="12"
+                                                                HorizontalAlignment="Stretch"
                                                                 ToolTip.Tip="{Binding Name}"/>
                                                     </DataTemplate>
-                                                </ComboBox.ItemTemplate>
-                                            </ComboBox>
+                                                </ctl:IconSelectButton.ItemTemplate>
+                                            </ctl:IconSelectButton>
 
                                             <!-- Col 3: blank spacer to match identity row trailing col -->
                                         </Grid>
@@ -660,22 +662,24 @@
                                             </Grid>
 
                                             <!-- Col 2: color under YAxis column (95 px) -->
-                                            <ComboBox Grid.Column="2"
-                                                      HorizontalAlignment="Stretch"
-                                                      ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
-                                                      SelectedIndex="{Binding MarkerColorIndex, Mode=TwoWay}"
-                                                      IsEnabled="{Binding MarkerEnabled}"
-                                                      Padding="4,0"
-                                                      VerticalAlignment="Center">
-                                                <ComboBox.ItemTemplate>
+                                            <ctl:IconSelectButton Grid.Column="2"
+                                                                  HorizontalAlignment="Stretch"
+                                                                  ItemsSource="{x:Static vm:PlotInspectorViewModel.ColorItems}"
+                                                                  SelectedItem="{Binding SelectedMarkerColor, Mode=TwoWay}"
+                                                                  IsEnabled="{Binding MarkerEnabled}"
+                                                                  Highlight="False"
+                                                                  HighlightSelected="False"
+                                                                  ToolTip.Tip="Marker color">
+                                                <ctl:IconSelectButton.ItemTemplate>
                                                     <DataTemplate x:DataType="vm:ColorItem">
-                                                        <Border Height="10"
-                                                                Background="{Binding Brush}"
-                                                                CornerRadius="2"
+                                                        <Border Background="{Binding Brush}"
+                                                                CornerRadius="3"
+                                                                MinWidth="20" Height="12"
+                                                                HorizontalAlignment="Stretch"
                                                                 ToolTip.Tip="{Binding Name}"/>
                                                     </DataTemplate>
-                                                </ComboBox.ItemTemplate>
-                                            </ComboBox>
+                                                </ctl:IconSelectButton.ItemTemplate>
+                                            </ctl:IconSelectButton>
 
                                             <!-- Col 3: blank spacer -->
                                         </Grid>

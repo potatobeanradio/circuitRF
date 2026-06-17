@@ -34,12 +34,12 @@
                 BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Grid.Column="0"
-                           Text="SNP Library"
+                           Text="Dataset Library"
                            FontWeight="SemiBold"
                            FontSize="12"
                            VerticalAlignment="Center">
                     <ToolTip.Tip>
-                        <TextBlock Text="Contains the list of s-parameter data currently loaded into memory.  Load a Touchstone file to add to SNP Library."
+                        <TextBlock Text="Contains the list of all data currently loaded into memory.  Load a file to add to Dataset Library."
                                    TextWrapping="Wrap"
                                    MaxWidth="275"/>
                     </ToolTip.Tip>

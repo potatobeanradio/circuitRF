@@ -214,4 +214,159 @@ public sealed class TraceCardLayoutTests
         Assert.NotNull(hit.HitTrace);
         Assert.Same(trace, hit.HitTrace);
     }
+
+    // ------------------------------------------------------------------ //
+    //  Test 5: CommitSpec re-populates picker state (Fix 1)               //
+    // ------------------------------------------------------------------ //
+
+    [Fact]
+    public async Task CommitSpec_SingleCubeSpec_RePopulatesPicker()
+    {
+        var freqAxis = new Axis("freq", new[] { 1e9, 2e9, 3e9 }, "Hz");
+        var nodeAxis = new Axis("node", new[] { 0.0, 1.0 });
+        var data = new System.Numerics.Complex[]
+        {
+            new(1, 0), new(2, 0),
+            new(0.5, 0.5), new(1, 1),
+            new(0.1, -0.1), new(0.9, 0.9),
+        };
+        var ds = new DataSet();
+        ds.Add("V", new DataCube(new[] { freqAxis, nodeAxis }, data));
+
+        var (path, lib) = await ExportAndLoad(ds);
+        try
+        {
+            var slice = new[]
+            {
+                new AxisSlice("freq", AxisRole.KeepAsX,   0),
+                new AxisSlice("node", AxisRole.PinToIndex, 0),
+            };
+            var cubeTrace = MakeCubeTrace(path, "V", slice);
+            cubeTrace.Expression = cubeTrace.BuildPickerExpression(); // "V[:, 0]"
+
+            var plot = new Plot(PlotType.Rect, FreqUnit.GHz);
+            plot.Traces.Add(cubeTrace);
+            var insp = new PlotInspectorViewModel(plot, () => {}, library: lib);
+            insp.RebuildAndNotify();
+
+            var row = insp.Traces.FirstOrDefault();
+            Assert.NotNull(row);
+            Assert.True(row.IsCubeBoundTrace);
+
+            // CommitSpec with a mag transform on node index 1.
+            row.CommitSpec("mag(V[:, 1])");
+
+            // CubeName/Transform/Slice must be back-populated from the parsed spec.
+            Assert.Equal("V", cubeTrace.CubeName);
+            Assert.Equal(CubeTransform.Mag, cubeTrace.Transform);
+            Assert.NotNull(cubeTrace.Slice);
+            var nodeSlice = cubeTrace.Slice!.FirstOrDefault(s => s.AxisName == "node");
+            Assert.Equal(AxisRole.PinToIndex, nodeSlice.Role);
+            Assert.Equal(1, nodeSlice.Index);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Tests 6–9: BuildCarriedSliceFromCube — slice carryover semantics   //
+    // ------------------------------------------------------------------ //
+
+    private static RfCore.Data.DataCube MakeCubeVhb()
+    {
+        // Simulates an HB V cube: axes (freq, node, harmonic)
+        // node axis has labels so BuildPickerExpression emits quoted names.
+        var freq = new Axis("freq", new[] { 1e9, 2e9 }, "Hz");
+        var node = new Axis("node", new[] { 0.0, 1.0, 2.0 }, "", new[] { "GND", "Vout2", "Vout3" });
+        var harm = new Axis("harmonic", new[] { 1.0, 2.0, 3.0 });
+        // 2 × 3 × 3 = 18 complex values (just zeros for shape testing)
+        return new RfCore.Data.DataCube(
+            new[] { freq, node, harm },
+            new System.Numerics.Complex[18]);
+    }
+
+    private static RfCore.Data.DataCube MakeCubeIbranch()
+    {
+        // Simulates an HB branch-current cube: axes (freq, harmonic) — no node axis
+        var freq = new Axis("freq", new[] { 1e9, 2e9 }, "Hz");
+        var harm = new Axis("harmonic", new[] { 1.0, 2.0, 3.0 });
+        return new RfCore.Data.DataCube(
+            new[] { freq, harm },
+            new System.Numerics.Complex[6]);
+    }
+
+    [Fact]
+    public void BuildCarriedSlice_SharedAxesCarriedOver()
+    {
+        // V slice: freq=X, node=pin@1, harmonic=pin@2
+        var oldSlice = new[]
+        {
+            new AxisSlice("freq",     AxisRole.KeepAsX,   0),
+            new AxisSlice("node",     AxisRole.PinToIndex, 1, Label: "Vout2"),
+            new AxisSlice("harmonic", AxisRole.PinToIndex, 2),
+        };
+        var result = TraceRowViewModel.BuildCarriedSliceFromCube(MakeCubeIbranch(), oldSlice);
+
+        // I:X1:g has (freq, harmonic) — node dropped, the other two carried.
+        Assert.Equal(2, result.Length);
+        Assert.Equal("freq",     result[0].AxisName);
+        Assert.Equal(AxisRole.KeepAsX,   result[0].Role);
+        Assert.Equal("harmonic", result[1].AxisName);
+        Assert.Equal(AxisRole.PinToIndex, result[1].Role);
+        Assert.Equal(2, result[1].Index);  // harmonic pin=2 carried
+    }
+
+    [Fact]
+    public void BuildCarriedSlice_OutOfRangeIndexClamped()
+    {
+        // Old slice pins harmonic at index 5, but new cube only has 3 elements → clamp to 2.
+        var oldSlice = new[]
+        {
+            new AxisSlice("freq",     AxisRole.KeepAsX,   0),
+            new AxisSlice("harmonic", AxisRole.PinToIndex, 5),
+        };
+        var result = TraceRowViewModel.BuildCarriedSliceFromCube(MakeCubeIbranch(), oldSlice);
+
+        Assert.Equal(2, result.Length);
+        Assert.Equal(2, result[1].Index);  // clamped from 5 → 2 (max valid index)
+    }
+
+    [Fact]
+    public void BuildCarriedSlice_AbsentAxisDropped()
+    {
+        // Old slice has node (absent in I cube) — it must not appear in result.
+        var oldSlice = new[]
+        {
+            new AxisSlice("freq",     AxisRole.KeepAsX,   0),
+            new AxisSlice("node",     AxisRole.PinToIndex, 1, Label: "Vout2"),
+            new AxisSlice("harmonic", AxisRole.PinToIndex, 2),
+        };
+        var result = TraceRowViewModel.BuildCarriedSliceFromCube(MakeCubeIbranch(), oldSlice);
+
+        Assert.DoesNotContain(result, s => s.AxisName == "node");
+    }
+
+    [Fact]
+    public void BuildCarriedSlice_LabelAxesGetQuotedLabel()
+    {
+        // V cube has node axis with labels. Switch from branch-current (no node) to V:
+        // new axis "node" is absent from oldSlice → defaults to pin@0 with label "GND".
+        var oldSlice = new[]
+        {
+            new AxisSlice("freq",     AxisRole.KeepAsX,   0),
+            new AxisSlice("harmonic", AxisRole.PinToIndex, 2),
+        };
+        var result = TraceRowViewModel.BuildCarriedSliceFromCube(MakeCubeVhb(), oldSlice);
+
+        // node is new → pin@0, label="GND"
+        var nodeSlice = result.Single(s => s.AxisName == "node");
+        Assert.Equal(0, nodeSlice.Index);
+        Assert.Equal("GND", nodeSlice.Label);
+
+        // harmonic carried at 2.
+        var harmSlice = result.Single(s => s.AxisName == "harmonic");
+        Assert.Equal(2, harmSlice.Index);
+    }
 }

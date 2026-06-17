@@ -369,7 +369,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             _inspectorFlyout?.Hide();
 
-            _inspectorVm = new PlotInspectorViewModel(_plot, () => _inspectorFlyout?.Hide(), _library);
+            // Reuse the container's single inspector so flyout edits and the Properties-pane inspector
+            // stay in sync (one VM per plot). Fall back to a fresh VM only if no container is wired
+            // (e.g. PlotControl used outside PlotContainerView).
+            _inspectorVm = ContainerProvider?.Invoke()?.Inspector
+                           ?? new PlotInspectorViewModel(_plot, () => { }, _library);
+
+            // Point the shared inspector's Close button at this flyout while it is open.
+            _inspectorVm.SetCloseAction(() => _inspectorFlyout?.Hide());
             _inspectorVm.PlotNeedsRedraw += OnInspectorPlotNeedsRedraw;
 
             var view = new PlotInspectorView { DataContext = _inspectorVm };
@@ -391,7 +398,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             _inspectorFlyout.Closed += (_, _) =>
             {
                 if (_inspectorVm is not null)
+                {
                     _inspectorVm.PlotNeedsRedraw -= OnInspectorPlotNeedsRedraw;
+                    // Restore a no-op so a stale flyout reference is never invoked by the Properties pane.
+                    _inspectorVm.SetCloseAction(() => { });
+                }
             };
 
             _inspectorFlyout.ShowAt(flyoutAnchor);

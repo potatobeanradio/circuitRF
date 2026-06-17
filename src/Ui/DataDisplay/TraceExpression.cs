@@ -248,8 +248,8 @@ public static class TraceExpression
             complexValues = null;
         }
 
-        // Smith/Polar require a complex result.
-        if (!plotType.IsRect() && realValues != null)
+        // Only the complex-locus plots (Smith / Polar) require a complex result; Rect and Table accept real.
+        if (plotType.IsComplex() && realValues != null)
         {
             error = "Smith/Polar needs a complex expression; result is real-valued.";
             return false;

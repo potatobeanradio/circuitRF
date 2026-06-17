@@ -130,8 +130,15 @@ public partial class TraceRowViewModel : ViewModelBase
 
         if (value.IsCubeBound)
         {
-            _trace.CubeName = value.CubeName;
-            _trace.Slice    = value.Slice?.ToArray();  // default slice; user edits via AxisRoles
+            // Carry over as much of the prior slice as the new cube allows (match by axis name),
+            // then re-derive Expression so the spec adapts to the new data source.
+            var oldSlice = _trace.Slice;          // may be from a different cube (e.g. V → I)
+            _trace.CubeName        = value.CubeName;
+            _trace.Slice           = BuildCarriedSlice(value, oldSlice);
+            _trace.InvalidSpecText = null;
+            _trace.ExpressionError = null;
+            _trace.Expression      = _trace.BuildPickerExpression();
+
             // Cube-bound traces have no per-port Z0 from the S matrix.
             _trace.SourceZ0PerPort   = null;
             _trace.SourceZ0IsUnusual = false;
@@ -139,11 +146,17 @@ public partial class TraceRowViewModel : ViewModelBase
         }
         else
         {
-            // Switching to network-bound: clear any cube identity.
-            _trace.CubeName = null;
-            _trace.Slice    = null;
+            // Switching to network-bound: clear ALL cube identity, INCLUDING the expression —
+            // otherwise IsCubeBound (CubeName is not null || Expression is not null) stays true
+            // and the card keeps showing HB fields.
+            _trace.CubeName        = null;
+            _trace.Slice           = null;
+            _trace.Expression      = null;
+            _trace.InvalidSpecText = null;
+            _trace.ExpressionError = null;
+            _trace.Transform       = CubeTransform.None;
             AxisRoles.Clear();
-            _trace.Data     = value.Entry.Snp!;
+            _trace.Data = value.Entry.Snp!;
 
             // Set per-port Z0 fields from the source entry (Phase 7.2f).
             ApplySourceZ0(value.Entry);
@@ -161,6 +174,12 @@ public partial class TraceRowViewModel : ViewModelBase
         }
 
         _parent.RebuildAndNotify();
+
+        // Source kind may have flipped (cube ↔ network) — refresh every card-visibility discriminator
+        // so the right fields show without reopening the inspector.
+        OnPropertyChanged(nameof(IsCubeBoundTrace));
+        OnPropertyChanged(nameof(ShowAllNodesToggleVisible));
+        RefreshDescription();   // raises ShowMatrixTypeCombo, ShowZ0Row/Control, ShowYAxisCombo, TraceTransformItems, Spec*, etc.
     }
 
     /// <summary>Populates SourceZ0PerPort / SourceZ0IsUnusual on the trace from the source entry,
@@ -540,6 +559,14 @@ public partial class TraceRowViewModel : ViewModelBase
         _trace.Properties.LineColorStorage = null;
         _trace.Properties.LineColorIndex   = value;
         _parent.Notify();
+        OnPropertyChanged(nameof(SelectedLineColor));
+    }
+
+    public ColorItem? SelectedLineColor
+    {
+        get => PlotInspectorViewModel.ColorItems.FirstOrDefault(c => c.Index == LineColorIndex)
+               ?? PlotInspectorViewModel.ColorItems[0];
+        set { if (value is not null && value.Index != LineColorIndex) LineColorIndex = value.Index; }
     }
 
     // ---- Marker -------------------------------------------------------------
@@ -606,6 +633,14 @@ public partial class TraceRowViewModel : ViewModelBase
         _trace.Properties.MarkerColorStorage = null;
         _trace.Properties.MarkerColorIndex   = value;
         _parent.Notify();
+        OnPropertyChanged(nameof(SelectedMarkerColor));
+    }
+
+    public ColorItem? SelectedMarkerColor
+    {
+        get => PlotInspectorViewModel.ColorItems.FirstOrDefault(c => c.Index == MarkerColorIndex)
+               ?? PlotInspectorViewModel.ColorItems[0];
+        set { if (value is not null && value.Index != MarkerColorIndex) MarkerColorIndex = value.Index; }
     }
 
     // ---- Table number-format controls (Table plot only) --------------------
@@ -775,6 +810,9 @@ public partial class TraceRowViewModel : ViewModelBase
             foreach (var (cubeName, cube) in ds.Cubes)
             {
                 if (cubeName is "S" or "Z0" || cubeName.StartsWith("__", StringComparison.Ordinal)) continue;
+                // Solver diagnostics — not offered in the picker; advanced users type them in the spec field.
+                if (cubeName.EndsWith("Converged", StringComparison.Ordinal) ||
+                    cubeName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
                 // Belt-and-suspenders: skip node-indexed current cubes (internal diagnostic).
                 // Authoritative fix is the __ prefix on __INl in HbEngine; this guards older datasets.
                 bool isNodeIndexedCurrent =
@@ -787,10 +825,16 @@ public partial class TraceRowViewModel : ViewModelBase
                 bool isEnabled = !isComplexPlot || cube.DataKind == DataKind.Complex;
 
                 // Default slice: axis 0 → KeepAsX, axes 1..N-1 → PinToIndex at 0.
+                // For axes with labels (e.g. node axis), store the label at index 0 so the
+                // shorthand emits a quoted net name rather than a bare index.
                 var defaultSlice = new AxisSlice[rank];
                 defaultSlice[0] = new AxisSlice(cube.Axes[0].Name, AxisRole.KeepAsX, 0);
                 for (int d = 1; d < rank; d++)
-                    defaultSlice[d] = new AxisSlice(cube.Axes[d].Name, AxisRole.PinToIndex, 0);
+                {
+                    var ax  = cube.Axes[d];
+                    string lbl = (ax.Labels is { Length: > 0 }) ? ax.Labels[0] : "";
+                    defaultSlice[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
+                }
 
                 AvailableSignals.Add(new TraceDataItem(entry, cubeName, defaultSlice,
                                                        $"{filePrefix}{cubeName}", isEnabled));
@@ -977,15 +1021,16 @@ public partial class TraceRowViewModel : ViewModelBase
                 if (displayIdx < 0) displayIdx = 0;
 
                 AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit,
-                    filteredOpts, isX, displayIdx, filteredIndices));
+                    filteredOpts, isX, displayIdx, filteredIndices, optionsAreLabels: true));
             }
             else
             {
                 // Unfiltered (all options).
                 var opts = new List<string>(axis.Length);
+                bool hasLabels = axis.Labels is not null && axis.Labels.Length > 0;
                 for (int k = 0; k < axis.Length; k++)
                 {
-                    if (axis.Labels is not null && k < axis.Labels.Length)
+                    if (hasLabels && k < axis.Labels!.Length)
                         opts.Add(axis.Labels[k]);
                     else if (axisIsFreq)
                         opts.Add($"{(axis.Values[k] * plotFreqUnit.Scale()).ToString("G4")} {plotFreqUnit.Description()}");
@@ -993,7 +1038,8 @@ public partial class TraceRowViewModel : ViewModelBase
                         opts.Add(axis.Values[k].ToString("G3"));
                 }
                 int pinIdx = Math.Clamp(savedTrueIdx, 0, Math.Max(0, axis.Length - 1));
-                AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit, opts, isX, pinIdx));
+                AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit, opts, isX, pinIdx,
+                    optionsAreLabels: hasLabels));
             }
         }
 
@@ -1024,9 +1070,12 @@ public partial class TraceRowViewModel : ViewModelBase
         for (int i = 0; i < AxisRoles.Count; i++)
         {
             var r = AxisRoles[i];
+            string lbl = (!r.IsX && r.OptionsAreLabels && r.PinOptions.Count > 0)
+                ? r.PinOptions[Math.Clamp(r.PinIndex, 0, r.PinOptions.Count - 1)]
+                : "";
             slice[i] = new AxisSlice(r.AxisName,
                 r.IsX ? AxisRole.KeepAsX : AxisRole.PinToIndex,
-                r.TruePinIndex);
+                r.TruePinIndex, Label: lbl);
         }
 
         // Guard: if no X survived, fall back to the first axis.
@@ -1042,6 +1091,69 @@ public partial class TraceRowViewModel : ViewModelBase
         _trace.Expression = null;
         _trace.Expression = _trace.BuildPickerExpression();
         _parent.RebuildAndNotify();
+    }
+
+    private AxisSlice[] BuildCarriedSlice(TraceDataItem value, AxisSlice[]? oldSlice)
+    {
+        var ds   = value.Entry.Data;
+        var cube = (ds is not null && value.CubeName is not null && ds.Contains(value.CubeName))
+            ? ds[value.CubeName] : null;
+        if (cube is null) return value.Slice?.ToArray() ?? Array.Empty<AxisSlice>();
+        return BuildCarriedSliceFromCube(cube, oldSlice);
+    }
+
+    /// <summary>
+    /// Builds a slice for <paramref name="cube"/>, preserving as many parameters from
+    /// <paramref name="oldSlice"/> as possible (matched by axis NAME): same role (X vs pinned)
+    /// and the same pin index when in range, else clamped to 0. Axes absent from the old slice
+    /// default to PinToIndex/0. Exactly one axis ends up as X. Label is set from the cube's
+    /// axis labels so node slots render as quoted net names (e.g. "Vout2").
+    /// </summary>
+    internal static AxisSlice[] BuildCarriedSliceFromCube(RfCore.Data.DataCube cube, AxisSlice[]? oldSlice)
+    {
+        int rank   = cube.Rank;
+        var result = new AxisSlice[rank];
+
+        var old = new System.Collections.Generic.Dictionary<string, AxisSlice>(StringComparer.Ordinal);
+        if (oldSlice is not null)
+            foreach (var s in oldSlice) old[s.AxisName] = s;
+
+        bool anyX = false;
+        for (int d = 0; d < rank; d++)
+        {
+            var ax  = cube.Axes[d];
+            int len = ax.Length;
+
+            if (old.TryGetValue(ax.Name, out var prev))
+            {
+                int idx  = Math.Clamp(prev.Index, 0, Math.Max(0, len - 1));
+                var role = prev.Role;
+                string lbl = (role == AxisRole.PinToIndex && ax.Labels is { Length: > 0 } && idx < ax.Labels.Length)
+                    ? ax.Labels[idx] : "";
+                result[d] = new AxisSlice(ax.Name, role, idx, Label: lbl);
+                if (role == AxisRole.KeepAsX) anyX = true;
+            }
+            else
+            {
+                string lbl = (ax.Labels is { Length: > 0 }) ? ax.Labels[0] : "";
+                result[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
+            }
+        }
+
+        if (!anyX && rank > 0)
+            result[0] = result[0] with { Role = AxisRole.KeepAsX, Label = "" };
+        else
+        {
+            bool seenX = false;
+            for (int d = 0; d < rank; d++)
+                if (result[d].Role == AxisRole.KeepAsX)
+                {
+                    if (seenX) result[d] = result[d] with { Role = AxisRole.PinToIndex };
+                    seenX = true;
+                }
+        }
+
+        return result;
     }
 
     // ---- Called by PlotInspectorViewModel after trace paths are rebuilt ----
@@ -1100,12 +1212,39 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         if (!_trace.IsCubeBound) return;
 
-        // Set the expression; TrySetCubeData will validate it during RebuildAndNotify.
         _trace.Expression      = text;
         _trace.InvalidSpecText = null;
         _trace.ExpressionError = null;
-        _parent.RebuildAndNotify();
-        // After rebuild, RefreshDescription fires OnPropertyChanged for SpecShorthand/SpecError/HasSpecError.
+
+        // Re-derive the picker state from the typed text so the card's comboboxes (harmonic/node pin,
+        // transform, axis-role rows) track the edit. A single-cube spec like `V[:, "Vout2", 1]` or
+        // `mag(V[:, "Vout", 1])` parses to (CubeName, Slice, Transform); a multi-cube expression does not,
+        // in which case we drop the single-cube identity and present it as a free expression.
+        string? normalizedSource = _trace.SourcePath is string sp ? System.IO.Path.GetFullPath(sp) : null;
+        var ds = _parent.LibraryEntries
+            .FirstOrDefault(e => string.Equals(e.FilePath, normalizedSource, StringComparison.OrdinalIgnoreCase))
+            ?.Data;
+        if (ds is not null &&
+            CubeTraceSpecParser.TryParse(text, ds, out var cubeName, out var slice, out var transform, out _))
+        {
+            _trace.CubeName  = cubeName;
+            _trace.Slice     = slice;
+            _trace.Transform = transform;
+        }
+        else
+        {
+            // Not a single-cube picker spec (e.g. multi-cube expression) — keep Expression as the source
+            // of truth and drop the single-cube identity so the axis-role editor shows nothing stale.
+            _trace.CubeName = null;
+            _trace.Slice    = null;
+        }
+
+        _parent.RebuildAndNotify();   // re-evaluates via Expression; RefreshDescription re-syncs transform combo + flags
+
+        // Rebuild the axis-role rows for the (possibly new) cube/slice — RefreshDescription does NOT do this.
+        RebuildAxisRoles();
+        OnPropertyChanged(nameof(IsCubeBoundTrace));
+        OnPropertyChanged(nameof(ShowAllNodesToggleVisible));
     }
 
     private static bool IsFreqUnit(string? unit) =>

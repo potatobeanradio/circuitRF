@@ -66,7 +66,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     }
 
     private readonly Plot                _plot;
-    private readonly Action              _closeAction;
+    private Action                       _closeAction;
     private readonly DataSourceLibraryViewModel? _library;
 
     public event EventHandler? PlotNeedsRedraw;
@@ -223,7 +223,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         RebuildTraces();
 
         AddTraceCommand = new RelayCommand(AddTrace, () => CanAddTrace);
-        CloseCommand    = new RelayCommand(_closeAction);
+        CloseCommand    = new RelayCommand(() => _closeAction());
 
         SetPlotTypeRectCommand  = new RelayCommand(() => PlotType = PlotType.Rect);
         SetPlotTypeSmithCommand = new RelayCommand(() => PlotType = PlotType.Smith);
@@ -236,6 +236,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
             _library.Entries.CollectionChanged += (_, _) => RefreshAddCommand();
         }
     }
+
+    // ---- Close-action seam (flyout vs Properties pane) -----------------
+
+    /// <summary>Points the shared inspector's Close button at the current flyout's Hide while it is
+    /// open; call with a no-op on flyout close so a stale reference is never invoked.</summary>
+    public void SetCloseAction(Action closeAction) => _closeAction = closeAction;
 
     // ---- Library event --------------------------------------------------
 

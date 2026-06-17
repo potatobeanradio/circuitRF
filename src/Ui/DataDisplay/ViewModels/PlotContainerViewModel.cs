@@ -259,6 +259,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         _parent   = parent;
 
         UpdateLabelStrips();
+        SyncTableWidth();    // size the box correctly if this container starts as a Table plot
 
         // Forward redraw requests from the inspector to the view; also bump
         // AppearanceRevision on every strip so AxisLabelControl re-renders live
@@ -271,6 +272,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         };
         Inspector.PlotStructureChanged += (s, e) =>
         {
+            CoerceAspectForPlotType();
             UpdateLabelStrips();
             OnPropertyChanged(nameof(IsSquareAspect));
             NotifyViewProperties();
@@ -326,6 +328,36 @@ public partial class PlotContainerViewModel : ViewModelBase
             Width  = newW;
             Height = newH;
         }
+    }
+
+    /// <summary>
+    /// Re-shapes the container box to match the current plot type after a live plot-type switch.
+    /// Smith/Polar → square (preserving the larger dimension); Table → natural column total;
+    /// Rect → left as-is.
+    /// </summary>
+    private void CoerceAspectForPlotType()
+    {
+        if (IsSquareAspect)
+        {
+            double size = Math.Max(200, Math.Max(Width, Height));
+            if (Width != size || Height != size) { Width = size; Height = size; }
+        }
+        else if (PlotVM.Plot.PlotType == PlotType.Table)
+        {
+            SyncTableWidth();
+        }
+    }
+
+    /// <summary>
+    /// Sets the container Width to the table's natural total column width so the table box exactly
+    /// fits its columns (freq column + one per trace value column). Height is left to the user/drag.
+    /// </summary>
+    private void SyncTableWidth()
+    {
+        var plot = PlotVM.Plot;
+        if (plot.PlotType != PlotType.Table) return;
+        double newW = Math.Max(200, TableRenderer.TotalColumnWidth(plot));
+        if (Math.Abs(Width - newW) > 0.5) Width = newW;
     }
 
     /// <summary>Called by parent when ZoomLevel or ViewOffset changes.</summary>
@@ -468,6 +500,7 @@ public partial class PlotContainerViewModel : ViewModelBase
     public void OnPlotChanged(object? sender, EventArgs e)
     {
         PlotVM.OnPlotChanged(sender, e);
+        SyncTableWidth();    // re-fits box after column-drag resize
         UpdateLabelStrips();
         _parent.OnContainerPlotChanged(this);
     }

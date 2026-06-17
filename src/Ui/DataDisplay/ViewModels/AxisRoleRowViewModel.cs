@@ -40,6 +40,11 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
         ? PinOptionIndices[Math.Clamp(PinIndex, 0, PinOptionIndices.Count - 1)]
         : PinIndex;
 
+    /// <summary>True when PinOptions were built from axis.Labels (i.e. they are net names, not
+    /// formatted numeric values). When true, the selected option string is used as the label in
+    /// AxisSlice so BuildPickerExpression can emit a quoted net-name token.</summary>
+    public bool OptionsAreLabels { get; }
+
     /// <summary>True when this is the only axis (rank-1 cube) — role toggle disabled.</summary>
     public bool IsRoleToggleable => _owner.AxisRoles.Count > 1;
 
@@ -65,13 +70,15 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
                                    string axisName, string? unit,
                                    IReadOnlyList<string> pinOptions,
                                    bool isX, int pinIndex,
-                                   IReadOnlyList<int>? pinOptionIndices = null)
+                                   IReadOnlyList<int>? pinOptionIndices = null,
+                                   bool optionsAreLabels = false)
     {
         _owner            = owner;
         AxisName          = axisName;
         Unit              = unit;
         PinOptions        = pinOptions;
         PinOptionIndices  = pinOptionIndices;
+        OptionsAreLabels  = optionsAreLabels;
         _isX              = isX;
         _pinIndex         = Math.Clamp(pinIndex, 0, Math.Max(0, pinOptions.Count - 1));
     }
