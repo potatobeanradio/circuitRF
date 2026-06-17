@@ -391,6 +391,50 @@ namespace RfCore
         }
 
         // ============================================================
+        //  Port-count sniff — no full parse
+        // ============================================================
+
+        /// <summary>
+        /// Returns the port count N for the Touchstone file at <paramref name="path"/>
+        /// without loading the full data set.  Prefers the .sNp extension; falls back
+        /// to reading data tokens until a complete first block is seen.
+        /// </summary>
+        public static bool TryGetPortCount(string path, out int ports, out string? error)
+        {
+            ports = 0; error = null;
+            try
+            {
+                if (!File.Exists(path)) { error = $"File not found: {path}"; return false; }
+                int? fromExt = ParsePortsFromExtension(path);
+                using var reader = new StreamReader(path);
+                var tokens = new List<double>();
+                string? line;
+                int linesRead = 0;
+                while ((line = reader.ReadLine()) != null && linesRead++ < 10000)
+                {
+                    string t = line.Trim();
+                    if (t.Length == 0 || t[0] == '!' || t[0] == '#') continue;
+                    int bang = t.IndexOf('!');
+                    if (bang >= 0) t = t[..bang];
+                    foreach (var tok in t.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+                        if (double.TryParse(tok, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out var v))
+                            tokens.Add(v);
+                    if (tokens.Count >= 3)
+                    {
+                        int? n = fromExt ?? TryInferPorts(tokens.Count - 1);
+                        if (n.HasValue && (tokens.Count - 1) == 2 * n.Value * n.Value)
+                        { ports = n.Value; return true; }
+                    }
+                }
+                if (fromExt is > 0) { ports = fromExt.Value; return true; }
+                error = "Could not determine port count from file contents or extension.";
+                return false;
+            }
+            catch (Exception ex) { error = ex.Message; return false; }
+        }
+
+        // ============================================================
         //  Private helpers — reader
         // ============================================================
 
