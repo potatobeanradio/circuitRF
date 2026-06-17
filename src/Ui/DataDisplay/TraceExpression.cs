@@ -238,9 +238,22 @@ public static class TraceExpression
         // ── Step 7: Build output ──────────────────────────────────────────────
         if (anyComplex)
         {
-            complexValues = results.Select(v =>
-                v.Kind == ValueKind.Complex ? v.AsComplex() : new Complex(v.AsReal(), 0)).ToArray();
-            realValues = null;
+            // If every result has Im == 0 (e.g. source cube was Real and wrapped as Complex(v,0)),
+            // demote to realValues so BuildCubePath treats the trace as scalar.
+            bool allImagZero = results.All(v =>
+                v.Kind != ValueKind.Complex || v.AsComplex().Imaginary == 0.0);
+            if (allImagZero)
+            {
+                realValues    = results.Select(v =>
+                    v.Kind == ValueKind.Complex ? v.AsComplex().Real : v.AsReal()).ToArray();
+                complexValues = null;
+            }
+            else
+            {
+                complexValues = results.Select(v =>
+                    v.Kind == ValueKind.Complex ? v.AsComplex() : new Complex(v.AsReal(), 0)).ToArray();
+                realValues = null;
+            }
         }
         else
         {

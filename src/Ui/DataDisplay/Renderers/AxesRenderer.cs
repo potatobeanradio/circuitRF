@@ -568,6 +568,21 @@ namespace CircuitRF.Ui.DataDisplay
                 for (int i = 0; i < plot.Traces.Count; i++)
                     labelLookup[plot.Traces[i]] = allLabels[i];
 
+                // Reference X-axis = first trace's cube X-axis (the plot's X axis). Cube traces whose X-axis
+                // name differs are softly flagged "dimension mismatch" but still attempt to render.
+                string? refCubeXAxis = plot.Traces.Count > 0 && plot.Traces[0].IsCubeBound
+                    ? plot.Traces[0].CubeXAxisName
+                    : null;
+
+                string LabelFor(Trace t)
+                {
+                    string networkFallback = labelLookup.GetValueOrDefault(t, t.ShortDescription);
+                    bool mismatch = t.IsCubeBound
+                                    && refCubeXAxis != null
+                                    && !string.Equals(t.CubeXAxisName, refCubeXAxis, StringComparison.Ordinal);
+                    return t.RectYLabel(networkFallback, showFilePrefix, mismatch);
+                }
+
                 string yLabel = plot.YLabel;
                 if (!string.IsNullOrEmpty(yLabel))
                 {
@@ -581,7 +596,7 @@ namespace CircuitRF.Ui.DataDisplay
                     for (int i = 0; i < leftTraces.Count; i++)
                     {
                         float cx = leftAnchor - sw * (i + 0.5f);
-                        DrawAt(labelLookup.GetValueOrDefault(leftTraces[i], leftTraces[i].ShortDescription),
+                        DrawAt(LabelFor(leftTraces[i]),
                                RenderTheme.ToSKColor(leftTraces[i].Properties.LineColor),
                                cx, false);
                     }
@@ -600,7 +615,7 @@ namespace CircuitRF.Ui.DataDisplay
                     for (int i = 0; i < rightTraces.Count; i++)
                     {
                         float cx = rightAnchor + sw * (i + 0.5f);
-                        DrawAt(labelLookup.GetValueOrDefault(rightTraces[i], rightTraces[i].ShortDescription),
+                        DrawAt(LabelFor(rightTraces[i]),
                                RenderTheme.ToSKColor(rightTraces[i].Properties.LineColor),
                                cx, true);
                     }

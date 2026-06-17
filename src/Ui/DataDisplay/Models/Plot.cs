@@ -174,15 +174,25 @@ namespace CircuitRF.Ui.DataDisplay
             {
                 if (CustomXLabelOn) return CustomXLabel;
 
-                string unit = FreqUnits.Description();
+                // Cube-bound first trace: label from the cube's X axis (the plot's X axis).
+                if (Traces.Count > 0 && Traces[0].IsCubeBound)
+                {
+                    string axisName = Traces[0].CubeXAxisName;
+                    string? unit    = Traces[0].CubeXUnit;
+                    if (string.IsNullOrEmpty(axisName)) axisName = "x";
+                    bool isFreq = unit is "Hz" or "kHz" or "MHz" or "GHz";
+                    if (isFreq)
+                        return $"freq ({FreqUnits.Description()})";
+                    return string.IsNullOrEmpty(unit) ? axisName : $"{axisName} ({unit})";
+                }
 
+                // Network/SNP behavior (unchanged).
+                string u = FreqUnits.Description();
                 if (Traces.Count == 0 || !SupportsComplex)
-                    return $"freq ({unit})";
-                string min = (FreqUnits.Scale() * Traces[0].MinFreq)
-                    .ToString($"G{Axes.NumDigitsXAxis}");
-                string max = (FreqUnits.Scale() * Traces[0].MaxFreq)
-                    .ToString($"G{Axes.NumDigitsXAxis}");
-                return $"freq ({min} to {max} {unit})";
+                    return $"freq ({u})";
+                string min = (FreqUnits.Scale() * Traces[0].MinFreq).ToString($"G{Axes.NumDigitsXAxis}");
+                string max = (FreqUnits.Scale() * Traces[0].MaxFreq).ToString($"G{Axes.NumDigitsXAxis}");
+                return $"freq ({min} to {max} {u})";
             }
         }
 

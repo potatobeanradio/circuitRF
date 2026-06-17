@@ -222,6 +222,10 @@ namespace CircuitRF.Ui.DataDisplay
         /// <summary>Set by the owner when TraceExpression evaluation fails; cleared on success.</summary>
         public string?       ExpressionError { get; set; }
 
+        /// <summary>True when the last BuildPath produced a Rect plot but the cube value is complex with no
+        /// scalar transform (None/Conj) — Rect can only plot scalars. Drives a soft "&lt;invalid&gt;" Y-axis label.</summary>
+        public bool RectValueInvalid { get; private set; }
+
         public bool          IsCubeBound => CubeName is not null || Expression is not null;
 
         // ---- Per-port source reference impedance (Phase 7.2f) -----------
@@ -301,6 +305,32 @@ namespace CircuitRF.Ui.DataDisplay
             }
         }
 
+        /// <summary>
+        /// Y-axis label for this trace on a Rect plot: the cube shorthand (net-name form, e.g.
+        /// mag(V[:, "Vout2", 2])), optionally source-prefixed, with soft suffixes:
+        ///   • " &lt;invalid&gt;" when the value can't render (parse error OR complex-on-Rect),
+        ///   • " dimension mismatch" when this trace's cube X-axis differs from the plot's X-axis.
+        /// Network (SNP) traces fall back to the supplied minimal label.
+        /// </summary>
+        public string RectYLabel(string networkFallback, bool showFilePrefix, bool dimensionMismatch)
+        {
+            string baseLabel;
+            if (IsCubeBound)
+            {
+                baseLabel = CubeShorthand;
+                if (showFilePrefix && SourcePath != null)
+                    baseLabel = System.IO.Path.GetFileNameWithoutExtension(SourcePath) + ".." + baseLabel;
+                if (RectValueInvalid && !baseLabel.Contains("<invalid"))
+                    baseLabel += " <invalid: complex on scalar plot type>";
+            }
+            else
+            {
+                baseLabel = networkFallback;
+            }
+            if (dimensionMismatch) baseLabel += " dimension mismatch";
+            return baseLabel;
+        }
+
         /// <summary>Computes the function-call shorthand from CubeName/Slice/Transform only,
         /// ignoring Expression.  Used by the owner to sync Expression after picker edits.</summary>
         internal string BuildPickerExpression()
@@ -313,8 +343,25 @@ namespace CircuitRF.Ui.DataDisplay
             var inner = string.Join(", ", parts);
             if (Transform == CubeTransform.None)
                 return $"{CubeName}[{inner}]";
-            return $"{Transform.ToString().ToLowerInvariant()}({CubeName}[{inner}])";
+            return $"{TransformFunctionName(Transform)}({CubeName}[{inner}])";
         }
+
+        /// <summary>Maps a CubeTransform to the exact expression-engine function name.
+        /// Case matters: the evaluator's function switch is case-sensitive and expects
+        /// "dB"/"dB20"/"dB10" (capital B) — lower-casing the enum name (e.g. "db20")
+        /// produces an UnknownFunction error. mag/phase/real/imag/conj are already lowercase.</summary>
+        private static string TransformFunctionName(CubeTransform t) => t switch
+        {
+            CubeTransform.dB20  => "dB20",
+            CubeTransform.dB10  => "dB10",
+            CubeTransform.dB    => "dB",
+            CubeTransform.Mag   => "mag",
+            CubeTransform.Phase => "phase",
+            CubeTransform.Real  => "real",
+            CubeTransform.Imag  => "imag",
+            CubeTransform.Conj  => "conj",
+            _                   => t.ToString().ToLowerInvariant(),
+        };
 
         private string DescriptionFor(bool includePrefix)
         {
@@ -424,9 +471,12 @@ namespace CircuitRF.Ui.DataDisplay
             BuildCubePath(plotType, freqUnit);
         }
 
+        private static bool IsFreqUnit(string? unit) => unit is "Hz" or "kHz" or "MHz" or "GHz";
+
         private void BuildCubePath(PlotType plotType, FreqUnit freqUnit)
         {
             Points.Clear();
+            RectValueInvalid = false;
             if (_cubeXValues is null) return;
             if (_cubeComplexValues is null && _cubeRealValues is null) return;
 
@@ -447,10 +497,17 @@ namespace CircuitRF.Ui.DataDisplay
                 return;
             }
 
-            // Rectangular
+            // Rectangular — Rect needs a scalar. A complex cube with a non-scalar transform is invalid.
+            if (isComplex && (Transform == CubeTransform.None || Transform == CubeTransform.Conj))
+            {
+                RectValueInvalid = true;
+                return;
+            }
+
+            double xScale = IsFreqUnit(_cubeXUnit) ? freqUnit.Scale() : 1.0;
             for (int i = 0; i < n; i++)
             {
-                double x = _cubeXValues[i];
+                double x = _cubeXValues[i] * xScale;
                 double y;
 
                 if (isComplex)
@@ -465,8 +522,7 @@ namespace CircuitRF.Ui.DataDisplay
                         CubeTransform.Phase => z.Phase * 180.0 / Math.PI,
                         CubeTransform.Real  => z.Real,
                         CubeTransform.Imag  => z.Imaginary,
-                        CubeTransform.Conj  => z.Magnitude,  // Conj on Rect → magnitude of conj = magnitude
-                        _                   => z.Magnitude,  // None on Complex → magnitude
+                        _                   => z.Magnitude,
                     };
                 }
                 else
@@ -478,7 +534,7 @@ namespace CircuitRF.Ui.DataDisplay
                         CubeTransform.dB10 => 10.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
                         CubeTransform.dB   => 10.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
                         CubeTransform.Mag  => Math.Abs(v),
-                        _                  => v,  // None / Real / Phase / Imag / Conj on Real → value
+                        _                  => v,
                     };
                 }
 
