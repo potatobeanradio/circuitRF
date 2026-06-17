@@ -85,14 +85,15 @@ public class HitTestTests
 
     // ── includeLabels tests ───────────────────────────────────────────────────
 
-    // Resistor at (0,0): type label "R" → textLeft=-165, textRight≈-66.5, centerY=170.
-    // Click (-100, 170) is inside that zone.
+    // Resistor at (0,0): type label "R" (1 char).
+    // Canonical geometry: baselineX=-155, baselineY=280, band=[204,305.6], textRight≈-106.5.
+    // Click (-130, 255) is inside that zone.
 
     [Fact]
     public void LabelClick_IncludeLabelsTrue_ReturnsLabelHit()
     {
         var (edit, render, index) = BuildSmall();
-        var hit = SchematicHitTest.Test(edit, render, index, -100, 170, includeLabels: true);
+        var hit = SchematicHitTest.Test(edit, render, index, -130, 255, includeLabels: true);
         Assert.Equal(SchematicHitTest.HitKind.ComponentType, hit.Kind);
         Assert.Equal(edit.Components[0].Id, hit.Id);
     }
@@ -101,7 +102,9 @@ public class HitTestTests
     public void LabelClick_IncludeLabelsFalse_ReturnsNone()
     {
         var (edit, render, index) = BuildSmall();
-        var hit = SchematicHitTest.Test(edit, render, index, -100, 170, includeLabels: false);
+        // Point below the glyph but NOT in the label band (which starts at y≈204) — uses old
+        // approximate position to confirm label exclusion is reliable regardless of click point.
+        var hit = SchematicHitTest.Test(edit, render, index, -130, 170, includeLabels: false);
         Assert.NotEqual(SchematicHitTest.HitKind.ComponentType, hit.Kind);
         Assert.NotEqual(SchematicHitTest.HitKind.ComponentName, hit.Kind);
         Assert.NotEqual(SchematicHitTest.HitKind.ComponentParam, hit.Kind);
@@ -352,14 +355,15 @@ public class HitTestTests
         });
         var (render, idx) = edit.BuildRenderModel();
 
-        // With ShowTypeLabel=false → no ComponentType hit at row 0.
-        var suppressed = SchematicHitTest.Test(edit, render, idx, -100, 170, includeLabels: true);
+        // With ShowTypeLabel=false → no ComponentType hit at the canonical row-0 position.
+        // Row 0 canonical band: baseline y=280, band [204,305.6], baseX=-155.
+        var suppressed = SchematicHitTest.Test(edit, render, idx, -130, 255, includeLabels: true);
         Assert.NotEqual(SchematicHitTest.HitKind.ComponentType, suppressed.Kind);
 
-        // Regression guard: ShowTypeLabel=true → ComponentType IS returned.
+        // Regression guard: ShowTypeLabel=true → ComponentType IS returned at same position.
         edit.Components[0].ShowTypeLabel = true;
         var (render2, idx2) = edit.BuildRenderModel();
-        var visible = SchematicHitTest.Test(edit, render2, idx2, -100, 170, includeLabels: true);
+        var visible = SchematicHitTest.Test(edit, render2, idx2, -130, 255, includeLabels: true);
         Assert.Equal(SchematicHitTest.HitKind.ComponentType, visible.Kind);
     }
 
@@ -387,13 +391,15 @@ public class HitTestTests
         edit.Components.Add(comp);
         var (render, idx) = edit.BuildRenderModel();
 
-        // Row 1 (instance name) suppressed → no ComponentName hit at centerY=242.
-        var nameHit = SchematicHitTest.Test(edit, render, idx, -100, 242, includeLabels: true);
+        // Row 1 (instance name) suppressed → no ComponentName hit at the row-1 canonical position.
+        // Row 1 canonical band: baseline y=352, band [276,377.6].
+        var nameHit = SchematicHitTest.Test(edit, render, idx, -100, 327, includeLabels: true);
         Assert.NotEqual(SchematicHitTest.HitKind.ComponentName, nameHit.Kind);
 
-        // Param row is row 2 (after suppressed row 1), centerY = 134 + 2*72 + 36 = 314.
-        // It should still produce a ComponentParam hit.
-        var paramHit = SchematicHitTest.Test(edit, render, idx, -100, 314, includeLabels: true);
+        // Param row is row 2 (after suppressed row 1).
+        // Row 2 baseline y = 280 + 2*72 = 424, band [348,449.6], center ≈ 399.
+        // textRight = -155 + 10*38.5 + 10 = 240 → x=-100 is inside.
+        var paramHit = SchematicHitTest.Test(edit, render, idx, -100, 399, includeLabels: true);
         Assert.Equal(SchematicHitTest.HitKind.ComponentParam, paramHit.Kind);
         Assert.Equal(comp.Id, paramHit.Id);
     }

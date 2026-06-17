@@ -11,12 +11,6 @@ public static class SchematicHitTest
     private const double WireHitTol       = 8.0;
     private const double EndpointHitTol   = 12.0;
 
-    // Match renderer: textSize_world=70, lineStep=textSize+2 → 72 world units/row.
-    // LabelStartOffY places zone centers at the visual center of each rendered row:
-    //   baseline(row0) = comp.Y + 190; visual center = baseline - textSize*0.28 = comp.Y+170.4
-    //   LabelStartOffY = 170.4 - LabelRowHeight*0.5 = 170.4 - 36 = 134.
-    private const double LabelRowHeight = 72.0;
-    private const double LabelStartOffY = 134.0;
     private const double CharWidthWorld = 38.5;   // textSize_world(70) × ~0.55 avg char ratio
 
     // Net label: PlexItalic at 65 world units, drawn at stored lbl.X/lbl.Y (no render-time shift).
@@ -241,12 +235,10 @@ public static class SchematicHitTest
 
     private static HitResult TestComponentLabels(EditableComponent comp, double wx, double wy)
     {
-        // Test each visible label row. Row layout: 0=type, 1=name, 2+=params with ShowOnSchematic.
-        // Only parameters with ShowOnSchematic==true and non-empty Expression produce a visible row.
-        // SubIndex in the returned HitResult is the index in the FULL Parameters list (not filtered),
-        // so callers can do comp.Parameters[hit.SubIndex] to retrieve the correct EditableParameter.
+        // Test each visible label row using canonical geometry from SchematicComponent.LabelRowGeometry
+        // so the clickable zone always tracks the rendered text (Bug A fix — single source of truth).
+        // SubIndex in the returned HitResult is the index in the FULL Parameters list (not filtered).
 
-        // Build displayed-param list: (fullIndex, param)
         var shownParams = new List<(int FullIndex, EditableParameter Param)>();
         for (int pi = 0; pi < comp.Parameters.Count; pi++)
         {
@@ -266,11 +258,11 @@ public static class SchematicHitTest
             };
             if (suppressed) continue;
 
-            var (oDx, oDy) = row < comp.LabelOffsets.Count
-                ? comp.LabelOffsets[row] : (0.0, 0.0);
+            var (oDx, oDy) = row < comp.LabelOffsets.Count ? comp.LabelOffsets[row] : (0.0, 0.0);
+            var (baseX, _, bandTop, bandBot) =
+                SchematicComponent.LabelRowGeometry(comp.X, comp.Y, row, oDx, oDy, comp.Symbol, comp.PortCount);
 
-            double centerY = comp.Y + LabelStartOffY + row * LabelRowHeight + LabelRowHeight * 0.5 + oDy;
-            if (Math.Abs(wy - centerY) > LabelRowHeight * 0.5) continue;
+            if (wy < bandTop || wy > bandBot) continue;
 
             string labelText = row switch
             {
@@ -279,16 +271,16 @@ public static class SchematicHitTest
                 _ => ParamLabelText(shownParams[row - 2].Param),
             };
 
-            double textLeft  = comp.X + oDx - 165;
-            double textRight = comp.X + oDx - 155 + labelText.Length * CharWidthWorld + 50;
+            double textLeft  = baseX - 10;
+            double textRight = baseX + labelText.Length * CharWidthWorld + 10;
             if (wx < textLeft || wx > textRight) continue;
 
-            double labelX = comp.X + oDx;
+            double centerY = (bandTop + bandBot) * 0.5;
             return row switch
             {
-                0 => new HitResult(HitKind.ComponentType,  comp.Id, 0, labelX, centerY),
-                1 => new HitResult(HitKind.ComponentName,  comp.Id, 0, labelX, centerY),
-                _ => new HitResult(HitKind.ComponentParam, comp.Id, shownParams[row - 2].FullIndex, labelX, centerY),
+                0 => new HitResult(HitKind.ComponentType,  comp.Id, 0, baseX, centerY),
+                1 => new HitResult(HitKind.ComponentName,  comp.Id, 0, baseX, centerY),
+                _ => new HitResult(HitKind.ComponentParam, comp.Id, shownParams[row - 2].FullIndex, baseX, centerY),
             };
         }
         return new HitResult(HitKind.None, "");

@@ -4,6 +4,18 @@ Standing instructions for `src/Engine` (the numeric layer: MNA assembly, linear 
 HB sub-engine in `HarmonicBalance/`). Read with the root `CLAUDE.md`. Design notes:
 `docs/design/linear-engine.md` and `docs/design/harmonic-balance.md`.
 
+## Node-picker filter fix — StackSweepAxis passes `__`-prefixed metadata cubes unstacked (brief-node-picker-filter-fix, 2026-06-16)
+
+`DataSet.StackSweepAxis` (RfCore/src/Data/DataSet.cs) now passes `__`-prefixed cubes through from the first dataset verbatim instead of calling `DataCube.PrependAxis` on them. Before the fix, stacking prepended the sweep axis onto `__LabeledNodes`, making it rank-2 (`[sweep, label]` instead of `[label]`); `RebuildAxisRolesCore` read `Axes[0].Labels` which was then the numeric sweep axis (Labels == null) → empty labeled set → filter broke for swept runs. The fix also updates `TraceRowViewModel.RebuildAxisRolesCore` to find the label axis by `Name == "label"` instead of by position, so it is resilient to any future shape change. Gate: `Stack_PreservesLabeledNodesShape`, `Stack_MetaCubeNotSwept` (Engine.Tests); `Picker_FiltersAfterSweep` (Ui.Tests); `Table_TraceHeader_HitTest_ReturnsTraceHeaderKind` (Ui.Tests). 4 new tests + 2 existing fixes; 1483 total tests pass.
+
+## CNL provenance round-trip — `labelednets` directive (brief-cnl-labelednets-provenance, 2026-06-16)
+
+**Root cause fixed:** `CnlWriter` never emitted `TestBench.LabeledNets`, so after the GUI wrote a `.cnl` file and `CnlReader` read it back, `tb.LabeledNets` was always empty → `HbEngine` skipped `__LabeledNodes` → picker showed all nodes.
+
+**Fix:** `CnlWriter.Write` appends `labelednets n1 n2 …` (sorted, top-level) when `tb.LabeledNets.Count > 0`. `CnlReader.TryParseLine` parses it back into `tb.LabeledNets`. The directive is only valid at top level (inside `define … end` throws).
+
+**T7 test** (`HbLabeledNodesCubeTests.T7_EndToEnd_SchematicCnl_EmitsLabeledNodesCube`): populates LabeledNets in-memory → `CnlWriter.Write` → `CnlReader.Read` → `Elaborator` → `HbEngine` → asserts `__LabeledNodes` present with correct labels. This is the regression guard for the full GUI run path (T4/T6 only covered the in-memory injection path).
+
 ## Node-picker labeled filter — `__LabeledNodes` side cube (brief-node-picker-labeled-filter, 2026-06-16)
 
 `HbEngine.BuildSingleToneDataSet` (and `BuildTwoToneDataSet`) emit a `__LabeledNodes` metadata cube when `_netlist.Nodes.LabeledNames` is non-empty. The cube has one axis `label` with `Labels` = the labeled node names that actually appear in the `node` axis; values are all-zeros (unused). The `__` prefix marks it as metadata: the signal list and signal picker skip all `__`-prefixed cubes. Round-trips automatically via the generic DataSet `.npy` exporter.

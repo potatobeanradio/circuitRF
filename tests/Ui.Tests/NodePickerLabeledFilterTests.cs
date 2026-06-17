@@ -364,6 +364,85 @@ public sealed class NodePickerLabeledFilterTests
         }
     }
 
+    // ── Picker_FiltersAfterSweep ─────────────────────────────────────────────
+    //
+    // After StackSweepAxis the V cube is [sweep, node, harmonic].
+    // __LabeledNodes remains rank-1 [label].
+    // The picker must still show only the labeled nodes (Vin, Vout), not n1/n2.
+
+    private static DataSet BuildSweptHbDataSet(
+        string[] nodeLabels, string[] labeledNodes, int sweepPts = 3)
+    {
+        // V cube: [node × harmonic] per sweep point; stacked below.
+        var nodeAxis = new Axis("node",     Enumerable.Range(0, nodeLabels.Length).Select(i => (double)i).ToArray(),
+                                "", nodeLabels);
+        var harmAxis = new Axis("harmonic", new[] { 0.0, 1e9 }, "Hz");
+        var vData    = new System.Numerics.Complex[nodeLabels.Length * 2];
+
+        var sweepVals = Enumerable.Range(0, sweepPts).Select(i => (double)i).ToArray();
+        var sweepAxis = new Axis("Pin", sweepVals);
+
+        // Build per-point DataSets, then stack.
+        var pts = new DataSet[sweepPts];
+        for (int i = 0; i < sweepPts; i++)
+        {
+            var pt = new DataSet();
+            pt.Add("V", new DataCube(new[] { nodeAxis, harmAxis }, vData));
+
+            // Every point carries the same __LabeledNodes cube (sweep-invariant metadata).
+            if (labeledNodes.Length > 0)
+            {
+                var lblIdx  = Enumerable.Range(0, labeledNodes.Length).Select(k => (double)k).ToArray();
+                var lblAxis = new Axis("label", lblIdx, "", labeledNodes);
+                pt.Add("__LabeledNodes", new DataCube(new[] { lblAxis }, new double[labeledNodes.Length]));
+            }
+            pts[i] = pt;
+        }
+
+        return DataSet.StackSweepAxis(sweepAxis, pts);
+    }
+
+    [Fact]
+    public async System.Threading.Tasks.Task Picker_FiltersAfterSweep()
+    {
+        // Swept DataSet: V is [sweep=3, node=4, harmonic=2], __LabeledNodes is [label=2].
+        // Only Vin and Vout are labeled; n1 and n2 are internal/auto-named.
+        var ds = BuildSweptHbDataSet(
+            nodeLabels:   ["Vin", "Vout", "n1", "n2"],
+            labeledNodes: ["Vin", "Vout"]);
+
+        // The V cube after stacking must be rank-3.
+        Assert.Equal(3, ds["V"].Rank);
+        Assert.Equal("Pin",  ds["V"].Axes[0].Name);
+        Assert.Equal("node", ds["V"].Axes[1].Name);
+
+        // __LabeledNodes must remain rank-1 (not swept).
+        Assert.Equal(1, ds["__LabeledNodes"].Rank);
+        Assert.Equal("label", ds["__LabeledNodes"].Axes[0].Name);
+
+        var (path, lib) = await ExportAndLoad(ds);
+        try
+        {
+            // Build inspector bound to the swept DataSet with V as the trace signal.
+            var (trvm, _) = BuildInspector(lib, path);
+
+            // Picker must filter to labeled nodes only.
+            Assert.False(trvm.ShowAllNodes, "Default: filter ON when __LabeledNodes is present");
+
+            var nodeRow = trvm.AxisRoles.FirstOrDefault(r => r.AxisName == "node");
+            Assert.NotNull(nodeRow);
+            Assert.Equal(2, nodeRow!.PinOptions.Count);
+            Assert.Contains("Vin",  nodeRow.PinOptions);
+            Assert.Contains("Vout", nodeRow.PinOptions);
+            Assert.DoesNotContain("n1", nodeRow.PinOptions);
+            Assert.DoesNotContain("n2", nodeRow.PinOptions);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
     // ── T11: SideCube_NotSelectable ──────────────────────────────────────────
 
     [Fact]

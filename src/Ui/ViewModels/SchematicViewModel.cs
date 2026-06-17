@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Schematic;
@@ -203,6 +204,13 @@ public sealed partial class SchematicViewModel : ObservableObject
     private EditableNetLabel?  _inlineEditExistingNetLabel;
     private bool               _inlineEditMoveLabel;   // true when existing label found via node search, not proximity
     private double             _inlineEditWorldX, _inlineEditWorldY;
+
+    /// <summary>True when the inline box text includes the parameter name (VAR/SDD name-edit mode).</summary>
+    public bool InlineEditIncludesName { get; private set; }
+    /// <summary>Selection start within the inline box text (0-based). Honoured by the view on open.</summary>
+    public int  InlineEditSelStart     { get; private set; }
+    /// <summary>Selection length (-1 = select-all) for the inline box. Set per hit kind.</summary>
+    public int  InlineEditSelLength    { get; private set; } = -1;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -3068,19 +3076,38 @@ public sealed partial class SchematicViewModel : ObservableObject
         switch (hit.Kind)
         {
             case SchematicHitTest.HitKind.ComponentType:
+                InlineEditIncludesName = false; InlineEditSelStart = 0; InlineEditSelLength = -1;
                 SetInlineEdit(InlineEditKind.ComponentType, hit.Id,
                     ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount), screenX, screenY);
                 break;
             case SchematicHitTest.HitKind.ComponentName:
+                InlineEditIncludesName = false; InlineEditSelStart = 0; InlineEditSelLength = -1;
                 SetInlineEdit(InlineEditKind.ComponentName, hit.Id, comp.InstanceName, screenX, screenY);
                 break;
             case SchematicHitTest.HitKind.ComponentParam:
+            {
                 var param = comp.Parameters.ElementAtOrDefault(hit.SubIndex);
                 if (param is null) return;
                 _inlineEditParam = param;
-                SetInlineEdit(InlineEditKind.ComponentParam, hit.Id,
-                    ParamInlineInitValue(param), screenX, screenY);
+
+                bool nameMode = comp.Symbol is SymbolKind.Var or SymbolKind.Sdd;
+                InlineEditIncludesName = nameMode;
+
+                string init;
+                if (nameMode)
+                {
+                    init = FullParamLabel(param);
+                    InlineEditSelStart = 0; InlineEditSelLength = -1;
+                }
+                else
+                {
+                    init = ParamInlineInitValue(param);
+                    InlineEditSelStart  = 0;
+                    InlineEditSelLength = string.IsNullOrEmpty(param.Unit) ? -1 : param.Expression.Length;
+                }
+                SetInlineEdit(InlineEditKind.ComponentParam, hit.Id, init, screenX, screenY);
                 break;
+            }
         }
     }
 
@@ -3110,6 +3137,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         _inlineEditMoveLabel        = moveLabel;
         _inlineEditWorldX = worldX;
         _inlineEditWorldY = worldY;
+        InlineEditIncludesName = false; InlineEditSelStart = 0; InlineEditSelLength = -1;
         SetInlineEdit(InlineEditKind.WireNetLabel, wireId, existing?.Name ?? "", screenX, screenY);
     }
 
@@ -3117,6 +3145,9 @@ public sealed partial class SchematicViewModel : ObservableObject
                                 double screenX, double screenY)
     {
         _inlineEditParam = param;
+        InlineEditIncludesName = false;
+        InlineEditSelStart  = 0;
+        InlineEditSelLength = string.IsNullOrEmpty(param.Unit) ? -1 : param.Expression.Length;
         SetInlineEdit(InlineEditKind.ComponentParam, comp.Id,
             ParamInlineInitValue(param), screenX, screenY);
     }
@@ -3124,6 +3155,10 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// <summary>Initial text for the inline edit box: "Expression Unit" (unit omitted when empty).</summary>
     private static string ParamInlineInitValue(EditableParameter p)
         => string.IsNullOrEmpty(p.Unit) ? p.Expression : $"{p.Expression} {p.Unit}";
+
+    /// <summary>Full editable label "Name = Expr Unit" (used for VAR/SDD where the name is editable).</summary>
+    private static string FullParamLabel(EditableParameter p)
+        => string.IsNullOrEmpty(p.Name) ? ParamInlineInitValue(p) : $"{p.Name} = {ParamInlineInitValue(p)}";
 
     private void SetInlineEdit(InlineEditKind kind, string targetId, string value,
                                double screenX, double screenY)
@@ -3144,14 +3179,15 @@ public sealed partial class SchematicViewModel : ObservableObject
         // Capture locals and clear VM state immediately so any deferred re-entry sees None and exits.
         // Reading captured locals (not fields) also prevents cross-contamination when the user has
         // already started editing a different component before the deferred call fires.
-        var kind       = _inlineEditKind;
-        var targetId   = _inlineEditTargetId;
-        var param      = _inlineEditParam;
-        var label      = _inlineEditExistingNetLabel;
-        var moveLabel  = _inlineEditMoveLabel;
-        var worldX     = _inlineEditWorldX;
-        var worldY     = _inlineEditWorldY;
-        string newVal  = InlineEditValue.Trim();
+        var kind         = _inlineEditKind;
+        var targetId     = _inlineEditTargetId;
+        var param        = _inlineEditParam;
+        var label        = _inlineEditExistingNetLabel;
+        var moveLabel    = _inlineEditMoveLabel;
+        var worldX       = _inlineEditWorldX;
+        var worldY       = _inlineEditWorldY;
+        var includesName = InlineEditIncludesName;
+        string newVal    = InlineEditValue.Trim();
 
         CancelInlineEdit();  // zero out all fields now — deferred call hits None guard above
 
@@ -3215,12 +3251,24 @@ public sealed partial class SchematicViewModel : ObservableObject
             case InlineEditKind.ComponentParam:
             {
                 if (param is null) break;
-                if (newVal.Length > 0)
+                if (newVal.Length == 0) break;
+
+                string newName = param.Name;
+                string rest    = newVal;
+                if (includesName)
                 {
-                    var (expr, unit) = ParseExpressionUnit(newVal);
-                    if (expr != param.Expression || unit != param.Unit)
-                        Execute(new EditParameterCommand(EditModel, param, expr, unit));
+                    int eq = newVal.IndexOf('=');
+                    if (eq >= 0)
+                    {
+                        newName = newVal[..eq].Trim();
+                        rest    = newVal[(eq + 1)..].Trim();
+                    }
+                    // No '=' typed → name unchanged, treat the whole text as the value.
                 }
+
+                var (expr, unit) = ParseExpressionUnit(rest, param);
+                if (newName != param.Name || expr != param.Expression || unit != param.Unit)
+                    Execute(new EditParameterCommand(EditModel, param, expr, unit, newName));
                 break;
             }
             case InlineEditKind.WireNetLabel:
@@ -3272,6 +3320,9 @@ public sealed partial class SchematicViewModel : ObservableObject
         _inlineEditExistingNetLabel = null;
         _inlineEditMoveLabel        = false;
         InlineEditValue             = "";
+        InlineEditIncludesName      = false;
+        InlineEditSelStart          = 0;
+        InlineEditSelLength         = -1;
     }
 
     /// <summary>
@@ -3291,6 +3342,56 @@ public sealed partial class SchematicViewModel : ObservableObject
         }
         return (raw, "");
     }
+
+    /// <summary>
+    /// Param-aware overload: splits "1Ω" → ("1","Ω") by checking whether the trailing
+    /// run of unit glyphs matches the param's known unit or a recognised engine unit.
+    /// Falls back to the spaced parse, then (raw,"") when nothing matches.
+    /// </summary>
+    internal static (string Expression, string Unit) ParseExpressionUnit(string raw, EditableParameter p)
+    {
+        raw = raw.Trim();
+        // 1) Spaced unit (existing behaviour): "2.5 nH" → ("2.5","nH").
+        int lastSpace = raw.LastIndexOf(' ');
+        if (lastSpace > 0)
+        {
+            string tail = raw[(lastSpace + 1)..];
+            if (tail.Length > 0 && char.IsLetter(tail[0]))
+                return (raw[..lastSpace].Trim(), tail);
+        }
+        // 2) No-space trailing unit remap: "1Ω" → ("1","Ω"), "2.5nH" → ("2.5","nH").
+        if (TrySplitTrailingUnit(raw, p, out var expr2, out var unit2))
+            return (expr2, unit2);
+        return (raw, "");
+    }
+
+    private static bool TrySplitTrailingUnit(string raw, EditableParameter p,
+                                             out string expr, out string unit)
+    {
+        expr = raw; unit = "";
+        int i = raw.Length;
+        while (i > 0 && IsUnitGlyph(raw[i - 1])) i--;      // trailing run of unit chars
+        if (i == raw.Length || i == 0) return false;        // no run, or no numeric part
+        char before = raw[i - 1];
+        if (!(char.IsDigit(before) || before == ')' || before == '.')) return false;
+        string run = raw[i..];
+
+        bool matchesParam = !string.IsNullOrEmpty(p.Unit)
+            && string.Equals(run, p.Unit, StringComparison.OrdinalIgnoreCase);
+        bool recognized = Units.IsRecognizedUnit(UnitNormalizer.ToEngineUnit(run))
+            && !(run.Length == 1 && IsBareSiPrefix(run[0]));
+        if (!matchesParam && !recognized) return false;
+
+        expr = raw[..i].Trim();
+        unit = matchesParam ? p.Unit : run;                  // canonical casing from the param
+        return true;
+    }
+
+    private static bool IsUnitGlyph(char c)
+        => char.IsLetter(c) || c is '%' or '°';
+
+    private static bool IsBareSiPrefix(char c)
+        => "TGMkmunpf".IndexOf(c) >= 0;
 
     // ── Misc helpers ──────────────────────────────────────────────────────────
 

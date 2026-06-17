@@ -293,11 +293,12 @@ public static class SchematicModelBuilder
         // components without saved LabelOffsets).
         double fullMinX = cx - HalfBound, fullMinY = cy - HalfBound;
         double fullMaxX = cx + HalfBound, fullMaxY = cy + HalfBound;
+
         for (int li = 0; li < labels.Count; li++)
         {
             if (string.IsNullOrEmpty(labels[li])) continue;
             double lx  = cx + SchematicComponent.LabelBaseOffsetX;
-            double ly  = cy + SchematicComponent.LabelBaseY + li * SchematicComponent.LabelWorldStep;
+            double ly  = cy + SchematicComponent.LabelBaseYFor(kind, n) + li * SchematicComponent.LabelWorldStep;
             fullMinX = Math.Min(fullMinX, lx);
             fullMinY = Math.Min(fullMinY, ly - SchematicComponent.LabelWorldHeight);
             fullMaxX = Math.Max(fullMaxX, lx + SchematicComponent.LabelWidthEstimate);

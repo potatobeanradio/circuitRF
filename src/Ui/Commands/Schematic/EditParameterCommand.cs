@@ -3,8 +3,8 @@ using CircuitRF.Ui.Schematic;
 namespace CircuitRF.Ui.Commands.Schematic;
 
 /// <summary>
-/// Changes the expression and unit of a single named parameter on a component.
-/// The parameter name stays fixed — only value and units are edited via the inline box.
+/// Changes the expression, unit, and optionally the name of a single parameter on a component.
+/// Pass newName to rename (used for VAR/SDD inline editing where the name is editable).
 /// </summary>
 internal sealed class EditParameterCommand : IUiCommand
 {
@@ -14,21 +14,26 @@ internal sealed class EditParameterCommand : IUiCommand
     private readonly string _oldExpression;
     private readonly string _newUnit;
     private readonly string _oldUnit;
+    private readonly string _newName;
+    private readonly string _oldName;
 
     public string Description => $"Edit {_param.Name}";
 
-    public EditParameterCommand(SchematicEditModel model, EditableParameter param, string newExpression, string newUnit = "")
+    public EditParameterCommand(SchematicEditModel model, EditableParameter param,
+        string newExpression, string newUnit = "", string? newName = null)
     {
         _model         = model;
         _param         = param;
         _oldExpression = param.Expression;
         _oldUnit       = param.Unit;
+        _oldName       = param.Name;
         _newExpression = newExpression;
         _newUnit       = newUnit;
+        _newName       = newName ?? param.Name;
     }
 
-    public void Execute() { _param.Expression = _newExpression; _param.Unit = _newUnit; _model.NotifyChanged(); }
-    public void Undo()    { _param.Expression = _oldExpression; _param.Unit = _oldUnit; _model.NotifyChanged(); }
+    public void Execute() { _param.Name = _newName; _param.Expression = _newExpression; _param.Unit = _newUnit; _model.NotifyChanged(); }
+    public void Undo()    { _param.Name = _oldName; _param.Expression = _oldExpression; _param.Unit = _oldUnit; _model.NotifyChanged(); }
 }
 
 /// <summary>

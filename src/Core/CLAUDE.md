@@ -64,8 +64,15 @@ behavior) the engine have their own notes.
   `TestBench` as `.cnl` text that `CnlReader` round-trips back to an equivalent `TestBench`.
   Handles: variables, standard instances (R/L/C/Port/SnP…), SDD (equation format), Z_Port (Z[i,j]=
   format + N-or-N+1 rule), Tuner (skips synthetic TunerName), typed analyses (HB/Loadpull/etc.),
-  measurements, and raw directives verbatim. Gate: 7 round-trip tests in
-  `tests/Core.Tests/Netlist/CnlWriterTests.cs`, all green.
+  measurements, raw directives verbatim, and a top-level `labelednets <name> <name> …` directive
+  recording which nets came from user-placed schematic labels (see below). Gate: 10 round-trip tests
+  in `tests/Core.Tests/Netlist/CnlWriterTests.cs`, all green.
+- **`labelednets` directive (brief-cnl-labelednets-provenance, 2026-06-16).** `CnlWriter` emits a
+  top-level `labelednets n1 n2 …` line (sorted, stable) from `tb.LabeledNets` when any labeled nets
+  exist; `CnlReader` parses it back into `tb.LabeledNets`. This is what lets the node-picker
+  labeled-filter survive the schematic→`.cnl`→CnlReader run path. `HbLabeledNodesCubeTests` (T4/T6)
+  previously only exercised the in-memory injection path and missed the `.cnl` round-trip gap; T7
+  (`EndToEnd_SchematicCnl_EmitsLabeledNodesCube`) is the regression guard for the full round-trip.
 - **Skip unknown header/comment lines** so real-world exports import cleanly; committed fixtures are
   clean `.cnl`.
 - The **VendorA importer** (a separate front-end, Phase 2) translates legacy `if…then…else…endif`

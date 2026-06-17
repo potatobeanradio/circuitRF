@@ -821,15 +821,16 @@ public static class SchematicRenderer
         SKPaint compNamePaint, SKPaint instNamePaint, SKPaint paramNamePaint,
         (double DX, double DY)? dragDelta = null)
     {
-        // All anchors are computed in world space and transformed once — same model as symbols and net labels.
+        // All anchors are computed via the canonical helper so the renderer and hit-test
+        // can never drift — SchematicComponent.LabelRowGeometry is the single source of truth.
+        int portCount = c.Ports.Count / 2;
         for (int i = 0; i < c.Labels.Count; i++)
         {
             string label = c.Labels[i];
             if (string.IsNullOrEmpty(label)) continue;
             var (oDx, oDy) = i < c.LabelOffsets.Count ? c.LabelOffsets[i] : (0.0, 0.0);
             if (dragDelta is { } dd) { oDx += dd.DX; oDy += dd.DY; }
-            double worldX = cx + LabelBaseOffsetX + oDx;
-            double worldY = cy + LabelBaseY       + oDy + i * LabelWorldStep;
+            var (worldX, worldY, _, _) = SchematicComponent.LabelRowGeometry(cx, cy, i, oDx, oDy, c.Symbol, portCount);
             var (lx, ly) = ToPixel(worldX, worldY, panX, panY, zoom);
             var paint = i == 0 ? compNamePaint : (i == 1 ? instNamePaint : paramNamePaint);
             canvas.DrawText(label, lx, ly, SKTextAlign.Left, font, paint);

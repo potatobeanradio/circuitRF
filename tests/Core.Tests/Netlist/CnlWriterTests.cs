@@ -298,6 +298,61 @@ public class CnlWriterTests
         Assert.Null(gain.Unit);
     }
 
+    // ── Tests: labelednets round-trip (brief-cnl-labelednets-provenance) ─────
+
+    /// <summary>
+    /// LabeledNets survive a full CnlWriter → CnlReader round-trip.
+    /// Regression guard: before fix, CnlWriter never emitted the directive and
+    /// LabeledNets was always empty after reading, breaking the node-picker filter.
+    /// </summary>
+    [Fact]
+    public void Cnl_RoundTrips_LabeledNets()
+    {
+        var tb = new TestBench("test");
+        tb.LabeledNets.Add("n_drain");
+        tb.LabeledNets.Add("n_gate");
+
+        var text = CnlWriter.Write(tb);
+
+        Assert.Contains("labelednets", text);
+
+        var (_, tb2) = new CnlReader().Read(text);
+        Assert.Equal(2, tb2.LabeledNets.Count);
+        Assert.Contains("n_drain", tb2.LabeledNets);
+        Assert.Contains("n_gate",  tb2.LabeledNets);
+    }
+
+    /// <summary>
+    /// An empty LabeledNets set must not emit a labelednets line, and re-reading
+    /// such a file must leave LabeledNets empty.
+    /// </summary>
+    [Fact]
+    public void Cnl_NoLabeledNets_NoDirective()
+    {
+        var tb   = new TestBench("test");
+        var text = CnlWriter.Write(tb);
+
+        Assert.DoesNotContain("labelednets", text);
+
+        var (_, tb2) = new CnlReader().Read(text);
+        Assert.Empty(tb2.LabeledNets);
+    }
+
+    /// <summary>
+    /// A labelednets directive inside a define…end block must throw CnlReadException.
+    /// The directive is only meaningful at top level.
+    /// </summary>
+    [Fact]
+    public void Cnl_LabeledNets_InsideDefine_Throws()
+    {
+        const string badCnl = """
+            define MyCell (a b)
+            labelednets n_drain
+            end MyCell
+            """;
+        Assert.Throws<CnlReadException>(() => new CnlReader().Read(badCnl));
+    }
+
     // ── Assertion helpers ────────────────────────────────────────────────────
 
     private static void AssertVariable(TestBench tb, string name, string expr, string? unit)

@@ -1,3 +1,6 @@
+// Suppress: the sweep fields on HarmonicBalanceAnalysis are [Obsolete] (retained for .cnl read
+// compat); these tests specifically verify that legacy round-trip behaviour still works.
+#pragma warning disable CS0618
 using System.Collections.Generic;
 using System.Linq;
 using CircuitRF.Core.Design;

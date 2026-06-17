@@ -602,11 +602,12 @@ public partial class SchematicView : UserControl
 
     // World-space anchor kept while a component label is being edited so the edit box
     // can follow zoom and pan.  Null for wire net-label edits (those use screen-click pos).
-    // PrefixWorldUnits = width of the "<Name> = " prefix in world units (pixels / zoom at
-    //   measurement time); 0 for type/name rows.  Multiply by current zoom in RepositionInlineEditBox.
-    //   Stored as world units (not pixels) so it stays correct at any zoom level.
+    // PrefixWorldUnits = width of the "<Name> = " prefix in world units (measured at the
+    //   renderer's reference size 70 so it is zoom-independent); 0 for type/name rows and
+    //   for name-mode edits (InlineEditIncludesName), where the box starts at the label's left edge.
     private sealed record ComponentLabelAnchor(
         double CompX, double CompY, int Row, double ODx, double ODy,
+        SymbolKind Symbol, int PortCount,
         double PrefixWorldUnits = 0);
     private ComponentLabelAnchor? _labelAnchor;
 
@@ -646,32 +647,33 @@ public partial class SchematicView : UserControl
 
             var (oDx, oDy) = editComp.GetLabelOffset(row);
 
-            // Prefix width in WORLD UNITS: measure the "<Name> = " prefix using Skia so that
-            // RepositionInlineEditBox stays accurate at any zoom.  Stored as px/zoom (world units)
-            // so multiplying by the current zoom at reposition time gives the correct screen offset.
+            // Prefix width in WORLD units: measure "<Name> = " at the renderer's reference size (70)
+            // so it is zoom-independent (the renderer scales the same text by zoom*70, and
+            // multiplying by zoom at reposition time gives the correct screen offset at any zoom).
+            // For name-mode edits (InlineEditIncludesName) the box starts at the label's left edge.
             double prefixWorldUnits = 0;
             if (hit.Kind == SchematicHitTest.HitKind.ComponentParam
-                && hit.SubIndex < editComp.Parameters.Count)
+                && hit.SubIndex < editComp.Parameters.Count
+                && !(Vm?.InlineEditIncludesName ?? false))
             {
                 var pName = editComp.Parameters[hit.SubIndex].Name;
                 if (!string.IsNullOrEmpty(pName))
                 {
-                    string prefix = $"{pName} = ";
-                    double z = SchematicCanvasCtrl.CurrentZoom;
-                    float ts = (float)Math.Max(z * 70, 4.0);
-                    using var mf = new SKFont(SkiaFonts.PlexRegular, ts);
-                    prefixWorldUnits = mf.MeasureText(prefix) / z;
+                    using var mf = new SKFont(SkiaFonts.PlexRegular, 70f);
+                    prefixWorldUnits = mf.MeasureText($"{pName} = ");
                 }
             }
 
-            _labelAnchor = new ComponentLabelAnchor(editComp.X, editComp.Y, row, oDx, oDy, prefixWorldUnits);
+            _labelAnchor = new ComponentLabelAnchor(
+                editComp.X, editComp.Y, row, oDx, oDy,
+                editComp.Symbol, editComp.PortCount, prefixWorldUnits);
         }
         else
         {
             _labelAnchor = null;
         }
 
-        ShowInlineEditBox(e.ScreenX, e.ScreenY, Vm.InlineEditValue);
+        ShowInlineEditBoxForLabel();
     }
 
     private void OnViewportChanged(object? sender, EventArgs e)
@@ -680,33 +682,34 @@ public partial class SchematicView : UserControl
             RepositionInlineEditBox();
     }
 
+    // Screen position of this label row's text anchor (Skia baseline / left edge), derived from the
+    // SAME LabelRowGeometry the renderer uses — the single source of truth for the inline box position.
+    // For value-only edits the box starts past the "<Name> = " prefix; for name-edits (VAR/SDD) it
+    // starts at the label's left edge (InlineEditIncludesName → PrefixWorldUnits already zero).
+    private (double X, double Y) ComputeComponentLabelScreen()
+    {
+        var a = _labelAnchor!;
+        var (baseXw, baseYw, _, _) = SchematicComponent.LabelRowGeometry(
+            a.CompX, a.CompY, a.Row, a.ODx, a.ODy, a.Symbol, a.PortCount);
+        double offsetW = (Vm?.InlineEditIncludesName ?? false) ? 0 : a.PrefixWorldUnits;
+        return SchematicCanvasCtrl.WorldToScreen(baseXw + offsetW, baseYw);
+    }
+
     private void RepositionInlineEditBox()
     {
-        var a       = _labelAnchor!;
-        double zoom = SchematicCanvasCtrl.CurrentZoom;
+        if (_labelAnchor is null) return;
 
-        double fontSize = Math.Max(zoom * 70, 9.0);   // no upper cap — matches renderer
+        double zoom     = SchematicCanvasCtrl.CurrentZoom;
+        double fontSize = Math.Max(zoom * 70, 9.0);   // matches renderer; floor for legibility
         InlineEditBox.FontSize = fontSize;
 
-        var (cpx, cpy)  = SchematicCanvasCtrl.WorldToScreen(a.CompX, a.CompY);
-        double textSize = Math.Max(zoom * 70, 4.0);
-        double lx = cpx - zoom * 155 + a.ODx * zoom;
-        double ly = cpy + zoom * 120 + textSize + a.Row * (textSize + 2) + a.ODy * zoom;
-        // Offset past the "<Name> = " prefix.  PrefixWorldUnits was measured with Skia at edit-start
-        // and stored as px/zoom so that multiplying by current zoom gives the correct screen offset
-        // at any zoom level without re-measuring.
-        if (a.PrefixWorldUnits > 0)
-            lx += a.PrefixWorldUnits * zoom;
+        var (sx, sy) = ComputeComponentLabelScreen();   // sy = Skia baseline in screen px
 
-        string text = InlineEditBox.Text ?? "";
-        double width = CalcInlineEditWidth(text, fontSize);
-        InlineEditBox.Width  = width;
-        // Height auto-sized by Avalonia.
-
-        _inlineEditAnchorLeft = lx - TextBoxLeftPad;
+        InlineEditBox.Width   = CalcInlineEditWidth(InlineEditBox.Text ?? "", fontSize);
+        _inlineEditAnchorLeft = sx - TextBoxLeftPad;
         InlineEditBox.Margin  = new Thickness(
             _inlineEditAnchorLeft,
-            ly - TextBoxTopPad - fontSize * _fontAscenderRatio,
+            sy - TextBoxTopPad - fontSize * _fontAscenderRatio,
             0, 0);
     }
 
@@ -778,6 +781,36 @@ public partial class SchematicView : UserControl
     // TextBox Margin.Left anchor (= text left edge - TextBoxLeftPad); fixed while user types.
     private double _inlineEditAnchorLeft;
 
+    // Component-label path: position from the world anchor (single source of truth = LabelRowGeometry).
+    private void ShowInlineEditBoxForLabel()
+    {
+        double zoom = SchematicCanvasCtrl.CurrentZoom;
+        InlineEditBox.FontSize = Math.Max(zoom * 70, 9.0);
+        InlineEditBox.Text     = Vm!.InlineEditValue;
+
+        InlineEditBox.TextChanged -= OnInlineEditTextChanged;
+        InlineEditBox.TextChanged += OnInlineEditTextChanged;
+
+        InlineEditBox.IsVisible = true;
+        RepositionInlineEditBox();        // position from the world anchor (single source)
+        FocusAndSelectInlineEditBox();
+    }
+
+    private void FocusAndSelectInlineEditBox()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            InlineEditBox.Focus();
+            int selLen = Vm?.InlineEditSelLength ?? -1;
+            if (selLen < 0) { InlineEditBox.SelectAll(); return; }   // -1 ⇒ select all
+            var t     = InlineEditBox.Text ?? "";
+            int start = Math.Clamp(Vm?.InlineEditSelStart ?? 0, 0, t.Length);
+            int end   = Math.Clamp(start + selLen, start, t.Length);
+            InlineEditBox.SelectionStart = start;
+            InlineEditBox.SelectionEnd   = end;
+        }, DispatcherPriority.Input);
+    }
+
     private void ShowInlineEditBox(double screenX, double screenY, string initialText)
     {
         // screenX = text left edge in screen pixels (from DrawLabels lx).
@@ -799,11 +832,7 @@ public partial class SchematicView : UserControl
         InlineEditBox.TextChanged += OnInlineEditTextChanged;
 
         InlineEditBox.IsVisible = true;
-        Dispatcher.UIThread.Post(() =>
-        {
-            InlineEditBox.Focus();
-            InlineEditBox.SelectAll();
-        }, DispatcherPriority.Input);
+        FocusAndSelectInlineEditBox();
     }
 
     private void OnInlineEditTextChanged(object? sender, TextChangedEventArgs e)

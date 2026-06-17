@@ -898,7 +898,11 @@ public partial class TraceRowViewModel : ViewModelBase
         {
             var lblCube = ds["__LabeledNodes"];
             labeledSet = new HashSet<string>(StringComparer.Ordinal);
-            if (lblCube.Axes.Count > 0 && lblCube.Axes[0].Labels is { } lbls)
+            // Find the axis that carries label strings by name, not by position —
+            // a swept DataSet may have extra axes prepended. Fall back to first axis with Labels.
+            var labelAxis = lblCube.Axes.FirstOrDefault(a => a.Name == "label" && a.Labels is not null)
+                         ?? lblCube.Axes.FirstOrDefault(a => a.Labels is not null);
+            if (labelAxis?.Labels is { } lbls)
                 foreach (var l in lbls) labeledSet.Add(l);
         }
 

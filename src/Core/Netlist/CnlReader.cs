@@ -132,6 +132,21 @@ public sealed class CnlReader
             return true;
         }
 
+        // Net-label provenance: "labelednets name1 name2 ..."
+        if (line.StartsWith("labelednets ", StringComparison.Ordinal) ||
+            line.Equals("labelednets", StringComparison.Ordinal))
+        {
+            if (_currentCell is not null)
+                throw new CnlReadException(_lineNumber, line,
+                    "'labelednets' is only valid at top level, not inside a define block.");
+            var rest = line.Length > "labelednets".Length
+                ? line["labelednets".Length..].Trim()
+                : "";
+            foreach (var net in rest.Split(' ', System.StringSplitOptions.RemoveEmptyEntries))
+                _testBench!.LabeledNets.Add(net);
+            return true;
+        }
+
         // Cell definition start: "define CellName ( P1 P2 ... )"
         if (line.StartsWith("define ", StringComparison.Ordinal))
         {

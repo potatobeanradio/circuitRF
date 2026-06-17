@@ -70,6 +70,11 @@ public static class CnlWriter
         foreach (var raw in tb.RawDirectives)
             sb.AppendLine($"{raw.Kind} {raw.RawLine}");
 
+        // Net-label provenance: which nets came from user-placed schematic labels.
+        // Round-trips tb.LabeledNets so the node-picker filter survives schematic→.cnl→reader.
+        if (tb.LabeledNets.Count > 0)
+            sb.AppendLine($"labelednets {string.Join(" ", tb.LabeledNets.OrderBy(n => n, System.StringComparer.Ordinal))}");
+
         return sb.ToString();
     }
 

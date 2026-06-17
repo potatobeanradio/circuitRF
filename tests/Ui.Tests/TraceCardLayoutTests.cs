@@ -183,4 +183,35 @@ public sealed class TraceCardLayoutTests
             File.Delete(path);
         }
     }
+
+    // ------------------------------------------------------------------ //
+    //  Test 4: Table_TraceHeader_DoubleClick_OpensInlineEditor            //
+    //  Verifies that TableRenderer.HitTest returns TraceHeader (not None) //
+    //  for a column-header position, confirming that the dispatch logic   //
+    //  in PlotControl.HandleDoubleTapAt can route to FocusSpecTextBox.    //
+    // ------------------------------------------------------------------ //
+
+    [Fact]
+    public void Table_TraceHeader_HitTest_ReturnsTraceHeaderKind()
+    {
+        var snp   = MakeSnp2Port();
+        var plot  = new Plot(PlotType.Table, FreqUnit.GHz);
+        var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);
+        trace.BuildPath(PlotType.Table, FreqUnit.GHz);
+        plot.Traces.Add(trace);
+
+        // Table layout: column-0 is the freq column, column-1 is the first trace column.
+        // Both columns default to ColumnWidth=115 px at zoom=1.
+        // Col-0 spans [0, 115), col-1 spans [115, 230). Resize handle zone = ±5 px from each right edge.
+        // Use x=170 — comfortably inside col-1 and ≥10 px away from any right edge.
+        const float headerY = 5f;
+        const float traceColX = 170f;
+        var canvasSize = (W: 400.0, H: 300.0);
+
+        var hit = TableRenderer.HitTest(traceColX, headerY, plot, canvasSize, zoomLevel: 1f);
+
+        Assert.Equal(TableHitKind.TraceHeader, hit.Kind);
+        Assert.NotNull(hit.HitTrace);
+        Assert.Same(trace, hit.HitTrace);
+    }
 }

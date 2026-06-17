@@ -40,10 +40,46 @@ public sealed class SchematicComponent
     // drifting to different values — that drift was what caused the LabelOffsets
     // cull blind spot fixed in this commit.
     public const double LabelBaseOffsetX   = -155.0; // label anchor X from center
-    public const double LabelBaseY         =  190.0; // first-row Skia baseline Y from center
+    public const double LabelBaseY         =  280.0; // first-row Skia baseline Y from center
     public const double LabelWorldHeight   =   70.0; // font cap-height in world units
     public const double LabelWorldStep     =   72.0; // line-to-line spacing
     public const double LabelWidthEstimate =  500.0; // conservative text-width estimate
+
+    /// <summary>
+    /// First-row label baseline Y (from component center) for this symbol and port count.
+    /// For fixed-geometry symbols this is the constant LabelBaseY. For the variadic SDD/ZPort
+    /// symbols whose body grows with port count, the base-Y is pushed just below the glyph's
+    /// bottom edge so the label never overlaps the symbol body.
+    /// </summary>
+    public static double LabelBaseYFor(SymbolKind symbol, int portCount)
+    {
+        if (symbol is SymbolKind.Sdd or SymbolKind.ZPort)
+        {
+            double halfH = SymbolPortDefs.SddBodyRect(portCount).HalfH;
+            return Math.Max(LabelBaseY, halfH + LabelWorldStep);
+        }
+        return LabelBaseY;
+    }
+
+    /// <summary>
+    /// Canonical world geometry for label row <paramref name="i"/>, given the per-label offset
+    /// (LabelOffsets[i] plus any live drag delta). Single source of truth shared by the renderer
+    /// (DrawLabels) and the hit-test (TestComponentLabels) so the clickable zone always tracks the
+    /// rendered text. Returns the left-aligned text anchor (BaselineX, BaselineY) and the vertical
+    /// hit band [BandTopY, BandBotY] centered on the visual row.
+    /// </summary>
+    public static (double BaselineX, double BaselineY, double BandTopY, double BandBotY)
+        LabelRowGeometry(double cx, double cy, int i, double oDx, double oDy,
+                         SymbolKind symbol, int portCount)
+    {
+        double baseY     = LabelBaseYFor(symbol, portCount);
+        double baselineX = cx + LabelBaseOffsetX + oDx;
+        double baselineY = cy + baseY + oDy + i * LabelWorldStep;
+        const double comfort = 6.0;
+        double bandTopY  = baselineY - LabelWorldHeight - comfort;
+        double bandBotY  = baselineY + LabelWorldHeight * 0.28 + comfort;
+        return (baselineX, baselineY, bandTopY, bandBotY);
+    }
 
     /// <summary>Stable ID carried from EditableComponent.Id — used by overlay for selection lookup.</summary>
     public string Id            { get; init; } = "";

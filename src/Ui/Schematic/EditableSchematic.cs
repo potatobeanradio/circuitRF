@@ -303,7 +303,7 @@ public sealed class EditableComponent
             if (string.IsNullOrEmpty(labels[li])) continue;
             var (oDx, oDy) = li < LabelOffsets.Count ? LabelOffsets[li] : (0.0, 0.0);
             double lx  = X + SchematicComponent.LabelBaseOffsetX + oDx;
-            double ly  = Y + SchematicComponent.LabelBaseY + oDy + li * SchematicComponent.LabelWorldStep;
+            double ly  = Y + SchematicComponent.LabelBaseYFor(Symbol, PortCount) + oDy + li * SchematicComponent.LabelWorldStep;
             fullMinX = Math.Min(fullMinX, lx);
             fullMinY = Math.Min(fullMinY, ly - SchematicComponent.LabelWorldHeight);
             fullMaxX = Math.Max(fullMaxX, lx + SchematicComponent.LabelWidthEstimate);
