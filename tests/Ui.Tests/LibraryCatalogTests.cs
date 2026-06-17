@@ -214,11 +214,18 @@ public class LibraryCatalogTests
     }
 
     [Fact]
-    public void ByCategory_MicrostripAndDataFiles_AreEmpty()
+    public void ByCategory_Microstrip_IsEmpty()
     {
-        // These categories have no built-ins yet — not even via ExtraCategories.
+        // Microstrip has no built-ins yet.
         Assert.Empty(LibraryCatalog.ByCategory(ComponentCategory.Microstrip));
-        Assert.Empty(LibraryCatalog.ByCategory(ComponentCategory.DataFiles));
+    }
+
+    [Fact]
+    public void ByCategory_DataFiles_ContainsSnp()
+    {
+        // SnP (Touchstone file-backed N-port) lives in the DataFiles category.
+        var kinds = LibraryCatalog.ByCategory(ComponentCategory.DataFiles).Select(i => i.Kind);
+        Assert.Contains(SymbolKind.Snp, kinds);
     }
 
     // ── Multi-category (ExtraCategories set-containment) ─────────────────────

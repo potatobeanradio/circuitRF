@@ -22,6 +22,7 @@ public enum SymbolKind
     Generic,
     Var,
     P1Tone,
+    Snp,
 }
 
 public enum PortConnectionState { Unconnected, Connected }
@@ -56,6 +57,11 @@ public sealed class SchematicComponent
         if (symbol is SymbolKind.Sdd or SymbolKind.ZPort)
         {
             double halfH = SymbolPortDefs.SddBodyRect(portCount).HalfH;
+            return Math.Max(LabelBaseY, halfH + LabelWorldStep);
+        }
+        if (symbol is SymbolKind.Snp)
+        {
+            var (_, halfH) = SymbolPortDefs.SnpBodyRect(portCount, SnpPinConfig.Standard, SnpPitch.Loose);
             return Math.Max(LabelBaseY, halfH + LabelWorldStep);
         }
         return LabelBaseY;
@@ -139,6 +145,13 @@ public sealed class SchematicComponent
 
     /// <summary>Non-null when CellRefState == Resolved — the primary .csym primitives to draw.</summary>
     public IReadOnlyList<SymbolPrimitive>? CellRefPrimitives { get; init; }
+
+    /// <summary>
+    /// Non-null for SnP components: the precomputed Symbol (primitives + pins) built from
+    /// the component's actual RefNode/PinConfig/Pitch values.  The renderer and glyph-BB
+    /// computation use this instead of the generic BuiltInSymbols.Primitives fallback.
+    /// </summary>
+    public Symbol? SnpSymbol { get; init; }
 }
 
 /// <summary>A wire segment (orthogonal polyline) with pre-computed world bounding box.</summary>

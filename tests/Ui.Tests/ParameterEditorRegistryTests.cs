@@ -99,12 +99,36 @@ public class ParameterEditorRegistryTests
     }
 
     [Fact]
-    public void DefaultParameters_Sdd_NumPortsNone()
+    public void DefaultParameters_Sdd_NumPortsPlus_IEquations()
     {
+        // After brief-p1tone-num-sddx-defaults Part 3: SDD defaults now emit
+        // NumPorts + one I[x,0]=_vx/50 per port so a freshly-placed SDD is functional.
         var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.Sdd, 2);
-        var numPorts = Assert.Single(ps);
-        Assert.Equal("NumPorts", numPorts.Name);
-        Assert.Equal(UnitDimension.None, numPorts.Dimension);
+        Assert.Equal(3, ps.Count); // NumPorts + I[1,0] + I[2,0]
+        Assert.Equal("NumPorts", ps[0].Name);
+        Assert.Equal(UnitDimension.None, ps[0].Dimension);
+        Assert.Equal("I[1,0]", ps[1].Name);
+        Assert.Equal("_v1/50", ps[1].Expression);
+        Assert.True(ps[1].ShowOnSchematic);
+        Assert.Equal("I[2,0]", ps[2].Name);
+        Assert.Equal("_v2/50", ps[2].Expression);
+        Assert.True(ps[2].ShowOnSchematic);
+    }
+
+    [Fact]
+    public void DefaultParameters_Sdd3Port_EmitsThreeIEquations()
+    {
+        // Part 3 gate test: 3-port SDD defaults = NumPorts + I[1,0]/I[2,0]/I[3,0].
+        var ps = ComponentTypeRegistry.DefaultParameters(SymbolKind.Sdd, 3);
+        Assert.Equal(4, ps.Count); // NumPorts + I[1,0] + I[2,0] + I[3,0]
+        Assert.Equal("NumPorts", ps[0].Name);
+        Assert.Equal("3", ps[0].Expression);
+        for (int x = 1; x <= 3; x++)
+        {
+            Assert.Equal($"I[{x},0]", ps[x].Name);
+            Assert.Equal($"_v{x}/50", ps[x].Expression);
+            Assert.True(ps[x].ShowOnSchematic);
+        }
     }
 
     // ── EditableParameter carries Dimension ───────────────────────────────────

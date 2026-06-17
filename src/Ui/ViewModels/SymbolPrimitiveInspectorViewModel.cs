@@ -19,12 +19,13 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
 
     // ── Static options (ComboBox ItemsSources) ────────────────────────────────
 
-    public static SymbolStrokeTier[] StrokeTierOptions { get; } = Enum.GetValues<SymbolStrokeTier>();
-    public static SineAxis[]         AxisOptions       { get; } = Enum.GetValues<SineAxis>();
-    public static SymbolTextAlign[]  AlignOptions      { get; } = Enum.GetValues<SymbolTextAlign>();
-    public static SymbolFontStyle[]  FontStyleOptions  { get; } = Enum.GetValues<SymbolFontStyle>();
-    public static SymbolTextVAlign[] VAlignOptions     { get; } = Enum.GetValues<SymbolTextVAlign>();
-    public static SymbolRotation[]   RotationOptions   { get; } = Enum.GetValues<SymbolRotation>();
+    public static SymbolStrokeTier[] StrokeTierOptions  { get; } = Enum.GetValues<SymbolStrokeTier>();
+    public static SineAxis[]         AxisOptions        { get; } = Enum.GetValues<SineAxis>();
+    public static SymbolTextAlign[]  AlignOptions       { get; } = Enum.GetValues<SymbolTextAlign>();
+    public static SymbolFontStyle[]  FontStyleOptions   { get; } = Enum.GetValues<SymbolFontStyle>();
+    public static SymbolTextVAlign[] VAlignOptions      { get; } = Enum.GetValues<SymbolTextVAlign>();
+    public static SymbolRotation[]   RotationOptions    { get; } = Enum.GetValues<SymbolRotation>();
+    public static SymbolColorRole[]  ColorRoleOptions   { get; } = Enum.GetValues<SymbolColorRole>();
 
     // ── Empty / header state ──────────────────────────────────────────────────
 
@@ -330,6 +331,14 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     [ObservableProperty] private SymbolTextVAlign _textVAlign;
     [ObservableProperty] private SymbolRotation   _textRotation;
     [ObservableProperty] private bool             _textForceReadable;
+    [ObservableProperty] private SymbolColorRole  _textColorRole;
+
+    partial void OnTextColorRoleChanged(SymbolColorRole oldValue, SymbolColorRole newValue)
+    {
+        if (_isRefreshing || _prim is not TextPrimitive tp || _vm is null || oldValue == newValue) return;
+        _vm.Execute(new SetSymbolPrimitiveFieldCommand<SymbolColorRole>(
+            _vm.EditableSymbol, "Color Role", oldValue, newValue, v => tp.ColorRole = v));
+    }
 
     partial void OnTextContentChanged(string? oldValue, string newValue)
     {
@@ -659,6 +668,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
                 TextVAlign        = t.VAlign;
                 TextRotation      = t.Rotation;
                 TextForceReadable = t.ForceReadable;
+                TextColorRole     = t.ColorRole;
                 break;
 
             case BitmapPrimitive bmp:

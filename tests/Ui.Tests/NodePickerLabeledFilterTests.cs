@@ -172,8 +172,8 @@ public sealed class NodePickerLabeledFilterTests
     public void T3_PinName_NotLabeled()
     {
         var model = new SchematicEditModel();
-        // Pin port is at local (200,0); Pin at (-200,0) → port at world (0,0).
-        model.Components.Add(MakePin(1, "rf_in", -200, 0));
+        // Pin port is at local (100,0); Pin at (-100,0) → port at world (0,0).
+        model.Components.Add(MakePin(1, "rf_in", -100, 0));
 
         // Wire with a net label on the same net as the Pin.
         // Pin port is at (0,0), on the wire from (0,0) to (0,400). Pin overrides the label.

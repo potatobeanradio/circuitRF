@@ -89,6 +89,26 @@ public sealed class P1ToneModel : ComponentModel
     /// <summary>Declared tone frequency (Hz) — used by HbEngine for commensurability and context.</summary>
     public double FreqHz => _freqHz;
 
+    /// <summary>
+    /// Branch index set by StampAsSParamPort; used by SParameterEngine legacy path (Re(Z0) ≤ 0).
+    /// Stable across frequencies because branch allocation order is deterministic.
+    /// </summary>
+    public int LastBranchIndex { get; private set; } = -1;
+
+    /// <summary>
+    /// Stamps a 0 V source branch between Nodes[0] and Nodes[1] (mirroring TermModel.Stamp),
+    /// for SParameterEngine's legacy path. The engine drives unit voltage on this branch and
+    /// reads the resulting current to extract the Y column.
+    /// </summary>
+    public void StampAsSParamPort(IMnaContext mna, ElaboratedComponent c)
+    {
+        LastBranchIndex = mna.AddBranch();
+        mna.AddBranchCurrent(LastBranchIndex, c.Nodes[0], c.Nodes[1]);
+        mna.AddConstraint(LastBranchIndex, c.Nodes[0], +Complex.One);
+        mna.AddConstraint(LastBranchIndex, c.Nodes[1], -Complex.One);
+        mna.AddSourceValue(LastBranchIndex, Complex.Zero);
+    }
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
         int nExt = c.Nodes.Length > 0 ? c.Nodes[0] : 0;

@@ -409,6 +409,17 @@
                     </Grid>
 
                     <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Color" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   ToolTip.Tip="Text color role: SymbolPlus = the '+'/plus accent color; SymbolText/SymbolLine = regular."/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{x:Static vm:SymbolPrimitiveInspectorViewModel.ColorRoleOptions}"
+                                  SelectedItem="{Binding TextColorRole, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="56,*">
                         <TextBlock Grid.Column="0" Text="Align" VerticalAlignment="Center" FontSize="11"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                         <ComboBox Grid.Column="1"

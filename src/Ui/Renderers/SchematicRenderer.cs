@@ -18,6 +18,11 @@ public static class SchematicRenderer
     private const double MinGridSpacingPx    = 4.0;
     private const double CoarseGridRatio     = 10.0;
 
+    // Single switch point for symbol stroke joins (schematic + symbol editor).
+    // Change to Miter/Bevel here to restyle all symbol corners at once.
+    public  const SKStrokeJoin SymbolStrokeJoinStyle = SKStrokeJoin.Round;
+    public  const SKStrokeCap  SymbolStrokeCapStyle  = SKStrokeCap.Round;
+
     private const float DotHalfSize = 5f;
     private const float PortBoxHalf = 8f;   // world units; chosen so zoom=1 → 8px (matches prior clamped appearance)
     private const float ConnDotHalf = 4f;
@@ -112,9 +117,11 @@ public static class SchematicRenderer
                                                    StrokeWidth = (float)Math.Max(1.0, zoom * 4),    Color = theme.Wire,
                                                    StrokeJoin  = SKStrokeJoin.Miter };
         using var bodyPaint       = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Stroke,
-                                                   StrokeWidth = (float)Math.Max(1.0, zoom * 3),    Color = theme.SymbolLine };
+                                                   StrokeWidth = (float)Math.Max(1.0, zoom * 3),    Color = theme.SymbolLine,
+                                                   StrokeJoin  = SymbolStrokeJoinStyle, StrokeCap = SymbolStrokeCapStyle };
         using var plusPaint       = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Stroke,
-                                                   StrokeWidth = (float)Math.Max(1.0, zoom * 3),    Color = theme.SymbolPlus };
+                                                   StrokeWidth = (float)Math.Max(1.0, zoom * 3),    Color = theme.SymbolPlus,
+                                                   StrokeJoin  = SymbolStrokeJoinStyle, StrokeCap = SymbolStrokeCapStyle };
         using var lodPaint        = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill,   Color = theme.LodRect };
         using var dotPaint        = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill,   Color = theme.ConnectionDot };
         using var unconnPaint     = new SKPaint { IsAntialias = true,  Style = SKPaintStyle.Stroke,
@@ -273,6 +280,12 @@ public static class SchematicRenderer
             {
                 DrawCellRefPrimaryMissingGlyph(canvas, cx, cy, panX, panY, zoom, bodyPaint);
             }
+            else if (c.SnpSymbol is not null)
+            {
+                DrawSymbol(canvas, c.SnpSymbol.Primitives,
+                    cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme,
+                    applyForceReadable: true);
+            }
             else
             {
                 // Built-in component: existing path.
@@ -427,7 +440,12 @@ public static class SchematicRenderer
             // TextPrimitive — drawn centered at its box center, rotated in place.
             if (prim is TextPrimitive txt)
             {
-                SKColor textColor = overridePaint?.Color ?? theme.SymbolLine;
+                // SchematicRenderTheme has no SymbolText color yet; SymbolText maps to SymbolLine.
+                SKColor textColor = overridePaint?.Color ?? txt.ColorRole switch
+                {
+                    SymbolColorRole.SymbolPlus => theme.SymbolPlus,
+                    _                          => theme.SymbolLine,
+                };
                 SKTypeface typeface = txt.FontStyle switch
                 {
                     SymbolFontStyle.Bold      => SkiaFonts.PlexBold,
@@ -540,6 +558,8 @@ public static class SchematicRenderer
                 Style       = info.filled ? SKPaintStyle.Fill : SKPaintStyle.Stroke,
                 Color       = color,
                 StrokeWidth = sw,
+                StrokeJoin  = SymbolStrokeJoinStyle,
+                StrokeCap   = SymbolStrokeCapStyle,
             };
             if (overridePaint?.PathEffect is { } pe) paint.PathEffect = pe;
 

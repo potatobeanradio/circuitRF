@@ -510,6 +510,7 @@
                      Width="140"
                      FontSize="11"
                      FontFamily="{DynamicResource IBMPlexSans}"
+                     Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
                      TextAlignment="Left"
                      Padding="4,2"
                      MinHeight="0"

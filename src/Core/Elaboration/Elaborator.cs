@@ -253,6 +253,8 @@ public sealed class Elaborator
             return ResolveToneSourceParameters(inst, parentScope);
         if (inst.Reference.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
             return ResolveP1ToneParameters(inst, parentScope);
+        if (inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))
+            return ResolveSnpParameters(inst, parentScope);
 
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
@@ -405,6 +407,33 @@ public sealed class Elaborator
             }
             catch { /* unresolvable */ }
         }
+    }
+
+    // ── SnP parameter resolution ──────────────────────────────────────────────
+    // File / InterpMode / ExtrapMode / PinConfig / RefNode are STRING params — store raw, never Eval().
+    // (A file path like "/Users/…/x.s2p" is not an expression.) Only NumPorts is numeric.
+
+    private static readonly HashSet<string> _snpStringParams =
+        new(StringComparer.OrdinalIgnoreCase) { "File", "InterpMode", "ExtrapMode", "PinConfig", "RefNode" };
+
+    private IReadOnlyDictionary<string, Value> ResolveSnpParameters(
+        Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var ov in inst.Overrides)
+        {
+            if (_snpStringParams.Contains(ov.Name))
+            {
+                result[ov.Name] = new Value(ov.Expression); // store raw string; do NOT parse/eval
+            }
+            else
+            {
+                // NumPorts and any other numeric override — evaluate normally.
+                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                catch { /* skip unresolvable; factory will error if a required numeric is missing */ }
+            }
+        }
+        return result;
     }
 
     // ── P1Tone parameter resolution ───────────────────────────────────────────

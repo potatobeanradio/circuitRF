@@ -2684,6 +2684,13 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (numParam != null)
                 numParam.Expression = NextFreeTermNum(EditModel).ToString();
         }
+        // P1Tone shares the same port-number pool as Term so the two never collide as s-param ports.
+        else if (kind == SymbolKind.P1Tone)
+        {
+            var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
+            if (numParam != null)
+                numParam.Expression = NextFreeTermNum(EditModel).ToString();
+        }
         // Auto-assign next-free Num for Pin — same pattern as Term.
         if (kind == SymbolKind.Pin)
         {
@@ -2822,10 +2829,11 @@ public sealed partial class SchematicViewModel : ObservableObject
     private string GenerateInstanceName(SymbolKind symbol)
         => SchematicEditModel.NextAvailableName(EditModel.Components, symbol);
 
+    // Term and P1Tone share the same s-param port-number space so they never collide as ports.
     private static int NextFreeTermNum(SchematicEditModel model)
     {
         var used = model.Components
-            .Where(c => c.Symbol == SymbolKind.Term)
+            .Where(c => c.Symbol == SymbolKind.Term || c.Symbol == SymbolKind.P1Tone)
             .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Num"))
             .Where(p => p != null && int.TryParse(p!.Expression, out _))
             .Select(p => int.Parse(p!.Expression))
@@ -3225,8 +3233,13 @@ public sealed partial class SchematicViewModel : ObservableObject
                     foreach (var dp in ComponentTypeRegistry.DefaultParameters(newKind, portCount))
                         newComp.Parameters.Add(new EditableParameter
                             { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
-                    // Auto-assign the next-free Num so a type-change to Pin/Term never duplicates an existing number.
+                    // Auto-assign the next-free Num so a type-change to Pin/Term/P1Tone never duplicates.
                     if (newKind == SymbolKind.Term)
+                    {
+                        var np = newComp.Parameters.FirstOrDefault(p => p.Name == "Num");
+                        if (np is not null) np.Expression = NextFreeTermNum(EditModel).ToString();
+                    }
+                    else if (newKind == SymbolKind.P1Tone)
                     {
                         var np = newComp.Parameters.FirstOrDefault(p => p.Name == "Num");
                         if (np is not null) np.Expression = NextFreeTermNum(EditModel).ToString();

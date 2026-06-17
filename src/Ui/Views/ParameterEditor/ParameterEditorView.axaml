@@ -56,77 +56,122 @@
                       IsVisible="{Binding IsNotEmptyState}"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding Rows}"
-                          Grid.IsSharedSizeScope="True"
-                          Margin="4,0">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ParameterRowViewModel">
-                        <Grid Margin="0,2">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>
-                                <ColumnDefinition Width="*"                                   MinWidth="50"/>
-                                <ColumnDefinition SharedSizeGroup="ParamUnit"    Width="Auto" MinWidth="60"/>
-                                <ColumnDefinition SharedSizeGroup="ParamPreview" Width="Auto"/>
-                                <ColumnDefinition SharedSizeGroup="ParamDisplay" Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+            <Panel>
+                <!-- Generic parameter rows: hidden for SnP (which uses the custom panel below) -->
+                <ItemsControl ItemsSource="{Binding Rows}"
+                              IsVisible="{Binding !IsSnp}"
+                              Grid.IsSharedSizeScope="True"
+                              Margin="4,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ParameterRowViewModel">
+                            <Grid Margin="0,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>
+                                    <ColumnDefinition Width="*"                                   MinWidth="50"/>
+                                    <ColumnDefinition SharedSizeGroup="ParamUnit"    Width="Auto" MinWidth="60"/>
+                                    <ColumnDefinition SharedSizeGroup="ParamPreview" Width="Auto"/>
+                                    <ColumnDefinition SharedSizeGroup="ParamDisplay" Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-                            <!-- Name: read-only TextBlock-style for fixed types, editable for extensible types.
-                                 IsReadOnly=True produces Avalonia's built-in dimmed/bordered appearance —
-                                 no custom inline style needed. -->
-                            <TextBox Grid.Column="0"
-                                     Text="{Binding StagedName}"
-                                     IsReadOnly="{Binding NameReadOnly}"
-                                     FontSize="11"
-                                     Padding="2,3"
-                                     VerticalAlignment="Center"
-                                     Margin="0,0,4,0"
-                                     ToolTip.Tip="{Binding NameError}"
-                                     LostFocus="OnParamNameLostFocus"
-                                     KeyDown="OnParamNameKeyDown"/>
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding StagedName}"
+                                         IsReadOnly="{Binding NameReadOnly}"
+                                         FontSize="11"
+                                         Padding="2,3"
+                                         VerticalAlignment="Center"
+                                         Margin="0,0,4,0"
+                                         ToolTip.Tip="{Binding NameError}"
+                                         LostFocus="OnParamNameLostFocus"
+                                         KeyDown="OnParamNameKeyDown"/>
+                                <TextBox Grid.Column="1"
+                                         Text="{Binding StagedExpression}"
+                                         FontSize="11"
+                                         Padding="4,3"
+                                         VerticalAlignment="Center"
+                                         LostFocus="OnParamExprLostFocus"
+                                         KeyDown="OnParamExprKeyDown"/>
+                                <ComboBox Grid.Column="2"
+                                          ItemsSource="{Binding UnitOptions}"
+                                          SelectedItem="{Binding StagedUnit}"
+                                          FontSize="11"
+                                          Padding="4,3"
+                                          MinWidth="60"
+                                          Margin="3,0,0,0"
+                                          VerticalAlignment="Center"
+                                          SelectionChanged="OnUnitSelectionChanged"/>
+                                <SelectableTextBlock Grid.Column="3"
+                                                     Text="{Binding ValuePreview}"
+                                                     IsVisible="{Binding HasValuePreview}"
+                                                     Foreground="{DynamicResource SystemBaseMediumColor}"
+                                                     FontSize="11"
+                                                     Opacity="0.7"
+                                                     VerticalAlignment="Center"
+                                                     Margin="8,0,4,0"
+                                                     ToolTip.Tip="Approximate value at current schematic state (pre-simulation)"/>
+                                <CheckBox Grid.Column="4"
+                                          IsChecked="{Binding ShowOnSchematic}"
+                                          ToolTip.Tip="Show on schematic"
+                                          Margin="6,0,2,0"
+                                          VerticalAlignment="Center"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
 
-                            <!-- Expression TextBox -->
-                            <TextBox Grid.Column="1"
-                                     Text="{Binding StagedExpression}"
-                                     FontSize="11"
-                                     Padding="4,3"
-                                     VerticalAlignment="Center"
-                                     LostFocus="OnParamExprLostFocus"
-                                     KeyDown="OnParamExprKeyDown"/>
-
-                            <!-- Unit ComboBox (closed, dimension-keyed) -->
-                            <ComboBox Grid.Column="2"
-                                      ItemsSource="{Binding UnitOptions}"
-                                      SelectedItem="{Binding StagedUnit}"
-                                      FontSize="11"
-                                      Padding="4,3"
-                                      MinWidth="60"
-                                      Margin="3,0,0,0"
-                                      VerticalAlignment="Center"
-                                      SelectionChanged="OnUnitSelectionChanged"/>
-
-                            <!-- Value preview: subtle grey "≈ evaluated". Non-interactive and
-                                 non-editable, but SelectableTextBlock lets the user select &
-                                 copy the text. Hidden when there is no preview. -->
-                            <SelectableTextBlock Grid.Column="3"
-                                                 Text="{Binding ValuePreview}"
-                                                 IsVisible="{Binding HasValuePreview}"
-                                                 Foreground="{DynamicResource SystemBaseMediumColor}"
-                                                 FontSize="11"
-                                                 Opacity="0.7"
-                                                 VerticalAlignment="Center"
-                                                 Margin="8,0,4,0"
-                                                 ToolTip.Tip="Approximate value at current schematic state (pre-simulation)"/>
-
-                            <!-- Display-on-schematic CheckBox -->
-                            <CheckBox Grid.Column="4"
-                                      IsChecked="{Binding ShowOnSchematic}"
-                                      ToolTip.Tip="Show on schematic"
-                                      Margin="6,0,2,0"
-                                      VerticalAlignment="Center"/>
-                        </Grid>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                <!-- SnP custom panel: file picker + layout controls -->
+                <StackPanel IsVisible="{Binding IsSnp}"
+                            Margin="6,4"
+                            Spacing="8">
+                    <!-- Port count -->
+                    <Grid ColumnDefinitions="60,*">
+                        <TextBlock Grid.Column="0" Text="Ports"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding SnpPortCountText}"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                    </Grid>
+                    <!-- File -->
+                    <Grid ColumnDefinitions="60,*,Auto">
+                        <TextBlock Grid.Column="0" Text="File"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1"
+                                 Text="{Binding SnpFilePath}"
+                                 FontSize="11"
+                                 Padding="4,3"
+                                 VerticalAlignment="Center"
+                                 IsReadOnly="True"/>
+                        <Button Grid.Column="2"
+                                Content="Browse…"
+                                FontSize="11"
+                                Padding="6,3"
+                                Margin="4,0,0,0"
+                                Command="{Binding PickSnpFileCommand}"/>
+                    </Grid>
+                    <!-- RefNode toggle -->
+                    <CheckBox IsChecked="{Binding SnpRefNode}"
+                              Content="Floating reference pin"
+                              FontSize="11"/>
+                    <!-- PinConfig + Pitch -->
+                    <Grid ColumnDefinitions="60,*,Auto,*">
+                        <TextBlock Grid.Column="0" Text="Pins"
+                                   FontSize="11" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding SnpPinConfigOptions}"
+                                  SelectedIndex="{Binding SnpPinConfigIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"/>
+                        <TextBlock Grid.Column="2" Text="Pitch"
+                                   FontSize="11" VerticalAlignment="Center"
+                                   Margin="8,0,6,0"/>
+                        <ComboBox Grid.Column="3"
+                                  ItemsSource="{Binding SnpPitchOptions}"
+                                  SelectedIndex="{Binding SnpPitchIndex}"
+                                  FontSize="11"
+                                  Padding="4,3"/>
+                    </Grid>
+                </StackPanel>
+            </Panel>
         </ScrollViewer>
 
         <!-- ── Row 3: Footer — +/- group buttons + Help + optional Close ───── -->

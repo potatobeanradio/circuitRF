@@ -291,8 +291,10 @@ public static class SchematicModelBuilder
 
         // FullBb: glyph BB unioned with default label positions (no offsets — builder creates
         // components without saved LabelOffsets).
-        double fullMinX = cx - HalfBound, fullMinY = cy - HalfBound;
-        double fullMaxX = cx + HalfBound, fullMaxY = cy + HalfBound;
+        // Also union with the glyph BB so tall symbols (SDD/ZPort with many ports) don't vanish
+        // when only their center scrolls off screen.
+        double fullMinX = Math.Min(cx - HalfBound, gMinX), fullMinY = Math.Min(cy - HalfBound, gMinY);
+        double fullMaxX = Math.Max(cx + HalfBound, gMaxX), fullMaxY = Math.Max(cy + HalfBound, gMaxY);
 
         for (int li = 0; li < labels.Count; li++)
         {
@@ -374,7 +376,7 @@ public static class SchematicModelBuilder
             SymbolKind.Term   => [new SchematicPortDef("+", 0, -200, p0),
                                   new SchematicPortDef("−", 0, +200, p1)],
             // Pin: one connection terminal at the lead tip — carries the interface port number.
-            SymbolKind.Pin    => [new SchematicPortDef("1", 200, 0, p0)],
+            SymbolKind.Pin    => [new SchematicPortDef("1", 100, 0, p0)],
             // FetSdd: horizontal box, pins unchanged
             SymbolKind.FetSdd => [
                 new SchematicPortDef("gate",   -200, 0,    p0),

@@ -46,6 +46,22 @@ behavior) the engine have their own notes.
   binding parameters. **Override expression evaluates in the PARENT scope; default in the cell's
   own scope.** Resolution is local-then-global; no upward/sideways reach.
 
+## Elaboration — string-param devices (do not Eval their non-numeric params)
+
+`Elaborator.ResolveParameters` dispatches to a per-device resolver for primitives whose overrides
+must NOT be expression-evaluated. Currently: **SDD**, **Z_Port**, **V_1Tone/V_nTone**, **P1Tone**,
+and **SnP** (brief-snp-fixes, 2026-06-17). Each stores its string-valued params as `new Value(raw)`
+(verbatim), and only evaluates genuinely numeric overrides via `_evaluator.Eval()`.
+
+**Why:** a file path (`File=/Users/…/x.s2p`) is not an expression — the leading `/` crashes the
+expression parser at position 0. Similarly, `InterpMode=Cubic` and `ExtrapMode=NearestEdge` are
+string-valued enum names, not numeric expressions.
+
+**Rule:** when adding a new primitive device that has string-valued params (file paths, enum names,
+equation strings), add a `ResolveXxxParameters` dispatcher in `Elaborator.cs` that stores those
+params raw. The generic `ResolveParameters` fallback evaluates ALL overrides — never let a string
+param fall through to it.
+
 ## Elaboration
 - Flatten depth-first; primitives emitted, cells recursed with a fresh scope.
 - Resolve every expression to a kinded value (units applied here), with cycle detection.

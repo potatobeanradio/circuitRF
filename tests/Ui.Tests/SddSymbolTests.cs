@@ -65,7 +65,7 @@ public class SddSymbolTests
     {
         // SDD2 at (0,0) R0. Layout — port 1 on left (x=-200), port 2 on right (x=+200):
         //   "1+" (-200,-100), "1-" (-200,+100), "2+" (+200,-100), "2-" (+200,+100)
-        // Pin symbol's connection point is at LocalX=+200 (so Pin at X,Y connects at world X+200, Y).
+        // Pin symbol's connection point is at LocalX=+100 (so Pin at X,Y connects at world X+100, Y).
         // Ground's connection point is at LocalY=0 (connects at world X, Y).
         var model = new SchematicEditModel();
 
@@ -73,8 +73,8 @@ public class SddSymbolTests
         sdd.Parameters.Add(new EditableParameter { Name = "NumPorts", Expression = "2" });
         model.Components.Add(sdd);
 
-        // Pin "Vin" at (-400,-100): connection at (-400+200,-100)=(-200,-100) → SDD "1+" (pin[0]).
-        var pinVin = new EditableComponent { InstanceName = "pin_vin", Symbol = SymbolKind.Pin, X = -400, Y = -100 };
+        // Pin "Vin" at (-300,-100): connection at (-300+100,-100)=(-200,-100) → SDD "1+" (pin[0]).
+        var pinVin = new EditableComponent { InstanceName = "pin_vin", Symbol = SymbolKind.Pin, X = -300, Y = -100 };
         pinVin.Parameters.Add(new EditableParameter { Name = "Num",  Expression = "1" });
         pinVin.Parameters.Add(new EditableParameter { Name = "Name", Expression = "Vin" });
         model.Components.Add(pinVin);
@@ -82,8 +82,8 @@ public class SddSymbolTests
         // Ground at (-200, 100): connection at (-200,+100) → SDD "1-" (pin[1]).
         model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = -200, Y = 100 });
 
-        // Pin "Vout" at (0,-100): connection at (0+200,-100)=(+200,-100) → SDD "2+" (pin[2]).
-        var pinVout = new EditableComponent { InstanceName = "pin_vout", Symbol = SymbolKind.Pin, X = 0, Y = -100 };
+        // Pin "Vout" at (100,-100): connection at (100+100,-100)=(+200,-100) → SDD "2+" (pin[2]).
+        var pinVout = new EditableComponent { InstanceName = "pin_vout", Symbol = SymbolKind.Pin, X = 100, Y = -100 };
         pinVout.Parameters.Add(new EditableParameter { Name = "Num",  Expression = "2" });
         pinVout.Parameters.Add(new EditableParameter { Name = "Name", Expression = "Vout" });
         model.Components.Add(pinVout);
@@ -113,16 +113,16 @@ public class SddSymbolTests
         sdd.Parameters.Add(new EditableParameter { Name = "NumPorts", Expression = "2" });
         model.Components.Add(sdd);
 
-        // Pin at (-400,-100): connection (-400+200,-100)=(-200,-100) → "1+".
+        // Pin at (-300,-100): connection (-300+100,-100)=(-200,-100) → "1+".
         // Ground at (-200,100): connection (-200,+100) → "1-".
-        var pinVin = new EditableComponent { InstanceName = "Vin", Symbol = SymbolKind.Pin, X = -400, Y = -100 };
+        var pinVin = new EditableComponent { InstanceName = "Vin", Symbol = SymbolKind.Pin, X = -300, Y = -100 };
         pinVin.Parameters.Add(new EditableParameter { Name = "Num", Expression = "1" });
         model.Components.Add(pinVin);
         model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = -200, Y = 100 });
 
-        // Pin at (0,-100): connection (0+200,-100)=(+200,-100) → "2+".
+        // Pin at (100,-100): connection (100+100,-100)=(+200,-100) → "2+".
         // Ground at (+200,100): connection (+200,+100) → "2-".
-        var pinVout = new EditableComponent { InstanceName = "Vout", Symbol = SymbolKind.Pin, X = 0, Y = -100 };
+        var pinVout = new EditableComponent { InstanceName = "Vout", Symbol = SymbolKind.Pin, X = 100, Y = -100 };
         pinVout.Parameters.Add(new EditableParameter { Name = "Num", Expression = "2" });
         model.Components.Add(pinVout);
         model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = 200, Y = 100 });
@@ -158,7 +158,7 @@ public class SddSymbolTests
     {
         // Z2P at (0,0) R0. 2N=4 pins — same geometry as SDD2:
         //   "1+" (-200,-100), "1-" (-200,+100), "2+" (+200,-100), "2-" (+200,+100)
-        // Pin port is at local (200,0); Pin at (X,Y) connects at world (X+200,Y).
+        // Pin port is at local (100,0); Pin at (X,Y) connects at world (X+100,Y).
         // Ground's port is at its local (0,0).
         var model = new SchematicEditModel();
 
@@ -168,8 +168,8 @@ public class SddSymbolTests
         zp.Parameters.Add(new EditableParameter { Name = "Z[2,2]", Expression = "50" });
         model.Components.Add(zp);
 
-        // Pin "a" at (-400,-100): port connects at (-400+200,-100)=(-200,-100) → "1+".
-        var pinA = new EditableComponent { InstanceName = "pin_a", Symbol = SymbolKind.Pin, X = -400, Y = -100 };
+        // Pin "a" at (-300,-100): port connects at (-300+100,-100)=(-200,-100) → "1+".
+        var pinA = new EditableComponent { InstanceName = "pin_a", Symbol = SymbolKind.Pin, X = -300, Y = -100 };
         pinA.Parameters.Add(new EditableParameter { Name = "Num",  Expression = "1" });
         pinA.Parameters.Add(new EditableParameter { Name = "Name", Expression = "a" });
         model.Components.Add(pinA);
@@ -177,8 +177,8 @@ public class SddSymbolTests
         // Ground at (-200, 100): port at (-200,+100) → "1-".
         model.Components.Add(new EditableComponent { Symbol = SymbolKind.Ground, X = -200, Y = 100 });
 
-        // Pin "b" at (0,-100): port connects at (0+200,-100)=(+200,-100) → "2+".
-        var pinB = new EditableComponent { InstanceName = "pin_b", Symbol = SymbolKind.Pin, X = 0, Y = -100 };
+        // Pin "b" at (100,-100): port connects at (100+100,-100)=(+200,-100) → "2+".
+        var pinB = new EditableComponent { InstanceName = "pin_b", Symbol = SymbolKind.Pin, X = 100, Y = -100 };
         pinB.Parameters.Add(new EditableParameter { Name = "Num",  Expression = "2" });
         pinB.Parameters.Add(new EditableParameter { Name = "Name", Expression = "b" });
         model.Components.Add(pinB);

@@ -178,6 +178,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Sources,
             SearchTerms: ["P1Tone", "power", "Pavl", "available power", "RF source", "drive", "harmonic"],
             IsCommon: true),
+        [SymbolKind.Snp]           = new("SnP",   "S",
+            Category: ComponentCategory.DataFiles,
+            SearchTerms: ["SnP", "Touchstone", "snp", "s2p", "sparam file", "data file", "network"],
+            IsCommon: true),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -199,6 +203,7 @@ public static class ComponentTypeRegistry
     {
         if (kind == SymbolKind.ZPort && portCount >= 1) return $"Z{portCount}P";
         if (kind == SymbolKind.Sdd   && portCount >= 1) return $"SDD{portCount}";
+        if (kind == SymbolKind.Snp   && portCount >= 1) return $"S{portCount}P";
         return DisplayName(kind);
     }
 
@@ -225,6 +230,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Ground        => "GND",
         SymbolKind.Var           => "VAR",   // sentinel — never emitted as an Instance; not a factory primitive
         SymbolKind.P1Tone        => "P1Tone",
+        SymbolKind.Snp           => "SnP",
         _                        => Get(kind).DisplayName,
     };
 
@@ -258,10 +264,13 @@ public static class ComponentTypeRegistry
                                                 new("Freq", "2", "GHz", true,  UnitDimension.Frequency),
                                                 new("Vdc",  "0", "V",   false, UnitDimension.Voltage)];
             // Pavl/Z/Freq/Phase match P1ToneModel factory keys.
-            case SymbolKind.P1Tone:        return [new("Pavl",  "0",  "dBm", true,  UnitDimension.Power),
-                                                   new("Z",    "50",  "Ω",   true,  UnitDimension.Resistance),
-                                                   new("Freq",  "1",  "GHz", true,  UnitDimension.Frequency),
-                                                   new("Phase", "0",  "deg", false, UnitDimension.Angle)];
+            // Num is the s-param port index; auto-assigned at placement from the shared Term+P1Tone pool.
+            case SymbolKind.P1Tone: return [
+                new("Num",   "1",   "",    true,  UnitDimension.None),
+                new("Pavl",  "0",   "dBm", true,  UnitDimension.Power),
+                new("Z",    "50",   "Ω",   true,  UnitDimension.Resistance),
+                new("Freq",  "1",   "GHz", true,  UnitDimension.Frequency),
+                new("Phase", "0",   "deg", false, UnitDimension.Angle)];
 
             case SymbolKind.ZPort:
             {
@@ -273,12 +282,15 @@ public static class ComponentTypeRegistry
                 return ps;
             }
 
-            // SDD equations are user-authored; only expose NumPorts as a default param.
-            // The engine reads per-port current/charge equations separately from the param dict.
+            // SDD: seed one I[x,0] = _vx/50 per port so a freshly-placed SDD is functional
+            // (acts as N independent 50-Ω conductances) and shows the port-voltage notation.
             case SymbolKind.Sdd:
             {
                 int n = portCount >= 1 ? portCount : 2;
-                return [new("NumPorts", $"{n}", "", false, UnitDimension.None)];
+                var ps = new List<DefaultParam>(1 + n) { new("NumPorts", $"{n}", "", false, UnitDimension.None) };
+                for (int x = 1; x <= n; x++)
+                    ps.Add(new($"I[{x},0]", $"_v{x}/50", "", true, UnitDimension.None));
+                return ps;
             }
 
             // Term: Num (port index, auto-assigned at placement) + Z (reference impedance).
@@ -299,6 +311,23 @@ public static class ComponentTypeRegistry
 
             // VAR: parameter rows are user-authored variable definitions; freshly placed VAR has no rows.
             case SymbolKind.Var: return [];
+
+            // SnP: N-port Touchstone file-backed component.
+            // NumPorts (hidden) is required by CnlReader. File, RefNode, PinConfig, Pitch,
+            // InterpMode, ExtrapMode are the remaining 6 fixed params.
+            case SymbolKind.Snp:
+            {
+                int n = portCount >= 1 ? portCount : 2;
+                return [
+                    new("NumPorts",  $"{n}",         "",  false, UnitDimension.None),
+                    new("File",      "",              "",  true,  UnitDimension.None),
+                    new("RefNode",   "false",         "",  false, UnitDimension.None),
+                    new("PinConfig", "Standard",      "",  false, UnitDimension.None),
+                    new("Pitch",     "Loose",         "",  false, UnitDimension.None),
+                    new("InterpMode","Cubic",         "",  false, UnitDimension.None),
+                    new("ExtrapMode","NearestEdge",   "",  false, UnitDimension.None),
+                ];
+            }
 
             // Ground/FetSdd/Generic need no default parameters.
             default: return [];
@@ -361,6 +390,14 @@ public static class ComponentTypeRegistry
                 {
                     kind      = SymbolKind.Sdd;
                     portCount = sn;
+                    return true;
+                }
+                // S{N}P — Touchstone file-backed N-port (e.g. S1P, S2P, S3P).
+                if (s.Length >= 3 && s[0] == 'S' && s[^1] == 'P' &&
+                    int.TryParse(s[1..^1], out int snp) && snp >= 1)
+                {
+                    kind      = SymbolKind.Snp;
+                    portCount = snp;
                     return true;
                 }
                 return Enum.TryParse(input, ignoreCase: true, out kind);

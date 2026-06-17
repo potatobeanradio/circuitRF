@@ -1,4 +1,5 @@
 using System.Numerics;
+using CircuitRF.Core;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 using CSparse.Complex.Factorization;
@@ -48,8 +49,8 @@ public static class SParameterEngine
         var (ports, branchLabels) = CollectPortsAndBranchLabels(netlist, nonGroundNodes);
         if (ports.Count == 0)
             throw new InvalidOperationException(
-                "S-parameter analysis requires at least one Port or Term component at the testbench top level. " +
-                "Place Term components (Num=1, Z=50 Ohm) directly in the testbench, not inside sub-cells.");
+                "S-parameter analysis requires at least one Port, Term, or P1Tone component at the testbench top level. " +
+                "Place Term or P1Tone components (Num=1, Z=50 Ohm) directly in the testbench, not inside sub-cells.");
         int N = ports.Count;
 
         var mna       = new MnaSystem(nonGroundNodes);
@@ -276,12 +277,15 @@ public static class SParameterEngine
     // ── Assembly helpers ───────────────────────────────────────────────────────
 
     /// <summary>
+    /// <summary>Returns true for models that act as s-param ports (Port, Term, or P1Tone).</summary>
+    private static bool IsSParamPort(ComponentModel m) => m is PortModel or TermModel or P1ToneModel;
+
     /// Stamp all components (two-phase: non-mutual first so InductorModel.LastBranchIndex
     /// is set before MutualInductanceModel reads it).
-    /// Buried Term/Port components (dotted InstancePath = inside a sub-cell) are silently
+    /// Buried Term/Port/P1Tone components (dotted InstancePath = inside a sub-cell) are silently
     /// skipped — they are inert and never become driven ports (Layer 2 scoping rule).
-    /// <paramref name="skipPorts"/>: when true (wave path), top-level Port/Term are also skipped
-    /// — they contribute conductances directly in RunWavePath instead of 0 V branches.
+    /// <paramref name="skipPorts"/>: when true (wave path), top-level Port/Term/P1Tone are also
+    /// skipped — they contribute conductances directly in RunWavePath instead of 0 V branches.
     /// </summary>
     private static void StampAll(
         MnaSystem         mna,
@@ -293,10 +297,17 @@ public static class SParameterEngine
         foreach (var ec in netlist.Components)
         {
             if (ec.Model is MutualInductanceModel) continue;
-            // Buried Term/Port: inert even in S-param analysis.
-            if ((ec.Model is PortModel or TermModel) && ec.InstancePath.Contains('.')) continue;
-            // Wave path: ports stamp their own conductances; skip the 0 V branch stamp.
-            if (skipPorts && (ec.Model is PortModel or TermModel)) continue;
+            // Buried Term/Port/P1Tone: inert even in S-param analysis.
+            if (IsSParamPort(ec.Model) && ec.InstancePath.Contains('.')) continue;
+            // Wave path: ports stamp their own conductances; skip the branch stamp.
+            if (skipPorts && IsSParamPort(ec.Model)) continue;
+            // Legacy path: P1Tone is stamped as a 0 V branch (via StampAsSParamPort in the
+            // prelim pass); do NOT call its normal Stamp here (that would stamp a Z-port branch).
+            if (ec.Model is P1ToneModel p1 && !skipPorts)
+            {
+                p1.StampAsSParamPort(mna, ec);
+                continue;
+            }
             ec.Model.Stamp(mna, ec, omega);
         }
         foreach (var ec in netlist.Components)
@@ -364,10 +375,15 @@ public static class SParameterEngine
         foreach (var ec in netlist.Components)
         {
             if (ec.Model is MutualInductanceModel) continue;
-            // Buried Term/Port: skip in the preliminary stamp pass (Layer 2 scoping rule).
-            if ((ec.Model is PortModel or TermModel) && ec.InstancePath.Contains('.')) continue;
+            // Buried s-param ports: skip in the preliminary stamp pass (Layer 2 scoping rule).
+            if (IsSParamPort(ec.Model) && ec.InstancePath.Contains('.')) continue;
             int before = tempMna.BranchCount;
-            ec.Model.Stamp(tempMna, ec, 1.0);
+            // P1Tone: stamp as a 0 V branch (same as Term) so LastBranchIndex is captured for
+            // the legacy path. Its own S-param Z-port stamp must NOT be called here.
+            if (ec.Model is P1ToneModel p1)
+                p1.StampAsSParamPort(tempMna, ec);
+            else
+                ec.Model.Stamp(tempMna, ec, 1.0);
             for (int b = before; b < tempMna.BranchCount; b++)
                 branchLabels[tempMna.NodeCount + b] = $"{ec.ComponentType}:{ec.InstancePath}";
         }
@@ -379,12 +395,14 @@ public static class SParameterEngine
         var ports = new List<PortEntry>();
         foreach (var ec in netlist.Components)
         {
-            // Only top-level Term/Port components (no dot in path) become S-param ports.
-            if ((ec.Model is PortModel or TermModel) && ec.InstancePath.Contains('.')) continue;
+            // Only top-level s-param port components (no dot in path) become S-param ports.
+            if (IsSParamPort(ec.Model) && ec.InstancePath.Contains('.')) continue;
             if (ec.Model is PortModel pm)
                 ports.Add(new PortEntry(GetPortNum(ec), GetZ0(ec), pm.LastBranchIndex, ec.Nodes[0], ec.Nodes[1]));
             else if (ec.Model is TermModel tm)
                 ports.Add(new PortEntry(GetPortNum(ec), GetZ0(ec), tm.LastBranchIndex, ec.Nodes[0], ec.Nodes[1]));
+            else if (ec.Model is P1ToneModel p1)
+                ports.Add(new PortEntry(GetPortNum(ec), GetZ0(ec), p1.LastBranchIndex, ec.Nodes[0], ec.Nodes[1]));
         }
 
         ports.Sort((a, b) => a.PortNum.CompareTo(b.PortNum));

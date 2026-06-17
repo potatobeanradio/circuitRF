@@ -17,6 +17,14 @@ namespace CircuitRF.Ui.Schematic;
 /// </summary>
 public static class BuiltInSymbols
 {
+    // ── Font sizes (compile-time consts — safe to reference from field initializers) ──
+    /// <summary>Font size for the +/− polarity marks on 2-terminal sources/terminations.</summary>
+    public const double PolarityFontSize = 36.0;
+    /// <summary>Font size for SDD/ZPort port-number labels ("1+", "2−", …).</summary>
+    public const double SddPortLabelFontSize = 10.0;
+    /// <summary>Font size for the "VAR" body label.</summary>
+    public const double VarLabelFontSize = 48.0;
+
     // ── Static caches — built once at first access ────────────────────────────
 
     private static readonly Symbol _resistor     = BuildResistor();
@@ -35,6 +43,8 @@ public static class BuiltInSymbols
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
     private static readonly Dictionary<int, Symbol> _zportCache = new();
+    // SnP cache key: (n, refNode, cfg, pitch)
+    private static readonly Dictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
 
     /// <summary>
     /// Returns the primitive list for a built-in symbol kind.
@@ -64,6 +74,11 @@ public static class BuiltInSymbols
                 if (!_sddCache.TryGetValue(n, out var sym))
                     _sddCache[n] = sym = BuildSddVariadicSymbol(SymbolKind.Sdd, n);
                 return sym;
+            }
+            case SymbolKind.Snp:
+            {
+                int n = portCount > 0 ? portCount : 2;
+                return PrimitivesForSnp(n, refNode: false, cfg: SnpPinConfig.Standard, pitch: SnpPitch.Loose);
             }
             case SymbolKind.Resistor:   return _resistor;
             case SymbolKind.Inductor:   return _inductor;
@@ -150,9 +165,10 @@ public static class BuiltInSymbols
     private static TextPrimitive Txt(string content, double ax, double ay,
                                       double fontSize = 12,
                                       SymbolTextAlign align = SymbolTextAlign.Center,
-                                      SymbolTextVAlign vAlign = SymbolTextVAlign.Middle)
+                                      SymbolTextVAlign vAlign = SymbolTextVAlign.Middle,
+                                      SymbolColorRole colorRole = SymbolColorRole.SymbolLine)
         => new() { Content = content, AnchorX = ax, AnchorY = ay,
-                   FontSize = fontSize, Align = align, VAlign = vAlign };
+                   FontSize = fontSize, Align = align, VAlign = vAlign, ColorRole = colorRole };
 
     // ── Sym helper ────────────────────────────────────────────────────────────
 
@@ -212,8 +228,8 @@ public static class BuiltInSymbols
         L(-40,  10,  40,  10),              // long bar
         L(-20,   30,  20,   30),            // short bar (− terminal)
         L(  0,   30,   0,  200),            // bottom lead
-        Txt("+", -25, -100),                // + polarity marker near top lead
-        Txt("−", -25, +100),                // − polarity marker near bottom lead
+        Txt("+", -25, -100, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),   // + polarity marker near top lead
+        Txt("−", -25, +100, fontSize: PolarityFontSize),                                           // − polarity marker near bottom lead
     ], SymbolKind.Vdc);
 
     // ── Tone / AC Source — circle + sine mark + leads + +/− markers ──────────
@@ -224,23 +240,28 @@ public static class BuiltInSymbols
         Circ(  0,    0,  60),                // body circle (stroked)
         L(   0,   60,   0,  200),           // bottom lead
         Sine(0,    0,  22,    1,   70, SineAxis.Horizontal),  // AC mark
-        Txt("+", -25, -130),                // + polarity marker near top lead
-        Txt("−", -25, +130),                // − polarity marker near bottom lead
+        Txt("+", -25, -130, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),   // + polarity marker near top lead
+        Txt("−", -25, +130, fontSize: PolarityFontSize),                                           // − polarity marker near bottom lead
     ], SymbolKind.ToneSource);
 
-    // ── P1Tone — power source: circle + sine mark + power-arrow chevron + +/− ─
+    // ── P1Tone — RF power source: Term-sized box, top-half zigzag resistor,
+    // bottom-half voltage-source circle with 1-cycle sine inside.
     // Pins: (0,-200) top (RF) / (0,+200) bottom (reference).
-    // Visually distinct from ToneSource by the upward-pointing chevron (↑) inside the circle.
+    // Same frame dimensions as Term so P1Tone reads as the same family.
 
     private static Symbol BuildP1Tone() => Sym([
-        L(   0, -200,   0,  -60),           // top lead
-        Circ(  0,    0,  60),                // body circle (stroked)
-        L(   0,   60,   0,  200),           // bottom lead
-        Sine(0,   15,  18,    1,   55, SineAxis.Horizontal),  // AC mark (shifted down slightly)
-        L( -20,  -22,   0,  -38),           // chevron left arm  (↑)
-        L(  20,  -22,   0,  -38),           // chevron right arm (↑)
-        Txt("+", -25, -130),                // + polarity marker near top lead
-        Txt("−", -25, +130),                // − polarity marker near bottom lead
+        L(    0, -200,    0, -110),          // top lead into box (same as Term)
+        RRect(0,    0,  110,  240,   12),    // frame box, SAME size as Term (y∈[-120,+120])
+        // Top half: small zigzag resistor (smaller than Term's), spanning y∈[-100,-10]
+        PLine(  0, -100,   0, -85,
+               18, -73, -18, -55,
+               18, -37, -18, -19,
+                0,  -7,   0,   0),           // resistor body ends at circle top
+        // Bottom half: voltage-source circle centered at (0,+55)
+        Circ(  0,   55,  45),
+        // Sine inside the circle: 1 cycle, fills the circle width (length = 2·r = 90)
+        Sine(  0,   55,  20,    1,   90, SineAxis.Horizontal),
+        L(    0,  120,    0,  200),          // bottom lead from box (same as Term)
     ], SymbolKind.P1Tone);
 
     // ── Term — resistor-in-box, "+" (signal) and "−" (reference) pins ───────────
@@ -254,20 +275,22 @@ public static class BuiltInSymbols
                25, -65, -25, -35,
                25,  -5, -25,  25,
                25,  55, -25,  80,
-                0,  95,   0, 110),
+                0,  95,   0, 120),
         L(    0, +120,    0, +200),         // "−" lead from box bottom
-        Txt("+", -70, -165),                // + polarity marker near top lead
-        Txt("−", -70, +165),                // − polarity marker near bottom lead
+        Txt("+", -70, -165, fontSize: PolarityFontSize, colorRole: SymbolColorRole.SymbolPlus),   // + polarity marker near top lead
+        Txt("−", -70, +165, fontSize: PolarityFontSize),                                           // − polarity marker near bottom lead
     ], SymbolKind.Term);
 
     // ── Pin — interface terminal: horizontal hexagon + stem, tip on the right ──
-    // Pin connection point at (200,0) — the lead tip on the right.
-    // Hexagon body centered near origin; stem from hex right vertex (80,0) to tip (200,0).
+    // Port at (100,0) — on grid (multiple of 100). Total x-span −100..100 = 200.
+    // Stem length 50: from hex right vertex (50,0) to port tip (100,0).
+    // Hexagon: left vertex (-100,0), right vertex (50,0), height ±50.
+    // Flat-top/bottom edges at x=-40 and x=10 (round numbers, aspect ratio free).
     // Num label (shown via parameters) identifies the cell interface port.
 
     private static Symbol BuildPin() => Sym([
-        Poly(false, -40,-50,  40,-50,  80,0,  40,50,  -40,50,  -80,0),  // hexagon body
-        L(80, 0,  200, 0),               // stem from hex right vertex to pin tip
+        Poly(false, -55,-50,  10,-50,  50,0,  10,50,  -55,50,  -100,0),  // hexagon body
+        L(50, 0,  100, 0),               // stem: hex right vertex (50,0) → port tip (100,0)
     ], SymbolKind.Pin);
 
     // ── Ground — stem + filled downward triangle (Core Graphics style) ────────
@@ -280,22 +303,17 @@ public static class BuiltInSymbols
         L(  -15,   70,   15,  70),         // third
     ], SymbolKind.Ground);
 
-    // ── FET/SDD — box with gate, drain, source (horizontal, unchanged) ────────
+    // ── FET/SDD — clean FET: gate bar, channel bar, straight horizontal leads ──
+    // No box, no arrows. Drain/source leads are perfectly straight horizontal
+    // lines from the channel bar to the on-grid pin tips at (200,∓100).
+    // Channel spans y∈[−100,100] so each lead leaves it horizontally.
 
     private static Symbol BuildFetSdd() => Sym([
-        L(-200,   0, -80,   0),   // gate lead (tip at -200)
-        L( -80,-100,  80,-100),   // box top
-        L(  80,-100,  80, 100),   // box right
-        L(  80, 100, -80, 100),   // box bottom
-        L( -80, 100, -80,-100),   // box left
-        L( -80,   0, -30,   0),   // gate horizontal bar
-        L( -30, -70, -30,  70),   // channel vertical
-        L( -30, -50,  80, -50),   // drain horizontal
-        L(  80, -50, 200,-100),   // drain diagonal (tip at 200,-100)
-        L( -30,  50,  80,  50),   // source horizontal
-        L(  80,  50, 200, 100),   // source diagonal (tip at 200,100)
-        L( -30, -50, -20, -40),   // arrow notch 1
-        L( -30, -50, -20, -60),   // arrow notch 2
+        L(-200,    0,  -60,    0),   // gate lead (tip at -200,0)
+        L( -60, -100,  -60,  100),   // gate vertical bar
+        L( -40, -100,  -40,  100),   // channel vertical bar (parallel to gate)
+        L( -40, -100,  200, -100),   // drain: PERFECTLY STRAIGHT horizontal lead to pin tip (200,-100)
+        L( -40,  100,  200,  100),   // source: PERFECTLY STRAIGHT horizontal lead to pin tip (200,100)
     ], SymbolKind.FetSdd);
 
     // ── SDD / ZPort — N-aware rounded-rect body ───────────────────────────────
@@ -317,12 +335,66 @@ public static class BuiltInSymbols
         {
             bool isLeft = lx < 0;
             double ax    = isLeft ? -75.0 : 75.0;
-            prims.Add(Txt(name, ax, ly, fontSize: 10,
+            // "+" terminal labels render in the SymbolPlus color; "−"/others stay regular.
+            var role = name.EndsWith("+", StringComparison.Ordinal)
+                ? SymbolColorRole.SymbolPlus
+                : SymbolColorRole.SymbolLine;
+            prims.Add(Txt(name, ax, ly, fontSize: SddPortLabelFontSize,
+                align: isLeft ? SymbolTextAlign.Left : SymbolTextAlign.Right,
+                vAlign: SymbolTextVAlign.Middle,
+                colorRole: role));
+        }
+
+        return Sym(prims, kind, n);
+    }
+
+    // ── SnP — N-port Touchstone-file-backed network ──────────────────────────
+
+    /// <summary>
+    /// Returns (possibly cached) symbol primitives for an SnP component with the given params.
+    /// Renderer/glyph-BB/ghost must call this instead of Primitives(Snp, n) when they know
+    /// the component's actual RefNode/PinConfig/Pitch values.
+    /// </summary>
+    public static Symbol PrimitivesForSnp(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)
+    {
+        var key = (n, refNode, cfg, pitch);
+        if (!_snpCache.TryGetValue(key, out var sym))
+            _snpCache[key] = sym = BuildSnpSymbol(n, refNode, cfg, pitch);
+        return sym;
+    }
+
+    private static Symbol BuildSnpSymbol(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)
+    {
+        var ports = SymbolPortDefs.GenerateSnpPorts(n, refNode, cfg, pitch);
+        var (w, halfH) = SymbolPortDefs.SnpBodyRect(n, cfg, pitch);
+
+        var prims = new List<SymbolPrimitive> { RRect(0, 0, w, halfH * 2, 12) };
+
+        double bodyLeft  = -w * 0.5;
+        double bodyRight = +w * 0.5;
+
+        foreach (var (name, lx, ly) in ports)
+        {
+            // Lead line: from body edge to pin tip.
+            if (lx < 0)
+                prims.Add(L(bodyLeft,  ly, lx, ly));    // left pin: body edge → tip
+            else if (lx > 0)
+                prims.Add(L(bodyRight, ly, lx, ly));    // right pin: body edge → tip
+            else
+                prims.Add(L(0, +halfH, 0, ly));          // bottom/ref pin: bottom edge → tip
+
+            if (name == "Ref") continue; // ref pin has no label inside body
+            bool isLeft = lx < 0 || (lx == 0 && n == 1);
+            double ax = isLeft ? bodyLeft + 20 : bodyRight - 20;
+            prims.Add(Txt(name, ax, ly,
+                fontSize: SddPortLabelFontSize,
                 align: isLeft ? SymbolTextAlign.Left : SymbolTextAlign.Right,
                 vAlign: SymbolTextVAlign.Middle));
         }
 
-        return Sym(prims, kind, n);
+        // Build pins manually so we use the SnP-specific port positions.
+        var pins = ports.Select((d, i) => new SymbolPin(d.LocalX, d.LocalY, i, d.Name)).ToList();
+        return new Symbol(prims, pins);
     }
 
     // ── VAR — port-less box with "VAR" label ─────────────────────────────────
@@ -332,7 +404,7 @@ public static class BuiltInSymbols
         L( 80, -60,  80,  60),   // right
         L( 80,  60, -80,  60),   // bottom
         L(-80,  60, -80, -60),   // left
-        Txt("VAR", 0, 0, fontSize: 24, align: SymbolTextAlign.Center, vAlign: SymbolTextVAlign.Middle),
+        Txt("VAR", 0, 0, fontSize: VarLabelFontSize, align: SymbolTextAlign.Center, vAlign: SymbolTextVAlign.Middle),
     ], SymbolKind.Var);
 
     // ── Generic — 2-port box with leads (horizontal fallback) ─────────────────

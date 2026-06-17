@@ -111,14 +111,14 @@ public class SymbolLibraryOverhaulTests
         Assert.Empty(diagonals);
     }
 
-    // ── Test 7: Pin has horizontal tip at (200,0), hexagon body ──────────────
+    // ── Test 7: Pin has horizontal tip at (100,0), hexagon body (Part 5 update) ──
 
     [Fact]
     public void Pin_HorizontalRightTip()
     {
         var portDefs = SymbolPortDefs.For(SymbolKind.Pin);
         Assert.Single(portDefs);
-        Assert.Equal(200f, portDefs[0].LocalX);
+        Assert.Equal(100f, portDefs[0].LocalX);  // port moved from (200,0) to (100,0)
         Assert.Equal(0f,   portDefs[0].LocalY);
 
         var sym = BuiltInSymbols.Primitives(SymbolKind.Pin);
@@ -137,12 +137,12 @@ public class SymbolLibraryOverhaulTests
         Assert.NotNull(txt);
     }
 
-    // ── Test 9: ToneSource / Vdc / P1Tone / Term each carry + and − markers ──
+    // ── Test 9: ToneSource / Vdc / Term carry + and − markers (P1Tone no longer does) ──
 
     [Fact]
     public void PlusMinusIndicators()
     {
-        foreach (var kind in new[] { SymbolKind.ToneSource, SymbolKind.Vdc, SymbolKind.P1Tone, SymbolKind.Term })
+        foreach (var kind in new[] { SymbolKind.ToneSource, SymbolKind.Vdc, SymbolKind.Term })
         {
             var sym   = BuiltInSymbols.Primitives(kind);
             var texts = sym.Primitives.OfType<TextPrimitive>().Select(t => t.Content).ToList();

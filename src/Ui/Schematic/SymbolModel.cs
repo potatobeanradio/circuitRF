@@ -20,6 +20,11 @@ public enum SymbolTextVAlign { Baseline, Top, Middle, Bottom }
 /// <summary>Tri-state snap mode for symbol-editor art.  Pins ALWAYS snap to P=100 regardless.</summary>
 public enum SnapMode { ConnectionGrid, FineGrid, None }
 
+/// <summary>Pin layout template for an SnP symbol.</summary>
+public enum SnpPinConfig { Standard, SplitLR, DualRow }
+/// <summary>Pitch between same-side pins for SnP symbols with N ≥ 4.</summary>
+public enum SnpPitch { Tight, Loose }
+
 // ── Primitive base ────────────────────────────────────────────────────────────
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
@@ -252,6 +257,12 @@ public sealed class TextPrimitive : SymbolPrimitive
     /// needed so it never renders upside-down/mirrored. When false (default), it rotates rigidly with
     /// the instance. The symbol editor always shows the literal authored rotation regardless.</summary>
     public bool ForceReadable { get; set; }
+
+    /// <summary>Color role for this text. Default SymbolLine preserves legacy rendering
+    /// (text historically drew in the SymbolLine color). Set SymbolPlus for "+" polarity marks;
+    /// SymbolText for regular label text that should track the dedicated text color.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SymbolColorRole ColorRole { get; set; } = SymbolColorRole.SymbolLine;
 }
 
 // ── Bitmap (reference/tracing artwork) ───────────────────────────────────────

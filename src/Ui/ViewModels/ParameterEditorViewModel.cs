@@ -1,9 +1,12 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RfCore;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
@@ -51,6 +54,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
         AddGroupCommand       = new RelayCommand(AddGroup);
         RemoveTopGroupCommand = new RelayCommand(RemoveTopGroup, () => _canRemoveTopGroup);
+        PickSnpFileCommand    = new AsyncRelayCommand(PickFileAsync);
     }
 
     // Subscribe/unsubscribe PropertyChanged on the target schematic's stack so
@@ -105,6 +109,93 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     {
         if (_isRefreshing || _target is null || _schematicVm is null) return;
         _schematicVm.Execute(new SetLabelVisibilityCommand(_schematicVm.EditModel, _target, isTypeLabel: false, newValue));
+    }
+
+    // ── SnP panel ─────────────────────────────────────────────────────────────
+
+    public bool IsSnp => _target?.Symbol == SymbolKind.Snp;
+
+    /// <summary>Callback set by the view so the VM can open a native file picker.</summary>
+    public Func<Task<string?>>? PickSnpFileAsync { get; set; }
+
+    public static string[] SnpPinConfigOptions { get; } = ["Standard", "SplitLR", "DualRow"];
+    public static string[] SnpPitchOptions     { get; } = ["Tight",    "Loose"];
+
+    public IAsyncRelayCommand PickSnpFileCommand { get; private set; } = null!;
+
+    [ObservableProperty] private string _snpFilePath       = "";
+    [ObservableProperty] private bool   _snpRefNode        = false;
+    [ObservableProperty] private int    _snpPinConfigIndex = 0;
+    [ObservableProperty] private int    _snpPitchIndex     = 1;
+    [ObservableProperty] private string _snpPortCountText  = "";
+
+    partial void OnSnpRefNodeChanged(bool oldValue, bool newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        ApplySnpParam("RefNode", newValue ? "true" : "false");
+    }
+
+    partial void OnSnpPinConfigIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        string val = (uint)newValue < (uint)SnpPinConfigOptions.Length ? SnpPinConfigOptions[newValue] : "Standard";
+        ApplySnpParam("PinConfig", val);
+    }
+
+    partial void OnSnpPitchIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        string val = (uint)newValue < (uint)SnpPitchOptions.Length ? SnpPitchOptions[newValue] : "Loose";
+        ApplySnpParam("Pitch", val);
+    }
+
+    private async Task PickFileAsync()
+    {
+        if (_target is null || _schematicVm is null || PickSnpFileAsync is null) return;
+        string? path = await PickSnpFileAsync();
+        if (path is null) return;
+
+        var newParams = _target.Parameters.Select(p => p.Clone()).ToList();
+        var fileParam = newParams.FirstOrDefault(p => p.Name == "File");
+        if (fileParam is not null) fileParam.Expression = path;
+
+        if (TouchstoneIO.TryGetPortCount(path, out int n, out _))
+        {
+            var numPorts = newParams.FirstOrDefault(p => p.Name == "NumPorts");
+            if (numPorts is not null) numPorts.Expression = n.ToString();
+        }
+
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
+    }
+
+    private void ApplySnpParam(string name, string value)
+    {
+        var newParams = _target!.Parameters.Select(p => p.Clone()).ToList();
+        var param = newParams.FirstOrDefault(p => p.Name == name);
+        if (param is not null) param.Expression = value;
+        _schematicVm!.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
+    }
+
+    private void RefreshSnpProperties()
+    {
+        if (_target?.Symbol != SymbolKind.Snp) return;
+        string file = _target.Parameters.FirstOrDefault(p => p.Name == "File")?.Expression ?? "";
+        bool refNode = (_target.Parameters.FirstOrDefault(p => p.Name == "RefNode")?.Expression ?? "false")
+            .Equals("true", StringComparison.OrdinalIgnoreCase);
+        string cfgStr   = _target.Parameters.FirstOrDefault(p => p.Name == "PinConfig")?.Expression ?? "Standard";
+        string pitchStr = _target.Parameters.FirstOrDefault(p => p.Name == "Pitch")?.Expression ?? "Loose";
+        int cfgIdx   = Array.IndexOf(SnpPinConfigOptions, cfgStr); if (cfgIdx < 0) cfgIdx = 0;
+        int pitchIdx = Array.IndexOf(SnpPitchOptions,     pitchStr); if (pitchIdx < 0) pitchIdx = 1;
+        int portCount = _target.PortCount;
+
+        // Set _isRefreshing so the partial callbacks don't call ApplySnpParam.
+        _isRefreshing = true;
+        SnpFilePath       = file;
+        SnpRefNode        = refNode;
+        SnpPinConfigIndex = cfgIdx;
+        SnpPitchIndex     = pitchIdx;
+        SnpPortCountText  = portCount >= 1 ? $"{portCount}-port" : "Unknown";
+        _isRefreshing = false;
     }
 
     // ── Close button (dialog host shows; embedded host hides) ─────────────────
@@ -192,9 +283,10 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         ShowTypeLabel     = comp.ShowTypeLabel;
         ShowInstanceName  = comp.ShowInstanceName;
 
-        // Build rows — NumPorts, NumFreqs, and blank-name params omitted
+        // Build rows — NumPorts, NumFreqs, blank-name params, and SnP-specific params omitted.
+        // SnP components use a custom panel instead of generic rows.
         Rows.Clear();
-        if (_schematicVm is not null)
+        if (_schematicVm is not null && comp.Symbol != SymbolKind.Snp)
         {
             foreach (var param in comp.Parameters)
             {
@@ -205,8 +297,10 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
         _isRefreshing = false;
 
+        OnPropertyChanged(nameof(IsSnp));
         OnPropertyChanged(nameof(AllowsAddParameter));
         UpdateCanRemoveTopGroup();
+        if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
     }
 
     // ── Commit helpers called by the view ─────────────────────────────────────
@@ -365,6 +459,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         foreach (var row in Rows)
             row.RefreshFromModel();
         _isRefreshing = false;
+        if (_target.Symbol == SymbolKind.Snp) RefreshSnpProperties();
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────────
@@ -538,7 +633,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     }
 
     private static int VisibleParamCount(EditableComponent comp)
-        => comp.Parameters.Count(p => p.Name is not "NumPorts" and not "NumFreqs" && !string.IsNullOrEmpty(p.Name));
+    {
+        // SnP uses a custom panel; generic rows are always empty.
+        if (comp.Symbol == SymbolKind.Snp) return 0;
+        return comp.Parameters.Count(p => p.Name is not "NumPorts" and not "NumFreqs" && !string.IsNullOrEmpty(p.Name));
+    }
 
     private static bool ParamNameOrderEquals(IEnumerable<EditableParameter> a, IReadOnlyList<EditableParameter> b)
     {

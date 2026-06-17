@@ -1,6 +1,9 @@
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using CircuitRF.Ui.ViewModels;
 
 namespace CircuitRF.Ui.Views.ParameterEditor;
@@ -10,7 +13,32 @@ public partial class ParameterEditorView : UserControl
     // Suppress SelectionChanged re-entrancy when RefreshFromModel updates StagedUnit bindings.
     private bool _suppressUnitCommit;
 
-    public ParameterEditorView() => InitializeComponent();
+    public ParameterEditorView()
+    {
+        InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object? sender, System.EventArgs e)
+    {
+        if (DataContext is ParameterEditorViewModel vm)
+            vm.PickSnpFileAsync = PickSnpFileAsync;
+    }
+
+    private async Task<string?> PickSnpFileAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return null;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title            = "Open Touchstone File",
+            AllowMultiple    = false,
+            FileTypeFilter   = [new FilePickerFileType("Touchstone") { Patterns = ["*.s1p","*.s2p","*.s3p","*.s4p","*.snp","*.S1P","*.S2P","*.S3P","*.S4P","*.SNP"] }],
+        });
+
+        return files.Count == 1 ? files[0].TryGetLocalPath() : null;
+    }
 
     private ParameterEditorViewModel? Vm => DataContext as ParameterEditorViewModel;
 

@@ -128,7 +128,32 @@ right `Z` lands on each. The conjugate-symmetry handling for negative-ω represe
 - **Matches the Tuner.** Same `Z[k]`/`Zdefault`/`G[k]` surface and the same `round(ω/ω0)` spirit, generalized
   from `ω0` to `f_c`. A user who knows the Tuner needs no new mental model.
 
-## 6. Limitations (state in the doc)
+## 6. S-parameter port role (brief-p1tone-num-sddx-defaults)
+
+A top-level P1Tone also participates in S-parameter analysis as a port, identical to a `Term`.
+
+### 6.1 The `Num` parameter
+P1Tone carries a `Num` parameter (auto-assigned at placement from the shared Term + P1Tone pool, so
+Port numbers never collide). `SParameterEngine.GetPortNum` reads it exactly like Term's `Num`.
+
+### 6.2 S-param stamping
+In S-parameter analysis `_fc = 0` (no tone context set). Two code paths:
+
+- **Wave path** (`Re(Z0) > 1e−12`, the common case): P1Tone stamps `G = 1/Z` conductance via the
+  usual `AddAdmittance` path, and its Kurokawa S-extraction uses `Node0/Node1`. Same as Term.
+- **Legacy path** (`Re(Z0) ≤ 0`): `P1ToneModel.StampAsSParamPort(mna, c)` stamps a 0 V source
+  branch between `Nodes[0]` and `Nodes[1]`, mirroring `TermModel.Stamp`. `LastBranchIndex` is read
+  by `CollectPortsAndBranchLabels` and stored in the `PortEntry`.
+
+Buried P1Tone (dotted `InstancePath`) is skipped identically to buried Term — it contributes no
+S-param port and no matrix stamps.
+
+### 6.3 Auto-placement numbering
+`SchematicViewModel.NextFreeTermNum` scans both `SymbolKind.Term` and `SymbolKind.P1Tone` instances
+so P1Tone:P1 (Num=1) and Term:T1 (Num=1) cannot coexist on the same testbench top level. This
+matches the S-param port-extraction invariant that `Num` values must be unique across all port types.
+
+## 7. Limitations (state in the doc)
 - The band model is **uniform-width** (`f_c`-spaced). It assumes the harmonic bands of interest sit near integer
   multiples of `f_c`. For wildly non-commensurate two-tone setups (f1, f2 far apart), "fundamental band" is less
   meaningful — but two-tone IM analysis intrinsically assumes closely-spaced tones, so this is the right regime.

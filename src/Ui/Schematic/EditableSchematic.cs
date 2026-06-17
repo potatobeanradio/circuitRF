@@ -59,13 +59,16 @@ public static class SymbolPortDefs
             // Pin order is the contract: NetBindings[0]=+ net, NetBindings[1]=− net.
             case SymbolKind.Term:    return [("+", 0f, -200f), ("−", 0f, +200f)];
             // Pin: one connection terminal at the lead tip (horizontal, tip on the right).
-            case SymbolKind.Pin:     return [("1", 200f, 0f)];
+            case SymbolKind.Pin:     return [("1", 100f, 0f)];
             case SymbolKind.FetSdd:  return [("gate",   -200f,   0f),
                                              ("drain",   200f, -100f),
                                              ("source",  200f,  100f)];
             case SymbolKind.ZPort:
             case SymbolKind.Sdd:
                 return GenerateSddPorts(portCount >= 1 ? portCount : 2);
+            case SymbolKind.Snp:
+                return GenerateSnpPorts(portCount >= 1 ? portCount : 2,
+                    refNode: false, cfg: SnpPinConfig.Standard, pitch: SnpPitch.Loose);
             default:
                 return [("1", 0f, -200f), ("2", 0f, 200f)];
         }
@@ -118,6 +121,92 @@ public static class SymbolPortDefs
         return (180f, maxPinY + 60f);
     }
 
+    /// <summary>
+    /// Generates pin definitions for an SnP symbol.  Includes N signal pins plus an optional
+    /// RefNode pin (index N, last) for a floating reference.
+    /// </summary>
+    /// <param name="n">Number of signal ports.</param>
+    /// <param name="refNode">True to append a RefNode pin (index N).</param>
+    /// <param name="cfg">Pin layout template.</param>
+    /// <param name="pitch">Same-side pin pitch for N ≥ 4 (Tight=100, Loose=200).</param>
+    public static (string Name, float LocalX, float LocalY)[] GenerateSnpPorts(
+        int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)
+    {
+        int totalPins = refNode ? n + 1 : n;
+        var pins = new (string Name, float LocalX, float LocalY)[totalPins];
+
+        float p = pitch == SnpPitch.Tight ? 100f : 200f;
+        const float bodyX = 200f;
+
+        switch (n)
+        {
+            case 1:
+                pins[0] = ("1", -bodyX, 0f);
+                break;
+            case 2:
+                pins[0] = ("1", -bodyX, 0f);
+                pins[1] = ("2", +bodyX, 0f);
+                break;
+            case 3:
+                // 2 on left, 1 on right center
+                pins[0] = ("1", -bodyX, -p);
+                pins[1] = ("2", -bodyX, +p);
+                pins[2] = ("3", +bodyX, 0f);
+                break;
+            default:
+            {
+                // N ≥ 4: distribute according to PinConfig
+                (int[] leftIdxs, int[] rightIdxs) = cfg switch
+                {
+                    SnpPinConfig.SplitLR => (
+                        Enumerable.Range(0, (n + 1) / 2).ToArray(),
+                        Enumerable.Range((n + 1) / 2, n / 2).ToArray()),
+                    SnpPinConfig.DualRow => (
+                        Enumerable.Range(0, n).Where(i => i % 2 == 0).ToArray(),
+                        Enumerable.Range(0, n).Where(i => i % 2 == 1).ToArray()),
+                    _ => ( // Standard: sequential wrap
+                        Enumerable.Range(0, (n + 1) / 2).ToArray(),
+                        Enumerable.Range((n + 1) / 2, n / 2).Reverse().ToArray()),
+                };
+                PlaceSide(pins, leftIdxs,  -bodyX, p);
+                PlaceSide(pins, rightIdxs, +bodyX, p);
+                break;
+            }
+        }
+
+        if (refNode)
+            pins[n] = ("Ref", 0f, SnpBodyHalfH(n, cfg, p) + 100f);
+
+        return pins;
+
+        static void PlaceSide((string Name, float LocalX, float LocalY)[] pins,
+            int[] portIdxs, float x, float pitch)
+        {
+            int count = portIdxs.Length;
+            float top = -(count - 1) * 0.5f * pitch;
+            for (int i = 0; i < count; i++)
+            {
+                int pn = portIdxs[i];
+                pins[pn] = ($"{pn + 1}", x, top + i * pitch);
+            }
+        }
+    }
+
+    private static float SnpBodyHalfH(int n, SnpPinConfig cfg, float pitch)
+    {
+        if (n <= 3) return n <= 1 ? 100f : (n <= 2 ? 100f : pitch + 60f);
+        int nLeft = (n + 1) / 2;
+        return (nLeft - 1) * 0.5f * pitch + 60f;
+    }
+
+    /// <summary>Returns the body rect (W, HalfH) for an SnP symbol.</summary>
+    public static (float W, float HalfH) SnpBodyRect(int n, SnpPinConfig cfg, SnpPitch pitch)
+    {
+        float p = pitch == SnpPitch.Tight ? 100f : 200f;
+        float halfH = n <= 1 ? 100f : n == 2 ? 100f : SnpBodyHalfH(n, cfg, p);
+        return (200f, Math.Max(halfH, 100f));
+    }
+
 }
 
 // ── Placed component ─────────────────────────────────────────────────────────
@@ -167,11 +256,34 @@ public sealed class EditableComponent
     /// <summary>World coordinates of a port by 0-based port index.</summary>
     public (double X, double Y) GetPortWorldCoord(int portIndex)
     {
-        var ports = SymbolPortDefs.For(Symbol, PortCount);
+        var ports = Symbol == SymbolKind.Snp
+            ? GetEffectiveSnpPortDefs()
+            : SymbolPortDefs.For(Symbol, PortCount);
         if ((uint)portIndex >= (uint)ports.Length)
             throw new ArgumentOutOfRangeException(nameof(portIndex));
         var (_, lx, ly) = ports[portIndex];
         return SchematicGeometry.LocalToWorld(lx, ly, X, Y, Rotation, MirrorX);
+    }
+
+    internal (string Name, float LocalX, float LocalY)[] GetEffectiveSnpPortDefs()
+    {
+        bool refNode = GetSnpBool("RefNode");
+        SnpPinConfig cfg = GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
+        SnpPitch pitch   = GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose);
+        return SymbolPortDefs.GenerateSnpPorts(PortCount, refNode, cfg, pitch);
+    }
+
+    private bool GetSnpBool(string name)
+    {
+        var p = Parameters.FirstOrDefault(q => q.Name == name);
+        return p is not null && p.Expression.Equals("true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private T GetSnpEnum<T>(string name, T defaultVal) where T : struct, Enum
+    {
+        var p = Parameters.FirstOrDefault(q => q.Name == name);
+        if (p is not null && Enum.TryParse<T>(p.Expression, ignoreCase: true, out var v)) return v;
+        return defaultVal;
     }
 
     /// <summary>
@@ -183,7 +295,7 @@ public sealed class EditableComponent
     {
         get
         {
-            if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd)
+            if (Symbol is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp)
             {
                 var p = Parameters.FirstOrDefault(q => q.Name == "NumPorts");
                 if (p is not null && int.TryParse(p.Expression, out int n) && n >= 1)
@@ -208,6 +320,15 @@ public sealed class EditableComponent
         List<SchematicPortDef> ports;
         CellSymbolState? cellRefState = null;
         IReadOnlyList<SymbolPrimitive>? cellRefPrimitives = null;
+        Symbol? snpSymbol = null;
+
+        if (Symbol == SymbolKind.Snp && cellRefResolution is null)
+        {
+            bool refNode   = GetSnpBool("RefNode");
+            SnpPinConfig cfg = GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
+            SnpPitch pitch   = GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose);
+            snpSymbol = BuiltInSymbols.PrimitivesForSnp(PortCount, refNode, cfg, pitch);
+        }
 
         if (cellRefResolution is not null)
         {
@@ -244,7 +365,12 @@ public sealed class EditableComponent
         }
         else
         {
-            var portDefs = SymbolPortDefs.For(Symbol, PortCount);
+            var portDefs = snpSymbol is not null
+                ? snpSymbol.Pins.Select(pin => (
+                    Name: pin.Name ?? $"P{pin.PortIndex + 1}",
+                    LocalX: (float)pin.LocalX,
+                    LocalY: (float)pin.LocalY)).ToArray()
+                : SymbolPortDefs.For(Symbol, PortCount);
             ports = portDefs.Select((p, i) =>
             {
                 PortConnectionState state;
@@ -291,13 +417,17 @@ public sealed class EditableComponent
             ? ComputeGlyphBb(cellRefPrimitives)
             : cellRefResolution is not null
                 ? (X - 160, Y - 60, X + 160, Y + 60)   // NotFound / PrimaryMissing placeholder
-                : ComputeGlyphBb(null);
+                : snpSymbol is not null
+                    ? ComputeGlyphBb(snpSymbol.Primitives)
+                    : ComputeGlyphBb(null);
 
         // FullBb: glyph BB unioned with every label's actual world position including offsets.
         // Computed once here so the spatial index and the renderer in-loop cull share a single
         // pre-baked value and cannot drift from each other.
-        double fullMinX = bb.MinX, fullMinY = bb.MinY;
-        double fullMaxX = bb.MaxX, fullMaxY = bb.MaxY;
+        // Also union with the glyph BB so tall symbols (SDD/ZPort with many ports) don't vanish
+        // when only their center scrolls off screen.
+        double fullMinX = Math.Min(bb.MinX, glyphMinX), fullMinY = Math.Min(bb.MinY, glyphMinY);
+        double fullMaxX = Math.Max(bb.MaxX, glyphMaxX), fullMaxY = Math.Max(bb.MaxY, glyphMaxY);
         for (int li = 0; li < labels.Count; li++)
         {
             if (string.IsNullOrEmpty(labels[li])) continue;
@@ -330,6 +460,7 @@ public sealed class EditableComponent
             FullBbMaxX = fullMaxX, FullBbMaxY = fullMaxY,
             CellRefState     = cellRefState,
             CellRefPrimitives = cellRefPrimitives,
+            SnpSymbol        = snpSymbol,
         };
     }
 
@@ -343,7 +474,17 @@ public sealed class EditableComponent
     public (double MinX, double MinY, double MaxX, double MaxY) ComputeGlyphBb(
         IReadOnlyList<SymbolPrimitive>? overridePrimitives = null)
     {
-        IReadOnlyList<SymbolPrimitive> prims = overridePrimitives ?? BuiltInSymbols.Primitives(Symbol, PortCount).Primitives;
+        IReadOnlyList<SymbolPrimitive> prims;
+        if (overridePrimitives is not null)
+            prims = overridePrimitives;
+        else if (Symbol == SymbolKind.Snp)
+            prims = BuiltInSymbols.PrimitivesForSnp(PortCount,
+                GetSnpBool("RefNode"),
+                GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard),
+                GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose)).Primitives;
+        else
+            prims = BuiltInSymbols.Primitives(Symbol, PortCount).Primitives;
+
         if (prims.Count == 0) return (X - 160, Y - 60, X + 160, Y + 60);
 
         var (lMinX, lMinY, lMaxX, lMaxY) = SymbolGeometry.ComputeBb(prims);
@@ -716,6 +857,16 @@ public sealed class SchematicEditModel
                 return r;
             }
             return [];
+        }
+
+        // SnP: use RefNode/PinConfig/Pitch-aware port defs (may include N+1 ports when RefNode=true).
+        if (comp.Symbol == SymbolKind.Snp)
+        {
+            var snpDefs = comp.GetEffectiveSnpPortDefs();
+            var snpResult = new (float LocalX, float LocalY, int PortIndex)[snpDefs.Length];
+            for (int i = 0; i < snpDefs.Length; i++)
+                snpResult[i] = (snpDefs[i].LocalX, snpDefs[i].LocalY, i);
+            return snpResult;
         }
 
         var portDefs = SymbolPortDefs.For(comp.Symbol, comp.PortCount);

@@ -708,7 +708,52 @@ public static class NetExtractor
         if (comp.Symbol == SymbolKind.ToneSource &&
             comp.Parameters.Any(p => p.Name == "NumFreqs"))
             reference = "V_nTone";
-        var overrides = comp.Parameters
+
+        // SnP: filter UI-only params and separate the optional reference-node pin.
+        if (comp.Symbol == SymbolKind.Snp)
+        {
+            bool hasRefNode = comp.Parameters
+                .FirstOrDefault(p => p.Name == "RefNode")?.Expression
+                .Equals("true", StringComparison.OrdinalIgnoreCase) ?? false;
+            int numPorts = comp.PortCount;
+
+            var overrides = comp.Parameters
+                .Where(p => p.Name is not "RefNode" and not "PinConfig" and not "Pitch")
+                .Select(p =>
+                {
+                    var unit = UnitNormalizer.ToEngineUnit(p.Unit);
+                    return new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null);
+                })
+                .ToList();
+
+            var snpNets = new List<string>();
+            var portDefs = GetEffectivePortDefs(model, comp, cellRefResolutions);
+            foreach (var def in portDefs)
+            {
+                if (hasRefNode && def.PortIndex == numPorts) continue; // ref pin handled separately
+                var (px, py) = model.PortWorldOf(comp, def);
+                snpNets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+            }
+
+            string? refNetBinding = null;
+            if (hasRefNode)
+            {
+                for (int di = 0; di < portDefs.Count; di++)
+                {
+                    if (portDefs[di].PortIndex == numPorts)
+                    {
+                        var (px, py) = model.PortWorldOf(comp, portDefs[di]);
+                        refNetBinding = NetForPort(comp, numPorts, px, py, uf, QK, netNames, detachedKeys);
+                        break;
+                    }
+                }
+            }
+
+            return new Instance(comp.InstanceName, reference, snpNets, overrides)
+                { RefNetBinding = refNetBinding };
+        }
+
+        var overrides2 = comp.Parameters
             .Select(p =>
             {
                 var unit = UnitNormalizer.ToEngineUnit(p.Unit);
@@ -717,13 +762,13 @@ public static class NetExtractor
             .ToList();
 
         // All built-in primitives: emit terminals in PortIndex order.
-        var nets = new List<string>();
+        var nets2 = new List<string>();
         foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
         {
             var (px, py) = model.PortWorldOf(comp, def);
-            nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+            nets2.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
         }
-        return new Instance(comp.InstanceName, reference, nets, overrides);
+        return new Instance(comp.InstanceName, reference, nets2, overrides2);
     }
 
     // ── Cell-ref-aware port geometry helpers ─────────────────────────────────
