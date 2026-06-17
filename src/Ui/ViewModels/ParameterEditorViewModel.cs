@@ -55,6 +55,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         AddGroupCommand       = new RelayCommand(AddGroup);
         RemoveTopGroupCommand = new RelayCommand(RemoveTopGroup, () => _canRemoveTopGroup);
         PickSnpFileCommand    = new AsyncRelayCommand(PickFileAsync);
+        ShowSnpFileCommand    = new AsyncRelayCommand(RevealSnpFileAsync,
+            () => !string.IsNullOrWhiteSpace(SnpFilePath));
     }
 
     // Subscribe/unsubscribe PropertyChanged on the target schematic's stack so
@@ -118,16 +120,22 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// <summary>Callback set by the view so the VM can open a native file picker.</summary>
     public Func<Task<string?>>? PickSnpFileAsync { get; set; }
 
+    /// <summary>Callback set by the view to reveal a file in the OS file manager.</summary>
+    public Func<string, Task>? RevealFileAsync { get; set; }
+
     public static string[] SnpPinConfigOptions { get; } = ["Standard", "SplitLR", "DualRow"];
     public static string[] SnpPitchOptions     { get; } = ["Tight",    "Loose"];
 
-    public IAsyncRelayCommand PickSnpFileCommand { get; private set; } = null!;
+    public IAsyncRelayCommand PickSnpFileCommand    { get; private set; } = null!;
+    public IAsyncRelayCommand ShowSnpFileCommand    { get; private set; } = null!;
 
     [ObservableProperty] private string _snpFilePath       = "";
     [ObservableProperty] private bool   _snpRefNode        = false;
     [ObservableProperty] private int    _snpPinConfigIndex = 0;
     [ObservableProperty] private int    _snpPitchIndex     = 1;
     [ObservableProperty] private string _snpPortCountText  = "";
+
+    partial void OnSnpFilePathChanged(string value) => ShowSnpFileCommand.NotifyCanExecuteChanged();
 
     partial void OnSnpRefNodeChanged(bool oldValue, bool newValue)
     {
@@ -166,6 +174,15 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         }
 
         _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
+    }
+
+    private async Task RevealSnpFileAsync()
+    {
+        if (RevealFileAsync is null || string.IsNullOrWhiteSpace(SnpFilePath)) return;
+        string path = SnpFilePath;
+        if (!System.IO.Path.IsPathRooted(path) && _schematicVm?.EditModel.SchematicDirectory is { } dir)
+            path = System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, path));
+        await RevealFileAsync(path);
     }
 
     private void ApplySnpParam(string name, string value)

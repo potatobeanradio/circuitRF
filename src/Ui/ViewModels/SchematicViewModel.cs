@@ -3281,7 +3281,13 @@ public sealed partial class SchematicViewModel : ObservableObject
 
                 var (expr, unit) = ParseExpressionUnit(rest, param);
                 if (newName != param.Name || expr != param.Expression || unit != param.Unit)
-                    Execute(new EditParameterCommand(EditModel, param, expr, unit, newName));
+                {
+                    var comp = EditModel.FindComponent(targetId ?? "");
+                    if (comp?.Symbol == SymbolKind.Snp && param.Name == "File")
+                        Execute(new SetSnpFileCommand(EditModel, comp, expr));
+                    else
+                        Execute(new EditParameterCommand(EditModel, param, expr, unit, newName));
+                }
                 break;
             }
             case InlineEditKind.WireNetLabel:

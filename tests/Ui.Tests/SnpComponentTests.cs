@@ -127,14 +127,25 @@ public class SnpComponentTests
     }
 
     [Fact]
-    public void GenerateSnpPorts_N3_TwoLeftOneRight()
+    public void GenerateSnpPorts_N3_SpecialCase_OneLeft_OneRight_OneTop()
     {
+        // n=3 special case: 1=left-mid, 2=right-mid, 3=top-mid
         var pins = SymbolPortDefs.GenerateSnpPorts(3, false, SnpPinConfig.Standard, SnpPitch.Loose);
         Assert.Equal(3, pins.Length);
-        int left  = pins.Count(p => p.LocalX < 0);
-        int right = pins.Count(p => p.LocalX > 0);
-        Assert.Equal(2, left);
-        Assert.Equal(1, right);
+        Assert.Equal(-200f, pins[0].LocalX); Assert.Equal(  0f, pins[0].LocalY);
+        Assert.Equal(+200f, pins[1].LocalX); Assert.Equal(  0f, pins[1].LocalY);
+        Assert.Equal(   0f, pins[2].LocalX); Assert.Equal(-200f, pins[2].LocalY);
+    }
+
+    [Fact]
+    public void GenerateSnpPorts_N3_RefNode_RefBelowBody()
+    {
+        var pins = SymbolPortDefs.GenerateSnpPorts(3, refNode: true, SnpPinConfig.Standard, SnpPitch.Loose);
+        Assert.Equal(4, pins.Length);
+        Assert.Equal("Ref", pins[3].Name);
+        Assert.Equal(0f, pins[3].LocalX);
+        Assert.True(pins[3].LocalY > 0, "Ref pin should be below the body (positive Y)");
+        Assert.Equal(0f, pins[3].LocalY % 100f); // must be on grid
     }
 
     [Fact]
@@ -238,5 +249,50 @@ public class SnpComponentTests
         Assert.DoesNotContain("RefNode",   overrideNames);
         Assert.DoesNotContain("PinConfig", overrideNames);
         Assert.DoesNotContain("Pitch",     overrideNames);
+    }
+
+    // ── Grid-alignment gate ──────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(1, false, SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(1, true,  SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(2, false, SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(2, true,  SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(3, false, SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(3, true,  SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(4, false, SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(4, true,  SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(4, false, SnpPinConfig.Standard, SnpPitch.Tight)]
+    [InlineData(4, true,  SnpPinConfig.Standard, SnpPitch.Tight)]
+    [InlineData(5, false, SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(5, false, SnpPinConfig.Standard, SnpPitch.Tight)]
+    [InlineData(5, false, SnpPinConfig.SplitLR,  SnpPitch.Tight)]
+    [InlineData(5, false, SnpPinConfig.DualRow,  SnpPitch.Tight)]
+    [InlineData(6, false, SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(6, true,  SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(6, false, SnpPinConfig.Standard, SnpPitch.Tight)]
+    [InlineData(6, true,  SnpPinConfig.Standard, SnpPitch.Tight)]
+    [InlineData(8, false, SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(8, true,  SnpPinConfig.Standard, SnpPitch.Loose)]
+    [InlineData(8, false, SnpPinConfig.Standard, SnpPitch.Tight)]
+    [InlineData(8, true,  SnpPinConfig.Standard, SnpPitch.Tight)]
+    public void SnpPinsAreGridAligned(int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)
+    {
+        var pins = SymbolPortDefs.GenerateSnpPorts(n, refNode, cfg, pitch);
+        foreach (var (name, lx, ly) in pins)
+        {
+            Assert.True(lx % 100f == 0f, $"Pin '{name}' X={lx} is not grid-aligned (n={n} refNode={refNode} cfg={cfg} pitch={pitch})");
+            Assert.True(ly % 100f == 0f, $"Pin '{name}' Y={ly} is not grid-aligned (n={n} refNode={refNode} cfg={cfg} pitch={pitch})");
+        }
+    }
+
+    [Fact]
+    public void GenerateSnpPorts_N1_RefNode_RefOnRight()
+    {
+        var pins = SymbolPortDefs.GenerateSnpPorts(1, refNode: true, SnpPinConfig.Standard, SnpPitch.Loose);
+        Assert.Equal(2, pins.Length);
+        Assert.Equal("Ref", pins[1].Name);
+        Assert.Equal(+200f, pins[1].LocalX);
+        Assert.Equal(0f, pins[1].LocalY);
     }
 }

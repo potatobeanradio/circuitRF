@@ -22,7 +22,10 @@ public partial class ParameterEditorView : UserControl
     private void OnDataContextChanged(object? sender, System.EventArgs e)
     {
         if (DataContext is ParameterEditorViewModel vm)
+        {
             vm.PickSnpFileAsync = PickSnpFileAsync;
+            vm.RevealFileAsync  = RevealFileAsync;
+        }
     }
 
     private async Task<string?> PickSnpFileAsync()
@@ -32,12 +35,43 @@ public partial class ParameterEditorView : UserControl
 
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title            = "Open Touchstone File",
-            AllowMultiple    = false,
-            FileTypeFilter   = [new FilePickerFileType("Touchstone") { Patterns = ["*.s1p","*.s2p","*.s3p","*.s4p","*.snp","*.S1P","*.S2P","*.S3P","*.S4P","*.SNP"] }],
+            Title         = "Open Touchstone File",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Touchstone (*.sNp, *.snp)")
+                {
+                    Patterns = ["*.s1p","*.s2p","*.s3p","*.s4p","*.s5p","*.s6p","*.s7p","*.s8p",
+                                "*.s9p","*.s10p","*.s11p","*.s12p","*.snp",
+                                "*.S1P","*.S2P","*.S3P","*.S4P","*.S5P","*.S6P","*.S7P","*.S8P",
+                                "*.S9P","*.S10P","*.S11P","*.S12P","*.SNP"],
+                },
+                FilePickerFileTypes.All,
+            ],
         });
 
         return files.Count == 1 ? files[0].TryGetLocalPath() : null;
+    }
+
+    private Task RevealFileAsync(string path)
+    {
+        try
+        {
+            if (OperatingSystem.IsMacOS())
+                System.Diagnostics.Process.Start("open", ["-R", path]);
+            else if (OperatingSystem.IsWindows())
+                System.Diagnostics.Process.Start("explorer.exe", [$"/select,\"{path}\""]);
+            else
+            {
+                string? dir = System.IO.Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir)) System.Diagnostics.Process.Start("xdg-open", [dir]);
+            }
+        }
+        catch (Exception)
+        {
+            // A missing file or file manager shouldn't crash the app.
+        }
+        return Task.CompletedTask;
     }
 
     private ParameterEditorViewModel? Vm => DataContext as ParameterEditorViewModel;

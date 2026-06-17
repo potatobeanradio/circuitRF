@@ -132,7 +132,7 @@
                                    Foreground="{DynamicResource SystemBaseMediumColor}"/>
                     </Grid>
                     <!-- File -->
-                    <Grid ColumnDefinitions="60,*,Auto">
+                    <Grid ColumnDefinitions="60,*,Auto,Auto">
                         <TextBlock Grid.Column="0" Text="File"
                                    FontSize="11" VerticalAlignment="Center"/>
                         <TextBox Grid.Column="1"
@@ -147,6 +147,13 @@
                                 Padding="6,3"
                                 Margin="4,0,0,0"
                                 Command="{Binding PickSnpFileCommand}"/>
+                        <Button Grid.Column="3"
+                                Content="Show"
+                                FontSize="11"
+                                Padding="6,3"
+                                Margin="4,0,0,0"
+                                ToolTip.Tip="Reveal this file in the system file manager"
+                                Command="{Binding ShowSnpFileCommand}"/>
                     </Grid>
                     <!-- RefNode toggle -->
                     <CheckBox IsChecked="{Binding SnpRefNode}"

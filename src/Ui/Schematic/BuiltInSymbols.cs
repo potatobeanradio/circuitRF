@@ -367,34 +367,41 @@ public static class BuiltInSymbols
     {
         var ports = SymbolPortDefs.GenerateSnpPorts(n, refNode, cfg, pitch);
         var (w, halfH) = SymbolPortDefs.SnpBodyRect(n, cfg, pitch);
+        float cy = SymbolPortDefs.SnpBodyCenterYPublic(n, cfg, pitch);
 
-        var prims = new List<SymbolPrimitive> { RRect(0, 0, w, halfH * 2, 12) };
+        double bodyTop  = cy - halfH, bodyBot = cy + halfH;
+        double bodyLeft = -w * 0.5,   bodyRight = +w * 0.5;
 
-        double bodyLeft  = -w * 0.5;
-        double bodyRight = +w * 0.5;
+        var prims = new List<SymbolPrimitive> { RRect(0, cy, w, halfH * 2, 12) };
 
         foreach (var (name, lx, ly) in ports)
         {
-            // Lead line: from body edge to pin tip.
-            if (lx < 0)
-                prims.Add(L(bodyLeft,  ly, lx, ly));    // left pin: body edge → tip
-            else if (lx > 0)
-                prims.Add(L(bodyRight, ly, lx, ly));    // right pin: body edge → tip
-            else
-                prims.Add(L(0, +halfH, 0, ly));          // bottom/ref pin: bottom edge → tip
+            // Lead from the nearest body edge to the pin tip.
+            if      (lx < 0)       prims.Add(L(bodyLeft,  ly, lx, ly));
+            else if (lx > 0)       prims.Add(L(bodyRight, ly, lx, ly));
+            else if (ly < bodyTop) prims.Add(L(0, bodyTop, 0, ly));   // top pin (3-port port 3)
+            else                   prims.Add(L(0, bodyBot, 0, ly));   // bottom / Ref
 
-            if (name == "Ref") continue; // ref pin has no label inside body
-            bool isLeft = lx < 0 || (lx == 0 && n == 1);
-            double ax = isLeft ? bodyLeft + 20 : bodyRight - 20;
-            prims.Add(Txt(name, ax, ly,
-                fontSize: SddPortLabelFontSize,
-                align: isLeft ? SymbolTextAlign.Left : SymbolTextAlign.Right,
-                vAlign: SymbolTextVAlign.Middle));
+            // Label inside the body; Ref gets "Ref" text, signal pins get port number.
+            if (lx < 0 || (lx == 0 && n == 1))
+                prims.Add(Txt(name, bodyLeft + 20, ClampInsideBody(ly, bodyTop, bodyBot),
+                    SddPortLabelFontSize, SymbolTextAlign.Left, SymbolTextVAlign.Middle));
+            else if (lx > 0)
+                prims.Add(Txt(name, bodyRight - 20, ClampInsideBody(ly, bodyTop, bodyBot),
+                    SddPortLabelFontSize, SymbolTextAlign.Right, SymbolTextVAlign.Middle));
+            else if (name == "Ref")
+                prims.Add(Txt("Ref", 0, bodyBot - 22, SddPortLabelFontSize,
+                    SymbolTextAlign.Center, SymbolTextVAlign.Middle));
+            else   // top-center pin (3-port port 3)
+                prims.Add(Txt(name, 0, bodyTop + 22, SddPortLabelFontSize,
+                    SymbolTextAlign.Center, SymbolTextVAlign.Middle));
         }
 
-        // Build pins manually so we use the SnP-specific port positions.
         var pins = ports.Select((d, i) => new SymbolPin(d.LocalX, d.LocalY, i, d.Name)).ToList();
         return new Symbol(prims, pins);
+
+        static double ClampInsideBody(double y, double top, double bot)
+            => Math.Min(bot - 22, Math.Max(top + 22, y));
     }
 
     // ── VAR — port-less box with "VAR" label ─────────────────────────────────

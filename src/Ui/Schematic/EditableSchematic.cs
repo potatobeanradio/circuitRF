@@ -122,8 +122,9 @@ public static class SymbolPortDefs
     }
 
     /// <summary>
-    /// Generates pin definitions for an SnP symbol.  Includes N signal pins plus an optional
+    /// Generates pin definitions for an SnP symbol. Includes N signal pins plus an optional
     /// RefNode pin (index N, last) for a floating reference.
+    /// All pin tips land on multiples of 100 (one grid square).
     /// </summary>
     /// <param name="n">Number of signal ports.</param>
     /// <param name="refNode">True to append a RefNode pin (index N).</param>
@@ -132,11 +133,10 @@ public static class SymbolPortDefs
     public static (string Name, float LocalX, float LocalY)[] GenerateSnpPorts(
         int n, bool refNode, SnpPinConfig cfg, SnpPitch pitch)
     {
-        int totalPins = refNode ? n + 1 : n;
-        var pins = new (string Name, float LocalX, float LocalY)[totalPins];
-
-        float p = pitch == SnpPitch.Tight ? 100f : 200f;
+        int total = refNode ? n + 1 : n;
+        var pins = new (string Name, float LocalX, float LocalY)[total];
         const float bodyX = 200f;
+        float p = pitch == SnpPitch.Tight ? 100f : 200f;
 
         switch (n)
         {
@@ -147,16 +147,14 @@ public static class SymbolPortDefs
                 pins[0] = ("1", -bodyX, 0f);
                 pins[1] = ("2", +bodyX, 0f);
                 break;
-            case 3:
-                // 2 on left, 1 on right center
-                pins[0] = ("1", -bodyX, -p);
-                pins[1] = ("2", -bodyX, +p);
-                pins[2] = ("3", +bodyX, 0f);
+            case 3:   // 1 left-mid, 2 right-mid, 3 top-mid
+                pins[0] = ("1", -bodyX,   0f);
+                pins[1] = ("2", +bodyX,   0f);
+                pins[2] = ("3",    0f, -200f);
                 break;
-            default:
+            default:  // n >= 4
             {
-                // N ≥ 4: distribute according to PinConfig
-                (int[] leftIdxs, int[] rightIdxs) = cfg switch
+                (int[] left, int[] right) = cfg switch
                 {
                     SnpPinConfig.SplitLR => (
                         Enumerable.Range(0, (n + 1) / 2).ToArray(),
@@ -164,47 +162,78 @@ public static class SymbolPortDefs
                     SnpPinConfig.DualRow => (
                         Enumerable.Range(0, n).Where(i => i % 2 == 0).ToArray(),
                         Enumerable.Range(0, n).Where(i => i % 2 == 1).ToArray()),
-                    _ => ( // Standard: sequential wrap
+                    _ => (
                         Enumerable.Range(0, (n + 1) / 2).ToArray(),
                         Enumerable.Range((n + 1) / 2, n / 2).Reverse().ToArray()),
                 };
-                PlaceSide(pins, leftIdxs,  -bodyX, p);
-                PlaceSide(pins, rightIdxs, +bodyX, p);
+                PlaceSide(pins, left,  -bodyX, p);
+                PlaceSide(pins, right, +bodyX, p);
                 break;
             }
         }
 
         if (refNode)
-            pins[n] = ("Ref", 0f, SnpBodyHalfH(n, cfg, p) + 100f);
-
+        {
+            if (n == 1)
+                pins[1] = ("Ref", +bodyX, 0f);
+            else
+            {
+                float cy     = SnpBodyCenterY(n, cfg, pitch);
+                float halfH  = SnpBodyHalfH(n, cfg, p);
+                float bottom = cy + halfH;
+                // n<=3: bottom is on grid → one full square of stem (bottom + 100).
+                // n>=4: the +50 padding makes bottom end in 50, so CeilG already lands one
+                // grid point below the edge — do NOT add another 100 or the pin is too far out.
+                pins[n] = ("Ref", 0f, n <= 3 ? CeilG(bottom) + 100f : CeilG(bottom));
+            }
+        }
         return pins;
 
+        // Snap the centered top to the grid so tight/even counts stay on grid.
         static void PlaceSide((string Name, float LocalX, float LocalY)[] pins,
-            int[] portIdxs, float x, float pitch)
+            int[] portIdx, float x, float p)
         {
-            int count = portIdxs.Length;
-            float top = -(count - 1) * 0.5f * pitch;
+            int count = portIdx.Length;
+            float top = SnapG(-(count - 1) * 0.5f * p);
             for (int i = 0; i < count; i++)
-            {
-                int pn = portIdxs[i];
-                pins[pn] = ($"{pn + 1}", x, top + i * pitch);
-            }
+                pins[portIdx[i]] = ($"{portIdx[i] + 1}", x, top + i * p);
         }
     }
 
-    private static float SnpBodyHalfH(int n, SnpPinConfig cfg, float pitch)
+    // Grid helpers: all pin tips must land on multiples of 100 (one schematic grid square).
+    private static float SnapG(float v) => (float)(Math.Round(v / 100.0) * 100.0);
+    private static float CeilG(float v) => (float)(Math.Ceiling(v / 100.0) * 100.0);
+
+    // Half-height of the body, measured from the body center (= pin-span midpoint).
+    // Grid-aligned so body edges land on grid and the Ref pin sits one square below.
+    private static float SnpBodyHalfH(int n, SnpPinConfig cfg, float p)
     {
-        if (n <= 3) return n <= 1 ? 100f : (n <= 2 ? 100f : pitch + 60f);
+        if (n <= 3) return 100f;   // 1/2/3-port: 200-tall square (unchanged)
         int nLeft = (n + 1) / 2;
-        return (nLeft - 1) * 0.5f * pitch + 60f;
+        float halfSpan = (nLeft - 1) * 0.5f * p;
+        return CeilG(halfSpan) + 50f;       // grid-aligned side-pin span, padded +50 each side
     }
+
+    // Body center Y = midpoint of the SIDE pins only (left/right). Top/bottom pins (3-port's
+    // port 3, the Ref pin) are stems that extend BEYOND the box and must not pull it off-center.
+    private static float SnpBodyCenterY(int n, SnpPinConfig cfg, SnpPitch pitch)
+    {
+        var pins = GenerateSnpPorts(n, refNode: false, cfg, pitch);
+        var side = pins.Where(q => Math.Abs(q.LocalX) >= 199f).ToArray();   // left/right pins only
+        if (side.Length == 0) return 0f;                                      // n=1 falls here → 0
+        float minY = side.Min(q => q.LocalY), maxY = side.Max(q => q.LocalY);
+        return SnapG((minY + maxY) * 0.5f);
+    }
+
+    /// <summary>Body center Y for the given SnP layout (signal pins only).</summary>
+    public static float SnpBodyCenterYPublic(int n, SnpPinConfig cfg, SnpPitch pitch)
+        => SnpBodyCenterY(n, cfg, pitch);
 
     /// <summary>Returns the body rect (W, HalfH) for an SnP symbol.</summary>
     public static (float W, float HalfH) SnpBodyRect(int n, SnpPinConfig cfg, SnpPitch pitch)
     {
         float p = pitch == SnpPitch.Tight ? 100f : 200f;
-        float halfH = n <= 1 ? 100f : n == 2 ? 100f : SnpBodyHalfH(n, cfg, p);
-        return (200f, Math.Max(halfH, 100f));
+        return (200f, SnpBodyHalfH(n, cfg, p));
     }
 
 }
