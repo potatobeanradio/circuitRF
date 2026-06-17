@@ -324,4 +324,30 @@ analysis HB1  type=hb  Tone=2e9  MaxHarm=3  Tol=1e-4
 
         output.WriteLine("T5 PASS — swept cube includes Vout2 at all points with correct divider ratio.");
     }
+
+    // ── T6 (Part 2): node-indexed current present; branch cubes are offered ──
+
+    /// <summary>
+    /// HbEngine emits "INl" (node-indexed current) for internal diagnostic use.
+    /// Branch-current cubes "I:instance:terminal" must also be present.
+    /// The "INl" cube is hidden from the trace picker by the node-axis filter in TraceRowViewModel
+    /// (see NodeIndexedCurrentFilterTests in CubeTraceTests for the UI gate).
+    /// Note: "INl" keeps its un-prefixed name so ParametricSweepEngine.StackSweepAxis stacks it
+    /// correctly across sweep points (__ prefix cubes are passed through from datasets[0] only).
+    /// </summary>
+    [Fact]
+    public void T6_NodeIndexedCurrent_PresentAndBranchCubesPresent()
+    {
+        var (ds, _) = RunHb(LinearNodeCnl);
+
+        // The node-indexed current cube must be present.
+        Assert.True(ds.Contains("INl"), "HbEngine must emit 'INl' node-indexed current cube");
+
+        // At least one branch-current cube must be present (I:instance:terminal, no node axis).
+        var branchCubes = ds.Cubes.Where(kv =>
+            kv.Key.StartsWith("I:", StringComparison.Ordinal) &&
+            kv.Value.Axes.All(a => a.Name != "node")).ToList();
+        Assert.NotEmpty(branchCubes);
+        output.WriteLine($"T6 PASS — 'INl' present; {branchCubes.Count} branch cube(s): {string.Join(", ", branchCubes.Select(kv => kv.Key))}");
+    }
 }

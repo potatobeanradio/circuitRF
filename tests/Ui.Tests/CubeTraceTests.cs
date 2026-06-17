@@ -161,6 +161,60 @@ public sealed class CubeTraceTests
 }
 
 // ================================================================
+//  NodeIndexedCurrentFilterTests  —  Part 2 UI gate tests
+//  (brief-trace-sweep-conformance.md §2: node-indexed current not offered)
+// ================================================================
+
+public sealed class NodeIndexedCurrentFilterTests
+{
+    // Build a DataSet with a node-indexed "INl" cube + a branch cube "I:M1:d".
+    // The picker should offer the branch cube but NOT the node-indexed one.
+    private static DataSet MakeDs()
+    {
+        var nodeAxis = new Axis("node",     new[] { 0.0, 1.0 }, "",      new[] { "n_gate", "n_drain" });
+        var harmAxis = new Axis("harmonic", new[] { 0.0, 1e9 }, "Hz");
+        var ds       = new DataSet();
+        ds.Add("INl",    new DataCube(new[] { nodeAxis, harmAxis },
+                             new System.Numerics.Complex[2 * 2]));
+        ds.Add("I:M1:d", new DataCube(new[] { harmAxis },
+                             new System.Numerics.Complex[2]));
+        return ds;
+    }
+
+    [Fact]
+    public async Task NodeIndexedCurrent_NotOffered_BranchCube_IsOffered()
+    {
+        var tmpPath = Path.Combine(Path.GetTempPath(), $"crf_inl_{Guid.NewGuid():N}.npy");
+        try
+        {
+            var ds = MakeDs();
+            RfCore.Export.DataSetExporter.Export(ds, tmpPath, RfCore.Export.ExportFormat.Npy);
+
+            var lib = new DataSourceLibraryViewModel();
+            await lib.LoadFileAsync(tmpPath);
+
+            var snp  = new SNP(new[] { 1e9 }, 2);
+            var plot = new Plot(PlotType.Rect, FreqUnit.GHz);
+            plot.Traces.Add(new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db));
+
+            var inspector = new PlotInspectorViewModel(plot, () => { }, lib);
+            var row       = inspector.Traces[0];
+            var signals   = row.AvailableSignals;
+
+            // Node-indexed current must be filtered out.
+            Assert.DoesNotContain(signals, s => s.IsCubeBound && s.CubeName == "INl");
+
+            // Branch cube (no node axis) must be offered.
+            Assert.Contains(signals, s => s.IsCubeBound && s.CubeName == "I:M1:d");
+        }
+        finally
+        {
+            if (File.Exists(tmpPath)) File.Delete(tmpPath);
+        }
+    }
+}
+
+// ================================================================
 //  CubeSliceConformanceTests  —  Part 1 gate tests
 //  (brief-trace-sweep-conformance.md §1a: All / a..b in CubeTraceSpecParser)
 // ================================================================

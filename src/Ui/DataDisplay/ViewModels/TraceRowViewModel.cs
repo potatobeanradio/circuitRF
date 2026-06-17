@@ -775,6 +775,12 @@ public partial class TraceRowViewModel : ViewModelBase
             foreach (var (cubeName, cube) in ds.Cubes)
             {
                 if (cubeName is "S" or "Z0" || cubeName.StartsWith("__", StringComparison.Ordinal)) continue;
+                // Belt-and-suspenders: skip node-indexed current cubes (internal diagnostic).
+                // Authoritative fix is the __ prefix on __INl in HbEngine; this guards older datasets.
+                bool isNodeIndexedCurrent =
+                    (cubeName == "I" || cubeName == "INl")
+                    && cube.Axes.Any(a => a.Name == "node");
+                if (isNodeIndexedCurrent) continue;
                 int rank = cube.Rank;
                 if (rank <= 0) continue;
 

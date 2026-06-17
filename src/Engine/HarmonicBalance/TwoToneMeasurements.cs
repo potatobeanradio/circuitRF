@@ -124,13 +124,13 @@ public static class TwoToneMeasurements
 
         int m = FindMixIndex(ds, k1, k2);
         if (m >= 0)
-            return (ReadAt(ds["V"],   vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, m),
-                    ReadAt(ds["INl"],  vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, m));
+            return (ReadAt(ds["V"],     vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, m),
+                    ReadAt(ds["INl"], vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, m));
 
         int mc = FindMixIndex(ds, -k1, -k2);   // conjugate partner in the stored half-plane
         if (mc >= 0)
-            return (Complex.Conjugate(ReadAt(ds["V"],   vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, mc)),
-                    Complex.Conjugate(ReadAt(ds["INl"],  vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, mc)));
+            return (Complex.Conjugate(ReadAt(ds["V"],     vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, mc)),
+                    Complex.Conjugate(ReadAt(ds["INl"], vCube.Rank, nodeAxisIdx, mixAxisIdx, sweepIdx, n, mc)));
 
         int maxOrder = (int)Math.Round(ds["MetaMixOrder"].RealValues[0]);
         throw new ArgumentException(

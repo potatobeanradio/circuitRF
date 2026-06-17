@@ -255,7 +255,7 @@ public sealed class Evaluator
         // ── V(nodeName, …) / INl(nodeName, …) — node-indexed ─────────────────
         if (accessorName is "V" or "INl")
         {
-            var cube    = ds[accessorName];
+            var cube = ds[accessorName];
             var nameVal = EvalExpr(cl.Args[0], scope);
             string nodeName = nameVal.Kind == ValueKind.String
                 ? nameVal.AsString()

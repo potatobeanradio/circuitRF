@@ -406,7 +406,7 @@ public sealed class LoadpullEngine
         if (nN > 0 && nH > 0 && nG > 0 && nP > 0)
         {
             ds.Add("V",   new DataCube(new[] { gridAxis, pinAxis, nodeAxis, harmAxis }, vData));
-            ds.Add("INl", new DataCube(new[] { gridAxis, pinAxis, nodeAxis, harmAxis }, inlData));
+            ds.Add("INl",   new DataCube(new[] { gridAxis, pinAxis, nodeAxis, harmAxis }, inlData));
         }
         return ds;
     }
