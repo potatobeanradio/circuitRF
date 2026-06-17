@@ -549,7 +549,8 @@ namespace RfCore.Data
 
         private static void ValidateSize(int[] strides, Axis[] axes, int dataLength)
         {
-            int expected = axes.Length == 0 ? 0 : strides[0] * axes[0].Length;
+            // Empty-product for rank-0 (scalar) is 1, not 0.
+            int expected = axes.Length == 0 ? 1 : strides[0] * axes[0].Length;
             if (dataLength != expected)
                 throw new ArgumentException(
                     $"Data length {dataLength} does not match axes shape {expected}.");
