@@ -223,6 +223,190 @@ public sealed class TableCubeTraceTests
 }
 
 // ================================================================
+//  TableColumnPlanTests  —  Gate tests for BuildColumns / BuildCopyGrid
+// ================================================================
+
+public sealed class TableColumnPlanTests
+{
+    // ---- Helpers -----------------------------------------------------------
+
+    private static Trace MakeBaseTrace() =>
+        new Trace(new SNP(new double[] { 1e9 }, 2), MatrixType.S, 0, 0, DependentVarFormat.Db);
+
+    private static Trace MakeCubeTrace(double[] xVals, string axisName = "Pin", string? unit = "dBm")
+    {
+        var t = MakeBaseTrace();
+        t.CubeName  = "V";
+        t.Slice     = new[] { new AxisSlice(axisName, AxisRole.KeepAsX, 0) };
+        t.Transform = CubeTransform.None;
+        var yVals = new double[xVals.Length];
+        for (int i = 0; i < xVals.Length; i++) yVals[i] = i + 1.0;
+        t.SetCubeData(xVals, complexValues: null, yVals, axisName, unit, PlotType.Table, FreqUnit.GHz);
+        return t;
+    }
+
+    private static Plot MakePlot(params Trace[] traces)
+    {
+        var p = new Plot(PlotType.Table, FreqUnit.GHz);
+        foreach (var t in traces) p.Traces.Add(t);
+        return p;
+    }
+
+    // ---- Test 1: Two traces with different X axes → 4 columns ---------------
+
+    [Fact]
+    public void BuildColumns_TwoTraces_DifferentX_FourColumns()
+    {
+        var t0   = MakeCubeTrace(new double[] { 1, 2, 3 }, "Pin",  "dBm");
+        var t1   = MakeCubeTrace(new double[] { 10, 20 },  "Bias", "V");
+        var plot = MakePlot(t0, t1);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        Assert.Equal(4, cols.Count);
+        Assert.Equal(TableColKind.XAxis,      cols[0].Kind);
+        Assert.Equal(TableColKind.TraceValue, cols[1].Kind);
+        Assert.Equal(TableColKind.XAxis,      cols[2].Kind);
+        Assert.Equal(TableColKind.TraceValue, cols[3].Kind);
+        Assert.Equal(0, cols[0].FirstTraceIndex);
+        Assert.Equal(0, cols[1].FirstTraceIndex);
+        Assert.Equal(1, cols[2].FirstTraceIndex);
+        Assert.Equal(1, cols[3].FirstTraceIndex);
+    }
+
+    // ---- Test 2: Two traces with identical X → 3 columns (deduped) ----------
+
+    [Fact]
+    public void BuildColumns_TwoTraces_IdenticalX_ThreeColumns()
+    {
+        var xVals = new double[] { 1, 2, 3 };
+        var t0    = MakeCubeTrace(xVals, "Pin", "dBm");
+        var t1    = MakeCubeTrace(xVals, "Pin", "dBm");
+        var plot  = MakePlot(t0, t1);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        Assert.Equal(3, cols.Count);   // [X, V0, V1]
+        Assert.Equal(TableColKind.XAxis,      cols[0].Kind);
+        Assert.Equal(TableColKind.TraceValue, cols[1].Kind);
+        Assert.Equal(TableColKind.TraceValue, cols[2].Kind);
+        // Both trace-value columns share the single X array by reference.
+        Assert.Same(cols[0].XValues, cols[1].XValues);
+        Assert.Same(cols[0].XValues, cols[2].XValues);
+    }
+
+    // ---- Test 3: Traces A, B, A — A is not adjacent to itself → 6 columns --
+
+    [Fact]
+    public void BuildColumns_ThreeTraces_NonAdjacentSameX_SixColumns()
+    {
+        var xAC  = new double[] { 1, 2, 3 };
+        var t0   = MakeCubeTrace(xAC,             "Pin",  "dBm");
+        var t1   = MakeCubeTrace(new double[] { 10, 20 }, "Bias", "V");
+        var t2   = MakeCubeTrace(xAC,             "Pin",  "dBm");
+        var plot = MakePlot(t0, t1, t2);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        // t0 and t2 share the same X but t1 breaks adjacency → no dedup for t2.
+        Assert.Equal(6, cols.Count);   // [XPin, V0, XBias, V1, XPin, V2]
+        Assert.Equal(TableColKind.XAxis, cols[0].Kind);
+        Assert.Equal(TableColKind.XAxis, cols[2].Kind);
+        Assert.Equal(TableColKind.XAxis, cols[4].Kind);
+    }
+
+    // ---- Test 4: Same values, different axis name → 4 columns (not deduped) -
+
+    [Fact]
+    public void BuildColumns_TwoTraces_SameValues_DifferentAxisName_NotDeduped()
+    {
+        var xVals = new double[] { 1, 2, 3 };
+        var t0    = MakeCubeTrace(xVals, "Pin",  "dBm");
+        var t1    = MakeCubeTrace(xVals, "Bias", "dBm");  // same values + unit, different name
+        var plot  = MakePlot(t0, t1);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        Assert.Equal(4, cols.Count);
+        Assert.Equal(TableColKind.XAxis, cols[0].Kind);
+        Assert.Equal(TableColKind.XAxis, cols[2].Kind);
+    }
+
+    // ---- Test 5: Same axis name but different point count → 4 columns -------
+
+    [Fact]
+    public void BuildColumns_TwoTraces_SameAxis_DifferentPointCount_NotDeduped()
+    {
+        var t0   = MakeCubeTrace(new double[] { 1, 2, 3 }, "Pin", "dBm");
+        var t1   = MakeCubeTrace(new double[] { 1, 2 },    "Pin", "dBm");  // fewer points
+        var plot = MakePlot(t0, t1);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        Assert.Equal(4, cols.Count);   // not deduped — different lengths
+    }
+
+    // ---- Test 6: BuildCopyGrid produces blanks when groups have unequal rows -
+
+    [Fact]
+    public void BuildCopyGrid_MatchesColumnPlan_WithBlanks()
+    {
+        var t0   = MakeCubeTrace(new double[] { 1, 2, 3 }, "Pin",  "dBm");  // 3 rows
+        var t1   = MakeCubeTrace(new double[] { 10, 20 },  "Bias", "V");    // 2 rows
+        var plot = MakePlot(t0, t1);
+
+        var (headers, rows) = TableRenderer.BuildCopyGrid(plot, (800, 600), 1f);
+
+        Assert.Equal(4, headers.Length);  // [XPin, V0, XBias, V1]
+        Assert.Equal(3, rows.Length);     // RowCount = max(3, 2) = 3
+
+        // Row index 2: first X group has a value; second X group is beyond its length.
+        Assert.NotEmpty(rows[2][0]);  // X for t0 (index 2 of 3)
+        Assert.NotEmpty(rows[2][1]);  // V0
+        Assert.Equal("", rows[2][2]); // X for t1 group (only 2 rows)
+        Assert.Equal("", rows[2][3]); // V1
+    }
+
+    // ---- Test 7: Sort order flip reverses X values --------------------------
+
+    [Fact]
+    public void BuildColumns_SortFlip_ReversesXValues()
+    {
+        var xVals   = new double[] { 3, 1, 2 };  // unsorted input
+        var t       = MakeCubeTrace(xVals, "Pin", "dBm");
+
+        var plotAsc  = MakePlot(t);
+        plotAsc.TableViewAscendingSortOrder = true;
+
+        var plotDesc = MakePlot(t);
+        plotDesc.TableViewAscendingSortOrder = false;
+
+        var xAsc  = TableRenderer.BuildColumns(plotAsc)[0].XValues;
+        var xDesc = TableRenderer.BuildColumns(plotDesc)[0].XValues;
+
+        Assert.Equal(new double[] { 1, 2, 3 }, xAsc);
+        Assert.Equal(new double[] { 3, 2, 1 }, xDesc);
+    }
+
+    // ---- Test 8: Single trace → 2 columns, shared XValues reference ---------
+
+    [Fact]
+    public void BuildColumns_SingleTrace_TwoColumns_Regression()
+    {
+        var t    = MakeCubeTrace(new double[] { 0, 5, 10 }, "Pin", "dBm");
+        var plot = MakePlot(t);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        Assert.Equal(2, cols.Count);
+        Assert.Equal(TableColKind.XAxis,      cols[0].Kind);
+        Assert.Equal(TableColKind.TraceValue, cols[1].Kind);
+        Assert.Equal(3, cols[0].XValues.Length);
+        Assert.Same(cols[0].XValues, cols[1].XValues);  // shared reference
+    }
+}
+
+// ================================================================
 //  CubeTraceSpecParserTests  —  Gate tests for #4 inline spec editor
 // ================================================================
 

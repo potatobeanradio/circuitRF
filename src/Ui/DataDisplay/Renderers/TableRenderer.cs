@@ -8,8 +8,9 @@
 //
 //  Layout model
 //  ─────────────────────────────────────────────────────────────
-//  Column 0 : frequency (Plot.ColumnWidth)
-//  Columns 1…N : one per Trace (Trace.ColumnWidth each)
+//  Column plan: one XAxis column per distinct-adjacent X group,
+//  one TraceValue column per trace.  Two adjacent traces with the
+//  same axis name, unit, and values share a single XAxis column.
 //  Header row height = fontSize * (1 + RowPaddingFraction*2)
 //  Data  row height  = fontSize * (1 + RowPaddingFraction)
 //  Text is clipped to column width with middle-truncation ("…").
@@ -25,6 +26,22 @@ using RfCore;
 
 namespace CircuitRF.Ui.DataDisplay
 {
+    // ============================================================
+    //  Column-plan types
+    // ============================================================
+
+    public enum TableColKind { XAxis, TraceValue }
+
+    public sealed class TableColumn
+    {
+        public TableColKind Kind;
+        public int          FirstTraceIndex;    // XAxis: first trace of this group; TraceValue: the trace
+        public string       Header = "";
+        public string?      Unit;               // XAxis only
+        public double[]     XValues = Array.Empty<double>();  // XAxis: sorted group X; TraceValue: same ref
+        public bool         IsFreqUnit;         // XAxis only
+    }
+
     // ============================================================
     //  Public hit-test types
     // ============================================================
@@ -43,8 +60,8 @@ namespace CircuitRF.Ui.DataDisplay
     public struct TableHitResult
     {
         public TableHitKind Kind;
-        public int          RowIndex;        // -1 = header, 0+ = data row (absolute freq index)
-        public int          ColIndex;        // 0 = freq col, 1+ = trace index (0-based into plot.Traces)
+        public int          RowIndex;        // -1 = header, 0+ = data row (absolute)
+        public int          ColIndex;        // index into BuildColumns() list
         public int          ResizeColIndex;  // column whose RIGHT edge is being dragged
         public Marker?      HitMarker;
         public Trace?       HitTrace;
@@ -93,17 +110,18 @@ namespace CircuitRF.Ui.DataDisplay
         {
             // ColX and ColW are in CANVAS pixels (logical * zoomLevel).
             // All other measurements involving positions are also in canvas pixels.
-            public float    ZoomLevel;       // captured from BuildLayout for helpers that need it
-            public float    ScaledPaddingX;  // TextCellPaddingX * ZoomLevel (canvas pixels)
-            public float    HeaderH;
-            public float    RowH;
-            public float    DataStartY;      // top of first data row (HeaderH + HeaderToDataRowPadding)
-            public float[]  ColX;
-            public float[]  ColW;
-            public int      ColCount;
-            public double[] Frequencies;
-            public int      ScrollIndex;
-            public int      VisibleRowCount;
+            public float              ZoomLevel;       // captured from BuildLayout for helpers that need it
+            public float              ScaledPaddingX;  // TextCellPaddingX * ZoomLevel (canvas pixels)
+            public float              HeaderH;
+            public float              RowH;
+            public float              DataStartY;      // top of first data row (HeaderH + HeaderToDataRowPadding)
+            public float[]            ColX;
+            public float[]            ColW;
+            public int                ColCount;
+            public int                RowCount;        // max XValues.Length across all XAxis columns
+            public int                ScrollIndex;
+            public int                VisibleRowCount;
+            public List<TableColumn>  Columns;         // the full column plan
         }
 
         // ============================================================
@@ -155,8 +173,9 @@ namespace CircuitRF.Ui.DataDisplay
             (double W, double H) canvasSize,
             float zoomLevel = 1f)
         {
-            var layout = BuildLayout(plot, canvasSize, zoomLevel);
-            var result = new TableHitResult
+            var layout  = BuildLayout(plot, canvasSize, zoomLevel);
+            var columns = layout.Columns;
+            var result  = new TableHitResult
                 { Kind = TableHitKind.None, RowIndex = -1, ColIndex = -1, ResizeColIndex = -1 };
 
             // ---- Header row ----
@@ -178,8 +197,15 @@ namespace CircuitRF.Ui.DataDisplay
                     {
                         result.RowIndex = -1;
                         result.ColIndex = c;
-                        result.Kind     = c == 0 ? TableHitKind.FreqHeader : TableHitKind.TraceHeader;
-                        if (c > 0) result.HitTrace = plot.Traces[c - 1];
+                        if (columns[c].Kind == TableColKind.XAxis)
+                        {
+                            result.Kind = TableHitKind.FreqHeader;
+                        }
+                        else
+                        {
+                            result.Kind     = TableHitKind.TraceHeader;
+                            result.HitTrace = plot.Traces[columns[c].FirstTraceIndex];
+                        }
                         return result;
                     }
                 }
@@ -192,19 +218,25 @@ namespace CircuitRF.Ui.DataDisplay
 
             int rowInView = (int)(dataY / layout.RowH);
             int absRow    = layout.ScrollIndex + rowInView;
-            if (absRow < 0 || absRow >= layout.Frequencies.Length) return result;
+            if (absRow < 0 || absRow >= layout.RowCount) return result;
             if (rowInView >= layout.VisibleRowCount) return result;
 
             result.RowIndex = absRow;
-            double freq = layout.Frequencies[absRow];
 
             for (int c = 0; c < layout.ColCount; c++)
             {
                 if (cx >= layout.ColX[c] && cx < layout.ColX[c] + layout.ColW[c])
                 {
                     result.ColIndex = c;
-                    result.Kind     = c == 0 ? TableHitKind.FreqCell : TableHitKind.DataCell;
-                    if (c > 0) result.HitTrace = plot.Traces[c - 1];
+                    if (columns[c].Kind == TableColKind.XAxis)
+                    {
+                        result.Kind = TableHitKind.FreqCell;
+                    }
+                    else
+                    {
+                        result.Kind     = TableHitKind.DataCell;
+                        result.HitTrace = plot.Traces[columns[c].FirstTraceIndex];
+                    }
                     break;
                 }
             }
@@ -212,23 +244,22 @@ namespace CircuitRF.Ui.DataDisplay
             if (result.Kind == TableHitKind.None) return result;
 
             // Upgrade DataCell to MarkerGlyph when this row has a marker on this trace.
-            // The ENTIRE cell is the drag/interaction area for a marker — no need to hit
-            // a small triangle.
-            if (result.ColIndex > 0 && result.HitTrace is { } trace)
+            // The ENTIRE cell is the drag/interaction area for a marker.
+            if (result.Kind == TableHitKind.DataCell && result.HitTrace is { } trace)
             {
-                float rowTop = layout.DataStartY + rowInView * layout.RowH;
+                double freq = absRow < columns[result.ColIndex].XValues.Length
+                    ? columns[result.ColIndex].XValues[absRow]
+                    : double.NaN;
 
-                foreach (var m in trace.Markers)
+                if (!double.IsNaN(freq))
                 {
-                    // The marker is at this row when its frequency matches the row's global-union
-                    // frequency. Using a direct freq comparison (not trace-local index) correctly
-                    // handles the case where the trace has no data at this frequency (NaN cell).
-                    if (m.Freq != freq) continue;
-
-                    // Entire cell is the hit area.
-                    result.Kind      = TableHitKind.MarkerGlyph;
-                    result.HitMarker = m;
-                    return result;
+                    foreach (var m in trace.Markers)
+                    {
+                        if (m.Freq != freq) continue;
+                        result.Kind      = TableHitKind.MarkerGlyph;
+                        result.HitMarker = m;
+                        return result;
+                    }
                 }
             }
 
@@ -246,97 +277,210 @@ namespace CircuitRF.Ui.DataDisplay
         {
             // Measure at unscaled font size so the result is zoom-independent logical units.
             float fs = (float)plot.FontSize;
-            using var regularFont    = new SKFont(SkiaFonts.PlexRegular,   fs);
-            using var boldFont       = new SKFont(SkiaFonts.PlexBold,      fs);
-            using var dejaVuRegular  = new SKFont(SkiaFonts.DejaVuRegular, fs);
+            using var regularFont   = new SKFont(SkiaFonts.PlexRegular,   fs);
+            using var boldFont      = new SKFont(SkiaFonts.PlexBold,      fs);
+            using var dejaVuRegular = new SKFont(SkiaFonts.DejaVuRegular, fs);
 
-            bool cubeMode = plot.Traces.Count > 0 && plot.Traces.All(t => t.IsCubeBound);
-            double[] freqs = GetSortedRowAxis(plot);
-            float maxW = 0;
+            var columns = BuildColumns(plot);
+            if (colIndex < 0 || colIndex >= columns.Count)
+                return MinColumnWidth;
 
-            // Measure header — freq column omits the glyph arrow (drawn as an SKPath at render time);
-            // reserve fixed space for the drawn triangle instead.
-            string headerText;
-            if (colIndex == 0)
-            {
-                if (cubeMode && plot.Traces.Count > 0)
-                {
-                    var x0 = plot.Traces[0];
-                    if (string.IsNullOrEmpty(x0.CubeXUnit))
-                        headerText = x0.CubeXAxisName;
-                    else if (IsFreqUnit(x0.CubeXUnit))
-                        headerText = $"{x0.CubeXAxisName} ({plot.FreqUnits.Description()})";
-                    else
-                        headerText = $"{x0.CubeXAxisName} ({x0.CubeXUnit})";
-                }
-                else
-                {
-                    headerText = $"Freq ({plot.FreqUnits.Description()})";
-                }
-            }
-            else
-            {
-                if (colIndex - 1 < plot.Traces.Count)
-                {
-                    var t = plot.Traces[colIndex - 1];
-                    headerText = cubeMode ? t.CubeShorthand : t.ShortDescription;
-                }
-                else
-                {
-                    headerText = "";
-                }
-            }
-            maxW = Math.Max(maxW, boldFont.MeasureText(headerText));
-            if (colIndex == 0)
+            var col  = columns[colIndex];
+            float maxW = boldFont.MeasureText(col.Header);
+
+            // Sort arrow space on XAxis column headers.
+            if (col.Kind == TableColKind.XAxis)
             {
                 float spaceW = boldFont.MeasureText(" ");
-                maxW += spaceW * 1.5f + fs * 0.6f + TextCellPaddingX; // gap + triangle
+                maxW += spaceW * 1.5f + fs * 0.6f + TextCellPaddingX;
             }
 
-            // Measure data rows — use fallback-aware measure so ∠ cells aren't under-measured.
-            string plotFmt = $"{plot.FormatString}{plot.MaximumFractionDigits}";
-            bool cubeFreqAxis = cubeMode && plot.Traces.Count > 0 && IsFreqUnit(plot.Traces[0].CubeXUnit);
-            foreach (double freq in freqs)
+            // Measure every data row in this column.
+            for (int ri = 0; ri < col.XValues.Length; ri++)
             {
-                string cellText;
-                if (colIndex == 0)
-                {
-                    cellText = (cubeMode && !cubeFreqAxis)
-                        ? freq.ToString(plotFmt)
-                        : (freq * plot.FreqUnits.Scale()).ToString(plotFmt);
-                }
-                else
-                {
-                    int traceIdx = colIndex - 1;
-                    if (traceIdx >= plot.Traces.Count) continue;
-                    cellText = cubeMode
-                        ? FormatCubeCellAt(plot.Traces[traceIdx], freq)
-                        : FormatTraceCell(plot.Traces[traceIdx], freq);
-                }
-                maxW = Math.Max(maxW,
-                    colIndex == 0
-                        ? regularFont.MeasureText(cellText)
-                        : RendererText.MeasureTextWithFallback(cellText, regularFont, dejaVuRegular));
+                string cellText = FormatColumnCell(col, ri, plot);
+                float  cellW    = col.Kind == TableColKind.XAxis
+                    ? regularFont.MeasureText(cellText)
+                    : RendererText.MeasureTextWithFallback(cellText, regularFont, dejaVuRegular);
+                maxW = Math.Max(maxW, cellW);
             }
 
             // If the trace column has any markers, add space for the right-edge marker glyph.
             float markerExtra = 0f;
-            if (colIndex > 0 && colIndex - 1 < plot.Traces.Count)
+            if (col.Kind == TableColKind.TraceValue && col.FirstTraceIndex < plot.Traces.Count)
             {
-                if (plot.Traces[colIndex - 1].Markers.Count > 0)
+                if (plot.Traces[col.FirstTraceIndex].Markers.Count > 0)
                     markerExtra = MarkerTriangleSize + TextCellPaddingX;
             }
 
             return maxW + TextCellPaddingX * 2 + markerExtra + 2;
         }
 
-        /// <summary>Total logical width of all columns (freq + all traces).</summary>
+        /// <summary>Total logical width of all columns (all XAxis + all trace columns).</summary>
         public static float TotalColumnWidth(Plot plot)
         {
-            float total = (float)Math.Max(MinColumnWidth, plot.ColumnWidth);
-            foreach (var t in plot.Traces)
-                total += (float)Math.Max(MinColumnWidth, t.ColumnWidth);
+            var cols  = BuildColumns(plot);
+            float total = 0f;
+            foreach (var col in cols)
+            {
+                total += col.Kind == TableColKind.XAxis
+                    ? (float)Math.Max(MinColumnWidth, plot.ColumnWidth)
+                    : (float)Math.Max(MinColumnWidth, plot.Traces[col.FirstTraceIndex].ColumnWidth);
+            }
             return total;
+        }
+
+        // ============================================================
+        //  Column-plan builder (public so PlotControl can query it)
+        // ============================================================
+
+        /// <summary>
+        /// Builds the ordered column plan for the table.  Adjacent traces that share
+        /// exactly the same X axis (same name, unit, sorted values, and point count)
+        /// collapse to a single shared XAxis column.
+        /// </summary>
+        public static List<TableColumn> BuildColumns(Plot plot)
+        {
+            var result = new List<TableColumn>(plot.Traces.Count * 2);
+
+            string?  prevAxisName   = null;
+            string?  prevUnit       = null;
+            double[]? prevRaw       = null;
+            double[]? currentXArray = null;
+
+            for (int ti = 0; ti < plot.Traces.Count; ti++)
+            {
+                var trace = plot.Traces[ti];
+
+                // Determine X identity for this trace.
+                string   axisName;
+                string?  unit;
+                double[] raw;
+
+                if (trace.IsCubeBound && trace.CubeXValues is { } xs)
+                {
+                    axisName = trace.CubeXAxisName ?? "X";
+                    unit     = trace.CubeXUnit;
+                    raw      = new double[xs.Count];
+                    for (int i = 0; i < xs.Count; i++) raw[i] = xs[i];
+                }
+                else if (trace.Data is { } d)
+                {
+                    axisName = "Freq";
+                    unit     = "Hz";
+                    raw      = d.Frequencies;
+                }
+                else
+                {
+                    axisName = "X";
+                    unit     = null;
+                    raw      = Array.Empty<double>();
+                }
+
+                // Adjacent-dedup: same axis name, same unit, same length, same sorted values.
+                bool dedup = currentXArray != null
+                    && prevAxisName == axisName
+                    && prevUnit     == unit
+                    && prevRaw is { } pr
+                    && pr.Length    == raw.Length
+                    && (raw.Length  == 0 || RawValuesEqual(pr, raw));
+
+                if (!dedup)
+                {
+                    double[] sorted   = SortUnique(raw, plot.TableViewAscendingSortOrder);
+                    bool     isFreq   = IsFreqUnit(unit);
+                    string   xHeader  = string.IsNullOrEmpty(unit)
+                        ? axisName
+                        : isFreq
+                            ? $"{axisName} ({plot.FreqUnits.Description()})"
+                            : $"{axisName} ({unit})";
+
+                    result.Add(new TableColumn
+                    {
+                        Kind            = TableColKind.XAxis,
+                        FirstTraceIndex = ti,
+                        Header          = xHeader,
+                        Unit            = unit,
+                        XValues         = sorted,
+                        IsFreqUnit      = isFreq,
+                    });
+                    currentXArray = sorted;
+                }
+
+                prevAxisName = axisName;
+                prevUnit     = unit;
+                prevRaw      = raw;
+
+                // TraceValue column shares the XValues array of its X group.
+                string valHeader = trace.IsCubeBound
+                    ? (trace.CubeShorthand ?? trace.ShortDescription)
+                    : trace.ShortDescription;
+                result.Add(new TableColumn
+                {
+                    Kind            = TableColKind.TraceValue,
+                    FirstTraceIndex = ti,
+                    Header          = valHeader,
+                    XValues         = currentXArray ?? Array.Empty<double>(),
+                });
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Formats a single table cell given the column plan entry and the absolute row index.
+        /// Returns "" when rowIndex is beyond the column's group length.
+        /// </summary>
+        public static string FormatColumnCell(TableColumn col, int rowIndex, Plot plot)
+        {
+            if (rowIndex >= col.XValues.Length) return "";
+            double xVal = col.XValues[rowIndex];
+
+            if (col.Kind == TableColKind.XAxis)
+            {
+                string fmt = $"{plot.FormatString}{plot.MaximumFractionDigits}";
+                return col.IsFreqUnit
+                    ? (xVal * plot.FreqUnits.Scale()).ToString(fmt)
+                    : xVal.ToString(fmt);
+            }
+
+            // TraceValue: look up the sample in this trace whose X value matches.
+            var trace = plot.Traces[col.FirstTraceIndex];
+            return trace.IsCubeBound
+                ? FormatCubeCellAt(trace, xVal)
+                : FormatTraceCell(trace, xVal);
+        }
+
+        /// <summary>
+        /// Builds the grid of tab-separated text for "Copy Table Data".
+        /// Returns the column headers and the visible rows (respects scroll + canvas size).
+        /// Cells are blank ("") when a group's trace has fewer rows than the longest group.
+        /// </summary>
+        public static (string[] headers, string[][] rows) BuildCopyGrid(
+            Plot plot, (double W, double H) canvasSize, float zoomLevel = 1f)
+        {
+            var layout  = BuildLayout(plot, canvasSize, zoomLevel);
+            var cols    = layout.Columns;
+
+            var headers = new string[cols.Count];
+            for (int c = 0; c < cols.Count; c++)
+                headers[c] = cols[c].Header;
+
+            int start = layout.ScrollIndex;
+            int count = Math.Min(layout.VisibleRowCount, layout.RowCount - start);
+            if (count <= 0) return (headers, Array.Empty<string[]>());
+
+            var rows = new string[count][];
+            for (int r = 0; r < count; r++)
+            {
+                int    absRow = start + r;
+                var    row    = new string[cols.Count];
+                for (int c = 0; c < cols.Count; c++)
+                    row[c] = FormatColumnCell(cols[c], absRow, plot);
+                rows[r] = row;
+            }
+
+            return (headers, rows);
         }
 
         // ============================================================
@@ -345,30 +489,40 @@ namespace CircuitRF.Ui.DataDisplay
 
         private static TableLayout BuildLayout(Plot plot, (double W, double H) canvasSize, float zoomLevel)
         {
-            float fs = (float)(plot.FontSize * zoomLevel);
+            float fs      = (float)(plot.FontSize * zoomLevel);
+            var   columns = BuildColumns(plot);
+
+            // Row count = longest XAxis group.
+            int rowCount = 0;
+            foreach (var col in columns)
+                if (col.Kind == TableColKind.XAxis && col.XValues.Length > rowCount)
+                    rowCount = col.XValues.Length;
 
             var layout = new TableLayout
             {
-                ZoomLevel     = zoomLevel,
+                ZoomLevel      = zoomLevel,
                 ScaledPaddingX = TextCellPaddingX * zoomLevel,
-                HeaderH       = fs * (1 + RowPaddingFraction * 2),
-                RowH          = fs * (1 + RowPaddingFraction),
-                Frequencies   = GetSortedRowAxis(plot),
-                ScrollIndex   = Math.Max(0, plot.TableViewScrollIndex),
+                HeaderH        = fs * (1 + RowPaddingFraction * 2),
+                RowH           = fs * (1 + RowPaddingFraction),
+                RowCount       = rowCount,
+                ScrollIndex    = Math.Max(0, plot.TableViewScrollIndex),
+                Columns        = columns,
             };
 
             layout.DataStartY = layout.HeaderH + HeaderToDataRowPadding;
 
-            // Column widths are stored in the model as LOGICAL units (pre-zoom).
-            // Multiply by zoomLevel to get canvas pixel widths.
-            int colCount = 1 + plot.Traces.Count;
+            // Column widths: XAxis columns use plot.ColumnWidth; TraceValue columns use trace.ColumnWidth.
+            int colCount = columns.Count;
             layout.ColCount = colCount;
             layout.ColX     = new float[colCount];
             layout.ColW     = new float[colCount];
 
-            layout.ColW[0] = (float)Math.Max(MinColumnWidth, plot.ColumnWidth) * zoomLevel;
-            for (int c = 1; c < colCount; c++)
-                layout.ColW[c] = (float)Math.Max(MinColumnWidth, plot.Traces[c - 1].ColumnWidth) * zoomLevel;
+            for (int c = 0; c < colCount; c++)
+            {
+                layout.ColW[c] = columns[c].Kind == TableColKind.XAxis
+                    ? (float)Math.Max(MinColumnWidth, plot.ColumnWidth) * zoomLevel
+                    : (float)Math.Max(MinColumnWidth, plot.Traces[columns[c].FirstTraceIndex].ColumnWidth) * zoomLevel;
+            }
 
             layout.ColX[0] = 0;
             for (int c = 1; c < colCount; c++)
@@ -378,16 +532,16 @@ namespace CircuitRF.Ui.DataDisplay
             float availH = (float)canvasSize.H - layout.DataStartY;
             layout.VisibleRowCount = availH > 0 ? (int)Math.Ceiling(availH / layout.RowH) : 0;
 
-            // Clamp scroll index and write back so OnPointerWheel can always apply a correct delta
-            int maxScroll = Math.Max(0, layout.Frequencies.Length - layout.VisibleRowCount);
-            layout.ScrollIndex          = Math.Clamp(layout.ScrollIndex, 0, maxScroll);
-            plot.TableViewScrollIndex   = layout.ScrollIndex;  // keep model in bounds
+            // Clamp scroll index and write back so OnPointerWheel can always apply a correct delta.
+            int maxScroll = Math.Max(0, layout.RowCount - layout.VisibleRowCount);
+            layout.ScrollIndex        = Math.Clamp(layout.ScrollIndex, 0, maxScroll);
+            plot.TableViewScrollIndex = layout.ScrollIndex;
 
             return layout;
         }
 
         // ============================================================
-        //  Frequency union
+        //  Frequency union (kept for backward compatibility)
         // ============================================================
 
         public static double[] GetSortedFrequencies(Plot plot)
@@ -432,11 +586,41 @@ namespace CircuitRF.Ui.DataDisplay
         {
             var layout = BuildLayout(plot, canvasSize, zoomLevel);
             int start  = layout.ScrollIndex;
-            int count  = Math.Min(layout.VisibleRowCount, layout.Frequencies.Length - start);
+            // Return the X values from the first XAxis column, or empty if no columns.
+            var firstX = layout.Columns.FirstOrDefault(c => c.Kind == TableColKind.XAxis);
+            if (firstX is null) return Array.Empty<double>();
+            int count = Math.Min(layout.VisibleRowCount, firstX.XValues.Length - start);
             if (count <= 0) return Array.Empty<double>();
             var result = new double[count];
-            Array.Copy(layout.Frequencies, start, result, 0, count);
+            Array.Copy(firstX.XValues, start, result, 0, count);
             return result;
+        }
+
+        // ============================================================
+        //  Private helpers — value equality + sort
+        // ============================================================
+
+        private static bool RawValuesEqual(double[] a, double[] b)
+        {
+            // Compare sorted sets so different orderings still match.
+            if (a.Length != b.Length) return false;
+            var sa = new SortedSet<double>(a);
+            var sb = new SortedSet<double>(b);
+            if (sa.Count != sb.Count) return false;
+            using var ea = sa.GetEnumerator();
+            using var eb = sb.GetEnumerator();
+            while (ea.MoveNext() && eb.MoveNext())
+                if (ea.Current != eb.Current) return false;
+            return true;
+        }
+
+        private static double[] SortUnique(double[] values, bool ascending)
+        {
+            var set = new SortedSet<double>(values);
+            var arr = new double[set.Count];
+            set.CopyTo(arr);
+            if (!ascending) Array.Reverse(arr);
+            return arr;
         }
 
         // ============================================================
@@ -617,7 +801,7 @@ namespace CircuitRF.Ui.DataDisplay
             for (int r = 0; r < layout.VisibleRowCount; r++)
             {
                 int absRow = layout.ScrollIndex + r;
-                if (absRow >= layout.Frequencies.Length) break;
+                if (absRow >= layout.RowCount) break;
                 if (absRow % 2 == 0) continue;
 
                 float rowTop = layout.DataStartY + r * layout.RowH;
@@ -633,16 +817,19 @@ namespace CircuitRF.Ui.DataDisplay
         {
             float canvasH = (float)(layout.DataStartY + layout.VisibleRowCount * layout.RowH);
 
-            for (int ti = 0; ti < plot.Traces.Count; ti++)
+            for (int planC = 0; planC < layout.Columns.Count; planC++)
             {
-                var   trace    = plot.Traces[ti];
-                int   colIndex = ti + 1;
-                float cellX    = layout.ColX[colIndex];
-                float cellW    = layout.ColW[colIndex];
+                var col = layout.Columns[planC];
+                if (col.Kind != TableColKind.TraceValue) continue;
+
+                var   trace = plot.Traces[col.FirstTraceIndex];
+                float cellX = layout.ColX[planC];
+                float cellW = layout.ColW[planC];
 
                 foreach (var m in trace.Markers)
                 {
-                    int absRow = Array.FindIndex(layout.Frequencies, f => f == m.Freq);
+                    // Find the row within this trace's X group where m.Freq lives.
+                    int absRow = Array.FindIndex(col.XValues, v => v == m.Freq);
                     if (absRow < 0) continue;
                     int rowInView = absRow - layout.ScrollIndex;
                     if (rowInView < 0 || rowInView >= layout.VisibleRowCount) continue;
@@ -740,7 +927,7 @@ namespace CircuitRF.Ui.DataDisplay
             for (int r = 0; r <= layout.VisibleRowCount; r++)
             {
                 int absRow = layout.ScrollIndex + r;
-                if (absRow > layout.Frequencies.Length) break;
+                if (absRow > layout.RowCount) break;
                 float y = layout.DataStartY + r * layout.RowH;
                 if (y > totalH) break;
                 canvas.DrawLine(0, y, (float)canvasSize.W, y, borderPaint);
@@ -752,7 +939,9 @@ namespace CircuitRF.Ui.DataDisplay
             RenderTheme theme, SKFont boldFont, SKFont dejaVuBold, SKFont regularFont,
             bool showFilePrefix)
         {
-            float totalColW = layout.ColX[layout.ColCount - 1] + layout.ColW[layout.ColCount - 1];
+            float totalColW = layout.ColCount > 0
+                ? layout.ColX[layout.ColCount - 1] + layout.ColW[layout.ColCount - 1]
+                : 0f;
 
             using var bgPaint = new SKPaint
             {
@@ -774,59 +963,48 @@ namespace CircuitRF.Ui.DataDisplay
             float textY = layout.HeaderH * HeaderTextVertFraction;
             float fs    = boldFont.Size;
 
-            bool cubeMode = plot.Traces.Count > 0 && plot.Traces.All(t => t.IsCubeBound);
-
-            // Freq / X-axis column header.
-            string col0Header;
-            if (cubeMode && plot.Traces.Count > 0)
+            for (int c = 0; c < layout.ColCount; c++)
             {
-                var x0 = plot.Traces[0];
-                if (string.IsNullOrEmpty(x0.CubeXUnit))
-                    col0Header = x0.CubeXAxisName;
-                else if (IsFreqUnit(x0.CubeXUnit))
-                    col0Header = $"{x0.CubeXAxisName} ({plot.FreqUnits.Description()})";
-                else
-                    col0Header = $"{x0.CubeXAxisName} ({x0.CubeXUnit})";
-            }
-            else
-            {
-                col0Header = $"Freq ({plot.FreqUnits.Description()})";
-            }
-            DrawClippedText(canvas, boldFont, textPaint,
-                col0Header,
-                layout.ColX[0], textY, layout.ColW[0],
-                layout.ScaledPaddingX, CellHeaderHorizAlign, dejaVuBold);
+                var col = layout.Columns[c];
 
-            // Drawn sort-direction triangle, positioned just right of the header text.
-            float triSize   = fs * 0.6f;
-            float measuredW = Math.Min(
-                boldFont.MeasureText(col0Header),
-                layout.ColW[0] - layout.ScaledPaddingX * 2);
-            float spaceW = boldFont.MeasureText(" ");
-            float triCx  = layout.ColX[0] + layout.ScaledPaddingX + measuredW + spaceW * 1.5f + triSize * 0.5f;
-            float triMidY = layout.HeaderH * 0.5f;
-
-            DrawSortArrow(canvas, plot.TableViewAscendingSortOrder, triCx, triMidY, triSize, textPaint);
-
-            // Trace column headers
-            for (int ti = 0; ti < plot.Traces.Count; ti++)
-            {
-                int    c     = ti + 1;
-                var    trace = plot.Traces[ti];
-                string label;
-                if (cubeMode)
+                if (col.Kind == TableColKind.XAxis)
                 {
-                    label = trace.CubeShorthand;
-                    if (showFilePrefix && trace.SourcePath != null)
-                        label = System.IO.Path.GetFileNameWithoutExtension(trace.SourcePath) + ".." + label;
+                    // Draw X-axis column header (pre-computed in BuildColumns).
+                    DrawClippedText(canvas, boldFont, textPaint,
+                        col.Header,
+                        layout.ColX[c], textY, layout.ColW[c],
+                        layout.ScaledPaddingX, CellHeaderHorizAlign, dejaVuBold);
+
+                    // Sort-direction triangle, positioned just right of the header text.
+                    float triSize   = fs * 0.6f;
+                    float measuredW = Math.Min(
+                        boldFont.MeasureText(col.Header),
+                        layout.ColW[c] - layout.ScaledPaddingX * 2);
+                    float spaceW = boldFont.MeasureText(" ");
+                    float triCx  = layout.ColX[c] + layout.ScaledPaddingX + measuredW + spaceW * 1.5f + triSize * 0.5f;
+                    float triMidY = layout.HeaderH * 0.5f;
+
+                    DrawSortArrow(canvas, plot.TableViewAscendingSortOrder, triCx, triMidY, triSize, textPaint);
                 }
                 else
                 {
-                    label = showFilePrefix ? trace.Description : trace.ShortDescription;
+                    // TraceValue column: compute label considering showFilePrefix.
+                    var    trace = plot.Traces[col.FirstTraceIndex];
+                    string label;
+                    if (trace.IsCubeBound)
+                    {
+                        label = trace.CubeShorthand ?? trace.ShortDescription;
+                        if (showFilePrefix && trace.SourcePath != null)
+                            label = System.IO.Path.GetFileNameWithoutExtension(trace.SourcePath) + ".." + label;
+                    }
+                    else
+                    {
+                        label = showFilePrefix ? trace.Description : trace.ShortDescription;
+                    }
+                    DrawClippedText(canvas, boldFont, textPaint,
+                        label, layout.ColX[c], textY, layout.ColW[c],
+                        layout.ScaledPaddingX, CellHeaderHorizAlign);
                 }
-                DrawClippedText(canvas, boldFont, textPaint,
-                    label, layout.ColX[c], textY, layout.ColW[c],
-                    layout.ScaledPaddingX, CellHeaderHorizAlign);
             }
         }
 
@@ -873,20 +1051,14 @@ namespace CircuitRF.Ui.DataDisplay
         {
             using var textPaint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
 
-            double freqScale = plot.FreqUnits.Scale();
-            string freqFmt   = $"{plot.FormatString}{plot.MaximumFractionDigits}";
-            float  canvasH   = (float)canvasSize.H;
-
-            bool cubeMode     = plot.Traces.Count > 0 && plot.Traces.All(t => t.IsCubeBound);
-            bool cubeFreqAxis = cubeMode && plot.Traces.Count > 0 && IsFreqUnit(plot.Traces[0].CubeXUnit);
+            float canvasH = (float)canvasSize.H;
 
             for (int r = 0; r < layout.VisibleRowCount; r++)
             {
                 int absRow = layout.ScrollIndex + r;
-                if (absRow >= layout.Frequencies.Length) break;
+                if (absRow >= layout.RowCount) break;
 
-                double freq   = layout.Frequencies[absRow];
-                float  rowTop = layout.DataStartY + r * layout.RowH;
+                float rowTop = layout.DataStartY + r * layout.RowH;
                 if (rowTop >= canvasH) break;
 
                 // Baseline is always computed from the full row height so vertical
@@ -894,27 +1066,17 @@ namespace CircuitRF.Ui.DataDisplay
                 // last row.  The canvas ClipRect (set in Draw) trims any overflow.
                 float textY = rowTop + layout.RowH * CellTextVertFraction;
 
-                // Column 0: X-axis value.  Frequency cube axes scale to plot FreqUnits;
-                // non-frequency cube axes (Pin/dBm, bias/V) remain unscaled.
-                string col0Text = (cubeMode && !cubeFreqAxis)
-                    ? freq.ToString(freqFmt)
-                    : (freq * freqScale).ToString(freqFmt);
-                DrawClippedText(canvas, regularFont, textPaint,
-                    col0Text,
-                    layout.ColX[0], textY, layout.ColW[0],
-                    layout.ScaledPaddingX, CellDataHorizAlign);
-
-                // Trace data cells — may contain ∠ (U+2220); use DejaVu fallback.
-                for (int ti = 0; ti < plot.Traces.Count; ti++)
+                for (int c = 0; c < layout.ColCount; c++)
                 {
-                    int c = ti + 1;
-                    string cellText = cubeMode
-                        ? FormatCubeCellAt(plot.Traces[ti], freq)
-                        : FormatTraceCell(plot.Traces[ti], freq);
+                    var col = layout.Columns[c];
+                    string cellText = FormatColumnCell(col, absRow, plot);
+
+                    // XAxis cells use the primary font (no ∠); TraceValue cells may contain ∠.
                     DrawClippedText(canvas, regularFont, textPaint,
                         cellText,
                         layout.ColX[c], textY, layout.ColW[c],
-                        layout.ScaledPaddingX, CellDataHorizAlign, dejaVuRegular);
+                        layout.ScaledPaddingX, CellDataHorizAlign,
+                        fallback: col.Kind == TableColKind.XAxis ? null : dejaVuRegular);
                 }
             }
         }

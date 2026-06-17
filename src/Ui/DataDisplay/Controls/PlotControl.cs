@@ -634,9 +634,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                         _tableColResizeDragging = true;
                         _tableResizeColIndex    = hitResult.ResizeColIndex;
                         _tableResizeStartPt     = pos;
-                        _tableResizeStartWidth  = _tableResizeColIndex == 0
-                            ? _plot.ColumnWidth
-                            : _plot.Traces[_tableResizeColIndex - 1].ColumnWidth;
+                        var resCols = TableRenderer.BuildColumns(_plot);
+                        _tableResizeStartWidth = hitResult.ResizeColIndex < resCols.Count
+                            && resCols[hitResult.ResizeColIndex].Kind == TableColKind.TraceValue
+                            ? _plot.Traces[resCols[hitResult.ResizeColIndex].FirstTraceIndex].ColumnWidth
+                            : _plot.ColumnWidth;
                         e.Pointer.Capture(this);
                         e.Handled = true;
                         return;
@@ -677,9 +679,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     else if (hitResult.RowIndex >= 0)
                     {
                         _rightClickedDataTrace = hitResult.HitTrace;
-                        double[] allFreqs = TableRenderer.GetSortedFrequencies(_plot);
-                        if (hitResult.RowIndex < allFreqs.Length)
-                            _rightClickedDataFreq = allFreqs[hitResult.RowIndex];
+                        var rcCols = TableRenderer.BuildColumns(_plot);
+                        if (hitResult.ColIndex >= 0 && hitResult.ColIndex < rcCols.Count)
+                        {
+                            var rcCol = rcCols[hitResult.ColIndex];
+                            if (hitResult.RowIndex >= 0 && hitResult.RowIndex < rcCol.XValues.Length)
+                                _rightClickedDataFreq = rcCol.XValues[hitResult.RowIndex];
+                        }
                     }
                 }
                 return;
@@ -758,10 +764,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 float resizeZoom = (float)(ContainerProvider?.Invoke()?.ZoomLevel ?? 1.0);
                 double dx        = (current.X - _tableResizeStartPt.X) / resizeZoom;
                 double newWidth  = Math.Max(TableRenderer.MinColumnWidth, _tableResizeStartWidth + dx);
-                if (_tableResizeColIndex == 0)
+                var drCols = TableRenderer.BuildColumns(_plot);
+                if (_tableResizeColIndex < drCols.Count
+                    && drCols[_tableResizeColIndex].Kind == TableColKind.TraceValue)
+                    _plot.Traces[drCols[_tableResizeColIndex].FirstTraceIndex].ColumnWidth = newWidth;
+                else
                     _plot.ColumnWidth = newWidth;
-                else if (_tableResizeColIndex - 1 < _plot.Traces.Count)
-                    _plot.Traces[_tableResizeColIndex - 1].ColumnWidth = newWidth;
                 InvalidateVisual();
                 return;
             }
@@ -784,9 +792,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                         traceChanged           = true;
                     }
 
-                    double[] allFreqs = TableRenderer.GetSortedFrequencies(_plot);
-                    if (hitResult.RowIndex >= 0 && hitResult.RowIndex < allFreqs.Length)
-                        _tableDraggingMarker.Freq = allFreqs[hitResult.RowIndex];
+                    int mti = _plot.Traces.IndexOf(_tableDraggingTrace);
+                    if (mti >= 0)
+                    {
+                        var mCols   = TableRenderer.BuildColumns(_plot);
+                        var mValCol = mCols.FirstOrDefault(c => c.Kind == TableColKind.TraceValue && c.FirstTraceIndex == mti);
+                        if (mValCol != null && hitResult.RowIndex >= 0 && hitResult.RowIndex < mValCol.XValues.Length)
+                            _tableDraggingMarker.Freq = mValCol.XValues[hitResult.RowIndex];
+                    }
 
                     if (traceChanged)
                         PlotChanged?.Invoke(this, EventArgs.Empty);
@@ -992,10 +1005,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 if (hit.Kind == TableHitKind.ResizeHandle)
                 {
                     float fitW = TableRenderer.CalcFitWidth(_plot, hit.ResizeColIndex, (Bounds.Width, Bounds.Height), tableZoom);
-                    if (hit.ResizeColIndex == 0)
+                    var dtCols = TableRenderer.BuildColumns(_plot);
+                    if (hit.ResizeColIndex < dtCols.Count && dtCols[hit.ResizeColIndex].Kind == TableColKind.TraceValue)
+                        _plot.Traces[dtCols[hit.ResizeColIndex].FirstTraceIndex].ColumnWidth = fitW;
+                    else
                         _plot.ColumnWidth = fitW;
-                    else if (hit.ResizeColIndex - 1 < _plot.Traces.Count)
-                        _plot.Traces[hit.ResizeColIndex - 1].ColumnWidth = fitW;
                     InvalidateVisual();
                     PlotChanged?.Invoke(this, EventArgs.Empty);
                 }
@@ -1406,32 +1420,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         {
             if (_plot is null) return;
             float zoom = (float)(ContainerProvider?.Invoke()?.ZoomLevel ?? 1.0);
-            bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-                (_library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
 
-            var    sb        = new System.Text.StringBuilder();
-            double freqScale = _plot.FreqUnits.Scale();
-            string freqFmt   = $"{_plot.FormatString}{_plot.MaximumFractionDigits}";
+            var (headers, rows) = TableRenderer.BuildCopyGrid(_plot, (Bounds.Width, Bounds.Height), zoom);
 
-            sb.Append($"Freq ({_plot.FreqUnits.Description()})");
-            foreach (var trace in _plot.Traces)
-            {
-                sb.Append('\t');
-                sb.Append(showFilePrefix ? trace.Description : trace.ShortDescription);
-            }
-            sb.AppendLine();
-
-            var visibleFreqs = TableRenderer.GetVisibleFrequencies(_plot, (Bounds.Width, Bounds.Height), zoom);
-            foreach (double freq in visibleFreqs)
-            {
-                sb.Append((freq * freqScale).ToString(freqFmt));
-                foreach (var trace in _plot.Traces)
-                {
-                    sb.Append('\t');
-                    sb.Append(TableRenderer.FormatTraceCell(trace, freq));
-                }
-                sb.AppendLine();
-            }
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(string.Join("\t", headers));
+            foreach (var row in rows)
+                sb.AppendLine(string.Join("\t", row));
 
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard is not null)
