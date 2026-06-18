@@ -104,6 +104,10 @@ public static class CnlWriter
             sb.Append("  parameters ")
               .AppendLine(string.Join("  ", cell.Parameters.Select(FormatParamDecl)));
 
+        // Cell-local VAR definitions (CnlReader routes in-block assignments to Cell.Variables).
+        foreach (var v in cell.Variables)
+            sb.Append("  ").AppendLine(FormatVariable(v));
+
         foreach (var inst in cell.Instances)
             sb.Append("  ").AppendLine(FormatInstance(inst));
 
