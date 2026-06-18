@@ -199,6 +199,42 @@ i2 ≈ 49.11 mA, i1 = −61 mA, gm ≈ 62.4 mS, gds ≈ −9.45 µS (negative).
 (branch constraint + KCL). Parameter `V=`. Required for bias sources in the DC hero circuit.
 Registered as type `V` in `ComponentModelFactory`.
 
+## Enabled semantics — AnalysisChain (brief-sweep-revamp-2-dispatch, 2026-06-17)
+
+`AnalysisChain` (`src/Core/Design/AnalysisChain.cs`) is a pure, framework-free resolver that
+honors `Analysis.Enabled` when walking a parametric-sweep chain.
+
+- **`ResolveEffectiveInner(innerName, tb)`**: descends from `innerName`, skipping disabled
+  `ParametricSweepAnalysis` nodes (collapse), until it reaches either an enabled sweep or any base
+  analysis. Used by `ParametricSweepEngine.Run` in place of the former raw name lookup.
+- **`ResolveEffectiveTop(root, tb)`**: from the chain root, skips disabled outer sweeps to the
+  first thing that actually runs. Used by `SchematicRunService` dispatch.
+- **`IsChainRunnable(top, tb)`**: true only if the chain eventually bottoms out at an enabled base
+  analysis. Used by `SchematicRunService` to skip dead chains (disabled base).
+
+Semantics:
+- Disabled sweep → collapses (its axis is dropped; its inner runs in its place). Spec is untouched.
+- Disabled base → whole chain is inert (nothing runs, no result emitted).
+- Both sweeps disabled → effective top is the base; runs as a plain single-point analysis.
+
+Gate: 9 tests in `tests/Core.Tests/Design/AnalysisChainTests.cs` (pure); 4 integration tests in
+`tests/Engine.Tests/Parametric/ParametricSweepEnabledTests.cs`. Build 0W/0E; 1629 total pass.
+
+Stage 3 (unified editor UX with per-axis Enabled + reorder) follows.
+
+## `.cnl` enabled flag + Spec persistence (brief-sweep-revamp-1-persistence, 2026-06-17)
+
+- **`enabled=false` in `.cnl`**: `CnlWriter` appends `enabled=false` to every sub-line of any
+  analysis whose `Enabled` is false (multi-segment S-param gets it on each segment line). `CnlReader`
+  has a shared `ParseEnabledToken` helper wired into all six typed parsers (DC, HB, S-param,
+  parametric sweep, loadpull, loadpull-pursuit). Absent token → `Enabled = true` (default). Gate:
+  5 tests in `tests/Core.Tests/Netlist/CnlEnabledTests.cs`.
+- **Sweep Spec round-trip through `.csch`/`.canl`/clipboard**: `CschAnalysis` DTO now carries
+  `PsaMode`, `PsaStart`, `PsaStop`, `PsaStepOrCount`, `PsaKind` for spec-form sweeps. `ToDto`
+  prefers the Spec fields (omits `PsaValues`) when `Spec` is non-null; `FromDto` has a Spec arm
+  (tried first) and a list arm. Explicit-list PSAs still round-trip unchanged. Gate: 7 new tests in
+  `tests/Ui.Tests/AnalysisSerializationTests.cs`.
+
 ## Parametric sweep — Start/Stop/Step|Npts (brief-parametric-sweep-stepcount, 2026-06-16)
 
 `SweepExpander` and `SweepAxisMode` moved from `src/Ui/Schematic/` → **`src/Core/Design/SweepExpander.cs`** (no Avalonia deps) so the CNL reader can use them without violating the Core→UI firewall.

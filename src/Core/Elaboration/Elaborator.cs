@@ -424,7 +424,12 @@ public sealed class Elaborator
         {
             if (_snpStringParams.Contains(ov.Name))
             {
-                result[ov.Name] = new Value(ov.Expression); // store raw string; do NOT parse/eval
+                // CNL string params are stored with surrounding quotes (e.g. File="path").
+                // Strip those outer quotes to get the actual string value.
+                var raw = ov.Expression;
+                if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+                    raw = raw[1..^1];
+                result[ov.Name] = new Value(raw);
             }
             else
             {

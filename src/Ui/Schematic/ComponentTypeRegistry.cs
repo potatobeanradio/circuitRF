@@ -157,6 +157,11 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Terminals,
             SearchTerms: ["Pin", "P", "io", "terminal", "interface", "port"],
             IsCommon: true),
+        // IProbe: 0 V series ammeter. Instance name (IP1, IP2, …) identifies the DC result cube I:IP1.
+        [SymbolKind.IProbe]        = new("IProbe", "IP",
+            Category: ComponentCategory.Terminals,
+            SearchTerms: ["IProbe", "I", "ammeter", "current", "probe", "meter"],
+            IsCommon: true),
         [SymbolKind.FetSdd]        = new("FET",   "X",
             Category: ComponentCategory.Other,
             SearchTerms: ["FET", "SDD", "FetSDD", "transistor", "nonlinear"]),
@@ -224,6 +229,7 @@ public static class ComponentTypeRegistry
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
+        SymbolKind.IProbe        => "IProbe",
         SymbolKind.FetSdd        => "SDD",
         SymbolKind.Sdd           => "SDD",
         SymbolKind.ZPort         => "Z_Port",
@@ -368,6 +374,8 @@ public static class ComponentTypeRegistry
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;
             case "PIN":    kind = SymbolKind.Pin;           return true;
+            case "IPROBE":
+            case "IP":     kind = SymbolKind.IProbe;        return true;
             case "VAR":    kind = SymbolKind.Var;           return true;
             case "P1TONE": kind = SymbolKind.P1Tone;        return true;
             case "FET":

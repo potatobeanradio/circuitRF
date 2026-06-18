@@ -16,10 +16,11 @@ internal sealed class PasteAnalysesCommand : IUiCommand
 
     public string Description => $"Paste {_toAppend.Count} analysis/analyses";
 
-    public PasteAnalysesCommand(SchematicEditModel model, IEnumerable<Core.Design.Analysis> toPaste)
+    public PasteAnalysesCommand(SchematicEditModel model, IEnumerable<Core.Design.Analysis> toPaste,
+                                string? retargetInner = null)
     {
         _model    = model;
-        _toAppend = ResolveNames(model.Analyses, toPaste);
+        _toAppend = ResolveNames(model.Analyses, toPaste.ToList(), retargetInner);
     }
 
     public void Execute()
@@ -36,21 +37,36 @@ internal sealed class PasteAnalysesCommand : IUiCommand
         _model.NotifyChanged();
     }
 
-    // Builds the collision-free list. Works from a growing HashSet so intra-paste names
-    // don't collide with each other (e.g. pasting two SP1s → SP1, SP1 copy).
     private static List<Core.Design.Analysis> ResolveNames(
         IReadOnlyList<Core.Design.Analysis> existing,
-        IEnumerable<Core.Design.Analysis> pasted)
+        IReadOnlyList<Core.Design.Analysis> pasted,
+        string? retargetInner)
     {
-        var used   = existing.Select(a => a.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var result = new List<Core.Design.Analysis>();
-        foreach (var a in pasted)
+        var used  = existing.Select(a => a.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var remap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // Pass 1: assign collision-free names, building old→new map (intra-paste names collide too).
+        var newNames = new string[pasted.Count];
+        for (int i = 0; i < pasted.Count; i++)
         {
-            string name = a.Name;
-            if (used.Contains(name))
-                name = ResolveConflict(used, name);
+            string name = used.Contains(pasted[i].Name)
+                ? ResolveConflict(used, pasted[i].Name)
+                : pasted[i].Name;
             used.Add(name);
-            result.Add(DuplicateAnalysisCommand.CloneAnalysis(a, name));
+            remap[pasted[i].Name] = name;
+            newNames[i] = name;
+        }
+
+        // Pass 2: clone with remapped name + inner link.
+        var result = new List<Core.Design.Analysis>(pasted.Count);
+        for (int i = 0; i < pasted.Count; i++)
+        {
+            string? newInner = null;
+            if (pasted[i] is ParametricSweepAnalysis psa)
+                newInner = remap.TryGetValue(psa.InnerAnalysisName, out var mapped)
+                    ? mapped                                            // inner is part of the pasted chain
+                    : (retargetInner ?? psa.InnerAnalysisName);        // lone sweep → attach to selected analysis
+            result.Add(DuplicateAnalysisCommand.CloneAnalysis(pasted[i], newNames[i], newInner));
         }
         return result;
     }

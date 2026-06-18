@@ -42,14 +42,14 @@ public sealed class SweepBuilderTests
 
         var chain = vm.BuildAnalyses();
 
-        // Must return 3 analyses: HB1 (disabled) + HB1_sweep_Pavl (disabled) + HB1_sweep_Vbias (enabled)
+        // Stage 3: all Enabled = true (base from dialog, each sweep from its row default=true)
         Assert.NotNull(chain);
         Assert.Equal(3, chain!.Count);
 
         var hb = chain[0] as HarmonicBalanceAnalysis;
         Assert.NotNull(hb);
         Assert.Equal("HB1", hb!.Name);
-        Assert.False(hb.Enabled);
+        Assert.True(hb.Enabled);   // base carries dialog Enabled (true)
 
         var sweepPavl = chain[1] as ParametricSweepAnalysis;
         Assert.NotNull(sweepPavl);
@@ -57,7 +57,7 @@ public sealed class SweepBuilderTests
         Assert.Equal("Pavl", sweepPavl.SweepVarName);
         Assert.Equal("HB1",  sweepPavl.InnerAnalysisName);
         Assert.Equal(5,      sweepPavl.SweepValues.Length);
-        Assert.False(sweepPavl.Enabled);
+        Assert.True(sweepPavl.Enabled);   // row.Enabled default = true
 
         var sweepVbias = chain[2] as ParametricSweepAnalysis;
         Assert.NotNull(sweepVbias);
@@ -65,7 +65,7 @@ public sealed class SweepBuilderTests
         Assert.Equal("Vbias",           sweepVbias.SweepVarName);
         Assert.Equal("HB1_sweep_Pavl",  sweepVbias.InnerAnalysisName);
         Assert.Equal(3,                 sweepVbias.SweepValues.Length); // 0, 0.5, 1.0
-        Assert.True(sweepVbias.Enabled);
+        Assert.True(sweepVbias.Enabled);   // row.Enabled default = true
     }
 
     // ── Test 2: no sweep axes → single enabled analysis ───────────────────────

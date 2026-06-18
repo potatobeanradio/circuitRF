@@ -38,10 +38,40 @@ namespace CircuitRF.Ui.DataDisplay
 
             // Split off everything before '['.
             int bracketPos = text.IndexOf('[');
+
+            // Bare cube name (no '[') — synthesize all-':' tokens for the whole cube.
             if (bracketPos < 0)
             {
-                error = "Missing '['.";
-                return false;
+                // The whole text (after any transform prefix) must be a cube name.
+                // Determine if there's a transform prefix by checking for a space.
+                string barePrefix = text;
+                CubeTransform bareTransform = CubeTransform.None;
+                int spaceIdx = text.IndexOf(' ');
+                if (spaceIdx >= 0)
+                {
+                    string potentialTransform = text[..spaceIdx].Trim();
+                    string potentialCube      = text[(spaceIdx + 1)..].Trim();
+                    if (TryParseTransform(potentialTransform, out var bt) && ds.Contains(potentialCube))
+                    {
+                        bareTransform = bt;
+                        barePrefix    = potentialCube;
+                    }
+                }
+                if (!ds.Contains(barePrefix))
+                {
+                    error = "Missing '['.";
+                    return false;
+                }
+                cubeName  = barePrefix;
+                transform = bareTransform;
+                var bareCube   = ds[cubeName];
+                var bareTokens = Enumerable.Repeat(":", bareCube.Rank).ToArray();
+                // Build the slice by recursively parsing as if the user typed "[transform ]Name[:, :, ...]"
+                string transformStr = bareTransform != CubeTransform.None
+                    ? bareTransform.ToString().ToLowerInvariant() + " "
+                    : "";
+                string synth = transformStr + cubeName + "[" + string.Join(", ", bareTokens) + "]";
+                return TryParse(synth, ds, out cubeName, out slice, out transform, out error);
             }
 
             // Parse optional transform + cube name from the prefix.
@@ -123,6 +153,7 @@ namespace CircuitRF.Ui.DataDisplay
 
             slice = new AxisSlice[tokens.Length];
             int xCount = 0;
+            int famCount = 0;
             for (int i = 0; i < tokens.Length; i++)
             {
                 var axis = cube.Axes[i];
@@ -134,6 +165,8 @@ namespace CircuitRF.Ui.DataDisplay
                     case SliceTokenParser.Kind.KeepRange:
                         slice[i] = new AxisSlice(axis.Name, AxisRole.KeepAsX, t.RangeStart,
                                                  t.RangeStart, t.RangeEndExclusive); xCount++; break;
+                    case SliceTokenParser.Kind.Family:
+                        slice[i] = new AxisSlice(axis.Name, AxisRole.FamilyIterate, 0); famCount++; break;
                     case SliceTokenParser.Kind.PinIndex:
                         slice[i] = new AxisSlice(axis.Name, AxisRole.PinToIndex, t.Index, Label: t.Label); break;
                     default:
@@ -141,10 +174,40 @@ namespace CircuitRF.Ui.DataDisplay
                 }
             }
 
-            if (xCount != 1)
+            var localSlice = slice;  // avoid capturing out parameter in lambda
+            var keptDims = Enumerable.Range(0, localSlice.Length)
+                .Where(i => localSlice[i].Role == AxisRole.KeepAsX).ToList();
+
+            if (famCount > 0)
             {
-                error = xCount == 0 ? "Need exactly one X axis (':', 'All', or a range)."
-                                    : "Too many X axes — only one ':'/range is allowed.";
+                // Explicit family marker present — honor it; skip the positional convention.
+                if (famCount > 1)
+                { error = "Only one axis may be the curve family ('~')."; return false; }
+                if (keptDims.Count == 0)
+                { error = "A family needs one swept X axis (':') alongside the family ('~')."; return false; }
+                if (keptDims.Count > 1)
+                { error = "A family supports one X axis (':') + one family ('~'); pin the extra axes."; return false; }
+                // exactly one family + one X — roles already set per token.
+            }
+            else if (keptDims.Count == 0)
+            {
+                error = "Need at least one swept axis (':', 'All', or a range).";
+                return false;
+            }
+            else if (keptDims.Count == 1)
+            {
+                // single curve — leave as-is
+            }
+            else if (keptDims.Count == 2)
+            {
+                // No explicit family → positional convention: last kept axis = X; earlier = Family.
+                int fDim = keptDims[0];
+                slice[fDim] = slice[fDim] with { Role = AxisRole.FamilyIterate };
+                // slice[keptDims[^1]] stays KeepAsX
+            }
+            else
+            {
+                error = "A family supports one swept (Family) axis + one X axis. Pin the extra axes.";
                 return false;
             }
 

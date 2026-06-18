@@ -100,31 +100,36 @@ public static class SchematicRunService
         var notes     = new List<string>();
         var errors    = new List<string>();
 
-        // Names that are wrapped as the inner of a parametric sweep — run only via their sweep.
-        var innerOfSweep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // A chain "root" is an analysis that no sweep references as its inner (the outermost level).
+        // We dispatch exactly one effective top per chain; everything below runs via the engine.
+        var referencedAsInner = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var a in tb.Analyses)
             if (a is ParametricSweepAnalysis ps && !string.IsNullOrEmpty(ps.InnerAnalysisName))
-                innerOfSweep.Add(ps.InnerAnalysisName);
+                referencedAsInner.Add(ps.InnerAnalysisName);
 
-        foreach (var analysis in tb.Analyses)
+        foreach (var root in tb.Analyses)
         {
-            if (!analysis.Enabled) continue;              // disabled — in tb for chain lookup only
-            if (innerOfSweep.Contains(analysis.Name)) continue; // runs only via its wrapping sweep
+            if (referencedAsInner.Contains(root.Name)) continue;     // not a root — runs via its outer
+
+            // Skip disabled OUTER sweeps to find the outermost thing that actually runs.
+            var top = AnalysisChain.ResolveEffectiveTop(root, tb);
+            if (top is null || !top.Enabled) continue;               // whole chain disabled
+            if (!AnalysisChain.IsChainRunnable(top, tb)) continue;   // base analysis disabled → nothing runs
 
             try
             {
-                var ds = RunTypedAnalysis(analysis, nl, tb, lib, notes);
+                var ds = RunTypedAnalysis(top, nl, tb, lib, notes);
                 if (ds is not null)
                 {
-                    var resultName = analysis is ParametricSweepAnalysis psa
+                    var resultName = top is ParametricSweepAnalysis psa
                         ? RootInnerName(psa, tb)
-                        : analysis.Name;
+                        : top.Name;
                     results.Add(new AnalysisResult(DeduplicateName(resultName, usedNames), ds));
                 }
             }
             catch (Exception ex)
             {
-                errors.Add($"'{analysis.Name}': {ex.Message}");
+                errors.Add($"'{top.Name}': {ex.Message}");
             }
         }
 
@@ -220,8 +225,12 @@ public static class SchematicRunService
             }
 
             case DcAnalysis:
-                notes.Add($"DC analysis '{analysis.Name}': not wired in-app yet — use CLI dc command.");
-                return null;
+            {
+                var dc = NonlinearDcEngine.Run(nl);
+                notes.Add($"DC '{analysis.Name}': {(dc.Converged ? "converged" : "did NOT converge")} " +
+                          $"in {dc.Iterations} iter, residual={dc.FinalResidual:G3}");
+                return DcResultPacker.Pack(dc, nl);
+            }
 
             default:
                 notes.Add($"Analysis type '{analysis.GetType().Name}' not dispatched.");
@@ -344,13 +353,13 @@ public static class SchematicRunService
         return sp < 0 ? s : s[..sp];
     }
 
-    // Walks InnerAnalysisName down to the first non-sweep analysis and returns its name.
+    // Walks the chain (skipping disabled sweeps) to the base analysis and returns its name.
     private static string RootInnerName(ParametricSweepAnalysis sweep, TestBench tb)
     {
         Analysis? cur = sweep;
         var guard = 0;
         while (cur is ParametricSweepAnalysis ps && guard++ < 64)
-            cur = tb.Analyses.FirstOrDefault(a => a.Name == ps.InnerAnalysisName);
+            cur = AnalysisChain.ResolveEffectiveInner(ps.InnerAnalysisName, tb);
         return cur?.Name ?? sweep.Name;
     }
 

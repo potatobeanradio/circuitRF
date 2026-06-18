@@ -1,5 +1,5 @@
 // ================================================================
-//  AxisRoleRowViewModel.cs  —  Phase 7.3a: per-axis role row VM
+//  AxisRoleRowViewModel.cs  —  Phase 7.3a/7.3b: per-axis role row VM
 // ================================================================
 
 using System;
@@ -10,9 +10,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
 /// <summary>
-/// One row in the axis-role editor for a cube-bound trace (Phase 7.3a).
-/// Each axis of the DataCube gets a role — KeepAsX (exactly one) or PinToIndex
-/// (single index, value picker).
+/// One row in the axis-role editor for a cube-bound trace.
+/// Each axis of the DataCube gets a role — KeepAsX (exactly one), FamilyIterate (at most one),
+/// or PinToIndex (single index, value picker).
 /// </summary>
 public sealed partial class AxisRoleRowViewModel : ViewModelBase
 {
@@ -59,10 +59,15 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     private bool _isX;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPinned))]
+    [NotifyPropertyChangedFor(nameof(ShowPinPicker))]
+    private bool _isFamily;
+
+    [ObservableProperty]
     private int _pinIndex;
 
-    public bool IsPinned    => !IsX;
-    public bool ShowPinPicker => !IsX;
+    public bool IsPinned      => !IsX && !IsFamily;
+    public bool ShowPinPicker => !IsX && !IsFamily;
 
     // ---- Construction -----------------------------------------------------
 
@@ -71,7 +76,8 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
                                    IReadOnlyList<string> pinOptions,
                                    bool isX, int pinIndex,
                                    IReadOnlyList<int>? pinOptionIndices = null,
-                                   bool optionsAreLabels = false)
+                                   bool optionsAreLabels = false,
+                                   bool isFamily = false)
     {
         _owner            = owner;
         AxisName          = axisName;
@@ -80,6 +86,7 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
         PinOptionIndices  = pinOptionIndices;
         OptionsAreLabels  = optionsAreLabels;
         _isX              = isX;
+        _isFamily         = isFamily;
         _pinIndex         = Math.Clamp(pinIndex, 0, Math.Max(0, pinOptions.Count - 1));
     }
 
@@ -94,7 +101,14 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     [RelayCommand]
     private void SetPinned()
     {
-        IsX = false;
+        IsX      = false;
+        IsFamily = false;
+    }
+
+    [RelayCommand]
+    private void SetFamily()
+    {
+        IsFamily = true;
     }
 
     // ---- Observable callbacks --------------------------------------------
@@ -102,13 +116,34 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     partial void OnIsXChanged(bool value)
     {
         if (_suppress) return;
-        if (value) _owner.OnAxisSetToX(this);  // auto-flip previous X to Pinned
+        if (value)
+        {
+            // Mutually exclusive with IsFamily on this row
+            _suppress = true;
+            IsFamily  = false;
+            _suppress = false;
+            _owner.OnAxisSetToX(this);  // auto-flip previous X to Pinned
+        }
+        _owner.FlushSliceAndRebuild();
+    }
+
+    partial void OnIsFamilyChanged(bool value)
+    {
+        if (_suppress) return;
+        if (value)
+        {
+            // Mutually exclusive with IsX on this row
+            _suppress = true;
+            IsX       = false;
+            _suppress = false;
+            _owner.OnAxisSetToFamily(this);  // auto-demote any other Family row
+        }
         _owner.FlushSliceAndRebuild();
     }
 
     partial void OnPinIndexChanged(int value)
     {
-        if (_suppress || _isX) return;
+        if (_suppress || _isX || _isFamily) return;
         _owner.FlushSliceAndRebuild();
     }
 
@@ -119,6 +154,14 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     {
         _suppress = true;
         IsX       = value;
+        _suppress = false;
+    }
+
+    /// <summary>Clears IsFamily without triggering FlushSliceAndRebuild (used during auto-demote).</summary>
+    internal void SetIsFamilySilent(bool value)
+    {
+        _suppress = true;
+        IsFamily  = value;
         _suppress = false;
     }
 }

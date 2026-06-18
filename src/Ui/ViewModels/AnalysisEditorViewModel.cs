@@ -81,6 +81,20 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     [RelayCommand]
     private void RemoveSweepAxis(SweepAxisRowViewModel row) => SweepAxes.Remove(row);
 
+    [RelayCommand]
+    private void MoveSweepAxisUp(SweepAxisRowViewModel row)
+    {
+        int i = SweepAxes.IndexOf(row);
+        if (i > 0) SweepAxes.Move(i, i - 1);
+    }
+
+    [RelayCommand]
+    private void MoveSweepAxisDown(SweepAxisRowViewModel row)
+    {
+        int i = SweepAxes.IndexOf(row);
+        if (i >= 0 && i < SweepAxes.Count - 1) SweepAxes.Move(i, i + 1);
+    }
+
     // ── Constructor: Add new ──────────────────────────────────────────────────
 
     public AnalysisEditorViewModel(SchematicEditModel model, AnalysisKind initialType = AnalysisKind.DC)
@@ -107,8 +121,8 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
         _editingName = inner.Name;
         _name        = inner.Name;
-        // Enabled is the outermost analysis's flag (or the inner if no sweeps).
-        _enabled = sweepChain.Count > 0 ? sweepChain[^1].Enabled : inner.Enabled;
+        // Enabled now lives on the base analysis (each sweep axis has its own row Enabled).
+        _enabled = inner.Enabled;
 
         // Track all chain member names so the edit command can remove the old chain.
         _editingChainNames.Add(inner.Name);
@@ -251,9 +265,9 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>
     /// Returns the staged analyses when validation passes, or null.
-    /// When no sweep axes are present the list contains a single enabled analysis.
-    /// When N axes are present: [inner (disabled), sweep1 (disabled), …, sweepN (enabled)],
-    /// naming each sweep as <c>&lt;innerName&gt;_sweep_&lt;varName&gt;</c>.
+    /// When no sweep axes are present the list contains a single analysis (Enabled from the dialog).
+    /// When N axes are present: [inner, sweep0, …, sweepN-1]; the base carries the dialog's
+    /// Enabled flag; each sweep axis carries its own row's Enabled (Stage 3 — no more isLast hack).
     /// </summary>
     public IReadOnlyList<Analysis>? BuildAnalyses()
     {
@@ -262,12 +276,13 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
         bool hasSweeps = SweepAxes.Count > 0;
 
-        // Build the inner analysis.
+        // Build the inner analysis. The base carries the dialog's Enabled flag; a disabled base makes
+        // the whole chain inert (Stage 2). Each sweep axis carries its own row's Enabled below.
         Analysis? inner = Type switch
         {
-            AnalysisKind.DC  => new DcAnalysis(name)           { Enabled = !hasSweeps && Enabled },
-            AnalysisKind.SP  => BuildSp(name, !hasSweeps && Enabled),
-            AnalysisKind.HB  => HbBody.BuildAnalysis(name,      !hasSweeps && Enabled),
+            AnalysisKind.DC  => new DcAnalysis(name)            { Enabled = Enabled },
+            AnalysisKind.SP  => BuildSp(name, Enabled),
+            AnalysisKind.HB  => HbBody.BuildAnalysis(name,      Enabled),
             _                => null,
         };
         if (inner is null) return null;
@@ -282,7 +297,6 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         for (int i = 0; i < SweepAxes.Count; i++)
         {
             var row      = SweepAxes[i];
-            bool isLast  = i == SweepAxes.Count - 1;
             string varName = row.VarName.Trim();
             if (varName.Length == 0) return null;
 
@@ -304,7 +318,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
                 if (psa.SweepValues.Length == 0) return null;
             }
 
-            psa.Enabled = isLast && Enabled;
+            psa.Enabled = row.Enabled;        // was: isLast && Enabled
             chain.Add(psa);
             innerName = sweepName;
         }
@@ -338,52 +352,29 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     private static (Analysis Inner, List<ParametricSweepAnalysis> SweepChain)
         ResolveChain(SchematicEditModel model, Analysis selected)
     {
-        // Navigate inward if the selected analysis is itself a sweep.
-        var psaStack = new Stack<ParametricSweepAnalysis>();
+        // Navigate inward to the base (innermost non-sweep) regardless of which chain member was
+        // selected, so editing ANY member — base or any sweep, inner or outer — opens the root view.
         Analysis current = selected;
         while (current is ParametricSweepAnalysis psa)
         {
-            psaStack.Push(psa);
             var next = model.Analyses.FirstOrDefault(
                 a => string.Equals(a.Name, psa.InnerAnalysisName, StringComparison.OrdinalIgnoreCase));
-            if (next is null) break;
+            if (next is null) break;   // dangling inner ref (broken chain) — stop here
             current = next;
         }
         var inner = current;
 
-        // The psaStack is now outermost-first; we want innermost-first for the list.
-        var chainFromOuter = psaStack.ToList(); // stack top = innermost sweep added last
-        // psaStack.Push order is outer→inner as we traverse in→out;
-        // but we traversed from outer→inner, so top is innermost PSA.
-        // Actually: selected was outermost. First iteration pushed selected (outermost).
-        // Next iteration pushed the next inner psa, etc.
-        // So stack top = deepest PSA (= PSA immediately wrapping inner).
-        // For our chain list we want [PSA wrapping inner, ..., outermost PSA].
-        var sweepChain = chainFromOuter; // already innermost-to-outermost? Let's check:
-        // If selected = outer sweep → stack = [outer], current = inner → stack top = outer
-        // If selected = inner-to-outer chain [A→B→inner]:
-        //   iter1: push A (outer), current = B
-        //   iter2: push B, current = inner
-        //   stack (bottom→top): A, B → top = B (immediately wrapping inner) ✓
-        // So stack ToList() = [A, B] = outermost to innermost-sweep → we need reverse
-        sweepChain.Reverse(); // now innermost-sweep to outermost
-
-        // If selected was NOT a sweep, collect sweep analyses wrapping it.
-        if (psaStack.Count == 0)
+        // Collect the FULL sweep chain wrapping the base, innermost→outermost.
+        var wrapping = new List<ParametricSweepAnalysis>();
+        var sweepMap = model.Analyses
+            .OfType<ParametricSweepAnalysis>()
+            .ToDictionary(a => a.InnerAnalysisName, StringComparer.OrdinalIgnoreCase);
+        var cursor = inner;
+        while (sweepMap.TryGetValue(cursor.Name, out var nextSweep))
         {
-            var wrapping = new List<ParametricSweepAnalysis>();
-            var cursor   = inner;
-            var sweepMap = model.Analyses
-                .OfType<ParametricSweepAnalysis>()
-                .ToDictionary(a => a.InnerAnalysisName, StringComparer.OrdinalIgnoreCase);
-            while (sweepMap.TryGetValue(cursor.Name, out var nextSweep))
-            {
-                wrapping.Add(nextSweep);
-                cursor = nextSweep;
-            }
-            return (inner, wrapping);
+            wrapping.Add(nextSweep);
+            cursor = nextSweep;
         }
-
-        return (inner, sweepChain);
+        return (inner, wrapping);
     }
 }

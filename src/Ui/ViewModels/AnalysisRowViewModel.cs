@@ -31,12 +31,14 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         }
     }
 
-    public string Name      => Analysis.Name;
+    public bool   IsSweep   => Analysis is ParametricSweepAnalysis;
+    public string Name      => Analysis is ParametricSweepAnalysis psa ? psa.SweepVarName : Analysis.Name;
     public string TypeLabel => Analysis switch
     {
         DcAnalysis               => "DC",
         SParameterAnalysis       => "SP",
         HarmonicBalanceAnalysis  => "HB",
+        ParametricSweepAnalysis  => "SW",
         _                        => "?",
     };
     public string Summary   => ComputeSummary(Analysis);
@@ -53,10 +55,11 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
 
     private static string ComputeSummary(Core.Design.Analysis a) => a switch
     {
-        DcAnalysis                => "Operating point",
-        SParameterAnalysis sp     => FormatSpSummary(sp),
+        DcAnalysis                 => "Operating point",
+        SParameterAnalysis sp      => FormatSpSummary(sp),
         HarmonicBalanceAnalysis hb => FormatHbSummary(hb),
-        _                         => "",
+        ParametricSweepAnalysis ps => FormatSweepSummary(ps),
+        _                          => "",
     };
 
     private static string FormatSpSummary(SParameterAnalysis sp)
@@ -72,6 +75,18 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         string tone = hb.ToneExpr == "0" ? "?" : FormatFreq(hb.ToneExpr);
         return $"f₀={tone}, {hb.MaxHarmonicExpr} harmonics";
     }
+
+    private static string FormatSweepSummary(ParametricSweepAnalysis psa)
+    {
+        var v = psa.SweepValues;
+        if (v.Length == 0) return "(empty)";
+        if (v.Length == 1) return $"1 pt: {FmtNum(v[0])}";
+        return $"{v.Length} pts: {FmtNum(v[0])}…{FmtNum(v[^1])}";
+    }
+
+    private static string FmtNum(double v) =>
+        v.ToString(System.Math.Abs(v) >= 1e6 || (System.Math.Abs(v) > 0 && System.Math.Abs(v) < 0.01)
+            ? "G4" : "G6", CultureInfo.InvariantCulture);
 
     // Best-effort plain-text frequency formatter: if the expression is a literal double,
     // render it with SI suffix (GHz/MHz/kHz/Hz); otherwise show the raw expression string.

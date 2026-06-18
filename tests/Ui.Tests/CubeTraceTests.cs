@@ -316,14 +316,18 @@ public sealed class CubeSliceConformanceTests
         Assert.Contains("empty", error, StringComparison.OrdinalIgnoreCase);
     }
 
-    // Test 7 (Part 1 #8): "V[:, All, 1]" → two X axes → error
+    // Test 7 (Phase 7.3b update): "V[:, All, 1]" → 2 kept axes → family trace (not error)
+    // Phase 7.3b: two kept axes is now a valid family assignment, not an error.
     [Fact]
-    public void TwoXAxes_Parser_Error()
+    public void TwoXAxes_ProducesFamily()
     {
         var ds = MakeDs();
-        bool ok = CubeTraceSpecParser.TryParse("V[:, All, 1]", ds, out _, out _, out _, out string error);
+        bool ok = CubeTraceSpecParser.TryParse("V[:, All, 1]", ds, out _, out AxisSlice[]? slice, out _, out string error);
 
-        Assert.False(ok);
-        Assert.Contains("Too many", error, StringComparison.OrdinalIgnoreCase);
+        Assert.True(ok, error);
+        Assert.NotNull(slice);
+        Assert.Equal(AxisRole.FamilyIterate, slice![0].Role);  // node → Family (earlier-kept)
+        Assert.Equal(AxisRole.KeepAsX,       slice![1].Role);  // harmonic → X (last-kept)
+        Assert.Equal(AxisRole.PinToIndex,    slice![2].Role);  // Pin → pinned
     }
 }

@@ -193,7 +193,32 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public bool CanAddTrace =>
         _plot.Traces.Count > 0 ||
-        (_library?.Entries.Any(e => e.Snp is not null && !e.Snp.IsEmpty) ?? false);
+        (_library?.Entries.Any(HasPlottableData) ?? false);
+
+    /// <summary>True when an entry has anything a trace can be seeded from: a non-empty SNP
+    /// (S-parameter network) OR at least one plottable cube (HB/DC/loadpull cube-only results).</summary>
+    private static bool HasPlottableData(DataSourceEntryViewModel e) =>
+        (e.Snp is not null && !e.Snp.IsEmpty) || FirstPlottableCubeName(e) is not null;
+
+    /// <summary>Returns the name of the first plottable cube in the entry's DataSet, applying the
+    /// same skip rules as the trace-signal picker (S/Z0, "__"-prefixed, Converged/Residual,
+    /// node-indexed current, rank ≤ 0). Null when the entry has no plottable cube.</summary>
+    private static string? FirstPlottableCubeName(DataSourceEntryViewModel e)
+    {
+        if (e.Data is not { } ds) return null;
+        foreach (var (cubeName, cube) in ds.Cubes)
+        {
+            if (cubeName is "S" or "Z0" || cubeName.StartsWith("__", StringComparison.Ordinal)) continue;
+            if (cubeName.EndsWith("Converged", StringComparison.Ordinal) ||
+                cubeName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
+            bool isNodeIndexedCurrent =
+                (cubeName == "I" || cubeName == "INl") && cube.Axes.Any(a => a.Name == "node");
+            if (isNodeIndexedCurrent) continue;
+            if (cube.Rank <= 0) continue;
+            return cubeName;
+        }
+        return null;
+    }
 
     // ---- Commands -------------------------------------------------------
 
@@ -277,7 +302,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
         foreach (var t in _plot.Traces)
         {
             if (t.IsCubeBound)
+            {
+                ReseedSliceIfCubeShapeChanged(t, _library);
                 TrySetCubeData(t, _library, _plot.PlotType, _plot.FreqUnits);
+            }
             else
                 t.BuildPath(_plot.PlotType, _plot.FreqUnits);
         }
@@ -320,15 +348,53 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 isComplex ? DependentVarFormat.Complex : DependentVarFormat.Db);
             trace.SourcePath = snp.FilePath;
         }
+        else if (_library?.Entries.FirstOrDefault(e => FirstPlottableCubeName(e) is not null) is { } firstCube)
+        {
+            // Cube-only source (HB / DC / loadpull result — no S network). Seed a cube-bound trace
+            // on the first plottable cube with a default slice (axis 0 = X, the rest pinned at 0).
+            trace = BuildSeedCubeTrace(firstCube);
+        }
         else return;
 
         trace.BuildPath(_plot.PlotType, _plot.FreqUnits);
+        if (trace.IsCubeBound)
+            TrySetCubeData(trace, _library, _plot.PlotType, _plot.FreqUnits);
         _plot.Traces.Add(trace);
         _plot.Autoscale();
         Traces.Add(new TraceRowViewModel(trace, this));
         RefreshAddCommand();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Builds a cube-bound seed trace on the entry's first plottable cube, with a default slice
+    /// (axis 0 = KeepAsX, remaining axes pinned at index 0, labels carried for quoted net names).
+    /// Mirrors the default-slice construction in TraceRowViewModel.RebuildSignals.
+    /// </summary>
+    private Trace BuildSeedCubeTrace(DataSourceEntryViewModel entry)
+    {
+        string cubeName = FirstPlottableCubeName(entry)!;
+        var    cube     = entry.Data![cubeName];
+        int    rank     = cube.Rank;
+
+        var slice = new AxisSlice[rank];
+        slice[0] = new AxisSlice(cube.Axes[0].Name, AxisRole.KeepAsX, 0);
+        for (int d = 1; d < rank; d++)
+        {
+            var ax  = cube.Axes[d];
+            string lbl = (ax.Labels is { Length: > 0 }) ? ax.Labels[0] : "";
+            slice[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
+        }
+
+        // Trace requires an SNP; use a 1-point placeholder (cube path ignores it).
+        var trace = new Trace(new SNP(new double[] { 1e9 }, 2), MatrixType.S, 0, 0,
+                              DependentVarFormat.Db);
+        trace.SourcePath = entry.FilePath;
+        trace.CubeName   = cubeName;
+        trace.Slice      = slice;
+        trace.Expression = trace.BuildPickerExpression();
+        return trace;
     }
 
     public void RemoveTrace(TraceRowViewModel vm)
@@ -378,6 +444,54 @@ public partial class PlotInspectorViewModel : ViewModelBase
     // ---- Cube data resolution (Phase 7.2c-a) ----------------------------
 
     /// <summary>
+    /// When a re-run changes a single-cube trace's bound cube to a different axis-name set OR a
+    /// different axis ORDER (added/removed/reordered sweep axis), re-derive the slice from the trace's
+    /// shape-independent spec text so the plot adopts the new dimensions. Re-parsing e.g. "I:Ids"
+    /// against the new cube restores its natural default (a family when ≥2 axes are kept, innermost =
+    /// X), instead of keeping a stale X or pinning a reappearing axis. t.Expression is left untouched
+    /// so it stays shape-independent across reshapes. A pure value/point-count re-run (same names AND
+    /// order) is skipped so the user's role choices and pins survive.
+    /// </summary>
+    private static void ReseedSliceIfCubeShapeChanged(Trace t, DataSourceLibraryViewModel? library)
+    {
+        if (t.Expression is not { } spec) return;                  // nothing shape-independent to re-derive from
+        if (t.CubeName is null || t.Slice is null) return;         // multi-cube expr → handled by TraceExpression
+
+        var entry = library?.Entries.FirstOrDefault(e =>
+            string.Equals(e.FilePath, t.SourcePath, StringComparison.OrdinalIgnoreCase));
+        var ds = entry?.Data;
+        if (ds is null || !ds.Contains(t.CubeName)) return;
+
+        var cube = ds[t.CubeName];
+        // Compare axis NAMES in ORDER. The slice is always built in cube-axis order, so reordering a
+        // parametric sweep inner↔outer is detected here even though the name SET is unchanged — that
+        // reorder flips which axis is innermost (the default plot X). A value/point-count re-run keeps
+        // the same names+order → skip and preserve the user's slice exactly.
+        var cubeOrder  = cube.Axes.Select(a => a.Name);
+        var sliceOrder = t.Slice.Select(s => s.AxisName);
+        if (cubeOrder.SequenceEqual(sliceOrder, StringComparer.Ordinal)) return;
+
+        // Structure or order changed. Re-parse the authored spec against the new cube.
+        if (CubeTraceSpecParser.TryParse(spec, ds, out var cn, out var sl, out var tf, out _)
+            && sl is not null)
+        {
+            t.CubeName        = cn;
+            t.Slice           = sl;
+            t.Transform       = tf;
+            t.InvalidSpecText = null;
+            t.ExpressionError = null;
+            // Deliberately do NOT regenerate t.Expression — it must stay shape-independent so the
+            // next reshape re-parses the same authored text (e.g. bare "I:Ids" stays a family).
+        }
+        else
+        {
+            // Spec can't apply to the new shape (e.g. an explicitly pinned axis vanished) — best-effort carry.
+            t.Slice      = TraceRowViewModel.BuildCarriedSliceFromCube(cube, t.Slice);
+            t.Expression = t.BuildPickerExpression();
+        }
+    }
+
+    /// <summary>
     /// Resolves a cube-bound trace's SourcePath+CubeName+Slice against the library,
     /// slices the DataCube to 1-D, and calls Trace.SetCubeData.
     /// If resolution fails (missing entry, missing cube, wrong rank), Points are cleared.
@@ -397,8 +511,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         DataSet? ds = entry?.Data;
 
+        // Single-cube specs (picker or typed Name[...]) resolve via the slice path (family-aware).
+        // Only multi-cube element-wise expressions go through TraceExpression.
+        bool singleCube = t.CubeName is not null && t.Slice is not null;
+
         // ── Expression path (element-wise multi-cube expressions) ─────────────
-        if (t.Expression is not null)
+        if (t.Expression is not null && !singleCube)
         {
             if (ds is null)
             {
@@ -434,6 +552,13 @@ public partial class PlotInspectorViewModel : ViewModelBase
         if (slice is null)
         {
             t.Points.Clear();
+            return;
+        }
+
+        // ── Family path (Phase 7.3b) ──────────────────────────────────────────
+        if (Array.Exists(slice, s => s.Role == AxisRole.FamilyIterate))
+        {
+            ResolveFamily(t, cube, slice, plotType, freqUnit);
             return;
         }
 
@@ -490,6 +615,64 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         t.SetCubeData(xAxis.Values, complexValues, realValues,
                       xAxis.Name, xAxis.Unit, plotType, freqUnit);
+    }
+
+    private static void ResolveFamily(Trace t, DataCube cube, AxisSlice[] slice,
+                                      PlotType plotType, FreqUnit freqUnit)
+    {
+        // Find family and X axes by name (slice is name-keyed, order-independent).
+        int fDim = -1, xDim = -1;
+        for (int d = 0; d < cube.Axes.Count; d++)
+        {
+            var axName = cube.Axes[d].Name;
+            foreach (var s in slice)
+            {
+                if (s.AxisName == axName)
+                {
+                    if (s.Role == AxisRole.FamilyIterate) fDim = d;
+                    else if (s.Role == AxisRole.KeepAsX)  xDim = d;
+                    break;
+                }
+            }
+        }
+        if (fDim < 0 || xDim < 0) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
+
+        var fAxis = cube.Axes[fDim];
+        int count = Math.Min(fAxis.Length, Trace.MaxFamilyCurves);
+
+        double[]? xVals = null; string xName = ""; string? xUnit = null;
+        var curves = new List<(double, string?, System.Numerics.Complex[]?, double[]?)>(count);
+
+        for (int k = 0; k < count; k++)
+        {
+            var args = new object[cube.Rank];
+            for (int d = 0; d < cube.Rank; d++)
+            {
+                var ax = cube.Axes[d];
+                AxisSlice s = default;
+                foreach (var sl in slice) { if (sl.AxisName == ax.Name) { s = sl; break; } }
+                if (s.Role == AxisRole.FamilyIterate)     args[d] = k;
+                else if (s.Role == AxisRole.KeepAsX)
+                    args[d] = s.IsNarrowedRange ? new Range(s.RangeStart, s.RangeEndExclusive) : Range.All;
+                else args[d] = Math.Clamp(s.Index, 0, Math.Max(0, ax.Length - 1));
+            }
+            var res = cube[args];
+            if (!res.IsCube || res.Cube!.Rank != 1) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
+            var sliced = res.Cube!;
+            if (xVals is null)
+            {
+                var xa = sliced.Axes[0];
+                xVals = xa.Values;
+                xName = xa.Name;
+                xUnit = string.IsNullOrEmpty(xa.Unit) ? null : xa.Unit;
+            }
+            curves.Add((fAxis.Values[k],
+                        fAxis.Labels is { } L && k < L.Length ? L[k] : null,
+                        sliced.DataKind == DataKind.Complex ? sliced.ComplexValues : null,
+                        sliced.DataKind == DataKind.Real    ? sliced.RealValues    : null));
+        }
+        if (xVals is null) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
+        t.SetFamilyData(xVals, xName, xUnit, fAxis.Name, curves, plotType, freqUnit);
     }
 
     /// <summary>

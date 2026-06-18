@@ -15,7 +15,10 @@
 
     <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
 
-        <StackPanel Grid.Row="0" Spacing="10">
+        <ScrollViewer Grid.Row="0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="10" Margin="0,0,6,0">
 
             <!-- Dialog title -->
             <TextBlock x:Name="DialogTitle"
@@ -132,6 +135,9 @@
 
                 <StackPanel Spacing="6" Margin="0,8,0,0">
 
+                    <TextBlock Text="Top = innermost sweep = plot X axis. Rows below are outer (slower) sweeps."
+                               FontSize="10" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,2"/>
+
                     <!-- Axis rows -->
                     <ItemsControl ItemsSource="{Binding SweepAxes}">
                         <ItemsControl.ItemTemplate>
@@ -155,6 +161,7 @@
             </Expander>
 
         </StackPanel>
+        </ScrollViewer>
 
         <!-- Buttons (HIG: Cancel then OK, right-aligned, centered labels) -->
         <StackPanel Grid.Row="1"

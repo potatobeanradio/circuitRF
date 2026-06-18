@@ -23,7 +23,7 @@ namespace CircuitRF.Ui.DataDisplay;
 /// keep it; ranges are END-EXCLUSIVE (NumPy/C#, not MATLAB).</summary>
 public static class SliceTokenParser
 {
-    public enum Kind { KeepWhole, KeepRange, PinIndex, PinLabel, Invalid }
+    public enum Kind { KeepWhole, KeepRange, PinIndex, PinLabel, Invalid, Family }
 
     public readonly record struct Token(
         Kind Kind, int Index = 0, int RangeStart = 0, int RangeEndExclusive = 0, string Label = "");
@@ -39,6 +39,13 @@ public static class SliceTokenParser
         // Whole-axis: ":", "All" (case-insensitive), or ".."
         if (tk == ":" || tk == ".." || string.Equals(tk, "All", StringComparison.OrdinalIgnoreCase))
             return new Token(Kind.KeepWhole);
+
+        // Family-iterate marker: "~" (also "fam"/"family"). Keeps the whole axis but renders it as a
+        // curve family rather than the X axis. Lets the picker encode an explicit X/Family split that
+        // the positional default (last-kept = X) cannot express.
+        if (tk == "~" || string.Equals(tk, "fam", StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(tk, "family", StringComparison.OrdinalIgnoreCase))
+            return new Token(Kind.Family);
 
         // Range "a..b" (end-exclusive), with open ends "..b", "a..", "..".
         int dots = tk.IndexOf("..", StringComparison.Ordinal);

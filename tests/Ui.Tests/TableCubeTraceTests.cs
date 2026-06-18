@@ -78,7 +78,7 @@ public sealed class TableCubeTraceTests
         t.Transform = CubeTransform.dB20;
         t.Slice = new[] { new AxisSlice("Pin", AxisRole.KeepAsX, 0) };
 
-        Assert.Equal("db20(V[:])", t.CubeShorthand);
+        Assert.Equal("dB20(V[:])", t.CubeShorthand);
     }
 
     [Fact]
@@ -497,18 +497,22 @@ public sealed class CubeTraceSpecParserTests
         Assert.Contains("2", error);   // got 2
     }
 
-    // ---- Test 8: Parser_TwoColons ------------------------------------------
+    // ---- Test 8: Parser_TwoColons_NowProducesFamily (Phase 7.3b) ------------
+    // V[:, :, 0] → 2 kept axes → family (not an error; earlier-kept=Family, last-kept=X)
 
     [Fact]
-    public void Parser_TwoColons()
+    public void Parser_TwoColons_ProducesFamily()
     {
         var ds = MakeDs();
         bool ok = CubeTraceSpecParser.TryParse(
             "V[:, :, 0]", ds,
-            out _, out _, out _, out string error);
+            out _, out AxisSlice[]? slice, out _, out string error);
 
-        Assert.False(ok);
-        Assert.Contains(":", error);
+        Assert.True(ok, error);
+        Assert.NotNull(slice);
+        Assert.Equal(AxisRole.FamilyIterate, slice![0].Role);  // node → Family (earlier-kept)
+        Assert.Equal(AxisRole.KeepAsX,       slice![1].Role);  // harmonic → X (last-kept)
+        Assert.Equal(AxisRole.PinToIndex,    slice![2].Role);  // Pin → pinned
     }
 
     // ---- Test 9: Parser_Transform ------------------------------------------
@@ -545,5 +549,201 @@ public sealed class CubeTraceSpecParserTests
         // FormatCubeCell returns "" (blank, not NaN) when InvalidSpecText is set
         string cell = t.FormatCubeCell(0, PrecisionFormat.F, 3);
         Assert.Equal("", cell);
+    }
+
+    // ---- Test 11 (Phase 7.3b): Parser_TwoKept_AssignsFamily ---------------
+
+    [Fact]
+    public void Parser_TwoKept_AssignsFamily_BracketForm()
+    {
+        // 2-D cube: Vgs × Vds
+        var vgsAxis = new Axis("Vgs", new double[] { 0, 0.5, 1.0, 1.5, 2.0 }, "V");
+        var vdsAxis = new Axis("Vds", new double[] { 0, 0.5, 1.0, 1.5 }, "V");
+        var data    = new double[5 * 4];
+        var cube    = new DataCube(new[] { vgsAxis, vdsAxis }, data);
+        var ds      = new DataSet();
+        ds.Add("I:Ids", cube);
+
+        bool ok = CubeTraceSpecParser.TryParse("I:Ids[:, :]", ds,
+            out _, out var slice, out _, out string err);
+
+        Assert.True(ok, err);
+        Assert.NotNull(slice);
+        Assert.Equal(AxisRole.FamilyIterate, slice![0].Role);  // Vgs → Family (earlier-kept)
+        Assert.Equal(AxisRole.KeepAsX,       slice![1].Role);  // Vds → X (last-kept)
+    }
+
+    [Fact]
+    public void Parser_TwoKept_AssignsFamily_BareForm()
+    {
+        // Same cube, bare "I:Ids" — no brackets → synthesize [:, :] → same assignment
+        var vgsAxis = new Axis("Vgs", new double[] { 0, 0.5, 1.0, 1.5, 2.0 }, "V");
+        var vdsAxis = new Axis("Vds", new double[] { 0, 0.5, 1.0, 1.5 }, "V");
+        var data    = new double[5 * 4];
+        var cube    = new DataCube(new[] { vgsAxis, vdsAxis }, data);
+        var ds      = new DataSet();
+        ds.Add("I:Ids", cube);
+
+        bool ok = CubeTraceSpecParser.TryParse("I:Ids", ds,
+            out _, out var slice, out _, out string err);
+
+        Assert.True(ok, err);
+        Assert.NotNull(slice);
+        Assert.Equal(AxisRole.FamilyIterate, slice![0].Role);
+        Assert.Equal(AxisRole.KeepAsX,       slice![1].Role);
+    }
+
+    // ---- Test 12 (Phase 7.3b): Parser_ThreeKept_Errors --------------------
+
+    [Fact]
+    public void Parser_ThreeKept_Errors()
+    {
+        // Three colons → >2 kept axes → error
+        var ds = MakeDs();
+        bool ok = CubeTraceSpecParser.TryParse(
+            "V[:, :, :]", ds,
+            out _, out _, out _, out string error);
+
+        Assert.False(ok);
+        Assert.Contains("Pin", error);   // tells user to "pin the extra axes"
+    }
+}
+
+// ================================================================
+//  FamilyTraceTests  —  Phase 7.3b gate tests for family-trace rendering
+// ================================================================
+
+public sealed class FamilyTraceTests
+{
+    // Helper: 2-D cube [Vgs(5) × Vds(20)]
+    private static (DataSet ds, DataCube cube) MakeFetCube(int nVgs = 5, int nVds = 20)
+    {
+        var vgsVals = new double[nVgs];
+        for (int i = 0; i < nVgs; i++) vgsVals[i] = i * 0.5;
+        var vdsVals = new double[nVds];
+        for (int i = 0; i < nVds; i++) vdsVals[i] = i * 0.1;
+
+        var vgsAxis = new Axis("Vgs", vgsVals, "V");
+        var vdsAxis = new Axis("Vds", vdsVals, "V");
+        var data    = new double[nVgs * nVds];
+
+        // Fill: Id = Vgs * Vds (simple linear for testing)
+        for (int g = 0; g < nVgs; g++)
+            for (int d = 0; d < nVds; d++)
+                data[g * nVds + d] = vgsVals[g] * vdsVals[d];
+
+        var cube = new DataCube(new[] { vgsAxis, vdsAxis }, data);
+        var ds   = new DataSet();
+        ds.Add("I:Ids", cube);
+        return (ds, cube);
+    }
+
+    private static Trace MakeBaseTrace() =>
+        new Trace(new SNP(new double[] { 1e9 }, 2), MatrixType.S, 0, 0, DependentVarFormat.Db);
+
+    // ---- Test 1 (Phase 7.3b): Family_RendersNCurves ------------------------
+
+    [Fact]
+    public void Family_RendersNCurves()
+    {
+        var (ds, cube) = MakeFetCube(5, 20);
+        var vgsVals    = cube.Axes[0].Values;
+        var vdsVals    = cube.Axes[1].Values;
+
+        // Build family slice: Vgs=FamilyIterate, Vds=KeepAsX
+        var slice = new[]
+        {
+            new AxisSlice("Vgs", AxisRole.FamilyIterate, 0),
+            new AxisSlice("Vds", AxisRole.KeepAsX,       0),
+        };
+
+        var t = MakeBaseTrace();
+        t.CubeName = "I:Ids";
+        t.Slice    = slice;
+
+        // Simulate what TrySetCubeData/ResolveFamily does
+        var cubeObj = ds["I:Ids"];
+        var curves  = new List<(double, string?, System.Numerics.Complex[]?, double[]?)>();
+        for (int g = 0; g < 5; g++)
+        {
+            var sliced = cubeObj[g, Range.All];
+            Assert.True(sliced.IsCube);
+            Assert.Equal(1, sliced.Cube!.Rank);
+            double[] rv = sliced.Cube!.RealValues!;
+            curves.Add((vgsVals[g], null, null, rv));
+        }
+
+        t.SetFamilyData(vdsVals, "Vds", "V", "Vgs", curves, PlotType.Rect, FreqUnit.GHz);
+
+        Assert.True(t.IsFamily);
+        Assert.Equal(5, t.FamilyCurves.Count);
+        Assert.Equal("Vgs", t.FamilyAxisName);
+        foreach (var fc in t.FamilyCurves)
+            Assert.Equal(20, fc.Points.Count);
+
+        // Spot-check: curve g=2 (Vgs=1.0), point d=3 (Vds=0.3): Id=1.0*0.3=0.3
+        Assert.Equal(1.0 * 0.3, t.FamilyCurves[2].Points[3].Y, precision: 5);
+    }
+
+    // ---- Test 2 (Phase 7.3b): Family_Cap101 --------------------------------
+
+    [Fact]
+    public void Family_Cap101()
+    {
+        // Family axis length 250 → capped at MaxFamilyCurves
+        var (ds, cube) = MakeFetCube(250, 4);
+
+        var vgsVals = cube.Axes[0].Values;
+        var vdsVals = cube.Axes[1].Values;
+        var cubeObj = ds["I:Ids"];
+
+        var curves = new List<(double, string?, System.Numerics.Complex[]?, double[]?)>();
+        int cap    = Trace.MaxFamilyCurves;
+        for (int g = 0; g < cap; g++)
+        {
+            var sliced = cubeObj[g, Range.All];
+            curves.Add((vgsVals[g], null, null, sliced.Cube!.RealValues));
+        }
+
+        var t = MakeBaseTrace();
+        t.CubeName = "I:Ids";
+        t.Slice    = new[] { new AxisSlice("Vgs", AxisRole.FamilyIterate, 0), new AxisSlice("Vds", AxisRole.KeepAsX, 0) };
+        t.SetFamilyData(vdsVals, "Vds", "V", "Vgs", curves, PlotType.Rect, FreqUnit.GHz);
+
+        Assert.Equal(cap, t.FamilyCurves.Count);
+        Assert.Equal(101, Trace.MaxFamilyCurves);
+    }
+
+    // ---- Test 3 (Phase 7.3b): Family_Autoscale ----------------------------
+
+    [Fact]
+    public void Family_Autoscale()
+    {
+        var (ds, cube) = MakeFetCube(3, 5);
+        var vgsVals    = cube.Axes[0].Values;
+        var vdsVals    = cube.Axes[1].Values;
+        var cubeObj    = ds["I:Ids"];
+
+        var curves = new List<(double, string?, System.Numerics.Complex[]?, double[]?)>();
+        for (int g = 0; g < 3; g++)
+        {
+            var sliced = cubeObj[g, Range.All];
+            curves.Add((vgsVals[g], null, null, sliced.Cube!.RealValues));
+        }
+
+        var t = MakeBaseTrace();
+        t.CubeName = "I:Ids";
+        t.Slice    = new[] { new AxisSlice("Vgs", AxisRole.FamilyIterate, 0), new AxisSlice("Vds", AxisRole.KeepAsX, 0) };
+        t.SetFamilyData(vdsVals, "Vds", "V", "Vgs", curves, PlotType.Rect, FreqUnit.GHz);
+
+        var rect = t.PathBoundingRect();
+
+        // Min X should be Vds[0]=0.0, Max X = Vds[4]=0.4
+        Assert.True(rect.Width > 0);
+        Assert.True(rect.Height > 0);
+
+        // Span should be at least as wide as the full Vds range
+        Assert.True(rect.Right >= 0.4 - 1e-6);
+        Assert.True(rect.Left  <= 0.0 + 1e-6);
     }
 }

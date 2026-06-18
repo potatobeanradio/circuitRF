@@ -524,7 +524,7 @@ namespace CircuitRF.Ui.DataDisplay
                     : (float)Math.Max(MinColumnWidth, plot.Traces[columns[c].FirstTraceIndex].ColumnWidth) * zoomLevel;
             }
 
-            layout.ColX[0] = 0;
+            if (colCount > 0) layout.ColX[0] = 0;
             for (int c = 1; c < colCount; c++)
                 layout.ColX[c] = layout.ColX[c - 1] + layout.ColW[c - 1];
 

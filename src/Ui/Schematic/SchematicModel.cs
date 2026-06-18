@@ -16,6 +16,7 @@ public enum SymbolKind
     Ground,
     Term,
     Pin,
+    IProbe,
     FetSdd,
     Sdd,
     ZPort,

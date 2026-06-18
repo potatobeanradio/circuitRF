@@ -189,7 +189,63 @@ analysis SW_Vgs  type=parametric_sweep  Var=Vgs  Values=-3,-3.5  Inner=SW_Vds
         output.WriteLine("Sweep_Nested_DcCurveTracer: PASS.");
     }
 
-    // ── 4. Unsupported inner type still throws ────────────────────────────────
+    // ── 4. Nested DC sweep with IProbe → I:IPd is a [Vgs,Vds] cube ──────────
+    //   Two resistors (gate/drain) + IProbe in drain leg.
+    //   Id = Vds / R_drain = Vds / 1000 (R=1 kΩ in drain).
+
+    private const string IprobeCurveTracerCnl = @"
+Vgs = -1.0
+Vds = 1.0
+
+Vdc:Vgate   n_gate  0  Vdc=Vgs
+Vdc:Vdrain  n_hi    0  Vdc=Vds
+R:R_gate    n_gate  0  R=1000 Ohm
+IProbe:IPd  n_hi    n_drain
+R:R_drain   n_drain 0  R=1000 Ohm
+
+analysis DC1     type=dc
+analysis SW_Vds  type=parametric_sweep  Var=Vds  Values=0,1,2  Inner=DC1
+analysis SW_Vgs  type=parametric_sweep  Var=Vgs  Values=-1,-2  Inner=SW_Vds
+";
+
+    [Fact]
+    public void Sweep_Nested_DcWithIProbe_YieldsCurrentCube()
+    {
+        var (lib, tb) = new CnlReader().Read(IprobeCurveTracerCnl);
+        var swVgs = tb.Analyses.OfType<ParametricSweepAnalysis>().First(a => a.Name == "SW_Vgs");
+
+        var ds = ParametricSweepEngine.Run(swVgs, lib, tb);
+
+        // I:IPd must exist and be a [Vgs(2), Vds(3)] cube after stacking.
+        Assert.True(ds.Contains("I:IPd"), "DataSet should contain 'I:IPd' after sweep.");
+        var iCube = ds["I:IPd"];
+        output.WriteLine($"I:IPd cube rank={iCube.Rank}  axes=[{string.Join(", ", iCube.Axes.Select(a => $"{a.Name}({a.Length})"))}]");
+
+        Assert.Equal(2, iCube.Rank);
+        Assert.Equal("Vgs", iCube.Axes[0].Name);
+        Assert.Equal(2, iCube.Axes[0].Length);
+        Assert.Equal("Vds", iCube.Axes[1].Name);
+        Assert.Equal(3, iCube.Axes[1].Length);
+
+        // At (Vgs=-1 [idx 0], Vds=0 [idx 0]): Id = 0/1000 = 0 A.
+        double i00 = iCube.RealValues[0 * 3 + 0];
+        output.WriteLine($"I:IPd at (Vgs=-1, Vds=0) = {i00:G6} A  (expected ≈ 0 A)");
+        Assert.True(Math.Abs(i00) < 1e-9, $"Expected I:IPd ≈ 0 A at Vds=0, got {i00:G}");
+
+        // At (Vgs=-1 [idx 0], Vds=1 [idx 1]): Id = 1/1000 = 1e-3 A.
+        double i01 = iCube.RealValues[0 * 3 + 1];
+        output.WriteLine($"I:IPd at (Vgs=-1, Vds=1) = {i01:G6} A  (expected ≈ 1e-3 A)");
+        Assert.True(Math.Abs(i01 - 1e-3) < 1e-9, $"Expected I:IPd ≈ 1 mA at Vds=1, got {i01:G}");
+
+        // At (Vgs=-2 [idx 1], Vds=2 [idx 2]): Id = 2/1000 = 2e-3 A.
+        double i12 = iCube.RealValues[1 * 3 + 2];
+        output.WriteLine($"I:IPd at (Vgs=-2, Vds=2) = {i12:G6} A  (expected ≈ 2e-3 A)");
+        Assert.True(Math.Abs(i12 - 2e-3) < 1e-9, $"Expected I:IPd ≈ 2 mA at Vds=2, got {i12:G}");
+
+        output.WriteLine("Sweep_Nested_DcWithIProbe_YieldsCurrentCube: PASS.");
+    }
+
+    // ── 5. Unsupported inner type still throws ────────────────────────────────
 
     [Fact]
     public void Unsupported_StillThrows()

@@ -41,7 +41,8 @@ plot inspector) ported into circuitRF, with the modifications below.
    constrains family-sweep expansion, contour fitting, and redraw (see §4).
 7. **Multi-dimensional traces** are authored by **axis-role assignment** over a cube's named axes (X /
    pinned / family) — see §2 and sub-phase 7.3. A **family sweep is ONE trace object** that renders N
-   curves; the user never adds/removes a trace per sweep point (see 7.3).
+   curves; the user never adds/removes a trace per sweep point (see 7.3). The family system as shipped —
+   roles, the `~` shorthand marker, auto-recognition, and rendering — is documented in `family-curves.md`.
 8. **Contours are first-class and fully user-controlled.** Form: *"Metric at constant value of a
    different metric"* — e.g. Pout at constant 3 dB compression, Efficiency at constant Pout = 45 dBm,
    Gain at constant back-off. Plottable in the **Γ-plane (Smith)** *or* the **Z-plane (Rect)**. Detailed

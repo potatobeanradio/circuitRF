@@ -54,6 +54,14 @@ public sealed partial class AnalysesListViewModel : ObservableObject
     /// <summary>True when a schematic is active but has no analyses (HIG empty state).</summary>
     public bool IsEmpty => !NoActiveSchematic && Rows.Count == 0;
 
+    // ── Run event (panel → WorkspaceViewModel) ────────────────────────────────
+
+    /// <summary>Raised when the Run button is pressed; WorkspaceViewModel runs the retained schematic.</summary>
+    public event Action? RunRequested;
+
+    [RelayCommand(CanExecute = nameof(HasActiveSchematic))]
+    private void Run() => RunRequested?.Invoke();
+
     // ── Active-schematic binding ──────────────────────────────────────────────
 
     /// <summary>Called by the dock tool (and modal host) when the active schematic changes.</summary>
@@ -131,17 +139,27 @@ public sealed partial class AnalysesListViewModel : ObservableObject
     }
 
     [RelayCommand(CanExecute = nameof(CanMoveUp))]
-    private void MoveUp()
-    {
-        if (SelectedRow is null || _schematicVm is null) return;
-        _schematicVm.Execute(new MoveAnalysisCommand(_schematicVm.EditModel, SelectedRow.Analysis, moveUp: true));
-    }
+    private void MoveUp() => MoveSelected(up: true);
 
     [RelayCommand(CanExecute = nameof(CanMoveDown))]
-    private void MoveDown()
+    private void MoveDown() => MoveSelected(up: false);
+
+    // Moves the selected card (sweep → reorder within chain; base → move whole chain), then
+    // re-selects it. Execute fires EditModel.Changed → RebuildRows, which nulls SelectedRow and
+    // replaces every row instance, so we re-find the moved card by name to keep its highlight.
+    private void MoveSelected(bool up)
     {
         if (SelectedRow is null || _schematicVm is null) return;
-        _schematicVm.Execute(new MoveAnalysisCommand(_schematicVm.EditModel, SelectedRow.Analysis, moveUp: false));
+        var    moved     = SelectedRow.Analysis;
+        string movedName = moved.Name;
+
+        if (moved is ParametricSweepAnalysis psa)
+            _schematicVm.Execute(new ReorderSweepInChainCommand(_schematicVm.EditModel, psa, moveInner: up));
+        else
+            _schematicVm.Execute(new MoveAnalysisChainCommand(_schematicVm.EditModel, moved, moveUp: up));
+
+        SelectedRow = Rows.FirstOrDefault(r =>
+            string.Equals(r.Analysis.Name, movedName, StringComparison.OrdinalIgnoreCase));
     }
 
     // ── Copy / Paste (clipboard, §5.2) ───────────────────────────────────────
@@ -159,7 +177,31 @@ public sealed partial class AnalysesListViewModel : ObservableObject
             toCopy = [SelectedRow.Analysis];
         else
             return;
-        await CopyToClipboard(window, toCopy);
+        await CopyToClipboard(window, ExpandSelectionToChains(toCopy));
+    }
+
+    /// <summary>Expands a selection so any selected base analysis also carries the parametric sweeps
+    /// that (transitively) wrap it. Result is ordered by position in the model so chains stay contiguous
+    /// (base first, then its sweeps inner→outer). Selected sweeps with no selected base come along alone.</summary>
+    internal IReadOnlyList<Analysis> ExpandSelectionToChains(IEnumerable<Analysis> selected)
+    {
+        if (_schematicVm is null) return selected.ToList();
+        var all  = _schematicVm.EditModel.Analyses;
+        var keep = new HashSet<Analysis>(selected);
+
+        // Map inner name → its wrapping sweep (follow InnerAnalysisName forward).
+        var sweepsByInner = all.OfType<ParametricSweepAnalysis>()
+            .ToLookup(p => p.InnerAnalysisName, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var a in keep.ToList())
+            if (a is not ParametricSweepAnalysis)   // a base — pull its chain outward
+            {
+                var cursor = a.Name;
+                while (sweepsByInner[cursor].FirstOrDefault() is { } sw)
+                { keep.Add(sw); cursor = sw.Name; }
+            }
+
+        return all.Where(keep.Contains).ToList();   // model order → contiguous chains
     }
 
     /// <summary>Copies all schematic analyses to the clipboard.</summary>
@@ -195,7 +237,8 @@ public sealed partial class AnalysesListViewModel : ObservableObject
         }
 
         if (toPaste.Count == 0) return;
-        _schematicVm.Execute(new PasteAnalysesCommand(_schematicVm.EditModel, toPaste));
+        _schematicVm.Execute(new PasteAnalysesCommand(
+            _schematicVm.EditModel, toPaste, retargetInner: SelectedRow?.Analysis.Name));
     }
 
     // ── Templates (§5.3) ─────────────────────────────────────────────────────
@@ -277,19 +320,49 @@ public sealed partial class AnalysesListViewModel : ObservableObject
     private bool HasSelection()       => SelectedRow is not null && _schematicVm is not null;
     private bool CanCopy()            => _schematicVm is not null && (_selectedRows.Count > 0 || SelectedRow is not null);
 
-    private bool CanMoveUp() =>
-        SelectedRow is not null && _schematicVm is not null
-        && _schematicVm.EditModel.Analyses.IndexOf(SelectedRow.Analysis) > 0;
+    private bool CanMoveUp()
+    {
+        if (SelectedRow is null || _schematicVm is null) return false;
+        var list = _schematicVm.EditModel.Analyses;
+        int idx = list.IndexOf(SelectedRow.Analysis);
+        if (idx < 0) return false;
 
-    private bool CanMoveDown() =>
-        SelectedRow is not null && _schematicVm is not null
-        && _schematicVm.EditModel.Analyses.IndexOf(SelectedRow.Analysis)
-            < _schematicVm.EditModel.Analyses.Count - 1;
+        if (SelectedRow.Analysis is ParametricSweepAnalysis)
+        {
+            // Not at the innermost slot ⇒ can move inward (the slot above it is also a sweep).
+            return idx > 0 && list[idx - 1] is ParametricSweepAnalysis;
+        }
+        // Base: a chain block exists above.
+        int b = idx;
+        while (b > 0 && list[b] is ParametricSweepAnalysis) b--;
+        return b > 0;
+    }
+
+    private bool CanMoveDown()
+    {
+        if (SelectedRow is null || _schematicVm is null) return false;
+        var list = _schematicVm.EditModel.Analyses;
+        int idx = list.IndexOf(SelectedRow.Analysis);
+        if (idx < 0) return false;
+
+        if (SelectedRow.Analysis is ParametricSweepAnalysis)
+        {
+            // Not at the outermost slot ⇒ can move outward (the slot below it is also a sweep).
+            return idx + 1 < list.Count && list[idx + 1] is ParametricSweepAnalysis;
+        }
+        // Base: compute this chain's end; a block exists below.
+        int b = idx;
+        while (b > 0 && list[b] is ParametricSweepAnalysis) b--;
+        int end = b;
+        while (end + 1 < list.Count && list[end + 1] is ParametricSweepAnalysis) end++;
+        return end + 1 < list.Count;
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void RefreshCommandStates()
     {
+        RunCommand.NotifyCanExecuteChanged();
         AddCommand.NotifyCanExecuteChanged();
         EditCommand.NotifyCanExecuteChanged();
         RemoveCommand.NotifyCanExecuteChanged();

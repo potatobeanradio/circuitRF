@@ -70,7 +70,7 @@ namespace CircuitRF.Ui.DataDisplay
     public enum CubeTransform { None, dB20, dB10, dB, Mag, Phase, Real, Imag, Conj }
 
     /// <summary>How a DataCube axis is consumed when building a 1-D trace.</summary>
-    public enum AxisRole { PinToIndex, KeepAsX }
+    public enum AxisRole { PinToIndex, KeepAsX, FamilyIterate }
 
     /// <summary>Per-axis slice directive for a cube-bound trace (one entry per cube axis, in axis order).
     /// For a kept sub-range (KeepAsX + RangeEndExclusive >= 0) the axis is sliced to [RangeStart, RangeEndExclusive)
@@ -228,6 +228,28 @@ namespace CircuitRF.Ui.DataDisplay
 
         public bool          IsCubeBound => CubeName is not null || Expression is not null;
 
+        // ── Performance guardrail (Phase 7.3) ────────────────────────────────────
+        // Max curves a single family trace renders. Single source of truth — clamp +
+        // one Message past it. Raise/lower here for perf testing.
+        public const int MaxFamilyCurves = 101;
+
+        /// <summary>One curve of a family trace: its iterated-axis value (for the legend) + its points.</summary>
+        public sealed class FamilyCurve
+        {
+            public double  AxisValue { get; init; }
+            public string? AxisLabel { get; init; }
+            public List<Vector2> Points { get; } = new();
+        }
+
+        /// <summary>N curves when IsFamily; empty otherwise. Derived (never serialized) — rebuilt on load.</summary>
+        public List<FamilyCurve> FamilyCurves { get; } = new();
+
+        /// <summary>Name of the iterated (family) axis — the legend title.</summary>
+        public string? FamilyAxisName { get; set; }
+
+        /// <summary>True when the slice marks an axis FamilyIterate.</summary>
+        public bool IsFamily => Slice is not null && Array.Exists(Slice, s => s.Role == AxisRole.FamilyIterate);
+
         // ---- Per-port source reference impedance (Phase 7.2f) -----------
         //
         //  Set by the owner when it binds/refreshes a scattering trace.
@@ -337,9 +359,10 @@ namespace CircuitRF.Ui.DataDisplay
         {
             if (CubeName is null || Slice is null) return ShortDescription;
             var parts = Slice.Select(s =>
-                s.Role == AxisRole.KeepAsX       ? ":"
-                : !string.IsNullOrEmpty(s.Label) ? $"\"{s.Label}\""
-                :                                   s.Index.ToString());
+                s.Role == AxisRole.KeepAsX         ? ":"
+                : s.Role == AxisRole.FamilyIterate ? "~"
+                : !string.IsNullOrEmpty(s.Label)   ? $"\"{s.Label}\""
+                :                                    s.Index.ToString());
             var inner = string.Join(", ", parts);
             if (Transform == CubeTransform.None)
                 return $"{CubeName}[{inner}]";
@@ -439,6 +462,8 @@ namespace CircuitRF.Ui.DataDisplay
             // Per-port Z0 (Phase 7.2f).
             SourceZ0PerPort   = src.SourceZ0PerPort;
             SourceZ0IsUnusual = src.SourceZ0IsUnusual;
+            // Family axis name (Phase 7.3b).
+            FamilyAxisName = src.FamilyAxisName;
             if (includeMarkers)
                 foreach (var m in src.Markers)
                     Markers.Add(new Marker(m));
@@ -472,6 +497,75 @@ namespace CircuitRF.Ui.DataDisplay
         }
 
         private static bool IsFreqUnit(string? unit) => unit is "Hz" or "kHz" or "MHz" or "GHz";
+
+        // Rect scalar Y from one sample (null → skip point).
+        private double? RectY(Complex? cz, double? rv)
+        {
+            if (cz is Complex z)
+            {
+                double y = Transform switch
+                {
+                    CubeTransform.dB20  => 20.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300)),
+                    CubeTransform.dB10 or CubeTransform.dB => 10.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300)),
+                    CubeTransform.Mag   => z.Magnitude,
+                    CubeTransform.Phase => z.Phase * 180.0 / Math.PI,
+                    CubeTransform.Real  => z.Real,
+                    CubeTransform.Imag  => z.Imaginary,
+                    _                   => z.Magnitude,
+                };
+                return double.IsFinite(y) ? y : (double?)null;
+            }
+            double v = rv!.Value;
+            double yr = Transform switch
+            {
+                CubeTransform.dB20 => 20.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
+                CubeTransform.dB10 or CubeTransform.dB => 10.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
+                CubeTransform.Mag  => Math.Abs(v),
+                _                  => v,
+            };
+            return double.IsFinite(yr) ? yr : (double?)null;
+        }
+
+        /// <summary>Injects N pre-sliced family curves (each a rank-1 X/value pair) and builds their Points.
+        /// xValues are shared across curves (same X axis). Each curve carries its own complex/real values.</summary>
+        public void SetFamilyData(double[] xValues, string xAxisName, string? xUnit, string familyAxisName,
+            IReadOnlyList<(double axisValue, string? axisLabel, Complex[]? cz, double[]? rv)> curves,
+            PlotType plotType, FreqUnit freqUnit)
+        {
+            _cubeXValues = xValues; _cubeXAxisName = xAxisName; _cubeXUnit = xUnit;
+            _cubeComplexValues = null; _cubeRealValues = null;
+            FamilyAxisName = familyAxisName;
+            FamilyCurves.Clear();
+            Points.Clear();
+            RectValueInvalid = false;
+
+            bool isRect = plotType.IsRect();
+            double xScale = IsFreqUnit(xUnit) ? freqUnit.Scale() : 1.0;
+
+            foreach (var (axisValue, axisLabel, cz, rv) in curves)
+            {
+                var fc = new FamilyCurve { AxisValue = axisValue, AxisLabel = axisLabel };
+                int n = xValues.Length;
+                bool isComplex = cz is not null;
+                if (isRect && isComplex && (Transform == CubeTransform.None || Transform == CubeTransform.Conj))
+                { RectValueInvalid = true; FamilyCurves.Add(fc); continue; }
+
+                for (int i = 0; i < n; i++)
+                {
+                    if (isRect)
+                    {
+                        double? y = RectY(isComplex ? cz![i] : (Complex?)null, isComplex ? (double?)null : rv![i]);
+                        if (y is double yy) fc.Points.Add(new Vector2((float)(xValues[i] * xScale), (float)yy));
+                    }
+                    else if (isComplex)
+                    {
+                        var z = Transform == CubeTransform.Conj ? Complex.Conjugate(cz![i]) : cz![i];
+                        fc.Points.Add(new Vector2((float)z.Real, (float)z.Imaginary));
+                    }
+                }
+                FamilyCurves.Add(fc);
+            }
+        }
 
         private void BuildCubePath(PlotType plotType, FreqUnit freqUnit)
         {
@@ -723,10 +817,21 @@ namespace CircuitRF.Ui.DataDisplay
 
         public Rect PathBoundingRect()
         {
+            if (IsFamily)
+            {
+                bool any = false; float minX = 0, minY = 0, maxX = 0, maxY = 0;
+                foreach (var c in FamilyCurves)
+                    foreach (var p in c.Points)
+                    {
+                        if (!any) { minX = maxX = p.X; minY = maxY = p.Y; any = true; }
+                        else { minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X); minY = Math.Min(minY, p.Y); maxY = Math.Max(maxY, p.Y); }
+                    }
+                return any ? new Rect(minX, minY, maxX - minX, maxY - minY) : default;
+            }
             if (Points.Count == 0) return default;
-            float minX = Points.Min(p => p.X), maxX = Points.Max(p => p.X);
-            float minY = Points.Min(p => p.Y), maxY = Points.Max(p => p.Y);
-            return new Rect(minX, minY, maxX - minX, maxY - minY);
+            float aX = Points.Min(p => p.X), bX = Points.Max(p => p.X);
+            float aY = Points.Min(p => p.Y), bY = Points.Max(p => p.Y);
+            return new Rect(aX, aY, bX - aX, bY - aY);
         }
 
         // ---- Data retrieval ---------------------------------------------
@@ -1153,7 +1258,7 @@ namespace CircuitRF.Ui.DataDisplay
 
         public void SetMarkerFreq(Marker m, double newFreq)
         {
-            if (IsCubeBound) return;
+            if (IsCubeBound || IsFamily) return;
             int fi = Array.FindIndex(Data.Frequencies, f => f >= newFreq - 1e-6);
             if (fi < 0) fi = Data.Frequencies.Length - 1;
             m.Freq = Data.Frequencies[fi];
@@ -1162,7 +1267,7 @@ namespace CircuitRF.Ui.DataDisplay
 
         public void IncrementMarkerFreq(Marker m)
         {
-            if (IsCubeBound) return;
+            if (IsCubeBound || IsFamily) return;
             int fi = Array.FindIndex(Data.Frequencies, f => f > m.Freq);
             if (fi < 0) fi = Data.Frequencies.Length - 1;
             m.Freq = Data.Frequencies[fi];
@@ -1172,7 +1277,7 @@ namespace CircuitRF.Ui.DataDisplay
 
         public void DecrementMarkerFreq(Marker m)
         {
-            if (IsCubeBound) return;
+            if (IsCubeBound || IsFamily) return;
             int fi = Array.FindLastIndex(Data.Frequencies, f => f < m.Freq);
             if (fi < 0) fi = 0;
             m.Freq = Data.Frequencies[fi];

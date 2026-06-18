@@ -74,11 +74,17 @@ public sealed class CschAnalysis
 
     // ── ParametricSweep ───────────────────────────────────────────────────────
     /// <summary>The variable name swept (parametric sweep type only).</summary>
-    public string?   PsaVarName        { get; set; }
-    /// <summary>Explicit double array of sweep values (parametric sweep type only).</summary>
-    public double[]? PsaValues         { get; set; }
+    public string?          PsaVarName        { get; set; }
+    /// <summary>Explicit double array of sweep values. Null when the sweep is defined by Spec fields.</summary>
+    public double[]?        PsaValues         { get; set; }
     /// <summary>Name of the inner analysis this sweep wraps (parametric sweep type only).</summary>
-    public string?   PsaInnerName      { get; set; }
+    public string?          PsaInnerName      { get; set; }
+    // Spec form — all four required to reconstruct a SweepSpec (PsaKind defaults to Linear if absent).
+    public SweepAxisMode?   PsaMode           { get; set; }
+    public double?          PsaStart          { get; set; }
+    public double?          PsaStop           { get; set; }
+    public double?          PsaStepOrCount    { get; set; }
+    public SweepKind?       PsaKind           { get; set; }
 }
 
 /// <summary>
@@ -252,12 +258,17 @@ public static class AnalysisSerialization
 
         ParametricSweepAnalysis psa => new CschAnalysis
         {
-            Type        = "sweep",
-            Name        = psa.Name,
-            Enabled     = psa.Enabled,
-            PsaVarName  = psa.SweepVarName,
-            PsaValues   = psa.SweepValues.Length > 0 ? psa.SweepValues : null,
-            PsaInnerName = psa.InnerAnalysisName,
+            Type           = "sweep",
+            Name           = psa.Name,
+            Enabled        = psa.Enabled,
+            PsaVarName     = psa.SweepVarName,
+            PsaInnerName   = psa.InnerAnalysisName,
+            PsaMode        = psa.Spec?.Mode,
+            PsaStart       = psa.Spec?.Start,
+            PsaStop        = psa.Spec?.Stop,
+            PsaStepOrCount = psa.Spec?.StepOrCount,
+            PsaKind        = psa.Spec?.Kind,
+            PsaValues      = psa.Spec is null && psa.SweepValues.Length > 0 ? psa.SweepValues : null,
         },
 
         // Unknown / v2 types: preserve Type tag + Name so a future version can round-trip them.
@@ -314,7 +325,15 @@ public static class AnalysisSerialization
 #pragma warning restore CS0618
         },
 
-        "sweep" when dto.PsaVarName is not null && dto.PsaValues is { Length: > 0 } && dto.PsaInnerName is not null =>
+        "sweep" when dto.PsaVarName is not null && dto.PsaInnerName is not null
+                     && dto.PsaMode is { } mode && dto.PsaStart is { } st
+                     && dto.PsaStop is { } sp && dto.PsaStepOrCount is { } soc =>
+            new ParametricSweepAnalysis(dto.Name, dto.PsaVarName,
+                new SweepSpec(st, sp, soc, mode, dto.PsaKind ?? SweepKind.Linear),
+                dto.PsaInnerName) { Enabled = dto.Enabled },
+
+        "sweep" when dto.PsaVarName is not null && dto.PsaInnerName is not null
+                     && dto.PsaValues is { Length: > 0 } =>
             new ParametricSweepAnalysis(dto.Name, dto.PsaVarName, dto.PsaValues, dto.PsaInnerName)
             { Enabled = dto.Enabled },
 

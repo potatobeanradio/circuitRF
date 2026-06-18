@@ -60,6 +60,9 @@ public static class SymbolPortDefs
             case SymbolKind.Term:    return [("+", 0f, -200f), ("−", 0f, +200f)];
             // Pin: one connection terminal at the lead tip (horizontal, tip on the right).
             case SymbolKind.Pin:     return [("1", 100f, 0f)];
+            // IProbe: two terminals at the bottom, 100 apart, both at y=100.
+            // Current flows pin1 (left, np) → pin2 (right, nm).
+            case SymbolKind.IProbe:  return [("np", 0f, 100f), ("nm", 100f, 100f)];
             case SymbolKind.FetSdd:  return [("gate",   -200f,   0f),
                                              ("drain",   200f, -100f),
                                              ("source",  200f,  100f)];

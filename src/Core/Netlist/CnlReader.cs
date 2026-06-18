@@ -722,6 +722,25 @@ public sealed class CnlReader
         return result;
     }
 
+    // ── Shared enabled-flag parser ────────────────────────────────────────────
+
+    /// <summary>
+    /// Reads <c>enabled=false</c> from <paramref name="tokens"/>.
+    /// Returns <c>false</c> only when the key is present and its value is exactly "false"
+    /// (case-insensitive). Absent or any other value → <c>true</c> (default-enabled).
+    /// </summary>
+    private static bool ParseEnabledToken(IReadOnlyList<string> tokens)
+    {
+        foreach (var t in tokens)
+        {
+            int eq = t.IndexOf('=');
+            if (eq <= 0) continue;
+            if (t[..eq].Equals("enabled", StringComparison.OrdinalIgnoreCase))
+                return !t[(eq + 1)..].Trim('"').Equals("false", StringComparison.OrdinalIgnoreCase);
+        }
+        return true;
+    }
+
     // ── Loadpull analysis directive parser ────────────────────────────────────
 
     /// <summary>
@@ -750,7 +769,7 @@ public sealed class CnlReader
         }
 
         if (!isDc) return false;
-        result = new DcAnalysis(analysisName);
+        result = new DcAnalysis(analysisName) { Enabled = ParseEnabledToken(tokens) };
         return true;
     }
 
@@ -820,6 +839,7 @@ public sealed class CnlReader
             CreateLoadpullResultExpr     = kv.GetValueOrDefault("CreateLoadpullResult",     "true"),
             LoadpullResultZsourceExpr    = kv.GetValueOrDefault("LoadpullResultZsource",    "MXE"),
             SourceDirectory              = sourceDirectory,
+            Enabled                      = ParseEnabledToken(tokens),
         };
         return true;
     }
@@ -879,6 +899,7 @@ public sealed class CnlReader
             DriveSteppingExpr = kv.GetValueOrDefault("DriveStepping", "IfNecessary"),
             GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic", "0"),
             SourceDirectory   = sourceDirectory,
+            Enabled           = ParseEnabledToken(tokens),
         };
         return true;
     }
@@ -962,7 +983,8 @@ public sealed class CnlReader
             freqSpec = new FrequencySpec(startExpr, stopExpr, stepExpr, kind);
         }
 
-        result = new CircuitRF.Core.Design.SParameterAnalysis(analysisName, freqSpec);
+        result = new CircuitRF.Core.Design.SParameterAnalysis(analysisName, freqSpec)
+            { Enabled = ParseEnabledToken(tokens) };
         return true;
     }
 
@@ -1184,6 +1206,7 @@ public sealed class CnlReader
                 analysisName, varName, spec, innerName);
         }
 
+        result.Enabled = ParseEnabledToken(tokens);
         return true;
     }
 
@@ -1254,6 +1277,7 @@ public sealed class CnlReader
             GuardHarmonicExpr = kv.GetValueOrDefault("GuardHarmonic",   "0"),
             LambdaExpr        = kv.GetValueOrDefault("Lambda",          "1"),
             MaxIterExpr       = kv.GetValueOrDefault("MaxIter",         "100"),
+            Enabled           = ParseEnabledToken(tokens),
 #pragma warning disable CS0618
             SweepVarName      = sweepVar,
             SweepStartExpr    = sweepStart,

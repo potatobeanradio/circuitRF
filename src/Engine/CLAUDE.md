@@ -102,11 +102,17 @@ wrapped in nested parametric sweeps (e.g. S-params vs a bias variable, a DC curv
 - **`SParameterAnalysis`:** calls `spa.Expand(netlist.ResolvedGlobals)` to get the flat frequency
   array, then delegates to `SParameterEngine.Run(netlist, freqs, settings)` and returns its DataSet.
   The S/Z0 cubes stack cleanly under a prepended sweep axis via `DataSet.StackSweepAxis`.
-- **`DcAnalysis`:** calls `NonlinearDcEngine.Run(netlist, settings)` → `DcResult`; packs node
-  voltages into a `V` DataCube with a `node` axis (node-name labels from `netlist.Nodes.NameOf`).
-  A DC curve-tracer comes from two nested parametric sweeps (Vgs outer, Vds inner) wrapping the
-  inner DC analysis — DC itself produces one operating point per point; the sweep axes supply
-  Vds/Vgs. Gate tests: `tests/Engine.Tests/Parametric/ParametricSweepDcSParamTests.cs` (4 tests).
+- **`DcAnalysis`:** calls `NonlinearDcEngine.Run(netlist, settings)` → `DcResult`; delegates all
+  packing to the shared **`DcResultPacker.Pack(result, netlist)`** (same packer used by the standalone
+  `SchematicRunService` path). The packer emits: `V[node]` cube (node-name labels), scalar
+  `Converged`/`Residual` cubes, scalar **`I:<probe>`** cubes for each `IProbeModel` instance
+  (sign: np→nm, matching `AddBranchCurrent`), and `__LabeledNodes` metadata when present.
+  `IProbe` branch currents live in `DcResult.ProbeCurrents` (keyed by instance path, set by
+  `ExtractProbeCurrents` from `x[probe.LastBranchIndex]` after each Newton solve).
+  A FET I–V family-of-curves = two nested parametric sweeps (Vgs outer, Vds inner) wrapping DC +
+  IProbe in the drain — `I:IPd` scalar cubes stack into a `[Vgs, Vds]` cube after `StackSweepAxis`.
+  Gate tests: `tests/Engine.Tests/Parametric/ParametricSweepDcSParamTests.cs` (5 tests) +
+  `tests/Engine.Tests/Nonlinear/IProbeCurrentTests.cs` (3 tests).
 - **Loadpull and other engine-owning analyses** remain unsupported in the generic sweep;
   `default:` still throws `NotSupportedException` with a diagnostic message.
 

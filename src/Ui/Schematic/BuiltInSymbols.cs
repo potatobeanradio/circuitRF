@@ -35,6 +35,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _ground       = BuildGround();
     private static readonly Symbol _term         = BuildTerm();
     private static readonly Symbol _pin          = BuildPin();
+    private static readonly Symbol _iprobe       = BuildIProbe();
     private static readonly Symbol _fetSdd       = BuildFetSdd();
     private static readonly Symbol _var          = BuildVar();
     private static readonly Symbol _generic      = BuildGeneric();
@@ -88,6 +89,7 @@ public static class BuiltInSymbols
             case SymbolKind.Ground:     return _ground;
             case SymbolKind.Term:       return _term;
             case SymbolKind.Pin:        return _pin;
+            case SymbolKind.IProbe:     return _iprobe;
             case SymbolKind.FetSdd:     return _fetSdd;
             case SymbolKind.Var:        return _var;
             case SymbolKind.P1Tone:     return _p1Tone;
@@ -292,6 +294,24 @@ public static class BuiltInSymbols
         Poly(false, -55,-50,  10,-50,  50,0,  10,50,  -55,50,  -100,0),  // hexagon body
         L(50, 0,  100, 0),               // stem: hex right vertex (50,0) → port tip (100,0)
     ], SymbolKind.Pin);
+
+    // ── IProbe — current probe / ammeter ─────────────────────────────────────
+    // 2-terminal series ammeter. Pins at the BOTTOM (0,100)/(100,100), 100 apart.
+    // Stems rise to a horizontal connector at y=0 carrying a right-pointing current
+    // arrow (pin1 left → pin2 right). Above the connector: an ammeter window
+    // (curved top/bottom via quad curves, top edge wider → angled sides). A rounded
+    // rect encloses the window + arrow; the connector leads exit it to the stems.
+    private static Symbol BuildIProbe() => Sym([
+        L(  0, 100,   0,   0),                 // left stem  (pin1 → connector)
+        L(100, 100, 100,   0),                 // right stem (pin2 → connector)
+        L(  0,   0, 100,   0),                 // horizontal connector
+        Poly(true, 40, -10, 60, 0, 40, 10),    // current arrow (filled), points right
+        QC(35, -22, 50, -16, 65, -22),         // window bottom edge (shorter, bows down)
+        QC(25, -52, 50, -58, 75, -52),         // window top edge (longer, bows up)
+        L(35, -22, 25, -52),                   // window left side (angled out toward top)
+        L(65, -22, 75, -52),                   // window right side (angled out toward top)
+        RRect(50, -24, 80, 84, 10),            // enclosing rounded rect (window + arrow)
+    ], SymbolKind.IProbe);
 
     // ── Ground — stem + filled downward triangle (Core Graphics style) ────────
     // Pins: (0,0) — the connection point at the top of the symbol.

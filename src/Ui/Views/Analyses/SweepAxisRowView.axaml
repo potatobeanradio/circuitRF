@@ -21,6 +21,16 @@
             <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseHighColor}"/>
             <Setter Property="FontWeight"  Value="SemiBold"/>
         </Style>
+        <Style Selector="Button.sw-icon">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="3"/>
+            <Setter Property="Padding"         Value="6,2"/>
+            <Setter Property="MinWidth"        Value="0"/>
+            <Setter Property="FontSize"        Value="13"/>
+            <Setter Property="Margin"          Value="0,0,2,0"/>
+        </Style>
     </UserControl.Styles>
 
     <!-- Card-style row -->
@@ -31,10 +41,16 @@
 
         <StackPanel Spacing="6">
 
-            <!-- Row 1: Variable name (combo editable) + Lin/Log + remove button -->
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+            <!-- Row 1: Enabled checkbox + Variable name + Spacing + Up/Down/× buttons -->
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
 
-                <StackPanel Spacing="2">
+                <CheckBox Grid.Column="0"
+                          IsChecked="{Binding Enabled, Mode=TwoWay}"
+                          VerticalAlignment="Bottom"
+                          Margin="0,0,0,4"
+                          ToolTip.Tip="Include this sweep axis (uncheck to drop this dimension from the result; Start/Stop/Step is kept)"/>
+
+                <StackPanel Grid.Column="1" Spacing="2">
                     <TextBlock Text="Variable"
                                FontSize="10" Opacity="0.6"/>
                     <AutoCompleteBox ItemsSource="{Binding KnownVarNames}"
@@ -51,7 +67,7 @@
                 </StackPanel>
 
                 <!-- Lin / Log -->
-                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Bottom">
+                <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Bottom">
                     <TextBlock Text="Spacing" FontSize="10" Opacity="0.6"/>
                     <StackPanel Orientation="Horizontal">
                         <Button Content="Lin"
@@ -65,18 +81,14 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Remove button (×) — bound via RelayCommand on the parent VM via Tag -->
-                <Button Grid.Column="2"
-                        Content="×"
-                        FontSize="14"
-                        Padding="6,2"
-                        VerticalAlignment="Bottom"
-                        Background="Transparent"
-                        BorderBrush="{DynamicResource SystemBaseMediumLowColor}"
-                        BorderThickness="1"
-                        CornerRadius="3"
-                        Tag="{Binding}"
-                        x:Name="RemoveButton"/>
+                <!-- Up / Down / Remove buttons -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Bottom">
+                    <Button Content="↑" Classes="sw-icon" x:Name="MoveUpButton"
+                            ToolTip.Tip="Move toward innermost (plot X axis)"/>
+                    <Button Content="↓" Classes="sw-icon" x:Name="MoveDownButton"
+                            ToolTip.Tip="Move toward outer (slower) sweep"/>
+                    <Button Content="×" Classes="sw-icon" x:Name="RemoveButton"/>
+                </StackPanel>
 
             </Grid>
 

@@ -354,6 +354,119 @@ public sealed class AnalysisSerializationTests
             Assert.Equal(clipA[i].Name,      canlA[i].Name);
         }
     }
+
+    // ── ParametricSweep Spec form (brief-sweep-revamp-1-persistence Part B) ───
+
+    [Fact]
+    public void SpecSweep_StepSize_Linear_RoundTripsViaSerialize()
+    {
+        var spec = new SweepSpec(-30.0, 0.0, 0.5, SweepAxisMode.StepSize, SweepKind.Linear);
+        var psa  = new ParametricSweepAnalysis("SW1", "Pin", spec, "HB1");
+
+        var (a2, _) = RoundTrip([psa], []);
+
+        var sw = Assert.IsType<ParametricSweepAnalysis>(Assert.Single(a2));
+        Assert.NotNull(sw.Spec);
+        Assert.Equal(SweepAxisMode.StepSize, sw.Spec!.Mode);
+        Assert.Equal(SweepKind.Linear,       sw.Spec.Kind);
+        Assert.Equal(-30.0, sw.Spec.Start,       precision: 9);
+        Assert.Equal(  0.0, sw.Spec.Stop,        precision: 9);
+        Assert.Equal(  0.5, sw.Spec.StepOrCount, precision: 9);
+        Assert.True(sw.SweepValues.Length > 0, "SweepValues should be expanded from Spec");
+    }
+
+    [Fact]
+    public void SpecSweep_PointCount_Log_RoundTripsViaSerialize()
+    {
+        var spec = new SweepSpec(1.0, 10.0, 11, SweepAxisMode.PointCount, SweepKind.Log);
+        var psa  = new ParametricSweepAnalysis("SW2", "Freq", spec, "HB1");
+
+        var (a2, _) = RoundTrip([psa], []);
+
+        var sw = Assert.IsType<ParametricSweepAnalysis>(Assert.Single(a2));
+        Assert.NotNull(sw.Spec);
+        Assert.Equal(SweepAxisMode.PointCount, sw.Spec!.Mode);
+        Assert.Equal(SweepKind.Log,            sw.Spec.Kind);
+        Assert.Equal( 1.0, sw.Spec.Start,       precision: 9);
+        Assert.Equal(10.0, sw.Spec.Stop,        precision: 9);
+        Assert.Equal(11.0, sw.Spec.StepOrCount, precision: 9);
+    }
+
+    [Fact]
+    public void SpecSweep_Disabled_EnabledPreservedViaSerialize()
+    {
+        var spec = new SweepSpec(0.0, 1.0, 3, SweepAxisMode.PointCount, SweepKind.Linear);
+        var psa  = new ParametricSweepAnalysis("SW_dis", "x", spec, "HB1") { Enabled = false };
+
+        var (a2, _) = RoundTrip([psa], []);
+
+        var sw = Assert.IsType<ParametricSweepAnalysis>(Assert.Single(a2));
+        Assert.False(sw.Enabled);
+        Assert.NotNull(sw.Spec);
+    }
+
+    [Fact]
+    public void SpecSweep_ToDto_FromDto_SpecAndEnabledPreserved()
+    {
+        var spec = new SweepSpec(-20.0, 10.0, 0.25, SweepAxisMode.StepSize, SweepKind.Linear);
+        var psa  = new ParametricSweepAnalysis("SW1", "Pin", spec, "HB1") { Enabled = false };
+
+        var dto    = AnalysisSerialization.ToDto(psa);
+        var result = AnalysisSerialization.FromDto(dto);
+
+        // DTO should carry Spec fields, not the expanded list
+        Assert.Null(dto.PsaValues);
+        Assert.Equal(SweepAxisMode.StepSize, dto.PsaMode);
+        Assert.Equal(-20.0, dto.PsaStart!.Value,       precision: 9);
+        Assert.Equal( 10.0, dto.PsaStop!.Value,        precision: 9);
+        Assert.Equal(  0.25, dto.PsaStepOrCount!.Value, precision: 9);
+        Assert.Equal(SweepKind.Linear, dto.PsaKind);
+
+        var sw = Assert.IsType<ParametricSweepAnalysis>(result);
+        Assert.Equal("SW1",  sw.Name);
+        Assert.Equal("Pin",  sw.SweepVarName);
+        Assert.Equal("HB1",  sw.InnerAnalysisName);
+        Assert.False(sw.Enabled);
+        Assert.NotNull(sw.Spec);
+        Assert.Equal(SweepAxisMode.StepSize, sw.Spec!.Mode);
+        Assert.Equal(SweepKind.Linear,       sw.Spec.Kind);
+        Assert.Equal(-20.0, sw.Spec.Start,       precision: 9);
+        Assert.Equal( 10.0, sw.Spec.Stop,        precision: 9);
+        Assert.Equal( 0.25, sw.Spec.StepOrCount, precision: 9);
+    }
+
+    [Fact]
+    public void ExplicitListSweep_StillRoundTrips_AsListNotSpec()
+    {
+        var values = new[] { 1.0, 2.0, 5.0, 10.0 };
+        var psa    = new ParametricSweepAnalysis("SW_list", "Vgs", values, "DC1");
+
+        var (a2, _) = RoundTrip([psa], []);
+
+        var sw = Assert.IsType<ParametricSweepAnalysis>(Assert.Single(a2));
+        Assert.Null(sw.Spec);
+        Assert.Equal(4, sw.SweepValues.Length);
+        Assert.Equal( 1.0, sw.SweepValues[0], precision: 9);
+        Assert.Equal( 2.0, sw.SweepValues[1], precision: 9);
+        Assert.Equal( 5.0, sw.SweepValues[2], precision: 9);
+        Assert.Equal(10.0, sw.SweepValues[3], precision: 9);
+    }
+
+    [Fact]
+    public void SpecSweep_ViaCanl_SpecPreserved()
+    {
+        var spec = new SweepSpec(-10.0, 10.0, 5, SweepAxisMode.PointCount, SweepKind.Linear);
+        var psa  = new ParametricSweepAnalysis("SW_canl", "Pin", spec, "HB1");
+
+        var (_, _, a2, _) = RoundTripCanl("T", null, [psa], []);
+
+        var sw = Assert.IsType<ParametricSweepAnalysis>(Assert.Single(a2));
+        Assert.NotNull(sw.Spec);
+        Assert.Equal(SweepAxisMode.PointCount, sw.Spec!.Mode);
+        Assert.Equal(-10.0, sw.Spec.Start,       precision: 9);
+        Assert.Equal( 10.0, sw.Spec.Stop,        precision: 9);
+        Assert.Equal(  5.0, sw.Spec.StepOrCount, precision: 9);
+    }
 }
 
 // ── Layer 2 gate: .csch round-trip + SchematicHasAnalyses ────────────────────

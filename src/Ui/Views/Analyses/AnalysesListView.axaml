@@ -6,6 +6,10 @@
              x:DataType="vm:AnalysesListViewModel"
              Background="{DynamicResource SystemChromeLowColor}">
 
+    <UserControl.Resources>
+        <vm:BoolToIndentConverter x:Key="IndentConv"/>
+    </UserControl.Resources>
+
     <UserControl.Styles>
         <!-- Remove ListBoxItem padding so the DataTemplate Border controls its own padding -->
         <Style Selector="ListBox.AnalysisRows ListBoxItem">
@@ -14,148 +18,90 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
 
-        <!-- Toolbar -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="4,4,4,2">
-
-            <TextBlock Grid.Column="0"
+        <!-- Schematic name + Run -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="4,4,4,1">
+            <Button Grid.Column="0"
+                    Command="{Binding RunCommand}"
+                    ToolTip.Tip="Run analysis"
+                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,5,0">
+                <mi:MaterialIcon Kind="Play" Width="15" Height="15"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </Button>
+            <TextBlock Grid.Column="1"
                        Text="{Binding HeaderLabel}"
                        FontWeight="SemiBold" FontSize="12"
-                       TextTrimming="None" ClipToBounds="True"
+                       TextTrimming="CharacterEllipsis"
                        VerticalAlignment="Center"/>
+        </Grid>
 
-            <!-- Add -->
-            <Button Grid.Column="1"
-                    Command="{Binding AddCommand}"
-                    CommandParameter="{Binding $parent[Window]}"
-                    ToolTip.Tip="Add analysis"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
-                <mi:MaterialIcon Kind="Plus" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
+        <!-- Toolbar -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="4,0,4,2">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="0">
+
+                <Button Command="{Binding AddCommand}" CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Add analysis" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                    <mi:MaterialIcon Kind="Plus" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+                <Button Command="{Binding EditCommand}" CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Edit selected analysis" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                    <mi:MaterialIcon Kind="Pencil" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+                <Button Command="{Binding DuplicateCommand}"
+                        ToolTip.Tip="Duplicate selected analysis" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                    <mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+                <Button Command="{Binding RemoveCommand}"
+                        ToolTip.Tip="Remove selected analysis" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,2,0">
+                    <mi:MaterialIcon Kind="Delete" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+                <Button Command="{Binding MoveUpCommand}"
+                        ToolTip.Tip="Move up (inner / earlier)" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                    <mi:MaterialIcon Kind="ChevronUp" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+                <Button Command="{Binding MoveDownCommand}"
+                        ToolTip.Tip="Move down (outer / later)" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,4,0">
+                    <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+
+                <Border Width="1" Height="12" Margin="0,0,4,0" VerticalAlignment="Center"
+                        Background="{DynamicResource SystemBaseLowColor}"/>
+
+                <Button Command="{Binding CopyCommand}" CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Copy selected analyses (⌘C / Ctrl+C)" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                    <mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+                <Button Command="{Binding CopyAllCommand}" CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Copy all analyses" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                    <mi:MaterialIcon Kind="SelectAll" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+                <Button Command="{Binding PasteCommand}" CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Paste analyses (⌘V / Ctrl+V)" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,4,0">
+                    <mi:MaterialIcon Kind="ContentPaste" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+
+                <Border Width="1" Height="12" Margin="0,0,4,0" VerticalAlignment="Center"
+                        Background="{DynamicResource SystemBaseLowColor}"/>
+
+                <Button Command="{Binding InsertFromTemplateCommand}" CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Insert from Template…" Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
+                    <mi:MaterialIcon Kind="FileImportOutline" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+                <Button Command="{Binding SaveAsTemplateCommand}" CommandParameter="{Binding $parent[Window]}"
+                        ToolTip.Tip="Save as Template…" Padding="3,2" Background="Transparent" BorderThickness="0">
+                    <mi:MaterialIcon Kind="BookmarkPlusOutline" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Button>
+            </StackPanel>
+
+            <Button Grid.Column="2" Click="OnHelp"
+                    ToolTip.Tip="Help" Padding="3,2" Background="Transparent" BorderThickness="0">
+                <mi:MaterialIcon Kind="HelpCircleOutline" Width="14" Height="14" Foreground="{DynamicResource SystemBaseMediumColor}"/>
             </Button>
-
-            <!-- Edit -->
-            <Button Grid.Column="2"
-                    Command="{Binding EditCommand}"
-                    CommandParameter="{Binding $parent[Window]}"
-                    ToolTip.Tip="Edit selected analysis"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
-                <mi:MaterialIcon Kind="Pencil" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Duplicate -->
-            <Button Grid.Column="3"
-                    Command="{Binding DuplicateCommand}"
-                    ToolTip.Tip="Duplicate selected analysis"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
-                <mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Remove -->
-            <Button Grid.Column="4"
-                    Command="{Binding RemoveCommand}"
-                    ToolTip.Tip="Remove selected analysis"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,2,0">
-                <mi:MaterialIcon Kind="Delete" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Move Up -->
-            <Button Grid.Column="5"
-                    Command="{Binding MoveUpCommand}"
-                    ToolTip.Tip="Move up (runs earlier)"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
-                <mi:MaterialIcon Kind="ChevronUp" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Move Down -->
-            <Button Grid.Column="6"
-                    Command="{Binding MoveDownCommand}"
-                    ToolTip.Tip="Move down (runs later)"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,4,0">
-                <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Separator -->
-            <Border Grid.Column="7"
-                    Width="1" Height="12" Margin="0,0,4,0"
-                    Background="{DynamicResource SystemBaseLowColor}"
-                    VerticalAlignment="Center"/>
-
-            <!-- Copy selected -->
-            <Button Grid.Column="8"
-                    Command="{Binding CopyCommand}"
-                    CommandParameter="{Binding $parent[Window]}"
-                    ToolTip.Tip="Copy selected analyses (⌘C / Ctrl+C)"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
-                <mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Copy All -->
-            <Button Grid.Column="9"
-                    Command="{Binding CopyAllCommand}"
-                    CommandParameter="{Binding $parent[Window]}"
-                    ToolTip.Tip="Copy all analyses"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
-                <mi:MaterialIcon Kind="SelectAll" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Paste -->
-            <Button Grid.Column="10"
-                    Command="{Binding PasteCommand}"
-                    CommandParameter="{Binding $parent[Window]}"
-                    ToolTip.Tip="Paste analyses (⌘V / Ctrl+V)"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,4,0">
-                <mi:MaterialIcon Kind="ContentPaste" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Separator -->
-            <Border Grid.Column="11"
-                    Width="1" Height="12" Margin="0,0,4,0"
-                    Background="{DynamicResource SystemBaseLowColor}"
-                    VerticalAlignment="Center"/>
-
-            <!-- Insert from Template -->
-            <Button Grid.Column="12"
-                    Command="{Binding InsertFromTemplateCommand}"
-                    CommandParameter="{Binding $parent[Window]}"
-                    ToolTip.Tip="Insert from Template…"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,1,0">
-                <mi:MaterialIcon Kind="FileImportOutline" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Save as Template -->
-            <Button Grid.Column="13"
-                    Command="{Binding SaveAsTemplateCommand}"
-                    CommandParameter="{Binding $parent[Window]}"
-                    ToolTip.Tip="Save as Template…"
-                    Padding="3,2" Background="Transparent" BorderThickness="0">
-                <mi:MaterialIcon Kind="BookmarkPlusOutline" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
-            <!-- Help -->
-            <Button Grid.Column="15"
-                    Click="OnHelp"
-                    ToolTip.Tip="Help"
-                    Padding="3,2" Background="Transparent" BorderThickness="0" Margin="2,0,0,0">
-                <mi:MaterialIcon Kind="HelpCircleOutline" Width="14" Height="14"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </Button>
-
         </Grid>
 
         <!-- List area -->
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="2">
 
             <!-- No active schematic -->
             <TextBlock Text="Open a schematic to set up analyses."
@@ -202,7 +148,8 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:AnalysisRowViewModel">
                         <Border Padding="4,3"
-                                Background="Transparent">
+                                Background="Transparent"
+                                Margin="{Binding IsSweep, Converter={StaticResource IndentConv}}">
                             <Grid ColumnDefinitions="Auto,Auto,*,Auto">
 
                                 <!-- Enabled checkbox -->
@@ -245,7 +192,7 @@
         </Grid>
 
         <!-- Footer hint (only when rows exist) -->
-        <TextBlock Grid.Row="2"
+        <TextBlock Grid.Row="3"
                    Text="Analyses run in listed order."
                    IsVisible="{Binding !IsEmpty}"
                    Foreground="{DynamicResource SystemBaseMediumLowColor}"

@@ -71,14 +71,23 @@ public sealed class NonlinearDcEngine
         /// <summary>Full per-step, per-iteration convergence trace.</summary>
         public ConvergenceTrace Trace { get; }
 
+        /// <summary>
+        /// DC branch current through each IProbe, keyed by the probe's instance path (e.g. "IPd").
+        /// Sign convention: positive current flows from the probe's first node to its second
+        /// (IProbe:IPd n_plus n_minus → positive = n_plus → n_minus), matching MnaSystem.AddBranchCurrent.
+        /// Empty when the circuit has no IProbes.
+        /// </summary>
+        public IReadOnlyDictionary<string, double> ProbeCurrents { get; }
+
         internal DcResult(double[] v, bool converged, int iters, double residual,
-            ConvergenceTrace trace)
+            ConvergenceTrace trace, IReadOnlyDictionary<string, double> probeCurrents)
         {
             NodeVoltages  = v;
             Converged     = converged;
             Iterations    = iters;
             FinalResidual = residual;
             Trace         = trace;
+            ProbeCurrents = probeCurrents;
         }
     }
 
@@ -127,6 +136,19 @@ public sealed class NonlinearDcEngine
         }
     }
 
+    private IReadOnlyDictionary<string, double> ExtractProbeCurrents(double[] x)
+    {
+        var map = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var ec in _nl.Components)
+        {
+            if (ec.Model is not IProbeModel probe) continue;
+            int br = probe.LastBranchIndex;
+            if (br >= _nodeCount && br < _systemSize)
+                map[ec.InstancePath] = x[br];
+        }
+        return map;
+    }
+
     private DcResult Solve()
         => _settings.DcBiasStepping switch
         {
@@ -165,7 +187,7 @@ public sealed class NonlinearDcEngine
         if (!converged && throwOnFailure)
             throw new NonlinearDcNotConvergedException(iters, finalRes);
 
-        return new DcResult(nodeV, converged, iters, finalRes, trace);
+        return new DcResult(nodeV, converged, iters, finalRes, trace, ExtractProbeCurrents(xNew));
     }
 
     /// <summary>
@@ -204,13 +226,13 @@ public sealed class NonlinearDcEngine
             if (!stepped)
             {
                 double[] nv = x[.._nodeCount];
-                return new DcResult(nv, false, totalIters, ResidualNorm(x, 1.0), trace);
+                return new DcResult(nv, false, totalIters, ResidualNorm(x, 1.0), trace, ExtractProbeCurrents(x));
             }
         }
 
         double[] nodeV  = x[.._nodeCount];
         double finalRes = ResidualNorm(x, 1.0);
-        return new DcResult(nodeV, finalRes < _settings.NonlinearAbsTol, totalIters, finalRes, trace);
+        return new DcResult(nodeV, finalRes < _settings.NonlinearAbsTol, totalIters, finalRes, trace, ExtractProbeCurrents(x));
     }
 
     private (bool OK, int Iters, double[] X, List<IterationRecord> Trace)

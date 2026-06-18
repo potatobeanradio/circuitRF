@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using CircuitRF.Core.Design;
 
@@ -55,7 +56,13 @@ public static class CnlWriter
 
         // Typed analyses
         foreach (var analysis in tb.Analyses)
-            sb.AppendLine(FormatAnalysis(analysis));
+        {
+            var text = FormatAnalysis(analysis);
+            if (!analysis.Enabled)
+                // Append to every \n-separated sub-line (S-param emits one line per segment).
+                text = string.Join("\n", text.Split('\n').Select(l => l + " enabled=false"));
+            sb.AppendLine(text);
+        }
 
         // Measurements: measure Name = expr
         foreach (var m in tb.Measurements)

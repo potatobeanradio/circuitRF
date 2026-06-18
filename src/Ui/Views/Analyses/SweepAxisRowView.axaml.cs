@@ -11,25 +11,51 @@ public partial class SweepAxisRowView : UserControl
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
-        // Wire the Remove button click → parent AnalysisEditorViewModel.RemoveSweepAxisCommand.
-        // Tag holds the SweepAxisRowViewModel; we walk up to find the editor VM.
-        if (RemoveButton is Button btn)
-        {
-            btn.Click += OnRemoveClick;
-        }
+        // Wire Up/Down/Remove buttons → parent AnalysisEditorViewModel commands via visual-tree walk.
+        if (RemoveButton   is Button rm)   rm.Click   += OnRemoveClick;
+        if (MoveUpButton   is Button up)   up.Click   += OnMoveUpClick;
+        if (MoveDownButton is Button down) down.Click += OnMoveDownClick;
     }
 
     private void OnRemoveClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not SweepAxisRowViewModel row) return;
-
-        // Walk the visual tree to find the AnalysisEditorViewModel.
         var ctrl = Parent;
         while (ctrl is not null)
         {
             if (ctrl.DataContext is AnalysisEditorViewModel editorVm)
             {
                 editorVm.RemoveSweepAxisCommand.Execute(row);
+                return;
+            }
+            ctrl = ctrl.Parent as Control;
+        }
+    }
+
+    private void OnMoveUpClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SweepAxisRowViewModel row) return;
+        var ctrl = Parent;
+        while (ctrl is not null)
+        {
+            if (ctrl.DataContext is AnalysisEditorViewModel editorVm)
+            {
+                editorVm.MoveSweepAxisUpCommand.Execute(row);
+                return;
+            }
+            ctrl = ctrl.Parent as Control;
+        }
+    }
+
+    private void OnMoveDownClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SweepAxisRowViewModel row) return;
+        var ctrl = Parent;
+        while (ctrl is not null)
+        {
+            if (ctrl.DataContext is AnalysisEditorViewModel editorVm)
+            {
+                editorVm.MoveSweepAxisDownCommand.Execute(row);
                 return;
             }
             ctrl = ctrl.Parent as Control;

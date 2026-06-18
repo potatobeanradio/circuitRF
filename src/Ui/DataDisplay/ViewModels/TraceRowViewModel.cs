@@ -978,7 +978,8 @@ public partial class TraceRowViewModel : ViewModelBase
             var axis = cube.Axes[d];
 
             // Find matching slice entry by axis name.
-            bool isX   = false;
+            bool isX      = false;
+            bool isFamily = false;
             int  savedTrueIdx = 0;
             if (slice is not null)
             {
@@ -987,6 +988,7 @@ public partial class TraceRowViewModel : ViewModelBase
                     if (s.AxisName == axis.Name)
                     {
                         isX          = s.Role == AxisRole.KeepAsX;
+                        isFamily     = s.Role == AxisRole.FamilyIterate;
                         savedTrueIdx = s.Index;
                         break;
                     }
@@ -1021,7 +1023,7 @@ public partial class TraceRowViewModel : ViewModelBase
                 if (displayIdx < 0) displayIdx = 0;
 
                 AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit,
-                    filteredOpts, isX, displayIdx, filteredIndices, optionsAreLabels: true));
+                    filteredOpts, isX, displayIdx, filteredIndices, optionsAreLabels: true, isFamily: isFamily));
             }
             else
             {
@@ -1039,13 +1041,16 @@ public partial class TraceRowViewModel : ViewModelBase
                 }
                 int pinIdx = Math.Clamp(savedTrueIdx, 0, Math.Max(0, axis.Length - 1));
                 AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit, opts, isX, pinIdx,
-                    optionsAreLabels: hasLabels));
+                    optionsAreLabels: hasLabels, isFamily: isFamily));
             }
         }
 
-        // Guard: at least one X axis.
+        // Guard: at least one X axis. Pick first non-family row, else axis 0.
         if (!AxisRoles.Any(r => r.IsX) && AxisRoles.Count > 0)
-            AxisRoles[0].SetIsXSilent(true);
+        {
+            var fallback = AxisRoles.FirstOrDefault(r => !r.IsFamily) ?? AxisRoles[0];
+            fallback.SetIsXSilent(true);
+        }
     }
 
     /// <summary>
@@ -1060,6 +1065,17 @@ public partial class TraceRowViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Called by AxisRoleRowViewModel when a row is set to Family.
+    /// Silently demotes any other Family row back to Pinned (≤1 family constraint).
+    /// </summary>
+    internal void OnAxisSetToFamily(AxisRoleRowViewModel newFamily)
+    {
+        foreach (var row in AxisRoles)
+            if (!ReferenceEquals(row, newFamily) && row.IsFamily)
+                row.SetIsFamilySilent(false);
+    }
+
+    /// <summary>
     /// Writes the current AxisRoles state back to Trace.Slice and
     /// triggers a full redraw + data resolve.
     /// </summary>
@@ -1070,20 +1086,23 @@ public partial class TraceRowViewModel : ViewModelBase
         for (int i = 0; i < AxisRoles.Count; i++)
         {
             var r = AxisRoles[i];
-            string lbl = (!r.IsX && r.OptionsAreLabels && r.PinOptions.Count > 0)
+            AxisRole role = r.IsX ? AxisRole.KeepAsX
+                          : r.IsFamily ? AxisRole.FamilyIterate
+                          : AxisRole.PinToIndex;
+            string lbl = (role == AxisRole.PinToIndex && r.OptionsAreLabels && r.PinOptions.Count > 0)
                 ? r.PinOptions[Math.Clamp(r.PinIndex, 0, r.PinOptions.Count - 1)]
                 : "";
-            slice[i] = new AxisSlice(r.AxisName,
-                r.IsX ? AxisRole.KeepAsX : AxisRole.PinToIndex,
-                r.TruePinIndex, Label: lbl);
+            slice[i] = new AxisSlice(r.AxisName, role, r.TruePinIndex, Label: lbl);
         }
 
-        // Guard: if no X survived, fall back to the first axis.
+        // Guard: if no X survived, fall back to the first non-family axis, then axis 0.
         bool hasX = Array.Exists(slice, s => s.Role == AxisRole.KeepAsX);
         if (!hasX && slice.Length > 0)
         {
-            slice[0] = new AxisSlice(slice[0].AxisName, AxisRole.KeepAsX, 0);
-            AxisRoles[0].SetIsXSilent(true);
+            int fallback = Array.FindIndex(slice, s => s.Role != AxisRole.FamilyIterate);
+            if (fallback < 0) fallback = 0;
+            slice[fallback] = new AxisSlice(slice[fallback].AxisName, AxisRole.KeepAsX, 0);
+            AxisRoles[fallback].SetIsXSilent(true);
         }
 
         _trace.Slice = slice;

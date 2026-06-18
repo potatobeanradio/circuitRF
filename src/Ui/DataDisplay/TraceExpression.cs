@@ -140,6 +140,8 @@ public static class TraceExpression
                         xDim = d; break;
                     case SliceTokenParser.Kind.PinIndex:
                         args[d] = t.Index; break;
+                    case SliceTokenParser.Kind.Family:
+                        error = $"'{info.RefStr}': the family marker '~' is only valid in single-cube picker specs, not multi-cube expressions."; return false;
                     default:
                         error = $"'{info.RefStr}': {error}"; return false;
                 }

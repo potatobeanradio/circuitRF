@@ -30,11 +30,12 @@ public static class ParametricSweepEngine
         TestBench tb,
         AnalysisSettings? settings = null)
     {
-        // Locate the inner analysis by name.
-        var inner = tb.Analyses.FirstOrDefault(a => a.Name == sweep.InnerAnalysisName)
+        // Locate the inner analysis, skipping disabled sweeps (collapse): a disabled inner sweep is
+        // transparent — its dimension is dropped and ITS inner runs here instead.
+        var inner = AnalysisChain.ResolveEffectiveInner(sweep.InnerAnalysisName, tb)
             ?? throw new InvalidOperationException(
                 $"Parametric sweep '{sweep.Name}': inner analysis " +
-                $"'{sweep.InnerAnalysisName}' not found in TestBench.");
+                $"'{sweep.InnerAnalysisName}' not found (or its chain is disabled).");
 
         // Find the variable in GlobalVariables so we can restore it.
         int varIdx   = tb.GlobalVariables.FindIndex(v => v.Name == sweep.SweepVarName);
@@ -132,20 +133,6 @@ public static class ParametricSweepEngine
         AnalysisSettings? settings)
     {
         var result = NonlinearDcEngine.Run(netlist, settings);
-
-        // Pack node voltages into a V cube with a node axis carrying net names.
-        int nodeCount = result.NodeVoltages.Length;  // non-ground nodes (circuit nodes 1..n)
-        var nodeVals  = new double[nodeCount];
-        var nodeNames = new string[nodeCount];
-        for (int i = 0; i < nodeCount; i++)
-        {
-            nodeVals[i]  = i;
-            nodeNames[i] = netlist.Nodes.NameOf(i + 1);
-        }
-        var nodeAxis = new Axis("node", nodeVals, "", nodeNames);
-
-        var ds = new DataSet();
-        ds.Add("V", new DataCube([nodeAxis], result.NodeVoltages));
-        return ds;
+        return DcResultPacker.Pack(result, netlist);
     }
 }

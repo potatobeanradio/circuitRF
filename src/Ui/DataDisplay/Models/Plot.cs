@@ -428,16 +428,22 @@ namespace CircuitRF.Ui.DataDisplay
 
             if (!SupportsComplex)
             {
+                // Frequency (network) X axis is always ≥ 0, so the legacy clamp pins the window to 0.
+                // Cube-bound traces plot against a swept variable (Vgs, Vds, Pin, …) that can be
+                // negative, so the clamp must NOT apply there or a negative-X sweep is scrolled
+                // entirely off-screen (correct X-label, no visible trace).
+                bool xIsFrequency = !(Traces.Count > 0 && Traces[0].IsCubeBound);
+
                 primary   = EnsureMinExtent(primary);
                 secondary = EnsureMinExtent(secondary);
                 primary   = InflateRect(primary,   primary.Width   * padX, primary.Height   * padY);
                 secondary = InflateRect(secondary, secondary.Width * padX, secondary.Height * padY);
 
-                if (primary.X < 0)
+                if (xIsFrequency && primary.X < 0)
                     primary = new Rect(0, primary.Y, primary.Right, primary.Height);
                 if (LeftAxisTraces.Count > 0)
                     secondary = new Rect(primary.X, secondary.Y, primary.Width, secondary.Height);
-                else if (secondary.X < 0)
+                else if (xIsFrequency && secondary.X < 0)
                     secondary = new Rect(0, secondary.Y, secondary.Right, secondary.Height);
             }
             else

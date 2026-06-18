@@ -113,6 +113,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // The active editable document; null when no undoable document is active.
     private IUndoableDocument? _activeUndoTarget;
 
+    // Last schematic document made active — kept so the Analyses panel + Run button survive focusing a
+    // data display / symbol / cell tab. Cleared when this doc is closed or the workspace changes.
+    private SchematicDocument? _lastActiveSchematicDoc;
+
     // Windows that already have undo/redo KeyBindings injected (Dock float support).
     private readonly HashSet<Window> _wiredHostWindows = [];
 
@@ -216,6 +220,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Notify PropertiesTool when the active document tab changes (active schematic tracking).
         if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged npc)
             npc.PropertyChanged += OnDocumentDockPropertyChanged;
+        WireAnalysesRun();
 
         // Load persisted preferences and seed the recent lists.
         var prefs         = AppPreferencesIo.Load();
@@ -347,6 +352,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _lastWorkspaceParentDir = result.ParentDir;
 
             SetActiveUndoTarget(null);
+            _lastActiveSchematicDoc = null;
             _openDocsByPath.Clear();
             _scratchDocs.Clear();
             _scratchSymbols.Clear();
@@ -369,6 +375,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Re-subscribe to the new DocumentDock (instance replaced by CreateDefaultLayout).
             if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged newNpc)
                 newNpc.PropertyChanged += OnDocumentDockPropertyChanged;
+            WireAnalysesRun();
 
             PushRecent(cwsPath);
             Messages.Clear();
@@ -616,6 +623,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _lastWorkspaceParentDir = Path.GetDirectoryName(workspaceDir) ?? _lastWorkspaceParentDir;
 
         SetActiveUndoTarget(null);
+        _lastActiveSchematicDoc = null;
         _openDocsByPath.Clear();
         _scratchDocs.Clear();
         _scratchSymbols.Clear();
@@ -638,6 +646,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Re-subscribe to the new DocumentDock (instance replaced by CreateDefaultLayout).
         if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged newNpc)
             newNpc.PropertyChanged += OnDocumentDockPropertyChanged;
+        WireAnalysesRun();
 
         var cws = TryLoadCws(cwsPath);
         if (cws.ColorSchemeName is { } schemeName)
@@ -1012,13 +1021,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand]
     private async Task RunAnalysis()
     {
-        var activeDoc = _factory.DocumentDock?.ActiveDockable as SchematicDocument;
-        if (activeDoc is null)
-        {
-            Messages.Warning("Run: no schematic is active.");
-            return;
-        }
+        var doc = (_factory.DocumentDock?.ActiveDockable as SchematicDocument) ?? _lastActiveSchematicDoc;
+        if (doc is null) { Messages.Warning("Run: no schematic is active."); return; }
+        await RunSchematicDocAsync(doc);
+    }
 
+    private async Task RunSchematicDocAsync(SchematicDocument activeDoc)
+    {
         var testBenchName = activeDoc.Id;
 
         // Step 1: extract + write netlist.cnl (synchronous — fast).
@@ -1088,6 +1097,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Engine instances created by RunAnalysis are synchronous and do not expose
         // CancellationToken.  Stop is informational for v1 — the run will complete.
         Messages.Info("Stop: engine runs to completion (no cancellation support in v1).");
+    }
+
+    private void WireAnalysesRun()
+    {
+        if (_factory.AnalysesTool?.ListVm is { } listVm)
+        {
+            listVm.RunRequested -= OnAnalysesRunRequested;
+            listVm.RunRequested += OnAnalysesRunRequested;
+        }
+    }
+
+    private void OnAnalysesRunRequested()
+    {
+        var doc = (_factory.DocumentDock?.ActiveDockable as SchematicDocument) ?? _lastActiveSchematicDoc;
+        if (doc is null) { Messages.Warning("Run: no schematic available."); return; }
+        _ = RunSchematicDocAsync(doc);
     }
 
     /// <summary>
@@ -2873,11 +2898,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _factory.PropertiesTool?.SetActiveSchematic(activeVm);
         }
 
-        // Analyses panel — tracks only schematics.
-        var schematicVm = activeDockable is SchematicDocument sd ? sd.ViewModel : null;
-        string? schName = activeDockable is SchematicDocument sdName && sdName.FilePath is { } fp
-            ? System.IO.Path.GetFileName(fp) : null;
-        _factory.AnalysesTool?.SetActiveSchematic(schematicVm, schName);
+        // Analyses panel — retain the last schematic so focusing a data display / symbol / cell tab
+        // does NOT blank it. Only update when a schematic document becomes active.
+        if (activeDockable is SchematicDocument sd)
+        {
+            _lastActiveSchematicDoc = sd;
+            string? schName = sd.FilePath is { } fp ? System.IO.Path.GetFileName(fp) : sd.Id;
+            _factory.AnalysesTool?.SetActiveSchematic(sd.ViewModel, schName);
+        }
 
         // Undo routing — follows any IUndoableDocument for main-window tabs.
         SetActiveUndoTarget(activeDockable as IUndoableDocument);
@@ -3084,6 +3112,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // After removing the doc from _openDocsByPath, retire its session if clean + unreferenced.
         if (dockable is SchematicDocument closedSchDoc && closedSchDoc.FilePath is { } closedPath)
             RetireSessionIfUnreferenced(closedPath);
+
+        // If the retained schematic is closed, blank the Analyses panel.
+        if (ReferenceEquals(dockable, _lastActiveSchematicDoc))
+        {
+            _lastActiveSchematicDoc = null;
+            _factory.AnalysesTool?.SetActiveSchematic(null);
+        }
     }
 
     // ---- Save All documents (⌘S / Ctrl+S) ----------------------------------

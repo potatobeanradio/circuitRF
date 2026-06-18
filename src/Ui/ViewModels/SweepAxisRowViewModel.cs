@@ -20,6 +20,11 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
 {
     private readonly SchematicEditModel _model;
 
+    // ── Enabled ───────────────────────────────────────────────────────────────
+
+    /// <summary>When false, this axis collapses out of the result (its Start/Stop/Step is kept).</summary>
+    [ObservableProperty] private bool _enabled = true;
+
     // ── Variable name ─────────────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -174,6 +179,7 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
     {
         var vm = new SweepAxisRowViewModel(model);
         vm.VarName = psa.SweepVarName;
+        vm.Enabled = psa.Enabled;
 
         if (psa.Spec is { } spec)
         {

@@ -51,7 +51,8 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
         }
     }
 
-    internal static Core.Design.Analysis CloneAnalysis(Core.Design.Analysis a, string newName) => a switch
+    internal static Core.Design.Analysis CloneAnalysis(
+        Core.Design.Analysis a, string newName, string? newInnerName = null) => a switch
     {
         DcAnalysis =>
             new DcAnalysis(newName) { Enabled = a.Enabled },
@@ -82,6 +83,14 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
 #pragma warning restore CS0618
             },
 
+        ParametricSweepAnalysis psa =>
+            CloneSweep(psa, newName, newInnerName ?? psa.InnerAnalysisName),
+
         _ => throw new NotSupportedException($"Cannot clone analysis type {a.GetType().Name}"),
     };
+
+    private static ParametricSweepAnalysis CloneSweep(ParametricSweepAnalysis psa, string name, string inner)
+        => psa.Spec is { } spec
+            ? new ParametricSweepAnalysis(name, psa.SweepVarName, spec, inner)        { Enabled = psa.Enabled }
+            : new ParametricSweepAnalysis(name, psa.SweepVarName, psa.SweepValues, inner) { Enabled = psa.Enabled };
 }

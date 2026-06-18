@@ -26,6 +26,39 @@ namespace CircuitRF.Ui.DataDisplay
             float lw    = (float)(Math.Min(canvasSize.W, canvasSize.H) / 200.0);
             var   props = trace.Properties;
 
+            // ---- Family trace (Phase 7.3b) ----
+            // Every curve in the family shares the trace's single line color (no per-curve
+            // stepping, no legend) — the family reads as one trace drawn N times.
+            if (trace.IsFamily)
+            {
+                if (!props.LineEnabled) return;
+                float strokeW   = lw * (float)props.LineWidth;
+                bool  useSecond = trace.UseSecondaryAxis;
+                using var paint = new SKPaint
+                {
+                    Color       = RenderTheme.ToSKColor(props.LineColor, props.LineOpacity),
+                    StrokeWidth = strokeW,
+                    Style       = SKPaintStyle.Stroke,
+                    IsAntialias = true,
+                    StrokeCap   = SKStrokeCap.Round,
+                    StrokeJoin  = SKStrokeJoin.Round
+                };
+                if (props.LineType == LineType.Dashed)
+                    paint.PathEffect = SKPathEffect.CreateDash(new[] { strokeW * 3f, strokeW * 2f }, 0);
+                foreach (var curve in trace.FamilyCurves)
+                {
+                    using var p = new SKPath();
+                    bool first = true;
+                    foreach (var pt in curve.Points)
+                    {
+                        var px = tf.ToCanvas(pt.X, pt.Y, useSecond);
+                        if (first) { p.MoveTo(px); first = false; } else p.LineTo(px);
+                    }
+                    canvas.DrawPath(p, paint);
+                }
+                return;
+            }
+
             // ---- Line / curve ----
             if (props.LineEnabled)
             {
