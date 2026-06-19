@@ -76,6 +76,24 @@ add an outer parametric sweep, a hand-edited bracket can address the wrong axis 
 not). So: prefer the **accessor** for durable hand-authored measurements; reach for the **bracket** when
 copy-pasting from a trace you already have on screen.
 
+### S-parameters: `i`/`j` are 1-based port numbers
+
+An S-parameter cube has axes `[freq, i, j]` (plus a leading sweep axis when swept), where `i` is the
+response port and `j` the drive port. On **these two axes the index is the port number, 1-based** — the
+way RF engineers name S-parameters — in both notations:
+
+```
+s21    = SP1.S(2, 1)         # accessor: S21 over frequency
+s21_db = dB( SP1.S[:, 2, 1] ) # bracket:  S21, freq kept (:), ports fixed
+s11    = SP1.S[:, 1, 1]       # S11
+```
+
+`SP1.S(i, j)` and `SP1.S[:, i, j]` are equivalent and both give Sij. `SP1.S[:, 2, 1]` is **S21**, not
+"row 2, column 1 by zero-based index." Only `i`/`j` carry port numbers; `freq`, sweep, harmonic, and
+node/branch axes are unchanged (`:` keeps them, integers index 0-based, names fix labeled axes). A port
+outside `1..nPorts` is a clear error listing the available ports. For a swept S cube the leading sweep
+axis stays 0-based positional — `SP1.S[0, :, 2, 1]` is S21 at the first sweep point.
+
 > **Multi-`:` note.** In a measurement every `:` axis is *kept* — `HB1.V[:, :, 1]` is a 2-D `[sweep,
 > node]` result. The trace card reads a second `:` as a *family of curves*; that family concept does not
 > exist in measurement algebra, so the same string means "keep both axes" here. Single-`:` specs (the

@@ -89,7 +89,8 @@ namespace CircuitRF.Ui.DataDisplay
                     sb.Append(first ? '(' : ',');
                     sb.Append(s.AxisName);
                     sb.Append('=');
-                    sb.Append(s.Index);
+                    // i/j are S/Y/Z port axes — show 1-based port numbers (i=1 ⇒ port 1).
+                    sb.Append(s.AxisName is "i" or "j" ? s.Index + 1 : s.Index);
                     first = false;
                 }
                 if (!first) sb.Append(')');

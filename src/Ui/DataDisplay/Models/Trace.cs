@@ -380,6 +380,7 @@ namespace CircuitRF.Ui.DataDisplay
             var parts = Slice.Select(s =>
                 s.Role == AxisRole.KeepAsX         ? ":"
                 : s.Role == AxisRole.FamilyIterate ? "~"
+                : (s.AxisName is "i" or "j")       ? (s.Index + 1).ToString()   // 1-based port number (S[:, 2, 1] = S21)
                 : !string.IsNullOrEmpty(s.Label)   ? $"\"{s.Label}\""
                 :                                    s.Index.ToString());
             var inner = string.Join(", ", parts);

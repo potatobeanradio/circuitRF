@@ -164,8 +164,10 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (path is null) return;
 
         var newParams = _target.Parameters.Select(p => p.Clone()).ToList();
+        // Prefer a workspace-relative path (portable); falls back to absolute per SnpPathPolicy.
+        string stored = SnpPathPolicy.ToStored(path, _schematicVm.WorkspaceRoot);
         var fileParam = newParams.FirstOrDefault(p => p.Name == "File");
-        if (fileParam is not null) fileParam.Expression = path;
+        if (fileParam is not null) fileParam.Expression = stored;
 
         if (TouchstoneIO.TryGetPortCount(path, out int n, out _))
         {
@@ -180,8 +182,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     {
         if (RevealFileAsync is null || string.IsNullOrWhiteSpace(SnpFilePath)) return;
         string path = SnpFilePath;
-        if (!System.IO.Path.IsPathRooted(path) && _schematicVm?.EditModel.SchematicDirectory is { } dir)
-            path = System.IO.Path.GetFullPath(System.IO.Path.Combine(dir, path));
+        if (!System.IO.Path.IsPathRooted(path) && _schematicVm?.WorkspaceRoot is { Length: > 0 } root)
+            path = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, path.Replace('\\', '/')));
         await RevealFileAsync(path);
     }
 

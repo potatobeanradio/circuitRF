@@ -38,7 +38,7 @@ A **`DataCube`** is an N-dimensional array (`DataKind` = Real or Complex) with n
 |------|------------------------------|------|-------|
 | `V` | `[node]` → `[node, harmonic]` → `[sweep…, node, harmonic]` | Complex (HB) / Real (DC) | node axis `Labels` = net names |
 | `I` | `[branch]` → `[branch, harmonic]` → `[sweep…, branch, harmonic]` | Complex / Real | branch axis `Labels` = IProbe names + device-port keys |
-| `S` | `[freq, i, j]` | Complex | network / Touchstone path |
+| `S` | `[freq, i, j]` or `[sweep…, freq, i, j]` | Complex | **Two paths:** default-group `S` (from Touchstone) uses the network/SNP path; named-group `S` (e.g. `SP1.S`, from a sim run) is a first-class `DataCube` — `freq` defaults to X, `i`/`j` are port selectors, `dB20` is the default Rect transform |
 | measurement | scalar (rank-0) or `[sweep…]` | Real/Complex | e.g. `PDC`, `Gain` |
 
 Two **provenance side-cubes** mark the "user-relevant" subset of a label axis, mirroring each
@@ -135,9 +135,10 @@ slice from the shape-independent spec text if axes were added/removed/reordered)
 ```
 - **X** — use as the plot X axis. **Fam** — iterate as a family. **Fix** — pin to one value
   (the **▾** selector). Exactly one X (or none → scalar); at most one Fam.
-- The **node/branch** label axis defaults to **Fix** (a selector), never X; the default X is
-  the first *non-label* axis (harmonic, sweep, freq…). With no non-label axis (e.g. no-sweep
-  DC), the cube has no X and resolves to a scalar.
+- The **node/branch** label axis defaults to **Fix** (a selector), never X; the default X
+  prefers the **`freq`** axis when present (S/Y/Z parameter cubes and freq-swept cubes), then
+  falls back to the first non-label axis (harmonic, sweep…). With no non-label axis (e.g.
+  no-sweep DC), the cube has no X and resolves to a scalar.
 - The **eye** (👁) sits on the label-axis row and reveals the unlabeled entries — all nodes
   beyond `__LabeledNodes`, all device-port branches beyond `__ProbeBranches`. It is the single
   "show all" control, shared by the node and branch rows.
@@ -145,6 +146,26 @@ slice from the shape-independent spec text if axes were added/removed/reordered)
 **Spec row** — the transform combo + the editable **shorthand** text box (§5).
 
 **Style rows** — line, symbol, per-port Z0 (network), and Table number-format.
+
+### Simulated S-parameters vs Touchstone
+
+Two paths produce S-parameter data; which one the card uses depends on how the data arrived:
+
+| Source | Group | `entry.Snp` | Path | CubeName |
+|--------|-------|-------------|------|----------|
+| Touchstone file (`.s2p`…) | `""` (default) | non-null | **Network/SNP** — group "S-Parameters", matrix-element items | n/a |
+| S-param run result (`run.npy`) | `"SP1"` (analysis name) | null | **Cube** — `freq` → X, `i`/`j` port selectors, `dB20` on Rect | `SP1.S` |
+
+The rules:
+- Default-group `S` is **always** owned by the network path (skipped by the cube picker).
+- Named-group `S` (e.g. `SP1.S`, axes `[(sweep,) freq, i, j]`) is a **first-class cube**
+  offered in the group picker under its analysis name.
+- `Z0` is **always** skipped (per-port reference impedance, not a signal).
+- A sweep axis is **pinned** by default; promote it to **Family** for one S-vs-freq curve per
+  sweep point. `i`/`j` are **1-based port selectors** — the shorthand shows port numbers
+  (`SP1.S[:, 1, 1]` = S11, `SP1.S[:, 2, 1]` = S21), though the internal `Fix` index stays 0-based.
+- `dB20` is the default Rect transform for S/Y/Z parameter cubes (axes `freq`, `i`, `j`).
+  Smith and Polar get no transform (`CubeTransform.None`).
 
 ---
 
@@ -174,6 +195,11 @@ The text box is a two-way view of the binding. Grammar:
   user explicitly types `PDC[:]`, that is preserved.
 - A fully-**Fixed** spec (no `:`/`~`) is a **scalar** (`DC1.I["Iout"]`, `DC1.V["Vout"]`) — valid
   on a Table.
+- On an S/Y/Z cube's **`i`/`j`** axes a bare integer is a **1-based port number**
+  (`SP1.S[:, 2, 1]` = S21, `SP1.S[:, 1, 1]` = S11), not a 0-based index — matching how RF
+  engineers name S-parameters. Every **other** axis (`freq`, sweep, harmonic) uses 0-based
+  integer indices; labeled axes (node/branch) use quoted names. A port outside `1..nPorts` is a
+  reported error.
 
 Validity: exactly one X **or** zero X (scalar); at most one `~`; a `~` requires an X. Anything
 else is reported inline under the box.
@@ -248,7 +274,7 @@ with the **▾** selector; the spec box mirrors the result (e.g. `HB1.V[~, "Vout
 ## 9. Multi-cube expressions
 
 When a trace needs arithmetic across cubes, the spec box accepts a free expression
-(`mag(HB1.V) - mag(HB1.Vref)`, `dB20(HB1.S[:,1,0])`). These take the `TraceExpression` path
+(`mag(HB1.V) - mag(HB1.Vref)`, `dB20(SP1.S[:, 2, 1])`). These take the `TraceExpression` path
 (element-wise over the referenced cube slices) instead of the single-cube slice path. Bare
 measurement names work as single-token specs (`PDC`); using a bare name *inside* a larger
 expression still requires the qualified form today (a noted future enhancement).

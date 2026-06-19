@@ -80,6 +80,13 @@ public static class SliceTokenParser
         // Integer index (pins/removes the axis).
         if (int.TryParse(tk, out int index))
         {
+            // S/Y/Z port axes (i, j) use 1-based PORT NUMBERS, not 0-based indices: S[:, 2, 1] = S21.
+            if (axisName is "i" or "j")
+            {
+                if (index < 1 || index > axisLength)
+                { error = $"Port {index} out of range for axis '{axisName}' (1..{axisLength})."; return new Token(Kind.Invalid); }
+                return new Token(Kind.PinIndex, Index: index - 1);
+            }
             if (index < 0 || index >= axisLength)
             { error = $"Index {index} out of range for axis '{axisName}' (0..{axisLength - 1})."; return new Token(Kind.Invalid); }
             return new Token(Kind.PinIndex, Index: index);

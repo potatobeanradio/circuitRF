@@ -203,8 +203,14 @@ public sealed class GroupedDataSetStage3Tests
             var measItems = trvm.AvailableSignals.Where(s => s.IsCubeBound).Select(s => s.CubeName).ToList();
             Assert.Contains("Gain", measItems);   // measurements group → bare name
 
-            // SP1.S must not appear in any group (S is filtered from cube picker).
-            foreach (var grp in trvm.AvailableGroups.ToList())
+            // SP1.S appears in the SP1 analysis group (named-group S is a first-class cube).
+            Assert.Contains("SP1", trvm.AvailableGroups);
+            trvm.SelectedGroup = "SP1";
+            var sp1Items = trvm.AvailableSignals.Where(s => s.IsCubeBound).Select(s => s.CubeName).ToList();
+            Assert.Contains("SP1.S", sp1Items);
+
+            // SP1.S must NOT leak into other groups (HB1, Measurements, ...).
+            foreach (var grp in trvm.AvailableGroups.Where(g => g != "SP1").ToList())
             {
                 trvm.SelectedGroup = grp;
                 Assert.DoesNotContain("SP1.S",

@@ -885,7 +885,10 @@ public partial class TraceRowViewModel : ViewModelBase
 
                 foreach (var (bareName, cube) in ds.CubesIn(group))
                 {
-                    if (bareName is "S" or "Z0" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
+                    if (bareName == "Z0" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
+                    // Default-group S belongs to the network/SNP path (Touchstone). S in a named analysis
+                    // group is a simulated S cube (no SNP) — offer it as a first-class cube.
+                    if (bareName == "S" && group == DataSet.DefaultGroup) continue;
                     // Solver diagnostics — not offered in the picker; advanced users type them in the spec field.
                     if (bareName.EndsWith("Converged", StringComparison.Ordinal) ||
                         bareName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
@@ -906,32 +909,9 @@ public partial class TraceRowViewModel : ViewModelBase
                             ? bareName
                             : $"{group}.{bareName}";
 
-                    // Default slice: rank-0 = empty; rank-1+ = first non-label axis → KeepAsX,
-                    // label axes (node/branch) always pinned. If no non-label axis exists (no-sweep
-                    // DC), nothing is X → the cube resolves to a scalar.
-                    AxisSlice[] defaultSlice;
-                    if (rank == 0)
-                    {
-                        defaultSlice = Array.Empty<AxisSlice>();
-                    }
-                    else
-                    {
-                        defaultSlice = new AxisSlice[rank];
-                        int xAxisIdx = -1;
-                        for (int d = 0; d < rank; d++)
-                            if (cube.Axes[d].Name is not "node" and not "branch") { xAxisIdx = d; break; }
-                        for (int d = 0; d < rank; d++)
-                        {
-                            var ax = cube.Axes[d];
-                            if (d == xAxisIdx)
-                                defaultSlice[d] = new AxisSlice(ax.Name, AxisRole.KeepAsX, 0);
-                            else
-                            {
-                                string lbl = (ax.Labels is { Length: > 0 }) ? ax.Labels[0] : "";
-                                defaultSlice[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
-                            }
-                        }
-                    }
+                    // freq → X when present (parameter / freq-swept cubes), else first non-label axis;
+                    // all other axes pinned at index 0.
+                    AxisSlice[] defaultSlice = BuildDefaultSlice(cube);
 
                     _allSignals.Add(new TraceDataItem(entry, qualified, defaultSlice, bareName, isEnabled)
                                     { Group = cubeGroup });
@@ -1254,6 +1234,52 @@ public partial class TraceRowViewModel : ViewModelBase
         _parent.RebuildAndNotify();
     }
 
+    /// <summary>
+    /// Index of the default X axis for a cube: the "freq" axis when present (S/Y/Z parameter cubes and
+    /// any freq-swept cube), else the first non-label (node/branch) axis. Returns -1 when only label
+    /// axes exist (→ no X → scalar, valid for no-sweep DC).
+    /// </summary>
+    internal static int DefaultXAxis(RfCore.Data.DataCube cube)
+    {
+        for (int d = 0; d < cube.Rank; d++)
+            if (cube.Axes[d].Name == "freq") return d;
+        for (int d = 0; d < cube.Rank; d++)
+            if (cube.Axes[d].Name is not "node" and not "branch") return d;
+        return -1;
+    }
+
+    /// <summary>
+    /// Default slice for a cube: <see cref="DefaultXAxis"/> → KeepAsX, every other axis pinned at index 0
+    /// (carrying its first label for quoted net names). Rank-0 → empty slice. For an S cube
+    /// [freq, i, j] (+ optional swept prefix) this is S(1,1) over frequency with i/j and the sweep pinned.
+    /// </summary>
+    internal static AxisSlice[] BuildDefaultSlice(RfCore.Data.DataCube cube)
+    {
+        int rank = cube.Rank;
+        if (rank == 0) return Array.Empty<AxisSlice>();
+        int xIdx = DefaultXAxis(cube);
+        var slice = new AxisSlice[rank];
+        for (int d = 0; d < rank; d++)
+        {
+            var ax = cube.Axes[d];
+            if (d == xIdx)
+                slice[d] = new AxisSlice(ax.Name, AxisRole.KeepAsX, 0);
+            else
+            {
+                string lbl = (ax.Labels is { Length: > 0 }) ? ax.Labels[0] : "";
+                slice[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
+            }
+        }
+        return slice;
+    }
+
+    /// <summary>True for an S/Y/Z parameter cube (axes "freq", "i", "j") — used to pick the dB20
+    /// first-add transform on Rect.</summary>
+    internal static bool IsParameterCube(RfCore.Data.DataCube cube)
+        => cube.Axes.Any(a => a.Name == "freq")
+        && cube.Axes.Any(a => a.Name == "i")
+        && cube.Axes.Any(a => a.Name == "j");
+
     private AxisSlice[] BuildCarriedSlice(TraceDataItem value, AxisSlice[]? oldSlice)
     {
         var ds   = value.Entry.Data;
@@ -1303,7 +1329,7 @@ public partial class TraceRowViewModel : ViewModelBase
 
         if (!anyX && rank > 0)
         {
-            int fb = Array.FindIndex(result, s => s.AxisName is not "node" and not "branch");
+            int fb = DefaultXAxis(cube);
             if (fb >= 0) result[fb] = result[fb] with { Role = AxisRole.KeepAsX, Label = "" };
             // else: all label axes → no X → scalar.
         }

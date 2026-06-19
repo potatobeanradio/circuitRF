@@ -29,6 +29,17 @@ public sealed partial class SchematicViewModel : ObservableObject
     public SchematicSelection Selection  { get; } = new();
     public IMessageSink?      MessageSink => _messageSink;
 
+    /// <summary>
+    /// Returns the current workspace root (the directory holding the .cws), or null when no workspace
+    /// is open. Supplied by WorkspaceViewModel. Used by the Parameter Editor to resolve/relativize SnP
+    /// File paths consistently with the engine (which resolves against the same root).
+    /// </summary>
+    public Func<string?>? WorkspaceRootProvider { get; set; }
+
+    /// <summary>The current workspace root, or null. Evaluated lazily so it always reflects the
+    /// currently-open workspace.</summary>
+    public string? WorkspaceRoot => WorkspaceRootProvider?.Invoke();
+
     // ── Render snapshot ───────────────────────────────────────────────────────
 
     [ObservableProperty] private SchematicModel?        _renderModel;

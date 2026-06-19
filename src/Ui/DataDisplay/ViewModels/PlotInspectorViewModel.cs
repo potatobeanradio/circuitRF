@@ -209,7 +209,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
         foreach (var group in ds.Groups)
             foreach (var (bareName, cube) in ds.CubesIn(group))
             {
-                if (bareName is "S" or "Z0" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
+                if (bareName == "Z0" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
+                // Default-group S is owned by the network/SNP path (Touchstone); grouped S is a
+                // simulated S cube offered as a first-class cube.
+                if (bareName == "S" && group == DataSet.DefaultGroup) continue;
                 if (bareName.EndsWith("Converged", StringComparison.Ordinal) ||
                     bareName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
                 if ((bareName == "I" || bareName == "INl") && cube.Axes.Any(a => a.Name == "node")) continue;
@@ -391,21 +394,16 @@ public partial class PlotInspectorViewModel : ViewModelBase
             return trace;
         }
 
-        var slice = new AxisSlice[rank];
-        slice[0] = new AxisSlice(cube.Axes[0].Name, AxisRole.KeepAsX, 0);
-        for (int d = 1; d < rank; d++)
-        {
-            var ax  = cube.Axes[d];
-            string lbl = (ax.Labels is { Length: > 0 }) ? ax.Labels[0] : "";
-            slice[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
-        }
+        // Default slice: freq → X when present (S/Y/Z parameter cubes and freq-swept cubes), else the
+        // first non-label axis; every other axis pinned at index 0. For an S cube [freq, i, j] (+ optional
+        // swept prefix) this yields S(1,1) over frequency with the sweep pinned — the user promotes the
+        // sweep to Family or repins i/j via the axis-role editor.
+        trace.Slice = TraceRowViewModel.BuildDefaultSlice(cube);
 
-        trace.Slice = slice;
-
-        // First-add nicety: a complex cube on a Rect plot would render <invalid>; default to mag() so the user
-        // sees something. Seed-time only — never re-applied on later edits.
+        // First-add nicety on Rect: complex cubes would render <invalid>. S/Y/Z parameter cubes default to
+        // dB20 (the natural S-parameter view); other complex cubes to mag(). Seed-time only.
         if (_plot.PlotType == PlotType.Rect && cube.DataKind == DataKind.Complex)
-            trace.Transform = CubeTransform.Mag;
+            trace.Transform = TraceRowViewModel.IsParameterCube(cube) ? CubeTransform.dB20 : CubeTransform.Mag;
 
         trace.Expression = trace.BuildPickerExpression();
         return trace;

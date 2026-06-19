@@ -238,14 +238,15 @@ public sealed class Evaluator
         if (cl.Args.Length == 0)
             return new Value(ds[accessorName]);
 
-        // ── S(portI, portJ) — S-parameter pair ───────────────────────────────
+        // ── S(portI, portJ) — S-parameter pair (1-based port numbers) ─────────
         if (accessorName == "S")
         {
             if (cl.Args.Length != 2) throw new ArityException(cl.Name, 2, cl.Args.Length);
-            int pi = (int)EvalExpr(cl.Args[0], scope).AsReal() - 1;
-            int pj = (int)EvalExpr(cl.Args[1], scope).AsReal() - 1;
-            var sc = ds["S"];
-            return SliceToValue(sc[new object[] { pi, pj, Range.All }]);
+            int pi = (int)EvalExpr(cl.Args[0], scope).AsReal();
+            int pj = (int)EvalExpr(cl.Args[1], scope).AsReal();
+            // DataSet.S resolves i/j by axis value (1-based) and keeps freq (+ sweep), order-independent —
+            // unlike the previous positional slice, which assumed [i, j, freq] and pinned freq instead.
+            return new Value(ds.S(pi, pj));
         }
 
         // ── V(nodeName,…) / INl(nodeName,…) — node-indexed ─────────────────
@@ -450,7 +451,19 @@ public sealed class Evaluator
             return idx;
         }
         if (v.Kind == ValueKind.Real)
-            return (int)v.AsReal();
+        {
+            int n = (int)v.AsReal();
+            // S/Y/Z port axes (i, j) use 1-based PORT NUMBERS resolved by axis value: S[:, 2, 1] = S21.
+            if (axis.Name is "i" or "j")
+            {
+                for (int k = 0; k < axis.Values.Length; k++)
+                    if ((int)Math.Round(axis.Values[k]) == n) return k;
+                throw new ExpressionException(
+                    $"Port {n} not found on axis '{axis.Name}'. Available ports: " +
+                    $"[{string.Join(", ", axis.Values.Select(x => ((int)Math.Round(x)).ToString()))}].");
+            }
+            return n;
+        }
         throw new ExpressionException(
             $"Index for axis '{axis.Name}' must be ':', a name, an integer, or a range — got {v.Kind}.");
     }
