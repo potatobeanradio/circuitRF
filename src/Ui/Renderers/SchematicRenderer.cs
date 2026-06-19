@@ -850,7 +850,7 @@ public static class SchematicRenderer
             if (string.IsNullOrEmpty(label)) continue;
             var (oDx, oDy) = i < c.LabelOffsets.Count ? c.LabelOffsets[i] : (0.0, 0.0);
             if (dragDelta is { } dd) { oDx += dd.DX; oDy += dd.DY; }
-            var (worldX, worldY, _, _) = SchematicComponent.LabelRowGeometry(cx, cy, i, oDx, oDy, c.Symbol, portCount);
+            var (worldX, worldY, _, _) = SchematicComponent.LabelRowGeometry(cx, cy, i, oDx, oDy, c.Symbol, portCount, c.GlyphBbMaxY - c.Y);
             var (lx, ly) = ToPixel(worldX, worldY, panX, panY, zoom);
             var paint = i == 0 ? compNamePaint : (i == 1 ? instNamePaint : paramNamePaint);
             canvas.DrawText(label, lx, ly, SKTextAlign.Left, font, paint);

@@ -593,7 +593,7 @@ public sealed class Elaborator
     private static void LintTopLevelTerms(ElaboratedNetlist netlist)
     {
         var topTerms = netlist.Components
-            .Where(ec => (ec.Model is PortModel or TermModel) && !ec.InstancePath.Contains('.'))
+            .Where(ec => (ec.Model is PortModel or TermModel or P1ToneModel) && !ec.InstancePath.Contains('.'))
             .ToList();
 
         if (topTerms.Count == 0) return;

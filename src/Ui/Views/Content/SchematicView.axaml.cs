@@ -327,6 +327,12 @@ public partial class SchematicView : UserControl
         SchematicCanvasCtrl.Focus();
     }
 
+    private void OnPlacePin(object? sender, RoutedEventArgs e)
+    {
+        Vm?.BeginPlacement(SymbolKind.Pin);
+        SchematicCanvasCtrl.Focus();
+    }
+
     // ── Transform buttons ─────────────────────────────────────────────────────
 
     private void OnRotateCcw(object? sender, RoutedEventArgs e)  => Vm?.RotateSelection(clockwise: false);
@@ -608,7 +614,7 @@ public partial class SchematicView : UserControl
     private sealed record ComponentLabelAnchor(
         double CompX, double CompY, int Row, double ODx, double ODy,
         SymbolKind Symbol, int PortCount,
-        double PrefixWorldUnits = 0);
+        double PrefixWorldUnits = 0, double? GlyphHalfH = null);
     private ComponentLabelAnchor? _labelAnchor;
 
     private void OnTextLabelDoubleTapped(object? sender, TextLabelHitArgs e)
@@ -664,9 +670,12 @@ public partial class SchematicView : UserControl
                 }
             }
 
+            double? anchorGlyphHalfH = editComp.Symbol == SymbolKind.Snp
+                ? editComp.ComputeGlyphBb().MaxY - editComp.Y
+                : null;
             _labelAnchor = new ComponentLabelAnchor(
                 editComp.X, editComp.Y, row, oDx, oDy,
-                editComp.Symbol, editComp.PortCount, prefixWorldUnits);
+                editComp.Symbol, editComp.PortCount, prefixWorldUnits, anchorGlyphHalfH);
         }
         else
         {
@@ -690,7 +699,7 @@ public partial class SchematicView : UserControl
     {
         var a = _labelAnchor!;
         var (baseXw, baseYw, _, _) = SchematicComponent.LabelRowGeometry(
-            a.CompX, a.CompY, a.Row, a.ODx, a.ODy, a.Symbol, a.PortCount);
+            a.CompX, a.CompY, a.Row, a.ODx, a.ODy, a.Symbol, a.PortCount, a.GlyphHalfH);
         double offsetW = (Vm?.InlineEditIncludesName ?? false) ? 0 : a.PrefixWorldUnits;
         return SchematicCanvasCtrl.WorldToScreen(baseXw + offsetW, baseYw);
     }

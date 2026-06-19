@@ -40,6 +40,7 @@ public static class Units
         { "fF",  1e-15 },
         // Resistance
         { "Ohm",  1.0  },
+        { "ohm",  1.0  },
         { "kOhm", 1e3  },
         { "MOhm", 1e6  },
         { "GOhm", 1e9  },
@@ -52,6 +53,7 @@ public static class Units
         { "rad", 1.0   },
         // Dimensionless / identity
         { "Ohms", 1.0  },  // alternate spelling seen in netlists
+        { "ohms", 1.0  },  // lowercase variant
     };
 
     /// <summary>Returns the linear scale factor for a unit string, or null if unrecognised.</summary>

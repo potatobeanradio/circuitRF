@@ -3667,13 +3667,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (window is null) return;
 
         // Prefer the active dockable if it's a scratch doc; else first dirty scratch doc.
+        // Also handle already-materialized docs (Save As to a new path).
         var doc = _factory.DocumentDock?.ActiveDockable as SchematicDocument;
         if (doc is null || !doc.IsScratch)
-            doc = _scratchDocs.FirstOrDefault(d => d.IsDirty);
+        {
+            var scratch = _scratchDocs.FirstOrDefault(d => d.IsDirty);
+            if (scratch is not null)
+                doc = scratch;
+        }
 
         if (doc is null)
         {
-            Messages.Info("No scratch schematic to save.");
+            Messages.Info("No schematic to save.");
             return;
         }
 
@@ -3712,10 +3717,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 cws.KnownFiles.Add(filePath);
             WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath!, cws);
 
-            // Scratch → materialized transition.
-            _scratchDocs.Remove(doc);
-            _recovery.ClearDoc(doc);
-            doc.Materialize(filePath);
+            if (doc.IsScratch)
+            {
+                // Scratch → materialized transition.
+                _scratchDocs.Remove(doc);
+                _recovery.ClearDoc(doc);
+                doc.Materialize(filePath);
+            }
+            else
+            {
+                // Materialized → Save As (new path).
+                string? oldPath = doc.FilePath;
+                if (oldPath is not null && oldPath != filePath)
+                    _openDocsByPath.Remove(oldPath);
+                doc.OnSavedAs(filePath, Path.GetFileNameWithoutExtension(filePath));
+            }
             _openDocsByPath[filePath] = doc;
             RegisterSession(filePath, doc.ViewModel);
             NotifySessionSaved(filePath);
@@ -3782,10 +3798,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             SchematicPersistence.SaveToFile(filePath, doc.ViewModel.EditModel, doc.Id);
 
-            // Materialize (plain — no workspace registration, no Known-File entry).
-            _scratchDocs.Remove(doc);
-            _recovery.ClearDoc(doc);
-            doc.Materialize(filePath);
+            if (doc.IsScratch)
+            {
+                // Materialize (plain — no workspace registration, no Known-File entry).
+                _scratchDocs.Remove(doc);
+                _recovery.ClearDoc(doc);
+                doc.Materialize(filePath);
+            }
+            else
+            {
+                // Materialized → Save As (new path, no workspace entry).
+                string? oldPath = doc.FilePath;
+                if (oldPath is not null && oldPath != filePath)
+                    _openDocsByPath.Remove(oldPath);
+                doc.OnSavedAs(filePath, Path.GetFileNameWithoutExtension(filePath));
+            }
             _openDocsByPath[filePath] = doc;
             RegisterSession(filePath, doc.ViewModel);
             NotifySessionSaved(filePath);

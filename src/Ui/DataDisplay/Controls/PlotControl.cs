@@ -647,11 +647,19 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                         _tableColResizeDragging = true;
                         _tableResizeColIndex    = hitResult.ResizeColIndex;
                         _tableResizeStartPt     = pos;
-                        var resCols = TableRenderer.BuildColumns(_plot);
-                        _tableResizeStartWidth = hitResult.ResizeColIndex < resCols.Count
-                            && resCols[hitResult.ResizeColIndex].Kind == TableColKind.TraceValue
-                            ? _plot.Traces[resCols[hitResult.ResizeColIndex].FirstTraceIndex].ColumnWidth
-                            : _plot.ColumnWidth;
+                        var resCols   = TableRenderer.BuildColumns(_plot);
+                        var resizeCol = hitResult.ResizeColIndex < resCols.Count
+                            ? resCols[hitResult.ResizeColIndex] : null;
+                        if (resizeCol?.Kind == TableColKind.TraceValue)
+                            _tableResizeStartWidth = _plot.Traces[resizeCol.FirstTraceIndex].ColumnWidth;
+                        else if (resizeCol?.Kind == TableColKind.XAxis)
+                        {
+                            var anchor = _plot.Traces[resizeCol.FirstTraceIndex];
+                            _tableResizeStartWidth = anchor.XColumnWidth > 0
+                                ? anchor.XColumnWidth : _plot.ColumnWidth;
+                        }
+                        else
+                            _tableResizeStartWidth = _plot.ColumnWidth;
                         e.Pointer.Capture(this);
                         e.Handled = true;
                         return;
@@ -778,9 +786,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 double dx        = (current.X - _tableResizeStartPt.X) / resizeZoom;
                 double newWidth  = Math.Max(TableRenderer.MinColumnWidth, _tableResizeStartWidth + dx);
                 var drCols = TableRenderer.BuildColumns(_plot);
-                if (_tableResizeColIndex < drCols.Count
-                    && drCols[_tableResizeColIndex].Kind == TableColKind.TraceValue)
-                    _plot.Traces[drCols[_tableResizeColIndex].FirstTraceIndex].ColumnWidth = newWidth;
+                if (_tableResizeColIndex < drCols.Count)
+                {
+                    var drCol = drCols[_tableResizeColIndex];
+                    if (drCol.Kind == TableColKind.TraceValue)
+                        _plot.Traces[drCol.FirstTraceIndex].ColumnWidth = newWidth;
+                    else  // XAxis: write to per-anchor XColumnWidth
+                        _plot.Traces[drCol.FirstTraceIndex].XColumnWidth = newWidth;
+                }
                 else
                     _plot.ColumnWidth = newWidth;
                 InvalidateVisual();
@@ -964,8 +977,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (_plot is null) return;
 
             // Table plots: plain scroll moves rows; no Ctrl required.
+            // If the table fits entirely on screen (can't scroll), let the event bubble for zoom.
             if (_plot.PlotType == PlotType.Table)
             {
+                float tableZoom = (float)(ContainerProvider?.Invoke()?.ZoomLevel ?? 1.0);
+                if (!TableRenderer.CanScroll(_plot, (Bounds.Width, Bounds.Height), tableZoom))
+                    return;   // leave e.Handled = false so parent can zoom
                 int delta = e.Delta.Y > 0 ? -1 : 1;
                 int newScroll = Math.Max(0, _plot.TableViewScrollIndex + delta);
                 _plot.TableViewScrollIndex = newScroll;
@@ -1019,8 +1036,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 {
                     float fitW = TableRenderer.CalcFitWidth(_plot, hit.ResizeColIndex, (Bounds.Width, Bounds.Height), tableZoom);
                     var dtCols = TableRenderer.BuildColumns(_plot);
-                    if (hit.ResizeColIndex < dtCols.Count && dtCols[hit.ResizeColIndex].Kind == TableColKind.TraceValue)
-                        _plot.Traces[dtCols[hit.ResizeColIndex].FirstTraceIndex].ColumnWidth = fitW;
+                    if (hit.ResizeColIndex < dtCols.Count)
+                    {
+                        var dtCol = dtCols[hit.ResizeColIndex];
+                        if (dtCol.Kind == TableColKind.TraceValue)
+                            _plot.Traces[dtCol.FirstTraceIndex].ColumnWidth = fitW;
+                        else  // XAxis: write to per-anchor XColumnWidth
+                            _plot.Traces[dtCol.FirstTraceIndex].XColumnWidth = fitW;
+                    }
                     else
                         _plot.ColumnWidth = fitW;
                     InvalidateVisual();

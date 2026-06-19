@@ -116,4 +116,34 @@ public sealed class SchematicRenderTheme
         WireRouting       = WireRouting,
         DisabledGlyph     = DisabledGlyph,
     };
+
+    /// <summary>Returns a copy with all symbol-line colors replaced by a neutral grey matching the toolbar foreground.</summary>
+    public SchematicRenderTheme WithMonochrome(bool isLight)
+    {
+        var grey = isLight ? new SKColor(55, 55, 55) : new SKColor(200, 200, 200);
+        return new SchematicRenderTheme
+        {
+            Background        = Background,
+            Grid              = Grid,
+            Wire              = Wire,
+            SymbolLine        = grey,
+            SymbolPlus        = grey,
+            ComponentNameText = ComponentNameText,
+            InstanceNameText  = InstanceNameText,
+            ParameterNameText = ParameterNameText,
+            ConnectionDot     = ConnectionDot,
+            UnconnectedPort   = UnconnectedPort,
+            Warning           = Warning,
+            ConnectedPin      = grey,
+            NetLabelText      = NetLabelText,
+            LodRect           = LodRect,
+            SelectionBox      = SelectionBox,
+            SelectionFill     = SelectionFill,
+            RubberBandStroke  = RubberBandStroke,
+            RubberBandFill    = RubberBandFill,
+            GhostBody         = GhostBody,
+            WireRouting       = WireRouting,
+            DisabledGlyph     = DisabledGlyph,
+        };
+    }
 }

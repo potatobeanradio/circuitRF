@@ -36,7 +36,7 @@ internal sealed class SchematicPasteCommand : IUiCommand
         IMessageSink? messageSink = null)
     {
         _model    = model;
-        _comps    = ResolveNames(model, comps.ToList());
+        _comps    = ResolveNums(model, ResolveNames(model, comps.ToList()));
         _wires    = wires.ToList();
         _cobjs    = cobjs.ToList();
         _reselect = reselect;
@@ -135,6 +135,41 @@ internal sealed class SchematicPasteCommand : IUiCommand
             string prefix = ComponentTypeRegistry.InstancePrefix(comp.Symbol);
             comp.InstanceName = SchematicEditModel.NextAvailableName(taken, prefix);
             taken.Add(comp.InstanceName);
+        }
+        return comps;
+    }
+
+    // S-param port family: Term and P1Tone share a single Num numbering space.
+    private static readonly HashSet<SymbolKind> PortFamily =
+        [SymbolKind.Term, SymbolKind.P1Tone];
+
+    /// <summary>
+    /// For each pasted Term/P1Tone/Port whose Num collides with an existing component,
+    /// reassigns to the lowest unused positive integer. Pasted components in the same
+    /// batch are checked against each other too so they stay unique.
+    /// </summary>
+    private static List<EditableComponent> ResolveNums(
+        SchematicEditModel model, List<EditableComponent> comps)
+    {
+        var pastedIds = comps.Select(c => c.Id).ToHashSet();
+        var usedNums  = new HashSet<int>(
+            model.Components
+                .Where(c => PortFamily.Contains(c.Symbol) && !pastedIds.Contains(c.Id))
+                .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Num")?.Expression)
+                .Where(e => e is not null && int.TryParse(e, out _))
+                .Select(e => int.Parse(e!)));
+
+        foreach (var comp in comps)
+        {
+            if (!PortFamily.Contains(comp.Symbol)) continue;
+            var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
+            if (numParam is null || !int.TryParse(numParam.Expression, out int num)) continue;
+            if (!usedNums.Contains(num)) { usedNums.Add(num); continue; }
+
+            int next = 1;
+            while (usedNums.Contains(next)) next++;
+            numParam.Expression = next.ToString();
+            usedNums.Add(next);
         }
         return comps;
     }

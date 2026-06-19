@@ -976,6 +976,7 @@ public partial class DataDisplayViewModel : ViewModelBase
             trace.SourcePath            = resolvedPath;
             trace.MatrixFormat          = traceConfig.MatrixFormat;
             trace.ColumnWidth           = traceConfig.ColumnWidth > 0 ? traceConfig.ColumnWidth : 115;
+            trace.XColumnWidth          = traceConfig.XColumnWidth;
             trace.FormatString          = traceConfig.FormatString;
             trace.MaximumFractionDigits = traceConfig.MaximumFractionDigits;
 
@@ -1133,6 +1134,7 @@ public partial class DataDisplayViewModel : ViewModelBase
             Z0                    = ComplexStringHelper.Format(t.Z0),
             MatrixFormat          = t.MatrixFormat,
             ColumnWidth           = t.ColumnWidth,
+            XColumnWidth          = t.XColumnWidth,
             FormatString          = t.FormatString,
             MaximumFractionDigits = t.MaximumFractionDigits,
             // Cube-bound identity fields (Phase 7.2c-a). Null = network-bound.

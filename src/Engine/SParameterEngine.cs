@@ -297,17 +297,25 @@ public static class SParameterEngine
         foreach (var ec in netlist.Components)
         {
             if (ec.Model is MutualInductanceModel) continue;
-            // Buried Term/Port/P1Tone: inert even in S-param analysis.
-            if (IsSParamPort(ec.Model) && ec.InstancePath.Contains('.')) continue;
-            // Wave path: ports stamp their own conductances; skip the branch stamp.
-            if (skipPorts && IsSParamPort(ec.Model)) continue;
-            // Legacy path: P1Tone is stamped as a 0 V branch (via StampAsSParamPort in the
-            // prelim pass); do NOT call its normal Stamp here (that would stamp a Z-port branch).
-            if (ec.Model is P1ToneModel p1 && !skipPorts)
+
+            // P1Tone: its internal __drv node (Nodes[2]) hosts the HB V-source junction and is
+            // unused in S-param mode — nothing else stamps it, so it would be a floating MNA
+            // unknown (zero row/col → singular). Tie it off in BOTH paths. The port itself is
+            // realized at the external terminals: the wave path adds the port conductance in
+            // RunWavePath (skipPorts); the legacy path stamps a 0 V port branch here (mirrors Term).
+            // Buried (sub-cell) P1Tones are inert ports but still need their __drv tied off.
+            if (ec.Model is P1ToneModel p1)
             {
-                p1.StampAsSParamPort(mna, ec);
+                bool buried = ec.InstancePath.Contains('.');
+                p1.StampSParamDriveTie(mna, ec);
+                if (!buried && !skipPorts) p1.StampAsSParamPort(mna, ec);
                 continue;
             }
+
+            // Buried Term/Port: inert even in S-param analysis.
+            if (IsSParamPort(ec.Model) && ec.InstancePath.Contains('.')) continue;
+            // Wave path: top-level ports stamp their own conductances; skip the branch stamp.
+            if (skipPorts && IsSParamPort(ec.Model)) continue;
             ec.Model.Stamp(mna, ec, omega);
         }
         foreach (var ec in netlist.Components)

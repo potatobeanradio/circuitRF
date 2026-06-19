@@ -196,6 +196,8 @@ namespace CircuitRF.Ui.DataDisplay
         public MatrixFormat    MatrixFormat          { get; set; } = MatrixFormat.MA;
         public TraceProperties Properties            { get; set; } = new TraceProperties();
         public double          ColumnWidth           { get; set; } = 115;
+        /// <summary>Per-X-group logical column width (0 = fall back to plot.ColumnWidth).</summary>
+        public double          XColumnWidth          { get; set; } = 0;
         public PrecisionFormat FormatString          { get; set; } = PrecisionFormat.F;
         public int             MaximumFractionDigits { get; set; } = 3;
 
@@ -240,9 +242,12 @@ namespace CircuitRF.Ui.DataDisplay
         /// <summary>One curve of a family trace: its iterated-axis value (for the legend) + its points.</summary>
         public sealed class FamilyCurve
         {
-            public double  AxisValue { get; init; }
-            public string? AxisLabel { get; init; }
-            public List<Vector2> Points { get; } = new();
+            public double     AxisValue  { get; init; }
+            public string?    AxisLabel  { get; init; }
+            public List<Vector2> Points  { get; } = new();
+            // Raw values (not transformed) — used by TableRenderer for cell formatting.
+            public Complex[]? RawComplex { get; init; }
+            public double[]?  RawReal    { get; init; }
         }
 
         /// <summary>N curves when IsFamily; empty otherwise. Derived (never serialized) — rebuilt on load.</summary>
@@ -477,6 +482,7 @@ namespace CircuitRF.Ui.DataDisplay
             SourceRef         = src.SourceRef;
             SourcePath        = src.SourcePath;
             ColumnWidth       = src.ColumnWidth;
+            XColumnWidth      = src.XColumnWidth;
             // Cube-bound identity fields (Phase 7.2c-a).
             CubeName        = src.CubeName;
             Slice           = src.Slice;   // AxisSlice[] is immutable; sharing is safe.
@@ -590,7 +596,8 @@ namespace CircuitRF.Ui.DataDisplay
 
             foreach (var (axisValue, axisLabel, cz, rv) in curves)
             {
-                var fc = new FamilyCurve { AxisValue = axisValue, AxisLabel = axisLabel };
+                var fc = new FamilyCurve { AxisValue = axisValue, AxisLabel = axisLabel,
+                                           RawComplex = cz, RawReal = rv };
                 int n = xValues.Length;
                 bool isComplex = cz is not null;
                 if (isRect && isComplex && (Transform == CubeTransform.None || Transform == CubeTransform.Conj))
@@ -1193,6 +1200,54 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             return "NaN";
+        }
+
+        /// <summary>
+        /// Formats family curve <paramref name="curveIndex"/> at X-array position <paramref name="xIndex"/>
+        /// for the Table renderer.  Returns "" for out-of-range or absent data (never throws).
+        /// </summary>
+        public string FormatFamilyCell(int curveIndex, int xIndex, PrecisionFormat fmt, int fracDigits)
+        {
+            if (curveIndex < 0 || curveIndex >= FamilyCurves.Count) return "";
+            var fc = FamilyCurves[curveIndex];
+            if (_cubeXValues is null || xIndex < 0 || xIndex >= _cubeXValues.Length) return "";
+            string f = $"{fmt}{fracDigits}";
+
+            if (fc.RawComplex is { } cz)
+            {
+                if (xIndex >= cz.Length) return "";
+                var z = cz[xIndex];
+                return Transform switch
+                {
+                    CubeTransform.None  => FormatCubeMA(z, f),
+                    CubeTransform.Conj  => FormatCubeMA(Complex.Conjugate(z), f),
+                    CubeTransform.dB20  => (20.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300))).ToString(f),
+                    CubeTransform.dB10 or CubeTransform.dB
+                                        => (10.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300))).ToString(f),
+                    CubeTransform.Mag   => z.Magnitude.ToString(f),
+                    CubeTransform.Phase => (z.Phase * 180.0 / Math.PI).ToString(f),
+                    CubeTransform.Real  => z.Real.ToString(f),
+                    CubeTransform.Imag  => z.Imaginary.ToString(f),
+                    _                   => z.Magnitude.ToString(f),
+                };
+            }
+
+            if (fc.RawReal is { } rv)
+            {
+                if (xIndex >= rv.Length) return "";
+                double v = rv[xIndex];
+                double y = Transform switch
+                {
+                    CubeTransform.dB20 => 20.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
+                    CubeTransform.dB10 or CubeTransform.dB
+                                       => 10.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
+                    CubeTransform.Mag  => Math.Abs(v),
+                    _                  => v,
+                };
+                return y.ToString(f);
+            }
+
+            return "";
         }
 
         private static string FormatCubeMA(Complex c, string fmt)

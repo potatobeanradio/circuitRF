@@ -41,6 +41,8 @@ namespace CircuitRF.Ui.DataDisplay
         public double[]     XValues = Array.Empty<double>();  // XAxis: sorted group X; TraceValue: same ref
         public bool         IsFreqUnit;         // XAxis only
         public bool         IsScalar;           // XAxis only: true for scalar (rank-0) anchor column
+        public bool         IsNodeAxis;         // XAxis only: true when axis name is "node" → render as integer
+        public int          FamilyCurveIndex = -1; // TraceValue only: ≥0 = curve k of a family trace
     }
 
     // ============================================================
@@ -268,6 +270,16 @@ namespace CircuitRF.Ui.DataDisplay
         }
 
         /// <summary>
+        /// Returns true when the table has more rows than fit in the visible area.
+        /// Used to gate wheel-scroll vs. wheel-zoom.
+        /// </summary>
+        public static bool CanScroll(Plot plot, (double W, double H) canvasSize, float zoomLevel = 1f)
+        {
+            var layout = BuildLayout(plot, canvasSize, zoomLevel);
+            return layout.RowCount > layout.VisibleRowCount;
+        }
+
+        /// <summary>
         /// Measures all rows (not just visible) and returns a stable auto-fit column width
         /// in LOGICAL units (pre-zoom), suitable for storing in plot.ColumnWidth / trace.ColumnWidth.
         /// </summary>
@@ -324,9 +336,16 @@ namespace CircuitRF.Ui.DataDisplay
             float total = 0f;
             foreach (var col in cols)
             {
-                total += col.Kind == TableColKind.XAxis
-                    ? (float)Math.Max(MinColumnWidth, plot.ColumnWidth)
-                    : (float)Math.Max(MinColumnWidth, plot.Traces[col.FirstTraceIndex].ColumnWidth);
+                if (col.Kind == TableColKind.XAxis)
+                {
+                    var anchor = plot.Traces[col.FirstTraceIndex];
+                    double w = anchor.XColumnWidth > 0 ? anchor.XColumnWidth : plot.ColumnWidth;
+                    total += (float)Math.Max(MinColumnWidth, w);
+                }
+                else
+                {
+                    total += (float)Math.Max(MinColumnWidth, plot.Traces[col.FirstTraceIndex].ColumnWidth);
+                }
             }
             return total;
         }
@@ -357,10 +376,20 @@ namespace CircuitRF.Ui.DataDisplay
                 string   axisName;
                 string?  unit;
                 double[] raw;
+                bool     isFamilyPath = false;
 
                 if (trace.IsCubeBound && trace.CubeIsScalar)
                 {
                     axisName = ""; unit = null; raw = new[] { 0.0 };   // single-row anchor, blank header
+                }
+                else if (trace.IsCubeBound && trace.IsFamily && trace.FamilyCurves.Count > 0
+                         && trace.CubeXValues is { } fxs)
+                {
+                    axisName = trace.CubeXAxisName ?? "X";
+                    unit     = trace.CubeXUnit;
+                    raw      = new double[fxs.Count];
+                    for (int i = 0; i < fxs.Count; i++) raw[i] = fxs[i];
+                    isFamilyPath = true;
                 }
                 else if (trace.IsCubeBound && trace.CubeXValues is { } xs)
                 {
@@ -368,6 +397,11 @@ namespace CircuitRF.Ui.DataDisplay
                     unit     = trace.CubeXUnit;
                     raw      = new double[xs.Count];
                     for (int i = 0; i < xs.Count; i++) raw[i] = xs[i];
+                }
+                else if (trace.IsCubeBound)
+                {
+                    // Cube-bound but no X values (InvalidSpecText, rank≥3, etc.) — blank column.
+                    axisName = ""; unit = null; raw = Array.Empty<double>();
                 }
                 else if (trace.Data is { } d)
                 {
@@ -392,9 +426,10 @@ namespace CircuitRF.Ui.DataDisplay
 
                 if (!dedup)
                 {
-                    double[] sorted   = SortUnique(raw, plot.TableViewAscendingSortOrder);
-                    bool     isFreq   = IsFreqUnit(unit);
-                    string   xHeader  = string.IsNullOrEmpty(unit)
+                    double[] sorted  = SortUnique(raw, plot.TableViewAscendingSortOrder);
+                    bool     isFreq  = IsFreqUnit(unit);
+                    bool     isNode  = string.Equals(axisName, "node", StringComparison.OrdinalIgnoreCase);
+                    string   xHeader = string.IsNullOrEmpty(unit)
                         ? axisName
                         : isFreq
                             ? $"{axisName} ({plot.FreqUnits.Description()})"
@@ -408,6 +443,7 @@ namespace CircuitRF.Ui.DataDisplay
                         Unit            = unit,
                         XValues         = sorted,
                         IsFreqUnit      = isFreq,
+                        IsNodeAxis      = isNode,
                         IsScalar        = trace.IsCubeBound && trace.CubeIsScalar,
                     });
                     currentXArray = sorted;
@@ -417,17 +453,43 @@ namespace CircuitRF.Ui.DataDisplay
                 prevUnit     = unit;
                 prevRaw      = raw;
 
-                // TraceValue column shares the XValues array of its X group.
-                string valHeader = trace.IsCubeBound
-                    ? (trace.CubeShorthand ?? trace.ShortDescription)
-                    : trace.ShortDescription;
-                result.Add(new TableColumn
+                if (isFamilyPath)
                 {
-                    Kind            = TableColKind.TraceValue,
-                    FirstTraceIndex = ti,
-                    Header          = valHeader,
-                    XValues         = currentXArray ?? Array.Empty<double>(),
-                });
+                    // Emit one TraceValue column per family curve.
+                    string  baseShorthand   = trace.CubeShorthand ?? trace.ShortDescription;
+                    string? familyAxisName  = trace.FamilyAxisName;
+                    int     cap             = Math.Min(trace.FamilyCurves.Count, Trace.MaxFamilyCurves);
+                    for (int k = 0; k < cap; k++)
+                    {
+                        var    fc          = trace.FamilyCurves[k];
+                        string familyLabel = fc.AxisLabel
+                            ?? (familyAxisName is not null
+                                ? $"{familyAxisName}={fc.AxisValue.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+                                : fc.AxisValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        result.Add(new TableColumn
+                        {
+                            Kind             = TableColKind.TraceValue,
+                            FirstTraceIndex  = ti,
+                            Header           = $"{baseShorthand} @ {familyLabel}",
+                            XValues          = currentXArray ?? Array.Empty<double>(),
+                            FamilyCurveIndex = k,
+                        });
+                    }
+                }
+                else
+                {
+                    // Single TraceValue column.
+                    string valHeader = trace.IsCubeBound
+                        ? (trace.CubeShorthand ?? trace.ShortDescription)
+                        : trace.ShortDescription;
+                    result.Add(new TableColumn
+                    {
+                        Kind            = TableColKind.TraceValue,
+                        FirstTraceIndex = ti,
+                        Header          = valHeader,
+                        XValues         = currentXArray ?? Array.Empty<double>(),
+                    });
+                }
             }
 
             return result;
@@ -445,6 +507,8 @@ namespace CircuitRF.Ui.DataDisplay
             if (col.Kind == TableColKind.XAxis)
             {
                 if (col.IsScalar) return "";        // scalar anchor column: no X value
+                if (col.IsNodeAxis)
+                    return ((long)Math.Round(xVal)).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 string fmt = $"{plot.FormatString}{plot.MaximumFractionDigits}";
                 return col.IsFreqUnit
                     ? (xVal * plot.FreqUnits.Scale()).ToString(fmt)
@@ -453,6 +517,8 @@ namespace CircuitRF.Ui.DataDisplay
 
             // TraceValue: look up the sample in this trace whose X value matches.
             var trace = plot.Traces[col.FirstTraceIndex];
+            if (col.FamilyCurveIndex >= 0)
+                return FormatFamilyCellAt(trace, col.FamilyCurveIndex, xVal);
             return trace.IsCubeBound
                 ? FormatCubeCellAt(trace, xVal)
                 : FormatTraceCell(trace, xVal);
@@ -460,7 +526,7 @@ namespace CircuitRF.Ui.DataDisplay
 
         /// <summary>
         /// Builds the grid of tab-separated text for "Copy Table Data".
-        /// Returns the column headers and the visible rows (respects scroll + canvas size).
+        /// Returns the column headers and ALL rows (ignores scroll position).
         /// Cells are blank ("") when a group's trace has fewer rows than the longest group.
         /// </summary>
         public static (string[] headers, string[][] rows) BuildCopyGrid(
@@ -473,17 +539,15 @@ namespace CircuitRF.Ui.DataDisplay
             for (int c = 0; c < cols.Count; c++)
                 headers[c] = cols[c].Header;
 
-            int start = layout.ScrollIndex;
-            int count = Math.Min(layout.VisibleRowCount, layout.RowCount - start);
+            int count = layout.RowCount;
             if (count <= 0) return (headers, Array.Empty<string[]>());
 
             var rows = new string[count][];
             for (int r = 0; r < count; r++)
             {
-                int    absRow = start + r;
-                var    row    = new string[cols.Count];
+                var row = new string[cols.Count];
                 for (int c = 0; c < cols.Count; c++)
-                    row[c] = FormatColumnCell(cols[c], absRow, plot);
+                    row[c] = FormatColumnCell(cols[c], r, plot);
                 rows[r] = row;
             }
 
@@ -526,9 +590,16 @@ namespace CircuitRF.Ui.DataDisplay
 
             for (int c = 0; c < colCount; c++)
             {
-                layout.ColW[c] = columns[c].Kind == TableColKind.XAxis
-                    ? (float)Math.Max(MinColumnWidth, plot.ColumnWidth) * zoomLevel
-                    : (float)Math.Max(MinColumnWidth, plot.Traces[columns[c].FirstTraceIndex].ColumnWidth) * zoomLevel;
+                if (columns[c].Kind == TableColKind.XAxis)
+                {
+                    var anchor = plot.Traces[columns[c].FirstTraceIndex];
+                    double w = anchor.XColumnWidth > 0 ? anchor.XColumnWidth : plot.ColumnWidth;
+                    layout.ColW[c] = (float)Math.Max(MinColumnWidth, w) * zoomLevel;
+                }
+                else
+                {
+                    layout.ColW[c] = (float)Math.Max(MinColumnWidth, plot.Traces[columns[c].FirstTraceIndex].ColumnWidth) * zoomLevel;
+                }
             }
 
             if (colCount > 0) layout.ColX[0] = 0;
@@ -694,6 +765,16 @@ namespace CircuitRF.Ui.DataDisplay
                 if (xs[i] == xValue)
                     return trace.FormatCubeCell(i, trace.FormatString, trace.MaximumFractionDigits);
             return "NaN";
+        }
+
+        private static string FormatFamilyCellAt(Trace trace, int curveIndex, double xValue)
+        {
+            var xs = trace.CubeXValues;
+            if (xs is null) return "";
+            for (int i = 0; i < xs.Count; i++)
+                if (xs[i] == xValue)
+                    return trace.FormatFamilyCell(curveIndex, i, trace.FormatString, trace.MaximumFractionDigits);
+            return "";
         }
 
         private static string FormatRI(System.Numerics.Complex c, string fmt)
@@ -987,8 +1068,10 @@ namespace CircuitRF.Ui.DataDisplay
                     float measuredW = Math.Min(
                         boldFont.MeasureText(col.Header),
                         layout.ColW[c] - layout.ScaledPaddingX * 2);
-                    float spaceW = boldFont.MeasureText(" ");
-                    float triCx  = layout.ColX[c] + layout.ScaledPaddingX + measuredW + spaceW * 1.5f + triSize * 0.5f;
+                    float spaceW  = boldFont.MeasureText(" ");
+                    float triCx   = layout.ColX[c] + layout.ScaledPaddingX + measuredW + spaceW * 1.5f + triSize * 0.5f;
+                    float maxCx   = layout.ColX[c] + layout.ColW[c] - triSize * 0.5f - CellBorderWidth;
+                    triCx         = Math.Min(triCx, maxCx);
                     float triMidY = layout.HeaderH * 0.5f;
 
                     DrawSortArrow(canvas, plot.TableViewAscendingSortOrder, triCx, triMidY, triSize, textPaint);
@@ -998,7 +1081,14 @@ namespace CircuitRF.Ui.DataDisplay
                     // TraceValue column: compute label considering showFilePrefix.
                     var    trace = plot.Traces[col.FirstTraceIndex];
                     string label;
-                    if (trace.IsCubeBound)
+                    if (col.FamilyCurveIndex >= 0)
+                    {
+                        // Family trace: col.Header already contains "baseShorthand @ familyLabel".
+                        label = col.Header;
+                        if (showFilePrefix && trace.SourcePath != null)
+                            label = System.IO.Path.GetFileNameWithoutExtension(trace.SourcePath) + ".." + label;
+                    }
+                    else if (trace.IsCubeBound)
                     {
                         label = trace.CubeShorthand ?? trace.ShortDescription;
                         if (showFilePrefix && trace.SourcePath != null)

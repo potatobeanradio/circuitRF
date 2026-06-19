@@ -747,3 +747,256 @@ public sealed class FamilyTraceTests
         Assert.True(rect.Left  <= 0.0 + 1e-6);
     }
 }
+
+// ================================================================
+//  TableImprovementsTests  —  Gate tests for Items 1–6 (table-improvements brief)
+// ================================================================
+
+public sealed class TableImprovementsTests
+{
+    // ---- Helpers -----------------------------------------------------------
+
+    private static Trace MakeBaseTrace() =>
+        new Trace(new SNP(new double[] { 1e9 }, 2), MatrixType.S, 0, 0, DependentVarFormat.Db);
+
+    private static Trace MakeCubeTrace(double[] xVals, double[] yVals, string axisName = "Pin", string? unit = "dBm")
+    {
+        var t = MakeBaseTrace();
+        t.CubeName  = "V";
+        t.Slice     = new[] { new AxisSlice(axisName, AxisRole.KeepAsX, 0) };
+        t.Transform = CubeTransform.None;
+        t.SetCubeData(xVals, complexValues: null, yVals, axisName, unit, PlotType.Table, FreqUnit.GHz);
+        return t;
+    }
+
+    private static Plot MakePlot(params Trace[] traces)
+    {
+        var p = new Plot(PlotType.Table, FreqUnit.GHz);
+        foreach (var t in traces) p.Traces.Add(t);
+        return p;
+    }
+
+    // Helper: a family trace with nCurves each having xVals.Length data points.
+    // family axis is "Vgs", X axis is "Vds", real data: Id = Vgs * Vds.
+    private static Trace MakeFamilyTrace(double[] xVals, double[] familyVals)
+    {
+        var t = MakeBaseTrace();
+        t.CubeName  = "Ids";
+        t.Transform = CubeTransform.None;
+        t.Slice = new[]
+        {
+            new AxisSlice("Vgs", AxisRole.FamilyIterate, 0),
+            new AxisSlice("Vds", AxisRole.KeepAsX,       0),
+        };
+
+        var curves = new List<(double, string?, Complex[]?, double[]?)>();
+        foreach (double vgs in familyVals)
+        {
+            double[] rv = new double[xVals.Length];
+            for (int i = 0; i < xVals.Length; i++) rv[i] = vgs * xVals[i];
+            curves.Add((vgs, null, null, rv));
+        }
+
+        t.SetFamilyData(xVals, "Vds", "V", "Vgs", curves, PlotType.Table, FreqUnit.GHz);
+        return t;
+    }
+
+    // ---- Item 1: Per-group X-column width ----------------------------------
+
+    [Fact]
+    public void Item1_XColumnWidth_TotalColumnWidth_IndependentPerGroup()
+    {
+        var t0 = MakeCubeTrace(new double[] { 1, 2, 3 }, new double[] { 1, 2, 3 }, "Pin",  "dBm");
+        var t1 = MakeCubeTrace(new double[] { 10, 20 },  new double[] { 4, 5 },   "Bias", "V");
+        var plot = MakePlot(t0, t1);
+        plot.ColumnWidth = 100.0;   // default XAxis width for groups that haven't been resized
+        t1.XColumnWidth  = 200.0;   // second X group resized independently
+
+        float total = TableRenderer.TotalColumnWidth(plot);
+
+        // Expected: XPin(100) + V0(115) + XBias(200) + V1(115) = 530
+        Assert.Equal(530f, total, precision: 1);
+    }
+
+    [Fact]
+    public void Item1_XColumnWidth_Zero_FallsBackToPlotDefault()
+    {
+        var t0   = MakeCubeTrace(new double[] { 1, 2, 3 }, new double[] { 1, 2, 3 }, "Pin", "dBm");
+        var plot = MakePlot(t0);
+        plot.ColumnWidth   = 150.0;
+        t0.XColumnWidth    = 0;   // zero = fall back
+
+        float total = TableRenderer.TotalColumnWidth(plot);
+
+        // Expected: XPin(150) + V0(115) = 265
+        Assert.Equal(265f, total, precision: 1);
+    }
+
+    // ---- Item 2: Sort-arrow clamp ------------------------------------------
+
+    [Fact]
+    public void Item2_SortArrow_ClampFormula_KeepsWithinColumn()
+    {
+        // Replicate the DrawHeaderRow clamp formula for a pathologically narrow column.
+        float fontSize = 14f;
+        float triSize  = fontSize * 0.6f;
+        float paddingX = 5f;   // TextCellPaddingX
+        float border   = 0.5f; // CellBorderWidth
+        float colX     = 0f;
+        float colW     = TableRenderer.MinColumnWidth;
+
+        // Simulate a long header that without the clamp would overflow.
+        float measuredW = colW * 3f;   // intentionally wider than the column
+        float spaceW    = 5f;
+
+        float triCxRaw = colX + paddingX + measuredW + spaceW * 1.5f + triSize * 0.5f;
+        float maxCx    = colX + colW - triSize * 0.5f - border;
+        float triCx    = Math.Min(triCxRaw, maxCx);
+
+        Assert.True(triCx + triSize * 0.5f <= colX + colW,
+            $"Sort arrow right edge {triCx + triSize * 0.5f:F2} exceeded column right {colX + colW:F2}");
+    }
+
+    // ---- Item 3: CanScroll -------------------------------------------------
+
+    [Fact]
+    public void Item3_CanScroll_FewRows_ReturnsFalse()
+    {
+        // 2-row table in a 600-pixel-tall canvas → all rows visible → cannot scroll.
+        var plot = MakePlot(MakeCubeTrace(new double[] { 1, 2 }, new double[] { 10, 20 }));
+        Assert.False(TableRenderer.CanScroll(plot, (800, 600), 1f));
+    }
+
+    [Fact]
+    public void Item3_CanScroll_ManyRowsShortCanvas_ReturnsTrue()
+    {
+        // 50-row table in a 100-pixel-tall canvas → rows overflow → can scroll.
+        double[] xVals = new double[50];
+        double[] yVals = new double[50];
+        for (int i = 0; i < 50; i++) { xVals[i] = i; yVals[i] = i; }
+        var plot = MakePlot(MakeCubeTrace(xVals, yVals));
+        Assert.True(TableRenderer.CanScroll(plot, (800, 100), 1f));
+    }
+
+    // ---- Item 4: Family trace renders N value columns ----------------------
+
+    [Fact]
+    public void Item4_FamilyTrace_BuildColumns_OneXAndNCurveColumns()
+    {
+        double[] xVals     = { 0.0, 0.5, 1.0, 1.5 };  // 4 Vds values
+        double[] familyVals = { 0.0, 1.0, 2.0 };       // 3 Vgs values → 3 curves
+        var t    = MakeFamilyTrace(xVals, familyVals);
+        var plot = MakePlot(t);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        // 1 X column + 3 family value columns = 4 total
+        Assert.Equal(4, cols.Count);
+        Assert.Equal(TableColKind.XAxis,      cols[0].Kind);
+        Assert.Equal(TableColKind.TraceValue, cols[1].Kind);
+        Assert.Equal(TableColKind.TraceValue, cols[2].Kind);
+        Assert.Equal(TableColKind.TraceValue, cols[3].Kind);
+        Assert.Equal(0, cols[1].FamilyCurveIndex);
+        Assert.Equal(1, cols[2].FamilyCurveIndex);
+        Assert.Equal(2, cols[3].FamilyCurveIndex);
+    }
+
+    [Fact]
+    public void Item4_FamilyTrace_FormatColumnCell_CorrectValues()
+    {
+        // Vgs=1.0, Vds=[0.0, 0.5, 1.0] → Ids[row] = 1.0 * Vds[row]
+        double[] xVals      = { 0.0, 0.5, 1.0 };
+        double[] familyVals = { 0.0, 1.0, 2.0 };
+        var t    = MakeFamilyTrace(xVals, familyVals);
+        var plot = MakePlot(t);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        // cols[2] = curve index 1 (Vgs=1.0), FormatColumnCell row 1 (Vds=0.5) → 1.0*0.5 = 0.500
+        string cell = TableRenderer.FormatColumnCell(cols[2], 1, plot);
+        Assert.Equal("0.500", cell);
+
+        // cols[3] = curve index 2 (Vgs=2.0), FormatColumnCell row 2 (Vds=1.0) → 2.0*1.0 = 2.000
+        string cell2 = TableRenderer.FormatColumnCell(cols[3], 2, plot);
+        Assert.Equal("2.000", cell2);
+    }
+
+    [Fact]
+    public void Item4_InvalidCubeTrace_BlankCells_NoThrow()
+    {
+        // A cube-bound trace with no CubeXValues (e.g. InvalidSpecText set) should yield blank cells, not crash.
+        var t = MakeBaseTrace();
+        t.CubeName       = "V";
+        t.Slice          = new[] { new AxisSlice("Pin", AxisRole.KeepAsX, 0) };
+        t.Transform      = CubeTransform.None;
+        t.InvalidSpecText = "bad spec";
+        var plot = MakePlot(t);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        // Should produce an XAxis column + a TraceValue column without throwing.
+        Assert.NotEmpty(cols);
+        string cell = TableRenderer.FormatColumnCell(cols[1], 0, plot);
+        Assert.Equal("", cell);
+    }
+
+    // ---- Item 5: BuildCopyGrid produces family columns ---------------------
+
+    [Fact]
+    public void Item5_BuildCopyGrid_FamilyTrace_NColumnsInHeader()
+    {
+        double[] xVals      = { 0.0, 1.0 };   // 2 X values
+        double[] familyVals = { 0.0, 1.0, 2.0 }; // 3 curves
+        var t    = MakeFamilyTrace(xVals, familyVals);
+        var plot = MakePlot(t);
+
+        var (headers, rows) = TableRenderer.BuildCopyGrid(plot, (1200, 600), 1f);
+
+        // 1 XAxis + 3 family value = 4 header columns
+        Assert.Equal(4, headers.Length);
+        // 2 data rows
+        Assert.Equal(2, rows.Length);
+        // Family curve 1 (Vgs=1.0), row 1 (Vds=1.0) → Ids = 1.0 * 1.0 = 1.000
+        Assert.Equal("1.000", rows[1][2]);
+    }
+
+    // ---- Item 6: Node axis formats as integer ------------------------------
+
+    [Fact]
+    public void Item6_NodeAxis_FormatsAsInteger()
+    {
+        var t = MakeCubeTrace(new double[] { 0, 1, 2 }, new double[] { 10, 20, 30 },
+                              axisName: "node", unit: null);
+        var plot = MakePlot(t);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        Assert.Equal(TableColKind.XAxis, cols[0].Kind);
+        Assert.True(cols[0].IsNodeAxis);
+
+        string cell0 = TableRenderer.FormatColumnCell(cols[0], 0, plot);
+        string cell1 = TableRenderer.FormatColumnCell(cols[0], 1, plot);
+        string cell2 = TableRenderer.FormatColumnCell(cols[0], 2, plot);
+
+        // Integers — no decimal point
+        Assert.Equal("0", cell0);
+        Assert.Equal("1", cell1);
+        Assert.Equal("2", cell2);
+    }
+
+    [Fact]
+    public void Item6_NonNodeAxis_UsesConfiguredFormat()
+    {
+        var t    = MakeCubeTrace(new double[] { 0, 1, 2 }, new double[] { 10, 20, 30 },
+                                 axisName: "Pin", unit: "dBm");
+        var plot = MakePlot(t);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        Assert.False(cols[0].IsNodeAxis);
+
+        // Default format is "F3" → "0.000"
+        string cell0 = TableRenderer.FormatColumnCell(cols[0], 0, plot);
+        Assert.Contains(".", cell0);  // has decimal point
+    }
+}

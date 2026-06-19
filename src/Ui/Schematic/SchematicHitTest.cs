@@ -259,8 +259,11 @@ public static class SchematicHitTest
             if (suppressed) continue;
 
             var (oDx, oDy) = row < comp.LabelOffsets.Count ? comp.LabelOffsets[row] : (0.0, 0.0);
+            double? glyphHalfH = comp.Symbol == SymbolKind.Snp
+                ? comp.ComputeGlyphBb().MaxY - comp.Y
+                : null;
             var (baseX, _, bandTop, bandBot) =
-                SchematicComponent.LabelRowGeometry(comp.X, comp.Y, row, oDx, oDy, comp.Symbol, comp.PortCount);
+                SchematicComponent.LabelRowGeometry(comp.X, comp.Y, row, oDx, oDy, comp.Symbol, comp.PortCount, glyphHalfH);
 
             if (wy < bandTop || wy > bandBot) continue;
 

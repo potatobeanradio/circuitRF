@@ -109,6 +109,22 @@ public sealed class P1ToneModel : ComponentModel
         mna.AddSourceValue(LastBranchIndex, Complex.Zero);
     }
 
+    /// <summary>
+    /// S-parameter mode: the internal drive node (Nodes[2], the "__p1tone_..._drv" junction) hosts
+    /// the HB V-source and is unused here — no drive branch, and no Z stamp touches it — so it would
+    /// be a floating MNA unknown (zero row/col, hence singular). Tie it to the reference node
+    /// (Nodes[1]) with a unit conductance. The drive node is otherwise isolated in S-param mode, so
+    /// this carries no current and does not affect the port at the external terminals; the engine
+    /// realizes Z0 via the port conductance (wave path) or renormalization (legacy path).
+    /// </summary>
+    public void StampSParamDriveTie(IMnaContext mna, ElaboratedComponent c)
+    {
+        int nRef = c.Nodes.Length > 1 ? c.Nodes[1] : 0;
+        int nDrv = c.Nodes.Length > 2 ? c.Nodes[2] : 0;
+        if (nDrv <= 0) return;   // no internal drive node → nothing to tie
+        mna.AddAdmittance(nDrv, nRef, Complex.One);
+    }
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
         int nExt = c.Nodes.Length > 0 ? c.Nodes[0] : 0;

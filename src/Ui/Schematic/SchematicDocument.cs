@@ -255,6 +255,18 @@ public sealed class SchematicDocument : Document, IUndoableDocument
         }
         IsDirty = false; // triggers UpdateTitle() which now uses the updated _baseTitle
     }
+
+    /// <summary>
+    /// Updates path and title after "Save As" on an already-materialized document.
+    /// Unlike <see cref="Materialize"/>, this may be called repeatedly.
+    /// </summary>
+    internal void OnSavedAs(string filePath, string cellName)
+    {
+        FilePath   = filePath;
+        _baseTitle = cellName;
+        Id         = cellName;
+        UpdateTitle();
+    }
 }
 
 /// <summary>

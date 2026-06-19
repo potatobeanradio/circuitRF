@@ -53,8 +53,10 @@ public sealed class SchematicComponent
     /// For fixed-geometry symbols this is the constant LabelBaseY. For the variadic SDD/ZPort
     /// symbols whose body grows with port count, the base-Y is pushed just below the glyph's
     /// bottom edge so the label never overlaps the symbol body.
+    /// <paramref name="glyphHalfH"/> — when provided, overrides the SNP body half-height lookup
+    /// with the component's real glyph extent, avoiding config-mismatch for n ≥ 4 ports.
     /// </summary>
-    public static double LabelBaseYFor(SymbolKind symbol, int portCount)
+    public static double LabelBaseYFor(SymbolKind symbol, int portCount, double? glyphHalfH = null)
     {
         if (symbol is SymbolKind.Sdd or SymbolKind.ZPort)
         {
@@ -63,7 +65,8 @@ public sealed class SchematicComponent
         }
         if (symbol is SymbolKind.Snp)
         {
-            var (_, halfH) = SymbolPortDefs.SnpBodyRect(portCount, SnpPinConfig.Standard, SnpPitch.Loose);
+            double halfH = glyphHalfH
+                ?? SymbolPortDefs.SnpBodyRect(portCount, SnpPinConfig.Standard, SnpPitch.Loose).HalfH;
             return Math.Max(LabelBaseY, halfH + LabelWorldStep);
         }
         return LabelBaseY;
@@ -75,12 +78,13 @@ public sealed class SchematicComponent
     /// (DrawLabels) and the hit-test (TestComponentLabels) so the clickable zone always tracks the
     /// rendered text. Returns the left-aligned text anchor (BaselineX, BaselineY) and the vertical
     /// hit band [BandTopY, BandBotY] centered on the visual row.
+    /// <paramref name="glyphHalfH"/> is forwarded to <see cref="LabelBaseYFor"/> for SNP accuracy.
     /// </summary>
     public static (double BaselineX, double BaselineY, double BandTopY, double BandBotY)
         LabelRowGeometry(double cx, double cy, int i, double oDx, double oDy,
-                         SymbolKind symbol, int portCount)
+                         SymbolKind symbol, int portCount, double? glyphHalfH = null)
     {
-        double baseY     = LabelBaseYFor(symbol, portCount);
+        double baseY     = LabelBaseYFor(symbol, portCount, glyphHalfH);
         double baselineX = cx + LabelBaseOffsetX + oDx;
         double baselineY = cy + baseY + oDy + i * LabelWorldStep;
         const double comfort = 6.0;

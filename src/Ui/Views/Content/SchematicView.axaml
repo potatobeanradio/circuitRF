@@ -175,7 +175,10 @@
                         Click="OnWireTool"
                         ToolTip.Tip="Wire  (W)"
                         Padding="6,3">
-                    <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
+                    <Path Width="16" Height="16" VerticalAlignment="Center"
+                          Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                          StrokeThickness="1.5" Fill="Transparent" StrokeLineCap="Round"
+                          Data="M 1,6 L 15,10"/>
                 </Button>
 
                 <!-- Ground symbol -->
@@ -183,7 +186,9 @@
                         Click="OnPlaceGround"
                         ToolTip.Tip="Place Ground"
                         Padding="6,3">
-                    <mi:MaterialIcon Kind="ArrowCollapseDown" Width="16" Height="16"/>
+                    <ctrl:PaletteGlyphControl Kind="Ground" Width="16" Height="16"
+                                              Monochrome="True"
+                                              VerticalAlignment="Center" HorizontalAlignment="Center"/>
                 </Button>
 
                 <!-- Term (S-param port) -->
@@ -191,7 +196,19 @@
                         Click="OnPlaceTerm"
                         ToolTip.Tip="Place Term"
                         Padding="6,3">
-                    <mi:MaterialIcon Kind="SquareCircle" Width="16" Height="16"/>
+                    <ctrl:PaletteGlyphControl Kind="Term" Width="16" Height="16"
+                                              Monochrome="True"
+                                              VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                </Button>
+
+                <!-- Pin -->
+                <Button x:Name="PlacePinBtn"
+                        Click="OnPlacePin"
+                        ToolTip.Tip="Place Pin"
+                        Padding="6,3">
+                    <ctrl:PaletteGlyphControl Kind="Pin" Width="16" Height="16"
+                                              Monochrome="True"
+                                              VerticalAlignment="Center" HorizontalAlignment="Center"/>
                 </Button>
 
                 <!-- Separator -->

@@ -1,5 +1,7 @@
 # Core — local conventions
 
+Schematic housecleaning (brief-schematic-housecleaning, 2026-06-19) — COMPLETE (Core items): **Item 2 (P1Tone S-param lint):** `Elaborator.LintTopLevelTerms` now includes `P1ToneModel` in the top-level port-family filter alongside `PortModel` and `TermModel`. A netlist with `P1Tone Num=1` + `Term Num=2` no longer emits a "port 1 missing" warning. Warning text still says "Terms are numbered…" but the diagnostic now spans the full S-param port family. **Item 5 (ohm/ohms units):** `Units._scales` (case-sensitive ordinal map) now includes `{ "ohm", 1.0 }` and `{ "ohms", 1.0 }` so `Z=50 ohms` no longer tokenizes `ohms` as a phantom net. `IsKnown("ohm")` / `IsKnown("ohms")` return true; `Scale("ohm")` / `Scale("ohms")` return 1.0. `Ohm`/`Ohms` (Title-case) are unchanged. 9 gate tests: 5 in `OhmLowercaseTests.cs` + 4 in `P1ToneLintTests.cs`. Build 0W/0E.
+
 Standing instructions for `src/Core` (the design layer, the elaboration layer, the expression
 engine, and the `ComponentModel` types). Read with the root `CLAUDE.md`. Design notes:
 `docs/design/data-model.md`, `docs/design/expressions.md`. `Data/` and (numeric `ComponentModel`

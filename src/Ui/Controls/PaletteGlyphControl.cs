@@ -19,10 +19,13 @@ namespace CircuitRF.Ui.Controls;
 /// </summary>
 public sealed class PaletteGlyphControl : Control
 {
-    // ── StyledProperty: Kind ─────────────────────────────────────────────────
+    // ── StyledProperties ─────────────────────────────────────────────────────
 
     public static readonly StyledProperty<SymbolKind> KindProperty =
         AvaloniaProperty.Register<PaletteGlyphControl, SymbolKind>(nameof(Kind));
+
+    public static readonly StyledProperty<bool> MonochromeProperty =
+        AvaloniaProperty.Register<PaletteGlyphControl, bool>(nameof(Monochrome));
 
     public SymbolKind Kind
     {
@@ -30,9 +33,17 @@ public sealed class PaletteGlyphControl : Control
         set => SetValue(KindProperty, value);
     }
 
+    /// <summary>When true, renders the glyph in neutral grey rather than the themed symbol color.</summary>
+    public bool Monochrome
+    {
+        get => GetValue(MonochromeProperty);
+        set => SetValue(MonochromeProperty, value);
+    }
+
     static PaletteGlyphControl()
     {
         AffectsRender<PaletteGlyphControl>(KindProperty);
+        AffectsRender<PaletteGlyphControl>(MonochromeProperty);
     }
 
     private ColorTheme _activeTheme = ColorTheme.BuiltIn;
@@ -58,9 +69,10 @@ public sealed class PaletteGlyphControl : Control
 
     public override void Render(DrawingContext context)
     {
-        var variant = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
-        var theme   = SchematicRenderTheme.FromTheme(_activeTheme, variant);
-        context.Custom(new GlyphDrawOperation(new Rect(Bounds.Size), Kind, theme));
+        var variant   = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
+        var theme     = SchematicRenderTheme.FromTheme(_activeTheme, variant);
+        var effective = Monochrome ? theme.WithMonochrome(variant == ColorVariant.Light) : theme;
+        context.Custom(new GlyphDrawOperation(new Rect(Bounds.Size), Kind, effective));
     }
 
     // ── ICustomDrawOperation ─────────────────────────────────────────────────

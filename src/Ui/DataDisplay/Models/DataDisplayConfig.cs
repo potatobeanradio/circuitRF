@@ -168,6 +168,7 @@ public sealed class TraceConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MatrixFormat    MatrixFormat          { get; set; } = MatrixFormat.MA;
     public double          ColumnWidth           { get; set; } = 115;
+    public double          XColumnWidth          { get; set; } = 0;
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public PrecisionFormat FormatString          { get; set; } = PrecisionFormat.F;
     public int             MaximumFractionDigits { get; set; } = 3;
