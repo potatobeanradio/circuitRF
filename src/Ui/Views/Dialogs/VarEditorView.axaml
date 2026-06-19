@@ -34,7 +34,7 @@
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,6">
             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
                         VerticalAlignment="Center">
-                <TextBlock Text="VAR"
+                <TextBlock Text="{Binding PanelTitle}"
                            FontWeight="SemiBold"
                            FontSize="13"
                            VerticalAlignment="Center"/>
@@ -154,7 +154,7 @@
                     </ItemsControl>
                 </ScrollViewer>
                 <Button DockPanel.Dock="Top"
-                        Content="+ Add Variable"
+                        Content="{Binding AddRowLabel, StringFormat='+ {0}'}"
                         Command="{Binding AddRowCommand}"
                         HorizontalAlignment="Left"
                         Margin="0,4,0,0"

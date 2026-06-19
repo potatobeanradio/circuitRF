@@ -36,6 +36,7 @@ public sealed class Parser
     private Expr ParseExpr(int minBp)
     {
         var left = ParsePrefix();
+        left = ParsePostfix(left);     // cube indexing binds tightest
 
         while (true)
         {
@@ -138,28 +139,33 @@ public sealed class Parser
                         return ParseIfThenChain(cond);
                     }
                 }
-                // qualified accessor: Analysis.Cube(args) — e.g. HB1.V("n_drain", 1, All)
-                // Recognized when: current token is '.', next is Identifier, one after that is '('
+                // qualified accessor: Analysis.Cube  or  Analysis.Cube(args)
+                //   member-access form:  DC1.Ids                  → CallExpr("DC1.Ids", [])  (whole cube)
+                //   method-call form:    HB1.V("n_drain", 1, All) → CallExpr("HB1.V", [args])
+                // Recognized when: current token is '.' and the next token is an Identifier.
+                // The arg list is optional — its absence means "the whole cube", which the
+                // evaluator handles via its zero-arg qualified-accessor path (ds[accessorName]).
                 if (Current.Kind == TokenKind.Dot
                     && _pos + 1 < _tokens.Length
-                    && _tokens[_pos + 1].Kind == TokenKind.Identifier
-                    && _pos + 2 < _tokens.Length
-                    && _tokens[_pos + 2].Kind == TokenKind.LParen)
+                    && _tokens[_pos + 1].Kind == TokenKind.Identifier)
                 {
-                    Advance(); // consume '.'
-                    var methodName = Advance().Text; // consume method name
-                    Advance(); // consume '('
+                    Advance();                       // consume '.'
+                    var methodName = Advance().Text; // consume cube / accessor name
                     var qArgs = new List<Expr>();
-                    if (Current.Kind != TokenKind.RParen)
+                    if (Current.Kind == TokenKind.LParen)
                     {
-                        qArgs.Add(ParseExpr(0));
-                        while (Current.Kind == TokenKind.Comma)
+                        Advance();                   // consume '('
+                        if (Current.Kind != TokenKind.RParen)
                         {
-                            Advance();
                             qArgs.Add(ParseExpr(0));
+                            while (Current.Kind == TokenKind.Comma)
+                            {
+                                Advance();
+                                qArgs.Add(ParseExpr(0));
+                            }
                         }
+                        Expect(TokenKind.RParen, ")");
                     }
-                    Expect(TokenKind.RParen, ")");
                     return new CallExpr($"{t.Text}.{methodName}", [.. qArgs]);
                 }
                 // function call or bare ref
@@ -183,6 +189,56 @@ public sealed class Parser
             default:
                 throw new ParseException($"Unexpected token '{t.Text}'", t.Position);
         }
+    }
+
+    // ── Postfix cube indexing ─────────────────────────────────────────────────
+
+    // Postfix cube indexing: Target[token, token, …]  (positional, numpy-style).
+    private Expr ParsePostfix(Expr left)
+    {
+        while (Current.Kind == TokenKind.LBracket)
+        {
+            Advance();                              // consume '['
+            var tokens = new List<IndexToken>();
+            if (Current.Kind != TokenKind.RBracket)
+            {
+                tokens.Add(ParseIndexToken());
+                while (Current.Kind == TokenKind.Comma)
+                {
+                    Advance();
+                    tokens.Add(ParseIndexToken());
+                }
+            }
+            Expect(TokenKind.RBracket, "]");
+            left = new IndexExpr(left, [.. tokens]);
+        }
+        return left;
+    }
+
+    private IndexToken ParseIndexToken()
+    {
+        // ':'  → keep whole axis
+        if (Current.Kind == TokenKind.Colon)
+        {
+            Advance();
+            return new IndexToken(IndexTokenKind.Whole);
+        }
+        // '~'  → trace-card family marker; meaningless in a measurement
+        if (Current.Kind == TokenKind.Tilde)
+            throw new ParseException(
+                "'~' (curve family) has no meaning in a measurement; use ':' to keep an axis " +
+                "or a name/index to fix it.", Current.Position);
+
+        // expr               → pin (int index or "label")
+        // expr ':' expr      → range
+        var first = ParseExpr(0);
+        if (Current.Kind == TokenKind.Colon)
+        {
+            Advance();
+            var second = ParseExpr(0);
+            return new IndexToken(IndexTokenKind.Range, first, second);
+        }
+        return new IndexToken(IndexTokenKind.Pin, first);
     }
 
     // ── Precedence table ─────────────────────────────────────────────────────

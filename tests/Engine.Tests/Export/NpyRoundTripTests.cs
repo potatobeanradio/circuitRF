@@ -439,7 +439,7 @@ public class NpyRoundTripTests(ITestOutputHelper output) : IDisposable
     {
         // The __meta__ JSON field sits inside the binary file as raw UTF-8 bytes.
         // Search for "format_version":1 and replace the trailing '1' with '0'.
-        byte[] needle = System.Text.Encoding.UTF8.GetBytes("\"format_version\":1");
+        byte[] needle = System.Text.Encoding.UTF8.GetBytes("\"format_version\":2");
         for (int i = 0; i <= original.Length - needle.Length; i++)
         {
             bool match = true;

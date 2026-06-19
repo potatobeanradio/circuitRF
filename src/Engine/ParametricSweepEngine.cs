@@ -28,7 +28,8 @@ public static class ParametricSweepEngine
         ParametricSweepAnalysis sweep,
         Library lib,
         TestBench tb,
-        AnalysisSettings? settings = null)
+        AnalysisSettings? settings = null,
+        string? baseDirectory = null)
     {
         // Locate the inner analysis, skipping disabled sweeps (collapse): a disabled inner sweep is
         // transparent — its dimension is dropped and ITS inner runs here instead.
@@ -61,8 +62,8 @@ public static class ParametricSweepEngine
 
             try
             {
-                var netlist = new Elaborator(lib).Elaborate(tb);
-                datasets.Add(RunInner(inner, lib, tb, netlist, settings));
+                var netlist = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory));
             }
             finally
             {
@@ -89,7 +90,8 @@ public static class ParametricSweepEngine
         Library lib,
         TestBench tb,
         ElaboratedNetlist netlist,
-        AnalysisSettings? settings)
+        AnalysisSettings? settings,
+        string? baseDirectory)
     {
         switch (inner)
         {
@@ -106,7 +108,7 @@ public static class ParametricSweepEngine
             case ParametricSweepAnalysis psa:
                 // Recursive: outer override already injected in tb.GlobalVariables.
                 // This call re-elaborates for each of its own sweep values on top of that.
-                return Run(psa, lib, tb, settings);
+                return Run(psa, lib, tb, settings, baseDirectory);
 
             default:
                 throw new NotSupportedException(

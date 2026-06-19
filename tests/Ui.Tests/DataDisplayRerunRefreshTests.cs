@@ -84,7 +84,7 @@ public sealed class DataDisplayRerunRefreshTests
         {
             // Initial: [Vgs(41), node(3)]
             var ds1 = new DataSet();
-            ds1.Add("I:Ids", MakeRealCube("Vgs", 41, "node", 3));
+            ds1.Add("Ids", MakeRealCube("Vgs", 41, "node", 3));
             SaveDs(ds1, tmpPath);
 
             var lib = new DataSourceLibraryViewModel();
@@ -96,7 +96,7 @@ public sealed class DataDisplayRerunRefreshTests
                 new AxisSlice("Vgs",  AxisRole.KeepAsX,    0),
                 new AxisSlice("node", AxisRole.PinToIndex, 0),
             };
-            var (trace, plot) = MakeCubeTrace(tmpPath, "I:Ids", initialSlice);
+            var (trace, plot) = MakeCubeTrace(tmpPath, "Ids", initialSlice);
             var inspector     = new PlotInspectorViewModel(plot, () => { }, lib);
 
             // Populate initial points.
@@ -105,7 +105,7 @@ public sealed class DataDisplayRerunRefreshTests
 
             // Re-run: same axes, 81 points.
             var ds2 = new DataSet();
-            ds2.Add("I:Ids", MakeRealCube("Vgs", 81, "node", 3));
+            ds2.Add("Ids", MakeRealCube("Vgs", 81, "node", 3));
             SaveDs(ds2, tmpPath);
 
             await lib.ReloadChangedAsync([tmpPath]);
@@ -132,7 +132,7 @@ public sealed class DataDisplayRerunRefreshTests
         {
             // Initial: [Vgs(41), node(3)]
             var ds1 = new DataSet();
-            ds1.Add("I:Ids", MakeRealCube("Vgs", 41, "node", 3));
+            ds1.Add("Ids", MakeRealCube("Vgs", 41, "node", 3));
             SaveDs(ds1, tmpPath);
 
             var lib = new DataSourceLibraryViewModel();
@@ -144,7 +144,7 @@ public sealed class DataDisplayRerunRefreshTests
                 new AxisSlice("Vgs",  AxisRole.KeepAsX,    0),
                 new AxisSlice("node", AxisRole.PinToIndex, 0),
             };
-            var (trace, plot) = MakeCubeTrace(tmpPath, "I:Ids", initialSlice);
+            var (trace, plot) = MakeCubeTrace(tmpPath, "Ids", initialSlice);
             var inspector     = new PlotInspectorViewModel(plot, () => { }, lib);
 
             // Populate initial points.
@@ -153,7 +153,7 @@ public sealed class DataDisplayRerunRefreshTests
 
             // Re-run with a new Vds sweep axis: [Vgs(41), Vds(7), node(3)]
             var ds3 = new DataSet();
-            ds3.Add("I:Ids", MakeRealCube3("Vgs", 41, "Vds", 7, "node", 3));
+            ds3.Add("Ids", MakeRealCube3("Vgs", 41, "Vds", 7, "node", 3));
             SaveDs(ds3, tmpPath);
 
             await lib.ReloadChangedAsync([tmpPath]);

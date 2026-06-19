@@ -85,6 +85,11 @@ public class Hero2Tests(ITestOutputHelper output)
         else
             Console.WriteLine($"All {sweepVals.Length} sweep points converged.");
 
+        // Locate drain branch in the unified I cube [sweep, branch, harmonic].
+        var branchLabels = ds["I"].Axes[1].Labels!;
+        int drainBrIdx = Array.FindIndex(branchLabels, l => l == "M1:d" || l == "M1:1");
+        Assert.True(drainBrIdx >= 0, "I cube must contain M1 drain branch");
+
         // PA measurement calcs
 
         double[] Pin_dBm = new double[sweepVals.Length];
@@ -101,9 +106,9 @@ public class Hero2Tests(ITestOutputHelper output)
             double pin    = sweepVals[si];
 
             double VDD = ((Complex)ds["V"][si, drainIdx, 0]).Real;
-            double IDC = ((Complex)ds["I:M1:d"][si, 0]).Real; // at DC — drain port current into FET
+            double IDC = ((Complex)ds["I"][si, drainBrIdx, 0]).Real; // at DC — drain port current into FET
             Complex Vout = (Complex)ds["V"][si, drainIdx, 1]; // at f0
-            Complex Iout = -(Complex)ds["I:M1:d"][si, 1]; // current OUT of port = −(current INTO FET)
+            Complex Iout = -(Complex)ds["I"][si, drainBrIdx, 1]; // current OUT of port = −(current INTO FET)
 
             Pin_dBm[si] = pin;
             poutW[si] = 0.5*(Vout*Iout.Conjugate()).Real;
@@ -345,6 +350,10 @@ public class Hero2Tests(ITestOutputHelper output)
 
         var sweepVals = ds["Converged"].Axes[0].Values;
 
+        // Locate drain branch in the unified I cube [sweep, branch, harmonic].
+        var brLabels = ds["I"].Axes[1].Labels!;
+        int drBrIdx  = Array.FindIndex(brLabels, l => l == "M1:d" || l == "M1:1");
+
         // Compute Pout and Gain at each sweep point.
         bool reachedP3dB = false;
         double maxGain = double.NegativeInfinity;
@@ -356,7 +365,7 @@ public class Hero2Tests(ITestOutputHelper output)
             double pin    = sweepVals[si];
             bool   conv   = (double)ds["Converged"][si] > 0.5;
             var    vOut   = (Complex)ds["V"][si, drainIdx, 1];
-            var    iInto  = -(Complex)ds["I:M1:d"][si, 1];
+            var    iInto  = drBrIdx >= 0 ? -(Complex)ds["I"][si, drBrIdx, 1] : Complex.Zero;
             double poutW  = 0.5 * (vOut * iInto.Conjugate()).Real;
             double pout   = poutW > 1e-15 ? 10*Math.Log10(poutW*1000) : double.NegativeInfinity;
             double gain   = double.IsFinite(pout) ? pout - pin : double.NegativeInfinity;

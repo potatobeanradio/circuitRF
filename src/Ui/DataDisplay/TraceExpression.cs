@@ -56,7 +56,11 @@ public static class TraceExpression
 
         // ── Step 1: Extract cube refs ─────────────────────────────────────────
         // Sort cube names descending by length so longer names match first (e.g. "VGain" before "V").
-        var cubeNames = ds.Cubes.Keys.OrderByDescending(n => n.Length).ToList();
+        var cubeNames = ds.Groups
+            .SelectMany(g => ds.CubesIn(g).Keys
+                .Select(c => g == DataSet.DefaultGroup ? c : $"{g}.{c}"))
+            .OrderByDescending(n => n.Length)
+            .ToList();
 
         // refMap:   originalRefStr → placeholder index
         // uniqueRefs: in order of first appearance

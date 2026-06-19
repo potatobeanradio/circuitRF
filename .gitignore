@@ -16,5 +16,6 @@
 /src/Ui/bin
 /tests/Ui.Tests/obj
 /tests/Ui.Tests/bin
+/circuitRF_demo
 
 TestResults/

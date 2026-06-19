@@ -209,6 +209,15 @@ see "File-format stability" above: break it freely, just upgrade exporter+import
 lockstep that remains is the in-process API and the requirement that the three serialization sites move
 together — not backward-compatibility with old files.)*
 
+**`DataSet.MeasurementsGroup = "measurements"` bare-resolution rule (brief-meas-component, 2026-06-18).**
+A bare cube name (no `.`) now resolves in the **default group first**, then the **`"measurements"` group**.
+Analysis cubes (those in named groups like `"HB1"`, `"SP1"`) require qualification: `Analysis.Cube` (e.g.
+`HB1.V`, `SP1.S`). The old sole-populated-group fallback is removed — a single-analysis run's cubes must
+be addressed `SP1.S`, not bare `S`. The measurements group is bare-resolvable so the user references a
+measurement as `Pout` (not `measurements.Pout`) in the Data Display, matching how RF tools surface
+post-processing equations. Flat Touchstone sources (default group) are unaffected.
+**Lockstep with splotRF:** splotRF must be aware that a grouped `.npy` DataSet has bare-resolving measurements.
+
 **Shipped (Phase 7.2a) — per-port reference impedance `Z0` cube.** Every S-parameter DataSet carries a
 **`Z0` complex cube** (name `"Z0"`, `DataKind.Complex`) with one axis `Axis("port", [1..n], "port")` (1-based
 port numbers) holding the per-port, possibly-complex reference impedances in complex ohms.

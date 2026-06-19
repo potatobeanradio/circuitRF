@@ -43,28 +43,27 @@ public static class NetExtractor
         var inProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var labeled    = new HashSet<string>(StringComparer.Ordinal);
 
-        var (instances, cellPorts, topVars) = ExtractModel(model, cells, lib, inProgress, conflicts, labeled);
+        var (instances, cellPorts, topVars, topMeas) = ExtractModel(model, cells, lib, inProgress, conflicts, labeled);
 
         var tb = new TestBench(testBenchName);
         tb.Instances.AddRange(instances);
         tb.GlobalVariables.AddRange(topVars);
+        tb.Measurements.AddRange(topMeas);
         foreach (var name in labeled)
             tb.LabeledNets.Add(name);
 
-        // Analyses + measurements attach to the TOP testbench only (data-model §2.1 invariant).
+        // Analyses attach to the TOP testbench only (data-model §2.1 invariant).
         // All analyses are carried so ParametricSweepEngine can find its inner analysis by name.
         // Dispatch (in SchematicRunService) skips disabled analyses at run time.
         foreach (var analysis in model.Analyses)
             tb.Analyses.Add(analysis);
-        foreach (var measurement in model.Measurements)
-            tb.Measurements.Add(measurement);
 
         return new ExtractionResult(tb, conflicts) { CellPorts = cellPorts, Library = lib };
     }
 
     // ── Per-model extraction pipeline (shared by top and sub-cells) ─────────
 
-    private static (List<Instance> Instances, IReadOnlyList<string> CellPorts, List<Variable> Variables) ExtractModel(
+    private static (List<Instance> Instances, IReadOnlyList<string> CellPorts, List<Variable> Variables, List<Measurement> Measurements) ExtractModel(
         SchematicEditModel model,
         ICellResolver?      cells,
         Library             lib,
@@ -197,6 +196,7 @@ public static class NetExtractor
             if (comp.Symbol == SymbolKind.Ground) continue;
             if (comp.Symbol == SymbolKind.Pin)    continue;
             if (comp.Symbol == SymbolKind.Var)    continue;  // VAR rows routed to Variables, not instances
+            if (comp.Symbol == SymbolKind.Meas)   continue;  // MEAS rows routed to Measurements, not instances
 
             if (comp.CellRef is not null)
             {
@@ -231,7 +231,28 @@ public static class NetExtractor
             }
         }
 
-        return (instances, cellPorts, frameVars);
+        // ── Collect MEAS measurement definitions for this frame ─────────────
+        var frameMeas    = new List<Measurement>();
+        var measNamesSeen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var comp in model.Components)
+        {
+            if (comp.Disable is DisableState.Open or DisableState.Short) continue;
+            if (comp.Symbol != SymbolKind.Meas) continue;
+            foreach (var p in comp.Parameters)
+            {
+                if (string.IsNullOrWhiteSpace(p.Name)) continue;
+                var measName = p.Name.Trim();
+                if (!measNamesSeen.Add(measName))
+                {
+                    conflicts.Add($"Measurement '{measName}' defined more than once; first definition kept.");
+                    continue;
+                }
+                string? unit = UnitNormalizer.ToEngineUnit(p.Unit) is { Length: > 0 } u ? u : null;
+                frameMeas.Add(new Measurement(measName, p.Expression, unit));
+            }
+        }
+
+        return (instances, cellPorts, frameVars, frameMeas);
     }
 
     // ── Cell instance emission ───────────────────────────────────────────────
@@ -273,7 +294,9 @@ public static class NetExtractor
         if (lib.Find(cellName) is null)
         {
             inProgress.Add(cellName);
-            var (subInstances, subPorts, subVars) = ExtractModel(res.Schematic, cells, lib, inProgress, conflicts);
+            var (subInstances, subPorts, subVars, subMeas) = ExtractModel(res.Schematic, cells, lib, inProgress, conflicts);
+            if (subMeas.Count > 0)
+                conflicts.Add($"Cell '{cellName}': MEAS components are ignored inside a cell; measurements attach to the top testbench only.");
             var cell = new Cell(cellName);
             cell.Ports.AddRange(subPorts);
             cell.Instances.AddRange(subInstances);

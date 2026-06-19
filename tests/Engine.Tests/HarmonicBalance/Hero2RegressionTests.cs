@@ -112,6 +112,12 @@ public class Hero2RegressionTests(ITestOutputHelper output)
 
         var sweepVals = ds["Converged"].Axes[0].Values;
 
+        // Locate drain branch in unified I cube [sweep, branch, harmonic].
+        var iCube     = ds["I"];
+        var iLabels   = iCube.Axes[iCube.Rank - 2].Labels!;
+        int drainBrIdx = Array.FindIndex(iLabels, l => l == "M1:d" || l == "M1:1");
+        Assert.True(drainBrIdx >= 0, "Unified I cube missing M1 drain branch");
+
         // ── All sweep points converged ────────────────────────────────────────
         int nonConv = ds["Converged"].RealValues.Count(v => v < 0.5);
         Assert.True(nonConv == 0, $"{nonConv} sweep points did not converge.");
@@ -127,7 +133,7 @@ public class Hero2RegressionTests(ITestOutputHelper output)
             Assert.InRange(vGate,  -3.10, -3.00); // ≈ −3.05 V
             Assert.InRange(vDrain,  47.0,  49.0); // ≈  48 V
             output.WriteLine($"Pin={pin,5:F1} dBm:  V_gate={vGate:F4} V  V_drain={vDrain:F4} V  " +
-                             $"I_nl_drain={((Complex)ds["I:M1:d"][si, 0]).Real*1e3:F2} mA");
+                             $"I_nl_drain={((Complex)iCube[si, drainBrIdx, 0]).Real*1e3:F2} mA");
         }
 
         // ── Gate harmonics k≥2 are near zero (linear gate, no harmonic generation) ──
@@ -149,7 +155,7 @@ public class Hero2RegressionTests(ITestOutputHelper output)
         double prevI = double.MinValue;
         for (int si = 0; si < sweepVals.Length; si++)
         {
-            double iDrain = ((Complex)ds["I:M1:d"][si, 0]).Real;
+            double iDrain = ((Complex)iCube[si, drainBrIdx, 0]).Real;
             Assert.True(iDrain >= prevI - 0.1e-3,  // allow 0.1 mA noise
                 $"DC drain current did not increase at Pin={sweepVals[si]:F1} dBm: " +
                 $"I_nl[drain,0]={iDrain*1e3:F2} mA, prev={prevI*1e3:F2} mA.");
@@ -183,6 +189,12 @@ public class Hero2RegressionTests(ITestOutputHelper output)
         var drainGolden = compareV ? drainGoldenV! : drainGoldenI!;
         var gateGolden  = compareV ? gateGoldenV!  : gateGoldenI!;
 
+        // Locate drain and gate branches in unified I cube [sweep, branch, harmonic].
+        var iCube = ds["I"];
+        var iBrLabels = iCube.Axes[iCube.Rank - 2].Labels!;
+        int iDrainBrIdx = Array.FindIndex(iBrLabels, l => l == "M1:d" || l == "M1:1");
+        int iGateBrIdx  = Array.FindIndex(iBrLabels, l => l == "M1:g" || l == "M1:0");
+
         var sweepVals = ds["Converged"].Axes[0].Values;
         double f0 = p.ToneHz;
         int    K  = p.MaxHarmonic;
@@ -197,11 +209,11 @@ public class Hero2RegressionTests(ITestOutputHelper output)
             {
                 double freqHz = k * f0;
 
-                foreach (var (nodeLabel, nodeIdx, branchCube, golden) in new[]
+                foreach (var (nodeLabel, nodeIdx, branchIdx, golden) in new[]
                 {
-                    // V path uses node-indexed cube; I path uses named branch cube (no node axis)
-                    ("drain", drainIdx, "I:M1:d", drainGolden),
-                    ("gate",  gateIdx,  "I:M1:g", gateGolden),
+                    // V path uses node-indexed cube; I path uses unified I cube with branch index.
+                    ("drain", drainIdx, iDrainBrIdx, drainGolden),
+                    ("gate",  gateIdx,  iGateBrIdx,  gateGolden),
                 })
                 {
                     var entry = golden.FirstOrDefault(e =>
@@ -211,8 +223,8 @@ public class Hero2RegressionTests(ITestOutputHelper output)
                     if (entry is null) continue;
 
                     Complex sim = compareV
-                        ? (Complex)ds["V"][si, nodeIdx, k]
-                        : (Complex)ds[branchCube][si, k];
+                        ? (Complex)ds["V"][si, nodeIdx,  k]
+                        : (Complex)iCube   [si, branchIdx, k];
                     double simRe = sim.Real;
                     double simIm = k == 0 ? 0.0 : sim.Imaginary;
 

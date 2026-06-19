@@ -41,16 +41,21 @@ public sealed class MeasurementEvaluator
     }
 
     /// <summary>
-    /// Evaluate all measurements and add result cubes to <paramref name="ds"/>.
+    /// Evaluate all measurements and add every result cube to <paramref name="ds"/>.
     /// </summary>
     public void EvaluateInto(DataSet ds)
+        => Evaluate((m, result) => ds.Add(m.Name, ToCube(m, result)));
+
+    // ── Shared evaluation core ───────────────────────────────────────────────────
+
+    private void Evaluate(Action<Measurement, Value> emit)
     {
         if (_tb.Measurements.Count == 0) return;
 
-        var ctx   = new MeasurementContext(_analysisResults, _backSolvers);
-        var eval  = new Evaluator(ctx);
+        var ctx  = new MeasurementContext(_analysisResults, _backSolvers);
+        var eval = new Evaluator(ctx);
 
-        // Globals scope: inject resolved global variables so measurements can reference them
+        // Globals scope: inject resolved global variables so measurements can reference them.
         var globalScope = new Scope("globals");
         foreach (var (name, value) in _netlist.ResolvedGlobals)
         {
@@ -58,7 +63,36 @@ public sealed class MeasurementEvaluator
             eval.InjectResolved("globals", name, value);   // pre-memoize actual value
         }
 
-        // Measurement scope: child of globals; used to inject computed measurement cubes
+        // Swept variables: a parametric sweep prepends an axis named after its SweepVarName, carrying
+        // the swept values. Inject each as a 1-D cube so a measurement that references the sweep
+        // variable directly (e.g. "Pin_avail_dBm = Pin") gets one element per sweep point — and so it
+        // broadcast-aligns (same axis name+values) with swept analysis cubes. This OVERRIDES the scalar
+        // global injected above.
+        var sweptVarNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var a in _tb.Analyses)
+            if (a is ParametricSweepAnalysis ps && !string.IsNullOrEmpty(ps.SweepVarName))
+                sweptVarNames.Add(ps.SweepVarName);
+
+        if (sweptVarNames.Count > 0)
+        {
+            // Take the actual axis (name + values) from the results — authoritative even when a sweep
+            // was disabled/collapsed (its axis simply won't be present, so it stays a scalar).
+            var sweepAxes = new Dictionary<string, Axis>(StringComparer.Ordinal);
+            foreach (var ds in _analysisResults.Values)
+                foreach (var (_, cube) in ds.Cubes)
+                    foreach (var ax in cube.Axes)
+                        if (sweptVarNames.Contains(ax.Name) && !sweepAxes.ContainsKey(ax.Name))
+                            sweepAxes[ax.Name] = ax;
+
+            foreach (var (name, ax) in sweepAxes)
+            {
+                var sweepCube = new DataCube([new Axis(name, ax.Values)], (double[])ax.Values.Clone());
+                globalScope.Bind(name, "0");                                  // ensure Lookup succeeds
+                eval.InjectResolved("globals", name, new Value(sweepCube));   // override the scalar global
+            }
+        }
+
+        // Measurement scope: child of globals; used to inject computed measurement cubes.
         var mScope = new Scope("measurements", globalScope);
 
         foreach (var m in _tb.Measurements)
@@ -74,20 +108,20 @@ public sealed class MeasurementEvaluator
                     $"Measurement '{m.Name}': failed to evaluate '{m.Expression}': {ex.Message}", ex);
             }
 
-            // Inject the result so later measurements can reference this one by name
+            // Inject the result so later measurements can reference this one by name.
             mScope.Bind(m.Name, result.ToString()!);
             eval.InjectResolved("measurements", m.Name, result);
 
-            // Add to DataSet
-            DataCube cube = result.Kind switch
-            {
-                ValueKind.Cube    => result.AsCube(),
-                ValueKind.Real    => DataCube.Scalar(result.AsReal()),
-                ValueKind.Complex => DataCube.Scalar(result.AsComplex()),
-                _ => throw new InvalidOperationException(
-                    $"Measurement '{m.Name}' produced an unsupported value kind: {result.Kind}")
-            };
-            ds.Add(m.Name, cube);
+            emit(m, result);
         }
     }
+
+    private static DataCube ToCube(Measurement m, Value result) => result.Kind switch
+    {
+        ValueKind.Cube    => result.AsCube(),
+        ValueKind.Real    => DataCube.Scalar(result.AsReal()),
+        ValueKind.Complex => DataCube.Scalar(result.AsComplex()),
+        _ => throw new InvalidOperationException(
+            $"Measurement '{m.Name}' produced an unsupported value kind: {result.Kind}")
+    };
 }

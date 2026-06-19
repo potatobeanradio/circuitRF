@@ -44,7 +44,7 @@ analysis DC1  type=dc
         output.WriteLine("IProbe_SeriesResistor_CurrentEqualsVOverR: PASS.");
     }
 
-    // ── T2: DcResultPacker emits I:<probe> scalar in the DataSet ─────────────
+    // ── T2: DcResultPacker emits unified I [branch] cube with IP1 labeled ──────
 
     [Fact]
     public void DcResultPacker_EmitsIProbeCube()
@@ -58,15 +58,21 @@ analysis DC1  type=dc
         Assert.True(ds.Contains("V"),          "DataSet must contain 'V' cube.");
         Assert.True(ds.Contains("Converged"),  "DataSet must contain 'Converged' cube.");
         Assert.True(ds.Contains("Residual"),   "DataSet must contain 'Residual' cube.");
-        Assert.True(ds.Contains("I:IP1"),      "DataSet must contain 'I:IP1' cube.");
+        Assert.True(ds.Contains("I"),          "DataSet must contain unified 'I' cube.");
 
-        // I:IP1 is a scalar (rank-0) — access via RealValues[0].
-        var iCube = ds["I:IP1"];
-        Assert.Equal(0, iCube.Rank);
-        double iVal = iCube.RealValues[0];
-        output.WriteLine($"ds[\"I:IP1\"] scalar = {iVal:G6} A");
+        // I is rank-1 with a branch axis labeled with probe names.
+        var iCube = ds["I"];
+        Assert.Equal(1, iCube.Rank);
+        Assert.Equal("branch", iCube.Axes[0].Name);
+        var labels = iCube.Axes[0].Labels;
+        Assert.NotNull(labels);
+        Assert.Contains("IP1", labels!);
+
+        int brIdx = Array.IndexOf(labels!, "IP1");
+        double iVal = iCube.RealValues[brIdx];
+        output.WriteLine($"ds[\"I\"][IP1] = {iVal:G6} A");
         Assert.True(Math.Abs(iVal - 0.1) < 1e-9,
-            $"Expected I:IP1 ≈ 0.1 A, got {iVal:G}");
+            $"Expected I[IP1] ≈ 0.1 A, got {iVal:G}");
 
         // V cube has 1-axis (node) with Labels.
         var vCube = ds["V"];
@@ -97,8 +103,8 @@ analysis DC1  type=dc
         Assert.Empty(dc.ProbeCurrents);
 
         var ds = DcResultPacker.Pack(dc, nl);
-        Assert.False(ds.Cubes.Keys.Any(k => k.StartsWith("I:", StringComparison.Ordinal)),
-            "No I: cubes expected when there are no IProbes.");
+        Assert.False(ds.Contains("I"),
+            "No I cube expected when there are no IProbes.");
 
         output.WriteLine("NoIProbe_ProbeCurrentsIsEmpty: PASS.");
     }

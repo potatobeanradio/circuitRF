@@ -31,7 +31,8 @@ public sealed class RunResult(
     RunStatus                        status,
     string                           statusMessage,
     IReadOnlyList<AnalysisResult>?   results  = null,
-    IReadOnlyList<string>?           warnings = null)
+    IReadOnlyList<string>?           warnings = null,
+    DataSet?                         grouped  = null)
 {
     public RunStatus                       Status        { get; } = status;
     public string                          StatusMessage { get; } = statusMessage;
@@ -43,6 +44,12 @@ public sealed class RunResult(
     /// Non-empty even on <see cref="RunStatus.EngineError"/> when the run partially succeeded.
     /// </summary>
     public IReadOnlyList<string> Warnings { get; } = warnings ?? [];
+
+    /// <summary>
+    /// One grouped DataSet for the whole run (one group per analysis + "measurements" group).
+    /// Null when no analyses produced results.
+    /// </summary>
+    public DataSet? GroupedResults { get; } = grouped;
 
     // Convenience: callers that only need the DataSets (unchanged from Phase 6e).
     public IReadOnlyList<DataSet> DataSets => Results.Select(r => r.Data).ToList();
@@ -62,7 +69,7 @@ public static class SchematicRunService
     /// Returns Success with DataSets, NoAnalysis when nothing is declared,
     /// or EngineError when an engine exception occurs.  Never throws.
     /// </summary>
-    public static RunResult RunNetlist(string netlistPath)
+    public static RunResult RunNetlist(string netlistPath, string? baseDirectory = null)
     {
         // ── 1. Read ────────────────────────────────────────────────────────────
         Library  lib;
@@ -87,7 +94,7 @@ public static class SchematicRunService
         ElaboratedNetlist nl;
         try
         {
-            nl = new Elaborator(lib).Elaborate(tb);
+            nl = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
         }
         catch (Exception ex)
         {
@@ -118,7 +125,7 @@ public static class SchematicRunService
 
             try
             {
-                var ds = RunTypedAnalysis(top, nl, tb, lib, notes);
+                var ds = RunTypedAnalysis(top, nl, tb, lib, notes, baseDirectory);
                 if (ds is not null)
                 {
                     var resultName = top is ParametricSweepAnalysis psa
@@ -149,6 +156,31 @@ public static class SchematicRunService
             }
         }
 
+        // ── 4b. Assemble the one grouped run DataSet (group per analysis + measurements) ──
+        DataSet? grouped = null;
+        if (results.Count > 0)
+        {
+            grouped = new DataSet();
+            foreach (var r in results)
+                foreach (var kv in r.Data.Cubes)
+                    grouped.AddToGroup(r.Name, kv.Key, kv.Value);
+
+            if (tb.Measurements.Count > 0)
+            {
+                try
+                {
+                    var analysisResults = new Dictionary<string, DataSet>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var r in results) analysisResults[r.Name] = r.Data;
+
+                    var measDs = new DataSet();
+                    new MeasurementEvaluator(tb, nl, analysisResults).EvaluateInto(measDs);
+                    foreach (var kv in measDs.Cubes)
+                        grouped.AddToGroup("measurements", kv.Key, kv.Value);
+                }
+                catch (Exception ex) { errors.Add($"measurements: {ex.Message}"); }
+            }
+        }
+
         // ── 5. Build outcome ───────────────────────────────────────────────────
         // Drain elaboration + engine run-time warnings from the netlist.
         IReadOnlyList<string> nlWarnings = nl.Warnings.Count > 0
@@ -170,7 +202,7 @@ public static class SchematicRunService
         var summary = allNotes.Count > 0
             ? string.Join("; ", allNotes)
             : $"{results.Count} analysis run(s) complete";
-        return new RunResult(RunStatus.Success, summary, results, nlWarnings);
+        return new RunResult(RunStatus.Success, summary, results, nlWarnings, grouped);
     }
 
     // ── Typed analysis dispatch ───────────────────────────────────────────────
@@ -180,7 +212,8 @@ public static class SchematicRunService
         ElaboratedNetlist nl,
         TestBench         tb,
         Library           lib,
-        List<string>      notes)
+        List<string>      notes,
+        string?           baseDirectory)
     {
         switch (analysis)
         {
@@ -221,7 +254,7 @@ public static class SchematicRunService
             case ParametricSweepAnalysis psa:
             {
                 notes.Add($"Parametric sweep '{psa.Name}': {psa.SweepValues.Length} pt(s) over {psa.SweepVarName}");
-                return ParametricSweepEngine.Run(psa, lib, tb);
+                return ParametricSweepEngine.Run(psa, lib, tb, baseDirectory: baseDirectory);
             }
 
             case DcAnalysis:

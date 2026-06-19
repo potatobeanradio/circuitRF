@@ -3098,7 +3098,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                 if (param is null) return;
                 _inlineEditParam = param;
 
-                bool nameMode = comp.Symbol is SymbolKind.Var or SymbolKind.Sdd;
+                bool nameMode = comp.Symbol is SymbolKind.Var or SymbolKind.Meas or SymbolKind.Sdd;
                 InlineEditIncludesName = nameMode;
 
                 string init;

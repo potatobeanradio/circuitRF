@@ -25,6 +25,12 @@ public sealed class TraceDataItem
     /// </summary>
     public bool IsBroken { get; }
 
+    /// <summary>A V/I placeholder for an analysis group whose cube is missing.</summary>
+    public bool IsAbsent { get; init; }
+
+    /// <summary>Picker group header this item belongs to (e.g. "HB1", "Measurements", "S-Parameters").</summary>
+    public string Group { get; init; } = "";
+
     // ---- Cube-bound discriminator (Phase 7.2c-a) ---------------------------
 
     /// <summary>True for cube-bound items; false for matrix / derived items.</summary>

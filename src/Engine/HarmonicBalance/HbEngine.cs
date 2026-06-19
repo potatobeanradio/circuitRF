@@ -400,9 +400,25 @@ public sealed class HbEngine
             }
         }
 
+        // IProbe branch currents (full spectrum) via the linear back-solver.
+        // LastBranchIndex is the absolute MNA row (AddBranch returns _nodeCount + branchLocalIdx),
+        // so x[ip.LastBranchIndex] directly yields the branch current.
+        var probeCurrents = new Dictionary<string, Complex[]>(StringComparer.Ordinal);
+        foreach (var ec in _netlist.Components)
+        {
+            if (ec.Model is not IProbeModel ip || ip.LastBranchIndex < 0) continue;
+            var spec = new Complex[K + 1];
+            for (int k = 0; k <= K; k++)
+            {
+                var x = backSolver.GetSolution(k, 0);
+                spec[k] = ip.LastBranchIndex < x.Length ? x[ip.LastBranchIndex] : Complex.Zero;
+            }
+            probeCurrents[ec.InstancePath] = spec;
+        }
+
         var ds = BuildSingleToneDataSet(
             Vfull, INlfull, namesFull, f0, K, trace, portCurrentsByBranch,
-            _netlist.Nodes.LabeledNames);
+            _netlist.Nodes.LabeledNames, probeCurrents);
 
         return new HbRunResult(ds, backSolver);
     }
@@ -906,7 +922,8 @@ public sealed class HbEngine
         int         K,
         HbConvergenceTrace trace,
         Dictionary<string, List<Complex[]>> portCurrents,
-        HashSet<string>?    labeledNames = null)
+        HashSet<string>?    labeledNames = null,
+        Dictionary<string, Complex[]>? probeCurrents = null)
     {
         int N  = V.GetLength(0);
         int K1 = K + 1;
@@ -951,13 +968,48 @@ public sealed class HbEngine
             }
         }
 
-        foreach (var (branchKey, specList) in portCurrents)
+        // Unified I [branch, harmonic] cube: probes first (labeled), then device ports.
         {
-            if (specList.Count == 0) continue;
-            var spec  = specList[0];
-            var iData = new Complex[K1];
-            for (int k = 0; k < K1 && k < spec.Length; k++) iData[k] = spec[k];
-            ds.Add("I:" + branchKey, new DataCube([harmAxis], iData));
+            var brNames = new List<string>();
+            var brSpecs = new List<Complex[]>();
+
+            string[] probeLabels = Array.Empty<string>();
+            if (probeCurrents is { Count: > 0 })
+            {
+                probeLabels = probeCurrents.Keys.ToArray();
+                foreach (var name in probeLabels)
+                {
+                    brNames.Add(name);
+                    brSpecs.Add(probeCurrents[name]);
+                }
+            }
+            foreach (var (key, specList) in portCurrents)
+            {
+                if (specList.Count == 0) continue;
+                brNames.Add(key);
+                brSpecs.Add(specList[0]);
+            }
+
+            if (brNames.Count > 0)
+            {
+                int B         = brNames.Count;
+                var bVals     = Enumerable.Range(0, B).Select(i => (double)i).ToArray();
+                var branchAxis = new Axis("branch", bVals, "", brNames.ToArray());
+                var iData     = new Complex[B * K1];
+                for (int b = 0; b < B; b++)
+                {
+                    var spec = brSpecs[b];
+                    for (int k = 0; k < K1; k++) iData[b * K1 + k] = k < spec.Length ? spec[k] : Complex.Zero;
+                }
+                ds.Add("I", new DataCube([branchAxis, harmAxis], iData));
+
+                if (probeLabels.Length > 0)
+                {
+                    var pIdx = Enumerable.Range(0, probeLabels.Length).Select(i => (double)i).ToArray();
+                    ds.Add("__ProbeBranches", new DataCube(
+                        [new Axis("probe", pIdx, "", probeLabels)], new double[probeLabels.Length]));
+                }
+            }
         }
 
         return ds;
@@ -969,7 +1021,7 @@ public sealed class HbEngine
     /// MixIndex axis values = {k1·f1+k2·f2} Hz per product, Labels = {"(k1,k2)"}.
     /// ToneFreqs cube has axis [tone] (Real): {f1, f2} Hz.
     /// MetaMixOrder cube has axis [1] (Real): {MaxMixOrder}.
-    /// I:* branch-current cubes have axis [mixIndex].
+    /// I cube has axes [branch, mixIndex] for device-port currents (no IProbe back-solver for two-tone yet).
     /// </summary>
     private static DataSet BuildTwoToneDataSet(
         Complex[,]  V,
@@ -1035,13 +1087,32 @@ public sealed class HbEngine
             }
         }
 
-        foreach (var (branchKey, specList) in portCurrentsByBranch)
+        // Unified I [branch, mixIndex] cube for device-port currents.
+        // TODO(two-tone IProbe currents): needs a mixing-lattice back-solver.
+        // RunTwoTone builds no HbLinearBackSolver, so there is no path to a two-tone
+        // IProbe current spectrum without new engine work. Single-tone only for now.
         {
-            if (specList.Count == 0) continue;
-            var spec  = specList[0];
-            var iData = new Complex[M];
-            for (int m = 0; m < M && m < spec.Length; m++) iData[m] = spec[m];
-            ds.Add("I:" + branchKey, new DataCube([mixAxis], iData));
+            var brNames = new List<string>();
+            var brSpecs = new List<Complex[]>();
+            foreach (var (key, specList) in portCurrentsByBranch)
+            {
+                if (specList.Count == 0) continue;
+                brNames.Add(key);
+                brSpecs.Add(specList[0]);
+            }
+            if (brNames.Count > 0)
+            {
+                int B         = brNames.Count;
+                var bVals     = Enumerable.Range(0, B).Select(i => (double)i).ToArray();
+                var branchAxis = new Axis("branch", bVals, "", brNames.ToArray());
+                var iData     = new Complex[B * M];
+                for (int b = 0; b < B; b++)
+                {
+                    var spec = brSpecs[b];
+                    for (int m = 0; m < M; m++) iData[b * M + m] = m < spec.Length ? spec[m] : Complex.Zero;
+                }
+                ds.Add("I", new DataCube([branchAxis, mixAxis], iData));
+            }
         }
 
         return ds;

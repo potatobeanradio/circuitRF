@@ -1050,10 +1050,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Step 2: run the engine on a background thread so the UI stays responsive.
         Messages.Info($"Running '{testBenchName}'…");
+        string? workspaceRoot = CurrentWorkspacePath is not null
+            ? Path.GetDirectoryName(CurrentWorkspacePath)
+            : null;
         RunResult result;
         try
         {
-            result = await Task.Run(() => SchematicRunService.RunNetlist(netlistPath));
+            result = await Task.Run(() => SchematicRunService.RunNetlist(netlistPath, baseDirectory: workspaceRoot));
         }
         catch (Exception ex)
         {
@@ -1077,11 +1080,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 break;
             case RunStatus.Success:
                 Messages.Success(result.StatusMessage);
-                var written = RunResultsWriter.WriteResults(
+                var written = RunResultsWriter.WriteRun(
                     baseDir,
                     RunResultsWriter.SchematicKey(activeDoc.FilePath, activeDoc.Id),
                     RunResultsWriter.OwnerIdentity(activeDoc.FilePath, activeDoc.Id),
-                    result.Results,
+                    result.GroupedResults,
                     Messages);
                 await RefreshOpenDataDisplaysAsync(written);
                 break;

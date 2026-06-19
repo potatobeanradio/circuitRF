@@ -78,7 +78,7 @@ public sealed class TableCubeTraceTests
         t.Transform = CubeTransform.dB20;
         t.Slice = new[] { new AxisSlice("Pin", AxisRole.KeepAsX, 0) };
 
-        Assert.Equal("dB20(V[:])", t.CubeShorthand);
+        Assert.Equal("dB20(V)", t.CubeShorthand);   // trivial [:] dropped (brief-card-ux-refinements)
     }
 
     [Fact]
@@ -562,9 +562,9 @@ public sealed class CubeTraceSpecParserTests
         var data    = new double[5 * 4];
         var cube    = new DataCube(new[] { vgsAxis, vdsAxis }, data);
         var ds      = new DataSet();
-        ds.Add("I:Ids", cube);
+        ds.Add("Ids", cube);
 
-        bool ok = CubeTraceSpecParser.TryParse("I:Ids[:, :]", ds,
+        bool ok = CubeTraceSpecParser.TryParse("Ids[:, :]", ds,
             out _, out var slice, out _, out string err);
 
         Assert.True(ok, err);
@@ -576,15 +576,15 @@ public sealed class CubeTraceSpecParserTests
     [Fact]
     public void Parser_TwoKept_AssignsFamily_BareForm()
     {
-        // Same cube, bare "I:Ids" — no brackets → synthesize [:, :] → same assignment
+        // Same cube, bare "Ids" — no brackets → synthesize [:, :] → same assignment
         var vgsAxis = new Axis("Vgs", new double[] { 0, 0.5, 1.0, 1.5, 2.0 }, "V");
         var vdsAxis = new Axis("Vds", new double[] { 0, 0.5, 1.0, 1.5 }, "V");
         var data    = new double[5 * 4];
         var cube    = new DataCube(new[] { vgsAxis, vdsAxis }, data);
         var ds      = new DataSet();
-        ds.Add("I:Ids", cube);
+        ds.Add("Ids", cube);
 
-        bool ok = CubeTraceSpecParser.TryParse("I:Ids", ds,
+        bool ok = CubeTraceSpecParser.TryParse("Ids", ds,
             out _, out var slice, out _, out string err);
 
         Assert.True(ok, err);
@@ -634,7 +634,7 @@ public sealed class FamilyTraceTests
 
         var cube = new DataCube(new[] { vgsAxis, vdsAxis }, data);
         var ds   = new DataSet();
-        ds.Add("I:Ids", cube);
+        ds.Add("Ids", cube);
         return (ds, cube);
     }
 
@@ -658,11 +658,11 @@ public sealed class FamilyTraceTests
         };
 
         var t = MakeBaseTrace();
-        t.CubeName = "I:Ids";
+        t.CubeName = "Ids";
         t.Slice    = slice;
 
         // Simulate what TrySetCubeData/ResolveFamily does
-        var cubeObj = ds["I:Ids"];
+        var cubeObj = ds["Ids"];
         var curves  = new List<(double, string?, System.Numerics.Complex[]?, double[]?)>();
         for (int g = 0; g < 5; g++)
         {
@@ -695,7 +695,7 @@ public sealed class FamilyTraceTests
 
         var vgsVals = cube.Axes[0].Values;
         var vdsVals = cube.Axes[1].Values;
-        var cubeObj = ds["I:Ids"];
+        var cubeObj = ds["Ids"];
 
         var curves = new List<(double, string?, System.Numerics.Complex[]?, double[]?)>();
         int cap    = Trace.MaxFamilyCurves;
@@ -706,7 +706,7 @@ public sealed class FamilyTraceTests
         }
 
         var t = MakeBaseTrace();
-        t.CubeName = "I:Ids";
+        t.CubeName = "Ids";
         t.Slice    = new[] { new AxisSlice("Vgs", AxisRole.FamilyIterate, 0), new AxisSlice("Vds", AxisRole.KeepAsX, 0) };
         t.SetFamilyData(vdsVals, "Vds", "V", "Vgs", curves, PlotType.Rect, FreqUnit.GHz);
 
@@ -722,7 +722,7 @@ public sealed class FamilyTraceTests
         var (ds, cube) = MakeFetCube(3, 5);
         var vgsVals    = cube.Axes[0].Values;
         var vdsVals    = cube.Axes[1].Values;
-        var cubeObj    = ds["I:Ids"];
+        var cubeObj    = ds["Ids"];
 
         var curves = new List<(double, string?, System.Numerics.Complex[]?, double[]?)>();
         for (int g = 0; g < 3; g++)
@@ -732,7 +732,7 @@ public sealed class FamilyTraceTests
         }
 
         var t = MakeBaseTrace();
-        t.CubeName = "I:Ids";
+        t.CubeName = "Ids";
         t.Slice    = new[] { new AxisSlice("Vgs", AxisRole.FamilyIterate, 0), new AxisSlice("Vds", AxisRole.KeepAsX, 0) };
         t.SetFamilyData(vdsVals, "Vds", "V", "Vgs", curves, PlotType.Rect, FreqUnit.GHz);
 

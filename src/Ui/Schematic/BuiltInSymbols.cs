@@ -38,6 +38,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _iprobe       = BuildIProbe();
     private static readonly Symbol _fetSdd       = BuildFetSdd();
     private static readonly Symbol _var          = BuildVar();
+    private static readonly Symbol _meas         = BuildMeas();
     private static readonly Symbol _generic      = BuildGeneric();
     private static readonly Symbol _p1Tone       = BuildP1Tone();
 
@@ -92,6 +93,7 @@ public static class BuiltInSymbols
             case SymbolKind.IProbe:     return _iprobe;
             case SymbolKind.FetSdd:     return _fetSdd;
             case SymbolKind.Var:        return _var;
+            case SymbolKind.Meas:       return _meas;
             case SymbolKind.P1Tone:     return _p1Tone;
             default:                    return _generic;
         }
@@ -433,6 +435,17 @@ public static class BuiltInSymbols
         L(-80,  60, -80, -60),   // left
         Txt("VAR", 0, 0, fontSize: VarLabelFontSize, align: SymbolTextAlign.Center, vAlign: SymbolTextVAlign.Middle),
     ], SymbolKind.Var);
+
+    // ── MEAS — port-less box with "=" motif (measurement equations) ──────────
+
+    private static Symbol BuildMeas() => Sym([
+        L(-80, -60,  80, -60),   // top
+        L( 80, -60,  80,  60),   // right
+        L( 80,  60, -80,  60),   // bottom
+        L(-80,  60, -80, -60),   // left
+        L(-40, -15,  40, -15),   // upper equals bar
+        L(-40,  15,  40,  15),   // lower equals bar
+    ], SymbolKind.Meas);
 
     // ── Generic — 2-port box with leads (horizontal fallback) ─────────────────
 

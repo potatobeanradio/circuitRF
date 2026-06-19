@@ -216,31 +216,36 @@ analysis SW_Vgs  type=parametric_sweep  Var=Vgs  Values=-1,-2  Inner=SW_Vds
 
         var ds = ParametricSweepEngine.Run(swVgs, lib, tb);
 
-        // I:IPd must exist and be a [Vgs(2), Vds(3)] cube after stacking.
-        Assert.True(ds.Contains("I:IPd"), "DataSet should contain 'I:IPd' after sweep.");
-        var iCube = ds["I:IPd"];
-        output.WriteLine($"I:IPd cube rank={iCube.Rank}  axes=[{string.Join(", ", iCube.Axes.Select(a => $"{a.Name}({a.Length})"))}]");
+        // Unified I cube must exist with axes [Vgs(2), Vds(3), branch(1)] after stacking.
+        Assert.True(ds.Contains("I"), "DataSet should contain unified 'I' cube after sweep.");
+        Assert.False(ds.Cubes.Keys.Any(k => k.StartsWith("I:", StringComparison.Ordinal)),
+            "No legacy 'I:*' per-probe cubes should be emitted.");
+        var iCube = ds["I"];
+        output.WriteLine($"I cube rank={iCube.Rank}  axes=[{string.Join(", ", iCube.Axes.Select(a => $"{a.Name}({a.Length})"))}]");
 
-        Assert.Equal(2, iCube.Rank);
-        Assert.Equal("Vgs", iCube.Axes[0].Name);
-        Assert.Equal(2, iCube.Axes[0].Length);
-        Assert.Equal("Vds", iCube.Axes[1].Name);
-        Assert.Equal(3, iCube.Axes[1].Length);
+        Assert.Equal(3, iCube.Rank);
+        Assert.Equal("Vgs",    iCube.Axes[0].Name);
+        Assert.Equal(2,        iCube.Axes[0].Length);
+        Assert.Equal("Vds",    iCube.Axes[1].Name);
+        Assert.Equal(3,        iCube.Axes[1].Length);
+        Assert.Equal("branch", iCube.Axes[2].Name);
+        Assert.Equal(1,        iCube.Axes[2].Length);  // one IProbe: IPd
 
+        // Probe "IPd" is at branch index 0.  Flat stride: Vgs*3*1 + Vds*1 + branch(0).
         // At (Vgs=-1 [idx 0], Vds=0 [idx 0]): Id = 0/1000 = 0 A.
         double i00 = iCube.RealValues[0 * 3 + 0];
-        output.WriteLine($"I:IPd at (Vgs=-1, Vds=0) = {i00:G6} A  (expected ≈ 0 A)");
-        Assert.True(Math.Abs(i00) < 1e-9, $"Expected I:IPd ≈ 0 A at Vds=0, got {i00:G}");
+        output.WriteLine($"I[IPd] at (Vgs=-1, Vds=0) = {i00:G6} A  (expected ≈ 0 A)");
+        Assert.True(Math.Abs(i00) < 1e-9, $"Expected I[IPd] ≈ 0 A at Vds=0, got {i00:G}");
 
         // At (Vgs=-1 [idx 0], Vds=1 [idx 1]): Id = 1/1000 = 1e-3 A.
         double i01 = iCube.RealValues[0 * 3 + 1];
-        output.WriteLine($"I:IPd at (Vgs=-1, Vds=1) = {i01:G6} A  (expected ≈ 1e-3 A)");
-        Assert.True(Math.Abs(i01 - 1e-3) < 1e-9, $"Expected I:IPd ≈ 1 mA at Vds=1, got {i01:G}");
+        output.WriteLine($"I[IPd] at (Vgs=-1, Vds=1) = {i01:G6} A  (expected ≈ 1e-3 A)");
+        Assert.True(Math.Abs(i01 - 1e-3) < 1e-9, $"Expected I[IPd] ≈ 1 mA at Vds=1, got {i01:G}");
 
         // At (Vgs=-2 [idx 1], Vds=2 [idx 2]): Id = 2/1000 = 2e-3 A.
         double i12 = iCube.RealValues[1 * 3 + 2];
-        output.WriteLine($"I:IPd at (Vgs=-2, Vds=2) = {i12:G6} A  (expected ≈ 2e-3 A)");
-        Assert.True(Math.Abs(i12 - 2e-3) < 1e-9, $"Expected I:IPd ≈ 2 mA at Vds=2, got {i12:G}");
+        output.WriteLine($"I[IPd] at (Vgs=-2, Vds=2) = {i12:G6} A  (expected ≈ 2e-3 A)");
+        Assert.True(Math.Abs(i12 - 2e-3) < 1e-9, $"Expected I[IPd] ≈ 2 mA at Vds=2, got {i12:G}");
 
         output.WriteLine("Sweep_Nested_DcWithIProbe_YieldsCurrentCube: PASS.");
     }

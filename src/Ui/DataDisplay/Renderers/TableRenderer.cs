@@ -40,6 +40,7 @@ namespace CircuitRF.Ui.DataDisplay
         public string?      Unit;               // XAxis only
         public double[]     XValues = Array.Empty<double>();  // XAxis: sorted group X; TraceValue: same ref
         public bool         IsFreqUnit;         // XAxis only
+        public bool         IsScalar;           // XAxis only: true for scalar (rank-0) anchor column
     }
 
     // ============================================================
@@ -357,7 +358,11 @@ namespace CircuitRF.Ui.DataDisplay
                 string?  unit;
                 double[] raw;
 
-                if (trace.IsCubeBound && trace.CubeXValues is { } xs)
+                if (trace.IsCubeBound && trace.CubeIsScalar)
+                {
+                    axisName = ""; unit = null; raw = new[] { 0.0 };   // single-row anchor, blank header
+                }
+                else if (trace.IsCubeBound && trace.CubeXValues is { } xs)
                 {
                     axisName = trace.CubeXAxisName ?? "X";
                     unit     = trace.CubeXUnit;
@@ -403,6 +408,7 @@ namespace CircuitRF.Ui.DataDisplay
                         Unit            = unit,
                         XValues         = sorted,
                         IsFreqUnit      = isFreq,
+                        IsScalar        = trace.IsCubeBound && trace.CubeIsScalar,
                     });
                     currentXArray = sorted;
                 }
@@ -438,6 +444,7 @@ namespace CircuitRF.Ui.DataDisplay
 
             if (col.Kind == TableColKind.XAxis)
             {
+                if (col.IsScalar) return "";        // scalar anchor column: no X value
                 string fmt = $"{plot.FormatString}{plot.MaximumFractionDigits}";
                 return col.IsFreqUnit
                     ? (xVal * plot.FreqUnits.Scale()).ToString(fmt)

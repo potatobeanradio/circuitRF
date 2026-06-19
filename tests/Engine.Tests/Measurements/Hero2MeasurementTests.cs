@@ -64,11 +64,17 @@ public class Hero2MeasurementTests(ITestOutputHelper output)
             n => n.Contains("n_drain", StringComparison.OrdinalIgnoreCase));
         Assert.True(drainIdx >= 0, "n_drain not found in V cube labels");
 
+        // Drain branch index in unified I cube [sweep, branch, harmonic].
+        var iCube     = ds["I"];
+        var iBrLabels = iCube.Axes[iCube.Rank - 2].Labels!;
+        int drainBrIdx = Array.FindIndex(iBrLabels, l => l == "M1:d" || l == "M1:1");
+        Assert.True(drainBrIdx >= 0, "I cube missing M1 drain branch");
+
         var refPout = new double[nSweep];
         for (int si = 0; si < nSweep; si++)
         {
             var vout = (Complex)ds["V"][si, drainIdx, 1];
-            var iout = -(Complex)ds["I:M1:d"][si, 1];   // current OUT of port = -(current INTO FET)
+            var iout = -(Complex)iCube[si, drainBrIdx, 1];   // current OUT of port = -(current INTO FET)
             double pW = 0.5 * (vout * Complex.Conjugate(iout)).Real;
             refPout[si] = 10.0 * Math.Log10(pW * 1000.0);
         }

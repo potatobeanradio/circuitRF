@@ -64,7 +64,12 @@ namespace CircuitRF.Ui.DataDisplay
                 }
                 cubeName  = barePrefix;
                 transform = bareTransform;
-                var bareCube   = ds[cubeName];
+                var bareCube = ds[cubeName];
+                if (bareCube.Rank == 0)
+                {
+                    slice = Array.Empty<AxisSlice>();
+                    return true;
+                }
                 var bareTokens = Enumerable.Repeat(":", bareCube.Rank).ToArray();
                 // Build the slice by recursively parsing as if the user typed "[transform ]Name[:, :, ...]"
                 string transformStr = bareTransform != CubeTransform.None
@@ -127,7 +132,8 @@ namespace CircuitRF.Ui.DataDisplay
             // Validate cube name.
             if (!ds.Contains(cubeName))
             {
-                var names = string.Join(", ", ds.Cubes.Keys);
+                var names = string.Join(", ", ds.Groups
+                    .SelectMany(g => ds.CubesIn(g).Keys.Select(c => g == DataSet.DefaultGroup ? c : $"{g}.{c}")));
                 error = $"No cube '{cubeName}' in dataset. Available: {names}.";
                 return false;
             }
@@ -142,7 +148,9 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             string sliceStr = text[(bracketPos + 1)..closeBracket];
-            var tokens = sliceStr.Split(',').Select(t => t.Trim()).ToArray();
+            var tokens = string.IsNullOrWhiteSpace(sliceStr)
+                ? Array.Empty<string>()
+                : sliceStr.Split(',').Select(t => t.Trim()).ToArray();
 
             if (tokens.Length != cube.Rank)
             {
@@ -152,6 +160,8 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             slice = new AxisSlice[tokens.Length];
+            if (slice.Length == 0)
+                return true;    // rank-0 cube: no axes, empty slice is valid
             int xCount = 0;
             int famCount = 0;
             for (int i = 0; i < tokens.Length; i++)
@@ -191,8 +201,7 @@ namespace CircuitRF.Ui.DataDisplay
             }
             else if (keptDims.Count == 0)
             {
-                error = "Need at least one swept axis (':', 'All', or a range).";
-                return false;
+                // Fully pinned → scalar (operating-point value). Valid: renders on a Table.
             }
             else if (keptDims.Count == 1)
             {

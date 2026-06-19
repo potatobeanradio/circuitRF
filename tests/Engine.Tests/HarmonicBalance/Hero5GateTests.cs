@@ -32,7 +32,7 @@ public class Hero5GateTests(ITestOutputHelper output)
 
     [Fact]
     public void Hero5_DeviceCurrent_MatchesSelfGeneratedGolden()
-        => RunAndCompare(compareV: false, label: "I:M1");
+        => RunAndCompare(compareV: false, label: "I (M1 branches)");
 
     private void RunAndCompare(bool compareV, string label)
     {
@@ -49,6 +49,12 @@ public class Hero5GateTests(ITestOutputHelper output)
         int gateIdx  = NodeIdx(ds, "n_gate");
         int drainIdx = NodeIdx(ds, "n_drain");
 
+        // Locate drain and gate branches in unified I cube [sweep, branch, mixIndex].
+        var iCube     = ds["I"];
+        var iBrLabels = iCube.Axes[iCube.Rank - 2].Labels!;
+        int iDrainIdx = Array.FindIndex(iBrLabels, l => l == "M1:d" || l == "M1:1");
+        int iGateIdx  = Array.FindIndex(iBrLabels, l => l == "M1:g" || l == "M1:0");
+
         var sweepVals = ds["Converged"].Axes[0].Values;
         int nChecked = 0, nFail = 0;
         var fails = new List<string>();
@@ -59,18 +65,20 @@ public class Hero5GateTests(ITestOutputHelper output)
             for (int m = 0; m < grid.MixCount; m++)
             {
                 var (k1, k2) = grid.ToneOf(m);
-                foreach (var (lbl, idx, golden) in new[] { ("drain", drainIdx, drain), ("gate", gateIdx, gate) })
+                foreach (var (lbl, idx, brIdx, golden) in new[]
+                {
+                    ("drain", drainIdx, iDrainIdx, drain),
+                    ("gate",  gateIdx,  iGateIdx,  gate),
+                })
                 {
                     var e = golden.FirstOrDefault(g =>
                         g.K1 == k1 && g.K2 == k2 && Math.Abs(g.Pave - pin) < 0.05);
                     if (e is null) continue;
 
-                    // V uses the node-indexed cube; I: uses the named branch cube (no node index).
+                    // V uses node-indexed cube; I uses unified I cube with branch index.
                     Complex sim = compareV
                         ? (Complex)ds["V"][si, idx, m]
-                        : lbl == "drain"
-                            ? (Complex)ds["I:M1:d"][si, m]
-                            : (Complex)ds["I:M1:g"][si, m];
+                        : (Complex)iCube  [si, brIdx, m];
                     double simRe = sim.Real;
                     double simIm = m == 0 ? 0.0 : sim.Imaginary;
 

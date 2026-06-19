@@ -25,6 +25,13 @@ public sealed partial class VarEditorViewModel : ObservableObject, IDisposable
     private SchematicViewModel? _schematicVm;
     private EditableComponent?  _comp;
     private bool                _isRefreshing;
+    private SymbolKind          _compKind = SymbolKind.Var;
+
+    // ── Labels (depend on whether the target is VAR or MEAS) ─────────────────
+
+    public string PanelTitle  => _compKind == SymbolKind.Meas ? "Measurements" : "Variables";
+    public string DialogTitle => _compKind == SymbolKind.Meas ? "MEAS Measurements" : "VAR Variables";
+    public string AddRowLabel => _compKind == SymbolKind.Meas ? "Add Measurement" : "Add Variable";
 
     // ── Undo/Redo (delegate to the owning schematic's stack) ─────────────────
 
@@ -125,7 +132,12 @@ public sealed partial class VarEditorViewModel : ObservableObject, IDisposable
 
         _schematicVm = schematicVm;
         _comp        = comp;
+        _compKind    = comp.Symbol;
         ShowClose    = showClose;
+
+        OnPropertyChanged(nameof(PanelTitle));
+        OnPropertyChanged(nameof(DialogTitle));
+        OnPropertyChanged(nameof(AddRowLabel));
 
         HookSchematicStack(schematicVm);
         _schematicVm.EditModel.Changed += OnModelChanged;
@@ -257,13 +269,14 @@ public sealed partial class VarEditorViewModel : ObservableObject, IDisposable
     private string GenerateUniqueName()
     {
         if (_comp is null) return "V1";
+        string prefix = _compKind == SymbolKind.Meas ? "Meas" : "Var";
         var existing = new HashSet<string>(_comp.Parameters.Select(p => p.Name), StringComparer.Ordinal);
         for (int i = 1; i <= 1000; i++)
         {
-            string candidate = $"Var{i}";
+            string candidate = $"{prefix}{i}";
             if (!existing.Contains(candidate)) return candidate;
         }
-        return $"Var{Guid.NewGuid().ToString("N")[..4]}";
+        return $"{prefix}{Guid.NewGuid().ToString("N")[..4]}";
     }
 
     // ── IDisposable ───────────────────────────────────────────────────────────

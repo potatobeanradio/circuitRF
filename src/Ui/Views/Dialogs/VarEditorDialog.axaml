@@ -4,7 +4,7 @@
         xmlns:d="using:CircuitRF.Ui.Views.Dialogs"
         x:Class="CircuitRF.Ui.Views.Dialogs.VarEditorDialog"
         x:DataType="vm:VarEditorViewModel"
-        Title="VAR Variables"
+        Title="{Binding DialogTitle}"
         Width="400"
         MinWidth="320"
         MinHeight="280"

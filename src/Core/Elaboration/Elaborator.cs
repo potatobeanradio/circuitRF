@@ -24,6 +24,13 @@ public sealed class Elaborator
     private readonly Library[]  _libraries;
     private readonly Evaluator  _evaluator = new();
 
+    /// <summary>
+    /// Workspace root for resolving relative file-path parameters (e.g. SnP File).
+    /// Null → relative paths are left as-authored (legacy CWD resolution) for CLI / no-workspace runs.
+    /// Only a path string crosses into Core here — no UI dependency.
+    /// </summary>
+    public string? BaseDirectory { get; init; }
+
     public Elaborator(params Library[] libraries)
         => _libraries = libraries;
 
@@ -429,6 +436,11 @@ public sealed class Elaborator
                 var raw = ov.Expression;
                 if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
                     raw = raw[1..^1];
+
+                // File: resolve a relative path against the workspace root (cross-platform).
+                if (ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase))
+                    raw = ResolveSnpFilePath(raw);
+
                 result[ov.Name] = new Value(raw);
             }
             else
@@ -439,6 +451,18 @@ public sealed class Elaborator
             }
         }
         return result;
+    }
+
+    // Resolves a relative SnP File path against BaseDirectory (the workspace root); absolute paths and
+    // the no-root case pass through unchanged. Cross-platform: Path.* honor the host separator rules,
+    // and we tolerate a Windows-authored '\' in a relative path so a netlist ports across OSes.
+    private string ResolveSnpFilePath(string file)
+    {
+        if (string.IsNullOrWhiteSpace(file))       return file;
+        if (Path.IsPathRooted(file))               return file;   // absolute on this OS → unchanged
+        if (string.IsNullOrEmpty(BaseDirectory))   return file;   // no workspace root → legacy behavior
+        var rel = file.Replace('\\', '/');                        // tolerate Windows-authored separators
+        return Path.GetFullPath(Path.Combine(BaseDirectory, rel));
     }
 
     // ── P1Tone parameter resolution ───────────────────────────────────────────

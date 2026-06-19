@@ -162,6 +162,24 @@ the same DataSet as named cubes; the HB engine does not invent its own result ty
 `docs/design/measurements.md`.
 - **Retain the DC (k = 0) component of V and I, including DC-source branch currents.** `Pdc`
   (hence `PAE`/`DE`) is read from the HB DC component — *not* a separate DC analysis — because HB
+
+## IProbe branch currents — single-tone (brief-iprobe-currents-hb, 2026-06-18)
+
+**Single-tone `HbEngine.Run`** now emits **`I:<probe>`** cubes (axis `[harmonic]`, `Complex`) for
+each `IProbeModel` in the circuit, recovering the full current spectrum from the linear back-solver's
+branch-current rows (`x[LastBranchIndex]`, where `LastBranchIndex` is the absolute MNA row returned
+by `AddBranch()`).
+
+- These coexist with the existing device-port `I:<instance>:<terminal>` cubes (different key format).
+- **`__ProbeBranches`** side-cube (axis `probe` with probe-name Labels, Real, all-zeros) marks the
+  IProbe set for Data Display filtering — analogous to `__LabeledNodes`. `StackSweepAxis` passes it
+  through sweep-invariantly.
+- `DcResultPacker` now also emits `__ProbeBranches` for DC runs, so the display filter treats DC and
+  HB identically.
+- **Two-tone gap**: `RunTwoTone` builds no `HbLinearBackSolver`, so no two-tone IProbe current
+  spectrum is available. A TODO comment marks the gap pending a mixing-lattice back-solver.
+- 5 gate tests: `HbIProbeCurrentTests` (T1–T4 HB; T5 DC) in
+  `tests/Engine.Tests/HarmonicBalance/HbIProbeCurrentTests.cs`.
   solves k = 0 self-consistently with the RF, capturing drive-dependent self-biasing. The k = 0
   slice must survive into the result cubes, not be discarded after convergence.
 
@@ -234,25 +252,26 @@ during HB extraction is cached in `HbLinearExtractor._luCache` and **reused** in
 11 billion× at intermediate sweep points — proving the residual is Newton convergence quality, not
 a back-solve bug. Test: `BackSolver_TighterHbTol_ImprovesCubeAgreement` in `LinearBackSolveTests`.
 
-### C2 — Branch-current addressing
-Current is addressed by **named branch** (`I:instancePath:terminal`), never by net/node index.
+### C2 — Branch-current addressing (brief-unify-i-cube-engine, 2026-06-18)
+All branch currents live in a **single `I` cube** with a labeled `branch` axis — mirroring `V`'s
+`node` axis. There are no per-branch `I:instance:terminal` cubes.
 
-- **Single-tone:** `BuildSingleToneDataSet` already built `I:instance:terminal` cubes (axes
-  `[harmonic, Pin]` with sweep; `[harmonic]` without).
-- **Two-tone:** `RunTwoTone` now calls `HbNewton2D.ComputeDevicePortCurrents2D` per sweep point
-  and passes results to `BuildTwoToneDataSet`, which emits `I:instance:terminal` cubes
-  (axes `[mixIndex, Pin]`).
-- **Forbidden test accesses** (`ds["INl"][nodeIdx, ...]`) replaced throughout Hero 2/4/5 tests and
-  NoSweep tests with the proper branch-cube accessors. Hero 4 `PinW`/`PoutW` now use
-  `I:M1:g`/`I:M1:d`/`I:M2:g`/`I:M2:d`. Hero 5 golden generator uses `I:M1:d`/`I:M1:g`.
+- **Single-tone:** `BuildSingleToneDataSet` emits `I [branch, harmonic]` Complex. IProbe branches
+  come first (labeled), device-port branches follow (unlabeled in `__ProbeBranches`).
+- **Two-tone:** `BuildTwoToneDataSet` emits `I [branch, mixIndex]` Complex over device-port
+  branches only. Two-tone IProbe back-solver is deferred — no `__ProbeBranches` in two-tone DataSets.
+- **`__ProbeBranches`** (axis `"probe"`, labels = IProbe names) marks the labeled subset, mirroring
+  `__LabeledNodes`. Absent in two-tone DataSets (no IProbe two-tone support yet).
+- **Measurement accessor:** `HB1.I("Ids")` (branch name) / `HB1.I("Ids", 1)` (pin harmonic) /
+  `HB1.I` (whole cube) — all fold through the `V`/`INl` node-accessor path with `axisName="branch"`.
 - `INl` persists as an internal diagnostic cube; it is **not** the measurement/test-facing current path.
 
 ### C3 — Optional sweep axis
 `BuildSingleToneDataSet` now takes `isSweep: bool` (computed from `HbAnalysisParams.HasSweep`):
-- **Sweep present:** V/INl have axes `[node, harmonic, Pin]`; Converged/Residual have axis `[Pin]`;
-  branch-I cubes have axes `[harmonic, Pin]`.
-- **No sweep:** V/INl have axes `[node, harmonic]` (2 axes, no Pin); Converged/Residual are
-  rank-0 scalars; branch-I cubes have axis `[harmonic]` only.
+- **Sweep present:** V/INl have axes `[sweep, node, harmonic]`; Converged/Residual have axis `[sweep]`;
+  I cube has axes `[sweep, branch, harmonic]`.
+- **No sweep:** V/INl have axes `[node, harmonic]` (2 axes); Converged/Residual are
+  rank-0 scalars; I cube has axes `[branch, harmonic]`.
 No dummy sweep axis is fabricated. Gate: `NoSweepHbTests.NoSweep_VCube_Is2D_NodeHarmonic`.
 
 ## Phase 5-6 — Composable nested parametric sweep — COMPLETE (2026-06-06)
@@ -287,7 +306,7 @@ only updates ToneSourceModels and is NOT sufficient for bias/topology parameters
 ### Cube shape after stacking
 - 1-level (Vgg outer × HB1 inner with Pin sweep): V axes = `[Vgg, node, harmonic, Pin]`
 - 2-level (Vgg outer × Vdd middle × HB1 inner): V axes = `[Vgg, Vdd, node, harmonic, Pin]`
-- Branch-I cubes gain the same prepended axes: `I:M1:d` axes = `[Vgg, harmonic, Pin]`.
+- The unified I cube gains the same prepended axes: `I` axes = `[Vgg, branch, harmonic]` (1-level sweep).
 
 ### Gate: `Hero2ParametricSweepTests` (5 tests)
 - `CnlRoundTrip_ParametricSweepDirective_Parses` — CNL parse

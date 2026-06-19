@@ -54,6 +54,7 @@ public static class SymbolPortDefs
         switch (kind)
         {
             case SymbolKind.Var:     return [];
+            case SymbolKind.Meas:    return [];
             case SymbolKind.Ground:  return [("1", 0f, 0f)];
             // Term: two terminals — "+" (signal, index 0) and "−" (reference, index 1).
             // Pin order is the contract: NetBindings[0]=+ net, NetBindings[1]=− net.

@@ -167,17 +167,18 @@ public sealed class CubeTraceTests
 
 public sealed class NodeIndexedCurrentFilterTests
 {
-    // Build a DataSet with a node-indexed "INl" cube + a branch cube "I:M1:d".
+    // Build a DataSet with a node-indexed "INl" cube + the unified "I" cube with branch axis.
     // The picker should offer the branch cube but NOT the node-indexed one.
     private static DataSet MakeDs()
     {
-        var nodeAxis = new Axis("node",     new[] { 0.0, 1.0 }, "",      new[] { "n_gate", "n_drain" });
-        var harmAxis = new Axis("harmonic", new[] { 0.0, 1e9 }, "Hz");
-        var ds       = new DataSet();
-        ds.Add("INl",    new DataCube(new[] { nodeAxis, harmAxis },
-                             new System.Numerics.Complex[2 * 2]));
-        ds.Add("I:M1:d", new DataCube(new[] { harmAxis },
-                             new System.Numerics.Complex[2]));
+        var nodeAxis   = new Axis("node",     new[] { 0.0, 1.0 }, "",      new[] { "n_gate", "n_drain" });
+        var harmAxis   = new Axis("harmonic", new[] { 0.0, 1e9 }, "Hz");
+        var branchAxis = new Axis("branch",   new[] { 0.0 }, "", new[] { "M1:d" });
+        var ds         = new DataSet();
+        ds.Add("INl", new DataCube(new[] { nodeAxis, harmAxis },
+                          new System.Numerics.Complex[2 * 2]));
+        ds.Add("I",   new DataCube(new[] { branchAxis, harmAxis },
+                          new System.Numerics.Complex[1 * 2]));
         return ds;
     }
 
@@ -204,8 +205,8 @@ public sealed class NodeIndexedCurrentFilterTests
             // Node-indexed current must be filtered out.
             Assert.DoesNotContain(signals, s => s.IsCubeBound && s.CubeName == "INl");
 
-            // Branch cube (no node axis) must be offered.
-            Assert.Contains(signals, s => s.IsCubeBound && s.CubeName == "I:M1:d");
+            // Unified I cube (branch axis, no node axis) must be offered.
+            Assert.Contains(signals, s => s.IsCubeBound && s.CubeName == "I");
         }
         finally
         {

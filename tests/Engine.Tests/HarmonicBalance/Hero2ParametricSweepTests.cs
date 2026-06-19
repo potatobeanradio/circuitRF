@@ -95,10 +95,11 @@ analysis SW1    type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2    Inner=SW_Pin
         Assert.Equal("node",     vCube.Axes[vCube.Rank - 2].Name);
         Assert.Equal("harmonic", vCube.Axes[vCube.Rank - 1].Name);
 
-        // Branch current cubes also get the Vgg + Pin axes prepended.
-        var iDrain = ds["I:M1:d"];
-        Assert.Equal("Vgg", iDrain.Axes[0].Name);
-        Assert.Equal(2, iDrain.Axes[0].Length);
+        // Unified I cube also gets the Vgg + Pin axes prepended.
+        var iDrain = ds["I"];
+        Assert.Equal("Vgg",    iDrain.Axes[0].Name);
+        Assert.Equal(2,        iDrain.Axes[0].Length);
+        Assert.Equal("branch", iDrain.Axes[iDrain.Rank - 2].Name);
 
         output.WriteLine("Single-level Vgg sweep: V cube structure correct. PASS.");
     }
@@ -239,15 +240,19 @@ analysis SW_Vgg  type=parametric_sweep  Var=Vgg  Values=-3.0,-3.2  Inner=SW_Vdd
 
         var ds = ParametricSweepEngine.Run(sw1, lib, tb);
 
-        // I:M1:d axes: [Vgg, Pin, harmonic]
-        var iDrain = ds["I:M1:d"];
-        output.WriteLine($"I:M1:d axes: [{string.Join(", ", iDrain.Axes.Select(a => $"{a.Name}({a.Length})"))}]");
+        // Unified I cube axes: [Vgg, Pin, branch, harmonic]
+        var iDrain   = ds["I"];
+        output.WriteLine($"I axes: [{string.Join(", ", iDrain.Axes.Select(a => $"{a.Name}({a.Length})"))}]");
 
-        Assert.Equal("Vgg", iDrain.Axes[0].Name);
+        Assert.Equal("Vgg",    iDrain.Axes[0].Name);
+        Assert.Equal("branch", iDrain.Axes[iDrain.Rank - 2].Name);
+
+        var brLabels  = iDrain.Axes[iDrain.Rank - 2].Labels!;
+        int drainIdx  = Array.FindIndex(brLabels, l => l == "M1:d" || l == "M1:1");
 
         // DC component (harmonic index 0), first Pin point.
-        Complex idc0 = (Complex)iDrain[0, 0, 0];   // Vgg=-3.0, Pin[0], DC
-        Complex idc1 = (Complex)iDrain[1, 0, 0];   // Vgg=-3.2, Pin[0], DC
+        Complex idc0 = (Complex)iDrain[0, 0, drainIdx, 0];   // Vgg=-3.0, Pin[0], drain, DC
+        Complex idc1 = (Complex)iDrain[1, 0, drainIdx, 0];   // Vgg=-3.2, Pin[0], drain, DC
 
         output.WriteLine($"Idc(Vgg=-3.0) = {idc0.Real * 1e3:F2} mA");
         output.WriteLine($"Idc(Vgg=-3.2) = {idc1.Real * 1e3:F2} mA");

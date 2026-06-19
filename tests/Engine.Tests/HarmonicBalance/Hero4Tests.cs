@@ -116,19 +116,32 @@ public class Hero4Tests(ITestOutputHelper output)
     private static int NodeIdx(DataSet ds, string name)
         => Array.FindIndex(ds["V"].Axes[1].Labels!, s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-    // Pin delivered into a stage at its gate: +½ Re(V_gate · conj(I:device:g)).
+    private static int BranchIdx(DataSet ds, string label)
+    {
+        var iCube  = ds["I"];
+        var labels = iCube.Axes[iCube.Rank - 2].Labels!;
+        return Array.FindIndex(labels, l => l == label);
+    }
+
+    // Pin delivered into a stage at its gate: +½ Re(V_gate · conj(I[gate branch])).
     private static double PinW(DataSet ds, int si, string devicePath, int gateNodeIdx)
     {
+        var iCube  = ds["I"];
+        int brIdx  = BranchIdx(ds, $"{devicePath}:g");
+        if (brIdx < 0) brIdx = BranchIdx(ds, $"{devicePath}:0");
         var v = (Complex)ds["V"][si, gateNodeIdx, 1];
-        var i = (Complex)ds[$"I:{devicePath}:g"][si, 1];
+        var i = (Complex)iCube[si, brIdx, 1];
         return 0.5 * (v * Complex.Conjugate(i)).Real;
     }
 
-    // Pout delivered by a stage at its drain into the external network: −½ Re(V_drain · conj(I:device:d)).
+    // Pout delivered by a stage at its drain into the external network: −½ Re(V_drain · conj(I[drain branch])).
     private static double PoutW(DataSet ds, int si, string devicePath, int drainNodeIdx)
     {
+        var iCube  = ds["I"];
+        int brIdx  = BranchIdx(ds, $"{devicePath}:d");
+        if (brIdx < 0) brIdx = BranchIdx(ds, $"{devicePath}:1");
         var v = (Complex)ds["V"][si, drainNodeIdx, 1];
-        var i = (Complex)ds[$"I:{devicePath}:d"][si, 1];
+        var i = (Complex)iCube[si, brIdx, 1];
         return -0.5 * (v * Complex.Conjugate(i)).Real;
     }
 }

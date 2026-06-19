@@ -69,8 +69,8 @@ public class Hero5GoldenGenerator(ITestOutputHelper output)
 
         WriteGoldenV(dir, "hero5_self_V_n_gate.csv",   "n_gate",  "V (interface voltage)",    ds, grid, gateIdx);
         WriteGoldenV(dir, "hero5_self_V_n_drain.csv",  "n_drain", "V (interface voltage)",    ds, grid, drainIdx);
-        WriteGoldenI(dir, "hero5_self_INl_n_gate.csv", "n_gate",  "I:M1:g (device current, A)", ds, grid, "I:M1:g");
-        WriteGoldenI(dir, "hero5_self_INl_n_drain.csv","n_drain", "I:M1:d (device current, A)", ds, grid, "I:M1:d");
+        WriteGoldenI(dir, "hero5_self_INl_n_gate.csv", "n_gate",  "I M1:g branch (device current, A)", ds, grid, "M1:g");
+        WriteGoldenI(dir, "hero5_self_INl_n_drain.csv","n_drain", "I M1:d branch (device current, A)", ds, grid, "M1:d");
 
         output.WriteLine("Golden files written to " + dir);
     }
@@ -83,12 +83,15 @@ public class Hero5GoldenGenerator(ITestOutputHelper output)
             (m, si) => (Complex)ds["V"][si, nodeIdx, m]);
     }
 
-    // Write I: branch-current golden (branch cube, axes [sweep, mixIndex])
+    // Write I: branch-current golden (unified I cube [sweep, branch, mixIndex])
     private static void WriteGoldenI(string dir, string filename, string nodeName, string quantity,
-        DataSet ds, MixingGrid grid, string branchCubeKey)
+        DataSet ds, MixingGrid grid, string branchLabel)
     {
+        var iCube  = ds["I"];
+        var labels = iCube.Axes[iCube.Rank - 2].Labels!;
+        int brIdx  = Array.FindIndex(labels, l => l == branchLabel);
         WriteGoldenCore(dir, filename, nodeName, quantity, ds, grid,
-            (m, si) => (Complex)ds[branchCubeKey][si, m]);
+            (m, si) => (Complex)iCube[si, brIdx, m]);
     }
 
     private static void WriteGoldenCore(string dir, string filename, string nodeName, string quantity,

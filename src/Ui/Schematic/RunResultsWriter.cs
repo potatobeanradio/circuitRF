@@ -74,20 +74,20 @@ public static class RunResultsWriter
     }
 
     /// <summary>
-    /// Writes one .npy per analysis result under &lt;baseDir&gt;/results/&lt;schematicKey&gt;/.
+    /// Writes one run.npy for the whole run under &lt;baseDir&gt;/results/&lt;schematicKey&gt;/.
     /// Collision-check: if the directory already has a .source from a different owner,
     /// posts a warning and returns without writing.  Clears stale .npy files each run.
     /// I/O failures are caught and posted as warnings — never thrown.
-    /// Returns the absolute paths of .npy files actually written; empty on any early-out.
+    /// Returns the absolute path of run.npy written; empty list on any early-out.
     /// </summary>
-    public static IReadOnlyList<string> WriteResults(
-        string                       baseDir,
-        string                       schematicKey,
-        string                       ownerIdentity,
-        IReadOnlyList<AnalysisResult> results,
-        IMessageSink?                messages)
+    public static IReadOnlyList<string> WriteRun(
+        string        baseDir,
+        string        schematicKey,
+        string        ownerIdentity,
+        DataSet?      grouped,
+        IMessageSink? messages)
     {
-        if (results.Count == 0) return [];
+        if (grouped is null || grouped.Groups.Count == 0) return [];
 
         try
         {
@@ -115,20 +115,15 @@ public static class RunResultsWriter
             foreach (var stale in Directory.GetFiles(dir, "*.npy"))
                 File.Delete(stale);
 
-            // ── Write each analysis ───────────────────────────────────────────
-            var written = new List<string>(results.Count);
-            foreach (var r in results)
-            {
-                var npy = Path.Combine(dir, Sanitize(r.Name) + ".npy");
-                DataSetExporter.Export(r.Data, npy, ExportFormat.Npy);
-                written.Add(Path.GetFullPath(npy));
-            }
+            // ── Write single grouped file ─────────────────────────────────────
+            var runNpy = Path.Combine(dir, "run.npy");
+            DataSetExporter.Export(grouped, runNpy, ExportFormat.Npy);
 
             messages?.Success(
-                $"Results written: {schematicKey} ({results.Count} analysis file(s))",
+                $"Results written: {schematicKey} ({grouped.Groups.Count} group(s))",
                 dir);
 
-            return written;
+            return [Path.GetFullPath(runNpy)];
         }
         catch (Exception ex)
         {

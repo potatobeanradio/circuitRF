@@ -13,6 +13,8 @@ public enum TokenKind
     // Ternary / punctuation
     Question, Colon, Comma, Dot,
     LParen, RParen,
+    // Indexing
+    LBracket, RBracket, Tilde,
     // String literal: "foo"  (storage-only config params; no string operations)
     StringLiteral,
     // Sentinel
@@ -70,8 +72,11 @@ public sealed class Tokenizer(string source)
             '/' => Advance(TokenKind.Slash,  start),
             '^' => Advance(TokenKind.Caret,  start),
             ',' => Advance(TokenKind.Comma,  start),
-            '(' => Advance(TokenKind.LParen, start),
-            ')' => Advance(TokenKind.RParen, start),
+            '(' => Advance(TokenKind.LParen,   start),
+            ')' => Advance(TokenKind.RParen,   start),
+            '[' => Advance(TokenKind.LBracket, start),
+            ']' => Advance(TokenKind.RBracket, start),
+            '~' => Advance(TokenKind.Tilde,    start),
             '.' => Advance(TokenKind.Dot,     start),
             '?' => Advance(TokenKind.Question, start),
             ':' => Advance(TokenKind.Colon,  start),

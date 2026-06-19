@@ -193,30 +193,29 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public bool CanAddTrace =>
         _plot.Traces.Count > 0 ||
-        (_library?.Entries.Any(HasPlottableData) ?? false);
+        (_library?.Entries.Any(e => HasPlottableData(e, _plot.PlotType == PlotType.Table)) ?? false);
 
     /// <summary>True when an entry has anything a trace can be seeded from: a non-empty SNP
     /// (S-parameter network) OR at least one plottable cube (HB/DC/loadpull cube-only results).</summary>
-    private static bool HasPlottableData(DataSourceEntryViewModel e) =>
-        (e.Snp is not null && !e.Snp.IsEmpty) || FirstPlottableCubeName(e) is not null;
+    private static bool HasPlottableData(DataSourceEntryViewModel e, bool allowScalars) =>
+        (e.Snp is not null && !e.Snp.IsEmpty) || FirstPlottableCubeName(e, allowScalars) is not null;
 
     /// <summary>Returns the name of the first plottable cube in the entry's DataSet, applying the
     /// same skip rules as the trace-signal picker (S/Z0, "__"-prefixed, Converged/Residual,
-    /// node-indexed current, rank ≤ 0). Null when the entry has no plottable cube.</summary>
-    private static string? FirstPlottableCubeName(DataSourceEntryViewModel e)
+    /// node-indexed current). Rank-0 (scalar) cubes are included only when allowScalars is true.</summary>
+    private static string? FirstPlottableCubeName(DataSourceEntryViewModel e, bool allowScalars = false)
     {
         if (e.Data is not { } ds) return null;
-        foreach (var (cubeName, cube) in ds.Cubes)
-        {
-            if (cubeName is "S" or "Z0" || cubeName.StartsWith("__", StringComparison.Ordinal)) continue;
-            if (cubeName.EndsWith("Converged", StringComparison.Ordinal) ||
-                cubeName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
-            bool isNodeIndexedCurrent =
-                (cubeName == "I" || cubeName == "INl") && cube.Axes.Any(a => a.Name == "node");
-            if (isNodeIndexedCurrent) continue;
-            if (cube.Rank <= 0) continue;
-            return cubeName;
-        }
+        foreach (var group in ds.Groups)
+            foreach (var (bareName, cube) in ds.CubesIn(group))
+            {
+                if (bareName is "S" or "Z0" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
+                if (bareName.EndsWith("Converged", StringComparison.Ordinal) ||
+                    bareName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
+                if ((bareName == "I" || bareName == "INl") && cube.Axes.Any(a => a.Name == "node")) continue;
+                if (cube.Rank == 0 && !allowScalars) continue;   // scalars are Table-only
+                return group == DataSet.DefaultGroup ? bareName : $"{group}.{bareName}";
+            }
         return null;
     }
 
@@ -348,7 +347,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 isComplex ? DependentVarFormat.Complex : DependentVarFormat.Db);
             trace.SourcePath = snp.FilePath;
         }
-        else if (_library?.Entries.FirstOrDefault(e => FirstPlottableCubeName(e) is not null) is { } firstCube)
+        else if (_library?.Entries.FirstOrDefault(e =>
+                     FirstPlottableCubeName(e, _plot.PlotType == PlotType.Table) is not null) is { } firstCube)
         {
             // Cube-only source (HB / DC / loadpull result — no S network). Seed a cube-bound trace
             // on the first plottable cube with a default slice (axis 0 = X, the rest pinned at 0).
@@ -374,9 +374,22 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// </summary>
     private Trace BuildSeedCubeTrace(DataSourceEntryViewModel entry)
     {
-        string cubeName = FirstPlottableCubeName(entry)!;
+        string cubeName = FirstPlottableCubeName(entry, _plot.PlotType == PlotType.Table)!;
         var    cube     = entry.Data![cubeName];
         int    rank     = cube.Rank;
+
+        // Trace requires an SNP; use a 1-point placeholder (cube path ignores it).
+        var trace = new Trace(new SNP(new double[] { 1e9 }, 2), MatrixType.S, 0, 0,
+                              DependentVarFormat.Db);
+        trace.SourcePath = entry.FilePath;
+        trace.CubeName   = cubeName;
+
+        if (rank == 0)   // scalar: empty slice, bare-name Expression
+        {
+            trace.Slice      = Array.Empty<AxisSlice>();
+            trace.Expression = trace.BuildPickerExpression();      // → bare CubeName (Part A5)
+            return trace;
+        }
 
         var slice = new AxisSlice[rank];
         slice[0] = new AxisSlice(cube.Axes[0].Name, AxisRole.KeepAsX, 0);
@@ -387,12 +400,13 @@ public partial class PlotInspectorViewModel : ViewModelBase
             slice[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
         }
 
-        // Trace requires an SNP; use a 1-point placeholder (cube path ignores it).
-        var trace = new Trace(new SNP(new double[] { 1e9 }, 2), MatrixType.S, 0, 0,
-                              DependentVarFormat.Db);
-        trace.SourcePath = entry.FilePath;
-        trace.CubeName   = cubeName;
-        trace.Slice      = slice;
+        trace.Slice = slice;
+
+        // First-add nicety: a complex cube on a Rect plot would render <invalid>; default to mag() so the user
+        // sees something. Seed-time only — never re-applied on later edits.
+        if (_plot.PlotType == PlotType.Rect && cube.DataKind == DataKind.Complex)
+            trace.Transform = CubeTransform.Mag;
+
         trace.Expression = trace.BuildPickerExpression();
         return trace;
     }
@@ -446,7 +460,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// <summary>
     /// When a re-run changes a single-cube trace's bound cube to a different axis-name set OR a
     /// different axis ORDER (added/removed/reordered sweep axis), re-derive the slice from the trace's
-    /// shape-independent spec text so the plot adopts the new dimensions. Re-parsing e.g. "I:Ids"
+    /// shape-independent spec text so the plot adopts the new dimensions. Re-parsing e.g. "Ids"
     /// against the new cube restores its natural default (a family when ≥2 axes are kept, innermost =
     /// X), instead of keeping a stale X or pinning a reappearing axis. t.Expression is left untouched
     /// so it stays shape-independent across reshapes. A pure value/point-count re-run (same names AND
@@ -481,7 +495,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             t.InvalidSpecText = null;
             t.ExpressionError = null;
             // Deliberately do NOT regenerate t.Expression — it must stay shape-independent so the
-            // next reshape re-parses the same authored text (e.g. bare "I:Ids" stays a family).
+            // next reshape re-parses the same authored text (e.g. bare "Ids" stays a family).
         }
         else
         {
@@ -555,6 +569,19 @@ public partial class PlotInspectorViewModel : ViewModelBase
             return;
         }
 
+        // Scalar cube (rank 0): operating-point value — valid only on a Table (Part A).
+        if (cube.Rank == 0)
+        {
+            var sr = cube[Array.Empty<object>()];
+            t.InvalidSpecText = null;
+            t.ExpressionError = null;
+            t.SetScalarCubeData(
+                sr.IsComplex ? sr.ComplexValue : (System.Numerics.Complex?)null,
+                sr.IsReal    ? sr.RealValue    : (double?)null,
+                plotType, freqUnit);
+            return;
+        }
+
         // ── Family path (Phase 7.3b) ──────────────────────────────────────────
         if (Array.Exists(slice, s => s.Role == AxisRole.FamilyIterate))
         {
@@ -588,11 +615,18 @@ public partial class PlotInspectorViewModel : ViewModelBase
             }
         }
 
-        // Fallback: if no axis mapped to X, keep the first axis.
-        if (xDim < 0 && cube.Rank > 0)
+        // No axis is X → every axis is pinned → scalar (operating-point value).
+        // Renders on a Table; <invalid> on Rect/Smith/Polar (handled by SetScalarCubeData).
+        if (xDim < 0)
         {
-            args[0] = Range.All;
-            xDim    = 0;
+            var sr = cube[args];
+            t.InvalidSpecText = null;
+            t.ExpressionError = null;
+            t.SetScalarCubeData(
+                sr.IsComplex ? sr.ComplexValue : (System.Numerics.Complex?)null,
+                sr.IsReal    ? sr.RealValue    : (double?)null,
+                plotType, freqUnit);
+            return;
         }
 
         var result = cube[args];

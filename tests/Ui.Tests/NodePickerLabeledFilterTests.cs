@@ -285,7 +285,7 @@ public sealed class NodePickerLabeledFilterTests
             var (trvm, _) = BuildInspector(lib, path);
 
             // ShowAllNodes should be false (default; __LabeledNodes present).
-            Assert.False(trvm.ShowAllNodes);
+            Assert.False(trvm.ShowAll);
 
             var nodeRow = trvm.AxisRoles.FirstOrDefault(r => r.AxisName == "node");
             Assert.NotNull(nodeRow);
@@ -319,7 +319,7 @@ public sealed class NodePickerLabeledFilterTests
             Assert.Equal(2, nodeRow!.PinOptions.Count);
 
             // Toggle ShowAllNodes → all 3 nodes appear.
-            trvm.ShowAllNodes = true;
+            trvm.ShowAll = true;
 
             nodeRow = trvm.AxisRoles.FirstOrDefault(r => r.AxisName == "node");
             Assert.NotNull(nodeRow);
@@ -350,7 +350,7 @@ public sealed class NodePickerLabeledFilterTests
             var (trvm, _) = BuildInspector(lib, path);
 
             // Absent provenance → ShowAllNodes defaults to true.
-            Assert.True(trvm.ShowAllNodes);
+            Assert.True(trvm.ShowAll);
 
             var nodeRow = trvm.AxisRoles.FirstOrDefault(r => r.AxisName == "node");
             Assert.NotNull(nodeRow);
@@ -427,7 +427,7 @@ public sealed class NodePickerLabeledFilterTests
             var (trvm, _) = BuildInspector(lib, path);
 
             // Picker must filter to labeled nodes only.
-            Assert.False(trvm.ShowAllNodes, "Default: filter ON when __LabeledNodes is present");
+            Assert.False(trvm.ShowAll, "Default: filter ON when __LabeledNodes is present");
 
             var nodeRow = trvm.AxisRoles.FirstOrDefault(r => r.AxisName == "node");
             Assert.NotNull(nodeRow);

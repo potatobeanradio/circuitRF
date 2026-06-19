@@ -9,7 +9,7 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// Pure-logic tests for RunResultsWriter (Phase 7.0).
+/// Pure-logic tests for RunResultsWriter (Stage 2 — single run.npy).
 /// Uses temp directories and a fake IMessageSink — no Avalonia runtime required.
 /// </summary>
 public sealed class RunResultsWriterTests : IDisposable
@@ -64,74 +64,60 @@ public sealed class RunResultsWriterTests : IDisposable
             RunResultsWriter.SchematicKey(null, "Untitled-Schematic-1"));
     }
 
-    // ── WriteResults — happy path ─────────────────────────────────────────────
+    // ── WriteRun — happy path ─────────────────────────────────────────────────
 
     [Fact]
-    public void WriteResults_HappyPath_FilesExistAndSourceWritten()
+    public void WriteRun_HappyPath_RunNpyExists()
     {
-        var baseDir   = MakeTempDir();
-        var key       = "MyAmp";
-        var owner     = "scratch:MyAmp";
-        var sink      = new FakeSink();
-        var results   = new[]
-        {
-            new AnalysisResult("SP1", MakeSimpleDataSet("S")),
-            new AnalysisResult("HB1", MakeSimpleDataSet("V")),
-        };
+        var baseDir = MakeTempDir();
+        var key     = "MyAmp";
+        var owner   = "scratch:MyAmp";
+        var sink    = new FakeSink();
+        var grouped = MakeGroupedDataSet();
 
-        RunResultsWriter.WriteResults(baseDir, key, owner, results, sink);
+        RunResultsWriter.WriteRun(baseDir, key, owner, grouped, sink);
 
         var dir = Path.Combine(baseDir, "results", key);
-        Assert.True(File.Exists(Path.Combine(dir, "SP1.npy")));
-        Assert.True(File.Exists(Path.Combine(dir, "HB1.npy")));
+        Assert.True(File.Exists(Path.Combine(dir, "run.npy")));
         Assert.Equal(owner, File.ReadAllText(Path.Combine(dir, ".source")).Trim());
         Assert.Single(sink.Successes);
         Assert.Contains("MyAmp", sink.Successes[0].Text);
-        Assert.Contains("2 analysis file(s)", sink.Successes[0].Text);
+        Assert.Contains("3 group(s)", sink.Successes[0].Text);
     }
 
-    // ── WriteResults — stale-file clear ──────────────────────────────────────
+    // ── WriteRun — stale-file clear ───────────────────────────────────────────
 
     [Fact]
-    public void WriteResults_SameOwnerRerun_StaleNpyCleared()
+    public void WriteRun_StaleNpyCleared()
     {
         var baseDir = MakeTempDir();
         var key     = "Amp";
         var owner   = "scratch:Amp";
         var sink    = new FakeSink();
 
-        // First run: 2 analyses
-        RunResultsWriter.WriteResults(baseDir, key, owner,
-            new[]
-            {
-                new AnalysisResult("SP1", MakeSimpleDataSet("S")),
-                new AnalysisResult("HB1", MakeSimpleDataSet("V")),
-            }, sink);
+        // Pre-seed a stale .npy in the results dir
+        var dir = Path.Combine(baseDir, "results", key);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".source"), owner);
+        File.WriteAllText(Path.Combine(dir, "stale_analysis.npy"), "dummy");
 
-        var dir     = Path.Combine(baseDir, "results", key);
-        Assert.True(File.Exists(Path.Combine(dir, "SP1.npy")));
-        Assert.True(File.Exists(Path.Combine(dir, "HB1.npy")));
+        RunResultsWriter.WriteRun(baseDir, key, owner, MakeGroupedDataSet(), sink);
 
-        // Second run: only SP1 remains
-        sink.Clear();
-        RunResultsWriter.WriteResults(baseDir, key, owner,
-            new[] { new AnalysisResult("SP1", MakeSimpleDataSet("S")) }, sink);
-
-        Assert.True(File.Exists(Path.Combine(dir, "SP1.npy")));
-        Assert.False(File.Exists(Path.Combine(dir, "HB1.npy")), "Stale HB1.npy must be deleted");
-        Assert.Single(sink.Successes);
+        Assert.True(File.Exists(Path.Combine(dir, "run.npy")));
+        Assert.False(File.Exists(Path.Combine(dir, "stale_analysis.npy")),
+            "Stale .npy must be deleted on write");
     }
 
-    // ── WriteResults — collision warning ──────────────────────────────────────
+    // ── WriteRun — collision warning ──────────────────────────────────────────
 
     [Fact]
-    public void WriteResults_DifferentOwner_PostsWarningWritesNothing()
+    public void WriteRun_DifferentOwner_PostsWarningWritesNothing()
     {
-        var baseDir  = MakeTempDir();
-        var key      = "Amp";
-        var ownerA   = "/path/to/LibA/Amp";
-        var ownerB   = "/path/to/LibB/Amp";
-        var sink     = new FakeSink();
+        var baseDir = MakeTempDir();
+        var key     = "Amp";
+        var ownerA  = "/path/to/LibA/Amp";
+        var ownerB  = "/path/to/LibB/Amp";
+        var sink    = new FakeSink();
 
         // Pre-create .source with ownerA
         var dir = Path.Combine(baseDir, "results", key);
@@ -139,8 +125,7 @@ public sealed class RunResultsWriterTests : IDisposable
         File.WriteAllText(Path.Combine(dir, ".source"), ownerA);
 
         // Attempt to write from ownerB
-        RunResultsWriter.WriteResults(baseDir, key, ownerB,
-            new[] { new AnalysisResult("SP1", MakeSimpleDataSet("S")) }, sink);
+        RunResultsWriter.WriteRun(baseDir, key, ownerB, MakeGroupedDataSet(), sink);
 
         Assert.Empty(Directory.GetFiles(dir, "*.npy"));
         Assert.Single(sink.Warnings);
@@ -148,10 +133,10 @@ public sealed class RunResultsWriterTests : IDisposable
         Assert.Empty(sink.Successes);
     }
 
-    // ── WriteResults — same owner proceeds without collision ──────────────────
+    // ── WriteRun — same owner proceeds without collision ──────────────────────
 
     [Fact]
-    public void WriteResults_SameOwner_ProceedsNormally()
+    public void WriteRun_SameOwner_ProceedsNormally()
     {
         var baseDir = MakeTempDir();
         var key     = "Amp";
@@ -163,23 +148,22 @@ public sealed class RunResultsWriterTests : IDisposable
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, ".source"), owner);
 
-        RunResultsWriter.WriteResults(baseDir, key, owner,
-            new[] { new AnalysisResult("SP1", MakeSimpleDataSet("S")) }, sink);
+        RunResultsWriter.WriteRun(baseDir, key, owner, MakeGroupedDataSet(), sink);
 
-        Assert.True(File.Exists(Path.Combine(dir, "SP1.npy")));
+        Assert.True(File.Exists(Path.Combine(dir, "run.npy")));
         Assert.Single(sink.Successes);
         Assert.Empty(sink.Warnings);
     }
 
-    // ── WriteResults — empty results skips silently ───────────────────────────
+    // ── WriteRun — null grouped skips silently ────────────────────────────────
 
     [Fact]
-    public void WriteResults_EmptyResults_WritesNothing()
+    public void WriteRun_NullGrouped_WritesNothing()
     {
         var baseDir = MakeTempDir();
         var sink    = new FakeSink();
 
-        var written = RunResultsWriter.WriteResults(baseDir, "Amp", "owner", Array.Empty<AnalysisResult>(), sink);
+        var written = RunResultsWriter.WriteRun(baseDir, "Amp", "owner", null, sink);
 
         Assert.Empty(written);
         Assert.False(Directory.Exists(Path.Combine(baseDir, "results")));
@@ -187,43 +171,58 @@ public sealed class RunResultsWriterTests : IDisposable
         Assert.Empty(sink.Warnings);
     }
 
-    // ── WriteResults — returns written paths ──────────────────────────────────
+    // ── WriteRun — zero-group DataSet skips silently ──────────────────────────
 
     [Fact]
-    public void WriteResults_ReturnsWrittenPaths()
+    public void WriteRun_ZeroGroups_WritesNothing()
+    {
+        var baseDir = MakeTempDir();
+        var sink    = new FakeSink();
+        var empty   = new DataSet();   // no AddToGroup calls → Groups.Count == 0
+
+        var written = RunResultsWriter.WriteRun(baseDir, "Amp", "owner", empty, sink);
+
+        Assert.Empty(written);
+        Assert.False(Directory.Exists(Path.Combine(baseDir, "results")));
+        Assert.Empty(sink.Successes);
+        Assert.Empty(sink.Warnings);
+    }
+
+    // ── WriteRun — returns single run.npy path ────────────────────────────────
+
+    [Fact]
+    public void WriteRun_ReturnsRunNpyPath()
     {
         var baseDir = MakeTempDir();
         var key     = "TestAmp";
         var owner   = "scratch:TestAmp";
         var sink    = new FakeSink();
-        var results = new[]
-        {
-            new AnalysisResult("SP1", MakeSimpleDataSet("S")),
-            new AnalysisResult("HB1", MakeSimpleDataSet("V")),
-        };
 
-        var written = RunResultsWriter.WriteResults(baseDir, key, owner, results, sink);
+        var written = RunResultsWriter.WriteRun(baseDir, key, owner, MakeGroupedDataSet(), sink);
 
-        Assert.Equal(2, written.Count);
-        var dir = Path.GetFullPath(Path.Combine(baseDir, "results", key));
-        Assert.Contains(Path.Combine(dir, "SP1.npy"), written);
-        Assert.Contains(Path.Combine(dir, "HB1.npy"), written);
+        Assert.Single(written);
+        var expected = Path.GetFullPath(Path.Combine(baseDir, "results", key, "run.npy"));
+        Assert.Equal(expected, written[0]);
 
         // Collision skip returns empty list.
-        var otherOwner = "scratch:OtherAmp";
-        var collisionResult = RunResultsWriter.WriteResults(baseDir, key, otherOwner,
-            new[] { new AnalysisResult("SP1", MakeSimpleDataSet("S")) }, sink);
-        Assert.Empty(collisionResult);
+        var sink2 = new FakeSink();
+        var collision = RunResultsWriter.WriteRun(baseDir, key, "scratch:OtherAmp",
+            MakeGroupedDataSet(), sink2);
+        Assert.Empty(collision);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static DataSet MakeSimpleDataSet(string cubeName)
+    private static DataSet MakeGroupedDataSet()
     {
         var axis = new Axis("freq", new[] { 1e9, 2e9 }, "Hz");
         var data = new Complex[] { new(0.1, -0.2), new(0.2, -0.1) };
-        var ds   = new DataSet();
-        ds.Add(cubeName, new DataCube(new[] { axis }, data));
+        var cube = new DataCube(new[] { axis }, data);
+
+        var ds = new DataSet();
+        ds.AddToGroup("SP1", "S", cube);
+        ds.AddToGroup("HB1", "V", cube);
+        ds.AddToGroup("measurements", "Gain", DataCube.Scalar(3.14));
         return ds;
     }
 

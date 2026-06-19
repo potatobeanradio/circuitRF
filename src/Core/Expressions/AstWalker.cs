@@ -44,6 +44,14 @@ public static class AstWalker
             case CallExpr cl:
                 foreach (var a in cl.Args) Walk(a, refs);
                 break;
+            case IndexExpr ix:
+                Walk(ix.Target, refs);
+                foreach (var tok in ix.Tokens)
+                {
+                    if (tok.A is { } a) Walk(a, refs);
+                    if (tok.B is { } b) Walk(b, refs);
+                }
+                break;
             // NumberExpr, ConstExpr, StringLiteralExpr — no refs
         }
     }

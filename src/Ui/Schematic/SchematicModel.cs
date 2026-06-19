@@ -22,6 +22,7 @@ public enum SymbolKind
     ZPort,
     Generic,
     Var,
+    Meas,
     P1Tone,
     Snp,
 }

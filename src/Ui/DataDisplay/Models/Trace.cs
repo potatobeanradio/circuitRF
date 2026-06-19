@@ -273,6 +273,13 @@ namespace CircuitRF.Ui.DataDisplay
         private string     _cubeXAxisName = "";
         private string?    _cubeXUnit;
 
+        private bool _cubeIsScalar;
+        public  bool CubeIsScalar => _cubeIsScalar;
+
+        /// <summary>True when a scalar (rank-0) cube is bound while the plot type is not Table. Scalars render
+        /// only on a Table; elsewhere the trace draws nothing and its label shows a soft "&lt;invalid&gt;".</summary>
+        public bool ScalarOnNonTableInvalid { get; private set; }
+
         // ---- Cube data read accessors (for TableRenderer — no recompute) -----
 
         public IReadOnlyList<double>?  CubeXValues   => _cubeXValues;
@@ -320,10 +327,13 @@ namespace CircuitRF.Ui.DataDisplay
         {
             get
             {
-                if (InvalidSpecText is not null) return $"{InvalidSpecText} <invalid>";
-                if (Expression is not null)      return Expression;
-                if (!IsCubeBound || Slice is null) return ShortDescription;
-                return BuildPickerExpression();
+                string baseLabel;
+                if (InvalidSpecText is not null)        baseLabel = $"{InvalidSpecText} <invalid>";
+                else if (Expression is not null)        baseLabel = Expression;
+                else if (!IsCubeBound || Slice is null) baseLabel = ShortDescription;
+                else                                    baseLabel = BuildPickerExpression();
+                if (ScalarOnNonTableInvalid && !baseLabel.Contains("<invalid")) baseLabel += " <invalid>";
+                return baseLabel;
             }
         }
 
@@ -358,6 +368,15 @@ namespace CircuitRF.Ui.DataDisplay
         internal string BuildPickerExpression()
         {
             if (CubeName is null || Slice is null) return ShortDescription;
+            if (Slice.Length == 0)   // scalar (rank-0) cube — no axes to slice
+                return Transform == CubeTransform.None
+                    ? CubeName
+                    : $"{TransformFunctionName(Transform)}({CubeName})";
+            // A single whole-axis X (e.g. "PDC[:]") reads better bare.
+            if (Slice.Length == 1 && Slice[0].Role == AxisRole.KeepAsX && !Slice[0].IsNarrowedRange)
+                return Transform == CubeTransform.None
+                    ? CubeName
+                    : $"{TransformFunctionName(Transform)}({CubeName})";
             var parts = Slice.Select(s =>
                 s.Role == AxisRole.KeepAsX         ? ":"
                 : s.Role == AxisRole.FamilyIterate ? "~"
@@ -394,7 +413,11 @@ namespace CircuitRF.Ui.DataDisplay
 
             // Cube-bound: minimal label.
             if (IsCubeBound)
-                return $"{prefix}{Expression ?? CubeName ?? ""}";
+            {
+                var lbl = $"{prefix}{Expression ?? CubeName ?? ""}";
+                if (ScalarOnNonTableInvalid) lbl += " <invalid>";
+                return lbl;
+            }
 
             if (IsDerived)
                 return Derived == DerivedParameters.MaxGain && YAxis == DependentVarFormat.Db
@@ -459,6 +482,7 @@ namespace CircuitRF.Ui.DataDisplay
             _cubeRealValues    = src._cubeRealValues;
             _cubeXAxisName     = src._cubeXAxisName;
             _cubeXUnit         = src._cubeXUnit;
+            _cubeIsScalar      = src._cubeIsScalar;
             // Per-port Z0 (Phase 7.2f).
             SourceZ0PerPort   = src.SourceZ0PerPort;
             SourceZ0IsUnusual = src.SourceZ0IsUnusual;
@@ -488,11 +512,26 @@ namespace CircuitRF.Ui.DataDisplay
                                 string xAxisName, string? xUnit,
                                 PlotType plotType, FreqUnit freqUnit)
         {
+            _cubeIsScalar      = false;
             _cubeXValues       = xValues;
             _cubeComplexValues = complexValues;
             _cubeRealValues    = realValues;
             _cubeXAxisName     = xAxisName;
             _cubeXUnit         = xUnit;
+            BuildCubePath(plotType, freqUnit);
+        }
+
+        /// <summary>Binds a scalar (rank-0) cube value. Renders as one Table cell; on any non-Table plot type
+        /// the trace produces no geometry and flags ScalarOnNonTableInvalid for a soft label.</summary>
+        public void SetScalarCubeData(Complex? complexValue, double? realValue,
+                                      PlotType plotType, FreqUnit freqUnit)
+        {
+            _cubeIsScalar      = true;
+            _cubeXValues       = new[] { 0.0 };                                  // synthetic 1-row anchor
+            _cubeComplexValues = complexValue is Complex c ? new[] { c } : null;
+            _cubeRealValues    = realValue   is double  r ? new[] { r } : null;
+            _cubeXAxisName     = "";
+            _cubeXUnit         = null;
             BuildCubePath(plotType, freqUnit);
         }
 
@@ -532,6 +571,7 @@ namespace CircuitRF.Ui.DataDisplay
             IReadOnlyList<(double axisValue, string? axisLabel, Complex[]? cz, double[]? rv)> curves,
             PlotType plotType, FreqUnit freqUnit)
         {
+            _cubeIsScalar = false;
             _cubeXValues = xValues; _cubeXAxisName = xAxisName; _cubeXUnit = xUnit;
             _cubeComplexValues = null; _cubeRealValues = null;
             FamilyAxisName = familyAxisName;
@@ -571,6 +611,14 @@ namespace CircuitRF.Ui.DataDisplay
         {
             Points.Clear();
             RectValueInvalid = false;
+            ScalarOnNonTableInvalid = false;
+            if (_cubeIsScalar)
+            {
+                // Scalars render only on a Table (which reads CubeXValues/FormatCubeCell, not Points).
+                // Rect/Smith/Polar have nothing meaningful to draw → no points + soft <invalid> label.
+                ScalarOnNonTableInvalid = plotType != PlotType.Table;
+                return;   // Points already cleared above.
+            }
             if (_cubeXValues is null) return;
             if (_cubeComplexValues is null && _cubeRealValues is null) return;
 

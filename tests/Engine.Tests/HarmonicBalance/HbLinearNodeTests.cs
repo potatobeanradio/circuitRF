@@ -325,15 +325,13 @@ analysis HB1  type=hb  Tone=2e9  MaxHarm=3  Tol=1e-4
         output.WriteLine("T5 PASS — swept cube includes Vout2 at all points with correct divider ratio.");
     }
 
-    // ── T6 (Part 2): node-indexed current present; branch cubes are offered ──
+    // ── T6 (Part 2): node-indexed current present; unified I cube with branch axis present ──
 
     /// <summary>
-    /// HbEngine emits "INl" (node-indexed current) for internal diagnostic use.
-    /// Branch-current cubes "I:instance:terminal" must also be present.
-    /// The "INl" cube is hidden from the trace picker by the node-axis filter in TraceRowViewModel
+    /// HbEngine emits "INl" (node-indexed current) for internal diagnostic use and "I"
+    /// (unified branch-current cube with a labeled "branch" axis) for user access.
+    /// "INl" is hidden from the trace picker by the node-axis filter in TraceRowViewModel
     /// (see NodeIndexedCurrentFilterTests in CubeTraceTests for the UI gate).
-    /// Note: "INl" keeps its un-prefixed name so ParametricSweepEngine.StackSweepAxis stacks it
-    /// correctly across sweep points (__ prefix cubes are passed through from datasets[0] only).
     /// </summary>
     [Fact]
     public void T6_NodeIndexedCurrent_PresentAndBranchCubesPresent()
@@ -343,11 +341,14 @@ analysis HB1  type=hb  Tone=2e9  MaxHarm=3  Tol=1e-4
         // The node-indexed current cube must be present.
         Assert.True(ds.Contains("INl"), "HbEngine must emit 'INl' node-indexed current cube");
 
-        // At least one branch-current cube must be present (I:instance:terminal, no node axis).
-        var branchCubes = ds.Cubes.Where(kv =>
-            kv.Key.StartsWith("I:", StringComparison.Ordinal) &&
-            kv.Value.Axes.All(a => a.Name != "node")).ToList();
-        Assert.NotEmpty(branchCubes);
-        output.WriteLine($"T6 PASS — 'INl' present; {branchCubes.Count} branch cube(s): {string.Join(", ", branchCubes.Select(kv => kv.Key))}");
+        // The unified branch-current cube must be present with a "branch" axis.
+        Assert.True(ds.Contains("I"), "HbEngine must emit unified 'I' cube");
+        var iCube = ds["I"];
+        Assert.True(iCube.Axes.Any(a => a.Name == "branch"), "'I' cube must have a 'branch' axis");
+        Assert.False(ds.Cubes.Keys.Any(k => k.StartsWith("I:", StringComparison.Ordinal)),
+            "No legacy 'I:*' per-branch cubes should be emitted");
+
+        var branchLabels = iCube.Axes.First(a => a.Name == "branch").Labels ?? [];
+        output.WriteLine($"T6 PASS — 'INl' present; unified 'I' cube with {branchLabels.Length} branches: {string.Join(", ", branchLabels)}");
     }
 }

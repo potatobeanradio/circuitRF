@@ -85,6 +85,7 @@ public sealed class Evaluator
         LogicExpr       lg => EvalLogic(lg, scope),
         ConditionalExpr cd => EvalConditional(cd, scope),
         CallExpr        cl => EvalCall(cl, scope),
+        IndexExpr       ix => EvalIndex(ix, scope),
         _ => throw new ExpressionException($"Unknown AST node: {expr.GetType().Name}")
     };
 
@@ -237,11 +238,6 @@ public sealed class Evaluator
         if (cl.Args.Length == 0)
             return new Value(ds[accessorName]);
 
-        // ── I(branchRef, harm [, sweepSlice]) — branch-current accessor ──────
-        // Resolves "I:branchRef" cube (e.g. "I:M1:d"); no node axis.
-        if (accessorName == "I")
-            return EvalBranchCurrentAccessor(ds, cl.Args, scope, cl.Name);
-
         // ── S(portI, portJ) — S-parameter pair ───────────────────────────────
         if (accessorName == "S")
         {
@@ -252,45 +248,47 @@ public sealed class Evaluator
             return SliceToValue(sc[new object[] { pi, pj, Range.All }]);
         }
 
-        // ── V(nodeName, …) / INl(nodeName, …) — node-indexed ─────────────────
-        if (accessorName is "V" or "INl")
+        // ── V(nodeName,…) / INl(nodeName,…) — node-indexed ─────────────────
+        // ── I(branchName,…) — branch-indexed (unified I cube, branch axis) ───
+        if (accessorName is "V" or "INl" or "I")
         {
             var cube = ds[accessorName];
+            string axisName = accessorName == "I" ? "branch" : "node";
             var nameVal = EvalExpr(cl.Args[0], scope);
-            string nodeName = nameVal.Kind == ValueKind.String
+            string label = nameVal.Kind == ValueKind.String
                 ? nameVal.AsString()
                 : nameVal.ToString();
 
-            // Find the "node" axis by name; sweep axes (from ParametricSweepEngine) are prepended.
-            // Layout: [sweep0, ..., sweepN, node, harmonic/mixIndex]
-            int nodeAxisIdx = -1;
+            // Find the named axis; sweep axes (from ParametricSweepEngine) are prepended.
+            // Layout: [sweep0, ..., sweepN, node/branch, harmonic/mixIndex]
+            int axisIdx = -1;
             for (int a = 0; a < cube.Rank; a++)
-                if (cube.Axes[a].Name == "node") { nodeAxisIdx = a; break; }
-            if (nodeAxisIdx < 0) nodeAxisIdx = 0;  // fallback: single-point, node is first axis
+                if (cube.Axes[a].Name == axisName) { axisIdx = a; break; }
+            if (axisIdx < 0) axisIdx = 0;  // fallback: single-point, target axis is first
 
-            var labels  = cube.Axes[nodeAxisIdx].Labels;
-            int nodeIdx = labels is null ? -1 :
-                Array.FindIndex(labels, s => s.Equals(nodeName, StringComparison.OrdinalIgnoreCase));
+            var labels = cube.Axes[axisIdx].Labels;
+            int idx    = labels is null ? -1
+                : Array.FindIndex(labels, s => s.Equals(label, StringComparison.OrdinalIgnoreCase));
 
-            // C1: V on a linear-interior node — fall back to the linear back-solver.
-            if (nodeIdx < 0 && accessorName == "V" &&
+            // V only: linear-interior node — fall back to the linear back-solver.
+            if (idx < 0 && accessorName == "V" &&
                 _ctx.TryGetBackSolver(analysisName, out var bs))
-                return EvalVFromBackSolver(bs!, cube, cl.Args, scope, cl.Name, nodeName);
+                return EvalVFromBackSolver(bs!, cube, cl.Args, scope, cl.Name, label);
 
-            if (nodeIdx < 0)
+            if (idx < 0)
                 throw new ExpressionException(
-                    $"{cl.Name}: node '{nodeName}' not found. " +
+                    $"{cl.Name}: {axisName} '{label}' not found. " +
                     $"Available: [{string.Join(", ", labels ?? [])}]");
 
-            // Build slice: sweep axes get args[2+a]; node gets nodeIdx; harm gets args[1].
-            // Caller convention: V("nodeName", harmSlice, sweepSlice0, sweepSlice1, ...)
-            int numSweepAxes = nodeAxisIdx;
+            // Build slice: sweep axes get args[2+a]; node/branch gets idx; harm gets args[1].
+            // Caller convention: V/I("name", harmSlice, sweepSlice0, sweepSlice1, ...)
+            int numSweepAxes = axisIdx;
             var sliceArgs = new object[cube.Rank];
 
-            sliceArgs[nodeAxisIdx] = (object)nodeIdx;
+            sliceArgs[axisIdx] = (object)idx;
 
-            if (nodeAxisIdx + 1 < cube.Rank)
-                sliceArgs[nodeAxisIdx + 1] = cl.Args.Length > 1
+            if (axisIdx + 1 < cube.Rank)
+                sliceArgs[axisIdx + 1] = cl.Args.Length > 1
                     ? ArgToSliceObj(EvalExpr(cl.Args[1], scope), cl.Name, 1)
                     : (object)Range.All;
 
@@ -313,45 +311,6 @@ public sealed class Evaluator
                 sliceArgs[i] = ArgToSliceObj(EvalExpr(cl.Args[i], scope), cl.Name, i);
             return SliceToValue(cube[sliceArgs]);
         }
-    }
-
-    // ── Branch-current accessor: I("M1:d", harm [, sweepSlice]) ─────────────
-
-    private Value EvalBranchCurrentAccessor(DataSet ds, Expr[] args, Scope scope, string exprName)
-    {
-        if (args.Length == 0) throw new ArityException(exprName, 1, 0);
-
-        var nameVal   = EvalExpr(args[0], scope);
-        string branch = nameVal.Kind == ValueKind.String ? nameVal.AsString() : nameVal.ToString();
-        string cname  = "I:" + branch;
-
-        if (!ds.Contains(cname))
-            throw new ExpressionException(
-                $"{exprName}: branch '{branch}' not found — cube '{cname}' not in DataSet. " +
-                $"Use instance:terminal form (e.g. \"M1:d\") or an IProbe name.");
-
-        var cube = ds[cname];
-
-        // Branch cube layout: [sweep0, ..., sweepN, harmonic/mixIndex]
-        // Harm/mixIndex axis is always last; sweep axes (from ParametricSweepEngine) are prepended.
-        // Caller convention: I("branch", harmSlice, sweepSlice0, sweepSlice1, ...)
-        int harmAxisIdx  = cube.Rank - 1;
-        int numSweepAxes = harmAxisIdx;
-        var sliceArgs    = new object[cube.Rank];
-
-        sliceArgs[harmAxisIdx] = args.Length > 1
-            ? ArgToSliceObj(EvalExpr(args[1], scope), exprName, 1)
-            : (object)Range.All;
-
-        for (int a = 0; a < numSweepAxes; a++)
-        {
-            int argIdx = 2 + a;
-            sliceArgs[a] = argIdx < args.Length
-                ? ArgToSliceObj(EvalExpr(args[argIdx], scope), exprName, argIdx)
-                : (object)Range.All;
-        }
-
-        return SliceToValue(cube[sliceArgs]);
     }
 
     // ── V back-solve from linear back-solver (C1) ────────────────────────────
@@ -436,6 +395,65 @@ public sealed class Evaluator
         _ => throw new ExpressionException(
             $"{name}: argument {idx} must be an integer index or All, got {v.Kind}")
     };
+
+    // ── Positional cube index: Target[token, …]  (numpy-style; mirrors the accessor) ──────────
+
+    private Value EvalIndex(IndexExpr ix, Scope scope)
+    {
+        var target = EvalExpr(ix.Target, scope);
+        if (target.Kind != ValueKind.Cube)
+            throw new ExpressionException(
+                $"'[...]' indexing requires a cube (e.g. HB1.V[...]); got {target.Kind}.");
+        var cube = target.AsCube();
+
+        if (ix.Tokens.Length != cube.Rank)
+            throw new ExpressionException(
+                $"Cube index has {ix.Tokens.Length} token(s) but cube has {cube.Rank} axis/axes " +
+                $"[{string.Join(", ", cube.Axes.Select(a => a.Name))}]. Brackets are positional " +
+                "(cube-axis order): ':' keeps an axis, a name/index fixes it, 'a:b' is a range.");
+
+        var args = new object[cube.Rank];
+        for (int d = 0; d < cube.Rank; d++)
+        {
+            var tok  = ix.Tokens[d];
+            var axis = cube.Axes[d];
+            switch (tok.Kind)
+            {
+                case IndexTokenKind.Whole:
+                    args[d] = Range.All;
+                    break;
+                case IndexTokenKind.Range:
+                    int lo = (int)EvalExpr(tok.A!, scope).AsReal();
+                    int hi = (int)EvalExpr(tok.B!, scope).AsReal();
+                    args[d] = new Range(lo, hi);
+                    break;
+                default: // Pin
+                    args[d] = ResolvePin(EvalExpr(tok.A!, scope), axis);
+                    break;
+            }
+        }
+        return SliceToValue(cube[args]);
+    }
+
+    private static object ResolvePin(Value v, RfCore.Data.Axis axis)
+    {
+        if (v.Kind == ValueKind.String)
+        {
+            string label = v.AsString();
+            if (axis.Labels is null)
+                throw new ExpressionException(
+                    $"Axis '{axis.Name}' has no name labels — cannot resolve \"{label}\".");
+            int idx = Array.FindIndex(axis.Labels, s => s.Equals(label, StringComparison.OrdinalIgnoreCase));
+            if (idx < 0)
+                throw new ExpressionException(
+                    $"'{label}' not found on axis '{axis.Name}'. Available: [{string.Join(", ", axis.Labels)}].");
+            return idx;
+        }
+        if (v.Kind == ValueKind.Real)
+            return (int)v.AsReal();
+        throw new ExpressionException(
+            $"Index for axis '{axis.Name}' must be ':', a name, an integer, or a range — got {v.Kind}.");
+    }
 
     private Value EvalIf(Expr[] args, Scope scope)
     {
@@ -684,6 +702,8 @@ public sealed class Evaluator
         double scale = Units.Scale(unit)
             ?? (Units.IsRecognizedUnit(unit) ? 1.0
                 : throw new ExpressionException($"Unknown unit '{unit}'"));
+        if (v.Kind == ValueKind.Cube)
+            return scale == 1.0 ? v : Value.Mul(v, new Value(scale));
         return v.Kind == ValueKind.Real
             ? new Value(v.AsReal() * scale)
             : new Value(v.AsComplex() * scale);

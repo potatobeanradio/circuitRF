@@ -242,6 +242,42 @@ public sealed class SchematicRunServiceTests
         finally { File.Delete(tmpPath); }
     }
 
+    // ── Grouped results — measurements + analyses assemble into GroupedResults ──
+
+    [Fact]
+    public void MeasurementsAndAnalyses_AssembleIntoGroupedResults()
+    {
+        const string cnl = """
+            Port:P1  n1 0  Num=1  Z=50 Ohm
+            R:R1  n1 n2  R=50 Ohm
+            Port:P2  n2 0  Num=2  Z=50 Ohm
+            analysis SP1  type=sparam  start=1 GHz  stop=3 GHz  step=1 GHz
+            measure Gain = dB(SP1.S(2,1))
+            """;
+
+        var tmpPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tmpPath, cnl);
+            var result = SchematicRunService.RunNetlist(tmpPath);
+
+            Assert.Equal(RunStatus.Success, result.Status);
+            Assert.NotNull(result.GroupedResults);
+
+            var grouped = result.GroupedResults!;
+            Assert.Contains("SP1",          grouped.Groups);
+            Assert.Contains("measurements", grouped.Groups);
+
+            var sp1S = grouped["SP1.S"];
+            Assert.NotNull(sp1S);
+
+            var gain = grouped["measurements.Gain"];
+            Assert.NotNull(gain);
+            Assert.Equal(RfCore.Data.DataKind.Real, gain.DataKind);
+        }
+        finally { File.Delete(tmpPath); }
+    }
+
     // ── L1f: diagnostics channel — clean netlist yields empty Warnings ────────
 
     [Fact]

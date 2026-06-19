@@ -62,7 +62,39 @@ public partial class TraceRowViewModel : ViewModelBase
     //  Selection revert is avoided by NOT calling RebuildSignals from
     //  RefreshDescription (which is called from RebuildAndNotify).
 
+    // Full unfiltered signal set (rebuilt by RebuildSignals); AvailableSignals is the slice for SelectedGroup.
+    private readonly List<TraceDataItem> _allSignals = new();
+
+    /// <summary>Group headers for the left picker combo (distinct, in build order).</summary>
+    public ObservableCollection<string> AvailableGroups { get; } = new();
+
+    [ObservableProperty]
+    private string? _selectedGroup;
+
+    partial void OnSelectedGroupChanged(string? value)
+    {
+        if (_suppressDataCallback) return;
+        _suppressDataCallback = true;
+        FilterSignalsToGroup(value);
+        _suppressDataCallback = false;
+        SelectedSignal = AvailableSignals.FirstOrDefault();
+    }
+
+    private void FilterSignalsToGroup(string? group)
+    {
+        AvailableSignals.Clear();
+        if (group is null) return;
+        foreach (var s in _allSignals)
+            if (s.Group == group) AvailableSignals.Add(s);
+        OnPropertyChanged(nameof(IsViSelector));
+    }
+
     public ObservableCollection<TraceDataItem> AvailableSignals { get; } = new();
+
+    /// <summary>True when the item list is the analysis V/I pair (render as an IconSelectButton).</summary>
+    public bool IsViSelector =>
+        AvailableSignals.Count > 0 &&
+        AvailableSignals.All(s => s.IsCubeBound && (s.Label == "V" || s.Label == "I"));
 
     // ---- Axis-role editor (Phase 7.3a) ------------------------------------
     //
@@ -71,27 +103,31 @@ public partial class TraceRowViewModel : ViewModelBase
 
     public ObservableCollection<AxisRoleRowViewModel> AxisRoles { get; } = new();
 
-    // ---- Node-picker labeled filter (brief node-picker-labeled-filter) ----
+    // ---- Unified node/branch visibility toggle ----------------------------------
     //
-    //  When __LabeledNodes is present, node axis is filtered to user-labeled nodes only.
-    //  ShowAllNodes = false (default) → filter ON; true → show all.
-    //  Absent __LabeledNodes (hand-written netlist) defaults ShowAllNodes=true.
+    //  ShowAll = false (default) → both node-axis filter and branch-list filter are ON.
+    //  true → reveals unlabeled nodes AND device-port branch currents.
+    //  Absent __LabeledNodes (hand-written netlist) defaults ShowAll=true.
 
     [ObservableProperty]
-    private bool _showAllNodes;
+    private bool _showAll;
 
     private bool _rebuildingAxisRoles;
 
-    partial void OnShowAllNodesChanged(bool value)
+    partial void OnShowAllChanged(bool value)
     {
-        if (!_rebuildingAxisRoles) RebuildAxisRoles();
+        if (_rebuildingAxisRoles) return;
+        RebuildSignals();
     }
 
-    // True when the current cube has a node axis (controls toggle visibility).
+    // True when the current cube has a filterable label axis (node or branch) — controls toggle visibility.
     private bool _hasNodeAxis;
 
-    /// <summary>True when the "Show all nodes" toggle is relevant (cube has a node axis).</summary>
+    /// <summary>True when the "Show all" toggle is relevant (cube has a filterable label axis).</summary>
     public bool ShowAllNodesToggleVisible => IsCubeBoundTrace && _hasNodeAxis;
+
+    /// <summary>True when the unified "Show all" toggle is relevant.</summary>
+    public bool ShowAllToggleVisible => IsCubeBoundTrace && _hasNodeAxis;
 
     [ObservableProperty]
     private TraceDataItem? _selectedSignal;
@@ -99,6 +135,18 @@ public partial class TraceRowViewModel : ViewModelBase
     partial void OnSelectedSignalChanged(TraceDataItem? value)
     {
         if (_suppressDataCallback || value == null) return;
+
+        if (value.IsAbsent)
+        {
+            _trace.CubeName = value.CubeName;
+            _trace.Slice    = Array.Empty<AxisSlice>();
+            AxisRoles.Clear();
+            _parent.RebuildAndNotify();
+            OnPropertyChanged(nameof(ShowEmptyQuantity));
+            OnPropertyChanged(nameof(EmptyQuantityMessage));
+            OnPropertyChanged(nameof(ShowAxisRoles));
+            return;
+        }
 
         // Skip if the trace already matches the selection — nothing actually changed.
         bool alreadyApplied;
@@ -134,7 +182,19 @@ public partial class TraceRowViewModel : ViewModelBase
             // then re-derive Expression so the spec adapts to the new data source.
             var oldSlice = _trace.Slice;          // may be from a different cube (e.g. V → I)
             _trace.CubeName        = value.CubeName;
-            _trace.Slice           = BuildCarriedSlice(value, oldSlice);
+
+            // Rank-0 (scalar) cube: empty slice, bare-name Expression — do not index Axes[0].
+            var cubeForRank = (value.Entry.Data is not null && value.CubeName is not null
+                && value.Entry.Data.Contains(value.CubeName))
+                ? value.Entry.Data[value.CubeName] : null;
+            if (cubeForRank?.Rank == 0)
+            {
+                _trace.Slice = Array.Empty<AxisSlice>();
+            }
+            else
+            {
+                _trace.Slice = BuildCarriedSlice(value, oldSlice);
+            }
             _trace.InvalidSpecText = null;
             _trace.ExpressionError = null;
             _trace.Expression      = _trace.BuildPickerExpression();
@@ -178,7 +238,7 @@ public partial class TraceRowViewModel : ViewModelBase
         // Source kind may have flipped (cube ↔ network) — refresh every card-visibility discriminator
         // so the right fields show without reopening the inspector.
         OnPropertyChanged(nameof(IsCubeBoundTrace));
-        OnPropertyChanged(nameof(ShowAllNodesToggleVisible));
+        OnPropertyChanged(nameof(ShowAllToggleVisible));
         RefreshDescription();   // raises ShowMatrixTypeCombo, ShowZ0Row/Control, ShowYAxisCombo, TraceTransformItems, Spec*, etc.
     }
 
@@ -389,6 +449,8 @@ public partial class TraceRowViewModel : ViewModelBase
         UseSecondaryAxis ? MaterialIconKind.ArrowRight : MaterialIconKind.ArrowLeft;
 
     public IRelayCommand ToggleSecondaryAxisCommand { get; }
+
+    public IRelayCommand ToggleShowAllCommand { get; }
 
     // ---- Z0 text entry (reference impedance) --------------------------------
 
@@ -725,6 +787,7 @@ public partial class TraceRowViewModel : ViewModelBase
 
         RemoveCommand              = new RelayCommand(() => _parent.RemoveTrace(this));
         ToggleSecondaryAxisCommand = new RelayCommand(() => UseSecondaryAxis = !UseSecondaryAxis);
+        ToggleShowAllCommand       = new RelayCommand(() => ShowAll = !ShowAll);
 
         // Build YAxis items once — plot type doesn't change within a VM lifetime
         // (RebuildTraces() creates fresh VMs on plot-type switch).
@@ -748,6 +811,8 @@ public partial class TraceRowViewModel : ViewModelBase
 
     private void RebuildSignals()
     {
+        _allSignals.Clear();
+        AvailableGroups.Clear();
         AvailableSignals.Clear();
 
         bool isComplexPlot = _parent.PlotType is PlotType.Smith or PlotType.Polar;
@@ -758,13 +823,17 @@ public partial class TraceRowViewModel : ViewModelBase
         {
             if (entry.Snp is null) continue;
             var snp = entry.Snp;
+
+            string netGroup = (singleSource ? "" : $"{System.IO.Path.GetFileNameWithoutExtension(entry.DisplayName)}..")
+                            + "S-Parameters";
+
             if (snp.IsEmpty)
             {
                 bool isSource = _trace.Data == snp;
                 int row = isSource ? _trace.Row : 0;
                 int col = isSource ? _trace.Col : 0;
-                AvailableSignals.Add(new TraceDataItem(entry, MatrixType, row, col,
-                    singleSource, isBroken: true));
+                _allSignals.Add(new TraceDataItem(entry, MatrixType, row, col,
+                    omitFilePrefix: true, isBroken: true) { Group = netGroup });
                 continue;
             }
 
@@ -774,21 +843,21 @@ public partial class TraceRowViewModel : ViewModelBase
                 && _trace.Derived == DerivedParameters.None
                 && (_trace.Row >= ports || _trace.Col >= ports))
             {
-                AvailableSignals.Add(new TraceDataItem(entry, MatrixType,
-                    _trace.Row, _trace.Col, singleSource, isBroken: true));
+                _allSignals.Add(new TraceDataItem(entry, MatrixType,
+                    _trace.Row, _trace.Col, omitFilePrefix: true, isBroken: true) { Group = netGroup });
             }
 
             for (int r = 0; r < ports; r++)
                 for (int c = 0; c < ports; c++)
-                    AvailableSignals.Add(new TraceDataItem(entry, MatrixType, r, c, singleSource));
+                    _allSignals.Add(new TraceDataItem(entry, MatrixType, r, c, omitFilePrefix: true) { Group = netGroup });
 
             if (ports == 2)
             {
-                AvailableSignals.Add(new TraceDataItem(entry, DerivedParameters.SourceStabilityCircle, _parent.PlotType, singleSource));
-                AvailableSignals.Add(new TraceDataItem(entry, DerivedParameters.LoadStabilityCircle,   _parent.PlotType, singleSource));
-                AvailableSignals.Add(new TraceDataItem(entry, DerivedParameters.MuPrime, _parent.PlotType, singleSource));
-                AvailableSignals.Add(new TraceDataItem(entry, DerivedParameters.Mu,      _parent.PlotType, singleSource));
-                AvailableSignals.Add(new TraceDataItem(entry, DerivedParameters.MaxGain, _parent.PlotType, singleSource));
+                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.SourceStabilityCircle, _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
+                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.LoadStabilityCircle,   _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
+                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.MuPrime, _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
+                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.Mu,      _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
+                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.MaxGain, _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
             }
         }
 
@@ -807,38 +876,85 @@ public partial class TraceRowViewModel : ViewModelBase
                 ? ""
                 : $"{System.IO.Path.GetFileNameWithoutExtension(entry.DisplayName)}..";
 
-            foreach (var (cubeName, cube) in ds.Cubes)
+            foreach (var group in ds.Groups)
             {
-                if (cubeName is "S" or "Z0" || cubeName.StartsWith("__", StringComparison.Ordinal)) continue;
-                // Solver diagnostics — not offered in the picker; advanced users type them in the spec field.
-                if (cubeName.EndsWith("Converged", StringComparison.Ordinal) ||
-                    cubeName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
-                // Belt-and-suspenders: skip node-indexed current cubes (internal diagnostic).
-                // Authoritative fix is the __ prefix on __INl in HbEngine; this guards older datasets.
-                bool isNodeIndexedCurrent =
-                    (cubeName == "I" || cubeName == "INl")
-                    && cube.Axes.Any(a => a.Name == "node");
-                if (isNodeIndexedCurrent) continue;
-                int rank = cube.Rank;
-                if (rank <= 0) continue;
+                string groupDisplay = group == DataSet.DefaultGroup      ? "Signals"
+                                    : group == DataSet.MeasurementsGroup ? "Measurements"
+                                    :                                       group;   // "HB1", "DC1", "SP1"
+                string cubeGroup = filePrefix + groupDisplay;
 
-                bool isEnabled = !isComplexPlot || cube.DataKind == DataKind.Complex;
-
-                // Default slice: axis 0 → KeepAsX, axes 1..N-1 → PinToIndex at 0.
-                // For axes with labels (e.g. node axis), store the label at index 0 so the
-                // shorthand emits a quoted net name rather than a bare index.
-                var defaultSlice = new AxisSlice[rank];
-                defaultSlice[0] = new AxisSlice(cube.Axes[0].Name, AxisRole.KeepAsX, 0);
-                for (int d = 1; d < rank; d++)
+                foreach (var (bareName, cube) in ds.CubesIn(group))
                 {
-                    var ax  = cube.Axes[d];
-                    string lbl = (ax.Labels is { Length: > 0 }) ? ax.Labels[0] : "";
-                    defaultSlice[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
-                }
+                    if (bareName is "S" or "Z0" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
+                    // Solver diagnostics — not offered in the picker; advanced users type them in the spec field.
+                    if (bareName.EndsWith("Converged", StringComparison.Ordinal) ||
+                        bareName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
+                    // Skip node-indexed current cubes (internal diagnostic / legacy guard).
+                    bool isNodeIndexedCurrent =
+                        (bareName == "I" || bareName == "INl")
+                        && cube.Axes.Any(a => a.Name == "node");
+                    if (isNodeIndexedCurrent) continue;
+                    int rank = cube.Rank;
+                    if (rank == 0 && !_parent.IsTablePlot) continue;   // scalars are Table-only
 
-                AvailableSignals.Add(new TraceDataItem(entry, cubeName, defaultSlice,
-                                                       $"{filePrefix}{cubeName}", isEnabled));
+                    bool isEnabled = !isComplexPlot || cube.DataKind == DataKind.Complex;
+                    // Default- and measurements-group cubes are bare-resolvable — emit their bare
+                    // name so the picker yields `PDC`/`V`, matching typed input. Analysis cubes
+                    // must stay qualified (bare `V` would resolve to the wrong group).
+                    string qualified =
+                        (group == DataSet.DefaultGroup || group == DataSet.MeasurementsGroup)
+                            ? bareName
+                            : $"{group}.{bareName}";
+
+                    // Default slice: rank-0 = empty; rank-1+ = first non-label axis → KeepAsX,
+                    // label axes (node/branch) always pinned. If no non-label axis exists (no-sweep
+                    // DC), nothing is X → the cube resolves to a scalar.
+                    AxisSlice[] defaultSlice;
+                    if (rank == 0)
+                    {
+                        defaultSlice = Array.Empty<AxisSlice>();
+                    }
+                    else
+                    {
+                        defaultSlice = new AxisSlice[rank];
+                        int xAxisIdx = -1;
+                        for (int d = 0; d < rank; d++)
+                            if (cube.Axes[d].Name is not "node" and not "branch") { xAxisIdx = d; break; }
+                        for (int d = 0; d < rank; d++)
+                        {
+                            var ax = cube.Axes[d];
+                            if (d == xAxisIdx)
+                                defaultSlice[d] = new AxisSlice(ax.Name, AxisRole.KeepAsX, 0);
+                            else
+                            {
+                                string lbl = (ax.Labels is { Length: > 0 }) ? ax.Labels[0] : "";
+                                defaultSlice[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
+                            }
+                        }
+                    }
+
+                    _allSignals.Add(new TraceDataItem(entry, qualified, defaultSlice, bareName, isEnabled)
+                                    { Group = cubeGroup });
+                }
             }
+        }
+
+        // ---- Ensure each analysis group offers both V and I (absent placeholder when cube missing) ----
+        foreach (var grpName in _allSignals.Select(s => s.Group).Distinct().ToList())
+        {
+            var items = _allSignals.Where(s => s.Group == grpName).ToList();
+            var vItem = items.FirstOrDefault(s => s.IsCubeBound && s.Label == "V" && (s.CubeName?.Contains('.') ?? false));
+            var iItem = items.FirstOrDefault(s => s.IsCubeBound && s.Label == "I" && (s.CubeName?.Contains('.') ?? false));
+            if (vItem is null && iItem is null) continue;          // not an analysis group
+            var sample = (vItem ?? iItem)!;
+            string cubeName = sample.CubeName!;
+            string prefix = cubeName[..(cubeName.IndexOf('.') + 1)];   // e.g. "HB1."
+            if (vItem is null)
+                _allSignals.Add(new TraceDataItem(sample.Entry, prefix + "V", Array.Empty<AxisSlice>(), "V")
+                                { Group = grpName, IsAbsent = true });
+            if (iItem is null)
+                _allSignals.Add(new TraceDataItem(sample.Entry, prefix + "I", Array.Empty<AxisSlice>(), "I")
+                                { Group = grpName, IsAbsent = true });
         }
 
         // ---- Select the item matching the current trace state ---------------
@@ -847,7 +963,7 @@ public partial class TraceRowViewModel : ViewModelBase
         if (_trace.IsCubeBound)
         {
             // Match by source + cube only; slice is managed via the axis-role editor.
-            match = AvailableSignals.FirstOrDefault(s =>
+            match = _allSignals.FirstOrDefault(s =>
                 s.IsCubeBound
                 && string.Equals(s.Entry.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase)
                 && s.CubeName == _trace.CubeName);
@@ -862,24 +978,29 @@ public partial class TraceRowViewModel : ViewModelBase
                         && (_trace.Row >= matchEntry.Snp!.Ports
                             || _trace.Col >= matchEntry.Snp!.Ports)))
                 {
-                    match = AvailableSignals.FirstOrDefault(s => s.IsBroken && s.Entry == matchEntry);
+                    match = _allSignals.FirstOrDefault(s => s.IsBroken && s.Entry == matchEntry);
                 }
                 else if (_trace.Derived != DerivedParameters.None)
                 {
-                    match = AvailableSignals.FirstOrDefault(s => s.Entry == matchEntry
+                    match = _allSignals.FirstOrDefault(s => s.Entry == matchEntry
                         && s.Derived == _trace.Derived);
                 }
                 else
                 {
-                    match = AvailableSignals.FirstOrDefault(s => s.Entry == matchEntry
+                    match = _allSignals.FirstOrDefault(s => s.Entry == matchEntry
                         && s.Row == _trace.Row && s.Col == _trace.Col
                         && s.Derived == DerivedParameters.None && !s.IsBroken);
                 }
             }
         }
 
+        foreach (var s in _allSignals)
+            if (!AvailableGroups.Contains(s.Group)) AvailableGroups.Add(s.Group);
+
         _suppressDataCallback = true;
-        SelectedSignal = match;
+        SelectedGroup  = match?.Group ?? AvailableGroups.FirstOrDefault();
+        FilterSignalsToGroup(SelectedGroup);
+        SelectedSignal = match ?? AvailableSignals.FirstOrDefault();
         _suppressDataCallback = false;
 
         // Keep per-port Z0 fields fresh when the library changes in place (e.g. auto-refresh).
@@ -902,7 +1023,14 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(Z0DisabledReason));
 
         // Rebuild axis-role rows for the currently selected cube (Phase 7.3a).
+        // Track ShowAll before/after: RebuildAxisRolesCore may auto-set ShowAll=true for
+        // hand-written netlists (absent __LabeledNodes) while the _rebuildingAxisRoles guard
+        // suppresses the usual OnShowAllChanged→RebuildSignals callback. If ShowAll changed,
+        // re-run so AvailableSignals reflects the new (all-show) state.
+        bool showAllSnapshot = ShowAll;
         RebuildAxisRoles();
+        if (ShowAll != showAllSnapshot)
+            RebuildSignals();
     }
 
     /// <summary>
@@ -926,6 +1054,12 @@ public partial class TraceRowViewModel : ViewModelBase
         finally { _rebuildingAxisRoles = false; }
     }
 
+    private static string SiblingCubeName(string cubeName, string sibling)
+    {
+        int dot = cubeName.IndexOf('.');
+        return dot > 0 ? string.Concat(cubeName.AsSpan(0, dot), ".", sibling) : sibling;
+    }
+
     private void RebuildAxisRolesCore()
     {
         AxisRoles.Clear();
@@ -940,38 +1074,37 @@ public partial class TraceRowViewModel : ViewModelBase
         var cube  = ds[_trace.CubeName];
         var slice = _trace.Slice;
 
-        // Read labeled-node set from __LabeledNodes side cube.
-        // Null = cube absent (hand-written netlist → default ShowAllNodes=true).
-        // Non-null but empty = schematic ran with no user labels → show nothing (filter ON).
+        // Which axis (if any) is the filterable label axis, and its provenance side-cube.
+        string? filterAxisName = null, provenanceCube = null;
+        foreach (var ax in cube.Axes)
+        {
+            if (ax.Name == "node")   { filterAxisName = "node";   provenanceCube = "__LabeledNodes";  break; }
+            if (ax.Name == "branch") { filterAxisName = "branch"; provenanceCube = "__ProbeBranches"; break; }
+        }
+
         HashSet<string>? labeledSet = null;
-        if (ds.Contains("__LabeledNodes"))
+        if (provenanceCube is not null)
         {
-            var lblCube = ds["__LabeledNodes"];
-            labeledSet = new HashSet<string>(StringComparer.Ordinal);
-            // Find the axis that carries label strings by name, not by position —
-            // a swept DataSet may have extra axes prepended. Fall back to first axis with Labels.
-            var labelAxis = lblCube.Axes.FirstOrDefault(a => a.Name == "label" && a.Labels is not null)
-                         ?? lblCube.Axes.FirstOrDefault(a => a.Labels is not null);
-            if (labelAxis?.Labels is { } lbls)
-                foreach (var l in lbls) labeledSet.Add(l);
+            string sib = SiblingCubeName(_trace.CubeName, provenanceCube);
+            if (ds.Contains(sib))
+            {
+                labeledSet = new HashSet<string>(StringComparer.Ordinal);
+                var lblCube   = ds[sib];
+                var labelAxis = lblCube.Axes.FirstOrDefault(a => a.Labels is not null);   // "label" or "probe"
+                if (labelAxis?.Labels is { } lbls) foreach (var l in lbls) labeledSet.Add(l);
+            }
         }
 
-        // Detect whether this cube has a node axis to control toggle visibility.
-        bool hasNode = false;
-        for (int d = 0; d < cube.Axes.Count; d++)
-            if (cube.Axes[d].Name == "node") { hasNode = true; break; }
-
-        if (_hasNodeAxis != hasNode)
+        bool hasFilterAxis = filterAxisName is not null;
+        if (_hasNodeAxis != hasFilterAxis)            // _hasNodeAxis now means "has a filterable label axis"
         {
-            _hasNodeAxis = hasNode;
+            _hasNodeAxis = hasFilterAxis;
             OnPropertyChanged(nameof(ShowAllNodesToggleVisible));
+            OnPropertyChanged(nameof(ShowAllToggleVisible));
         }
 
-        // Default ShowAllNodes=true when __LabeledNodes is absent (hand-written netlist).
-        if (labeledSet is null && !ShowAllNodes)
-            ShowAllNodes = true;
-
-        bool showAll = ShowAllNodes;
+        if (labeledSet is null && !ShowAll) ShowAll = true;   // no provenance ⇒ show all (unchanged)
+        bool showAll = ShowAll;
 
         for (int d = 0; d < cube.Rank; d++)
         {
@@ -1000,7 +1133,7 @@ public partial class TraceRowViewModel : ViewModelBase
             bool axisIsFreq = IsFreqUnit(axis.Unit);
             FreqUnit plotFreqUnit = _parent.FreqUnit;
 
-            if (axis.Name == "node" && !showAll && labeledSet is not null)
+            if (axis.Name == filterAxisName && !showAll && labeledSet is not null)
             {
                 // Filtered: only show options that are in the labeled set.
                 var filteredOpts    = new List<string>();
@@ -1023,7 +1156,8 @@ public partial class TraceRowViewModel : ViewModelBase
                 if (displayIdx < 0) displayIdx = 0;
 
                 AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit,
-                    filteredOpts, isX, displayIdx, filteredIndices, optionsAreLabels: true, isFamily: isFamily));
+                    filteredOpts, isX, displayIdx, filteredIndices, optionsAreLabels: true, isFamily: isFamily,
+                    isFilterableLabelAxis: true));
             }
             else
             {
@@ -1041,15 +1175,18 @@ public partial class TraceRowViewModel : ViewModelBase
                 }
                 int pinIdx = Math.Clamp(savedTrueIdx, 0, Math.Max(0, axis.Length - 1));
                 AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit, opts, isX, pinIdx,
-                    optionsAreLabels: hasLabels, isFamily: isFamily));
+                    optionsAreLabels: hasLabels, isFamily: isFamily,
+                    isFilterableLabelAxis: axis.Name == filterAxisName));
             }
         }
 
-        // Guard: at least one X axis. Pick first non-family row, else axis 0.
-        if (!AxisRoles.Any(r => r.IsX) && AxisRoles.Count > 0)
+        // Guard: if no X axis, promote the first non-family, non-label row.
+        // A null fallback means only label/family axes exist → no X → scalar (valid for no-sweep DC).
+        if (!AxisRoles.Any(r => r.IsX))
         {
-            var fallback = AxisRoles.FirstOrDefault(r => !r.IsFamily) ?? AxisRoles[0];
-            fallback.SetIsXSilent(true);
+            var fallback = AxisRoles.FirstOrDefault(r =>
+                !r.IsFamily && r.AxisName is not "node" and not "branch");
+            fallback?.SetIsXSilent(true);
         }
     }
 
@@ -1095,14 +1232,19 @@ public partial class TraceRowViewModel : ViewModelBase
             slice[i] = new AxisSlice(r.AxisName, role, r.TruePinIndex, Label: lbl);
         }
 
-        // Guard: if no X survived, fall back to the first non-family axis, then axis 0.
+        // Guard: if no X survived, promote the first non-family, non-label axis.
+        // If none exists (only label/family axes), leave no X → scalar (valid for no-sweep DC).
         bool hasX = Array.Exists(slice, s => s.Role == AxisRole.KeepAsX);
         if (!hasX && slice.Length > 0)
         {
-            int fallback = Array.FindIndex(slice, s => s.Role != AxisRole.FamilyIterate);
-            if (fallback < 0) fallback = 0;
-            slice[fallback] = new AxisSlice(slice[fallback].AxisName, AxisRole.KeepAsX, 0);
-            AxisRoles[fallback].SetIsXSilent(true);
+            int fb = Array.FindIndex(slice, s =>
+                s.Role != AxisRole.FamilyIterate && s.AxisName is not "node" and not "branch");
+            if (fb >= 0)
+            {
+                slice[fb] = new AxisSlice(slice[fb].AxisName, AxisRole.KeepAsX, 0);
+                AxisRoles[fb].SetIsXSilent(true);
+            }
+            // else: only label/family axes → no X → scalar. Leave as-is.
         }
 
         _trace.Slice = slice;
@@ -1160,7 +1302,11 @@ public partial class TraceRowViewModel : ViewModelBase
         }
 
         if (!anyX && rank > 0)
-            result[0] = result[0] with { Role = AxisRole.KeepAsX, Label = "" };
+        {
+            int fb = Array.FindIndex(result, s => s.AxisName is not "node" and not "branch");
+            if (fb >= 0) result[fb] = result[fb] with { Role = AxisRole.KeepAsX, Label = "" };
+            // else: all label axes → no X → scalar.
+        }
         else
         {
             bool seenX = false;
@@ -1189,6 +1335,7 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsTablePlot));
         OnPropertyChanged(nameof(IsNotTablePlot));
         OnPropertyChanged(nameof(IsCubeBoundTrace));
+        OnPropertyChanged(nameof(ShowAllToggleVisible));
         OnPropertyChanged(nameof(ShowYAxisCombo));
         OnPropertyChanged(nameof(ShowZ0Badge));
         OnPropertyChanged(nameof(Z0BadgeTooltip));
@@ -1201,6 +1348,9 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(SpecShorthand));
         OnPropertyChanged(nameof(SpecError));
         OnPropertyChanged(nameof(HasSpecError));
+        OnPropertyChanged(nameof(ShowEmptyQuantity));
+        OnPropertyChanged(nameof(EmptyQuantityMessage));
+        OnPropertyChanged(nameof(ShowAxisRoles));
         // Unified transform combo: rebuild list and re-sync selection to trace state.
         OnPropertyChanged(nameof(TraceTransformItems));
         SyncTransformItem();
@@ -1216,6 +1366,13 @@ public partial class TraceRowViewModel : ViewModelBase
     public string SpecShorthand => _trace.IsCubeBound
         ? (_trace.InvalidSpecText ?? _trace.CubeShorthand)
         : "";
+
+    public bool   ShowEmptyQuantity   => SelectedSignal?.IsAbsent == true;
+    public string EmptyQuantityMessage =>
+        SelectedSignal?.IsAbsent == true
+            ? (SelectedSignal.Label == "I" ? "No branch currents" : "No node voltages")
+            : "";
+    public bool   ShowAxisRoles       => IsCubeBoundTrace && !ShowEmptyQuantity;
 
     /// <summary>Human-readable parse/eval error for the spec hint; empty when valid.</summary>
     public string SpecError => _trace.ExpressionError ?? "";
@@ -1258,12 +1415,14 @@ public partial class TraceRowViewModel : ViewModelBase
             _trace.Slice    = null;
         }
 
-        _parent.RebuildAndNotify();   // re-evaluates via Expression; RefreshDescription re-syncs transform combo + flags
+        _parent.RebuildAndNotify();
 
-        // Rebuild the axis-role rows for the (possibly new) cube/slice — RefreshDescription does NOT do this.
-        RebuildAxisRoles();
+        if (_trace.CubeName is not null)   // valid single-cube spec
+            RebuildSignals();              // re-syncs group + item combos AND axis-role rows to the new cube
+        else
+            RebuildAxisRoles();            // best-effort: clear stale rows; combos unchanged
         OnPropertyChanged(nameof(IsCubeBoundTrace));
-        OnPropertyChanged(nameof(ShowAllNodesToggleVisible));
+        OnPropertyChanged(nameof(ShowAllToggleVisible));
     }
 
     private static bool IsFreqUnit(string? unit) =>

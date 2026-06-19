@@ -336,21 +336,58 @@
                                 <StackPanel Grid.Column="0" Spacing="4">
 
                                     <!-- ── Identity row ──────────────────────────────────────
-                                         Cols: * (signal) | 1000* (transform) | Auto (matrix S-only) | 26 (→R)
-                                         Matrix col is Auto so it collapses when hidden.             -->
+                                         Cols: * (group) | * (item) | Auto (matrix S-only) | 26 (→R)
+                                         Matrix col is Auto so it collapses when hidden. Eye moved to pin row. -->
                                     <Grid ClipToBounds="False">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"     MinWidth="75"/>
-                                            <ColumnDefinition Width="1000*" MinWidth="50" MaxWidth="95"/>
+                                            <ColumnDefinition Width="*"    MinWidth="60"/>
+                                            <ColumnDefinition Width="*"    MinWidth="60"/>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="26"/>
                                         </Grid.ColumnDefinitions>
 
-                                        <!-- Col 0: data source (signal) combo -->
+                                        <!-- Col 0: group header combo -->
                                         <ComboBox Grid.Column="0"
+                                                  ItemsSource="{Binding AvailableGroups}"
+                                                  SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
+                                                  PlaceholderText="(load a file…)"
+                                                  Margin="0,0,3,0"
+                                                  MinWidth="20"
+                                                  HorizontalAlignment="Stretch"
+                                                  HorizontalContentAlignment="Stretch">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding}"
+                                                               FontSize="{StaticResource FontSize}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               ToolTip.Tip="{Binding}"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+
+                                        <!-- Col 1: item within the group -->
+                                        <!-- Analysis V/I → compact icon-select -->
+                                        <ctl:IconSelectButton Grid.Column="1"
+                                                              IsVisible="{Binding IsViSelector}"
+                                                              ItemsSource="{Binding AvailableSignals}"
+                                                              SelectedItem="{Binding SelectedSignal, Mode=TwoWay}"
+                                                              Highlight="False" HighlightSelected="False"
+                                                              Margin="0,0,3,0" MinWidth="40"
+                                                              ToolTip.Tip="Quantity (V / I)">
+                                            <ctl:IconSelectButton.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:TraceDataItem">
+                                                    <TextBlock Text="{Binding Label}"
+                                                               FontSize="{StaticResource FontSize}"
+                                                               HorizontalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </ctl:IconSelectButton.ItemTemplate>
+                                        </ctl:IconSelectButton>
+
+                                        <!-- Measurements / S-Parameters → keep the ComboBox -->
+                                        <ComboBox Grid.Column="1"
+                                                  IsVisible="{Binding !IsViSelector}"
                                                   ItemsSource="{Binding AvailableSignals}"
                                                   SelectedItem="{Binding SelectedSignal, Mode=TwoWay}"
-                                                  PlaceholderText="(load a file…)"
                                                   Margin="0,0,3,0"
                                                   MinWidth="20"
                                                   HorizontalAlignment="Stretch"
@@ -368,27 +405,6 @@
                                                                FontSize="{StaticResource FontSize}"
                                                                TextTrimming="CharacterEllipsis"
                                                                ToolTip.Tip="{Binding Label}"/>
-                                                </DataTemplate>
-                                            </ComboBox.ItemTemplate>
-                                        </ComboBox>
-
-                                        <!-- Col 1: unified transform combo (Rect/Table; both cube and network) -->
-                                        <ComboBox Grid.Column="1"
-                                                  IsVisible="{Binding IsRectOrTablePlot}"
-                                                  ItemsSource="{Binding TraceTransformItems}"
-                                                  SelectedItem="{Binding SelectedTransformItem, Mode=TwoWay}"
-                                                  HorizontalAlignment="Stretch"
-                                                  Margin="0,0,3,0">
-                                            <ComboBox.ItemContainerTheme>
-                                                <ControlTheme TargetType="ComboBoxItem">
-                                                    <Setter Property="IsEnabled"
-                                                            Value="{ReflectionBinding Enabled}"/>
-                                                </ControlTheme>
-                                            </ComboBox.ItemContainerTheme>
-                                            <ComboBox.ItemTemplate>
-                                                <DataTemplate x:DataType="vm:CubeTransformItem">
-                                                    <TextBlock Text="{Binding Label}"
-                                                               FontSize="{StaticResource FontSize}"/>
                                                 </DataTemplate>
                                             </ComboBox.ItemTemplate>
                                         </ComboBox>
@@ -434,11 +450,11 @@
                                                 IsVisible="{Binding IsStandardTrace}">
 
                                         <!-- ── Axis-role editor: cube-bound (Phase 7.3a) ─────── -->
-                                        <ItemsControl IsVisible="{Binding IsCubeBoundTrace}"
+                                        <ItemsControl IsVisible="{Binding ShowAxisRoles}"
                                                       ItemsSource="{Binding AxisRoles}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:AxisRoleRowViewModel">
-                                                    <Grid ColumnDefinitions="70,Auto,Auto,Auto,*"
+                                                    <Grid ColumnDefinitions="70,Auto,Auto,Auto,*,Auto"
                                                           Margin="0,0,0,2">
                                                         <TextBlock Grid.Column="0"
                                                                    Text="{Binding AxisLabel}"
@@ -470,36 +486,69 @@
                                                                 IsEnabled="{Binding IsRoleToggleable}"
                                                                 Padding="6,2"
                                                                 Margin="0,0,4,0"
-                                                                ToolTip.Tip="Pin to a single index">
-                                                            <TextBlock Text="Pin" FontSize="10"/>
+                                                                ToolTip.Tip="Fix this axis to a single value">
+                                                            <TextBlock Text="Fix" FontSize="10"/>
                                                         </Button>
                                                         <ComboBox Grid.Column="4"
                                                                   IsVisible="{Binding ShowPinPicker}"
                                                                   ItemsSource="{Binding PinOptions}"
                                                                   SelectedIndex="{Binding PinIndex, Mode=TwoWay}"
                                                                   HorizontalAlignment="Stretch"/>
+                                                        <!-- Eye: reveal unlabeled nodes / device-port branches. Tied to the pin selector. -->
+                                                        <Button Grid.Column="5"
+                                                                Classes="seg-btn"
+                                                                Classes.active="{Binding $parent[ItemsControl].DataContext.ShowAll}"
+                                                                Command="{Binding $parent[ItemsControl].DataContext.ToggleShowAllCommand}"
+                                                                IsVisible="{Binding IsFilterableLabelAxis}"
+                                                                Width="26" Padding="3,2" Margin="3,0,0,0"
+                                                                ToolTip.Tip="Show all nodes / branch currents">
+                                                            <mi:MaterialIcon Kind="Eye" Width="14" Height="14"/>
+                                                        </Button>
                                                     </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
 
-                                        <!-- Show all nodes toggle (node-picker labeled filter) -->
-                                        <CheckBox IsVisible="{Binding ShowAllNodesToggleVisible}"
-                                                  IsChecked="{Binding ShowAllNodes, Mode=TwoWay}"
-                                                  Content="Show all nodes"
-                                                  FontSize="10"
-                                                  Margin="0,1,0,0"
-                                                  ToolTip.Tip="Show auto-named nodes in addition to user-labeled nodes"/>
+                                        <TextBlock Classes="label"
+                                                   IsVisible="{Binding ShowEmptyQuantity}"
+                                                   Text="{Binding EmptyQuantityMessage}"
+                                                   Margin="0,2,0,0"/>
 
-                                        <!-- ── Spec editor: cube-bound traces (#4) ────────────── -->
-                                        <TextBox IsVisible="{Binding IsCubeBoundTrace}"
-                                                 Text="{Binding SpecShorthand, Mode=OneWay}"
-                                                 FontSize="{StaticResource FontSize}"
-                                                 Margin="0,2,0,0"
-                                                 Padding="4,2"
-                                                 LostFocus="OnSpecEditLostFocus"
-                                                 KeyDown="OnSpecEditKeyDown"
-                                                 ToolTip.Tip="Type a cube shorthand, e.g. dB20 V[0, 1, :]"/>
+                                        <!-- ── Spec editor row: transform combo + cube-bound TextBox ─
+                                             Transform combo moves here from identity row (Part D).
+                                             Auto col collapses on Smith/Polar so TextBox reclaims width. -->
+                                        <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                            <!-- Transform combo (Rect/Table; both cube and network) -->
+                                            <ComboBox Grid.Column="0"
+                                                      IsVisible="{Binding IsRectOrTablePlot}"
+                                                      Width="90"
+                                                      Margin="0,0,3,0"
+                                                      ItemsSource="{Binding TraceTransformItems}"
+                                                      SelectedItem="{Binding SelectedTransformItem, Mode=TwoWay}">
+                                                <ComboBox.ItemContainerTheme>
+                                                    <ControlTheme TargetType="ComboBoxItem">
+                                                        <Setter Property="IsEnabled"
+                                                                Value="{ReflectionBinding Enabled}"/>
+                                                    </ControlTheme>
+                                                </ComboBox.ItemContainerTheme>
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:CubeTransformItem">
+                                                        <TextBlock Text="{Binding Label}"
+                                                                   FontSize="{StaticResource FontSize}"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+
+                                            <!-- Spec editor (cube-bound) -->
+                                            <TextBox Grid.Column="1"
+                                                     IsVisible="{Binding IsCubeBoundTrace}"
+                                                     Text="{Binding SpecShorthand, Mode=OneWay}"
+                                                     FontSize="{StaticResource FontSize}"
+                                                     Padding="4,2"
+                                                     LostFocus="OnSpecEditLostFocus"
+                                                     KeyDown="OnSpecEditKeyDown"
+                                                     ToolTip.Tip="Type a cube shorthand, e.g. dB20 V[0, 1, :]"/>
+                                        </Grid>
                                         <SelectableTextBlock IsVisible="{Binding HasSpecError}"
                                                              Text="{Binding SpecError}"
                                                              FontSize="10"

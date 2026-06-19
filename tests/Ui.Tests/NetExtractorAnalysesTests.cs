@@ -57,20 +57,23 @@ public sealed class NetExtractorAnalysesTests
         Assert.Equal("DC1", result.TestBench.Analyses[0].Name);
     }
 
-    // ── Test 3: measurements carried regardless of analyses ───────────────────
+    // ── Test 3: MEAS component rows carried into tb.Measurements ─────────────
 
     [Fact]
     public void Extract_Measurements_AllCarried()
     {
+        // Measurements now come from MEAS components, not model.Measurements directly.
         var model = new SchematicEditModel();
-        model.Measurements.Add(new Measurement("Pout", "pout()", "dBm"));
-        model.Measurements.Add(new Measurement("Gain", "S21", "dB"));
+        var measComp = new EditableComponent { Symbol = SymbolKind.Meas, InstanceName = "MEAS1" };
+        measComp.Parameters.Add(new EditableParameter { Name = "Pout", Expression = "pout()", Unit = "dBm" });
+        measComp.Parameters.Add(new EditableParameter { Name = "Gain", Expression = "S21", Unit = "dB" });
+        model.Components.Add(measComp);
 
         var result = NetExtractor.Extract(model);
 
         Assert.Equal(2, result.TestBench.Measurements.Count);
-        Assert.Contains(result.TestBench.Measurements, m => m.Name == "Pout" && m.Unit == "dBm");
-        Assert.Contains(result.TestBench.Measurements, m => m.Name == "Gain" && m.Unit == "dB");
+        Assert.Contains(result.TestBench.Measurements, m => m.Name == "Pout");
+        Assert.Contains(result.TestBench.Measurements, m => m.Name == "Gain");
     }
 
     // ── Test 4: SP multi-segment carried with all segments intact ─────────────

@@ -179,6 +179,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Other,
             SearchTerms: ["VAR", "Variable", "var", "vars", "parameter", "sweep"],
             IsCommon: true),
+        [SymbolKind.Meas]          = new("MEAS",  "MEAS",
+            Category: ComponentCategory.Other,
+            SearchTerms: ["MEAS", "Measurement", "measure", "meas", "equation", "eqn"],
+            IsCommon: true),
         [SymbolKind.P1Tone]        = new("P1Tone", "P",
             Category: ComponentCategory.Sources,
             SearchTerms: ["P1Tone", "power", "Pavl", "available power", "RF source", "drive", "harmonic"],
@@ -235,6 +239,7 @@ public static class ComponentTypeRegistry
         SymbolKind.ZPort         => "Z_Port",
         SymbolKind.Ground        => "GND",
         SymbolKind.Var           => "VAR",   // sentinel — never emitted as an Instance; not a factory primitive
+        SymbolKind.Meas          => "MEAS",  // sentinel — never emitted as an Instance; rows route to tb.Measurements
         SymbolKind.P1Tone        => "P1Tone",
         SymbolKind.Snp           => "SnP",
         _                        => Get(kind).DisplayName,
@@ -318,6 +323,9 @@ public static class ComponentTypeRegistry
             // VAR: parameter rows are user-authored variable definitions; freshly placed VAR has no rows.
             case SymbolKind.Var: return [];
 
+            // MEAS: parameter rows are user-authored measurement equations; freshly placed MEAS has no rows.
+            case SymbolKind.Meas: return [];
+
             // SnP: N-port Touchstone file-backed component.
             // NumPorts (hidden) is required by CnlReader. File, RefNode, PinConfig, Pitch,
             // InterpMode, ExtrapMode are the remaining 6 fixed params.
@@ -377,6 +385,7 @@ public static class ComponentTypeRegistry
             case "IPROBE":
             case "IP":     kind = SymbolKind.IProbe;        return true;
             case "VAR":    kind = SymbolKind.Var;           return true;
+            case "MEAS":   kind = SymbolKind.Meas;          return true;
             case "P1TONE": kind = SymbolKind.P1Tone;        return true;
             case "FET":
             case "SDD":
@@ -460,6 +469,15 @@ public static class ComponentTypeRegistry
         // VAR: user-authored variable rows — adds Var{n} placeholder names.
         SymbolKind.Var => new IndexedParamGroup(
             NameFormats:     ["Var{0}"],
+            DefaultUnits:    [""],
+            ShowOnSchematic: [false],
+            Dimensions:      [UnitDimension.None],
+            FirstAddIndex:   1,
+            SkipIndices:     null),
+
+        // MEAS: user-authored measurement equation rows — adds Meas{n} placeholder names.
+        SymbolKind.Meas => new IndexedParamGroup(
+            NameFormats:     ["Meas{0}"],
             DefaultUnits:    [""],
             ShowOnSchematic: [false],
             Dimensions:      [UnitDimension.None],

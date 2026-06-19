@@ -10,15 +10,16 @@ namespace CircuitRF.Engine;
 /// (ParametricSweepEngine.RunDc) call this so their cube shapes are identical and stackable.
 ///
 /// Cubes:
-///   "V"            Real, axis [node] (Values 0..n-1, Unit "V", Labels = net names).
-///   "I:<probe>"    Real, scalar (0-rank) per IProbe — DC branch current (np→nm sign).
-///   "Converged"    scalar 1.0/0.0.
-///   "Residual"     scalar (final ‖F‖).
-///   "__LabeledNodes"  provenance: user-named nets (node-picker filter). "__"-prefixed ⇒
-///                     StackSweepAxis passes it through sweep-invariantly.
+///   "V"                Real, axis [node] (Values 0..n-1, Unit "V", Labels = net names).
+///   "I"                Real, axis [branch] (Labels = probe names) — unified branch current cube.
+///   "Converged"        scalar 1.0/0.0.
+///   "Residual"         scalar (final ‖F‖).
+///   "__ProbeBranches"  provenance: probe-named subset of the branch axis (branch-picker filter).
+///   "__LabeledNodes"   provenance: user-named nets (node-picker filter). "__"-prefixed ⇒
+///                      StackSweepAxis passes it through sweep-invariantly.
 /// A standalone DC run yields scalars per node/probe (an operating-point table); wrapping DC in a
-/// ParametricSweep prepends the sweep axes via StackSweepAxis → a plottable [sweep…, node] cube and
-/// [sweep…] I:<probe> cubes (the family of curves).
+/// ParametricSweep prepends the sweep axes via StackSweepAxis → a plottable [sweep…, node] V cube
+/// and [sweep…, branch] I cube.
 /// </summary>
 public static class DcResultPacker
 {
@@ -39,8 +40,18 @@ public static class DcResultPacker
         ds.Add("Converged", DataCube.Scalar(dc.Converged ? 1.0 : 0.0));
         ds.Add("Residual",  DataCube.Scalar(dc.FinalResidual));
 
-        foreach (var (probeName, current) in dc.ProbeCurrents)
-            ds.Add("I:" + probeName, DataCube.Scalar(current));
+        if (dc.ProbeCurrents.Count > 0)
+        {
+            var bNames     = dc.ProbeCurrents.Keys.ToArray();
+            var bVals      = Enumerable.Range(0, bNames.Length).Select(i => (double)i).ToArray();
+            var branchAxis = new Axis("branch", bVals, "A", bNames);
+            var iVals      = bNames.Select(n => dc.ProbeCurrents[n]).ToArray();
+            ds.Add("I", new DataCube([branchAxis], iVals));
+
+            var pIdx = Enumerable.Range(0, bNames.Length).Select(i => (double)i).ToArray();
+            ds.Add("__ProbeBranches", new DataCube(
+                [new Axis("probe", pIdx, "", bNames)], new double[bNames.Length]));
+        }
 
         var labeled = nodeNames.Where(nm => nl.Nodes.LabeledNames.Contains(nm)).Distinct().ToArray();
         if (labeled.Length > 0)

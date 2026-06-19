@@ -45,6 +45,9 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     /// AxisSlice so BuildPickerExpression can emit a quoted net-name token.</summary>
     public bool OptionsAreLabels { get; }
 
+    /// <summary>True for the axis that is filtered by label (node or branch axis).</summary>
+    public bool IsFilterableLabelAxis { get; }
+
     /// <summary>True when this is the only axis (rank-1 cube) — role toggle disabled.</summary>
     public bool IsRoleToggleable => _owner.AxisRoles.Count > 1;
 
@@ -77,17 +80,19 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
                                    bool isX, int pinIndex,
                                    IReadOnlyList<int>? pinOptionIndices = null,
                                    bool optionsAreLabels = false,
-                                   bool isFamily = false)
+                                   bool isFamily = false,
+                                   bool isFilterableLabelAxis = false)
     {
-        _owner            = owner;
-        AxisName          = axisName;
-        Unit              = unit;
-        PinOptions        = pinOptions;
-        PinOptionIndices  = pinOptionIndices;
-        OptionsAreLabels  = optionsAreLabels;
-        _isX              = isX;
-        _isFamily         = isFamily;
-        _pinIndex         = Math.Clamp(pinIndex, 0, Math.Max(0, pinOptions.Count - 1));
+        _owner                = owner;
+        AxisName              = axisName;
+        Unit                  = unit;
+        PinOptions            = pinOptions;
+        PinOptionIndices      = pinOptionIndices;
+        OptionsAreLabels      = optionsAreLabels;
+        IsFilterableLabelAxis = isFilterableLabelAxis;
+        _isX                  = isX;
+        _isFamily             = isFamily;
+        _pinIndex             = Math.Clamp(pinIndex, 0, Math.Max(0, pinOptions.Count - 1));
     }
 
     // ---- Commands ---------------------------------------------------------

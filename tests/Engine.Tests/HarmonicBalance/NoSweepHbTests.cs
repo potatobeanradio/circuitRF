@@ -74,13 +74,25 @@ hb_analysis HB1 Tone=2e9 MaxHarm=4 Tol=1e-6
         Assert.Equal("node",     vCube.Axes[0].Name);
         Assert.Equal("harmonic", vCube.Axes[1].Name);
 
-        // ── Branch current cubes: rank 1, axis [harmonic] ────────────────────
-        Assert.True(ds.Contains("I:M1:d"), "Expected 'I:M1:d' branch cube");
-        Assert.True(ds.Contains("I:M1:g"), "Expected 'I:M1:g' branch cube");
+        // ── Unified I cube: rank 2, axes [branch, harmonic] ──────────────────
+        Assert.True(ds.Contains("I"), "Expected unified 'I' cube");
+        var iCube = ds["I"];
+        Assert.Equal(2, iCube.Rank);
+        Assert.Equal("branch",   iCube.Axes[0].Name);
+        Assert.Equal("harmonic", iCube.Axes[1].Name);
 
-        var iDrainCube = ds["I:M1:d"];
-        Assert.Equal(1, iDrainCube.Rank);
-        Assert.Equal("harmonic", iDrainCube.Axes[0].Name);
+        var branchLabels = iCube.Axes[0].Labels;
+        Assert.NotNull(branchLabels);
+
+        // M1 drain branch must be present (by name or port-number convention).
+        bool hasDrain = branchLabels!.Any(l => l == "M1:d" || l == "M1:1");
+        bool hasGate  = branchLabels!.Any(l => l == "M1:g" || l == "M1:0");
+        Assert.True(hasDrain, "I cube must contain M1 drain branch (M1:d or M1:1)");
+        Assert.True(hasGate,  "I cube must contain M1 gate branch (M1:g or M1:0)");
+
+        // No legacy I:* separate cubes.
+        Assert.False(ds.Cubes.Keys.Any(k => k.StartsWith("I:", StringComparison.Ordinal)),
+            "No legacy I:* cubes should exist");
 
         // ── Converged / Residual: scalars (rank 0) ───────────────────────────
         var convCube = ds["Converged"];
@@ -88,29 +100,15 @@ hb_analysis HB1 Tone=2e9 MaxHarm=4 Tol=1e-6
         Assert.Equal(0, convCube.Rank);
         Assert.True(convCube.RealValues[0] > 0.5, "No-sweep solve must converge");
 
-        // ── Port-number aliases ("M1:0" = gate port 0, "M1:1" = drain port 1) ──────────────
-        // Generic SDD blocks that aren't FETs access current by 0-based port index.
-        Assert.True(ds.Contains("I:M1:0"), "Expected port-number alias 'I:M1:0' (gate, port 0)");
-        Assert.True(ds.Contains("I:M1:1"), "Expected port-number alias 'I:M1:1' (drain, port 1)");
-
-        // Both conventions must return the same value at every harmonic.
-        var iGateName = ds["I:M1:g"];
-        var iGateNum  = ds["I:M1:0"];
-        var iDrainNum = ds["I:M1:1"];
-        int K1 = iDrainCube.Axes[0].Length;
-        for (int k = 0; k < K1; k++)
-        {
-            Assert.Equal((Complex)iGateName[k], (Complex)iGateNum[k]);
-            Assert.Equal((Complex)iDrainCube[k], (Complex)iDrainNum[k]);
-        }
-
         // ── Values: DC drain current is positive (FET is in saturation at the bias point) ──
-        Complex drainDcI = (Complex)iDrainCube[0];
-        output.WriteLine($"I:M1:d[DC] = {drainDcI.Real*1e3:F2} mA  (expect ~49 mA for Hero2 bias)");
+        int drainIdx = Array.FindIndex(branchLabels!, l => l == "M1:d" || l == "M1:1");
+        int K1       = iCube.Axes[1].Length;
+        Complex drainDcI = iCube.ComplexValues[drainIdx * K1 + 0];
+        output.WriteLine($"I[M1:d, k=0] = {drainDcI.Real*1e3:F2} mA  (expect ~49 mA for Hero2 bias)");
         Assert.True(drainDcI.Real > 1e-3,
-            $"I:M1:d DC component should be positive (FET bias current ~49 mA), got {drainDcI.Real*1e3:F2} mA");
+            $"Drain DC component should be positive (FET bias current ~49 mA), got {drainDcI.Real*1e3:F2} mA");
 
-        output.WriteLine("No-sweep C3 gate: V 2D, I:M1:d and I:M1:1 both 1D, Converged scalar. PASS.");
+        output.WriteLine("No-sweep C3 gate: V 2D, unified I 2D [branch,harmonic], Converged scalar. PASS.");
     }
 
     private static string Hero2Dir()

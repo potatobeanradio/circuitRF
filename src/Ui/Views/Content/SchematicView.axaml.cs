@@ -733,8 +733,8 @@ public partial class SchematicView : UserControl
 
         var owner = TopLevel.GetTopLevel(this) as Window;
 
-        // VAR → dedicated multi-line variable editor (Mode A text paste, Mode B rows).
-        if (comp.Symbol == SymbolKind.Var)
+        // VAR / MEAS → dedicated multi-line editor (Mode A text paste, Mode B rows).
+        if (comp.Symbol is SymbolKind.Var or SymbolKind.Meas)
         {
             var varVm = new VarEditorViewModel();
             varVm.SetTarget(Vm, comp, showClose: true);
