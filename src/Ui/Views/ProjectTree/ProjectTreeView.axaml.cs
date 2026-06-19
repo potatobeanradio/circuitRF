@@ -209,6 +209,15 @@ public partial class ProjectTreeView : UserControl
         }
     }
 
+    // ── Context menu Opening handler (Item 4) ────────────────────────────────
+
+    // Fires INPC on IsSaveable/SaveHeader so the menu shows the real live state.
+    private void OnNodeContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (sender is ContextMenu { DataContext: ProjectTreeNodeViewModel vm })
+            vm.RefreshDynamicMenuState();
+    }
+
     // ── On-focus refresh (Layer 4) ─────────────────────────────────────────────
 
     private bool _refreshPending;

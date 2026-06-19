@@ -194,6 +194,12 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>Remove this cell folder (moves to Trash). Visible only for Cell nodes.</summary>
     public IAsyncRelayCommand RemoveCellCommand { get; }
 
+    /// <summary>Duplicate this cell folder to a new name. Visible only for Cell nodes.</summary>
+    public IAsyncRelayCommand DuplicateCellCommand { get; }
+
+    /// <summary>Rename this cell folder. Visible only for Cell nodes.</summary>
+    public IAsyncRelayCommand RenameCellCommand { get; }
+
     /// <summary>Save this node: cell saves all dirty views; file saves only itself.</summary>
     public IAsyncRelayCommand SaveCommand { get; }
 
@@ -324,8 +330,26 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             () => _actions?.RemoveCellAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsCell);
 
+        DuplicateCellCommand = new AsyncRelayCommand(
+            () => _actions?.DuplicateCellAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsCell);
+
+        RenameCellCommand = new AsyncRelayCommand(
+            () => _actions?.RenameCellAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsCell);
+
         SaveCommand = new AsyncRelayCommand(
             () => _actions?.SaveNodeAsync(this) ?? Task.CompletedTask);
+    }
+
+    /// <summary>
+    /// Fires INPC for properties that depend on live state (dirty flag, dirty-header) so the
+    /// context menu shows current values when it opens.  Called by the Opening handler in the view.
+    /// </summary>
+    public void RefreshDynamicMenuState()
+    {
+        OnPropertyChanged(nameof(IsSaveable));
+        OnPropertyChanged(nameof(SaveHeader));
     }
 
     // ── Filter ─────────────────────────────────────────────────────────────────

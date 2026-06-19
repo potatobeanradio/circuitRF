@@ -34,6 +34,14 @@ public partial class PropertiesTool : Tool
     [ObservableProperty]
     private bool _isDataDisplayActive;
 
+    /// <summary>True when a Known-File leaf or OtherFile node is selected in the project tree.</summary>
+    [ObservableProperty]
+    private bool _isFileInfoActive;
+
+    /// <summary>File-info VM for the currently selected tree leaf, or null.</summary>
+    [ObservableProperty]
+    private FileInfoInspectorViewModel? _fileInfoVm;
+
     /// <summary>
     /// The cell editor VM for the active cell document, or null.
     /// Bound by PropertiesView to show compact cell properties in the inspector.
@@ -58,14 +66,15 @@ public partial class PropertiesTool : Tool
     private string _headerText = "Properties";
 
     /// <summary>
-    /// True when none of the specific contexts (symbol/cell/data-display) is active —
+    /// True when none of the specific contexts (symbol/cell/data-display/file-info) is active —
     /// i.e., when the schematic parameter editor (or empty placeholder) should be shown.
     /// </summary>
-    public bool IsSchematicContextActive => !IsSymbolEditorActive && !IsCellActive && !IsDataDisplayActive;
+    public bool IsSchematicContextActive => !IsSymbolEditorActive && !IsCellActive && !IsDataDisplayActive && !IsFileInfoActive;
 
     partial void OnIsSymbolEditorActiveChanged(bool value)  => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsCellActiveChanged(bool value)          => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsDataDisplayActiveChanged(bool value)   => OnPropertyChanged(nameof(IsSchematicContextActive));
+    partial void OnIsFileInfoActiveChanged(bool value)      => OnPropertyChanged(nameof(IsSchematicContextActive));
 
     public PropertiesTool()
     {
@@ -91,8 +100,10 @@ public partial class PropertiesTool : Tool
         IsCellActive          = false;
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = false;
+        IsFileInfoActive      = false;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
+        FileInfoVm            = null;
         EditorVm.SetContext(vm);
         SymbolInspectorVm.SetContext(null);
         HeaderText = EditorVm.IsEmptyState ? "Properties" : "Component";
@@ -104,8 +115,10 @@ public partial class PropertiesTool : Tool
         IsCellActive          = false;
         IsSymbolEditorActive  = vm is not null;
         IsDataDisplayActive   = false;
+        IsFileInfoActive      = false;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
+        FileInfoVm            = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(vm);
         HeaderText = vm is not null ? "Symbol" : "Properties";
@@ -117,8 +130,10 @@ public partial class PropertiesTool : Tool
         IsCellActive          = vm is not null;
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = false;
+        IsFileInfoActive      = false;
         CellEditorVm          = vm;
         PlotInspectorVm       = null;
+        FileInfoVm            = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
         HeaderText = vm is not null ? "Cell" : "Properties";
@@ -133,10 +148,30 @@ public partial class PropertiesTool : Tool
         IsCellActive          = false;
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = vm is not null;
+        IsFileInfoActive      = false;
         CellEditorVm          = null;
         PlotInspectorVm       = vm;
+        FileInfoVm            = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
         HeaderText = vm is not null ? "Plot" : "Properties";
+    }
+
+    /// <summary>
+    /// Called when a Known File leaf or OtherFile node is selected in the project tree.
+    /// Null clears the file-info context.
+    /// </summary>
+    public void SetActiveFileInfo(FileInfoInspectorViewModel? vm)
+    {
+        IsCellActive          = false;
+        IsSymbolEditorActive  = false;
+        IsDataDisplayActive   = false;
+        CellEditorVm          = null;
+        PlotInspectorVm       = null;
+        EditorVm.SetContext(null);
+        SymbolInspectorVm.SetContext(null);
+        IsFileInfoActive      = vm is not null;
+        FileInfoVm            = vm;
+        HeaderText            = vm is not null ? "File" : "Properties";
     }
 }

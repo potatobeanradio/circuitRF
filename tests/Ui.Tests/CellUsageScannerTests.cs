@@ -102,4 +102,68 @@ public class CellUsageScannerTests : IDisposable
         int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
         Assert.Equal(0, result);
     }
+
+    // ── RewriteCellReferences (Item 7) ────────────────────────────────────────
+
+    [Fact]
+    public void RewriteUpdatesLastSegmentMatch()
+    {
+        // cellA references oldCell; after rename oldCell→newCell the reference reads newCell.
+        var oldCell = CreateCell("oldCell");
+        var newCell = Path.Combine(_ws, "newCell");   // not created yet — we just check the rewrite
+        var cellA   = CreateCell("cellA");
+        SaveSchematicWithCellRef(cellA, "../../oldCell");
+
+        CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out _);
+
+        // Reload the schematic and verify the CellRef was updated.
+        var schDir = CellFolder.SubFolderPath(cellA, ViewType.Schematic);
+        var cschPath = Path.Combine(schDir, "cellA.csch");
+        var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
+        Assert.Equal("../../newCell", model.Components[0].CellRef);
+    }
+
+    [Fact]
+    public void RewriteDoesNotTouchUnrelatedRefs()
+    {
+        // cellA references "oldCell", cellB references "unrelated" — cellB's ref must be unchanged.
+        CreateCell("oldCell");
+        var cellA = CreateCell("cellA");
+        var cellB = CreateCell("cellB");
+        SaveSchematicWithCellRef(cellA, "../../oldCell");
+        SaveSchematicWithCellRef(cellB, "../../unrelated");
+
+        CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out _);
+
+        var schDirB  = CellFolder.SubFolderPath(cellB, ViewType.Schematic);
+        var cschPathB = Path.Combine(schDirB, "cellB.csch");
+        var (modelB, _, _) = SchematicPersistence.LoadFromFile(cschPathB);
+        Assert.Equal("../../unrelated", modelB.Components[0].CellRef);
+    }
+
+    [Fact]
+    public void RewriteReturnsUpdatedPaths()
+    {
+        CreateCell("oldCell");
+        var cellA = CreateCell("cellA");
+        SaveSchematicWithCellRef(cellA, "../../oldCell");
+
+        var updated = CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out var failed);
+
+        Assert.Empty(failed);
+        Assert.Single(updated);
+    }
+
+    [Fact]
+    public void RewriteEmptyWhenNoMatches()
+    {
+        CreateCell("oldCell");
+        var cellA = CreateCell("cellA");
+        SaveSchematicWithCellRef(cellA, "../../differentCell");
+
+        var updated = CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out var failed);
+
+        Assert.Empty(failed);
+        Assert.Empty(updated);
+    }
 }

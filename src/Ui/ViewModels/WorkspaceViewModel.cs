@@ -142,7 +142,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ---- Recent Workspaces (persisted in AppPreferences) --------------------
 
-    private readonly List<string> _recentWorkspaces;
+    private readonly List<string> _recentWorkspaces = [];
 
     // ---- Recently-Placed MRU (persisted in AppPreferences) ------------------
 
@@ -192,6 +192,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();
+        CloseWorkspaceCommand.NotifyCanExecuteChanged();
 
         if (_factory.ProjectTreeTool is { } tree)
         {
@@ -228,7 +229,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Load persisted preferences and seed the recent lists.
         var prefs         = AppPreferencesIo.Load();
-        _recentWorkspaces = new List<string>(prefs.RecentWorkspaces ?? []);
+        _recentWorkspaces.AddRange(prefs.RecentWorkspaces ?? []);
         _recentlyPlaced   = ParseMruPlaced(prefs.RecentlyPlaced);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         RebuildRecentMenuItems();
@@ -784,6 +785,61 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         SwitchToWorkspace(cwsPath);
+    }
+
+    /// <summary>Close the current workspace and return to the no-workspace shell (Item 2).</summary>
+    [RelayCommand(CanExecute = nameof(CanCloseWorkspace))]
+    private async Task CloseWorkspace()
+    {
+        if (CurrentWorkspacePath is null) return;
+        var window = ResolveOwner(null);
+        if (window is null) return;
+
+        if (HasAnyDirtyWork() && !await PromptSaveBeforeClose(window, "closing the workspace"))
+            return;
+
+        ResetToBlankShell();
+    }
+    private bool CanCloseWorkspace() => CurrentWorkspacePath is not null;
+
+    /// <summary>
+    /// Reverts to the no-workspace state (blank Dock layout, no open documents).
+    /// Called by CloseWorkspace; extractable here so startup's blank-shell launch path
+    /// can share the same reset logic.
+    /// </summary>
+    private void ResetToBlankShell()
+    {
+        SetActiveUndoTarget(null);
+        _lastActiveSchematicDoc = null;
+
+        // Force-close all open dockable documents before clearing the registry.
+        foreach (var dockable in _openDocsByPath.Values.ToList())
+            _factory.ForceCloseDockable(dockable);
+
+        _openDocsByPath.Clear();
+        _scratchDocs.Clear();
+        _scratchSymbols.Clear();
+        _scratchDataDisplays.Clear();
+        _registry.Clear();
+
+        CurrentWorkspacePath = null;   // fires OnCurrentWorkspacePathChanged → tree.ClearWorkspace()
+
+        var newLayout = _factory.CreateDefaultLayout();
+        _factory.InitLayout(newLayout);
+        Layout = newLayout;
+        _factory.PaletteTool?.SetPlacementService(PlacementService);
+        _factory.PaletteTool?.SetMru(_recentlyPlaced);
+
+        _factory.ProjectTreeTool?.SetActions(this);
+        SubscribeToFilterState();
+        SubscribeToTreeSelection();
+
+        if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged newNpc)
+            newNpc.PropertyChanged += OnDocumentDockPropertyChanged;
+        WireAnalysesRun();
+
+        Messages.Clear();
+        Messages.Info("Workspace closed.");
     }
 
     /// <summary>Empty the Recent Workspaces list and save.</summary>
@@ -2372,6 +2428,49 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         RefreshCellDirty(cellDir);
     }
 
+    // ── ITreeActions: recent-workspace access (Item 1) ───────────────────────
+
+    /// <inheritdoc/>
+    public IReadOnlyList<(string Name, string Path)> GetRecentWorkspaces()
+    {
+        var sep    = new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar };
+        var result = new List<(string, string)>(_recentWorkspaces.Count);
+        foreach (var p in _recentWorkspaces)
+        {
+            var dir = Path.GetDirectoryName(p.TrimEnd(sep));
+            if (dir is null || !Directory.Exists(dir)) continue;
+            result.Add((Path.GetFileName(dir) ?? p, p));
+        }
+        return result;
+    }
+
+    /// <inheritdoc/>
+    public void OpenWorkspacePath(string cwsPath)
+        => _ = OpenRecentWorkspaceCommand.ExecuteAsync(cwsPath);
+
+    /// <inheritdoc/>
+    void ITreeActions.ClearRecentWorkspaces()
+    {
+        _recentWorkspaces.Clear();
+        SaveRecent();
+        RebuildRecentMenuItems();
+    }
+
+    // ── ITreeActions: selection change hook (Item 5) ──────────────────────────
+
+    /// <inheritdoc/>
+    public void OnTreeSelectionChanged(ProjectTreeNodeViewModel? node)
+    {
+        if (node is not null
+            && (node.Kind == NodeKind.OtherFile
+                || (node.Kind == NodeKind.KnownFile && File.Exists(node.AbsolutePath))))
+        {
+            _factory.PropertiesTool?.SetActiveFileInfo(new FileInfoInspectorViewModel(node.AbsolutePath));
+            return;
+        }
+        // For all other node kinds, leave the current document-driven context intact.
+    }
+
     // ── Reveal in file manager ────────────────────────────────────────────────
 
     /// <inheritdoc/>
@@ -2872,6 +2971,206 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Error($"Failed to create schematic: {ex.Message}");
         }
+    }
+
+    // ── Duplicate Cell (Item 6) ───────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task DuplicateCellAsync(ProjectTreeNodeViewModel cellNode)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var oldDir       = cellNode.AbsolutePath;
+        var parentDir    = Path.GetDirectoryName(oldDir) ?? workspaceDir;
+
+        var mainWindow = ResolveOwner(null);
+        if (mainWindow is null) return;
+
+        var dlg     = new InputNameDialog("Duplicate Cell", "New cell name:");
+        var newName = await dlg.ShowDialog<string?>(mainWindow);
+        if (newName is null) return;
+
+        var reason = NameValidator.Validate(newName);
+        if (reason is not null) { Messages.Error($"Invalid cell name: {reason}"); return; }
+
+        var newDir = Path.Combine(parentDir, newName);
+        if (Directory.Exists(newDir))
+        {
+            Messages.Error($"A cell or folder named '{newName}' already exists.");
+            return;
+        }
+
+        try
+        {
+            CopyDirectoryRecursive(oldDir, newDir);
+
+            // Rename primary schematic and symbol if present.
+            foreach (var viewType in new[] { ViewType.Schematic, ViewType.Symbol })
+            {
+                var res = CellFolder.ResolvePrimary(newDir, viewType);
+                if (res.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent))
+                    continue;
+
+                var subDir     = CellFolder.SubFolderPath(newDir, viewType);
+                var ext        = CellFolder.ViewExtension(viewType);
+                var targetName = newName + ext;
+                var targetPath = Path.Combine(subDir, targetName);
+
+                if (res.ResolvedName is null) continue;
+                var sourcePath = Path.Combine(subDir, res.ResolvedName);
+
+                // Skip rename if a different non-primary file already has the target name.
+                if (File.Exists(targetPath)
+                    && !string.Equals(res.ResolvedName, targetName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!string.Equals(res.ResolvedName, targetName, StringComparison.OrdinalIgnoreCase))
+                    File.Move(sourcePath, targetPath);
+
+                // Update .ccell to point to the renamed primary.
+                UpdateCcellPrimary(newDir, viewType, targetName);
+            }
+
+            _factory.ProjectTreeTool?.Refresh();
+            Messages.Success("Duplicated", newDir);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Duplicate failed: {ex.Message}");
+        }
+    }
+
+    // ── Rename Cell (Item 7) ──────────────────────────────────────────────────
+
+    /// <inheritdoc/>
+    public async Task RenameCellAsync(ProjectTreeNodeViewModel cellNode)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var oldDir       = cellNode.AbsolutePath;
+        var oldName      = cellNode.Name;
+        var parentDir    = Path.GetDirectoryName(oldDir) ?? workspaceDir;
+
+        var mainWindow = ResolveOwner(null);
+        if (mainWindow is null) return;
+
+        var dlg    = new Views.Dialogs.RenameCellDialog(oldName);
+        var result = await dlg.ShowDialog<(string? Name, bool RenamePrimaries)>(mainWindow);
+        if (result.Name is null) return;
+        var newName          = result.Name;
+        var renamePrimaries  = result.RenamePrimaries;
+
+        var reason = NameValidator.Validate(newName);
+        if (reason is not null) { Messages.Error($"Invalid cell name: {reason}"); return; }
+
+        if (string.Equals(newName, oldName, StringComparison.OrdinalIgnoreCase))
+        {
+            Messages.Info("Name unchanged."); return;
+        }
+
+        var newDir = Path.Combine(parentDir, newName);
+        if (Directory.Exists(newDir) || File.Exists(newDir))
+        {
+            Messages.Error($"A cell or folder named '{newName}' already exists.");
+            return;
+        }
+
+        // Require save + close any open docs under this cell before renaming.
+        var cellDocs = _openDocsByPath
+            .Where(kvp => IsPathOrUnder(kvp.Key, oldDir))
+            .Select(kvp => (kvp.Key, kvp.Value))
+            .ToList();
+        if (cellDocs.Count > 0)
+        {
+            if (HasAnyDirtyWork() && !await PromptSaveBeforeClose(mainWindow, $"renaming '{oldName}'"))
+                return;
+            foreach (var (key, dockable) in cellDocs)
+            {
+                _factory.ForceCloseDockable(dockable);
+                if (key.EndsWith(".csch", StringComparison.OrdinalIgnoreCase))
+                    RetireSessionIfUnreferenced(key);
+            }
+        }
+
+        try { Directory.Move(oldDir, newDir); }
+        catch (Exception ex) { Messages.Error($"Rename failed: {ex.Message}"); return; }
+
+        // Rewrite all schematics that reference the old cell name.
+        var rewritten = CellUsageScanner.RewriteCellReferences(workspaceDir, oldName, newName, out var failed);
+        foreach (var f in failed)
+            Messages.Warning($"Reference rewrite failed: {f}");
+        if (rewritten.Count > 0)
+            Messages.Info($"Updated {rewritten.Count} schematic reference(s) to '{newName}'.");
+
+        // Optionally rename primary schematic + symbol.
+        if (renamePrimaries)
+        {
+            foreach (var viewType in new[] { ViewType.Schematic, ViewType.Symbol })
+            {
+                var res = CellFolder.ResolvePrimary(newDir, viewType);
+                if (res.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent))
+                    continue;
+
+                var subDir     = CellFolder.SubFolderPath(newDir, viewType);
+                var ext        = CellFolder.ViewExtension(viewType);
+                var targetName = newName + ext;
+                var targetPath = Path.Combine(subDir, targetName);
+
+                if (res.ResolvedName is null) continue;
+                var sourcePath = Path.Combine(subDir, res.ResolvedName);
+
+                if (File.Exists(targetPath)
+                    && !string.Equals(res.ResolvedName, targetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    Messages.Warning(
+                        $"Skipped renaming {CellFolder.SubFolderName(viewType)} primary: '{targetName}' already exists as a non-primary file.");
+                    continue;
+                }
+
+                if (!string.Equals(res.ResolvedName, targetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    try { File.Move(sourcePath, targetPath); }
+                    catch (Exception ex)
+                    {
+                        Messages.Warning($"Could not rename {CellFolder.SubFolderName(viewType)} primary: {ex.Message}");
+                        continue;
+                    }
+                }
+
+                UpdateCcellPrimary(newDir, viewType, targetName);
+            }
+        }
+
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Success($"Renamed '{oldName}' → '{newName}'", newDir);
+    }
+
+    // Reads, updates, and re-saves a .ccell file's primary field for one view type.
+    private static void UpdateCcellPrimary(string cellDir, ViewType viewType, string newPrimaryFileName)
+    {
+        var ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        if (!File.Exists(ccellPath)) return;
+        try
+        {
+            var ccell = CellPersistence.LoadFromFile(ccellPath);
+            switch (viewType)
+            {
+                case ViewType.Schematic: ccell.PrimarySchematic = newPrimaryFileName; break;
+                case ViewType.Symbol:    ccell.PrimarySymbol    = newPrimaryFileName; break;
+            }
+            CellPersistence.SaveToFile(ccellPath, ccell);
+        }
+        catch { /* non-fatal: .ccell update is best-effort for alpha */ }
+    }
+
+    // Copies a directory tree recursively (all files and sub-directories).
+    private static void CopyDirectoryRecursive(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (var file in Directory.GetFiles(source))
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)));
+        foreach (var dir in Directory.GetDirectories(source))
+            CopyDirectoryRecursive(dir, Path.Combine(destination, Path.GetFileName(dir)));
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

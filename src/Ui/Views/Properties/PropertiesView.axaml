@@ -37,6 +37,19 @@
                 </ScrollViewer>
             </Panel>
 
+            <!-- File Info Inspector (shown when a Known File leaf or OtherFile node is selected) -->
+            <StackPanel IsVisible="{Binding IsFileInfoActive}" Margin="8" Spacing="6">
+                <SelectableTextBlock Text="{Binding FileInfoVm.Name}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Size" Margin="0,0,8,2"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                    <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding FileInfoVm.SizeText}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Modified" Margin="0,0,8,0"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                    <SelectableTextBlock Grid.Row="1" Grid.Column="1" Text="{Binding FileInfoVm.ModifiedText}"/>
+                </Grid>
+            </StackPanel>
+
             <!--
                 COEXISTENCE_FLAG: "content-switch" (default) — parameter editor when one non-Ground
                 component is selected, palette placeholder otherwise. To switch to "stack" (show both

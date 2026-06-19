@@ -60,4 +60,31 @@ public interface ITreeActions
 
     /// <summary>Save this node: a cell saves all its dirty schematics+symbols; a file saves just itself.</summary>
     Task SaveNodeAsync(ProjectTreeNodeViewModel node);
+
+    // ── Recent-workspace access (Item 1) ──────────────────────────────────────
+
+    /// <summary>Returns the recent-workspace list as (Name, Path) pairs (most-recent first).</summary>
+    IReadOnlyList<(string Name, string Path)> GetRecentWorkspaces();
+
+    /// <summary>Open the workspace at <paramref name="cwsPath"/> (same as clicking Open Recent).</summary>
+    void OpenWorkspacePath(string cwsPath);
+
+    /// <summary>Clear all recent workspaces.</summary>
+    void ClearRecentWorkspaces();
+
+    // ── Selection change hook (Item 5) ────────────────────────────────────────
+
+    /// <summary>
+    /// Called when the project-tree selection changes. Implementor may update the Properties
+    /// pane with file-info for leaf Known File / OtherFile nodes.
+    /// </summary>
+    void OnTreeSelectionChanged(ProjectTreeNodeViewModel? node);
+
+    // ── Cell operations (Items 6 & 7) ────────────────────────────────────────
+
+    /// <summary>Duplicate the given cell folder to a new name in the same workspace directory.</summary>
+    Task DuplicateCellAsync(ProjectTreeNodeViewModel cellNode);
+
+    /// <summary>Rename the given cell folder, rewrite all workspace references, and optionally rename primaries.</summary>
+    Task RenameCellAsync(ProjectTreeNodeViewModel cellNode);
 }

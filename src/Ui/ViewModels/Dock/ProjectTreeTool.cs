@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Mvvm.Controls;
@@ -50,6 +51,47 @@ public partial class ProjectTreeTool : Tool
     /// <summary>True when a workspace is loaded; drives placeholder visibility in the view.</summary>
     public bool HasWorkspace => _workspaceModel is not null;
 
+    // ── Recent workspaces (Item 1) ────────────────────────────────────────────
+
+    /// <summary>Name + path pair for the no-workspace recent list.</summary>
+    public sealed record RecentEntry(string Name, string Path);
+
+    public ObservableCollection<RecentEntry> RecentWorkspaces { get; } = new();
+    public bool HasRecentWorkspaces => RecentWorkspaces.Count > 0;
+
+    private void RefreshRecent()
+    {
+        RecentWorkspaces.Clear();
+        if (_actions is not null)
+            foreach (var (n, p) in _actions.GetRecentWorkspaces())
+                RecentWorkspaces.Add(new RecentEntry(n, p));
+        OnPropertyChanged(nameof(HasRecentWorkspaces));
+    }
+
+    [RelayCommand]
+    private void OpenRecent(string path) => _actions?.OpenWorkspacePath(path);
+
+    [RelayCommand]
+    private void ClearRecent()
+    {
+        _actions?.ClearRecentWorkspaces();
+        RefreshRecent();
+    }
+
+    // ── Workspace reveal (Item 3) ─────────────────────────────────────────────
+
+    /// <summary>Platform-correct label for "Reveal in …" on the workspace title.</summary>
+    public string RevealLabel =>
+        RuntimeInformation.IsOSPlatform(OSPlatform.OSX)      ? "Reveal in Finder"
+        : RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Reveal in Explorer"
+        : "Reveal in File Manager";
+
+    [RelayCommand]
+    private void RevealWorkspace()
+    {
+        if (RootItems.Count > 0) RootItems[0].RevealCommand.Execute(null);
+    }
+
     // ── Construction ──────────────────────────────────────────────────────────
 
     public ProjectTreeTool()
@@ -64,7 +106,11 @@ public partial class ProjectTreeTool : Tool
     /// Called by WorkspaceViewModel to inject the open/create/reveal callback interface.
     /// Must be called before SetWorkspace so actions are available during the first scan.
     /// </summary>
-    public void SetActions(ITreeActions actions) => _actions = actions;
+    public void SetActions(ITreeActions actions)
+    {
+        _actions = actions;
+        RefreshRecent();
+    }
 
     /// <summary>New Cell in the workspace root — bound to the tree-header button.</summary>
     [RelayCommand]
@@ -99,7 +145,12 @@ public partial class ProjectTreeTool : Tool
         TopLevelItems = null;
         RootItems.Clear();
         OnPropertyChanged(nameof(HasWorkspace));
+        RefreshRecent();
     }
+
+    // Notifies ITreeActions of selection changes (Item 5 — file info inspector routing).
+    partial void OnSelectedItemChanged(ProjectTreeNodeViewModel? value)
+        => _actions?.OnTreeSelectionChanged(value);
 
     // ── Refresh ───────────────────────────────────────────────────────────────
 

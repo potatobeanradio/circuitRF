@@ -37,6 +37,8 @@
                         </NativeMenuItem>
                         <NativeMenuItem Header="Add Library…"    Command="{Binding AddLibraryCommand}"         CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Close Workspace" Command="{Binding CloseWorkspaceCommand}"/>
+                        <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Open Symbol…"    Command="{Binding OpenSymbolFileCommand}"        CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Open Data Display…" Command="{Binding OpenDataDisplayFileCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Export…"        Command="{Binding ExportDataCommand}"/>
@@ -177,6 +179,11 @@
                           Command="{Binding AddLibraryCommand}"
                           CommandParameter="{Binding $parent[Window]}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="BookOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="Close Workspace"
+                          Command="{Binding CloseWorkspaceCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderRemoveOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="{Binding SaveMenuHeader}"

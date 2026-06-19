@@ -7,18 +7,33 @@
              x:DataType="vm:ProjectTreeTool"
              Background="{DynamicResource SystemChromeLowColor}">
 
+    <UserControl.Styles>
+        <Style Selector="Button.pt-link">
+            <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid RowDefinitions="Auto,*">
 
         <!-- Toolbar: title + refresh + filter -->
         <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="4,4,4,2">
 
-            <!-- Workspace name — elides when the panel is narrow -->
+            <!-- Workspace name — right-click to reveal (Item 3) -->
             <TextBlock Grid.Column="0"
                        Text="{Binding WorkspaceName}"
                        FontWeight="SemiBold" FontSize="12"
                        VerticalAlignment="Center"
                        Margin="0,0,4,0"
-                       TextTrimming="CharacterEllipsis"/>
+                       TextTrimming="CharacterEllipsis">
+                <TextBlock.ContextMenu>
+                    <ContextMenu IsVisible="{Binding HasWorkspace}">
+                        <MenuItem Header="{Binding RevealLabel}" Command="{Binding RevealWorkspaceCommand}">
+                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderSearchOutline" Width="14" Height="14"/></MenuItem.Icon>
+                        </MenuItem>
+                    </ContextMenu>
+                </TextBlock.ContextMenu>
+            </TextBlock>
 
             <!-- Refresh button (Layer 4 — manual refresh) -->
             <Button Grid.Column="1"
@@ -65,13 +80,30 @@
         <!-- Tree area -->
         <Grid Grid.Row="1">
 
-            <!-- No-workspace placeholder -->
-            <TextBlock Text="No workspace open."
-                       Foreground="{DynamicResource SystemBaseMediumColor}"
-                       FontSize="11"
-                       Margin="8,6"
-                       VerticalAlignment="Top"
-                       IsVisible="{Binding !HasWorkspace}"/>
+            <!-- No-workspace placeholder with recent workspaces list (Item 1) -->
+            <StackPanel IsVisible="{Binding !HasWorkspace}" Margin="8,6" Spacing="4">
+                <TextBlock Text="Recent Workspaces" FontWeight="SemiBold" FontSize="11"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                           IsVisible="{Binding HasRecentWorkspaces}"/>
+                <ItemsControl ItemsSource="{Binding RecentWorkspaces}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ProjectTreeTool+RecentEntry">
+                            <Button Classes="pt-link" Padding="0" Margin="0,1"
+                                    Background="Transparent" BorderThickness="0" HorizontalAlignment="Left"
+                                    Content="{Binding Name}"
+                                    ToolTip.Tip="{Binding Path}"
+                                    Command="{Binding $parent[ItemsControl].((vm:ProjectTreeTool)DataContext).OpenRecentCommand}"
+                                    CommandParameter="{Binding Path}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="No recent workspaces." FontSize="11"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                           IsVisible="{Binding !HasRecentWorkspaces}"/>
+                <Button Content="Clear Recent" FontSize="11" Margin="0,4,0,0"
+                        Command="{Binding ClearRecentCommand}"
+                        IsVisible="{Binding HasRecentWorkspaces}"/>
+            </StackPanel>
 
             <!-- Tree (Layer 2 — disclosure, bold primaries, warning styling) -->
             <ScrollViewer IsVisible="{Binding HasWorkspace}">
@@ -159,7 +191,24 @@
                                      Commands are RelayCommands / AsyncRelayCommands on the VM,
                                      delegating to ITreeActions (WorkspaceViewModel). -->
                                 <Grid.ContextMenu>
-                                    <ContextMenu>
+                                    <ContextMenu Opening="OnNodeContextMenuOpening">
+
+                                        <!-- Cell: open primary views at the top for quick access -->
+                                        <MenuItem Header="Open Schematic"
+                                                  Command="{Binding OpenSchematicCommand}"
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FileDocumentOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Open Cell"
+                                                  Command="{Binding ActivateCommand}"
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="IntegratedCircuitChip" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Open Symbol"
+                                                  Command="{Binding OpenSymbolCommand}"
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="VectorSquare" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
 
                                         <!-- Save dirty node — visible only when IsSaveable (resolved at menu-open) -->
                                         <MenuItem Header="{Binding SaveHeader}"
@@ -193,30 +242,11 @@
                                         </MenuItem>
                                         <Separator IsVisible="{Binding IsKnownFile}"/>
 
-                                        <!-- View file actions (Make Primary + Reveal) -->
+                                        <!-- View file actions (Make Primary) -->
                                         <MenuItem Header="Make Primary"
                                                   Command="{Binding MakePrimaryCommand}"
                                                   IsVisible="{Binding IsViewFile}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="Star" Width="14" Height="14"/></MenuItem.Icon>
-                                        </MenuItem>
-
-                                        <!-- All revealable nodes -->
-                                        <MenuItem Header="{Binding RevealLabel}"
-                                                  Command="{Binding RevealCommand}"
-                                                  IsVisible="{Binding CanReveal}">
-                                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderSearchOutline" Width="14" Height="14"/></MenuItem.Icon>
-                                        </MenuItem>
-
-                                        <!-- Cell: open primary views (greyed when no primary of that type exists) -->
-                                        <MenuItem Header="Open Schematic"
-                                                  Command="{Binding OpenSchematicCommand}"
-                                                  IsVisible="{Binding IsCell}">
-                                            <MenuItem.Icon><mi:MaterialIcon Kind="FileDocumentOutline" Width="14" Height="14"/></MenuItem.Icon>
-                                        </MenuItem>
-                                        <MenuItem Header="Open Symbol"
-                                                  Command="{Binding OpenSymbolCommand}"
-                                                  IsVisible="{Binding IsCell}">
-                                            <MenuItem.Icon><mi:MaterialIcon Kind="VectorSquare" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
                                         <!-- Separator before creation actions -->
@@ -246,11 +276,23 @@
                                                   IsVisible="{Binding IsCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="LayersPlus" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
+                                        <MenuItem Header="Duplicate…"
+                                                  Command="{Binding DuplicateCellCommand}"
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="ContentDuplicate" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Rename…"
+                                                  Command="{Binding RenameCellCommand}"
+                                                  IsVisible="{Binding IsCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FormTextbox" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator IsVisible="{Binding IsCell}"/>
                                         <MenuItem Header="Edit Parameters"
                                                   Command="{Binding ActivateCommand}"
                                                   IsVisible="{Binding IsCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="Pencil" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
+                                        <Separator IsVisible="{Binding IsCell}"/>
 
                                         <!-- Remove to Trash -->
                                         <MenuItem Header="Remove Data Display"
@@ -263,6 +305,14 @@
                                                   IsVisible="{Binding IsRemovableFile}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
+
+                                        <!-- All revealable nodes — above Remove Cell so it groups with the other removes -->
+                                        <MenuItem Header="{Binding RevealLabel}"
+                                                  Command="{Binding RevealCommand}"
+                                                  IsVisible="{Binding CanReveal}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="FolderSearchOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
                                         <Separator IsVisible="{Binding IsCell}"/>
                                         <MenuItem Header="Remove Cell"
                                                   Command="{Binding RemoveCellCommand}"
