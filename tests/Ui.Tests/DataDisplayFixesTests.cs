@@ -58,12 +58,17 @@ public sealed class DataDisplayFixesTests : IDisposable
         return vm;
     }
 
-    // Wires a fake clipboard so PerformCopy / Paste can work in tests.
+    // Wires a fake clipboard so PerformCopy / Paste can work in headless tests.
+    // Uses BuildContainersJson to capture the JSON (no Skia/anchor needed in tests).
     private static string? _clipText;
     private static void WireClipboard(DisplayWindowViewModel vm)
     {
         _clipText = null;
-        vm.SetSetClipboardTextAction(text => { _clipText = text; return Task.CompletedTask; });
+        vm.SetRichCopyAction((containers, _) =>
+        {
+            _clipText = PlotExporter.BuildContainersJson(containers);
+            return Task.CompletedTask;
+        });
         vm.SetGetClipboardTextAction(() => Task.FromResult<string?>(_clipText));
     }
 

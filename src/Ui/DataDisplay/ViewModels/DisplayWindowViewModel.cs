@@ -276,7 +276,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private Func<(double W, double H)>?                        _getCanvasSizeAction;
     private Func<(double L, double T, double W, double H)>?    _getWindowGeometryAction;
     private Func<Task<string?>>?                               _getClipboardTextAction;
-    private Func<string, Task>?                                _setClipboardTextAction;
+    private Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, Task>? _richCopyAction;
     // Injected by WorkspaceViewModel: opens the given file as a new document tab.
     private Func<string, Stream, Task>?                        _openFileAsNewDisplayAction;
     // Injected by code-behind: opens folder picker scoped to workspace results/.
@@ -297,7 +297,8 @@ public partial class DisplayWindowViewModel : ViewModelBase
     public void SetGetWindowGeometryAction(Func<(double, double, double, double)> a)
         => _getWindowGeometryAction = a;
     public void SetGetClipboardTextAction(Func<Task<string?>> a)          => _getClipboardTextAction       = a;
-    public void SetSetClipboardTextAction(Func<string, Task> a)           => _setClipboardTextAction       = a;
+    public void SetRichCopyAction(Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, Task> a)
+        => _richCopyAction = a;
     public void SetOpenFileAsNewDisplayAction(Func<string, Stream, Task> a) => _openFileAsNewDisplayAction = a;
     public void SetLoadRunResultsAction(Func<Task> a)                     => _loadRunResultsAction         = a;
     public void SetExportDataAction(Func<Task> a)                         => _exportDataAction              = a;
@@ -562,22 +563,14 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private async Task PerformCopy(bool selectedOnly)
     {
         var display = DataDisplay;
-        if (display is null || _setClipboardTextAction is null) return;
+        if (display is null || _richCopyAction is null) return;
 
         var containers = (selectedOnly
             ? display.Plots.Where(p => p.IsSelected)
             : display.Plots).ToList();
         if (containers.Count == 0) return;
 
-        var config = new DataDisplayConfig
-        {
-            FormatVersion = DataDisplayConfig.CurrentFormatVersion,
-            Plots = containers
-                .Select(c => DataDisplayViewModel.BuildPlotContainerConfig(c, configDir: "", display.Library))
-                .ToList(),
-        };
-        string json = JsonSerializer.Serialize(config, DataDisplayViewModel.JsonOpts);
-        await _setClipboardTextAction(json);
+        await _richCopyAction(containers, CurrentTheme);
         await CheckPasteStateAsync();
     }
 

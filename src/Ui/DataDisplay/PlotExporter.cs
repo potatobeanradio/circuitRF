@@ -269,6 +269,24 @@ namespace CircuitRF.Ui.DataDisplay
         // ================================================================
 
         /// <summary>
+        /// Renders <paramref name="containers"/> to PDF, SVG, raster bitmap, and JSON, then
+        /// writes all formats to the system clipboard so the receiving application (Keynote,
+        /// Pages, Word, PowerPoint) can paste the richest representation it understands.
+        /// Plain-text JSON is always present as the circuitRF Paste fallback.
+        /// </summary>
+        internal static async Task CopyContainersToClipboardAsync(
+            Control                               anchor,
+            IReadOnlyList<PlotContainerViewModel> containers,
+            RenderTheme                           theme)
+        {
+            byte[]  pdf    = BuildPdfBytesForContainers(containers, theme);
+            string  svg    = BuildSvgStringForContainers(containers, theme);
+            string  json   = BuildContainersJson(containers);
+            Bitmap? bitmap = BuildBitmapForContainers(containers, theme);
+            await SetClipboardDataAsync(anchor, pdf, svg, json, bitmap);
+        }
+
+        /// <summary>
         /// Renders the plot (label strips + markers) to PDF bytes, SVG text, and a
         /// JSON DataDisplay config string, then places all three formats on the
         /// system clipboard so the receiving application can pick the richest one.

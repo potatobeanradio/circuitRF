@@ -52,11 +52,8 @@ public partial class DataDisplayView : UserControl
             if (cb is not null) await cb.SetTextAsync(text);
         };
 
-        win.SetSetClipboardTextAction(async text =>
-        {
-            var cb = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (cb is not null) await cb.SetTextAsync(text);
-        });
+        win.SetRichCopyAction((containers, theme) =>
+            PlotExporter.CopyContainersToClipboardAsync(this, containers, theme));
         win.SetGetClipboardTextAction(async () =>
         {
             var cb = TopLevel.GetTopLevel(this)?.Clipboard;
