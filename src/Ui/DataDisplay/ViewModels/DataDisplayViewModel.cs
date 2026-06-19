@@ -881,8 +881,9 @@ public partial class DataDisplayViewModel : ViewModelBase
 
     // Loads a single PlotContainerConfig and appends the resulting container
     // to _plots, including SNP-library lookup, broken-entry fallback, and
-    // marker restoration.
-    private async Task LoadPlotContainerConfigAsync(PlotContainerConfig pc, string configDir)
+    // marker restoration.  Returns the added container so callers such as
+    // PasteFromConfigAsync can collect pasted containers.
+    private async Task<PlotContainerViewModel> LoadPlotContainerConfigAsync(PlotContainerConfig pc, string configDir)
     {
         var plot = new Plot(pc.PlotType, pc.FreqUnit);
 
@@ -1033,6 +1034,7 @@ public partial class DataDisplayViewModel : ViewModelBase
         };
         _plots.Add(container);
         RebuildMarkerInfoBoxesForContainer(container);
+        return container;
     }
 
     /// <summary>
@@ -1196,8 +1198,6 @@ public partial class DataDisplayViewModel : ViewModelBase
     {
         const double PasteOffset = 20.0;
 
-        var pastedContainers = new List<PlotContainerViewModel>();
-
         // Seed with every marker name already in the display; updated as new names are assigned
         // so intra-paste collisions (two source plots both having "m1") are also resolved.
         var usedMarkerNames = new HashSet<string>(
@@ -1206,131 +1206,39 @@ public partial class DataDisplayViewModel : ViewModelBase
                   .Select(m => m.Name),
             StringComparer.Ordinal);
 
+        var pastedContainers = new List<PlotContainerViewModel>();
+
         foreach (var pc in config.Plots)
         {
-            var plot = new Plot(pc.PlotType, pc.FreqUnit);
-
-            // Restore custom axis labels (absent in old files → defaults leave auto-labels intact).
-            plot.CustomTitle     = pc.CustomTitle;
-            plot.CustomTitleOn   = pc.CustomTitleOn;
-            plot.CustomXLabel    = pc.CustomXLabel;
-            plot.CustomXLabelOn  = pc.CustomXLabelOn;
-            plot.CustomYLabel    = pc.CustomYLabel;
-            plot.CustomYLabelOn  = pc.CustomYLabelOn;
-            plot.CustomY2Label   = pc.CustomY2Label;
-            plot.CustomY2LabelOn = pc.CustomY2LabelOn;
-            plot.TableViewAscendingSortOrder = pc.TableViewAscendingSortOrder;
-            plot.TableViewScrollIndex        = pc.TableViewScrollIndex;
-            plot.FontSize                    = pc.FontSize > 0 ? pc.FontSize : 12;
-            plot.ColumnWidth                 = pc.FreqColumnWidth > 0 ? pc.FreqColumnWidth : 115;
-
+            // Offset position so pasted content doesn't land exactly on top of the source.
+            pc.Left += PasteOffset;
+            pc.Top  += PasteOffset;
             foreach (var tc in pc.Traces)
-            {
-                if (tc.SourcePath is null) continue;
-
-                string resolvedPath = Path.IsPathRooted(tc.SourcePath)
-                    ? tc.SourcePath
-                    : Path.GetFullPath(tc.SourcePath);
-
-                SNP? snp = null;
-                if (Library is not null)
-                {
-                    snp = Library.Entries
-                        .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
-                                             StringComparison.OrdinalIgnoreCase))?.Snp;
-
-                    if (snp is null)
-                    {
-                        if (File.Exists(resolvedPath))
-                        {
-                            await Library.LoadFileAsync(resolvedPath);
-                            snp = Library.Entries
-                                .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
-                                                     StringComparison.OrdinalIgnoreCase))?.Snp;
-                        }
-                        else
-                        {
-                            Library.AddBrokenEntry(resolvedPath);
-                            snp = Library.Entries
-                                .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
-                                                     StringComparison.OrdinalIgnoreCase))?.Snp;
-                        }
-                    }
-                }
-
-                if (snp is null) continue;
-
-                var trace = new Trace(snp, tc.MatrixType, tc.Row, tc.Col, tc.YAxis,
-                                      tc.UseSecondaryAxis);
-                trace.Derived               = tc.Derived;
-                trace.SourcePath            = resolvedPath;
-                trace.MatrixFormat          = tc.MatrixFormat;
-                trace.ColumnWidth           = tc.ColumnWidth > 0 ? tc.ColumnWidth : 115;
-                trace.FormatString          = tc.FormatString;
-                trace.MaximumFractionDigits = tc.MaximumFractionDigits;
-
-                if (ComplexStringHelper.TryParse(tc.Z0, out System.Numerics.Complex z0))
-                    trace.Z0 = z0;
-
-                ApplyProperties(tc.Properties, trace.Properties);
-
-                if (!snp.IsEmpty)
-                    trace.BuildPath(pc.PlotType, pc.FreqUnit);
-
                 foreach (var mc in tc.Markers)
                 {
-                    // Resolve name collisions: if the name is already taken, append _2, _3, …
-                    string markerName = mc.Name;
-                    if (!usedMarkerNames.Add(markerName))
+                    mc.InfoBoxX += PasteOffset;
+                    mc.InfoBoxY += PasteOffset;
+                }
+
+            var container = await LoadPlotContainerConfigAsync(pc, configDir: "");
+
+            // Dedup marker names against pre-paste set (incl. names already assigned this paste).
+            foreach (var trace in container.PlotVM.Plot.Traces)
+            {
+                foreach (var marker in trace.Markers)
+                {
+                    string name = marker.Name;
+                    if (!usedMarkerNames.Add(name))
                     {
                         for (int n = 2; ; n++)
                         {
-                            string candidate = $"{markerName}_{n}";
-                            if (usedMarkerNames.Add(candidate)) { markerName = candidate; break; }
+                            string candidate = $"{name}_{n}";
+                            if (usedMarkerNames.Add(candidate)) { marker.Name = candidate; break; }
                         }
                     }
-
-                    var marker = new Marker(trace, mc.Freq, mc.IsMulti, mc.IsDelta, mc.Index, mc.FreqUnits)
-                    {
-                        Name                   = markerName,
-                        MatrixFormat           = mc.MatrixFormat,
-                        Style                  = mc.Style,
-                        UseNormalizedImpedance = mc.UseNormalizedImpedance,
-                        MaximumFractionDigits  = mc.MaximumFractionDigits,
-                        InfoBoxPos             = new Avalonia.Point(mc.InfoBoxX + PasteOffset, mc.InfoBoxY + PasteOffset),
-                        PositionStatic         = new System.Numerics.Vector2(mc.PositionStaticX, mc.PositionStaticY),
-                    };
-                    trace.Markers.Add(marker);
                 }
-
-                plot.Traces.Add(trace);
             }
 
-            if (pc.Axes is { } pastedAxes)
-                plot.RestoreAxesFromConfig(
-                    pastedAxes.AutoscaleX, pastedAxes.AutoscaleY,
-                    pastedAxes.AutoscaleRightY, pastedAxes.AutoscaleMag,
-                    new Rect(pastedAxes.WindowX, pastedAxes.WindowY,
-                             pastedAxes.WindowWidth, pastedAxes.WindowHeight),
-                    new Rect(pastedAxes.WindowSecondaryX, pastedAxes.WindowSecondaryY,
-                             pastedAxes.WindowSecondaryWidth, pastedAxes.WindowSecondaryHeight));
-            else
-                plot.Autoscale();
-
-            var plotVm    = new PlotViewModel(plot);
-            var inspector = new PlotInspectorViewModel(plot, () => { }, Library);
-
-            var container = new PlotContainerViewModel(plotVm, inspector, this)
-            {
-                Left    = pc.Left   + PasteOffset,
-                Top     = pc.Top    + PasteOffset,
-                Width   = pc.Width,
-                Height  = pc.Height,
-                Theme   = Theme,
-                Library = Library,
-            };
-            _plots.Add(container);
-            RebuildMarkerInfoBoxesForContainer(container);
             pastedContainers.Add(container);
         }
 

@@ -973,6 +973,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (paste) await schDoc.ViewModel.ClipboardPasteAsync(clipboard);
             else       await schDoc.ViewModel.ClipboardCopyAsync(clipboard, cut);
         }
+        else if (active is DataDisplayDocument ddDoc)
+        {
+            var win = ddDoc.ViewModel.Window;
+            if (paste)    await win.InvokePasteAsync();
+            else if (cut) await win.InvokeCutAsync();
+            else          await win.InvokeCopyAsync();
+        }
     }
 
     private IClipboard? GetClipboard()
@@ -3189,6 +3196,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         try
         {
+            // Active Data Display — save (or save-as) the focused .cdd, consistent with
+            // how Ctrl+S saves an active schematic or symbol.
+            if (_factory.DocumentDock?.ActiveDockable is DataDisplayDocument activeDisplay)
+            {
+                if (!activeDisplay.ViewModel.Window.HasUnsavedChanges())
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                await SaveDataDisplayDoc(activeDisplay, window);
+                return;
+            }
+
             // SingleDoc scope: save only the active document.
             if (ActiveSaveScope == SaveScope.SingleDoc &&
                 _factory.DocumentDock?.ActiveDockable is SchematicDocument singleDoc)

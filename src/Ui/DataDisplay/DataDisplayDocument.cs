@@ -1,11 +1,10 @@
+using System.IO;
 using Dock.Model.Mvvm.Controls;
 
 namespace CircuitRF.Ui.DataDisplay;
 
 /// <summary>
 /// Dock Document representing an open Data Display.
-/// In 7.1a the body is a placeholder canvas; plot model, persistence, and undo
-/// arrive in 7.1b–7.1e.
 /// </summary>
 public sealed class DataDisplayDocument : Document
 {
@@ -15,7 +14,6 @@ public sealed class DataDisplayDocument : Document
 
     /// <summary>
     /// Absolute on-disk path of the .cdd file, or null for a scratch document.
-    /// Set once at materialization (7.1e); null = scratch.
     /// </summary>
     public string? FilePath { get; private set; }
 
@@ -53,14 +51,31 @@ public sealed class DataDisplayDocument : Document
             if (e.PropertyName is nameof(DataDisplayDocumentViewModel.IsDirty))
                 IsDirty = ViewModel.IsDirty;
         };
+
+        // Update tab title and identity when the display is saved to a path.
+        vm.Window.ConfigPathSaved += OnSavedToPath;
     }
 
     /// <summary>
-    /// Transitions this scratch document to materialized (stub — wired for real in 7.1e).
+    /// Called when DisplayWindowViewModel.SaveAllAsync completes successfully.
+    /// Updates FilePath, _baseTitle, Id, and Title so the dock tab reflects the real file name.
+    /// Also handles the scratch→materialized transition (clears dirty via the VM).
+    /// </summary>
+    internal void OnSavedToPath(string path)
+    {
+        FilePath   = path;
+        _baseTitle = Path.GetFileNameWithoutExtension(path);
+        Id         = path;
+        Title      = _isDirty ? $"• {_baseTitle}" : _baseTitle;
+    }
+
+    /// <summary>
+    /// Transitions this document to materialized.
+    /// Clears the dirty flag; tab title is already updated via ConfigPathSaved / OnSavedToPath.
     /// </summary>
     internal void Materialize(string filePath)
     {
-        FilePath       = filePath;
+        FilePath          = filePath;
         ViewModel.IsDirty = false;
         // IsDirty on the document clears via the PropertyChanged subscription above.
     }

@@ -163,6 +163,12 @@ public partial class DisplayWindowViewModel : ViewModelBase
     /// </summary>
     public event EventHandler? DirtyChanged;
 
+    /// <summary>
+    /// Fired after a successful save with the absolute path of the written .cdd file.
+    /// DataDisplayDocument subscribes to update its tab title and Id.
+    /// </summary>
+    public event Action<string>? ConfigPathSaved;
+
     private void RaiseDirtyChanged() => DirtyChanged?.Invoke(this, EventArgs.Empty);
     private void OnActiveDisplayContentChanged(object? s, EventArgs e) => RaiseDirtyChanged();
 
@@ -270,7 +276,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private Func<(double W, double H)>?                        _getCanvasSizeAction;
     private Func<(double L, double T, double W, double H)>?    _getWindowGeometryAction;
     private Func<Task<string?>>?                               _getClipboardTextAction;
-    private Func<DataTransfer, Task>?                          _setClipboardDataAction;
+    private Func<string, Task>?                                _setClipboardTextAction;
     // Injected by WorkspaceViewModel: opens the given file as a new document tab.
     private Func<string, Stream, Task>?                        _openFileAsNewDisplayAction;
     // Injected by code-behind: opens folder picker scoped to workspace results/.
@@ -291,7 +297,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
     public void SetGetWindowGeometryAction(Func<(double, double, double, double)> a)
         => _getWindowGeometryAction = a;
     public void SetGetClipboardTextAction(Func<Task<string?>> a)          => _getClipboardTextAction       = a;
-    public void SetSetClipboardDataAction(Func<DataTransfer, Task> a)     => _setClipboardDataAction       = a;
+    public void SetSetClipboardTextAction(Func<string, Task> a)           => _setClipboardTextAction       = a;
     public void SetOpenFileAsNewDisplayAction(Func<string, Stream, Task> a) => _openFileAsNewDisplayAction = a;
     public void SetLoadRunResultsAction(Func<Task> a)                     => _loadRunResultsAction         = a;
     public void SetExportDataAction(Func<Task> a)                         => _exportDataAction              = a;
@@ -443,7 +449,11 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private void ToggleInspector() => IsInspectorOpen = !IsInspectorOpen;
 
     [RelayCommand]
-    private void AddPlot() => DataDisplay?.AddPlot();
+    private void AddPlot() => DataDisplay?.AddPlot(PlotType.Rect);
+
+    [RelayCommand] private void AddSmithPlot() => DataDisplay?.AddPlot(PlotType.Smith);
+    [RelayCommand] private void AddPolarPlot() => DataDisplay?.AddPlot(PlotType.Polar);
+    [RelayCommand] private void AddTablePlot() => DataDisplay?.AddPlot(PlotType.Table);
 
     [RelayCommand(CanExecute = nameof(CanRemovePlot))]
     private void RemovePlot() => DataDisplay?.RemoveSelected();
@@ -551,11 +561,24 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
     private async Task PerformCopy(bool selectedOnly)
     {
-        if (_setClipboardDataAction is null) return;
         var display = DataDisplay;
-        if (display is null) return;
-        // TODO 7.x: stub — PlotExporter not yet ported to circuitRF
-        await Task.CompletedTask;
+        if (display is null || _setClipboardTextAction is null) return;
+
+        var containers = (selectedOnly
+            ? display.Plots.Where(p => p.IsSelected)
+            : display.Plots).ToList();
+        if (containers.Count == 0) return;
+
+        var config = new DataDisplayConfig
+        {
+            FormatVersion = DataDisplayConfig.CurrentFormatVersion,
+            Plots = containers
+                .Select(c => DataDisplayViewModel.BuildPlotContainerConfig(c, configDir: "", display.Library))
+                .ToList(),
+        };
+        string json = JsonSerializer.Serialize(config, DataDisplayViewModel.JsonOpts);
+        await _setClipboardTextAction(json);
+        await CheckPasteStateAsync();
     }
 
     /// <summary>
@@ -575,6 +598,11 @@ public partial class DisplayWindowViewModel : ViewModelBase
             display.UndoRedo.Push(new PasteCommand(added, display));
     }
     private bool CanPaste() => _canPaste;
+
+    /// <summary>Invokes cut/copy/paste for routing from the workspace Edit menu.</summary>
+    public Task InvokeCutAsync()   => Cut();
+    public Task InvokeCopyAsync()  => Copy();
+    public Task InvokePasteAsync() => Paste();
 
     public async Task CheckPasteStateAsync()
     {
@@ -641,6 +669,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
         // Update baseline so HasUnsavedChanges() returns false right after saving.
         CaptureBaseline();
         RaiseDirtyChanged();
+        ConfigPathSaved?.Invoke(path);
     }
 
     /// <summary>

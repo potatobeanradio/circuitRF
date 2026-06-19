@@ -23,7 +23,10 @@ public partial class DataDisplayView : UserControl
     private void OnAttachedToVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
     {
         if (DataContext is DataDisplayDocument doc)
+        {
             doc.ViewModel.Window.RefreshAvailableDataSources();
+            _ = doc.ViewModel.Window.CheckPasteStateAsync();
+        }
     }
 
     private void OnLoaded(object? sender, RoutedEventArgs e)
@@ -48,6 +51,17 @@ public partial class DataDisplayView : UserControl
             var cb = TopLevel.GetTopLevel(this)?.Clipboard;
             if (cb is not null) await cb.SetTextAsync(text);
         };
+
+        win.SetSetClipboardTextAction(async text =>
+        {
+            var cb = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (cb is not null) await cb.SetTextAsync(text);
+        });
+        win.SetGetClipboardTextAction(async () =>
+        {
+            var cb = TopLevel.GetTopLevel(this)?.Clipboard;
+            return cb is null ? null : await cb.TryGetTextAsync();
+        });
 
         win.DataSourceLibrary.FindMissingFileAsync = path => FindMissingSnpFileAsync(path);
     }

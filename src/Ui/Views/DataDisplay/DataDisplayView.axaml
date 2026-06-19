@@ -4,6 +4,7 @@
              xmlns:v="using:CircuitRF.Ui.Views.DataDisplay"
              xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
              xmlns:mi="using:Material.Icons.Avalonia"
+             xmlns:ctl="using:CircuitRF.Ui.DataDisplay.Controls"
              x:Class="CircuitRF.Ui.Views.DataDisplay.DataDisplayView"
              x:DataType="dd:DataDisplayDocument">
 
@@ -31,6 +32,14 @@
         <KeyBinding Gesture="Ctrl+Y"        Command="{Binding ViewModel.Window.RedoCommand}"/>
         <KeyBinding Gesture="Ctrl+L"        Command="{Binding ViewModel.Window.OpenFileCommand}"/>
         <KeyBinding Gesture="Meta+L"        Command="{Binding ViewModel.Window.OpenFileCommand}"/>
+        <KeyBinding Gesture="Ctrl+S"        Command="{Binding ViewModel.Window.SaveDataDisplayCommand}"/>
+        <KeyBinding Gesture="Meta+S"        Command="{Binding ViewModel.Window.SaveDataDisplayCommand}"/>
+        <KeyBinding Gesture="Ctrl+C"        Command="{Binding ViewModel.Window.CopyCommand}"/>
+        <KeyBinding Gesture="Meta+C"        Command="{Binding ViewModel.Window.CopyCommand}"/>
+        <KeyBinding Gesture="Ctrl+X"        Command="{Binding ViewModel.Window.CutCommand}"/>
+        <KeyBinding Gesture="Meta+X"        Command="{Binding ViewModel.Window.CutCommand}"/>
+        <KeyBinding Gesture="Ctrl+V"        Command="{Binding ViewModel.Window.PasteCommand}"/>
+        <KeyBinding Gesture="Meta+V"        Command="{Binding ViewModel.Window.PasteCommand}"/>
     </UserControl.KeyBindings>
 
     <DockPanel>
@@ -42,11 +51,52 @@
                 Padding="4,2">
             <StackPanel Orientation="Horizontal" Spacing="2" Classes="Toolbar">
 
+                <!-- Datasource combo: lists results/ schematics + workspace Touchstone files -->
+                <ComboBox Width="200"
+                          ItemsSource="{Binding ViewModel.Window.DataSourceLibrary.AvailableDataSources}"
+                          SelectedItem="{Binding ViewModel.Window.SelectedDataSourceItem, Mode=TwoWay}"
+                          ToolTip.Tip="{Binding ViewModel.Window.DataSourceLibrary.SelectedDataSourceAbs}"
+                          Padding="6,3">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DataSourceItem">
+                            <TextBlock Text="{Binding DisplayName}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                 <Button Command="{Binding ViewModel.Window.AddPlotCommand}"
-                        ToolTip.Tip="Add Plot  (Ctrl+Shift+A)"
+                        ToolTip.Tip="Add Rect Plot  (Ctrl+Shift+A)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/>
                 </Button>
+
+                <Button Command="{Binding ViewModel.Window.AddSmithPlotCommand}"
+                        ToolTip.Tip="Add Smith Plot"
+                        Padding="6,3">
+                    <ctl:PlotTypeGlyphControl Kind="Smith" Width="16" Height="16"
+                        Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+                </Button>
+
+                <Button Command="{Binding ViewModel.Window.AddPolarPlotCommand}"
+                        ToolTip.Tip="Add Polar Plot"
+                        Padding="6,3">
+                    <ctl:PlotTypeGlyphControl Kind="Polar" Width="16" Height="16"
+                        Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+                </Button>
+
+                <Button Command="{Binding ViewModel.Window.AddTablePlotCommand}"
+                        ToolTip.Tip="Add Table"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
+                </Button>
+
+                <!-- Separator -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                 <Button Command="{Binding ViewModel.Window.NewTabCommand}"
                         ToolTip.Tip="New Tab  (Ctrl+T)"
@@ -117,25 +167,6 @@
                 <!-- Separator -->
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
-
-                <Button Command="{Binding ViewModel.Window.LoadRunResultsCommand}"
-                        ToolTip.Tip="Load Dataset…"
-                        Padding="6,3">
-                    <mi:MaterialIcon Kind="FolderArrowDownOutline" Width="16" Height="16"/>
-                </Button>
-
-                <!-- Datasource combo: lists results/ schematics + workspace Touchstone files -->
-                <ComboBox Width="200"
-                          ItemsSource="{Binding ViewModel.Window.DataSourceLibrary.AvailableDataSources}"
-                          SelectedItem="{Binding ViewModel.Window.SelectedDataSourceItem, Mode=TwoWay}"
-                          ToolTip.Tip="{Binding ViewModel.Window.DataSourceLibrary.SelectedDataSourceAbs}"
-                          Padding="6,3">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="vm:DataSourceItem">
-                            <TextBlock Text="{Binding DisplayName}"/>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
 
                 <Button Command="{Binding ViewModel.Window.ExportDataCommand}"
                         ToolTip.Tip="Export Data"

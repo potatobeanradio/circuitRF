@@ -40,6 +40,7 @@ public partial class PlotCanvasView : UserControl
 
     public PlotCanvasView()
     {
+        Focusable = true;
         InitializeComponent();
 
         // FindControl is valid immediately after InitializeComponent() —
@@ -110,6 +111,7 @@ public partial class PlotCanvasView : UserControl
     private void OnCanvasPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(_plotCanvas).Properties.IsLeftButtonPressed) return;
+        Focus();
 
         bool additive = e.KeyModifiers.HasFlag(KeyModifiers.Control) ||
                         e.KeyModifiers.HasFlag(KeyModifiers.Meta);

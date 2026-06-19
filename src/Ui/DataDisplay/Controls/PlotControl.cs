@@ -242,6 +242,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
         public PlotControl()
         {
+            Focusable = true;
             PointerPressed      += OnPointerPressed;
             PointerMoved        += OnPointerMoved;
             PointerReleased     += OnPointerReleased;
@@ -627,6 +628,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
         {
             if (_plot is null) return;
+            Focus();
 
             var props = e.GetCurrentPoint(this).Properties;
             _dragStartScreen = e.GetPosition(this);
