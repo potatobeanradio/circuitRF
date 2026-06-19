@@ -39,6 +39,7 @@
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Open Symbol…"    Command="{Binding OpenSymbolFileCommand}"        CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Open Data Display…" Command="{Binding OpenDataDisplayFileCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Export…"        Command="{Binding ExportDataCommand}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Save All"              Command="{Binding SaveAllDocumentsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+S"/>
                         <NativeMenuItem Header="Save Schematic As…"  Command="{Binding SaveLooseSchematicCommand}" CommandParameter="{Binding $parent[Window]}"/>
@@ -152,6 +153,10 @@
                           Command="{Binding OpenDataDisplayFileCommand}"
                           CommandParameter="{Binding $parent[Window]}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Export…"
+                          Command="{Binding ExportDataCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="New _Cell"
                           Command="{Binding NewCellInWorkspaceCommand}">

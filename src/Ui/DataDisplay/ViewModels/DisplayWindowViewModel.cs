@@ -275,6 +275,8 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private Func<string, Stream, Task>?                        _openFileAsNewDisplayAction;
     // Injected by code-behind: opens folder picker scoped to workspace results/.
     private Func<Task>?                                        _loadRunResultsAction;
+    // Injected by code-behind: opens the Data Exporter dialog.
+    private Func<Task>?                                        _exportDataAction;
     // Injected by WorkspaceViewModel: returns <workspaceRoot>/results, or null when no workspace.
     public Func<string?>?                                      GetResultsRootAction { get; set; }
 
@@ -292,6 +294,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
     public void SetSetClipboardDataAction(Func<DataTransfer, Task> a)     => _setClipboardDataAction       = a;
     public void SetOpenFileAsNewDisplayAction(Func<string, Stream, Task> a) => _openFileAsNewDisplayAction = a;
     public void SetLoadRunResultsAction(Func<Task> a)                     => _loadRunResultsAction         = a;
+    public void SetExportDataAction(Func<Task> a)                         => _exportDataAction              = a;
 
     /// <summary>
     /// Opens <paramref name="path"/> as a new document tab via the workspace-injected action.
@@ -425,6 +428,12 @@ public partial class DisplayWindowViewModel : ViewModelBase
     private async Task LoadRunResults()
     {
         if (_loadRunResultsAction is not null) await _loadRunResultsAction();
+    }
+
+    [RelayCommand]
+    private async Task ExportData()
+    {
+        if (_exportDataAction is not null) await _exportDataAction();
     }
 
     [RelayCommand]

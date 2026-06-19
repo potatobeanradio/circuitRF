@@ -137,6 +137,12 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
 
+                <Button Command="{Binding ViewModel.Window.ExportDataCommand}"
+                        ToolTip.Tip="Export Data"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/>
+                </Button>
+
             </StackPanel>
         </Border>
 

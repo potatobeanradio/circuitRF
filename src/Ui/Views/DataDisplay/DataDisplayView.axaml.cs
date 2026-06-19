@@ -6,6 +6,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.DataDisplay;
@@ -35,6 +36,7 @@ public partial class DataDisplayView : UserControl
         win.SetSaveDataDisplayAsAction(DoSaveDisplayAsAsync);
         win.SetOpenDataDisplayAction(DoOpenDisplayAsync);
         win.SetLoadRunResultsAction(DoLoadRunResultsAsync);
+        win.SetExportDataAction(DoExportDataAsync);
         // Geometry not persisted — embedded Dock document, not a floating OS window.
         win.SetGetWindowGeometryAction(() => (0, 0, 0, 0));
 
@@ -174,6 +176,26 @@ public partial class DataDisplayView : UserControl
 
         foreach (var path in npyFiles)
             await doc.ViewModel.Window.DataSourceLibrary.LoadFileAsync(path);
+    }
+
+    private async Task DoExportDataAsync()
+    {
+        if (DataContext is not DataDisplayDocument doc) return;
+        var win = doc.ViewModel.Window;
+
+        string? resultsRoot = win.GetResultsRootAction?.Invoke();
+
+        string? preselect = null;
+        var srcAbs = win.DataSourceLibrary.SelectedDataSourceAbs;
+        if (srcAbs is not null && srcAbs.EndsWith("run.npy", StringComparison.OrdinalIgnoreCase))
+        {
+            var sub = Path.GetDirectoryName(srcAbs);
+            if (sub is not null) preselect = Path.GetFileName(sub);
+        }
+
+        var vm     = new DataExporterViewModel(resultsRoot, preselect);
+        var owner  = TopLevel.GetTopLevel(this) as Window;
+        await DataExporterDialog.ShowAsync(owner, vm);
     }
 
     private async Task ShowErrorAsync(string message)

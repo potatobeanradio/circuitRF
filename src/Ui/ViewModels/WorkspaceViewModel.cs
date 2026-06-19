@@ -191,6 +191,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         WindowTitle = !string.IsNullOrEmpty(name) ? $"{name} — circuitRF" : "circuitRF";
 
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
+        ExportDataCommand.NotifyCanExecuteChanged();
 
         if (_factory.ProjectTreeTool is { } tree)
         {
@@ -1380,6 +1381,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Creates a scratch Data Display tab immediately.
     /// Always enabled; no workspace required (scratch-first, same as New Schematic/Symbol).
     /// </summary>
+    [RelayCommand(CanExecute = nameof(CanExportData))]
+    private async Task ExportData()
+    {
+        var resultsRoot = GetResultsRoot();
+        var vm = new CircuitRF.Ui.DataDisplay.ViewModels.DataExporterViewModel(resultsRoot, null);
+        await DataExporterDialog.ShowAsync(null, vm);
+    }
+
+    private bool CanExportData() => GetResultsRoot() is not null;
+
     [RelayCommand]
     private void NewDataDisplay()
     {

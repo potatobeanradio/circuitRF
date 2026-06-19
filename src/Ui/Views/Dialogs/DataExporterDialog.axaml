@@ -1,0 +1,190 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mi="using:Material.Icons.Avalonia"
+        xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+        x:Class="CircuitRF.Ui.Views.Dialogs.DataExporterDialog"
+        Title="Export Data"
+        Width="400"
+        MinWidth="360"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <Window.Styles>
+        <!-- Compact label style -->
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize"   Value="10"/>
+            <Setter Property="Opacity"    Value="0.6"/>
+            <Setter Property="Margin"     Value="0,8,0,2"/>
+        </Style>
+        <!-- Compact combo -->
+        <Style Selector="ComboBox.compact">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="Height"     Value="22"/>
+            <Setter Property="Padding"    Value="6,1"/>
+        </Style>
+        <!-- Segmented buttons -->
+        <Style Selector="ToggleButton.seg-btn">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="Padding"    Value="10,3"/>
+            <Setter Property="Height"     Value="22"/>
+            <Setter Property="Margin"     Value="0,0,2,0"/>
+        </Style>
+    </Window.Styles>
+
+    <Border Background="{DynamicResource SystemChromeMediumLowColor}"
+            CornerRadius="8"
+            Padding="12,10">
+
+        <StackPanel Spacing="0">
+
+            <!-- ── Format ── -->
+            <TextBlock Classes="label" Text="FORMAT"/>
+            <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,0,0,4">
+                <ToggleButton Classes="seg-btn" x:Name="NpyBtn"    Content=".npy"        />
+                <ToggleButton Classes="seg-btn" x:Name="MatBtn"    Content=".mat"        />
+                <ToggleButton Classes="seg-btn" x:Name="TsvBtn"    Content="Tab-delimited"/>
+                <ToggleButton Classes="seg-btn" x:Name="TsBtn"     Content="Touchstone"  />
+            </StackPanel>
+
+            <!-- ── Datasource ── -->
+            <TextBlock Classes="label" Text="DATASOURCE"/>
+            <ComboBox x:Name="SchematicCombo"
+                      Classes="compact"
+                      HorizontalAlignment="Stretch"
+                      Margin="0,0,0,4"/>
+
+            <!-- ── Include (multi-select, npy/mat/tsv) ── -->
+            <TextBlock Classes="label" x:Name="IncludeLabel" Text="INCLUDE"/>
+            <Border x:Name="IncludePanel"
+                    BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="6,4"
+                    Margin="0,0,0,4">
+                <StackPanel Spacing="2">
+                    <ListBox x:Name="IncludeListBox"
+                             SelectionMode="Multiple"
+                             BorderThickness="0"
+                             Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:IncludeRow">
+                                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                          Content="{Binding GroupName}"
+                                          FontSize="11"
+                                          Padding="4,1"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <CheckBox x:Name="MeasurementsCheck"
+                              Content="measurements"
+                              FontSize="11"
+                              Padding="4,1"
+                              Margin="0,2,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Touchstone options (Touchstone mode only) ── -->
+            <StackPanel x:Name="TsOptionsPanel" IsVisible="False" Spacing="4">
+                <TextBlock Classes="label" Text="REFERENCE IMPEDANCE (Ω)"/>
+                <NumericUpDown x:Name="Z0Box"
+                               Minimum="1" Maximum="10000"
+                               Increment="1"
+                               FormatString="G"
+                               FontSize="11"
+                               Height="22"
+                               Margin="0,0,0,4"/>
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Classes="label" Text="DIGITS"/>
+                        <NumericUpDown x:Name="DigitsBox"
+                                       Minimum="1" Maximum="17"
+                                       Increment="1"
+                                       FormatString="0"
+                                       FontSize="11"
+                                       Height="22"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Classes="label" Text="DIGIT FORMAT"/>
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <ToggleButton Classes="seg-btn" x:Name="FmtFBtn" Content="f"/>
+                            <ToggleButton Classes="seg-btn" x:Name="FmtGBtn" Content="g"/>
+                            <ToggleButton Classes="seg-btn" x:Name="FmtEBtn" Content="e"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Classes="label" Text="MATRIX FORMAT"/>
+                <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,0,0,4">
+                    <ToggleButton Classes="seg-btn" x:Name="MaBtn" Content="MA"/>
+                    <ToggleButton Classes="seg-btn" x:Name="RiBtn" Content="RI"/>
+                    <ToggleButton Classes="seg-btn" x:Name="DbBtn" Content="dB"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- ── Touchstone slicing (Touchstone mode + sweep axes) ── -->
+            <StackPanel x:Name="TsSlicingPanel" IsVisible="False" Spacing="4">
+                <TextBlock Classes="label" Text="SWEEP SELECTION"/>
+                <ItemsControl x:Name="SweepSliceItems">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SweepSliceRow">
+                            <Grid ColumnDefinitions="Auto,*" Margin="0,2">
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding AxisName}"
+                                           FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                                <ComboBox Grid.Column="1"
+                                          Classes="compact"
+                                          ItemsSource="{Binding Options}"
+                                          SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <CheckBox x:Name="AllSweepCheck"
+                          Content="Save all sweep combinations to separate files"
+                          FontSize="11"
+                          Padding="4,1"
+                          Margin="0,4,0,0"/>
+            </StackPanel>
+
+            <!-- ── Z0 notice ── -->
+            <Border x:Name="Z0NoticePanel"
+                    IsVisible="False"
+                    BorderBrush="{DynamicResource CrfWarningBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Padding="8,6"
+                    Margin="0,4,0,4">
+                <TextBlock x:Name="Z0NoticeText"
+                           Foreground="{DynamicResource CrfWarningBrush}"
+                           FontSize="11"
+                           TextWrapping="Wrap"/>
+            </Border>
+
+            <!-- ── Buttons ── -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="8"
+                        Margin="0,12,0,0">
+                <Button Content="Cancel"
+                        FontSize="12"
+                        Padding="14,5"
+                        x:Name="CancelBtn"
+                        Click="OnCancelClick"/>
+                <Button x:Name="ExportBtn"
+                        Content="Export…"
+                        FontSize="12"
+                        Padding="14,5"
+                        IsDefault="True"
+                        Click="OnExportClick"/>
+            </StackPanel>
+
+        </StackPanel>
+    </Border>
+
+</Window>
