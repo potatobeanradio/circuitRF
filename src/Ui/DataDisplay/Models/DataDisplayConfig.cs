@@ -169,6 +169,7 @@ public sealed class TraceConfig
     public MatrixFormat    MatrixFormat          { get; set; } = MatrixFormat.MA;
     public double          ColumnWidth           { get; set; } = 115;
     public double          XColumnWidth          { get; set; } = 0;
+    public Dictionary<int, double> FamilyColumnWidths { get; set; } = new();
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public PrecisionFormat FormatString          { get; set; } = PrecisionFormat.F;
     public int             MaximumFractionDigits { get; set; } = 3;

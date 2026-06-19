@@ -344,7 +344,10 @@ namespace CircuitRF.Ui.DataDisplay
                 }
                 else
                 {
-                    total += (float)Math.Max(MinColumnWidth, plot.Traces[col.FirstTraceIndex].ColumnWidth);
+                    var trace = plot.Traces[col.FirstTraceIndex];
+                    int   fci = col.FamilyCurveIndex;
+                    double w  = fci >= 0 && trace.FamilyColumnWidths.TryGetValue(fci, out var fcw) ? fcw : trace.ColumnWidth;
+                    total += (float)Math.Max(MinColumnWidth, w);
                 }
             }
             return total;
@@ -598,7 +601,10 @@ namespace CircuitRF.Ui.DataDisplay
                 }
                 else
                 {
-                    layout.ColW[c] = (float)Math.Max(MinColumnWidth, plot.Traces[columns[c].FirstTraceIndex].ColumnWidth) * zoomLevel;
+                    var trace = plot.Traces[columns[c].FirstTraceIndex];
+                    int   fci = columns[c].FamilyCurveIndex;
+                    double w  = fci >= 0 && trace.FamilyColumnWidths.TryGetValue(fci, out var fcw) ? fcw : trace.ColumnWidth;
+                    layout.ColW[c] = (float)Math.Max(MinColumnWidth, w) * zoomLevel;
                 }
             }
 

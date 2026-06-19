@@ -977,6 +977,8 @@ public partial class DataDisplayViewModel : ViewModelBase
             trace.MatrixFormat          = traceConfig.MatrixFormat;
             trace.ColumnWidth           = traceConfig.ColumnWidth > 0 ? traceConfig.ColumnWidth : 115;
             trace.XColumnWidth          = traceConfig.XColumnWidth;
+            foreach (var kvp in traceConfig.FamilyColumnWidths)
+                trace.FamilyColumnWidths[kvp.Key] = kvp.Value;
             trace.FormatString          = traceConfig.FormatString;
             trace.MaximumFractionDigits = traceConfig.MaximumFractionDigits;
 
@@ -1135,6 +1137,7 @@ public partial class DataDisplayViewModel : ViewModelBase
             MatrixFormat          = t.MatrixFormat,
             ColumnWidth           = t.ColumnWidth,
             XColumnWidth          = t.XColumnWidth,
+            FamilyColumnWidths    = new Dictionary<int, double>(t.FamilyColumnWidths),
             FormatString          = t.FormatString,
             MaximumFractionDigits = t.MaximumFractionDigits,
             // Cube-bound identity fields (Phase 7.2c-a). Null = network-bound.

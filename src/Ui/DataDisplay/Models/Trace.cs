@@ -198,6 +198,8 @@ namespace CircuitRF.Ui.DataDisplay
         public double          ColumnWidth           { get; set; } = 115;
         /// <summary>Per-X-group logical column width (0 = fall back to plot.ColumnWidth).</summary>
         public double          XColumnWidth          { get; set; } = 0;
+        /// <summary>Per-family-curve column widths (key = FamilyCurveIndex). Empty = fall back to ColumnWidth.</summary>
+        public Dictionary<int, double> FamilyColumnWidths { get; } = new();
         public PrecisionFormat FormatString          { get; set; } = PrecisionFormat.F;
         public int             MaximumFractionDigits { get; set; } = 3;
 
@@ -483,6 +485,8 @@ namespace CircuitRF.Ui.DataDisplay
             SourcePath        = src.SourcePath;
             ColumnWidth       = src.ColumnWidth;
             XColumnWidth      = src.XColumnWidth;
+            foreach (var kvp in src.FamilyColumnWidths)
+                FamilyColumnWidths[kvp.Key] = kvp.Value;
             // Cube-bound identity fields (Phase 7.2c-a).
             CubeName        = src.CubeName;
             Slice           = src.Slice;   // AxisSlice[] is immutable; sharing is safe.
@@ -588,6 +592,7 @@ namespace CircuitRF.Ui.DataDisplay
             _cubeComplexValues = null; _cubeRealValues = null;
             FamilyAxisName = familyAxisName;
             FamilyCurves.Clear();
+            FamilyColumnWidths.Clear();
             Points.Clear();
             RectValueInvalid = false;
 

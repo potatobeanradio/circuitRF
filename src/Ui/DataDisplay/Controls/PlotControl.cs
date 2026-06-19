@@ -651,7 +651,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                         var resizeCol = hitResult.ResizeColIndex < resCols.Count
                             ? resCols[hitResult.ResizeColIndex] : null;
                         if (resizeCol?.Kind == TableColKind.TraceValue)
-                            _tableResizeStartWidth = _plot.Traces[resizeCol.FirstTraceIndex].ColumnWidth;
+                        {
+                            var rt  = _plot.Traces[resizeCol.FirstTraceIndex];
+                            int fci = resizeCol.FamilyCurveIndex;
+                            _tableResizeStartWidth = fci >= 0 && rt.FamilyColumnWidths.TryGetValue(fci, out var fcw) ? fcw : rt.ColumnWidth;
+                        }
                         else if (resizeCol?.Kind == TableColKind.XAxis)
                         {
                             var anchor = _plot.Traces[resizeCol.FirstTraceIndex];
@@ -790,7 +794,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 {
                     var drCol = drCols[_tableResizeColIndex];
                     if (drCol.Kind == TableColKind.TraceValue)
-                        _plot.Traces[drCol.FirstTraceIndex].ColumnWidth = newWidth;
+                    {
+                        var dt  = _plot.Traces[drCol.FirstTraceIndex];
+                        int fci = drCol.FamilyCurveIndex;
+                        if (fci >= 0)
+                            dt.FamilyColumnWidths[fci] = newWidth;
+                        else
+                            dt.ColumnWidth = newWidth;
+                    }
                     else  // XAxis: write to per-anchor XColumnWidth
                         _plot.Traces[drCol.FirstTraceIndex].XColumnWidth = newWidth;
                 }
@@ -1040,7 +1051,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     {
                         var dtCol = dtCols[hit.ResizeColIndex];
                         if (dtCol.Kind == TableColKind.TraceValue)
-                            _plot.Traces[dtCol.FirstTraceIndex].ColumnWidth = fitW;
+                        {
+                            var dtt  = _plot.Traces[dtCol.FirstTraceIndex];
+                            int fci  = dtCol.FamilyCurveIndex;
+                            if (fci >= 0)
+                                dtt.FamilyColumnWidths[fci] = fitW;
+                            else
+                                dtt.ColumnWidth = fitW;
+                        }
                         else  // XAxis: write to per-anchor XColumnWidth
                             _plot.Traces[dtCol.FirstTraceIndex].XColumnWidth = fitW;
                     }

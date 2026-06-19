@@ -940,6 +940,35 @@ public sealed class TableImprovementsTests
         Assert.Equal("", cell);
     }
 
+    // ---- Item 4 (resize fix): Family columns have independent widths --------
+
+    [Fact]
+    public void Item4_FamilyTrace_ResizingOneCurveColumn_DoesNotAffectOthers()
+    {
+        double[] xVals      = { 0.0, 0.5, 1.0 };
+        double[] familyVals = { 0.0, 1.0, 2.0 };  // 3 curves → cols[1..3] all FirstTraceIndex=0
+        var t    = MakeFamilyTrace(xVals, familyVals);
+        var plot = MakePlot(t);
+
+        // Baseline: 4 columns all at default 115 → total = 4 × 115 = 460.
+        float before = TableRenderer.TotalColumnWidth(plot);
+        Assert.Equal(460f, before, precision: 1);
+
+        // Simulate resizing col[1] (FamilyCurveIndex=0) to width 200 — only 85 extra.
+        t.FamilyColumnWidths[0] = 200.0;
+        float after1 = TableRenderer.TotalColumnWidth(plot);
+        Assert.Equal(545f, after1, precision: 1);  // 115+200+115+115
+
+        // Resize col[2] (FamilyCurveIndex=1) independently to width 80.
+        t.FamilyColumnWidths[1] = 80.0;
+        float after2 = TableRenderer.TotalColumnWidth(plot);
+        // Total = 115 (XAxis) + 200 (curve0) + max(40,80)=80 (curve1) + 115 (curve2) = 510
+        Assert.Equal(510f, after2, precision: 1);
+
+        // trace.ColumnWidth (default 115) must remain unchanged — it's the fallback for curve2 only.
+        Assert.Equal(115.0, t.ColumnWidth, precision: 1);
+    }
+
     // ---- Item 5: BuildCopyGrid produces family columns ---------------------
 
     [Fact]
