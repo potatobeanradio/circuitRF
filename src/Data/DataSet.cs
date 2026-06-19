@@ -11,6 +11,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using NumFlat;
 using RfCore.Data;
@@ -21,30 +22,166 @@ namespace RfCore.Data
     /// Named collection of <see cref="DataCube"/>s returned by a single analysis run.
     /// Mixed kinds (Complex / Real) coexist — one DataSet holds both S-param cubes
     /// and derived real measurements (PAE, Gain, …).
+    /// <para>
+    /// A DataSet is an ordered map of group-name → (cube-name → cube).  The default
+    /// group <c>""</c> is used by <see cref="Add"/> and all legacy bare-name lookups.
+    /// Named groups (e.g. <c>"HB1"</c>, <c>"SP1"</c>, <c>"measurements"</c>) are used
+    /// when aggregating multiple analyses into one run-result DataSet.
+    /// </para>
     /// </summary>
     public sealed class DataSet
     {
-        private readonly Dictionary<string, DataCube> _cubes = new();
+        private readonly List<string> _groupOrder = new();
+        private readonly Dictionary<string, Dictionary<string, DataCube>> _groups =
+            new(StringComparer.Ordinal);
 
-        // ---- Cube registration ----------------------------------
+        /// <summary>The name of the unnamed default group used by <see cref="Add"/>.</summary>
+        public const string DefaultGroup = "";
 
+        /// <summary>The group name holding post-run measurement cubes; bare-resolvable like the default group.</summary>
+        public const string MeasurementsGroup = "measurements";
+
+        // ── Group management ──────────────────────────────────────────────────
+
+        private Dictionary<string, DataCube> GetOrCreateGroup(string group)
+        {
+            if (!_groups.TryGetValue(group, out var d))
+            {
+                d = new Dictionary<string, DataCube>(StringComparer.Ordinal);
+                _groups[group] = d;
+                _groupOrder.Add(group);
+            }
+            return d;
+        }
+
+        /// <summary>
+        /// Pre-registers a group so its order is preserved even before any cubes are added.
+        /// Called by <see cref="RfCore.Export.NpyReader"/> to restore serialized group order.
+        /// </summary>
+        internal void RegisterGroup(string group)
+        {
+            if (!_groups.ContainsKey(group))
+            {
+                _groups[group] = new Dictionary<string, DataCube>(StringComparer.Ordinal);
+                _groupOrder.Add(group);
+            }
+        }
+
+        // ── Cube registration ─────────────────────────────────────────────────
+
+        /// <summary>Add a cube to the default group.</summary>
         public void Add(string name, DataCube cube)
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw new ArgumentException("Cube name must be non-empty.");
-            _cubes[name] = cube;
+            GetOrCreateGroup(DefaultGroup)[name] = cube;
         }
 
-        public DataCube this[string name] =>
-            _cubes.TryGetValue(name, out var c) ? c
-            : throw new KeyNotFoundException($"No cube named '{name}' in this DataSet.");
+        /// <summary>Add a cube to a named group, creating the group on first use.</summary>
+        public void AddToGroup(string group, string name, DataCube cube)
+        {
+            if (group is null) throw new ArgumentNullException(nameof(group));
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Cube name must be non-empty.");
+            GetOrCreateGroup(group)[name] = cube;
+        }
 
-        public bool Contains(string name) => _cubes.ContainsKey(name);
+        // ── Lookup ────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Look up a cube by name or qualified <c>Group.Cube</c> spec.
+        /// <list type="bullet">
+        ///   <item>Bare name — resolves in the default group or the measurements group
+        ///   (<c>"measurements"</c>); analysis cubes require qualification as
+        ///   <c>Analysis.Cube</c> (e.g. <c>HB1.V</c>).</item>
+        ///   <item>Qualified <c>Group.Cube</c> — splits at the first dot; if the group exists,
+        ///   returns its cube (throws if the cube is absent in that group); otherwise falls back
+        ///   to bare-resolving the whole spec (handles default-group cubes whose names contain dots).</item>
+        /// </list>
+        /// </summary>
+        public DataCube this[string spec] => Resolve(spec);
+
+        /// <summary>Returns <c>true</c> when <see cref="this[string]"/> would succeed.</summary>
+        public bool Contains(string spec)
+        {
+            try { Resolve(spec); return true; }
+            catch (KeyNotFoundException) { return false; }
+        }
+
+        private DataCube Resolve(string spec)
+        {
+            int dot = spec.IndexOf('.');
+            if (dot < 0)
+                return BareResolve(spec);
+
+            string group = spec[..dot];
+            string cube  = spec[(dot + 1)..];
+            if (_groups.TryGetValue(group, out var groupCubes))
+            {
+                if (groupCubes.TryGetValue(cube, out var c)) return c;
+                throw new KeyNotFoundException(
+                    $"Group '{group}' has no cube named '{cube}' in this DataSet.");
+            }
+            // Group not found — fall back to bare-resolving the whole spec so that
+            // default-group cubes literally named "a.b" still resolve.
+            return BareResolve(spec);
+        }
+
+        private DataCube BareResolve(string name)
+        {
+            // 1. Default group (flat / Touchstone sources).
+            if (_groups.TryGetValue(DefaultGroup, out var dg) && dg.TryGetValue(name, out var c1))
+                return c1;
+
+            // 2. Measurements group — bare measurement access (names cannot contain '.').
+            if (_groups.TryGetValue(MeasurementsGroup, out var mg) && mg.TryGetValue(name, out var c2))
+                return c2;
+
+            // Analysis cubes are reachable only by qualification (Analysis.Cube).
+            var populated = _groupOrder.Where(g => _groups[g].Count > 0).ToList();
+            if (populated.Count > 0)
+                throw new KeyNotFoundException(
+                    $"No cube named '{name}' in the default or measurements group. " +
+                    $"Groups present: [{string.Join(", ", populated)}]. " +
+                    $"Qualify analysis cubes as 'Analysis.Cube' (e.g. 'HB1.V').");
+
+            throw new KeyNotFoundException($"No cube named '{name}' — DataSet is empty.");
+        }
+
+        // ── Group API ─────────────────────────────────────────────────────────
+
+        /// <summary>Ordered list of group names that contain at least one cube.</summary>
+        public IReadOnlyList<string> Groups =>
+            _groupOrder.Where(g => _groups[g].Count > 0).ToList();
+
+        /// <summary>Returns <c>true</c> when the named group exists (regardless of cube count).</summary>
+        public bool ContainsGroup(string group) => _groups.ContainsKey(group);
+
+        /// <summary>Returns the cube map for a named group.</summary>
+        /// <exception cref="KeyNotFoundException">If the group does not exist.</exception>
+        public IReadOnlyDictionary<string, DataCube> CubesIn(string group)
+        {
+            if (_groups.TryGetValue(group, out var d)) return d;
+            throw new KeyNotFoundException($"No group named '{group}' in this DataSet.");
+        }
+
+        /// <summary>
+        /// The default group's cube map.  Returns an empty dictionary for a purely-grouped
+        /// DataSet (one that was built exclusively via <see cref="AddToGroup"/>).
+        /// Legacy bare consumers in the engine and UI read this property.
+        /// </summary>
+        public IReadOnlyDictionary<string, DataCube> Cubes =>
+            _groups.TryGetValue(DefaultGroup, out var dg)
+                ? (IReadOnlyDictionary<string, DataCube>)dg
+                : new Dictionary<string, DataCube>();
+
+        // ── Sweep stacking ────────────────────────────────────────────────────
 
         /// <summary>
         /// Stack multiple DataSets along a new prepended axis.
         /// Every cube present in all DataSets is stacked; any cube missing from a DataSet
         /// causes an exception.  Call with a sweep axis whose length equals datasets.Count.
+        /// Operates on the default group only — engine sweep DataSets are always flat.
         /// </summary>
         public static DataSet StackSweepAxis(Axis sweepAxis, IReadOnlyList<DataSet> datasets)
         {
@@ -68,10 +205,7 @@ namespace RfCore.Data
             return result;
         }
 
-        public IReadOnlyDictionary<string, DataCube> Cubes =>
-            (IReadOnlyDictionary<string, DataCube>)_cubes;
-
-        // ---- Network-parameter convenience accessors ------------
+        // ── Network-parameter convenience accessors ───────────────────────────
         //
         //  S(i,j), Y(i,j), Z(i,j) address the cube by user port numbers.
         //  Port numbers are 1-based (S(2,1) = S21), matching Touchstone /
@@ -123,7 +257,7 @@ namespace RfCore.Data
                 $"Port {portNumber} not found on axis '{axisName}' of cube '{cubeName}'.");
         }
 
-        // ---- Node-voltage / branch-current accessors -----------
+        // ── Node-voltage / branch-current accessors ───────────────────────────
 
         /// <summary>
         /// V(nodeName, …)  — node voltage trace.
@@ -133,10 +267,10 @@ namespace RfCore.Data
             NodeTrace("V", "node", nodeName, remainingArgs);
 
         /// <summary>
-        /// I(branchName, …)  — branch current trace.
+        /// I(branchName, …)  — branch current trace (unified I cube, branch axis).
         /// </summary>
         public DataCube I(string branchName, params object[] remainingArgs) =>
-            NodeTrace("I", "node", branchName, remainingArgs);
+            NodeTrace("I", "branch", branchName, remainingArgs);
 
         private DataCube NodeTrace(string cubeName, string nodeAxisName,
                                    string nodeLabel, object[] remainingArgs)

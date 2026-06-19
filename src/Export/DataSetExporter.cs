@@ -94,12 +94,14 @@ public static class DataSetExporter
     {
         const long MiB = 1L << 20;
 
-        // Existing DataSet cubes
-        long existingBytes = ds.Cubes.Values.Sum(c =>
-        {
-            long elems = c.Axes.Count == 0 ? 1L : c.Axes.Aggregate(1L, (acc, a) => acc * a.Length);
-            return elems * (c.DataKind == DataKind.Complex ? 16L : 8L);
-        });
+        // Existing DataSet cubes — sum across all groups (grouped results have no default-group cubes).
+        long existingBytes = ds.Groups
+            .SelectMany(g => ds.CubesIn(g).Values)
+            .Sum(c =>
+            {
+                long elems = c.Axes.Count == 0 ? 1L : c.Axes.Aggregate(1L, (acc, a) => acc * a.Length);
+                return elems * (c.DataKind == DataKind.Complex ? 16L : 8L);
+            });
 
         long linearNetworkBytes  = 0;
         long evalBytes           = 0;

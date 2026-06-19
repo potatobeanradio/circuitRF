@@ -39,10 +39,16 @@ internal static class NpyWriter
     /// Format version written into the <c>__meta__</c> JSON and checked by <see cref="NpyReader"/>.
     /// Increment when the file layout changes.  The importer rejects any mismatch.
     /// </summary>
-    internal const int FormatVersion = 1;
+    internal const int FormatVersion = 2;
+
     // ── NumPy magic & version constants ─────────────────────────────────────
 
     private static readonly byte[] Magic = { 0x93, (byte)'N', (byte)'U', (byte)'M', (byte)'P', (byte)'Y' };
+
+    // ── Cube field mapping ───────────────────────────────────────────────────
+
+    // Maps each cube to its unique NumPy field name (opaque key — do not parse for group/cube).
+    private readonly record struct CubeMapping(string FieldName, string Group, string CubeName);
 
     // ── Public entry point ───────────────────────────────────────────────────
 
@@ -52,12 +58,15 @@ internal static class NpyWriter
         ExportOptions         opts,
         ILinearNetworkPayload? payload)
     {
+        // 0. Build cube → field-name mappings once; shared by meta + data passes.
+        var cubeMappings = BuildCubeMappings(ds);
+
         // 1. Build JSON metadata first — need byte count for |S<N> dtype.
-        string metaJson  = BuildMetaJson(ds, opts, payload);
+        string metaJson  = BuildMetaJson(ds, opts, payload, cubeMappings);
         byte[] metaBytes = Encoding.UTF8.GetBytes(metaJson);
 
         // 2. Collect field descriptors (name, numpy-dtype, int[] shape).
-        var fields = CollectFields(ds, metaBytes.Length, opts, payload);
+        var fields = CollectFields(ds, metaBytes.Length, opts, payload, cubeMappings);
 
         // 3. Build the Python dict header string (without padding — needed first to
         //    compute length then pad).
@@ -95,17 +104,56 @@ internal static class NpyWriter
         w.Write(paddedHeaderBytes);
 
         // 6. Write data for each field in declaration order.
-        WriteFieldData(w, ds, metaBytes, opts, payload, fields);
+        WriteFieldData(w, ds, metaBytes, opts, payload, fields, cubeMappings);
     }
 
     // ── Field descriptor ────────────────────────────────────────────────────
 
     private sealed record FieldDesc(
-        string   Name,    // numpy field name (cube name, possibly escaped)
+        string   Name,    // numpy field name (unique, opaque — do not parse for group/cube)
         string   Dtype,   // numpy dtype string: '<c16', '<f8', '<i4', '<i8', '|S<N>'
         int[]    Shape);  // sub-array shape; empty = scalar field
 
     private static string EscapeName(string name) => name.Replace("/", "__slash__");
+
+    // ── Cube → field-name mapping ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Assign a unique NumPy field name to every cube in the DataSet.
+    /// The field name is an opaque key; the authoritative (group, cube) pair lives in __meta__.
+    /// Uniquification: base = EscapeName(cube); on collision: EscapeName(group)+"."+EscapeName(cube);
+    /// on further collision: append "~N".
+    /// </summary>
+    private static List<CubeMapping> BuildCubeMappings(DataSet ds)
+    {
+        var mappings  = new List<CubeMapping>();
+        var usedNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var group in ds.Groups)
+        {
+            foreach (var kvp in ds.CubesIn(group))
+            {
+                string cubeName = kvp.Key;
+                string fieldName = EscapeName(cubeName);
+
+                if (usedNames.Contains(fieldName))
+                    fieldName = EscapeName(group) + "." + EscapeName(cubeName);
+
+                if (usedNames.Contains(fieldName))
+                {
+                    int n = 2;
+                    string candidate;
+                    do { candidate = EscapeName(group) + "." + EscapeName(cubeName) + "~" + n++; }
+                    while (usedNames.Contains(candidate));
+                    fieldName = candidate;
+                }
+
+                usedNames.Add(fieldName);
+                mappings.Add(new CubeMapping(fieldName, group, cubeName));
+            }
+        }
+        return mappings;
+    }
 
     // ── Field collection ─────────────────────────────────────────────────────
 
@@ -113,18 +161,18 @@ internal static class NpyWriter
         DataSet               ds,
         int                   metaByteCount,
         ExportOptions         opts,
-        ILinearNetworkPayload? payload)
+        ILinearNetworkPayload? payload,
+        List<CubeMapping>     cubeMappings)
     {
         var list = new List<FieldDesc>();
 
-        // Cube fields
-        foreach (var kvp in ds.Cubes)
+        // Cube fields — in group order as recorded by BuildCubeMappings.
+        foreach (var m in cubeMappings)
         {
-            string name  = EscapeName(kvp.Key);
-            var    cube  = kvp.Value;
+            var    cube  = ds.CubesIn(m.Group)[m.CubeName];
             string dtype = cube.DataKind == DataKind.Complex ? "<c16" : "<f8";
             var    shape = cube.Axes.Select(a => a.Length).ToArray();
-            list.Add(new FieldDesc(name, dtype, shape));
+            list.Add(new FieldDesc(m.FieldName, dtype, shape));
         }
 
         // Metadata field — fixed-length byte string sized to exact JSON length.
@@ -134,8 +182,6 @@ internal static class NpyWriter
         if (opts.IncludeLinearNetwork && payload != null)
         {
             // nnz = union of all harmonics' sparsity patterns.
-            // G(DC) has fewer nonzeros than G(fundamental+) because capacitors are open
-            // at DC (ω=0). Using k=0 alone would undercount and corrupt the layout.
             var (canonRows, _) = BuildCanonicalPattern(payload, payload.HarmonicCount);
             int nnz = canonRows.Length;
             int K1  = payload.HarmonicCount;
@@ -204,8 +250,12 @@ internal static class NpyWriter
         byte[]                metaBytes,
         ExportOptions         opts,
         ILinearNetworkPayload? payload,
-        List<FieldDesc>       fields)
+        List<FieldDesc>       fields,
+        List<CubeMapping>     cubeMappings)
     {
+        // Build a field-name → mapping lookup for O(1) access.
+        var cubeByField = cubeMappings.ToDictionary(m => m.FieldName, m => m);
+
         // The structured array has shape (1,) — write exactly ONE element of the struct.
         // Fields are laid out sequentially, each field as C-order row-major bytes.
 
@@ -224,9 +274,9 @@ internal static class NpyWriter
                 continue;
             }
 
-            // Regular DataCube field
-            string cubeName = f.Name.Replace("__slash__", "/");
-            var    cube     = ds.Cubes[cubeName];
+            // Regular DataCube field — look up via the cube mapping.
+            var m    = cubeByField[f.Name];
+            var cube = ds.CubesIn(m.Group)[m.CubeName];
             WriteCubeData(w, cube);
         }
     }
@@ -376,24 +426,50 @@ internal static class NpyWriter
 
     // ── Metadata JSON ─────────────────────────────────────────────────────────
 
-    private static string BuildMetaJson(DataSet ds, ExportOptions opts, ILinearNetworkPayload? payload)
+    private static string BuildMetaJson(
+        DataSet               ds,
+        ExportOptions         opts,
+        ILinearNetworkPayload? payload,
+        List<CubeMapping>     cubeMappings)
     {
-        // Build: { "format_version":N, "CubeName": { "kind": "Complex"|"Real", "axes": [...] }, ...
-        //          "__linnet_node_names":[...], "__linnet_branch_names":[...] }
-        // Hand-built to avoid a System.Text.Json dependency (and to control precision).
+        // Build:
+        //   { "format_version":2,
+        //     "groups":["HB1","SP1","measurements"],
+        //     "<fieldName>": { "group":"HB1", "cube":"V", "kind":"Complex", "axes":[...] },
+        //     ...
+        //     "__linnet_node_names":[...], "__linnet_branch_names":[...] }
+        //
+        // The field name (key) is the opaque uniquified numpy dtype name.
+        // The authoritative group and cube names live inside the value object.
         var sb = new StringBuilder();
         sb.Append("{\"format_version\":");
         sb.Append(FormatVersion);
-        foreach (var kvp in ds.Cubes)
+
+        // Top-level groups array (ordered).
+        sb.Append(",\"groups\":[");
+        var groups = ds.Groups;
+        for (int gi = 0; gi < groups.Count; gi++)
         {
-            sb.Append(',');
-
-            string fieldName = EscapeName(kvp.Key);
-            var    cube      = kvp.Value;
-
+            if (gi > 0) sb.Append(',');
             sb.Append('"');
-            AppendJsonString(sb, fieldName);
-            sb.Append("\":{\"kind\":\"");
+            AppendJsonString(sb, groups[gi]);
+            sb.Append('"');
+        }
+        sb.Append(']');
+
+        // Per-cube entries keyed by unique field name.
+        foreach (var m in cubeMappings)
+        {
+            var cube = ds.CubesIn(m.Group)[m.CubeName];
+
+            sb.Append(',');
+            sb.Append('"');
+            AppendJsonString(sb, m.FieldName);
+            sb.Append("\":{\"group\":\"");
+            AppendJsonString(sb, m.Group);
+            sb.Append("\",\"cube\":\"");
+            AppendJsonString(sb, m.CubeName);
+            sb.Append("\",\"kind\":\"");
             sb.Append(cube.DataKind == DataKind.Complex ? "Complex" : "Real");
             sb.Append("\",\"axes\":[");
 
@@ -436,8 +512,6 @@ internal static class NpyWriter
         }
 
         // Linnet name maps: include when IncludeLinearNetwork is on.
-        // Stored in __meta__ (not as a separate structured field) because variable-length
-        // string arrays cannot be embedded in NumPy structured dtypes without pickling.
         if (opts.IncludeLinearNetwork && payload != null)
         {
             sb.Append(",\"__linnet_node_names\":[");

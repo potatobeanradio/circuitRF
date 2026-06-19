@@ -117,36 +117,54 @@ internal static class NpyReader
 
         var ds = new DataSet();
 
+        // Pre-register groups in the order recorded by the writer so that group order
+        // is preserved even before any cubes are added.
+        if (meta.TryGetProperty("groups", out var groupsArr)
+            && groupsArr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var gEl in groupsArr.EnumerateArray())
+                ds.RegisterGroup(gEl.GetString() ?? DataSet.DefaultGroup);
+        }
+
         foreach (var f in fields)
         {
             // Skip non-cube fields
             if (f.Name == "__meta__" || f.Name.StartsWith("__linnet_", StringComparison.Ordinal))
                 continue;
 
-            // Escaped field name in __meta__ matches the dtype field name directly.
+            // The field name is the opaque uniquified key written by NpyWriter.
             if (!meta.TryGetProperty(f.Name, out var cubeMeta))
                 throw new InvalidDataException(
                     $"Field '{f.Name}' in dtype has no entry in __meta__ — file is inconsistent.");
 
+            // Read group and cube names from meta (authoritative since format_version 2).
+            if (!cubeMeta.TryGetProperty("group", out var groupProp))
+                throw new InvalidDataException(
+                    $"Cube field '{f.Name}' is missing 'group' in __meta__.");
+            if (!cubeMeta.TryGetProperty("cube", out var cubeProp))
+                throw new InvalidDataException(
+                    $"Cube field '{f.Name}' is missing 'cube' in __meta__.");
+
+            string group    = groupProp.GetString() ?? DataSet.DefaultGroup;
+            string cubeName = cubeProp.GetString()
+                ?? throw new InvalidDataException($"'cube' is null for field '{f.Name}'.");
+
             string kindStr = cubeMeta.GetProperty("kind").GetString()
-                ?? throw new InvalidDataException($"'kind' is null for cube '{f.Name}'.");
+                ?? throw new InvalidDataException($"'kind' is null for cube field '{f.Name}'.");
             DataKind kind  = kindStr == "Complex" ? DataKind.Complex : DataKind.Real;
 
             var axesJson = cubeMeta.GetProperty("axes");
             var axes     = BuildAxes(axesJson, f.Name);
 
-            // Unescape the field name to get the DataSet cube name.
-            string cubeName = f.Name.Replace("__slash__", "/");
-
             if (kind == DataKind.Complex)
             {
                 var data = ReadComplex(rawFields[f.Name], f.Shape);
-                ds.Add(cubeName, new DataCube(axes, data));
+                ds.AddToGroup(group, cubeName, new DataCube(axes, data));
             }
             else
             {
                 var data = ReadReal(rawFields[f.Name], f.Shape);
-                ds.Add(cubeName, new DataCube(axes, data));
+                ds.AddToGroup(group, cubeName, new DataCube(axes, data));
             }
         }
 
