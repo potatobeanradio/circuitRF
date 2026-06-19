@@ -27,4 +27,10 @@ public enum ExportFormat
     /// Readable by NumPy ≥ 1.9 and any library that supports structured dtypes.
     /// </summary>
     Npy = 1,
+
+    /// <summary>
+    /// Tab-delimited text file (<c>.txt</c>).
+    /// Long format — one section per cube.  Written by <see cref="TsvWriter"/>.
+    /// </summary>
+    Tsv = 2,
 }

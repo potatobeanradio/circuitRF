@@ -80,6 +80,10 @@ public static class DataSetExporter
                 NpyWriter.Write(path, workingDs, opts, linearPayload);
                 break;
 
+            case ExportFormat.Tsv:
+                TsvWriter.Write(path, workingDs, opts);
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown export format.");
         }

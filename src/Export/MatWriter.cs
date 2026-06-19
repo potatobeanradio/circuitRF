@@ -46,7 +46,7 @@ internal static class MatWriter
     /// Format version written as <c>/dataset/format_version</c>.
     /// Increment when the file layout changes.  Consumers should reject mismatches.
     /// </summary>
-    internal const int FormatVersion = 1;
+    internal const int FormatVersion = 2;
     // ── Compound type for complex double (MATLAB-compatible field names) ──────
 
     /// <summary>
@@ -78,20 +78,32 @@ internal static class MatWriter
         // Format version — scalar int64 at /dataset/format_version
         datasetGroup["format_version"] = MakeShapedArray(new long[] { (long)FormatVersion }, Array.Empty<int>());
 
-        // ── Cube datasets ────────────────────────────────────────────────────
-        foreach (var kvp in ds.Cubes)
+        // ── Cube datasets (grouped) ──────────────────────────────────────────
+        foreach (var group in ds.Groups)
         {
-            string hdf5Name = EscapeName(kvp.Key);
-            var    cube     = kvp.Value;
+            H5Group target, axesTarget;
+            if (group == DataSet.DefaultGroup)
+            {
+                target     = datasetGroup;
+                axesTarget = axesGroup;
+            }
+            else
+            {
+                target     = new H5Group(); datasetGroup[EscapeName(group)] = target;
+                axesTarget = new H5Group(); axesGroup[EscapeName(group)]    = axesTarget;
+            }
 
-            // Build the dataset
-            datasetGroup[hdf5Name] = MakeCubeDataset(cube);
-
-            // Build axes metadata as JSON stored in a 1-element string dataset
-            var cubeAxesGroup = new H5Group();
-            axesGroup[hdf5Name] = cubeAxesGroup;
-            cubeAxesGroup["axes.json"] = new string[] { BuildAxesJson(cube) };
+            foreach (var kvp in ds.CubesIn(group))
+            {
+                string h = EscapeName(kvp.Key);
+                target[h] = MakeCubeDataset(kvp.Value);
+                var cag   = new H5Group(); axesTarget[h] = cag;
+                cag["axes.json"] = new string[] { BuildAxesJson(kvp.Value) };
+            }
         }
+
+        // Ordered group-name list for readers that need to enumerate groups
+        datasetGroup["groups"] = ds.Groups.ToArray();
 
         // ── Linear-network group ─────────────────────────────────────────────
         if (opts.IncludeLinearNetwork && payload != null)
