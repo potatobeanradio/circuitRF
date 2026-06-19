@@ -98,6 +98,7 @@ public sealed class NodePickerLabeledFilterTests
         DataSetExporter.Export(ds, path, ExportFormat.Npy);
         var lib = new DataSourceLibraryViewModel();
         await lib.LoadFileAsync(path);
+        await lib.SelectDataSourceAsync(path);
         return (path, lib);
     }
 

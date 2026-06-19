@@ -118,6 +118,30 @@ public partial class DisplayWindowViewModel : ViewModelBase
     public bool                    HasSingleSelection => DataDisplay?.HasSingleSelection ?? false;
     public PlotInspectorViewModel? ActiveInspector    => DataDisplay?.ActiveInspector;
 
+    // ---- Datasource combo binding (single-source brief) -------------------
+
+    /// <summary>
+    /// Bound two-way to the toolbar datasource combo. Setting calls SelectDataSourceAsync.
+    /// </summary>
+    public DataSourceItem? SelectedDataSourceItem
+    {
+        get => DataSourceLibrary.AvailableDataSources
+                   .FirstOrDefault(i => i.LogicalId == DataSourceLibrary.SelectedDataSourceRef);
+        set
+        {
+            if (value is null) return;
+            _ = DataSourceLibrary.SelectDataSourceAsync(value.LogicalId);
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Pass-through: enumerate results + workspace Touchstone without loading any file.</summary>
+    public void RefreshAvailableDataSources()
+    {
+        DataSourceLibrary.RefreshAvailableDataSources();
+        OnPropertyChanged(nameof(SelectedDataSourceItem));
+    }
+
     // ---- Unsaved-changes tracking ----------------------------------------
     //
     // _baselineConfigJson stores a serialised snapshot of the display config
@@ -179,6 +203,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
         {
             // Window geometry is excluded (zeroed) — not a "meaningful" change.
             // ActiveTabIndex is excluded — tab-switch alone should not prompt.
+            SelectedDataSource = DataSourceLibrary.SelectedDataSourceRef,
         };
 
         foreach (var tab in Tabs)
@@ -290,6 +315,13 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
         // Tab-level undo state changes must also refresh the Undo/Redo commands.
         TabUndoRedo.StateChanged += OnUndoRedoStateChanged;
+
+        // Keep the combo selection in sync with the library selection.
+        DataSourceLibrary.SelectedDataSourceChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(SelectedDataSourceItem));
+            RaiseDirtyChanged();
+        };
 
         UpdateThemeFromSystem();
         if (Application.Current is not null)
@@ -582,12 +614,13 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
         var config = new DataDisplayConfig
         {
-            FormatVersion  = DataDisplayConfig.CurrentFormatVersion,
-            WindowLeft     = windowLeft,
-            WindowTop      = windowTop,
-            WindowWidth    = windowWidth,
-            WindowHeight   = windowHeight,
-            ActiveTabIndex = ActiveTab is not null ? Math.Max(0, Tabs.IndexOf(ActiveTab)) : 0,
+            FormatVersion      = DataDisplayConfig.CurrentFormatVersion,
+            SelectedDataSource = DataSourceLibrary.SelectedDataSourceRef,
+            WindowLeft         = windowLeft,
+            WindowTop          = windowTop,
+            WindowWidth        = windowWidth,
+            WindowHeight       = windowHeight,
+            ActiveTabIndex     = ActiveTab is not null ? Math.Max(0, Tabs.IndexOf(ActiveTab)) : 0,
         };
 
         foreach (var tab in Tabs)
@@ -685,6 +718,9 @@ public partial class DisplayWindowViewModel : ViewModelBase
         TabUndoRedo.Clear();
         Tabs.Clear();
         ActiveTab = null;
+
+        // Select the persisted datasource BEFORE loading tabs so sentinel traces resolve correctly.
+        await DataSourceLibrary.SelectDataSourceAsync(config.SelectedDataSource);
 
         foreach (var tc in tabConfigs)
         {

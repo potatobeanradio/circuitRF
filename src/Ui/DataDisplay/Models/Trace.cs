@@ -199,7 +199,11 @@ namespace CircuitRF.Ui.DataDisplay
         public PrecisionFormat FormatString          { get; set; } = PrecisionFormat.F;
         public int             MaximumFractionDigits { get; set; } = 3;
 
-        /// <summary>Optional URL of the source file (for display / reload).</summary>
+        /// <summary>Logical reference persisted in .cdd. "run.npy" (or null) = selected datasource sentinel;
+        /// "schemName/run.npy" = a specific sim run; rooted path = explicit Touchstone file.</summary>
+        public string? SourceRef  { get; set; }
+
+        /// <summary>Resolved absolute path for the source file (runtime only, not persisted directly).</summary>
         public string? SourcePath { get; set; }
 
         // ---- Cube-native binding (Phase 7.2c-a) -------------------------
@@ -470,6 +474,7 @@ namespace CircuitRF.Ui.DataDisplay
             _derived          = src.Derived;
             Properties        = new TraceProperties(src.Properties, incrementColorBy);
             _z0               = src.Z0;
+            SourceRef         = src.SourceRef;
             SourcePath        = src.SourcePath;
             ColumnWidth       = src.ColumnWidth;
             // Cube-bound identity fields (Phase 7.2c-a).

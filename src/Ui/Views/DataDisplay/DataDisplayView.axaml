@@ -124,22 +124,27 @@
                     <mi:MaterialIcon Kind="FolderArrowDownOutline" Width="16" Height="16"/>
                 </Button>
 
+                <!-- Datasource combo: lists results/ schematics + workspace Touchstone files -->
+                <ComboBox Width="200"
+                          ItemsSource="{Binding ViewModel.Window.DataSourceLibrary.AvailableDataSources}"
+                          SelectedItem="{Binding ViewModel.Window.SelectedDataSourceItem, Mode=TwoWay}"
+                          ToolTip.Tip="{Binding ViewModel.Window.DataSourceLibrary.SelectedDataSourceAbs}"
+                          Padding="6,3">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DataSourceItem">
+                            <TextBlock Text="{Binding DisplayName}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
             </StackPanel>
         </Border>
 
-        <!-- ── Main content: library | splitter | tabs + inspector ──────────── -->
-        <Grid ColumnDefinitions="180,4,*">
+        <!-- ── Main content: tabs + inspector (library panel removed) ────────── -->
+        <Grid ColumnDefinitions="*">
 
-            <!-- Left: data-source library panel -->
-            <v:DataSourceLibraryView Grid.Column="0"
-                              DataContext="{Binding ViewModel.Window.DataSourceLibrary}"/>
-
-            <GridSplitter Grid.Column="1"
-                          Background="{DynamicResource SystemBaseLowColor}"
-                          ResizeDirection="Columns"/>
-
-            <!-- Right: tab control + optional docked inspector -->
-            <Grid Grid.Column="2" ColumnDefinitions="*,Auto">
+            <!-- Tab control + optional docked inspector -->
+            <Grid Grid.Column="0" ColumnDefinitions="*,Auto">
 
                 <!--
                     TabControl.  Each tab owns an independent PlotCanvasView

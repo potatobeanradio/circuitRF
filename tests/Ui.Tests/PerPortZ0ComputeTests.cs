@@ -193,6 +193,7 @@ public sealed class PerPortZ0ComputeTests
             // Case B: non-uniform Z0 — library entry drives SourceZ0IsUnusual = true.
             var libB = new DataSourceLibraryViewModel();
             await libB.LoadFileAsync(tmpNu);
+            await libB.SelectDataSourceAsync(tmpNu);
             var entryB = libB.Entries.Single();
             Assert.True(entryB.HasUnusualZ0, "pre-condition: non-uniform Z0 entry");
 
@@ -206,6 +207,7 @@ public sealed class PerPortZ0ComputeTests
             // Case C: complex Z0 — library entry drives SourceZ0IsUnusual = true.
             var libC = new DataSourceLibraryViewModel();
             await libC.LoadFileAsync(tmpCx);
+            await libC.SelectDataSourceAsync(tmpCx);
             var entryC = libC.Entries.Single();
             Assert.True(entryC.HasUnusualZ0, "pre-condition: complex Z0 entry");
 

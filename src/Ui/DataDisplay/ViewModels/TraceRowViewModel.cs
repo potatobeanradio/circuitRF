@@ -174,6 +174,8 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(Z0DisabledReason));
         if (alreadyApplied) return;
 
+        // All picker signals come from SelectedEntry, so stamp the sentinel ref.
+        _trace.SourceRef  = DataSourceRef.Selected;
         _trace.SourcePath = value.Entry.FilePath;
 
         if (value.IsCubeBound)
@@ -734,6 +736,8 @@ public partial class TraceRowViewModel : ViewModelBase
     internal void UnsubscribeFromLibrary()
     {
         _parent.LibraryEntries.CollectionChanged -= OnLibraryEntriesChanged;
+        if (_parent.Library is { } lib)
+            lib.SelectedDataSourceChanged -= OnSelectedDataSourceChanged;
     }
 
     // ---- Command ------------------------------------------------------------
@@ -802,11 +806,18 @@ public partial class TraceRowViewModel : ViewModelBase
 
         // Keep AvailableSignals fresh when the library collection changes.
         _parent.LibraryEntries.CollectionChanged += OnLibraryEntriesChanged;
+
+        // Refresh signals when the selected datasource changes.
+        if (_parent.Library is { } lib)
+            lib.SelectedDataSourceChanged += OnSelectedDataSourceChanged;
     }
 
     // ---- Signal list management ---------------------------------------------
 
     private void OnLibraryEntriesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => RebuildSignals();
+
+    private void OnSelectedDataSourceChanged(object? s, EventArgs e)
         => RebuildSignals();
 
     private void RebuildSignals()
@@ -816,10 +827,14 @@ public partial class TraceRowViewModel : ViewModelBase
         AvailableSignals.Clear();
 
         bool isComplexPlot = _parent.PlotType is PlotType.Smith or PlotType.Polar;
-        bool singleSource  = _parent.LibraryEntries.Count == 1;
+        // Picker shows only the selected datasource (single-source brief).
+        var selectedEntry = _parent.Library?.SelectedEntry;
+        bool singleSource = true;  // always single-source now
 
         // ---- Network-bound signals (matrix / derived) -----------------------
-        foreach (var entry in _parent.LibraryEntries)
+        foreach (var entry in selectedEntry is null
+            ? System.Linq.Enumerable.Empty<DataSourceEntryViewModel>()
+            : new[] { selectedEntry })
         {
             if (entry.Snp is null) continue;
             var snp = entry.Snp;
@@ -867,7 +882,9 @@ public partial class TraceRowViewModel : ViewModelBase
         // Default slice: first axis as X, remainder pinned at index 0.
         // The axis-role editor below the combo lets users reassign roles without
         // generating a combinatorial explosion of signal items.
-        foreach (var entry in _parent.LibraryEntries)
+        foreach (var entry in selectedEntry is null
+            ? System.Linq.Enumerable.Empty<DataSourceEntryViewModel>()
+            : new[] { selectedEntry })
         {
             var ds = entry.Data;
             if (ds is null) continue;
@@ -1046,8 +1063,12 @@ public partial class TraceRowViewModel : ViewModelBase
 
         if (!_trace.IsCubeBound || _trace.CubeName is null) return;
 
-        var entry = _parent.LibraryEntries.FirstOrDefault(e =>
-            string.Equals(e.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase));
+        // For sentinel traces, look in SelectedEntry; for cross-schematic, scan all Entries.
+        var entry = _parent.Library?.SelectedEntry is { } sel &&
+                    string.Equals(sel.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase)
+            ? sel
+            : _parent.LibraryEntries.FirstOrDefault(e =>
+                  string.Equals(e.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase));
         var ds = entry?.Data;
         if (ds is null || !ds.Contains(_trace.CubeName)) return;
 
@@ -1423,8 +1444,11 @@ public partial class TraceRowViewModel : ViewModelBase
         // `mag(V[:, "Vout", 1])` parses to (CubeName, Slice, Transform); a multi-cube expression does not,
         // in which case we drop the single-cube identity and present it as a free expression.
         string? normalizedSource = _trace.SourcePath is string sp ? System.IO.Path.GetFullPath(sp) : null;
-        var ds = _parent.LibraryEntries
-            .FirstOrDefault(e => string.Equals(e.FilePath, normalizedSource, StringComparison.OrdinalIgnoreCase))
+        var ds = (_parent.Library?.SelectedEntry is { } sel2 &&
+                  string.Equals(sel2.FilePath, normalizedSource, StringComparison.OrdinalIgnoreCase)
+            ? sel2
+            : _parent.LibraryEntries.FirstOrDefault(e =>
+                  string.Equals(e.FilePath, normalizedSource, StringComparison.OrdinalIgnoreCase)))
             ?.Data;
         if (ds is not null &&
             CubeTraceSpecParser.TryParse(text, ds, out var cubeName, out var slice, out var transform, out _))

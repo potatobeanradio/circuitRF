@@ -107,6 +107,7 @@ public sealed class Z0IndicatorTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(tmpPath);
+            await lib.SelectDataSourceAsync(tmpPath);
             var entry = lib.Entries.Single();
 
             Assert.True(entry.HasUnusualZ0, "pre-condition: entry must have unusual Z0");
@@ -159,6 +160,7 @@ public sealed class Z0IndicatorTests
 
             // Load source A once — event fires once.
             await lib.LoadFileAsync(tmpA);
+            await lib.SelectDataSourceAsync(tmpA);
             Assert.Equal(1, warnCount);
 
             // Reload source A (simulate auto-refresh) — event must NOT fire again.
@@ -171,10 +173,12 @@ public sealed class Z0IndicatorTests
                 string.Equals(e.FilePath, tmpA, StringComparison.OrdinalIgnoreCase));
             lib.Remove(entryA);
             await lib.LoadFileAsync(tmpA);
+            await lib.SelectDataSourceAsync(tmpA);
             Assert.Equal(2, warnCount);
 
             // Load source B — distinct path, fires once more.
             await lib.LoadFileAsync(tmpB);
+            await lib.SelectDataSourceAsync(tmpB);
             Assert.Equal(3, warnCount);
         }
         finally

@@ -130,6 +130,7 @@ public sealed class Z0OverrideTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(tmpPath);
+            await lib.SelectDataSourceAsync(tmpPath);
             var entry = lib.Entries.Single();
 
             Assert.Equal(Z0Kind.UniformComplex, entry.Z0Kind);
@@ -169,6 +170,7 @@ public sealed class Z0OverrideTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(tmpPath);
+            await lib.SelectDataSourceAsync(tmpPath);
             var entry = lib.Entries.Single();
 
             Assert.Equal(Z0Kind.NonUniform, entry.Z0Kind);

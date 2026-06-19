@@ -133,6 +133,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     // ---- Library access (for TraceRowViewModel) -------------------------
 
+    /// <summary>The document datasource library (null in design mode).</summary>
+    public DataSourceLibraryViewModel? Library => _library;
+
     /// <summary>Live collection of loaded data-source entries, forwarded to each trace row.</summary>
     public ObservableCollection<DataSourceEntryViewModel> LibraryEntries =>
         _library?.Entries ?? _emptyEntries;
@@ -193,7 +196,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public bool CanAddTrace =>
         _plot.Traces.Count > 0 ||
-        (_library?.Entries.Any(e => HasPlottableData(e, _plot.PlotType == PlotType.Table)) ?? false);
+        (_library?.SelectedEntry is { } e && HasPlottableData(e, _plot.PlotType == PlotType.Table));
 
     /// <summary>True when an entry has anything a trace can be seeded from: a non-empty SNP
     /// (S-parameter network) OR at least one plottable cube (HB/DC/loadpull cube-only results).</summary>
@@ -259,8 +262,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         if (_library != null)
         {
-            _library.LibraryChanged += OnLibraryChanged;
+            _library.LibraryChanged            += OnLibraryChanged;
             _library.Entries.CollectionChanged += (_, _) => RefreshAddCommand();
+            _library.SelectedDataSourceChanged += (_, _) => RefreshAddCommand();
         }
     }
 
@@ -340,22 +344,26 @@ public partial class PlotInspectorViewModel : ViewModelBase
         {
             var src = _plot.Traces.Last();
             trace = new Trace(src, incrementColorBy: 1, includeMarkers: false);
+            trace.SourceRef = src.SourceRef;
         }
-        else if (_library?.Entries.FirstOrDefault(e => e.Snp is not null && !e.Snp.IsEmpty) is { } firstReal)
+        else if (_library?.SelectedEntry is { } sel && sel.Snp is not null && !sel.Snp.IsEmpty)
         {
-            var snp = firstReal.Snp!;
+            var snp = sel.Snp!;
             bool isComplex = _plot.PlotType is PlotType.Smith or PlotType.Polar;
             trace = new Trace(
                 snp, MatrixType.S, 0, 0,
                 isComplex ? DependentVarFormat.Complex : DependentVarFormat.Db);
-            trace.SourcePath = snp.FilePath;
+            trace.SourceRef  = DataSourceRef.Selected;
+            trace.SourcePath = _library.SelectedDataSourceAbs;
         }
-        else if (_library?.Entries.FirstOrDefault(e =>
-                     FirstPlottableCubeName(e, _plot.PlotType == PlotType.Table) is not null) is { } firstCube)
+        else if (_library?.SelectedEntry is { } firstCube &&
+                 FirstPlottableCubeName(firstCube, _plot.PlotType == PlotType.Table) is not null)
         {
             // Cube-only source (HB / DC / loadpull result — no S network). Seed a cube-bound trace
             // on the first plottable cube with a default slice (axis 0 = X, the rest pinned at 0).
             trace = BuildSeedCubeTrace(firstCube);
+            trace.SourceRef  = DataSourceRef.Selected;
+            trace.SourcePath = _library.SelectedDataSourceAbs;
         }
         else return;
 
@@ -555,7 +563,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // ── Single-slice path (picker-authored, no Expression) ────────────────
         if (ds is null || t.CubeName is null || !ds.Contains(t.CubeName))
         {
+            // Cube unavailable in the (new) source → surface "<spec> <invalid>" on the label rather
+            // than a silently-empty trace. Cleared below once the cube resolves again.
+            t.InvalidSpecText = t.Expression ?? t.CubeName;
             t.Points.Clear();
+            t.FamilyCurves.Clear();   // family geometry must vanish too (and stop feeding Autoscale)
             return;
         }
 
@@ -563,9 +575,16 @@ public partial class PlotInspectorViewModel : ViewModelBase
         var slice = t.Slice;
         if (slice is null)
         {
+            t.InvalidSpecText = t.Expression ?? t.CubeName;
             t.Points.Clear();
+            t.FamilyCurves.Clear();
             return;
         }
+
+        // Cube + slice resolved → clear any stale invalid flag left by a prior bad source
+        // (covers the scalar, family, all-pinned, and rank-1 success paths below).
+        t.InvalidSpecText = null;
+        t.ExpressionError = null;
 
         // Scalar cube (rank 0): operating-point value — valid only on a Table (Part A).
         if (cube.Rank == 0)

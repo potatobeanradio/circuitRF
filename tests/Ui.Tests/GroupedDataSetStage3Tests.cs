@@ -171,6 +171,7 @@ public sealed class GroupedDataSetStage3Tests
             DataSetExporter.Export(ds, path, ExportFormat.Npy);
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(path);
+            await lib.SelectDataSourceAsync(path);
 
             // Seed a cube-bound trace pointing at "HB1.V" so the inspector has a valid context.
             var snp   = new SNP(new[] { 1e9 }, 2);

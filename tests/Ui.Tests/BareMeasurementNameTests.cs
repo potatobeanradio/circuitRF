@@ -124,6 +124,7 @@ public sealed class BareMeasurementNameTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(path);
+            await lib.SelectDataSourceAsync(path);
 
             var snp   = new SNP(new[] { 1e9 }, 2);
             var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);

@@ -62,6 +62,7 @@ public sealed class SparamRunAddTraceTests
         DataSetExporter.Export(ds, path, ExportFormat.Npy);
         var lib = new DataSourceLibraryViewModel();
         await lib.LoadFileAsync(path);
+        await lib.SelectDataSourceAsync(path);
         return (path, lib);
     }
 
@@ -190,6 +191,7 @@ public sealed class SparamRunAddTraceTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(path);
+            await lib.SelectDataSourceAsync(path);
 
             var entry = lib.Entries.First();
             Assert.NotNull(entry.Snp);  // Touchstone entry has SNP
@@ -386,6 +388,7 @@ public sealed class SparamRunAddTraceTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(path);
+            await lib.SelectDataSourceAsync(path);
 
             var plot      = new Plot(PlotType.Rect, FreqUnit.GHz);
             var inspector = new PlotInspectorViewModel(plot, () => { }, lib);

@@ -1389,8 +1389,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchDataDisplays.Add(doc);
         vm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
         vm.Window.GetResultsRootAction = GetResultsRoot;
-        _factory.OpenDocument(doc);
         WireDataDisplayLibraryEvents(vm);
+        _factory.OpenDocument(doc);
+        // Seed the toolbar combo with the most-recent run.npy.
+        vm.Window.RefreshAvailableDataSources();
+        _ = vm.Window.DataSourceLibrary.SelectDataSourceAsync(
+            vm.Window.DataSourceLibrary.MostRecentRunRef());
     }
 
     /// <summary>
@@ -1436,8 +1440,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _openDocsByPath[absPath] = newDoc;
         newVm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
         newVm.Window.GetResultsRootAction = GetResultsRoot;
-        _factory.OpenDocument(newDoc);
         WireDataDisplayLibraryEvents(newVm);
+        _factory.OpenDocument(newDoc);
 
         // format_version check throws InvalidDataException on mismatch.
         await newVm.Window.LoadAllAsync(absPath, stream);
@@ -1474,11 +1478,30 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         return wsDir is not null ? Path.Combine(wsDir, "results") : null;
     }
 
-    // ---- Data Display library event wiring (Phase 7.2e) --------------------
+    private IReadOnlyList<string> GetKnownTouchstoneFiles()
+    {
+        if (CurrentWorkspacePath is not { } cwsPath) return Array.Empty<string>();
+        CwsFile cws;
+        try { cws = WorkspacePersistence.LoadFromFile(cwsPath); }
+        catch { return Array.Empty<string>(); }
+        return cws.KnownFiles
+            .Where(p =>
+            {
+                var ext = System.IO.Path.GetExtension(p);
+                return ext.StartsWith(".s", StringComparison.OrdinalIgnoreCase)
+                    && (ext.EndsWith("p", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".snp", StringComparison.OrdinalIgnoreCase));
+            })
+            .ToList();
+    }
+
+    // ---- Data Display library event wiring ---------------------------------
 
     private void WireDataDisplayLibraryEvents(DataDisplayDocumentViewModel docVm)
     {
-        docVm.Window.DataSourceLibrary.UnusualZ0Detected += OnUnusualZ0Detected;
+        var lib = docVm.Window.DataSourceLibrary;
+        lib.UnusualZ0Detected      += OnUnusualZ0Detected;
+        lib.ResultsRootProvider     = GetResultsRoot;
+        lib.KnownTouchstoneProvider = GetKnownTouchstoneFiles;
     }
 
     private void OnUnusualZ0Detected(string path, Z0Kind kind, IReadOnlyList<Complex> z0)
@@ -2840,10 +2863,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private async Task RefreshOpenDataDisplaysAsync(IReadOnlyList<string> changedPaths)
     {
         if (changedPaths.Count == 0) return;
+        var changed = new HashSet<string>(changedPaths.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
         var displays = _openDocsByPath.Values.OfType<DataDisplayDocument>()
             .Concat(_scratchDataDisplays);
         foreach (var dd in displays)
-            await dd.ViewModel.Window.DataSourceLibrary.ReloadChangedAsync(changedPaths);
+        {
+            var lib = dd.ViewModel.Window.DataSourceLibrary;
+            lib.RefreshAvailableDataSources();
+            await lib.ReloadChangedAsync(changedPaths);
+            // If the selected datasource file was among the changed paths, re-select to re-resolve traces.
+            if (lib.SelectedDataSourceAbs is { } selAbs &&
+                changed.Contains(Path.GetFullPath(selAbs)))
+            {
+                await lib.SelectDataSourceAsync(lib.SelectedDataSourceRef);
+            }
+        }
     }
 
     /// <summary>

@@ -15,7 +15,14 @@ public partial class DataDisplayView : UserControl
     public DataDisplayView()
     {
         InitializeComponent();
-        Loaded += OnLoaded;
+        Loaded               += OnLoaded;
+        AttachedToVisualTree += OnAttachedToVisualTree;
+    }
+
+    private void OnAttachedToVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
+    {
+        if (DataContext is DataDisplayDocument doc)
+            doc.ViewModel.Window.RefreshAvailableDataSources();
     }
 
     private void OnLoaded(object? sender, RoutedEventArgs e)

@@ -17,6 +17,13 @@ using RfCore.Export;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
+/// <summary>One entry in the datasource combobox.</summary>
+public record DataSourceItem(
+    string DisplayName,
+    string LogicalId,
+    string AbsolutePath,
+    SourceKind Kind);
+
 public partial class DataSourceLibraryViewModel : ViewModelBase
 {
     public ObservableCollection<DataSourceEntryViewModel> Entries { get; } = new();
@@ -41,6 +48,129 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         if (entry.FilePath is not string path) return;
         if (!_warnedPaths.Add(path)) return;
         UnusualZ0Detected?.Invoke(path, entry.Z0Kind!.Value, entry.Z0PerPort);
+    }
+
+    // ---- Single-source selection (brief: single-datasource Data Display) -
+
+    /// <summary>Returns the workspace results directory, e.g. "…/results". Null outside a workspace.</summary>
+    public Func<string?>? ResultsRootProvider { get; set; }
+
+    /// <summary>Returns absolute paths of workspace-tracked Touchstone known files.</summary>
+    public Func<IReadOnlyList<string>>? KnownTouchstoneProvider { get; set; }
+
+    /// <summary>Logical id persisted in .cdd (e.g. "ampA/run.npy" or abs Touchstone path).</summary>
+    public string? SelectedDataSourceRef { get; private set; }
+
+    /// <summary>Resolved absolute path for the selected datasource; null when nothing is selected or file missing.</summary>
+    public string? SelectedDataSourceAbs { get; private set; }
+
+    /// <summary>The loaded library entry for the selected datasource, or null when lazy-load hasn't happened yet.</summary>
+    public DataSourceEntryViewModel? SelectedEntry { get; private set; }
+
+    /// <summary>Available datasources for the toolbar combobox. Rebuilt by RefreshAvailableDataSources.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<DataSourceItem> AvailableDataSources { get; } = new();
+
+    /// <summary>Fired after SelectDataSourceAsync completes (selection or load changed).</summary>
+    public event EventHandler? SelectedDataSourceChanged;
+
+    /// <summary>Resolves a logical SourceRef to an absolute path.
+    /// Null/sentinel → SelectedDataSourceAbs. Rooted → as-is. Relative → under ResultsRootProvider.</summary>
+    public string? ResolveAbs(string? sourceRef)
+    {
+        if (string.IsNullOrEmpty(sourceRef) || sourceRef == DataSourceRef.Selected)
+            return SelectedDataSourceAbs;
+        if (Path.IsPathRooted(sourceRef)) return sourceRef;
+        var root = ResultsRootProvider?.Invoke();
+        return root is null ? null : Path.GetFullPath(Path.Combine(root, sourceRef));
+    }
+
+    /// <summary>Enumerate available datasources without loading any file. Safe when there's no workspace.</summary>
+    public void RefreshAvailableDataSources()
+    {
+        AvailableDataSources.Clear();
+
+        var root = ResultsRootProvider?.Invoke();
+        if (root is not null && Directory.Exists(root))
+        {
+            // Sim runs: each subdir containing run.npy, sorted newest-first.
+            var simItems = new List<(string logicalId, string abs, long lastWrite)>();
+            foreach (var sub in Directory.EnumerateDirectories(root))
+            {
+                string runNpy = Path.Combine(sub, "run.npy");
+                if (!File.Exists(runNpy)) continue;
+                string schematic = Path.GetFileName(sub);
+                string logicalId = $"{schematic}/run.npy";
+                long ticks;
+                try { ticks = new System.IO.FileInfo(runNpy).LastWriteTimeUtc.Ticks; }
+                catch { ticks = 0; }
+                simItems.Add((logicalId, runNpy, ticks));
+            }
+            simItems.Sort((a, b) => b.lastWrite.CompareTo(a.lastWrite));
+            foreach (var (logicalId, abs, _) in simItems)
+            {
+                string schematic = logicalId[..logicalId.IndexOf('/')];
+                AvailableDataSources.Add(new DataSourceItem(schematic, logicalId, abs, SourceKind.Npy));
+            }
+        }
+
+        // Workspace known Touchstone files, sorted by name.
+        var touchstone = KnownTouchstoneProvider?.Invoke() ?? Array.Empty<string>();
+        foreach (var p in touchstone.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+            AvailableDataSources.Add(new DataSourceItem(Path.GetFileName(p), p, p, SourceKind.Touchstone));
+    }
+
+    /// <summary>Returns the LogicalId of the most-recently-written run.npy, or null.</summary>
+    public string? MostRecentRunRef()
+    {
+        var root = ResultsRootProvider?.Invoke();
+        if (root is null || !Directory.Exists(root)) return null;
+
+        string? bestId = null;
+        long    bestTicks = 0;
+        foreach (var sub in Directory.EnumerateDirectories(root))
+        {
+            string runNpy = Path.Combine(sub, "run.npy");
+            if (!File.Exists(runNpy)) continue;
+            long ticks;
+            try { ticks = new System.IO.FileInfo(runNpy).LastWriteTimeUtc.Ticks; }
+            catch { continue; }
+            if (ticks > bestTicks)
+            {
+                bestTicks = ticks;
+                bestId    = $"{Path.GetFileName(sub)}/run.npy";
+            }
+        }
+        return bestId;
+    }
+
+    /// <summary>Select by logical id: resolve, lazy-load, set SelectedEntry, fire event.</summary>
+    public async Task SelectDataSourceAsync(string? logicalId)
+    {
+        SelectedDataSourceRef = logicalId;
+        SelectedDataSourceAbs = ResolveAbs(logicalId);
+        SelectedEntry         = null;
+
+        if (SelectedDataSourceAbs is not null)
+        {
+            if (File.Exists(SelectedDataSourceAbs))
+            {
+                // Load into cache if not already present.
+                await LoadFileAsync(SelectedDataSourceAbs);
+                SelectedEntry = Entries.FirstOrDefault(e =>
+                    string.Equals(e.FilePath, SelectedDataSourceAbs,
+                                  StringComparison.OrdinalIgnoreCase));
+            }
+            else
+            {
+                // File missing — leave SelectedEntry null; traces render <invalid>.
+                AddBrokenEntry(SelectedDataSourceAbs);
+                SelectedEntry = Entries.FirstOrDefault(e =>
+                    string.Equals(e.FilePath, SelectedDataSourceAbs,
+                                  StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        SelectedDataSourceChanged?.Invoke(this, EventArgs.Empty);
     }
 
     // ---- UI callbacks set from code-behind --------------------------------

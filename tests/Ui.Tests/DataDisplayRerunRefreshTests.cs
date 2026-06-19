@@ -89,6 +89,7 @@ public sealed class DataDisplayRerunRefreshTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(tmpPath);
+            await lib.SelectDataSourceAsync(tmpPath);
             var entry = lib.Entries.Single();
 
             var initialSlice = new[]
@@ -137,6 +138,7 @@ public sealed class DataDisplayRerunRefreshTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(tmpPath);
+            await lib.SelectDataSourceAsync(tmpPath);
             var entry = lib.Entries.Single();
 
             var initialSlice = new[]

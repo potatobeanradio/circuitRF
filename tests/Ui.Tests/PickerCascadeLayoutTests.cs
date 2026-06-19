@@ -62,6 +62,7 @@ public sealed class PickerCascadeLayoutTests
         DataSetExporter.Export(ds, path, ExportFormat.Npy);
         var lib = new DataSourceLibraryViewModel();
         await lib.LoadFileAsync(path);
+        await lib.SelectDataSourceAsync(path);
         return (path, lib);
     }
 
@@ -175,6 +176,7 @@ public sealed class PickerCascadeLayoutTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(path);
+            await lib.SelectDataSourceAsync(path);
 
             var snp   = new SNP(new[] { 1e9 }, 2);
             var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);
@@ -302,6 +304,7 @@ public sealed class PickerCascadeLayoutTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(path);
+            await lib.SelectDataSourceAsync(path);
 
             var snp   = new SNP(new[] { 1e9 }, 2);
             var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);

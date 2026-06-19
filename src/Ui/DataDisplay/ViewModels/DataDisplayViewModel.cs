@@ -364,6 +364,7 @@ public partial class DataDisplayViewModel : ViewModelBase
         _library = library;
         library.LibraryChanged            += (_, _) => OnLibraryEntryCountChanged();
         library.Entries.CollectionChanged += (_, _) => OnLibraryEntryCountChanged();
+        library.SelectedDataSourceChanged += OnSelectedDataSourceChanged;
 
         // Respond immediately to settings changes that require a visual refresh.
         AppSettingsViewModel.Instance.PropertyChanged += OnSettingsPropertyChanged;
@@ -381,6 +382,33 @@ public partial class DataDisplayViewModel : ViewModelBase
     {
         foreach (var m in _markerInfoBoxes)
             m.OnLibraryEntryCountChanged();
+    }
+
+    private async void OnSelectedDataSourceChanged(object? s, EventArgs e)
+    {
+        if (_library is null) return;
+        // Re-point all sentinel traces to the newly-selected datasource, then rebuild via the same
+        // path a trace-expression commit uses (Inspector.RebuildAndNotify). Cube traces go through
+        // TrySetCubeData ONLY — never BuildPath, which would rebuild Points from the trace's stale
+        // cube buffer and resurrect the previous source's curve (the reported bug). Network traces
+        // get their SNP re-pointed to the new source (or a broken SNP) so they redraw the new data
+        // or fall blank. RebuildAndNotify also autoscales, refreshes trace cards, and redraws.
+        foreach (var c in _plots)
+        {
+            foreach (var t in c.PlotVM.Plot.Traces)
+            {
+                if (string.IsNullOrEmpty(t.SourceRef) || t.SourceRef == DataSourceRef.Selected)
+                {
+                    t.SourcePath = _library.ResolveAbs(t.SourceRef);
+                    if (!t.IsCubeBound)
+                        t.Data = _library.SelectedEntry?.Snp ?? SNP.CreateBroken(t.SourcePath ?? "");
+                }
+            }
+            c.Inspector.RebuildAndNotify();
+            c.UpdateLabelStrips();
+        }
+        RaiseContentChanged();
+        await Task.CompletedTask;
     }
 
     private void OnSettingsPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -820,7 +848,7 @@ public partial class DataDisplayViewModel : ViewModelBase
             ViewOffsetY = _viewOffsetY,
         };
         foreach (var c in _plots)
-            tc.Plots.Add(BuildPlotContainerConfig(c, configDir));
+            tc.Plots.Add(BuildPlotContainerConfig(c, configDir, Library));
         return tc;
     }
 
@@ -875,36 +903,41 @@ public partial class DataDisplayViewModel : ViewModelBase
         {
             if (traceConfig.SourcePath is null) continue;
 
-            string resolvedPath = Path.IsPathRooted(traceConfig.SourcePath)
-                ? traceConfig.SourcePath
-                : Path.GetFullPath(Path.Combine(configDir, traceConfig.SourcePath));
+            // traceConfig.SourcePath now stores the logical SourceRef (not an absolute/relative path).
+            string? sref        = traceConfig.SourcePath;
+            string? resolvedPath = Library?.ResolveAbs(sref);
 
-            // Look up (or load) the library entry; also grab the SNP for network-bound traces.
+            // For cross-schematic refs or abs Touchstone: resolve and lazy-load that specific file.
+            if (resolvedPath is not null &&
+                !string.IsNullOrEmpty(sref) && sref != DataSourceRef.Selected &&
+                Library is not null)
+            {
+                await Library.LoadFileAsync(resolvedPath);
+            }
+
+            // Look up the library entry; also grab the SNP for network-bound traces.
             DataSourceEntryViewModel? libEntry = null;
             SNP? snp = null;
 
-            if (Library is not null)
+            if (Library is not null && resolvedPath is not null)
             {
                 libEntry = Library.Entries
                     .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
                                          StringComparison.OrdinalIgnoreCase));
 
-                if (libEntry is null)
+                if (libEntry is null && File.Exists(resolvedPath))
                 {
-                    if (File.Exists(resolvedPath))
-                    {
-                        await Library.LoadFileAsync(resolvedPath);
-                        libEntry = Library.Entries
-                            .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
-                                                 StringComparison.OrdinalIgnoreCase));
-                    }
-                    else
-                    {
-                        Library.AddBrokenEntry(resolvedPath);
-                        libEntry = Library.Entries
-                            .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
-                                                 StringComparison.OrdinalIgnoreCase));
-                    }
+                    await Library.LoadFileAsync(resolvedPath);
+                    libEntry = Library.Entries
+                        .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
+                                             StringComparison.OrdinalIgnoreCase));
+                }
+                else if (libEntry is null)
+                {
+                    Library.AddBrokenEntry(resolvedPath);
+                    libEntry = Library.Entries
+                        .FirstOrDefault(e => string.Equals(e.FilePath, resolvedPath,
+                                             StringComparison.OrdinalIgnoreCase));
                 }
 
                 snp = libEntry?.Snp;
@@ -938,6 +971,7 @@ public partial class DataDisplayViewModel : ViewModelBase
                 trace.Derived = traceConfig.Derived;
             }
 
+            trace.SourceRef             = sref;
             trace.SourcePath            = resolvedPath;
             trace.MatrixFormat          = traceConfig.MatrixFormat;
             trace.ColumnWidth           = traceConfig.ColumnWidth > 0 ? traceConfig.ColumnWidth : 115;
@@ -1013,7 +1047,8 @@ public partial class DataDisplayViewModel : ViewModelBase
     /// (e.g. clipboard copy) where absolute paths are acceptable.
     /// </param>
     internal static PlotContainerConfig BuildPlotContainerConfig(
-        PlotContainerViewModel c, string configDir)
+        PlotContainerViewModel c, string configDir,
+        DataSourceLibraryViewModel? library = null)
     {
         var plot = c.PlotVM.Plot;
         var pc   = new PlotContainerConfig
@@ -1053,27 +1088,40 @@ public partial class DataDisplayViewModel : ViewModelBase
             },
         };
         foreach (var t in plot.Traces)
-            pc.Traces.Add(BuildTraceConfig(t, configDir));
+            pc.Traces.Add(BuildTraceConfig(t, configDir, library));
         return pc;
     }
 
-    internal static TraceConfig BuildTraceConfig(Trace t, string configDir)
+    /// <summary>Derives the logical SourceRef from a trace's absolute SourcePath as a fallback
+    /// for traces created before SourceRef was stamped.</summary>
+    private static string? DeriveRef(Trace t, DataSourceLibraryViewModel? library)
     {
-        // For cube-bound, SourcePath is the authority; network-bound uses the SNP's FilePath.
-        string? sourcePath = t.IsCubeBound
-            ? t.SourcePath
-            : (t.Data?.FilePath ?? t.SourcePath);
+        string? abs = t.IsCubeBound ? t.SourcePath : (t.Data?.FilePath ?? t.SourcePath);
+        if (abs is null || library is null) return abs;
 
-        if (sourcePath != null && !string.IsNullOrEmpty(configDir))
-        {
-            string? srcDir = Path.GetDirectoryName(sourcePath);
-            if (string.Equals(configDir, srcDir, StringComparison.OrdinalIgnoreCase))
-                sourcePath = Path.GetFileName(sourcePath);
-        }
+        // Match against the currently-selected datasource → sentinel.
+        if (library.SelectedDataSourceAbs is not null &&
+            string.Equals(abs, library.SelectedDataSourceAbs, StringComparison.OrdinalIgnoreCase))
+            return DataSourceRef.Selected;
+
+        // Under the results root → "<schematic>/run.npy" relative id.
+        var root = library.ResultsRootProvider?.Invoke();
+        if (root is not null && abs.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            return Path.GetRelativePath(root, abs).Replace('\\', '/');
+
+        return abs;  // rooted Touchstone or unknown
+    }
+
+    internal static TraceConfig BuildTraceConfig(Trace t, string configDir,
+        DataSourceLibraryViewModel? library = null)
+    {
+        // Emit the logical SourceRef (persisted) instead of an absolute/relative path.
+        // DeriveRef is the fallback for traces created before SourceRef was populated.
+        string? sourceRef = t.SourceRef ?? DeriveRef(t, library);
 
         var tc = new TraceConfig
         {
-            SourcePath            = sourcePath,
+            SourcePath            = sourceRef,
             Row                   = t.Row,
             Col                   = t.Col,
             MatrixType            = t.MatrixType,

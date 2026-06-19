@@ -102,6 +102,7 @@ public sealed class CubeTraceTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(tmpPath);
+            await lib.SelectDataSourceAsync(tmpPath);
 
             var snp  = new SNP(new[] { 1e9 }, 2);
             var plot = new Plot(PlotType.Rect, FreqUnit.GHz);
@@ -193,6 +194,7 @@ public sealed class NodeIndexedCurrentFilterTests
 
             var lib = new DataSourceLibraryViewModel();
             await lib.LoadFileAsync(tmpPath);
+            await lib.SelectDataSourceAsync(tmpPath);
 
             var snp  = new SNP(new[] { 1e9 }, 2);
             var plot = new Plot(PlotType.Rect, FreqUnit.GHz);

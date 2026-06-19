@@ -5,10 +5,11 @@
 //  CircuitRF.Ui.DataDisplay.
 //
 //  FORMAT VERSIONS
-//  v2 (multi-tab): Tabs list is non-empty.  ZoomLevel/ViewOffsetX/Y and
-//      Plots at the root level are ignored.
-//  v1 (legacy single-tab): Tabs is empty; Plots at root level contains
-//      the plot containers and ZoomLevel/ViewOffsetX/Y apply.
+//  v2 (single-source): adds SelectedDataSource; trace SourcePath stores logical SourceRef.
+//      v1 files are rejected (alpha no-back-compat). FormatVersion default stays 1 so
+//      the clipboard copy/paste path (which omits this field) continues to work unchanged.
+//      Multi-tab is detected by Tabs.Count > 0 (not by FormatVersion) and still applies here.
+//  v1 (original): single or multi tab, absolute/relative SourcePath in traces.
 // ================================================================
 
 using System.Collections.Generic;
@@ -29,11 +30,17 @@ public sealed class TabConfig
 
 public sealed class DataDisplayConfig
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
 
     // Written on every save; rejected on mismatch (alpha no-back-compat policy).
-    // Default = 1 so clipboard JSON (which omits this field) passes the check.
+    // Default = 1 so clipboard JSON (which omits this field) passes the check
+    // without triggering the version mismatch guard in the paste path.
     public int FormatVersion { get; set; } = 1;
+
+    // Logical datasource id selected at the document level (drives the toolbar combo).
+    // "run.npy" or null = sentinel (most-recent run); "<schematic>/run.npy" = specific sim;
+    // abs path = explicit Touchstone file.
+    public string? SelectedDataSource { get; set; }
 
     // v2: multi-tab layout.  Non-empty list takes precedence over legacy fields.
     public List<TabConfig> Tabs { get; set; } = new();
