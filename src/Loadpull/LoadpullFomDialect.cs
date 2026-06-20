@@ -1,0 +1,87 @@
+// ================================================================
+//  LoadpullFomDialect.cs — FOM-name dialect map for .spl / .lpcwave
+//
+//  Two measured-data dialects (HarmonicaRF and lpcwave-derived) use
+//  different column names for the same physical quantities.  This
+//  shared table maps every known measured name to the canonical name
+//  used by BuildLoadpullDataSet (the engine's contract), plus the
+//  unit conversion needed to reach the engine's stored unit.
+// ================================================================
+
+using System;
+using System.Collections.Generic;
+
+namespace RfCore.Loadpull
+{
+    public enum FomScale
+    {
+        PassThrough,   // stored unit matches measured unit
+        DbmToW,        // 10^(x/10)/1000
+        PctToLinear,   // x/100
+        MaToA,         // x/1000
+        UaToA,         // x/1_000_000
+    }
+
+    public sealed record FomEntry(string CanonicalName, FomScale Scale);
+
+    /// <summary>
+    /// Shared dialect table: measured column name → (canonical DataSet cube name, unit scale).
+    /// Add new dialect entries here; readers use Apply() for conversion.
+    /// Canonical names match BuildLoadpullDataSet exactly.
+    /// </summary>
+    public static class LoadpullFomDialect
+    {
+        public static readonly IReadOnlyDictionary<string, FomEntry> Map =
+            new Dictionary<string, FomEntry>(StringComparer.OrdinalIgnoreCase)
+        {
+            // ── Output power ──────────────────────────────────────
+            ["Pout_dBm"]          = new("Pout",      FomScale.DbmToW),
+            ["PoutWaves[dBm]"]    = new("Pout",      FomScale.DbmToW),
+
+            // ── Transducer gain ───────────────────────────────────
+            ["Gt_dB"]             = new("Gt",        FomScale.PassThrough),
+            ["GainWavesTrd[dB]"]  = new("Gt",        FomScale.PassThrough),
+
+            // ── Power gain ────────────────────────────────────────
+            ["Gp_dB"]             = new("Gp",        FomScale.PassThrough),
+            ["GainWavesPwr[dB]"]  = new("Gp",        FomScale.PassThrough),
+
+            // ── Drain efficiency ──────────────────────────────────
+            ["Eff_%%"]            = new("DE",        FomScale.PctToLinear),
+            ["Eff_%"]             = new("DE",        FomScale.PctToLinear),
+            ["OutEffWaves[%]"]    = new("DE",        FomScale.PctToLinear),
+
+            // ── PAE ───────────────────────────────────────────────
+            // HarmonicaRF "PAE" column is already in % (0-100)
+            ["PAE"]               = new("PAE",       FomScale.PctToLinear),
+            ["PAEffWaves[%]"]     = new("PAE",       FomScale.PctToLinear),
+
+            // ── Available source power (PavlDbm axis) ─────────────
+            ["Pin_avail_dBm"]     = new("PavlDbm",   FomScale.PassThrough),
+            ["Psource[dBm]"]      = new("PavlDbm",   FomScale.PassThrough),
+            ["PinWaves[dBm]"]     = new("PavlDbm",   FomScale.PassThrough),
+
+            // ── Load-side bias (drain) ────────────────────────────
+            ["Vq_out_v"]          = new("BiasVLoad", FomScale.PassThrough),
+            ["V2[V]"]             = new("BiasVLoad", FomScale.PassThrough),
+            ["Iq_out_mA"]         = new("BiasILoad", FomScale.MaToA),
+            ["I2[mA]"]            = new("BiasILoad", FomScale.MaToA),
+
+            // ── Source-side bias (gate) ───────────────────────────
+            ["Vq_in_v"]           = new("BiasVSrc",  FomScale.PassThrough),
+            ["V1[V]"]             = new("BiasVSrc",  FomScale.PassThrough),
+            ["Iq_in_mA"]          = new("BiasISrc",  FomScale.MaToA),
+            ["I1[mA]"]            = new("BiasISrc",  FomScale.MaToA),
+            ["I1[uA]"]            = new("BiasISrc",  FomScale.UaToA),
+        };
+
+        public static double Apply(double v, FomScale scale) => scale switch
+        {
+            FomScale.DbmToW      => Math.Pow(10.0, v / 10.0) / 1000.0,
+            FomScale.PctToLinear => v / 100.0,
+            FomScale.MaToA       => v / 1000.0,
+            FomScale.UaToA       => v / 1_000_000.0,
+            _                    => v,
+        };
+    }
+}
