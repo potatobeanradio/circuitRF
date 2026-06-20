@@ -43,6 +43,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _p1Tone       = BuildP1Tone();
     private static readonly Symbol _nonlinearC   = BuildNonlinearC();
     private static readonly Symbol _mutual        = BuildMutual();
+    private static readonly Symbol _tline         = BuildTline();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
@@ -89,6 +90,7 @@ public static class BuiltInSymbols
             case SymbolKind.Capacitor:  return _capacitor;
             case SymbolKind.NonlinearC: return _nonlinearC;
             case SymbolKind.Mutual:     return _mutual;
+            case SymbolKind.Tline:      return _tline;
             case SymbolKind.Vdc:        return _vdcSrc;
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.Ground:     return _ground;
@@ -483,6 +485,18 @@ public static class BuiltInSymbols
         Poly(true, -75,30, -66,9, -54,25),   // left arrowhead
         Poly(true,  75,30,  66,9,  54,25),   // right arrowhead
     ], SymbolKind.Mutual);
+
+    // ── TLIN — ideal lossless transmission line: horizontal 2-port box with leads ──
+    // Pins: (−200,0) left / (+200,0) right (horizontal, ground-referenced).
+    // A rounded-rect body (read as a line segment) with two horizontal leads. A thin
+    // centre line through the body evokes the conductor; the box distinguishes it from
+    // the generic 2-port and the lumped elements.
+    private static Symbol BuildTline() => Sym([
+        L(-200,   0,  -90,   0),            // left lead
+        L(  90,   0,  200,   0),            // right lead
+        RRect( 0,  0,  180,  90,  18),      // body (rounded rect, x∈[−90,90], y∈[−45,45])
+        L( -60,   0,   60,   0),            // centre conductor line through the body
+    ], SymbolKind.Tline);
 
     // ── Generic — 2-port box with leads (horizontal fallback) ─────────────────
 

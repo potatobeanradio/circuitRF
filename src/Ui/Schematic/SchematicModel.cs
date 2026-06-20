@@ -27,6 +27,7 @@ public enum SymbolKind
     Snp,
     NonlinearC,
     Mutual,
+    Tline,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

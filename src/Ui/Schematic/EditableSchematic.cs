@@ -68,6 +68,9 @@ public static class SymbolPortDefs
             case SymbolKind.FetSdd:  return [("gate",   -200f,   0f),
                                              ("drain",   200f, -100f),
                                              ("source",  200f,  100f)];
+            // TLIN: horizontal 2-port — port 1 left, port 2 right. Both ground-referenced
+            // (the reference net is implicit; only these two signal nets are netlisted).
+            case SymbolKind.Tline:   return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.ZPort:
             case SymbolKind.Sdd:
                 return GenerateSddPorts(portCount >= 1 ? portCount : 2);

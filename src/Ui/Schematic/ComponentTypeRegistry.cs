@@ -199,6 +199,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Lumped,
             SearchTerms: ["Mutual", "mutual", "M", "coupling", "inductance", "transformer"],
             IsCommon: false),
+        [SymbolKind.Tline]         = new("TLIN", "TL",
+            Category: ComponentCategory.TransmissionLine,
+            SearchTerms: ["TLIN", "TLine", "transmission line", "tline", "ideal", "lossless", "line"],
+            IsCommon: true),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -252,6 +256,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Snp           => "SnP",
         SymbolKind.NonlinearC    => "NonlinearC",
         SymbolKind.Mutual        => "Mutual",
+        SymbolKind.Tline         => "TLIN",
         _                        => Get(kind).DisplayName,
     };
 
@@ -356,6 +361,13 @@ public static class ComponentTypeRegistry
             case SymbolKind.NonlinearC:
                 return [new("C0", "1", "pF", true, UnitDimension.Capacitance)];
 
+            // TLIN: ideal lossless transmission line. Z = characteristic impedance (real, lossless),
+            // E = electrical length in degrees at reference frequency F. All three show on the schematic.
+            case SymbolKind.Tline:
+                return [new("Z", "50", "Ω",   true, UnitDimension.Resistance),
+                        new("E", "90", "deg", true, UnitDimension.Angle),
+                        new("F", "1",  "GHz", true, UnitDimension.Frequency)];
+
             // Mutual: Inductor1 and Inductor2 are instance-name strings (no unit);
             // M is the mutual inductance value.
             case SymbolKind.Mutual:
@@ -411,6 +423,8 @@ public static class ComponentTypeRegistry
             case "NLC":    kind = SymbolKind.NonlinearC;  return true;
             case "MUTUAL":
             case "MUT":    kind = SymbolKind.Mutual;       return true;
+            case "TLIN":
+            case "TL":     kind = SymbolKind.Tline;        return true;
             case "FET":
             case "SDD":
             case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default

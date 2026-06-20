@@ -15,12 +15,18 @@ before writing anything.
 **Device component** — has ports, stamps/evaluates in the engine, and its `EngineReference` resolves to
 a real component-model in the elaborator's factory (R, L, C, Vdc, SnP, ZPort, SDD, …). This is the
 common case and is fully documented step-by-step in `docs/palette-contributor-guide.md`. Follow that
-guide; this skill does not duplicate it. Two corrections to that guide, verified against current code:
+guide for the **UI/palette** edits (enum, registry, ports, glyph, default params, code-parse). Two
+corrections to that guide, verified against current code:
 - Its variadic-port section describes ZPort/Sdd as "N+1 pins with a `ref` pin → `RefNetBinding`." The
   code actually generates **2N pins as differential ± pairs** (`SymbolPortDefs.GenerateSddPorts`); there
   is no `ref` pin for those types. Trust the code, not that paragraph.
 - The design-note cross-links it lists (`design/library-palette.md`, etc.) may not all exist; grep
   before relying on them.
+
+The palette guide assumes the **engine model already exists**. When the component is *not yet
+implemented in the engine* (you must write the MNA stamp) or has ports that need a node convention
+decision, the palette guide is **not enough** — see "Device-component engine implementation" below,
+with TLIN (ideal transmission line) as the worked example.
 
 **Annotation component** — has *no ports*, contributes *no instance* to the netlist, and instead carries
 rows of `name = expression` text that are routed into a `TestBench` collection. The existing examples are
@@ -96,6 +102,101 @@ Concretely, following the recipe above:
 The difference from VAR is only the destination collection and the top-level-only scope; everything else
 is the same archetype.
 
+## Device-component engine implementation (writing the MNA stamp + factory wiring)
+
+The palette-contributor-guide gets a device tile placing and netlisting, but it stops at
+`EngineReference` — it assumes a model already answers to that reference string. When you are adding a
+component **not yet implemented in the engine**, you also write the engine model and register it in the
+factory. Worked example: **TLIN**, an ideal (lossless) transmission line — a 2-port device with three
+parameters (`Z`, `E`, `F`).
+
+### A. Decide the node convention BEFORE writing the stamp
+
+A "2-port" can mean two different node layouts, and the choice drives both the symbol ports and the
+stamp:
+- **Ground-referenced ports (TLIN, and most lumped 2-ports).** Each port is one signal net referenced
+  to the global ground ("0"). The symbol has **2 pins**; `c.Nodes[0]`/`c.Nodes[1]` are the signal nets;
+  ground is the implicit common return and is **never a terminal**, so the netlister emits only the two
+  signal nets (no reference net is written). This is the `default` 2-pin case in `SymbolPortDefs.For`
+  — but make it explicit (give the kind its own `case`) when the symbol is horizontal
+  (`(−200,0)`/`(+200,0)`) rather than the vertical default.
+- **Differential 2N nets (ZPort/Sdd).** Each port is a ± pair with its own independent reference;
+  `SymbolPortDefs.GenerateSddPorts` emits 2N pins. Use this **only** when ports genuinely float
+  (per-port references). Do **not** use it for a ground-referenced line — it is wrong physics and
+  doubles the pin count.
+
+For TLIN: ground-referenced, 2 pins, horizontal. The reference-net-is-implicit behavior is automatic —
+`NetExtractor.EmitInstance` emits one net per **pin**, and ground is not a pin, so nothing extra is
+needed to "suppress" the reference net.
+
+### B. Write the engine model (`src/Core/Devices/<Name>Model.cs`)
+
+Subclass `ComponentModel`. The contract (read an existing analog — `InductorModel` for a Group-2
+branch-current element, `ResistorModel` for a pure nodal-admittance element, `ZPortModel` for an N-port):
+- `public override int PortCount => N;` and `public override ModelKind Kind => ModelKind.Linear;`
+  (or `Nonlinear`).
+- Constructor takes the **resolved parameter values** (doubles/Complex), not the raw param dict.
+- `public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)` does the MNA stamp.
+
+**Stamp primitives** (`IMnaContext`, see `src/Core/IMnaContext.cs`):
+- Pure admittance between nodes → `AddAdmittance(a, b, y)` (adds the ± pattern to ground automatically).
+- One raw nodal-matrix entry → `AddBlockAdmittance(rowNode, colNode, y)` (places `y` at `(row,col)`;
+  ground node 0 rows/cols are **auto-dropped**, which is exactly how a ground-referenced port works).
+- Branch-current unknown (voltage sources, inductors, Z-ports) → `AddBranch()` +
+  `AddBranchCurrent`/`AddConstraint`/`AddBranchConstraint`. Expose `LastBranchIndex` if another model
+  must reference this branch (e.g. Mutual, SDD control currents).
+
+**Frequency.** `omega` is the angular frequency at the stamping point; `freqHz = omega/(2π)`. For a
+frequency-dependent device, compute the response at `freqHz` inside `Stamp` (it is called once per
+frequency point).
+
+**Parameter units — the one real gotcha.** The elaborator applies the unit string to numeric params
+before the model sees them, so a `Frequency`-dimensioned param arrives in **Hz**, a `Resistance` one in
+**Ω**, etc. **Angles are the exception**: a `deg`/`UnitDimension.Angle` param arrives as **degrees, not
+radians** (verified: `CreateP1ToneModel` passes `Phase` straight through as `phaseDeg`). Convert
+deg→rad inside the model. TLIN reads `E` (degrees), `Z` (Ω), `F` (Hz) and converts `E` internally.
+
+**Degeneracy/clamping philosophy.** circuitRF is a research tool: warn-and-continue rather than throw
+on non-physical-but-recoverable inputs (mirror `MutualInductanceModel`'s over-coupling warning and
+TLIN's `sin θ → 0` resonance clamp). Warn **once per instance** (a `bool _warned` field), not once per
+frequency point. The engine's regularization rescues a singular matrix downstream.
+
+**TreatWarningsAsErrors.** Core builds clean too — an unused private field (`CS0169`) fails the build.
+If the constructor takes a param you don't use yet (e.g. an instance name reserved for diagnostics),
+discard it (`_ = name;`) rather than storing it in an unread field.
+
+### C. Register in the factory (`src/Core/Devices/ComponentModelFactory.cs`)
+
+The factory maps the `EngineReference` string → a model instance. Two kinds of registration:
+- **Parameterless** primitives (R/L/C/…) are entries in the `_registry` dict (`() => new XModel()`).
+- **Parameterized** primitives (anything reading resolved params — TLIN, SnP, SDD, …) need: (1) add the
+  reference string to the `_parameterizedTypes` set, (2) a dispatch line in the param-taking
+  `TryCreate(typeName, parameters)` (`if (typeName.Equals("TLIN", …)) return CreateTLineModel(parameters);`),
+  and (3) a `CreateXModel(parameters)` that pulls the resolved values out and constructs the model. Use
+  the `GetReal(parameters, "Key", fallback)` helper (already in the factory) for numeric params; match
+  the fallback to the registry default. `IsPrimitive` then returns true automatically (it checks both
+  sets), so the elaborator treats it as a primitive rather than a missing sub-cell.
+
+The `EngineReference` string, the `_parameterizedTypes` entry, and the `TryCreate` dispatch must all use
+the **same** spelling (TLIN here). A mismatch shows up as an "unknown component" elaboration error at
+run, not a build error.
+
+### D. Persistence is automatic
+
+`.csch` serializes `SymbolKind` by name (`JsonStringEnumConverter`) and parameters as ordinary rows, so
+a new device round-trips with **no persistence edit** — confirm by save/reload, but don't go looking for
+a persistence switch to update.
+
+### TLIN touchpoint summary (every file, for grep-confirmation)
+
+Engine: `src/Core/Devices/TLineModel.cs` (new, the stamp); `ComponentModelFactory.cs`
+(`_parameterizedTypes` += "TLIN", `TryCreate` dispatch, `CreateTLineModel`). UI: `SchematicModel.cs`
+(`SymbolKind.Tline`); `ComponentTypeRegistry.cs` (Registry entry, `EngineReference`, `DefaultParameters`,
+`TryParseCode`); `EditableSchematic.cs` (`SymbolPortDefs.For` — horizontal 2-pin case);
+`BuiltInSymbols.cs` (cache field, `Primitives` dispatch, `BuildTline`). The stamp math for the lossless
+line: `θ = E·(π/180)·(f/F)`; `Y11=Y22=−j·cotθ/Z`, `Y12=Y21=+j/(Z·sinθ)`, stamped as the 2×2 nodal
+block with ground as the common return.
+
 ## Verify
 
 1. `dotnet build` — zero new warnings (`TreatWarningsAsErrors=true`; capture nullable properties into
@@ -110,7 +211,10 @@ is the same archetype.
 
 ## See also
 
-- `docs/palette-contributor-guide.md` — the full device-component step-by-step (fields, glyph helpers,
-  worked attenuator example).
+- `docs/palette-contributor-guide.md` — the full device-component **UI/palette** step-by-step (fields,
+  glyph helpers, worked attenuator example). Does **not** cover the engine model — see
+  "Device-component engine implementation" above (TLIN) for the stamp + factory wiring.
+- `src/Core/Devices/TLineModel.cs` + `ComponentModelFactory.CreateTLineModel` — reference
+  implementation of a from-scratch device engine model (lossless 2-port, nodal-admittance stamp).
 - `docs/design/measurements.md` — the measurement system MEAS feeds.
 - `src/Ui/Schematic/NetExtractor.cs` — the VAR routing to copy for an annotation component.

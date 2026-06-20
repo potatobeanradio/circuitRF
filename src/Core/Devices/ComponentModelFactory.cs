@@ -27,7 +27,7 @@ public static class ComponentModelFactory
 
     // Types that require resolved parameters at construction time.
     private static readonly HashSet<string> _parameterizedTypes =
-        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "NonlinearC" };
+        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "NonlinearC", "TLIN" };
 
     /// <summary>
     /// Returns a new ComponentModel, using resolved parameters when needed.
@@ -53,6 +53,8 @@ public static class ComponentModelFactory
             return CreateP1ToneModel(parameters);
         if (typeName.Equals("NonlinearC", StringComparison.OrdinalIgnoreCase))
             return CreateNonlinearCModel(parameters);
+        if (typeName.Equals("TLIN", StringComparison.OrdinalIgnoreCase))
+            return CreateTLineModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -363,6 +365,25 @@ public static class ComponentModelFactory
             coeffs.Add(val.AsReal());
         }
         return new NonlinearCModel(coeffs.Count > 0 ? coeffs.ToArray() : [0.0]);
+    }
+
+    // ── TLIN (ideal/lossless transmission line) ─────────────────────────────────
+
+    private static TLineModel CreateTLineModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        string name = parameters.TryGetValue("TLineName", out var nm) && nm.Kind == ValueKind.String
+            ? nm.AsString() : "TLIN";
+
+        // Units already applied by the elaborator: Z in Ω, F in Hz, and E in RADIANS.
+        // The elaborator's generic parameter path multiplies the authored value by the angle
+        // unit's scale (Units.Scale("deg") = π/180), so an authored "E=90 deg" arrives here as
+        // π/2 ≈ 1.5708. TLineModel consumes E as radians directly — it does NOT re-apply π/180.
+        // (Defaults are quoted in the SAME post-scale convention: 90° = π/2 rad.)
+        double z0     = GetReal(parameters, "Z", 50.0);
+        double eRad   = GetReal(parameters, "E", Math.PI / 2.0);
+        double fRefHz = GetReal(parameters, "F", 1e9);
+
+        return new TLineModel(z0, eRad, fRefHz, name);
     }
 
     private static Complex ToComplex(Value v)
