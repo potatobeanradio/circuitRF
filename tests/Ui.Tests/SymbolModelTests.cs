@@ -488,8 +488,8 @@ public class BuiltInSymbolsTests
         var kinds = Enum.GetValues<SymbolKind>();
         foreach (var k in kinds)
         {
-            // VAR and MEAS are intentionally port-less — annotation boxes with no connection pins.
-            if (k is SymbolKind.Var or SymbolKind.Meas) continue;
+            // VAR, MEAS, and Mutual are intentionally port-less — annotation boxes with no connection pins.
+            if (k is SymbolKind.Var or SymbolKind.Meas or SymbolKind.Mutual) continue;
 
             var sym = BuiltInSymbols.Primitives(k);
             Assert.True(sym.Pins.Count >= 1, $"Symbol {k} has no pins");

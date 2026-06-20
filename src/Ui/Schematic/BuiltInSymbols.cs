@@ -42,6 +42,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _generic      = BuildGeneric();
     private static readonly Symbol _p1Tone       = BuildP1Tone();
     private static readonly Symbol _nonlinearC   = BuildNonlinearC();
+    private static readonly Symbol _mutual        = BuildMutual();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
@@ -87,6 +88,7 @@ public static class BuiltInSymbols
             case SymbolKind.Inductor:   return _inductor;
             case SymbolKind.Capacitor:  return _capacitor;
             case SymbolKind.NonlinearC: return _nonlinearC;
+            case SymbolKind.Mutual:     return _mutual;
             case SymbolKind.Vdc:        return _vdcSrc;
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.Ground:     return _ground;
@@ -463,6 +465,24 @@ public static class BuiltInSymbols
         L(-40, -15,  40, -15),   // upper equals bar
         L(-40,  15,  40,  15),   // lower equals bar
     ], SymbolKind.Meas);
+
+    // ── Mutual — 0-port coupling annotation: letter M + two outward-curved arrows ──
+    // No electrical pins. Two arcs (center=(0,110), R=110) flank the M glyph.
+    // Arc 1: 230°→255° (left side).  Arc 2: 285°→310° (right side).
+    // Arrowheads computed so each triangle base is exactly orthogonal to its arc
+    // at the outer endpoint (230° and 310°).  CW-tangent at θ = (−sin θ, cos θ).
+    //   Left  tip=(−75,30); base corners=(−66,9) and (−54,25).
+    //   Right tip=( 75,30); base corners=( 66,9) and ( 54,25).
+    // RoundedRect frames the full content (M + arcs + arrowheads) with ~15 u margin.
+
+    private static Symbol BuildMutual() => Sym([
+        Txt("M", 0, 0, fontSize: 36, align: SymbolTextAlign.Center, vAlign: SymbolTextVAlign.Middle),
+        RRect(0, 5, 200, 80, 8),
+        A(0, 110, 110, 230, 25),   // left arc
+        A(0, 110, 110, 285, 25),   // right arc
+        Poly(true, -75,30, -66,9, -54,25),   // left arrowhead
+        Poly(true,  75,30,  66,9,  54,25),   // right arrowhead
+    ], SymbolKind.Mutual);
 
     // ── Generic — 2-port box with leads (horizontal fallback) ─────────────────
 

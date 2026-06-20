@@ -195,6 +195,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Lumped,
             SearchTerms: ["NLC", "NonlinearC", "nonlinear capacitor", "nonlinear", "varactor", "varicap", "CV", "C(V)"],
             IsCommon: false),
+        [SymbolKind.Mutual]        = new("M",   "M",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["Mutual", "mutual", "M", "coupling", "inductance", "transformer"],
+            IsCommon: false),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -247,6 +251,7 @@ public static class ComponentTypeRegistry
         SymbolKind.P1Tone        => "P1Tone",
         SymbolKind.Snp           => "SnP",
         SymbolKind.NonlinearC    => "NonlinearC",
+        SymbolKind.Mutual        => "Mutual",
         _                        => Get(kind).DisplayName,
     };
 
@@ -277,7 +282,7 @@ public static class ComponentTypeRegistry
             // V and Freq match V_1Tone factory keys (V= amplitude, Freq= frequency in Hz).
             // Vdc (hidden) provides a DC bias offset on the tone source.
             case SymbolKind.ToneSource: return [new("V",    "1", "V",   true,  UnitDimension.Voltage),
-                                                new("Freq", "2", "GHz", true,  UnitDimension.Frequency),
+                                                new("Freq", "1", "GHz", true,  UnitDimension.Frequency),
                                                 new("Vdc",  "0", "V",   false, UnitDimension.Voltage)];
             // Pavl/Z/Freq/Phase match P1ToneModel factory keys.
             // Num is the s-param port index; auto-assigned at placement from the shared Term+P1Tone pool.
@@ -351,6 +356,13 @@ public static class ComponentTypeRegistry
             case SymbolKind.NonlinearC:
                 return [new("C0", "1", "pF", true, UnitDimension.Capacitance)];
 
+            // Mutual: Inductor1 and Inductor2 are instance-name strings (no unit);
+            // M is the mutual inductance value.
+            case SymbolKind.Mutual:
+                return [new("Inductor1", "\"L1\"", "", true,  UnitDimension.None),
+                        new("Inductor2", "\"L2\"", "", true,  UnitDimension.None),
+                        new("M",         "0", "pH", true, UnitDimension.Inductance)];
+
             // Ground/FetSdd/Generic need no default parameters.
             default: return [];
         }
@@ -397,6 +409,8 @@ public static class ComponentTypeRegistry
             case "P1TONE": kind = SymbolKind.P1Tone;        return true;
             case "NONLINEARC":
             case "NLC":    kind = SymbolKind.NonlinearC;  return true;
+            case "MUTUAL":
+            case "MUT":    kind = SymbolKind.Mutual;       return true;
             case "FET":
             case "SDD":
             case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default
