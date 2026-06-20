@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.ViewModels"
+        xmlns:d="using:CircuitRF.Ui.Views.Dialogs"
+        x:Class="CircuitRF.Ui.Views.Dialogs.NonlinearCvEditorDialog"
+        x:DataType="vm:NonlinearCvEditorViewModel"
+        Title="{Binding DialogTitle}"
+        Width="400"
+        MinWidth="320"
+        MinHeight="280"
+        SizeToContent="Height"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <!-- Undo/Redo act on the owning schematic's stack. -->
+    <!-- Ctrl+Return / Meta+Return trigger Apply without closing (HIG primary accelerator). -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Z"       Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Meta+Z"       Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+Z" Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y"       Command="{Binding RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Return"  Command="{Binding ApplyCommand}"/>
+        <KeyBinding Gesture="Meta+Return"  Command="{Binding ApplyCommand}"/>
+    </Window.KeyBindings>
+
+    <d:NonlinearCvEditorView/>
+
+</Window>

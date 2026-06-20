@@ -199,10 +199,13 @@ public class LibraryCatalogTests
     // ── ByCategory ────────────────────────────────────────────────────────────
 
     [Fact]
-    public void ByCategory_Lumped_ReturnsExactlyRLC()
+    public void ByCategory_Lumped_ReturnsLumpedPassives()
     {
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Lumped).Select(i => i.Kind).ToHashSet();
-        Assert.Equal(new HashSet<SymbolKind> { SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor }, kinds);
+        Assert.Equal(new HashSet<SymbolKind>
+        {
+            SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor, SymbolKind.NonlinearC,
+        }, kinds);
     }
 
     [Fact]
@@ -266,10 +269,13 @@ public class LibraryCatalogTests
     [Fact]
     public void SingleCategoryItems_UnchangedByExtraCategoryFeature()
     {
-        // Lumped still returns exactly R/L/C — no extra-category bleed from other components.
+        // Lumped returns exactly R/L/C/NLC — no extra-category bleed from other components.
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Lumped).Select(i => i.Kind).ToHashSet();
         Assert.Equal(
-            new HashSet<SymbolKind> { SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor },
+            new HashSet<SymbolKind>
+            {
+                SymbolKind.Resistor, SymbolKind.Inductor, SymbolKind.Capacitor, SymbolKind.NonlinearC,
+            },
             kinds);
     }
 

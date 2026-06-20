@@ -94,6 +94,7 @@
                          Padding="6"
                          MinHeight="120"
                          VerticalAlignment="Stretch"
+                         VerticalContentAlignment="Top"
                          PlaceholderText="Pin = -10&#10;Gain = 2*Pin&#10;# this is a comment"/>
             </DockPanel>
 

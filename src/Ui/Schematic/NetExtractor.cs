@@ -777,6 +777,10 @@ public static class NetExtractor
         }
 
         var overrides2 = comp.Parameters
+            // CvData is editor-only: the raw C-V table persists in .csch for re-editing, but it is
+            // not an engine parameter (the NonlinearC model reads only C0..Cn). Keep it out of the
+            // netlist/elaboration the same way the SnP branch drops RefNode/PinConfig/Pitch.
+            .Where(p => p.Name is not "CvData")
             .Select(p =>
             {
                 var unit = UnitNormalizer.ToEngineUnit(p.Unit);

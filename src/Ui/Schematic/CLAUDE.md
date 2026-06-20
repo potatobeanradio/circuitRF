@@ -1,5 +1,9 @@
 # Schematic — local conventions for `src/Ui/Schematic/`
 
+`SymbolKind.NonlinearC` + registry + glyph (brief-nonlinearc-symbol, 2026-06-19) — COMPLETE: Added `NonlinearC` to end of `SymbolKind` enum (`SchematicModel.cs`). 5 `ComponentTypeRegistry.cs` edits: `Registry` entry (`"NLC"` display name, `"C"` prefix, `Lumped`, not IsCommon), `EngineReference("NonlinearC")`, `DefaultParameters` seeding `C0=1pF`, `UserParamTemplate` for `C1,C2,…` (raw SI, `None` dimension, `FirstAddIndex=1`), `TryParseCode("NLC")`. `BuiltInSymbols.cs`: `_nonlinearC` cache field, `Primitives` case, `BuildNonlinearC()` (capacitor glyph + 3 diagonal slashes). `SymbolPortDefs.For` falls through to `default` (2-terminal vertical), no separate case needed. Updated 2 `LibraryCatalogTests` that hardcoded Lumped = R/L/C. 1 Engine integration test (`T1_ConstantC_NonlinearC_MatchesLinearCapacitor`). Build 0W/0E, 1901 total tests.
+
+
+
 Read with root `CLAUDE.md` and `src/Ui/CLAUDE.md`.
 
 ## SDD placement defaults (brief-p1tone-num-sddx-defaults, 2026-06-17)

@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using CircuitRF.Ui.ViewModels;
+using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.ParameterEditor;
 
@@ -23,9 +24,25 @@ public partial class ParameterEditorView : UserControl
     {
         if (DataContext is ParameterEditorViewModel vm)
         {
-            vm.PickSnpFileAsync = PickSnpFileAsync;
-            vm.RevealFileAsync  = RevealFileAsync;
+            vm.PickSnpFileAsync       = PickSnpFileAsync;
+            vm.RevealFileAsync        = RevealFileAsync;
+            vm.OpenCvEditorDialogAsync = OpenCvEditorDialogAsync;
         }
+    }
+
+    private async Task OpenCvEditorDialogAsync()
+    {
+        var vm = Vm;
+        if (vm?.SchematicVm is null || vm.Target is null) return;
+
+        var cvVm = new NonlinearCvEditorViewModel();
+        cvVm.SetTarget(vm.SchematicVm, vm.Target);
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        var dialog = new NonlinearCvEditorDialog { DataContext = cvVm };
+        dialog.Closed += (_, _) => cvVm.Dispose();
+        dialog.Show(owner!);
+        await Task.CompletedTask;
     }
 
     private async Task<string?> PickSnpFileAsync()

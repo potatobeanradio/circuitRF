@@ -96,12 +96,41 @@ public static class SParameterEngine
             settings.ConductanceRegularization == RegularizationMode.IfNecessary ||
             settings.InductanceRegularization  == RegularizationMode.IfNecessary;
 
+        // ── Nonlinear devices → solve the DC operating point once and linearize there (design §3.2) ──
+        // RULE: purely-linear S-parameter runs never touch the DC engine (zero behavior change).
+        double[]? dcNodeVoltages = null;
+        bool hasNonlinear = netlist.Components.Any(c => c.Model.Kind == ModelKind.Nonlinear);
+        if (hasNonlinear)
+        {
+            NonlinearDcEngine.DcResult? dc = null;
+            try { dc = NonlinearDcEngine.Run(netlist, settings); }
+            catch (NonlinearDcNotConvergedException) { dc = null; }  // DcBiasStepping=Never path throws
+
+            if (dc is { Converged: true })
+            {
+                dcNodeVoltages = dc.NodeVoltages;
+                const double ZeroBiasTol = 1e-9;
+                if (dc.NodeVoltages.All(v => Math.Abs(v) < ZeroBiasTol))
+                    netlist.AddWarningOnce("sparam-zero-bias",
+                        "No DC bias present; nonlinear components linearized at the 0 V operating point.");
+            }
+            else
+            {
+                // Non-convergence (degenerate) → warn + fall back to zero-bias linearization (design §3.5).
+                string detail = dc is null ? "(no result)" : $"residual {dc.FinalResidual:G3} after {dc.Iterations} iters";
+                netlist.AddWarningOnce("sparam-dc-nonconverged",
+                    $"DC operating-point solve did not converge ({detail}); nonlinear components linearized at " +
+                    "0 V. S-parameters may be inaccurate.");
+                dcNodeVoltages = null;  // null ⇒ BuildBias yields 0 V
+            }
+        }
+
         if (allPortsResistive)
             RunWavePath(netlist, freqsHz, settings, ports, N, mna, freqCount, sMatrices,
-                nodeNamer, branchNamer, canRetry);
+                nodeNamer, branchNamer, canRetry, dcNodeVoltages);
         else
             RunLegacyPath(netlist, freqsHz, settings, ports, N, z0PerPort, mna, freqCount, sMatrices,
-                nodeNamer, branchNamer, canRetry);
+                nodeNamer, branchNamer, canRetry, dcNodeVoltages);
 
         var refZ0 = z0PerPort.Length > 0 ? z0PerPort[0] : new Complex(50, 0);
         var snp   = new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
@@ -123,7 +152,8 @@ public static class SParameterEngine
         Mat<Complex>[]       sMatrices,
         Func<int, string>    nodeNamer,
         Func<int, string>    branchNamer,
-        bool                 canRetry)
+        bool                 canRetry,
+        double[]?            dcNodeVoltages = null)
     {
         int nonGroundNodes = mna.NodeCount;
 
@@ -132,7 +162,7 @@ public static class SParameterEngine
             double omega = 2.0 * Math.PI * freqsHz[fi];
 
             // Stamp network (ports contribute conductances, not 0 V branches).
-            StampAll(mna, netlist, omega, skipPorts: true);
+            StampAll(mna, netlist, omega, skipPorts: true, dcNodeVoltages: dcNodeVoltages);
             StampPortConductances(mna, ports, N);
             ApplyRegularization(mna, netlist, nonGroundNodes, settings, applyIfNecessary: false);
 
@@ -150,7 +180,7 @@ public static class SParameterEngine
                     $"(conductance={settings.ConductanceRegularization != RegularizationMode.Never} " +
                     $"inductance={settings.InductanceRegularization != RegularizationMode.Never})");
 
-                StampAll(mna, netlist, omega, skipPorts: true);
+                StampAll(mna, netlist, omega, skipPorts: true, dcNodeVoltages: dcNodeVoltages);
                 StampPortConductances(mna, ports, N);
                 ApplyRegularization(mna, netlist, nonGroundNodes, settings, applyIfNecessary: true);
                 lu = mna.Factorize(nodeNamer: nodeNamer, branchNamer: branchNamer);
@@ -216,7 +246,8 @@ public static class SParameterEngine
         Mat<Complex>[]       sMatrices,
         Func<int, string>    nodeNamer,
         Func<int, string>    branchNamer,
-        bool                 canRetry)
+        bool                 canRetry,
+        double[]?            dcNodeVoltages = null)
     {
         int nonGroundNodes = mna.NodeCount;
 
@@ -226,7 +257,7 @@ public static class SParameterEngine
             double omega = 2.0 * Math.PI * hz;
 
             // ── Stamp components + first regularization pass ──────────────────
-            StampAll(mna, netlist, omega);
+            StampAll(mna, netlist, omega, dcNodeVoltages: dcNodeVoltages);
             ApplyRegularization(mna, netlist, nonGroundNodes, settings,
                 applyIfNecessary: false); // first attempt omits IfNecessary regs
 
@@ -245,7 +276,7 @@ public static class SParameterEngine
                     $"(conductance={settings.ConductanceRegularization != RegularizationMode.Never} " +
                     $"inductance={settings.InductanceRegularization != RegularizationMode.Never})");
 
-                StampAll(mna, netlist, omega);
+                StampAll(mna, netlist, omega, dcNodeVoltages: dcNodeVoltages);
                 ApplyRegularization(mna, netlist, nonGroundNodes, settings,
                     applyIfNecessary: true);
                 lu = mna.Factorize(nodeNamer: nodeNamer, branchNamer: branchNamer);
@@ -291,7 +322,8 @@ public static class SParameterEngine
         MnaSystem         mna,
         ElaboratedNetlist netlist,
         double            omega,
-        bool              skipPorts = false)
+        bool              skipPorts      = false,
+        double[]?         dcNodeVoltages = null)
     {
         mna.Reset();
         foreach (var ec in netlist.Components)
@@ -316,12 +348,41 @@ public static class SParameterEngine
             if (IsSParamPort(ec.Model) && ec.InstancePath.Contains('.')) continue;
             // Wave path: top-level ports stamp their own conductances; skip the branch stamp.
             if (skipPorts && IsSParamPort(ec.Model)) continue;
+
+            // Nonlinear devices: small-signal linearization at the DC operating point (design §3).
+            // Never IsSParamPort, so they fall through the port skips above to here.
+            if (ec.Model.Kind == ModelKind.Nonlinear)
+            {
+                ec.Model.StampLinearized(mna, ec, omega, BuildBias(ec, dcNodeVoltages));
+                continue;
+            }
+
             ec.Model.Stamp(mna, ec, omega);
         }
         foreach (var ec in netlist.Components)
             if (ec.Model is MutualInductanceModel)
                 ec.Model.Stamp(mna, ec, omega);
     }
+
+    /// <summary>Builds a device's bias PortVoltages from the DC node-voltage solution, using the same
+    /// port→node-pair convention as NonlinearDcEngine (port p = Nodes[2p] − Nodes[2p+1]).
+    /// Null dcNodeVoltages ⇒ all-zero bias (purely-linear run never reaches here; DC-fail fallback).</summary>
+    private static PortVoltages BuildBias(ElaboratedComponent ec, double[]? dcNodeVoltages)
+    {
+        int P = ec.Model.PortCount;
+        var v = new double[P];
+        for (int p = 0; p < P; p++)
+        {
+            int np = ec.Nodes.Length > 2 * p     ? ec.Nodes[2 * p]     : 0;
+            int nm = ec.Nodes.Length > 2 * p + 1 ? ec.Nodes[2 * p + 1] : 0;
+            v[p] = NodeV(dcNodeVoltages, np) - NodeV(dcNodeVoltages, nm);
+        }
+        return new PortVoltages(v);
+    }
+
+    /// <summary>DC voltage of 1-based circuit node (0 = ground = 0 V).</summary>
+    private static double NodeV(double[]? dc, int node1based)
+        => (dc is null || node1based <= 0 || node1based - 1 >= dc.Length) ? 0.0 : dc[node1based - 1];
 
     /// <summary>
     /// Apply conductance and/or inductance regularization to the assembled MNA.

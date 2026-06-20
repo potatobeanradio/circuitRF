@@ -57,6 +57,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         PickSnpFileCommand    = new AsyncRelayCommand(PickFileAsync);
         ShowSnpFileCommand    = new AsyncRelayCommand(RevealSnpFileAsync,
             () => !string.IsNullOrWhiteSpace(SnpFilePath));
+        OpenCvEditorCommand   = new AsyncRelayCommand(OpenCvEditorAsync);
     }
 
     // Subscribe/unsubscribe PropertyChanged on the target schematic's stack so
@@ -111,6 +112,21 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     {
         if (_isRefreshing || _target is null || _schematicVm is null) return;
         _schematicVm.Execute(new SetLabelVisibilityCommand(_schematicVm.EditModel, _target, isTypeLabel: false, newValue));
+    }
+
+    // ── NonlinearC C–V editor ──────────────────────────────────────────────────
+
+    public bool ShowCvEditorButton => _target?.Symbol == SymbolKind.NonlinearC;
+
+    /// <summary>Callback set by the view to open the C-V editor dialog.</summary>
+    public Func<Task>? OpenCvEditorDialogAsync { get; set; }
+
+    public IAsyncRelayCommand OpenCvEditorCommand { get; private set; } = null!;
+
+    private async Task OpenCvEditorAsync()
+    {
+        if (OpenCvEditorDialogAsync is not null)
+            await OpenCvEditorDialogAsync();
     }
 
     // ── SnP panel ─────────────────────────────────────────────────────────────
@@ -217,6 +233,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _isRefreshing = false;
     }
 
+    // ── Internal surface for view (C-V editor dialog) ────────────────────────
+
+    internal SchematicViewModel? SchematicVm => _schematicVm;
+    internal EditableComponent?  Target      => _target;
+
     // ── Close button (dialog host shows; embedded host hides) ─────────────────
 
     [ObservableProperty] private bool _showClose;
@@ -309,7 +330,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         {
             foreach (var param in comp.Parameters)
             {
-                if (param.Name is "NumPorts" or "NumFreqs" || string.IsNullOrEmpty(param.Name)) continue;
+                if (param.Name is "NumPorts" or "NumFreqs" or "CvData" || string.IsNullOrEmpty(param.Name)) continue;
                 Rows.Add(new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp));
             }
         }
@@ -317,6 +338,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _isRefreshing = false;
 
         OnPropertyChanged(nameof(IsSnp));
+        OnPropertyChanged(nameof(ShowCvEditorButton));
         OnPropertyChanged(nameof(AllowsAddParameter));
         UpdateCanRemoveTopGroup();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
@@ -655,7 +677,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     {
         // SnP uses a custom panel; generic rows are always empty.
         if (comp.Symbol == SymbolKind.Snp) return 0;
-        return comp.Parameters.Count(p => p.Name is not "NumPorts" and not "NumFreqs" && !string.IsNullOrEmpty(p.Name));
+        return comp.Parameters.Count(p => p.Name is not "NumPorts" and not "NumFreqs" and not "CvData" && !string.IsNullOrEmpty(p.Name));
     }
 
     private static bool ParamNameOrderEquals(IEnumerable<EditableParameter> a, IReadOnlyList<EditableParameter> b)

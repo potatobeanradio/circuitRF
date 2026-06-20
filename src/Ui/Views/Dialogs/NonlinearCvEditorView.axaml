@@ -1,0 +1,221 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:ctl="using:CircuitRF.Ui.Controls"
+             xmlns:cvt="using:CircuitRF.Ui.Converters"
+             x:Class="CircuitRF.Ui.Views.Dialogs.NonlinearCvEditorView"
+             x:DataType="vm:NonlinearCvEditorViewModel"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <UserControl.Styles>
+        <!-- Mode toggle buttons — mirror VarEditorView -->
+        <Style Selector="Button.mode-btn">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Background" Value="{DynamicResource SystemChromeMediumColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfTileBorderBrush}"/>
+        </Style>
+        <Style Selector="Button.mode-btn.active">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- Rows: header | controls | validation | editor body | footer -->
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="8">
+
+        <!-- ── Row 0: Title + instance name  +  mode toggle ─────────────────── -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6"
+                        VerticalAlignment="Center">
+                <TextBlock Text="CV Data"
+                           FontWeight="SemiBold"
+                           FontSize="13"
+                           VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding InstanceName}"
+                           FontSize="11"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+            <!-- Rows / Text mode toggle -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="0"
+                        VerticalAlignment="Center">
+                <Button Classes="mode-btn"
+                        Classes.active="{Binding IsRowsMode}"
+                        Content="Rows"
+                        Command="{Binding SetRowsModeCommand}"/>
+                <Button Classes="mode-btn"
+                        Classes.active="{Binding IsTextMode}"
+                        Content="Text"
+                        Command="{Binding SetTextModeCommand}"
+                        BorderThickness="0,1,1,1"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ── Row 1: Controls (cap unit left · fit order + preview right) ────── -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
+            <!-- Left: unit label + combo -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4"
+                        VerticalAlignment="Center">
+                <TextBlock Text="Unit:"
+                           FontSize="11"
+                           VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{x:Static vm:NonlinearCvEditorViewModel.CapacitanceUnitOptions}"
+                          SelectedItem="{Binding CapacitanceUnit}"
+                          FontSize="11"
+                          Padding="6,2"
+                          MinHeight="0"
+                          Height="24"
+                          Width="70"
+                          VerticalAlignment="Center"/>
+            </StackPanel>
+            <!-- Right: fit order NUD + shape preview (same StackPanel idiom as original header) -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4"
+                        VerticalAlignment="Center">
+                <TextBlock Text="Fit order:"
+                           FontSize="11"
+                           VerticalAlignment="Center"/>
+                <NumericUpDown Value="{Binding FitOrder, Converter={x:Static cvt:NumericFieldConverter.Instance}}"
+                               Minimum="0"
+                               Maximum="20"
+                               Increment="1"
+                               FormatString="0"
+                               Width="70"
+                               FontSize="11"
+                               VerticalAlignment="Center"/>
+                <ctl:CvShapePreview Points="{Binding PreviewPoints}"
+                                    Width="45"
+                                    Height="25"
+                                    VerticalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ── Row 2: Validation summary ─────────────────────────────────────── -->
+        <Border Grid.Row="2"
+                IsVisible="{Binding HasValidationErrors}"
+                Background="{DynamicResource SystemChromeMediumColor}"
+                BorderBrush="{DynamicResource CrfWarningBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,4"
+                Margin="0,0,0,4">
+            <TextBlock Text="{Binding ValidationSummary}"
+                       FontSize="10"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- ── Row 3: Editor body — Rows panel or Text panel ─────────────────── -->
+        <Grid Grid.Row="3">
+
+            <!-- Rows mode: column hints + scrollable (V, C) table + Add point -->
+            <DockPanel IsVisible="{Binding IsRowsMode}">
+                <Grid DockPanel.Dock="Top"
+                      ColumnDefinitions="*,*,20"
+                      Margin="0,0,0,2">
+                    <TextBlock Grid.Column="0"
+                               Text="V (volts)"
+                               FontSize="10"
+                               Opacity="0.55"
+                               Margin="0,0,3,0"/>
+                    <TextBlock Grid.Column="1"
+                               Text="C (in chosen unit)"
+                               FontSize="10"
+                               Opacity="0.55"
+                               Margin="0,0,3,0"/>
+                </Grid>
+                <Button DockPanel.Dock="Bottom"
+                        Content="+ Add point"
+                        Command="{Binding AddRowCommand}"
+                        HorizontalAlignment="Left"
+                        Margin="0,4,0,0"
+                        FontSize="11"
+                        Padding="8,3"
+                        MinHeight="0"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              MaxHeight="280">
+                    <ItemsControl ItemsSource="{Binding Rows}"
+                                  Grid.IsSharedSizeScope="True">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CvRowViewModel">
+                                <Grid ColumnDefinitions="*,*,Auto" Margin="0,2">
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding StagedV}"
+                                             Margin="0,0,3,0"
+                                             FontSize="11"
+                                             Padding="4,3"
+                                             MinHeight="0"
+                                             PlaceholderText="V"
+                                             ToolTip.Tip="Terminal voltage (V)"
+                                             LostFocus="OnRowVLostFocus"
+                                             KeyDown="OnRowVKeyDown"/>
+                                    <TextBox Grid.Column="1"
+                                             Text="{Binding StagedC}"
+                                             Margin="0,0,3,0"
+                                             FontSize="11"
+                                             Padding="4,3"
+                                             MinHeight="0"
+                                             PlaceholderText="C"
+                                             ToolTip.Tip="Capacitance (in chosen unit)"
+                                             LostFocus="OnRowCLostFocus"
+                                             KeyDown="OnRowCKeyDown"/>
+                                    <Button Grid.Column="2"
+                                            Command="{Binding RemoveCommand}"
+                                            Content="×"
+                                            FontSize="12"
+                                            Padding="4,0"
+                                            MinHeight="0"
+                                            Height="22"
+                                            VerticalAlignment="Center"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            ToolTip.Tip="Remove point"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+
+            <!-- Text mode: monospace multiline TextBox for Excel paste -->
+            <TextBox IsVisible="{Binding IsTextMode}"
+                     Text="{Binding TextContent}"
+                     AcceptsReturn="True"
+                     FontFamily="IBM Plex Mono,Consolas,Courier New,monospace"
+                     FontSize="11"
+                     MinHeight="120"
+                     MaxHeight="280"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     TextWrapping="NoWrap"
+                     VerticalContentAlignment="Top"
+                     LostFocus="OnTextBoxLostFocus"
+                     PlaceholderText="Paste V&#x9;C data (tab-separated, one point per line)"/>
+
+        </Grid>
+
+        <!-- ── Row 4: Footer (HIG: Close left, Apply trailing/right) ─────────── -->
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,8,0,0"
+                    Spacing="6">
+            <Button Content="Close"
+                    IsCancel="True"
+                    FontSize="11"
+                    Padding="10,4"
+                    MinHeight="0"
+                    Click="OnCloseClick"/>
+            <Button Content="Apply"
+                    IsDefault="True"
+                    Command="{Binding ApplyCommand}"
+                    IsEnabled="{Binding !HasValidationErrors}"
+                    FontSize="11"
+                    Padding="10,4"
+                    MinHeight="0"/>
+        </StackPanel>
+
+    </Grid>
+</UserControl>

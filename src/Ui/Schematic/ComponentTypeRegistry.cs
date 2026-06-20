@@ -191,6 +191,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.DataFiles,
             SearchTerms: ["SnP", "Touchstone", "snp", "s2p", "sparam file", "data file", "network"],
             IsCommon: true),
+        [SymbolKind.NonlinearC]    = new("NonlinearC",   "C",
+            Category: ComponentCategory.Lumped,
+            SearchTerms: ["NLC", "NonlinearC", "nonlinear capacitor", "nonlinear", "varactor", "varicap", "CV", "C(V)"],
+            IsCommon: false),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -242,6 +246,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Meas          => "MEAS",  // sentinel — never emitted as an Instance; rows route to tb.Measurements
         SymbolKind.P1Tone        => "P1Tone",
         SymbolKind.Snp           => "SnP",
+        SymbolKind.NonlinearC    => "NonlinearC",
         _                        => Get(kind).DisplayName,
     };
 
@@ -343,6 +348,9 @@ public static class ComponentTypeRegistry
                 ];
             }
 
+            case SymbolKind.NonlinearC:
+                return [new("C0", "1", "pF", true, UnitDimension.Capacitance)];
+
             // Ground/FetSdd/Generic need no default parameters.
             default: return [];
         }
@@ -387,6 +395,8 @@ public static class ComponentTypeRegistry
             case "VAR":    kind = SymbolKind.Var;           return true;
             case "MEAS":   kind = SymbolKind.Meas;          return true;
             case "P1TONE": kind = SymbolKind.P1Tone;        return true;
+            case "NONLINEARC":
+            case "NLC":    kind = SymbolKind.NonlinearC;  return true;
             case "FET":
             case "SDD":
             case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default
@@ -478,6 +488,15 @@ public static class ComponentTypeRegistry
         // MEAS: user-authored measurement equation rows — adds Meas{n} placeholder names.
         SymbolKind.Meas => new IndexedParamGroup(
             NameFormats:     ["Meas{0}"],
+            DefaultUnits:    [""],
+            ShowOnSchematic: [false],
+            Dimensions:      [UnitDimension.None],
+            FirstAddIndex:   1,
+            SkipIndices:     null),
+
+        // NonlinearC: user adds C1, C2, … higher-order polynomial coefficients (raw SI: F/V, F/V², …).
+        SymbolKind.NonlinearC => new IndexedParamGroup(
+            NameFormats:     ["C{0}"],
             DefaultUnits:    [""],
             ShowOnSchematic: [false],
             Dimensions:      [UnitDimension.None],

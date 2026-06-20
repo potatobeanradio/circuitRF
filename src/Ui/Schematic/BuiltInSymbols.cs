@@ -41,6 +41,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _meas         = BuildMeas();
     private static readonly Symbol _generic      = BuildGeneric();
     private static readonly Symbol _p1Tone       = BuildP1Tone();
+    private static readonly Symbol _nonlinearC   = BuildNonlinearC();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
@@ -85,6 +86,7 @@ public static class BuiltInSymbols
             case SymbolKind.Resistor:   return _resistor;
             case SymbolKind.Inductor:   return _inductor;
             case SymbolKind.Capacitor:  return _capacitor;
+            case SymbolKind.NonlinearC: return _nonlinearC;
             case SymbolKind.Vdc:        return _vdcSrc;
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.Ground:     return _ground;
@@ -221,6 +223,21 @@ public static class BuiltInSymbols
         QC( -50,   22,   0,    2,  50,  22),// curved bottom plate (bows toward gap)
         L(   0,   12,   0,  200),           // bottom lead (from curve apex)
     ], SymbolKind.Capacitor);
+
+    // ── NonlinearC — capacitor glyph + three diagonal "nonlinear" slashes ──────
+    // Identical plates/leads to the linear capacitor; three parallel diagonal strokes
+    // are the standard nonlinear-element annotation. Pins: (0,-200)/(0,+200).
+
+    private static Symbol BuildNonlinearC() => Sym([
+        L(   0, -200,   0,  -12),            // top lead
+        L( -50,  -12,  50,  -12),            // flat top plate
+        QC( -50,   22,   0,    2,  50,  22), // curved bottom plate
+        L(   0,   12,   0,  200),            // bottom lead
+        // nonlinear annotation: two end-ticks joined by a diagonal (−y is up)
+        L( -50, -32, -50, -62),              // Line 1: left tick, above plate, upward
+        L(  50,   28,  50,  58),              // Line 2: right tick, below plate, downward
+        L( -50, -32,  50,   28),              // Line 3: diagonal joining the closest ends
+    ], SymbolKind.NonlinearC);
 
     // ── Vdc — battery symbol: two unequal parallel bars + leads + +/− markers ─
     // Pins: (0,-200) + top / (0,+200) − bottom.

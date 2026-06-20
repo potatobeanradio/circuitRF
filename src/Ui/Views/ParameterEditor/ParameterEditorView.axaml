@@ -203,6 +203,11 @@
                     IsVisible="{Binding AllowsAddParameter}"
                     ToolTip.Tip="Add parameter group"
                     Command="{Binding AddGroupCommand}"/>
+            <Button Content="Edit CV..."
+                    FontSize="11"
+                    Padding="8,3"
+                    IsVisible="{Binding ShowCvEditorButton}"
+                    Command="{Binding OpenCvEditorCommand}"/>
             <Button Content="Help"
                     FontSize="11"
                     Padding="8,3"

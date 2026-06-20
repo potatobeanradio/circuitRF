@@ -27,7 +27,7 @@ public static class ComponentModelFactory
 
     // Types that require resolved parameters at construction time.
     private static readonly HashSet<string> _parameterizedTypes =
-        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone" };
+        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "NonlinearC" };
 
     /// <summary>
     /// Returns a new ComponentModel, using resolved parameters when needed.
@@ -51,6 +51,8 @@ public static class ComponentModelFactory
             return CreateTunerModel(parameters);
         if (typeName.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
             return CreateP1ToneModel(parameters);
+        if (typeName.Equals("NonlinearC", StringComparison.OrdinalIgnoreCase))
+            return CreateNonlinearCModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -346,6 +348,21 @@ public static class ComponentModelFactory
         }
 
         return new P1ToneModel(instanceName, harmonicZ, zDefault, pavlDbm, freqHz, phaseDeg);
+    }
+
+    // ── NonlinearC ────────────────────────────────────────────────────────────
+
+    private static NonlinearCModel CreateNonlinearCModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        // Read C0, C1, … consecutively; stop at the first absent index. Absent ⇒ implicitly 0
+        // (so trailing zeros may be omitted). No C0 at all ⇒ degenerate 0 F cap (allowed; warns elsewhere).
+        var coeffs = new List<double>();
+        for (int k = 0; ; k++)
+        {
+            if (!parameters.TryGetValue($"C{k}", out var val) || val.Kind != ValueKind.Real) break;
+            coeffs.Add(val.AsReal());
+        }
+        return new NonlinearCModel(coeffs.Count > 0 ? coeffs.ToArray() : [0.0]);
     }
 
     private static Complex ToComplex(Value v)

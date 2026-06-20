@@ -1,3 +1,4 @@
+using System.Numerics;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Core;
@@ -36,6 +37,36 @@ public abstract class ComponentModel
     /// </summary>
     public virtual NonlinearResult Evaluate(in PortVoltages v)
         => throw new NotSupportedException($"{GetType().Name} is not a nonlinear model");
+
+    /// <summary>
+    /// Small-signal linear contribution of a nonlinear device, linearized at the supplied bias
+    /// operating point. Stamps Y[p,q] = Dg[p,q] + jω·Dc[p,q] (from Evaluate(bias)) as an N-port
+    /// admittance block, using the same port→node-pair convention as NonlinearDcEngine
+    /// (port p spans Nodes[2p],Nodes[2p+1]). Linear-only engines (S-parameter, future linear-AC)
+    /// call this for Kind==Nonlinear devices instead of Stamp(); HB/DC never call it.
+    /// Base default suits every nonlinear device (NonlinearC, SDD); override only for special cases.
+    /// </summary>
+    public virtual void StampLinearized(IMnaContext mna, ElaboratedComponent c, double omega, in PortVoltages bias)
+    {
+        var r = Evaluate(bias);
+        int P = PortCount;
+        for (int p = 0; p < P; p++)
+        {
+            int np = c.Nodes.Length > 2 * p     ? c.Nodes[2 * p]     : 0;
+            int nm = c.Nodes.Length > 2 * p + 1 ? c.Nodes[2 * p + 1] : 0;
+            for (int q = 0; q < P; q++)
+            {
+                int qp = c.Nodes.Length > 2 * q     ? c.Nodes[2 * q]     : 0;
+                int qm = c.Nodes.Length > 2 * q + 1 ? c.Nodes[2 * q + 1] : 0;
+                var y = new Complex(r.Dg[p, q], omega * r.Dc[p, q]);
+                if (y == Complex.Zero) continue;
+                mna.AddBlockAdmittance(np, qp,  y);
+                mna.AddBlockAdmittance(np, qm, -y);
+                mna.AddBlockAdmittance(nm, qp, -y);
+                mna.AddBlockAdmittance(nm, qm,  y);
+            }
+        }
+    }
 }
 
 /// <summary>Port voltage vector passed to Evaluate (Phase 3+).</summary>

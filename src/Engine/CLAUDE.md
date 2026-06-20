@@ -1,5 +1,7 @@
 # Engine — local conventions
 
+Nonlinear-device small-signal seam + DC-biased S-parameter (brief-nonlinear-engine-seam, 2026-06-19) — COMPLETE: `ComponentModel.StampLinearized` added (Core); `SParameterEngine` gains a DC pre-pass that runs `NonlinearDcEngine` once when `Kind==Nonlinear` devices are present, threads `dcNodeVoltages` into both wave and legacy paths, and routes nonlinear devices through `StampLinearized` in `StampAll` instead of `Stamp`. Purely-linear S-param runs are byte-identical (no DC pre-pass). Two helper methods: `BuildBias` (device port-voltage vector from DC node solution) and `NodeV` (1-based index safe). Fallback policy: zero-bias note when DC solves to ≈0 V (`sparam-zero-bias`); warn-and-continue on non-convergence (`sparam-dc-nonconverged`). 4 gate tests in `tests/Engine.Tests/Linear/NonlinearSParamTests.cs` (T1: linear regression guard; T2: resistive SDD at 0 V matches linear R; T3: bias-dependent G(V₀); T4: DC non-convergence fallback). Build 0W/0E; 1891 total tests pass.
+
 Standing instructions for `src/Engine` (the numeric layer: MNA assembly, linear analyses, and the
 HB sub-engine in `HarmonicBalance/`). Read with the root `CLAUDE.md`. Design notes:
 `docs/design/linear-engine.md` and `docs/design/harmonic-balance.md`.
