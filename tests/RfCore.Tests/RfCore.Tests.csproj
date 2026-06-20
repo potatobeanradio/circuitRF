@@ -28,5 +28,14 @@
     <None Update="testdata/**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- Loadpull test data from sibling circuitRF repo -->
+    <None Include="../../../circuitRF/testdata/spl_test_data/**"
+          Link="testdata/spl_test_data/%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="../../../circuitRF/testdata/lpwave_test_data/**"
+          Link="testdata/lpwave_test_data/%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

@@ -440,7 +440,13 @@ public class DataCubeTests
         var vCube = new DataCube(new[] { nodeAxis, harmAxis, pinAxis }, data);
         var ds = new DataSet();
         ds.Add("V", vCube);
-        ds.Add("I", vCube);  // reuse same shape for branch tests
+
+        // The I cube uses a "branch" axis (not "node") — that is what DataSet.I()
+        // resolves against. Reuse the same labels/values/data, only the axis name differs.
+        var branchAxis = new Axis("branch", new double[nN].Select((_, i) => (double)i).ToArray(), "",
+                                  nodeNames);
+        var iCube = new DataCube(new[] { branchAxis, harmAxis, pinAxis }, data);
+        ds.Add("I", iCube);  // same shape as V, but branch-named axis for I() lookups
         return (ds, nN, nH, nP);
     }
 
