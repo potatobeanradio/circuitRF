@@ -1,5 +1,6 @@
 using System.Numerics;
 using CircuitRF.Core;
+using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Engine.HarmonicBalance;
@@ -15,6 +16,36 @@ public sealed record HigherWeightBucket(
     int            W,
     Complex[,]     WNl,    // [N, K+1]
     Complex[,,]    Dw);    // [N, N, Kj+1]
+
+/// <summary>
+/// Carries the linear extractor + per-harmonic source RHS into HbNewton.Solve so the per-iterate
+/// _c_ref recompute can call SolveFullNetwork inside the Newton loop (brief #2).
+/// Null for circuits with no SDD C[n] references — zero overhead on the common path.
+/// </summary>
+public sealed record ControlCurrentContext(
+    HbLinearExtractor Extractor,
+    Complex[][]       BSrc,   // [K+1][mnaSize] — per-harmonic source RHS (snapshotted)
+    double            F0,
+    int               K);
+
+/// <summary>
+/// Ingredients for the control-current Jacobian block J_cc (brief #3 §2), produced by the
+/// pass-2 evaluation and consumed by BuildJ. J_cc = B·R·A where:
+///   A = ∂iNl_total/∂V        (the main conversion blocks — built in BuildJ from G/C/buckets)
+///   R = ∂_c_ref/∂iNl_total   (rRef sensitivity rows, harmonic-diagonal — built from Extractor)
+///   B = ∂F/∂_c_ref           (conversion of the per-w control kernels with H[w] weighting)
+/// </summary>
+/// <param name="G">Number of (SDD, control) references.</param>
+/// <param name="BranchIdx">[G] resolved MNA branch index of each referenced device.</param>
+/// <param name="Models">[G] owning SDD model per control (for H[w] weights).</param>
+/// <param name="Kernels">w → Khat[node, g, d]: FFT of ∂I[p,w]/∂_c summed to interface node.</param>
+/// <param name="Kj">Conversion-grid harmonic reach of the kernels (= min(2K, gridN/2)).</param>
+public sealed record ControlJacData(
+    int                          G,
+    int[]                        BranchIdx,
+    ComponentModel[]             Models,
+    Dictionary<int, Complex[,,]> Kernels,
+    int                          Kj);
 
 /// <summary>
 /// HB Newton loop — solves ALL harmonics k = 0..K simultaneously (harmonic-balance.md §4, §7, §8).
@@ -57,7 +88,9 @@ public static class HbNewton
         AnalysisSettings   settings,
         double             tol,
         double             lambda         = 1.0,   // B2: Newton step size λ ∈ (0,1]
-        int                guardHarmonic  = 0)      // B3: guard harmonic index (0=off)
+        int                guardHarmonic  = 0,      // B3: guard harmonic index (0=off)
+        ControlCurrentContext? cc         = null,   // brief #2: per-iterate _c_ref context
+        bool               useControlJacobian = true)  // brief #3: J_cc on (quadratic) vs off (quasi-Newton)
     {
         double omega0  = 2.0 * Math.PI * f0;
         int    unknowns = 2 * N * (K + 1);  // real-split: all harmonics k=0..K
@@ -69,7 +102,8 @@ public static class HbNewton
         for (int iter = 0; iter < maxIter; iter++)
         {
             // ── 1. Time-domain evaluation ─────────────────────────────────────
-            var (iNl, qNl, G, C, higherBuckets) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
+            var (iNl, qNl, G, C, higherBuckets) =
+                EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, iNlLast, out var ctrlJac);
             iNlLast = iNl;
 
             // ── 2. Residual F[n, k=0..K] ──────────────────────────────────────
@@ -81,7 +115,8 @@ public static class HbNewton
                 return new SolveResult(true, iter + 1, trace, iNlLast);
 
             // ── 3. Jacobian J (real-split 2×2 blocks, §7.2 + Maas §7.3) ───────
-            var J = BuildJ(yNN, G, C, N, K, omega0, guardHarmonic, higherBuckets);
+            var J = BuildJ(yNN, G, C, N, K, omega0, guardHarmonic, higherBuckets,
+                useControlJacobian ? ctrlJac : null, cc);
 
             // ── 4. Dense solve J·ΔV = −F ─────────────────────────────────────
             var negF = new double[unknowns];
@@ -98,7 +133,7 @@ public static class HbNewton
         }
 
         // Max iterations.
-        var (iNlF, qNlF, _, _, bucketsF) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
+        var (iNlF, qNlF, _, _, bucketsF) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, iNlLast);
         iNlLast = iNlF;
         var FF = BuildF(V, yNN, iSrc, iNlF, qNlF, N, K, omega0, bucketsF);
         trace.Add(new HbConvergenceTrace.IterRecord(settings.HbMaxIter, L2(FF)));
@@ -107,11 +142,38 @@ public static class HbNewton
 
     // ── Time-domain nonlinear evaluation ─────────────────────────────────────
 
+    /// <summary>Convenience overload — discards the control-Jacobian ingredients (brief #3).</summary>
     public static (Complex[,] iNl, Complex[,] qNl, Complex[,,] G, Complex[,,] C,
                    IReadOnlyList<HigherWeightBucket> higherBuckets)
         EvaluateNonlinear(Complex[,] V, int N, int K, int gridN,
-            ElaboratedNetlist netlist, int[] interfaceNodes)
+            ElaboratedNetlist netlist, int[] interfaceNodes,
+            ControlCurrentContext? cc = null, Complex[,]? iNlPrev = null)
+        => EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, iNlPrev, out _);
+
+    /// <summary>
+    /// Time-domain evaluation of all nonlinear devices, returning the residual spectra
+    /// (iNl, qNl) and conversion-matrix spectra (G, C, higherBuckets).
+    ///
+    /// Control currents (brief #3 §0) — TWO-PASS self-consistent <c>_c_ref(V)</c>:
+    ///   Pass 1 evaluates the SDDs with <c>_c_ref</c> frozen at the entry seed (from
+    ///   <paramref name="iNlPrev"/>) → <c>iNl(V)</c> for the CURRENT V. Then
+    ///   <c>_c_ref(V)</c> is computed from that <c>iNl(V)</c> via SolveFullNetwork per
+    ///   harmonic (injecting the TOTAL nonlinear current: iNl + jωq + ΣH·WNl). Pass 2
+    ///   re-evaluates with the self-consistent <c>_c_ref(V)</c> → the returned spectra,
+    ///   so the residual the FD oracle differentiates has <c>∂_c_ref/∂V ≠ 0</c>.
+    /// The inner map is a SINGLE linearization step (no inner iteration) — the analytic
+    /// <c>J_cc</c> (BuildJ) is the exact derivative of exactly this one-step map.
+    /// When <paramref name="cc"/> is null (no control SDDs), this is byte-identical to the
+    /// pre-brief single-pass evaluation.
+    /// </summary>
+    public static (Complex[,] iNl, Complex[,] qNl, Complex[,,] G, Complex[,,] C,
+                   IReadOnlyList<HigherWeightBucket> higherBuckets)
+        EvaluateNonlinear(Complex[,] V, int N, int K, int gridN,
+            ElaboratedNetlist netlist, int[] interfaceNodes,
+            ControlCurrentContext? cc, Complex[,]? iNlPrev, out ControlJacData? ctrlJac)
     {
+        ctrlJac = null;
+
         var vTime = new double[N][];
         for (int n = 0; n < N; n++)
         {
@@ -121,15 +183,80 @@ public static class HbNewton
             HbFft.Inverse(Xn, K, vTime[n]);
         }
 
+        int Kj = Math.Min(2 * K, gridN / 2);
+
+        // Control-reference table: one entry per (SDD, local control index).
+        var controlEntries = BuildControlEntries(netlist);
+        bool hasControl = cc is not null && controlEntries.Count > 0;
+
+        Dictionary<int, double[,]>? cRefByDevice = null;
+        if (hasControl)
+        {
+            double omega0 = 2.0 * Math.PI * cc!.F0;
+
+            // Pass 1: frozen _c seed from iNlPrev (w=0) → iNl(V) for the current V.
+            var cRefSeed = ComputeControlRefTimes(netlist, cc, N, K, gridN,
+                (n, k) => iNlPrev is not null ? iNlPrev[n, k] : Complex.Zero);
+            var (iNl1, qNl1, _, _, buckets1, _) =
+                RunDevicePass(vTime, N, K, Kj, gridN, netlist, interfaceNodes, cRefSeed, null);
+
+            // Total nonlinear injection spectrum from pass 1 (iNl + jωq + ΣH·WNl).
+            cRefByDevice = ComputeControlRefTimes(netlist, cc, N, K, gridN, (n, k) =>
+            {
+                Complex tot = iNl1[n, k];
+                if (k > 0) tot += new Complex(0, k * omega0) * qNl1[n, k];
+                foreach (var b in buckets1)
+                    tot += b.Model.Weight(b.W, k * omega0) * b.WNl[n, k];
+                return tot;
+            });
+        }
+
+        // Main pass (pass 2 if control present; the only pass otherwise).
+        var (iNl, qNl, G, C, higherBuckets, sens) =
+            RunDevicePass(vTime, N, K, Kj, gridN, netlist, interfaceNodes, cRefByDevice,
+                hasControl ? controlEntries : null);
+
+        if (hasControl && sens is not null)
+            ctrlJac = BuildCtrlJacData(sens, controlEntries, N, K, Kj, gridN);
+
+        return (iNl, qNl, G, C, higherBuckets);
+    }
+
+    /// <summary>
+    /// One full time-domain evaluation pass over all nonlinear devices.
+    /// <paramref name="cRefByDevice"/> maps a control-SDD's component index to its
+    /// <c>_c_ref(t)</c> array [localControl, gridN]; null devices get no control currents.
+    /// When <paramref name="controlEntries"/> is non-null, per-w control sensitivities
+    /// (∂I[p,w]/∂_c) are accumulated into <c>sens</c> time buffers [node, globalControl, t].
+    /// </summary>
+    private static (Complex[,] iNl, Complex[,] qNl, Complex[,,] G, Complex[,,] C,
+                    List<HigherWeightBucket> buckets, Dictionary<int, double[,,]>? sens)
+        RunDevicePass(double[][] vTime, int N, int K, int Kj, int gridN,
+            ElaboratedNetlist netlist, int[] interfaceNodes,
+            Dictionary<int, double[,]>? cRefByDevice,
+            IReadOnlyList<(int nlIdx, int ci, int branchIdx, ComponentModel model)>? controlEntries)
+    {
         var iTime  = new double[N, gridN];
         var qTime  = new double[N, gridN];
-        int Kj     = Math.Min(2 * K, gridN / 2);
         var dgTime = new double[N, N, gridN];
         var dcTime = new double[N, N, gridN];
 
         // Per-(nlIdx, W) time-domain buffers for w≥2 buckets.
         var bucketBuffers = new Dictionary<(int nlIdx, int w),
             (ComponentModel model, double[,] wTime, double[,,] dwTime)>();
+
+        // Control-sensitivity time buffers: w → ∂I[p,w]/∂_c at [node, globalControl, t].
+        Dictionary<int, double[,,]>? sens = null;
+        Dictionary<(int nlIdx, int ci), int>? gLookup = null;
+        int gCount = 0;
+        if (controlEntries is not null)
+        {
+            sens    = new Dictionary<int, double[,,]>();
+            gLookup = new Dictionary<(int, int), int>();
+            for (int g = 0; g < controlEntries.Count; g++)
+                gLookup[(controlEntries[g].nlIdx, controlEntries[g].ci)] = g;
+            gCount = controlEntries.Count;
+        }
 
         foreach (var nlIdx in netlist.NonlinearComponents)
         {
@@ -147,6 +274,10 @@ public static class HbNewton
                 portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
             }
 
+            double[,]? cRefTime = null;
+            cRefByDevice?.TryGetValue(nlIdx, out cRefTime);
+            bool collectSens = sens is not null && cRefTime is not null;
+
             for (int t = 0; t < gridN; t++)
             {
                 for (int p = 0; p < portCount; p++)
@@ -155,7 +286,16 @@ public static class HbNewton
                     double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t] : 0.0;
                     portV[p] = vp - vm;
                 }
-                var res = ec.Model.Evaluate(new PortVoltages(portV));
+                NonlinearResult res;
+                if (cRefTime is not null)
+                {
+                    int m = ((SddModel)ec.Model).ControlRefs.Length;
+                    var cVals = new double[m];
+                    for (int ci = 0; ci < m; ci++) cVals[ci] = cRefTime[ci, t];
+                    res = ec.Model.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
+                }
+                else
+                    res = ec.Model.Evaluate(new PortVoltages(portV));
 
                 for (int p = 0; p < portCount; p++)
                 {
@@ -190,6 +330,39 @@ public static class HbNewton
                             int jPlus = portPlusIdx[q];
                             if (jPlus < 0) continue;
                             buf.dwTime[iPlus, jPlus, t] += term.Jac[p, q];
+                        }
+                    }
+                }
+
+                // Brief #3 §2: accumulate per-w control sensitivities ∂I[p,w]/∂_c.
+                if (collectSens)
+                {
+                    int m = res.DControl?.GetLength(1) ?? 0;
+                    for (int p = 0; p < portCount; p++)
+                    {
+                        int iPlus = portPlusIdx[p];
+                        if (iPlus < 0) continue;
+                        for (int ci = 0; ci < m; ci++)
+                        {
+                            int g = gLookup![(nlIdx, ci)];
+                            if (res.DControl is not null)
+                                SensAdd(sens!, 0, N, gCount, gridN, iPlus, g, t, res.DControl[p, ci]);
+                            if (res.DControlCharge is not null)
+                                SensAdd(sens!, 1, N, gCount, gridN, iPlus, g, t, res.DControlCharge[p, ci]);
+                        }
+                    }
+                    foreach (var term in res.Terms)
+                    {
+                        if (term.JacCtrl is null) continue;
+                        for (int p = 0; p < portCount; p++)
+                        {
+                            int iPlus = portPlusIdx[p];
+                            if (iPlus < 0) continue;
+                            for (int ci = 0; ci < term.JacCtrl.GetLength(1); ci++)
+                            {
+                                int g = gLookup![(nlIdx, ci)];
+                                SensAdd(sens!, term.W, N, gCount, gridN, iPlus, g, t, term.JacCtrl[p, ci]);
+                            }
                         }
                     }
                 }
@@ -249,7 +422,104 @@ public static class HbNewton
             higherBuckets.Add(new HigherWeightBucket(model, w, WNl, Dw));
         }
 
-        return (iNl, qNl, G, C, higherBuckets);
+        return (iNl, qNl, G, C, higherBuckets, sens);
+    }
+
+    private static void SensAdd(Dictionary<int, double[,,]> sens, int w,
+        int N, int gCount, int gridN, int node, int g, int t, double val)
+    {
+        if (!sens.TryGetValue(w, out var buf))
+            sens[w] = buf = new double[N, gCount, gridN];
+        buf[node, g, t] += val;
+    }
+
+    /// <summary>Flat list of (SDD component idx, local control idx, resolved branch idx, model).</summary>
+    private static List<(int nlIdx, int ci, int branchIdx, ComponentModel model)>
+        BuildControlEntries(ElaboratedNetlist netlist)
+    {
+        var entries = new List<(int, int, int, ComponentModel)>();
+        foreach (var nlIdx in netlist.NonlinearComponents)
+        {
+            var ec = netlist.Components[nlIdx];
+            if (ec.Model is not SddModel sdd || sdd.ControlRefs.Length == 0) continue;
+            for (int ci = 0; ci < sdd.ControlRefs.Length; ci++)
+                entries.Add((nlIdx, ci, sdd.ControlBranchIndices[ci], sdd));
+        }
+        return entries;
+    }
+
+    /// <summary>
+    /// Per control-SDD, compute <c>_c_ref(t)</c> [localControl, gridN] from a given
+    /// interface-current source spectrum via SolveFullNetwork per harmonic (the same
+    /// back-solve the residual uses). <paramref name="source"/>(n,k) is the injected
+    /// nonlinear current at interface node n, harmonic k.
+    /// </summary>
+    private static Dictionary<int, double[,]> ComputeControlRefTimes(
+        ElaboratedNetlist netlist, ControlCurrentContext cc, int N, int K, int gridN,
+        Func<int, int, Complex> source)
+    {
+        var dict = new Dictionary<int, double[,]>();
+        var iNlK = new Complex[N];
+        foreach (var nlIdx in netlist.NonlinearComponents)
+        {
+            var ec = netlist.Components[nlIdx];
+            if (ec.Model is not SddModel sdd || sdd.ControlRefs.Length == 0) continue;
+
+            int m = sdd.ControlRefs.Length;
+            var spec = new Complex[m, K + 1];
+            for (int k = 0; k <= K; k++)
+            {
+                for (int n = 0; n < N; n++) iNlK[n] = source(n, k);
+                double omegaK = k == 0 ? 0.0 : k * 2.0 * Math.PI * cc.F0;
+                var xK = cc.Extractor.SolveFullNetwork(omegaK, iNlK, cc.BSrc[k]);
+                for (int ci = 0; ci < m; ci++)
+                {
+                    int br = sdd.ControlBranchIndices[ci];
+                    spec[ci, k] = br >= 0 && br < xK.Length ? xK[br] : Complex.Zero;
+                }
+            }
+
+            var cRefTime = new double[m, gridN];
+            var sbuf = new Complex[K + 1];
+            var tbuf = new double[gridN];
+            for (int ci = 0; ci < m; ci++)
+            {
+                for (int k = 0; k <= K; k++) sbuf[k] = spec[ci, k];
+                HbFft.Inverse(sbuf, K, tbuf);
+                for (int t = 0; t < gridN; t++) cRefTime[ci, t] = tbuf[t];
+            }
+            dict[nlIdx] = cRefTime;
+        }
+        return dict;
+    }
+
+    /// <summary>FFT the per-w control-sensitivity time buffers into the J_cc kernel spectra.</summary>
+    private static ControlJacData BuildCtrlJacData(
+        Dictionary<int, double[,,]> sens,
+        IReadOnlyList<(int nlIdx, int ci, int branchIdx, ComponentModel model)> controlEntries,
+        int N, int K, int Kj, int gridN)
+    {
+        int Gc = controlEntries.Count;
+        var kernels = new Dictionary<int, Complex[,,]>();
+        foreach (var (w, buf) in sens)
+        {
+            var khat = new Complex[N, Gc, Kj + 1];
+            for (int n = 0; n < N; n++)
+            for (int g = 0; g < Gc; g++)
+            {
+                var x = new double[gridN];
+                for (int t = 0; t < gridN; t++) x[t] = buf[n, g, t];
+                HbFft.Forward(x, Kj, out var ampl, out _);
+                for (int d = 0; d <= Kj; d++) khat[n, g, d] = ampl[d];
+            }
+            kernels[w] = khat;
+        }
+
+        var branchIdx = new int[Gc];
+        var models    = new ComponentModel[Gc];
+        for (int g = 0; g < Gc; g++) { branchIdx[g] = controlEntries[g].branchIdx; models[g] = controlEntries[g].model; }
+
+        return new ControlJacData(Gc, branchIdx, models, kernels, Kj);
     }
 
     // ── Residual F[n, k=0..K] (real-split) ───────────────────────────────────
@@ -288,7 +558,8 @@ public static class HbNewton
 
     public static double[] BuildJ(Complex[][,] yNN, Complex[,,] G, Complex[,,] C,
         int N, int K, double omega0, int guardHarmonic = 0,
-        IReadOnlyList<HigherWeightBucket>? higherBuckets = null)
+        IReadOnlyList<HigherWeightBucket>? higherBuckets = null,
+        ControlJacData? ctrlJac = null, ControlCurrentContext? cc = null)
     {
         int dof = 2 * N * (K + 1);
         var J = new double[dof * dof];
@@ -398,7 +669,167 @@ public static class HbNewton
             if (rk1 >= 0 && ci1 >= 0 && rk1 < dof && ci1 < dof)
                 J[rk1*dof+ci1] += a11;
         }
+
+        // ── Control-current Jacobian block J_cc (brief #3 §2) ─────────────────
+        if (ctrlJac is not null && cc is not null && ctrlJac.G > 0)
+            AddControlJacobian(J, G, C, higherBuckets, hkCache, ctrlJac, cc, N, K, omega0);
+
         return J;
+    }
+
+    // ── Control-current Jacobian assembly: J_cc = B·R·A (brief #3 §2) ─────────
+
+    /// <summary>
+    /// 2×2 real-split conversion block for output (n,k) ← input (m,i) from a single complex
+    /// spectrum D[a,b,d] (conjugate for negative d), scaled by complex weight <paramref name="h"/>.
+    /// Identical machinery to the G/C/bucket blocks in the main loop — NO Y_NN, Maas, or guard.
+    /// </summary>
+    private static (double a00, double a01, double a10, double a11) SpectrumBlock(
+        Complex[,,] D, int a, int b, int k, int i, Complex h)
+    {
+        double wKmi = ConversionWeight(k, k - i);
+        double wKpi = ConversionWeight(k, k + i);
+        Complex Dkmi = SafeGet(D, a, b, k - i);
+        Complex Dkpi = SafeGet(D, a, b, k + i);
+        double d00 =  wKmi * Dkmi.Real      + wKpi * Dkpi.Real;
+        double d01 = -wKmi * Dkmi.Imaginary + wKpi * Dkpi.Imaginary;
+        double d10 =  wKmi * Dkmi.Imaginary + wKpi * Dkpi.Imaginary;
+        double d11 =  wKmi * Dkmi.Real      - wKpi * Dkpi.Real;
+        double ha = h.Real, hb = h.Imaginary;
+        return (ha * d00 - hb * d10, ha * d01 - hb * d11,
+                hb * d00 + ha * d10, hb * d01 + ha * d11);
+    }
+
+    private static void AddControlJacobian(double[] J, Complex[,,] G, Complex[,,] C,
+        IReadOnlyList<HigherWeightBucket>? buckets, Complex[,]? hkCache,
+        ControlJacData cj, ControlCurrentContext cc, int N, int K, double omega0)
+    {
+        int dofN = 2 * N * (K + 1);
+        int Gc   = cj.G;
+        int dofG = 2 * Gc * (K + 1);
+
+        // A: ∂iNl_total/∂V  [dofN × dofN] — the main conversion (G + jω·C + ΣH·Dw), no Y/Maas.
+        var A = new double[dofN * dofN];
+        for (int n = 0; n < N; n++)
+        for (int k = 0; k <= K; k++)
+        for (int m = 0; m < N; m++)
+        for (int i = 0; i <= K; i++)
+        {
+            var (a00, a01, a10, a11) = SpectrumBlock(G, n, m, k, i, Complex.One);
+            var (c00, c01, c10, c11) = SpectrumBlock(C, n, m, k, i, new Complex(0, k * omega0));
+            a00 += c00; a01 += c01; a10 += c10; a11 += c11;
+            if (buckets is not null && hkCache is not null)
+                for (int bi = 0; bi < buckets.Count; bi++)
+                {
+                    var (b00, b01, b10, b11) = SpectrumBlock(buckets[bi].Dw, n, m, k, i, hkCache[bi, k]);
+                    a00 += b00; a01 += b01; a10 += b10; a11 += b11;
+                }
+            WriteBlock(A, dofN, n, k, m, i, K, a00, a01, a10, a11);
+        }
+        ZeroDcIm(A, dofN, dofN, K);  // iNl_total DC bin is real (HbFft forces Im=0)
+
+        // B: ∂F/∂_c_ref  [dofN × dofG] — conversion of the per-w control kernels, H[w]-weighted.
+        var B = new double[dofN * dofG];
+        for (int n = 0; n < N; n++)
+        for (int k = 0; k <= K; k++)
+        for (int g = 0; g < Gc; g++)
+        for (int kap = 0; kap <= K; kap++)
+        {
+            double s00 = 0, s01 = 0, s10 = 0, s11 = 0;
+            foreach (var (w, khat) in cj.Kernels)
+            {
+                Complex h = w switch
+                {
+                    0 => Complex.One,
+                    1 => new Complex(0, k * omega0),
+                    _ => cj.Models[g].Weight(w, k * omega0)
+                };
+                var (q00, q01, q10, q11) = SpectrumBlock(khat, n, g, k, kap, h);
+                s00 += q00; s01 += q01; s10 += q10; s11 += q11;
+            }
+            WriteBlockRect(B, dofG, Idx(n, k, false, N, K), Idx(n, k, true, N, K),
+                Idx(g, kap, false, Gc, K), Idx(g, kap, true, Gc, K), s00, s01, s10, s11);
+        }
+
+        // R: ∂_c_ref/∂iNl_total  [dofG × dofN] — rRef rows, harmonic-diagonal.
+        var R = new double[dofG * dofN];
+        for (int g = 0; g < Gc; g++)
+        for (int kap = 0; kap <= K; kap++)
+        {
+            double omegaKap = kap == 0 ? 0.0 : kap * omega0;
+            var rRef = cc.Extractor.ControlSensitivityRow(omegaKap, cj.BranchIdx[g]);
+            int rRe = Idx(g, kap, false, Gc, K);
+            int rIm = Idx(g, kap, true,  Gc, K);
+            for (int j = 0; j < N; j++)
+            {
+                Complex coeff = rRef[j];   // = ∂_c_ref/∂iNl[j] (sign baked into ControlSensitivityRow)
+                int cRe = Idx(j, kap, false, N, K);
+                int cIm = Idx(j, kap, true,  N, K);
+                R[rRe * dofN + cRe] += coeff.Real;
+                R[rRe * dofN + cIm] += -coeff.Imaginary;
+                R[rIm * dofN + cRe] += coeff.Imaginary;
+                R[rIm * dofN + cIm] += coeff.Real;
+            }
+        }
+
+        // J_cc = B · R · A, with DC-Im rows/cols zeroed (match Maas's fictitious-DOF handling).
+        var RA  = MatMul(R, dofG, dofN, A, dofN, dofN);   // [dofG × dofN]
+        var BRA = MatMul(B, dofN, dofG, RA, dofG, dofN);  // [dofN × dofN]
+        for (int r = 0; r < dofN; r++)
+        {
+            if (IsDcImDof(r, K)) continue;
+            for (int c = 0; c < dofN; c++)
+            {
+                if (IsDcImDof(c, K)) continue;
+                J[r * dofN + c] += BRA[r * dofN + c];
+            }
+        }
+    }
+
+    // Write a 2×2 real-split block into a square dof×dof matrix at output (n,k), input (m,i).
+    private static void WriteBlock(double[] M, int dof, int n, int k, int m, int i, int K,
+        double a00, double a01, double a10, double a11)
+    {
+        int r0 = Idx(n, k, false, 0, K), r1 = Idx(n, k, true, 0, K);
+        int c0 = Idx(m, i, false, 0, K), c1 = Idx(m, i, true, 0, K);
+        WriteBlockRect(M, dof, r0, r1, c0, c1, a00, a01, a10, a11);
+    }
+
+    private static void WriteBlockRect(double[] M, int cols, int r0, int r1, int c0, int c1,
+        double a00, double a01, double a10, double a11)
+    {
+        if (r0 >= 0 && c0 >= 0) M[r0 * cols + c0] += a00;
+        if (r0 >= 0 && c1 >= 0) M[r0 * cols + c1] += a01;
+        if (r1 >= 0 && c0 >= 0) M[r1 * cols + c0] += a10;
+        if (r1 >= 0 && c1 >= 0) M[r1 * cols + c1] += a11;
+    }
+
+    // Zero every entry whose row or column is a DC-imaginary (fictitious) DOF.
+    private static void ZeroDcIm(double[] M, int rows, int cols, int K)
+    {
+        for (int r = 0; r < rows; r++)
+        {
+            bool rDc = IsDcImDof(r, K);
+            for (int c = 0; c < cols; c++)
+                if (rDc || IsDcImDof(c, K)) M[r * cols + c] = 0.0;
+        }
+    }
+
+    // Dense real matrix multiply: (xr×xc)·(yr×yc) = (xr×yc), requires xc == yr.
+    private static double[] MatMul(double[] X, int xr, int xc, double[] Y, int yr, int yc)
+    {
+        var R = new double[xr * yc];
+        for (int r = 0; r < xr; r++)
+        for (int kk = 0; kk < xc; kk++)
+        {
+            double xv = X[r * xc + kk];
+            if (xv == 0.0) continue;
+            int yrow = kk * yc;
+            int rrow = r * yc;
+            for (int c = 0; c < yc; c++)
+                R[rrow + c] += xv * Y[yrow + c];
+        }
+        return R;
     }
 
     // ── Finite-difference Jacobian comparison (PASS A diagnostic) ─────────────
@@ -434,14 +865,25 @@ public static class HbNewton
         Complex[][,] yNN,
         Complex[][] iSrc,
         double f0, int K, int N,
-        ElaboratedNetlist netlist, int[] interfaceNodes, int gridN)
+        ElaboratedNetlist netlist, int[] interfaceNodes, int gridN,
+        ControlCurrentContext? cc = null,
+        bool useControlJacobian = true)
     {
         double omega0 = 2.0 * Math.PI * f0;
         int dof = 2 * N * (K + 1);
 
+        // Frozen control-current seed (brief #3 §0): the same iNlPrev is used for the
+        // analytic Jacobian AND every FD evaluation, so pass-1's _c_ref seed is constant
+        // across the perturbation and the two-pass map is differentiated self-consistently.
+        Complex[,]? iNlSeed = null;
+        if (cc is not null)
+            iNlSeed = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, null).iNl;
+
         // ── Analytic Jacobian at V ────────────────────────────────────────────
-        var (iNl0, qNl0, G0, C0, buckets0) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
-        double[] analyticJ = BuildJ(yNN, G0, C0, N, K, omega0, higherBuckets: buckets0);
+        var (iNl0, qNl0, G0, C0, buckets0) =
+            EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, iNlSeed, out var ctrlJac0);
+        double[] analyticJ = BuildJ(yNN, G0, C0, N, K, omega0,
+            higherBuckets: buckets0, ctrlJac: useControlJacobian ? ctrlJac0 : null, cc: cc);
 
         // ── FD Jacobian: perturb each real DOF j ──────────────────────────────
         double[] fdJ = new double[dof * dof];
@@ -462,13 +904,13 @@ public static class HbNewton
             // V+
             var Vp = (Complex[,])V.Clone();
             Vp[jNode, jHarm] += jIsIm ? new Complex(0, eps) : new Complex(eps, 0);
-            var (iNlp, qNlp, _, _, bucketsP) = EvaluateNonlinear(Vp, N, K, gridN, netlist, interfaceNodes);
+            var (iNlp, qNlp, _, _, bucketsP) = EvaluateNonlinear(Vp, N, K, gridN, netlist, interfaceNodes, cc, iNlSeed);
             double[] Fp = BuildF(Vp, yNN, iSrc, iNlp, qNlp, N, K, omega0, bucketsP);
 
             // V-
             var Vm = (Complex[,])V.Clone();
             Vm[jNode, jHarm] += jIsIm ? new Complex(0, -eps) : new Complex(-eps, 0);
-            var (iNlm, qNlm, _, _, bucketsM) = EvaluateNonlinear(Vm, N, K, gridN, netlist, interfaceNodes);
+            var (iNlm, qNlm, _, _, bucketsM) = EvaluateNonlinear(Vm, N, K, gridN, netlist, interfaceNodes, cc, iNlSeed);
             double[] Fm = BuildF(Vm, yNN, iSrc, iNlm, qNlm, N, K, omega0, bucketsM);
 
             for (int r = 0; r < dof; r++)
@@ -656,7 +1098,9 @@ public static class HbNewton
         int               K,
         int               gridN,
         ElaboratedNetlist netlist,
-        int[]             interfaceNodes)
+        int[]             interfaceNodes,
+        ControlCurrentContext? cc           = null,
+        Complex[,]?            iNlConverged = null)
     {
         // IFFT V to time domain
         var vTime = new double[N][];
@@ -686,6 +1130,37 @@ public static class HbNewton
                 portMinusIdx[p] = Array.IndexOf(interfaceNodes, nm);
             }
 
+            // Control currents at the converged state (same approach as EvaluateNonlinear).
+            double[,]? cRefTimePost = null;
+            if (cc is not null && ec.Model is SddModel sddPostCtrl && sddPostCtrl.ControlRefs.Length > 0)
+            {
+                int m = sddPostCtrl.ControlRefs.Length;
+                var specByCtrl = new Complex[m, K + 1];
+                var iNlK = new Complex[N];
+                for (int k = 0; k <= K; k++)
+                {
+                    for (int n = 0; n < N; n++)
+                        iNlK[n] = iNlConverged is not null ? iNlConverged[n, k] : Complex.Zero;
+                    double omegaK = k == 0 ? 0.0 : k * 2.0 * Math.PI * cc.F0;
+                    var xK = cc.Extractor.SolveFullNetwork(omegaK, iNlK, cc.BSrc[k]);
+                    for (int ci = 0; ci < m; ci++)
+                    {
+                        int brIdx = sddPostCtrl.ControlBranchIndices[ci];
+                        specByCtrl[ci, k] = brIdx >= 0 && brIdx < xK.Length
+                            ? xK[brIdx] : Complex.Zero;
+                    }
+                }
+                cRefTimePost = new double[m, gridN];
+                var specBuf = new Complex[K + 1];
+                var timeBuf = new double[gridN];
+                for (int ci = 0; ci < m; ci++)
+                {
+                    for (int k = 0; k <= K; k++) specBuf[k] = specByCtrl[ci, k];
+                    HbFft.Inverse(specBuf, K, timeBuf);
+                    for (int t = 0; t < gridN; t++) cRefTimePost[ci, t] = timeBuf[t];
+                }
+            }
+
             var portITime = new double[portCount, gridN];
 
             for (int t = 0; t < gridN; t++)
@@ -697,7 +1172,16 @@ public static class HbNewton
                     double vm = portMinusIdx[p] >= 0 ? vTime[portMinusIdx[p]][t] : 0.0;
                     portV[p] = vp - vm;
                 }
-                var res = ec.Model.Evaluate(new PortVoltages(portV));
+                NonlinearResult res;
+                if (cRefTimePost is not null)
+                {
+                    int m = ((SddModel)ec.Model).ControlRefs.Length;
+                    var cVals = new double[m];
+                    for (int ci = 0; ci < m; ci++) cVals[ci] = cRefTimePost[ci, t];
+                    res = ec.Model.Evaluate(new PortVoltages(portV), new ControlCurrents(cVals));
+                }
+                else
+                    res = ec.Model.Evaluate(new PortVoltages(portV));
                 for (int p = 0; p < portCount; p++)
                     portITime[p, t] = res.I[p];
             }

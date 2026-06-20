@@ -198,6 +198,7 @@ analysis LP1  type=loadpull  Tone=2e9  MaxHarm=4  LoadTuner=Load  SourceTuner=Sr
         public void AddBlockAdmittance(int rn, int cn, Complex y)  { }
         public void AddBranchCurrent(int b, int na, int nb)        { }
         public void AddConstraint(int b, int n, Complex c)         { }
+        public void AddNodeBranchCoupling(int n, int b, Complex c) { }
         public void AddBranchConstraint(int b1, int b2, Complex c) { }
         public void AddCurrentInjection(int n, Complex i)          { }
         public void AddSourceValue(int b, Complex v)               { SourceValues.Add(v); }

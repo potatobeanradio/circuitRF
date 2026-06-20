@@ -496,6 +496,8 @@ public sealed class Elaborator
 
     // Port voltage names in SDD equations — _v1, _v2, … (injected at eval time, not scope vars).
     private static readonly Regex RxPortVoltage = new(@"^_v\d+$", RegexOptions.Compiled);
+    // Control current names — _c1, _c2, … (injected by the engine, not scope vars).
+    private static readonly Regex RxControlCurrent = new(@"^_c\d+$", RegexOptions.Compiled);
     // SDD equation parameter name pattern — matches I[...], Q[...], F[...], C[...], i[...].
     private static readonly Regex RxSddEquation = new(@"^[IFCQiH][^\[]*\[", RegexOptions.Compiled);
 
@@ -546,8 +548,9 @@ public sealed class Elaborator
         var refs = AstWalker.CollectRefs(ast);
         foreach (var name in refs)
         {
-            if (RxPortVoltage.IsMatch(name)) continue;     // _v1, _v2 — injected at eval time
-            if (into.ContainsKey(name))       continue;     // already injected by a prior equation
+            if (RxPortVoltage.IsMatch(name))    continue;   // _v1, _v2 — injected at eval time
+            if (RxControlCurrent.IsMatch(name)) continue;  // _c1, _c2 — injected by engine at eval time
+            if (into.ContainsKey(name))         continue;  // already injected by a prior equation
 
             var binding = scope.Lookup(name);
             if (binding is null) continue;                  // unknown name — factory will error later

@@ -101,6 +101,12 @@ public sealed class MnaSystem : IMnaContext
         if (nc >= 0) Accum(branch, nc, coeff);
     }
 
+    public void AddNodeBranchCoupling(int node, int branch, Complex coeff)
+    {
+        int n = Col(node);
+        if (n >= 0) Accum(n, branch, coeff);   // branch is the absolute matrix column index
+    }
+
     public void AddBranchConstraint(int branch, int otherBranch, Complex coeff)
         => Accum(branch, otherBranch, coeff);
 

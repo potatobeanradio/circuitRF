@@ -28,6 +28,13 @@ public sealed class SnpModel : ComponentModel
 
     private SNP? _snp;
 
+    /// <summary>
+    /// Branch indices per port, set during each Stamp call.
+    /// PortBranchIndices[k] = branch index for port k (0-based).
+    /// -1 before first stamp.
+    /// </summary>
+    public int[] PortBranchIndices { get; private set; }
+
     public SnpModel(
         int                  portCount,
         string               absoluteFilePath,
@@ -38,6 +45,8 @@ public sealed class SnpModel : ComponentModel
         _filePath     = absoluteFilePath;
         _interpMethod = interpMethod;
         _extrapPolicy = extrapPolicy;
+        PortBranchIndices = new int[portCount];
+        for (int k = 0; k < portCount; k++) PortBranchIndices[k] = -1;
     }
 
     private SNP LoadSnp()
@@ -70,7 +79,10 @@ public sealed class SnpModel : ComponentModel
         // Allocate one branch-current unknown per port.
         var branches = new int[n];
         for (int k = 0; k < n; k++)
-            branches[k] = mna.AddBranch();
+        {
+            branches[k]           = mna.AddBranch();
+            PortBranchIndices[k]  = branches[k];
+        }
 
         for (int k = 0; k < n; k++)
         {

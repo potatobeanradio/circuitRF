@@ -122,8 +122,13 @@ public static class SParameterEngine
                     $"DC operating-point solve did not converge ({detail}); nonlinear components linearized at " +
                     "0 V. S-parameters may be inaccurate.");
                 dcNodeVoltages = null;  // null ⇒ BuildBias yields 0 V
+                ResetSddControlBias(netlist);  // consistent 0 V seed for the control sensitivities
             }
         }
+
+        // Resolve each control-using SDD's referenced branch index against THIS (S-param) assembly.
+        // Must happen before the frequency loop — the SDD reads ControlBranchIndices when it stamps.
+        ResolveSParamControlBranches(netlist, freqsHz, allPortsResistive, ports, N, dcNodeVoltages, settings);
 
         if (allPortsResistive)
             RunWavePath(netlist, freqsHz, settings, ports, N, mna, freqCount, sMatrices,
@@ -383,6 +388,90 @@ public static class SParameterEngine
     /// <summary>DC voltage of 1-based circuit node (0 = ground = 0 V).</summary>
     private static double NodeV(double[]? dc, int node1based)
         => (dc is null || node1based <= 0 || node1based - 1 >= dc.Length) ? 0.0 : dc[node1based - 1];
+
+    // ── SDD control-current column: resolve referenced branches in the S-param matrix ──────────
+
+    /// <summary>Zero every control-using SDD's bias seed (DC-nonconverged fallback → 0 V linearization).</summary>
+    private static void ResetSddControlBias(ElaboratedNetlist netlist)
+    {
+        foreach (var ec in netlist.Components)
+            if (ec.Model is SddModel sdd && sdd.ControlRefs.Length > 0)
+                Array.Clear(sdd.ControlBias);
+    }
+
+    /// <summary>
+    /// Resolve each control-using SDD's referenced branch index (C[n]) against the S-parameter
+    /// assembly. Branch numbering differs from the DC/HB matrices (the wave path skips ports; legacy
+    /// stamps 0 V port branches), so a throwaway pass replicating the chosen path's StampAll is run
+    /// into a temp MNA — every referenced device's LastBranchIndex / PortBranchIndices then matches
+    /// what the real per-frequency StampAll produces (topology-invariant across ω). The resolved
+    /// indices are written into each SDD's ControlBranchIndices for the run. No-op when no SDD has
+    /// control references (so purely-linear and control-free SDD runs are byte-identical).
+    /// </summary>
+    private static void ResolveSParamControlBranches(
+        ElaboratedNetlist netlist, double[] freqsHz, bool wavePath,
+        List<PortEntry> ports, int N, double[]? dcNodeVoltages, AnalysisSettings settings)
+    {
+        var sdds = netlist.Components
+            .Where(ec => ec.Model is SddModel s && s.ControlRefs.Length > 0)
+            .ToList();
+        if (sdds.Count == 0) return;
+
+        // Reset so the SDD's own control column is skipped during the throwaway resolution pass.
+        foreach (var ec in sdds)
+        {
+            var s = (SddModel)ec.Model;
+            for (int i = 0; i < s.ControlBranchIndices.Length; i++) s.ControlBranchIndices[i] = -1;
+        }
+
+        // Replicate the real solve assembly so referenced-device branch indices match the solve.
+        double omega = freqsHz.Length > 0 ? 2.0 * Math.PI * freqsHz[0] : 1.0;
+        var temp = new MnaSystem(netlist.Nodes.Count - 1);
+        StampAll(temp, netlist, omega, skipPorts: wavePath, dcNodeVoltages: dcNodeVoltages);
+        if (wavePath) StampPortConductances(temp, ports, N);
+
+        foreach (var ec in sdds)
+        {
+            var sdd = (SddModel)ec.Model;
+            for (int i = 0; i < sdd.ControlRefs.Length; i++)
+            {
+                var (n, refInst, port) = sdd.ControlRefs[i];
+                ElaboratedComponent? target = null;
+                foreach (var cc in netlist.Components)
+                    if (string.Equals(cc.InstancePath, refInst, StringComparison.Ordinal)) { target = cc; break; }
+                if (target is null)
+                    throw new InvalidOperationException(
+                        $"SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' " +
+                        $"found in the netlist.");
+                sdd.ControlBranchIndices[i] = ResolveSParamBranchIndex(sdd.Name, n, port, target);
+            }
+        }
+    }
+
+    /// <summary>Map a referenced device (by kind + optional port) to its S-param-MNA branch index.</summary>
+    private static int ResolveSParamBranchIndex(string sddName, int n, int port, ElaboratedComponent target)
+    {
+        int br = target.Model switch
+        {
+            VdcModel        vdc => vdc.LastBranchIndex,
+            ToneSourceModel ton => ton.LastBranchIndex,
+            IProbeModel   probe => probe.LastBranchIndex,
+            InductorModel   ind => ind.LastBranchIndex,
+            SnpModel        snp => PortBranch(snp.PortBranchIndices, port),
+            ZPortModel       zp => PortBranch(zp.PortBranchIndices, port),
+            _ => throw new InvalidOperationException(
+                $"SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' " +
+                $"which is not a referenceable device class (Vdc, V_1Tone/V_nTone, IProbe, L, SnP, Z_Port).")
+        };
+        if (br < 0)
+            throw new InvalidOperationException(
+                $"SDD '{sddName}': C[{n}]={target.InstancePath} — referenced device allocated no branch " +
+                $"in the S-parameter matrix.");
+        return br;
+
+        static int PortBranch(int[] indices, int port)
+            => (port >= 1 && port <= indices.Length) ? indices[port - 1] : -1;
+    }
 
     /// <summary>
     /// Apply conductance and/or inductance regularization to the assembled MNA.

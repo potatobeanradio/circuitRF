@@ -25,13 +25,22 @@ public sealed class ZPortModel : ComponentModel
     private readonly IReadOnlyDictionary<string, Value> _scopeVars;      // resolved globals
     private readonly string                            _name;
 
+    /// <summary>
+    /// Branch indices per port, set during each Stamp call.
+    /// PortBranchIndices[k] = branch index for port k (0-based).
+    /// -1 before first stamp.
+    /// </summary>
+    public int[] PortBranchIndices { get; private set; }
+
     public ZPortModel(int portCount, Expr?[,] zExprs,
         IReadOnlyDictionary<string, Value> scopeVars, string name)
     {
-        _portCount = portCount;
-        _zExprs    = zExprs;
-        _scopeVars = scopeVars;
-        _name      = name;
+        _portCount        = portCount;
+        _zExprs           = zExprs;
+        _scopeVars        = scopeVars;
+        _name             = name;
+        PortBranchIndices = new int[portCount];
+        for (int k = 0; k < portCount; k++) PortBranchIndices[k] = -1;
     }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
@@ -44,7 +53,10 @@ public sealed class ZPortModel : ComponentModel
         // 2N nets: Nodes[2p] = port p+, Nodes[2p+1] = port p−. Per-port reference.
         var branches = new int[_portCount];
         for (int p = 0; p < _portCount; p++)
-            branches[p] = mna.AddBranch();
+        {
+            branches[p]          = mna.AddBranch();
+            PortBranchIndices[p] = branches[p];
+        }
 
         for (int p = 0; p < _portCount; p++)
         {

@@ -4,6 +4,44 @@ Standing instructions for `src/Engine/HarmonicBalance`. Read with the root `CLAU
 This is the hardest math in the project — design on paper (see `docs/design/harmonic-balance.md`)
 before implementing, and keep the pieces below independently testable.
 
+## SDD control-current HB Jacobian `J_cc` (brief-sdd-control-current-hb-jacobian, 2026-06-19) — COMPLETE
+
+Restores quadratic-quality convergence for SDD `_cn` references in HB by adding the
+control-current Jacobian coupling, FD-oracle gated (`CompareJacobianNumerical` ≤ 1e-5).
+
+- **Two-pass self-consistent `_c_ref(V)`** (`HbNewton.EvaluateNonlinear` → `RunDevicePass`): when an
+  SDD has `C[n]` refs, pass 1 evaluates with `_c_ref` frozen at the entry seed (from `iNlPrev`) →
+  `iNl(V)` for the current `V`; then `_c_ref(V)` is back-solved per harmonic from the **TOTAL**
+  nonlinear injection `iNl + jωq + ΣH·WNl` (not just w=0); pass 2 re-evaluates with `_c_ref(V)`. The
+  inner map is a **single linearization step** (NO inner iteration) so `J_cc` is the exact derivative
+  of exactly that one-step residual — that is what the FD oracle differentiates. `cc==null` → byte-
+  identical single-pass fast path.
+- **`J_cc = B·R·A`** (`HbNewton.AddControlJacobian`, added inside `BuildJ`): `A=∂iNl_total/∂V` (the
+  main conversion blocks G + jω·C + ΣH·Dw, no Y_NN/Maas), `R=∂_c_ref/∂iNl_total` (rRef rows, harmonic-
+  diagonal), `B=∂F/∂_c_ref` (conversion of the per-w control kernels with H[w] weighting). DC-Im
+  rows/cols are zeroed (Maas fictitious-DOF parity); `A`'s DC-Im output row is also zeroed (HbFft
+  forces the DC bin real). Composition is a dense real matmul — fine since control refs are rare/small.
+- **`HbLinearExtractor.ControlSensitivityRow(omega, branchIdx)`**: `rRef[j] = −(G⁻¹)_{branch,node_j}`
+  via N forward solves on the cached LU (sign baked in: `∂_c_ref/∂iNl[j]`). Identity pinned by a test:
+  `c0 + Σ rRef·iNl == SolveFullNetwork[branch]`.
+- **Per-w control sensitivities** (`SddModel.Evaluate`): `NonlinearResult.DControlCharge` (∂Q/∂_c, w=1)
+  and `WeightedTerm.JacCtrl` (∂I[p,w]/∂_c, w≥2) join the existing `DControl` (w=0); defaults keep non-
+  control devices unaffected. FFT'd into `ControlJacData.Kernels` for `B`.
+- **FD oracle wiring**: `CompareJacobianNumerical` / `HbEngine.RunJacobianDiagnostic` take `cc` and a
+  **frozen `iNlPrev` seed** (same seed for analytic + every FD eval). Both also take
+  `useControlJacobian` (also on `HbNewton.Solve`) — quasi-Newton fallback + the §3.2 tripwire (oracle
+  reports ~0.57 without `J_cc`, ≤1e-8 with it).
+- **FD-floor lesson**: tiny ad-hoc control circuits hit the FD relative-error floor on near-zero
+  off-diagonal entries (`MaxAbsError ~1e-12` but `MaxRelError ~5e-5`) when the SDD is **linear** (no
+  harmonic generation) and the network is **purely resistive** (no phase). Gate tests use a gentle
+  quadratic SDD term + a reactive element so all entries are FD-resolvable → margins 1e-10..7e-8.
+- **Convergence note**: the one-step `_c_ref` seed lags by an iterate, so for *strong* coupling
+  (beta≈0.8) the outer Newton is superlinear, not strictly quadratic (J_cc 28 iters vs quasi-Newton
+  31 — J_cc still wins). This is inherent to the brief's single-step design, not a bug.
+- 10 gate tests: `SddControlCurrentHbJacobianTests.cs`. **Owed follow-ons — now landed** (brief #4 /
+  `SddControlCurrentSParamTests.cs`): the `StampLinearized` control column for S-parameter analysis (design
+  §5, see Engine CLAUDE.md), plus the docs-sync of `sdd.md` §6/§8.5 and the control-current design doc.
+
 ## Formulation
 - **Partition** the circuit into a linear subnetwork (characterized in the frequency domain) and
   nonlinear devices (evaluated in the time domain, transformed with the FFT). The HB unknowns are

@@ -455,6 +455,52 @@ public sealed class HbLinearExtractor
         return x;
     }
 
+    /// <summary>
+    /// Control-current sensitivity row (brief #3 §1): for the referenced branch
+    /// <paramref name="branchIdx"/> at frequency <paramref name="omega"/>, returns
+    /// <c>rRef[j] = ∂(x[branchIdx]) / ∂(iNl_at_interface[j])</c> for each interface
+    /// node j = 0..N-1, i.e. <c>rRef[j] = −(G⁻¹)_{branchIdx, node_j}</c>.
+    ///
+    /// The minus sign matches SolveFullNetwork's injection convention
+    /// (<c>b[node_j] -= iNl[j]</c>), so the §4 functional reproduces the forward solve:
+    /// <c>x[branchIdx] = c0 + Σ_j rRef[j]·iNl[j]</c> with
+    /// <c>c0 = SolveFullNetwork(omega, 0, bSrc)[branchIdx]</c>.
+    ///
+    /// Computed by N forward solves against the cached LU (the EXACT factorization
+    /// SolveFullNetwork uses — guaranteed consistent with the residual): for each
+    /// interface node j, solve <c>G z = e_{node_j}</c> and read <c>rRef[j] = −z[branchIdx]</c>.
+    /// Reuses (and lazily populates) the per-omega <c>_luCache</c> entry.
+    /// </summary>
+    public Complex[] ControlSensitivityRow(double omega, int branchIdx)
+    {
+        if (!_luCache.TryGetValue(omega, out var entry))
+        {
+            var mna0 = BuildMna(omega, zeroDrive: true);
+            var g0   = mna0.BuildCsc();
+            var lu0  = mna0.Factorize(nodeNamer: _nodeNamer, branchNamer: _branchNamer);
+            if (_branchNames is null && mna0.BranchCount > 0)
+            {
+                _branchNames = BuildBranchNamesFromMna(mna0);
+                _cachedMnaSize = mna0.Size;
+            }
+            entry = (lu0, mna0.Size, null, g0);
+            _luCache[omega] = entry;
+        }
+
+        var rRef = new Complex[_N];
+        var bvec = new Complex[entry.Size];
+        var z    = new Complex[entry.Size];
+        for (int j = 0; j < _N; j++)
+        {
+            int nodeJ = _interfaceNodes[j];
+            Array.Clear(bvec, 0, bvec.Length);
+            if (nodeJ > 0 && nodeJ - 1 < bvec.Length) bvec[nodeJ - 1] = Complex.One;
+            entry.Lu.Solve(bvec, z);
+            rRef[j] = branchIdx >= 0 && branchIdx < z.Length ? -z[branchIdx] : Complex.Zero;
+        }
+        return rRef;
+    }
+
     // ── Export accessors (data-export.md §4, §8) ─────────────────────────────
 
     /// <summary>
@@ -625,6 +671,7 @@ file sealed class ZeroDriveMna(MnaSystem inner) : IMnaContext
     public void AddBlockAdmittance(int r, int c, Complex y) => inner.AddBlockAdmittance(r, c, y);
     public void AddBranchCurrent(int br, int from, int to) => inner.AddBranchCurrent(br, from, to);
     public void AddConstraint(int br, int node, Complex coeff) => inner.AddConstraint(br, node, coeff);
+    public void AddNodeBranchCoupling(int node, int br, Complex coeff) => inner.AddNodeBranchCoupling(node, br, coeff);
     public void AddBranchConstraint(int br, int other, Complex coeff) => inner.AddBranchConstraint(br, other, coeff);
     public void AddCurrentInjection(int node, Complex j) => inner.AddCurrentInjection(node, j);
     public void AddSourceValue(int branch, Complex value) { /* zeroed for Y extraction */ }

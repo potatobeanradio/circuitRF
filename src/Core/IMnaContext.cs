@@ -28,6 +28,12 @@ public interface IMnaContext
     // Group 2: add coeff at (branch row, node col) in the constraint block.
     void AddConstraint(int branch, int node, Complex coeff);
 
+    // Group 2: add coeff at (node row, branch col) — a node-KCL dependence on a branch current.
+    // Transpose-position of AddConstraint (branch row × node col). Used by the SDD control-current
+    // column (a port-KCL row that depends on a referenced device's branch-current unknown).
+    // <paramref name="branch"/> is the absolute matrix column index (= the value AddBranch returned).
+    void AddNodeBranchCoupling(int node, int branch, Complex coeff);
+
     // Group 2: add coeff at (branch row, otherBranch col) — the off-diagonal D block.
     void AddBranchConstraint(int branch, int otherBranch, Complex coeff);
 

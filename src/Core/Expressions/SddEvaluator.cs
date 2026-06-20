@@ -242,4 +242,40 @@ public static class SddEvaluator
         for (int i = 0; i < n; i++) grad[i] = result.GetGrad(i);
         return (result.Value, grad);
     }
+
+    /// <summary>
+    /// Evaluate the expression in Dual arithmetic with control currents.
+    /// controlCurrents[i] = (N=1-based control index, Value=current value).
+    /// Returns (value, grad) where grad has length portCount + controlCount:
+    ///   grad[0..nV-1]      = ∂result/∂portVoltages[k]
+    ///   grad[nV..nV+nC-1]  = ∂result/∂controlCurrents[k].Value
+    /// </summary>
+    public static (double Value, double[] Grad) EvalDual(
+        Expr ast,
+        IReadOnlyDictionary<string, double> parameters,
+        double[] portVoltages,
+        (int N, double Value)[] controlCurrents,
+        string modelName = "<sdd>")
+    {
+        int nV = portVoltages.Length;
+        int nC = controlCurrents.Length;
+        int n  = nV + nC;
+        if (n > Dual.MaxN)
+            throw new ArgumentException(
+                $"Port count {nV} + control count {nC} = {n} exceeds Dual.MaxN = {Dual.MaxN}; " +
+                $"reduce SDD port count or number of C[n] references");
+
+        var bindings = new Dictionary<string, Dual>(StringComparer.Ordinal);
+        foreach (var kv in parameters)
+            bindings[kv.Key] = Dual.Param(kv.Value, n);
+        for (int i = 0; i < nV; i++)
+            bindings[$"_v{i + 1}"] = Dual.Seed(portVoltages[i], n, i);
+        for (int i = 0; i < nC; i++)
+            bindings[$"_c{controlCurrents[i].N}"] = Dual.Seed(controlCurrents[i].Value, n, nV + i);
+
+        var result = Eval<Dual>(ast, bindings, modelName);
+        var grad = new double[n];
+        for (int i = 0; i < n; i++) grad[i] = result.GetGrad(i);
+        return (result.Value, grad);
+    }
 }

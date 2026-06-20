@@ -134,6 +134,115 @@ public sealed class NonlinearDcEngine
             for (int k = 0; k < _systemSize; k++)
                 _gAug[i, k] = mna.GetEntry(i, k).Real;
         }
+
+        // Resolve control-current branch indices for any SDD with C[n] references.
+        // Branch indices are now assigned (the stamp loop above ran all linear devices).
+        ResolveControlCurrentBranches();
+    }
+
+    /// <summary>
+    /// Resolve C[n] references to branch indices for all SDD components.
+    /// Must run after the linear stamp loop so LastBranchIndex / PortBranchIndices are valid.
+    /// </summary>
+    private void ResolveControlCurrentBranches()
+    {
+        foreach (var ec in _nl.Components)
+        {
+            if (ec.Model is not SddModel sdd) continue;
+            if (sdd.ControlRefs.Length == 0) continue;
+            ResolveForSdd(sdd);
+        }
+    }
+
+    private void ResolveForSdd(SddModel sdd)
+    {
+        for (int i = 0; i < sdd.ControlRefs.Length; i++)
+        {
+            var (n, refInst, port) = sdd.ControlRefs[i];
+
+            // Find the sibling component by InstancePath.
+            ElaboratedComponent? target = null;
+            foreach (var ec in _nl.Components)
+            {
+                if (string.Equals(ec.InstancePath, refInst, StringComparison.Ordinal))
+                {
+                    target = ec;
+                    break;
+                }
+            }
+
+            if (target is null)
+                throw new InvalidOperationException(
+                    $"SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' " +
+                    $"found in the netlist. Check the instance name.");
+
+            sdd.ControlBranchIndices[i] = GetControlBranchIndex(sdd.Name, n, port, target);
+        }
+    }
+
+    private static int GetControlBranchIndex(string sddName, int n, int port, ElaboratedComponent target)
+    {
+        const string AllowedKinds = "Vdc, V_1Tone/V_nTone, IProbe, L (Inductor), SnP, Z_Port";
+        return target.Model switch
+        {
+            VdcModel        vdc  => ValidateSinglePortBranch(sddName, n, port, vdc.LastBranchIndex,  "Vdc"),
+            ToneSourceModel tone => ValidateSinglePortBranch(sddName, n, port, tone.LastBranchIndex, "V_1Tone/V_nTone"),
+            IProbeModel probe => ValidateSinglePortBranch(sddName, n, port, probe.LastBranchIndex, "IProbe"),
+            InductorModel ind => ValidateSinglePortBranch(sddName, n, port, ind.LastBranchIndex,   "Inductor"),
+            SnpModel    snp   => ValidateMultiPortBranch(sddName, n, port, snp.PortBranchIndices,  "SnP"),
+            ZPortModel  zp    => ValidateMultiPortBranch(sddName, n, port, zp.PortBranchIndices,   "Z_Port"),
+            _ => throw new InvalidOperationException(
+                $"SDD '{sddName}': C[{n}]={target.InstancePath} references a '{target.ComponentType}' " +
+                $"which is not a referenceable device class. Allowed: {AllowedKinds}.")
+        };
+    }
+
+    private static int ValidateSinglePortBranch(string sddName, int n, int port, int branchIdx, string kind)
+    {
+        if (port > 1)
+            throw new InvalidOperationException(
+                $"SDD '{sddName}': Cport[{n}]={port} — {kind} is a two-terminal device; " +
+                $"Cport must be absent or 1.");
+        if (branchIdx < 0)
+            throw new InvalidOperationException(
+                $"SDD '{sddName}': C[{n}] — {kind} branch index not yet assigned. " +
+                $"Ensure the referenced device is stamped before resolution.");
+        return branchIdx;
+    }
+
+    private static int ValidateMultiPortBranch(string sddName, int n, int port, int[] indices, string kind)
+    {
+        if (port == 0)
+            throw new InvalidOperationException(
+                $"SDD '{sddName}': C[{n}] references a {kind} device; " +
+                $"Cport[{n}]=<port> is required for multi-port references.");
+        if (port < 1 || port > indices.Length)
+            throw new InvalidOperationException(
+                $"SDD '{sddName}': Cport[{n}]={port} is out of range for {kind} device " +
+                $"with {indices.Length} port(s). Valid range: 1..{indices.Length}.");
+        if (indices[port - 1] < 0)
+            throw new InvalidOperationException(
+                $"SDD '{sddName}': C[{n}] — {kind} port {port} branch index not yet assigned.");
+        return indices[port - 1];
+    }
+
+    /// <summary>
+    /// Capture each SDD's control-current values at the converged DC operating point into
+    /// SddModel.ControlBias (using the DC-resolved branch indices, still in place here). The
+    /// S-parameter engine reads these to seed its small-signal linearization, then re-resolves
+    /// ControlBranchIndices against its own MNA. No-op when no SDD has control references.
+    /// </summary>
+    private void CaptureControlBias(double[] xFull)
+    {
+        foreach (var ec in _nl.Components)
+        {
+            if (ec.Model is not SddModel sdd || sdd.ControlRefs.Length == 0) continue;
+            for (int i = 0; i < sdd.ControlBranchIndices.Length; i++)
+            {
+                int br = sdd.ControlBranchIndices[i];
+                sdd.ControlBias[i] = (br >= 0 && br < xFull.Length) ? xFull[br] : 0.0;
+            }
+        }
     }
 
     private IReadOnlyDictionary<string, double> ExtractProbeCurrents(double[] x)
@@ -187,6 +296,7 @@ public sealed class NonlinearDcEngine
         if (!converged && throwOnFailure)
             throw new NonlinearDcNotConvergedException(iters, finalRes);
 
+        CaptureControlBias(xNew);   // seed SDD.ControlBias for a downstream S-param linearization
         return new DcResult(nodeV, converged, iters, finalRes, trace, ExtractProbeCurrents(xNew));
     }
 
@@ -232,6 +342,7 @@ public sealed class NonlinearDcEngine
 
         double[] nodeV  = x[.._nodeCount];
         double finalRes = ResidualNorm(x, 1.0);
+        CaptureControlBias(x);   // seed SDD.ControlBias for a downstream S-param linearization
         return new DcResult(nodeV, finalRes < _settings.NonlinearAbsTol, totalIters, finalRes, trace, ExtractProbeCurrents(x));
     }
 
@@ -328,7 +439,18 @@ public sealed class NonlinearDcEngine
                 portV[p] = NodeV(x, np) - NodeV(x, nm);
             }
 
-            var res = ec.Model.Evaluate(new PortVoltages(portV));
+            // Build control-current vector for SDD devices with C[n] references.
+            SddModel? sddModel = ec.Model as SddModel;
+            ControlCurrents ctrl = ControlCurrents.Empty;
+            if (sddModel is not null && sddModel.ControlRefs.Length > 0)
+            {
+                var cVals = new double[sddModel.ControlRefs.Length];
+                for (int ci = 0; ci < cVals.Length; ci++)
+                    cVals[ci] = x[sddModel.ControlBranchIndices[ci]];
+                ctrl = new ControlCurrents(cVals);
+            }
+
+            var res = ec.Model.Evaluate(new PortVoltages(portV), ctrl);
 
             for (int p = 0; p < portCount; p++)
             {
@@ -348,6 +470,25 @@ public sealed class NonlinearDcEngine
                     if (dgpq == 0.0) continue;
 
                     StampDg(j, np, nm, qp, qm, dgpq);
+                }
+            }
+
+            // Stamp DControl: ∂I[p]/∂_cn → referenced branch column (exact DC Jacobian entry).
+            if (res.DControl is not null && sddModel is not null)
+            {
+                for (int p = 0; p < portCount; p++)
+                {
+                    int np = ec.Nodes.Length > 2 * p     ? ec.Nodes[2 * p]     : 0;
+                    int nm = ec.Nodes.Length > 2 * p + 1 ? ec.Nodes[2 * p + 1] : 0;
+
+                    for (int ci = 0; ci < sddModel.ControlRefs.Length; ci++)
+                    {
+                        double dc = res.DControl[p, ci];
+                        if (dc == 0.0) continue;
+                        int col = sddModel.ControlBranchIndices[ci]; // 0-based branch index
+                        if (np > 0) j.Add((np - 1, col, +dc));
+                        if (nm > 0) j.Add((nm - 1, col, -dc));
+                    }
                 }
             }
 

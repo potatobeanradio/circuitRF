@@ -379,9 +379,13 @@ public static class ComponentModelFactory
     private static readonly Regex RxChargeEq1  = new(@"^Q\[(\d+)\]$", RegexOptions.Compiled);
     // H[w] weighting-function parameter — user-defined for w≥2 only.
     private static readonly Regex RxWeightFn = new(@"^H\[(\d+)\]$", RegexOptions.Compiled);
+    // C[n] and Cport[n] — control-current references parsed in this brief.
+    private static readonly Regex RxControlRef  = new(@"^C\[(\d+)\]$",     RegexOptions.Compiled);
+    private static readonly Regex RxControlPort = new(@"^Cport\[(\d+)\]$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    // _c{N} references in equations — used for cross-validation.
+    private static readonly Regex RxControlVarRef = new(@"^_c(\d+)$", RegexOptions.Compiled);
     // Regex for unsupported constructs that must hard-error.
     private static readonly Regex RxImplicitEq = new(@"^F\[",  RegexOptions.Compiled);
-    private static readonly Regex RxCurrentCtrl = new(@"^C(port)?\[", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     // Noise entries (In, Nc) — silently skip.
     private static readonly Regex RxNoise = new(@"^(In|Nc)\[", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -418,20 +422,52 @@ public static class ComponentModelFactory
         for (int k = 0; k < portCount; k++) higherAst[k] = [];
         var weightAst  = new Dictionary<int, Expr>();
 
+        // Control-current references: N → (RefInstance, Port) where Port=0 means Cport absent.
+        var controlRefInsts = new Dictionary<int, string>();
+        var controlRefPorts = new Dictionary<int, int>();
+
         foreach (var kv in parameters)
         {
             var key = kv.Key;
 
-            // Hard errors for unsupported SDD constructs that change device physics
+            // Hard error for implicit F[...] equations (unsupported physics).
             if (RxImplicitEq.IsMatch(key))
                 throw new InvalidOperationException(
                     $"SDD '{sddName}': implicit equation F[...] not supported; use I[...] for explicit current");
-            if (RxCurrentCtrl.IsMatch(key))
-                throw new InvalidOperationException(
-                    $"SDD '{sddName}': current-controlled equation C[]/Cport[] not supported (Evaluate is voltage-controlled)");
 
             // Silently skip noise entries (In, Nc — out of v1 scope, don't affect solve)
             if (RxNoise.IsMatch(key)) continue;
+
+            // C[n]=<instanceName> — control-current instance reference.
+            var mCref = RxControlRef.Match(key);
+            if (mCref.Success)
+            {
+                int n = int.Parse(mCref.Groups[1].Value);
+                if (n < 1)
+                    throw new InvalidOperationException($"SDD '{sddName}': C[{n}] index must be ≥ 1");
+                string refInst = kv.Value.Kind == ValueKind.String
+                    ? kv.Value.AsString().Trim()
+                    : throw new InvalidOperationException(
+                        $"SDD '{sddName}': C[{n}] value must be a String (instance name), got {kv.Value.Kind}");
+                controlRefInsts[n] = refInst;
+                continue;
+            }
+
+            // Cport[n]=<port> — port selector for multi-port control reference.
+            var mCport = RxControlPort.Match(key);
+            if (mCport.Success)
+            {
+                int n = int.Parse(mCport.Groups[1].Value);
+                string portStr = kv.Value.Kind == ValueKind.String
+                    ? kv.Value.AsString().Trim()
+                    : throw new InvalidOperationException(
+                        $"SDD '{sddName}': Cport[{n}] value must be a String, got {kv.Value.Kind}");
+                if (!int.TryParse(portStr, out int portNum) || portNum < 1)
+                    throw new InvalidOperationException(
+                        $"SDD '{sddName}': Cport[{n}]={portStr} is not a valid port number (≥1)");
+                controlRefPorts[n] = portNum;
+                continue;
+            }
 
             // H[w] weighting-function parameter
             var mH = RxWeightFn.Match(key);
@@ -506,10 +542,37 @@ public static class ComponentModelFactory
                 throw new InvalidOperationException(
                     $"SDD '{sddName}': I[p,{w}] references weighting H[{w}] which is not defined");
 
+        // Cross-validate: every _cn referenced in any equation must have a C[n] entry.
+        var controlVarRefs = new HashSet<int>();
+        void CollectControlVarRefs(Expr? ast)
+        {
+            if (ast is null) return;
+            foreach (var name in AstWalker.CollectRefs(ast))
+            {
+                var mCtrl = RxControlVarRef.Match(name);
+                if (mCtrl.Success) controlVarRefs.Add(int.Parse(mCtrl.Groups[1].Value));
+            }
+        }
+        foreach (var ast in currentAst) CollectControlVarRefs(ast);
+        foreach (var ast in chargeAst)  CollectControlVarRefs(ast);
+        foreach (var list in higherAst)
+            foreach (var (_, ast) in list) CollectControlVarRefs(ast);
+
+        foreach (int refN in controlVarRefs)
+            if (!controlRefInsts.ContainsKey(refN))
+                throw new InvalidOperationException(
+                    $"SDD '{sddName}': equation references '_c{refN}' but C[{refN}] is not defined");
+
+        // Build sorted control-refs list (by N).
+        var controlRefs = controlRefInsts
+            .OrderBy(kv => kv.Key)
+            .Select(kv => (kv.Key, kv.Value, controlRefPorts.GetValueOrDefault(kv.Key, 0)))
+            .ToList();
+
         var higherAstRo = Array.ConvertAll(higherAst,
             list => (IReadOnlyList<(int W, Expr Ast)>)list);
 
-        return new SddModel(sddName, portCount, currentAst, chargeAst, numericParams, higherAstRo, weightAst);
+        return new SddModel(sddName, portCount, currentAst, chargeAst, numericParams, higherAstRo, weightAst, controlRefs);
     }
 
     private static void ValidateAndBind(

@@ -34,9 +34,19 @@ public abstract class ComponentModel
 
     /// <summary>
     /// Nonlinear contribution — Phase 3 (HB). Not called in Phase 1.
+    /// Base default: not a nonlinear model.
     /// </summary>
     public virtual NonlinearResult Evaluate(in PortVoltages v)
         => throw new NotSupportedException($"{GetType().Name} is not a nonlinear model");
+
+    /// <summary>
+    /// Nonlinear contribution with control currents. Engines call this form, passing
+    /// ControlCurrents.Empty when they don't yet supply control currents.
+    /// Base default: forward to the 1-arg form (ignores control currents — correct for every
+    /// built-in device; only SddModel overrides this).
+    /// </summary>
+    public virtual NonlinearResult Evaluate(in PortVoltages v, in ControlCurrents c)
+        => Evaluate(v);
 
     /// <summary>
     /// Frequency-domain weighting function H[w](ω).
@@ -92,21 +102,38 @@ public readonly struct PortVoltages(double[] voltages)
     public double this[int i] => Voltages[i];
 }
 
+/// <summary>Control currents _c1.._cm seeded for the SDD (empty for every other device).</summary>
+public readonly struct ControlCurrents(double[] values)
+{
+    public double[] Values { get; } = values;
+    public int Count => Values.Length;
+    public double this[int i] => Values[i];
+    public static readonly ControlCurrents Empty = new([]);
+}
+
 /// <summary>
 /// One higher-weighting-function (w≥2) bucket returned by ComponentModel.Evaluate.
 /// The port current contribution is: H[w](ω) · FT{Value[p](v(t))}.
 /// </summary>
-public readonly struct WeightedTerm(int w, double[] value, double[,] jac)
+public readonly struct WeightedTerm
 {
-    public int       W     { get; } = w;     // weighting index ≥ 2
-    public double[]  Value { get; } = value; // per-port time-domain value of I[p,w]
-    public double[,] Jac   { get; } = jac;   // ∂Value[p]/∂v[q]
+    public int       W     { get; }     // weighting index ≥ 2
+    public double[]  Value { get; }     // per-port time-domain value of I[p,w]
+    public double[,] Jac   { get; }     // ∂Value[p]/∂v[q]
+    /// <summary>∂Value[p]/∂_cn (port × control-index); null when no control currents (brief #3 §2).</summary>
+    public double[,]? JacCtrl { get; }
+
+    public WeightedTerm(int w, double[] value, double[,] jac, double[,]? jacCtrl = null)
+    {
+        W = w; Value = value; Jac = jac; JacCtrl = jacCtrl;
+    }
 }
 
 /// <summary>
 /// Result returned by ComponentModel.Evaluate (Phase 3+).
 /// i=port currents (w=0), q=port charges (w=1), dg=di/dv, dc=dq/dv.
 /// Terms carries optional higher-w (w≥2) buckets; empty for all built-in devices.
+/// DControl carries ∂I[p,0]/∂_cn (port × control-index); null when no control currents.
 /// </summary>
 public readonly struct NonlinearResult
 {
@@ -115,17 +142,34 @@ public readonly struct NonlinearResult
     public double[,] Dg    { get; }
     public double[,] Dc    { get; }
     public IReadOnlyList<WeightedTerm> Terms { get; }
+    public double[,]? DControl { get; }
+    /// <summary>∂Q[p]/∂_cn (port × control-index), charge/w=1 path; null when no control currents (brief #3 §2).</summary>
+    public double[,]? DControlCharge { get; }
 
-    // Existing 4-arg ctor — Terms = [] (fast path, unchanged).
+    // Existing 4-arg ctor — Terms = [], DControl = null (fast path, unchanged).
     public NonlinearResult(double[] i, double[] q, double[,] dg, double[,] dc)
     {
-        I = i; Q = q; Dg = dg; Dc = dc; Terms = [];
+        I = i; Q = q; Dg = dg; Dc = dc; Terms = []; DControl = null; DControlCharge = null;
     }
 
-    // Extended 5-arg ctor — carries higher-w buckets.
+    // Extended 5-arg ctor — carries higher-w buckets; DControl = null.
     public NonlinearResult(double[] i, double[] q, double[,] dg, double[,] dc,
         IReadOnlyList<WeightedTerm>? terms)
     {
-        I = i; Q = q; Dg = dg; Dc = dc; Terms = terms ?? [];
+        I = i; Q = q; Dg = dg; Dc = dc; Terms = terms ?? []; DControl = null; DControlCharge = null;
+    }
+
+    // 6-arg ctor — carries higher-w buckets and control-current (w=0) sensitivity.
+    public NonlinearResult(double[] i, double[] q, double[,] dg, double[,] dc,
+        IReadOnlyList<WeightedTerm>? terms, double[,]? dControl)
+    {
+        I = i; Q = q; Dg = dg; Dc = dc; Terms = terms ?? []; DControl = dControl; DControlCharge = null;
+    }
+
+    // 7-arg ctor — also carries the charge (w=1) control-current sensitivity (brief #3 §2).
+    public NonlinearResult(double[] i, double[] q, double[,] dg, double[,] dc,
+        IReadOnlyList<WeightedTerm>? terms, double[,]? dControl, double[,]? dControlCharge)
+    {
+        I = i; Q = q; Dg = dg; Dc = dc; Terms = terms ?? []; DControl = dControl; DControlCharge = dControlCharge;
     }
 }

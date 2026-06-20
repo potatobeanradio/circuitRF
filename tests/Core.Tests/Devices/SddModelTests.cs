@@ -106,12 +106,18 @@ SDD:X1  n1 0  F[1,0]=_v1
     }
 
     [Fact]
-    public void CurrentControlled_C_ThrowsHardError()
+    public void ControlRef_CDeclaration_ParsesAndPopulatesControlRefs()
     {
-        var ex = Assert.ThrowsAny<Exception>(() => ParseSdd(@"
-SDD:X1  n1 0  C[1]=_v1
-"));
-        Assert.Contains("C[", ex.Message);
+        // C[n]=<instance> was previously a hard error; now it declares a control reference
+        // that the DC engine resolves at run time. Verify the factory populates ControlRefs.
+        var sdd = ParseSdd(@"
+R:R1    n1 0  R=50 Ohm
+SDD:X1  n1 0  I[1,0]=_v1  C[1]=R1
+");
+        Assert.Single(sdd.ControlRefs);
+        Assert.Equal(1,    sdd.ControlRefs[0].N);
+        Assert.Equal("R1", sdd.ControlRefs[0].RefInstance);
+        Assert.Equal(0,    sdd.ControlRefs[0].Port);  // Cport absent → sentinel 0
     }
 
     [Fact]

@@ -306,6 +306,23 @@ public sealed class HbEngine
             iSrc[k] = s;
         }
 
+        // ── Control-current context (brief #2): detect SDDs with C[n] and resolve HB branch indices.
+        // The extractor has already stamped all linear devices (assigning LastBranchIndex etc.),
+        // so we can read valid HB-MNA indices here before the Newton loop.
+        // RunSinglePoint (loadpull) and two-tone pass null — control currents out of scope there.
+        ControlCurrentContext? cc = null;
+        {
+            bool hasCtrl = false;
+            foreach (var ec in _netlist.Components)
+                if (ec.Model is SddModel sdd && sdd.ControlRefs.Length > 0)
+                { hasCtrl = true; break; }
+            if (hasCtrl)
+            {
+                ResolveControlBranchIndicesHb(extractor, _netlist);
+                cc = new ControlCurrentContext(extractor, bSrcThisPoint, f0, K);
+            }
+        }
+
         // ── Newton solve ──────────────────────────────────────────────────────
         var effectiveSettings = p.MaxIter != _settings.HbMaxIter
             ? new AnalysisSettings
@@ -323,7 +340,7 @@ public sealed class HbEngine
             : _settings;
         var solveResult = HbNewton.Solve(V, yNN, iSrc, f0, K, N,
             _netlist, ifNodes, gridN, effectiveSettings, p.Tol,
-            p.Lambda, p.GuardHarmonic);
+            p.Lambda, p.GuardHarmonic, cc);
 
         trace.AddStep(new HbConvergenceTrace.StepRecord(
             0.0, solveResult.Iterations, solveResult.Converged,
@@ -349,8 +366,9 @@ public sealed class HbEngine
         Console.Error.WriteLine();
 
         // C2: Post-convergence per-device port-current extraction (not in Newton hot path).
+        // Pass cc + converged INl so SDDs with C[n] refs get the correct _cn values.
         var pointPortCurrents = HbNewton.ComputeDevicePortCurrents(
-            V, N, K, gridN, _netlist, ifNodes);
+            V, N, K, gridN, _netlist, ifNodes, cc, solveResult.INl);
         foreach (var (key, spec) in pointPortCurrents)
         {
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
@@ -869,7 +887,8 @@ public sealed class HbEngine
     public HbNewton.JacobianComparisonResult RunJacobianDiagnostic(
         HbAnalysisParams p,
         Complex[,]       Vstar,
-        double           sweepVal)
+        double           sweepVal,
+        bool             useControlJacobian = true)
     {
         // Set sweep state so I_src(k) reflects the right drive level.
         if (p.SweepVarName is not null)
@@ -902,7 +921,23 @@ public sealed class HbEngine
                 $"Vstar dimensions [{Vstar.GetLength(0)},{Vstar.GetLength(1)}] " +
                 $"do not match extractor N={N}, K={K}.");
 
-        return HbNewton.CompareJacobianNumerical(Vstar, yNN, iSrc, f0, K, N, _netlist, ifNodes, gridN);
+        // Control-current context (brief #3): without it the FD oracle can't exercise the
+        // control path, so J_cc would be untested. Build it exactly as Run() does.
+        ControlCurrentContext? cc = null;
+        bool hasCtrl = false;
+        foreach (var ec in _netlist.Components)
+            if (ec.Model is SddModel sdd && sdd.ControlRefs.Length > 0) { hasCtrl = true; break; }
+        if (hasCtrl)
+        {
+            ResolveControlBranchIndicesHb(extractor, _netlist);
+            var bSrcThisPoint = new Complex[K + 1][];
+            for (int k = 0; k <= K; k++)
+                bSrcThisPoint[k] = extractor.BuildSourceRhs(k == 0 ? 0.0 : k * omega0);
+            cc = new ControlCurrentContext(extractor, bSrcThisPoint, f0, K);
+        }
+
+        return HbNewton.CompareJacobianNumerical(Vstar, yNN, iSrc, f0, K, N, _netlist, ifNodes, gridN,
+            cc, useControlJacobian);
     }
 
     // ── DataSet builders (5-3) ────────────────────────────────────────────────
@@ -1116,6 +1151,88 @@ public sealed class HbEngine
         }
 
         return ds;
+    }
+
+    // ── Control-current branch resolution (HB) — brief #2 ───────────────────
+
+    /// <summary>
+    /// Re-resolve SDD ControlBranchIndices against the HB extractor's MNA.
+    /// The extractor has already stamped all linear devices, so LastBranchIndex /
+    /// PortBranchIndices are HB-valid. Asserts each index is in [0, mnaSize).
+    /// </summary>
+    private static void ResolveControlBranchIndicesHb(
+        HbLinearExtractor extractor, ElaboratedNetlist netlist)
+    {
+        int mnaSize = extractor.MnaSize;
+        foreach (var ec in netlist.Components)
+        {
+            if (ec.Model is not SddModel sdd || sdd.ControlRefs.Length == 0) continue;
+            for (int i = 0; i < sdd.ControlRefs.Length; i++)
+            {
+                var (n, refInst, port) = sdd.ControlRefs[i];
+                ElaboratedComponent? target = null;
+                foreach (var tec in netlist.Components)
+                    if (string.Equals(tec.InstancePath, refInst, StringComparison.Ordinal))
+                    { target = tec; break; }
+                if (target is null)
+                    throw new InvalidOperationException(
+                        $"HB: SDD '{sdd.Name}': C[{n}]={refInst} — no component named '{refInst}'.");
+                int brIdx = GetControlBranchIndexHb(sdd.Name, n, port, target);
+                if (brIdx < 0 || (mnaSize > 0 && brIdx >= mnaSize))
+                    throw new InvalidOperationException(
+                        $"HB: SDD '{sdd.Name}': C[{n}] branch index {brIdx} " +
+                        $"out of HB MNA range [0, {mnaSize}).");
+                sdd.ControlBranchIndices[i] = brIdx;
+            }
+        }
+    }
+
+    private static int GetControlBranchIndexHb(
+        string sddName, int n, int port, ElaboratedComponent target)
+    {
+        const string Allowed = "Vdc, V_1Tone/V_nTone, IProbe, L (Inductor), SnP, Z_Port";
+        return target.Model switch
+        {
+            VdcModel        vdc  => ValidateSinglePortBranchHb(sddName, n, port, vdc.LastBranchIndex,  "Vdc"),
+            ToneSourceModel tone => ValidateSinglePortBranchHb(sddName, n, port, tone.LastBranchIndex, "V_1Tone/V_nTone"),
+            IProbeModel probe => ValidateSinglePortBranchHb(sddName, n, port, probe.LastBranchIndex, "IProbe"),
+            InductorModel ind => ValidateSinglePortBranchHb(sddName, n, port, ind.LastBranchIndex,   "Inductor"),
+            SnpModel    snp   => ValidateMultiPortBranchHb(sddName, n, port, snp.PortBranchIndices,  "SnP"),
+            ZPortModel  zp    => ValidateMultiPortBranchHb(sddName, n, port, zp.PortBranchIndices,   "Z_Port"),
+            _ => throw new InvalidOperationException(
+                $"HB: SDD '{sddName}': C[{n}]={target.InstancePath} references " +
+                $"'{target.ComponentType}'; allowed: {Allowed}.")
+        };
+    }
+
+    private static int ValidateSinglePortBranchHb(
+        string sddName, int n, int port, int branchIdx, string kind)
+    {
+        if (port > 1)
+            throw new InvalidOperationException(
+                $"HB: SDD '{sddName}': Cport[{n}]={port} — {kind} is two-terminal; " +
+                $"Cport must be absent or 1.");
+        if (branchIdx < 0)
+            throw new InvalidOperationException(
+                $"HB: SDD '{sddName}': C[{n}] — {kind} branch index not assigned; " +
+                $"ensure the referenced device is stamped before resolution.");
+        return branchIdx;
+    }
+
+    private static int ValidateMultiPortBranchHb(
+        string sddName, int n, int port, int[] indices, string kind)
+    {
+        if (port == 0)
+            throw new InvalidOperationException(
+                $"HB: SDD '{sddName}': C[{n}] references {kind}; Cport[{n}]=<port> is required.");
+        if (port < 1 || port > indices.Length)
+            throw new InvalidOperationException(
+                $"HB: SDD '{sddName}': Cport[{n}]={port} out of range for {kind} " +
+                $"with {indices.Length} port(s). Valid: 1..{indices.Length}.");
+        if (indices[port - 1] < 0)
+            throw new InvalidOperationException(
+                $"HB: SDD '{sddName}': C[{n}] — {kind} port {port} branch index not assigned.");
+        return indices[port - 1];
     }
 
     // ── Commensurability check (harmonic-balance.md §3.1) ────────────────────

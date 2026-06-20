@@ -4,18 +4,18 @@ using System.Runtime.InteropServices;
 namespace CircuitRF.Core.Expressions;
 
 // Inline gradient storage — allocation-free, stack-friendly.
-// MaxN = 8 covers all practical SDD port counts (hero = 2).
+// MaxN = 16 covers portCount + controlCount (up to 8 ports + 8 control refs).
 [InlineArray(Dual.MaxN)]
 internal struct DualGrad { private double _e; }
 
 /// <summary>
 /// Forward-mode dual number for automatic differentiation.
-/// Carries a value and an N-wide gradient (N = port count, ≤ MaxN).
+/// Carries a value and an N-wide gradient (N = port count + control count, ≤ MaxN).
 /// Entirely a value type — no heap allocation per operation (§2.6).
 /// </summary>
 public struct Dual : IAdScalar<Dual>
 {
-    public const int MaxN = 8;
+    public const int MaxN = 16;
 
     // Overflow cap for Exp. exp(709) ≈ 8.2e307 < double.MaxValue; cap at 700 to stay clear.
     private const double ExpCap = 700.0;

@@ -38,6 +38,8 @@ port counts use ordinal names.
 ### 1.2 Equation variables
 Inside an equation the user may reference:
 - **`_v1 … _vN`** — the differential port voltages (the Newton unknowns' time-domain samples).
+- **`_c1 … _cM`** — **control currents**: the current flowing in *another* device, bound via `C[n]` (§8). Used
+  in the time-domain current/charge equations exactly like `_vn`.
 - **Scope variables** — any named parameter/variable resolved from the `.cnl` scope (`B`, `Sc`, `TV0`, …),
   constants at eval time.
 - **`freq`** — the frequency global (Hz), used **only** in weighting-function expressions `H[w]` (§3), not in
@@ -177,6 +179,11 @@ found first (the auto-bias rule), then each bucket's bias-point derivative is sc
 For a nonlinear capacitor at zero bias this reduces to `jω·C(0)` — identical to NonlinearC (§5), which is the
 test.
 
+**Control currents (`_cn`) are honored here too.** When the SDD references another device's current, the same
+small-signal block gains a **control-current column** coupling each SDD port-KCL row to the referenced device's
+branch-current unknown: `Σ_w H[w](ω)·∂I[p,w]/∂_cn`. The sign matches the DC branch column, so the column value
+at ω→0 equals the DC engine's entry exactly. See §8.5.
+
 ---
 
 ## 5. Worked example — a nonlinear capacitor as a 1-port SDD
@@ -231,36 +238,30 @@ C(V) = 10 − 1.5·V + 0.1·V²   (pF)        →  Q(V) = 10·V − 0.75·V² + 
 
 ---
 
-## 6. Implementation seams (current state → target)
+## 6. Implementation seams (current state)
 
-**Current state (verified on disk):**
-- `SddModel` carries `currentAst[]` (w=0) and `chargeAst[]` (w=1); `Evaluate` → `NonlinearResult(i,q,dg,dc)` —
-  exactly two buckets.
-- `ComponentModelFactory.CreateSddModel` parses `I[p,0]`/`I[p,1]`/`I[p]`/`Q[p]` and **hard-errors on
-  `I[p,w≥2]`** ("weighting w≥2 (H[w]) not supported in v1"). No `H[w]` parameter is parsed. `F[…]` and
-  `C[]/Cport[]` hard-error; `In/Nc` (noise) are skipped.
-- `HbNewton` applies `w=0` (`iNl` direct) and `w=1` (`jkω₀·qNl`) in `BuildF`/`BuildJ`.
-- `StampLinearized` (S-param) does `Y = Dg + jω·Dc`.
-
-**Target changes (design-level; exact edits in the implementation brief):**
-1. **Result model.** Generalize `NonlinearResult` to carry, beyond the `w=0`/`w=1` fast-path `(i,q,dg,dc)`, an
-   optional list of higher buckets — per present `w≥2`: the port values `value[p]` and the gradient
-   `jac[p,q]` of `I[p,w]`. Keep `i/q/dg/dc` as the `w=0/1` fast path so the validated HB path is untouched when
-   no `H[w≥2]` is used.
-2. **Weighting on the model.** Expose `Complex Weight(int w, double omega)` — built-ins `w=0→1`, `w=1→jω`;
-   `w≥2` evaluates the SDD's parsed `H[w]` expression at `freq=omega/2π`. (NonlinearC and any other nonlinear
-   device inherit the `w=0/1` defaults and never define `w≥2`.)
-3. **SDD model + factory.** Store per-`(p,w)` current ASTs and the `H[w]` expressions; remove the `w≥2`
-   hard-error; parse `H[w]=expr` parameters (a new regex + elaborator pass-through of the expression text);
-   error on `I[p,w]` whose `H[w]` is undeclared.
-4. **HB engine.** Loop `EvaluateNonlinear`/`BuildF`/`BuildJ` over the weighting buckets present, applying
-   `Weight(w, ω_k)` per row-harmonic (the complex-multiply block, §4.1). `w=0/1` stay the fast path.
-5. **DC + S-param.** `NonlinearDcEngine` asks `Weight(w,0)` for `w≥2` buckets instead of assuming zero;
-   `StampLinearized` sums `Σ_w Weight(w,ω)·D[w]` (§4.3).
-
-The change is **additive and gated**: with no `H[w≥2]` declared, every path takes the existing `w=0/1` branch
-and behaves bit-identically — so the SDD-vs-NonlinearC test (§5) passes *before* any `w≥2` code path is
-exercised, and the `w≥2` machinery is validated separately afterward.
+**Current state (verified on disk — weighting functions AND control currents have landed):**
+- `SddModel` carries `currentAst[]` (w=0), `chargeAst[]` (w=1), per-port `higherAst[]` (w≥2), the `H[w]`
+  expression map, and the control-current bindings (`ControlRefs` / `ControlBranchIndices`). `Evaluate(v, c)`
+  returns `NonlinearResult(i, q, dg, dc, terms, dControl)` — the `w≥2` buckets in `terms`, the
+  `∂I/∂_cn` sensitivities in `dControl`.
+- `ComponentModelFactory.CreateSddModel` parses `I[p,0]`/`I[p,1]`/`I[p]`/`Q[p]`, `I[p,w≥2]`, `H[w]=expr`,
+  and `C[n]=<instance>` / `Cport[n]=<port>`; cross-validates that every referenced `H[w]` and every `_cn`
+  is declared. `F[…]` hard-errors; `In/Nc` (noise) are skipped.
+- `ComponentModel.Weight(int w, double omega)` returns the built-ins (`w=0→1`, `w=1→jω`) and, for the SDD,
+  evaluates the user `H[w]` at `freq=ω/2π`.
+- `HbNewton` applies the full `Σ_w H[w](ω_k)·…` sum in `BuildF`/`BuildJ` (the `w=0/1` fast path plus the
+  `w≥2` buckets), and, when control currents are present, recomputes `_c_ref` per Newton iterate via the
+  linear back-solve and adds the control-current Jacobian coupling `J_cc` (FD-oracle-gated).
+- `NonlinearDcEngine` reads `_cn` directly from the referenced branch unknown and stamps `∂I/∂_cn` into the
+  branch column (exact at DC — the branch is already a Newton unknown).
+- `SnpModel`/`ZPortModel` expose `PortBranchIndices` so `Cport[n]` can select a port's branch current.
+- `SddModel.StampLinearized` (S-parameter) adds the **control-current column** `Σ_w H[w](ω)·∂I[p,w]/∂_cn`
+  coupling each SDD port row to the referenced branch unknown, via the new `IMnaContext.AddNodeBranchCoupling`
+  `(node-row, branch-col)` primitive. The S-param engine re-resolves the referenced branch index against its own
+  assembly and seeds the DC operating-point control currents. The column value at ω→0 equals the DC engine's
+  branch-column entry exactly (same sign). So `_cn` is now honored across **all three** analyses (DC, HB, S-param).
+  See `sdd-control-current.md` §5.
 
 ---
 
@@ -271,9 +272,107 @@ exercised, and the `w≥2` machinery is validated separately afterward.
   scope for `H[w]` (it is already stamped per-harmonic in HB).
 - **Per-harmonic `H[w]` caching.** `H[w](ω_k)` is constant across Newton iterations (depends only on the
   harmonic grid), so evaluate once per sweep point and cache the `[w][k]` table — not in the Newton hot loop.
-- **`F[…]` implicit equations / `C[]/Cport[]` current-controlled / noise `In/Nc`** remain out of scope (still
-  hard-error / skip) — this note covers voltage-controlled `I[p,w]` + `H[w]` only.
+- **`F[…]` implicit equations** and **noise `In/Nc`** remain out of scope (still hard-error / skip) — this
+  note covers voltage-controlled `I[p,w]` + `H[w]` + control currents `_cn`. (`C[n]/Cport[n]` current control
+  is now **supported** — §8.)
 - **Multi-tone `H[w]`.** Under two-tone HB the row frequency is `k₁f₁+k₂f₂`; `Weight(w, ω)` takes that
   frequency — no formula change, just the multi-tone `ω` per mix index. Carried, not specially designed here.
 - **Stability of high-order user weights.** A user `H[w]` with gain ≫1 at high harmonics can stiffen Newton;
   the guard harmonic (§4.1, acts on the assembled Jacobian block) still applies. No additional clamp planned.
+
+---
+
+## 8. Control currents — `_cn` (referencing another device's current)
+
+An SDD equation can reference the **current flowing in another device** and use it like any other variable. This
+is the current-controlled complement to the voltage-controlled `_vn`. Full design + math in
+`sdd-control-current.md`; this section is the user-facing reference.
+
+### 8.1 Binding a control current
+Two instance parameters declare the reference; the equation then reads it as `_cn`:
+
+```
+C[n]     = <instance>     ; bind _cn to the current in device <instance>
+Cport[n] = <port>         ; (multi-port devices only) which port's current
+```
+
+- **`n`** is the 1-based control index — `C[1]` defines `_c1`, `C[2]` defines `_c2`, …
+- **`<instance>`** is the instance name of a sibling device **in the same schematic**.
+- **`Cport[n]`** is required only for multi-port referenced devices (SnP, ZnP); omit it (or set 1) for
+  two-terminal devices.
+- Every `_cn` used in an equation must have a matching `C[n]`, or it is a setup error naming the missing index.
+
+### 8.2 Referenceable devices
+The current of these device classes can be sensed (they each solve their current as a branch unknown):
+
+| Device | `Cport` needed? | What `_cn` is |
+|---|---|---|
+| Independent voltage source (`Vdc`) | no | source branch current |
+| Tone voltage source (`V_1Tone` / `V_nTone`) | no | source branch current |
+| Current probe (`IProbe`) | no | the probed series current (0 V ammeter) |
+| Inductor (`L`) | no | inductor branch current |
+| `SnP` (Touchstone N-port) | **yes** | the selected port's current |
+| `ZnP` / `Z_Port` (N-port) | **yes** | the selected port's current |
+
+Referencing any other device kind (resistor, capacitor, another node) is a setup error listing the allowed
+kinds. References are same-schematic only (no `C[1]=X1.L2` cross-hierarchy paths in this rev).
+
+### 8.3 Sign convention
+`_cn` carries the **branch-current sign of the referenced device**: current flows from the device's **first
+net to its second** (the stamp convention). For an `IProbe:IP1 a b`, `_cn > 0` means conventional current
+flows `a → b` through the probe. Check the sign against a DC bias point if a mirror comes out inverted — flip
+it in the equation (`-beta*_c1`) rather than re-wiring.
+
+### 8.4 Worked examples
+
+**(a) Current mirror / sense-and-scale (DC + HB).** A 2-port SDD whose drain current follows a sensed branch
+current — e.g. an output current proportional to the current in a sense inductor `Lsense`:
+
+```
+L:Lsense    nsrc nx   L=1n
+SDD:Xmirror g 0  d 0
+    I[1,0] = _v1/1e6            ; high-Z gate (just a DC path for the solver)
+    I[2,0] = beta*_c1          ; drain current = beta × the sensed current
+    C[1]   = Lsense            ; _c1 = current in Lsense
+    beta   = 5
+```
+
+At DC the drain sources `beta ×` the inductor current; under HB the full spectrum of `_c1` is mirrored
+(harmonics and all), because `_c1` is recomputed at every Newton iterate from the present operating point.
+
+**(b) Current-controlled transconductance with a real reference.** Sense the current delivered by a bias
+supply and fold it into a gate-voltage-controlled drain current — a crude current-feedback transconductor:
+
+```
+Vdc:Vdd     vdd 0    Vdc=5
+SDD:Xcc     g 0  d 0
+    I[2,0] = gm*_v1 - kfb*_c1  ; drain current: gm·Vgs minus feedback on supply current
+    C[1]   = Vdd               ; _c1 = current drawn from the 5 V supply
+    gm     = 0.05
+    kfb    = 0.1
+```
+
+**(c) Control current through a weighting function (`I[1,1]`, charge/reactive path).** `_cn` can appear in any
+`I[p,w]`, including the jω-weighted charge path. Here a control current drives a *displacement-like* term —
+the drain charge depends on a sensed current, so the contributed current is its time derivative:
+
+```
+SnP:S1      in 0 out 0   File=coupler.s2p
+SDD:Xq      g 0  d 0
+    I[2,1] = tau*_c1           ; charge ∝ sensed current → current = d/dt(tau·_c1) via H[1]=jω
+    C[1]   = S1
+    Cport[1] = 2               ; _c1 = current in port 2 of the S-parameter block
+    tau    = 1n
+```
+
+Because `I[2,1]` rides the built-in `H[1]=jω` weighting, this contributes `jω·(tau·_c1)` per harmonic — a
+reactive response to the sensed current. (At DC, `jω=0`, so this term drops, exactly like a charge.)
+
+### 8.5 Which analyses honor `_cn`
+- **Nonlinear DC** — exact (the referenced current is a Newton unknown in the same system).
+- **Harmonic balance** — exact, with the control-current Jacobian coupling for quadratic convergence
+  (FD-oracle-gated). Works single-tone; multi-tone/loadpull control currents are not wired yet.
+- **Small-signal S-parameters** — exact. `StampLinearized` adds the control-current column
+  `Σ_w H[w](ω)·∂I[p,w]/∂_cn` coupling each SDD port row to the referenced branch unknown; its ω→0 value equals
+  the DC branch-column entry (same sign). The small-signal sensitivities are evaluated at the DC operating point
+  (seeded into `ControlBias`); for a linear-in-`_cn` equation the sensitivity is seed-independent.

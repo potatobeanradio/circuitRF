@@ -273,6 +273,7 @@ public class P1ToneTests(ITestOutputHelper output)
         public void AddBlockAdmittance(int rn, int cn, Complex y)   { }
         public void AddBranchCurrent(int b, int na, int nb)         { }
         public void AddConstraint(int b, int n, Complex c)          { BranchConstraints.Add((b, n, c)); }
+        public void AddNodeBranchCoupling(int n, int b, Complex c)  { BranchConstraints.Add((n, b, c)); }
         public void AddBranchConstraint(int b1, int b2, Complex c)  { BranchConstraints.Add((b1, b2, c)); }
         public void AddCurrentInjection(int n, Complex i)           { }
         public void AddSourceValue(int b, Complex v)                { SourceValues.Add(v); }

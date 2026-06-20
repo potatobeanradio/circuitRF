@@ -21,6 +21,13 @@ public sealed class ToneSourceModel : ComponentModel
     public override int       PortCount => 1;
     public override ModelKind Kind      => ModelKind.Linear;
 
+    /// <summary>
+    /// Branch index for the tone source's current (set each Stamp). −1 before first stamp.
+    /// Mirrors VdcModel.LastBranchIndex — exposes the source current as a referenceable
+    /// control-current branch (SDD C[n]=&lt;toneSrc&gt;).
+    /// </summary>
+    public int LastBranchIndex { get; private set; } = -1;
+
     // Matching tolerance: 1 rad/s — negligible at GHz; exact by the HB guarantee.
     private const double OmegaTolRads = 1.0;
 
@@ -53,7 +60,7 @@ public sealed class ToneSourceModel : ComponentModel
         int va = c.Nodes[0];
         int vb = c.Nodes[1];
 
-        int br = mna.AddBranch();
+        int br = LastBranchIndex = mna.AddBranch();
         mna.AddConstraint(br, va, new Complex(+1, 0));
         mna.AddConstraint(br, vb, new Complex(-1, 0));
         mna.AddBranchCurrent(br, va, vb);
