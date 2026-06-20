@@ -115,12 +115,14 @@ SDD:X1  n1 0  C[1]=_v1
     }
 
     [Fact]
-    public void WeightingW2_ThrowsHardError()
+    public void WeightingW2_MissingH_ThrowsCrossValidationError()
     {
+        // I[1,2] without H[2] must error with a clear "not defined" message.
         var ex = Assert.ThrowsAny<Exception>(() => ParseSdd(@"
 SDD:X1  n1 0  I[1,2]=_v1
 "));
-        Assert.Contains("w≥2", ex.Message);
+        Assert.Contains("H[2]", ex.Message);
+        Assert.Contains("not defined", ex.Message);
     }
 
     // ── Charge equation plumbing ──────────────────────────────────────────────

@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands.Schematic;
@@ -24,9 +25,17 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     private readonly EditableComponent? _ownerComp;
     private bool _isRefreshing;
 
+    // Mirrors ComponentModelFactory's private RxCurrentEq/RxCurrentEq1/RxChargeEq1/RxWeightFn.
+    // Duplicated here (with this comment) because those fields are private to Core.
+    private static readonly Regex RxSddH  = new(@"^H\[(\d+)\]$",      RegexOptions.Compiled);
+    private static readonly Regex RxSddI1 = new(@"^I\[(\d+)\]$",      RegexOptions.Compiled);
+    private static readonly Regex RxSddI2 = new(@"^I\[(\d+),(\d+)\]$", RegexOptions.Compiled);
+    private static readonly Regex RxSddQ  = new(@"^Q\[(\d+)\]$",      RegexOptions.Compiled);
+
     public string Name         => _param.Name;
     public bool   NameEditable { get; }
     public bool   NameReadOnly => !NameEditable;
+    public string NameWatermark { get; }
     public string[] UnitOptions { get; }
 
     [ObservableProperty] private string _stagedName       = "";
@@ -74,6 +83,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         _ownerComp   = ownerComp;
         UnitOptions  = ComponentTypeRegistry.UnitOptions(param.Dimension);
         NameEditable = ComponentTypeRegistry.UserParamTemplate(ownerSymbol) is not null;
+        NameWatermark = (ownerSymbol is SymbolKind.Sdd or SymbolKind.FetSdd) ? "I[p,w] · Q[p] · H[w]" : "";
 
         _isRefreshing = true;
         _stagedName       = param.Name;
@@ -106,8 +116,79 @@ public sealed partial class ParameterRowViewModel : ObservableObject
             return;
         }
 
+        // SDD-specific grammar validation — only for SDD/FetSdd owners.
+        if (_ownerSymbol is SymbolKind.Sdd or SymbolKind.FetSdd)
+        {
+            if (!TryValidateSddName(name, out string sddError))
+            {
+                NameError = sddError;
+                return;
+            }
+        }
+
         NameError = "";
         _schematicVm.Execute(new SetParameterNameCommand(_schematicVm.EditModel, _param, name));
+    }
+
+    /// <summary>
+    /// Validates an SDD equation parameter name against the accepted grammar.
+    /// Returns true (error = "") when the name is valid.
+    /// Returns false with a user-facing error message when it is not.
+    /// </summary>
+    internal static bool TryValidateSddName(string name, out string error)
+    {
+        // H[w] — check first because it has distinct error messages.
+        var mH = RxSddH.Match(name);
+        if (mH.Success)
+        {
+            int w = int.Parse(mH.Groups[1].Value, CultureInfo.InvariantCulture);
+            if (w < 2)
+            {
+                error = "H[0] and H[1] are built-in (1 and jω) — not user-definable";
+                return false;
+            }
+            error = "";
+            return true;
+        }
+        // H[…] with non-integer or empty index.
+        if (name.StartsWith("H[", StringComparison.Ordinal))
+        {
+            error = "H[w] requires an integer weight ≥ 2";
+            return false;
+        }
+
+        // I[p,w] — two-index form.
+        var mI2 = RxSddI2.Match(name);
+        if (mI2.Success)
+        {
+            int p = int.Parse(mI2.Groups[1].Value, CultureInfo.InvariantCulture);
+            if (p >= 1) { error = ""; return true; }
+            error = "Not a valid SDD equation name (use I[p], I[p,w], Q[p], or H[w])";
+            return false;
+        }
+
+        // I[p] — single-index current.
+        var mI1 = RxSddI1.Match(name);
+        if (mI1.Success)
+        {
+            int p = int.Parse(mI1.Groups[1].Value, CultureInfo.InvariantCulture);
+            if (p >= 1) { error = ""; return true; }
+            error = "Not a valid SDD equation name (use I[p], I[p,w], Q[p], or H[w])";
+            return false;
+        }
+
+        // Q[p] — single-index charge.
+        var mQ = RxSddQ.Match(name);
+        if (mQ.Success)
+        {
+            int p = int.Parse(mQ.Groups[1].Value, CultureInfo.InvariantCulture);
+            if (p >= 1) { error = ""; return true; }
+            error = "Not a valid SDD equation name (use I[p], I[p,w], Q[p], or H[w])";
+            return false;
+        }
+
+        error = "Not a valid SDD equation name (use I[p], I[p,w], Q[p], or H[w])";
+        return false;
     }
 
     /// <summary>Commit the staged expression to the model (no-op if unchanged).</summary>

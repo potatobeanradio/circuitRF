@@ -372,11 +372,13 @@ public static class ComponentModelFactory
         throw new InvalidOperationException($"Expected numeric value, got {v.Kind}");
     }
 
-    // Regex for I[p,w] two-index form — current (w=0) or charge (w=1).
+    // Regex for I[p,w] two-index form — current (w=0), charge (w=1), or higher (w≥2).
     private static readonly Regex RxCurrentEq = new(@"^I\[(\d+),(\d+)\]$", RegexOptions.Compiled);
     // Single-index sugar: I[p] → current (w=0); Q[p] → charge (w=1).
     private static readonly Regex RxCurrentEq1 = new(@"^I\[(\d+)\]$", RegexOptions.Compiled);
     private static readonly Regex RxChargeEq1  = new(@"^Q\[(\d+)\]$", RegexOptions.Compiled);
+    // H[w] weighting-function parameter — user-defined for w≥2 only.
+    private static readonly Regex RxWeightFn = new(@"^H\[(\d+)\]$", RegexOptions.Compiled);
     // Regex for unsupported constructs that must hard-error.
     private static readonly Regex RxImplicitEq = new(@"^F\[",  RegexOptions.Compiled);
     private static readonly Regex RxCurrentCtrl = new(@"^C(port)?\[", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -387,6 +389,7 @@ public static class ComponentModelFactory
     {
         // Parameters dict for SDD (populated by Elaborator.ResolveSddParameters):
         //   "I[p,w]" → Value.String(expressionText)  — equation entries
+        //   "H[w]"   → Value.String(expressionText)  — weight-function entries (w≥2)
         //   "SddName" → Value.String(name)            — device name for warnings
         //   "SddPortCount" → Value.Real(N)            — port count
         //   everything else → Value.Real(double)      — resolved scope variables
@@ -411,6 +414,9 @@ public static class ComponentModelFactory
         // Build equation arrays — indexed by port-1
         var currentAst = new Expr?[portCount];
         var chargeAst  = new Expr?[portCount];
+        var higherAst  = new List<(int W, Expr Ast)>[portCount];
+        for (int k = 0; k < portCount; k++) higherAst[k] = [];
+        var weightAst  = new Dictionary<int, Expr>();
 
         foreach (var kv in parameters)
         {
@@ -427,16 +433,47 @@ public static class ComponentModelFactory
             // Silently skip noise entries (In, Nc — out of v1 scope, don't affect solve)
             if (RxNoise.IsMatch(key)) continue;
 
+            // H[w] weighting-function parameter
+            var mH = RxWeightFn.Match(key);
+            if (mH.Success)
+            {
+                int w = int.Parse(mH.Groups[1].Value);
+                if (w < 2)
+                    throw new InvalidOperationException(
+                        $"SDD '{sddName}': H[{w}] is a built-in weighting function and cannot be redefined");
+                if (kv.Value.Kind != ValueKind.String)
+                    throw new InvalidOperationException(
+                        $"SDD '{sddName}': H[{w}] must be stored as a String expression, got {kv.Value.Kind}");
+                weightAst[w] = Parser.Parse(kv.Value.AsString());
+                continue;
+            }
+
             // Two-index form: I[p,w]
             var m = RxCurrentEq.Match(key);
             if (m.Success)
             {
                 int p = int.Parse(m.Groups[1].Value);
                 int w = int.Parse(m.Groups[2].Value);
-                if (w >= 2)
-                    throw new InvalidOperationException(
-                        $"SDD '{sddName}': weighting w≥2 (H[w]) not supported in v1 (got I[{p},{w}])");
-                ValidateAndBind(key, p, portCount, kv.Value, sddName, w == 0 ? currentAst : chargeAst);
+                if (w == 0)
+                {
+                    ValidateAndBind(key, p, portCount, kv.Value, sddName, currentAst);
+                }
+                else if (w == 1)
+                {
+                    ValidateAndBind(key, p, portCount, kv.Value, sddName, chargeAst);
+                }
+                else
+                {
+                    // w≥2 — validate port range and store in per-port higher-bucket list.
+                    if (p < 1 || p > portCount)
+                        throw new InvalidOperationException(
+                            $"SDD '{sddName}': equation references port {p} but only {portCount} port(s) of nets were given" +
+                            $" (need {p * 2} nets for a {p}-port SDD: p1+ p1− … p{p}+ p{p}−)");
+                    if (kv.Value.Kind != ValueKind.String)
+                        throw new InvalidOperationException(
+                            $"SDD '{sddName}': {key} must be stored as a String expression, got {kv.Value.Kind}");
+                    higherAst[p - 1].Add((w, Parser.Parse(kv.Value.AsString())));
+                }
                 continue;
             }
 
@@ -456,10 +493,23 @@ public static class ComponentModelFactory
                 continue;
             }
 
-            // key is SddName, SddPortCount, or a resolved numeric param — already handled above
+            // key is SddName, SddPortCount, H[w], or a resolved numeric param — already handled above
         }
 
-        return new SddModel(sddName, portCount, currentAst, chargeAst, numericParams);
+        // Cross-validate: every w≥2 referenced by some I[p,w] must have a matching H[w] declared.
+        var referencedW = new HashSet<int>();
+        foreach (var list in higherAst)
+            foreach (var (w, _) in list)
+                referencedW.Add(w);
+        foreach (int w in referencedW)
+            if (!weightAst.ContainsKey(w))
+                throw new InvalidOperationException(
+                    $"SDD '{sddName}': I[p,{w}] references weighting H[{w}] which is not defined");
+
+        var higherAstRo = Array.ConvertAll(higherAst,
+            list => (IReadOnlyList<(int W, Expr Ast)>)list);
+
+        return new SddModel(sddName, portCount, currentAst, chargeAst, numericParams, higherAstRo, weightAst);
     }
 
     private static void ValidateAndBind(

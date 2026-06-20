@@ -339,7 +339,7 @@ public sealed class CnlReader
     // Optional whitespace around '=' is allowed (spaced form: I[1,0] = expr).
     // Capture group 3 captures the '=' (to find where the RHS expression starts).
     private static readonly Regex SddAssignmentHeader = new(
-        @"(I|Q|F|In|Nc)\[\d+(,\d+)?\]\s*(=)|(C(?:port)?)\[\d+\]\s*(=)",
+        @"(I|Q|F|In|Nc)\[\d+(,\d+)?\]\s*(=)|(C(?:port)?)\[\d+\]\s*(=)|H\[\d+\]\s*(=)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>

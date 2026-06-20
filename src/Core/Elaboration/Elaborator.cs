@@ -497,7 +497,7 @@ public sealed class Elaborator
     // Port voltage names in SDD equations — _v1, _v2, … (injected at eval time, not scope vars).
     private static readonly Regex RxPortVoltage = new(@"^_v\d+$", RegexOptions.Compiled);
     // SDD equation parameter name pattern — matches I[...], Q[...], F[...], C[...], i[...].
-    private static readonly Regex RxSddEquation = new(@"^[IFCQi][^\[]*\[", RegexOptions.Compiled);
+    private static readonly Regex RxSddEquation = new(@"^[IFCQiH][^\[]*\[", RegexOptions.Compiled);
 
     private IReadOnlyDictionary<string, Value> ResolveSddParameters(
         Instance inst,

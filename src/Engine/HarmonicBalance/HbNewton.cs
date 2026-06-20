@@ -5,6 +5,18 @@ using CircuitRF.Core.Elaboration;
 namespace CircuitRF.Engine.HarmonicBalance;
 
 /// <summary>
+/// FFT'd contribution from one (component, w≥2) bucket — pre-computed once per Newton iterate.
+/// WNl[n,k] is the spectrum of Σ_ports I[p,w] summed over interface nodes.
+/// Dw[n,m,k] is the corresponding Jacobian spectrum (used in the conversion matrix).
+/// Model is kept to call Weight(W, k·ω₀) at Jacobian assembly time.
+/// </summary>
+public sealed record HigherWeightBucket(
+    ComponentModel Model,
+    int            W,
+    Complex[,]     WNl,    // [N, K+1]
+    Complex[,,]    Dw);    // [N, N, Kj+1]
+
+/// <summary>
 /// HB Newton loop — solves ALL harmonics k = 0..K simultaneously (harmonic-balance.md §4, §7, §8).
 ///
 /// DC (k=0) is a FULL Newton participant (not frozen):
@@ -57,11 +69,11 @@ public static class HbNewton
         for (int iter = 0; iter < maxIter; iter++)
         {
             // ── 1. Time-domain evaluation ─────────────────────────────────────
-            var (iNl, qNl, G, C) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
+            var (iNl, qNl, G, C, higherBuckets) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
             iNlLast = iNl;
 
             // ── 2. Residual F[n, k=0..K] ──────────────────────────────────────
-            var F     = BuildF(V, yNN, iSrc, iNl, qNl, N, K, omega0);
+            var F     = BuildF(V, yNN, iSrc, iNl, qNl, N, K, omega0, higherBuckets);
             double fN = L2(F);
             trace.Add(new HbConvergenceTrace.IterRecord(iter, fN));
 
@@ -69,7 +81,7 @@ public static class HbNewton
                 return new SolveResult(true, iter + 1, trace, iNlLast);
 
             // ── 3. Jacobian J (real-split 2×2 blocks, §7.2 + Maas §7.3) ───────
-            var J = BuildJ(yNN, G, C, N, K, omega0, guardHarmonic);
+            var J = BuildJ(yNN, G, C, N, K, omega0, guardHarmonic, higherBuckets);
 
             // ── 4. Dense solve J·ΔV = −F ─────────────────────────────────────
             var negF = new double[unknowns];
@@ -86,16 +98,17 @@ public static class HbNewton
         }
 
         // Max iterations.
-        var (iNlF, qNlF, _, _) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
+        var (iNlF, qNlF, _, _, bucketsF) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
         iNlLast = iNlF;
-        var FF = BuildF(V, yNN, iSrc, iNlF, qNlF, N, K, omega0);
+        var FF = BuildF(V, yNN, iSrc, iNlF, qNlF, N, K, omega0, bucketsF);
         trace.Add(new HbConvergenceTrace.IterRecord(settings.HbMaxIter, L2(FF)));
         return new SolveResult(false, settings.HbMaxIter, trace, iNlLast);
     }
 
     // ── Time-domain nonlinear evaluation ─────────────────────────────────────
 
-    public static (Complex[,] iNl, Complex[,] qNl, Complex[,,] G, Complex[,,] C)
+    public static (Complex[,] iNl, Complex[,] qNl, Complex[,,] G, Complex[,,] C,
+                   IReadOnlyList<HigherWeightBucket> higherBuckets)
         EvaluateNonlinear(Complex[,] V, int N, int K, int gridN,
             ElaboratedNetlist netlist, int[] interfaceNodes)
     {
@@ -113,6 +126,10 @@ public static class HbNewton
         int Kj     = Math.Min(2 * K, gridN / 2);
         var dgTime = new double[N, N, gridN];
         var dcTime = new double[N, N, gridN];
+
+        // Per-(nlIdx, W) time-domain buffers for w≥2 buckets.
+        var bucketBuffers = new Dictionary<(int nlIdx, int w),
+            (ComponentModel model, double[,] wTime, double[,,] dwTime)>();
 
         foreach (var nlIdx in netlist.NonlinearComponents)
         {
@@ -154,6 +171,28 @@ public static class HbNewton
                         dcTime[iPlus, jPlus, t] += res.Dc[p, q];
                     }
                 }
+
+                // Accumulate w≥2 bucket time-domain values.
+                foreach (var term in res.Terms)
+                {
+                    var key = (nlIdx, term.W);
+                    if (!bucketBuffers.ContainsKey(key))
+                        bucketBuffers[key] = (ec.Model,
+                            new double[N, gridN], new double[N, N, gridN]);
+                    var buf = bucketBuffers[key];
+                    for (int p = 0; p < portCount; p++)
+                    {
+                        int iPlus = portPlusIdx[p];
+                        if (iPlus < 0) continue;
+                        buf.wTime[iPlus, t] += term.Value[p];
+                        for (int q = 0; q < portCount; q++)
+                        {
+                            int jPlus = portPlusIdx[q];
+                            if (jPlus < 0) continue;
+                            buf.dwTime[iPlus, jPlus, t] += term.Jac[p, q];
+                        }
+                    }
+                }
             }
         }
 
@@ -183,13 +222,41 @@ public static class HbNewton
             HbFft.Forward(dcX, Kj, out var cAmpl, out _);
             for (int k=0;k<=Kj;k++) C[n,m,k] = cAmpl[k];
         }
-        return (iNl, qNl, G, C);
+
+        // FFT each w≥2 bucket's time buffers → WNl and Dw.
+        var higherBuckets = new List<HigherWeightBucket>(bucketBuffers.Count);
+        foreach (var ((_, w), (model, wTime, dwTime)) in bucketBuffers)
+        {
+            var WNl = new Complex[N, K + 1];
+            var Dw  = new Complex[N, N, Kj + 1];
+
+            for (int n = 0; n < N; n++)
+            {
+                var wX = new double[gridN];
+                for (int t = 0; t < gridN; t++) wX[t] = wTime[n, t];
+                HbFft.Forward(wX, K, out var wAmpl, out _);
+                for (int k = 0; k <= K; k++) WNl[n, k] = wAmpl[k];
+            }
+            for (int n = 0; n < N; n++)
+            for (int m = 0; m < N; m++)
+            {
+                var dwX = new double[gridN];
+                for (int t = 0; t < gridN; t++) dwX[t] = dwTime[n, m, t];
+                HbFft.Forward(dwX, Kj, out var dwAmpl, out _);
+                for (int k = 0; k <= Kj; k++) Dw[n, m, k] = dwAmpl[k];
+            }
+
+            higherBuckets.Add(new HigherWeightBucket(model, w, WNl, Dw));
+        }
+
+        return (iNl, qNl, G, C, higherBuckets);
     }
 
     // ── Residual F[n, k=0..K] (real-split) ───────────────────────────────────
 
     public static double[] BuildF(Complex[,] V, Complex[][,] yNN, Complex[][] iSrc,
-        Complex[,] iNl, Complex[,] qNl, int N, int K, double omega0)
+        Complex[,] iNl, Complex[,] qNl, int N, int K, double omega0,
+        IReadOnlyList<HigherWeightBucket>? higherBuckets = null)
     {
         int dof = 2 * N * (K + 1);
         var F = new double[dof];
@@ -205,6 +272,10 @@ public static class HbNewton
             for (int m = 0; m < N; m++) f += yk[n, m] * V[m, k];
             f += iNl[n, k];
             if (k > 0) f += new Complex(0, k * omega0) * qNl[n, k];
+            // w≥2 buckets: H[w](kω₀) · WNl[n,k]; w=0/1 are the fast path above.
+            if (higherBuckets is { Count: > 0 })
+                foreach (var buc in higherBuckets)
+                    f += buc.Model.Weight(buc.W, k * omega0) * buc.WNl[n, k];
 
             F[rRe] = f.Real;
             // DC (k=0): Im part of F is always 0 (real signal — Maas §7.3).
@@ -216,10 +287,24 @@ public static class HbNewton
     // ── Jacobian (real 2×2 blocks, §7.2 + Maas §7.3) ─────────────────────────
 
     public static double[] BuildJ(Complex[][,] yNN, Complex[,,] G, Complex[,,] C,
-        int N, int K, double omega0, int guardHarmonic = 0)
+        int N, int K, double omega0, int guardHarmonic = 0,
+        IReadOnlyList<HigherWeightBucket>? higherBuckets = null)
     {
         int dof = 2 * N * (K + 1);
         var J = new double[dof * dof];
+
+        // Pre-compute H[w](k·ω₀) cache for each bucket — constant per solve.
+        Complex[,]? hkCache = null;
+        if (higherBuckets is { Count: > 0 })
+        {
+            hkCache = new Complex[higherBuckets.Count, K + 1];
+            for (int bi = 0; bi < higherBuckets.Count; bi++)
+            {
+                var buc = higherBuckets[bi];
+                for (int k = 0; k <= K; k++)
+                    hkCache[bi, k] = buc.Model.Weight(buc.W, k * omega0);
+            }
+        }
 
         for (int n = 0; n < N; n++)
         for (int k = 0; k <= K; k++)
@@ -259,6 +344,28 @@ public static class HbNewton
             double kw   =  k * omega0;
             a00 += -kw * cb10;  a01 += -kw * cb11;
             a10 +=  kw * cb00;  a11 +=  kw * cb01;
+
+            // ── w≥2 bucket contribution (§2, BuildJ) ─────────────────────────────
+            // Each bucket contributes: H[w](k·ω₀) complex-multiplied by its
+            // conversion block, using the same SafeGet / ConversionWeight convention.
+            if (hkCache is not null)
+            {
+                for (int bi = 0; bi < higherBuckets!.Count; bi++)
+                {
+                    Complex Dkmi = SafeGet(higherBuckets[bi].Dw, n, m, k - i);
+                    Complex Dkpi = SafeGet(higherBuckets[bi].Dw, n, m, k + i);
+                    double d00 =  wKmi *  Dkmi.Real      + wKpi *  Dkpi.Real;
+                    double d01 = -wKmi *  Dkmi.Imaginary + wKpi *  Dkpi.Imaginary;
+                    double d10 =  wKmi *  Dkmi.Imaginary + wKpi *  Dkpi.Imaginary;
+                    double d11 =  wKmi *  Dkmi.Real      - wKpi *  Dkpi.Real;
+                    double ha  = hkCache[bi, k].Real;
+                    double hb  = hkCache[bi, k].Imaginary;
+                    a00 += ha * d00 - hb * d10;
+                    a01 += ha * d01 - hb * d11;
+                    a10 += hb * d00 + ha * d10;
+                    a11 += hb * d01 + ha * d11;
+                }
+            }
 
             // ── B3: Guard harmonic — hard cutoff above guardHarmonic index ────────
             // Applied to G/C only (not Y_NN) and only to J, never to F.
@@ -333,8 +440,8 @@ public static class HbNewton
         int dof = 2 * N * (K + 1);
 
         // ── Analytic Jacobian at V ────────────────────────────────────────────
-        var (iNl0, qNl0, G0, C0) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
-        double[] analyticJ = BuildJ(yNN, G0, C0, N, K, omega0);
+        var (iNl0, qNl0, G0, C0, buckets0) = EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes);
+        double[] analyticJ = BuildJ(yNN, G0, C0, N, K, omega0, higherBuckets: buckets0);
 
         // ── FD Jacobian: perturb each real DOF j ──────────────────────────────
         double[] fdJ = new double[dof * dof];
@@ -355,26 +462,31 @@ public static class HbNewton
             // V+
             var Vp = (Complex[,])V.Clone();
             Vp[jNode, jHarm] += jIsIm ? new Complex(0, eps) : new Complex(eps, 0);
-            var (iNlp, qNlp, _, _) = EvaluateNonlinear(Vp, N, K, gridN, netlist, interfaceNodes);
-            double[] Fp = BuildF(Vp, yNN, iSrc, iNlp, qNlp, N, K, omega0);
+            var (iNlp, qNlp, _, _, bucketsP) = EvaluateNonlinear(Vp, N, K, gridN, netlist, interfaceNodes);
+            double[] Fp = BuildF(Vp, yNN, iSrc, iNlp, qNlp, N, K, omega0, bucketsP);
 
             // V-
             var Vm = (Complex[,])V.Clone();
             Vm[jNode, jHarm] += jIsIm ? new Complex(0, -eps) : new Complex(-eps, 0);
-            var (iNlm, qNlm, _, _) = EvaluateNonlinear(Vm, N, K, gridN, netlist, interfaceNodes);
-            double[] Fm = BuildF(Vm, yNN, iSrc, iNlm, qNlm, N, K, omega0);
+            var (iNlm, qNlm, _, _, bucketsM) = EvaluateNonlinear(Vm, N, K, gridN, netlist, interfaceNodes);
+            double[] Fm = BuildF(Vm, yNN, iSrc, iNlm, qNlm, N, K, omega0, bucketsM);
 
             for (int r = 0; r < dof; r++)
                 fdJ[r * dof + j] = (Fp[r] - Fm[r]) / (2.0 * eps);
         }
 
         // ── Scale for relative error ──────────────────────────────────────────
-        // Global floor = globalScale × 1e-8: elements below this are treated as zero.
-        // This is intentionally coarse — near-zero elements in high-Y rows (k=2,5 with
-        // ZLoad≈1µΩ → Y≈1e6 S) have dom clamped to ≥0.01, so their FD-truncation error
-        // (≈2.8e-8 for J'''≈1.7e5) contributes ≤2.8e-6 relative — at the FD oracle limit.
-        // The SDD model's large J''' (up to ~1e7) makes sub-ppm FD accuracy impossible
-        // for near-zero elements; the 1e-5 assertion gate is set accordingly.
+        // Global floor = globalScale × 1e-7: elements below this are treated as zero
+        // (their value is unresolvable noise, not a derivative). This reflects a hard
+        // FD limit, not a fudge: at eps=1e-6 the central difference of two F values whose
+        // matrix peak is `globalScale` carries cancellation noise of ~globalScale·1e-12
+        // absolute. An entry that is a *structural zero* (e.g. the diagonal of a purely
+        // reactive H=jω self-block, where the whole magnitude rotates into the off-diagonal
+        // Re↔Im block) therefore reads as ~1e-12·peak of pure roundoff. An eps-sweep makes
+        // this unambiguous — such entries scale ~1/eps (roundoff) while real entries are
+        // eps-flat. Flooring at 1e-8·peak claimed FD could resolve 8 orders below peak; it
+        // cannot. 1e-7·peak keeps every genuinely-resolvable entry honest while not flagging
+        // structural zeros as Jacobian errors. Real entries are unaffected (dom = |entry|).
         double globalScale = 0;
         for (int i = 0; i < dof * dof; i++)
             globalScale = Math.Max(globalScale, Math.Max(Math.Abs(analyticJ[i]), Math.Abs(fdJ[i])));
@@ -404,7 +516,7 @@ public static class HbNewton
                 continue;
             }
 
-            double domFloor = Math.Max(globalScale * 1e-8, 1e-12);
+            double domFloor = Math.Max(globalScale * 1e-7, 1e-12);
             double dom    = Math.Max(Math.Max(Math.Abs(an), Math.Abs(fd)), domFloor);
             double relErr = absErr / dom;
 

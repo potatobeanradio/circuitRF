@@ -76,6 +76,7 @@
                                 <TextBox Grid.Column="0"
                                          Text="{Binding StagedName}"
                                          IsReadOnly="{Binding NameReadOnly}"
+                                         PlaceholderText="{Binding NameWatermark}"
                                          FontSize="11"
                                          Padding="2,3"
                                          VerticalAlignment="Center"

@@ -350,6 +350,32 @@ public sealed class NonlinearDcEngine
                     StampDg(j, np, nm, qp, qm, dgpq);
                 }
             }
+
+            // w≥2 bucket contributions at DC (ω=0).
+            // Weight(w,0) for most physical H[w] is zero (e.g. jω→0), but we ask rather than assume.
+            foreach (var term in res.Terms)
+            {
+                double hwReal = ec.Model.Weight(term.W, 0.0).Real;
+                if (hwReal == 0.0) continue;
+
+                for (int p = 0; p < portCount; p++)
+                {
+                    int np = ec.Nodes.Length > 2 * p     ? ec.Nodes[2 * p]     : 0;
+                    int nm = ec.Nodes.Length > 2 * p + 1 ? ec.Nodes[2 * p + 1] : 0;
+                    double ip = hwReal * term.Value[p];
+                    if (np > 0) f[np - 1] += ip;
+                    if (nm > 0) f[nm - 1] -= ip;
+
+                    for (int q = 0; q < portCount; q++)
+                    {
+                        int qp = ec.Nodes.Length > 2 * q     ? ec.Nodes[2 * q]     : 0;
+                        int qm = ec.Nodes.Length > 2 * q + 1 ? ec.Nodes[2 * q + 1] : 0;
+                        double dg = hwReal * term.Jac[p, q];
+                        if (dg == 0.0) continue;
+                        StampDg(j, np, nm, qp, qm, dg);
+                    }
+                }
+            }
         }
 
         return (f, j);

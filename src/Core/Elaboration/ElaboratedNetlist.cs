@@ -28,7 +28,7 @@ public sealed class ElaboratedNetlist
     public IReadOnlyDictionary<string, Value> ResolvedGlobals => _resolvedGlobals;
     private readonly Dictionary<string, Value> _resolvedGlobals = new(StringComparer.Ordinal);
 
-    internal void AddComponent(ElaboratedComponent c)
+    public void AddComponent(ElaboratedComponent c)
     {
         int idx = Components.Count;
         Components.Add(c);
