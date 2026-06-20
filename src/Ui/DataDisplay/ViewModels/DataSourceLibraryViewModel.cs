@@ -14,6 +14,7 @@ using Avalonia.Platform.Storage;
 using RfCore;
 using RfCore.Data;
 using RfCore.Export;
+using RfCore.Loadpull;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
@@ -218,6 +219,18 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             return;
         }
 
+        if (IsSplExtension(ext))
+        {
+            await LoadSplAsync(path);
+            return;
+        }
+
+        if (IsLpcwaveExtension(ext))
+        {
+            await LoadLpcwaveAsync(path);
+            return;
+        }
+
         if (!IsSnpExtension(ext)) return;
 
         // If a broken Touchstone entry matches this path, restore it.
@@ -261,6 +274,18 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         if (IsNpyExtension(ext))
         {
             await LoadNpyAsync(path);
+            return;
+        }
+
+        if (IsSplExtension(ext))
+        {
+            await LoadSplAsync(path);
+            return;
+        }
+
+        if (IsLpcwaveExtension(ext))
+        {
+            await LoadLpcwaveAsync(path);
             return;
         }
 
@@ -309,11 +334,22 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             return;
 
         DataSourceEntryViewModel entry;
-        if (IsNpyExtension(Path.GetExtension(path)))
+        string brokenExt = Path.GetExtension(path);
+        if (IsNpyExtension(brokenExt))
         {
             // Broken .npy: use SNP.CreateBroken so IsBroken returns true,
             // but store no DataSet (file is missing).
             entry = new DataSourceEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this);
+        }
+        else if (IsSplExtension(brokenExt))
+        {
+            entry = new DataSourceEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this,
+                                                 SourceKind.Spl);
+        }
+        else if (IsLpcwaveExtension(brokenExt))
+        {
+            entry = new DataSourceEntryViewModel(path, data: null, snp: SNP.CreateBroken(path), this,
+                                                 SourceKind.Lpcwave);
         }
         else
         {
@@ -341,6 +377,26 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             entry.RefreshNpy(data, newPath);
             UpdateDisplayNames();
             MaybeFireUnusualZ0Warning(entry);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        else if (entry.Kind == SourceKind.Spl)
+        {
+            DataSet data;
+            try { data = await Task.Run(() => SplReader.ReadSpl(newPath)); }
+            catch { return; }
+
+            entry.RefreshLoadpull(data, newPath);
+            UpdateDisplayNames();
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        else if (entry.Kind == SourceKind.Lpcwave)
+        {
+            DataSet data;
+            try { data = await Task.Run(() => LpcwaveReader.ReadLpcwave(newPath)); }
+            catch { return; }
+
+            entry.RefreshLoadpull(data, newPath);
+            UpdateDisplayNames();
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
         else
@@ -382,6 +438,24 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             catch { return; }
 
             entry.RefreshNpy(data, entry.FilePath!);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        else if (entry.Kind == SourceKind.Spl)
+        {
+            DataSet data;
+            try { data = await Task.Run(() => SplReader.ReadSpl(entry.FilePath!)); }
+            catch { return; }
+
+            entry.RefreshLoadpull(data, entry.FilePath!);
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        else if (entry.Kind == SourceKind.Lpcwave)
+        {
+            DataSet data;
+            try { data = await Task.Run(() => LpcwaveReader.ReadLpcwave(entry.FilePath!)); }
+            catch { return; }
+
+            entry.RefreshLoadpull(data, entry.FilePath!);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
         else
@@ -510,6 +584,56 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    private async Task LoadSplAsync(string path)
+    {
+        var broken = Entries.FirstOrDefault(e =>
+            e.Kind == SourceKind.Spl && e.IsBroken &&
+            string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (broken != null)
+        {
+            await RestoreBrokenEntry(broken, path);
+            return;
+        }
+
+        if (Entries.Any(e => !e.IsBroken &&
+                string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        DataSet data;
+        try { data = await Task.Run(() => SplReader.ReadSpl(path)); }
+        catch { return; }
+
+        var entry = new DataSourceEntryViewModel(path, data, null, this, SourceKind.Spl);
+        Entries.Add(entry);
+        UpdateDisplayNames();
+        LibraryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private async Task LoadLpcwaveAsync(string path)
+    {
+        var broken = Entries.FirstOrDefault(e =>
+            e.Kind == SourceKind.Lpcwave && e.IsBroken &&
+            string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        if (broken != null)
+        {
+            await RestoreBrokenEntry(broken, path);
+            return;
+        }
+
+        if (Entries.Any(e => !e.IsBroken &&
+                string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        DataSet data;
+        try { data = await Task.Run(() => LpcwaveReader.ReadLpcwave(path)); }
+        catch { return; }
+
+        var entry = new DataSourceEntryViewModel(path, data, null, this, SourceKind.Lpcwave);
+        Entries.Add(entry);
+        UpdateDisplayNames();
+        LibraryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     // ---- Extension helpers ------------------------------------------------
 
     private static readonly HashSet<string> _snpExtensions =
@@ -519,7 +643,11 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         ".s21p", ".s22p", ".s23p", ".s24p",
         ".snp", ".ts" };
 
-    private static bool IsSnpExtension(string ext) => _snpExtensions.Contains(ext);
-    private static bool IsNpyExtension(string ext)  =>
-        string.Equals(ext, ".npy", StringComparison.OrdinalIgnoreCase);
+    private static bool IsSnpExtension(string ext)     => _snpExtensions.Contains(ext);
+    private static bool IsNpyExtension(string ext)      =>
+        string.Equals(ext, ".npy",      StringComparison.OrdinalIgnoreCase);
+    private static bool IsSplExtension(string ext)      =>
+        string.Equals(ext, ".spl",      StringComparison.OrdinalIgnoreCase);
+    private static bool IsLpcwaveExtension(string ext)  =>
+        string.Equals(ext, ".lpcwave",  StringComparison.OrdinalIgnoreCase);
 }

@@ -17,7 +17,7 @@ using RfCore.Data;
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
 /// <summary>Distinguishes how this entry was loaded.</summary>
-public enum SourceKind { Touchstone, Npy }
+public enum SourceKind { Touchstone, Npy, Spl, Lpcwave }
 
 public partial class DataSourceEntryViewModel : ViewModelBase
 {
@@ -104,11 +104,12 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         ClassifyZ0FromData();
     }
 
-    // ---- .npy constructor (DataSet loaded; Snp may be null for cube-only) --
+    // ---- .npy / loadpull constructor (DataSet loaded; Snp may be null for cube-only) --
 
-    internal DataSourceEntryViewModel(string path, DataSet? data, SNP? snp, DataSourceLibraryViewModel library)
+    internal DataSourceEntryViewModel(string path, DataSet? data, SNP? snp, DataSourceLibraryViewModel library,
+                                      SourceKind kind = SourceKind.Npy)
     {
-        Kind       = SourceKind.Npy;
+        Kind       = kind;
         _filePath  = path;
         _data      = data;
         _snp       = snp;
@@ -214,6 +215,19 @@ public partial class DataSourceEntryViewModel : ViewModelBase
             _snp = null;
         }
 
+        NotifyBrokenStateChanged();
+        ClassifyZ0FromData();
+    }
+
+    /// <summary>
+    /// Refreshes a loadpull entry (.spl or .lpcwave) in place after reload.
+    /// Loadpull DataSets carry no S cube, so Snp stays null.
+    /// </summary>
+    internal void RefreshLoadpull(DataSet data, string newPath)
+    {
+        _filePath = newPath;
+        _data     = data;
+        _snp      = null;
         NotifyBrokenStateChanged();
         ClassifyZ0FromData();
     }

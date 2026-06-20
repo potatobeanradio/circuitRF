@@ -17,5 +17,7 @@
 /tests/Ui.Tests/obj
 /tests/Ui.Tests/bin
 /circuitRF_demo
+/testdata/lpwave_test_data
+/testdata/spl_test_data
 
 TestResults/

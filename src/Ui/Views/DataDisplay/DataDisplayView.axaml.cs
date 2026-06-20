@@ -78,7 +78,8 @@ public partial class DataDisplayView : UserControl
                 new FilePickerFileType("Data Files")
                 {
                     Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
-                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy" }
+                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy",
+                                       "*.spl", "*.lpcwave" }
                 },
                 new FilePickerFileType("Touchstone Files")
                 {
@@ -86,6 +87,7 @@ public partial class DataDisplayView : UserControl
                                        "*.s5p", "*.s6p", "*.snp", "*.ts" }
                 },
                 new FilePickerFileType("NumPy Files") { Patterns = new[] { "*.npy" } },
+                new FilePickerFileType("Loadpull Files") { Patterns = new[] { "*.spl", "*.lpcwave" } },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }
         });
@@ -239,7 +241,8 @@ public partial class DataDisplayView : UserControl
                 new FilePickerFileType("Data Files")
                 {
                     Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
-                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy" }
+                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy",
+                                       "*.spl", "*.lpcwave" }
                 },
                 new FilePickerFileType("Touchstone Files")
                 {
@@ -247,6 +250,7 @@ public partial class DataDisplayView : UserControl
                                        "*.s5p", "*.s6p", "*.snp", "*.ts" }
                 },
                 new FilePickerFileType("NumPy Files") { Patterns = new[] { "*.npy" } },
+                new FilePickerFileType("Loadpull Files") { Patterns = new[] { "*.spl", "*.lpcwave" } },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }
         });

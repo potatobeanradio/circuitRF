@@ -2,8 +2,8 @@
 
 Roadmap for the circuitRF Data Display. This is the **plan** document: it locks the decisions made in
 the Phase 7 kickoff, fixes the architecture spine, and breaks the work into sub-phases. Finer design of
-each sub-phase happens when we arrive at it (especially 7.4 contours, which is gated on the loadpull
-spline white paper + reference code, not yet in hand).
+each sub-phase happens when we arrive at it. Sub-phase 7.4 (contours) now has its own detailed design note,
+`docs/design/loadpull-contours.md` (reference materials in hand).
 
 Read with: `data-model.md` and `src/Core/Data/CLAUDE.md` (the DataSet/DataCube contract — the splotRF
 seam), `data-export.md` + `RfCore/src/Export/CLAUDE.md` (`.npy` native format, exporter/importer),
@@ -399,9 +399,15 @@ a table; markers read correctly. Matches splotRF behavior for the `{freq,i,j}` c
   cubes; (d) minimal-label policy §2.7; (e) indicator + Messages warning; (f) follow-on: per-port Z0-dependent
   compute on cube-S-traces.
 
-### 7.3 — Multi-dimensional sweep trace dialog
+### 7.3 — Multi-dimensional sweep trace dialog  ✅ COMPLETE
 **Goal:** author traces from cubes with >2 axes via **axis-role assignment**, matching the Analyses-
 Properties UX style.
+
+> **COMPLETE.** Axis-role assignment (X / pinned / family) ships as the one generic mechanism; a family
+> is ONE trace object rendering N curves (roles, the `~` shorthand, auto-recognition, rendering) per
+> `family-curves.md`. The `~`/`:`/index slice grammar, `CubeTraceSpecParser`, `SliceTokenParser`, and the
+> All/`a..b` range tokens are in place (`brief-trace-sweep-conformance`); the harmonic stem-plot X-axis
+> case is wired. Family guardrail = `Trace.MaxFamilyCurves` (101) with a clamp + one Message past it.
 **Deliverables:** trace dialog assigns each cube axis a role — **X** (kept), **pinned** (single index,
 value picker against the axis), or **family** (iterate → render one curve per index); value cube +
 transform choose the Y. Maps 1:1 onto `DataCube.Slice` (int pins, `Range` keeps).
@@ -425,34 +431,45 @@ only HB + nested sweeps. **DC and S-param need inner-analysis dispatch added** t
 curve-tracer family; S-param for swept-Z0 / bias-swept S). That engine work is separate from the 7.3 dialog and
 gated when those sweeps are actually wired.
 
-### 7.4 — Loadpull contours (Γ-plane + Z-plane)  ⛔ design gated on white paper + Python
+### 7.4 — Loadpull contours + surface modeling (Γ-plane + Z-plane)  → DETAILED IN `loadpull-contours.md`
 **Goal:** first-class contour plotting with full user control, form *"Metric at constant value of a
-different metric."*
-**Known inputs (from kickoff):**
-- Contour examples: Pout @ const 3 dB compression; Efficiency @ const Pout = 45 dBm; Gain @ const back-off.
-- Substrates: Γ-plane (Smith) **and** Z-plane (Rect).
-- Overlay: 1-port Touchstone (`.s1p`) reflection allowed; power-sweep line traces not mixed in.
-- The **2D-spline surface engine** (to be supplied) fits the scattered loadpull field **and** can
-  synthesize power drive-ups at load points **off** the simulation grid — i.e. it is a *surface model /
-  data-synthesis engine*, not merely an iso-line tracer. The user has a white paper, reference Python,
-  and a discussion chat to share; the data-generation method becomes clear from those.
-**Data on hand:** loadpull DataSet already carries the raw scattered field — FOM cubes
-(`Pout`/`PAE`/`Gt`/`Gp`/`DE`/`Pdc`/…) over `{gridPoint, pinStep}` plus `GammaLoad`/`ZLoad` over
-`{gridPoint}`. "At constant 3 dB compression" etc. are per-grid-point reductions/interpolations over
-`pinStep`; the spline then fits value-vs-Γ (or vs Z) and extracts iso-levels.
-**Key open design question (storage):** does the **trace** own the fitted spline surface (derived,
-cached, recomputed on input change) or does the **DataSet/cube** store it? Current lean: the **cube
-stores only the honest measured field; a derived surface-model object owns the fit + iso-extraction +
-off-grid synthesis**, computed at author/render time and cached. The off-grid-driveup capability argues
-the spline may deserve a **first-class `LoadpullSurface` model** (framework-free, RfCore/Engine) that
-both contour extraction and off-grid queries call — but the final shape waits on the white paper.
-**Deliverables (to be detailed):** the surface-model engine (headless, tested); contour authoring UI
-("metric @ constant other-metric = value", level set, substrate Γ/Z); iso-line rendering on Smith and
-Rect; `.s1p` overlay.
-**Gate:** reproduce a known contour set from a loadpull run (owner-verifiable against the Python
+different metric"*, on a smooth 2-D surface model of the scattered loadpull field (which also synthesizes
+power drive-ups at load points **off** the data grid).
+
+> **DESIGN UNBLOCKED — full design in `docs/design/loadpull-contours.md`.** The reference materials are in
+> hand (Hart ARFTG-2006 paper + `SPLData.py` + `.spl`/`.lpcwave` test data, in `loadpull-contours-refs/`).
+> The method is RBF (multiquadric) 2-D interpolation over scattered Γ, with per-grid-point compression
+> preprocessing and a stack-of-surfaces for off-grid drive-up synthesis. Contour **iso-line tracing is ours
+> to build** (marching squares; not in the Python, which used matplotlib). See the note for the algorithm,
+> the scipy.Rbf scope, and the sub-gate detail.
+
+**Locked decisions (see `loadpull-contours.md` §1):**
+- **Surface storage = derived; cube stays honest (Option A).** The cube stores only the measured/simulated
+  field; a first-class headless **`LoadpullSurface`** model owns the RBF fit + iso-extraction + off-grid
+  synthesis, cached **in-memory** keyed by all fit params. No surface serialization (no format to version).
+  A disposable cross-session sidecar cache is a **documented future option**, not built in 7.4.
+- **Ingest first.** `.spl`/`.lpcwave` readers come **before** the contour engine — they normalize measured
+  loadpull into the **same** DataSet shape the loadpull engine emits, so the Data Display treats measured and
+  simulated identically, and 7.4a–c validate against real data.
+- **Custom allocation-free dense LDLᵀ/Cholesky solver** for the RBF (dense kernel; sparse solvers are the
+  wrong tool). Fast at both N≈20 (zero ceremony) and N≈200 (cache-resident); performance is a benchmarked
+  gate. Math is framework-free in RfCore (firewall).
+
+**Sub-gates (detail in `loadpull-contours.md` §3):**
+- **7.4f — `.spl`/`.lpcwave` ingest** (FIRST): readers → loadpull DataSet shape; canonical FOM-name
+  normalization; wire into the data-source library.
+- **7.4a — RBF + interp1d math core** (RfCore): multiquadric `RfBfRbf2D` matching scipy numerically +
+  allocation-free LDLᵀ solve; correctness + performance gates.
+- **7.4b — `LoadpullSurface` model**: compression preprocessing, metric-@-constant-other-metric surfaces,
+  MXP/MXE auto-view-box, lazy cache.
+- **7.4c — off-grid power-sweep synthesis** (the surface stack): held-out grid-point gate.
+- **7.4d — contour iso-line renderer** (Skia + headless marching squares): Γ-disk / Z-plane clip + labels.
+- **7.4e — contour trace card** (inspector extension, §2.8) + `.s1p` overlay.
+
+**Gate (overall):** reproduce a known contour set from a loadpull run (owner-verifiable against the Python
 reference); off-grid driveup synthesis matches the reference within tolerance.
-**Action:** obtain the white paper, the Python implementation, and the discussion chat before designing
-this sub-phase. Likely warrants its own design note (`docs/design/loadpull-contours.md`).
+**Action:** start 7.4f — request 1–2 `.spl`/`.lpcwave` test files copied into `circuitRF/testdata/` for the
+reader's regression tests.
 
 ### 7.5 — Data Display templates (DEFERRED)
 A saved display reused as a starting point with re-pointed data sources. Out of scope for now; recorded
@@ -500,10 +517,11 @@ so 7.1 persistence is designed to not preclude it.
   addition (`src/Core/Data/CLAUDE.md`). Producer VERIFIED: `SParameterEngine.Run` already computes per-port Z0
   (`YToS(yMat, z0PerPort)`) but discards it (`refZ0 = z0PerPort[0]` → uniform SNP) — a live latent mis-reference
   bug; single-site fix folded into the 7.2 carrier brief; testable now. See §7.2 "Design (RESOLVED)".
-- **7.3:** family-sweep guardrail policy (default cap, over-cap behavior).
-- **7.4:** spline storage (trace-owned cache vs first-class `LoadpullSurface`); which FOMs are first-class;
-  how "constant other-metric = value" is specified in the UI; contour level-set specification. **All gated
-  on the white paper + Python + discussion chat.**
+- **7.3:** RESOLVED — family-sweep guardrail = `Trace.MaxFamilyCurves` (101): clamp + one Message past the cap.
+- **7.4:** RESOLVED into a full design note (`docs/design/loadpull-contours.md`). Surface storage = derived
+  `LoadpullSurface` (cube stays honest), in-memory cache, sidecar deferred. Ingest (`.spl`/`.lpcwave`) first.
+  Custom allocation-free dense LDLᵀ RBF solver. Sub-gates 7.4a–f defined. Remaining open items are
+  per-sub-gate (FOM-name set, scipy tolerance, level-set UX, stack defaults) — tracked in that note §5.
 
 ---
 
@@ -516,8 +534,8 @@ so 7.1 persistence is designed to not preclude it.
 - **Phase 7.1d-1 — COMPLETE.** `PlotInspectorView` restyle, `PlotTypeGlyphControl`, `IconSelectButton`, accent colors, line glyph, HighlightSelected, trash button, slider fix.
 - **Phase 7.1e — COMPLETE.** `.cdd` layout persistence: `format_version` field (reject-on-mismatch), Save/Open Display dialogs wired in `DataDisplayView.axaml.cs`, Save/Open toolbar buttons. Round-trips active tab, canvas zoom/pan, per-plot axes zoom exactly. Build 0W/0E; 1206 tests pass.
 - **Phase 7.1f — COMPLETE.** Data Display workspace/tree integration: File → "Open Data Display…" menu item (`OpenDataDisplayFileCommand`); `.cws` open-doc persistence (kind `"datadisplay"`) + restore; `WorkspaceScanner.Scan` enumerates loose files at workspace root (`.cdd` → `NodeKind.DataDisplayFile`); `OpenNode` double-click opens `.cdd` in the Content pane via `OpenOrActivateDataDisplay`. Core helper `OpenOrActivateDataDisplayCoreAsync` (stream or path); fire-and-forget wrapper for restore/tree paths. Build 0W/0E; 1206 tests pass.
-- Sub-phase 7.4 (contours) blocked pending the loadpull spline white paper, reference Python, and the
-  discussion chat.
+- Sub-phase 7.4 (contours): **design complete** — see `docs/design/loadpull-contours.md`. Materials in hand;
+  RBF surface-model method understood; sub-gates 7.4a–f defined (ingest 7.4f runs first). Ready to brief.
 - **Grouped-dataset layout — COMPLETE (supersedes 7.0's per-analysis file).** Results now write one
   grouped `results/<schematicKey>/run.npy` per run (group per analysis + a `measurements` group),
   addressed `Analysis.Cube`; `DataSet` is grouped (default group preserves bare access for Touchstone);
@@ -565,3 +583,5 @@ resize handle auto-fits the column.
 - **Renderer glyph fix — COMPLETE (pre-7.2 cleanup).** IBM Plex missing-glyph fallback: table sort arrow drawn as an `SKPath`; per-glyph DejaVu fallback for `∠` (and any Plex-missing glyph) in `TableRenderer`/`MarkerRenderer`.
 - **Phase 7.2a — COMPLETE.** `Z0{port}` carrier + producer fix: `DataSetBuilder.BuildZ0Cube`, `ClassifyZ0`, `Z0Kind` enum in `RfCore.Data`; `FromSnp` emits a uniform `Z0` cube on every S DataSet; `ToSnp` reads the cube (non-uniform → port-1 value + `RFNetwork.Warn`; absent → 50 Ω); `SParameterEngine.Run` overwrites the placeholder with the true per-port complex values. Build 0W/0E; full suite passes.
 - **Phase 7.2b — COMPLETE.** Data-source library generalised to load `.npy` alongside Touchstone. `SnpEntryViewModel` adds `SourceKind {Touchstone, Npy}`, nullable `SNP? Snp`, `DataSet? Data`, `string? FilePath` (single path authority). `IsBroken => _snp?.IsEmpty ?? false` — null Snp (cube-only .npy) is NOT broken. Command properties use `{ get; private set; } = null!` so `InitCommands` can assign them. `SnpLibraryViewModel` routes `LoadFileAsync` by extension: Touchstone → existing path; `.npy` → `DataSetImporter.Import` → new `.npy` entry ctor; broken-entry restore + `ReloadAsync` branch on `SourceKind`. `AddBrokenEntry` routes by extension. `.npy`-with-S: `DataSetBuilder.ToSnp(data)` exposes an `SNP` for the existing picker (the S-param gate). `.npy`-without-S: `Snp = null` (cube-only, not pickable until 7.2c). File-picker filter in `DataDisplayView.axaml.cs` updated to "Data Files" (Touchstone + .npy). All `e.Snp.FilePath` → `e.FilePath`; all `e.Snp.IsEmpty` guards updated with null checks. `SnpLibraryView.axaml.cs` drop handler uses `e.IsBroken` + `e.FilePath`. In-place refresh invariant: `RefreshNpy` calls `_snp.RefreshFrom(ToSnp(data))` when live (preserves trace bindings); replaces reference only when broken/null. Naming debt flagged in comments; rename to `DataSource*` deferred to 7.2c. Build 0W/0E; 1211 tests pass. S-param gate met (`.npy`-with-S pickable + plottable via existing SNP machinery). **Next:** Phase 7.2c — cube-native trace path for non-S cubes + identity components + minimal labels + class rename.
+- **Phase 7.2c — COMPLETE.** Cube-native trace path for non-S cubes landed: `Trace` is dual-source (SNP-backed Touchstone keeps full S-param machinery; DataSet-cube binding `(source, cube, slice, transform)` for HB V/I spectra, measurements, and S-cubes). Trace identity stored as separate components (`source · analysis/group · cube · slice · transform`), never a pre-joined string. Qualified `Group.Cube` addressing resolves through the picker, `TraceExpression`, and `CubeTraceSpecParser`. Minimal-label policy (§2.7) computes the shortest disambiguating label at plot/legend level. Non-uniform/complex `Z0` indicator + one-time Messages warning wired. Data-source library classes generalised (the `Snp*`→`DataSource*` naming debt from 7.2b resolved). Build 0W/0E.
+- **Phase 7.3 — COMPLETE.** Multi-dimensional sweep via axis-role assignment (X / pinned / family); a family is ONE trace object rendering N curves (`family-curves.md`). Slice grammar (`~`/`:`/index + All/`a..b` ranges), `CubeTraceSpecParser`, `SliceTokenParser`, harmonic stem-plot X-axis case all in place; family guardrail = `Trace.MaxFamilyCurves` (101) with clamp + one Message past it.
