@@ -9,6 +9,7 @@
 using System;
 using System.Collections.Generic;
 using CircuitRF.Ui.Renderers;
+using RfCore.Loadpull;
 using SkiaSharp;
 
 namespace CircuitRF.Ui.DataDisplay
@@ -191,10 +192,45 @@ namespace CircuitRF.Ui.DataDisplay
             canvas.Save();
             canvas.ClipRect(ViewportClipRect(tf.Viewport, canvasSize));
 
+            // ---- Contour fill pre-pass (under all traces) ---------------
+            foreach (var trace in plot.Traces)
+            {
+                var cd = trace.ContourData;
+                if (cd == null) continue;
+                var grid = cd.Grid;
+                if (grid == null) continue;
+
+                switch (cd.FillType)
+                {
+                    case ContourFillType.TopoMap:
+                        if (cd.Levels.Levels.Length > 0)
+                            ContourRenderer.DrawTopoMapFill(canvas, grid, cd.Levels, tf);
+                        break;
+
+                    case ContourFillType.HeatMap:
+                        if (cd.Scatter is { } sc)
+                            ContourRenderer.DrawHeatMapFill(canvas, canvasSize, sc, tf);
+                        break;
+                }
+            }
+
+            // ---- Traces --------------------------------------------------
             bool plotIsRect = plot.PlotType == PlotType.Rect;
             foreach (var trace in plot.Traces)
+            {
+                if (trace.IsContourTrace)
+                {
+                    var cd = trace.ContourData!;
+                    var polylines = cd.GetPolylines();
+                    if (polylines != null && cd.ShowIsoLines)
+                        ContourRenderer.DrawIsoLines(
+                            canvas, canvasSize, polylines, tf,
+                            cd.LineColor, cd.StrokeWidth, cd.DrawLabels);
+                    continue;
+                }
                 TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
                     stemMode: plotIsRect && trace.IsHarmonicStem);
+            }
 
             if (plot.PlotType == PlotType.Rect)
                 foreach (var trace in plot.Traces)

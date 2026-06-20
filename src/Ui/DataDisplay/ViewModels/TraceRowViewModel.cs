@@ -13,6 +13,7 @@ using CommunityToolkit.Mvvm.Input;
 using Material.Icons;
 using RfCore;
 using RfCore.Data;
+using RfCore.Loadpull;
 using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
@@ -41,8 +42,293 @@ public partial class TraceRowViewModel : ViewModelBase
     public bool IsTablePlot    => _parent.PlotType == PlotType.Table;
     public bool IsNotTablePlot => _parent.PlotType != PlotType.Table;
 
-    // Standard (line/marker/table) trace body. 7.4 adds IsContourTrace sibling.
-    public bool IsStandardTrace => true;
+    // Standard (line/marker/table) trace body; hidden for contour traces.
+    public bool IsStandardTrace => !IsContourTrace;
+
+    // ---- Contour trace (Phase 7.4e) -----------------------------------------
+
+    public bool IsContourTrace => _trace.IsContourTrace;
+
+    // VM-side LoadpullSurface (owned here; Trace must not hold a DataSet per firewall).
+    private LoadpullSurface? _loadpullSurface;
+    private string?          _surfaceSourcePath;
+
+    // Suppresses On…Changed callbacks during SyncContourVmFromData.
+    private bool _suppressContourCallback;
+
+    public ObservableCollection<string> AvailableMetrics     { get; } = new();
+    public ObservableCollection<string> AvailableFrequencies { get; } = new();
+
+    [ObservableProperty] private string?          _contourMetricName;
+    [ObservableProperty] private ConstraintKind   _contourConstraintKind = ConstraintKind.Compression;
+    [ObservableProperty] private string           _contourConstraintMetric = "";
+    [ObservableProperty] private double           _contourConstraintValue = 3.0;
+    [ObservableProperty] private int              _contourFreqIndex;
+    [ObservableProperty] private ContourLevelMode _contourLevelMode;
+    [ObservableProperty] private double           _contourLevelStart;
+    [ObservableProperty] private double           _contourLevelStep;
+    [ObservableProperty] private double           _contourLevelStop;
+    [ObservableProperty] private int              _contourLevelCount = 10;
+    [ObservableProperty] private bool             _contourShowIsoLines = true;
+    [ObservableProperty] private bool             _contourShowFill;
+    [ObservableProperty] private bool             _contourShowLabels = true;
+    [ObservableProperty] private ContourFillKind  _contourSelectedFillKind;
+    [ObservableProperty] private ContourColorMap  _contourColorMap;
+    [ObservableProperty] private double           _contourLabelSpacing = 1.0;
+    [ObservableProperty] private bool             _contourOptionsExpanded;
+
+    public bool IsCompressionConstraint    => ContourConstraintKind == ConstraintKind.Compression;
+    public bool IsConstantMetricConstraint => ContourConstraintKind == ConstraintKind.ConstantMetric;
+    public bool IsRangeLevelMode           => ContourLevelMode == ContourLevelMode.Range;
+    public bool IsCountLevelMode           => ContourLevelMode == ContourLevelMode.Count;
+    public bool ShowContourFreqPicker      => IsContourTrace && AvailableFrequencies.Count > 1;
+
+    partial void OnContourMetricNameChanged(string? value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.MetricName = value ?? "";
+        var (s, step, stop) = ContourDefaults.LevelRange(cd.MetricName);
+        cd.LevelStart = s; cd.LevelStep = step; cd.LevelStop = stop;
+        SyncContourVmFromData(cd);
+        RebuildContour();
+    }
+
+    partial void OnContourConstraintKindChanged(ConstraintKind value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.ContourConstraintKind = value;
+        OnPropertyChanged(nameof(IsCompressionConstraint));
+        OnPropertyChanged(nameof(IsConstantMetricConstraint));
+        RebuildContour();
+    }
+
+    partial void OnContourConstraintMetricChanged(string value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.ConstraintMetricName = value;
+        RebuildContour();
+    }
+
+    partial void OnContourConstraintValueChanged(double value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.ConstraintValue = value;
+        RebuildContour();
+    }
+
+    partial void OnContourFreqIndexChanged(int value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.FreqIndex = value;
+        RebuildContour();
+    }
+
+    partial void OnContourLevelModeChanged(ContourLevelMode value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LevelMode = value;
+        OnPropertyChanged(nameof(IsRangeLevelMode));
+        OnPropertyChanged(nameof(IsCountLevelMode));
+        RebuildContour();
+    }
+
+    partial void OnContourLevelStartChanged(double value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LevelStart = value;
+        RebuildContour();
+    }
+
+    partial void OnContourLevelStepChanged(double value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LevelStep = value;
+        RebuildContour();
+    }
+
+    partial void OnContourLevelStopChanged(double value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LevelStop = value;
+        RebuildContour();
+    }
+
+    partial void OnContourLevelCountChanged(int value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LevelCount = value;
+        RebuildContour();
+    }
+
+    partial void OnContourShowIsoLinesChanged(bool value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.ShowIsoLines = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourShowFillChanged(bool value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.ShowFill = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourShowLabelsChanged(bool value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.DrawLabels = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourSelectedFillKindChanged(ContourFillKind value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.SelectedFillKind = value;
+        OnPropertyChanged(nameof(IsTopoMapFill));
+        OnPropertyChanged(nameof(IsHeatMapFill));
+        _parent.Notify();
+    }
+
+    partial void OnContourColorMapChanged(ContourColorMap value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.ColorMap = value;
+        // DEFERRED: renderer ignores ColorMap until colormap ramp mapping is implemented.
+        _parent.Notify();
+    }
+
+    partial void OnContourLabelSpacingChanged(double value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LabelSpacing = value;
+        // DEFERRED: richer label render with spacing is future work.
+        _parent.Notify();
+    }
+
+    private void RebuildContour()
+    {
+        var cd = _trace.ContourData;
+        if (cd is null) return;
+
+        if (!EnsureLoadpullSurface()) { ClearContourGrid(cd); return; }
+
+        var surface = _loadpullSurface!;
+        int freqIdx = Math.Clamp(cd.FreqIndex, 0, Math.Max(0, surface.Frequencies.Count - 1));
+
+        ConstraintSpec constraint = cd.ContourConstraintKind == ConstraintKind.Compression
+            ? ConstraintSpec.AtCompression(cd.ConstraintValue)
+            : ConstraintSpec.AtConstantMetric(cd.ConstraintMetricName, cd.ConstraintValue);
+
+        var plane = (_parent.PlotType is PlotType.Smith or PlotType.Polar)
+            ? SurfacePlane.Gamma
+            : SurfacePlane.Z;
+
+        var fit = surface.Fit(freqIdx, cd.MetricName, constraint, plane);
+        if (fit is null) { ClearContourGrid(cd); return; }
+
+        var grid    = surface.Resample(fit);
+        var scatter = surface.Reduce(freqIdx, cd.MetricName, constraint, plane);
+
+        ContourLevelSet levels;
+        if (cd.LevelMode == ContourLevelMode.Range)
+        {
+            double step = cd.LevelStep > 0 ? cd.LevelStep : 0.5;
+            var    raw  = ContourExtractor.LevelsByStep(grid, step, cd.LevelStart);
+            double lo   = Math.Min(cd.LevelStart, cd.LevelStop);
+            double hi   = Math.Max(cd.LevelStart, cd.LevelStop);
+            double[] filtered = Array.FindAll(raw.Levels, l => l >= lo && l <= hi);
+            levels = new ContourLevelSet(filtered);
+        }
+        else
+        {
+            levels = ContourExtractor.LevelsBetween(grid, Math.Max(1, cd.LevelCount));
+        }
+
+        cd.Grid    = grid;
+        cd.Scatter = scatter;
+        cd.Levels  = levels;
+
+        _parent.Notify();
+    }
+
+    private static void ClearContourGrid(ContourData cd)
+    {
+        cd.Grid    = null;
+        cd.Scatter = null;
+        cd.Levels  = new ContourLevelSet(Array.Empty<double>());
+    }
+
+    private bool EnsureLoadpullSurface()
+    {
+        DataSourceEntryViewModel? entry = null;
+        string? tracePath = _trace.SourcePath;
+
+        if (tracePath is not null)
+        {
+            var sel = _parent.Library?.SelectedEntry;
+            if (sel is not null &&
+                string.Equals(sel.FilePath, tracePath, StringComparison.OrdinalIgnoreCase))
+                entry = sel;
+            else
+                entry = _parent.LibraryEntries.FirstOrDefault(e =>
+                    string.Equals(e.FilePath, tracePath, StringComparison.OrdinalIgnoreCase));
+        }
+
+        entry ??= _parent.Library?.SelectedEntry;
+
+        if (entry?.Data is not { } ds) return false;
+
+        if (_loadpullSurface is null ||
+            !string.Equals(entry.FilePath, _surfaceSourcePath, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                _loadpullSurface   = new LoadpullSurface(ds);
+                _surfaceSourcePath = entry.FilePath;
+            }
+            catch
+            {
+                _loadpullSurface = null;
+                return false;
+            }
+            RebuildMetricList();
+            RebuildFrequencyList();
+        }
+        return _loadpullSurface.Frequencies.Count > 0;
+    }
+
+    private void RebuildMetricList()
+    {
+        AvailableMetrics.Clear();
+        var entry = _parent.Library?.SelectedEntry;
+        if (entry?.Data is not { } ds) return;
+        foreach (var group in ds.Groups)
+            foreach (var kvp in ds.CubesIn(group))
+            {
+                if (kvp.Key == "GammaLoad" || kvp.Key.StartsWith("__", StringComparison.Ordinal)) continue;
+                if (kvp.Value.Axes.Any(a => a.Name == "gridPoint") && !AvailableMetrics.Contains(kvp.Key))
+                    AvailableMetrics.Add(kvp.Key);
+            }
+    }
+
+    private void RebuildFrequencyList()
+    {
+        AvailableFrequencies.Clear();
+        if (_loadpullSurface is null) return;
+        foreach (var f in _loadpullSurface.Frequencies)
+            AvailableFrequencies.Add($"{f / 1e9:G4} GHz");
+        OnPropertyChanged(nameof(ShowContourFreqPicker));
+    }
+
+    private void SyncContourVmFromData(ContourData cd)
+    {
+        _suppressContourCallback = true;
+        ContourLevelStart = cd.LevelStart;
+        ContourLevelStep  = cd.LevelStep;
+        ContourLevelStop  = cd.LevelStop;
+        _suppressContourCallback = false;
+    }
 
     // ---- Cube-bound discriminators (Phase 7.2c-a) --------------------------
 
@@ -744,6 +1030,25 @@ public partial class TraceRowViewModel : ViewModelBase
 
     public IRelayCommand RemoveCommand { get; }
 
+    // ---- Contour commands (Phase 7.4e) ----------------------------------------
+
+    public IRelayCommand SetConstraintCompressionCommand  { get; private set; } = null!;
+    public IRelayCommand SetConstraintConstantCommand     { get; private set; } = null!;
+    public IRelayCommand SetRangeLevelModeCommand         { get; private set; } = null!;
+    public IRelayCommand SetCountLevelModeCommand         { get; private set; } = null!;
+    public IRelayCommand ToggleShowIsoLinesCommand        { get; private set; } = null!;
+    public IRelayCommand ToggleShowFillCommand            { get; private set; } = null!;
+    public IRelayCommand ToggleShowLabelsCommand          { get; private set; } = null!;
+    public IRelayCommand SetTopoMapFillCommand            { get; private set; } = null!;
+    public IRelayCommand SetHeatMapFillCommand            { get; private set; } = null!;
+    public IRelayCommand ToggleOptionsCommand             { get; private set; } = null!;
+
+    public bool IsTopoMapFill => ContourSelectedFillKind == ContourFillKind.TopoMap;
+    public bool IsHeatMapFill => ContourSelectedFillKind == ContourFillKind.HeatMap;
+
+    public static IReadOnlyList<ContourColorMap> AllContourColorMaps { get; } =
+        Enum.GetValues<ContourColorMap>().ToList();
+
     // ---- Constructor --------------------------------------------------------
 
     public TraceRowViewModel(Trace trace, PlotInspectorViewModel parent)
@@ -792,6 +1097,41 @@ public partial class TraceRowViewModel : ViewModelBase
         RemoveCommand              = new RelayCommand(() => _parent.RemoveTrace(this));
         ToggleSecondaryAxisCommand = new RelayCommand(() => UseSecondaryAxis = !UseSecondaryAxis);
         ToggleShowAllCommand       = new RelayCommand(() => ShowAll = !ShowAll);
+
+        SetConstraintCompressionCommand  = new RelayCommand(() => ContourConstraintKind = ConstraintKind.Compression);
+        SetConstraintConstantCommand     = new RelayCommand(() => ContourConstraintKind = ConstraintKind.ConstantMetric);
+        SetRangeLevelModeCommand         = new RelayCommand(() => ContourLevelMode      = ContourLevelMode.Range);
+        SetCountLevelModeCommand         = new RelayCommand(() => ContourLevelMode      = ContourLevelMode.Count);
+        ToggleShowIsoLinesCommand        = new RelayCommand(() => ContourShowIsoLines   = !ContourShowIsoLines);
+        ToggleShowFillCommand            = new RelayCommand(() => ContourShowFill       = !ContourShowFill);
+        ToggleShowLabelsCommand          = new RelayCommand(() => ContourShowLabels     = !ContourShowLabels);
+        SetTopoMapFillCommand            = new RelayCommand(() => ContourSelectedFillKind = ContourFillKind.TopoMap);
+        SetHeatMapFillCommand            = new RelayCommand(() => ContourSelectedFillKind = ContourFillKind.HeatMap);
+        ToggleOptionsCommand             = new RelayCommand(() => ContourOptionsExpanded  = !ContourOptionsExpanded);
+
+        // Initialize contour VM fields from ContourData (if this is a contour trace).
+        if (trace.ContourData is { } cd)
+        {
+            _contourMetricName       = cd.MetricName;
+            _contourConstraintKind   = cd.ContourConstraintKind;
+            _contourConstraintMetric = cd.ConstraintMetricName;
+            _contourConstraintValue  = cd.ConstraintValue;
+            _contourFreqIndex        = cd.FreqIndex;
+            _contourLevelMode        = cd.LevelMode;
+            _contourLevelStart       = cd.LevelStart;
+            _contourLevelStep        = cd.LevelStep;
+            _contourLevelStop        = cd.LevelStop;
+            _contourLevelCount       = cd.LevelCount;
+            _contourShowIsoLines     = cd.ShowIsoLines;
+            _contourShowFill         = cd.ShowFill;
+            _contourShowLabels       = cd.DrawLabels;
+            _contourSelectedFillKind = cd.SelectedFillKind;
+            _contourColorMap         = cd.ColorMap;
+            _contourLabelSpacing     = cd.LabelSpacing;
+            // Build surface and populate metric/frequency lists; trigger initial fit.
+            if (EnsureLoadpullSurface())
+                RebuildContour();
+        }
 
         // Build YAxis items once — plot type doesn't change within a VM lifetime
         // (RebuildTraces() creates fresh VMs on plot-type switch).
@@ -1377,6 +1717,8 @@ public partial class TraceRowViewModel : ViewModelBase
 
     public void RefreshDescription()
     {
+        OnPropertyChanged(nameof(IsContourTrace));
+        OnPropertyChanged(nameof(IsStandardTrace));
         OnPropertyChanged(nameof(IsRectPlot));
         OnPropertyChanged(nameof(IsRectOrTablePlot));
         OnPropertyChanged(nameof(IsTablePlot));

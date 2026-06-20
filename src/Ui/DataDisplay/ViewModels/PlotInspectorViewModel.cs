@@ -12,6 +12,7 @@ using CommunityToolkit.Mvvm.Input;
 using Material.Icons;
 using RfCore;
 using RfCore.Data;
+using RfCore.Loadpull;
 using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
@@ -227,14 +228,19 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     // ---- Commands -------------------------------------------------------
 
-    public IRelayCommand AddTraceCommand { get; }
-    public IRelayCommand CloseCommand    { get; }
+    public IRelayCommand AddTraceCommand        { get; }
+    public IRelayCommand AddContourTraceCommand { get; }
+    public IRelayCommand CloseCommand           { get; }
 
     // Plot-type set commands (segmented header buttons, §A)
     public IRelayCommand SetPlotTypeRectCommand  { get; }
     public IRelayCommand SetPlotTypeSmithCommand { get; }
     public IRelayCommand SetPlotTypePolarCommand { get; }
     public IRelayCommand SetPlotTypeTableCommand { get; }
+
+    /// <summary>True when the selected data source is a loadpull result eligible for contour authoring.</summary>
+    public bool CanAddContourTrace =>
+        _library?.SelectedEntry is { } e && IsLoadpullSource(e);
 
     // ---- Constructor ----------------------------------------------------
 
@@ -252,8 +258,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         RebuildTraces();
 
-        AddTraceCommand = new RelayCommand(AddTrace, () => CanAddTrace);
-        CloseCommand    = new RelayCommand(() => _closeAction());
+        AddTraceCommand        = new RelayCommand(AddTrace,        () => CanAddTrace);
+        AddContourTraceCommand = new RelayCommand(AddContourTrace, () => CanAddContourTrace);
+        CloseCommand           = new RelayCommand(() => _closeAction());
 
         SetPlotTypeRectCommand  = new RelayCommand(() => PlotType = PlotType.Rect);
         SetPlotTypeSmithCommand = new RelayCommand(() => PlotType = PlotType.Smith);
@@ -748,5 +755,36 @@ public partial class PlotInspectorViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(CanAddTrace));
         ((RelayCommand)AddTraceCommand).NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanAddContourTrace));
+        ((RelayCommand)AddContourTraceCommand).NotifyCanExecuteChanged();
+    }
+
+    /// <summary>True when the entry has a loadpull DataSet (contains a GammaLoad cube).</summary>
+    private static bool IsLoadpullSource(DataSourceEntryViewModel e) =>
+        e.Data is { } ds && ds.Groups.Any(g => ds.CubesIn(g).ContainsKey("GammaLoad"));
+
+    private void AddContourTrace()
+    {
+        var entry = _library?.SelectedEntry;
+        if (entry?.Data is null) return;
+
+        var placeholder = new SNP(new double[] { 1e9 }, 1);
+        var trace = new Trace(placeholder, MatrixType.S, 0, 0, DependentVarFormat.Db);
+        trace.SourceRef  = DataSourceRef.Selected;
+        trace.SourcePath = _library!.SelectedDataSourceAbs;
+
+        var plane = (_plot.PlotType is PlotType.Smith or PlotType.Polar)
+            ? SurfacePlane.Gamma : SurfacePlane.Z;
+
+        trace.ContourData = new ContourData
+        {
+            ShowFill = ContourDefaults.ShowFillDefault(plane),
+        };
+
+        _plot.Traces.Add(trace);
+        Traces.Add(new TraceRowViewModel(trace, this));
+        RefreshAddCommand();
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
     }
 }

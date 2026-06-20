@@ -944,15 +944,47 @@ public partial class DataDisplayViewModel : ViewModelBase
                 snp = libEntry?.Snp;
             }
 
-            bool isCubeBound = (traceConfig.CubeName is not null && traceConfig.CubeSlice.Count > 0)
-                            || traceConfig.Expression is not null;
+            bool isCubeBound    = (traceConfig.CubeName is not null && traceConfig.CubeSlice.Count > 0)
+                               || traceConfig.Expression is not null;
+            bool isContourTrace = traceConfig.ContourTrace is not null;
 
-            // Network-bound: must have a valid SNP. Cube-bound: must have an entry in the library.
-            if (!isCubeBound && snp is null) continue;
+            // Network-bound: must have a valid SNP. Cube-bound/contour: must have a library entry.
+            if (!isCubeBound && !isContourTrace && snp is null) continue;
             if (isCubeBound  && libEntry is null) continue;
+            if (isContourTrace && libEntry is null) continue;
 
             Trace trace;
-            if (isCubeBound)
+            if (isContourTrace)
+            {
+                var ct = traceConfig.ContourTrace!;
+                var placeholder = new SNP(new double[] { 1e9 }, 1);
+                trace = new Trace(placeholder, MatrixType.S, 0, 0, DependentVarFormat.Db, false);
+                trace.ContourData = new ContourData
+                {
+                    MetricName            = ct.MetricName,
+                    ContourConstraintKind = ct.ConstraintKind,
+                    ConstraintMetricName  = ct.ConstraintMetricName,
+                    ConstraintValue       = ct.ConstraintValue,
+                    FreqIndex             = ct.FreqIndex,
+                    LevelMode             = ct.LevelMode,
+                    LevelStart            = ct.LevelStart,
+                    LevelStep             = ct.LevelStep,
+                    LevelStop             = ct.LevelStop,
+                    LevelCount            = ct.LevelCount,
+                    ShowIsoLines          = ct.ShowIsoLines,
+                    ShowFill              = ct.ShowFill,
+                    DrawLabels            = ct.DrawLabels,
+                    SelectedFillKind      = ct.SelectedFillKind,
+                    ColorMap              = ct.ColorMap,
+                    LabelSpacing          = ct.LabelSpacing,
+                };
+                ApplyProperties(traceConfig.Properties, trace.Properties);
+                trace.SourceRef  = sref;
+                trace.SourcePath = resolvedPath;
+                plot.Traces.Add(trace);
+                continue;
+            }
+            else if (isCubeBound)
             {
                 // Use a placeholder SNP (or the actual SNP if the file has one).
                 var placeholderSnp = snp ?? new SNP(new double[] { 1e9 }, 2);
@@ -1164,6 +1196,30 @@ public partial class DataDisplayViewModel : ViewModelBase
                 MarkerType       = t.Properties.MarkerType,
             },
         };
+
+        // Contour trace authoring state (7.4e).
+        if (t.ContourData is { } cd)
+        {
+            tc.ContourTrace = new ContourTraceConfig
+            {
+                MetricName           = cd.MetricName,
+                ConstraintKind       = cd.ContourConstraintKind,
+                ConstraintMetricName = cd.ConstraintMetricName,
+                ConstraintValue      = cd.ConstraintValue,
+                FreqIndex            = cd.FreqIndex,
+                LevelMode            = cd.LevelMode,
+                LevelStart           = cd.LevelStart,
+                LevelStep            = cd.LevelStep,
+                LevelStop            = cd.LevelStop,
+                LevelCount           = cd.LevelCount,
+                ShowIsoLines         = cd.ShowIsoLines,
+                ShowFill             = cd.ShowFill,
+                DrawLabels           = cd.DrawLabels,
+                SelectedFillKind     = cd.SelectedFillKind,
+                ColorMap             = cd.ColorMap,
+                LabelSpacing         = cd.LabelSpacing,
+            };
+        }
 
         foreach (var m in t.Markers)
         {

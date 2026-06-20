@@ -210,6 +210,16 @@ namespace CircuitRF.Ui.DataDisplay
         /// <summary>Resolved absolute path for the source file (runtime only, not persisted directly).</summary>
         public string? SourcePath { get; set; }
 
+        // ---- Contour trace (Phase 7.4d) ---------------------------------
+
+        /// <summary>
+        /// When non-null, this trace renders loadpull contours (iso-lines + fill).
+        /// Overrides all SNP / cube-bound behaviour in the renderers.
+        /// </summary>
+        public ContourData? ContourData { get; set; }
+
+        public bool IsContourTrace => ContourData != null;
+
         // ---- Cube-native binding (Phase 7.2c-a) -------------------------
         //
         //  Null CubeName ⇒ this trace uses the legacy SNP/matrix path.

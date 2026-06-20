@@ -15,6 +15,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using RfCore;
+using RfCore.Loadpull;
 
 namespace CircuitRF.Ui.DataDisplay;
 
@@ -186,6 +187,10 @@ public sealed class TraceConfig
 
     public TracePropertiesConfig   Properties { get; set; } = new();
     public List<MarkerConfig>      Markers    { get; set; } = new();
+
+    /// <summary>Non-null when this trace is a loadpull contour trace (7.4e).
+    /// When present, the standard network/cube-bound fields are ignored.</summary>
+    public ContourTraceConfig? ContourTrace { get; set; }
 }
 
 public sealed class MarkerConfig
@@ -217,6 +222,40 @@ public sealed class MarkerConfig
     // For stability-circle markers: snapped world position.
     public float PositionStaticX { get; set; }
     public float PositionStaticY { get; set; }
+}
+
+/// <summary>Persisted authoring state for one loadpull contour trace (7.4e).
+/// The Grid/Scatter/Levels are not persisted — they are re-derived at load time by RebuildContour.</summary>
+public sealed class ContourTraceConfig
+{
+    public string MetricName { get; set; } = "Pout";
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ConstraintKind ConstraintKind { get; set; } = ConstraintKind.Compression;
+
+    public string ConstraintMetricName { get; set; } = "";
+    public double ConstraintValue      { get; set; } = 3.0;
+    public int    FreqIndex            { get; set; } = 0;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ContourLevelMode LevelMode  { get; set; } = ContourLevelMode.Range;
+
+    public double LevelStart { get; set; } = -30.0;
+    public double LevelStep  { get; set; } = 0.5;
+    public double LevelStop  { get; set; } = 60.0;
+    public int    LevelCount { get; set; } = 10;
+
+    public bool ShowIsoLines { get; set; } = true;
+    public bool ShowFill     { get; set; }
+    public bool DrawLabels   { get; set; } = true;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ContourFillKind SelectedFillKind { get; set; } = ContourFillKind.TopoMap;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public ContourColorMap ColorMap { get; set; } = ContourColorMap.Hot;
+
+    public double LabelSpacing { get; set; } = 1.0;
 }
 
 public sealed class TracePropertiesConfig

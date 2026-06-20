@@ -156,6 +156,45 @@ flat arrays) with `System.Numerics.Vector<double>` SIMD added only if profiling 
 (sparse overhead on a dense matrix) and NumFlat (call overhead hurts N≈20). **Gate includes micro-benchmarks**
 at N≈20 and N≈200 plus a full contour render (fit + 50×50 eval) so "fast" is regression-guarded.
 
+### 2.5 Filled contours (7.4d renderer; Skia, UI)
+The renderer supports both **iso-lines** and **filled contours**. Two fill types:
+
+**TopoMap (PREFERRED).** Topographic-style discrete colour bands, one band per interval between adjacent
+iso-levels. Rendered as **pure vector** (no bitmap): for each level threshold Lk, a filled `SKPath` covering the
+region where the surface value is ≥ Lk is built by **"marching-squares fill"** — per grid cell, the polygon of
+the ≥Lk sub-region (cell corners ≥Lk plus linearly-interpolated edge crossings), accumulated into one `SKPath`
+per band. Bands are painted back-to-front (lowest threshold first) in **opaque** colours, composited through a
+single `SaveLayer` alpha so the Smith grid shows through uniformly and every pixel ends up exactly one band
+colour. Because the per-cell crossings are the same ones marching-squares uses for the iso-lines, **band edges
+coincide with the iso-lines by construction**. NaN cells (outside the Γ-disk) are skipped, so the fill clips to
+the disk for free. Being `DrawPath`-based, it exports to PDF/SVG as true vector via `SKDocument.CreatePdf` /
+`SKSvgCanvas` (a `DrawBitmap` LUT raster was the original sketch but is rejected — it pixelates on vector
+export). The `SkGradientShader` duplicate-stop banding technique
+(`https://api.skia.org/classSkGradientShader.html`) remains available if a continuous-gradient TopoMap variant
+is ever wanted, but the band-path approach is what ships.
+
+**HeatMap (EXPERIMENTAL).** A true density heat map of the scattered measured points, rendered as **pure
+vector**: each measured point is drawn as a warm radial-gradient `SKShader` (semi-opaque hot core → transparent
+edge) with `SKBlendMode.Plus`, so overlapping points accumulate additively toward the hot end (dense clusters
+read hotter). No bitmap — each point is a `DrawCircle` with a radial shader, which `SKDocument.CreatePdf` /
+`SKSvgCanvas` emit as native radial shadings, so it scales cleanly in vector export. (The earlier two-pass
+bitmap sketch — `SKBlendMode.Plus` accumulation into a monochrome bitmap then `SKColorFilter.CreateTable` LUT —
+is rejected for the same rasterization reason.) Offered behind a fill-type selector — NOT the default — because
+it visualizes raw point density rather than the fitted FOM surface. Owner's framing: TopoMap is the preferred
+filled contour; HeatMap is exploratory for now.
+
+> **Future option (if HeatMap graduates from experimental):** the vector additive-bloom above reads as density
+> but cannot reproduce a true per-pixel multi-hue density LUT (blue→cyan→green→yellow→red) exactly — a precise
+> LUT is inherently raster. The one faithful route that is *also* vector is to **treat the density field as a
+> surface and TopoMap-fill it**: rasterize point density onto a grid (or evaluate a kernel-density surface),
+> then run the same marching-squares band-fill used for TopoMap. That yields the exact palette look as clean
+> vector bands. Deferred until HeatMap proves its keep — noted here so the path is on record.
+
+Both fills are **renderer-only** (Skia, `src/Ui`) and **all vector** (no `DrawBitmap`) so PDF/SVG export stays
+crisp at any scale — the headless `LoadpullSurface`/`ContourExtractor` stay colour-agnostic (they emit value
+grids + iso-polylines; colour mapping is a UI concern). This keeps the firewall intact and lets the fill
+palette be a pure UI/style choice.
+
 ---
 
 ## 3. Sub-phases
@@ -197,14 +236,25 @@ resample to a smooth sweep), with the reference's support-count guards (drop sli
 data-display.md headline gate). Verify against a held-out grid point (fit without it, synthesize at its Γ,
 compare to its measured drive-up).
 
-### 7.4d — contour iso-line renderer (UI / Skia)
-**Goal:** turn a resampled metric grid into drawn iso-lines on the Smith/Z substrate.
-**Deliverables:** `ContourExtractor` (marching squares → iso-polylines, headless RfCore) clipped to the Γ-disk
-(Smith) or the auto-box (Z-plane); Skia rendering of iso-lines with level labels; level-set specification
-(explicit levels, or N levels between min/max, or step). Integrate with the existing Smith/Polar/Rect
-substrates and the auto-view-box.
-**Gate:** reproduce a known contour set from a loadpull run, owner-verifiable against the Python/matplotlib
-reference; lines clip correctly to the Smith boundary.
+### 7.4d — contour renderer: iso-lines + filled contours (UI / Skia)
+**Goal:** turn a resampled metric grid into drawn **iso-lines** AND **filled contours** on the Smith/Z
+substrate.
+**Deliverables:**
+- `ContourExtractor` (marching squares → iso-polylines, headless RfCore) clipped to the Γ-disk (Smith) or the
+  auto-box (Z-plane); level-set specification (explicit levels, or N levels between min/max, or step).
+- Skia rendering of **iso-lines** with level labels.
+- Skia rendering of **filled contours**, two fill types (see §2.5):
+  - **TopoMap (PREFERRED)** — discrete elevation-style colour bands between the iso-levels, hard-edged via
+    duplicate gradient colour stops (`SkGradientShader` banding). The marching-squares iso-levels ARE the band
+    boundaries, so fill reuses the extractor output — no separate computation.
+  - **HeatMap (EXPERIMENTAL)** — true density heat map via a two-pass Skia approach (Pass 1: accumulate
+    radial-gradient intensity with `SKBlendMode.Plus` onto a monochrome bitmap; Pass 2: remap intensity →
+    multi-stop colour via `SKColorFilter.CreateTable` LUT). Marked experimental; ships behind a fill-type
+    selector, not the default.
+- Integrate with the existing Smith/Polar/Rect substrates and the auto-view-box.
+**Gate:** reproduce a known contour set from a loadpull run (owner-verifiable against the Python/matplotlib
+reference); iso-lines clip correctly to the Smith boundary; TopoMap fill bands align exactly with the iso-lines
+(shared boundaries); HeatMap renders a plausible density map behind a selector.
 
 ### 7.4e — contour trace card (inspector extension) + `.s1p` overlay
 **Goal:** author a contour trace end-to-end from the Data Display.
@@ -241,7 +291,9 @@ overlays; live edits re-extract + redraw.
 - **7.4b:** which FOMs are first-class (Pout/PAE/DE/Gt/Gp/AMPM …); compression type default (`Gmax` vs `Gss`);
   the auto-view-box VSWR inclusion factors.
 - **7.4c:** stack count / back-off span defaults (reference: 32 slices / 16 dB) and the min-support guard.
-- **7.4d:** level-set UX (explicit / N-between / step); label placement; Γ-disk clip robustness at the edge.
+- **7.4d:** level-set UX (explicit / N-between / step); label placement; Γ-disk clip robustness at the edge;
+  TopoMap band palette + colour-stop banding details; whether HeatMap intensity uses measured-point density or
+  the resampled surface; fill-type selector UX (lines / TopoMap / HeatMap, and lines-over-fill combos).
 - **7.4e:** how "@ constant other-metric = value" reads in the card; `.s1p` overlay styling.
 
 ---
