@@ -3,6 +3,20 @@
 Standing instructions for `src/Ui/DataDisplay`. Read with the root `CLAUDE.md`, `src/Ui/CLAUDE.md`,
 and `docs/design/data-display.md`.
 
+Harmonic stem plot (brief-datadisplay-harmonic-stem-plot, 2026-06-20) — COMPLETE: HB single-tone
+Rect traces whose X-axis is `"harmonic"` are rendered as discrete lollipop/stem plots instead of a
+connected polyline. **Detection:** `Trace.HarmonicAxisName = "harmonic"` (const); `Trace.IsHarmonicStem`
+(computed: `IsCubeBound && CubeXAxisName == "harmonic"`, Ordinal). **Wire-up:** `PlotRenderer.Draw`
+computes `stemMode = plotIsRect && trace.IsHarmonicStem` and passes it to `TraceRenderer.Draw`
+(`bool stemMode = false` default keeps all other callers byte-identical). **Rendering (TraceRenderer):**
+when `stemMode && props.LineEnabled`, replaces the connected-line branch with per-point stems: a
+vertical `DrawLine` from world-y=0 to the data point, capped by a filled triangle arrowhead pointing
+away from baseline (`dir = Sign(basePx.Y − tipPx.Y)`; head size `= Min(lw*3, Max(lw*0.5, stemLen*0.33))`).
+Separate `BuildStemPaint`/`BuildHeadPaint`/`DrawStem` helpers keep the implementation in one place for
+both single traces and family traces. Point markers remain additive. Autoscale option (A) chosen: stems
+clip at viewport floor; no autoscale Y-min extension. 3 gate tests in `HarmonicStemPlotTests.cs`
+(T1 harmonic=true, T2 freq=false, T3 SNP=false). Build 0W/0E; 1998 total tests pass.
+
 ## Slice grammar — one parser, two consumers
 
 **`SliceTokenParser`** (`SliceTokenParser.cs`) is the single authority for the per-axis bracket

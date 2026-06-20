@@ -42,11 +42,11 @@ public partial class ProjectTreeTool : Tool
     [ObservableProperty] private ProjectTreeNodeViewModel? _selectedItem;
 
     /// <summary>
-    /// Workspace folder name shown in the in-view header; resets to "No workspace" when
+    /// Workspace folder name shown in the in-view header; resets to "No workspace open" when
     /// no workspace is open.  A separate [ObservableProperty] because Tool.Title (Dock base)
     /// fires its own PropertyChanged which Avalonia compiled bindings don't reliably pick up.
     /// </summary>
-    [ObservableProperty] private string _workspaceName = "No workspace";
+    [ObservableProperty] private string _workspaceName = "No workspace open";
 
     /// <summary>True when a workspace is loaded; drives placeholder visibility in the view.</summary>
     public bool HasWorkspace => _workspaceModel is not null;
@@ -141,7 +141,7 @@ public partial class ProjectTreeTool : Tool
     public void ClearWorkspace()
     {
         _workspaceModel = null;
-        WorkspaceName = "No workspace";
+        WorkspaceName = "No workspace open";
         TopLevelItems = null;
         RootItems.Clear();
         OnPropertyChanged(nameof(HasWorkspace));

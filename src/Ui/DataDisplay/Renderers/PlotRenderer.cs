@@ -191,8 +191,10 @@ namespace CircuitRF.Ui.DataDisplay
             canvas.Save();
             canvas.ClipRect(ViewportClipRect(tf.Viewport, canvasSize));
 
+            bool plotIsRect = plot.PlotType == PlotType.Rect;
             foreach (var trace in plot.Traces)
-                TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme);
+                TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
+                    stemMode: plotIsRect && trace.IsHarmonicStem);
 
             if (plot.PlotType == PlotType.Rect)
                 foreach (var trace in plot.Traces)

@@ -216,8 +216,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Layout = layout;
         _factory.PaletteTool?.SetPlacementService(PlacementService);
 
+        // Load persisted preferences and seed the recent lists BEFORE wiring the tree.
+        // SetActions(this) triggers ProjectTreeTool.RefreshRecent(), which snapshots
+        // GetRecentWorkspaces() — so _recentWorkspaces must already be populated, or the
+        // no-workspace tree shows "No recent workspaces." on a fresh launch even though the
+        // File ▸ Open Recent menu (rebuilt below) is correct. (Close-workspace re-runs
+        // SetActions later when the list is populated, which is why this only bit cold start.)
+        var prefs         = AppPreferencesIo.Load();
+        _recentWorkspaces.AddRange(prefs.RecentWorkspaces ?? []);
+        _recentlyPlaced   = ParseMruPlaced(prefs.RecentlyPlaced);
+        _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        RebuildRecentMenuItems();
+
         // Wire tree-item actions before any workspace is loaded so actions are available
-        // the moment SetWorkspace builds the first VM tree.
+        // the moment SetWorkspace builds the first VM tree. RefreshRecent() now sees the
+        // populated recent list seeded above.
         _factory.ProjectTreeTool?.SetActions(this);
         SubscribeToFilterState();
         SubscribeToTreeSelection();
@@ -226,13 +239,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (_factory.DocumentDock is System.ComponentModel.INotifyPropertyChanged npc)
             npc.PropertyChanged += OnDocumentDockPropertyChanged;
         WireAnalysesRun();
-
-        // Load persisted preferences and seed the recent lists.
-        var prefs         = AppPreferencesIo.Load();
-        _recentWorkspaces.AddRange(prefs.RecentWorkspaces ?? []);
-        _recentlyPlaced   = ParseMruPlaced(prefs.RecentlyPlaced);
-        _factory.PaletteTool?.SetMru(_recentlyPlaced);
-        RebuildRecentMenuItems();
 
         // Wire close-tab prompt: before a dockable is removed, show Save/Don't Save/Cancel
         // for dirty/scratch documents. FactoryBase.DockableClosed fires from base.CloseDockable

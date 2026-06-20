@@ -21,7 +21,8 @@ namespace CircuitRF.Ui.DataDisplay
             (double W, double H) canvasSize,
             Trace                trace,
             TransformSet         tf,
-            RenderTheme          theme)
+            RenderTheme          theme,
+            bool                 stemMode = false)
         {
             float lw    = (float)(Math.Min(canvasSize.W, canvasSize.H) / 200.0);
             var   props = trace.Properties;
@@ -34,6 +35,17 @@ namespace CircuitRF.Ui.DataDisplay
                 if (!props.LineEnabled) return;
                 float strokeW   = lw * (float)props.LineWidth;
                 bool  useSecond = trace.UseSecondaryAxis;
+
+                if (stemMode)
+                {
+                    using var stemPaint = BuildStemPaint(props, lw, strokeW);
+                    using var headPaint = BuildHeadPaint(props);
+                    foreach (var curve in trace.FamilyCurves)
+                        foreach (var pt in curve.Points)
+                            DrawStem(canvas, tf, pt.X, pt.Y, useSecond, lw, strokeW, stemPaint, headPaint);
+                    return;
+                }
+
                 using var paint = new SKPaint
                 {
                     Color       = RenderTheme.ToSKColor(props.LineColor, props.LineOpacity),
@@ -59,9 +71,20 @@ namespace CircuitRF.Ui.DataDisplay
                 return;
             }
 
-            // ---- Line / curve ----
-            if (props.LineEnabled)
+            // ---- Stem plot (harmonic-index X-axis) ----
+            if (stemMode && props.LineEnabled)
             {
+                float     strokeW   = lw * (float)props.LineWidth;
+                bool      useSecond = trace.UseSecondaryAxis;
+                using var stemPaint = BuildStemPaint(props, lw, strokeW);
+                using var headPaint = BuildHeadPaint(props);
+                foreach (var pt in trace.Points)
+                    DrawStem(canvas, tf, pt.X, pt.Y, useSecond, lw, strokeW, stemPaint, headPaint);
+                // fall through to draw point markers as well if enabled
+            }
+            else if (props.LineEnabled)
+            {
+                // ---- Line / curve ----
                 float strokeW = lw * (float)props.LineWidth;
 
                 using var path  = BuildPath(trace, tf);
@@ -119,6 +142,66 @@ namespace CircuitRF.Ui.DataDisplay
                     }
                 }
             }
+        }
+
+        // ---- Stem rendering helpers ------------------------------------
+
+        private static SKPaint BuildStemPaint(TraceProperties props, float lw, float strokeW)
+            => new SKPaint
+            {
+                Color       = RenderTheme.ToSKColor(props.LineColor, props.LineOpacity),
+                StrokeWidth = strokeW,
+                Style       = SKPaintStyle.Stroke,
+                IsAntialias = true,
+                StrokeCap   = SKStrokeCap.Round,
+                PathEffect  = props.LineType == LineType.Dashed
+                    ? SKPathEffect.CreateDash(new[] { strokeW * 3f, strokeW * 2f }, 0)
+                    : null
+            };
+
+        private static SKPaint BuildHeadPaint(TraceProperties props)
+            => new SKPaint
+            {
+                Color       = RenderTheme.ToSKColor(props.LineColor, props.LineOpacity),
+                Style       = SKPaintStyle.Fill,
+                IsAntialias = true
+            };
+
+        private static void DrawStem(
+            SKCanvas     canvas,
+            TransformSet tf,
+            double       worldX,
+            double       worldY,
+            bool         useSecondary,
+            float        lw,
+            float        strokeW,
+            SKPaint      stemPaint,
+            SKPaint      headPaint)
+        {
+            var basePx = tf.ToCanvas(worldX, 0,      useSecondary);
+            var tipPx  = tf.ToCanvas(worldX, worldY, useSecondary);
+
+            float stemLenPx = Math.Abs(basePx.Y - tipPx.Y);
+
+            // dir > 0 when tip is above baseline in canvas space (positive world value)
+            float dir = Math.Sign(basePx.Y - tipPx.Y);
+            if (dir == 0) dir = 1;
+
+            // Arrowhead height keyed on strokeW so it scales with LineWidth.
+            // Floor at 2× strokeW guarantees the rounded cap (radius = strokeW/2) is
+            // always inside the triangle; cap at stemLen/3 so short stems stay clean.
+            float ah = Math.Max(strokeW * 2f, Math.Min(strokeW * 4f, stemLenPx * 0.33f));
+
+            // Terminate the stem at the arrowhead base so the filled triangle covers
+            // the line cap — prevents cap bleed above the apex.
+            canvas.DrawLine(basePx.X, basePx.Y, tipPx.X, tipPx.Y + dir * ah, stemPaint);
+
+            using var head = new SKPath();
+            head.MoveTo(tipPx.X,             tipPx.Y);
+            head.LineTo(tipPx.X - ah * 0.5f, tipPx.Y + dir * ah);
+            head.LineTo(tipPx.X + ah * 0.5f, tipPx.Y + dir * ah);
+            head.Close();
+            canvas.DrawPath(head, headPaint);
         }
 
         // ---- Path building ----------------------------------------------

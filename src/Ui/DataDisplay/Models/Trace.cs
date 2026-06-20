@@ -241,6 +241,14 @@ namespace CircuitRF.Ui.DataDisplay
         // one Message past it. Raise/lower here for perf testing.
         public const int MaxFamilyCurves = 101;
 
+        /// <summary>Axis name emitted by HbEngine for the single-tone spectral axis.
+        /// Matched case-sensitively against CubeXAxisName to drive stem rendering.</summary>
+        public const string HarmonicAxisName = "harmonic";
+
+        /// <summary>True when this trace's X-axis is harmonic index (HB spectrum) — drives stem rendering.</summary>
+        public bool IsHarmonicStem => IsCubeBound
+            && string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal);
+
         /// <summary>One curve of a family trace: its iterated-axis value (for the legend) + its points.</summary>
         public sealed class FamilyCurve
         {
