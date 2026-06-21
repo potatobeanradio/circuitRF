@@ -537,4 +537,48 @@ public class DataCubeTests
         ds.Add("V", cube);
         Assert.Throws<InvalidOperationException>(() => ds.V("anything", DataCube.All));
     }
+
+    // ---- CubeVaries tests (§10 / 7.4h-5) ---------------------------------
+
+    [Fact]
+    public void CubeVaries_ConstantRealCube_ReturnsFalse()
+    {
+        var axis = new Axis("gridPoint", new[] { 0.0, 1.0, 2.0 }, "");
+        var cube = new DataCube(new[] { axis }, new double[] { 3.14, 3.14, 3.14 });
+        Assert.False(DataCube.CubeVaries(cube));
+    }
+
+    [Fact]
+    public void CubeVaries_VaryingRealCube_ReturnsTrue()
+    {
+        var axis = new Axis("gridPoint", new[] { 0.0, 1.0, 2.0 }, "");
+        var cube = new DataCube(new[] { axis }, new double[] { 1.0, 2.0, 3.0 });
+        Assert.True(DataCube.CubeVaries(cube));
+    }
+
+    [Fact]
+    public void CubeVaries_LargeConstant_RelativeEpsilonNotMisjudged()
+    {
+        // A large constant value — absolute difference is 0, should still be false.
+        var axis = new Axis("gridPoint", new[] { 0.0, 1.0 }, "");
+        var cube = new DataCube(new[] { axis }, new double[] { 1e12, 1e12 });
+        Assert.False(DataCube.CubeVaries(cube));
+    }
+
+    [Fact]
+    public void CubeVaries_NaNOnlyCube_ReturnsFalse()
+    {
+        var axis = new Axis("gridPoint", new[] { 0.0, 1.0 }, "");
+        var cube = new DataCube(new[] { axis }, new double[] { double.NaN, double.NaN });
+        Assert.False(DataCube.CubeVaries(cube));
+    }
+
+    [Fact]
+    public void CubeVaries_VaryingComplexCube_ReturnsTrue()
+    {
+        var axis = new Axis("gridPoint", new[] { 0.0, 1.0 }, "");
+        var cube = new DataCube(new[] { axis },
+            new Complex[] { new Complex(1, 0), new Complex(2, 0) });
+        Assert.True(DataCube.CubeVaries(cube));
+    }
 }

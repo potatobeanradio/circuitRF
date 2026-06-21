@@ -686,6 +686,53 @@ namespace RfCore.Data
                 ? new DataCube(Array.Empty<Axis>(), buf, noCopy: true)
                 : new DataCube(outAxes, buf, noCopy: true);
         }
+
+        // ---- Variation check -------------------------------------------
+
+        /// <summary>
+        /// Returns true when the cube contains at least two values that differ
+        /// by more than <paramref name="epsilon"/> relative to the data scale,
+        /// i.e. the field carries information worth plotting.
+        /// NaN-only or empty cubes return false.
+        /// For Complex cubes the magnitude is used.
+        /// </summary>
+        public static bool CubeVaries(DataCube cube, double epsilon = 1e-9)
+        {
+            if (cube.DataKind == DataKind.Real)
+            {
+                var data = cube._realData;
+                if (data == null || data.Length == 0) return false;
+
+                double min = double.MaxValue, max = double.MinValue;
+                foreach (double v in data)
+                {
+                    if (double.IsNaN(v)) continue;
+                    if (v < min) min = v;
+                    if (v > max) max = v;
+                    // Early-out: clearly varies.
+                    if ((max - min) > epsilon * Math.Max(1.0, Math.Abs(max))) return true;
+                }
+                if (max == double.MinValue) return false;  // all NaN
+                return (max - min) > epsilon * Math.Max(1.0, Math.Abs(max));
+            }
+            else
+            {
+                var data = cube._complexData;
+                if (data == null || data.Length == 0) return false;
+
+                double min = double.MaxValue, max = double.MinValue;
+                foreach (var v in data)
+                {
+                    double m = v.Magnitude;
+                    if (double.IsNaN(m)) continue;
+                    if (m < min) min = m;
+                    if (m > max) max = m;
+                    if ((max - min) > epsilon * Math.Max(1.0, max)) return true;
+                }
+                if (max == double.MinValue) return false;
+                return (max - min) > epsilon * Math.Max(1.0, max);
+            }
+        }
     }
 
     // ============================================================

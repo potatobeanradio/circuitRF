@@ -64,7 +64,8 @@ namespace RfCore.Loadpull
         string      MetricY,
         ConstraintSpec Constraint,
         RbfKernel   Kernel,
-        double      Smooth);
+        double      Smooth,
+        double?     Epsilon = null);
 
     public sealed record SurfaceGrid(
         double[] XSpace,
@@ -153,9 +154,10 @@ namespace RfCore.Loadpull
         public LoadpullFit? Fit(
             int freqIdx, string metricY, ConstraintSpec constraint,
             SurfacePlane plane, double? z0 = null,
-            RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3)
+            RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3,
+            double? epsilon = null)
         {
-            var key = new FitKey(freqIdx, metricY, constraint, plane, z0, kernel, smooth);
+            var key = new FitKey(freqIdx, metricY, constraint, plane, z0, kernel, smooth, epsilon);
             if (_cache.TryGetValue(key, out var cached)) return cached;
 
             var reduction = Reduce(freqIdx, metricY, constraint, plane, z0);
@@ -166,8 +168,8 @@ namespace RfCore.Loadpull
                 return null;
             }
 
-            var rbf = new Rbf2D(reduction.Coords, reduction.Values, kernel, smooth);
-            var fit = new LoadpullFit(rbf, plane, z0, freqIdx, metricY, constraint, kernel, smooth);
+            var rbf = new Rbf2D(reduction.Coords, reduction.Values, kernel, smooth, epsilon);
+            var fit = new LoadpullFit(rbf, plane, z0, freqIdx, metricY, constraint, kernel, smooth, epsilon);
             _cache[key] = fit;
             return fit;
         }
@@ -177,14 +179,16 @@ namespace RfCore.Loadpull
         /// <summary>Max output power location (MXP): measured + interpolated Γ or Z.</summary>
         public MxxResult? MaxPower(
             int freqIdx, ConstraintSpec constraint,
-            SurfacePlane plane, double? z0 = null)
-            => GetMxx(freqIdx, "Pout", constraint, plane, z0);
+            SurfacePlane plane, double? z0 = null,
+            RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
+            => GetMxx(freqIdx, "Pout", constraint, plane, z0, kernel, smooth, epsilon);
 
         /// <summary>Max drain efficiency location (MXE): measured + interpolated Γ or Z.</summary>
         public MxxResult? MaxEfficiency(
             int freqIdx, ConstraintSpec constraint,
-            SurfacePlane plane, double? z0 = null)
-            => GetMxx(freqIdx, "DE", constraint, plane, z0);
+            SurfacePlane plane, double? z0 = null,
+            RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
+            => GetMxx(freqIdx, "DE", constraint, plane, z0, kernel, smooth, epsilon);
 
         // ── RecommendedBox ───────────────────────────────────────────────────
 
@@ -195,8 +199,8 @@ namespace RfCore.Loadpull
         public ViewBox RecommendedBox(LoadpullFit fit)
         {
             var fs        = _freqs[fit.FreqIdx];
-            var mxpResult = GetMxx(fit.FreqIdx, "Pout",  fit.Constraint, fit.Plane, fit.Z0);
-            var mxeResult = GetMxx(fit.FreqIdx, "DE",    fit.Constraint, fit.Plane, fit.Z0);
+            var mxpResult = GetMxx(fit.FreqIdx, "Pout", fit.Constraint, fit.Plane, fit.Z0, fit.Kernel, fit.Smooth, fit.Epsilon);
+            var mxeResult = GetMxx(fit.FreqIdx, "DE",   fit.Constraint, fit.Plane, fit.Z0, fit.Kernel, fit.Smooth, fit.Epsilon);
 
             // Measured-data bounding box (from RBF node coords)
             double minRe = double.MaxValue, maxRe = double.MinValue;
@@ -538,7 +542,8 @@ namespace RfCore.Loadpull
 
         private MxxResult? GetMxx(
             int freqIdx, string metricY, ConstraintSpec constraint,
-            SurfacePlane plane, double? z0)
+            SurfacePlane plane, double? z0,
+            RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
         {
             // Use Compression constraint for MXX regardless of caller constraint
             // (SPLData.get_MXX always uses constant_var='Compression' with the same val)
@@ -547,7 +552,7 @@ namespace RfCore.Loadpull
                 : new ConstraintSpec(ConstraintKind.Compression, "Compression",
                                      _freqs[freqIdx].RecommendedCompression);
 
-            var fit = Fit(freqIdx, metricY, mxxConstraint, plane, z0);
+            var fit = Fit(freqIdx, metricY, mxxConstraint, plane, z0, kernel, smooth, epsilon);
             if (fit == null || fit.Rbf.NodeCount == 0) return null;
 
             // 1. Measured peak = argmax over node values
@@ -1064,6 +1069,7 @@ namespace RfCore.Loadpull
             SurfacePlane  Plane,
             double?       Z0,
             RbfKernel     Kernel,
-            double        Smooth);
+            double        Smooth,
+            double?       Epsilon);
     }
 }

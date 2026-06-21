@@ -192,6 +192,38 @@ public class LoadpullSurfaceTests
         Assert.NotSame(fit3dB, fit1dB);
     }
 
+    // ── 7.4h-1a: epsilon cache ───────────────────────────────────────────────
+
+    [Fact]
+    public void Fit_DifferentEpsilonProducesDistinctCacheEntry()
+    {
+        var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc        = new LoadpullSurface(ds);
+        var constraint = ConstraintSpec.AtCompression(3.0);
+
+        var fitAuto   = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, epsilon: null);
+        var fitCustom = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, epsilon: 2.0);
+
+        Assert.NotNull(fitAuto);
+        Assert.NotNull(fitCustom);
+        Assert.NotSame(fitAuto, fitCustom);
+        Assert.Equal(2.0, fitCustom!.Epsilon);
+        Assert.Null(fitAuto!.Epsilon);
+    }
+
+    [Fact]
+    public void Fit_SameEpsilonReturnsCachedInstance()
+    {
+        var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc        = new LoadpullSurface(ds);
+        var constraint = ConstraintSpec.AtCompression(3.0);
+
+        var fit1 = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, epsilon: 1.5);
+        var fit2 = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, epsilon: 1.5);
+
+        Assert.Same(fit1, fit2);
+    }
+
     // ── 7.4b-3: Resample + MXP/MXE + view-box ───────────────────────────────
 
     [Fact]
@@ -398,5 +430,49 @@ public class LoadpullSurfaceTests
 
         Assert.True(scatter.Coords.Length > 0,
             "Expected ≥1 scatter coord from lpcwave at recommended compression");
+    }
+
+    // ── 7.4h-6 §2: MaxPower/MaxEfficiency forward kernel params ──────────────
+
+    [Fact]
+    public void MaxPower_DifferentKernels_ProduceDifferentInterpolatedPeak()
+    {
+        var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc = new LoadpullSurface(ds);
+        var constraint = ConstraintSpec.AtCompression(sfc.RecommendedCompression(0));
+
+        var mxpMQ = sfc.MaxPower(0, constraint, SurfacePlane.Gamma,
+            kernel: RbfKernel.Multiquadric);
+        var mxpTP = sfc.MaxPower(0, constraint, SurfacePlane.Gamma,
+            kernel: RbfKernel.ThinPlate);
+
+        // Both must find a result.
+        Assert.NotNull(mxpMQ);
+        Assert.NotNull(mxpTP);
+        // Interpolated peaks should differ between kernels (not numerically identical).
+        double distRe = Math.Abs(mxpMQ!.Interpolated.Real  - mxpTP!.Interpolated.Real);
+        double distIm = Math.Abs(mxpMQ!.Interpolated.Imaginary - mxpTP!.Interpolated.Imaginary);
+        Assert.True(distRe + distIm > 1e-9,
+            "MaxPower interpolated peak must vary with kernel choice");
+    }
+
+    [Fact]
+    public void MaxEfficiency_DifferentKernels_ProduceDifferentInterpolatedPeak()
+    {
+        var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc = new LoadpullSurface(ds);
+        var constraint = ConstraintSpec.AtCompression(sfc.RecommendedCompression(0));
+
+        var mxeMQ = sfc.MaxEfficiency(0, constraint, SurfacePlane.Gamma,
+            kernel: RbfKernel.Multiquadric);
+        var mxeTP = sfc.MaxEfficiency(0, constraint, SurfacePlane.Gamma,
+            kernel: RbfKernel.ThinPlate);
+
+        Assert.NotNull(mxeMQ);
+        Assert.NotNull(mxeTP);
+        double distRe = Math.Abs(mxeMQ!.Interpolated.Real  - mxeTP!.Interpolated.Real);
+        double distIm = Math.Abs(mxeMQ!.Interpolated.Imaginary - mxeTP!.Interpolated.Imaginary);
+        Assert.True(distRe + distIm > 1e-9,
+            "MaxEfficiency interpolated peak must vary with kernel choice");
     }
 }
