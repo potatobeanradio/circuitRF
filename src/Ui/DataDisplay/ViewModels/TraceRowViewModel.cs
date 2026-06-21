@@ -8,13 +8,18 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
+using Avalonia.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Material.Icons;
 using RfCore;
 using RfCore.Data;
 using RfCore.Loadpull;
+using SkiaSharp;
 using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.Theming;
+using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
@@ -59,6 +64,42 @@ public partial class TraceRowViewModel : ViewModelBase
     public ObservableCollection<string> AvailableMetrics     { get; } = new();
     public ObservableCollection<string> AvailableFrequencies { get; } = new();
 
+    // §7 — wrapper items for the const-metric combo so disabled items can grey out.
+    public record ConstraintMetricItem(string Name, bool IsEnabled);
+    public ObservableCollection<ConstraintMetricItem> ConstraintMetricOptions { get; } = new();
+
+    [ObservableProperty]
+    private ConstraintMetricItem? _selectedConstraintMetricItem;
+
+    partial void OnSelectedConstraintMetricItemChanged(ConstraintMetricItem? value)
+    {
+        if (_suppressContourCallback || value is null || _trace.ContourData is not { } cd) return;
+        cd.ConstraintMetricName = value.Name;
+        _suppressContourCallback = true;
+        ContourConstraintMetric = value.Name;
+        _suppressContourCallback = false;
+        RebuildContour();
+    }
+
+    private void RebuildConstraintMetricOptions()
+    {
+        ConstraintMetricOptions.Clear();
+        foreach (var m in AvailableMetrics)
+            ConstraintMetricOptions.Add(new ConstraintMetricItem(m, m != ContourMetricName));
+        // Sync current selection — pick first enabled if current is absent or same as primary.
+        var match = ConstraintMetricOptions.FirstOrDefault(i => i.Name == ContourConstraintMetric);
+        var select = (match?.IsEnabled ?? false) ? match
+                   : ConstraintMetricOptions.FirstOrDefault(i => i.IsEnabled);
+        _suppressContourCallback = true;
+        SelectedConstraintMetricItem = select;
+        _suppressContourCallback = false;
+        if (select is not null && string.IsNullOrEmpty(ContourConstraintMetric))
+        {
+            ContourConstraintMetric = select.Name;
+            if (_trace.ContourData is { } cd) cd.ConstraintMetricName = select.Name;
+        }
+    }
+
     [ObservableProperty] private string?          _contourMetricName;
     [ObservableProperty] private ConstraintKind   _contourConstraintKind = ConstraintKind.Compression;
     [ObservableProperty] private string           _contourConstraintMetric = "";
@@ -74,14 +115,48 @@ public partial class TraceRowViewModel : ViewModelBase
     [ObservableProperty] private bool             _contourShowLabels = true;
     [ObservableProperty] private ContourFillKind  _contourSelectedFillKind;
     [ObservableProperty] private ContourColorMap  _contourColorMap;
-    [ObservableProperty] private double           _contourLabelSpacing = 1.0;
+    [ObservableProperty] private double           _contourLabelSpacing = 30.0;
     [ObservableProperty] private bool             _contourOptionsExpanded;
+
+    // ---- New fields (7.4h-1b) -----------------------------------------------
+    [ObservableProperty] private bool      _contourDisplayMxp;
+    [ObservableProperty] private bool      _contourDisplayMxe;
+    [ObservableProperty] private bool      _contourDisplayGridPoints;
+    [ObservableProperty] private SKColor   _contourGridPointColor   = SKColors.Black;
+    [ObservableProperty] private SKColor   _contourLabelBackground  = SKColors.White;
+    [ObservableProperty] private SKColor   _contourLabelForeground  = SKColors.Black;
+    [ObservableProperty] private RbfKernel _contourInterpKernel     = RbfKernel.Multiquadric;
+    [ObservableProperty] private double    _contourSmoothing        = 1e-3;
+    [ObservableProperty] private double?   _contourEpsilon;
+
+    // ---- New fields (7.4h-3) -----------------------------------------------
+    [ObservableProperty] private double  _contourGridPointSize = 3.0;
+    [ObservableProperty] private double  _contourLevelFontSize = 9.0;
+    [ObservableProperty] private SKColor _contourLineColor     = new SKColor(255, 255, 255, 220);
+    [ObservableProperty] private bool    _contourFadeLineOpacity;
+
+    // ---- New fields (7.4h-4) -----------------------------------------------
+    [ObservableProperty] private double _contourStrokeWidth = 1.5;
 
     public bool IsCompressionConstraint    => ContourConstraintKind == ConstraintKind.Compression;
     public bool IsConstantMetricConstraint => ContourConstraintKind == ConstraintKind.ConstantMetric;
     public bool IsRangeLevelMode           => ContourLevelMode == ContourLevelMode.Range;
     public bool IsCountLevelMode           => ContourLevelMode == ContourLevelMode.Count;
     public bool ShowContourFreqPicker      => IsContourTrace && AvailableFrequencies.Count > 1;
+
+    // §16 — units label for the constraint value box.
+    public string ConstraintUnits => ContourConstraintKind == ConstraintKind.Compression
+        ? "dB"
+        : ConstraintMetricUnit(ContourConstraintMetric);
+
+    private static string ConstraintMetricUnit(string? metric) => metric switch
+    {
+        "Pout"                         => "dBm",
+        "Gain" or "Gt" or "Gp"        => "dB",
+        "DE" or "PAE" or "Efficiency"  => "%",
+        "AMPM"                         => "deg",
+        _                              => "",
+    };
 
     partial void OnContourMetricNameChanged(string? value)
     {
@@ -90,6 +165,7 @@ public partial class TraceRowViewModel : ViewModelBase
         var (s, step, stop) = ContourDefaults.LevelRange(cd.MetricName);
         cd.LevelStart = s; cd.LevelStep = step; cd.LevelStop = stop;
         SyncContourVmFromData(cd);
+        RebuildConstraintMetricOptions();  // §7: refresh enabled flags when primary metric changes
         RebuildContour();
     }
 
@@ -99,6 +175,21 @@ public partial class TraceRowViewModel : ViewModelBase
         cd.ContourConstraintKind = value;
         OnPropertyChanged(nameof(IsCompressionConstraint));
         OnPropertyChanged(nameof(IsConstantMetricConstraint));
+        OnPropertyChanged(nameof(ConstraintUnits));
+        // §8: when switching to ConstantMetric ensure a valid metric is selected.
+        if (value == ConstraintKind.ConstantMetric)
+        {
+            var first = ConstraintMetricOptions.FirstOrDefault(m => m.IsEnabled);
+            if (first is not null &&
+                (string.IsNullOrEmpty(cd.ConstraintMetricName) || cd.ConstraintMetricName == cd.MetricName))
+            {
+                _suppressContourCallback = true;
+                ContourConstraintMetric = first.Name;
+                SelectedConstraintMetricItem = first;
+                cd.ConstraintMetricName = first.Name;
+                _suppressContourCallback = false;
+            }
+        }
         RebuildContour();
     }
 
@@ -106,6 +197,7 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
         cd.ConstraintMetricName = value;
+        OnPropertyChanged(nameof(ConstraintUnits));
         RebuildContour();
     }
 
@@ -171,6 +263,7 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
         cd.ShowFill = value;
+        OnPropertyChanged(nameof(SelectedContourFill));
         _parent.Notify();
     }
 
@@ -187,6 +280,7 @@ public partial class TraceRowViewModel : ViewModelBase
         cd.SelectedFillKind = value;
         OnPropertyChanged(nameof(IsTopoMapFill));
         OnPropertyChanged(nameof(IsHeatMapFill));
+        OnPropertyChanged(nameof(SelectedContourFill));
         _parent.Notify();
     }
 
@@ -194,7 +288,7 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
         cd.ColorMap = value;
-        // DEFERRED: renderer ignores ColorMap until colormap ramp mapping is implemented.
+        cd.LineColorOverridden = false;
         _parent.Notify();
     }
 
@@ -202,8 +296,130 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
         cd.LabelSpacing = value;
-        // DEFERRED: richer label render with spacing is future work.
         _parent.Notify();
+    }
+
+    // ---- New display-toggle handlers (7.4h-1b) — no re-fit, just redraw ----
+
+    partial void OnContourDisplayMxpChanged(bool value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.DisplayMxp = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourDisplayMxeChanged(bool value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.DisplayMxe = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourDisplayGridPointsChanged(bool value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.DisplayGridPoints = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourGridPointColorChanged(SKColor value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.GridPointColor = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourLabelBackgroundChanged(SKColor value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LabelBackground = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourLabelForegroundChanged(SKColor value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LabelForeground = value;
+        _parent.Notify();
+    }
+
+    // ---- New display handlers (7.4h-3) — redraw only, no re-fit -----------
+
+    partial void OnContourGridPointSizeChanged(double value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.GridPointSize = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourLevelFontSizeChanged(double value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LevelFontSize = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourLineColorChanged(SKColor value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LineColor = value;
+        cd.LineColorOverridden = true;
+        _parent.Notify();
+    }
+
+    partial void OnContourFadeLineOpacityChanged(bool value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.FadeLineOpacity = value;
+        _parent.Notify();
+    }
+
+    partial void OnContourStrokeWidthChanged(double value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.StrokeWidth = (float)value;
+        _parent.Notify();
+    }
+
+    // ---- Engine-param handlers — re-fit on change --------------------------
+
+    partial void OnContourInterpKernelChanged(RbfKernel value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.InterpKernel = value;
+        RebuildContour();
+    }
+
+    partial void OnContourSmoothingChanged(double value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.Smoothing = value;
+        RebuildContour();
+    }
+
+    partial void OnContourEpsilonChanged(double? value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.Epsilon = value;
+        RebuildContour();
+    }
+
+    // ---- SelectedContourFill (VM-only; drives ShowFill + SelectedFillKind) --
+
+    public ContourFillSelection SelectedContourFill
+    {
+        get => ContourShowFill
+            ? (ContourSelectedFillKind == ContourFillKind.TopoMap
+                ? ContourFillSelection.Topography
+                : ContourFillSelection.Heatmap)
+            : ContourFillSelection.None;
+        set
+        {
+            ContourShowFill = value != ContourFillSelection.None;
+            if (value == ContourFillSelection.Topography) ContourSelectedFillKind = ContourFillKind.TopoMap;
+            else if (value == ContourFillSelection.Heatmap) ContourSelectedFillKind = ContourFillKind.HeatMap;
+            OnPropertyChanged();
+        }
     }
 
     private void RebuildContour()
@@ -224,7 +440,8 @@ public partial class TraceRowViewModel : ViewModelBase
             ? SurfacePlane.Gamma
             : SurfacePlane.Z;
 
-        var fit = surface.Fit(freqIdx, cd.MetricName, constraint, plane);
+        var fit = surface.Fit(freqIdx, cd.MetricName, constraint, plane,
+            kernel: cd.InterpKernel, smooth: cd.Smoothing, epsilon: cd.Epsilon);
         if (fit is null) { ClearContourGrid(cd); return; }
 
         var grid    = surface.Resample(fit);
@@ -249,14 +466,22 @@ public partial class TraceRowViewModel : ViewModelBase
         cd.Scatter = scatter;
         cd.Levels  = levels;
 
+        // Cache MXP / MXE for the renderer (surface stays out of renderer path).
+        cd.MxpCoord = surface.MaxPower(freqIdx, constraint, plane,
+            kernel: cd.InterpKernel, smooth: cd.Smoothing, epsilon: cd.Epsilon)?.Measured;
+        cd.MxeCoord = surface.MaxEfficiency(freqIdx, constraint, plane,
+            kernel: cd.InterpKernel, smooth: cd.Smoothing, epsilon: cd.Epsilon)?.Measured;
+
         _parent.Notify();
     }
 
     private static void ClearContourGrid(ContourData cd)
     {
-        cd.Grid    = null;
-        cd.Scatter = null;
-        cd.Levels  = new ContourLevelSet(Array.Empty<double>());
+        cd.Grid     = null;
+        cd.Scatter  = null;
+        cd.Levels   = new ContourLevelSet(Array.Empty<double>());
+        cd.MxpCoord = null;
+        cd.MxeCoord = null;
     }
 
     private bool EnsureLoadpullSurface()
@@ -303,13 +528,63 @@ public partial class TraceRowViewModel : ViewModelBase
         AvailableMetrics.Clear();
         var entry = _parent.Library?.SelectedEntry;
         if (entry?.Data is not { } ds) return;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var candidates = new List<(string Key, int Priority)>();
+
         foreach (var group in ds.Groups)
             foreach (var kvp in ds.CubesIn(group))
             {
-                if (kvp.Key == "GammaLoad" || kvp.Key.StartsWith("__", StringComparison.Ordinal)) continue;
-                if (kvp.Value.Axes.Any(a => a.Name == "gridPoint") && !AvailableMetrics.Contains(kvp.Key))
-                    AvailableMetrics.Add(kvp.Key);
+                string key = kvp.Key;
+                if (key == "GammaLoad" || key.StartsWith("__", StringComparison.Ordinal)) continue;
+                if (!kvp.Value.Axes.Any(a => a.Name == "gridPoint")) continue;
+                if (!seen.Add(key)) continue;
+                // §10 — skip fields that don't vary (constant across the sweep).
+                if (!DataCube.CubeVaries(kvp.Value)) continue;
+                candidates.Add((key, MetricPriority(key)));
             }
+
+        // §9 — priority sort, then alphabetical within the same priority bucket.
+        candidates.Sort((a, b) =>
+        {
+            int c = a.Priority.CompareTo(b.Priority);
+            return c != 0 ? c : string.Compare(a.Key, b.Key, StringComparison.OrdinalIgnoreCase);
+        });
+
+        foreach (var (key, _) in candidates)
+            AvailableMetrics.Add(key);
+
+        RebuildConstraintMetricOptions();  // §7: refresh disabled-items list
+    }
+
+    // §9 — alias-normalization + priority table.
+    // Respects vendor labels in the displayed text; only controls sort order.
+    private static int MetricPriority(string key)
+    {
+        string norm = key.EndsWith("_dB", StringComparison.OrdinalIgnoreCase)
+            ? key[..^3].ToLowerInvariant()
+            : key.ToLowerInvariant();
+        norm = norm.Trim();
+
+        // 1. Pout
+        if (norm == "pout") return 1;
+        // 2. Efficiency / Drain Efficiency
+        if (norm is "efficiency" or "de" or "deff" or "eff" or "drainedf" or "draineff") return 2;
+        // 3. Gain (Gt) — match exact stem "gt" not "gp"
+        if (norm is "gt" or "gain") return 3;
+        // 4. AM/PM
+        if (norm is "ampm" or "trans_phase" or "transmission phase" or "transphase") return 4;
+        // 5. (deferred — curvilinear angle; reserved slot, treated as low priority)
+        // 6. PAE
+        if (norm == "pae") return 6;
+        // 7. Gp (Power Gain) — exact stem "gp" only
+        if (norm is "gp") return 7;
+        // 8. Zin_real
+        if (norm is "zin_real") return 8;
+        // 9. Zin_imag
+        if (norm is "zin_imag") return 9;
+        // 10. Everything else — alphabetical (use high priority number + string sort handles rest)
+        return 100;
     }
 
     private void RebuildFrequencyList()
@@ -328,6 +603,48 @@ public partial class TraceRowViewModel : ViewModelBase
         ContourLevelStep  = cd.LevelStep;
         ContourLevelStop  = cd.LevelStop;
         _suppressContourCallback = false;
+    }
+
+    private static Rgba SkColorToRgba(SKColor c) => new Rgba(c.Red, c.Green, c.Blue, c.Alpha);
+    private static SKColor RgbaToSkColor(Rgba r)  => new SKColor(r.R, r.G, r.B, r.A);
+
+    private async Task<Rgba?> ShowColorPickerAsync(Rgba initial)
+    {
+        var owner = _parent.GetOwnerWindow?.Invoke();
+        if (owner is null) return null;
+        _parent.RaiseColorPickStarted();
+        try
+        {
+            return await new ColorPickerDialog(initial).ShowDialog<Rgba?>(owner);
+        }
+        finally
+        {
+            _parent.RaiseColorPickEnded();
+        }
+    }
+
+    private async Task PickGridPointColorAsync()
+    {
+        var result = await ShowColorPickerAsync(SkColorToRgba(ContourGridPointColor));
+        if (result is { } rgba) ContourGridPointColor = RgbaToSkColor(rgba);
+    }
+
+    private async Task PickLabelBgColorAsync()
+    {
+        var result = await ShowColorPickerAsync(SkColorToRgba(ContourLabelBackground));
+        if (result is { } rgba) ContourLabelBackground = RgbaToSkColor(rgba);
+    }
+
+    private async Task PickLabelFgColorAsync()
+    {
+        var result = await ShowColorPickerAsync(SkColorToRgba(ContourLabelForeground));
+        if (result is { } rgba) ContourLabelForeground = RgbaToSkColor(rgba);
+    }
+
+    private async Task PickLineColorAsync()
+    {
+        var result = await ShowColorPickerAsync(SkColorToRgba(ContourLineColor));
+        if (result is { } rgba) ContourLineColor = RgbaToSkColor(rgba);
     }
 
     // ---- Cube-bound discriminators (Phase 7.2c-a) --------------------------
@@ -1043,11 +1360,27 @@ public partial class TraceRowViewModel : ViewModelBase
     public IRelayCommand SetHeatMapFillCommand            { get; private set; } = null!;
     public IRelayCommand ToggleOptionsCommand             { get; private set; } = null!;
 
+    public IRelayCommand ToggleMxpCommand            { get; private set; } = null!;
+    public IRelayCommand ToggleMxeCommand            { get; private set; } = null!;
+    public IRelayCommand ToggleDisplayGridPtsCommand { get; private set; } = null!;
+
+    public IAsyncRelayCommand PickGridPointColorCommand { get; private set; } = null!;
+    public IAsyncRelayCommand PickLabelBgColorCommand   { get; private set; } = null!;
+    public IAsyncRelayCommand PickLabelFgColorCommand   { get; private set; } = null!;
+    public IAsyncRelayCommand PickLineColorCommand       { get; private set; } = null!;
+    public IRelayCommand      ToggleFadeLineOpacityCommand { get; private set; } = null!;
+
     public bool IsTopoMapFill => ContourSelectedFillKind == ContourFillKind.TopoMap;
     public bool IsHeatMapFill => ContourSelectedFillKind == ContourFillKind.HeatMap;
 
-    public static IReadOnlyList<ContourColorMap> AllContourColorMaps { get; } =
+    public static IReadOnlyList<ContourColorMap>      AllContourColorMaps { get; } =
         Enum.GetValues<ContourColorMap>().ToList();
+
+    public static IReadOnlyList<RbfKernel>            AllRbfKernels { get; } =
+        Enum.GetValues<RbfKernel>().ToList();
+
+    public static IReadOnlyList<ContourFillSelection> ContourFillOptions { get; } =
+        Enum.GetValues<ContourFillSelection>().ToList();
 
     // ---- Constructor --------------------------------------------------------
 
@@ -1109,6 +1442,16 @@ public partial class TraceRowViewModel : ViewModelBase
         SetHeatMapFillCommand            = new RelayCommand(() => ContourSelectedFillKind = ContourFillKind.HeatMap);
         ToggleOptionsCommand             = new RelayCommand(() => ContourOptionsExpanded  = !ContourOptionsExpanded);
 
+        ToggleMxpCommand            = new RelayCommand(() => ContourDisplayMxp        = !ContourDisplayMxp);
+        ToggleMxeCommand            = new RelayCommand(() => ContourDisplayMxe        = !ContourDisplayMxe);
+        ToggleDisplayGridPtsCommand = new RelayCommand(() => ContourDisplayGridPoints = !ContourDisplayGridPoints);
+
+        PickGridPointColorCommand    = new AsyncRelayCommand(PickGridPointColorAsync);
+        PickLabelBgColorCommand      = new AsyncRelayCommand(PickLabelBgColorAsync);
+        PickLabelFgColorCommand      = new AsyncRelayCommand(PickLabelFgColorAsync);
+        PickLineColorCommand         = new AsyncRelayCommand(PickLineColorAsync);
+        ToggleFadeLineOpacityCommand = new RelayCommand(() => ContourFadeLineOpacity = !ContourFadeLineOpacity);
+
         // Initialize contour VM fields from ContourData (if this is a contour trace).
         if (trace.ContourData is { } cd)
         {
@@ -1128,6 +1471,20 @@ public partial class TraceRowViewModel : ViewModelBase
             _contourSelectedFillKind = cd.SelectedFillKind;
             _contourColorMap         = cd.ColorMap;
             _contourLabelSpacing     = cd.LabelSpacing;
+            _contourDisplayMxp        = cd.DisplayMxp;
+            _contourDisplayMxe        = cd.DisplayMxe;
+            _contourDisplayGridPoints = cd.DisplayGridPoints;
+            _contourGridPointColor    = cd.GridPointColor;
+            _contourLabelBackground   = cd.LabelBackground;
+            _contourLabelForeground   = cd.LabelForeground;
+            _contourInterpKernel      = cd.InterpKernel;
+            _contourSmoothing         = cd.Smoothing;
+            _contourEpsilon           = cd.Epsilon;
+            _contourGridPointSize     = cd.GridPointSize;
+            _contourLevelFontSize     = cd.LevelFontSize;
+            _contourLineColor         = cd.LineColor;
+            _contourFadeLineOpacity   = cd.FadeLineOpacity;
+            _contourStrokeWidth       = cd.StrokeWidth;
             // Build surface and populate metric/frequency lists; trigger initial fit.
             if (EnsureLoadpullSurface())
                 RebuildContour();

@@ -23,6 +23,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using CircuitRF.Ui.Renderers;
 using RfCore.Loadpull;
 using SkiaSharp;
@@ -51,14 +52,30 @@ namespace CircuitRF.Ui.DataDisplay
             SKCanvas        canvas,
             SurfaceGrid     grid,
             ContourLevelSet levels,
-            TransformSet    tf)
+            TransformSet    tf,
+            ContourColorMap colorMap = ContourColorMap.Hot,
+            SurfacePlane    plane    = SurfacePlane.Gamma)
         {
             if (levels.Levels.Length == 0) return;
             int res = grid.XSpace.Length;
             if (res < 2 || grid.YSpace.Length != res) return;
 
             int nBands  = levels.Levels.Length + 1;
-            var palette = BuildTopoPalette(nBands);
+            var palette = BuildPalette(nBands, colorMap);
+
+            // §1: on Smith/Polar (Γ-plane) clip to the unit disk so the fill has a
+            // clean circular edge rather than ragged NaN-cell gaps at the boundary.
+            bool needsClip = plane == SurfacePlane.Gamma;
+            if (needsClip)
+            {
+                canvas.Save();
+                var center = tf.ToCanvas(0.0, 0.0, useSecondary: false);
+                var edge   = tf.ToCanvas(1.0, 0.0, useSecondary: false);
+                float radius = Math.Abs(edge.X - center.X) * 1.02f;
+                using var circlePath = new SKPath();
+                circlePath.AddCircle(center.X, center.Y, radius);
+                canvas.ClipPath(circlePath, antialias: true);
+            }
 
             // Composite all bands opaquely among themselves, then apply one global
             // alpha so the grid underneath shows through without inter-band blending.
@@ -78,7 +95,10 @@ namespace CircuitRF.Ui.DataDisplay
                 canvas.DrawPath(path, paint);
             }
 
-            canvas.Restore();
+            canvas.Restore();  // pairs with SaveLayer
+
+            if (needsClip)
+                canvas.Restore();  // pairs with Save/ClipPath
         }
 
         /// <summary>Global translucency of the TopoMap fill over the grid (0–255).</summary>
@@ -200,7 +220,7 @@ namespace CircuitRF.Ui.DataDisplay
         // ================================================================
 
         /// <summary>
-        /// Stroke each polyline world→canvas and optionally label every line.
+        /// Stroke each polyline world-to-canvas and optionally label every line.
         /// Must be called inside PlotRenderer's viewport clip.
         /// </summary>
         public static void DrawIsoLines(
@@ -209,41 +229,80 @@ namespace CircuitRF.Ui.DataDisplay
             IReadOnlyList<IsoPolyline> polylines,
             TransformSet               tf,
             SKColor                    lineColor,
+            bool                       lineColorOverridden,
             float                      strokeWidth,
-            bool                       drawLabels)
+            bool                       drawLabels,
+            SKColor                    labelBg,
+            SKColor                    labelFg,
+            double                     labelSpacing,
+            ContourColorMap            colorMap        = ContourColorMap.Hot,
+            float                      levelFontSize   = 9f,
+            bool                       fadeLineOpacity = false,
+            float                      zoomLevel       = 1f)
         {
             if (polylines == null || polylines.Count == 0) return;
 
+            // Pre-compute level range — needed for both §E colormap contrast and fade.
+            double minLevel = double.MaxValue, maxLevel = double.MinValue;
+            foreach (var pl in polylines)
+            {
+                if (pl.Level < minLevel) minLevel = pl.Level;
+                if (pl.Level > maxLevel) maxLevel = pl.Level;
+            }
+            double levelRange = Math.Max(maxLevel - minLevel, 1e-9);
+
             using var linePaint = new SKPaint
             {
-                Color       = lineColor,
                 StrokeWidth = strokeWidth,
                 IsAntialias = true,
                 Style       = SKPaintStyle.Stroke,
                 StrokeCap   = SKStrokeCap.Round,
                 StrokeJoin  = SKStrokeJoin.Round,
             };
+            using var labelFont  = new SKFont(SkiaFonts.PlexRegular, levelFontSize);
+            using var labelPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
+            using var bgPaint    = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
+            using var bgStroke   = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 0.75f };
 
-            using var labelFont  = new SKFont(SkiaFonts.PlexRegular, 8f);
-            using var labelPaint = new SKPaint
-            {
-                Color       = lineColor,
-                IsAntialias = true,
-                Style       = SKPaintStyle.Fill,
-            };
-            using var bgPaint = new SKPaint
-            {
-                Color       = new SKColor(0, 0, 0, 140),
-                IsAntialias = false,
-                Style       = SKPaintStyle.Fill,
-            };
+            // §3 — label positions are world-unit based so they don't shift on zoom.
+            // spacingW is in world coordinates; a canvas-px guard keeps labels off tiny paths.
+            const float  minLabelLenPx = 30f;
+            double spacingW = Math.Max(labelSpacing, 1e-6);
 
-            float minLabelLen = 30f;  // skip label on polylines shorter than this (canvas px)
+            // §5 — one line color for all iso-lines (per-level variation removed).
+            // Derive a single high-contrast color from the colormap midpoint before the loop.
+            SKColor baseLineColor;
+            if (lineColorOverridden)
+            {
+                baseLineColor = lineColor;
+            }
+            else
+            {
+                var mapColor = ContourColormaps.Sample(colorMap, 0.5);
+                float lum = (0.299f * mapColor.Red + 0.587f * mapColor.Green + 0.114f * mapColor.Blue) / 255f;
+                byte hi = lum > 0.5f ? (byte)0 : (byte)255;
+                byte r = LerpByte(mapColor.Red,   hi, 0.5);
+                byte g = LerpByte(mapColor.Green, hi, 0.5);
+                byte b = LerpByte(mapColor.Blue,  hi, 0.5);
+                baseLineColor = new SKColor(r, g, b, lineColor.Alpha);
+            }
+
+            int ringIndex = 0;  // stagger counter across all labelled polylines
 
             foreach (var pl in polylines)
             {
                 var pts = pl.Points;
                 if (pts.Count < 2) continue;
+
+                // Apply fade alpha on top of base colour.
+                float fadeF = 1.0f;
+                if (fadeLineOpacity)
+                {
+                    double tFade = (maxLevel - pl.Level) / levelRange;  // 0=peak, 1=edge
+                    fadeF = (float)Math.Max(0.0, 1.0 - tFade);
+                }
+                linePaint.Color  = baseLineColor.WithAlpha((byte)Math.Round(baseLineColor.Alpha * fadeF));
+                labelPaint.Color = labelFg.WithAlpha((byte)Math.Round(labelFg.Alpha * fadeF));
 
                 using var path = new SKPath();
                 var p0 = tf.ToCanvas(pts[0].X, pts[0].Y, useSecondary: false);
@@ -251,27 +310,65 @@ namespace CircuitRF.Ui.DataDisplay
                 for (int i = 1; i < pts.Count; i++)
                     path.LineTo(tf.ToCanvas(pts[i].X, pts[i].Y, useSecondary: false));
                 if (pl.Closed) path.Close();
-
                 canvas.DrawPath(path, linePaint);
 
                 if (drawLabels)
                 {
-                    int mid = pts.Count / 2;
-                    var pm  = tf.ToCanvas(pts[mid].X, pts[mid].Y, useSecondary: false);
-
+                    // Canvas-px guard: skip paths too short to read (zoom-invariant intent).
                     float length = PathCanvasLength(pts, tf);
-                    if (length < minLabelLen) continue;
+                    if (length < minLabelLenPx) { ringIndex++; continue; }
 
-                    string label = FormatLevel(pl.Level);
-                    float tw = labelFont.MeasureText(label);
-                    float th = 8f;
-                    var  bg  = new SKRect(pm.X - tw / 2 - 2, pm.Y - th - 1, pm.X + tw / 2 + 2, pm.Y + 2);
+                    string labelText = FormatLevel(pl.Level);
+                    float  tw        = labelFont.MeasureText(labelText);
+                    float  th        = levelFontSize;
 
-                    canvas.DrawRect(bg, bgPaint);
-                    canvas.DrawText(label, pm.X, pm.Y, SKTextAlign.Center, labelFont, labelPaint);
+                    // Stagger start per ring in world-unit fractions.
+                    double startFrac = 0.5 + 0.18 * ((ringIndex % 3) - 1);
+                    startFrac = Math.Max(0.15, Math.Min(0.85, startFrac));
+                    double targetArcW = startFrac * spacingW;
+
+                    // §3 — walk in world coordinates; convert to canvas only when drawing.
+                    double arcSoFarW  = 0.0;
+                    double prevWx     = pts[0].X, prevWy = pts[0].Y;
+
+                    for (int i = 1; i < pts.Count; i++)
+                    {
+                        double curWx  = pts[i].X, curWy = pts[i].Y;
+                        double dx     = curWx - prevWx, dy = curWy - prevWy;
+                        double segLen = Math.Sqrt(dx * dx + dy * dy);
+                        double segEnd = arcSoFarW + segLen;
+
+                        while (targetArcW <= segEnd)
+                        {
+                            double t_seg = segLen > 0.0 ? (targetArcW - arcSoFarW) / segLen : 0.0;
+                            double pmWx  = prevWx + t_seg * dx;
+                            double pmWy  = prevWy + t_seg * dy;
+                            var    pm    = tf.ToCanvas(pmWx, pmWy, useSecondary: false);
+
+                            bgPaint.Color  = labelBg.WithAlpha((byte)Math.Round(labelBg.Alpha * fadeF));
+                            bgStroke.Color = new SKColor(0, 0, 0, (byte)Math.Round(120 * fadeF));
+                            var bg = new SKRect(pm.X - tw / 2 - 2, pm.Y - th - 1,
+                                                pm.X + tw / 2 + 2, pm.Y + 2);
+                            canvas.DrawRect(bg, bgPaint);
+                            canvas.DrawRect(bg, bgStroke);
+                            canvas.DrawText(labelText, pm.X, pm.Y,
+                                            SKTextAlign.Center, labelFont, labelPaint);
+
+                            targetArcW += spacingW;
+                        }
+
+                        arcSoFarW = segEnd;
+                        prevWx    = curWx;
+                        prevWy    = curWy;
+                    }
+
+                    ringIndex++;
                 }
             }
         }
+
+        private static byte LerpByte(byte a, byte b, double t)
+            => (byte)Math.Round(a + (b - a) * t);
 
         // ================================================================
         //  HeatMap fill  (§4 in brief — experimental) — VECTOR
@@ -289,14 +386,12 @@ namespace CircuitRF.Ui.DataDisplay
             (double W, double H) canvasSize,
             ScatterReduction     scatter,
             TransformSet         tf,
+            ContourColorMap      colorMap    = ContourColorMap.Hot,
             float                pointRadius = 28f)
         {
             if (scatter.Coords.Length == 0) return;
 
-            // Per-point bloom: a translucent warm radial gradient. Additive blend
-            // means dense clusters sum to brighter/hotter; sparse points stay dim.
-            // Colours chosen so a single point reads cool-ish and overlaps saturate
-            // toward red (the classic density ramp), achieved purely by additive RGB.
+            // Per-point bloom: additive radial gradients in the chosen colormap hue.
             using var paint = new SKPaint
             {
                 IsAntialias = true,
@@ -304,13 +399,13 @@ namespace CircuitRF.Ui.DataDisplay
                 BlendMode   = SKBlendMode.Plus,
             };
 
-            // Gradient stops: warm core fading to transparent. Alpha kept modest so
-            // ~3-4 overlaps approach full saturation.
+            var coreRgb = ContourColormaps.Sample(colorMap, 1.0);
+            var midRgb  = ContourColormaps.Sample(colorMap, 0.6);
             var colors = new SKColor[]
             {
-                new SKColor(180,  40,  10, 120),  // core (adds red strongly)
-                new SKColor( 60,  90,  20,  70),  // mid  (adds some green → yellows on overlap)
-                new SKColor(  0,   0,   0,   0),  // transparent edge
+                new SKColor(coreRgb.Red, coreRgb.Green, coreRgb.Blue, 120),
+                new SKColor(midRgb.Red,  midRgb.Green,  midRgb.Blue,  70),
+                new SKColor(0, 0, 0, 0),
             };
             var stops = new float[] { 0f, 0.5f, 1f };
 
@@ -326,40 +421,98 @@ namespace CircuitRF.Ui.DataDisplay
         }
 
         // ================================================================
+        //  Grid-point dots and optima markers
+        // ================================================================
+
+        /// <summary>Draw a small dot at each original measured loadpull point.</summary>
+        public static void DrawGridPoints(
+            SKCanvas         canvas,
+            ScatterReduction scatter,
+            TransformSet     tf,
+            SKColor          color,
+            float            pointRadius = 2.5f)
+        {
+            if (scatter.Coords.Length == 0) return;
+            using var paint = new SKPaint { Color = color, Style = SKPaintStyle.Fill, IsAntialias = true };
+            foreach (var coord in scatter.Coords)
+            {
+                var pt = tf.ToCanvas(coord.Real, coord.Imaginary, useSecondary: false);
+                canvas.DrawCircle(pt, pointRadius, paint);
+            }
+        }
+
+        /// <summary>Draw MXP / MXE circle markers if enabled and coords are available.</summary>
+        public static void DrawOptimaMarkers(
+            SKCanvas canvas, ContourData cd, TransformSet tf, float zoomLevel = 1f)
+        {
+            if (cd.DisplayMxp && cd.MxpCoord is { } mxp)
+                DrawOptimumMarker(canvas, mxp, 'P', MxpAccent(cd.ColorMap), tf, zoomLevel);
+            if (cd.DisplayMxe && cd.MxeCoord is { } mxe)
+                DrawOptimumMarker(canvas, mxe, 'E', MxeAccent(cd.ColorMap), tf, zoomLevel);
+        }
+
+        private static void DrawOptimumMarker(
+            SKCanvas canvas, Complex coord, char letter, SKColor accent, TransformSet tf,
+            float zoomLevel = 1f)
+        {
+            var pt = tf.ToCanvas(coord.Real, coord.Imaginary, useSecondary: false);
+            // Constant canvas-px sizes — zoom-independent (round-5 division removed §10).
+            float r  = 7f;
+            float sw = 1.5f;
+            float fs = 9f;
+
+            // Filled circle
+            using var fill = new SKPaint { Color = accent, IsAntialias = true, Style = SKPaintStyle.Fill };
+            canvas.DrawCircle(pt, r, fill);
+
+            // Black ring
+            using var ring = new SKPaint
+                { Color = SKColors.Black, StrokeWidth = sw, IsAntialias = true, Style = SKPaintStyle.Stroke };
+            canvas.DrawCircle(pt, r, ring);
+
+            // Centered letter — luminance-based contrast colour
+            float lum = (0.299f * accent.Red + 0.587f * accent.Green + 0.114f * accent.Blue) / 255f;
+            var   textColor = lum > 0.5f ? SKColors.Black : SKColors.White;
+
+            using var font    = new SKFont(SkiaFonts.PlexBold, fs);
+            var       metrics = font.Metrics;
+            float     baselineY = pt.Y - (metrics.Ascent + metrics.Descent) / 2f;
+
+            using var textPaint = new SKPaint { Color = textColor, IsAntialias = true };
+            canvas.DrawText(letter.ToString(), pt.X, baselineY, SKTextAlign.Center, font, textPaint);
+        }
+
+        private static SKColor MxpAccent(ContourColorMap colorMap)
+            => EnsureBright(ContourColormaps.Sample(colorMap, 0.15));
+
+        private static SKColor MxeAccent(ContourColorMap colorMap)
+            => EnsureBright(ContourColormaps.Sample(colorMap, 0.85));
+
+        private static SKColor EnsureBright(SKColor c)
+        {
+            // Mix 60% toward white so the accent is always legible on the fill.
+            byte r = (byte)(c.Red   + (255 - c.Red)   * 0.6f);
+            byte g = (byte)(c.Green + (255 - c.Green) * 0.6f);
+            byte b = (byte)(c.Blue  + (255 - c.Blue)  * 0.6f);
+            return new SKColor(r, g, b, 255);
+        }
+
+        // ================================================================
         //  Helpers
         // ================================================================
 
-        // Build a palette of nBands OPAQUE colours: blue (low) → red (high).
+        // Build a palette of nBands OPAQUE colours from the selected colormap.
         // Opaque because DrawTopoMapFill composites bands through one SaveLayer
         // alpha (TopoLayerAlpha); per-band translucency would double-dip.
-        private static SKColor[] BuildTopoPalette(int nBands)
+        private static SKColor[] BuildPalette(int nBands, ContourColorMap colorMap)
         {
             var c = new SKColor[nBands];
             for (int i = 0; i < nBands; i++)
             {
-                float t = nBands > 1 ? (float)i / (nBands - 1) : 0f;
-                // Hue 240° (blue) → 0° (red) as value increases.
-                float hue = (1f - t) * 240f;
-                var (r, g, b) = HsvToRgb(hue, 0.85f, 0.90f);
-                c[i] = new SKColor((byte)(r * 255), (byte)(g * 255), (byte)(b * 255), 255);
+                double t = nBands > 1 ? (double)i / (nBands - 1) : 0.0;
+                c[i] = ContourColormaps.Sample(colorMap, t);
             }
             return c;
-        }
-
-        private static (float R, float G, float B) HsvToRgb(float h, float s, float v)
-        {
-            h = ((h % 360f) + 360f) % 360f;
-            float c = v * s;
-            float x = c * (1f - Math.Abs(h / 60f % 2f - 1f));
-            float m = v - c;
-            float r, g, b;
-            if      (h <  60f) { r = c; g = x; b = 0; }
-            else if (h < 120f) { r = x; g = c; b = 0; }
-            else if (h < 180f) { r = 0; g = c; b = x; }
-            else if (h < 240f) { r = 0; g = x; b = c; }
-            else if (h < 300f) { r = x; g = 0; b = c; }
-            else               { r = c; g = 0; b = x; }
-            return (r + m, g + m, b + m);
         }
 
         private static float PathCanvasLength(IReadOnlyList<(double X, double Y)> pts, TransformSet tf)

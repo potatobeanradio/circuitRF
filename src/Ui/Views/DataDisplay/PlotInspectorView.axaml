@@ -15,8 +15,9 @@
     </Design.DataContext>
 
     <UserControl.Resources>
-        <cv:DoubleToDecimalConverter         x:Key="D2D"/>
-        <cv:LineTypeToDashArrayConverter     x:Key="LTD"/>
+        <cv:DoubleToDecimalConverter             x:Key="D2D"/>
+        <cv:LineTypeToDashArrayConverter         x:Key="LTD"/>
+        <cv:SkColorToAvaloniaColorConverter      x:Key="SKC"/>
         <sys:Double x:Key="FontSize">10</sys:Double>
 
         <!-- ── IconSelectButton default ControlTheme ────────────────────── -->
@@ -347,8 +348,10 @@
 
                                     <!-- ── Identity row ──────────────────────────────────────
                                          Cols: * (group) | * (item) | Auto (matrix S-only) | 26 (→R)
-                                         Matrix col is Auto so it collapses when hidden. Eye moved to pin row. -->
-                                    <Grid ClipToBounds="False">
+                                         Matrix col is Auto so it collapses when hidden. Eye moved to pin row.
+                                         Hidden for contour traces (they have no cube/SNP picker). -->
+                                    <Grid ClipToBounds="False"
+                                          IsVisible="{Binding IsStandardTrace}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"    MinWidth="60"/>
                                             <ColumnDefinition Width="*"    MinWidth="60"/>
@@ -490,25 +493,40 @@
                                                     <TextBlock Text="Const" FontSize="10"/>
                                                 </Button>
                                             </StackPanel>
-                                            <NumericUpDown Grid.Column="2"
-                                                           Value="{Binding ContourConstraintValue, Mode=TwoWay}"
-                                                           Increment="0.5"
-                                                           FormatString="F1"
-                                                           Margin="3,0,0,0"
-                                                           ToolTip.Tip="Constraint value (dB compression or metric constant)"/>
+                                            <StackPanel Grid.Column="2"
+                                                        Orientation="Horizontal" Spacing="2"
+                                                        Margin="3,0,0,0">
+                                                <NumericUpDown Value="{Binding ContourConstraintValue, Mode=TwoWay}"
+                                                               Increment="0.5"
+                                                               FormatString="F1"
+                                                               Width="46"
+                                                               ToolTip.Tip="Constraint value (dB compression or metric constant)"/>
+                                                <TextBlock Text="{Binding ConstraintUnits}"
+                                                           Classes="label" VerticalAlignment="Center"/>
+                                            </StackPanel>
                                         </Grid>
 
-                                        <!-- Constant-metric name (shown when Const kind) -->
+                                        <!-- Constant-metric name (shown when Const kind) — §7: same metric disabled -->
                                         <Grid ColumnDefinitions="50,*"
                                               IsVisible="{Binding IsConstantMetricConstraint}">
                                             <TextBlock Grid.Column="0" Text="Metric"
                                                        Classes="label"/>
-                                            <TextBox Grid.Column="1"
-                                                     Text="{Binding ContourConstraintMetric, Mode=TwoWay}"
-                                                     FontSize="{StaticResource FontSize}"
-                                                     Height="20" MinHeight="0" Padding="4,3"
-                                                     PlaceholderText="e.g. Pout"
-                                                     ToolTip.Tip="Metric to hold constant"/>
+                                            <ComboBox Grid.Column="1"
+                                                      ItemsSource="{Binding ConstraintMetricOptions}"
+                                                      SelectedItem="{Binding SelectedConstraintMetricItem, Mode=TwoWay}"
+                                                      HorizontalAlignment="Stretch"
+                                                      ToolTip.Tip="Metric to hold constant">
+                                                <ComboBox.ItemContainerTheme>
+                                                    <ControlTheme TargetType="ComboBoxItem">
+                                                        <Setter Property="IsEnabled" Value="{ReflectionBinding IsEnabled}"/>
+                                                    </ControlTheme>
+                                                </ComboBox.ItemContainerTheme>
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Name}" FontSize="10"/>
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
                                         </Grid>
 
                                         <!-- Frequency pin row (only when multi-freq) -->
@@ -546,7 +564,7 @@
                                         </Grid>
 
                                         <!-- Range fields: Start / Step / Stop -->
-                                        <Grid ColumnDefinitions="*,Auto,*,Auto,*"
+                                        <Grid ColumnDefinitions="36,Auto,36,Auto,36"
                                               IsVisible="{Binding IsRangeLevelMode}">
                                             <NumericUpDown Grid.Column="0"
                                                            Value="{Binding ContourLevelStart, Mode=TwoWay}"
@@ -567,7 +585,7 @@
                                         </Grid>
 
                                         <!-- Count field -->
-                                        <Grid ColumnDefinitions="50,*"
+                                        <Grid ColumnDefinitions="50,Auto"
                                               IsVisible="{Binding IsCountLevelMode}">
                                             <TextBlock Grid.Column="0" Text="N levels"
                                                        Classes="label"/>
@@ -575,53 +593,9 @@
                                                            Value="{Binding ContourLevelCount, Mode=TwoWay}"
                                                            Minimum="2" Maximum="50" Increment="1"
                                                            FormatString="0"
+                                                           Width="40"
                                                            ToolTip.Tip="Number of iso-line levels"/>
                                         </Grid>
-
-                                        <!-- Three show toggles: iso-lines, fill, labels -->
-                                        <StackPanel Orientation="Horizontal" Spacing="2">
-                                            <Button Classes="seg-btn"
-                                                    Classes.active="{Binding ContourShowIsoLines}"
-                                                    Command="{Binding ToggleShowIsoLinesCommand}"
-                                                    Padding="5,2"
-                                                    ToolTip.Tip="Show iso-lines">
-                                                <TextBlock Text="Lines" FontSize="10"/>
-                                            </Button>
-                                            <Button Classes="seg-btn"
-                                                    Classes.active="{Binding ContourShowFill}"
-                                                    Command="{Binding ToggleShowFillCommand}"
-                                                    Padding="5,2"
-                                                    ToolTip.Tip="Show fill">
-                                                <TextBlock Text="Fill" FontSize="10"/>
-                                            </Button>
-                                            <Button Classes="seg-btn"
-                                                    Classes.active="{Binding ContourShowLabels}"
-                                                    Command="{Binding ToggleShowLabelsCommand}"
-                                                    Padding="5,2"
-                                                    ToolTip.Tip="Show level labels">
-                                                <TextBlock Text="Labels" FontSize="10"/>
-                                            </Button>
-                                        </StackPanel>
-
-                                        <!-- Fill-kind toggle: visible only when ShowFill is on -->
-                                        <StackPanel Orientation="Horizontal" Spacing="2"
-                                                    IsVisible="{Binding ContourShowFill}">
-                                            <TextBlock Text="Fill" Classes="label" Margin="0,0,4,0"/>
-                                            <Button Classes="seg-btn"
-                                                    Classes.active="{Binding IsTopoMapFill}"
-                                                    Command="{Binding SetTopoMapFillCommand}"
-                                                    Padding="5,2"
-                                                    ToolTip.Tip="Topographic-map fill (discrete colour bands)">
-                                                <TextBlock Text="TopoMap" FontSize="10"/>
-                                            </Button>
-                                            <Button Classes="seg-btn"
-                                                    Classes.active="{Binding IsHeatMapFill}"
-                                                    Command="{Binding SetHeatMapFillCommand}"
-                                                    Padding="5,2"
-                                                    ToolTip.Tip="Heat-map fill (density of scatter points)">
-                                                <TextBlock Text="HeatMap" FontSize="10"/>
-                                            </Button>
-                                        </StackPanel>
 
                                         <!-- Options disclosure: chevron + label, bespoke (no TabControl) -->
                                         <Button Classes="seg-btn"
@@ -645,26 +619,176 @@
                                         <StackPanel Spacing="4"
                                                     IsVisible="{Binding ContourOptionsExpanded}">
 
-                                            <!-- Label spacing (deferred render) -->
-                                            <Grid ColumnDefinitions="80,*">
-                                                <TextBlock Grid.Column="0" Text="Label spacing"
-                                                           Classes="label"/>
-                                                <NumericUpDown Grid.Column="1"
-                                                               Value="{Binding ContourLabelSpacing, Mode=TwoWay}"
-                                                               Minimum="0.1" Maximum="10" Increment="0.1"
-                                                               FormatString="F1"
-                                                               ToolTip.Tip="Label spacing factor along iso-line (deferred render)"/>
-                                            </Grid>
+                                            <!-- MXP / MXE markers -->
+                                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                                <Button Classes="seg-btn"
+                                                        Classes.active="{Binding ContourDisplayMxp}"
+                                                        Command="{Binding ToggleMxpCommand}"
+                                                        Padding="5,2"
+                                                        ToolTip.Tip="Show max-power point (MXP)">
+                                                    <TextBlock Text="Max Power" FontSize="10"/>
+                                                </Button>
+                                                <Button Classes="seg-btn"
+                                                        Classes.active="{Binding ContourDisplayMxe}"
+                                                        Command="{Binding ToggleMxeCommand}"
+                                                        Padding="5,2"
+                                                        ToolTip.Tip="Show max-efficiency point (MXE)">
+                                                    <TextBlock Text="Max Eff" FontSize="10"/>
+                                                </Button>
+                                            </StackPanel>
 
-                                            <!-- Colormap (deferred render) -->
-                                            <Grid ColumnDefinitions="80,*">
-                                                <TextBlock Grid.Column="0" Text="Colormap"
-                                                           Classes="label"/>
-                                                <ComboBox Grid.Column="1"
+                                            <!-- Fill style + Colormap row — §11: no width clipping -->
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <ComboBox Grid.Column="0"
+                                                          HorizontalAlignment="Stretch"
                                                           ItemsSource="{x:Static vm:TraceRowViewModel.AllContourColorMaps}"
                                                           SelectedItem="{Binding ContourColorMap, Mode=TwoWay}"
+                                                          ToolTip.Tip="Fill colormap"/>
+                                                <ctl:IconSelectButton Grid.Column="1"
+                                                    HorizontalAlignment="Left"
+                                                    Width="80"
+                                                    ItemsSource="{x:Static vm:TraceRowViewModel.ContourFillOptions}"
+                                                    SelectedItem="{Binding SelectedContourFill, Mode=TwoWay}"
+                                                    Highlight="False" HighlightSelected="False"
+                                                    ToolTip.Tip="Fill style (None / Topography / Heatmap)">
+                                                    <ctl:IconSelectButton.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding}"
+                                                                       FontSize="10"
+                                                                       HorizontalAlignment="Center"/>
+                                                        </DataTemplate>
+                                                    </ctl:IconSelectButton.ItemTemplate>
+                                                </ctl:IconSelectButton>
+                                            </Grid>
+
+                                            <!-- Line row: on/off toggle + color swatch + Fade toggle + width slider -->
+                                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                                <Button Classes="seg-btn"
+                                                        Classes.active="{Binding ContourShowIsoLines}"
+                                                        Command="{Binding ToggleShowIsoLinesCommand}"
+                                                        Padding="5,2"
+                                                        ToolTip.Tip="Show iso-lines">
+                                                    <TextBlock Text="Lines" FontSize="10"/>
+                                                </Button>
+                                                <Button Command="{Binding PickLineColorCommand}"
+                                                        Width="20" Height="20"
+                                                        Padding="1"
+                                                        Margin="2,0,2,0"
+                                                        ToolTip.Tip="Iso-line color">
+                                                    <Border CornerRadius="2"
+                                                            Width="14" Height="14"
+                                                            Background="{Binding ContourLineColor, Converter={StaticResource SKC}}"/>
+                                                </Button>
+                                                <Button Classes="seg-btn"
+                                                        Classes.active="{Binding ContourFadeLineOpacity}"
+                                                        Command="{Binding ToggleFadeLineOpacityCommand}"
+                                                        Padding="5,2"
+                                                        ToolTip.Tip="Fade outer iso-lines toward transparent">
+                                                    <TextBlock Text="Fade" FontSize="10"/>
+                                                </Button>
+                                                <Slider Value="{Binding ContourStrokeWidth, Mode=TwoWay}"
+                                                        Minimum="0.5" Maximum="5"
+                                                        SmallChange="0.25"
+                                                        Width="60"
+                                                        ToolTip.Tip="Iso-line width (px)"/>
+                                            </StackPanel>
+
+                                            <!-- Grid points row: §12 single "Grid" toggle + color swatch + size NUD -->
+                                            <Grid ColumnDefinitions="Auto,Auto,Auto">
+                                                <Button Grid.Column="0" Classes="seg-btn"
+                                                        Classes.active="{Binding ContourDisplayGridPoints}"
+                                                        Command="{Binding ToggleDisplayGridPtsCommand}"
+                                                        Padding="5,2" Margin="0,0,4,0"
+                                                        ToolTip.Tip="Show raw scatter grid points">
+                                                    <TextBlock Text="Grid" FontSize="10"/>
+                                                </Button>
+                                                <Button Grid.Column="1"
+                                                        Command="{Binding PickGridPointColorCommand}"
+                                                        Width="20" Height="20"
+                                                        Padding="1"
+                                                        Margin="0,0,4,0"
+                                                        ToolTip.Tip="Grid point color">
+                                                    <Border CornerRadius="2"
+                                                            Width="14" Height="14"
+                                                            Background="{Binding ContourGridPointColor, Converter={StaticResource SKC}}"/>
+                                                </Button>
+                                                <NumericUpDown Grid.Column="2"
+                                                               Value="{Binding ContourGridPointSize, Mode=TwoWay}"
+                                                               Minimum="1" Maximum="12" Increment="0.5"
+                                                               FormatString="F1"
+                                                               Width="34"
+                                                               ToolTip.Tip="Grid point dot radius (px)"/>
+                                            </Grid>
+
+                                            <!-- Label row: Labels toggle + Bg swatch + Text swatch + Size NUD + Spacing NUD -->
+                                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                                <Button Classes="seg-btn"
+                                                        Classes.active="{Binding ContourShowLabels}"
+                                                        Command="{Binding ToggleShowLabelsCommand}"
+                                                        Padding="5,2"
+                                                        ToolTip.Tip="Show level labels">
+                                                    <TextBlock Text="Labels" FontSize="10"/>
+                                                </Button>
+                                                <Button Command="{Binding PickLabelBgColorCommand}"
+                                                        Width="20" Height="20"
+                                                        Padding="1"
+                                                        Margin="2,0,0,0"
+                                                        ToolTip.Tip="Label background color">
+                                                    <Border CornerRadius="2"
+                                                            Width="14" Height="14"
+                                                            Background="{Binding ContourLabelBackground, Converter={StaticResource SKC}}"/>
+                                                </Button>
+                                                <Button Command="{Binding PickLabelFgColorCommand}"
+                                                        Width="20" Height="20"
+                                                        Padding="1"
+                                                        Margin="2,0,4,0"
+                                                        ToolTip.Tip="Label text color">
+                                                    <Border CornerRadius="2"
+                                                            Width="14" Height="14"
+                                                            Background="{Binding ContourLabelForeground, Converter={StaticResource SKC}}"/>
+                                                </Button>
+                                                <NumericUpDown Value="{Binding ContourLevelFontSize, Mode=TwoWay}"
+                                                               Minimum="5" Maximum="24" Increment="1"
+                                                               FormatString="F0"
+                                                               Width="36"
+                                                               ToolTip.Tip="Label font size (pt)"/>
+                                                <NumericUpDown Value="{Binding ContourLabelSpacing, Mode=TwoWay}"
+                                                               Minimum="0.1" Maximum="1000" Increment="0.1"
+                                                               FormatString="F1"
+                                                               Width="36"
+                                                               ToolTip.Tip="Label spacing factor (smaller = more labels)"/>
+                                            </StackPanel>
+
+                                            <!-- Interp kernel -->
+                                            <Grid ColumnDefinitions="50,*">
+                                                <TextBlock Grid.Column="0" Text="Kernel"
+                                                           Classes="label"/>
+                                                <ComboBox Grid.Column="1"
+                                                          ItemsSource="{x:Static vm:TraceRowViewModel.AllRbfKernels}"
+                                                          SelectedItem="{Binding ContourInterpKernel, Mode=TwoWay}"
                                                           HorizontalAlignment="Stretch"
-                                                          ToolTip.Tip="Fill colormap (deferred render)"/>
+                                                          ToolTip.Tip="RBF interpolation kernel"/>
+                                            </Grid>
+
+                                            <!-- Smooth + Epsilon -->
+                                            <Grid ColumnDefinitions="50,Auto,Auto,Auto">
+                                                <TextBlock Grid.Column="0" Text="Smooth"
+                                                           Classes="label"/>
+                                                <NumericUpDown Grid.Column="1"
+                                                               Value="{Binding ContourSmoothing, Mode=TwoWay}"
+                                                               Minimum="0" Maximum="10" Increment="0.0001"
+                                                               FormatString="G3"
+                                                               Width="68"
+                                                               ToolTip.Tip="RBF smoothing factor"/>
+                                                <TextBlock Grid.Column="2" Text="ε"
+                                                           Classes="label" Margin="4,0,2,0"
+                                                           VerticalAlignment="Center"/>
+                                                <NumericUpDown Grid.Column="3"
+                                                               Value="{Binding ContourEpsilon, Mode=TwoWay}"
+                                                               Minimum="0" Increment="0.1"
+                                                               FormatString="G3"
+                                                               Width="60"
+                                                               ToolTip.Tip="RBF epsilon (blank = auto)"/>
                                             </Grid>
 
                                         </StackPanel>

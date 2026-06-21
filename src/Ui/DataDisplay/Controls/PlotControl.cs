@@ -165,6 +165,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private Flyout?                  _inspectorFlyout;
         private PlotInspectorViewModel?  _inspectorVm;
         private PlotInspectorView?       _inspectorView;
+        private Control?                 _inspectorFlyoutAnchor;
+        // When true, a color-picker dialog is open; the flyout Closed handler re-shows instead of cleaning up.
+        private bool                     _suppressInspectorDismiss;
 
         // Table column-resize drag state
         private bool   _tableColResizeDragging;
@@ -380,11 +383,19 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             _inspectorVm.SetCloseAction(() => _inspectorFlyout?.Hide());
             _inspectorVm.PlotNeedsRedraw += OnInspectorPlotNeedsRedraw;
 
+            // Inject owner-window resolver so color pickers use the main window, not PopupRoot.
+            _inspectorVm.GetOwnerWindow = () => TopLevel.GetTopLevel(this) as Window;
+            _inspectorVm.ColorPickStarted += OnInspectorColorPickStarted;
+            _inspectorVm.ColorPickEnded   += OnInspectorColorPickEnded;
+
             var view = new PlotInspectorView { DataContext = _inspectorVm };
             _inspectorView = view;
 
             var (flyoutAnchor, hOffset, vOffset) = ComputeStableAnchor(
                 new Point(Bounds.Width, 0), PlacementMode.RightEdgeAlignedTop);
+
+            _inspectorFlyoutAnchor   = flyoutAnchor;
+            _suppressInspectorDismiss = false;
 
             _inspectorFlyout = new Flyout
             {
@@ -398,9 +409,17 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             _inspectorFlyout.Closed += (_, _) =>
             {
+                if (_suppressInspectorDismiss && _inspectorFlyoutAnchor is { } anchor)
+                {
+                    // Dialog stole focus and light-dismissed the flyout; re-show immediately.
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => _inspectorFlyout?.ShowAt(anchor));
+                    return;
+                }
                 if (_inspectorVm is not null)
                 {
-                    _inspectorVm.PlotNeedsRedraw -= OnInspectorPlotNeedsRedraw;
+                    _inspectorVm.ColorPickStarted -= OnInspectorColorPickStarted;
+                    _inspectorVm.ColorPickEnded   -= OnInspectorColorPickEnded;
+                    _inspectorVm.PlotNeedsRedraw  -= OnInspectorPlotNeedsRedraw;
                     // Restore a no-op so a stale flyout reference is never invoked by the Properties pane.
                     _inspectorVm.SetCloseAction(() => { });
                 }
@@ -417,6 +436,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             InvalidateVisual();
             PlotChanged?.Invoke(this, EventArgs.Empty);
         }
+
+        private void OnInspectorColorPickStarted(object? sender, EventArgs e)
+            => _suppressInspectorDismiss = true;
+
+        private void OnInspectorColorPickEnded(object? sender, EventArgs e)
+            => _suppressInspectorDismiss = false;
 
         private void OnMenuActionTwo(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
             => ShowAxesLimitsFlyout();

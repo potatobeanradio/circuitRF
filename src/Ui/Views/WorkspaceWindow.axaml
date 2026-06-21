@@ -36,6 +36,7 @@
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
                         <NativeMenuItem Header="Add Library…"    Command="{Binding AddLibraryCommand}"         CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Import Data…"   Command="{Binding ImportDataCommand}"         CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Close Workspace" Command="{Binding CloseWorkspaceCommand}"/>
                         <NativeMenuItemSeparator/>
@@ -179,6 +180,11 @@
                           Command="{Binding AddLibraryCommand}"
                           CommandParameter="{Binding $parent[Window]}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="BookOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Import _Data…"
+                          Command="{Binding ImportDataCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseImportOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Close Workspace"

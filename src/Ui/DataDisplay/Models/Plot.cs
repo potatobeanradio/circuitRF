@@ -164,8 +164,30 @@ namespace CircuitRF.Ui.DataDisplay
         public string CustomY2Label  { get; set; } = "";
         public bool   CustomY2LabelOn{ get; set; } = false;
 
-        public string Title   => CustomTitleOn  ? CustomTitle  : "";
-        public string YLabel  => CustomYLabelOn  ? CustomYLabel  : "";
+        public string Title
+        {
+            get
+            {
+                if (CustomTitleOn) return CustomTitle;
+                var parts = Traces
+                    .Where(t => t.IsContourTrace)
+                    .Select(t => t.ContourData!.TitleString())
+                    .ToList();
+                return parts.Count > 0 ? string.Join(" / ", parts) : "";
+            }
+        }
+
+        public string YLabel
+        {
+            get
+            {
+                if (CustomYLabelOn) return CustomYLabel;
+                if (PlotType == PlotType.Rect && Traces.Any(t => t.IsContourTrace))
+                    return "Imaginary (Ω)";
+                return "";
+            }
+        }
+
         public string Y2Label => CustomY2LabelOn ? CustomY2Label : "";
 
         public string XLabel
@@ -173,6 +195,13 @@ namespace CircuitRF.Ui.DataDisplay
             get
             {
                 if (CustomXLabelOn) return CustomXLabel;
+
+                // Smith/Polar contour: no freq label.
+                if (PlotType.IsComplex() && Traces.Any(t => t.IsContourTrace)) return "";
+
+                // Rect contour (Z-plane): impedance axis labels.
+                if (PlotType == PlotType.Rect && Traces.Any(t => t.IsContourTrace))
+                    return "Real (Ω)";
 
                 // Cube-bound first trace: label from the cube's X axis (the plot's X axis).
                 if (Traces.Count > 0 && Traces[0].IsCubeBound)
@@ -395,8 +424,10 @@ namespace CircuitRF.Ui.DataDisplay
         {
             const double paddingComplex = 0.02;
             const double paddingRect    = 0.10;
-            double padX = SupportsComplex ? paddingComplex : paddingRect;
-            double padY = SupportsComplex ? paddingComplex : paddingRect;
+            // Rect contour autoscales tight (zero padding) so the surface fills the plot area.
+            bool hasRectContour = PlotType == PlotType.Rect && Traces.Any(t => t.IsContourTrace);
+            double padX = SupportsComplex ? paddingComplex : (hasRectContour ? 0.0 : paddingRect);
+            double padY = SupportsComplex ? paddingComplex : (hasRectContour ? 0.0 : paddingRect);
 
             var primary   = default(Rect);
             var secondary = default(Rect);

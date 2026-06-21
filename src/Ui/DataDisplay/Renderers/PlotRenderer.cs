@@ -204,12 +204,16 @@ namespace CircuitRF.Ui.DataDisplay
                 {
                     case ContourFillType.TopoMap:
                         if (cd.Levels.Levels.Length > 0)
-                            ContourRenderer.DrawTopoMapFill(canvas, grid, cd.Levels, tf);
+                        {
+                            var contourPlane = plot.PlotType is PlotType.Smith or PlotType.Polar
+                                ? SurfacePlane.Gamma : SurfacePlane.Z;
+                            ContourRenderer.DrawTopoMapFill(canvas, grid, cd.Levels, tf, cd.ColorMap, contourPlane);
+                        }
                         break;
 
                     case ContourFillType.HeatMap:
                         if (cd.Scatter is { } sc)
-                            ContourRenderer.DrawHeatMapFill(canvas, canvasSize, sc, tf);
+                            ContourRenderer.DrawHeatMapFill(canvas, canvasSize, sc, tf, cd.ColorMap);
                         break;
                 }
             }
@@ -225,7 +229,13 @@ namespace CircuitRF.Ui.DataDisplay
                     if (polylines != null && cd.ShowIsoLines)
                         ContourRenderer.DrawIsoLines(
                             canvas, canvasSize, polylines, tf,
-                            cd.LineColor, cd.StrokeWidth, cd.DrawLabels);
+                            cd.LineColor, cd.LineColorOverridden, cd.StrokeWidth, cd.DrawLabels,
+                            cd.LabelBackground, cd.LabelForeground, cd.LabelSpacing,
+                            cd.ColorMap, (float)cd.LevelFontSize, cd.FadeLineOpacity,
+                            zoomLevel);
+                    if (cd.DisplayGridPoints && cd.Scatter is { } scPts)
+                        ContourRenderer.DrawGridPoints(canvas, scPts, tf, cd.GridPointColor, (float)cd.GridPointSize);
+                    ContourRenderer.DrawOptimaMarkers(canvas, cd, tf, zoomLevel);
                     continue;
                 }
                 TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,

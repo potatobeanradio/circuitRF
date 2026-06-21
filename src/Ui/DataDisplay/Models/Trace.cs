@@ -375,6 +375,7 @@ namespace CircuitRF.Ui.DataDisplay
         /// </summary>
         public string RectYLabel(string networkFallback, bool showFilePrefix, bool dimensionMismatch)
         {
+            if (IsContourTrace) return "";
             string baseLabel;
             if (IsCubeBound)
             {
@@ -522,6 +523,10 @@ namespace CircuitRF.Ui.DataDisplay
             SourceZ0IsUnusual = src.SourceZ0IsUnusual;
             // Family axis name (Phase 7.3b).
             FamilyAxisName = src.FamilyAxisName;
+            // Contour traces: deep-copy authoring fields so paste gets an independent
+            // ContourData that re-fits independently.  Grid/Levels/caches are left null
+            // and repopulated when the pasted trace's VM calls RebuildContour.
+            ContourData = src.ContourData?.Clone();
             if (includeMarkers)
                 foreach (var m in src.Markers)
                     Markers.Add(new Marker(m));
@@ -901,6 +906,17 @@ namespace CircuitRF.Ui.DataDisplay
 
         public Rect PathBoundingRect()
         {
+            // Contour traces have no Points — return the grid extent so AutoscaleCore frames it.
+            if (IsContourTrace)
+            {
+                var grid = ContourData?.Grid;
+                if (grid == null || grid.XSpace.Length == 0 || grid.YSpace.Length == 0)
+                    return default;
+                double minX = grid.XSpace[0],                     maxX = grid.XSpace[grid.XSpace.Length - 1];
+                double minY = grid.YSpace[0],                     maxY = grid.YSpace[grid.YSpace.Length - 1];
+                return new Rect(minX, minY, maxX - minX, maxY - minY);
+            }
+
             if (IsFamily)
             {
                 bool any = false; float minX = 0, minY = 0, maxX = 0, maxY = 0;

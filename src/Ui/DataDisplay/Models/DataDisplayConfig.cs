@@ -256,6 +256,28 @@ public sealed class ContourTraceConfig
     public ContourColorMap ColorMap { get; set; } = ContourColorMap.Hot;
 
     public double LabelSpacing { get; set; } = 1.0;
+
+    // ---- Overlay display toggles -------------------------------------
+    public bool    DisplayMxp        { get; set; }
+    public bool    DisplayMxe        { get; set; }
+    public bool    DisplayGridPoints { get; set; }
+    public uint    GridPointColor    { get; set; } = 0xFF000000u; // SKColors.Black ARGB
+    public uint    LabelForeground   { get; set; } = 0xFFFFFFFFu; // SKColors.White ARGB
+
+    // ---- Iso-line style ----------------------------------------------
+    public uint   LineColor          { get; set; } = 0xDCFFFFFFu; // white, 220 alpha
+    public float  StrokeWidth        { get; set; } = 1.5f;
+    public bool   LineColorOverridden { get; set; }
+    public uint   LabelBackground    { get; set; } = 0x8C000000u; // black, 140 alpha
+    public double GridPointSize      { get; set; } = 3.0;
+    public double LevelFontSize      { get; set; } = 9.0;
+    public bool   FadeLineOpacity    { get; set; }
+
+    // ---- Interp engine params -----------------------------------------
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public RbfKernel InterpKernel { get; set; } = RbfKernel.Multiquadric;
+    public double    Smoothing    { get; set; } = 1e-3;
+    public double?   Epsilon      { get; set; } = null;
 }
 
 public sealed class TracePropertiesConfig

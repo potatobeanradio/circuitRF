@@ -59,6 +59,9 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// <summary>Returns absolute paths of workspace-tracked Touchstone known files.</summary>
     public Func<IReadOnlyList<string>>? KnownTouchstoneProvider { get; set; }
 
+    /// <summary>Returns absolute paths of workspace-tracked loadpull known files (.spl/.lpcwave).</summary>
+    public Func<IReadOnlyList<string>>? KnownLoadpullProvider { get; set; }
+
     /// <summary>Logical id persisted in .cdd (e.g. "ampA/run.npy" or abs Touchstone path).</summary>
     public string? SelectedDataSourceRef { get; private set; }
 
@@ -118,6 +121,14 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         var touchstone = KnownTouchstoneProvider?.Invoke() ?? Array.Empty<string>();
         foreach (var p in touchstone.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
             AvailableDataSources.Add(new DataSourceItem(Path.GetFileName(p), p, p, SourceKind.Touchstone));
+
+        // Workspace known loadpull files (.spl/.lpcwave), sorted by name.
+        var loadpull = KnownLoadpullProvider?.Invoke() ?? Array.Empty<string>();
+        foreach (var p in loadpull.OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+        {
+            var kind = IsSplExtension(Path.GetExtension(p)) ? SourceKind.Spl : SourceKind.Lpcwave;
+            AvailableDataSources.Add(new DataSourceItem(Path.GetFileName(p), p, p, kind));
+        }
     }
 
     /// <summary>Returns the LogicalId of the most-recently-written run.npy, or null.</summary>
@@ -633,6 +644,10 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         UpdateDisplayNames();
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    // ---- Test helpers (accessible to CircuitRF.Ui.Tests via InternalsVisibleTo) ----
+
+    internal void FireLibraryChangedForTest() => LibraryChanged?.Invoke(this, EventArgs.Empty);
 
     // ---- Extension helpers ------------------------------------------------
 

@@ -764,6 +764,39 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         await Task.CompletedTask;
     }
 
+    [RelayCommand]
+    private async Task ImportData(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var result = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Import Data",
+            AllowMultiple = true,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Loadpull / Data Files")
+                    { Patterns = ["*.spl", "*.lpcwave", "*.npy", "*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp"] },
+                new FilePickerFileType("Loadpull (SPL)")  { Patterns = ["*.spl"] },
+                new FilePickerFileType("Loadpull (LPCW)") { Patterns = ["*.lpcwave"] },
+                new FilePickerFileType("NumPy Array")     { Patterns = ["*.npy"] },
+                new FilePickerFileType("Touchstone")      { Patterns = ["*.s1p", "*.s2p", "*.s3p", "*.s4p", "*.snp"] },
+                new FilePickerFileType("All Files")       { Patterns = ["*.*"] },
+            ],
+        });
+
+        if (result.Count == 0) return;
+
+        foreach (var item in result)
+            AddKnownFile(item.Path.LocalPath);
+
+        var displays = _openDocsByPath.Values.OfType<DataDisplayDocument>()
+            .Concat(_scratchDataDisplays);
+        foreach (var dd in displays)
+            dd.ViewModel.Window.DataSourceLibrary.RefreshAvailableDataSources();
+    }
+
     // ---- Recent Workspaces commands -----------------------------------------
 
     /// <summary>Open a workspace from the Recent list by its .cws path.</summary>
@@ -1574,6 +1607,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             .ToList();
     }
 
+    private IReadOnlyList<string> GetKnownLoadpullFiles()
+    {
+        if (CurrentWorkspacePath is not { } cwsPath) return Array.Empty<string>();
+        CwsFile cws;
+        try { cws = WorkspacePersistence.LoadFromFile(cwsPath); }
+        catch { return Array.Empty<string>(); }
+        return cws.KnownFiles
+            .Where(p =>
+            {
+                var ext = System.IO.Path.GetExtension(p);
+                return string.Equals(ext, ".spl", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(ext, ".lpcwave", StringComparison.OrdinalIgnoreCase);
+            })
+            .ToList();
+    }
+
     // ---- Data Display library event wiring ---------------------------------
 
     private void WireDataDisplayLibraryEvents(DataDisplayDocumentViewModel docVm)
@@ -1582,6 +1631,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         lib.UnusualZ0Detected      += OnUnusualZ0Detected;
         lib.ResultsRootProvider     = GetResultsRoot;
         lib.KnownTouchstoneProvider = GetKnownTouchstoneFiles;
+        lib.KnownLoadpullProvider   = GetKnownLoadpullFiles;
     }
 
     private void OnUnusualZ0Detected(string path, Z0Kind kind, IReadOnlyList<Complex> z0)

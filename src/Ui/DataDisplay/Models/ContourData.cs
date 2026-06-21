@@ -14,14 +14,16 @@
 
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using RfCore.Loadpull;
 using SkiaSharp;
 
 namespace CircuitRF.Ui.DataDisplay
 {
-    public enum ContourFillType { None, Lines, TopoMap, HeatMap }
-    public enum ContourLevelMode { Range, Count }
-    public enum ContourFillKind  { TopoMap, HeatMap }
+    public enum ContourFillType      { None, Lines, TopoMap, HeatMap }
+    public enum ContourLevelMode     { Range, Count }
+    public enum ContourFillKind      { TopoMap, HeatMap }
+    public enum ContourFillSelection { None, Topography, Heatmap }
 
     /// <summary>Matplotlib-style colormap names. Render mapping is deferred — the renderer keeps
     /// the current blue→red palette until a later pass maps these names to ramps.</summary>
@@ -54,7 +56,7 @@ namespace CircuitRF.Ui.DataDisplay
 
         // ---- Level-set authoring -------------------------------------------
 
-        public ContourLevelMode LevelMode  { get; set; } = ContourLevelMode.Range;
+        public ContourLevelMode LevelMode  { get; set; } = ContourLevelMode.Count;
         public double           LevelStart { get; set; } = -30.0;
         public double           LevelStep  { get; set; } = 0.5;
         public double           LevelStop  { get; set; } = 60.0;
@@ -67,7 +69,7 @@ namespace CircuitRF.Ui.DataDisplay
         /// <summary>Whether to render the fill layer. Default is plane-dependent (see ContourDefaults).</summary>
         public bool ShowFill     { get; set; }
 
-        public bool DrawLabels   { get; set; } = true;
+        public bool DrawLabels   { get; set; }
 
         // ---- Fill kind + derived FillType ----------------------------------
 
@@ -84,17 +86,41 @@ namespace CircuitRF.Ui.DataDisplay
 
         // ---- Style ---------------------------------------------------------
 
-        public SKColor LineColor   { get; set; } = new SKColor(255, 255, 255, 220);
-        public float   StrokeWidth { get; set; } = 1.5f;
+        public SKColor LineColor         { get; set; } = new SKColor(255, 255, 255, 220);
+        public float   StrokeWidth       { get; set; } = 1.5f;
+        public bool    LineColorOverridden { get; set; }
 
         // ---- Label styling (state now; richer render deferred) -------------
         // DEFERRED (AppSettings): defaults come from ContourDefaults; SettingsView override is a future pass.
-        public SKColor LabelBackground { get; set; } = new SKColor(0, 0, 0, 140);
-        public double  LabelSpacing    { get; set; } = 1.0;
+        public SKColor LabelBackground { get; set; } = SKColors.White;
+        public double  LabelSpacing    { get; set; } = 30.0;
 
-        // ---- Colormap (picker + persist now; render mapping deferred) ------
-        // DEFERRED: renderer keeps current blue→red palette until colormap ramps are implemented.
-        public ContourColorMap ColorMap { get; set; } = ContourColorMap.Hot;
+        // ---- Colormap -------------------------------------------------------
+        public ContourColorMap ColorMap { get; set; } = ContourColorMap.Bone;
+
+        // ---- Overlay display toggles -------------------------------------
+        public bool    DisplayMxp        { get; set; } = true;
+        public bool    DisplayMxe        { get; set; } = true;
+        public bool    DisplayGridPoints { get; set; }
+        public SKColor GridPointColor    { get; set; } = SKColors.Black;
+        public SKColor LabelForeground   { get; set; } = SKColors.Black;
+
+        // ---- Size / font params (§5) ------------------------------------
+        public double GridPointSize { get; set; } = 3.0;
+        public double LevelFontSize { get; set; } = 9.0;
+
+        // ---- Fade-line-opacity toggle (§7) ------------------------------
+        public bool FadeLineOpacity { get; set; }
+
+        // ---- Interp engine params -----------------------------------------
+        public RbfKernel InterpKernel { get; set; } = RbfKernel.Multiquadric;
+        public double    Smoothing    { get; set; } = 1e-3;
+        public double?   Epsilon      { get; set; } = null;
+
+        // ---- Cached optima coords (set by VM in RebuildContour; renderer reads) ----
+
+        public Complex? MxpCoord { get; set; }
+        public Complex? MxeCoord { get; set; }
 
         // ---- Polyline cache ------------------------------------------------
 
@@ -102,8 +128,91 @@ namespace CircuitRF.Ui.DataDisplay
         private SurfaceGrid?                _cacheGrid;
         private ContourLevelSet?            _cacheLevels;
 
-        /// <summary>Returns cached iso-polylines, re-extracting when Grid or Levels changes.
-        /// Returns null when Grid is not set or Levels is empty.</summary>
+        // ---- Title string ---------------------------------------------------
+
+        /// <summary>Builds a human-readable title for this contour trace (used by Plot.Title default).</summary>
+        public string TitleString()
+        {
+            string displayName = MetricDisplayName(MetricName);
+            string unit        = MetricUnit(MetricName);
+
+            if (ContourConstraintKind == ConstraintKind.Compression)
+            {
+                string c = FormatCompression(ConstraintValue);
+                return $"P-{c}dB {displayName} ({unit})";
+            }
+            else
+            {
+                string otherDisplay = MetricDisplayName(ConstraintMetricName);
+                string otherUnit    = MetricUnit(ConstraintMetricName);
+                string val          = FormatCompression(ConstraintValue);
+                return $"{displayName} ({unit}) at Constant {otherDisplay}={val} {otherUnit}";
+            }
+        }
+
+        private static string MetricDisplayName(string metric) => metric switch
+        {
+            "Gain" or "Gt" or "Gp"       => "Gain",
+            "DE" or "PAE" or "Efficiency" => "Efficiency",
+            _                             => metric,
+        };
+
+        private static string MetricUnit(string metric) => metric switch
+        {
+            "Pout"                        => "dBm",
+            "Gain" or "Gt" or "Gp"       => "dB",
+            "DE" or "PAE" or "Efficiency" => "%",
+            "AMPM"                        => "deg",
+            _                             => "",
+        };
+
+        private static string FormatCompression(double value)
+        {
+            string s = value.ToString("G6");
+            if (s.Contains('.')) s = s.TrimEnd('0').TrimEnd('.');
+            return s;
+        }
+
+        /// <summary>
+        /// Deep-copy of all authoring and style fields. Computed/cached state
+        /// (Grid, Scatter, Levels, MxpCoord, MxeCoord, polyline cache) is left
+        /// null so the pasted trace re-fits on first draw.
+        /// </summary>
+        public ContourData Clone() => new ContourData
+        {
+            MetricName            = MetricName,
+            ContourConstraintKind = ContourConstraintKind,
+            ConstraintMetricName  = ConstraintMetricName,
+            ConstraintValue       = ConstraintValue,
+            FreqIndex             = FreqIndex,
+            LevelMode             = LevelMode,
+            LevelStart            = LevelStart,
+            LevelStep             = LevelStep,
+            LevelStop             = LevelStop,
+            LevelCount            = LevelCount,
+            ShowIsoLines          = ShowIsoLines,
+            ShowFill              = ShowFill,
+            DrawLabels            = DrawLabels,
+            SelectedFillKind      = SelectedFillKind,
+            LineColor             = LineColor,
+            StrokeWidth           = StrokeWidth,
+            LineColorOverridden   = LineColorOverridden,
+            LabelBackground       = LabelBackground,
+            LabelSpacing          = LabelSpacing,
+            ColorMap              = ColorMap,
+            DisplayMxp            = DisplayMxp,
+            DisplayMxe            = DisplayMxe,
+            DisplayGridPoints     = DisplayGridPoints,
+            GridPointColor        = GridPointColor,
+            LabelForeground       = LabelForeground,
+            GridPointSize         = GridPointSize,
+            LevelFontSize         = LevelFontSize,
+            FadeLineOpacity       = FadeLineOpacity,
+            InterpKernel          = InterpKernel,
+            Smoothing             = Smoothing,
+            Epsilon               = Epsilon,
+        };
+
         public IReadOnlyList<IsoPolyline>? GetPolylines()
         {
             var grid = Grid;

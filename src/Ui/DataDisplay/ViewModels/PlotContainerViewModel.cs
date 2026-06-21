@@ -426,8 +426,8 @@ public partial class PlotContainerViewModel : ViewModelBase
 
             if (isComplex)
             {
-                bool hasCustomY  = plot.CustomYLabelOn  && !string.IsNullOrEmpty(plot.CustomYLabel);
-                bool hasCustomY2 = plot.CustomY2LabelOn && !string.IsNullOrEmpty(plot.CustomY2Label);
+                bool hasCustomY  = plot.CustomYLabelOn;
+                bool hasCustomY2 = plot.CustomY2LabelOn;
 
                 // Show filename prefix when settings force it, or when multiple SNPs are loaded.
                 bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
@@ -440,8 +440,8 @@ public partial class PlotContainerViewModel : ViewModelBase
                 for (int i = 0; i < plot.Traces.Count; i++)
                     labelMap[plot.Traces[i]] = allLabels[i];
 
-                var leftTraces  = plot.LeftAxisTraces;
-                var rightTraces = plot.RightAxisTraces;
+                var leftTraces  = plot.LeftAxisTraces.Where(t => !t.IsContourTrace).ToList();
+                var rightTraces = plot.RightAxisTraces.Where(t => !t.IsContourTrace).ToList();
 
                 // Custom Y label: one strip showing the custom text — no per-trace strips.
                 // No custom label: one strip per trace, AutoLabel set to the computed minimal label.
@@ -450,7 +450,7 @@ public partial class PlotContainerViewModel : ViewModelBase
                     LeftLabelStrips.Add(new LabelStripViewModel(leftTraces[0], false, sw, th)
                         { CustomLabel = plot.CustomYLabel, ShowFilePrefix = showFilePrefix });
                 }
-                else
+                else if (!hasCustomY)
                 {
                     foreach (var t in leftTraces)
                         LeftLabelStrips.Add(new LabelStripViewModel(t, false, sw, th)
@@ -465,7 +465,7 @@ public partial class PlotContainerViewModel : ViewModelBase
                     RightLabelStrips.Add(new LabelStripViewModel(rightTraces[0], true, sw, th)
                         { CustomLabel = plot.CustomY2Label, ShowFilePrefix = showFilePrefix });
                 }
-                else
+                else if (!hasCustomY2)
                 {
                     foreach (var t in rightTraces)
                         RightLabelStrips.Add(new LabelStripViewModel(t, true, sw, th)

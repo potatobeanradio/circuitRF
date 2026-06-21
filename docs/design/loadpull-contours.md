@@ -264,6 +264,50 @@ toggle, frequency pin; bind to a loadpull DataSet (measured or simulated); `.s1p
 **Gate:** author a contour from a loadpull `run.npy` and from an ingested `.spl` in the same way; an `.s1p`
 overlays; live edits re-extract + redraw.
 
+### 7.4g — loadpull data-source entry point (make LP data selectable in the Data Display)
+**Goal:** close the last gap — a way for loadpull data (simulated *or* measured `.spl`/`.lpcwave`) to become a
+**selectable data source** in the Data Display, so 7.4e's contour card has something to bind. Today nothing
+lists loadpull data in the source picker, so the whole 7.4 stack has no UI entry point.
+
+**What's already on disk (verified):** the data-source library already supports loadpull fully *as a loader* —
+`DataSourceLibraryViewModel` has `SourceKind.Spl`/`SourceKind.Lpcwave`, reads them via the 7.4f readers
+(`SplReader.ReadSpl`/`LpcwaveReader.ReadLpcwave`) into a loadpull DataSet, and handles dedup/reload/restore.
+The gap is **discovery/listing**: `RefreshAvailableDataSources` only enumerates (a) sim-run `run.npy`
+directories and (b) workspace **known Touchstone** files (via `KnownTouchstoneProvider`). Loadpull files are
+loadable but never *offered* in `AvailableDataSources`, so a user can't pick one.
+
+**The decision — both producer paths converge on one selectable-source mechanism.** The two ways LP data
+reaches the Data Display are NOT competing designs; they share the same missing listing step:
+1. **Simulated** (LP analysis → result): the loadpull engine writes its result where the source library
+   already scans for runs (the per-schematic `run.npy` results convention, `results-dataset-layout.md`). If LP
+   results land as a grouped `run.npy` like every other analysis, they appear in `AvailableDataSources`
+   **for free** — no new mechanism. Confirm the LP engine's result actually serializes through the run.npy
+   path; if it doesn't yet, that wiring is the simulated-path work.
+2. **Measured `.spl`/`.lpcwave`** (the test data we have now): the user registers the file as a workspace
+   **"known file"** — exactly the existing Touchstone known-file path, generalized to loadpull extensions. The
+   provider that feeds `KnownTouchstoneProvider` becomes a known-**data-file** provider (or a sibling
+   `KnownLoadpullProvider`) and `RefreshAvailableDataSources` lists those entries with `SourceKind.Spl`/
+   `.Lpcwave`. The library already knows how to load them once selected.
+
+**Deliverables:**
+- Generalize workspace known-file tracking + the provider hook so `.spl`/`.lpcwave` are first-class known
+  files beside Touchstone, and `RefreshAvailableDataSources` surfaces them in `AvailableDataSources` (with a
+  sensible display name + the right `SourceKind`).
+- Confirm/About wire the LP analysis result so it serializes through the existing `run.npy` results path and
+  thus auto-appears as a selectable source (simulated path). If LP results don't round-trip through run.npy
+  yet, that's the bulk of the simulated-path work; otherwise it's free.
+- An "add known file" affordance that accepts loadpull extensions (reuse the existing import/known-file UX;
+  the file picker just needs the `.spl`/`.lpcwave` filters, which the library's extension helpers already
+  recognize).
+**Gate:** drop a test `.spl` into the workspace as a known file → it appears in the Data Display source picker
+→ selecting it loads the loadpull DataSet → a contour trace (7.4e) binds and draws. Separately, run an LP
+analysis → its result appears as a selectable source the same way → a contour binds and draws. Neither path
+shows an origin-specific affordance (measured and simulated are indistinguishable downstream, per decision
+§1.2).
+**Note:** this is the natural last sub-gate — it depends on 7.4f (readers) being done (it is) and gives 7.4e
+its data. Could be done before or interleaved with 7.4e, but listed last because it's the
+wiring-it-all-together step.
+
 ---
 
 ## 4. Cross-cutting
@@ -301,6 +345,12 @@ overlays; live edits re-extract + redraw.
 ## 6. Status
 - Materials in hand (paper + `SPLData.py` + `.spl`/`.lpcwave` test data, in `loadpull-contours-refs/`).
 - Decisions §1 locked: surface storage = derived/in-memory (Option A); ingest first; custom LDLᵀ solver.
-- Sub-gates 7.4a–7.4f defined (§3). Ingest (7.4f) runs first.
-- Next: 7.4f detailed brief(s) — `.spl`/`.lpcwave` reader → loadpull DataSet shape; request 1–2 test files
-  copied into `circuitRF/testdata/` for the reader's regression tests.
+- **7.4a COMPLETE** (2026-06-20): Rbf2D + Interp1DLinear, 22 gate tests.
+- **7.4b COMPLETE** (2026-06-20): LoadpullSurface engine, 22 gate tests.
+- **7.4c COMPLETE** (2026-06-20): DataInterpStack power-sweep synthesis, 14 gate tests.
+- **7.4d COMPLETE** (2026-06-20): ContourExtractor (marching squares) + ContourRenderer, 15 gate tests.
+- **7.4e COMPLETE** (2026-06-20): ContourData model + contour trace card (PlotInspectorView), 12 gate tests.
+- **7.4f COMPLETE** (2026-06-20): SplReader + LpcwaveReader, 39 gate tests.
+- **7.4g COMPLETE** (2026-06-20): `KnownLoadpullProvider` + loadpull block in `RefreshAvailableDataSources` +
+  `GetKnownLoadpullFiles` in `WorkspaceViewModel`. Simulated path confirmed already wired through `run.npy`.
+  6 gate tests; 2057 total.

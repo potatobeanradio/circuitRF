@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
 using RfCore;
+using SkiaSharp;
 using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
@@ -977,6 +978,21 @@ public partial class DataDisplayViewModel : ViewModelBase
                     SelectedFillKind      = ct.SelectedFillKind,
                     ColorMap              = ct.ColorMap,
                     LabelSpacing          = ct.LabelSpacing,
+                    DisplayMxp            = ct.DisplayMxp,
+                    DisplayMxe            = ct.DisplayMxe,
+                    DisplayGridPoints     = ct.DisplayGridPoints,
+                    GridPointColor        = new SKColor(ct.GridPointColor),
+                    LabelForeground       = new SKColor(ct.LabelForeground),
+                    LineColor             = new SKColor(ct.LineColor),
+                    StrokeWidth           = ct.StrokeWidth,
+                    LineColorOverridden   = ct.LineColorOverridden,
+                    LabelBackground       = new SKColor(ct.LabelBackground),
+                    GridPointSize         = ct.GridPointSize,
+                    LevelFontSize         = ct.LevelFontSize,
+                    FadeLineOpacity       = ct.FadeLineOpacity,
+                    InterpKernel          = ct.InterpKernel,
+                    Smoothing             = ct.Smoothing,
+                    Epsilon               = ct.Epsilon,
                 };
                 ApplyProperties(traceConfig.Properties, trace.Properties);
                 trace.SourceRef  = sref;
@@ -1218,6 +1234,21 @@ public partial class DataDisplayViewModel : ViewModelBase
                 SelectedFillKind     = cd.SelectedFillKind,
                 ColorMap             = cd.ColorMap,
                 LabelSpacing         = cd.LabelSpacing,
+                DisplayMxp           = cd.DisplayMxp,
+                DisplayMxe           = cd.DisplayMxe,
+                DisplayGridPoints    = cd.DisplayGridPoints,
+                GridPointColor       = (uint)cd.GridPointColor,
+                LabelForeground      = (uint)cd.LabelForeground,
+                LineColor             = (uint)cd.LineColor,
+                StrokeWidth           = cd.StrokeWidth,
+                LineColorOverridden   = cd.LineColorOverridden,
+                LabelBackground       = (uint)cd.LabelBackground,
+                GridPointSize         = cd.GridPointSize,
+                LevelFontSize         = cd.LevelFontSize,
+                FadeLineOpacity       = cd.FadeLineOpacity,
+                InterpKernel         = cd.InterpKernel,
+                Smoothing            = cd.Smoothing,
+                Epsilon              = cd.Epsilon,
             };
         }
 

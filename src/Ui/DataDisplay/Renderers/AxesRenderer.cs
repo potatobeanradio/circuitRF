@@ -590,15 +590,18 @@ namespace CircuitRF.Ui.DataDisplay
                     DrawAt(yLabel, theme.TextColor, cx, false);
                     rects.YLabel = new SKRect(cx - sw * 0.5f, vpTop, leftAnchor, vpBottom);
                 }
-                else
+                else if (!plot.CustomYLabelOn)
                 {
                     var leftTraces = plot.LeftAxisTraces;
+                    int col = 0;
                     for (int i = 0; i < leftTraces.Count; i++)
                     {
-                        float cx = leftAnchor - sw * (i + 0.5f);
+                        if (leftTraces[i].IsContourTrace) continue;
+                        float cx = leftAnchor - sw * (col + 0.5f);
                         DrawAt(LabelFor(leftTraces[i]),
                                RenderTheme.ToSKColor(leftTraces[i].Properties.LineColor),
                                cx, false);
+                        col++;
                     }
                 }
 
@@ -609,15 +612,18 @@ namespace CircuitRF.Ui.DataDisplay
                     DrawAt(y2Label, theme.TextColor, cx, true);
                     rects.Y2Label = new SKRect(rightAnchor, vpTop, cx + sw * 0.5f, vpBottom);
                 }
-                else if (plot.Axes.ShowSecondary)
+                else if (plot.Axes.ShowSecondary && !plot.CustomY2LabelOn)
                 {
                     var rightTraces = plot.RightAxisTraces;
+                    int col2 = 0;
                     for (int i = 0; i < rightTraces.Count; i++)
                     {
-                        float cx = rightAnchor + sw * (i + 0.5f);
+                        if (rightTraces[i].IsContourTrace) continue;
+                        float cx = rightAnchor + sw * (col2 + 0.5f);
                         DrawAt(LabelFor(rightTraces[i]),
                                RenderTheme.ToSKColor(rightTraces[i].Properties.LineColor),
                                cx, true);
+                        col2++;
                     }
                 }
             }
@@ -655,8 +661,13 @@ namespace CircuitRF.Ui.DataDisplay
             if (traces.Count == 0) return;
 
             bool hasCustomX = plot.CustomXLabelOn && !string.IsNullOrEmpty(plot.CustomXLabel);
-            bool multiTrace = traces.Count > 1;
-            int  drawCount  = hasCustomX ? 1 : traces.Count;
+
+            // Contour traces never emit freq X-labels; filter them out.
+            var nonContourTraces = traces.Where(t => !t.IsContourTrace).ToList();
+            if (!hasCustomX && nonContourTraces.Count == 0) return;
+
+            bool multiTrace = nonContourTraces.Count > 1;
+            int  drawCount  = hasCustomX ? 1 : nonContourTraces.Count;
 
             float fontSizePx = (float)(plot.Axes.FontSizeLabel * lw);
             if (fontSizePx < 4f) return;
@@ -676,7 +687,7 @@ namespace CircuitRF.Ui.DataDisplay
                 }
                 else
                 {
-                    var    t   = traces[i];
+                    var    t   = nonContourTraces[i];
                     double min = t.MinFreq;
                     double max = t.MaxFreq;
                     if (!double.IsFinite(min) || !double.IsFinite(max)) continue;
@@ -686,7 +697,7 @@ namespace CircuitRF.Ui.DataDisplay
                     string sMax  = (scale * max).ToString("G4");
                     label       = $"freq ({sMin} to {sMax} {plot.FreqUnits.Description()})";
                     paint.Color = multiTrace
-                        ? RenderTheme.ToSKColor(traces[i].Properties.LineColor)
+                        ? RenderTheme.ToSKColor(nonContourTraces[i].Properties.LineColor)
                         : theme.TextColor;
                 }
 

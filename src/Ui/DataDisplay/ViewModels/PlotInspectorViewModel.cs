@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
+using Avalonia.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Material.Icons;
@@ -72,6 +73,21 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public event EventHandler? PlotNeedsRedraw;
     public event EventHandler? PlotStructureChanged;
+
+    // ---- Color-picker owner + suppress-flyout-dismiss seam (§3) -----------
+
+    /// <summary>Injected by PlotControl when building the inspector flyout. Returns the main
+    /// application Window so color-picker dialogs use the correct owner (not the PopupRoot).</summary>
+    public Func<Window?>? GetOwnerWindow { get; set; }
+
+    /// <summary>Raised by TraceRowViewModel before opening a color-picker dialog.</summary>
+    public event EventHandler? ColorPickStarted;
+
+    /// <summary>Raised by TraceRowViewModel after a color-picker dialog closes.</summary>
+    public event EventHandler? ColorPickEnded;
+
+    internal void RaiseColorPickStarted() => ColorPickStarted?.Invoke(this, EventArgs.Empty);
+    internal void RaiseColorPickEnded()   => ColorPickEnded?.Invoke(this, EventArgs.Empty);
 
     // ---- Static ItemsSource lists ---------------------------------------
 
@@ -298,6 +314,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
             .Where(rv =>
             {
                 var t = rv.Trace;
+                // Contour traces are never stale here — their data lives in ContourData,
+                // keyed by SourcePath, not by t.Data / librarySnps.
+                if (t.IsContourTrace) return false;
                 return t.IsCubeBound
                     ? t.SourcePath is null || !libraryPaths.Contains(t.SourcePath)
                     : t.Data is not null && !librarySnps.Contains(t.Data);
@@ -776,13 +795,27 @@ public partial class PlotInspectorViewModel : ViewModelBase
         var plane = (_plot.PlotType is PlotType.Smith or PlotType.Polar)
             ? SurfacePlane.Gamma : SurfacePlane.Z;
 
+        // §4: inherit colormap from the most-recent contour trace, or use the default.
+        var lastContourColorMap = _plot.Traces
+            .Select(t => t.ContourData)
+            .OfType<ContourData>()
+            .LastOrDefault()?.ColorMap ?? ContourColorMap.Bone;
+
         trace.ContourData = new ContourData
         {
-            ShowFill = ContourDefaults.ShowFillDefault(plane),
+            LevelMode       = ContourLevelMode.Count,
+            ShowFill        = ContourDefaults.ShowFillDefault(plane),
+            DisplayMxp      = true,
+            DisplayMxe      = true,
+            FadeLineOpacity = (plane == SurfacePlane.Gamma),
+            ColorMap        = lastContourColorMap,          // §4
+            DrawLabels      = (plane == SurfacePlane.Z),   // §13
         };
 
         _plot.Traces.Add(trace);
         Traces.Add(new TraceRowViewModel(trace, this));
+        // Re-autoscale after RebuildContour() in the VM ctor has populated the grid.
+        _plot.Autoscale(force: true);
         RefreshAddCommand();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
