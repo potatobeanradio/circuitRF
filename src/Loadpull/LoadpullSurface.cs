@@ -190,6 +190,61 @@ namespace RfCore.Loadpull
             RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
             => GetMxx(freqIdx, "DE", constraint, plane, z0, kernel, smooth, epsilon);
 
+        // ── MetricAtCoord / SourceZ / OperatingPoint (summary-table accessors) ─
+
+        /// <summary>
+        /// Scalar value of <paramref name="metricY"/> at <paramref name="coord"/> (in the fit plane: Γ if
+        /// plane==Gamma, Z if plane==Z), at the given constraint.
+        ///   nearest == false (Interp): evaluate the metric's RBF surface at coord.
+        ///   nearest == true  (Nearest): value of the nearest measured node to coord.
+        /// Returns NaN if the metric cube is absent or the fit cannot be built (presence-tolerant).
+        /// Used by the summary table to read each metric column at the MXP/MXE optimum.
+        /// </summary>
+        public double MetricAtCoord(
+            int freqIdx, string metricY, Complex coord, ConstraintSpec constraint,
+            SurfacePlane plane, double? z0 = null,
+            bool nearest = false,
+            RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
+        {
+            var fit = Fit(freqIdx, metricY, constraint, plane, z0, kernel, smooth, epsilon);
+            if (fit == null || fit.Rbf.NodeCount == 0) return double.NaN;
+            var rbf = fit.Rbf;
+
+            if (!nearest)
+                return rbf.Evaluate(coord.Real, coord.Imaginary);
+
+            int    best   = 0;
+            double bestD2 = double.PositiveInfinity;
+            for (int i = 0; i < rbf.NodeCount; i++)
+            {
+                double dx = rbf.NodesRe[i] - coord.Real;
+                double dy = rbf.NodesIm[i] - coord.Imaginary;
+                double d2 = dx * dx + dy * dy;
+                if (d2 < bestD2) { bestD2 = d2; best = i; }
+            }
+            return rbf.NodeValues[best];
+        }
+
+        /// <summary>
+        /// Per-frequency source termination impedance (Ω), assumed constant across load terminations.
+        /// Reads a source-Z cube if present (canonical name "ZSource"); null when absent (presence-tolerant).
+        /// Read at grid point 0 (source termination does not vary with the load grid).
+        /// </summary>
+        public Complex? SourceZ(int freqIdx) => _freqs[freqIdx].SourceZ;
+
+        /// <summary>
+        /// Per-frequency operating-point scalar from a bias cube (e.g. "BiasVLoad"=VDD, "BiasILoad"=Idq).
+        /// Returns the value at grid point 0, pinStep 0 (constant over the sweep). null if the cube is absent.
+        /// Stored unit is the cube's native unit (e.g. BiasILoad in Amps — caller scales to mA for display).
+        /// </summary>
+        public double? OperatingPoint(int freqIdx, string cubeName)
+        {
+            if (!_freqs[freqIdx].DriveUps.TryGetValue(cubeName, out var driveUps)) return null;
+            if (driveUps.Length == 0 || driveUps[0] is not { Length: > 0 } du0) return null;
+            double v = du0[0];
+            return double.IsNaN(v) ? (double?)null : v;
+        }
+
         // ── RecommendedBox ───────────────────────────────────────────────────
 
         /// <summary>
@@ -327,7 +382,8 @@ namespace RfCore.Loadpull
             var pinAxisCube  = GetCube("PavlDbm");
 
             // Build optional metric cubes
-            var metricNames  = new[] { "Pout", "Gt", "Gp", "DE", "PAE", "PavlDbm" };
+            var metricNames  = new[] { "Pout", "Gt", "Gp", "DE", "PAE", "PavlDbm",
+                                       "BiasVLoad", "BiasILoad", "BiasVSrc", "BiasISrc" };
             var metricCubes  = new Dictionary<string, DataCube>(StringComparer.Ordinal);
             foreach (var m in metricNames)
                 if (hasCube(m)) metricCubes[m] = GetCube(m);
@@ -340,6 +396,28 @@ namespace RfCore.Loadpull
 
             double[]  pinAxisVals = pinAxisCube.Axis("pinStep").Values;
             double[]? freqVals   = hasFreq ? poutCube.Axis("freq").Values : null;
+
+            // Single-freq datasets carry no "freq" axis on the FOM cubes; the importer preserves
+            // the measured frequency on a rank-1 "__Freq" carrier cube (or on "ZSource" when a
+            // source termination is present). Recover it so the summary table shows the real freq
+            // instead of 0. (Bug: single-freq .spl reported Freq = 0.)
+            if (!hasFreq)
+            {
+                double single = 0.0;
+                if (hasCube("__Freq"))
+                {
+                    var fc = GetCube("__Freq");
+                    var fr = fc[0];
+                    if (fr.IsReal) single = fr.RealValue!.Value;
+                }
+                else if (hasCube("ZSource"))
+                {
+                    var za = GetCube("ZSource");
+                    var ax = za.Axes.FirstOrDefault(a => a.Name == "freq");
+                    if (ax is not null && ax.Values.Length > 0) single = ax.Values[0];
+                }
+                freqVals = new[] { single };
+            }
 
             var slices = new FreqSlice[nFreq];
 
@@ -404,6 +482,14 @@ namespace RfCore.Loadpull
                 double medianComp  = validComp.Length > 0 ? Median(validComp) : 0.0;
                 double recCompress = RecommendedCompressionSetting(medianComp);
 
+                Complex? srcZ = null;
+                if (hasCube("ZSource"))
+                {
+                    var zc = GetCube("ZSource");   // always rank-1 {freq} from 7.5g importers
+                    var sr = zc[fi];
+                    if (sr.IsComplex) srcZ = sr.ComplexValue;
+                }
+
                 slices[fi] = new FreqSlice
                 {
                     FreqHz              = freqVals != null ? freqVals[fi] : 0.0,
@@ -415,6 +501,7 @@ namespace RfCore.Loadpull
                     Compressions        = compressions,
                     MedianCompression   = medianComp,
                     RecommendedCompression = recCompress,
+                    SourceZ             = srcZ,
                 };
             }
 
@@ -1051,15 +1138,16 @@ namespace RfCore.Loadpull
 
         private sealed class FreqSlice
         {
-            public double   FreqHz;
-            public int      NGrid;
+            public double    FreqHz;
+            public int       NGrid;
             public Complex[] Gammas  = Array.Empty<Complex>();
             public Complex[] Zs      = Array.Empty<Complex>();
             public double[]  PinAxis = Array.Empty<double>();
             public Dictionary<string, double[][]> DriveUps = new(StringComparer.Ordinal);
             public GridPointCompression[] Compressions = Array.Empty<GridPointCompression>();
-            public double MedianCompression;
-            public double RecommendedCompression;
+            public double    MedianCompression;
+            public double    RecommendedCompression;
+            public Complex?  SourceZ;
         }
 
         private readonly record struct FitKey(

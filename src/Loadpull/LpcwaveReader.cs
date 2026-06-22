@@ -128,6 +128,14 @@ namespace RfCore.Loadpull
             public Complex[] GammaLoad = Array.Empty<Complex>();
             public double[]  PinAxis   = Array.Empty<double>();
             public Dictionary<string, double[]> Foms = new(StringComparer.Ordinal);
+            // Raw derivation inputs (null when column absent)
+            public double[]? GinMag;       // |Γin| (linear)
+            public double[]? GinPhase;     // ∠Γin (degrees)
+            public double[]? TransPhase;   // transducer phase (degrees)
+            public double[]? ReflDb;       // input return loss dB (stored alias)
+            public double[]? ReflLin;      // reflection coeff (linear, stored alias)
+            public Complex   SourceGamma;  // per-freq source Γ (from first grid/pin)
+            public bool      HasSourceGamma;
         }
 
         private static FreqBlock ParseFreqBlock(List<string> lines, double freqGhz)
@@ -190,6 +198,26 @@ namespace RfCore.Loadpull
                     pinRelIdx = i - dataOffset;
                     break;
                 }
+            }
+
+            // ── Raw derivation input columns (not in dialect Map) ────────────────
+            int ginMagRelIdx  = -1, ginPhRelIdx  = -1;
+            int transPhRelIdx = -1;
+            int srcGMagRelIdx = -1, srcGPhRelIdx = -1;
+            for (int i = dataOffset; i < headerParts.Length; i++)
+            {
+                var h = headerParts[i];
+                int rel = i - dataOffset;
+                if      (h.Equals("|GinWaves@F0|",       StringComparison.OrdinalIgnoreCase)) ginMagRelIdx  = rel;
+                else if (h.Equals("PhiinWaves@F0[deg]",  StringComparison.OrdinalIgnoreCase)) ginPhRelIdx   = rel;
+                else if (h.Equals("PhiLWaves@F0[deg]",   StringComparison.OrdinalIgnoreCase)) transPhRelIdx = rel;
+                else if (h.Equals("|GS@F0|",             StringComparison.OrdinalIgnoreCase)) srcGMagRelIdx = rel;
+                else if (h.Equals("PhiS@F0[deg]",        StringComparison.OrdinalIgnoreCase)) srcGPhRelIdx  = rel;
+                // SPL-style names (lpcwave files may mix both dialects)
+                else if (h.Equals("Gamma_in_mag",    StringComparison.OrdinalIgnoreCase) && ginMagRelIdx  < 0) ginMagRelIdx  = rel;
+                else if (h.Equals("Gamma_in_phase",  StringComparison.OrdinalIgnoreCase) && ginPhRelIdx   < 0) ginPhRelIdx   = rel;
+                else if (h.Equals("trans_phase",     StringComparison.OrdinalIgnoreCase) && transPhRelIdx < 0) transPhRelIdx = rel;
+                else if (h.Equals("Refl_dB",         StringComparison.OrdinalIgnoreCase)) { /* handled via ginMag fallback */ }
             }
 
             // ── Scan grid points ─────────────────────────────────────────────────
@@ -290,6 +318,60 @@ namespace RfCore.Loadpull
                 for (int pi2 = 0; pi2 < nPin; pi2++)
                     block.Foms["PavlDbm"][gi2 * nPin + pi2] = block.PinAxis[pi2];
 
+            // ── Capture source Γ from first grid/pin (setup constant, MA pair) ───
+            if (srcGMagRelIdx >= 0 && srcGPhRelIdx >= 0 && driveups.Count > 0 && driveups[0].Count > 0)
+            {
+                var r0  = driveups[0][0];
+                double mag = srcGMagRelIdx < r0.Length ? r0[srcGMagRelIdx] : double.NaN;
+                double phd = srcGPhRelIdx  < r0.Length ? r0[srcGPhRelIdx]  : double.NaN;
+                if (!double.IsNaN(mag) && !double.IsNaN(phd))
+                {
+                    double phR = phd * Math.PI / 180.0;
+                    block.SourceGamma    = new Complex(mag * Math.Cos(phR), mag * Math.Sin(phR));
+                    block.HasSourceGamma = true;
+                }
+            }
+
+            // ── Allocate raw derivation capture arrays ───────────────────────────
+            bool hasGin = ginMagRelIdx >= 0 && ginPhRelIdx >= 0;
+            if (hasGin)
+            {
+                block.GinMag   = new double[nGrid * nPin];
+                block.GinPhase = new double[nGrid * nPin];
+                Array.Fill(block.GinMag,   double.NaN);
+                Array.Fill(block.GinPhase, double.NaN);
+            }
+            if (transPhRelIdx >= 0)
+            {
+                block.TransPhase = new double[nGrid * nPin];
+                Array.Fill(block.TransPhase, double.NaN);
+            }
+
+            if (hasGin || transPhRelIdx >= 0)
+            {
+                for (int gi = 0; gi < nGrid; gi++)
+                {
+                    var du = gi < driveups.Count ? driveups[gi] : null;
+                    for (int pi = 0; pi < nPin; pi++)
+                    {
+                        if (du is null || pi >= du.Count) continue;
+                        var row = du[pi];
+                        int idx = gi * nPin + pi;
+                        if (hasGin)
+                        {
+                            block.GinMag![idx]   = ginMagRelIdx < row.Length ? row[ginMagRelIdx]  : double.NaN;
+                            block.GinPhase![idx] = ginPhRelIdx  < row.Length ? row[ginPhRelIdx]   : double.NaN;
+                        }
+                        if (transPhRelIdx >= 0)
+                            block.TransPhase![idx] = transPhRelIdx < row.Length ? row[transPhRelIdx] : double.NaN;
+                    }
+                }
+            }
+
+            LoadpullDerivedFields.Derive(
+                block.Foms, block.NGrid, block.NPin,
+                block.GinMag, block.GinPhase, block.TransPhase, block.ReflDb, block.ReflLin);
+
             return block;
         }
 
@@ -302,7 +384,13 @@ namespace RfCore.Loadpull
 
             if (!multiFreq)
             {
-                AddFreqSlice(ds, blocks[0]);
+                var b0 = blocks[0];
+                AddFreqSlice(ds, b0);
+                if (b0.HasSourceGamma)
+                {
+                    var fa = new Axis("freq", new[] { b0.FreqGHz * 1e9 }, "Hz");
+                    ds.Add("ZSource", new DataCube(new[] { fa }, new Complex[] { GammaToZ(b0.SourceGamma) }));
+                }
             }
             else
             {
@@ -357,6 +445,17 @@ namespace RfCore.Loadpull
                 }
                 ds.Add("GammaLoad", new DataCube(new[] { freqAxis, gridAxis }, gammaAll));
                 ds.Add("ZLoad",     new DataCube(new[] { freqAxis, gridAxis }, zAll));
+
+                // ZSource — rank-1 {freq} cube, presence-gated
+                bool anySource = false;
+                foreach (var b in blocks) if (b.HasSourceGamma) { anySource = true; break; }
+                if (anySource)
+                {
+                    var zSrcVals = new Complex[nF];
+                    for (int fi = 0; fi < nF; fi++)
+                        zSrcVals[fi] = blocks[fi].HasSourceGamma ? GammaToZ(blocks[fi].SourceGamma) : Complex.Zero;
+                    ds.Add("ZSource", new DataCube(new[] { freqAxis }, zSrcVals));
+                }
             }
 
             return ds;
@@ -376,6 +475,12 @@ namespace RfCore.Loadpull
 
             ds.Add("GammaLoad", new DataCube(new[] { gridAxis }, b.GammaLoad));
             ds.Add("ZLoad",     new DataCube(new[] { gridAxis }, zLoad));
+
+            // Preserve the single measured frequency on a rank-1 "__Freq" carrier so the surface
+            // engine reports the real freq (not 0) for single-freq datasets. "__"-prefixed cubes
+            // are hidden from the trace picker.
+            ds.Add("__Freq", new DataCube(new[] { new Axis("freq", new[] { b.FreqGHz * 1e9 }, "Hz") },
+                                          new[] { b.FreqGHz * 1e9 }));
         }
 
         // ── Axes ────────────────────────────────────────────────────────────────

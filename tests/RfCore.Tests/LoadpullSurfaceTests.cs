@@ -475,4 +475,96 @@ public class LoadpullSurfaceTests
         Assert.True(distRe + distIm > 1e-9,
             "MaxEfficiency interpolated peak must vary with kernel choice");
     }
+
+    // ── 7.5a: summary-table accessors ────────────────────────────────────────
+
+    [Fact]
+    public void MetricAtCoord_Interp_EqualsSurfaceEval()
+    {
+        var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc        = new LoadpullSurface(ds);
+        var constraint = ConstraintSpec.AtCompression(3.0);
+
+        var mxp = sfc.MaxPower(0, constraint, SurfacePlane.Gamma);
+        Assert.NotNull(mxp);
+        Complex optimum = mxp!.Interpolated;
+
+        double fromAccessor = sfc.MetricAtCoord(0, "Pout", optimum, constraint,
+            SurfacePlane.Gamma, nearest: false);
+        double fromFit      = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma)!
+                                  .Rbf.Evaluate(optimum.Real, optimum.Imaginary);
+
+        Assert.True(double.IsFinite(fromAccessor), $"MetricAtCoord result should be finite, got {fromAccessor}");
+        Assert.Equal(fromFit, fromAccessor);
+    }
+
+    [Fact]
+    public void MetricAtCoord_Nearest_ReturnsNodeValue()
+    {
+        var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc        = new LoadpullSurface(ds);
+        var constraint = ConstraintSpec.AtCompression(3.0);
+
+        var mxp = sfc.MaxPower(0, constraint, SurfacePlane.Gamma);
+        Assert.NotNull(mxp);
+        Complex optimum = mxp!.Measured;
+
+        double result = sfc.MetricAtCoord(0, "Pout", optimum, constraint,
+            SurfacePlane.Gamma, nearest: true);
+
+        var rbf = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma)!.Rbf;
+        bool isNodeValue = false;
+        for (int i = 0; i < rbf.NodeCount; i++)
+            if (rbf.NodeValues[i] == result) { isNodeValue = true; break; }
+        Assert.True(isNodeValue, $"MetricAtCoord nearest={result} is not any measured node value");
+    }
+
+    [Fact]
+    public void MetricAtCoord_AbsentMetric_ReturnsNaN()
+    {
+        var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc        = new LoadpullSurface(ds);
+        var constraint = ConstraintSpec.AtCompression(3.0);
+
+        double result = sfc.MetricAtCoord(0, "NopeMetric", Complex.Zero, constraint,
+            SurfacePlane.Gamma, nearest: false);
+
+        Assert.True(double.IsNaN(result), $"Expected NaN for absent metric, got {result}");
+    }
+
+    [Fact]
+    public void OperatingPoint_AbsentCube_ReturnsNull()
+    {
+        var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc = new LoadpullSurface(ds);
+
+        Assert.Null(sfc.OperatingPoint(0, "NopeCube"));
+    }
+
+    [Fact]
+    public void OperatingPoint_PresentCube_ReturnsFiniteOrAbsent()
+    {
+        // BiasVLoad is mapped from VDD; present in some .spl files, absent in others.
+        // This test is presence-tolerant: finite value if present, null if absent.
+        var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc = new LoadpullSurface(ds);
+
+        var vdd = sfc.OperatingPoint(0, "BiasVLoad");
+        if (vdd.HasValue)
+            Assert.True(double.IsFinite(vdd.Value), $"BiasVLoad should be finite, got {vdd.Value}");
+        // else: cube absent in this fixture — presence-tolerant, no assertion needed
+    }
+
+    [Fact]
+    public void SourceZ_PresentAfterImport_ReturnsFiniteValue()
+    {
+        // After 7.5g, gamma_src1 is captured from the fixture → ZSource cube added → SourceZ is finite.
+        var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc = new LoadpullSurface(ds);
+
+        var sz = sfc.SourceZ(0);
+        Assert.NotNull(sz);
+        Assert.True(double.IsFinite(sz!.Value.Real),      $"SourceZ.Real should be finite, got {sz.Value.Real}");
+        Assert.True(double.IsFinite(sz.Value.Imaginary),  $"SourceZ.Imag should be finite, got {sz.Value.Imaginary}");
+    }
 }

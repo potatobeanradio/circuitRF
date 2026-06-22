@@ -124,6 +124,14 @@ namespace RfCore.Loadpull
             public double[]  PinAxis   = Array.Empty<double>(); // pinStep values (PavlDbm)
             // FOM data — each double[NGrid * NPin], row-major gi*NPin + pi
             public Dictionary<string, double[]> Foms = new(StringComparer.Ordinal);
+            // Raw derivation inputs (null when column absent)
+            public double[]? GinMag;       // |Γin| (linear)
+            public double[]? GinPhase;     // ∠Γin (degrees)
+            public double[]? TransPhase;   // transducer phase (degrees)
+            public double[]? ReflDb;       // input return loss dB (stored alias)
+            public double[]? ReflLin;      // reflection coeff (linear, stored alias)
+            public Complex   SourceGamma;  // per-freq source Γ (from first grid pt)
+            public bool      HasSourceGamma;
         }
 
         private static FreqBlock ParseFreqBlock(
@@ -268,6 +276,105 @@ namespace RfCore.Loadpull
                 for (int pi = 0; pi < nPin; pi++)
                     block.Foms["PavlDbm"][gi * nPin + pi] = block.PinAxis[pi];
 
+            // ── Detect raw derivation input column indices (not in dialect Map) ──
+            int ginMagCol  = colIdx.TryGetValue("Gamma_in_mag",          out int _gm1) ? _gm1
+                           : colIdx.TryGetValue("|GinWaves@F0|",         out int _gm2) ? _gm2 : -1;
+            int ginPhCol   = colIdx.TryGetValue("Gamma_in_phase",        out int _gp1) ? _gp1
+                           : colIdx.TryGetValue("PhiinWaves@F0[deg]",    out int _gp2) ? _gp2 : -1;
+            int transPhCol = colIdx.TryGetValue("trans_phase",            out int _tp1) ? _tp1
+                           : colIdx.TryGetValue("PhiLWaves@F0[deg]",     out int _tp2) ? _tp2 : -1;
+            int reflDbCol  = colIdx.TryGetValue("Refl_dB",               out int _rd1) ? _rd1
+                           : colIdx.TryGetValue("ReflectCoefficient_dB", out int _rd2) ? _rd2 : -1;
+            int reflLinCol = colIdx.TryGetValue("ReflectCoefficient",     out int _rl1) ? _rl1 : -1;
+            int srcGRealCol = colIdx.TryGetValue("gamma_src1_real",       out int _sr1) ? _sr1 : -1;
+            int srcGImagCol = colIdx.TryGetValue("gamma_src1_imag",       out int _si1) ? _si1 : -1;
+            int srcGMagCol  = -1, srcGPhCol = -1;
+            if (srcGRealCol < 0 || srcGImagCol < 0)
+            {
+                srcGMagCol = colIdx.TryGetValue("|GS@F0|",        out int _sm1) ? _sm1 : -1;
+                srcGPhCol  = colIdx.TryGetValue("PhiS@F0[deg]",   out int _sp1) ? _sp1 : -1;
+            }
+
+            // ── Capture source Γ from first row (validity-agnostic: it's a termination) ──
+            if (srcGRealCol >= 0 && srcGImagCol >= 0 && rawData.Count > 0)
+            {
+                var r0 = rawData[0];
+                double re = srcGRealCol < r0.Length ? r0[srcGRealCol] : double.NaN;
+                double im = srcGImagCol < r0.Length ? r0[srcGImagCol] : double.NaN;
+                if (!double.IsNaN(re) && !double.IsNaN(im))
+                {
+                    block.SourceGamma    = new Complex(re, im);
+                    block.HasSourceGamma = true;
+                }
+            }
+            else if (srcGMagCol >= 0 && srcGPhCol >= 0 && rawData.Count > 0)
+            {
+                var r0 = rawData[0];
+                double mag = srcGMagCol < r0.Length ? r0[srcGMagCol] : double.NaN;
+                double phd = srcGPhCol  < r0.Length ? r0[srcGPhCol]  : double.NaN;
+                if (!double.IsNaN(mag) && !double.IsNaN(phd))
+                {
+                    double phR = phd * Math.PI / 180.0;
+                    block.SourceGamma    = new Complex(mag * Math.Cos(phR), mag * Math.Sin(phR));
+                    block.HasSourceGamma = true;
+                }
+            }
+
+            // ── Allocate and fill per-sample raw derivation captures ─────────────
+            bool hasGin = ginMagCol >= 0 && ginPhCol >= 0;
+            if (hasGin)
+            {
+                block.GinMag   = new double[nGrid * nPin];
+                block.GinPhase = new double[nGrid * nPin];
+                Array.Fill(block.GinMag,   double.NaN);
+                Array.Fill(block.GinPhase, double.NaN);
+            }
+            if (transPhCol >= 0)
+            {
+                block.TransPhase = new double[nGrid * nPin];
+                Array.Fill(block.TransPhase, double.NaN);
+            }
+            if (reflDbCol >= 0)
+            {
+                block.ReflDb = new double[nGrid * nPin];
+                Array.Fill(block.ReflDb, double.NaN);
+            }
+            if (reflLinCol >= 0)
+            {
+                block.ReflLin = new double[nGrid * nPin];
+                Array.Fill(block.ReflLin, double.NaN);
+            }
+
+            if (hasGin || transPhCol >= 0 || reflDbCol >= 0 || reflLinCol >= 0)
+            {
+                for (int gi = 0; gi < nGrid; gi++)
+                {
+                    for (int pi = 0; pi < nPin; pi++)
+                    {
+                        int ri = gi * nPin + pi;
+                        if (ri >= rawData.Count) continue;
+                        var row     = rawData[ri];
+                        bool isValid = validCol < row.Length && row[validCol] != 0.0;
+
+                        if (hasGin)
+                        {
+                            block.GinMag![ri]   = isValid && ginMagCol < row.Length ? row[ginMagCol] : double.NaN;
+                            block.GinPhase![ri] = isValid && ginPhCol  < row.Length ? row[ginPhCol]  : double.NaN;
+                        }
+                        if (transPhCol >= 0)
+                            block.TransPhase![ri] = isValid && transPhCol < row.Length ? row[transPhCol] : double.NaN;
+                        if (reflDbCol >= 0)
+                            block.ReflDb![ri] = isValid && reflDbCol < row.Length ? row[reflDbCol] : double.NaN;
+                        if (reflLinCol >= 0)
+                            block.ReflLin![ri] = isValid && reflLinCol < row.Length ? row[reflLinCol] : double.NaN;
+                    }
+                }
+            }
+
+            LoadpullDerivedFields.Derive(
+                block.Foms, block.NGrid, block.NPin,
+                block.GinMag, block.GinPhase, block.TransPhase, block.ReflDb, block.ReflLin);
+
             return block;
         }
 
@@ -282,6 +389,11 @@ namespace RfCore.Loadpull
             {
                 var b = blocks[0];
                 AddFreqSlice(ds, b);
+                if (b.HasSourceGamma)
+                {
+                    var fa = new Axis("freq", new[] { b.FreqGHz * 1e9 }, "Hz");
+                    ds.Add("ZSource", new DataCube(new[] { fa }, new Complex[] { GammaToZ(b.SourceGamma) }));
+                }
             }
             else
             {
@@ -345,6 +457,17 @@ namespace RfCore.Loadpull
                 }
                 ds.Add("GammaLoad", new DataCube(new[] { freqAxis, gridAxis }, gammaAll));
                 ds.Add("ZLoad",     new DataCube(new[] { freqAxis, gridAxis }, zAll));
+
+                // ZSource — rank-1 {freq} cube, presence-gated
+                bool anySource = false;
+                foreach (var b in blocks) if (b.HasSourceGamma) { anySource = true; break; }
+                if (anySource)
+                {
+                    var zSrcVals = new Complex[nF];
+                    for (int fi = 0; fi < nF; fi++)
+                        zSrcVals[fi] = blocks[fi].HasSourceGamma ? GammaToZ(blocks[fi].SourceGamma) : Complex.Zero;
+                    ds.Add("ZSource", new DataCube(new[] { freqAxis }, zSrcVals));
+                }
             }
 
             return ds;
@@ -365,6 +488,12 @@ namespace RfCore.Loadpull
 
             ds.Add("GammaLoad", new DataCube(new[] { gridAxis }, gammaLoad));
             ds.Add("ZLoad",     new DataCube(new[] { gridAxis }, zLoad));
+
+            // Preserve the single measured frequency on a rank-1 "__Freq" carrier so the surface
+            // engine reports the real freq (not 0) for single-freq datasets. "__"-prefixed cubes
+            // are hidden from the trace picker.
+            ds.Add("__Freq", new DataCube(new[] { new Axis("freq", new[] { b.FreqGHz * 1e9 }, "Hz") },
+                                          new[] { b.FreqGHz * 1e9 }));
         }
 
         // ── Axes ────────────────────────────────────────────────────────────────
