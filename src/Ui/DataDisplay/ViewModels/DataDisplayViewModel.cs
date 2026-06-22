@@ -148,6 +148,7 @@ public partial class DataDisplayViewModel : ViewModelBase
         {
             foreach (var marker in trace.Markers)
             {
+                if (!marker.ShowInfoBox) continue;   // glyph still drawn by PlotRenderer
                 if (double.IsNaN(marker.InfoBoxPos.X))
                     PlaceInfoBoxInLogicalCoords(marker, trace, plot, container);
 
@@ -959,6 +960,29 @@ public partial class DataDisplayViewModel : ViewModelBase
             if (isContourTrace && libEntry is null) continue;
             if (isSummaryTrace && libEntry is null) continue;
 
+            void RestoreMarkers(Trace tr, TraceConfig tcfg)
+            {
+                foreach (var mc in tcfg.Markers)
+                {
+                    var marker = new Marker(tr, mc.Freq, mc.IsMulti, mc.IsDelta, mc.Index, mc.FreqUnits)
+                    {
+                        Name                   = mc.Name,
+                        MatrixFormat           = mc.MatrixFormat,
+                        Style                  = mc.Style,
+                        UseNormalizedImpedance = mc.UseNormalizedImpedance,
+                        MaximumFractionDigits  = mc.MaximumFractionDigits,
+                        InfoBoxPos             = new Avalonia.Point(mc.InfoBoxX, mc.InfoBoxY),
+                        PositionStatic         = new System.Numerics.Vector2(mc.PositionStaticX, mc.PositionStaticY),
+                        MarkerKind             = mc.MarkerKind,
+                        ShowInfoBox            = mc.ShowInfoBox,
+                        ContourSnapped         = mc.ContourSnapped,
+                        VswrEnabled            = mc.VswrEnabled,
+                        VswrValue              = mc.VswrValue,
+                    };
+                    tr.Markers.Add(marker);
+                }
+            }
+
             Trace trace;
             if (isSummaryTrace)
             {
@@ -976,6 +1000,7 @@ public partial class DataDisplayViewModel : ViewModelBase
                 ApplyProperties(traceConfig.Properties, trace.Properties);
                 trace.SourceRef  = sref;
                 trace.SourcePath = resolvedPath;
+                RestoreMarkers(trace, traceConfig);
                 plot.Traces.Add(trace);
                 continue;
             }
@@ -1021,6 +1046,7 @@ public partial class DataDisplayViewModel : ViewModelBase
                 ApplyProperties(traceConfig.Properties, trace.Properties);
                 trace.SourceRef  = sref;
                 trace.SourcePath = resolvedPath;
+                RestoreMarkers(trace, traceConfig);
                 plot.Traces.Add(trace);
                 continue;
             }
@@ -1064,23 +1090,9 @@ public partial class DataDisplayViewModel : ViewModelBase
             else if (snp is not null && !snp.IsEmpty)
                 trace.BuildPath(pc.PlotType, pc.FreqUnit);
 
-            if (isCubeBound) { plot.Traces.Add(trace); continue; } // markers not supported yet
+            if (isCubeBound) { RestoreMarkers(trace, traceConfig); plot.Traces.Add(trace); continue; }
 
-            foreach (var mc in traceConfig.Markers)
-            {
-                var marker = new Marker(trace, mc.Freq, mc.IsMulti, mc.IsDelta, mc.Index, mc.FreqUnits)
-                {
-                    Name                  = mc.Name,
-                    MatrixFormat          = mc.MatrixFormat,
-                    Style                 = mc.Style,
-                    UseNormalizedImpedance= mc.UseNormalizedImpedance,
-                    MaximumFractionDigits = mc.MaximumFractionDigits,
-                    InfoBoxPos            = new Avalonia.Point(mc.InfoBoxX, mc.InfoBoxY),
-                    PositionStatic        = new System.Numerics.Vector2(mc.PositionStaticX, mc.PositionStaticY),
-                };
-                trace.Markers.Add(marker);
-            }
-
+            RestoreMarkers(trace, traceConfig);
             plot.Traces.Add(trace);
         }
 
@@ -1310,6 +1322,11 @@ public partial class DataDisplayViewModel : ViewModelBase
                 InfoBoxY              = m.InfoBoxPos.Y,
                 PositionStaticX       = m.PositionStatic.X,
                 PositionStaticY       = m.PositionStatic.Y,
+                MarkerKind            = m.MarkerKind,
+                ShowInfoBox           = m.ShowInfoBox,
+                ContourSnapped        = m.ContourSnapped,
+                VswrEnabled           = m.VswrEnabled,
+                VswrValue             = m.VswrValue,
             });
         }
 

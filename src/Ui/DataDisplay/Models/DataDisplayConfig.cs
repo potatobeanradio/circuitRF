@@ -244,6 +244,14 @@ public sealed class MarkerConfig
     // For stability-circle markers: snapped world position.
     public float PositionStaticX { get; set; }
     public float PositionStaticY { get; set; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MarkerKind MarkerKind { get; set; } = MarkerKind.Polyline;
+
+    public bool   ShowInfoBox    { get; set; } = true;
+    public bool   ContourSnapped { get; set; }
+    public bool   VswrEnabled    { get; set; }
+    public double VswrValue      { get; set; } = 2.0;
 }
 
 /// <summary>Persisted authoring state for one loadpull contour trace (7.4e).

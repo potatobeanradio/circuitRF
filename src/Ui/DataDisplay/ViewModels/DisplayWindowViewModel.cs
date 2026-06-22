@@ -81,6 +81,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ActiveInspector));
         RemovePlotCommand.NotifyCanExecuteChanged();
         CutCommand.NotifyCanExecuteChanged();
+        DeleteSelectedCommand.NotifyCanExecuteChanged();
         UndoCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
     }
@@ -99,6 +100,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
         {
             RemovePlotCommand.NotifyCanExecuteChanged();
             CutCommand.NotifyCanExecuteChanged();
+            DeleteSelectedCommand.NotifyCanExecuteChanged();
         }
         if (e.PropertyName == nameof(DataDisplayViewModel.HasSingleSelection))
         {
@@ -459,6 +461,10 @@ public partial class DisplayWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanRemovePlot))]
     private void RemovePlot() => DataDisplay?.RemoveSelected();
     private bool CanRemovePlot() => DataDisplay?.HasAnySelection ?? false;
+
+    [RelayCommand(CanExecute = nameof(CanDeleteSelected))]
+    private void DeleteSelected() => DataDisplay?.DeleteSelected();
+    private bool CanDeleteSelected() => DataDisplay?.HasAnySelection ?? false;
 
     [RelayCommand]
     private async Task OpenDataDisplay()

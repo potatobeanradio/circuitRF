@@ -9,6 +9,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using CircuitRF.Ui.Renderers;
 using SkiaSharp;
 
@@ -295,21 +296,49 @@ namespace CircuitRF.Ui.DataDisplay
                 dataPx.Y - ts - 4f,
                 SKTextAlign.Left, font, paint);
 
-            // Downward-pointing filled triangle
-            using var triPath = new SKPath();
-            triPath.MoveTo(dataPx.X,            dataPx.Y);
-            triPath.LineTo(dataPx.X - ts / 2f,  dataPx.Y - ts);
-            triPath.LineTo(dataPx.X + ts / 2f,  dataPx.Y - ts);
-            triPath.Close();
+            bool isContourMode1 = marker.MarkerKind == MarkerKind.Contour && !marker.ContourSnapped;
 
-            using var triPaint = new SKPaint
+            using var glyphPath = new SKPath();
+            if (isContourMode1)
             {
-                Color       = theme.TextColor,
-                Style       = SKPaintStyle.Fill,
-                IsAntialias = true
-            };
-            canvas.DrawPath(triPath, triPaint);
+                // Ringed circle: filled disc + thin black stroked ring (design §9) —
+                // signals the reading is a 2-D interpolant, not a measured/grid value.
+                float r = ts * 0.5f;
+                glyphPath.AddCircle(dataPx.X, dataPx.Y, r);
 
+                using var discPaint = new SKPaint
+                {
+                    Color       = theme.TextColor,
+                    Style       = SKPaintStyle.Fill,
+                    IsAntialias = true,
+                };
+                canvas.DrawPath(glyphPath, discPaint);
+
+                using var ringPaint = new SKPaint
+                {
+                    Color       = SKColors.Black,
+                    StrokeWidth = Math.Max(1f, ts * 0.08f),
+                    Style       = SKPaintStyle.Stroke,
+                    IsAntialias = true,
+                };
+                canvas.DrawPath(glyphPath, ringPaint);
+            }
+            else
+            {
+                // Downward-pointing filled triangle (unchanged from prior behavior).
+                glyphPath.MoveTo(dataPx.X,           dataPx.Y);
+                glyphPath.LineTo(dataPx.X - ts / 2f, dataPx.Y - ts);
+                glyphPath.LineTo(dataPx.X + ts / 2f, dataPx.Y - ts);
+                glyphPath.Close();
+
+                using var triPaint = new SKPaint
+                {
+                    Color       = theme.TextColor,
+                    Style       = SKPaintStyle.Fill,
+                    IsAntialias = true,
+                };
+                canvas.DrawPath(glyphPath, triPaint);
+            }
 
             // Selection highlight of marker glyph; note to AI tools:  never change this selection algorithm
             if (isSelected)
@@ -321,7 +350,7 @@ namespace CircuitRF.Ui.DataDisplay
                     Style       = SKPaintStyle.Stroke,
                     IsAntialias = true,
                 };
-                canvas.DrawPath(triPath, hlPaint);
+                canvas.DrawPath(glyphPath, hlPaint);
             }
         }
 
@@ -331,6 +360,52 @@ namespace CircuitRF.Ui.DataDisplay
         /// </summary>
         public static float SymbolHitRadius(Marker marker, (double W, double H) canvasSize)
             => SymbolTextSize(marker, canvasSize) * 1.5f;
+
+        // ---- VSWR locus overlay -------------------------------------------
+        //  Draws a red, no-fill closed polyline through the constant-VSWR locus
+        //  around a marker that has VswrEnabled. plane/z0Ref are resolved by the
+        //  caller (PlotRenderer) from the host plot + trace.
+
+        /// <summary>
+        /// Draws the constant-VSWR locus (red stroke, no fill) around a marker that carries a Z/Γ value.
+        /// plane/z0Ref are resolved by the caller (PlotRenderer) from the host plot + trace.
+        /// Drawn inside the plot clip. No-op when the marker has no usable coordinate.
+        /// </summary>
+        public static void DrawVswrLocus(
+            SKCanvas canvas, (double W, double H) canvasSize,
+            Marker marker, Trace trace, TransformSet tf,
+            RfCore.Loadpull.SurfacePlane plane, Complex z0Ref)
+        {
+            if (!marker.VswrEnabled) return;
+
+            var dl     = trace.GetMarkerDataLocation(marker);
+            var center = new Complex(dl.X, dl.Y);
+
+            var pts = RfCore.Loadpull.LoadpullSurface.VswrLocus(
+                center, marker.VswrValue, plane, z0Ref);
+            if (pts is null || pts.Length < 2) return;
+
+            float lw = (float)(Math.Min(canvasSize.W, canvasSize.H) / 200.0);
+            using var paint = new SKPaint
+            {
+                Color       = SKColors.Red,
+                StrokeWidth = lw * 1.1f,
+                Style       = SKPaintStyle.Stroke,
+                IsAntialias = true,
+                StrokeJoin  = SKStrokeJoin.Round,
+            };
+
+            using var path = new SKPath();
+            var p0 = tf.ToCanvas(pts[0].Real, pts[0].Imaginary, trace.UseSecondaryAxis);
+            path.MoveTo(p0);
+            for (int i = 1; i < pts.Length; i++)
+            {
+                var p = tf.ToCanvas(pts[i].Real, pts[i].Imaginary, trace.UseSecondaryAxis);
+                path.LineTo(p);
+            }
+            path.Close();
+            canvas.DrawPath(path, paint);
+        }
 
         // ---- Multi-marker vertical line ------------------------------------
         //  Drawn inside the viewport clip rect (caller's responsibility).

@@ -86,10 +86,14 @@ public partial class MarkerInfoBoxView : UserControl
             Vm.Marker,
             Vm.Trace,
             Vm.Container.PlotVM.Plot.Traces,
-            openEditorFlyout: () => OpenEditorFlyout(),
-            changeToTrace:    t  => Vm.ChangeToTrace(t),
-            removeMarker:     () => Vm.RemoveMarker(),
-            showFilePrefix:   Vm.ShowFilePrefix);
+            Vm.Container.PlotVM.Plot,
+            openEditorFlyout:     () => OpenEditorFlyout(),
+            changeToTrace:        t  => Vm.ChangeToTrace(t),
+            removeMarker:         () => Vm.RemoveMarker(),
+            showFilePrefix:       Vm.ShowFilePrefix,
+            onContourModeToggled: () => Vm.RequestRedraw(),
+            onShowInfoBoxToggled: () => Vm.Container.RequestInfoBoxRebuild(),
+            onVswrToggled:        () => { Vm.RequestRedraw(); Vm.Container.RequestPlotRedraw(); });
     }
 
     /// <summary>
@@ -103,10 +107,14 @@ public partial class MarkerInfoBoxView : UserControl
         Marker                                    marker,
         Trace                                     trace,
         System.Collections.Generic.IList<Trace>   allTraces,
+        Plot                                      hostPlot,
         Action?                                   openEditorFlyout,
         Action<Trace>                             changeToTrace,
         Action                                    removeMarker,
-        bool                                      showFilePrefix = true)
+        bool                                      showFilePrefix = true,
+        Action?                                   onContourModeToggled = null,
+        Action?                                   onShowInfoBoxToggled = null,
+        Action?                                   onVswrToggled = null)
     {
         menu.Items.Clear();
 
@@ -142,6 +150,69 @@ public partial class MarkerInfoBoxView : UserControl
 
         menu.Items.Add(editItem);
         menu.Items.Add(changeItem);
+
+        // ---- Grouped toggles (no separators between them) ----
+        if (PlotRenderer.VswrAvailableFor(hostPlot, trace, marker))
+        {
+            var vswrItem = new MenuItem
+            {
+                Header = marker.VswrEnabled
+                    ? $"VSWR: {marker.VswrValue.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture)}"
+                    : "VSWR",
+                Icon = new MaterialIcon
+                {
+                    Kind = marker.VswrEnabled
+                        ? MaterialIconKind.CheckboxOutline
+                        : MaterialIconKind.CheckboxBlankOutline,
+                },
+            };
+            vswrItem.Click += (_, _) =>
+            {
+                marker.VswrEnabled = !marker.VswrEnabled;
+                onVswrToggled?.Invoke();
+            };
+            menu.Items.Add(vswrItem);
+        }
+
+        if (marker.MarkerKind == MarkerKind.Contour)
+        {
+            var snapItem = new MenuItem
+            {
+                Header = "Snap to Point",
+                Icon   = new MaterialIcon
+                {
+                    Kind = marker.ContourSnapped
+                        ? MaterialIconKind.CheckboxOutline
+                        : MaterialIconKind.CheckboxBlankOutline,
+                },
+            };
+            snapItem.Click += (_, _) =>
+            {
+                marker.ContourSnapped = !marker.ContourSnapped;
+                marker.PositionStatic = trace.ResolveContourMarkerPosition(marker, marker.PositionStatic);
+                onContourModeToggled?.Invoke();
+            };
+            menu.Items.Add(snapItem);
+        }
+
+        var showBoxItem = new MenuItem
+        {
+            Header = "Show Info Box",
+            Icon   = new MaterialIcon
+            {
+                Kind = marker.ShowInfoBox
+                    ? MaterialIconKind.CheckboxOutline
+                    : MaterialIconKind.CheckboxBlankOutline,
+            },
+        };
+        showBoxItem.Click += (_, _) =>
+        {
+            marker.ShowInfoBox = !marker.ShowInfoBox;
+            onShowInfoBoxToggled?.Invoke();
+        };
+        menu.Items.Add(showBoxItem);
+
+        // ---- Remove — always last, separator above ----
         menu.Items.Add(new Separator());
         menu.Items.Add(removeItem);
     }

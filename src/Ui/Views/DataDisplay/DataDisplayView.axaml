@@ -14,7 +14,7 @@
         <KeyBinding Gesture="Meta+Shift+A"  Command="{Binding ViewModel.Window.AddPlotCommand}"/>
         <KeyBinding Gesture="Ctrl+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
         <KeyBinding Gesture="Meta+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
-        <KeyBinding Gesture="Delete"        Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
+        <KeyBinding Gesture="Delete"        Command="{Binding ViewModel.Window.DeleteSelectedCommand}"/>
         <KeyBinding Gesture="Ctrl+Shift+D"  Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
         <KeyBinding Gesture="Meta+Shift+D"  Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
         <KeyBinding Gesture="Ctrl+OemPlus"  Command="{Binding ViewModel.Window.ZoomInCommand}"/>

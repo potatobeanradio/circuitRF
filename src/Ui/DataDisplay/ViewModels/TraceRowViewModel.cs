@@ -481,10 +481,11 @@ public partial class TraceRowViewModel : ViewModelBase
             levels = ContourExtractor.LevelsBetween(grid, Math.Max(1, cd.LevelCount));
         }
 
-        cd.Grid     = grid;
-        cd.FillGrid = fillGrid;
-        cd.Scatter  = scatter;
-        cd.Levels   = levels;
+        cd.Grid       = grid;
+        cd.FillGrid   = fillGrid;
+        cd.Scatter    = scatter;
+        cd.Levels     = levels;
+        cd.GammaPlane = plane == SurfacePlane.Gamma;
 
         // Cache MXP / MXE for the renderer (surface stays out of renderer path).
         cd.MxpCoord = surface.MaxPower(freqIdx, constraint, plane,
@@ -492,17 +493,49 @@ public partial class TraceRowViewModel : ViewModelBase
         cd.MxeCoord = surface.MaxEfficiency(freqIdx, constraint, plane,
             kernel: cd.InterpKernel, smooth: cd.Smoothing, epsilon: cd.Epsilon)?.Measured;
 
+        // Marker surface-evaluation hooks — capture locals so the closures are stable.
+        var      evalSurface = surface;
+        int      evalFreq    = freqIdx;
+        string   evalMetric  = cd.MetricName;
+        var      evalConstr  = constraint;
+        var      evalPlane   = plane;
+        RbfKernel evalKernel = cd.InterpKernel;
+        double   evalSmooth  = cd.Smoothing;
+        double?  evalEps     = cd.Epsilon;
+
+        cd.EvaluateMetric = (coord, snapped) =>
+            evalSurface.MetricAtCoord(evalFreq, evalMetric, coord, evalConstr, evalPlane,
+                nearest: snapped, kernel: evalKernel, smooth: evalSmooth, epsilon: evalEps);
+
+        var nodeCoords = scatter.Coords;
+        cd.NearestNode = coord =>
+        {
+            if (nodeCoords is null || nodeCoords.Length == 0) return coord;
+            int best = 0; double bestD2 = double.PositiveInfinity;
+            for (int i = 0; i < nodeCoords.Length; i++)
+            {
+                double dx = nodeCoords[i].Real - coord.Real;
+                double dy = nodeCoords[i].Imaginary - coord.Imaginary;
+                double d2 = dx * dx + dy * dy;
+                if (d2 < bestD2) { bestD2 = d2; best = i; }
+            }
+            return nodeCoords[best];
+        };
+
         _parent.Notify();
     }
 
     private static void ClearContourGrid(ContourData cd)
     {
-        cd.Grid     = null;
-        cd.FillGrid = null;
-        cd.Scatter  = null;
-        cd.Levels   = new ContourLevelSet(Array.Empty<double>());
-        cd.MxpCoord = null;
-        cd.MxeCoord = null;
+        cd.Grid           = null;
+        cd.FillGrid       = null;
+        cd.Scatter        = null;
+        cd.Levels         = new ContourLevelSet(Array.Empty<double>());
+        cd.MxpCoord       = null;
+        cd.MxeCoord       = null;
+        cd.EvaluateMetric = null;
+        cd.NearestNode    = null;
+        cd.GammaPlane     = false;
     }
 
     private bool EnsureLoadpullSurface()

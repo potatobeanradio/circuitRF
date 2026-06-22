@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RfCore;
@@ -182,8 +183,129 @@ public partial class MarkerEditorViewModel : ViewModelBase
         NotifyParent();
     }
 
-    /// <summary>True when the host plot is a Rect chart — gates IsMulti / IsDelta controls.</summary>
-    public bool ShowMultiDeltaControls => _parent is not null && _parent.PlotType == PlotType.Rect;
+    // ---- ShowInfoBox toggle ---------------------------------------------
+
+    [ObservableProperty]
+    private bool _showInfoBox;
+
+    partial void OnShowInfoBoxChanged(bool value)
+    {
+        if (!MarkerIsLive) return;
+        _marker.ShowInfoBox = value;
+        NotifyParent();
+        _parent?.Container.RequestInfoBoxRebuild();
+    }
+
+    // ---- VSWR enable + value -------------------------------------------
+
+    [ObservableProperty]
+    private bool _vswrEnabled;
+
+    partial void OnVswrEnabledChanged(bool value)
+    {
+        if (!MarkerIsLive) return;
+        _marker.VswrEnabled = value;
+        NotifyParent();
+        _parent?.Container.RequestPlotRedraw();
+    }
+
+    [ObservableProperty]
+    private string _vswrValueText = "2";
+
+    public void CommitVswrValue()
+    {
+        if (!MarkerIsLive) return;
+        if (double.TryParse(VswrValueText, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.CurrentCulture, out double v))
+        {
+            _marker.VswrValue = v;
+            VswrValueText = v.ToString("G6");
+            NotifyParent();
+            _parent?.Container.RequestPlotRedraw();
+        }
+        else
+        {
+            VswrValueText = _marker.VswrValue.ToString("G6");
+        }
+    }
+
+    // ---- Contour mode (Mode 1 free / Mode 2 snapped) -------------------
+
+    [ObservableProperty]
+    private bool _contourSnapped;
+
+    partial void OnContourSnappedChanged(bool value)
+    {
+        if (!MarkerIsLive) return;
+        _marker.ContourSnapped = value;
+        _marker.PositionStatic = _parent!.Trace.ResolveContourMarkerPosition(_marker, _marker.PositionStatic);
+        NotifyParent();
+        _parent.Container.RequestPlotRedraw();
+    }
+
+    // ---- Impedance (buffered, contour markers only) ---------------------
+
+    [ObservableProperty]
+    private string _impedanceText = "";
+
+    private Complex RealZ0()
+    {
+        var z0 = _parent!.Trace.Z0;
+        return z0 == Complex.Zero ? new Complex(50, 0) : z0;
+    }
+
+    public void SyncImpedanceText()
+    {
+        if (_parent is null || !_parent.Trace.IsContourTrace) return;
+        var pos = _marker.PositionStatic;
+        Complex shown = _parent.PlotType == PlotType.Rect
+            ? new Complex(pos.X, pos.Y)
+            : RfHelpers.G2Z(new Complex(pos.X, pos.Y)) * RealZ0();
+        ImpedanceText = ComplexStringHelper.Format(shown, "G6");
+    }
+
+    public void CommitImpedance()
+    {
+        if (!MarkerIsLive || _parent is null || !_parent.Trace.IsContourTrace) return;
+        if (!ComplexStringHelper.TryParse(ImpedanceText, out Complex z)) { SyncImpedanceText(); return; }
+        Complex posC = _parent.PlotType == PlotType.Rect
+            ? z
+            : RfHelpers.Z2G(z / RealZ0());
+        var world = new System.Numerics.Vector2((float)posC.Real, (float)posC.Imaginary);
+        _marker.PositionStatic = _parent.Trace.ResolveContourMarkerPosition(_marker, world);
+        SyncImpedanceText();
+        NotifyParent();
+        _parent.Container.RequestPlotRedraw();
+    }
+
+    // ---- Visibility gates -----------------------------------------------
+
+    public bool IsContour  => _parent is not null && _parent.Trace.IsContourTrace;
+    public bool IsSpectrum => _parent is not null && _parent.Trace.IsHarmonicStem;
+    public bool IsRectPlot => _parent is not null && _parent.PlotType == PlotType.Rect;
+
+    /// <summary>VSWR controls show only for markers on a Smith/Γ plot (§6.1 gate).</summary>
+    public bool ShowVswrControls =>
+        _parent is not null &&
+        PlotRenderer.VswrAvailableFor(_parent.Container.PlotVM.Plot, _parent.Trace, _marker);
+
+    /// <summary>Contour mode toggle shows only for contour markers.</summary>
+    public bool ShowContourModeToggle => _parent is not null && _parent.Trace.IsContourTrace;
+
+    /// <summary>True when the host plot is a Rect chart and not a contour trace.</summary>
+    public bool ShowMultiDeltaControls => _parent is not null && _parent.PlotType == PlotType.Rect && !IsContour;
+
+    /// <summary>Z0 line hidden for contour-on-Rect and for spectrum.</summary>
+    public bool ShowZ0Line => _parent is not null && !IsSpectrum && !(IsContour && IsRectPlot);
+
+    /// <summary>Norm Z toggle hidden for contour-on-Rect and spectrum.</summary>
+    public bool ShowNormZ => _parent is not null && !(IsContour && IsRectPlot) && !IsSpectrum;
+
+    /// <summary>Frequency field shown for network/stability markers only.</summary>
+    public bool ShowFrequencyField => _parent is not null && !IsContour && !IsSpectrum;
+
+    /// <summary>Impedance field shown for contour markers.</summary>
+    public bool ShowImpedanceField => IsContour;
 
     /// <summary>
     /// Matrix-format selector is only meaningful on Smith/Polar plots where the marker
@@ -227,6 +349,11 @@ public partial class MarkerEditorViewModel : ViewModelBase
         _name            = marker.Name;
 #pragma warning disable MVVMTK0034
         _freqDisplayText = (marker.Freq * marker.FreqUnits.Scale()).ToString("G6");
+        _showInfoBox     = marker.ShowInfoBox;
+        _vswrEnabled     = marker.VswrEnabled;
+        _vswrValueText   = marker.VswrValue.ToString("G6");
+        _contourSnapped  = marker.ContourSnapped;
+        _impedanceText   = "";
 #pragma warning restore MVVMTK0034
         _matrixFormat    = marker.MatrixFormat;
         _style           = marker.Style;
@@ -245,6 +372,11 @@ public partial class MarkerEditorViewModel : ViewModelBase
         _name           = _marker.Name;
 #pragma warning disable MVVMTK0034
         _freqDisplayText= (_marker.Freq * _marker.FreqUnits.Scale()).ToString("G6");
+        _showInfoBox    = _marker.ShowInfoBox;
+        _vswrEnabled    = _marker.VswrEnabled;
+        _vswrValueText  = _marker.VswrValue.ToString("G6");
+        _contourSnapped = _marker.ContourSnapped;
+        _impedanceText  = "";
 #pragma warning restore MVVMTK0034
         _matrixFormat   = _marker.MatrixFormat;
         _style          = _marker.Style;
@@ -253,13 +385,14 @@ public partial class MarkerEditorViewModel : ViewModelBase
         _formatString   = _marker.FormatString;
         _isMulti        = _marker.IsMulti;
         _isDelta        = _marker.IsDelta;
+        SyncImpedanceText();
     }
 
     // ---- Data-point display (always shown) and multi-marker rows --------
 
     /// <summary>Own trace data description, e.g. "dB(S(2,1))=−12.3 dB ∠−45°".</summary>
     public string OwnDataLine => _parent is null ? "dB(S(2,1)) = −3.45 dB ∠−45°"
-        : _parent.Trace.GetMarkerValString(_marker, showFilePrefix: false);
+        : _parent.Trace.GetEditorDataLine(_marker, showFilePrefix: false);
 
     /// <summary>Own trace reference impedance, e.g. "Z0=50 Ω".</summary>
     public string OwnZ0Line => _parent is null ? "Z0=50 Ω"
@@ -300,6 +433,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
         OnPropertyChanged(nameof(OwnDataLine));
         OnPropertyChanged(nameof(HasMultiLines));
         OnPropertyChanged(nameof(MultiLines));
+        SyncImpedanceText();
     }
 
     public string FreqUnitLabel => _marker.FreqUnits.Description();

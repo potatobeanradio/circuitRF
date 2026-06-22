@@ -847,7 +847,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
                         sliced.DataKind == DataKind.Real    ? sliced.RealValues    : null));
         }
         if (xVals is null) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
-        t.SetFamilyData(xVals, xName, xUnit, fAxis.Name, curves, plotType, freqUnit);
+        t.SetFamilyData(xVals, xName, xUnit, fAxis.Name, curves, plotType, freqUnit,
+                        familyAxisUnit: string.IsNullOrEmpty(fAxis.Unit) ? null : fAxis.Unit);
     }
 
     /// <summary>

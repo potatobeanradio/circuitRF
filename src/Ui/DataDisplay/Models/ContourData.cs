@@ -127,6 +127,23 @@ namespace CircuitRF.Ui.DataDisplay
         public Complex? MxpCoord { get; set; }
         public Complex? MxeCoord { get; set; }
 
+        // ---- Marker surface-evaluation hooks (non-serialized; set by RebuildContour) ----
+        // Both are null until the contour has been fitted. Markers must null-check and
+        // fall back to NaN / identity when null (e.g. before first fit, or fit failed).
+
+        /// <summary>Evaluates the contour metric at a coordinate in the fit plane (Γ if Smith/Polar, Z if Rect).
+        /// snapped=false → RBF-interpolated surface value (Mode 1); snapped=true → nearest measured node value
+        /// (Mode 2). Returns NaN when the surface can't be evaluated. Set by RebuildContour.</summary>
+        public Func<Complex, bool, double>? EvaluateMetric { get; set; }
+
+        /// <summary>Maps an arbitrary coordinate (fit plane) to the nearest measured grid-node coordinate,
+        /// for Mode-2 glyph snapping. Returns the input unchanged when unavailable. Set by RebuildContour.</summary>
+        public Func<Complex, Complex>? NearestNode { get; set; }
+
+        /// <summary>True when the contour lives on a Smith/Polar (Γ) plot; false for Rect (Z) plots.
+        /// Non-serialized — set by RebuildContour from the resolved SurfacePlane.</summary>
+        public bool GammaPlane { get; set; }
+
         // ---- Polyline cache ------------------------------------------------
 
         private IReadOnlyList<IsoPolyline>? _cachedPolylines;

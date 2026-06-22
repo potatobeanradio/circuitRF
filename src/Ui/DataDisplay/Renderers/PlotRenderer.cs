@@ -8,12 +8,23 @@
 
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using CircuitRF.Ui.Renderers;
 using RfCore.Loadpull;
 using SkiaSharp;
 
 namespace CircuitRF.Ui.DataDisplay
 {
+    // ============================================================
+    //  VswrReadout  —  transient drag-readout payload
+    // ============================================================
+
+    /// <summary>
+    /// Transient readout shown next to the pointer while the user drags a VSWR locus.
+    /// Not part of the persistent Plot model — built from drag state and discarded on release.
+    /// </summary>
+    public readonly record struct VswrReadout(string Text, SkiaSharp.SKPoint PointerPx);
+
     // ============================================================
     //  TransformSet
     // ============================================================
@@ -156,7 +167,8 @@ namespace CircuitRF.Ui.DataDisplay
             float                watermarkOpacity = 0.06f,
             HashSet<Marker>?     selectedMarkers  = null,
             SKColor              selectionColor   = default,
-            float                zoomLevel        = 1f)
+            float                zoomLevel        = 1f,
+            VswrReadout?         vswrReadout      = null)
         {
             if (plot.PlotType == PlotType.Table)
             {
@@ -262,15 +274,49 @@ namespace CircuitRF.Ui.DataDisplay
 
             if (detail == PlotDetail.Full)
             {
-                canvas.Save();
-                canvas.ClipRect(new SKRect(0, 0, (float)canvasSize.W, (float)canvasSize.H));
+                var viewportClip = ViewportClipRect(tf.Viewport, canvasSize);
                 foreach (var trace in plot.Traces)
                     foreach (var marker in trace.Markers)
+                    {
+                        if (marker.VswrEnabled && VswrAvailableFor(plot, trace, marker))
+                        {
+                            var vplane = plot.PlotType is PlotType.Smith or PlotType.Polar
+                                ? SurfacePlane.Gamma : SurfacePlane.Z;
+                            // Full complex trace Z0 is the reference — never drop the imaginary part.
+                            var z0Ref = trace.Z0 == System.Numerics.Complex.Zero
+                                ? new System.Numerics.Complex(50.0, 0.0)
+                                : trace.Z0;
+                            canvas.Save();
+                            canvas.ClipRect(viewportClip);
+                            MarkerRenderer.DrawVswrLocus(canvas, canvasSize, marker, trace, tf, vplane, z0Ref);
+                            canvas.Restore();
+                        }
                         MarkerRenderer.DrawSymbol(canvas, canvasSize, marker, trace, tf, theme,
                             isSelected:     selectedMarkers?.Contains(marker) ?? false,
                             selectionColor: selectionColor);
-                canvas.Restore();
+                    }
+
+                // ---- Live VSWR drag readout (unclipped — must not be cut off near the edge) ----
+                if (vswrReadout is { } ro)
+                {
+                    using var font  = new SKFont(CircuitRF.Ui.Renderers.SkiaFonts.PlexBold,
+                                                 (float)(Math.Min(canvasSize.W, canvasSize.H) * 0.0224));
+                    using var paint = new SKPaint { Color = SKColors.Black, IsAntialias = true };
+                    canvas.DrawText(ro.Text, ro.PointerPx.X + 10f, ro.PointerPx.Y - 10f,
+                                    SKTextAlign.Left, font, paint);
+                }
             }
+        }
+
+        // §6.1: VSWR locus is available only when the marker has a well-defined Z/Γ value.
+        //  - Smith/Polar plot: any marker on a complex plane qualifies.
+        //  - Rect plot: only a contour marker (Z-plane); ordinary Rect traces are Cartesian (no Z/Γ).
+        //  - Table excluded (tables don't reach this renderer path).
+        internal static bool VswrAvailableFor(Plot plot, Trace trace, Marker marker)
+        {
+            if (plot.PlotType is PlotType.Smith or PlotType.Polar) return true;
+            if (plot.PlotType == PlotType.Rect) return trace.IsContourTrace;
+            return false;
         }
 
         // ---- Viewport clip rect -----------------------------------------

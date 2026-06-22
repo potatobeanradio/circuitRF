@@ -282,6 +282,11 @@ namespace CircuitRF.Ui.DataDisplay
         /// <summary>Name of the iterated (family) axis — the legend title.</summary>
         public string? FamilyAxisName { get; set; }
 
+        /// <summary>Unit of the iterated (family) axis (e.g. "Hz" when the family axis is a frequency,
+        /// such as the HB "harmonic" axis whose coordinate values are physical frequencies). Null when
+        /// the axis is unitless. Used to unit-scale the family-curve value in a marker InfoBox.</summary>
+        public string? FamilyAxisUnit { get; set; }
+
         /// <summary>True when the slice marks an axis FamilyIterate.</summary>
         public bool IsFamily => Slice is not null && Array.Exists(Slice, s => s.Role == AxisRole.FamilyIterate);
 
@@ -529,6 +534,7 @@ namespace CircuitRF.Ui.DataDisplay
             SourceZ0IsUnusual = src.SourceZ0IsUnusual;
             // Family axis name (Phase 7.3b).
             FamilyAxisName = src.FamilyAxisName;
+            FamilyAxisUnit = src.FamilyAxisUnit;
             // Contour traces: deep-copy authoring fields so paste gets an independent
             // ContourData that re-fits independently.  Grid/Levels/caches are left null
             // and repopulated when the pasted trace's VM calls RebuildContour.
@@ -615,12 +621,13 @@ namespace CircuitRF.Ui.DataDisplay
         /// xValues are shared across curves (same X axis). Each curve carries its own complex/real values.</summary>
         public void SetFamilyData(double[] xValues, string xAxisName, string? xUnit, string familyAxisName,
             IReadOnlyList<(double axisValue, string? axisLabel, Complex[]? cz, double[]? rv)> curves,
-            PlotType plotType, FreqUnit freqUnit)
+            PlotType plotType, FreqUnit freqUnit, string? familyAxisUnit = null)
         {
             _cubeIsScalar = false;
             _cubeXValues = xValues; _cubeXAxisName = xAxisName; _cubeXUnit = xUnit;
             _cubeComplexValues = null; _cubeRealValues = null;
             FamilyAxisName = familyAxisName;
+            FamilyAxisUnit = familyAxisUnit;
             FamilyCurves.Clear();
             FamilyColumnWidths.Clear();
             Points.Clear();
@@ -1022,6 +1029,26 @@ namespace CircuitRF.Ui.DataDisplay
         public (int FreqIndex, double Distance, Vector2 NearestPoint)?
             FindNearestTraceData(Vector2 queryPt)
         {
+            // Family cube trace: geometry is in FamilyCurves[].Points, not Points.
+            // Search across all curves; FreqIndex returns the X-array index of the hit.
+            if (IsFamily)
+            {
+                double bestF = double.PositiveInfinity;
+                int    bestI = -1;
+                Vector2 bestP = default;
+                bool complexPlane = YAxis == DependentVarFormat.Complex;
+                for (int c = 0; c < FamilyCurves.Count; c++)
+                {
+                    var cps = FamilyCurves[c].Points;
+                    for (int i = 0; i < cps.Count; i++)
+                    {
+                        double d = complexPlane ? Dist(queryPt, cps[i]) : Math.Abs(queryPt.X - cps[i].X);
+                        if (d < bestF) { bestF = d; bestI = i; bestP = cps[i]; }
+                    }
+                }
+                return bestI < 0 ? null : (bestI, bestF, bestP);
+            }
+
             if (IsStabilityCircle)
             {
                 double  best    = double.PositiveInfinity;
@@ -1122,12 +1149,301 @@ namespace CircuitRF.Ui.DataDisplay
 
         public Vector2 GetMarkerDataLocation(Marker m)
         {
-            if (IsCubeBound) return Vector2.Zero;
+            if (IsContourTrace)    return m.PositionStatic;   // contour markers positioned by world Γ/Z
+            if (IsHarmonicStem)    return StemPointFor(m);
+            if (IsCubeXMarker)     return CubeMarkerPointFor(m);
+            if (IsCubeBound)       return Vector2.Zero;
             if (IsStabilityCircle) return m.PositionStatic;
             int fi = Array.FindIndex(Data.Frequencies, f => f >= m.Freq - 1e-6);
             if (fi < 0) fi = Data.Frequencies.Length - 1;
             if (fi >= 0 && fi < Points.Count) return Points[fi];
             return Vector2.Zero;
+        }
+
+        // ---- Generic cube-bound marker (non-harmonic X axis: Pin sweep etc.) ----
+        //
+        //  Covers a cube-bound Rect trace whose X axis is a swept variable (NOT the
+        //  harmonic stem axis) — both single-curve (Polyline) and family (Spectrum).
+        //  The marker stores the snapped display-X in PositionStatic.X and, for a
+        //  family, the bound curve index in PositionStatic.Y (rounded). Lookups compare
+        //  against Points.X / FamilyCurves[c].Points.X (display units), matching the stem
+        //  convention so there is no Hz-vs-display unit mismatch.
+
+        /// <summary>True for a cube-bound trace whose X axis is a generic swept variable
+        /// (not the harmonic stem axis, not a contour). Single-curve or family.</summary>
+        public bool IsCubeXMarker => IsCubeBound && !IsContourTrace && !IsHarmonicStem;
+
+        /// <summary>The Points list backing a generic cube marker — the bound family curve
+        /// when IsFamily, else the trace's own Points. Empty list when unavailable.</summary>
+        private IReadOnlyList<Vector2> CubeMarkerPoints(Marker m)
+        {
+            if (IsFamily)
+            {
+                int c = CubeMarkerCurveIndex(m);
+                if (c >= 0 && c < FamilyCurves.Count) return FamilyCurves[c].Points;
+                return Array.Empty<Vector2>();
+            }
+            return Points;
+        }
+
+        /// <summary>Bound family-curve index stored in PositionStatic.Y (clamped to range).
+        /// Returns 0 for a non-family trace.</summary>
+        public int CubeMarkerCurveIndex(Marker m)
+        {
+            if (!IsFamily || FamilyCurves.Count == 0) return 0;
+            int c = (int)MathF.Round(m.PositionStatic.Y);
+            return Math.Clamp(c, 0, FamilyCurves.Count - 1);
+        }
+
+        /// <summary>Index into the bound curve's Points whose X is nearest PositionStatic.X.</summary>
+        private int CubeMarkerIndex(Marker m)
+        {
+            var pts = CubeMarkerPoints(m);
+            int idx = 0; float bestD = float.PositiveInfinity;
+            for (int i = 0; i < pts.Count; i++)
+            {
+                float d = Math.Abs(pts[i].X - m.PositionStatic.X);
+                if (d < bestD) { bestD = d; idx = i; }
+            }
+            return idx;
+        }
+
+        private Vector2 CubeMarkerPointFor(Marker m)
+        {
+            var pts = CubeMarkerPoints(m);
+            if (pts.Count == 0) return Vector2.Zero;
+            return pts[CubeMarkerIndex(m)];
+        }
+
+        /// <summary>Snaps a world point to the nearest sample of a generic cube trace and returns
+        /// the values to store on the marker: snapped display position, the X to keep in
+        /// PositionStatic.X, and the bound family-curve index (0 when not a family).
+        /// For a family, the nearest sample is searched across ALL curves so the marker binds to
+        /// whichever curve the cursor is closest to. Returns null when no geometry is available.</summary>
+        public (Vector2 Pos, float CubeX, int CurveIndex)? SnapToCubeMarker(Vector2 worldPt)
+        {
+            if (!IsCubeXMarker) return null;
+
+            if (IsFamily)
+            {
+                int    bestC = -1, bestI = -1;
+                double bestD = double.PositiveInfinity;
+                for (int c = 0; c < FamilyCurves.Count; c++)
+                {
+                    var cps = FamilyCurves[c].Points;
+                    for (int i = 0; i < cps.Count; i++)
+                    {
+                        double d = Dist(worldPt, cps[i]);
+                        if (d < bestD) { bestD = d; bestC = c; bestI = i; }
+                    }
+                }
+                if (bestC < 0) return null;
+                var p = FamilyCurves[bestC].Points[bestI];
+                return (p, p.X, bestC);
+            }
+
+            if (Points.Count == 0) return null;
+            int best = 0; float bd = float.PositiveInfinity;
+            for (int i = 0; i < Points.Count; i++)
+            {
+                float d = Math.Abs(Points[i].X - worldPt.X);
+                if (d < bd) { bd = d; best = i; }
+            }
+            return (Points[best], Points[best].X, 0);
+        }
+
+        /// <summary>InfoBox lines for a generic cube-bound marker (X = swept variable).
+        /// Row 1: marker name. For a family, the iterated-axis identity rows: when that axis is
+        /// frequency-like (e.g. the HB "harmonic" axis, whose values are physical frequencies) it is
+        /// shown as a unit-scaled "freq=…" row plus an integer "harmonic=…" row (consistent with the
+        /// harmonic-stem InfoBox); otherwise a single "&lt;axis&gt;=&lt;value&gt;" row. Then the X-axis
+        /// row (swept variable name + value + unit), then the cube value.</summary>
+        private List<(string, bool)> BuildCubeMarkerBoxLines(Marker m, FreqUnit freqUnit, bool showFilePrefix)
+        {
+            var lines = new List<(string, bool)> { (m.MarkerString, true) };
+
+            var pts = CubeMarkerPoints(m);
+            string desc = showFilePrefix ? Description : ShortDescription;
+
+            if (pts.Count == 0 || _cubeXValues is null || _cubeXValues.Length == 0)
+            {
+                lines.Add(($"{desc}=NaN", false));
+                return lines;
+            }
+
+            int xIdx = CubeMarkerIndex(m);
+            int curve = CubeMarkerCurveIndex(m);
+
+            // Family: identify the bound curve via its iterated-axis value.
+            if (IsFamily && curve >= 0 && curve < FamilyCurves.Count)
+            {
+                var fc = FamilyCurves[curve];
+
+                if (IsFreqUnit(FamilyAxisUnit))
+                {
+                    // Frequency-valued family axis (HB "harmonic" axis stores physical frequencies):
+                    // show a unit-scaled freq row plus the integer harmonic order, matching the
+                    // harmonic-stem InfoBox convention.
+                    double scaled = fc.AxisValue * freqUnit.Scale();
+                    lines.Add(($"freq={scaled:G6} {freqUnit.Description()}", false));
+                    lines.Add(($"harmonic={HarmonicOrderOf(fc.AxisValue)}", false));
+                }
+                else if (string.Equals(FamilyAxisName, HarmonicAxisName, StringComparison.Ordinal))
+                {
+                    // Unitless "harmonic" axis whose values are the integer harmonic indices.
+                    lines.Add(($"harmonic={(int)Math.Round(fc.AxisValue)}", false));
+                }
+                else
+                {
+                    string axisName = string.IsNullOrEmpty(FamilyAxisName) ? "curve" : FamilyAxisName;
+                    string axisVal  = !string.IsNullOrEmpty(fc.AxisLabel)
+                        ? fc.AxisLabel
+                        : fc.AxisValue.ToString($"{m.FormatString}{m.MaximumFractionDigits}");
+                    lines.Add(($"{axisName}={axisVal}", false));
+                }
+            }
+
+            // X-axis row: the swept variable name + value + unit (never "freq" unless the
+            // axis really is a frequency).
+            int rawIdx = xIdx < _cubeXValues.Length ? xIdx : _cubeXValues.Length - 1;
+            double xRaw = _cubeXValues[rawIdx];
+            string xName = string.IsNullOrEmpty(_cubeXAxisName) ? "x" : _cubeXAxisName;
+            string xUnit = string.IsNullOrEmpty(_cubeXUnit) ? "" : $" {_cubeXUnit}";
+            lines.Add(($"{xName}={xRaw:G6}{xUnit}", false));
+
+            // Value row.
+            string val = IsFamily
+                ? FormatFamilyCell(curve, xIdx, m.FormatString, m.MaximumFractionDigits)
+                : FormatCubeCell(xIdx, m.FormatString, m.MaximumFractionDigits);
+            if (string.IsNullOrEmpty(val)) val = "NaN";
+            lines.Add(($"{desc}={val}", false));
+            return lines;
+        }
+
+        /// <summary>Integer harmonic order for a frequency-valued family axis: the family-axis value
+        /// divided by the fundamental, where the fundamental is the smallest positive family-axis value
+        /// (handles both fundamental-first axes [f0, 2f0, …] and DC-inclusive axes [0, f0, 2f0, …]).
+        /// Returns 0 when no positive fundamental exists (e.g. a single DC curve).</summary>
+        private int HarmonicOrderOf(double axisValueHz)
+        {
+            double f0 = double.PositiveInfinity;
+            foreach (var c in FamilyCurves)
+                if (c.AxisValue > 0 && c.AxisValue < f0) f0 = c.AxisValue;
+            if (!double.IsFinite(f0) || f0 <= 0)
+                return 0;
+            return (int)Math.Round(axisValueHz / f0);
+        }
+
+        private Vector2 StemPointFor(Marker m)
+        {
+            if (Points.Count == 0) return Vector2.Zero;
+            float targetX = m.PositionStatic.X;
+            int best = 0; float bestD = float.PositiveInfinity;
+            for (int i = 0; i < Points.Count; i++)
+            {
+                float d = Math.Abs(Points[i].X - targetX);
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            return Points[best];
+        }
+
+        /// <summary>For a harmonic-stem trace, snaps a world point to the nearest stem and
+        /// returns (snapped Points position, harmonic X-value to store in Marker.PositionStatic.X).
+        /// Returns null when not a stem trace or no points.</summary>
+        public (Vector2 Pos, float HarmonicX)? SnapToStem(Vector2 worldPt)
+        {
+            if (!IsHarmonicStem || Points.Count == 0) return null;
+            int best = 0; float bestD = float.PositiveInfinity;
+            for (int i = 0; i < Points.Count; i++)
+            {
+                float d = Math.Abs(Points[i].X - worldPt.X);
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            return (Points[best], Points[best].X);
+        }
+
+        // Finds the index in Points whose X (display freq units) is nearest to PositionStatic.X.
+        // CubeXValues stores raw Hz values; Points.X stores Hz * freqUnit.Scale(). Using Points
+        // avoids the unit mismatch that occurs when comparing Hz directly to PositionStatic.X.
+        private int FindStemIndex(Marker m)
+        {
+            int idx = 0; float bestD = float.PositiveInfinity;
+            for (int i = 0; i < Points.Count; i++)
+            {
+                float d = Math.Abs(Points[i].X - m.PositionStatic.X);
+                if (d < bestD) { bestD = d; idx = i; }
+            }
+            return idx;
+        }
+
+        /// <summary>Integer harmonic order for the InfoBox of a stem marker. Single-tone only.</summary>
+        public string GetStemOrderString(Marker m)
+        {
+            // TODO multitone (mixIndex): format (k1,k2) pair
+            return $"harmonic={FindStemIndex(m)}";
+        }
+
+        /// <summary>Physical frequency row for the InfoBox of a stem marker (Branch A: CubeXValues are Hz).</summary>
+        public string? GetStemFreqString(Marker m)
+        {
+            if (CubeXValues is not { } xs || xs.Count == 0 || Points.Count == 0) return null;
+            double fHz   = xs[FindStemIndex(m)];
+            double scaled = fHz * m.FreqUnits.Scale();
+            return $"freq={scaled:G6} {m.FreqUnits.Description()}";
+        }
+
+        /// <summary>Marker value string for a harmonic-stem marker.</summary>
+        public string GetStemValString(Marker m, bool showFilePrefix)
+        {
+            string desc = showFilePrefix ? Description : ShortDescription;
+            if (CubeXValues is null || CubeXValues.Count == 0 || Points.Count == 0) return $"{desc}=NaN";
+            int    idx = FindStemIndex(m);
+            string val = FormatCubeCell(idx, m.FormatString, m.MaximumFractionDigits);
+            return $"{desc}={val}";
+        }
+
+        /// <summary>The marker value line for the compact editor readout, by kind.</summary>
+        public string GetEditorDataLine(Marker m, bool showFilePrefix)
+        {
+            if (IsContourTrace && ContourData is { } cd)
+            {
+                var coord   = new Complex(m.PositionStatic.X, m.PositionStatic.Y);
+                double val  = cd.EvaluateMetric?.Invoke(coord, m.ContourSnapped) ?? double.NaN;
+                string metric = string.IsNullOrEmpty(cd.MetricName) ? "value" : cd.MetricName;
+                string fmt    = $"{m.FormatString}{m.MaximumFractionDigits}";
+                string valStr = double.IsFinite(val) ? val.ToString(fmt) : "NaN";
+                string cue    = m.ContourSnapped ? "" : " (interp)";
+                return $"{metric}={valStr}{cue}";
+            }
+            if (IsHarmonicStem) return GetStemValString(m, showFilePrefix);
+            if (IsCubeXMarker)
+            {
+                string desc = showFilePrefix ? Description : ShortDescription;
+                var pts = CubeMarkerPoints(m);
+                if (pts.Count == 0 || _cubeXValues is null || _cubeXValues.Length == 0)
+                    return $"{desc}=NaN";
+                int xIdx = CubeMarkerIndex(m);
+                string val = IsFamily
+                    ? FormatFamilyCell(CubeMarkerCurveIndex(m), xIdx, m.FormatString, m.MaximumFractionDigits)
+                    : FormatCubeCell(xIdx, m.FormatString, m.MaximumFractionDigits);
+                if (string.IsNullOrEmpty(val)) val = "NaN";
+                return $"{desc}={val}";
+            }
+            return GetMarkerValString(m, showFilePrefix);
+        }
+
+        /// <summary>Resolves a world Γ/Z point to the position a contour marker should take,
+        /// honoring the marker's mode: Mode 1 (free) returns the point unchanged; Mode 2 (snapped)
+        /// returns the nearest measured grid-node coordinate. No-op fallback when no fit yet.</summary>
+        public Vector2 ResolveContourMarkerPosition(Marker m, Vector2 worldPt)
+        {
+            if (!IsContourTrace) return worldPt;
+            if (m.ContourSnapped && ContourData?.NearestNode is { } snap)
+            {
+                var c = snap(new Complex(worldPt.X, worldPt.Y));
+                return new Vector2((float)c.Real, (float)c.Imaginary);
+            }
+            return worldPt;
         }
 
         public Complex GetMarkerDataPoint(Marker m)
@@ -1393,22 +1709,53 @@ namespace CircuitRF.Ui.DataDisplay
         public List<(string Text, bool Bold)> BuildMarkerBoxLines(Marker m, FreqUnit freqUnit,
             bool showFilePrefix = true, IReadOnlyList<Trace>? otherTraces = null)
         {
-            var lines = new List<(string, bool)>
+            if (IsContourTrace && ContourData is { } cd)
+            {
+                var lines = new List<(string, bool)> { (m.MarkerString, true) };
+
+                var coord = new Complex(m.PositionStatic.X, m.PositionStatic.Y);
+                double val = cd.EvaluateMetric?.Invoke(coord, m.ContourSnapped) ?? double.NaN;
+
+                string metric = string.IsNullOrEmpty(cd.MetricName) ? "value" : cd.MetricName;
+                string fmt    = $"{m.FormatString}{m.MaximumFractionDigits}";
+                string valStr = double.IsFinite(val) ? val.ToString(fmt) : "NaN";
+                string cue    = m.ContourSnapped ? "" : " (interp)";
+                lines.Add(($"{metric}={valStr}{cue}", false));
+
+                string coordLbl = cd.GammaPlane ? "Γ" : "Z";
+                lines.Add(($"{coordLbl}={m.FormatComplex(coord)}", false));
+                return lines;
+            }
+
+            if (IsHarmonicStem)
+            {
+                var lines = new List<(string, bool)> { (m.MarkerString, true) };
+                var fline = GetStemFreqString(m);
+                if (!string.IsNullOrEmpty(fline)) lines.Add((fline, false));
+                lines.Add((GetStemOrderString(m), false));
+                lines.Add((GetStemValString(m, showFilePrefix), false));
+                return lines;
+            }
+
+            if (IsCubeXMarker)
+                return BuildCubeMarkerBoxLines(m, freqUnit, showFilePrefix);
+
+            var standardLines = new List<(string, bool)>
             {
                 (m.MarkerString,                        true),
                 (m.FreqString,                          false),
                 (GetMarkerValString(m, showFilePrefix), false)
             };
             if (MarkerShowsImpedance(m))
-                lines.Add((GetMarkerImpedanceString(m), false));
+                standardLines.Add((GetMarkerImpedanceString(m), false));
             if (IsStabilityCircle)
-                lines.Add((MuString(m), false));
+                standardLines.Add((MuString(m), false));
 
             if (m.IsMulti && otherTraces != null)
                 foreach (var other in otherTraces)
-                    lines.Add((GetMultiMarkerLine(m, other), false));
+                    standardLines.Add((GetMultiMarkerLine(m, other), false));
 
-            return lines;
+            return standardLines;
         }
 
         public void SetMarkerFreq(Marker m, double newFreq)

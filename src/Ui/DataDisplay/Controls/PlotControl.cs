@@ -154,6 +154,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private Marker? _draggingMarker;
         private Trace?  _draggingTrace;
 
+        // VSWR locus drag state
+        private Marker? _draggingVswrMarker;
+        private Trace?  _draggingVswrTrace;
+        private Point   _vswrReadoutPt;
+        private bool    _vswrReadoutActive;
+
         // Right-click state
         private Point    _lastRightClickPos;
         private Marker?  _rightClickedMarker;
@@ -571,6 +577,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             float zoom = (float)(ContainerProvider?.Invoke()?.ZoomLevel ?? 1.0);
 
+            VswrReadout? readout = null;
+            if (_vswrReadoutActive && _draggingVswrMarker is { } rMark)
+                readout = new VswrReadout(
+                    $"VSWR {rMark.VswrValue:G4}",
+                    new SkiaSharp.SKPoint((float)_vswrReadoutPt.X, (float)_vswrReadoutPt.Y));
+
             context.Custom(new PlotDrawOperation(
                 new Rect(Bounds.Size),
                 _plot,
@@ -579,7 +591,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 showFilePrefix,
                 selectedMarkers,
                 selColor,
-                zoom));
+                zoom,
+                readout));
         }
 
         // ============================================================
@@ -596,6 +609,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             private readonly HashSet<Marker>?  _selectedMarkers;
             private readonly SKColor           _selectionColor;
             private readonly float             _zoomLevel;
+            private readonly VswrReadout?      _vswrReadout;
 
             public PlotDrawOperation(
                 Rect             bounds,
@@ -605,7 +619,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 bool             showFilePrefix,
                 HashSet<Marker>? selectedMarkers = null,
                 SKColor          selectionColor  = default,
-                float            zoomLevel       = 1f)
+                float            zoomLevel       = 1f,
+                VswrReadout?     vswrReadout     = null)
             {
                 _bounds          = bounds;
                 _plot            = plot;
@@ -615,6 +630,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 _selectedMarkers = selectedMarkers;
                 _selectionColor  = selectionColor;
                 _zoomLevel       = zoomLevel;
+                _vswrReadout     = vswrReadout;
             }
 
             public bool Equals(ICustomDrawOperation? other) => false;
@@ -649,7 +665,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 canvas.ClipRect(canvas.LocalClipBounds);
                 PlotRenderer.Draw(canvas, canvasSize, _plot, _detail, _theme, _showFilePrefix,
                     selectedMarkers: _selectedMarkers, selectionColor: _selectionColor,
-                    zoomLevel: _zoomLevel);
+                    zoomLevel: _zoomLevel, vswrReadout: _vswrReadout);
                 canvas.Restore();
             }
 
@@ -767,6 +783,18 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                         else              infoVm.SelectOnly();
                     }
 
+                    _renderDetail = PlotDetail.Full;
+                    e.Pointer.Capture(this);
+                    e.Handled = true;
+                    return;
+                }
+
+                // VSWR locus grab — checked after glyph hit so glyph always wins
+                var vswrHit = HitTestVswrLocus(e.GetPosition(this));
+                if (vswrHit.HasValue)
+                {
+                    _draggingVswrMarker = vswrHit.Value.Marker;
+                    _draggingVswrTrace  = vswrHit.Value.Trace;
                     _renderDetail = PlotDetail.Full;
                     e.Pointer.Capture(this);
                     e.Handled = true;
@@ -896,6 +924,44 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
 
+            // ---- VSWR locus drag ----
+            if (_draggingVswrMarker is not null && _draggingVswrTrace is not null)
+            {
+                var (plane, z0Ref) = ResolveVswrPlaneAndZ0(_draggingVswrTrace);
+                var dl = _draggingVswrTrace.GetMarkerDataLocation(_draggingVswrMarker);
+
+                double pwx, pwy;
+                if (_draggingVswrTrace.UseSecondaryAxis)
+                    (pwx, pwy) = tf.SecondaryFromCanvas((float)current.X, (float)current.Y);
+                else
+                    (pwx, pwy) = tf.PrimaryFromCanvas((float)current.X, (float)current.Y);
+
+                double vswr;
+                if (plane == RfCore.Loadpull.SurfacePlane.Gamma)
+                {
+                    vswr = RfCore.RfHelpers.VswrFromGamma(
+                        new System.Numerics.Complex(dl.X, dl.Y),
+                        new System.Numerics.Complex(pwx, pwy));
+                }
+                else
+                {
+                    var z0 = z0Ref == System.Numerics.Complex.Zero
+                        ? new System.Numerics.Complex(50.0, 0.0) : z0Ref;
+                    vswr = RfCore.RfHelpers.VswrFromZ(
+                        new System.Numerics.Complex(dl.X, dl.Y) / z0,
+                        new System.Numerics.Complex(pwx, pwy) / z0);
+                }
+
+                if (double.IsFinite(vswr))
+                    _draggingVswrMarker.VswrValue = vswr;
+
+                _vswrReadoutPt     = current;
+                _vswrReadoutActive = true;
+                InvalidateVisual();
+                MarkerMoved?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
             // ---- Marker symbol drag ----
             if (_draggingMarker is not null && _draggingTrace is not null)
             {
@@ -971,6 +1037,18 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 _rightDragOccurred  = false;
                 _rightClickedTrace  = null;
                 _rightClickedMarker = null;
+                return;
+            }
+
+            if (_draggingVswrMarker is not null)
+            {
+                _draggingVswrMarker = null;
+                _draggingVswrTrace  = null;
+                _vswrReadoutActive  = false;
+                _renderDetail       = PlotDetail.Full;
+                e.Pointer.Capture(null);
+                InvalidateVisual();
+                PlotChanged?.Invoke(this, EventArgs.Empty);
                 return;
             }
 
@@ -1206,7 +1284,19 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             }
 
             const double SnapPx = 20.0;
-            if (bestTrace is null || bestPixDist > SnapPx) return false;
+            if (bestTrace is null || bestPixDist > SnapPx)
+            {
+                // Fall back to a contour trace if one is present (free-roam add at the cursor).
+                var contour = _plot.Traces.FirstOrDefault(t => t.IsContourTrace);
+                if (contour is not null) return TryAddContourMarker(contour, canvasPt);
+                return false;
+            }
+
+            if (bestTrace.IsHarmonicStem)
+                return TryAddStemMarker(bestTrace, canvasPt);
+
+            if (bestTrace.IsCubeXMarker)
+                return TryAddCubeMarker(bestTrace, canvasPt);
 
             AddMarkerAtFreqIndex(bestTrace, bestFi, bestNearPt);
             return true;
@@ -1258,9 +1348,71 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             return null;
         }
 
+        // ============================================================
+        //  VSWR locus hit-test and plane/Z0 helpers
+        // ============================================================
+
+        private (Marker Marker, Trace Trace)? HitTestVswrLocus(Point screenPt)
+        {
+            if (_plot is null) return null;
+            var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
+            float grabPx = (float)(Math.Min(Bounds.Width, Bounds.Height) / 200.0) * 4f;
+
+            for (int ti = _plot.Traces.Count - 1; ti >= 0; ti--)
+            {
+                var trace = _plot.Traces[ti];
+                for (int mi = trace.Markers.Count - 1; mi >= 0; mi--)
+                {
+                    var marker = trace.Markers[mi];
+                    if (!marker.VswrEnabled || !PlotRenderer.VswrAvailableFor(_plot, trace, marker)) continue;
+
+                    var (plane, z0Ref) = ResolveVswrPlaneAndZ0(trace);
+                    var dl     = trace.GetMarkerDataLocation(marker);
+                    var center = new System.Numerics.Complex(dl.X, dl.Y);
+                    var pts    = RfCore.Loadpull.LoadpullSurface.VswrLocus(center, marker.VswrValue, plane, z0Ref);
+                    if (pts is null || pts.Length < 2) continue;
+
+                    for (int i = 0; i < pts.Length; i++)
+                    {
+                        var a = tf.ToCanvas(pts[i].Real, pts[i].Imaginary, trace.UseSecondaryAxis);
+                        var b = tf.ToCanvas(pts[(i + 1) % pts.Length].Real, pts[(i + 1) % pts.Length].Imaginary, trace.UseSecondaryAxis);
+                        if (DistPointToSegment((float)screenPt.X, (float)screenPt.Y, a.X, a.Y, b.X, b.Y) <= grabPx)
+                            return (marker, trace);
+                    }
+                }
+            }
+            return null;
+        }
+
+        private (RfCore.Loadpull.SurfacePlane Plane, System.Numerics.Complex Z0Ref) ResolveVswrPlaneAndZ0(Trace trace)
+        {
+            var plane  = (_plot?.PlotType is PlotType.Smith or PlotType.Polar)
+                ? RfCore.Loadpull.SurfacePlane.Gamma
+                : RfCore.Loadpull.SurfacePlane.Z;
+            var z0Ref  = trace.Z0 == System.Numerics.Complex.Zero
+                ? new System.Numerics.Complex(50.0, 0.0)
+                : trace.Z0;
+            return (plane, z0Ref);
+        }
+
+        private static float DistPointToSegment(
+            float px, float py, float ax, float ay, float bx, float by)
+        {
+            float dx = bx - ax, dy = by - ay;
+            float lenSq = dx * dx + dy * dy;
+            if (lenSq < 1e-6f) return MathF.Sqrt((px - ax) * (px - ax) + (py - ay) * (py - ay));
+            float t = Math.Clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0f, 1f);
+            float cx = ax + t * dx, cy = ay + t * dy;
+            return MathF.Sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+        }
+
         private void AddMarkerAtCanvasPoint(Trace trace, Point canvasPt)
         {
             if (_plot is null) return;
+
+            if (TryAddContourMarker(trace, canvasPt)) return;
+            if (TryAddStemMarker(trace, canvasPt)) return;
+            if (TryAddCubeMarker(trace, canvasPt)) return;
 
             var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
             var (wx, wy) = trace.UseSecondaryAxis
@@ -1272,6 +1424,93 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (!hit.HasValue) return;
 
             AddMarkerAtFreqIndex(trace, hit.Value.FreqIndex, hit.Value.NearestPoint);
+        }
+
+        // Returns true if it added a contour marker at the cursor world point.
+        private bool TryAddContourMarker(Trace trace, Point canvasPt)
+        {
+            if (_plot is null || !trace.IsContourTrace) return false;
+
+            var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
+            var (wx, wy) = tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
+            var world = new System.Numerics.Vector2((float)wx, (float)wy);
+
+            int idx    = NextMarkerIndexProvider?.Invoke() ?? (trace.Markers.Count + 1);
+            var marker = new Marker(trace, 0.0, false, false, idx, _plot.FreqUnits)
+            {
+                MarkerKind            = MarkerKind.Contour,
+                MaximumFractionDigits = AppSettingsViewModel.Instance.MarkerMaxFractionDigits,
+                FormatString          = AppSettingsViewModel.Instance.MarkerPrecisionFormat,
+            };
+            marker.PositionStatic = trace.ResolveContourMarkerPosition(marker, world);
+
+            trace.Markers.Add(marker);
+            _renderDetail = PlotDetail.Full;
+            InvalidateVisual();
+            PlotChanged?.Invoke(this, EventArgs.Empty);
+            MarkerAdded?.Invoke(marker, trace);
+            return true;
+        }
+
+        private bool TryAddStemMarker(Trace trace, Point canvasPt)
+        {
+            if (_plot is null || !trace.IsHarmonicStem) return false;
+
+            var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
+            var (wx, wy) = trace.UseSecondaryAxis
+                ? tf.SecondaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y)
+                : tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
+
+            var snap = trace.SnapToStem(new System.Numerics.Vector2((float)wx, (float)wy));
+            if (snap is null) return false;
+
+            int idx    = NextMarkerIndexProvider?.Invoke() ?? (trace.Markers.Count + 1);
+            var marker = new Marker(trace, 0.0, false, false, idx, _plot.FreqUnits)
+            {
+                MarkerKind            = MarkerKind.Spectrum,
+                MaximumFractionDigits = AppSettingsViewModel.Instance.MarkerMaxFractionDigits,
+                FormatString          = AppSettingsViewModel.Instance.MarkerPrecisionFormat,
+                PositionStatic        = new System.Numerics.Vector2(snap.Value.HarmonicX, 0f),
+            };
+
+            trace.Markers.Add(marker);
+            _renderDetail = PlotDetail.Full;
+            InvalidateVisual();
+            PlotChanged?.Invoke(this, EventArgs.Empty);
+            MarkerAdded?.Invoke(marker, trace);
+            return true;
+        }
+
+        private bool TryAddCubeMarker(Trace trace, Point canvasPt)
+        {
+            if (_plot is null || !trace.IsCubeXMarker) return false;
+
+            var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
+            var (wx, wy) = trace.UseSecondaryAxis
+                ? tf.SecondaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y)
+                : tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
+
+            var snap = trace.SnapToCubeMarker(new System.Numerics.Vector2((float)wx, (float)wy));
+            if (snap is null) return false;
+
+            // Family curves iterate the spectral axis (Spectrum kind); a single Pin-swept
+            // cube curve is an ordinary Polyline. Either way the marker is keyed by cube-X
+            // (PositionStatic.X) + bound curve index (PositionStatic.Y).
+            int idx    = NextMarkerIndexProvider?.Invoke() ?? (trace.Markers.Count + 1);
+            var marker = new Marker(trace, 0.0, false, false, idx, _plot.FreqUnits)
+            {
+                MarkerKind            = trace.IsFamily ? MarkerKind.Spectrum : MarkerKind.Polyline,
+                MaximumFractionDigits = AppSettingsViewModel.Instance.MarkerMaxFractionDigits,
+                FormatString          = AppSettingsViewModel.Instance.MarkerPrecisionFormat,
+                PositionStatic        = new System.Numerics.Vector2(snap.Value.CubeX, snap.Value.CurveIndex),
+            };
+
+            trace.Markers.Add(marker);
+            _renderDetail = PlotDetail.Full;
+            InvalidateVisual();
+            PlotChanged?.Invoke(this, EventArgs.Empty);
+            MarkerAdded?.Invoke(marker, trace);
+            return true;
         }
 
         private void AddMarkerAtFreqIndex(
@@ -1331,7 +1570,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 (_library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
             var menu = new ContextMenu();
             MarkerInfoBoxView.PopulateMarkerMenu(
-                menu, marker, trace, _plot.Traces,
+                menu, marker, trace, _plot.Traces, _plot,
                 openEditor,
                 t =>
                 {
@@ -1362,7 +1601,23 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                         }
                     }
                 },
-                showFilePrefix);
+                showFilePrefix,
+                onContourModeToggled: () =>
+                {
+                    InvalidateVisual();
+                    PlotChanged?.Invoke(this, EventArgs.Empty);
+                    MarkerMoved?.Invoke(this, EventArgs.Empty);
+                },
+                onShowInfoBoxToggled: () =>
+                {
+                    ContainerProvider?.Invoke()?.RequestInfoBoxRebuild();
+                    InvalidateVisual();
+                },
+                onVswrToggled: () =>
+                {
+                    InvalidateVisual();
+                    PlotChanged?.Invoke(this, EventArgs.Empty);
+                });
             menu.Open(this);
         }
 
@@ -1550,6 +1805,41 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         {
             var clipRect = PlotRenderer.ViewportClipRect(tf.Viewport, tf.CanvasSize);
 
+            if (trace.IsContourTrace)
+            {
+                var (wx, wy) = tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
+                var snapped  = tf.ToCanvas(wx, wy, false);
+                if (!clipRect.Contains(snapped.X, snapped.Y)) return;
+                marker.PositionStatic = trace.ResolveContourMarkerPosition(
+                    marker, new System.Numerics.Vector2((float)wx, (float)wy));
+                return;
+            }
+
+            if (trace.IsHarmonicStem)
+            {
+                var (wx, wy) = tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
+                var snap = trace.SnapToStem(new System.Numerics.Vector2((float)wx, (float)wy));
+                if (snap is null) return;
+                var snappedPx = tf.ToCanvas(snap.Value.Pos.X, snap.Value.Pos.Y, trace.UseSecondaryAxis);
+                if (!clipRect.Contains(snappedPx.X, snappedPx.Y)) return;
+                marker.PositionStatic = new System.Numerics.Vector2(snap.Value.HarmonicX, 0f);
+                return;
+            }
+
+            if (trace.IsCubeXMarker)
+            {
+                var (wx, wy) = trace.UseSecondaryAxis
+                    ? tf.SecondaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y)
+                    : tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
+                var snap = trace.SnapToCubeMarker(new System.Numerics.Vector2((float)wx, (float)wy));
+                if (snap is null) return;
+                var snappedPx = tf.ToCanvas(snap.Value.Pos.X, snap.Value.Pos.Y, trace.UseSecondaryAxis);
+                if (!clipRect.Contains(snappedPx.X, snappedPx.Y)) return;
+                // X = snapped cube X-value, Y = bound family-curve index (0 when single-curve).
+                marker.PositionStatic = new System.Numerics.Vector2(snap.Value.CubeX, snap.Value.CurveIndex);
+                return;
+            }
+
             if (trace.IsStabilityCircle)
             {
                 var (wx, wy) = tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
@@ -1579,7 +1869,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                                           trace.UseSecondaryAxis);
                 if (!clipRect.Contains(snapped.X, snapped.Y)) return;
 
-                marker.Freq = trace.Data.Frequencies[hit.Value.FreqIndex];
+                var freqs = trace.Data.Frequencies;
+                if (!trace.IsCubeBound && hit.Value.FreqIndex >= 0 && hit.Value.FreqIndex < freqs.Length)
+                    marker.Freq = freqs[hit.Value.FreqIndex];
             }
         }
 

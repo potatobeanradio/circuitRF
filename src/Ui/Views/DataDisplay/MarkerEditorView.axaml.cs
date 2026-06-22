@@ -16,4 +16,22 @@ public partial class MarkerEditorView : UserControl
             e.Handled = true;
         }
     }
+
+    private void OnVswrValueKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Return && DataContext is MarkerEditorViewModel vm)
+        {
+            vm.CommitVswrValue();
+            e.Handled = true;
+        }
+    }
+
+    private void OnImpedanceKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Return && DataContext is MarkerEditorViewModel vm)
+        {
+            vm.CommitImpedance();
+            e.Handled = true;
+        }
+    }
 }

@@ -18,6 +18,8 @@ namespace CircuitRF.Ui.DataDisplay
 
     public enum MarkerStyle { Small, Medium, Large, XLarge }
 
+    public enum MarkerKind { Polyline, Spectrum, StabilityCircle, Table, Contour }
+
     public static class MarkerStyleExtensions
     {
         public static string Description(this MarkerStyle s) => s switch
@@ -79,6 +81,11 @@ namespace CircuitRF.Ui.DataDisplay
         public MarkerStyle    Style                  { get; set; } = MarkerStyle.Medium;
         public int            MaximumFractionDigits  { get; set; } = 4;
         public PrecisionFormat FormatString          { get; set; } = PrecisionFormat.G;
+        public MarkerKind     MarkerKind             { get; set; } = MarkerKind.Polyline;
+        public bool           ShowInfoBox            { get; set; } = true;
+        public bool           ContourSnapped         { get; set; }
+        public bool           VswrEnabled            { get; set; }
+        public double         VswrValue              { get; set; } = 2.0;
 
         /// <summary>
         /// Info-box position in screen pixels relative to the PlotContainerView top-left.
@@ -141,6 +148,11 @@ namespace CircuitRF.Ui.DataDisplay
             FormatString           = src.FormatString;
             Style                  = src.Style;
             MaximumFractionDigits  = src.MaximumFractionDigits;
+            MarkerKind             = src.MarkerKind;
+            ShowInfoBox            = src.ShowInfoBox;
+            ContourSnapped         = src.ContourSnapped;
+            VswrEnabled            = src.VswrEnabled;
+            VswrValue              = src.VswrValue;
         }
 
         // ---- Interaction ------------------------------------------------

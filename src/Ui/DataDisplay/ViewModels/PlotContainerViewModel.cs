@@ -558,6 +558,11 @@ public partial class PlotContainerViewModel : ViewModelBase
     public void RequestPlotRedraw() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
 
     /// <summary>
+    /// Rebuilds the info-box VMs for this container (e.g. when ShowInfoBox is toggled).
+    /// </summary>
+    public void RequestInfoBoxRebuild() => _parent.OnContainerPlotChanged(this);
+
+    /// <summary>
     /// Returns the lowest m-number not currently used by any marker on any
     /// plot in the whole DataDisplay.
     /// </summary>

@@ -92,8 +92,9 @@
                 <TextBox Text="{Binding Name}"/>
             </StackPanel>
 
-            <!-- Frequency — committed on Enter, snapped to nearest data point -->
-            <StackPanel Spacing="3">
+            <!-- Frequency — committed on Enter, snapped to nearest data point;
+                 hidden for contour and spectrum markers -->
+            <StackPanel Spacing="3" IsVisible="{Binding ShowFrequencyField}">
                 <TextBlock Text="{Binding FreqUnitLabel, StringFormat='Frequency ({0})'}"
                            Classes="label"/>
                 <TextBox x:Name="FreqTextBox"
@@ -101,6 +102,16 @@
                          Width="120"
                          HorizontalAlignment="Left"
                          KeyDown="OnFreqTextBoxKeyDown"/>
+            </StackPanel>
+
+            <!-- Impedance — contour markers only; Enter commits + moves marker -->
+            <StackPanel Spacing="3" IsVisible="{Binding ShowImpedanceField}">
+                <TextBlock Text="Impedance (Ω)" Classes="label"/>
+                <TextBox x:Name="ImpedanceTextBox"
+                         Text="{Binding ImpedanceText}"
+                         Width="120"
+                         HorizontalAlignment="Left"
+                         KeyDown="OnImpedanceKeyDown"/>
             </StackPanel>
 
             <!-- Data readout block — card-styled, read-only live values -->
@@ -118,7 +129,8 @@
                         <SelectableTextBlock Grid.Column="1"
                                              Text="{Binding OwnZ0Line}"
                                              FontSize="11"
-                                             Opacity="0.55"/>
+                                             Opacity="0.55"
+                                             IsVisible="{Binding ShowZ0Line}"/>
                     </Grid>
                     <ItemsControl ItemsSource="{Binding MultiLines}"
                                   IsVisible="{Binding HasMultiLines}">
@@ -141,45 +153,14 @@
                 </StackPanel>
             </Border>
 
-            <!-- Format / Precision / Digits — one row;
-                 Format Auto-column + gap collapse on Rect plots -->
-            <Grid ColumnDefinitions="Auto,Auto,*,8,Auto">
-                <!-- Format — hidden on Rect (Smith/Polar only) -->
-                <StackPanel Grid.Column="0" Spacing="3"
-                            IsVisible="{Binding ShowFormatSelector}">
-                    <TextBlock Text="Format" Classes="label"/>
-                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllFormats}"
-                              SelectedItem="{Binding MatrixFormat}"
-                              Width="72"/>
-                </StackPanel>
-                <Border Grid.Column="1" Width="8"
-                        IsVisible="{Binding ShowFormatSelector}"/>
-
-                <!-- Precision (Auto / Fixed / Scientific) -->
-                <StackPanel Grid.Column="2" Spacing="3">
-                    <TextBlock Text="Precision" Classes="label"/>
-                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllPrecisionFormats}"
-                              SelectedItem="{Binding FormatString}"
-                              HorizontalAlignment="Stretch">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Converter={x:Static vm:PrecisionFormatConverter.Instance}}"
-                                           FontSize="10"/>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </StackPanel>
-
-                <!-- Digits -->
-                <StackPanel Grid.Column="4" Spacing="3">
-                    <TextBlock Text="Digits" Classes="label"/>
-                    <NumericUpDown Value="{Binding Digits}"
-                                   Minimum="1" Maximum="16"
-                                   Increment="1"
-                                   FormatString="0"
-                                   Width="52"/>
-                </StackPanel>
-            </Grid>
+            <!-- Format — Smith/Polar only -->
+            <StackPanel Spacing="3" IsVisible="{Binding ShowFormatSelector}">
+                <TextBlock Text="Format" Classes="label"/>
+                <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllFormats}"
+                          SelectedItem="{Binding MatrixFormat}"
+                          Width="72"
+                          HorizontalAlignment="Left"/>
+            </StackPanel>
 
             <!-- Normalize (ToggleButton) + Display Size (ComboBox) -->
             <Grid ColumnDefinitions="*,8,Auto" VerticalAlignment="Bottom">
@@ -187,6 +168,7 @@
                               Classes="seg-btn"
                               IsChecked="{Binding UseNormalized, Mode=TwoWay}"
                               HorizontalAlignment="Left"
+                              IsVisible="{Binding ShowNormZ}"
                               ToolTip.Tip="Normalize to reference impedance">
                     Norm Z
                 </ToggleButton>
@@ -220,6 +202,67 @@
                     Δ
                 </ToggleButton>
             </StackPanel>
+
+            <!-- Show Info Box -->
+            <ToggleButton Classes="seg-btn"
+                          IsChecked="{Binding ShowInfoBox, Mode=TwoWay}"
+                          HorizontalAlignment="Left"
+                          ToolTip.Tip="Show this marker's info box">
+                Info Box
+            </ToggleButton>
+
+            <!-- VSWR: toggle + value on one row -->
+            <Grid ColumnDefinitions="Auto,8,Auto,6,Auto"
+                  IsVisible="{Binding ShowVswrControls}">
+                <ToggleButton Grid.Column="0"
+                              Classes="seg-btn"
+                              IsChecked="{Binding VswrEnabled, Mode=TwoWay}"
+                              ToolTip.Tip="Draw a constant-VSWR circle around this marker">
+                    VSWR
+                </ToggleButton>
+                <TextBlock Grid.Column="2"
+                           Text="VSWR"
+                           Classes="label"
+                           VerticalAlignment="Center"/>
+                <TextBox Grid.Column="4"
+                         x:Name="VswrValueTextBox"
+                         Text="{Binding VswrValueText}"
+                         Width="64"
+                         KeyDown="OnVswrValueKeyDown"/>
+            </Grid>
+
+            <!-- Contour mode: snap to grid point vs free/interpolated -->
+            <ToggleButton Classes="seg-btn"
+                          IsChecked="{Binding ContourSnapped, Mode=TwoWay}"
+                          IsVisible="{Binding ShowContourModeToggle}"
+                          ToolTip.Tip="Snap to grid point (off = free / interpolated)">
+                Snap to Point
+            </ToggleButton>
+
+            <!-- Precision / Digits — always at the bottom -->
+            <Grid ColumnDefinitions="Auto,8,Auto">
+                <StackPanel Grid.Column="0" Spacing="3">
+                    <TextBlock Text="Precision" Classes="label"/>
+                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllPrecisionFormats}"
+                              SelectedItem="{Binding FormatString}"
+                              Width="92">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={x:Static vm:PrecisionFormatConverter.Instance}}"
+                                           FontSize="10"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="3">
+                    <TextBlock Text="Digits" Classes="label"/>
+                    <NumericUpDown Value="{Binding Digits}"
+                                   Minimum="1" Maximum="16"
+                                   Increment="1"
+                                   FormatString="0"
+                                   Width="40"/>
+                </StackPanel>
+            </Grid>
 
         </StackPanel>
     </Border>
