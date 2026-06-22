@@ -507,6 +507,17 @@ namespace CircuitRF.Ui.DataDisplay
             string title = plot.Title;
             if (!string.IsNullOrEmpty(title))
             {
+                // Shrink-to-fit: a long title (e.g. "Pout (dBm) at Constant Eff=…") can be wider
+                // than the control. Since the PlotControl now clips to its bounds, scale the title
+                // font down so the full text fits within the canvas width instead of being clipped.
+                float avail   = w - 4f * lw;                 // small side margin
+                float titleW  = font.MeasureText(title);
+                float titleSz = font.Size;
+                if (titleW > avail && titleW > 0f)
+                {
+                    titleSz = Math.Max(font.Size * (avail / titleW), font.Size * 0.5f);
+                    font.Size = titleSz;
+                }
                 float tw = font.MeasureText(title);
                 float tx = vpCenterX - tw / 2f;
                 float ty = vpTop / 2f + font.Size * 0.35f;
@@ -652,9 +663,15 @@ namespace CircuitRF.Ui.DataDisplay
                 float titleSz = (float)(plot.Axes.FontSizeLabel * 1.4f * lw);
                 using var tf2 = new SKFont(SkiaFonts.PlexRegular, titleSz);
                 using var tp2 = new SKPaint { Color = theme.TextColor, IsAntialias = true };
+                // Shrink-to-fit so a long contour title ("X at Constant Y=…") fits the control
+                // width rather than being clipped at the now-bounded edges.
+                float availT = w - 4f * lw;
+                float measT  = tf2.MeasureText(title);
+                if (measT > availT && measT > 0f)
+                    tf2.Size = Math.Max(titleSz * (availT / measT), titleSz * 0.5f);
                 float tw2 = tf2.MeasureText(title);
                 canvas.DrawText(title, vpCenterX - tw2 / 2f,
-                    vpTop / 2f + titleSz * 0.35f, SKTextAlign.Left, tf2, tp2);
+                    vpTop / 2f + tf2.Size * 0.35f, SKTextAlign.Left, tf2, tp2);
             }
 
             var traces = plot.Traces;

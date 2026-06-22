@@ -70,6 +70,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     private readonly Plot                _plot;
     private Action                       _closeAction;
     private readonly DataSourceLibraryViewModel? _library;
+    private bool                         _harmonicWarned;
 
     public event EventHandler? PlotNeedsRedraw;
     public event EventHandler? PlotStructureChanged;
@@ -97,6 +98,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public static IReadOnlyList<MatrixType>  AllMatrixTypes { get; } = Enum.GetValues<MatrixType>().ToList();
     public static IReadOnlyList<LineType>       AllLineTypes       { get; } = Enum.GetValues<LineType>().ToList();
     public static IReadOnlyList<PrecisionFormat> AllPrecisionFormats { get; } = Enum.GetValues<PrecisionFormat>().ToList();
+    public static IReadOnlyList<TableOptimum>    AllTableOptima    { get; } = Enum.GetValues<TableOptimum>().ToList();
+    public static IReadOnlyList<TableReadMode>   AllTableReadModes { get; } = Enum.GetValues<TableReadMode>().ToList();
 
     // Marker types as icon-bearing wrappers so the combo can display glyphs.
     public static IReadOnlyList<MarkerTypeItem> AllMarkerTypes { get; } = new[]
@@ -166,13 +169,30 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     partial void OnPlotTypeChanged(PlotType value)
     {
+        // Leaving Table for any other plot type: clear all traces. Table traces are summary columns
+        // (or scalar/operating-point rows) that don't translate to a Smith/Polar/Rect plot, and forcing
+        // the user to delete each one by hand before reusing the plot as e.g. a Smith chart is tedious
+        // (design feedback). Start the new plot type clean.
+        var oldType = _plot.PlotType;
+        if (oldType == PlotType.Table && value != PlotType.Table && _plot.Traces.Count > 0)
+        {
+            foreach (var vm in Traces.ToList())
+                vm.UnsubscribeFromLibrary();
+            _plot.Traces.Clear();
+            Traces.Clear();
+        }
+
         _plot.SetPlotType(value);
         RebuildTraces();
         OnPropertyChanged(nameof(IsRectPlot));
         OnPropertyChanged(nameof(IsSmithPlot));
         OnPropertyChanged(nameof(IsPolarPlot));
         OnPropertyChanged(nameof(IsTablePlot));
+        OnPropertyChanged(nameof(IsSummaryTable));
+        OnPropertyChanged(nameof(AddLoadpullTraceLabel));
+        OnPropertyChanged(nameof(IsSummaryAddMode));
         OnPropertyChanged(nameof(InspectorTitle));
+        if (IsSummaryTable) RebuildSummary();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -193,6 +213,57 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public bool IsPolarPlot => _plot.PlotType == PlotType.Polar;
     public bool IsTablePlot => _plot.PlotType == PlotType.Table;
 
+    /// <summary>True when this Table contains summary columns — gates the summary header controls.</summary>
+    public bool IsSummaryTable => _plot.PlotType == PlotType.Table
+        && _plot.Traces.Any(t => t.IsSummaryColumn);
+
+    [ObservableProperty] private TableOptimum  _tableOptimum;
+    [ObservableProperty] private TableReadMode _tableReadMode;
+
+    partial void OnTableOptimumChanged(TableOptimum value)
+    {
+        _plot.TableOptimum = value;
+        RebuildSummary();
+    }
+
+    partial void OnTableReadModeChanged(TableReadMode value)
+    {
+        _plot.TableReadMode = value;
+        RebuildSummary();
+        OnPropertyChanged(nameof(IsInterp));
+    }
+
+    /// <summary>Checkbox-friendly view of TableReadMode: true = Interp, false = Nearest.</summary>
+    public bool IsInterp
+    {
+        get => TableReadMode == TableReadMode.Interp;
+        set
+        {
+            var target = value ? TableReadMode.Interp : TableReadMode.Nearest;
+            if (TableReadMode == target) return;
+            TableReadMode = target;            // setter → OnTableReadModeChanged → RebuildSummary
+            OnPropertyChanged();
+        }
+    }
+
+    public double TableCompression
+    {
+        get => _plot.TableCompression;
+        set
+        {
+            if (Math.Abs(_plot.TableCompression - value) < 1e-9) return;
+            _plot.TableCompression = value;
+            OnPropertyChanged();
+            RebuildSummary();
+        }
+    }
+
+    /// <summary>Label for the loadpull add-trace button: "+ Summary" on a Table, "+ Contour" otherwise.</summary>
+    public string AddLoadpullTraceLabel => _plot.PlotType == PlotType.Table ? "+ Summary" : "+ Contour";
+
+    /// <summary>True when the loadpull add button should add a summary column (Table) vs a contour (Smith/Polar/Rect).</summary>
+    public bool IsSummaryAddMode => _plot.PlotType == PlotType.Table;
+
     public string InspectorTitle => IsTablePlot ? "Table Properties" : "Plot Properties";
 
     public double FontSize
@@ -200,8 +271,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
         get => _plot.FontSize;
         set
         {
-            if (_plot.FontSize == value) return;
-            _plot.FontSize = value;
+            // Fail gracefully on invalid input (empty/garbled NUD text can push NaN): ignore non-finite
+            // values and clamp to the supported range so the table can never be driven to a broken size.
+            if (double.IsNaN(value) || double.IsInfinity(value)) { OnPropertyChanged(); return; }
+            double clamped = Math.Clamp(value, 6.0, 32.0);
+            if (_plot.FontSize == clamped) { if (value != clamped) OnPropertyChanged(); return; }
+            _plot.FontSize = clamped;
             OnPropertyChanged();
             PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         }
@@ -246,6 +321,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public IRelayCommand AddTraceCommand        { get; }
     public IRelayCommand AddContourTraceCommand { get; }
+    public IRelayCommand AddSummaryTraceCommand { get; }
+    public IRelayCommand AutoFillSummaryCommand { get; }
     public IRelayCommand CloseCommand           { get; }
 
     // Plot-type set commands (segmented header buttons, §A)
@@ -258,6 +335,18 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public bool CanAddContourTrace =>
         _library?.SelectedEntry is { } e && IsLoadpullSource(e);
 
+    /// <summary>True when a contour can be added in the current mode (non-Table plot + loadpull source).
+    /// Hides the contour button on Table plots so only "+ Summary" shows there.</summary>
+    public bool CanAddContourInCurrentMode =>
+        !IsSummaryAddMode && CanAddContourTrace;
+
+    /// <summary>True when a summary column can be added (Table plot + loadpull source).</summary>
+    public bool CanAddSummaryTrace =>
+        _plot.PlotType == PlotType.Table && _library?.SelectedEntry is { } e && IsLoadpullSource(e);
+
+    /// <summary>True when the auto-fill standard column set action is available.</summary>
+    public bool CanAutoFillSummary => CanAddSummaryTrace;
+
     // ---- Constructor ----------------------------------------------------
 
     public PlotInspectorViewModel(
@@ -269,13 +358,17 @@ public partial class PlotInspectorViewModel : ViewModelBase
         _closeAction = closeAction;
         _library     = library;
 
-        _plotType = plot.PlotType;
-        _freqUnit = plot.FreqUnits;
+        _plotType    = plot.PlotType;
+        _freqUnit    = plot.FreqUnits;
+        _tableOptimum  = plot.TableOptimum;
+        _tableReadMode = plot.TableReadMode;
 
         RebuildTraces();
 
         AddTraceCommand        = new RelayCommand(AddTrace,        () => CanAddTrace);
         AddContourTraceCommand = new RelayCommand(AddContourTrace, () => CanAddContourTrace);
+        AddSummaryTraceCommand = new RelayCommand(AddSummaryTrace, () => CanAddSummaryTrace);
+        AutoFillSummaryCommand = new RelayCommand(AutoFillSummary, () => CanAutoFillSummary);
         CloseCommand           = new RelayCommand(() => _closeAction());
 
         SetPlotTypeRectCommand  = new RelayCommand(() => PlotType = PlotType.Rect);
@@ -289,6 +382,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
             _library.Entries.CollectionChanged += (_, _) => RefreshAddCommand();
             _library.SelectedDataSourceChanged += (_, _) => RefreshAddCommand();
         }
+
+        if (IsSummaryTable) RebuildSummary();
     }
 
     // ---- Close-action seam (flyout vs Properties pane) -----------------
@@ -347,7 +442,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
         foreach (var vm in Traces)
             vm.RefreshDataSources();
 
+        _harmonicWarned = false;   // new source → re-warn once if harmonic cubes found
         _plot.Autoscale();
+        if (IsSummaryTable) RebuildSummary();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
         RefreshAddCommand();
@@ -449,6 +546,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         _plot.Traces.Remove(vm.Trace);
         _plot.Autoscale();
         Traces.Remove(vm);
+        OnPropertyChanged(nameof(IsSummaryTable));
         RefreshAddCommand();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
@@ -776,6 +874,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
         ((RelayCommand)AddTraceCommand).NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanAddContourTrace));
         ((RelayCommand)AddContourTraceCommand).NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanAddContourInCurrentMode));
+        OnPropertyChanged(nameof(CanAddSummaryTrace));
+        ((RelayCommand)AddSummaryTraceCommand).NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanAutoFillSummary));
+        ((RelayCommand)AutoFillSummaryCommand).NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(AddLoadpullTraceLabel));
+        OnPropertyChanged(nameof(IsSummaryAddMode));
+        OnPropertyChanged(nameof(IsSummaryTable));
     }
 
     /// <summary>True when the entry has a loadpull DataSet (contains a GammaLoad cube).</summary>
@@ -819,5 +925,282 @@ public partial class PlotInspectorViewModel : ViewModelBase
         RefreshAddCommand();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void AddSummaryTrace()
+    {
+        var entry = _library?.SelectedEntry;
+        if (entry?.Data is null) return;
+
+        var placeholder = new SNP(new double[] { 1e9 }, 1);
+        var trace = new Trace(placeholder, MatrixType.S, 0, 0, DependentVarFormat.Db);
+        trace.SourceRef  = DataSourceRef.Selected;
+        trace.SourcePath = _library!.SelectedDataSourceAbs;
+
+        trace.SummaryColumn = new SummaryColumnData
+        {
+            Kind           = SummaryColumnKind.Metric,
+            MetricName     = "Pout",
+            FractionDigits = 1,
+        };
+        trace.ColumnWidth = trace.SummaryColumn.ColumnWidth > 0
+            ? trace.SummaryColumn.ColumnWidth
+            : _plot.ColumnWidth;
+
+        _plot.Traces.Add(trace);
+        Traces.Add(new TraceRowViewModel(trace, this));
+        RebuildSummary();
+        RefreshAddCommand();
+        OnPropertyChanged(nameof(IsSummaryTable));
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ---- Auto-fill standard column set (Phase 7.5e) ----------------------------
+
+    /// <summary>True when a cube of the given canonical name exists in any group of the dataset.</summary>
+    private static bool HasCube(DataSet ds, string name) =>
+        ds.Groups.Any(g => ds.CubesIn(g).ContainsKey(name));
+
+    /// <summary>
+    /// True when the dataset carries harmonic-indexed load-termination cubes (GammaLoad2/ZLoad2/…),
+    /// which the summary table does NOT use — it targets the fundamental (1f0) only (design decision 3).
+    /// Presence-gated: returns false for every dataset the current importer produces (fundamental-only).
+    /// Convention: harmonic-n cubes are named GammaLoad{n} or ZLoad{n} for n≥2 (trailing digit).
+    /// </summary>
+    private static bool HasHarmonicLoadCubes(DataSet ds)
+    {
+        foreach (var g in ds.Groups)
+            foreach (var cubeName in ds.CubesIn(g).Keys)
+            {
+                if ((cubeName.StartsWith("GammaLoad", StringComparison.Ordinal)
+                  || cubeName.StartsWith("ZLoad",     StringComparison.Ordinal))
+                    && cubeName.Length > 0 && char.IsDigit(cubeName[^1]))
+                    return true;
+            }
+        return false;
+    }
+
+    /// <summary>
+    /// Replaces the table's summary columns with the standard performance set (design §4), in order,
+    /// presence-gated against the dataset. Columns whose backing cube is absent are silently skipped.
+    /// (Phase 7.5e.)
+    /// </summary>
+    private void AutoFillSummary()
+    {
+        var entry = _library?.SelectedEntry;
+        if (entry?.Data is not { } ds) return;
+
+        // Remove existing summary traces first (replace semantics).
+        var existing = Traces.Where(vm => vm.Trace.IsSummaryColumn).ToList();
+        foreach (var vm in existing)
+        {
+            vm.UnsubscribeFromLibrary();
+            _plot.Traces.Remove(vm.Trace);
+            Traces.Remove(vm);
+        }
+
+        // Build the standard set in order, presence-gated.
+        void AddCol(SummaryColumnKind kind, string metricName, bool present)
+        {
+            if (!present) return;
+            var placeholder = new SNP(new double[] { 1e9 }, 1);
+            var trace = new Trace(placeholder, MatrixType.S, 0, 0, DependentVarFormat.Db);
+            trace.SourceRef  = DataSourceRef.Selected;
+            trace.SourcePath = _library!.SelectedDataSourceAbs;
+            trace.SummaryColumn = new SummaryColumnData
+            {
+                Kind           = kind,
+                MetricName     = metricName,
+                FractionDigits = 1,
+            };
+            trace.ColumnWidth = _plot.ColumnWidth;
+            _plot.Traces.Add(trace);
+            Traces.Add(new TraceRowViewModel(trace, this));
+        }
+
+        // §4 standard order: VDD, Idq, Zsource, Zin, Zload, Power, Efficiency, Gain, AM/PM, IRL.
+        AddCol(SummaryColumnKind.OperatingPoint, "BiasVLoad", HasCube(ds, "BiasVLoad"));
+        AddCol(SummaryColumnKind.OperatingPoint, "BiasILoad", HasCube(ds, "BiasILoad"));
+        AddCol(SummaryColumnKind.Zsource,        "",          HasCube(ds, "ZSource"));
+        AddCol(SummaryColumnKind.Zin,            "",          HasCube(ds, "Zin_real") && HasCube(ds, "Zin_imag"));
+        AddCol(SummaryColumnKind.Zload,          "",          HasCube(ds, "ZLoad"));
+        AddCol(SummaryColumnKind.Metric,         "Pout",      HasCube(ds, "Pout"));
+        AddCol(SummaryColumnKind.Metric,         "DE",        HasCube(ds, "DE"));
+        AddCol(SummaryColumnKind.Metric,         "Gt",        HasCube(ds, "Gt"));
+        AddCol(SummaryColumnKind.Metric,         "AMPM",      HasCube(ds, "AMPM"));
+        AddCol(SummaryColumnKind.Metric,         "IRL",       HasCube(ds, "IRL"));
+
+        RebuildSummary();
+        RefreshAddCommand();
+        OnPropertyChanged(nameof(IsSummaryTable));
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ---- RebuildSummary (Phase 7.5d keystone) ----------------------------------
+
+    /// <summary>
+    /// Recomputes the summary table's derived state: Plot.SummaryFreqs and each summary column's
+    /// CellsReal/CellsComplex, read at the per-frequency MXP/MXE optimum using the table-wide
+    /// compression and read mode. No-op when the plot is not a summary table. (Phase 7.5d.)
+    /// </summary>
+    public void RebuildSummary()
+    {
+        var summaryTraces = _plot.Traces.Where(t => t.IsSummaryColumn).ToList();
+        if (summaryTraces.Count == 0)
+        {
+            _plot.SummaryFreqs = null;
+            PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        var entry = _library?.SelectedEntry;
+        if (entry?.Data is not { } ds)
+        {
+            _plot.SummaryFreqs = null;
+            ClearSummaryCells(summaryTraces);
+            PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        // Harmonic guard (Phase 7.5f): silently noted; summary uses fundamental only.
+        // No UI warning seam available in this VM — the detection is the durable value.
+        if (HasHarmonicLoadCubes(ds) && !_harmonicWarned)
+            _harmonicWarned = true;
+
+        LoadpullSurface surface;
+        try { surface = new LoadpullSurface(ds); }
+        catch
+        {
+            _plot.SummaryFreqs = null;
+            ClearSummaryCells(summaryTraces);
+            PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        int nFreq = surface.Frequencies.Count;
+        var freqs = new double[nFreq];
+        for (int i = 0; i < nFreq; i++) freqs[i] = surface.Frequencies[i];
+        _plot.SummaryFreqs = freqs;
+
+        var constraint = ConstraintSpec.AtCompression(_plot.TableCompression);
+        var plane      = SurfacePlane.Z;
+        bool nearest   = _plot.TableReadMode == TableReadMode.Nearest;
+
+        var optima = new System.Numerics.Complex?[nFreq];
+        for (int fi = 0; fi < nFreq; fi++)
+        {
+            var mxx = _plot.TableOptimum == TableOptimum.Mxp
+                ? surface.MaxPower(fi, constraint, plane)
+                : surface.MaxEfficiency(fi, constraint, plane);
+            optima[fi] = mxx is null ? (System.Numerics.Complex?)null
+                       : (nearest ? mxx.Measured : mxx.Interpolated);
+        }
+
+        foreach (var t in summaryTraces)
+        {
+            var sc = t.SummaryColumn!;
+            if (SummaryColumns.IsComplexColumn(sc.Kind))
+                sc.CellsComplex = ComputeComplexColumn(surface, sc, optima, freqs, constraint, plane, nearest);
+            else
+                sc.CellsReal = ComputeRealColumn(surface, sc, optima, constraint, plane, nearest);
+            t.ColumnWidth = sc.ColumnWidth > 0 ? sc.ColumnWidth : _plot.ColumnWidth;
+        }
+
+        NotifySummaryColumnsCompression();
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static void ClearSummaryCells(IEnumerable<Trace> summaryTraces)
+    {
+        foreach (var t in summaryTraces)
+        {
+            if (t.SummaryColumn is not { } sc) continue;
+            sc.CellsReal    = null;
+            sc.CellsComplex = null;
+        }
+    }
+
+    private void NotifySummaryColumnsCompression()
+    {
+        foreach (var vm in Traces)
+            vm.RaiseSummaryCompressionChanged();
+    }
+
+    private static double[] ComputeRealColumn(
+        LoadpullSurface surface, SummaryColumnData sc,
+        System.Numerics.Complex?[] optima, ConstraintSpec constraint, SurfacePlane plane, bool nearest)
+    {
+        int n = optima.Length;
+        var cells = new double[n];
+
+        if (sc.Kind == SummaryColumnKind.OperatingPoint)
+        {
+            // Read the raw bias values (SI base units: Amps for BiasILoad, Volts for BiasVLoad).
+            var raw = new double[n];
+            double repAbs = double.NaN;   // first finite |value| → drives the magnitude-inferred unit
+            for (int fi = 0; fi < n; fi++)
+            {
+                double? v = surface.OperatingPoint(fi, sc.MetricName);
+                raw[fi] = v ?? double.NaN;
+                if (double.IsNaN(repAbs) && v is { } vv && !double.IsNaN(vv))
+                    repAbs = System.Math.Abs(vv);
+            }
+
+            // Bug 5 (option b): pick the display unit + scale from the representative magnitude,
+            // stamp the label so AutoHeader and the card unit label stay consistent with the values.
+            var (label, scale) = SummaryColumns.OperatingPointUnit(sc.MetricName, repAbs);
+            sc.UnitLabel = label;
+            for (int fi = 0; fi < n; fi++)
+                cells[fi] = double.IsNaN(raw[fi]) ? double.NaN : raw[fi] * scale;
+            return cells;
+        }
+
+        sc.UnitLabel = "";
+        for (int fi = 0; fi < n; fi++)
+        {
+            if (optima[fi] is not { } coord) { cells[fi] = double.NaN; continue; }
+            cells[fi] = surface.MetricAtCoord(fi, sc.MetricName, coord, constraint, plane, nearest: nearest);
+        }
+        return cells;
+    }
+
+    private static System.Numerics.Complex[] ComputeComplexColumn(
+        LoadpullSurface surface, SummaryColumnData sc,
+        System.Numerics.Complex?[] optima, double[] freqs, ConstraintSpec constraint, SurfacePlane plane, bool nearest)
+    {
+        int n = optima.Length;
+        var cells = new System.Numerics.Complex[n];
+        var nan   = new System.Numerics.Complex(double.NaN, double.NaN);
+        for (int fi = 0; fi < n; fi++)
+        {
+            switch (sc.Kind)
+            {
+                case SummaryColumnKind.Zsource:
+                    cells[fi] = surface.SourceZ(fi) ?? nan;
+                    break;
+
+                case SummaryColumnKind.Zload:
+                    cells[fi] = optima[fi] ?? nan;
+                    break;
+
+                case SummaryColumnKind.Zin:
+                    if (optima[fi] is { } c)
+                    {
+                        double re = surface.MetricAtCoord(fi, "Zin_real", c, constraint, plane, nearest: nearest);
+                        double im = surface.MetricAtCoord(fi, "Zin_imag", c, constraint, plane, nearest: nearest);
+                        cells[fi] = (double.IsNaN(re) || double.IsNaN(im)) ? nan
+                                  : new System.Numerics.Complex(re, im);
+                    }
+                    else cells[fi] = nan;
+                    break;
+
+                default:
+                    cells[fi] = nan;
+                    break;
+            }
+        }
+        return cells;
     }
 }

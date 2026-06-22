@@ -312,7 +312,7 @@ public partial class PlotContainerViewModel : ViewModelBase
     public void ResizeTo(double targetW, double targetH)
     {
         double newW = Math.Max(200, targetW);
-        double newH = Math.Max(150, targetH);
+        double newH = Math.Max(MinLogicalHeight(), targetH);
 
         if (IsSquareAspect)
         {
@@ -328,6 +328,45 @@ public partial class PlotContainerViewModel : ViewModelBase
             Width  = newW;
             Height = newH;
         }
+    }
+
+    /// <summary>
+    /// Minimum container height in LOGICAL (pre-zoom) units. For a Table this is the summary title
+    /// band (0 when there is no title) + the header row + the gap + up to two data rows — but never
+    /// more rows than the table actually has, so a single-row summary table can shrink to one row
+    /// instead of being floored at two (which left empty space below the last row at large fonts).
+    /// For all other plot types it is the legacy 150 px floor. Mirrors TableRenderer.BuildLayout's
+    /// row geometry at the unscaled plot font size, and includes the title band via
+    /// TableRenderer.RequiredCanvasHeight so the floor and the double-click fit stay consistent.
+    /// </summary>
+    private double MinLogicalHeight()
+    {
+        var plot = PlotVM.Plot;
+        if (plot.PlotType != PlotType.Table) return 150;
+
+        double fs         = plot.FontSize;
+        double headerH    = fs * (1 + TableRenderer.RowPaddingFraction * 2);
+        double rowH       = fs * (1 + TableRenderer.RowPaddingFraction);
+        double dataStartY = headerH + TableRenderer.HeaderToDataRowPadding;
+
+        // Whole-table logical height (title band + header + gap + every row) at the current font.
+        double fullLogical = TableRenderer.RequiredCanvasHeight(plot, 1f);
+        // The title band (0 when no title) = full height minus the grid (header + gap + all rows).
+        double bandLogical = fullLogical - (dataStartY + RowCountLogical(plot) * rowH);
+        // Floor at the band + header + gap + up to two data rows, so multi-row tables stay shrinkable
+        // to ~2 rows while never demanding more rows than the table actually has.
+        double twoRowFloor = bandLogical + dataStartY + 2 * rowH;
+        return Math.Min(fullLogical, twoRowFloor);
+    }
+
+    /// <summary>Number of data rows the table will render (longest XAxis group), ≥1.</summary>
+    private static int RowCountLogical(Plot plot)
+    {
+        int rows = 0;
+        foreach (var col in TableRenderer.BuildColumns(plot))
+            if (col.Kind == TableColKind.XAxis && col.XValues.Length > rows)
+                rows = col.XValues.Length;
+        return Math.Max(1, rows);
     }
 
     /// <summary>

@@ -197,8 +197,7 @@ namespace CircuitRF.Ui.DataDisplay
             {
                 var cd = trace.ContourData;
                 if (cd == null) continue;
-                var grid = cd.Grid;
-                if (grid == null) continue;
+                if (cd.Grid == null) continue;
 
                 switch (cd.FillType)
                 {
@@ -207,7 +206,10 @@ namespace CircuitRF.Ui.DataDisplay
                         {
                             var contourPlane = plot.PlotType is PlotType.Smith or PlotType.Polar
                                 ? SurfacePlane.Gamma : SurfacePlane.Z;
-                            ContourRenderer.DrawTopoMapFill(canvas, grid, cd.Levels, tf, cd.ColorMap, contourPlane);
+                            // §1: for Smith/Polar use the disk-covering fill grid so the fill
+                            // reaches the circular clip edge; iso-lines use cd.Grid (recommended box).
+                            var fillGrid = cd.FillGrid ?? cd.Grid;
+                            ContourRenderer.DrawTopoMapFill(canvas, fillGrid, cd.Levels, tf, cd.ColorMap, contourPlane);
                         }
                         break;
 
@@ -231,11 +233,10 @@ namespace CircuitRF.Ui.DataDisplay
                             canvas, canvasSize, polylines, tf,
                             cd.LineColor, cd.LineColorOverridden, cd.StrokeWidth, cd.DrawLabels,
                             cd.LabelBackground, cd.LabelForeground, cd.LabelSpacing,
-                            cd.ColorMap, (float)cd.LevelFontSize, cd.FadeLineOpacity,
-                            zoomLevel);
+                            cd.ColorMap, (float)cd.LevelFontSize, cd.FadeLineOpacity);
                     if (cd.DisplayGridPoints && cd.Scatter is { } scPts)
-                        ContourRenderer.DrawGridPoints(canvas, scPts, tf, cd.GridPointColor, (float)cd.GridPointSize);
-                    ContourRenderer.DrawOptimaMarkers(canvas, cd, tf, zoomLevel);
+                        ContourRenderer.DrawGridPoints(canvas, canvasSize, scPts, tf, cd.GridPointColor, (float)cd.GridPointSize);
+                    ContourRenderer.DrawOptimaMarkers(canvas, cd, tf, canvasSize);
                     continue;
                 }
                 TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,

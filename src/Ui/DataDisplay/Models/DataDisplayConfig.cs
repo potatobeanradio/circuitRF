@@ -96,6 +96,13 @@ public sealed class PlotContainerConfig
     public double FontSize                    { get; set; } = 12;
     public double FreqColumnWidth             { get; set; } = 115;
 
+    // Summary-table state (Phase 7.5). Defaults match Plot so a non-summary Table round-trips unchanged.
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public TableOptimum  TableOptimum     { get; set; } = TableOptimum.Mxp;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public TableReadMode TableReadMode    { get; set; } = TableReadMode.Interp;
+    public double        TableCompression { get; set; } = 3.0;
+
     public List<TraceConfig> Traces { get; set; } = new();
 
     // Null on older .splot files — load code defaults to full autoscale when absent.
@@ -191,6 +198,21 @@ public sealed class TraceConfig
     /// <summary>Non-null when this trace is a loadpull contour trace (7.4e).
     /// When present, the standard network/cube-bound fields are ignored.</summary>
     public ContourTraceConfig? ContourTrace { get; set; }
+
+    /// <summary>Non-null when this trace is a summary-table column (7.5). Mutually exclusive with ContourTrace.</summary>
+    public SummaryColumnConfig? SummaryColumn { get; set; }
+}
+
+/// <summary>Persisted authoring state for one summary-table column (Phase 7.5).
+/// When present, the trace is a summary column; standard network/cube fields are ignored.</summary>
+public sealed class SummaryColumnConfig
+{
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public SummaryColumnKind Kind { get; set; } = SummaryColumnKind.Metric;
+    public string MetricName     { get; set; } = "Pout";
+    public string Header         { get; set; } = "";
+    public int    FractionDigits { get; set; } = 1;
+    public double ColumnWidth    { get; set; } = 0;
 }
 
 public sealed class MarkerConfig

@@ -638,9 +638,19 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     return;
                 }
 
+                // §7 (corrected): clip to THIS control's region so antialiased text at the
+                // edge can't bleed into the parent DataDisplay canvas during a move.
+                // The leased canvas is shared across all plots and is pre-translated so the
+                // control's content is positioned by the current matrix; clip in that same
+                // local space via LocalClipBounds (NOT a hand-built SKRect(0,0,W,H), which
+                // is the surface origin, and NOT canvas.Clear, which wipes the whole shared
+                // surface and erases other plots).
+                canvas.Save();
+                canvas.ClipRect(canvas.LocalClipBounds);
                 PlotRenderer.Draw(canvas, canvasSize, _plot, _detail, _theme, _showFilePrefix,
                     selectedMarkers: _selectedMarkers, selectionColor: _selectionColor,
                     zoomLevel: _zoomLevel);
+                canvas.Restore();
             }
 
             public void Dispose() { }

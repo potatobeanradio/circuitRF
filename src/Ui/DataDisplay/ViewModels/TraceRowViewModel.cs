@@ -47,12 +47,13 @@ public partial class TraceRowViewModel : ViewModelBase
     public bool IsTablePlot    => _parent.PlotType == PlotType.Table;
     public bool IsNotTablePlot => _parent.PlotType != PlotType.Table;
 
-    // Standard (line/marker/table) trace body; hidden for contour traces.
-    public bool IsStandardTrace => !IsContourTrace;
+    // Standard (line/marker/table) trace body; hidden for contour and summary traces.
+    public bool IsStandardTrace => !IsContourTrace && !IsSummaryColumn;
 
     // ---- Contour trace (Phase 7.4e) -----------------------------------------
 
-    public bool IsContourTrace => _trace.IsContourTrace;
+    public bool IsContourTrace   => _trace.IsContourTrace;
+    public bool IsSummaryColumn  => _trace.IsSummaryColumn;
 
     // VM-side LoadpullSurface (owned here; Trace must not hold a DataSet per firewall).
     private LoadpullSurface? _loadpullSurface;
@@ -83,22 +84,35 @@ public partial class TraceRowViewModel : ViewModelBase
 
     private void RebuildConstraintMetricOptions()
     {
+        // §6: use alias-group comparison so Gain/Gt/Gp and DE/PAE/Efficiency are treated
+        // as the same concept — a constraint metric that aliases to the primary is disabled.
+        string primaryGroup = MetricAliasGroup(ContourMetricName);
         ConstraintMetricOptions.Clear();
         foreach (var m in AvailableMetrics)
-            ConstraintMetricOptions.Add(new ConstraintMetricItem(m, m != ContourMetricName));
-        // Sync current selection — pick first enabled if current is absent or same as primary.
+            ConstraintMetricOptions.Add(new ConstraintMetricItem(m, MetricAliasGroup(m) != primaryGroup));
+        // Sync current selection — pick first enabled if current is absent or aliases to primary.
         var match = ConstraintMetricOptions.FirstOrDefault(i => i.Name == ContourConstraintMetric);
         var select = (match?.IsEnabled ?? false) ? match
                    : ConstraintMetricOptions.FirstOrDefault(i => i.IsEnabled);
         _suppressContourCallback = true;
         SelectedConstraintMetricItem = select;
         _suppressContourCallback = false;
-        if (select is not null && string.IsNullOrEmpty(ContourConstraintMetric))
+        // Always update cd when the constraint metric needs to change (was empty, or now conflicts).
+        bool constraintCollides = string.IsNullOrEmpty(ContourConstraintMetric)
+            || MetricAliasGroup(ContourConstraintMetric) == primaryGroup;
+        if (select is not null && constraintCollides)
         {
             ContourConstraintMetric = select.Name;
             if (_trace.ContourData is { } cd) cd.ConstraintMetricName = select.Name;
         }
     }
+
+    private static string MetricAliasGroup(string? metric) => metric switch
+    {
+        "Gain" or "Gt" or "Gp"        => "Gain",
+        "DE" or "PAE" or "Efficiency"  => "Efficiency",
+        _                              => metric ?? "",
+    };
 
     [ObservableProperty] private string?          _contourMetricName;
     [ObservableProperty] private ConstraintKind   _contourConstraintKind = ConstraintKind.Compression;
@@ -445,6 +459,11 @@ public partial class TraceRowViewModel : ViewModelBase
         if (fit is null) { ClearContourGrid(cd); return; }
 
         var grid    = surface.Resample(fit);
+        // §1: for Smith/Polar compute a disk-covering fill grid over [-1,1]×[-1,1]
+        // at higher resolution so the TopoMap fill reaches the circular-clip edge.
+        var fillGrid = (plane == SurfacePlane.Gamma)
+            ? surface.Resample(fit, new ViewBox(-1.0, 1.0, -1.0, 1.0), 80)
+            : null;
         var scatter = surface.Reduce(freqIdx, cd.MetricName, constraint, plane);
 
         ContourLevelSet levels;
@@ -462,9 +481,10 @@ public partial class TraceRowViewModel : ViewModelBase
             levels = ContourExtractor.LevelsBetween(grid, Math.Max(1, cd.LevelCount));
         }
 
-        cd.Grid    = grid;
-        cd.Scatter = scatter;
-        cd.Levels  = levels;
+        cd.Grid     = grid;
+        cd.FillGrid = fillGrid;
+        cd.Scatter  = scatter;
+        cd.Levels   = levels;
 
         // Cache MXP / MXE for the renderer (surface stays out of renderer path).
         cd.MxpCoord = surface.MaxPower(freqIdx, constraint, plane,
@@ -478,6 +498,7 @@ public partial class TraceRowViewModel : ViewModelBase
     private static void ClearContourGrid(ContourData cd)
     {
         cd.Grid     = null;
+        cd.FillGrid = null;
         cd.Scatter  = null;
         cd.Levels   = new ContourLevelSet(Array.Empty<double>());
         cd.MxpCoord = null;
@@ -645,6 +666,135 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         var result = await ShowColorPickerAsync(SkColorToRgba(ContourLineColor));
         if (result is { } rgba) ContourLineColor = RgbaToSkColor(rgba);
+    }
+
+    // ---- Summary column authoring (Phase 7.5d) ---------------------------------
+
+    private bool _suppressSummaryCallback;
+
+    public ObservableCollection<string> SummaryMetricOptions { get; } = new();
+
+    [ObservableProperty] private string? _summaryMetricSelection;
+
+    partial void OnSummaryMetricSelectionChanged(string? value)
+    {
+        if (_suppressSummaryCallback || _trace.SummaryColumn is not { } sc || value is null) return;
+        ApplySummaryMetric(sc, value);
+        _parent.RebuildSummary();
+        OnPropertyChanged(nameof(SummaryUnitLabel));
+    }
+
+    private void ApplySummaryMetric(SummaryColumnData sc, string selection)
+    {
+        switch (selection)
+        {
+            case "Zload":   sc.Kind = SummaryColumnKind.Zload;          sc.MetricName = ""; break;
+            case "Zsource": sc.Kind = SummaryColumnKind.Zsource;        sc.MetricName = ""; break;
+            case "Zin":     sc.Kind = SummaryColumnKind.Zin;            sc.MetricName = ""; break;
+            case "VDD":     sc.Kind = SummaryColumnKind.OperatingPoint; sc.MetricName = "BiasVLoad"; break;
+            case "Idq":     sc.Kind = SummaryColumnKind.OperatingPoint; sc.MetricName = "BiasILoad"; break;
+            default:        sc.Kind = SummaryColumnKind.Metric;         sc.MetricName = selection; break;
+        }
+        sc.Header = "";
+    }
+
+    private void RebuildSummaryMetricOptions()
+    {
+        SummaryMetricOptions.Clear();
+        foreach (var m in new[] { "Pout", "DE", "Gt", "AMPM", "IRL" })
+            if (AvailableMetrics.Contains(m)) SummaryMetricOptions.Add(m);
+        SummaryMetricOptions.Add("Zload");
+        // Zin is offered when the Zin_real cube EXISTS in the dataset — not gated on AvailableMetrics,
+        // which drops low-variance cubes (input impedance is often near-constant across the load grid,
+        // so Zin_real would be filtered out and Zin would wrongly never appear). Presence is the right test.
+        if (SummaryDataHasCube("Zin_real")) SummaryMetricOptions.Add("Zin");
+        SummaryMetricOptions.Add("Zsource");
+        SummaryMetricOptions.Add("VDD");
+        SummaryMetricOptions.Add("Idq");
+        _suppressSummaryCallback = true;
+        SummaryMetricSelection = SummaryMetricForColumn(_trace.SummaryColumn);
+        _suppressSummaryCallback = false;
+    }
+
+    /// <summary>True when the selected datasource contains a cube with the given canonical name
+    /// (presence test, independent of whether it varies across the grid).</summary>
+    private bool SummaryDataHasCube(string name)
+    {
+        var ds = _parent.Library?.SelectedEntry?.Data;
+        return ds is not null && ds.Contains(name);
+    }
+
+    private static string? SummaryMetricForColumn(SummaryColumnData? sc) => sc?.Kind switch
+    {
+        null                              => null,
+        SummaryColumnKind.Zload           => "Zload",
+        SummaryColumnKind.Zsource         => "Zsource",
+        SummaryColumnKind.Zin             => "Zin",
+        SummaryColumnKind.OperatingPoint  => sc.MetricName == "BiasILoad" ? "Idq" : "VDD",
+        _                                 => sc.MetricName,
+    };
+
+    /// <summary>The table-wide compression shown (disabled) on a summary column card.</summary>
+    public double SummaryCompressionDisplay => _parent.TableCompression;
+
+    /// <summary>
+    /// Display precision (decimal digits) for a summary column's cells. Bound by the summary card's
+    /// Digits NUD. This must write SummaryColumnData.FractionDigits (what the cell formatter reads),
+    /// NOT the trace's MaximumFractionDigits (which the standard-table number-format controls use).
+    /// Editing it re-renders the table so the new precision shows immediately.
+    /// </summary>
+    public int SummaryFractionDigits
+    {
+        get => _trace.SummaryColumn?.FractionDigits ?? 1;
+        set
+        {
+            var sc = _trace.SummaryColumn;
+            if (sc is null || sc.FractionDigits == value) return;
+            sc.FractionDigits = value;
+            OnPropertyChanged();
+            _parent.Notify();   // re-render: cells re-format at the new precision
+        }
+    }
+
+    /// <summary>Always false — per-column compression box is greyed; compression is table-wide.</summary>
+    public bool SummaryCompressionEditable => false;
+
+    public string SummaryUnitLabel
+    {
+        get
+        {
+            var sc = _trace.SummaryColumn;
+            if (sc is null) return "";
+            return sc.Kind switch
+            {
+                SummaryColumnKind.Zload   => "Ω",
+                SummaryColumnKind.Zsource => "Ω",
+                SummaryColumnKind.Zin     => "Ω",
+                SummaryColumnKind.OperatingPoint => string.IsNullOrEmpty(sc.UnitLabel)
+                    ? (sc.MetricName == "BiasILoad" ? "mA" : "V")   // pre-RebuildSummary fallback
+                    : sc.UnitLabel,                                  // magnitude-inferred (bug 5 option b)
+                SummaryColumnKind.Metric  => sc.MetricName switch
+                {
+                    "Pout"            => "dBm",
+                    "DE" or "PAE"     => "%",
+                    "AMPM"            => "°",
+                    _                 => "dB",
+                },
+                _ => "dB",
+            };
+        }
+    }
+
+    /// <summary>Raises the disabled-compression display so a summary card reflects the table-wide value.
+    /// Also re-reads SummaryUnitLabel, which can change after RebuildSummary stamps a magnitude-inferred
+    /// Idq/VDD unit (bug 5 option b).</summary>
+    internal void RaiseSummaryCompressionChanged()
+    {
+        if (_trace.IsSummaryColumn)
+        {
+            OnPropertyChanged(nameof(SummaryCompressionDisplay));
+            OnPropertyChanged(nameof(SummaryUnitLabel));
+        }
     }
 
     // ---- Cube-bound discriminators (Phase 7.2c-a) --------------------------
@@ -1452,6 +1602,16 @@ public partial class TraceRowViewModel : ViewModelBase
         PickLineColorCommand         = new AsyncRelayCommand(PickLineColorAsync);
         ToggleFadeLineOpacityCommand = new RelayCommand(() => ContourFadeLineOpacity = !ContourFadeLineOpacity);
 
+        // Initialize summary column fields (if this is a summary trace).
+        if (trace.IsSummaryColumn)
+        {
+            if (EnsureLoadpullSurface())
+            {
+                RebuildMetricList();
+                RebuildSummaryMetricOptions();
+            }
+        }
+
         // Initialize contour VM fields from ContourData (if this is a contour trace).
         if (trace.ContourData is { } cd)
         {
@@ -2075,6 +2235,7 @@ public partial class TraceRowViewModel : ViewModelBase
     public void RefreshDescription()
     {
         OnPropertyChanged(nameof(IsContourTrace));
+        OnPropertyChanged(nameof(IsSummaryColumn));
         OnPropertyChanged(nameof(IsStandardTrace));
         OnPropertyChanged(nameof(IsRectPlot));
         OnPropertyChanged(nameof(IsRectOrTablePlot));

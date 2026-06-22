@@ -145,7 +145,30 @@ namespace CircuitRF.Ui.DataDisplay
             HashSet<Marker>?  selectedMarkers = null,
             SKColor           selectionColor  = default)
         {
-            var layout = BuildLayout(plot, canvasSize, zoomLevel);
+            // Summary tables reserve a title band ABOVE the grid (design §2.6). The band height
+            // is derived from the title font size; the table is translated down by that amount.
+            float titleBandH = SummaryTitleBandHeight(plot, zoomLevel);
+
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, 0, (float)canvasSize.W, (float)canvasSize.H));
+
+            // Draw the title in the reserved band at the very top (full opacity, larger bold).
+            // The title right-aligns to the table's COLUMN EXTENT (not the full canvas), so it never
+            // floats out over empty canvas to the right of narrow columns (design feedback: the title
+            // must read as the plot title, never as a detached wide column).
+            if (titleBandH > 0)
+            {
+                float columnExtent = TotalColumnWidth(plot) * zoomLevel;
+                float titleRight    = Math.Min((float)canvasSize.W, columnExtent);
+                DrawSummaryTitle(canvas, titleRight, plot, theme, zoomLevel, titleBandH);
+            }
+
+            // Translate the table grid down past the title band, and shrink its available height.
+            canvas.Save();
+            canvas.Translate(0, titleBandH);
+            var tableSize = (canvasSize.W, canvasSize.H - titleBandH);
+
+            var layout = BuildLayout(plot, tableSize, zoomLevel);
 
             float fs = layout.RowH / (1 + RowPaddingFraction); // effective font size from row height
 
@@ -154,20 +177,57 @@ namespace CircuitRF.Ui.DataDisplay
             using var dejaVuRegular    = new SKFont(SkiaFonts.DejaVuRegular,  fs);
             using var dejaVuBold       = new SKFont(SkiaFonts.DejaVuBold,     fs);
 
-            // Clip to the canvas bounds so text and highlights don't bleed outside the view
-            // (especially visible when the user drags the container near a window edge).
-            canvas.Save();
-            canvas.ClipRect(new SKRect(0, 0, (float)canvasSize.W, (float)canvasSize.H));
-
-            DrawRowBackgrounds(canvas, canvasSize, layout, theme);
+            DrawRowBackgrounds(canvas, tableSize, layout, theme);
             DrawMarkerHighlights(canvas, layout, plot, theme, selectedMarkers, selectionColor);
-            DrawCellBorders(canvas, canvasSize, layout, theme);
+            DrawCellBorders(canvas, tableSize, layout, theme);
             DrawHeaderRow(canvas, layout, plot, theme, boldFont, dejaVuBold, regularFont, showFilePrefix);
-            DrawDataRows(canvas, canvasSize, layout, plot, theme, regularFont, dejaVuRegular);
+            DrawDataRows(canvas, tableSize, layout, plot, theme, regularFont, dejaVuRegular);
             DrawResizeHandles(canvas, layout, theme);
 
-            canvas.Restore();
+            canvas.Restore();   // undo table translate
+            canvas.Restore();   // undo clip
         }
+
+        /// <summary>Height (canvas px) of the title band reserved above a summary table; 0 otherwise.</summary>
+        private static float SummaryTitleBandHeight(Plot plot, float zoomLevel)
+        {
+            if (string.IsNullOrEmpty(SummaryTitle(plot))) return 0f;
+            float fs = SummaryTitleFontSize(zoomLevel);
+            return fs + 8f * zoomLevel;   // font + top/bottom breathing room
+        }
+
+        /// <summary>
+        /// Total canvas-px height needed to show the WHOLE table at the given zoom: the summary title
+        /// band (0 when there is no title) + the header row + the gap + every data row, ending exactly
+        /// at the bottom border of the last row. Used by the resize-gripper double-click so the box
+        /// fits the table perfectly at any user font size (row height scales with plot.FontSize) and
+        /// whether or not a summary title band is present. Mirrors Draw()'s translate-by-band + the
+        /// BuildLayout row geometry so the two never drift.
+        /// </summary>
+        public static float RequiredCanvasHeight(Plot plot, float zoomLevel)
+        {
+            float fs         = (float)(plot.FontSize * zoomLevel);
+            float headerH    = fs * (1 + RowPaddingFraction * 2);
+            float rowH       = fs * (1 + RowPaddingFraction);
+            float dataStartY = headerH + HeaderToDataRowPadding;
+
+            int rowCount = 0;
+            foreach (var col in BuildColumns(plot))
+                if (col.Kind == TableColKind.XAxis && col.XValues.Length > rowCount)
+                    rowCount = col.XValues.Length;
+            int rows = Math.Max(1, rowCount);   // never collapse below a single data row
+
+            float bandH = SummaryTitleBandHeight(plot, zoomLevel);
+            return bandH + dataStartY + rows * rowH;
+        }
+
+        /// <summary>Title font size (canvas px) — larger than the table header per design feedback.
+        /// Scales linearly with zoom (no lower floor): a Math.Max(13, …) floor kept the title at 13 px
+        /// once 16*zoom dropped below it (zoom &lt; ~0.81), so when zoomed far out the title stayed large
+        /// while the table rows kept shrinking via fs = plot.FontSize*zoom — leaving an oversized title
+        /// over a tiny grid. Pure 16*zoom keeps the title proportional to the rows at every zoom level;
+        /// SummaryTitleBandHeight uses this same value so the band shrinks in lockstep.</summary>
+        private static float SummaryTitleFontSize(float zoomLevel) => 16f * zoomLevel;
 
         /// <summary>Returns which table element is under canvas point (cx, cy).</summary>
         public static TableHitResult HitTest(
@@ -176,7 +236,13 @@ namespace CircuitRF.Ui.DataDisplay
             (double W, double H) canvasSize,
             float zoomLevel = 1f)
         {
-            var layout  = BuildLayout(plot, canvasSize, zoomLevel);
+            // Summary tables draw a title band above the grid; the grid is translated down by it.
+            // Offset the incoming Y and shrink the height so hit-testing matches the drawn layout.
+            float titleBandH = SummaryTitleBandHeight(plot, zoomLevel);
+            cy -= titleBandH;
+            var tableSize = (canvasSize.W, canvasSize.H - titleBandH);
+
+            var layout  = BuildLayout(plot, tableSize, zoomLevel);
             var columns = layout.Columns;
             var result  = new TableHitResult
                 { Kind = TableHitKind.None, RowIndex = -1, ColIndex = -1, ResizeColIndex = -1 };
@@ -333,6 +399,19 @@ namespace CircuitRF.Ui.DataDisplay
         public static float TotalColumnWidth(Plot plot)
         {
             var cols  = BuildColumns(plot);
+
+            // Summary tables render with auto-fit column widths (SummaryFitWidth), NOT the stored
+            // trace.ColumnWidth. The gripper "auto-size" must use the SAME widths, otherwise it sizes
+            // the table far wider than the rendered columns and the right-aligned title floats out in
+            // the empty space, looking like a detached column (design feedback).
+            if (IsSummaryTable(plot))
+            {
+                float summaryTotal = 0f;
+                foreach (var col in cols)
+                    summaryTotal += SummaryFitWidth(plot, col);
+                return summaryTotal;
+            }
+
             float total = 0f;
             foreach (var col in cols)
             {
@@ -357,6 +436,16 @@ namespace CircuitRF.Ui.DataDisplay
         //  Column-plan builder (public so PlotControl can query it)
         // ============================================================
 
+        /// <summary>True when this Table should render as a loadpull summary (one row per freq,
+        /// columns read at the MXP/MXE optimum). Triggered by any trace carrying SummaryColumnData.</summary>
+        public static bool IsSummaryTable(Plot plot)
+        {
+            var traces = plot.Traces;
+            for (int i = 0; i < traces.Count; i++)
+                if (traces[i].IsSummaryColumn) return true;
+            return false;
+        }
+
         /// <summary>
         /// Builds the ordered column plan for the table.  Adjacent traces that share
         /// exactly the same X axis (same name, unit, sorted values, and point count)
@@ -364,6 +453,8 @@ namespace CircuitRF.Ui.DataDisplay
         /// </summary>
         public static List<TableColumn> BuildColumns(Plot plot)
         {
+            if (IsSummaryTable(plot)) return BuildSummaryColumns(plot);
+
             var result = new List<TableColumn>(plot.Traces.Count * 2);
 
             string?  prevAxisName   = null;
@@ -498,6 +589,45 @@ namespace CircuitRF.Ui.DataDisplay
             return result;
         }
 
+        private static List<TableColumn> BuildSummaryColumns(Plot plot)
+        {
+            var result = new List<TableColumn>(plot.Traces.Count + 1);
+            double[] freqs = plot.SummaryFreqs ?? Array.Empty<double>();
+
+            // Find the first summary trace (used as the anchor for the freq column's width lookup).
+            int firstSummary = 0;
+            for (int i = 0; i < plot.Traces.Count; i++)
+                if (plot.Traces[i].IsSummaryColumn) { firstSummary = i; break; }
+
+            // Leading Freq anchor column.
+            result.Add(new TableColumn
+            {
+                Kind            = TableColKind.XAxis,
+                FirstTraceIndex = firstSummary,
+                Header          = SummaryColumns.FreqHeader(plot.FreqUnits),
+                Unit            = "Hz",
+                XValues         = freqs,
+                IsFreqUnit      = true,
+            });
+
+            // One value column per summary trace, in trace order.
+            for (int ti = 0; ti < plot.Traces.Count; ti++)
+            {
+                var trace = plot.Traces[ti];
+                if (!trace.IsSummaryColumn) continue;
+                var sc = trace.SummaryColumn!;
+                string header = string.IsNullOrEmpty(sc.Header) ? SummaryColumns.AutoHeader(sc) : sc.Header;
+                result.Add(new TableColumn
+                {
+                    Kind            = TableColKind.TraceValue,
+                    FirstTraceIndex = ti,
+                    Header          = header,
+                    XValues         = freqs,
+                });
+            }
+            return result;
+        }
+
         /// <summary>
         /// Formats a single table cell given the column plan entry and the absolute row index.
         /// Returns "" when rowIndex is beyond the column's group length.
@@ -518,13 +648,48 @@ namespace CircuitRF.Ui.DataDisplay
                     : xVal.ToString(fmt);
             }
 
-            // TraceValue: look up the sample in this trace whose X value matches.
+            // TraceValue: check for summary column before the standard cube/network paths.
             var trace = plot.Traces[col.FirstTraceIndex];
+            if (trace.IsSummaryColumn)
+                return FormatSummaryCell(trace.SummaryColumn!, rowIndex);
+
+            // Standard TraceValue: look up the sample in this trace whose X value matches.
             if (col.FamilyCurveIndex >= 0)
                 return FormatFamilyCellAt(trace, col.FamilyCurveIndex, xVal);
             return trace.IsCubeBound
                 ? FormatCubeCellAt(trace, xVal)
                 : FormatTraceCell(trace, xVal);
+        }
+
+        private static string FormatSummaryCell(SummaryColumnData sc, int rowIndex)
+        {
+            if (SummaryColumns.IsComplexColumn(sc.Kind))
+            {
+                var cells = sc.CellsComplex;
+                if (cells is null || rowIndex < 0 || rowIndex >= cells.Length) return "";
+                var z = cells[rowIndex];
+                if (double.IsNaN(z.Real) || double.IsNaN(z.Imaginary)) return "NaN";
+                return FormatComplexOhms(z, 2);
+            }
+            else
+            {
+                var cells = sc.CellsReal;
+                if (cells is null || rowIndex < 0 || rowIndex >= cells.Length) return "";
+                double v = cells[rowIndex];
+                if (double.IsNaN(v)) return "NaN";
+                string fmt = $"F{sc.FractionDigits}";
+                return v.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        /// <summary>Formats a complex impedance as "R+jX" with the given decimals (design §3).
+        /// No unit suffix in the cell — the "(Ω)" lives in the column header (design feedback).</summary>
+        private static string FormatComplexOhms(System.Numerics.Complex z, int decimals)
+        {
+            string f    = $"F{decimals}";
+            var    ci   = System.Globalization.CultureInfo.InvariantCulture;
+            string sign = z.Imaginary >= 0 ? "+" : "-";
+            return $"{z.Real.ToString(f, ci)}{sign}j{Math.Abs(z.Imaginary).ToString(f, ci)}";
         }
 
         /// <summary>
@@ -565,6 +730,7 @@ namespace CircuitRF.Ui.DataDisplay
         {
             float fs      = (float)(plot.FontSize * zoomLevel);
             var   columns = BuildColumns(plot);
+            bool  summary = IsSummaryTable(plot);
 
             // Row count = longest XAxis group.
             int rowCount = 0;
@@ -593,6 +759,16 @@ namespace CircuitRF.Ui.DataDisplay
 
             for (int c = 0; c < colCount; c++)
             {
+                // Summary tables auto-fit each column to its content (header or widest cell),
+                // so impedance columns (R+jX Ω) get room while scalar columns stay tight
+                // (design feedback: default widths were far too wide). SummaryFitWidth measures
+                // in LOGICAL units (unscaled font); caller applies zoom here.
+                if (summary)
+                {
+                    layout.ColW[c] = SummaryFitWidth(plot, columns[c]) * zoomLevel;
+                    continue;
+                }
+
                 if (columns[c].Kind == TableColKind.XAxis)
                 {
                     var anchor = plot.Traces[columns[c].FirstTraceIndex];
@@ -622,6 +798,42 @@ namespace CircuitRF.Ui.DataDisplay
             plot.TableViewScrollIndex = layout.ScrollIndex;
 
             return layout;
+        }
+
+        /// <summary>
+        /// Auto-fit width in LOGICAL units (pre-zoom) for a summary-table column: the max of the
+        /// header width and every cell's width, plus padding. Measured at the unscaled plot font
+        /// size so the result is zoom-independent (caller multiplies by zoom). Clamped to MinColumnWidth.
+        /// </summary>
+        private static float SummaryFitWidth(Plot plot, TableColumn col)
+        {
+            float fs = (float)plot.FontSize;
+            using var boldFont      = new SKFont(SkiaFonts.PlexBold,      fs);
+            using var regularFont   = new SKFont(SkiaFonts.PlexRegular,   fs);
+            using var dejaVuRegular = new SKFont(SkiaFonts.DejaVuRegular, fs);
+
+            float maxW = boldFont.MeasureText(col.Header);
+
+            // Leave room for the sort arrow on the Freq anchor (XAxis) header.
+            if (col.Kind == TableColKind.XAxis)
+            {
+                float spaceW = boldFont.MeasureText(" ");
+                maxW += spaceW * 1.5f + fs * 0.6f;
+            }
+
+            int rows = col.XValues.Length;
+            for (int ri = 0; ri < rows; ri++)
+            {
+                string cellText = FormatColumnCell(col, ri, plot);
+                float  cellW    = col.Kind == TableColKind.XAxis
+                    ? regularFont.MeasureText(cellText)
+                    : RendererText.MeasureTextWithFallback(cellText, regularFont, dejaVuRegular);
+                if (cellW > maxW) maxW = cellW;
+            }
+
+            // Padding both sides + a hair of slack so text never touches the border.
+            float w = maxW + TextCellPaddingX * 2 + 4f;
+            return Math.Max(MinColumnWidth, w);
         }
 
         // ============================================================
@@ -1087,7 +1299,14 @@ namespace CircuitRF.Ui.DataDisplay
                     // TraceValue column: compute label considering showFilePrefix.
                     var    trace = plot.Traces[col.FirstTraceIndex];
                     string label;
-                    if (col.FamilyCurveIndex >= 0)
+                    if (trace.IsSummaryColumn)
+                    {
+                        // Summary column: header is pre-computed in BuildSummaryColumns
+                        // (SummaryColumns.AutoHeader). Use it verbatim — the placeholder SNP's
+                        // ShortDescription would wrongly read "dB(S(1,1))".
+                        label = col.Header;
+                    }
+                    else if (col.FamilyCurveIndex >= 0)
                     {
                         // Family trace: col.Header already contains "baseShorthand @ familyLabel".
                         label = col.Header;
@@ -1201,6 +1420,63 @@ namespace CircuitRF.Ui.DataDisplay
                 float x = layout.ColX[c] + layout.ColW[c];
                 canvas.DrawLine(x, top, x, bot, handlePaint);
             }
+        }
+
+        // ============================================================
+        //  Summary-table title
+        // ============================================================
+
+        /// <summary>
+        /// Returns the top-right title string for a summary table (design §2.6):
+        /// "Max P-{x}dB Power Load" (MXP) / "Max P-{x}dB Efficiency Load" (MXE),
+        /// where {x} is the table-wide compression. A user CustomTitle overrides.
+        /// Empty string when the plot is not a summary table.
+        /// </summary>
+        public static string SummaryTitle(Plot plot)
+        {
+            if (!IsSummaryTable(plot)) return "";
+            if (plot.CustomTitleOn && !string.IsNullOrEmpty(plot.CustomTitle)) return plot.CustomTitle;
+            string x    = FormatCompressionToken(plot.TableCompression);
+            string kind = plot.TableOptimum == TableOptimum.Mxe ? "Efficiency" : "Power";
+            return $"Max P-{x}dB {kind} Load";
+        }
+
+        private static string FormatCompressionToken(double compression)
+        {
+            // {x} is the compression magnitude as authored (e.g. "3", "1.5"). The "P-{x}dB"
+            // form already encodes the compression sense, so no leading sign is added here.
+            string s = compression.ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
+            if (s.Contains('.')) s = s.TrimEnd('0').TrimEnd('.');
+            return s;
+        }
+
+        private static void DrawSummaryTitle(
+            SKCanvas             canvas,
+            float                rightEdge,
+            Plot                 plot,
+            RenderTheme          theme,
+            float                zoomLevel,
+            float                bandH)
+        {
+            string title = SummaryTitle(plot);
+            if (string.IsNullOrEmpty(title)) return;
+
+            float fs = SummaryTitleFontSize(zoomLevel);
+            using var font  = new SKFont(SkiaFonts.PlexBold, fs);
+            using var paint = new SKPaint
+            {
+                Color       = theme.TextColor,   // full opacity (design feedback: no transparency)
+                IsAntialias = true,
+            };
+
+            float textW = font.MeasureText(title);
+            // Right-align to the table's column extent so the title sits over the columns,
+            // never floating out in empty canvas. Clamp left so a wide title can't go negative.
+            float x     = Math.Max(8f * zoomLevel, rightEdge - textW - 8f * zoomLevel);
+            // Vertically center the baseline within the title band (above the grid).
+            float y     = (bandH + fs) * 0.5f - font.Metrics.Descent * 0.5f;
+
+            canvas.DrawText(title, x, y, font, paint);
         }
     }
 }

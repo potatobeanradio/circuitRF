@@ -230,6 +230,18 @@ namespace CircuitRF.Ui.DataDisplay
         public double         ColumnWidth                 { get; set; } = 115;
         public bool           TableViewAscendingSortOrder { get; set; } = true;
         public int            TableViewScrollIndex        { get; set; } = 0;
+
+        // ---- Summary-table state (Phase 7.5) ----------------------------
+        // Table-wide controls: which optimum, how metrics are read, and the single shared compression.
+        // Only meaningful when PlotType == Table with summary traces; ignored otherwise.
+        public TableOptimum  TableOptimum     { get; set; } = TableOptimum.Mxp;
+        public TableReadMode TableReadMode    { get; set; } = TableReadMode.Interp;
+        public double        TableCompression { get; set; } = 3.0;
+
+        /// <summary>Per-frequency row axis (Hz) for a summary Table, set by the VM's RebuildSummary.
+        /// Null/empty for non-summary tables. Not persisted (re-derived on load).</summary>
+        public double[]? SummaryFreqs { get; set; }
+
         public PrecisionFormat FormatString               { get; set; } = PrecisionFormat.F;
         public int            MaximumFractionDigits       { get; set; } = 3;
         public double         FontSize                 { get; set; } = 12;
@@ -412,7 +424,22 @@ namespace CircuitRF.Ui.DataDisplay
             Axes.Window          = window;
             Axes.WindowSecondary = windowSecondary;
 
-            Autoscale();
+            // Only (re)autoscale an axis whose saved window is missing/degenerate — never clobber a
+            // valid saved window. A valid window has positive width AND height. This preserves the
+            // user's exact saved view and prevents the empty-points Rect autoscale from scrolling
+            // the trace off-screen when data resolves after paste/load.
+            bool windowValid          = window.Width > 0 && window.Height > 0;
+            bool windowSecondaryValid = windowSecondary.Width > 0 && windowSecondary.Height > 0;
+
+            if (SupportsComplex)
+            {
+                if (!windowValid && _autoscaleMag) RunAutoscale("both");
+            }
+            else
+            {
+                if (!windowValid)          { if (_autoscaleX) RunAutoscale("x"); if (_autoscaleY) RunAutoscale("y"); }
+                if (!windowSecondaryValid) { if (_autoscaleRightY) RunAutoscale("rightY"); }
+            }
 
             Axes.WindowState          = Axes.Window;
             Axes.WindowSecondaryState = Axes.WindowSecondary;
@@ -454,8 +481,19 @@ namespace CircuitRF.Ui.DataDisplay
                 ? new Rect(-1, -1, 2, 2)
                 : new Rect( 0,  0, 2, 2);
 
-            if (!primarySet)   primary   = defaultWindow;
-            if (!secondarySet) secondary = defaultWindow;
+            // For Rect: if no trace produced a bounding box, prefer the existing window over the
+            // origin fallback (0..2) so data that arrives later doesn't render off-screen.
+            // Only fall back to defaultWindow when the existing window is itself degenerate.
+            if (!primarySet)
+            {
+                bool existingValid = !SupportsComplex && Axes.Window.Width > 0 && Axes.Window.Height > 0;
+                primary = existingValid ? Axes.Window : defaultWindow;
+            }
+            if (!secondarySet)
+            {
+                bool existingValid = !SupportsComplex && Axes.WindowSecondary.Width > 0 && Axes.WindowSecondary.Height > 0;
+                secondary = existingValid ? Axes.WindowSecondary : defaultWindow;
+            }
 
             if (!SupportsComplex)
             {

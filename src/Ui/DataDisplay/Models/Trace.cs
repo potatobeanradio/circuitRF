@@ -220,6 +220,12 @@ namespace CircuitRF.Ui.DataDisplay
 
         public bool IsContourTrace => ContourData != null;
 
+        /// <summary>When non-null, this trace is a summary-table column (Phase 7.5). Mutually exclusive
+        /// with ContourData; only meaningful on a Table plot.</summary>
+        public SummaryColumnData? SummaryColumn { get; set; }
+
+        public bool IsSummaryColumn => SummaryColumn != null;
+
         // ---- Cube-native binding (Phase 7.2c-a) -------------------------
         //
         //  Null CubeName ⇒ this trace uses the legacy SNP/matrix path.
@@ -527,6 +533,7 @@ namespace CircuitRF.Ui.DataDisplay
             // ContourData that re-fits independently.  Grid/Levels/caches are left null
             // and repopulated when the pasted trace's VM calls RebuildContour.
             ContourData = src.ContourData?.Clone();
+            SummaryColumn = src.SummaryColumn?.Clone();
             if (includeMarkers)
                 foreach (var m in src.Markers)
                     Markers.Add(new Marker(m));

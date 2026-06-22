@@ -60,12 +60,22 @@
         <Panel Grid.Column="1">
 
             <!-- Plot control — panning disabled; container handles left-drag for moving -->
+            <!--
+                ClipToBounds=True: clip the Skia draw to the control's own bounds so
+                antialiased axis-label text at the edge cannot bleed past the control
+                rectangle. Without this, long axis labels that reach the edge leave a
+                smeared text residue on the DataDisplay canvas when the container is
+                drag-moved (the bled pixels fall outside the moved layout rect that
+                Avalonia invalidates). The container's ViewTotalWidth/ViewHeight already
+                budget all label/title/strip space, so nothing legitimate is clipped.
+            -->
             <cc:PlotControl x:Name="MyPlotControl"
                             Plot="{Binding PlotVM.Plot}"
                             PlotTheme="{Binding Theme}"
                             Library="{Binding Library}"
                             EnablePanning="False"
                             ZoomFactor="1.15"
+                            ClipToBounds="True"
                             Cursor="Arrow"/>
 
             <!--

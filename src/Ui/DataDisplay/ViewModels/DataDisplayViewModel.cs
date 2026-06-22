@@ -900,6 +900,9 @@ public partial class DataDisplayViewModel : ViewModelBase
         plot.TableViewScrollIndex        = pc.TableViewScrollIndex;
         plot.FontSize                    = pc.FontSize > 0 ? pc.FontSize : 12;
         plot.ColumnWidth                 = pc.FreqColumnWidth > 0 ? pc.FreqColumnWidth : 115;
+        plot.TableOptimum                = pc.TableOptimum;
+        plot.TableReadMode               = pc.TableReadMode;
+        plot.TableCompression            = pc.TableCompression > 0 ? pc.TableCompression : 3.0;
 
         foreach (var traceConfig in pc.Traces)
         {
@@ -948,14 +951,35 @@ public partial class DataDisplayViewModel : ViewModelBase
             bool isCubeBound    = (traceConfig.CubeName is not null && traceConfig.CubeSlice.Count > 0)
                                || traceConfig.Expression is not null;
             bool isContourTrace = traceConfig.ContourTrace is not null;
+            bool isSummaryTrace = traceConfig.SummaryColumn is not null;
 
-            // Network-bound: must have a valid SNP. Cube-bound/contour: must have a library entry.
-            if (!isCubeBound && !isContourTrace && snp is null) continue;
+            // Network-bound: must have a valid SNP. Cube-bound/contour/summary: must have a library entry.
+            if (!isCubeBound && !isContourTrace && !isSummaryTrace && snp is null) continue;
             if (isCubeBound  && libEntry is null) continue;
             if (isContourTrace && libEntry is null) continue;
+            if (isSummaryTrace && libEntry is null) continue;
 
             Trace trace;
-            if (isContourTrace)
+            if (isSummaryTrace)
+            {
+                var sc = traceConfig.SummaryColumn!;
+                var placeholder = new SNP(new double[] { 1e9 }, 1);
+                trace = new Trace(placeholder, MatrixType.S, 0, 0, DependentVarFormat.Db, false);
+                trace.SummaryColumn = new SummaryColumnData
+                {
+                    Kind           = sc.Kind,
+                    MetricName     = sc.MetricName,
+                    Header         = sc.Header,
+                    FractionDigits = sc.FractionDigits,
+                    ColumnWidth    = sc.ColumnWidth,
+                };
+                ApplyProperties(traceConfig.Properties, trace.Properties);
+                trace.SourceRef  = sref;
+                trace.SourcePath = resolvedPath;
+                plot.Traces.Add(trace);
+                continue;
+            }
+            else if (isContourTrace)
             {
                 var ct = traceConfig.ContourTrace!;
                 var placeholder = new SNP(new double[] { 1e9 }, 1);
@@ -1124,6 +1148,9 @@ public partial class DataDisplayViewModel : ViewModelBase
             TableViewScrollIndex        = plot.TableViewScrollIndex,
             FontSize                    = plot.FontSize,
             FreqColumnWidth             = plot.ColumnWidth,
+            TableOptimum                = plot.TableOptimum,
+            TableReadMode               = plot.TableReadMode,
+            TableCompression            = plot.TableCompression,
             Axes = new AxesConfig
             {
                 AutoscaleX      = plot.AutoscaleX,
@@ -1249,6 +1276,19 @@ public partial class DataDisplayViewModel : ViewModelBase
                 InterpKernel         = cd.InterpKernel,
                 Smoothing            = cd.Smoothing,
                 Epsilon              = cd.Epsilon,
+            };
+        }
+
+        // Summary column authoring state (7.5).
+        if (t.SummaryColumn is { } sc)
+        {
+            tc.SummaryColumn = new SummaryColumnConfig
+            {
+                Kind           = sc.Kind,
+                MetricName     = sc.MetricName,
+                Header         = sc.Header,
+                FractionDigits = sc.FractionDigits,
+                ColumnWidth    = sc.ColumnWidth,
             };
         }
 

@@ -37,7 +37,12 @@ namespace CircuitRF.Ui.DataDisplay
 
         /// <summary>Resampled metric surface (from <c>LoadpullSurface.Resample</c>).
         /// Setting a new reference invalidates the polyline cache.</summary>
-        public SurfaceGrid?      Grid    { get; set; }
+        public SurfaceGrid?      Grid     { get; set; }
+
+        /// <summary>Disk-covering fill grid (Gamma plane only): resampled over [-1,1]×[-1,1] at
+        /// higher resolution so the TopoMap fill reaches the Smith circular-clip edge.
+        /// Null on Rect plots (fill uses <see cref="Grid"/>).</summary>
+        public SurfaceGrid?      FillGrid { get; set; }
 
         /// <summary>Scatter points (from <c>LoadpullSurface.Reduce</c>). Used only for HeatMap.</summary>
         public ScatterReduction? Scatter { get; set; }
@@ -143,6 +148,11 @@ namespace CircuitRF.Ui.DataDisplay
             }
             else
             {
+                // §6 defense: if constraint aliases to the same concept as the plotted metric,
+                // the title would read "X at Constant X" — fall back to a non-degenerate form.
+                if (MetricDisplayName(ConstraintMetricName) == displayName)
+                    return $"P-3dB {displayName} ({unit})";
+
                 string otherDisplay = MetricDisplayName(ConstraintMetricName);
                 string otherUnit    = MetricUnit(ConstraintMetricName);
                 string val          = FormatCompression(ConstraintValue);
@@ -180,6 +190,7 @@ namespace CircuitRF.Ui.DataDisplay
         /// </summary>
         public ContourData Clone() => new ContourData
         {
+            // Grid, FillGrid, Scatter, Levels, MxpCoord, MxeCoord left null — re-built on first draw.
             MetricName            = MetricName,
             ContourConstraintKind = ContourConstraintKind,
             ConstraintMetricName  = ConstraintMetricName,

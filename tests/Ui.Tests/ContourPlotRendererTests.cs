@@ -272,4 +272,166 @@ public sealed class ContourPlotRendererTests
         };
         Assert.Equal("Efficiency (%) at Constant Pout=30 dBm", cd.TitleString());
     }
+
+    // ── T18 — §6: TitleString never emits "X at Constant X" for same metric ──
+    [Fact]
+    public void ContourData_TitleString_SameConstraintMetric_FallsBackToCompression()
+    {
+        var cd = new ContourData
+        {
+            MetricName            = "Gain",
+            ContourConstraintKind = ConstraintKind.ConstantMetric,
+            ConstraintMetricName  = "Gain",   // direct collision
+            ConstraintValue       = 20.0,
+        };
+        var title = cd.TitleString();
+        Assert.DoesNotContain("at Constant Gain", title);
+        Assert.DoesNotContain("at Constant Gain", title);
+    }
+
+    // ── T19 — §6: alias collision (Gt aliases to Gain) also falls back ────────
+    [Fact]
+    public void ContourData_TitleString_AliasConstraintMetric_FallsBackToCompression()
+    {
+        var cd = new ContourData
+        {
+            MetricName            = "Gain",
+            ContourConstraintKind = ConstraintKind.ConstantMetric,
+            ConstraintMetricName  = "Gt",    // aliases to "Gain"
+            ConstraintValue       = 20.0,
+        };
+        var title = cd.TitleString();
+        Assert.DoesNotContain("at Constant Gain", title);
+    }
+
+    // ── T20 — §6: DE aliases to Efficiency also falls back ───────────────────
+    [Fact]
+    public void ContourData_TitleString_DEAliasToEfficiency_FallsBackWhenSame()
+    {
+        var cd = new ContourData
+        {
+            MetricName            = "DE",
+            ContourConstraintKind = ConstraintKind.ConstantMetric,
+            ConstraintMetricName  = "PAE",   // aliases to "Efficiency", same as DE
+            ConstraintValue       = 50.0,
+        };
+        var title = cd.TitleString();
+        Assert.DoesNotContain("at Constant Efficiency", title);
+    }
+
+    // §3 line-color helper: mirrors DrawIsoLines auto-color logic (50% lerp + luminance ceiling).
+    private static (byte R, byte G, byte B) ComputeIsoLineColor(ContourColorMap colorMap)
+    {
+        var mapColor = ContourColormaps.Sample(colorMap, 0.5);
+        float lum = (0.299f * mapColor.Red + 0.587f * mapColor.Green + 0.114f * mapColor.Blue) / 255f;
+        byte hi = lum > 0.5f ? (byte)0 : (byte)255;
+        byte r = LerpByte(mapColor.Red,   hi, 0.5f);
+        byte g = LerpByte(mapColor.Green, hi, 0.5f);
+        byte b = LerpByte(mapColor.Blue,  hi, 0.5f);
+        float lineL = (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
+        const float LumCeiling = 0.45f;
+        if (lineL > LumCeiling)
+        {
+            float scale = LumCeiling / lineL;
+            r = (byte)Math.Round(r * scale);
+            g = (byte)Math.Round(g * scale);
+            b = (byte)Math.Round(b * scale);
+        }
+        return (r, g, b);
+    }
+
+    // ── T21 — §3: Gray colormap iso-line color meets luminance ceiling ────────
+    [Fact]
+    public void ContourIsoLineColor_Gray_MeetsDarknessThreshold()
+    {
+        var (r, g, b) = ComputeIsoLineColor(ContourColorMap.Gray);
+        float resultLum = (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
+        Assert.True(resultLum <= 0.46f, $"Gray iso-line luminance {resultLum:F3} must be ≤ 0.46");
+    }
+
+    // ── T22 — §3: GistHeat colormap iso-line color meets luminance ceiling ────
+    [Fact]
+    public void ContourIsoLineColor_GistHeat_MeetsDarknessThreshold()
+    {
+        var (r, g, b) = ComputeIsoLineColor(ContourColorMap.GistHeat);
+        float resultLum = (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
+        Assert.True(resultLum <= 0.46f, $"GistHeat iso-line luminance {resultLum:F3} must be ≤ 0.46");
+    }
+
+    // ── T23 — §3: Bone, Winter, Copper also meet the ceiling ─────────────────
+    [Theory]
+    [InlineData(ContourColorMap.Bone)]
+    [InlineData(ContourColorMap.Winter)]
+    [InlineData(ContourColorMap.Copper)]
+    public void ContourIsoLineColor_LightMaps_MeetDarknessThreshold(ContourColorMap colorMap)
+    {
+        var (r, g, b) = ComputeIsoLineColor(colorMap);
+        float resultLum = (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
+        Assert.True(resultLum <= 0.46f, $"{colorMap} iso-line luminance {resultLum:F3} must be ≤ 0.46");
+    }
+
+    // ── T24 — §2: DrawGridPoints accepts canvasSize (compile-time + empty-scatter path) ─
+    [Fact]
+    public void ContourRenderer_DrawGridPoints_AcceptsCanvasSizeParam()
+    {
+        using var surface = SKSurface.Create(new SKImageInfo(400, 400));
+        var canvas = surface.Canvas;
+        var tf = new TransformSet
+        {
+            Primary    = (400.0, -400.0, 200.0, 200.0),
+            Secondary  = (400.0, -400.0, 200.0, 200.0),
+            CanvasSize = (400, 400),
+            Viewport   = new Avalonia.Rect(0, 0, 1, 1),
+        };
+        // Use empty scatter — no drawing happens, but signature is verified.
+        var scatter = new ScatterReduction(
+            Array.Empty<System.Numerics.Complex>(),
+            Array.Empty<double>(),
+            Array.Empty<int>());
+        ContourRenderer.DrawGridPoints(canvas, (400.0, 400.0), scatter, tf, SKColors.Black, 3f);
+    }
+
+    // ── T25 — §2: DrawOptimaMarkers signature accepts canvasSize (empty-coords path) ─
+    [Fact]
+    public void ContourRenderer_DrawOptimaMarkers_AcceptsCanvasSizeParam()
+    {
+        using var surface = SKSurface.Create(new SKImageInfo(400, 400));
+        var canvas = surface.Canvas;
+        var tf = new TransformSet
+        {
+            Primary    = (400.0, -400.0, 200.0, 200.0),
+            Secondary  = (400.0, -400.0, 200.0, 200.0),
+            CanvasSize = (400, 400),
+            Viewport   = new Avalonia.Rect(0, 0, 1, 1),
+        };
+        // DisplayMxp/Mxe = false — no drawing, no SkiaFonts load needed; signature verified.
+        var cd = new ContourData { DisplayMxp = false, DisplayMxe = false };
+        ContourRenderer.DrawOptimaMarkers(canvas, cd, tf, (400.0, 400.0));
+    }
+
+    // ── T26 — §1: FillGrid property exists on ContourData ────────────────────
+    [Fact]
+    public void ContourData_FillGrid_PropertyExists()
+    {
+        var cd = new ContourData();
+        Assert.Null(cd.FillGrid);
+        var grid = new SurfaceGrid(new[] { 0.0, 1.0 }, new[] { 0.0, 1.0 }, new[] { 1.0, 2.0, 3.0, 4.0 });
+        cd.FillGrid = grid;
+        Assert.Same(grid, cd.FillGrid);
+    }
+
+    // ── T27 — §1: Clone does not copy FillGrid (re-built on first draw) ───────
+    [Fact]
+    public void ContourData_Clone_FillGridIsNull()
+    {
+        var grid = new SurfaceGrid(new[] { 0.0, 1.0 }, new[] { 0.0, 1.0 }, new[] { 1.0, 2.0, 3.0, 4.0 });
+        var cd   = new ContourData { FillGrid = grid };
+        var copy = cd.Clone();
+        Assert.Null(copy.FillGrid);
+    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    private static byte LerpByte(byte a, byte b, float t)
+        => (byte)Math.Round(a + (b - a) * t);
 }

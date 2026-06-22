@@ -32,6 +32,11 @@ namespace CircuitRF.Ui.DataDisplay
 {
     internal static class ContourRenderer
     {
+        // lw at a nominal 400×400 (zoom=1) canvas: min(400,400)/200 = 2.0.
+        // All contour element sizes are expressed as multiples of lw so they
+        // scale identically to grid lines when the canvas (already zoom-scaled)
+        // grows or shrinks.
+        private const float BaseLw = 2.0f;
         // ================================================================
         //  TopoMap fill  (§3 in brief) — VECTOR band paths
         // ================================================================
@@ -237,10 +242,15 @@ namespace CircuitRF.Ui.DataDisplay
             double                     labelSpacing,
             ContourColorMap            colorMap        = ContourColorMap.Hot,
             float                      levelFontSize   = 9f,
-            bool                       fadeLineOpacity = false,
-            float                      zoomLevel       = 1f)
+            bool                       fadeLineOpacity = false)
         {
             if (polylines == null || polylines.Count == 0) return;
+
+            // Scale stroke and font by canvas-proportional lw so they track zoom
+            // identically to the Smith/Rect grid lines.
+            float lw                = AxesRenderer.LineWidth(canvasSize);
+            float effectiveStroke   = strokeWidth   * lw / BaseLw;
+            float effectiveFontSize = levelFontSize * lw / BaseLw;
 
             // Pre-compute level range — needed for both §E colormap contrast and fade.
             double minLevel = double.MaxValue, maxLevel = double.MinValue;
@@ -253,16 +263,26 @@ namespace CircuitRF.Ui.DataDisplay
 
             using var linePaint = new SKPaint
             {
-                StrokeWidth = strokeWidth,
+                StrokeWidth = effectiveStroke,
                 IsAntialias = true,
                 Style       = SKPaintStyle.Stroke,
                 StrokeCap   = SKStrokeCap.Round,
                 StrokeJoin  = SKStrokeJoin.Round,
             };
-            using var labelFont  = new SKFont(SkiaFonts.PlexRegular, levelFontSize);
+            using var labelFont  = new SKFont(SkiaFonts.PlexRegular, effectiveFontSize);
             using var labelPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
             using var bgPaint    = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
             using var bgStroke   = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Stroke, StrokeWidth = 0.75f };
+
+            // Label-box padding (canvas px), scaled by lw so it tracks zoom like the font. Slightly
+            // larger than the old fixed 2 px so the text never crowds the border (design feedback).
+            // capHeight = the text's visual height (ascent above baseline + descent below); the box is
+            // centered on the label anchor in BOTH axes and the baseline is placed so the glyphs sit in
+            // the exact center of the box.
+            var   labelMetrics = labelFont.Metrics;
+            float labelPadX    = 4f * lw / BaseLw;
+            float labelPadY    = 3f * lw / BaseLw;
+            float capHeight    = labelMetrics.Descent - labelMetrics.Ascent;  // ascent is negative
 
             // §3 — label positions are world-unit based so they don't shift on zoom.
             // spacingW is in world coordinates; a canvas-px guard keeps labels off tiny paths.
@@ -284,6 +304,18 @@ namespace CircuitRF.Ui.DataDisplay
                 byte r = LerpByte(mapColor.Red,   hi, 0.5);
                 byte g = LerpByte(mapColor.Green, hi, 0.5);
                 byte b = LerpByte(mapColor.Blue,  hi, 0.5);
+                // §3: luminance ceiling — if the candidate line color is too light (Gray,
+                // Bone, Winter, GistHeat, Copper midpoints land near 0.5 and can lerp
+                // toward white), scale it down until luminance ≤ 0.45 so it stays readable.
+                float lineL = (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
+                const float LumCeiling = 0.45f;
+                if (lineL > LumCeiling)
+                {
+                    float scale = LumCeiling / lineL;
+                    r = (byte)Math.Round(r * scale);
+                    g = (byte)Math.Round(g * scale);
+                    b = (byte)Math.Round(b * scale);
+                }
                 baseLineColor = new SKColor(r, g, b, lineColor.Alpha);
             }
 
@@ -320,7 +352,6 @@ namespace CircuitRF.Ui.DataDisplay
 
                     string labelText = FormatLevel(pl.Level);
                     float  tw        = labelFont.MeasureText(labelText);
-                    float  th        = levelFontSize;
 
                     // Stagger start per ring in world-unit fractions.
                     double startFrac = 0.5 + 0.18 * ((ringIndex % 3) - 1);
@@ -347,11 +378,20 @@ namespace CircuitRF.Ui.DataDisplay
 
                             bgPaint.Color  = labelBg.WithAlpha((byte)Math.Round(labelBg.Alpha * fadeF));
                             bgStroke.Color = new SKColor(0, 0, 0, (byte)Math.Round(120 * fadeF));
-                            var bg = new SKRect(pm.X - tw / 2 - 2, pm.Y - th - 1,
-                                                pm.X + tw / 2 + 2, pm.Y + 2);
+
+                            // Box centered on the label anchor (pm) in BOTH axes, with padded
+                            // half-extents. Text is horizontally centered (SKTextAlign.Center at pm.X)
+                            // and vertically centered: baseline offset places the glyph block's midpoint
+                            // at pm.Y, so the text sits in the exact center of the box (design feedback).
+                            float halfW = tw / 2f + labelPadX;
+                            float halfH = capHeight / 2f + labelPadY;
+                            var   bg    = new SKRect(pm.X - halfW, pm.Y - halfH,
+                                                     pm.X + halfW, pm.Y + halfH);
                             canvas.DrawRect(bg, bgPaint);
                             canvas.DrawRect(bg, bgStroke);
-                            canvas.DrawText(labelText, pm.X, pm.Y,
+
+                            float baselineY = pm.Y - (labelMetrics.Ascent + labelMetrics.Descent) / 2f;
+                            canvas.DrawText(labelText, pm.X, baselineY,
                                             SKTextAlign.Center, labelFont, labelPaint);
 
                             targetArcW += spacingW;
@@ -426,40 +466,45 @@ namespace CircuitRF.Ui.DataDisplay
 
         /// <summary>Draw a small dot at each original measured loadpull point.</summary>
         public static void DrawGridPoints(
-            SKCanvas         canvas,
-            ScatterReduction scatter,
-            TransformSet     tf,
-            SKColor          color,
-            float            pointRadius = 2.5f)
+            SKCanvas             canvas,
+            (double W, double H) canvasSize,
+            ScatterReduction     scatter,
+            TransformSet         tf,
+            SKColor              color,
+            float                pointRadius = 2.5f)
         {
             if (scatter.Coords.Length == 0) return;
+            float lw              = AxesRenderer.LineWidth(canvasSize);
+            float effectiveRadius = pointRadius * lw / BaseLw;
             using var paint = new SKPaint { Color = color, Style = SKPaintStyle.Fill, IsAntialias = true };
             foreach (var coord in scatter.Coords)
             {
                 var pt = tf.ToCanvas(coord.Real, coord.Imaginary, useSecondary: false);
-                canvas.DrawCircle(pt, pointRadius, paint);
+                canvas.DrawCircle(pt, effectiveRadius, paint);
             }
         }
 
         /// <summary>Draw MXP / MXE circle markers if enabled and coords are available.</summary>
         public static void DrawOptimaMarkers(
-            SKCanvas canvas, ContourData cd, TransformSet tf, float zoomLevel = 1f)
+            SKCanvas canvas, ContourData cd, TransformSet tf, (double W, double H) canvasSize)
         {
             if (cd.DisplayMxp && cd.MxpCoord is { } mxp)
-                DrawOptimumMarker(canvas, mxp, 'P', MxpAccent(cd.ColorMap), tf, zoomLevel);
+                DrawOptimumMarker(canvas, mxp, 'P', MxpAccent(cd.ColorMap), tf, canvasSize);
             if (cd.DisplayMxe && cd.MxeCoord is { } mxe)
-                DrawOptimumMarker(canvas, mxe, 'E', MxeAccent(cd.ColorMap), tf, zoomLevel);
+                DrawOptimumMarker(canvas, mxe, 'E', MxeAccent(cd.ColorMap), tf, canvasSize);
         }
 
         private static void DrawOptimumMarker(
             SKCanvas canvas, Complex coord, char letter, SKColor accent, TransformSet tf,
-            float zoomLevel = 1f)
+            (double W, double H) canvasSize)
         {
             var pt = tf.ToCanvas(coord.Real, coord.Imaginary, useSecondary: false);
-            // Constant canvas-px sizes — zoom-independent (round-5 division removed §10).
-            float r  = 7f;
-            float sw = 1.5f;
-            float fs = 9f;
+            // lw-proportional sizes: at BaseLw=2 (nominal 400px canvas) these match
+            // the original constants 7/1.5/9, and scale with zoom like grid lines.
+            float lw = AxesRenderer.LineWidth(canvasSize);
+            float r  = 3.5f * lw;
+            float sw = 0.75f * lw;
+            float fs = 4.5f * lw;
 
             // Filled circle
             using var fill = new SKPaint { Color = accent, IsAntialias = true, Style = SKPaintStyle.Fill };

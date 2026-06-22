@@ -191,21 +191,16 @@ public partial class PlotContainerView : UserControl
         double maxW    = Math.Max(200, viewableRight - vm.Left);
         double targetW = Math.Min(totalW, maxW);
 
-        // ---- Height: snap to nearest whole row ----
-        // canvasH = PlotControl.Bounds.Height = vm.Height * ZoomLevel (for Table, no extra label space).
-        // Replicate BuildLayout's geometry to find how many rows currently fit, then snap.
-        double zoom       = vm.ZoomLevel;
-        double fs         = plot.FontSize * zoom;
-        double headerH    = fs * (1 + TableRenderer.RowPaddingFraction * 2);
-        double rowH       = fs * (1 + TableRenderer.RowPaddingFraction);
-        double dataStartY = headerH + TableRenderer.HeaderToDataRowPadding;
-
-        double canvasH  = _plotControl.Bounds.Height;
-        double rowsF    = (canvasH - dataStartY) / rowH;
-        // Round to nearest: >0.5 fractional row visible → add it; ≤0.5 → trim it.
-        int    snapRows = Math.Max(1, (int)Math.Round(rowsF, MidpointRounding.AwayFromZero));
-
-        double targetH = (dataStartY + snapRows * rowH) / zoom;
+        // ---- Height: fit the WHOLE table (title band + header + all rows) ----
+        // vm.Height is in LOGICAL (pre-zoom) units, so compute the required height in logical units too
+        // by asking RequiredCanvasHeight with zoomLevel = 1 (it bakes zoom into the row/band geometry,
+        // so zoom=1 yields the unscaled logical height). This is directly comparable to ResizeTo's
+        // MinLogicalHeight() floor (also computed at the unscaled font), so a genuine N-row table is no
+        // longer wrongly clamped to the 2-row minimum — the earlier divide-by-scale double-removed zoom
+        // and produced a sub-minimum target, which the clamp then inflated, leaving extra space below
+        // the last row. The renderer re-applies zoom when drawing, so the on-screen fit is exact.
+        double reqLogicalH = TableRenderer.RequiredCanvasHeight(plot, 1f);
+        double targetH     = reqLogicalH + 1.0;   // +1 logical px so the last row's bottom border never clips
 
         vm.ResizeTo(targetW, targetH);
         e.Handled = true;
@@ -344,8 +339,11 @@ public partial class PlotContainerView : UserControl
         double targetW = (pt.X - leftPx) / zoom;
         double targetH = pt.Y / zoom;
 
-        // Shift+drag on a Rect plot locks the aspect ratio to the user-configured value.
-        if ((e.KeyModifiers & KeyModifiers.Shift) != 0 && !vm.IsSquareAspect)
+        // Aspect lock applies ONLY to Rect plots, and ONLY when Shift is NOT held (design feedback:
+        // Rect resizes at the configured "golden" ratio by default; Shift frees it). Tables and the
+        // square-aspect plots (Smith/Polar) are never ratio-locked here — a Table must resize freely in
+        // both dimensions, and ResizeTo already keeps Smith/Polar square on its own.
+        if (vm.PlotVM.Plot.PlotType == PlotType.Rect && (e.KeyModifiers & KeyModifiers.Shift) == 0)
         {
             double ratio = AppSettingsViewModel.Instance.RectAspectRatio;
             if (ratio > 0) targetH = targetW / ratio;
