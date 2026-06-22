@@ -701,34 +701,89 @@ namespace RfCore.Loadpull
         }
 
         /// <summary>
+        /// Constant-VSWR locus around <paramref name="center"/>, as a closed ring of points
+        /// in the requested plane. For <see cref="SurfacePlane.Z"/> the locus is computed directly
+        /// in the Z-plane. For <see cref="SurfacePlane.Gamma"/> the locus is drawn as a TRUE CIRCLE
+        /// in the Γ-plane: a constant-VSWR contour is the set |s| = ρ of the Kurokawa power-wave
+        /// reflection coefficient s = (Z − Z0)/(Z + conj(Z0)), and s relates to the ordinary Γ by a
+        /// Möbius transform, which maps the circle |s| = ρ to another circle in Γ. We compute that
+        /// Γ-circle's center and radius in closed form and sample it uniformly in angle, so the ring
+        /// is smooth at any VSWR with a fixed point count (no Z→Γ mapping jaggies). See
+        /// docs/design/vswr-locus-gamma-plane.md for the derivation. <paramref name="z0ref"/> is the
+        /// host trace's reference impedance — a FULL complex value, imaginary part included.
+        /// vswr is unclamped (negative permitted; ρ may be negative — the circle formulas still hold).
+        /// </summary>
+        public static Complex[] VswrLocus(
+            Complex center, double vswr, SurfacePlane plane, Complex z0ref, int nPoints = VswrNPoints)
+        {
+            if (plane == SurfacePlane.Gamma)
+                return VswrCircleGamma(center, vswr, z0ref, nPoints);
+            return VswrCircleZ(center, vswr, nPoints);
+        }
+
+        /// <summary>
+        /// Constant-VSWR locus as a true Γ-plane circle, sampled uniformly in angle.
+        ///
+        /// Derivation (docs/design/vswr-locus-gamma-plane.md): the center impedance is
+        /// Zc = G2Z(center)·Z0 (ohms). The Z-plane locus about Zc is the power-wave circle
+        /// |s_c| = ρ, s_c = (Z − Zc)/(Z + conj(Zc)), ρ = (V−1)/(V+1) — i.e. Z = (Zc + s_c·conj(Zc))/(1 − s_c).
+        /// Composing with Γ = (Z − Z0)/(Z + Z0) gives a single Möbius map Γ = (a·s_c + b)/(c·s_c + d) with
+        ///   a = conj(Zc) + Z0,  b = Zc − Z0,  c = conj(Zc) − Z0,  d = Zc + Z0.
+        /// The image of |s_c| = ρ is the circle
+        ///   center = (b·conj(d) − a·conj(c)·ρ²) / (|d|² − |c|²·ρ²),
+        ///   radius = |a·d − b·c|·|ρ| / | |d|² − |c|²·ρ² |.
+        /// (For real Z0 this reduces to Γ = ρ·e^{jθ} about the matched point — the textbook result.)
+        /// Falls back to direct Möbius sampling in the rare degenerate case where the circle passes
+        /// through Γ = ∞ (denominator ≈ 0).
+        /// </summary>
+        private static Complex[] VswrCircleGamma(
+            Complex center, double vswr, Complex z0ref, int nPoints)
+        {
+            double  rho = (vswr - 1.0) / (vswr + 1.0);
+            Complex Zc  = RfHelpers.G2Z(center) * z0ref;
+            Complex Zcc = Complex.Conjugate(Zc);
+
+            // Mobius coefficients: Gamma = (a*s + b)/(c*s + d), s on |s| = rho about Zc.
+            Complex a = Zcc + z0ref;
+            Complex b = Zc  - z0ref;
+            Complex c = Zcc - z0ref;
+            Complex d = Zc  + z0ref;
+
+            double denom = d.Magnitude * d.Magnitude - c.Magnitude * c.Magnitude * rho * rho;
+
+            var pts = new Complex[nPoints];
+
+            if (Math.Abs(denom) < 1e-30)
+            {
+                // Degenerate: image circle passes through infinity. Sample the Mobius map directly.
+                for (int k = 0; k < nPoints; k++)
+                {
+                    double th = 2.0 * Math.PI * k / nPoints;
+                    Complex s = rho * new Complex(Math.Cos(th), Math.Sin(th));
+                    pts[k] = (a * s + b) / (c * s + d);
+                }
+                return pts;
+            }
+
+            Complex ctr = (b * Complex.Conjugate(d) - a * Complex.Conjugate(c) * rho * rho) / denom;
+            double  rad = (a * d - b * c).Magnitude * Math.Abs(rho) / Math.Abs(denom);
+
+            for (int k = 0; k < nPoints; k++)
+            {
+                double th = 2.0 * Math.PI * k / nPoints;
+                pts[k] = ctr + rad * new Complex(Math.Cos(th), Math.Sin(th));
+            }
+            return pts;
+        }
+
+        /// <summary>
         /// Bounding box of the VSWR circle in the coordinate space of the fit plane.
         /// For Gamma: converts Z-plane circle back to Γ (as SPLData does).
         /// </summary>
         private static ViewBox VswrBoundingBox(
             Complex center, double vswr,
             SurfacePlane plane, double? z0ref)
-        {
-            Complex[] pts;
-            if (plane == SurfacePlane.Gamma)
-            {
-                // z0ref is the reference impedance for this gamma plane
-                double z0 = z0ref ?? 50.0;
-                // Convert Γ_center → actual Z
-                Complex zActual = RfHelpers.G2Z(center) * z0;
-                // Build VSWR circle in Z-plane
-                Complex[] zPts = VswrCircleZ(zActual, vswr);
-                // Convert each Z point back to Γ (normalized to z0)
-                pts = new Complex[zPts.Length];
-                for (int i = 0; i < zPts.Length; i++)
-                    pts[i] = RfHelpers.Z2G(zPts[i] / z0);
-            }
-            else
-            {
-                pts = VswrCircleZ(center, vswr);
-            }
-
-            return BoundingBox(pts);
-        }
+            => BoundingBox(VswrLocus(center, vswr, plane, new Complex(z0ref ?? 50.0, 0.0)));
 
         /// <summary>
         /// Bounding box of the VSWR search circle for the MXX grid search.
