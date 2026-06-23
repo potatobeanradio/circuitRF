@@ -1322,27 +1322,39 @@ namespace CircuitRF.Ui.DataDisplay
             {
                 var fc = FamilyCurves[curve];
 
-                if (IsFreqUnit(FamilyAxisUnit))
+                bool familyIsHarmonic = string.Equals(FamilyAxisName, HarmonicAxisName, StringComparison.Ordinal);
+                if (familyIsHarmonic && IsFreqUnit(FamilyAxisUnit))
                 {
-                    // Frequency-valued family axis (HB "harmonic" axis stores physical frequencies):
-                    // show a unit-scaled freq row plus the integer harmonic order, matching the
-                    // harmonic-stem InfoBox convention.
+                    // Genuine HB "harmonic" family axis (stores physical frequencies):
+                    // unit-scaled freq row + integer harmonic order.
                     double scaled = fc.AxisValue * freqUnit.Scale();
                     lines.Add(($"freq={scaled:G6} {freqUnit.Description()}", false));
                     lines.Add(($"harmonic={HarmonicOrderOf(fc.AxisValue)}", false));
                 }
-                else if (string.Equals(FamilyAxisName, HarmonicAxisName, StringComparison.Ordinal))
+                else if (familyIsHarmonic)
                 {
-                    // Unitless "harmonic" axis whose values are the integer harmonic indices.
+                    // Unitless "harmonic" axis whose values are integer harmonic indices.
                     lines.Add(($"harmonic={(int)Math.Round(fc.AxisValue)}", false));
                 }
                 else
                 {
+                    // Any other family axis — including a sweep over a frequency variable (e.g. RFfreq).
+                    // Show the swept variable's NAME; scale by the plot's freq unit when the axis
+                    // carries a frequency unit, else append the axis's own unit.
                     string axisName = string.IsNullOrEmpty(FamilyAxisName) ? "curve" : FamilyAxisName;
-                    string axisVal  = !string.IsNullOrEmpty(fc.AxisLabel)
-                        ? fc.AxisLabel
-                        : fc.AxisValue.ToString($"{m.FormatString}{m.MaximumFractionDigits}");
-                    lines.Add(($"{axisName}={axisVal}", false));
+                    if (IsFreqUnit(FamilyAxisUnit))
+                    {
+                        double scaled = fc.AxisValue * freqUnit.Scale();
+                        lines.Add(($"{axisName}={scaled:G6} {freqUnit.Description()}", false));
+                    }
+                    else
+                    {
+                        string axisVal = !string.IsNullOrEmpty(fc.AxisLabel)
+                            ? fc.AxisLabel
+                            : fc.AxisValue.ToString($"{m.FormatString}{m.MaximumFractionDigits}");
+                        string unit = string.IsNullOrEmpty(FamilyAxisUnit) ? "" : $" {FamilyAxisUnit}";
+                        lines.Add(($"{axisName}={axisVal}{unit}", false));
+                    }
                 }
             }
 
@@ -1360,7 +1372,10 @@ namespace CircuitRF.Ui.DataDisplay
                 if (IsFreqUnit(_cubeXUnit))
                 {
                     double scaledX = xRaw * freqUnit.Scale();
-                    lines.Add(($"freq={scaledX:G6} {freqUnit.Description()}", false));
+                    // "freq" only for the genuine harmonic axis; a frequency-variable sweep shows its own name.
+                    string xLabel = (xIsHarmonicAxis || string.IsNullOrEmpty(_cubeXAxisName))
+                        ? "freq" : _cubeXAxisName;
+                    lines.Add(($"{xLabel}={scaledX:G6} {freqUnit.Description()}", false));
                     if (xIsHarmonicAxis)
                         lines.Add(($"harmonic={rawIdx}", false));
                 }

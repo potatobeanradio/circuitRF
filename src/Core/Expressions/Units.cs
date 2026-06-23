@@ -85,4 +85,36 @@ public static class Units
     /// </summary>
     public static bool IsRecognizedUnit(string unit)
         => IsKnown(unit) || _identityUnits.Contains(unit);
+
+    // Maps prefixed units to their scale-1 base symbol.
+    private static readonly Dictionary<string, string> _baseUnitMap = new(StringComparer.Ordinal)
+    {
+        // Inductance
+        { "mH", "H" }, { "uH", "H" }, { "nH", "H" }, { "pH", "H" }, { "fH", "H" },
+        // Capacitance
+        { "mF", "F" }, { "uF", "F" }, { "nF", "F" }, { "pF", "F" }, { "fF", "F" },
+        // Resistance (prefixed variants only; Ohm/ohm are already base)
+        { "kOhm", "Ohm" }, { "MOhm", "Ohm" }, { "GOhm", "Ohm" },
+        // Voltage
+        { "kV", "V" }, { "mV", "V" }, { "uV", "V" }, { "nV", "V" },
+        // Current
+        { "mA", "A" }, { "uA", "A" }, { "nA", "A" },
+        // Power
+        { "mW", "W" }, { "uW", "W" }, { "kW", "W" },
+        // Length (scaled variants; mm/um/mil are in _scales)
+        { "mm", "m" }, { "um", "m" }, { "nm", "m" }, { "cm", "m" },
+    };
+
+    /// <summary>
+    /// Returns the scale-1 base symbol for <paramref name="unit"/>:
+    /// frequency units (Hz/kHz/MHz/GHz/THz) → "Hz"; SI-prefixed units → their base
+    /// symbol (e.g. "mV"→"V", "pF"→"F", "kOhm"→"Ohm"); all others (dBm, V, Ohm, …)
+    /// and empty/unknown strings pass through unchanged.
+    /// </summary>
+    public static string BaseUnit(string unit)
+    {
+        if (string.IsNullOrEmpty(unit)) return unit;
+        if (unit is "kHz" or "MHz" or "GHz" or "THz") return "Hz";
+        return _baseUnitMap.TryGetValue(unit, out var b) ? b : unit;
+    }
 }

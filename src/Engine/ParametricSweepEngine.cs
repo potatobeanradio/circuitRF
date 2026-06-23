@@ -1,6 +1,7 @@
 using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Engine.HarmonicBalance;
 using RfCore.Data;
 
@@ -42,17 +43,27 @@ public static class ParametricSweepEngine
         int varIdx   = tb.GlobalVariables.FindIndex(v => v.Name == sweep.SweepVarName);
         var origVar  = varIdx >= 0 ? tb.GlobalVariables[varIdx] : null;
 
+        // Effective unit = the unit Brief 2 scaled by: the sweep's Spec.Unit, else the VAR's
+        // declared unit. BaseUnit reduces it to scale-1 (e.g. "GHz"→"Hz") so injecting it leaves
+        // the value unchanged while marking the variable as unit-bearing (var-unit-wins, Part A).
+        string effUnit  = sweep.Spec?.Unit is { Length: > 0 } su ? su : (origVar?.Unit ?? "");
+        string baseUnit = Units.BaseUnit(effUnit);
+
         var datasets = new List<DataSet>(sweep.SweepValues.Length);
 
         for (int si = 0; si < sweep.SweepValues.Length; si++)
         {
             double val = sweep.SweepValues[si];
-            // SweepValues are pre-scaled to base units by ParametricSweepAnalysis's spec ctor
-            // (Part A of brief-sweep-range-units). Injecting without a unit here is correct and
-            // intentional — do NOT add origVar.Unit, which would double-apply the multiplier.
+            // SweepValues are already in base SI (scaled by ParametricSweepAnalysis spec ctor).
+            // Attach the base unit (scale-1) so the Elaborator calls MarkGlobalHasUnit, which
+            // puts the variable into GlobalsWithExplicitUnit → FreqUnit.ResolveHz fires
+            // var-unit-wins → ToneUnit/site-unit is not re-applied (fixes swept-freq double-unit).
+            // When effUnit is empty (no sweep unit, no VAR unit), baseUnit="" → override stays
+            // unit-less (unmarked), values were never scaled, use sites apply their unit once.
             var overrideVar = new Variable(
                 sweep.SweepVarName,
-                val.ToString("G17", CultureInfo.InvariantCulture));
+                val.ToString("G17", CultureInfo.InvariantCulture),
+                string.IsNullOrEmpty(baseUnit) ? null : baseUnit);
 
             // Inject override into GlobalVariables (add if absent).
             if (varIdx >= 0)
@@ -81,8 +92,10 @@ public static class ParametricSweepEngine
             }
         }
 
-        // Build sweep axis using the exact values provided.
-        var sweepAxis = new Axis(sweep.SweepVarName, sweep.SweepValues);
+        // Build sweep axis; tag with base SI unit so marker readouts show "freq=2 GHz".
+        // SweepValues are already in base SI — the unit tag is for display only.
+        // Use the same baseUnit computed above (prefers Spec.Unit over origVar.Unit).
+        var sweepAxis = new Axis(sweep.SweepVarName, sweep.SweepValues, baseUnit);
         return DataSet.StackSweepAxis(sweepAxis, datasets);
     }
 

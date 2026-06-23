@@ -94,7 +94,23 @@ public sealed class Evaluator
     {
         var ast = Parser.Parse(expression);
         var raw = EvalExpr(ast, scope);
+        // var-unit-wins: if any referenced variable declares its own unit, that unit was already
+        // applied when the variable resolved (Resolve → ApplyUnit with the binding's unit); do NOT
+        // re-apply the site unit. Matches FreqUnit.ResolveHz, using per-binding scope units.
+        if (!string.IsNullOrEmpty(unit) && ReferencesUnitBearingVar(ast, scope))
+            return raw;
         return ApplyUnit(raw, unit);
+    }
+
+    private static bool ReferencesUnitBearingVar(Expr ast, Scope scope)
+    {
+        foreach (var name in AstWalker.CollectRefs(ast))
+        {
+            var found = scope.Lookup(name);
+            if (found is not null && !string.IsNullOrEmpty(found.Value.Unit))
+                return true;
+        }
+        return false;
     }
 
     // ── Nodes ────────────────────────────────────────────────────────────────
