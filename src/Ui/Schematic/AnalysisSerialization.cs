@@ -16,9 +16,11 @@ namespace CircuitRF.Ui.Schematic;
 //    - Id never persisted
 //    - format_version reject-on-mismatch (enforced by the CschFile wrapper)
 //
-//  Type discriminator: CschAnalysis.Type is "dc" / "sp" / "hb".
-//  v1 only authors DC/SP/HB; loadpull/pursuit are omitted from the discriminator
-//  (unknown Type tags are silently skipped on load — graceful forward-compat).
+//  Type discriminator: CschAnalysis.Type is "dc" / "sp" / "hb" / "sweep" / "lp" / "lpp".
+//  Loadpull ("lp") and Loadpull-Pursuit ("lpp") round-trip here (authoring forms: briefs 05-06).
+//  Their tone serializes as LpToneExpr + LpToneUnit — the same coefficient+unit pair HB uses, so a
+//  VAR tone with or without a unit resolves correctly via the var-unit-wins rule (brief 04b).
+//  Unknown Type tags are silently skipped on load — graceful forward-compat.
 // ──────────────────────────────────────────────────────────────────────────────
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
@@ -52,7 +54,7 @@ public sealed class CschFrequencySpec
 /// </summary>
 public sealed class CschAnalysis
 {
-    /// <summary>Type tag: "dc" | "sp" | "hb" | "sweep".  Unknown tags are skipped on load.</summary>
+    /// <summary>Type tag: "dc" | "sp" | "hb" | "sweep" | "lp" | "lpp".  Unknown tags are skipped on load.</summary>
     public string Type    { get; set; } = "";
     public string Name    { get; set; } = "";
     /// <summary>False = skip at run time (VendorC "enabled" pattern). Defaults true; absent on old files → true.</summary>
@@ -97,6 +99,41 @@ public sealed class CschAnalysis
     public SweepKind?       PsaKind           { get; set; }
     /// <summary>Unit for sweep range.  Null / absent → base units (back-compat).</summary>
     public string?          PsaUnit           { get; set; }
+
+    // ── LP / LPP (loadpull + loadpull_pursuit) ─────────────────────────────────
+    public string?  LpLoadTunerName    { get; set; }
+    public string?  LpSourceTunerName  { get; set; }
+    public string?  LpGridPath         { get; set; }   // LP only (LPP generates its grid)
+    public string?  LpToneExpr         { get; set; }
+    public string?  LpToneUnit         { get; set; }   // null/absent → "Hz" (var-unit-wins; brief 04b)
+    public string?  LpPinStartExpr     { get; set; }
+    public string?  LpPinMaxExpr       { get; set; }
+    public string?  LpPinStepExpr      { get; set; }
+    public string?  LpMaxHarmonicExpr  { get; set; }
+    public string?  LpSweepExpr        { get; set; }   // "Load" | "Source"
+    public string?  LpTuneHarmExpr     { get; set; }
+    public string?  LpCompressionExpr  { get; set; }
+    public string?  LpGainTypeExpr     { get; set; }   // "Gt" | "Gp"
+    public string?  LpTickleExpr       { get; set; }   // dBm or "off"
+    public string?  LpMaxIterExpr      { get; set; }
+    public string?  LpFftOverSampleExpr{ get; set; }
+    public string?  LpTolExpr          { get; set; }
+    public string?  LpDriveSteppingExpr{ get; set; }
+    public string?  LpGuardHarmonicExpr{ get; set; }
+
+    // ── LPP-only pursuit keys ──────────────────────────────────────────────────
+    public string?  LppEffType              { get; set; }   // "DE" | "PAE"
+    public string?  LppZsourceOBO           { get; set; }
+    public string?  LppSearchMethod         { get; set; }   // "SteepestAscent" | "IteratedQuadratic"
+    public string?  LppOutputGridPath       { get; set; }   // null = no file
+    public string?  LppVswr1                { get; set; }
+    public string?  LppVswr1Resolution      { get; set; }
+    public string?  LppVswr2                { get; set; }
+    public string?  LppVswr2Resolution      { get; set; }
+    public string?  LppKeepNonconverging    { get; set; }
+    public string?  LppNonconvergentVswr    { get; set; }
+    public string?  LppCreateLoadpullResult { get; set; }
+    public string?  LppLoadpullResultZsource{ get; set; }   // "MXE" | "MXP" | "None"
 }
 
 /// <summary>
@@ -286,6 +323,69 @@ public static class AnalysisSerialization
             PsaValues      = psa.Spec is null && psa.SweepValues.Length > 0 ? psa.SweepValues : null,
         },
 
+        LoadpullAnalysis lp => new CschAnalysis
+        {
+            Type              = "lp",
+            Name              = lp.Name,
+            Enabled           = lp.Enabled,
+            LpLoadTunerName   = lp.LoadTunerName,
+            LpSourceTunerName = lp.SourceTunerName,
+            LpGridPath        = lp.GridPath,
+            LpToneExpr        = lp.ToneExpr,
+            LpToneUnit        = lp.ToneUnit != "Hz" ? lp.ToneUnit : null,   // omit default (mirror HB)
+            LpPinStartExpr    = lp.PinStartExpr,
+            LpPinMaxExpr      = lp.PinMaxExpr,
+            LpPinStepExpr     = lp.PinStepExpr,
+            LpMaxHarmonicExpr = lp.MaxHarmonicExpr,
+            LpSweepExpr       = lp.SweepExpr,
+            LpTuneHarmExpr    = lp.TuneHarmExpr,
+            LpCompressionExpr = lp.CompressionExpr,
+            LpGainTypeExpr    = lp.GainTypeExpr,
+            LpTickleExpr      = lp.TickleExpr,
+            LpMaxIterExpr     = lp.MaxIterExpr,
+            LpFftOverSampleExpr = lp.FFTOverSampleExpr,
+            LpTolExpr         = lp.TolExpr,
+            LpDriveSteppingExpr = lp.DriveSteppingExpr,
+            LpGuardHarmonicExpr = lp.GuardHarmonicExpr,
+        },
+
+        LoadpullPursuitAnalysis lpp => new CschAnalysis
+        {
+            Type              = "lpp",
+            Name              = lpp.Name,
+            Enabled           = lpp.Enabled,
+            LpLoadTunerName   = lpp.LoadTunerName,
+            LpSourceTunerName = lpp.SourceTunerName,
+            LpToneExpr        = lpp.ToneExpr,
+            LpToneUnit        = lpp.ToneUnit != "Hz" ? lpp.ToneUnit : null,
+            LpPinStartExpr    = lpp.PinStartExpr,
+            LpPinMaxExpr      = lpp.PinMaxExpr,
+            LpPinStepExpr     = lpp.PinStepExpr,
+            LpMaxHarmonicExpr = lpp.MaxHarmonicExpr,
+            LpSweepExpr       = lpp.SweepExpr,
+            LpTuneHarmExpr    = lpp.TuneHarmExpr,
+            LpCompressionExpr = lpp.CompressionExpr,
+            LpGainTypeExpr    = lpp.GainTypeExpr,
+            LpTickleExpr      = lpp.TickleExpr,
+            LpMaxIterExpr     = lpp.MaxIterExpr,
+            LpFftOverSampleExpr = lpp.FFTOverSampleExpr,
+            LpTolExpr         = lpp.TolExpr,
+            LpDriveSteppingExpr = lpp.DriveSteppingExpr,
+            LpGuardHarmonicExpr = lpp.GuardHarmonicExpr,
+            LppEffType              = lpp.EffTypeExpr,
+            LppZsourceOBO           = lpp.ZsourceOBOExpr,
+            LppSearchMethod         = lpp.SearchMethodExpr,
+            LppOutputGridPath       = lpp.OutputGridPath,
+            LppVswr1                = lpp.Vswr1Expr,
+            LppVswr1Resolution      = lpp.Vswr1ResolutionExpr,
+            LppVswr2                = lpp.Vswr2Expr,
+            LppVswr2Resolution      = lpp.Vswr2ResolutionExpr,
+            LppKeepNonconverging    = lpp.KeepNonconvergingExpr,
+            LppNonconvergentVswr    = lpp.NonconvergentVswrExpr,
+            LppCreateLoadpullResult = lpp.CreateLoadpullResultExpr,
+            LppLoadpullResultZsource= lpp.LoadpullResultZsourceExpr,
+        },
+
         // Unknown / v2 types: preserve Type tag + Name so a future version can round-trip them.
         _ => new CschAnalysis { Type = "?", Name = a.Name, Enabled = a.Enabled },
     };
@@ -356,6 +456,65 @@ public static class AnalysisSerialization
                      && dto.PsaValues is { Length: > 0 } =>
             new ParametricSweepAnalysis(dto.Name, dto.PsaVarName, dto.PsaValues, dto.PsaInnerName)
             { Enabled = dto.Enabled },
+
+        "lp" => new LoadpullAnalysis(dto.Name)
+        {
+            Enabled         = dto.Enabled,
+            LoadTunerName   = dto.LpLoadTunerName   ?? "",
+            SourceTunerName = dto.LpSourceTunerName ?? "",
+            GridPath        = dto.LpGridPath        ?? "",
+            ToneExpr        = dto.LpToneExpr        ?? "0",
+            ToneUnit        = dto.LpToneUnit        ?? "Hz",
+            PinStartExpr    = dto.LpPinStartExpr    ?? "-20",
+            PinMaxExpr      = dto.LpPinMaxExpr      ?? "10",
+            PinStepExpr     = dto.LpPinStepExpr     ?? "1",
+            MaxHarmonicExpr = dto.LpMaxHarmonicExpr ?? "5",
+            SweepExpr       = dto.LpSweepExpr       ?? "Load",
+            TuneHarmExpr    = dto.LpTuneHarmExpr    ?? "1",
+            CompressionExpr = dto.LpCompressionExpr ?? "3",
+            GainTypeExpr    = dto.LpGainTypeExpr    ?? "Gt",
+            TickleExpr      = dto.LpTickleExpr      ?? "-50",
+            MaxIterExpr     = dto.LpMaxIterExpr     ?? "100",
+            FFTOverSampleExpr = dto.LpFftOverSampleExpr ?? "1",
+            TolExpr         = dto.LpTolExpr         ?? "1e-6",
+            DriveSteppingExpr = dto.LpDriveSteppingExpr ?? "IfNecessary",
+            GuardHarmonicExpr = dto.LpGuardHarmonicExpr ?? "0",
+        },
+
+        "lpp" => new LoadpullPursuitAnalysis(dto.Name)
+        {
+            Enabled         = dto.Enabled,
+            LoadTunerName   = dto.LpLoadTunerName   ?? "",
+            SourceTunerName = dto.LpSourceTunerName ?? "",
+            ToneExpr        = dto.LpToneExpr        ?? "0",
+            ToneUnit        = dto.LpToneUnit        ?? "Hz",
+            PinStartExpr    = dto.LpPinStartExpr    ?? "-20",
+            PinMaxExpr      = dto.LpPinMaxExpr      ?? "10",
+            PinStepExpr     = dto.LpPinStepExpr     ?? "1",
+            MaxHarmonicExpr = dto.LpMaxHarmonicExpr ?? "5",
+            SweepExpr       = dto.LpSweepExpr       ?? "Load",
+            TuneHarmExpr    = dto.LpTuneHarmExpr    ?? "1",
+            CompressionExpr = dto.LpCompressionExpr ?? "3",
+            GainTypeExpr    = dto.LpGainTypeExpr    ?? "Gt",
+            TickleExpr      = dto.LpTickleExpr      ?? "-50",
+            MaxIterExpr     = dto.LpMaxIterExpr     ?? "100",
+            FFTOverSampleExpr = dto.LpFftOverSampleExpr ?? "1",
+            TolExpr         = dto.LpTolExpr         ?? "1e-6",
+            DriveSteppingExpr = dto.LpDriveSteppingExpr ?? "IfNecessary",
+            GuardHarmonicExpr = dto.LpGuardHarmonicExpr ?? "0",
+            EffTypeExpr               = dto.LppEffType              ?? "DE",
+            ZsourceOBOExpr            = dto.LppZsourceOBO           ?? "5",
+            SearchMethodExpr          = dto.LppSearchMethod         ?? "SteepestAscent",
+            OutputGridPath            = dto.LppOutputGridPath,   // null = no file
+            Vswr1Expr                 = dto.LppVswr1               ?? "1.5",
+            Vswr1ResolutionExpr       = dto.LppVswr1Resolution     ?? "4",
+            Vswr2Expr                 = dto.LppVswr2               ?? "3",
+            Vswr2ResolutionExpr       = dto.LppVswr2Resolution     ?? "4",
+            KeepNonconvergingExpr     = dto.LppKeepNonconverging   ?? "false",
+            NonconvergentVswrExpr     = dto.LppNonconvergentVswr   ?? "1.05",
+            CreateLoadpullResultExpr  = dto.LppCreateLoadpullResult ?? "true",
+            LoadpullResultZsourceExpr = dto.LppLoadpullResultZsource ?? "MXE",
+        },
 
         // Unknown type tag (e.g. "loadpull") or empty/malformed: skip gracefully.
         _ => null,

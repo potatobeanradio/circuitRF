@@ -1,0 +1,211 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Analyses.LpBodyView"
+             x:DataType="vm:LpBodyViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Button.hb-btn">
+            <Setter Property="Background"     Value="Transparent"/>
+            <Setter Property="BorderBrush"    Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"   Value="3"/>
+            <Setter Property="Padding"        Value="8,2"/>
+            <Setter Property="MinWidth"       Value="0"/>
+            <Setter Property="FontSize"       Value="11"/>
+            <Setter Property="Margin"         Value="0,0,2,0"/>
+        </Style>
+        <Style Selector="Button.hb-btn.active">
+            <Setter Property="Background"  Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="Foreground"  Value="{DynamicResource SystemRegionColor}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+        </Style>
+        <Style Selector="ComboBox.unit-combo">
+            <Setter Property="MinWidth"  Value="60"/>
+            <Setter Property="MaxWidth"  Value="68"/>
+            <Setter Property="FontSize"  Value="9"/>
+            <Setter Property="Margin"    Value="3,0,0,0"/>
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer MaxHeight="400"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+
+        <StackPanel Spacing="10" Margin="0,0,4,0">
+
+            <!-- ── Tuner pickers ─────────────────────────────────────────────── -->
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Load tuner" FontSize="10" Opacity="0.6"/>
+                    <ComboBox ItemsSource="{Binding TunerInstanceNames}"
+                              SelectedItem="{Binding LoadTunerName, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch"
+                              FontSize="11"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Source tuner" FontSize="10" Opacity="0.6"/>
+                    <ComboBox ItemsSource="{Binding TunerInstanceNames}"
+                              SelectedItem="{Binding SourceTunerName, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch"
+                              FontSize="11"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- No-tuner hint -->
+            <TextBlock Text="Place a Tuner component first."
+                       FontSize="10"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="{Binding HasNoTuners}"/>
+
+            <!-- ── Tone (f₀) coefficient + unit ─────────────────────────────── -->
+            <StackPanel Spacing="2">
+                <TextBlock Text="Tone (f₀)" FontSize="10" Opacity="0.6"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Text="{Binding ToneCoeff, Mode=TwoWay}" FontSize="11"/>
+                    <ComboBox Grid.Column="1"
+                              Classes="unit-combo"
+                              ItemsSource="{x:Static vm:LpBodyViewModel.FreqUnits}"
+                              SelectedItem="{Binding ToneUnit, Mode=TwoWay}"/>
+                </Grid>
+                <TextBlock Text="{Binding TonePreview}" FontSize="10" Opacity="0.55"/>
+            </StackPanel>
+
+            <!-- ── Grid (.gam) file + Browse ────────────────────────────────── -->
+            <StackPanel Spacing="2">
+                <TextBlock Text="Grid (.gam file)" FontSize="10" Opacity="0.6"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Text="{Binding GridPath, Mode=TwoWay}" FontSize="11"/>
+                    <Button Grid.Column="1"
+                            Content="Browse…"
+                            Classes="hb-btn"
+                            Margin="6,0,0,0"
+                            Click="OnBrowseGridClick"/>
+                </Grid>
+            </StackPanel>
+
+            <!-- ── Pin start / max / step ───────────────────────────────────── -->
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Pin start (dBm)" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding PinStartExpr, Mode=TwoWay}" FontSize="11"/>
+                    <TextBlock Text="{Binding PinStartPreview}" FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Pin max (dBm)" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding PinMaxExpr, Mode=TwoWay}" FontSize="11"/>
+                    <TextBlock Text="{Binding PinMaxPreview}" FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="2">
+                    <TextBlock Text="Pin step (dB)" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding PinStepExpr, Mode=TwoWay}" FontSize="11"/>
+                    <TextBlock Text="{Binding PinStepPreview}" FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ── Compression ──────────────────────────────────────────────── -->
+            <StackPanel Spacing="2">
+                <TextBlock Text="Compression (dB)" FontSize="10" Opacity="0.6"/>
+                <TextBox Text="{Binding CompressionExpr, Mode=TwoWay}" FontSize="11"/>
+                <TextBlock Text="{Binding CompressionPreview}" FontSize="10" Opacity="0.55"/>
+            </StackPanel>
+
+            <Separator Opacity="0.3"/>
+
+            <!-- ── Advanced expander (collapsed by default) ─────────────────── -->
+            <Expander Header="Advanced"
+                      IsExpanded="{Binding AdvancedExpanded, Mode=TwoWay}"
+                      FontSize="11">
+
+                <StackPanel Spacing="8" Margin="0,8,0,0">
+
+                    <!-- Sweep + GainType toggles -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Sweep" FontSize="10" Opacity="0.6"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Button Content="Load"   Classes="hb-btn"
+                                        Classes.active="{Binding IsSweepLoad}"
+                                        Command="{Binding SetSweepLoadCommand}"/>
+                                <Button Content="Source" Classes="hb-btn"
+                                        Classes.active="{Binding IsSweepSource}"
+                                        Command="{Binding SetSweepSourceCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Gain type" FontSize="10" Opacity="0.6"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Button Content="Gt" Classes="hb-btn"
+                                        Classes.active="{Binding IsGainGt}"
+                                        Command="{Binding SetGainGtCommand}"/>
+                                <Button Content="Gp" Classes="hb-btn"
+                                        Classes.active="{Binding IsGainGp}"
+                                        Command="{Binding SetGainGpCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- TuneHarm + MaxHarm -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Tune harmonic" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding TuneHarmExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding TuneHarmPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Max harmonics" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding MaxHarmonicExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding MaxHarmonicPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Tickle + MaxIter -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Tickle (dBm or off)" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding TickleExpr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Max iterations" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding MaxIterExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding MaxIterPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- FFT oversample + Tolerance -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="FFT oversample" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding FftOverSampleExpr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Tolerance" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding TolExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding TolPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Drive stepping + Guard harmonic -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Drive stepping" FontSize="10" Opacity="0.6"/>
+                            <ComboBox ItemsSource="{x:Static vm:LpBodyViewModel.DriveSteppingOptions}"
+                                      SelectedItem="{Binding DriveSteppingExpr, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Guard harmonic" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding GuardHarmonicExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding GuardHarmonicPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                </StackPanel>
+            </Expander>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

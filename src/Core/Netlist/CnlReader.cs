@@ -568,8 +568,14 @@ public sealed class CnlReader
         // Find first Z[k]= or G[k]= at paren-depth 0.
         int eqStart = FindFirstTunerHarmonic(rest);
         var netSection = eqStart >= 0 ? rest[..eqStart].Trim() : rest;
+        // Net tokens never contain '='. The simple params (Zdefault=, Z0=, BiasTee=, Vbias=) may
+        // appear in the net section when Z[1]= is written last (the GUI emits this order); they are
+        // captured separately by ParseTunerSimpleParams. Drop them here so they never become bogus
+        // nets — two tuners sharing the same param strings would otherwise cross-wire their internals.
         var nets = netSection.Length > 0
-            ? netSection.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).ToList()
+            ? netSection.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries)
+                        .Where(t => !t.Contains('='))
+                        .ToList()
             : [];
 
         // Parse simple key=value pairs before the harmonic entries.
@@ -810,6 +816,7 @@ public sealed class CnlReader
         result = new CircuitRF.Core.Design.LoadpullPursuitAnalysis(analysisName)
         {
             ToneExpr              = kv.GetValueOrDefault("Tone",                "0"),
+            ToneUnit              = kv.GetValueOrDefault("ToneUnit",            "Hz"),
             MaxHarmonicExpr       = kv.GetValueOrDefault("MaxHarm",             "5"),
             LoadTunerName         = kv.GetValueOrDefault("LoadTuner",           ""),
             SourceTunerName       = kv.GetValueOrDefault("SourceTuner",         ""),
@@ -881,6 +888,7 @@ public sealed class CnlReader
         result = new CircuitRF.Core.Design.LoadpullAnalysis(analysisName)
         {
             ToneExpr          = kv.GetValueOrDefault("Tone",           "0"),
+            ToneUnit          = kv.GetValueOrDefault("ToneUnit",       "Hz"),
             MaxHarmonicExpr   = kv.GetValueOrDefault("MaxHarm",        "5"),
             LoadTunerName     = kv.GetValueOrDefault("LoadTuner",      ""),
             SourceTunerName   = kv.GetValueOrDefault("SourceTuner",    ""),

@@ -71,6 +71,17 @@ public static class SymbolPortDefs
             // TLIN: horizontal 2-port — port 1 left, port 2 right. Both ground-referenced
             // (the reference net is implicit; only these two signal nets are netlisted).
             case SymbolKind.Tline:   return [("1", -200f, 0f), ("2", 200f, 0f)];
+            // Tuner: 1-port termination, single DUT-facing pin on the LEFT. The reference net is
+            // hard-coded to ground "0" at extraction (NOT a pin) — exposing it as a pin is DEFERRED
+            // (loadpull.md §1; can add a 2nd pin later if users need a non-ground reference).
+            case SymbolKind.Tuner:   return [("1", -300f, 0f)];   // single pin, left; on grid (multiple of 100)
+            // LoadTuner: single DUT-facing pin on the LEFT (like the general Tuner). Reference = implicit
+            // ground, bound at extraction (NOT a pin) — exposing it as a pin is DEFERRED (loadpull.md §1).
+            case SymbolKind.LoadTuner:   return [("1", -300f, 0f)];
+            // SourceTuner: single DUT-facing pin on the RIGHT. The internal source net is auto-generated at
+            // extraction (NOT a pin, NOT ground) — exposing it as a pin is DEFERRED (loadpull.md §1). Wider
+            // 400 box (edges ±200) → ±300 pin gives a 100-unit lead.
+            case SymbolKind.SourceTuner: return [("1", 300f, 0f)];
             case SymbolKind.ZPort:
             case SymbolKind.Sdd:
                 return GenerateSddPorts(portCount >= 1 ? portCount : 2);
@@ -304,13 +315,15 @@ public sealed class EditableComponent
 
     internal (string Name, float LocalX, float LocalY)[] GetEffectiveSnpPortDefs()
     {
-        bool refNode = GetSnpBool("RefNode");
+        bool refNode = GetBoolParam("RefNode");
         SnpPinConfig cfg = GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
         SnpPitch pitch   = GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose);
         return SymbolPortDefs.GenerateSnpPorts(PortCount, refNode, cfg, pitch);
     }
 
-    private bool GetSnpBool(string name)
+    /// <summary>Reads a boolean instance param by name (case-insensitive "true"). Used by SnP
+    /// (RefNode) and the Tuner family (ShowBias).</summary>
+    private bool GetBoolParam(string name)
     {
         var p = Parameters.FirstOrDefault(q => q.Name == name);
         return p is not null && p.Expression.Equals("true", StringComparison.OrdinalIgnoreCase);
@@ -357,14 +370,22 @@ public sealed class EditableComponent
         List<SchematicPortDef> ports;
         CellSymbolState? cellRefState = null;
         IReadOnlyList<SymbolPrimitive>? cellRefPrimitives = null;
-        Symbol? snpSymbol = null;
+        Symbol? instanceSymbol = null;
 
-        if (Symbol == SymbolKind.Snp && cellRefResolution is null)
+        // Per-instance glyph: SnP varies by RefNode/PinConfig/Pitch; the Tuner family varies by ShowBias.
+        if (cellRefResolution is null)
         {
-            bool refNode   = GetSnpBool("RefNode");
-            SnpPinConfig cfg = GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
-            SnpPitch pitch   = GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose);
-            snpSymbol = BuiltInSymbols.PrimitivesForSnp(PortCount, refNode, cfg, pitch);
+            if (Symbol == SymbolKind.Snp)
+            {
+                bool refNode   = GetBoolParam("RefNode");
+                SnpPinConfig cfg = GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard);
+                SnpPitch pitch   = GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose);
+                instanceSymbol = BuiltInSymbols.PrimitivesForSnp(PortCount, refNode, cfg, pitch);
+            }
+            else if (Symbol is SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner)
+            {
+                instanceSymbol = BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias"));
+            }
         }
 
         if (cellRefResolution is not null)
@@ -402,8 +423,8 @@ public sealed class EditableComponent
         }
         else
         {
-            var portDefs = snpSymbol is not null
-                ? snpSymbol.Pins.Select(pin => (
+            var portDefs = instanceSymbol is not null
+                ? instanceSymbol.Pins.Select(pin => (
                     Name: pin.Name ?? $"P{pin.PortIndex + 1}",
                     LocalX: (float)pin.LocalX,
                     LocalY: (float)pin.LocalY)).ToArray()
@@ -454,8 +475,8 @@ public sealed class EditableComponent
             ? ComputeGlyphBb(cellRefPrimitives)
             : cellRefResolution is not null
                 ? (X - 160, Y - 60, X + 160, Y + 60)   // NotFound / PrimaryMissing placeholder
-                : snpSymbol is not null
-                    ? ComputeGlyphBb(snpSymbol.Primitives)
+                : instanceSymbol is not null
+                    ? ComputeGlyphBb(instanceSymbol.Primitives)
                     : ComputeGlyphBb(null);
 
         // FullBb: glyph BB unioned with every label's actual world position including offsets.
@@ -497,7 +518,7 @@ public sealed class EditableComponent
             FullBbMaxX = fullMaxX, FullBbMaxY = fullMaxY,
             CellRefState     = cellRefState,
             CellRefPrimitives = cellRefPrimitives,
-            SnpSymbol        = snpSymbol,
+            InstanceSymbol   = instanceSymbol,
         };
     }
 
@@ -516,9 +537,11 @@ public sealed class EditableComponent
             prims = overridePrimitives;
         else if (Symbol == SymbolKind.Snp)
             prims = BuiltInSymbols.PrimitivesForSnp(PortCount,
-                GetSnpBool("RefNode"),
+                GetBoolParam("RefNode"),
                 GetSnpEnum<SnpPinConfig>("PinConfig", SnpPinConfig.Standard),
                 GetSnpEnum<SnpPitch>("Pitch", SnpPitch.Loose)).Primitives;
+        else if (Symbol is SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner)
+            prims = BuiltInSymbols.PrimitivesForTuner(Symbol, GetBoolParam("ShowBias")).Primitives;
         else
             prims = BuiltInSymbols.Primitives(Symbol, PortCount).Primitives;
 

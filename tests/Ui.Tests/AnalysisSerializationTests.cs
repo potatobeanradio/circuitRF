@@ -496,6 +496,187 @@ public sealed class AnalysisSerializationTests
         Assert.Equal("", back0.Spec!.Unit);
         Assert.Equal(1.0, back0.SweepValues[0], precision: 9);
     }
+
+    // ── LP / LPP (loadpull + loadpull_pursuit) — brief 04 ─────────────────────
+
+    private static LoadpullAnalysis SampleLp() => new("LP1")
+    {
+        Enabled         = false,
+        LoadTunerName   = "LoadTuner1",
+        SourceTunerName = "SourceTuner1",
+        GridPath        = "/grids/load.gam",
+        ToneExpr        = "RFfreq",
+        ToneUnit        = "GHz",            // non-default — must survive
+        PinStartExpr    = "-15",
+        PinMaxExpr      = "25",
+        PinStepExpr     = "0.5",
+        MaxHarmonicExpr = "7",
+        SweepExpr       = "Source",
+        TuneHarmExpr    = "2",
+        CompressionExpr = "1",
+        GainTypeExpr    = "Gp",
+        TickleExpr      = "off",
+        MaxIterExpr     = "50",
+        FFTOverSampleExpr = "2",
+        TolExpr         = "1e-8",
+        DriveSteppingExpr = "Always",
+        GuardHarmonicExpr = "3",
+    };
+
+    [Fact]
+    public void LP_RoundTrips_AllFields_InclNonDefaultToneUnit()
+    {
+        var (a2, _) = RoundTrip([SampleLp()], []);
+        var lp = Assert.IsType<LoadpullAnalysis>(Assert.Single(a2));
+
+        Assert.Equal("LP1", lp.Name);
+        Assert.False(lp.Enabled);
+        Assert.Equal("LoadTuner1",   lp.LoadTunerName);
+        Assert.Equal("SourceTuner1", lp.SourceTunerName);
+        Assert.Equal("/grids/load.gam", lp.GridPath);
+        Assert.Equal("RFfreq", lp.ToneExpr);
+        Assert.Equal("GHz",    lp.ToneUnit);
+        Assert.Equal("-15", lp.PinStartExpr);
+        Assert.Equal("25",  lp.PinMaxExpr);
+        Assert.Equal("0.5", lp.PinStepExpr);
+        Assert.Equal("7",   lp.MaxHarmonicExpr);
+        Assert.Equal("Source", lp.SweepExpr);
+        Assert.Equal("2",   lp.TuneHarmExpr);
+        Assert.Equal("1",   lp.CompressionExpr);
+        Assert.Equal("Gp",  lp.GainTypeExpr);
+        Assert.Equal("off", lp.TickleExpr);
+        Assert.Equal("50",  lp.MaxIterExpr);
+        Assert.Equal("2",   lp.FFTOverSampleExpr);
+        Assert.Equal("1e-8", lp.TolExpr);
+        Assert.Equal("Always", lp.DriveSteppingExpr);
+        Assert.Equal("3",   lp.GuardHarmonicExpr);
+    }
+
+    [Fact]
+    public void LP_DefaultToneUnit_OmittedFromDto_ReReadsAsHz()
+    {
+        var lp  = new LoadpullAnalysis("LP1") { ToneExpr = "2e9", ToneUnit = "Hz", GridPath = "g.gam" };
+        var dto = AnalysisSerialization.ToDto(lp);
+        Assert.Null(dto.LpToneUnit);   // default omitted (mirror HB)
+
+        var back = Assert.IsType<LoadpullAnalysis>(AnalysisSerialization.FromDto(dto));
+        Assert.Equal("Hz", back.ToneUnit);
+        Assert.Equal("2e9", back.ToneExpr);
+    }
+
+    [Fact]
+    public void LPP_RoundTrips_AllFields_InclToneUnit_And_NullOutputGrid()
+    {
+        var lpp = new LoadpullPursuitAnalysis("LPP1")
+        {
+            Enabled         = true,
+            LoadTunerName   = "LoadTuner1",
+            SourceTunerName = "SourceTuner1",
+            ToneExpr        = "RFfreq",
+            ToneUnit        = "GHz",
+            PinStartExpr    = "-12",
+            PinMaxExpr      = "30",
+            PinStepExpr     = "0.25",
+            MaxHarmonicExpr = "9",
+            SweepExpr       = "Load",
+            TuneHarmExpr    = "1",
+            CompressionExpr = "3",
+            GainTypeExpr    = "Gt",
+            TickleExpr      = "-40",
+            MaxIterExpr     = "120",
+            FFTOverSampleExpr = "1",
+            TolExpr         = "1e-7",
+            DriveSteppingExpr = "Never",
+            GuardHarmonicExpr = "0",
+            EffTypeExpr               = "PAE",
+            ZsourceOBOExpr            = "6",
+            SearchMethodExpr          = "IteratedQuadratic",
+            OutputGridPath            = null,   // no file
+            Vswr1Expr                 = "1.2",
+            Vswr1ResolutionExpr       = "5",
+            Vswr2Expr                 = "2.5",
+            Vswr2ResolutionExpr       = "6",
+            KeepNonconvergingExpr     = "true",
+            NonconvergentVswrExpr     = "1.1",
+            CreateLoadpullResultExpr  = "false",
+            LoadpullResultZsourceExpr = "MXP",
+        };
+
+        var (a2, _) = RoundTrip([lpp], []);
+        var b = Assert.IsType<LoadpullPursuitAnalysis>(Assert.Single(a2));
+
+        Assert.Equal("LPP1", b.Name);
+        Assert.Equal("RFfreq", b.ToneExpr);
+        Assert.Equal("GHz",    b.ToneUnit);
+        Assert.Equal("-12", b.PinStartExpr);
+        Assert.Equal("30",  b.PinMaxExpr);
+        Assert.Equal("Never", b.DriveSteppingExpr);
+        Assert.Equal("PAE", b.EffTypeExpr);
+        Assert.Equal("6",   b.ZsourceOBOExpr);
+        Assert.Equal("IteratedQuadratic", b.SearchMethodExpr);
+        Assert.Null(b.OutputGridPath);
+        Assert.Equal("1.2", b.Vswr1Expr);
+        Assert.Equal("5",   b.Vswr1ResolutionExpr);
+        Assert.Equal("2.5", b.Vswr2Expr);
+        Assert.Equal("6",   b.Vswr2ResolutionExpr);
+        Assert.Equal("true", b.KeepNonconvergingExpr);
+        Assert.Equal("1.1", b.NonconvergentVswrExpr);
+        Assert.Equal("false", b.CreateLoadpullResultExpr);
+        Assert.Equal("MXP", b.LoadpullResultZsourceExpr);
+    }
+
+    [Fact]
+    public void LPP_NonNullOutputGridPath_RoundTrips()
+    {
+        var lpp = new LoadpullPursuitAnalysis("LPP1")
+        {
+            LoadTunerName = "L", SourceTunerName = "S",
+            OutputGridPath = "/grids/out.gam",
+        };
+        var (a2, _) = RoundTrip([lpp], []);
+        var b = Assert.IsType<LoadpullPursuitAnalysis>(Assert.Single(a2));
+        Assert.Equal("/grids/out.gam", b.OutputGridPath);
+    }
+
+    [Fact]
+    public void MixedList_DC_SP_HB_LP_LPP_RoundTrips_ViaCanl()
+    {
+        var analyses = new List<Analysis>
+        {
+            new DcAnalysis("DC1"),
+            new SParameterAnalysis("SP1", new[] { new FrequencySpec("1e9", "2e9", "1e8") }),
+            new HarmonicBalanceAnalysis("HB1") { ToneExpr = "2", ToneUnit = "GHz" },
+            SampleLp(),
+            new LoadpullPursuitAnalysis("LPP1")
+                { LoadTunerName = "L", SourceTunerName = "S", ToneExpr = "RFfreq", ToneUnit = "GHz" },
+        };
+
+        string canl = AnalysisSerialization.SerializeCanl("bundle", "mixed", analyses, []);
+        var (name, desc, a2, _) = AnalysisSerialization.DeserializeCanl(canl);
+
+        Assert.Equal("bundle", name);
+        Assert.Equal("mixed", desc);
+        Assert.Collection(a2,
+            x => Assert.IsType<DcAnalysis>(x),
+            x => Assert.IsType<SParameterAnalysis>(x),
+            x => Assert.IsType<HarmonicBalanceAnalysis>(x),
+            x => Assert.IsType<LoadpullAnalysis>(x),
+            x => Assert.IsType<LoadpullPursuitAnalysis>(x));
+        Assert.Equal("GHz", Assert.IsType<LoadpullAnalysis>(a2[3]).ToneUnit);
+    }
+
+    [Fact]
+    public void LP_ForwardCompat_AbsentFields_LoadModelDefaults()
+    {
+        // A minimal DTO (only Type + Name) must load with model defaults and not throw.
+        var dto  = new CschAnalysis { Type = "lp", Name = "LP1" };
+        var lp   = Assert.IsType<LoadpullAnalysis>(AnalysisSerialization.FromDto(dto));
+        Assert.Equal("Hz", lp.ToneUnit);
+        Assert.Equal("0",  lp.ToneExpr);
+        Assert.Equal("Load", lp.SweepExpr);
+        Assert.Equal("Gt", lp.GainTypeExpr);
+        Assert.True(lp.Enabled);
+    }
 }
 
 // ── Layer 2 gate: .csch round-trip + SchematicHasAnalyses ────────────────────

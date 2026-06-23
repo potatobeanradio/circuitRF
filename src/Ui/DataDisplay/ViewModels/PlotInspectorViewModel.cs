@@ -922,9 +922,17 @@ public partial class PlotInspectorViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSummaryTable));
     }
 
-    /// <summary>True when the entry has a loadpull DataSet (contains a GammaLoad cube).</summary>
+    /// <summary>
+    /// True when the entry is a loadpull source eligible for a contour/summary trace. Recognition is
+    /// shape-based and group-aware (<see cref="LoadpullRecognition"/>): a simulated LP <c>run.npy</c>
+    /// (cubes under an <c>LP1</c> group) is accepted identically to an ingested flat <c>.spl</c>/
+    /// <c>.lpcwave</c>. The source-kind fast path keeps measured files eligible even if their cube
+    /// layout differs slightly from the canonical engine shape.
+    /// </summary>
     private static bool IsLoadpullSource(DataSourceEntryViewModel e) =>
-        e.Data is { } ds && ds.Groups.Any(g => ds.CubesIn(g).ContainsKey("GammaLoad"));
+        e.Data is { } ds
+        && (e.Kind is SourceKind.Spl or SourceKind.Lpcwave
+            || LoadpullRecognition.IsLoadpull(ds));
 
     private void AddContourTrace()
     {
@@ -1063,7 +1071,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         AddCol(SummaryColumnKind.Zsource,        "",          HasCube(ds, "ZSource"));
         AddCol(SummaryColumnKind.Zin,            "",          HasCube(ds, "Zin_real") && HasCube(ds, "Zin_imag"));
         AddCol(SummaryColumnKind.Zload,          "",          HasCube(ds, "ZLoad"));
-        AddCol(SummaryColumnKind.Metric,         "Pout",      HasCube(ds, "Pout"));
+        AddCol(SummaryColumnKind.Metric,         "Pout_dBm",  HasCube(ds, "Pout_dBm"));
         AddCol(SummaryColumnKind.Metric,         "DE",        HasCube(ds, "DE"));
         AddCol(SummaryColumnKind.Metric,         "Gt",        HasCube(ds, "Gt"));
         AddCol(SummaryColumnKind.Metric,         "AMPM",      HasCube(ds, "AMPM"));
@@ -1107,8 +1115,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
         if (HasHarmonicLoadCubes(ds) && !_harmonicWarned)
             _harmonicWarned = true;
 
+        // Group-aware: LP cubes may be top level (flat .spl) or under an analysis group (LP run.npy).
+        var lpViews = LoadpullRecognition.FindLoadpullViews(ds);
+        string lpGroup = lpViews.Count > 0 ? (lpViews[0].Group ?? "") : "";
+
         LoadpullSurface surface;
-        try { surface = new LoadpullSurface(ds); }
+        try { surface = new LoadpullSurface(ds, lpGroup); }
         catch
         {
             _plot.SummaryFreqs = null;

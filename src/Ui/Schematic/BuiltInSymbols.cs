@@ -44,12 +44,17 @@ public static class BuiltInSymbols
     private static readonly Symbol _nonlinearC   = BuildNonlinearC();
     private static readonly Symbol _mutual        = BuildMutual();
     private static readonly Symbol _tline         = BuildTline();
+    private static readonly Symbol _tuner         = BuildTuner();
+    private static readonly Symbol _sourceTuner   = BuildSourceTuner();
+    private static readonly Symbol _loadTuner     = BuildLoadTuner();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
     private static readonly Dictionary<int, Symbol> _zportCache = new();
     // SnP cache key: (n, refNode, cfg, pitch)
     private static readonly Dictionary<(int, bool, SnpPinConfig, SnpPitch), Symbol> _snpCache = new();
+    // Tuner-family cache key: (kind, showBias) — per-instance bias-branch variant.
+    private static readonly Dictionary<(SymbolKind, bool), Symbol> _tunerCache = new();
 
     /// <summary>
     /// Returns the primitive list for a built-in symbol kind.
@@ -101,6 +106,9 @@ public static class BuiltInSymbols
             case SymbolKind.Var:        return _var;
             case SymbolKind.Meas:       return _meas;
             case SymbolKind.P1Tone:     return _p1Tone;
+            case SymbolKind.Tuner:       return _tuner;
+            case SymbolKind.SourceTuner: return _sourceTuner;
+            case SymbolKind.LoadTuner:   return _loadTuner;
             default:                    return _generic;
         }
     }
@@ -497,6 +505,86 @@ public static class BuiltInSymbols
         RRect( 0,  0,  180,  90,  18),      // body (rounded rect, x∈[−90,90], y∈[−45,45])
         L( -60,   0,   60,   0),            // centre conductor line through the body
     ], SymbolKind.Tline);
+
+    // ── Tuner — compact almost-square termination, single left pin ────────────
+    // 220 × 200 box (edges ±110 / ±100) — nearly square. Advanced users want a small footprint,
+    // not a detailed pictorial; keep the interior mark minimal. The tuning dial is centered in the
+    // box. Pin "1" (DUT-facing) at (−300,0); the reference net is implicit ground (hard-coded "0"
+    // at extraction — deferred to expose).
+    private static Symbol BuildTuner() => Sym([
+        L(-300,   0, -110,   0),          // left lead to box edge (DUT-facing pin)
+        RRect(0,  0,  220,  200,  20),    // almost-square body, 220 × 200
+        Circ(0,   0,   40),               // tuning dial (a Smith-ish circle), centered
+        L(0, 0, 28, -28),                 // short "slug" needle
+    ], SymbolKind.Tuner);
+
+    // ── Source Tuner — wider box + P1Tone-style source-drive circle; single RIGHT pin ──
+    // 400 × 200. The drive circle + 1-cycle sine (borrowed from P1Tone) marks that a source
+    // tuner OWNS its internal RF drive (loadpull.md §1.1). The drive source sits on the PIN side
+    // (right, nearest the DUT); the tunable-Γ dial is on the far (left) side. Pin "1" at (+300,0).
+    private static Symbol BuildSourceTuner() => Sym([
+        L( 200,   0,  300,   0),           // right lead → DUT-facing pin
+        RRect(0,  0,  400,  200,  20),     // wider body
+        Circ( 90,  0,  48),                // source-drive circle (P1Tone motif) — pin side (right)
+        Sine( 90,  0,  20,   1,   90, SineAxis.Horizontal),
+        Circ(-90,  0,  40),                // tunable-Γ mark — far side (left)
+        L(-90, 0, -62, -28),               // slug needle
+    ], SymbolKind.SourceTuner);
+
+    // ── Load Tuner — wider box, passive (no drive circle); single LEFT pin ────
+    // 400 × 200. Passive termination → NO drive circle. The termination zigzag (passive load) sits
+    // on the PIN side (left, nearest the DUT); the tunable-Γ dial is on the far (right) side.
+    // Pin "1" (DUT-facing) at (−300,0).
+    private static Symbol BuildLoadTuner() => Sym([
+        L(-300,   0, -200,   0),           // left lead → DUT-facing pin
+        RRect(0,  0,  400,  200,  20),     // wider body
+        PLine(-90,-44, -90,-28, -70,-14, -110,12, -70,36, -90,50, -90,55),  // termination zigzag — pin side (left)
+        Circ( 90,  0,  40),                // tunable-Γ mark — far side (right)
+        L(90, 0, 118, -28),                // slug needle
+    ], SymbolKind.LoadTuner);
+
+    /// <summary>
+    /// Per-instance Tuner-family symbol. <paramref name="showBias"/> appends the embedded bias-tee +
+    /// DC-supply annotation (loadpull.md §1.1) beneath the box. DISPLAY-ONLY — never changes the
+    /// extracted netlist; the bias-tee hardware is identical across the three kinds, so the same add-on
+    /// is appended to whichever base glyph (general / Source / Load) the kind selects. Cached per
+    /// (kind, showBias), mirroring the SnP per-instance symbol path.
+    /// </summary>
+    public static Symbol PrimitivesForTuner(SymbolKind kind, bool showBias)
+    {
+        var key = (kind, showBias);
+        if (!_tunerCache.TryGetValue(key, out var sym))
+            _tunerCache[key] = sym = BuildTunerVariant(kind, showBias);
+        return sym;
+    }
+
+    private static Symbol BuildTunerVariant(SymbolKind kind, bool showBias)
+    {
+        var baseSym = kind switch
+        {
+            SymbolKind.SourceTuner => _sourceTuner,
+            SymbolKind.LoadTuner   => _loadTuner,
+            _                      => _tuner,
+        };
+        if (!showBias) return baseSym;
+        var prims = new List<SymbolPrimitive>(baseSym.Primitives);
+        prims.AddRange(BiasTeeAddOn());
+        return new Symbol(prims, baseSym.Pins);
+    }
+
+    // ── Shared bias-tee add-on — RF choke (2 coils) + Vdc two-bar supply ───────
+    // Drawn beneath the box (bottom edge at y=+100), dropping straight down from box-bottom center.
+    // Annotates that the tuner carries its own bias supply; identical for all three tuner kinds.
+    private static IReadOnlyList<SymbolPrimitive> BiasTeeAddOn() =>
+    [
+        L(0, 100,  0, 124),                 // tee stub from box bottom
+        A(0, 136, 12, -90, 180),            // choke coil 1
+        A(0, 160, 12, -90, 180),            // choke coil 2
+        L(0, 172,  0, 196),                 // lead to DC supply
+        L(-22, 196, 22, 196),               // long bar (+)
+        L(-12, 212, 12, 212),               // short bar (−)
+        L(0, 212,  0, 236),                 // bottom tail
+    ];
 
     // ── Generic — 2-port box with leads (horizontal fallback) ─────────────────
 

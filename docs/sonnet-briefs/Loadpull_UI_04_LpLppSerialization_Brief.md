@@ -1,46 +1,50 @@
 # Brief — Loadpull UI 04: serialize Loadpull & Loadpull-Pursuit analyses (`.csch` / clipboard / `.canl`)
 
 **Goal:** Teach the single shared analysis encoder to round-trip the **already-existing**
-`LoadpullAnalysis` and `LoadpullPursuitAnalysis` model types. This is headless, framework-free, fully
-unit-testable, and has **no UI** — it is the foundation the authoring forms (briefs 05–06) build on. Do this
-first so the editor work can immediately persist what it produces.
+`LoadpullAnalysis` and `LoadpullPursuitAnalysis` model types (including the `ToneUnit` field added in brief
+04b). Headless, framework-free, fully unit-testable, **no UI** — the foundation the authoring forms
+(briefs 05–06) build on.
 
-**Depends on:** nothing (independent of the Tuner track).
+**Depends on:** **brief 04b** (which adds `ToneUnit` to both loadpull models — required so the DTO can carry
+it). Do 04b first.
 
-**Reads with:** `docs/design/analysis-authoring.md` §3 + §5.4 (the ONE serialization principle), and the
-existing code: `src/Ui/Schematic/AnalysisSerialization.cs` (the encoder you extend) and
-`src/Core/Design/Analysis.cs` (the `LoadpullAnalysis` / `LoadpullPursuitAnalysis` fields — already defined,
-do not change them).
+**Reads with:** `docs/design/analysis-authoring.md` §3 + §5.4 (the ONE serialization principle),
+`src/Ui/Schematic/AnalysisSerialization.cs` (the encoder you extend) and `src/Core/Design/Analysis.cs`
+(the `LoadpullAnalysis` / `LoadpullPursuitAnalysis` fields — already defined; brief 04b adds `ToneUnit`).
 
-## Context: the model already exists; only serialization is missing
+## Context
 
-`Analysis.cs` already defines `LoadpullAnalysis` and `LoadpullPursuitAnalysis` with every field as a raw
-expression string (e.g. `ToneExpr`, `LoadTunerName`, `SourceTunerName`, `GridPath`, `PinStartExpr`,
-`PinMaxExpr`, `SweepExpr`, `TuneHarmExpr`, `CompressionExpr`, `GainTypeExpr`, `PinStepExpr`, `TickleExpr`,
-`MaxIterExpr`, …; and for pursuit: `EffTypeExpr`, `ZsourceOBOExpr`, `SearchMethodExpr`, `OutputGridPath`,
-`Vswr1Expr`, `Vswr1ResolutionExpr`, `Vswr2Expr`, `Vswr2ResolutionExpr`, `KeepNonconvergingExpr`,
-`NonconvergentVswrExpr`, `CreateLoadpullResultExpr`, `LoadpullResultZsourceExpr`). Read both classes and copy
-the field names **exactly**.
+`Analysis.cs` defines `LoadpullAnalysis` and `LoadpullPursuitAnalysis` with every field as a raw expression
+string (`ToneExpr`, `LoadTunerName`, `SourceTunerName`, `GridPath`, `PinStartExpr`, `PinMaxExpr`,
+`SweepExpr`, `TuneHarmExpr`, `CompressionExpr`, `GainTypeExpr`, `PinStepExpr`, `TickleExpr`, `MaxIterExpr`,
+…; pursuit adds `EffTypeExpr`, `ZsourceOBOExpr`, `SearchMethodExpr`, `OutputGridPath`, `Vswr1Expr`,
+`Vswr1ResolutionExpr`, `Vswr2Expr`, `Vswr2ResolutionExpr`, `KeepNonconvergingExpr`,
+`NonconvergentVswrExpr`, `CreateLoadpullResultExpr`, `LoadpullResultZsourceExpr`). **Brief 04b adds a
+`ToneUnit` field (default `"Hz"`) to both** — this brief serializes it. Read both classes and copy field
+names exactly.
 
-But `AnalysisSerialization` only handles `"dc"`/`"sp"`/`"hb"`/`"sweep"`. Its header comment even says
-loadpull/pursuit are intentionally omitted and unknown tags are skipped. We now add `"lp"` and `"lpp"`.
+`AnalysisSerialization` only handles `"dc"`/`"sp"`/`"hb"`/`"sweep"` today; add `"lp"` and `"lpp"`.
+
+## Tone is `ToneExpr` + `ToneUnit` (NOT a single combined string) — corrected
+
+The tone must serialize as a **coefficient expression + a frequency unit**, exactly like HB
+(`hb.ToneExpr` + `hb.ToneUnit`). This is what makes a VAR with *or without* a unit resolve correctly at run
+time via the var-unit-wins rule (brief 04b). Do **not** collapse the tone into one combined expression — a
+unitless VAR would then glitch to Hz. Mirror HB's serialization, which omits `ToneUnit` when it is the
+default `"Hz"`.
 
 ## Changes (all in `src/Ui/Schematic/AnalysisSerialization.cs`)
 
 ### 1 — DTO fields on `CschAnalysis`
-`CschAnalysis` is a flat polymorphic DTO (all variants' fields inline, nullable, `WhenWritingNull`). Add the
-loadpull + pursuit fields as nullable strings, grouped and commented like the existing `// ── HB ──` block.
-Reuse `ToneExpr`/`MaxHarmonicExpr`/`GuardHarmonicExpr`/`TolExpr`/`FFTOverSampleExpr`/`DriveSteppingExpr`/
-`MaxIterExpr` **only if** their semantics match (they do — same raw-expression strings); to avoid coupling LP
-to HB's fields, prefer **dedicated** LP-prefixed properties so the two never drift. Recommended explicit set:
-
+Add the LP + pursuit fields as nullable strings, grouped/commented like the existing `// ── HB ──` block.
+Use dedicated `Lp*`/`Lpp*` properties so LP never couples to HB's fields:
 ```csharp
 // ── LP / LPP (loadpull + loadpull_pursuit) ─────────────────────────────────
 public string?  LpLoadTunerName    { get; set; }
 public string?  LpSourceTunerName  { get; set; }
 public string?  LpGridPath         { get; set; }   // LP only (LPP generates its grid)
 public string?  LpToneExpr         { get; set; }
-public string?  LpToneUnit         { get; set; }   // null/absent → "Hz" (see note below)
+public string?  LpToneUnit         { get; set; }   // null/absent → "Hz" (var-unit-wins; brief 04b)
 public string?  LpPinStartExpr     { get; set; }
 public string?  LpPinMaxExpr       { get; set; }
 public string?  LpPinStepExpr      { get; set; }
@@ -70,20 +74,10 @@ public string?  LppNonconvergentVswr    { get; set; }
 public string?  LppCreateLoadpullResult { get; set; }
 public string?  LppLoadpullResultZsource{ get; set; }   // "MXE" | "MXP" | "None"
 ```
-**Note on `ToneUnit`:** `LoadpullAnalysis` stores `ToneExpr` only — there is **no `ToneUnit` field** on the
-model (unlike HB). The model's `ToneExpr` is resolved by the engine with its own unit handling. So you have
-two choices: (a) store the LP tone as a single combined expression string (no separate unit) to match the
-model exactly — simplest, recommended; or (b) keep a UI-side `LpToneUnit` for editor convenience and bake it
-into `ToneExpr` when building the model in brief 05. **Recommend (a):** `LpToneExpr` is the whole tone
-expression (e.g. `"2e9"` or `"2*f0"`), no `LpToneUnit`. Drop `LpToneUnit` from the list above unless brief 05
-finds it genuinely needed; if kept, it is editor-only and never on the model. Keep this brief consistent with
-whatever brief 05 expects — they are co-designed.
+`SourceDirectory` on the model (resolves relative `Grid`/`OutputGrid` paths) is set by the reader at run
+time — **not serialized**.
 
-`SourceDirectory` on the model (used to resolve relative `Grid`/`OutputGrid` paths) is set by the reader at
-extraction time, **not** serialized (it is environment-specific). Do not add a DTO field for it.
-
-### 2 — `ToDto` cases
-Add two `switch` arms in `ToDto(Analysis a)`:
+### 2 — `ToDto` cases (before the `_ => …` fallback)
 ```csharp
 LoadpullAnalysis lp => new CschAnalysis
 {
@@ -94,6 +88,7 @@ LoadpullAnalysis lp => new CschAnalysis
     LpSourceTunerName = lp.SourceTunerName,
     LpGridPath        = lp.GridPath,
     LpToneExpr        = lp.ToneExpr,
+    LpToneUnit        = lp.ToneUnit != "Hz" ? lp.ToneUnit : null,   // omit default (mirror HB)
     LpPinStartExpr    = lp.PinStartExpr,
     LpPinMaxExpr      = lp.PinMaxExpr,
     LpPinStepExpr     = lp.PinStepExpr,
@@ -118,6 +113,7 @@ LoadpullPursuitAnalysis lpp => new CschAnalysis
     LpLoadTunerName   = lpp.LoadTunerName,
     LpSourceTunerName = lpp.SourceTunerName,
     LpToneExpr        = lpp.ToneExpr,
+    LpToneUnit        = lpp.ToneUnit != "Hz" ? lpp.ToneUnit : null,
     LpPinStartExpr    = lpp.PinStartExpr,
     LpPinMaxExpr      = lpp.PinMaxExpr,
     LpPinStepExpr     = lpp.PinStepExpr,
@@ -146,13 +142,10 @@ LoadpullPursuitAnalysis lpp => new CschAnalysis
     LppLoadpullResultZsource= lpp.LoadpullResultZsourceExpr,
 },
 ```
-Place these arms **before** the `_ => …` fallback. (The fallback that emits `Type="?"` for unknown types
-stays.)
 
-### 3 — `FromDto` cases
-Add two arms in `FromDto(CschAnalysis dto)`, before the `_ => null` fallback. Use the model's init-only
-properties; fall back to the model's documented defaults when a DTO field is null (so an old/short file still
-loads). Example for LP:
+### 3 — `FromDto` cases (before `_ => null`)
+Fall back to model defaults when a DTO field is null (old/short files still load). **`ToneUnit` defaults
+`"Hz"`** when absent:
 ```csharp
 "lp" => new LoadpullAnalysis(dto.Name)
 {
@@ -161,6 +154,7 @@ loads). Example for LP:
     SourceTunerName = dto.LpSourceTunerName ?? "",
     GridPath        = dto.LpGridPath        ?? "",
     ToneExpr        = dto.LpToneExpr        ?? "0",
+    ToneUnit        = dto.LpToneUnit        ?? "Hz",
     PinStartExpr    = dto.LpPinStartExpr    ?? "-20",
     PinMaxExpr      = dto.LpPinMaxExpr      ?? "10",
     PinStepExpr     = dto.LpPinStepExpr     ?? "1",
@@ -177,28 +171,25 @@ loads). Example for LP:
     GuardHarmonicExpr = dto.LpGuardHarmonicExpr ?? "0",
 },
 ```
-…and the analogous `"lpp"` arm filling `LoadpullPursuitAnalysis` (all LP fields + the `Lpp*` pursuit keys;
-`OutputGridPath = dto.LppOutputGridPath` stays nullable — null means "no file"). Use the exact defaults from
+…and the analogous `"lpp"` arm (all LP fields incl. `ToneUnit = dto.LpToneUnit ?? "Hz"` + the `Lpp*`
+keys; `OutputGridPath = dto.LppOutputGridPath` stays nullable = "no file"). Use the exact defaults from
 `Analysis.cs`.
 
-### 4 — Update the header comment
-The file header says the discriminator is `"dc"/"sp"/"hb"` and LP/LPP are omitted. Update it to include
-`"lp"/"lpp"` and note that authoring is now supported (briefs 05–06).
+### 4 — Header comment
+Update the file header: discriminator now includes `"lp"/"lpp"`; authoring supported (briefs 05–06); the
+tone serializes as `LpToneExpr` + `LpToneUnit` (var-unit-wins, brief 04b).
 
-## Tests
-Add round-trip tests in `tests/Ui.Tests/AnalysisSerializationTests.cs` (mirror the existing 19 there):
-- LP: build a `LoadpullAnalysis` with non-default values for every field, `ToDto` → `FromDto`, assert all
-  fields equal (and `Enabled` preserved).
-- LPP: same for `LoadpullPursuitAnalysis`, including `OutputGridPath = null` (no file) and a non-null case.
-- Clipboard payload round-trip via `Serialize`/`Deserialize` with a list mixing DC, SP, HB, LP, LPP.
-- `.canl` round-trip via `SerializeCanl`/`DeserializeCanl` containing an LP and an LPP.
-- Forward-compat: a JSON blob with `Type="lp"` but several fields absent → loads with model defaults, no
-  throw.
+## Tests (`tests/Ui.Tests/AnalysisSerializationTests.cs`)
+- LP round-trip with non-default values for every field — **including a non-`"Hz"` `ToneUnit`** (e.g.
+  `ToneExpr="RFfreq"`, `ToneUnit="GHz"`) — `ToDto`→`FromDto`, assert all fields + `Enabled` equal.
+- LP with default `ToneUnit="Hz"`: assert `LpToneUnit` is omitted (null) in the DTO and re-reads as `"Hz"`.
+- LPP round-trip incl. `ToneUnit`, `OutputGridPath = null` and a non-null case.
+- Clipboard `Serialize`/`Deserialize` and `.canl` `SerializeCanl`/`DeserializeCanl` with a list mixing DC,
+  SP, HB, LP, LPP.
+- Forward-compat: `Type="lp"` with fields absent → loads with model defaults (`ToneUnit="Hz"`), no throw.
 
 ## Verify
 1. `dotnet build` zero warnings; `dotnet test` green (existing + new).
-2. No UI touched; firewall unaffected. This brief is pure serialization plumbing.
-3. Sanity: a `.csch` saved with an LP/LPP analysis (once briefs 05–06 author one) reloads identically — the
-   `.csch` path uses `ToDto`/`FromDto` automatically via `SchematicPersistence`, so no further `.csch` wiring
-   is needed here (confirm `SchematicPersistence.ToFileModel/FromFileModel` already routes through
-   `AnalysisSerialization.ToDto/FromDto` — it does, per analysis-authoring.md §7 step 2).
+2. No UI touched; firewall unaffected.
+3. `.csch` round-trip is automatic via `SchematicPersistence.ToFileModel/FromFileModel` →
+   `AnalysisSerialization.ToDto/FromDto` (confirm; no extra `.csch` wiring needed).

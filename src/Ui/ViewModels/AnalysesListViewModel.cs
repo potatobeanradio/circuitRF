@@ -101,7 +101,8 @@ public sealed partial class AnalysesListViewModel : ObservableObject
     private async Task Add(Window? owner)
     {
         if (_schematicVm is null) return;
-        var vm     = new AnalysisEditorViewModel(_schematicVm.EditModel);
+        var vm     = new AnalysisEditorViewModel(_schematicVm.EditModel,
+                         workspaceRoot: _schematicVm.WorkspaceRoot);
         var result = await AnalysisEditorDialog.ShowAsync(owner, vm, isEdit: false);
         if (result is null) return;
         _schematicVm.Execute(new AddAnalysesCommand(_schematicVm.EditModel, result));
@@ -111,7 +112,8 @@ public sealed partial class AnalysesListViewModel : ObservableObject
     private async Task Edit(Window? owner)
     {
         if (SelectedRow is null || _schematicVm is null) return;
-        var vm = new AnalysisEditorViewModel(_schematicVm.EditModel, SelectedRow.Analysis);
+        var vm = new AnalysisEditorViewModel(_schematicVm.EditModel, SelectedRow.Analysis,
+                     workspaceRoot: _schematicVm.WorkspaceRoot);
 
         // Collect the old chain before opening the dialog.
         var oldChainNames = vm.EditingChainNames;

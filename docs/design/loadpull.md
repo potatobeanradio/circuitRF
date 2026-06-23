@@ -37,10 +37,14 @@ A **`Tuner`** is the user-facing programmable termination at a DUT port — the 
 ### 1.2 What a `Tuner` does NOT hold
 The *procedure* — the Γ-grid, compression target, gain choice, max-Pin, tickle — lives in the `Loadpull` analysis (§2), **not** in the Tuner. The Tuner is a circuit block ("what it is"); the analysis is the behavior ("what it does"). This split keeps the Tuner reusable (standalone termination) and the analysis about behavior, and avoids cramming a procedure's worth of parameters onto a component.
 
+**UI/schematic surface — single pin, implicit-ground reference (deferred 2nd pin).** The general `Tuner` schematic symbol exposes a **single** DUT-facing pin (on the left of the glyph). The engine's `TunerModel` declares **two** nets — `Nodes[0]` DUT-facing, `Nodes[1]` reference — and the same ordering for **all three tiles** (general `Tuner`, `LoadTuner`, `SourceTuner`): the net extractor supplies `Nodes[0]` from the pin and **hard-codes `Nodes[1] = "0"` (ground)**. This matches the lab convention (a tuner connects a single DUT terminal; the reference is implicit ground). The `SourceTuner`'s internal RF-drive node (where the embedded `V_1Tone` drives against the reference) is **minted by the engine** (`__tuner_<inst>_outer`, Nodes[4]), not declared — so the schematic surface and net ordering are symmetric across the family. Exposing the reference as a second pin — for non-ground references such as differential terminations — is **deferred**; it can be added later without changing the net ordering.
+
+In the GUI, the Source/Load/general Tuner tiles place the identical `Tuner` component (same EngineReference, parameters, and net ordering [pin → Nodes[0], "0" → Nodes[1]]); they differ only in glyph and instance prefix. Match the symbol to its analysis role (`LoadTuner=`/`SourceTuner=`); the role (assigned by the analysis) selects the stamp, and the engine mints the source's internal drive node when needed.
+
 ### 1.3 `.cnl` surface
 ```
 Tuner:Load  n_drain 0  Z[1]=80+j*10  Z[2]=1  Zdefault=1e-6  BiasTee=on  Vbias=48
-Tuner:Src   n_src   n_gate  Z[1]=25                         BiasTee=on  Vbias=-3.05
+Tuner:Src   n_gate  0   Z[1]=25                         BiasTee=on  Vbias=-3.05
 ```
 No `TuneHarm` on the Tuner (the `Loadpull` directive sets it, §2). `Z[1]`/`G[1]` is **required**; `Zdefault` defaults to `1e-6` if omitted. The **source** Tuner needs no separate drive source — when the `Loadpull` analysis names it `SourceTuner=`, it stamps its own internal `V_1Tone` and computes `|Vs|` from its `Z[1]` and the analysis-supplied `Pavl` (§1.1, §3). Γ form: replace `Z[1]`/`Z[2]`/… with `G[1]`/`G[2]`/… and optionally add `Z0=` (default 50 Ω); forms may be mixed per harmonic, but the same harmonic may not be given both an impedance and a reflection (error). Values resolve through the expression engine, so terminations and bias may be parameters/expressions. (Bias-tee sub-parameters — choke/block values vs "ideal" — are an open item, §7.)
 

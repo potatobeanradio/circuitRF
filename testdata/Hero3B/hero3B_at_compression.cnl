@@ -32,7 +32,7 @@ Vdd = 48
 ; ============================================================
 ; SOURCE Tuner (DUT port 1 = n_gate)
 ; ============================================================
-Tuner:Src   n_src n_gate   Z[1]=25   Zdefault=1e-6   BiasTee=on   Vbias=Vgg
+Tuner:Src   n_gate 0   Z[1]=25   Zdefault=1e-6   BiasTee=on   Vbias=Vgg
 
 ; ============================================================
 ; The FET (SDD), source grounded: port1 = n_gate, port2 = n_drain

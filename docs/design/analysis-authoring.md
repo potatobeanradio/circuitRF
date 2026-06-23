@@ -17,9 +17,10 @@ authoring surface for `TestBench.Analyses` (+ `Measurements`). Companions: `net-
 - **Analyses live in the `.csch`** (not the `.ccell`) so a **scratch schematic can be simulated without
   defining a cell**. A cell's `IsTestBench` flips true when its primary schematic carries analyses (the
   `SchematicHasAnalyses` hook the save-plan step already stubs).
-- **v1 types: DC, S-parameter, Harmonic Balance.** **Loadpull / loadpull-pursuit authoring is DEFERRED**
-  (they need tuner-instance pickers + `.gam` grid refs — more UI). *(Run can still execute a hand-authored
-  loadpull `.cnl`; you just can't author one in the GUI yet. **TODO: add loadpull/pursuit authoring.**)*
+- **v1 types: DC, S-parameter, Harmonic Balance, Loadpull, Loadpull-Pursuit.** Loadpull and
+  loadpull-pursuit authoring **shipped** (briefs 05/06): tuner-instance pickers + `.gam` grid/output
+  refs, the tone as a coefficient + unit pair resolved with the HB var-unit-wins rule (brief 04b).
+  *(v1 limitation: LP/LPP cannot yet be wrapped in a parametric sweep — loadpull is itself a 2-D sweep.)*
 - **UI:** an **Analyses dock panel** (the list, tied to the active schematic) **and** the option to present
   that same list as a **modal dialog**; plus an **Add/Edit dialog** (the per-analysis form) — the
   VendorC "Choosing Analyses" pattern.
@@ -124,9 +125,9 @@ A panel tied to the **active schematic**, showing its analyses:
 
 ### 4.2 The Add/Edit dialog — the "Choosing Analyses" form (progressive disclosure)
 Opened by Add or Edit. Mirrors VendorC's type-then-relevant-fields:
-1. **Type picker** at the top (segmented control or radio row): **DC · S-Parameter · Harmonic Balance**
-   (loadpull/pursuit shown **disabled with a "coming soon" tooltip**, so the surface is visible but clearly
-   deferred). Picking a type **swaps the form body** to that type's fields only.
+1. **Type picker** at the top (segmented control or radio row): **DC · S-Parameter · Harmonic Balance ·
+   Load Pull · LP Pursuit** (all enabled as of briefs 05/06). Picking a type **swaps the form body** to
+   that type's fields only.
 2. **Name** field (defaulted `SP1`/`HB1`/`DC1`, editable, validated).
 3. **Enabled** checkbox.
 4. **Per-type body:**
@@ -290,8 +291,9 @@ Steps 1–2 are model+persistence (headless, testable); 3–4 are the UI (the HI
 ---
 
 ## 8. Open / deferred
-- **Loadpull / loadpull-pursuit authoring** — DEFERRED (tuner-instance pickers + `.gam` grid refs). **TODO:
-  add so it's not forgotten.** Run still executes hand-authored loadpull `.cnl`.
+- **Loadpull / loadpull-pursuit authoring** — **DONE** (briefs 05/06): tuner-instance pickers, `.gam`
+  grid/output refs, tone coeff+unit (var-unit-wins, brief 04b). Remaining v1 limitation: LP/LPP cannot be
+  wrapped in a parametric sweep yet (loadpull is itself a 2-D sweep).
 - **Thin Model A** (analysis-as-placed-component writing into this metadata list) — v2, owner-noted.
 - **Parametric sweep nesting** (`ParametricSweepAnalysis`) — v1 may expose a single per-analysis design-var
   sweep; full nested parametric UI deferred.

@@ -26,6 +26,9 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     private readonly SchematicEditModel _model;
     private readonly List<string>       _existingNames;
     private readonly string?            _editingName;
+    // Workspace root — the base for storing picked .gam paths relative (the engine's resolution base).
+    // Threaded into the LP/LPP bodies so their file pickers mirror the SnP File picker's behavior.
+    private readonly string?            _workspaceRoot;
 
     // Names of analyses in the OLD chain that must be removed on edit (inner + old sweeps).
     // Empty for the Add flow.
@@ -34,7 +37,8 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     // ── Type selection ────────────────────────────────────────────────────────
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp))]
+    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp),
+                              nameof(ShowSweeps))]
     private AnalysisKind _type = AnalysisKind.DC;
 
     public bool IsDc  => Type == AnalysisKind.DC;
@@ -42,6 +46,9 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     public bool IsHb  => Type == AnalysisKind.HB;
     public bool IsLp  => Type == AnalysisKind.LP;
     public bool IsLpp => Type == AnalysisKind.LPP;
+
+    /// <summary>Parametric-sweep chains are not supported on Loadpull/LP-Pursuit in v1 — hide the UI.</summary>
+    public bool ShowSweeps => !IsLp && !IsLpp;
 
     // ── Name + Enabled ────────────────────────────────────────────────────────
 
@@ -64,6 +71,12 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>HB body (Layer 3 enriches this stub with all field editing).</summary>
     public HbBodyViewModel HbBody { get; }
+
+    /// <summary>Loadpull body (brief 05).</summary>
+    public LpBodyViewModel LpBody { get; }
+
+    /// <summary>Loadpull-Pursuit body (brief 06).</summary>
+    public LppBodyViewModel LppBody { get; }
 
     // ── Parametric sweep axes ─────────────────────────────────────────────────
 
@@ -97,23 +110,29 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     // ── Constructor: Add new ──────────────────────────────────────────────────
 
-    public AnalysisEditorViewModel(SchematicEditModel model, AnalysisKind initialType = AnalysisKind.DC)
+    public AnalysisEditorViewModel(SchematicEditModel model, AnalysisKind initialType = AnalysisKind.DC,
+        string? workspaceRoot = null)
     {
         _model         = model;
+        _workspaceRoot = workspaceRoot;
         _existingNames = model.Analyses.Select(a => a.Name).ToList();
         _editingName   = null;
         _type          = initialType;
         _name          = NextFreeName(initialType, _existingNames);
         SpBody         = new SpBodyViewModel(model);
         HbBody         = new HbBodyViewModel(model);
+        LpBody         = new LpBodyViewModel(model, workspaceRoot);
+        LppBody        = new LppBodyViewModel(model, workspaceRoot);
         ValidateName();
     }
 
     // ── Constructor: Edit existing ────────────────────────────────────────────
 
-    public AnalysisEditorViewModel(SchematicEditModel model, Analysis existing)
+    public AnalysisEditorViewModel(SchematicEditModel model, Analysis existing,
+        string? workspaceRoot = null)
     {
         _model         = model;
+        _workspaceRoot = workspaceRoot;
         _existingNames = model.Analyses.Select(a => a.Name).ToList();
 
         // Resolve the chain: navigate to innermost non-sweep analysis and collect sweeps.
@@ -134,12 +153,32 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
                 _type  = AnalysisKind.SP;
                 SpBody = SpBodyViewModel.FromAnalysis(sp, model);
                 HbBody = new HbBodyViewModel(model);
+                LpBody = new LpBodyViewModel(model, workspaceRoot);
+                LppBody = new LppBodyViewModel(model, workspaceRoot);
+                break;
+
+            case LoadpullPursuitAnalysis lpp:
+                _type   = AnalysisKind.LPP;
+                SpBody  = new SpBodyViewModel(model);
+                HbBody  = new HbBodyViewModel(model);
+                LpBody  = new LpBodyViewModel(model, workspaceRoot);
+                LppBody = LppBodyViewModel.FromAnalysis(lpp, model, workspaceRoot);
+                break;
+
+            case LoadpullAnalysis lp:
+                _type  = AnalysisKind.LP;
+                SpBody = new SpBodyViewModel(model);
+                HbBody = new HbBodyViewModel(model);
+                LpBody = LpBodyViewModel.FromAnalysis(lp, model, workspaceRoot);
+                LppBody = new LppBodyViewModel(model, workspaceRoot);
                 break;
 
             case HarmonicBalanceAnalysis hb:
                 _type  = AnalysisKind.HB;
                 SpBody = new SpBodyViewModel(model);
                 HbBody = HbBodyViewModel.FromAnalysis(hb, model);
+                LpBody = new LpBodyViewModel(model, workspaceRoot);
+                LppBody = new LppBodyViewModel(model, workspaceRoot);
 
                 // Migrate legacy HB sweep fields into a sweep axis row.
 #pragma warning disable CS0618
@@ -160,6 +199,8 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
                 _type  = AnalysisKind.DC;
                 SpBody = new SpBodyViewModel(model);
                 HbBody = new HbBodyViewModel(model);
+                LpBody = new LpBodyViewModel(model, workspaceRoot);
+                LppBody = new LppBodyViewModel(model, workspaceRoot);
                 break;
         }
 
@@ -283,9 +324,16 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             AnalysisKind.DC  => new DcAnalysis(name)            { Enabled = Enabled },
             AnalysisKind.SP  => BuildSp(name, Enabled),
             AnalysisKind.HB  => HbBody.BuildAnalysis(name,      Enabled),
+            AnalysisKind.LP  => LpBody.IsValid  ? LpBody.BuildAnalysis(name, Enabled)  : null,
+            AnalysisKind.LPP => LppBody.IsValid ? LppBody.BuildAnalysis(name, Enabled) : null,
             _                => null,
         };
         if (inner is null) return null;
+
+        // Loadpull / LP-Pursuit do not support parametric-sweep chains in v1 — any sweep axes
+        // present are ignored; the base analysis runs on its own (loadpull is itself a 2-D sweep).
+        if (Type is AnalysisKind.LP or AnalysisKind.LPP)
+            return [inner];
 
         if (!hasSweeps)
             return [inner];

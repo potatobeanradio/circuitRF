@@ -28,6 +28,19 @@ public enum SymbolKind
     NonlinearC,
     Mutual,
     Tline,
+    Tuner,
+
+    /// <summary>Source-side Tuner. Same engine component as <see cref="Tuner"/> (EngineReference "Tuner",
+    /// same parameters). Differs by glyph, instance prefix, and SOURCE-STYLE single-pin net ordering
+    /// (pin = DUT-facing = Nodes[1]; the internal source net = Nodes[0], auto-generated, NOT ground).
+    /// Pin on the RIGHT. Must be named SourceTuner= in the Loadpull analysis. Reference/source net as a
+    /// pin is deferred.</summary>
+    SourceTuner,
+
+    /// <summary>Load-side Tuner. Same engine component as <see cref="Tuner"/>; LOAD-STYLE ordering
+    /// (pin = DUT-facing = Nodes[0]; reference Nodes[1] hard-coded ground "0"). Pin on the LEFT. Must be
+    /// named LoadTuner= in the analysis. Reference pin deferred.</summary>
+    LoadTuner,
 }
 
 public enum PortConnectionState { Unconnected, Connected }
@@ -70,6 +83,13 @@ public sealed class SchematicComponent
         {
             double halfH = glyphHalfH
                 ?? SymbolPortDefs.SnpBodyRect(portCount, SnpPinConfig.Standard, SnpPitch.Loose).HalfH;
+            return Math.Max(LabelBaseY, halfH + LabelWorldStep);
+        }
+        // Tuner family: the box is only 200 tall (±100) but ShowBias adds a bias branch beneath it,
+        // so the label must clear the actual glyph extent (glyphHalfH = glyph bottom), like SDD/ZPort/SnP.
+        if (symbol is SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner)
+        {
+            double halfH = glyphHalfH ?? 100.0;   // box half-height when the real extent isn't supplied
             return Math.Max(LabelBaseY, halfH + LabelWorldStep);
         }
         return LabelBaseY;
@@ -156,11 +176,12 @@ public sealed class SchematicComponent
     public IReadOnlyList<SymbolPrimitive>? CellRefPrimitives { get; init; }
 
     /// <summary>
-    /// Non-null for SnP components: the precomputed Symbol (primitives + pins) built from
-    /// the component's actual RefNode/PinConfig/Pitch values.  The renderer and glyph-BB
-    /// computation use this instead of the generic BuiltInSymbols.Primitives fallback.
+    /// Non-null for components whose glyph depends on per-instance params: SnP (RefNode/PinConfig/
+    /// Pitch) and the Tuner family (ShowBias). The precomputed Symbol (primitives + pins). The
+    /// renderer and glyph-BB computation use this instead of the generic BuiltInSymbols.Primitives
+    /// fallback. Null for components whose glyph is a pure function of SymbolKind + port count.
     /// </summary>
-    public Symbol? SnpSymbol { get; init; }
+    public Symbol? InstanceSymbol { get; init; }
 }
 
 /// <summary>A wire segment (orthogonal polyline) with pre-computed world bounding box.</summary>

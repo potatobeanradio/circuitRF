@@ -1,89 +1,81 @@
 # Loadpull Analysis — UI/UX Implementation Plan (overview)
 
-**Status:** Plan for review · **Date:** 2026-06-23 (rev 2 — Tuner symbols: single pin, hard-coded reference)
-**Reads with:** `docs/design/loadpull.md` (the engine + `Tuner` this exposes), `docs/design/loadpull_pursuit.md`
-(the pursuit search this exposes), `docs/design/analysis-authoring.md` (the Add/Edit Analysis surface this
-extends — loadpull/pursuit authoring is the DEFERRED item in §0/§8), `docs/skills/adding-a-library-component.md`
-and `docs/sonnet-briefs/palette-contributor-guide.md` (how to add the Tuner component).
+**Status:** rev 4 — Track A (Tuner, briefs 01–03) **landed**; Track B (authoring, 04b/04/05/06/07) defined;
+Track C (Data Display recognition of simulated LP results, 08–09) added 2026-06-23.
+**Reads with:** `docs/design/loadpull.md`, `docs/design/loadpull_pursuit.md`,
+`docs/design/analysis-authoring.md`, `docs/design/loadpull-contours.md`,
+`docs/skills/adding-a-library-component.md`, `docs/sonnet-briefs/palette-contributor-guide.md`.
 
 ## What this is
 
-**The loadpull engine and the loadpull_pursuit search are already built and tested** (see
-`src/Engine/Loadpull/CLAUDE.md` — Phase 4b-1 + 4b-2 complete, 259 tests green). What is missing is the
-**authoring UI**: there is no way to draw a Tuner on a schematic, and the Add/Edit Analysis dialog shows
-Loadpull / Loadpull-Pursuit as "coming soon" placeholders. This plan closes that gap — UI/UX only, no
-engine changes.
+The loadpull engine, the loadpull_pursuit search, AND the Data Display contour stack (Phase 7.4) are all
+**already built and tested**. Missing is the **UI glue**: drawing a Tuner, authoring Loadpull /
+Loadpull-Pursuit, and recognizing a **simulated** LP result as a loadpull source for contour viewing. Three
+tracks:
 
-Two independent workstreams, delivered as a series of small briefs:
+1. **The `Tuner` component** (briefs 01–03) — **DONE.** Three tiles (general / Source / Load), one engine
+   component, single pin, hard-coded reference (ground for Tuner/Load; auto internal net for Source).
+2. **Loadpull & Loadpull-Pursuit authoring** (briefs 04b, 04, 05, 06, 07) — enable the two deferred analysis
+   types, with progressive-disclosure forms + tuner pickers, serialization, **tone-unit parity with HB**,
+   and `.cnl` round-trip / run wiring.
+3. **Data Display recognition of simulated LP results** (briefs 08–09) — make a simulated LP `run.npy` build
+   a `LoadpullSurface` for contour viewing, identical to an ingested `.spl`/`.lpcwave`.
 
-1. **The `Tuner` component** (briefs 01–03) — a new built-in library component so a user can draw the
-   programmable termination on a schematic. Three palette tiles (general / Source / Load) that all emit the
-   **same** engine component; they differ only in glyph, instance-name prefix, and single-pin net ordering.
-2. **Loadpull & Loadpull-Pursuit authoring** (briefs 04–07) — enable the two deferred analysis types in the
-   Edit Analysis dialog, with progressive-disclosure forms and tuner-instance pickers, plus serialization
-   and `.cnl` round-trip wiring.
+## Track A facts (Tuner) — complete
 
-## The architectural facts that drive Track A (Tuner)
+Role-neutral hardware; `TunerModel` is `PortCount => 1` over two role-interpreted nets. GUI: single pin =
+DUT-facing; reference hard-coded (`"0"` for Tuner/Load; unique internal net for Source); general glyph
+300×200, Source/Load wider; second pin deferred. EngineReference `"Tuner"` for all three; SourceTuner named
+`SourceTuner=`, Tuner/LoadTuner named `LoadTuner=`.
 
-A **`Tuner` is role-neutral hardware.** The engine's `TunerModel` declares `PortCount => 1` and connects
-**two nets** (`Nodes[0]`, `Nodes[1]`), interpreted **by role** at run time (the role is assigned by the
-`Loadpull`/`loadpull_pursuit` analysis via `LoadTuner=` / `SourceTuner=` + `SetRole()`, not by the symbol):
-- **Load role:** `Nodes[0]` = DUT-facing, `Nodes[1]` = reference (ground).
-- **Source role:** `Nodes[0]` = internal RF source node (the embedded `V_1Tone` drives it **against
-  ground**, so it can never be ground), `Nodes[1]` = DUT-facing.
+## Track B fact — tone units (var-unit-wins)
 
-The engine reference string is `"Tuner"` — `ComponentModelFactory` already registers it
-(`_parameterizedTypes` + `CreateTunerModel`). So all three GUI tiles emit `EngineReference("Tuner")` with
-identical parameters.
+HB resolves its tone with `FreqUnit.ResolveHz(ToneExpr, ToneUnit, globals, globalsWithUnit)` so a VAR with
+*or without* a unit works. The loadpull/pursuit engines did the tone with a plain evaluator (no field unit) —
+a unitless VAR glitched to Hz. **Brief 04b** brings Loadpull to HB parity (model `ToneUnit` +
+`FreqUnit.ResolveHz` in both `Resolve` methods + reader/writer); it is a prerequisite for 04/05/06. (As of
+the latest engine read, `LoadpullEngine.Resolve` already routes the tone through `FreqUnit.ResolveHz` and
+`SchematicRunService` passes `nl.GlobalsWithExplicitUnit` — so 04b may be partly/fully landed; verify the
+model `ToneUnit` field + reader/writer unit-token before treating 04b as done.)
 
-**GUI decisions (owner-confirmed, rev 2):**
-- **Single pin = the DUT-facing net.** No second pin. The reference/other net is bound at extraction:
-  - **Tuner + LoadTuner (load-style):** pin → `Nodes[0]`; `Nodes[1]` hard-coded ground `"0"`. Pin on the
-    **left**.
-  - **SourceTuner (source-style):** pin → `Nodes[1]`; `Nodes[0]` = an **auto-generated unique internal
-    source net** (NOT ground — it carries the internal drive). Pin on the **right**.
-- **Compact general Tuner glyph: 300 × 200**, minimal interior mark (advanced users want a small footprint).
-  Source/Load are **wider** (~400 × 200) and more illustrative (Source borrows the P1Tone source-drive
-  motif; Load is passive).
-- **Exposing the reference/source net as a pin is DEFERRED** — documented in code + `loadpull.md`; a second
-  pin can be added later if users need a non-ground reference (e.g. differential terminations) or to wire a
-  source's outer net.
+## Track C fact — simulated LP results need shape-based recognition
 
-**Equivalence (the §3 deliverable), restated precisely:** the three tiles are the same engine component
-(same `"Tuner"` reference, same parameters, same `UserParamTemplate`). They differ in (a) glyph, (b)
-instance prefix, and (c) single-pin net ordering (load-style vs source-style). Because the net ordering
-encodes the intended role, **a SourceTuner symbol must be named `SourceTuner=` in the analysis, and a
-Tuner/LoadTuner symbol named `LoadTuner=`.** The general Tuner is electrically identical to the LoadTuner.
+The Data Display's loadpull/contour eligibility is gated on `SourceKind.Spl`/`.Lpcwave`. A simulated LP
+result loads as `SourceKind.Npy` (a grouped `run.npy`, LP cubes nested under the analysis-name group e.g.
+`LP1`), so it is selectable but never treated as loadpull — no surface, no contour. The **data is already
+correct**: `LoadpullEngine.BuildLoadpullDataSet` emits the canonical loadpull cubes/units, and the
+`.spl`/`.lpcwave` readers were built to match it. The fix is **shape-based, group-aware recognition** (08)
+plus **group-aware surface binding** (09). No engine/model/format change.
 
 ## Brief sequence
 
-| # | File | Scope | Depends on |
-|---|------|-------|------------|
-| 01 | `Loadpull_UI_01_TunerComponent_Brief.md` | General `Tuner`: `SymbolKind.Tuner`, registry entry, **single left pin**, **compact 300×200** glyph, default params (`Z[1]`/`Zdefault`/`BiasTee`/`Vbias`/`Z0`), `Z[k]` "+" template, code-parse. Extraction emits `[pinNet, "0"]` (reference hard-coded ground; second pin deferred). Extraction test. | — |
-| 02 | `Loadpull_UI_02_SourceLoadTuner_Brief.md` | `SymbolKind.SourceTuner` (pin **right**, drive motif) + `SymbolKind.LoadTuner` (pin **left**, passive), ~400-wide glyphs. Same engine component. Load emits `[pinNet,"0"]`; Source emits `[uniqueInternalNet, pinNet]`. Equivalence + role-agreement documented. | 01 |
-| 03 | `Loadpull_UI_03_TunerPolish_Brief.md` | Polish: the "render the bias supply" display toggle (`ShowBias`, display-only, filtered from extraction), label clearance, **deferred-reference-pin docs**, Γ-vs-Z entry note, palette + full test checklist. | 01, 02 |
-| 04 | `Loadpull_UI_04_LpLppSerialization_Brief.md` | Extend `AnalysisSerialization` with `"lp"`/`"lpp"` discriminators so the existing `LoadpullAnalysis`/`LoadpullPursuitAnalysis` round-trip through `.csch` / clipboard / `.canl`. Headless, testable, no UI. | — |
-| 05 | `Loadpull_UI_05_LoadpullAuthoring_Brief.md` | `LpBodyViewModel` + the Loadpull editor form (tuner pickers, `.gam` grid browse, Sweep/TuneHarm/compression/Pin fields), wired into `AnalysisEditorViewModel.BuildAnalyses`; list badge "LP" + summary. | 04 |
-| 06 | `Loadpull_UI_06_PursuitAuthoring_Brief.md` | `LppBodyViewModel` + the Loadpull-Pursuit editor form (all LP keys except Grid, plus the §3 pursuit keys), badge "LPP" + summary. | 04, 05 |
-| 07 | `Loadpull_UI_07_ExtractionAndRun_Brief.md` | Carry LP/LPP analyses into the extracted `TestBench`; confirm `CnlWriter`/`CnlReader` round-trip the directives; Run executes an authored loadpull end-to-end on Hero 3. | 05, 06 |
+| # | File | Scope | Depends on | Status |
+|---|------|-------|------------|--------|
+| 01 | `Loadpull_UI_01_TunerComponent_Brief.md` | General `Tuner`: single left pin, 300×200 glyph, params, extraction `[pinNet,"0"]`. | — | **done** |
+| 02 | `Loadpull_UI_02_SourceLoadTuner_Brief.md` | `SourceTuner`/`LoadTuner`; same engine component; Source emits `[uniqueNet, pinNet]`. | 01 | **done** |
+| 03 | `Loadpull_UI_03_TunerPolish_Brief.md` | `ShowBias` toggle, label clearance, deferred-reference-pin docs, tests. | 01, 02 | **done** |
+| 04b | `Loadpull_UI_04b_ToneUnitVarWinsParity_Brief.md` | Tone-unit parity with HB: `ToneUnit` on both LP models; `FreqUnit.ResolveHz` in resolves; reader/writer unit token. | — | verify |
+| 04 | `Loadpull_UI_04_LpLppSerialization_Brief.md` | `"lp"`/`"lpp"` serialization (incl. `LpToneUnit`) for `.csch`/clipboard/`.canl`. | 04b | todo |
+| 05 | `Loadpull_UI_05_LoadpullAuthoring_Brief.md` | `LpBodyViewModel` + Loadpull form (tuner pickers, Tone coeff+unit, `.gam` browse, …); "LP" badge. | 04b, 04 | todo |
+| 06 | `Loadpull_UI_06_PursuitAuthoring_Brief.md` | `LppBodyViewModel` + Pursuit form (LP keys except Grid + pursuit keys); "LPP" badge. | 04b, 04, 05 | todo |
+| 07 | `Loadpull_UI_07_ExtractionAndRun_Brief.md` | Carry LP/LPP into the `TestBench`; `CnlWriter`/`CnlReader` round-trip; run on Hero 3. | 04b, 05, 06 | partly landed (LP run works) |
+| 08 | `Loadpull_UI_08_DataDisplayRecognition_Brief.md` | **Shape-based, group-aware loadpull recognition** (`LoadpullRecognition.FindLoadpullViews`) replacing the `SourceKind.Spl/.Lpcwave` gate; headless + testable. | — | todo |
+| 09 | `Loadpull_UI_09_ContourBinding_Brief.md` | Group-aware `LoadpullSurface` construction + contour-card binding for a recognized LP `run.npy`; end-to-end render gate. | 08 | todo |
 
-Briefs 01–03 (Tuner) and 04–07 (authoring) are independent and may be done in parallel by two Sonnet
-sessions. Within each track the order matters.
+Tracks are independent. Track A is done. Track B order: 04b → 04 → 05/06 → 07. Track C order: 08 → 09. Track C
+needs only that an LP run writes its `run.npy` (it does), so it can proceed in parallel with Track B.
 
 ## Guardrails (apply to every brief)
 
-- **UI firewall:** `src/Core`, `src/Engine`, `src/Cli`, `RfCore` reference no Avalonia. All view code stays
-  in `src/Ui`. The model types (`LoadpullAnalysis`, `TunerModel`) are already framework-free — do not move
-  UI concerns into them.
-- **Do not touch the engine.** `TunerModel`, `LoadpullEngine`, `PursuitEngine`, `ComponentModelFactory`,
-  `GamReader`/`GamWriter`, and the analysis model classes are done and tested. This work is purely the UI
-  surface that produces those model objects and that draws the Tuner. The one exception is serialization
-  DTOs (brief 04), which live in `src/Ui/Schematic/AnalysisSerialization.cs` — still UI-side.
-- **`TreatWarningsAsErrors=true`** everywhere. Zero new warnings. Capture nullable properties into locals
-  before passing to non-null parameters.
-- **Grep an existing analog** rather than reasoning about which files a `SymbolKind` touches. For the Tuner,
-  grep `SymbolKind.Term` (a box-framed terminal), `SymbolKind.Tline` (a single-case horizontal device with
-  an implicit/ground reference), and `SymbolKind.P1Tone` (the `Z[k]`-bearing source whose drive motif you
-  borrow). For the analysis forms, the HB body (`HbBodyViewModel` + its view) is the template.
-- **Build + test after each brief:** `dotnet build` (zero warnings), `dotnet test` (all green), and the
-  firewall assembly-reference check must pass.
+- **UI firewall:** `src/Core`, `src/Engine`, `src/Cli`, `RfCore` reference no Avalonia. Brief 04b touches
+  Core/Engine only via `FreqUnit` (already a Core dependency). Track C's recognizer (`LoadpullRecognition`)
+  and the surface/contour math stay framework-free; only binding VMs change.
+- **Numeric core + result shape are off-limits.** The 2-D sweep, HB solves, pursuit search, and
+  `BuildLoadpullDataSet` are done and tested. Track C is Data Display wiring only — do not "fix" the LP
+  result shape; it already matches the `.spl` contract.
+- **`TreatWarningsAsErrors=true`** everywhere; zero new warnings.
+- **Grep an existing analog:** authoring forms → `HbBodyViewModel` + its view (the Tone coeff+unit pattern,
+  `FreqUnitHelper`, `ComputeFreqPreview`). Track C recognition → grep `SourceKind.Spl`/`.Lpcwave` in
+  `src/Ui/DataDisplay`; surface binding → grep `LoadpullSurface` / `RebuildContour` in `TraceRowViewModel`.
+- **Build + test after each brief:** `dotnet build` (zero warnings), `dotnet test` (all green), firewall
+  check passes.

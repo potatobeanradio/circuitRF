@@ -196,14 +196,19 @@ public sealed class Elaborator
                               ? 0
                               : netlist.Nodes.GetOrAssign(ResolveNet(inst.RefNetBinding));
 
-                // Tuner: mint two internal nodes for the bias-tee topology (loadpull.md §1.1).
+                // Tuner: mint internal nodes for the bias-tee topology (loadpull.md §1.1).
                 // Names are collision-proof: keyed on the Tuner instance path.
                 // The __ prefix is reserved so user nets can never collide.
+                //   _block / _bias — used by both Load and Source roles.
+                //   _outer — the SourceTuner's internal RF-drive node (where the embedded V_1Tone
+                //            drives against the reference). Minted for every Tuner so both declared
+                //            nets stay [DUT, reference]; the LoadTuner role simply ignores it.
                 if (inst.Reference.Equals("Tuner", StringComparison.OrdinalIgnoreCase))
                 {
                     int nBlock = netlist.Nodes.GetOrAssign($"__tuner_{childPath}_block");
                     int nBias  = netlist.Nodes.GetOrAssign($"__tuner_{childPath}_bias");
-                    resolvedNodes = [..resolvedNodes, nBlock, nBias];
+                    int nOuter = netlist.Nodes.GetOrAssign($"__tuner_{childPath}_outer");
+                    resolvedNodes = [..resolvedNodes, nBlock, nBias, nOuter];
                 }
 
                 // P1Tone: mint one internal node (junction between V-source and Z_Port).

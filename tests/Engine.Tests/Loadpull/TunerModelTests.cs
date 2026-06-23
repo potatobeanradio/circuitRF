@@ -112,8 +112,9 @@ public class TunerModelTests(ITestOutputHelper output)
         double expectedVs = Math.Sqrt(8 * 1e-3 * 25);
 
         // Stamp at the fundamental omega and capture source values.
+        // Node layout [nDut, nRef, nBlock, nBias, nOuter]; the V_1Tone drives nOuter against nRef.
         var ctx   = new CaptureMnaContext();
-        var nodes = new int[] { 1, 2, 3, 4 };
+        var nodes = new int[] { 1, 2, 3, 4, 5 };
         var ec    = new ElaboratedComponent("Tuner", "Src", nodes,
             new Dictionary<string, Value>(), tm);
         tm.Stamp(ctx, ec, 2.0 * Math.PI * 2e9);
@@ -138,15 +139,18 @@ public class TunerModelTests(ITestOutputHelper output)
         var ec = netlist.Components.FirstOrDefault(c =>
             c.ComponentType.Equals("Tuner", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(ec);
-        Assert.Equal(4, ec!.Nodes.Length);
+        Assert.Equal(5, ec!.Nodes.Length);   // [n_dut, n_ref, block, bias, outer]
 
         var blockName = netlist.Nodes.NameOf(ec.Nodes[2]);
         var biasName  = netlist.Nodes.NameOf(ec.Nodes[3]);
+        var outerName = netlist.Nodes.NameOf(ec.Nodes[4]);
         Assert.StartsWith("__tuner_", blockName);
         Assert.Contains("_block", blockName);
         Assert.StartsWith("__tuner_", biasName);
         Assert.Contains("_bias", biasName);
-        output.WriteLine($"Internal nodes: {blockName}={ec.Nodes[2]}, {biasName}={ec.Nodes[3]}");
+        Assert.StartsWith("__tuner_", outerName);
+        Assert.Contains("_outer", outerName);
+        output.WriteLine($"Internal nodes: {blockName}={ec.Nodes[2]}, {biasName}={ec.Nodes[3]}, {outerName}={ec.Nodes[4]}");
     }
 
     // ── Test 8: Loadpull directive parsed by CnlReader ───────────────────────

@@ -126,6 +126,25 @@ Per `project-file-formats.md`:
 - It is a **generated scratch artifact**, never part of the saved project (the `.csch` is the source of
   truth).
 
+### 3.1 File-path resolution base — `Grid` / `OutputGrid` / SnP `File` (Loadpull UI 07)
+
+Relative file paths in the emitted `netlist.cnl` (the loadpull `Grid=` / pursuit `OutputGrid=`, and the
+SnP `File=`) **resolve against the directory that `netlist.cnl` is written to** — the workspace root
+(materialized) or the scratch session dir. `CnlReader.ReadFile` sets `_sourceDirectory` to the netlist's
+own directory, and the loadpull/pursuit/SnP parsers resolve relative paths against it (`Path.Combine` →
+absolute); absolute paths pass through verbatim.
+
+**Convention (one base, no surprises):** the GUI file pickers store paths **relative to the workspace
+root** — the SAME base — via `SnpPathPolicy.ToStored(absolutePath, workspaceRoot)`. The Loadpull/Pursuit
+authoring bodies (`Lp/LppBodyViewModel`) take the workspace root (threaded from `SchematicViewModel.
+WorkspaceRoot`) and use it as the `ToStored` base, exactly like the SnP `File` picker
+(`ParameterEditorViewModel`). Because the picker base = the netlist directory = the reader's resolution
+base, a picked `.gam` round-trips correctly **regardless of where the schematic itself lives** (a
+cell-homed schematic sits under `<ws>/<cell>/schematic/`, but its `.gam` paths are still relative to the
+workspace root). Storing relative to the schematic dir instead would lose directory levels at run time —
+the bug fixed in the Loadpull UI 06 follow-up. When no workspace is open (scratch), the picker keeps the
+absolute path, which also resolves unchanged.
+
 ---
 
 ## 4. The extraction oracle (the correctness test)

@@ -38,6 +38,8 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         DcAnalysis               => "DC",
         SParameterAnalysis       => "SP",
         HarmonicBalanceAnalysis  => "HB",
+        LoadpullPursuitAnalysis  => "LPP",
+        LoadpullAnalysis         => "LP",
         ParametricSweepAnalysis  => "SW",
         _                        => "?",
     };
@@ -58,9 +60,27 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         DcAnalysis                 => "Operating point",
         SParameterAnalysis sp      => FormatSpSummary(sp),
         HarmonicBalanceAnalysis hb => FormatHbSummary(hb),
+        LoadpullPursuitAnalysis lpp => FormatLppSummary(lpp),
+        LoadpullAnalysis lp        => FormatLpSummary(lp),
         ParametricSweepAnalysis ps => FormatSweepSummary(ps),
         _                          => "",
     };
+
+    private static string FormatLppSummary(LoadpullPursuitAnalysis lpp)
+    {
+        string followOn = lpp.CreateLoadpullResultExpr.Trim()
+            .Equals("false", System.StringComparison.OrdinalIgnoreCase) ? "" : ", +loadpull";
+        return $"Pursuit · {lpp.SearchMethodExpr} · {lpp.EffTypeExpr}{followOn}";
+    }
+
+    private static string FormatLpSummary(LoadpullAnalysis lp)
+    {
+        string tuners = $"{lp.LoadTunerName}/{lp.SourceTunerName}";
+        string grid   = string.IsNullOrEmpty(lp.GridPath)
+            ? "no grid"
+            : System.IO.Path.GetFileName(lp.GridPath);
+        return $"Loadpull · {tuners} · {lp.CompressionExpr} dB, grid {grid}";
+    }
 
     private static string FormatSpSummary(SParameterAnalysis sp)
     {

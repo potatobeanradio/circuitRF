@@ -58,6 +58,9 @@ public partial class TraceRowViewModel : ViewModelBase
     // VM-side LoadpullSurface (owned here; Trace must not hold a DataSet per firewall).
     private LoadpullSurface? _loadpullSurface;
     private string?          _surfaceSourcePath;
+    // Loadpull group the cached surface was built from ("" = top level / flat .spl). Part of the
+    // staleness key so re-binding to a different group (e.g. LP1 → LP2) rebuilds the surface.
+    private string?          _surfaceGroup;
 
     // Suppresses On…Changed callbacks during SyncContourVmFromData.
     private bool _suppressContourCallback;
@@ -558,13 +561,21 @@ public partial class TraceRowViewModel : ViewModelBase
 
         if (entry?.Data is not { } ds) return false;
 
-        if (_loadpullSurface is null ||
-            !string.Equals(entry.FilePath, _surfaceSourcePath, StringComparison.OrdinalIgnoreCase))
+        // Loadpull cubes may live at top level (flat .spl/.lpcwave) or under an analysis-name group
+        // (simulated LP run.npy, e.g. "LP1"). Resolve the group shape-based (brief 08) and build the
+        // surface from it. Default to the first loadpull view; "" = top level (unchanged flat path).
+        var views = LoadpullRecognition.FindLoadpullViews(ds);
+        string group = views.Count > 0 ? (views[0].Group ?? "") : "";
+
+        if (_loadpullSurface is null
+            || !string.Equals(entry.FilePath, _surfaceSourcePath, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(group, _surfaceGroup, StringComparison.Ordinal))
         {
             try
             {
-                _loadpullSurface   = new LoadpullSurface(ds);
+                _loadpullSurface   = new LoadpullSurface(ds, group);
                 _surfaceSourcePath = entry.FilePath;
+                _surfaceGroup      = group;
             }
             catch
             {
@@ -576,6 +587,26 @@ public partial class TraceRowViewModel : ViewModelBase
         }
         return _loadpullSurface.Frequencies.Count > 0;
     }
+
+    // Simulation-only bookkeeping cubes that share the {gridPoint[,pinStep]} shape but are NOT
+    // figures of merit — they must never appear in the contour metric picker. GammaLoad is the
+    // termination coordinate (the Γ/Z plane itself), not a metric over it. (Measured .spl/.lpcwave
+    // sources don't carry these, which is why the leak only showed on simulated LP runs.)
+    private static readonly HashSet<string> NonMetricCubes = new(StringComparer.Ordinal)
+    {
+        "GammaLoad", "Converged", "IsTickle", "StopCode", "PavlDbm",
+    };
+
+    // Headline FOMs always offered as contour metrics even when flat — a user expects Pout / gain /
+    // efficiency to be selectable regardless of dynamic range (e.g. DE/PAE are 0 with no bias-tee;
+    // Pout may be near-constant). Other cubes (ZLoad, Pdc, Bias*, custom measurements) are still
+    // gated by the §10 "must vary" rule so genuinely flat extras stay out of the way.
+    private static readonly HashSet<string> KnownFomCubes = new(StringComparer.Ordinal)
+    {
+        // Engine core FOMs + post-processor derived FOMs (loadpull-postprocessor.md) — always offered.
+        "Pout", "Gt", "Gp", "DE", "PAE",
+        "Pout_dBm", "Zin_real", "Zin_imag", "IRL", "AMPM",
+    };
 
     private void RebuildMetricList()
     {
@@ -590,11 +621,14 @@ public partial class TraceRowViewModel : ViewModelBase
             foreach (var kvp in ds.CubesIn(group))
             {
                 string key = kvp.Key;
-                if (key == "GammaLoad" || key.StartsWith("__", StringComparison.Ordinal)) continue;
+                if (NonMetricCubes.Contains(key) || key.StartsWith("__", StringComparison.Ordinal)) continue;
                 if (!kvp.Value.Axes.Any(a => a.Name == "gridPoint")) continue;
+                // A contour metric is a scalar field over {gridPoint[, pinStep]}; the interface spectra
+                // (V/INl) carry node/harmonic axes and are not selectable metrics — exclude them.
+                if (kvp.Value.Axes.Any(a => a.Name is "node" or "harmonic")) continue;
                 if (!seen.Add(key)) continue;
-                // §10 — skip fields that don't vary (constant across the sweep).
-                if (!DataCube.CubeVaries(kvp.Value)) continue;
+                // §10 — skip fields that don't vary, EXCEPT the headline FOMs (always offered).
+                if (!KnownFomCubes.Contains(key) && !DataCube.CubeVaries(kvp.Value)) continue;
                 candidates.Add((key, MetricPriority(key)));
             }
 
@@ -615,10 +649,9 @@ public partial class TraceRowViewModel : ViewModelBase
     // Respects vendor labels in the displayed text; only controls sort order.
     private static int MetricPriority(string key)
     {
-        string norm = key.EndsWith("_dB", StringComparison.OrdinalIgnoreCase)
-            ? key[..^3].ToLowerInvariant()
-            : key.ToLowerInvariant();
-        norm = norm.Trim();
+        string norm = key.ToLowerInvariant().Trim();
+        if      (norm.EndsWith("_dbm", StringComparison.Ordinal)) norm = norm[..^4];
+        else if (norm.EndsWith("_db",  StringComparison.Ordinal)) norm = norm[..^3];
 
         // 1. Pout
         if (norm == "pout") return 1;

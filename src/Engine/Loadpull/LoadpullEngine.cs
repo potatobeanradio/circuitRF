@@ -71,9 +71,15 @@ public sealed class LoadpullEngine
 
     // ── Directive resolution ─────────────────────────────────────────────────
 
+    /// <summary>
+    /// Resolve a LoadpullAnalysis directive against the elaborated globals.
+    /// Pass <paramref name="globalsWithUnit"/> (from <c>ElaboratedNetlist.GlobalsWithExplicitUnit</c>)
+    /// to enable the var-unit-wins rule for the tone frequency — identical to HbEngine.Resolve.
+    /// </summary>
     public static LoadpullAnalysisParams Resolve(
         LoadpullAnalysis lpa,
-        IReadOnlyDictionary<string, Value> globals)
+        IReadOnlyDictionary<string, Value> globals,
+        IReadOnlyCollection<string>? globalsWithUnit = null)
     {
         double Num(string expr, double def)
         {
@@ -93,7 +99,11 @@ public sealed class LoadpullEngine
             catch { return def; }
         }
 
-        double tone    = Num(lpa.ToneExpr,           1e9);
+        // Tone is the only frequency-unit-sensitive field; resolve it with HB's var-unit-wins rule.
+        // (Pin/Compression/etc. are dBm/dB/counts, not frequencies — they stay on Num().)
+        double tone;
+        try   { tone = FreqUnit.ResolveHz(lpa.ToneExpr, lpa.ToneUnit, globals, globalsWithUnit); }
+        catch { tone = 1e9; }
         int    maxH    = (int)Num(lpa.MaxHarmonicExpr,   5);
         int    osamp   = Math.Max(1, (int)Num(lpa.FFTOverSampleExpr, 1));
         double tol     = Num(lpa.TolExpr,            1e-6);
@@ -188,8 +198,10 @@ public sealed class LoadpullEngine
         srcModel.SetRole(TunerRole.Source);
         loadModel.SetTone(p.ToneHz);
 
+        // Both tuners now declare [DUT, ref]: the DUT-facing net is Nodes[0] for either role
+        // (the SourceTuner's internal RF-drive node is minted as Nodes[4] — see TunerModel).
         int loadDutNode = loadEc.Nodes.Length > 0 ? loadEc.Nodes[0] : 0;
-        int srcDutNode  = srcEc.Nodes.Length  > 1 ? srcEc.Nodes[1]  : 0;
+        int srcDutNode  = srcEc.Nodes.Length  > 0 ? srcEc.Nodes[0]  : 0;
 
         var tempExtractor = new HbLinearExtractor(_netlist, _lpSettings);
         int[] ifNodes     = tempExtractor.InterfaceNodes;
@@ -408,6 +420,18 @@ public sealed class LoadpullEngine
             ds.Add("V",   new DataCube(new[] { gridAxis, pinAxis, nodeAxis, harmAxis }, vData));
             ds.Add("INl",   new DataCube(new[] { gridAxis, pinAxis, nodeAxis, harmAxis }, inlData));
         }
+
+        // Node-identity provenance (loadpull-postprocessor.md §2): rank-0 metadata cubes naming the
+        // DUT input (source-side) and output (load-side) node-axis indices, so a DataSet-only consumer
+        // (the post-processor / export) can compute Zin/Γin/AM-PM without re-deriving topology.
+        // __-prefixed → hidden from pickers, passed through StackSweepAxis unstacked. −1 = unknown.
+        ds.Add("__SrcNodeIdx",  new DataCube(Array.Empty<Axis>(), new[] { (double)ctx.SrcIfIdx }));
+        ds.Add("__LoadNodeIdx", new DataCube(Array.Empty<Axis>(), new[] { (double)ctx.LoadIfIdx }));
+
+        // Single-frequency carrier so the summary surface reports the real tone frequency (not 0) for
+        // these freq-axis-less FOM cubes — same convention the .spl/.lpcwave readers use (__Freq).
+        ds.Add("__Freq", new DataCube(new[] { new Axis("freq", new[] { p.ToneHz }, "Hz") },
+                                      new[] { p.ToneHz }));
         return ds;
     }
 

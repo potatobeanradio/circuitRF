@@ -181,7 +181,8 @@ public sealed class LoadpullPursuitEngine
     /// </summary>
     public static PursuitParams Resolve(
         LoadpullPursuitAnalysis lpa,
-        IReadOnlyDictionary<string, Value> globals)
+        IReadOnlyDictionary<string, Value> globals,
+        IReadOnlyCollection<string>? globalsWithUnit = null)
     {
         double Num(string expr, double def)
         {
@@ -216,7 +217,10 @@ public sealed class LoadpullPursuitEngine
         }
 
         // Resolve the inner-sweep params manually (avoid Grid validation on empty path).
-        double tone    = Num(lpa.ToneExpr,           1e9);
+        // Tone is the only frequency-unit-sensitive field; resolve it with HB's var-unit-wins rule.
+        double tone;
+        try   { tone = FreqUnit.ResolveHz(lpa.ToneExpr, lpa.ToneUnit, globals, globalsWithUnit); }
+        catch { tone = 1e9; }
         int    maxH    = (int)Num(lpa.MaxHarmonicExpr,   5);
         int    osamp   = Math.Max(1, (int)Num(lpa.FFTOverSampleExpr, 1));
         double tol     = Num(lpa.TolExpr,             1e-6);

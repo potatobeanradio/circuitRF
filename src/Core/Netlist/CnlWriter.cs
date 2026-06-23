@@ -297,7 +297,7 @@ public static class CnlWriter
     private static string FormatLoadpullAnalysis(LoadpullAnalysis lp)
     {
         var sb = new StringBuilder($"analysis {lp.Name} type=loadpull");
-        sb.Append($" Tone=\"{lp.ToneExpr}\"");
+        sb.Append($" Tone=\"{lp.ToneExpr}\" ToneUnit={lp.ToneUnit}");
         sb.Append($" MaxHarm={lp.MaxHarmonicExpr}");
         sb.Append($" LoadTuner={lp.LoadTunerName}");
         sb.Append($" SourceTuner={lp.SourceTunerName}");
@@ -322,7 +322,7 @@ public static class CnlWriter
     private static string FormatLoadpullPursuitAnalysis(LoadpullPursuitAnalysis lpp)
     {
         var sb = new StringBuilder($"analysis {lpp.Name} type=loadpull_pursuit");
-        sb.Append($" Tone=\"{lpp.ToneExpr}\"");
+        sb.Append($" Tone=\"{lpp.ToneExpr}\" ToneUnit={lpp.ToneUnit}");
         sb.Append($" MaxHarm={lpp.MaxHarmonicExpr}");
         sb.Append($" LoadTuner={lpp.LoadTunerName}");
         sb.Append($" SourceTuner={lpp.SourceTunerName}");

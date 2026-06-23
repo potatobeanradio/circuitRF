@@ -280,9 +280,9 @@ public static class SchematicRenderer
             {
                 DrawCellRefPrimaryMissingGlyph(canvas, cx, cy, panX, panY, zoom, bodyPaint);
             }
-            else if (c.SnpSymbol is not null)
+            else if (c.InstanceSymbol is not null)
             {
-                DrawSymbol(canvas, c.SnpSymbol.Primitives,
+                DrawSymbol(canvas, c.InstanceSymbol.Primitives,
                     cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme,
                     applyForceReadable: true);
             }

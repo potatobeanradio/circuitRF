@@ -126,6 +126,9 @@ public sealed class LoadpullAnalysis(string name) : Analysis(name)
 {
     // ── Required ───────────────────────────────────────────────────────────────
     public string ToneExpr        { get; init; } = "0";
+    /// <summary>Unit for ToneExpr. Default "Hz" for back-compatibility (field unit × eval = Hz value).
+    /// Resolved via the same var-unit-wins rule HB uses (FreqUnit.ResolveHz).</summary>
+    public string ToneUnit        { get; init; } = "Hz";
     public string LoadTunerName   { get; init; } = "";   // instance name of the load Tuner
     public string SourceTunerName { get; init; } = "";   // instance name of the source Tuner
     public string GridPath        { get; init; } = "";   // path to .gam grid file (required)
@@ -159,6 +162,9 @@ public sealed class LoadpullPursuitAnalysis(string name) : Analysis(name)
 {
     // ── Shared with LoadpullAnalysis (no Grid) ────────────────────────────────
     public string ToneExpr          { get; init; } = "0";
+    /// <summary>Unit for ToneExpr. Default "Hz" for back-compatibility. Resolved via the same
+    /// var-unit-wins rule HB uses (FreqUnit.ResolveHz).</summary>
+    public string ToneUnit          { get; init; } = "Hz";
     public string LoadTunerName     { get; init; } = "";
     public string SourceTunerName   { get; init; } = "";
     public string PinStartExpr      { get; init; } = "-20";

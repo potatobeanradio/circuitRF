@@ -10,22 +10,24 @@ namespace CircuitRF.Core.Devices;
 /// before any HB runs. Outside HB (S-parameter sims) the Tuner presents Z[1] flat
 /// over all frequencies (no harmonic band structure).
 ///
-/// Node layout (4 entries in ElaboratedComponent.Nodes):
-///   [0] = first declared net  (DUT-facing for LoadTuner; outer RF port for SourceTuner)
-///   [1] = second declared net (reference/ground for LoadTuner; DUT-facing for SourceTuner)
+/// Node layout (5 entries in ElaboratedComponent.Nodes). Both roles declare the same two nets
+/// — [0] DUT-facing, [1] reference — and the engine mints the rest (loadpull.md §1.1):
+///   [0] = n_dut   (DUT-facing net; the single schematic pin)
+///   [1] = n_ref   (reference net; ground "0" by default)
 ///   [2] = __tuner_&lt;inst&gt;_block  (internal: between DC-block cap and RF termination)
 ///   [3] = __tuner_&lt;inst&gt;_bias   (internal: between RF choke and bias supply)
+///   [4] = __tuner_&lt;inst&gt;_outer  (internal: SourceTuner RF-drive node; unused by LoadTuner)
 ///
 /// Internal bias-tee topology (BiasTee=on, loadpull.md §1.1):
 ///
-///   LoadTuner  (nodes[0]=n_dut, nodes[1]=n_ref~ground):
+///   LoadTuner  (n_dut, n_ref):
 ///     n_dut  --[C=1F]--   n_block --[Z_Port per-harmonic]-- n_ref
 ///     n_dut  --[L=1H]--   n_bias  --[V=Vbias@DC]----------  n_ref
 ///
-///   SourceTuner (nodes[0]=n_outer, nodes[1]=n_dut):
-///     n_outer --[V_1Tone drive at f0, |Vs|]-- gnd
+///   SourceTuner (n_dut, n_ref; n_outer minted internally):
+///     n_outer --[V_1Tone drive at f0, |Vs|]-- n_ref
 ///     n_outer --[Z_Port per-harmonic]-- n_block --[C=1F]-- n_dut
-///     n_dut   --[L=1H]--  n_bias --[V=Vbias@DC]-- gnd
+///     n_dut   --[L=1H]--  n_bias --[V=Vbias@DC]-- n_ref
 ///
 /// Matches the Hero-2 explicit bias-tee topology (hero2.cnl) exactly.
 /// C = 1 F (ideal: open at DC, short at RF), L = 1 H (ideal: short at DC, high-Z at RF).
@@ -132,20 +134,21 @@ public sealed class TunerModel : ComponentModel
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
         // Node layout (see class doc):
-        //   [0] = n0, [1] = n1, [2] = nBlock, [3] = nBias
-        int n0     = c.Nodes.Length > 0 ? c.Nodes[0] : 0;
-        int n1     = c.Nodes.Length > 1 ? c.Nodes[1] : 0;
+        //   [0] = n_dut, [1] = n_ref, [2] = nBlock, [3] = nBias, [4] = nOuter
+        int nDut   = c.Nodes.Length > 0 ? c.Nodes[0] : 0;
+        int nRef   = c.Nodes.Length > 1 ? c.Nodes[1] : 0;
         int nBlock = c.Nodes.Length > 2 ? c.Nodes[2] : 0;
         int nBias  = c.Nodes.Length > 3 ? c.Nodes[3] : 0;
+        int nOuter = c.Nodes.Length > 4 ? c.Nodes[4] : 0;
         bool isDC  = Math.Abs(omega) < OmegaTolRad;
 
         ChokeBranchIndex      = -1;  // reset each stamp pass
         BiasSupplyBranchIndex = -1;
 
         if (Role == TunerRole.Load)
-            StampLoad(mna, n0, n1, nBlock, nBias, omega, isDC);
+            StampLoad(mna, nDut, nRef, nBlock, nBias, omega, isDC);
         else
-            StampSource(mna, n0, n1, nBlock, nBias, omega, isDC);
+            StampSource(mna, nDut, nRef, nBlock, nBias, nOuter, omega, isDC);
     }
 
     // ── LoadTuner ─────────────────────────────────────────────────────────────
@@ -175,10 +178,10 @@ public sealed class TunerModel : ComponentModel
     // ── SourceTuner ───────────────────────────────────────────────────────────
 
     private void StampSource(IMnaContext mna,
-        int nOuter, int nDut, int nBlock, int nBias,
+        int nDut, int nRef, int nBlock, int nBias, int nOuter,
         double omega, bool isDC)
     {
-        // 1. V_1Tone drive: Group-2 branch between nOuter and ground (0).
+        // 1. V_1Tone drive: Group-2 branch between nOuter and nRef.
         //    Drives at the analysis fundamental; shorts all other frequencies.
         //    Only stamped when tone is set (HB mode; not S-param).
         if (_toneFreqHz > 0)
@@ -187,9 +190,9 @@ public sealed class TunerModel : ComponentModel
             bool   isTone    = Math.Abs(omega - omegaTone) < OmegaTolRad;
             var    driveV    = isTone ? new Complex(_vsMagnitude, 0) : Complex.Zero;
             int brDrive = mna.AddBranch();
-            mna.AddBranchCurrent(brDrive, nOuter, 0);
+            mna.AddBranchCurrent(brDrive, nOuter, nRef);
             mna.AddConstraint(brDrive, nOuter, new Complex(+1, 0));
-            // Node 0 (ground): AddConstraint silently drops it (index = node−1 = −1).
+            if (nRef > 0) mna.AddConstraint(brDrive, nRef, new Complex(-1, 0));
             mna.AddSourceValue(brDrive, driveV);
         }
 
@@ -203,9 +206,9 @@ public sealed class TunerModel : ComponentModel
         // 4. RF choke L=1H between nDut and nBias.
         ChokeBranchIndex = StampInductor(mna, nDut, nBias, omega, isDC);
 
-        // 5. Bias supply between nBias and ground.
+        // 5. Bias supply between nBias and nRef.
         if (_hasBiasTee)
-            BiasSupplyBranchIndex = StampBiasSupply(mna, nBias, 0, isDC);
+            BiasSupplyBranchIndex = StampBiasSupply(mna, nBias, nRef, isDC);
     }
 
     // ── Shared stamp primitives ───────────────────────────────────────────────

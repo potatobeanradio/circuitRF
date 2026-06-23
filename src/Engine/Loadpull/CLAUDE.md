@@ -19,27 +19,34 @@ It does NOT modify the HB inner Newton solve.
 nets + two internally-allocated nodes:
 
 ```
-Nodes: [0]=declared_net_0  [1]=declared_net_1
+Nodes: [0]=n_dut (DUT-facing)  [1]=n_ref (reference; ground "0" by default)
        [2]=__tuner_<inst>_block  (DC-block ↔ Z_Port junction)
        [3]=__tuner_<inst>_bias   (choke ↔ bias supply junction)
+       [4]=__tuner_<inst>_outer  (SourceTuner RF-drive node; unused by LoadTuner)
 ```
 
-Internal nodes are minted by the Elaborator at elaboration time (via `NodeMap.GetOrAssign`
-with collision-proof `__tuner_<inst>_*` names). The `__` prefix is reserved; user nets must
-never use it.
+**Both roles declare the same two nets `[DUT, ref]`** — symmetric net ordering across the
+Tuner/LoadTuner/SourceTuner tiles. The internal nodes (block, bias, **and** the SourceTuner's
+RF-drive `outer` node) are all minted by the Elaborator (via `NodeMap.GetOrAssign` with
+collision-proof `__tuner_<inst>_*` names). The `__` prefix is reserved; user nets must never use
+it. `outer` is minted for every Tuner (the role isn't known at elaboration time); the LoadTuner
+role simply ignores it.
 
-**LoadTuner topology** (Nodes[0]=n_dut, Nodes[1]=n_ref):
+**LoadTuner topology** (n_dut=Nodes[0], n_ref=Nodes[1]):
 ```
 n_dut --[C=1F]-- n_block --[Z_Port per-harmonic]-- n_ref
 n_dut --[L=1H]-- n_bias --[V=Vbias@DC]------------ n_ref
 ```
 
-**SourceTuner topology** (Nodes[0]=n_outer, Nodes[1]=n_dut):
+**SourceTuner topology** (n_dut=Nodes[0], n_ref=Nodes[1], n_outer=Nodes[4] minted):
 ```
-n_outer --[V_1Tone drive]-- gnd
+n_outer --[V_1Tone drive]-- n_ref
 n_outer --[Z_Port per-harmonic]-- n_block --[C=1F]-- n_dut
-n_dut   --[L=1H]-- n_bias --[V=Vbias@DC]------------ gnd
+n_dut   --[L=1H]-- n_bias --[V=Vbias@DC]------------ n_ref
 ```
+
+The `LoadpullEngine` reads the DUT-facing node as `Nodes[0]` for **both** roles (the source's
+drive node is the minted `outer`, never a declared net).
 
 C = 1 F (ideal: open at DC, short at RF), L = 1 H (ideal: short at DC, open at RF).
 Matches the Hero-2 explicit bias-tee topology exactly.

@@ -45,7 +45,7 @@ Vdd = 48
 ;   When named SourceTuner by the Loadpull analysis, this Tuner stamps its own
 ;   internal RF drive and computes |Vs| from Z[1] + the analysis-supplied Pavl.
 ; ============================================================
-Tuner:Src   n_src n_gate   Z[1]=25   Zdefault=1e-6   BiasTee=on   Vbias=Vgg
+Tuner:Src   n_gate 0   Z[1]=25   Zdefault=1e-6   BiasTee=on   Vbias=Vgg
 
 ; ============================================================
 ; The FET (SDD), source grounded: port1 = n_gate, port2 = n_drain

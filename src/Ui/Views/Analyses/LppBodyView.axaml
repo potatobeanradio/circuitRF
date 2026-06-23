@@ -1,0 +1,292 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Analyses.LppBodyView"
+             x:DataType="vm:LppBodyViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Button.hb-btn">
+            <Setter Property="Background"     Value="Transparent"/>
+            <Setter Property="BorderBrush"    Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"   Value="3"/>
+            <Setter Property="Padding"        Value="8,2"/>
+            <Setter Property="MinWidth"       Value="0"/>
+            <Setter Property="FontSize"       Value="11"/>
+            <Setter Property="Margin"         Value="0,0,2,0"/>
+        </Style>
+        <Style Selector="Button.hb-btn.active">
+            <Setter Property="Background"  Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="Foreground"  Value="{DynamicResource SystemRegionColor}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+        </Style>
+        <Style Selector="ComboBox.unit-combo">
+            <Setter Property="MinWidth"  Value="60"/>
+            <Setter Property="MaxWidth"  Value="68"/>
+            <Setter Property="FontSize"  Value="9"/>
+            <Setter Property="Margin"    Value="3,0,0,0"/>
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer MaxHeight="400"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+
+        <StackPanel Spacing="10" Margin="0,0,4,0">
+
+            <!-- ── Tuner pickers ─────────────────────────────────────────────── -->
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Load tuner" FontSize="10" Opacity="0.6"/>
+                    <ComboBox ItemsSource="{Binding TunerInstanceNames}"
+                              SelectedItem="{Binding LoadTunerName, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Source tuner" FontSize="10" Opacity="0.6"/>
+                    <ComboBox ItemsSource="{Binding TunerInstanceNames}"
+                              SelectedItem="{Binding SourceTunerName, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </StackPanel>
+            </Grid>
+
+            <TextBlock Text="Place a Tuner component first."
+                       FontSize="10"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="{Binding HasNoTuners}"/>
+
+            <!-- ── Tone (f₀) coefficient + unit (no Grid for LPP) ────────────── -->
+            <StackPanel Spacing="2">
+                <TextBlock Text="Tone (f₀)" FontSize="10" Opacity="0.6"/>
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Text="{Binding ToneCoeff, Mode=TwoWay}" FontSize="11"/>
+                    <ComboBox Grid.Column="1"
+                              Classes="unit-combo"
+                              ItemsSource="{x:Static vm:LppBodyViewModel.FreqUnits}"
+                              SelectedItem="{Binding ToneUnit, Mode=TwoWay}"/>
+                </Grid>
+                <TextBlock Text="{Binding TonePreview}" FontSize="10" Opacity="0.55"/>
+            </StackPanel>
+
+            <!-- ── Pin start / max / step ───────────────────────────────────── -->
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Pin start (dBm)" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding PinStartExpr, Mode=TwoWay}" FontSize="11"/>
+                    <TextBlock Text="{Binding PinStartPreview}" FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Pin max (dBm)" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding PinMaxExpr, Mode=TwoWay}" FontSize="11"/>
+                    <TextBlock Text="{Binding PinMaxPreview}" FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="2">
+                    <TextBlock Text="Pin step (dB)" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding PinStepExpr, Mode=TwoWay}" FontSize="11"/>
+                    <TextBlock Text="{Binding PinStepPreview}" FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ── Compression + EffType + Zsource backoff ──────────────────── -->
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Compression (dB)" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding CompressionExpr, Mode=TwoWay}" FontSize="11"/>
+                    <TextBlock Text="{Binding CompressionPreview}" FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Zsource backoff (dB)" FontSize="10" Opacity="0.6"/>
+                    <TextBox Text="{Binding ZsourceOboExpr, Mode=TwoWay}" FontSize="11"/>
+                    <TextBlock Text="{Binding ZsourceOboPreview}" FontSize="10" Opacity="0.55"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- ── Efficiency metric + Search method ────────────────────────── -->
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Efficiency metric" FontSize="10" Opacity="0.6"/>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="DE"  Classes="hb-btn"
+                                Classes.active="{Binding IsEffDe}"
+                                Command="{Binding SetEffDeCommand}"/>
+                        <Button Content="PAE" Classes="hb-btn"
+                                Classes.active="{Binding IsEffPae}"
+                                Command="{Binding SetEffPaeCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Search method" FontSize="10" Opacity="0.6"/>
+                    <ComboBox ItemsSource="{x:Static vm:LppBodyViewModel.SearchMethods}"
+                              SelectedItem="{Binding SearchMethodExpr, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </StackPanel>
+            </Grid>
+
+            <Separator Opacity="0.3"/>
+
+            <!-- ── Follow-on / output group ─────────────────────────────────── -->
+            <Expander Header="Output / follow-on"
+                      IsExpanded="{Binding OutputExpanded, Mode=TwoWay}"
+                      FontSize="11">
+                <StackPanel Spacing="8" Margin="0,8,0,0">
+
+                    <CheckBox Content="Create follow-on loadpull"
+                              IsChecked="{Binding CreateLoadpullResult, Mode=TwoWay}"
+                              FontSize="11"/>
+
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Follow-on source match" FontSize="10" Opacity="0.6"/>
+                        <ComboBox ItemsSource="{x:Static vm:LppBodyViewModel.ZsourceModes}"
+                                  SelectedItem="{Binding LoadpullResultZsource, Mode=TwoWay}"
+                                  IsEnabled="{Binding FollowOnEnabled}"
+                                  HorizontalAlignment="Stretch" FontSize="11"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Output .gam grid (optional)" FontSize="10" Opacity="0.6"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Text="{Binding OutputGridPath, Mode=TwoWay}" FontSize="11"/>
+                            <Button Grid.Column="1"
+                                    Content="Save as…"
+                                    Classes="hb-btn"
+                                    Margin="6,0,0,0"
+                                    Click="OnBrowseOutputGridClick"/>
+                        </Grid>
+                    </StackPanel>
+
+                </StackPanel>
+            </Expander>
+
+            <!-- ── Advanced expander (shared LP advanced + grid-builder) ────── -->
+            <Expander Header="Advanced"
+                      IsExpanded="{Binding AdvancedExpanded, Mode=TwoWay}"
+                      FontSize="11">
+                <StackPanel Spacing="8" Margin="0,8,0,0">
+
+                    <!-- Sweep + GainType toggles -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Sweep" FontSize="10" Opacity="0.6"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Button Content="Load"   Classes="hb-btn"
+                                        Classes.active="{Binding IsSweepLoad}"
+                                        Command="{Binding SetSweepLoadCommand}"/>
+                                <Button Content="Source" Classes="hb-btn"
+                                        Classes.active="{Binding IsSweepSource}"
+                                        Command="{Binding SetSweepSourceCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Gain type" FontSize="10" Opacity="0.6"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Button Content="Gt" Classes="hb-btn"
+                                        Classes.active="{Binding IsGainGt}"
+                                        Command="{Binding SetGainGtCommand}"/>
+                                <Button Content="Gp" Classes="hb-btn"
+                                        Classes.active="{Binding IsGainGp}"
+                                        Command="{Binding SetGainGpCommand}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- TuneHarm + MaxHarm -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Tune harmonic" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding TuneHarmExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding TuneHarmPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Max harmonics" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding MaxHarmonicExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding MaxHarmonicPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Tickle + MaxIter -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Tickle (dBm or off)" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding TickleExpr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Max iterations" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding MaxIterExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding MaxIterPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- FFT oversample + Tolerance -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="FFT oversample" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding FftOverSampleExpr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Tolerance" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding TolExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding TolPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Drive stepping + Guard harmonic -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Drive stepping" FontSize="10" Opacity="0.6"/>
+                            <ComboBox ItemsSource="{x:Static vm:LppBodyViewModel.DriveSteppingOptions}"
+                                      SelectedItem="{Binding DriveSteppingExpr, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Guard harmonic" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding GuardHarmonicExpr, Mode=TwoWay}" FontSize="11"/>
+                            <TextBlock Text="{Binding GuardHarmonicPreview}" FontSize="10" Opacity="0.55"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <Separator Opacity="0.3"/>
+                    <TextBlock Text="Recommended-grid builder" FontSize="10" Opacity="0.6" FontWeight="SemiBold"/>
+
+                    <!-- VSWR1 + resolution -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="VSWR 1" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding Vswr1Expr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="VSWR 1 resolution" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding Vswr1ResolutionExpr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- VSWR2 + resolution -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="VSWR 2" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding Vswr2Expr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="VSWR 2 resolution" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding Vswr2ResolutionExpr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Keep non-converging + exclusion VSWR -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <CheckBox Content="Keep non-converging"
+                                  IsChecked="{Binding KeepNonconverging, Mode=TwoWay}"
+                                  FontSize="11" VerticalAlignment="Bottom"/>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Non-convergent VSWR" FontSize="10" Opacity="0.6"/>
+                            <TextBox Text="{Binding NonconvergentVswrExpr, Mode=TwoWay}" FontSize="11"/>
+                        </StackPanel>
+                    </Grid>
+
+                </StackPanel>
+            </Expander>
+
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

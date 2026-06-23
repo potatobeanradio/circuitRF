@@ -55,20 +55,14 @@
                                  Content="Load Pull"
                                  GroupName="AnalysisType"
                                  FontSize="12"
-                                 IsEnabled="False"
-                                 Opacity="0.45"
-                                 Margin="0,0,16,4">
-                        <ToolTip.Tip>Load Pull authoring is coming in a future version.</ToolTip.Tip>
-                    </RadioButton>
+                                 Margin="0,0,16,4"
+                                 IsCheckedChanged="OnTypeRadioChanged"/>
                     <RadioButton x:Name="LppRadio"
                                  Content="LP Pursuit"
                                  GroupName="AnalysisType"
                                  FontSize="12"
-                                 IsEnabled="False"
-                                 Opacity="0.45"
-                                 Margin="0,0,0,4">
-                        <ToolTip.Tip>LP Pursuit authoring is coming in a future version.</ToolTip.Tip>
-                    </RadioButton>
+                                 Margin="0,0,0,4"
+                                 IsCheckedChanged="OnTypeRadioChanged"/>
                 </WrapPanel>
             </StackPanel>
 
@@ -128,9 +122,28 @@
                 <analyses:HbBodyView x:Name="HbBodyViewControl"/>
             </Border>
 
-            <!-- ── Parametric Sweeps section (all analysis types) ──────────────── -->
+            <!-- ── Loadpull body ─────────────────────────────────────────────────── -->
+            <Border x:Name="LpBodyPanel"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="10,10"
+                    IsVisible="False">
+                <analyses:LpBodyView x:Name="LpBodyViewControl"/>
+            </Border>
+
+            <!-- ── Loadpull-Pursuit body ─────────────────────────────────────────── -->
+            <Border x:Name="LppBodyPanel"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="10,10"
+                    IsVisible="False">
+                <analyses:LppBodyView x:Name="LppBodyViewControl"/>
+            </Border>
+
+            <!-- ── Parametric Sweeps section (DC/SP/HB; hidden for LP/LPP in v1) ─── -->
             <Expander Header="Parametric Sweeps"
                       IsExpanded="{Binding SweepsExpanded, Mode=TwoWay}"
+                      IsVisible="{Binding ShowSweeps}"
                       FontSize="12">
 
                 <StackPanel Spacing="6" Margin="0,8,0,0">

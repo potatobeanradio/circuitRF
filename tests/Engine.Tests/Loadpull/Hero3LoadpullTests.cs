@@ -53,6 +53,24 @@ public class Hero3LoadpullTests(ITestOutputHelper output)
         _ => "Unknown",
     };
 
+    // ── Freq carrier provenance ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Hero3Loadpull_EmitsFreqCarrier_ForSummaryTable()
+    {
+        var (lib, tb) = CnlReader.ReadFile(Path.Combine(Hero3Dir(), "hero3.cnl"));
+        var netlist   = new Elaborator(lib).Elaborate(tb);
+        var lpa = tb.Analyses.OfType<LoadpullAnalysis>().First();
+        var p   = LoadpullEngine.Resolve(lpa, netlist.ResolvedGlobals);
+        var ds  = new LoadpullEngine(netlist, tb).Run(p);
+
+        // The FOM cubes carry no "freq" axis (single-frequency); a __Freq carrier preserves the tone
+        // so the Data Display summary reports 2 GHz instead of 0.
+        Assert.True(ds.Contains("__Freq"));
+        Assert.Equal(p.ToneHz, ds["__Freq"][0].RealValue!.Value, precision: 3);
+        Assert.Equal(2e9, p.ToneHz, precision: 3);
+    }
+
     // ── 1. Golden generator ────────────────────────────────────────────────────
 
     [Fact]

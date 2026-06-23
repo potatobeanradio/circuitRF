@@ -780,13 +780,30 @@ public static class NetExtractor
             // CvData is editor-only: the raw C-V table persists in .csch for re-editing, but it is
             // not an engine parameter (the NonlinearC model reads only C0..Cn). Keep it out of the
             // netlist/elaboration the same way the SnP branch drops RefNode/PinConfig/Pitch.
-            .Where(p => p.Name is not "CvData")
+            // ShowBias is the Tuner family's display-only bias-branch toggle (loadpull.md §1.1) — it
+            // drives the glyph only and must NEVER reach the engine, so it is dropped here too. The
+            // extracted Instance is therefore identical whether ShowBias is true or false.
+            .Where(p => p.Name is not "CvData" and not "ShowBias")
             .Select(p =>
             {
                 var unit = UnitNormalizer.ToEngineUnit(p.Unit);
                 return new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null);
             })
             .ToList();
+
+        // Tuner family: 1 symbol pin (DUT-facing) but the engine TunerModel needs 2 declared nets.
+        // All three tiles emit Reference "Tuner" with the SAME net ordering (loadpull.md §1, §9):
+        // Nodes[0] = pin (DUT-facing), Nodes[1] = "0" (reference, hard-coded ground; exposing it as a
+        // second pin is DEFERRED). The SourceTuner's internal RF-drive node is minted by the engine
+        // (Elaborator → __tuner_<inst>_outer), so all three tiles are net-identical here.
+        if (comp.Symbol is SymbolKind.Tuner or SymbolKind.LoadTuner or SymbolKind.SourceTuner)
+        {
+            var def = GetEffectivePortDefs(model, comp, cellRefResolutions)[0];
+            var (px, py) = model.PortWorldOf(comp, def);
+            string pinNet = NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys);
+            var tunerNets = new List<string> { pinNet, "0" };   // [Nodes0 = DUT-facing, Nodes1 = ground]
+            return new Instance(comp.InstanceName, reference, tunerNets, overrides2);
+        }
 
         // All built-in primitives: emit terminals in PortIndex order.
         var nets2 = new List<string>();

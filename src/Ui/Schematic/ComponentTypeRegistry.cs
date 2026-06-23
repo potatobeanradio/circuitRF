@@ -203,6 +203,24 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.TransmissionLine,
             SearchTerms: ["TLIN", "TLine", "transmission line", "tline", "ideal", "lossless", "line"],
             IsCommon: true),
+        // Tuner: general programmable RF termination (loadpull.md §1). Single DUT-facing pin;
+        // the reference net is hard-coded ground at extraction. Appears under Terminals + Sources.
+        [SymbolKind.Tuner]         = new("Tuner", "Tuner",
+            Category: ComponentCategory.Terminals,
+            SearchTerms: ["Tuner", "tuner", "loadpull", "load pull", "sourcepull", "termination", "Z", "gamma"],
+            IsCommon: true,
+            ExtraCategories: [ComponentCategory.Sources]),
+        // SourceTuner / LoadTuner: same engine component as Tuner ("Tuner"), different glyph +
+        // prefix + single-pin net ordering (loadpull.md §1, §9). Match the symbol to its analysis role.
+        [SymbolKind.SourceTuner]   = new("SourceTuner", "SourceTuner",
+            Category: ComponentCategory.Sources,
+            SearchTerms: ["SourceTuner", "source tuner", "tuner", "sourcepull", "drive", "loadpull"],
+            IsCommon: true,
+            ExtraCategories: [ComponentCategory.Terminals]),
+        [SymbolKind.LoadTuner]     = new("LoadTuner", "LoadTuner",
+            Category: ComponentCategory.Terminals,
+            SearchTerms: ["LoadTuner", "load tuner", "tuner", "loadpull", "termination"],
+            IsCommon: true),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -257,6 +275,10 @@ public static class ComponentTypeRegistry
         SymbolKind.NonlinearC    => "NonlinearC",
         SymbolKind.Mutual        => "Mutual",
         SymbolKind.Tline         => "TLIN",
+        // All three tuner tiles place the identical engine component.
+        SymbolKind.Tuner         => "Tuner",
+        SymbolKind.SourceTuner   => "Tuner",
+        SymbolKind.LoadTuner     => "Tuner",
         _                        => Get(kind).DisplayName,
     };
 
@@ -375,6 +397,32 @@ public static class ComponentTypeRegistry
                         new("Inductor2", "\"L2\"", "", true,  UnitDimension.None),
                         new("M",         "0", "pH", true, UnitDimension.Inductance)];
 
+            // Tuner: programmable termination (loadpull.md §1). Z[1] REQUIRED (fundamental); Zdefault is the
+            // catch-all (engine default 1e-6); Z0 sets Γ-normalisation for any G[k] form (default 50). BiasTee=
+            // "on"/"off" toggles the internal bias-tee + supply; Vbias is the DC bias at the DUT-facing port.
+            // BiasTee=on is required by the Loadpull directive (loadpull.md §1.1) — "off" is fine for a standalone
+            // tuner. The Loadpull analysis decides the tuned harmonic (TuneHarm) and the role (Load/Source), NOT
+            // this component. Z[1] accepts complex literals (e.g. 50+j*10). Add Z[2], Z[3], … via the editor "+".
+            // SourceTuner/LoadTuner share this list — they are the same engine component ("Tuner"); only glyph,
+            // instance prefix, and single-pin net ordering differ (loadpull.md §1, §9).
+            //
+            // Γ-vs-Z entry: the engine factory accepts either Z[k] (impedance) or G[k] (reflection coefficient,
+            // normalised to Z0) per harmonic — but not both for the same k. The "+" button produces Z[k]; to
+            // enter a reflection coefficient instead, rename the row to G[k] and set Z0 (a dedicated Γ/Z picker
+            // is future polish, out of scope here).
+            //
+            // ShowBias is DISPLAY-ONLY (never reaches the engine — dropped at extraction): when true (with
+            // BiasTee=on) the glyph draws the embedded bias-tee + DC supply teed off the single DUT-facing lead.
+            case SymbolKind.Tuner:
+            case SymbolKind.SourceTuner:
+            case SymbolKind.LoadTuner:
+                return [new("Z[1]",     "50",    "Ω", true,  UnitDimension.Resistance),
+                        new("Zdefault", "1e-6",  "Ω", false, UnitDimension.Resistance),
+                        new("Z0",       "50",    "Ω", false, UnitDimension.Resistance),
+                        new("BiasTee",  "off",   "",  false, UnitDimension.None),
+                        new("Vbias",    "0",     "V", false, UnitDimension.Voltage),
+                        new("ShowBias", "false", "",  false, UnitDimension.None)];
+
             // Ground/FetSdd/Generic need no default parameters.
             default: return [];
         }
@@ -425,6 +473,11 @@ public static class ComponentTypeRegistry
             case "MUT":    kind = SymbolKind.Mutual;       return true;
             case "TLIN":
             case "TL":     kind = SymbolKind.Tline;        return true;
+            case "TUNER":  kind = SymbolKind.Tuner;         return true;
+            case "SOURCETUNER":
+            case "SRCTUNER": kind = SymbolKind.SourceTuner; return true;
+            case "LOADTUNER":
+            case "LDTUNER":  kind = SymbolKind.LoadTuner;    return true;
             case "FET":
             case "SDD":
             case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default
@@ -529,6 +582,17 @@ public static class ComponentTypeRegistry
             ShowOnSchematic: [false],
             Dimensions:      [UnitDimension.None],
             FirstAddIndex:   1,
+            SkipIndices:     null),
+
+        // Tuner family (general / Source / Load): user adds Z[2], Z[3], … per-harmonic termination
+        // impedances. The fundamental is the Z[1] row itself (it IS the first index, not a separate
+        // scalar), so the first addable index is 2. All three share this template (same engine component).
+        SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner => new IndexedParamGroup(
+            NameFormats:     ["Z[{0}]"],
+            DefaultUnits:    ["Ω"],
+            ShowOnSchematic: [true],
+            Dimensions:      [UnitDimension.Resistance],
+            FirstAddIndex:   2,
             SkipIndices:     null),
 
         _ => null,

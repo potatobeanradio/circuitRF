@@ -237,17 +237,19 @@ public static class SchematicRunService
 
             case LoadpullAnalysis lpa:
             {
-                var p = LoadpullEngine.Resolve(lpa, nl.ResolvedGlobals);
+                var p = LoadpullEngine.Resolve(lpa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
                 notes.Add($"Loadpull '{lpa.Name}': f0={p.ToneHz / 1e9:G4} GHz, " +
                           $"{p.Grid.Points.Count} grid pts");
-                return new LoadpullEngine(nl, tb).Run(p);
+                // Post-process: add the derived display metrics (Pout_dBm, Zin, IRL, AMPM) so the
+                // Data Display renders the same contours as a measured .spl (loadpull-postprocessor.md).
+                return RfCore.Loadpull.LoadpullPostProcessor.Enrich(new LoadpullEngine(nl, tb).Run(p));
             }
 
             case LoadpullPursuitAnalysis lppa:
             {
                 var lpEngine      = new LoadpullEngine(nl, tb);
                 var pursuitEngine = new LoadpullPursuitEngine(lpEngine);
-                var p             = LoadpullPursuitEngine.Resolve(lppa, nl.ResolvedGlobals);
+                var p             = LoadpullPursuitEngine.Resolve(lppa, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
                 notes.Add($"Loadpull-pursuit '{lppa.Name}': f0={p.LpParams.ToneHz / 1e9:G4} GHz");
                 return pursuitEngine.Run(p);
             }

@@ -31,6 +31,8 @@ public partial class AnalysisEditorDialog : Window
         DataContext = vm;
         SpBodyViewControl.DataContext = vm.SpBody;
         HbBodyViewControl.DataContext = vm.HbBody;
+        LpBodyViewControl.DataContext = vm.LpBody;
+        LppBodyViewControl.DataContext = vm.LppBody;
 
         var heading = isEdit ? "Edit Analysis" : "Add Analysis";
         DialogTitle.Text = heading;
@@ -40,6 +42,8 @@ public partial class AnalysisEditorDialog : Window
         DcRadio.IsChecked = vm.IsDc;
         SpRadio.IsChecked = vm.IsSp;
         HbRadio.IsChecked = vm.IsHb;
+        LpRadio.IsChecked = vm.IsLp;
+        LppRadio.IsChecked = vm.IsLpp;
         NameBox.Text           = vm.Name;
         EnabledCheck.IsChecked = vm.Enabled;
 
@@ -79,6 +83,8 @@ public partial class AnalysisEditorDialog : Window
             nameof(DcRadio) => AnalysisEditorViewModel.AnalysisKind.DC,
             nameof(SpRadio) => AnalysisEditorViewModel.AnalysisKind.SP,
             nameof(HbRadio) => AnalysisEditorViewModel.AnalysisKind.HB,
+            nameof(LpRadio) => AnalysisEditorViewModel.AnalysisKind.LP,
+            nameof(LppRadio) => AnalysisEditorViewModel.AnalysisKind.LPP,
             _               => Vm.Type,
         };
         Vm.Type = kind;
@@ -90,6 +96,8 @@ public partial class AnalysisEditorDialog : Window
         DcBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.DC;
         SpBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.SP;
         HbBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.HB;
+        LpBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.LP;
+        LppBodyPanel.IsVisible = kind == AnalysisEditorViewModel.AnalysisKind.LPP;
     }
 
     // ── Name ──────────────────────────────────────────────────────────────────
