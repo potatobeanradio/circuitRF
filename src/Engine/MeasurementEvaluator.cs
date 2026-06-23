@@ -42,15 +42,17 @@ public sealed class MeasurementEvaluator
 
     /// <summary>
     /// Evaluate all measurements and add every result cube to <paramref name="ds"/>.
+    /// Returns per-measurement error strings for any that failed; successful cubes are always emitted.
     /// </summary>
-    public void EvaluateInto(DataSet ds)
+    public IReadOnlyList<string> EvaluateInto(DataSet ds)
         => Evaluate((m, result) => ds.Add(m.Name, ToCube(m, result)));
 
     // ── Shared evaluation core ───────────────────────────────────────────────────
 
-    private void Evaluate(Action<Measurement, Value> emit)
+    private IReadOnlyList<string> Evaluate(Action<Measurement, Value> emit)
     {
-        if (_tb.Measurements.Count == 0) return;
+        var errors = new List<string>();
+        if (_tb.Measurements.Count == 0) return errors;
 
         var ctx  = new MeasurementContext(_analysisResults, _backSolvers);
         var eval = new Evaluator(ctx);
@@ -98,22 +100,24 @@ public sealed class MeasurementEvaluator
         foreach (var m in _tb.Measurements)
         {
             Value result;
-            try
-            {
-                result = eval.Eval(m.Expression, mScope, m.Unit);
-            }
+            try { result = eval.Eval(m.Expression, mScope, m.Unit); }
             catch (Exception ex)
             {
-                throw new InvalidOperationException(
-                    $"Measurement '{m.Name}': failed to evaluate '{m.Expression}': {ex.Message}", ex);
+                errors.Add($"Measurement '{m.Name}': failed to evaluate '{m.Expression}': {ex.Message}");
+                continue;  // skip bind+emit; later measurements referencing this name report cascade error
             }
 
             // Inject the result so later measurements can reference this one by name.
             mScope.Bind(m.Name, result.ToString()!);
             eval.InjectResolved("measurements", m.Name, result);
 
-            emit(m, result);
+            try { emit(m, result); }
+            catch (Exception ex)
+            {
+                errors.Add($"Measurement '{m.Name}': failed to emit result: {ex.Message}");
+            }
         }
+        return errors;
     }
 
     private static DataCube ToCube(Measurement m, Value result) => result.Kind switch

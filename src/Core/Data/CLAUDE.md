@@ -200,6 +200,21 @@ filter — the instance name is the user's handle. Deep, hierarchy-reaching meas
 (see `docs/design/measurements.md`) thus define the retained set together with the named nodes —
 the same set a future "retain only referenced nodes" optimization would prune to.
 
+## Named-axis broadcasting in `DataCube.ElementWise` (brief-cube-broadcast-measurements Part A, 2026-06-22)
+
+Cube–cube `+ − * /` now broadcasts by **axis name**, not by position. The previous implementation called `RequireSameShape` and threw when operands had mismatched rank.
+
+**Algorithm:**
+- **Fast path** (`SameShapeByName`): if both operands have the same axes in the same order with the same lengths, `ZipIdentical` runs the old element-zip loop unchanged. Byte-identical result.
+- **Broadcast path** (`UnionAxes` → `MapPositions` → `BroadcastDecode` + `BroadcastOperandFlat`): the result has the **union** of both axis-sets (higher-rank operand determines axis order; lower-rank operand's axes are appended). Each operand "replicates" across any result axis it lacks. A rank-0 scalar broadcasts against any shape.
+- `UnionAxes` throws `ArgumentException` if a shared axis name appears in both operands with **different lengths or differing coordinate values** (within 1e-12 relative tolerance).
+
+**Primary use case:** a swept-variable cube is rank-1 `[Pin]`; an HB output cube may be rank-2 `[RFfreq, Pin]`. A measurement expression that subtracts them no longer throws "rank mismatch."
+
+**Location:** `DataCube.ElementWise` (and helper methods `ZipIdentical`, `SameShapeByName`, `UnionAxes`, `MapPositions`, `BroadcastDecode`, `BroadcastOperandFlat`) in `RfCore/src/Data/DataCube.cs`.
+
+Gate tests: T1–T6 in `RfCore/tests/RfCore.Tests/DataCubeTests.cs` (broadcast subset-axis, axis-order, scalar, complex×real, incompatible-shared-axis throw, fast-path regression).
+
 ## Change carefully
 The `DataSet`/`DataCube` **in-process API** contract (cube shape, `DataKind`, axis semantics, the
 accessors) is **owned by circuitRF and consumed by splotRF.** Any change to it is a reviewed decision

@@ -172,12 +172,13 @@ public static class SchematicRunService
                     var analysisResults = new Dictionary<string, DataSet>(StringComparer.OrdinalIgnoreCase);
                     foreach (var r in results) analysisResults[r.Name] = r.Data;
 
-                    var measDs = new DataSet();
-                    new MeasurementEvaluator(tb, nl, analysisResults).EvaluateInto(measDs);
+                    var measDs    = new DataSet();
+                    var measErrors = new MeasurementEvaluator(tb, nl, analysisResults).EvaluateInto(measDs);
                     foreach (var kv in measDs.Cubes)
-                        grouped.AddToGroup("measurements", kv.Key, kv.Value);
+                        grouped.AddToGroup("measurements", kv.Key, kv.Value);  // reached even if some failed
+                    foreach (var e in measErrors) errors.Add($"measurements: {e}");
                 }
-                catch (Exception ex) { errors.Add($"measurements: {ex.Message}"); }
+                catch (Exception ex) { errors.Add($"measurements: {ex.Message}"); }  // safety net
             }
         }
 
