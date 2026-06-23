@@ -383,7 +383,10 @@ namespace RfCore.Loadpull
 
             // Build optional metric cubes
             var metricNames  = new[] { "Pout", "Gt", "Gp", "DE", "PAE", "PavlDbm",
-                                       "BiasVLoad", "BiasILoad", "BiasVSrc", "BiasISrc" };
+                                       "BiasVLoad", "BiasILoad", "BiasVSrc", "BiasISrc",
+                                       // Derived display metrics (post-processor / .spl reader) — must be
+                                       // loadable so the summary table's MetricAtCoord can read them.
+                                       "Pout_dBm", "Zin_real", "Zin_imag", "AMPM", "IRL" };
             var metricCubes  = new Dictionary<string, DataCube>(StringComparer.Ordinal);
             foreach (var m in metricNames)
                 if (hasCube(m)) metricCubes[m] = GetCube(m);
