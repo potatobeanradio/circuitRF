@@ -77,18 +77,40 @@ public sealed partial class FrequencySpecViewModel : ObservableObject
             _mode = seed.Mode;
             _kind = seed.Kind;
 
-            var (sc, su) = FreqUnitHelper.Split(seed.StartExpr);
-            var (ec, eu) = FreqUnitHelper.Split(seed.StopExpr);
-            _startCoeff = sc; _startUnit = su; _prevStartUnit = su;
-            _stopCoeff  = ec; _stopUnit  = eu; _prevStopUnit  = eu;
-            StartPreview = Prev(FreqUnitHelper.ToHzExpr(sc, su));
-            StopPreview  = Prev(FreqUnitHelper.ToHzExpr(ec, eu));
+            // Read stored raw expr + unit directly.
+            // Legacy nicety: when unit=="Hz" and expr is a plain number, use Split for pretty
+            // display (e.g. old baked "1e9" → "1" GHz). Never Split a non-numeric expression.
+            string startExpr = seed.StartExpr;
+            string startUnit = string.IsNullOrEmpty(seed.StartUnit) ? "Hz" : seed.StartUnit;
+            if (startUnit == "Hz")
+            {
+                var (sc, su) = FreqUnitHelper.Split(startExpr);
+                startExpr = sc; startUnit = su;
+            }
+            _startCoeff = startExpr; _startUnit = startUnit; _prevStartUnit = startUnit;
+            StartPreview = AnalysisPreviewHelper.ComputeFreqPreview(startExpr, startUnit, _model);
+
+            string stopExpr = seed.StopExpr;
+            string stopUnit = string.IsNullOrEmpty(seed.StopUnit) ? "Hz" : seed.StopUnit;
+            if (stopUnit == "Hz")
+            {
+                var (ec, eu) = FreqUnitHelper.Split(stopExpr);
+                stopExpr = ec; stopUnit = eu;
+            }
+            _stopCoeff = stopExpr; _stopUnit = stopUnit; _prevStopUnit = stopUnit;
+            StopPreview = AnalysisPreviewHelper.ComputeFreqPreview(stopExpr, stopUnit, _model);
 
             if (seed.Mode == FreqSpecMode.StepSize)
             {
-                var (stc, stu) = FreqUnitHelper.Split(seed.StepExpr);
-                _stepCoeff = stc; _stepUnit = stu; _prevStepUnit = stu;
-                StepPreview = Prev(FreqUnitHelper.ToHzExpr(stc, stu));
+                string stepExpr = seed.StepExpr;
+                string stepUnit = string.IsNullOrEmpty(seed.StepUnit) ? "Hz" : seed.StepUnit;
+                if (stepUnit == "Hz")
+                {
+                    var (stc, stu) = FreqUnitHelper.Split(stepExpr);
+                    stepExpr = stc; stepUnit = stu;
+                }
+                _stepCoeff = stepExpr; _stepUnit = stepUnit; _prevStepUnit = stepUnit;
+                StepPreview = AnalysisPreviewHelper.ComputeFreqPreview(stepExpr, stepUnit, _model);
             }
             else
             {
@@ -101,9 +123,9 @@ public sealed partial class FrequencySpecViewModel : ObservableObject
 
     // ── Preview side-effects ───────────────────────────────────────────────────
 
-    partial void OnStartCoeffChanged(string value) => StartPreview = Prev(FreqUnitHelper.ToHzExpr(value, StartUnit));
-    partial void OnStopCoeffChanged(string value)  => StopPreview  = Prev(FreqUnitHelper.ToHzExpr(value, StopUnit));
-    partial void OnStepCoeffChanged(string value)  => StepPreview  = Prev(FreqUnitHelper.ToHzExpr(value, StepUnit));
+    partial void OnStartCoeffChanged(string value) => StartPreview = AnalysisPreviewHelper.ComputeFreqPreview(value, StartUnit, _model);
+    partial void OnStopCoeffChanged(string value)  => StopPreview  = AnalysisPreviewHelper.ComputeFreqPreview(value, StopUnit,  _model);
+    partial void OnStepCoeffChanged(string value)  => StepPreview  = AnalysisPreviewHelper.ComputeFreqPreview(value, StepUnit,  _model);
     partial void OnNumPointsExprChanged(string value) => NumPointsPreview = Prev(value);
 
     // Unit changes: rescale coefficient to keep the same Hz value, then refresh preview.
@@ -111,21 +133,21 @@ public sealed partial class FrequencySpecViewModel : ObservableObject
     {
         StartCoeff     = FreqUnitHelper.Rescale(StartCoeff, _prevStartUnit, value);
         _prevStartUnit = value;
-        StartPreview   = Prev(FreqUnitHelper.ToHzExpr(StartCoeff, value));
+        StartPreview   = AnalysisPreviewHelper.ComputeFreqPreview(StartCoeff, value, _model);
     }
 
     partial void OnStopUnitChanged(string value)
     {
         StopCoeff     = FreqUnitHelper.Rescale(StopCoeff, _prevStopUnit, value);
         _prevStopUnit = value;
-        StopPreview   = Prev(FreqUnitHelper.ToHzExpr(StopCoeff, value));
+        StopPreview   = AnalysisPreviewHelper.ComputeFreqPreview(StopCoeff, value, _model);
     }
 
     partial void OnStepUnitChanged(string value)
     {
         StepCoeff     = FreqUnitHelper.Rescale(StepCoeff, _prevStepUnit, value);
         _prevStepUnit = value;
-        StepPreview   = Prev(FreqUnitHelper.ToHzExpr(StepCoeff, value));
+        StepPreview   = AnalysisPreviewHelper.ComputeFreqPreview(StepCoeff, value, _model);
     }
 
     private string Prev(string hzExpr) => AnalysisPreviewHelper.ComputePreview(hzExpr, _model);
@@ -161,18 +183,15 @@ public sealed partial class FrequencySpecViewModel : ObservableObject
 
     public FrequencySpec Build()
     {
-        string start = FreqUnitHelper.ToHzExpr(StartCoeff, StartUnit);
-        string stop  = FreqUnitHelper.ToHzExpr(StopCoeff,  StopUnit);
-
+        // Store raw coeff + unit — do NOT bake via ToHzExpr.
         if (Mode == FreqSpecMode.PointCount)
         {
             int pts = int.TryParse(NumPointsExpr.Trim(), out var n) ? Math.Max(1, n) : 101;
-            return new FrequencySpec(start, stop, pts, Kind);
+            return new FrequencySpec(StartCoeff, StopCoeff, pts, Kind, StartUnit, StopUnit);
         }
 
-        string step = StepCoeff.Trim().Length > 0
-            ? FreqUnitHelper.ToHzExpr(StepCoeff, StepUnit)
-            : "100e6";
-        return new FrequencySpec(start, stop, step, Kind);
+        string step     = StepCoeff.Trim().Length > 0 ? StepCoeff : "100";
+        string stepUnit = StepCoeff.Trim().Length > 0 ? StepUnit  : "MHz";
+        return new FrequencySpec(StartCoeff, StopCoeff, step, Kind, StartUnit, StopUnit, stepUnit);
     }
 }

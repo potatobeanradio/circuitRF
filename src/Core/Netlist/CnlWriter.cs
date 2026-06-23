@@ -264,7 +264,7 @@ public static class CnlWriter
     private static string FormatHbAnalysis(HarmonicBalanceAnalysis hb)
     {
         var sb = new StringBuilder($"analysis {hb.Name} type=hb");
-        sb.Append($" Tone={hb.ToneExpr}");
+        sb.Append($" Tone=\"{hb.ToneExpr}\" ToneUnit={hb.ToneUnit}");
 
         // Multi-tone fields only when NumFreqs > 1 or ToneExprs is populated.
         if (hb.ToneExprs.Length > 0)
@@ -272,7 +272,10 @@ public static class CnlWriter
             sb.Append($" NumFreqs={hb.NumFreqsExpr}");
             sb.Append($" MaxMixOrder={hb.MaxMixOrderExpr}");
             for (int i = 0; i < hb.ToneExprs.Length; i++)
-                sb.Append($" Tone[{i + 1}]={hb.ToneExprs[i]}");
+            {
+                string unit = i < hb.ToneUnits.Length ? hb.ToneUnits[i] : "Hz";
+                sb.Append($" Tone[{i + 1}]=\"{hb.ToneExprs[i]}\" ToneUnit[{i + 1}]={unit}");
+            }
         }
 
         sb.Append($" MaxHarm={hb.MaxHarmonicExpr}");
@@ -294,7 +297,7 @@ public static class CnlWriter
     private static string FormatLoadpullAnalysis(LoadpullAnalysis lp)
     {
         var sb = new StringBuilder($"analysis {lp.Name} type=loadpull");
-        sb.Append($" Tone={lp.ToneExpr}");
+        sb.Append($" Tone=\"{lp.ToneExpr}\"");
         sb.Append($" MaxHarm={lp.MaxHarmonicExpr}");
         sb.Append($" LoadTuner={lp.LoadTunerName}");
         sb.Append($" SourceTuner={lp.SourceTunerName}");
@@ -319,7 +322,7 @@ public static class CnlWriter
     private static string FormatLoadpullPursuitAnalysis(LoadpullPursuitAnalysis lpp)
     {
         var sb = new StringBuilder($"analysis {lpp.Name} type=loadpull_pursuit");
-        sb.Append($" Tone={lpp.ToneExpr}");
+        sb.Append($" Tone=\"{lpp.ToneExpr}\"");
         sb.Append($" MaxHarm={lpp.MaxHarmonicExpr}");
         sb.Append($" LoadTuner={lpp.LoadTunerName}");
         sb.Append($" SourceTuner={lpp.SourceTunerName}");
@@ -365,6 +368,8 @@ public static class CnlWriter
                 sb.Append($" Npts={(int)Math.Round(spec.StepOrCount)}");
             else
                 sb.Append($" Step={spec.StepOrCount.ToString(CultureInfo.InvariantCulture)}");
+            if (!string.IsNullOrEmpty(spec.Unit))
+                sb.Append($" Unit={spec.Unit}");
             sb.Append($" Inner={ps.InnerAnalysisName}");
             return sb.ToString();
         }
@@ -384,11 +389,11 @@ public static class CnlWriter
         {
             var line = new StringBuilder($"analysis {sp.Name} type=sparam");
             if (f.Kind == SweepKind.Log) line.Append(" log");
-            line.Append($" start={f.StartExpr} stop={f.StopExpr}");
+            line.Append($" start=\"{f.StartExpr}\" startUnit={f.StartUnit} stop=\"{f.StopExpr}\" stopUnit={f.StopUnit}");
             if (f.Mode == FreqSpecMode.PointCount)
                 line.Append($" npts={f.NumPoints}");
             else
-                line.Append($" step={f.StepExpr}");
+                line.Append($" step=\"{f.StepExpr}\" stepUnit={f.StepUnit}");
             if (lines.Length > 0) lines.Append('\n');
             lines.Append(line);
         }

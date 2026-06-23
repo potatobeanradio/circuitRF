@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using CircuitRF.Core.Design;   // ParametricSweepAnalysis, SweepKind, SweepAxisMode, SweepExpander, SweepSpec
-using CircuitRF.Ui.Schematic;  // SchematicEditModel, SymbolKind
+using CircuitRF.Core.Design;       // ParametricSweepAnalysis, SweepKind, SweepAxisMode, SweepExpander, SweepSpec
+using CircuitRF.Core.Expressions;  // Units
+using CircuitRF.Ui.Schematic;      // SchematicEditModel, SymbolKind
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -28,7 +29,7 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
     // ── Variable name ─────────────────────────────────────────────────────────
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(VarNameError), nameof(HasVarNameError))]
+    [NotifyPropertyChangedFor(nameof(VarNameError), nameof(HasVarNameError), nameof(Preview))]
     private string _varName = "";
 
     // ── Mode ──────────────────────────────────────────────────────────────────
@@ -72,9 +73,21 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
     public bool IsLinear => SweepKind == SweepKind.Linear;
     public bool IsLog    => SweepKind == SweepKind.Log;
 
-    // ── Optional display unit ─────────────────────────────────────────────────
+    // ── Optional display unit (general; empty = inherit from swept VAR) ──────
 
-    [ObservableProperty] private string _unit = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Preview))]
+    private string _unit = "";
+
+    /// <summary>
+    /// The unit actually applied to Start/Stop/Step coefficients.
+    /// = <see cref="Unit"/> when the user has set one; otherwise the swept VAR's declared unit.
+    /// Exposed so AXAML can show the inherited unit as placeholder text.
+    /// Note: var-unit-wins does NOT apply here — the chosen field/inherited unit always governs
+    /// (unlike the freq preview, where a var's own unit overrides the field unit).
+    /// </summary>
+    public string EffectiveUnit =>
+        !string.IsNullOrEmpty(Unit) ? Unit : GetVarUnit(_model, VarName.Trim());
 
     // ── Known variable names (populated from VAR components) ─────────────────
 
@@ -145,7 +158,12 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
             !TryResolve(StepOrCountExpr, out double stepOrCount))
             return null;
 
-        return SweepExpander.ExpandSweep(start, stop, stepOrCount, Mode, SweepKind);
+        double m = Units.Scale(EffectiveUnit) ?? 1.0;
+        return SweepExpander.ExpandSweep(
+            start * m,
+            stop  * m,
+            Mode == SweepAxisMode.StepSize ? stepOrCount * m : stepOrCount,
+            Mode, SweepKind);
     }
 
     /// <summary>True when the row is complete enough to include in a build.</summary>
@@ -165,7 +183,9 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
             !TryResolve(StepOrCountExpr, out double stepOrCount))
             return null;
 
-        return new SweepSpec(start, stop, stepOrCount, Mode, SweepKind);
+        // Store coefficients (unscaled) + EffectiveUnit; Part A of brief-sweep-range-units
+        // applies the unit multiplier when ParametricSweepAnalysis materializes SweepValues.
+        return new SweepSpec(start, stop, stepOrCount, Mode, SweepKind, EffectiveUnit);
     }
 
     // ── Serialization-restore factory ────────────────────────────────────────
@@ -188,6 +208,7 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
             vm.StartExpr       = spec.Start.ToString("G", CultureInfo.InvariantCulture);
             vm.StopExpr        = spec.Stop.ToString("G", CultureInfo.InvariantCulture);
             vm.StepOrCountExpr = spec.StepOrCount.ToString("G", CultureInfo.InvariantCulture);
+            vm.Unit            = spec.Unit;
         }
         else
         {
@@ -255,5 +276,16 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static string GetVarUnit(SchematicEditModel model, string varName)
+    {
+        if (string.IsNullOrEmpty(varName)) return "";
+        return model.Components
+            .Where(c => c.Symbol == SymbolKind.Var)
+            .SelectMany(c => c.Parameters)
+            .Where(p => p.Name.Equals(varName, StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.Unit)
+            .FirstOrDefault(u => !string.IsNullOrEmpty(u)) ?? "";
     }
 }

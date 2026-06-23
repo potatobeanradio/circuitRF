@@ -958,10 +958,16 @@ public sealed class CnlReader
         // When a key's value is a plain number and the NEXT token is a unit keyword, consume it.
         // (Not applicable here because TokeniseLine splits on whitespace — the unit is a separate
         //  token. We handle this by re-scanning tokens after the key=value pairs.)
+        // NormalizeFreqExpr handles old-style unquoted `start=1 GHz` for backward compat.
+        // New-style `start="1" startUnit=GHz` gives startExpr="1" and startUnit from kv below.
         string startExpr = NormalizeFreqExpr(kv.GetValueOrDefault("start", "1e9"),
                                               tokens, kv.Keys, "start");
         string stopExpr  = NormalizeFreqExpr(kv.GetValueOrDefault("stop",  "10e9"),
                                               tokens, kv.Keys, "stop");
+
+        // Read explicit unit keys (new format). Absent → "Hz" (back-compat with baked values).
+        string startUnit = kv.GetValueOrDefault("startUnit", "Hz");
+        string stopUnit  = kv.GetValueOrDefault("stopUnit",  "Hz");
 
         // Detect kind: bare "log" keyword OR log=true key.
         bool isLog = bare.Contains("log") ||
@@ -974,13 +980,14 @@ public sealed class CnlReader
         if (kv.TryGetValue("npts", out var nptsStr) &&
             int.TryParse(nptsStr, out int npts) && npts >= 1)
         {
-            freqSpec = new FrequencySpec(startExpr, stopExpr, npts, kind);
+            freqSpec = new FrequencySpec(startExpr, stopExpr, npts, kind, startUnit, stopUnit);
         }
         else
         {
             string stepExpr = NormalizeFreqExpr(kv.GetValueOrDefault("step", "1e8"),
                                                  tokens, kv.Keys, "step");
-            freqSpec = new FrequencySpec(startExpr, stopExpr, stepExpr, kind);
+            string stepUnit = kv.GetValueOrDefault("stepUnit", "Hz");
+            freqSpec = new FrequencySpec(startExpr, stopExpr, stepExpr, kind, startUnit, stopUnit, stepUnit);
         }
 
         result = new CircuitRF.Core.Design.SParameterAnalysis(analysisName, freqSpec)
@@ -1175,6 +1182,8 @@ public sealed class CnlReader
                           logVal.Equals("true", StringComparison.OrdinalIgnoreCase));
             var kind = isLog ? CircuitRF.Core.Design.SweepKind.Log : CircuitRF.Core.Design.SweepKind.Linear;
 
+            string unit = kv.TryGetValue("Unit", out var unitStr) ? (unitStr ?? "") : "";
+
             CircuitRF.Core.Design.SweepSpec spec;
             if (kv.TryGetValue("Npts", out var nptsStr) && !string.IsNullOrEmpty(nptsStr))
             {
@@ -1182,7 +1191,7 @@ public sealed class CnlReader
                     throw new InvalidOperationException(
                         $"Parametric sweep '{analysisName}': Npts={nptsStr} must be a positive integer.");
                 spec = new CircuitRF.Core.Design.SweepSpec(start, stop, npts,
-                    CircuitRF.Core.Design.SweepAxisMode.PointCount, kind);
+                    CircuitRF.Core.Design.SweepAxisMode.PointCount, kind, unit);
             }
             else if (kv.TryGetValue("Step", out var stepStr) && !string.IsNullOrEmpty(stepStr))
             {
@@ -1194,7 +1203,7 @@ public sealed class CnlReader
                     throw new InvalidOperationException(
                         $"Parametric sweep '{analysisName}': Step= must be > 0 (got {step}).");
                 spec = new CircuitRF.Core.Design.SweepSpec(start, stop, step,
-                    CircuitRF.Core.Design.SweepAxisMode.StepSize, kind);
+                    CircuitRF.Core.Design.SweepAxisMode.StepSize, kind, unit);
             }
             else
             {
@@ -1264,11 +1273,18 @@ public sealed class CnlReader
                 break;  // stop at first gap
         }
 
+        // Collect ToneUnit[i] parallel to toneExprs. Default "Hz" for any missing entry.
+        var toneUnits = new List<string>();
+        for (int i = 1; i <= toneExprs.Count; i++)
+            toneUnits.Add(kv.GetValueOrDefault($"ToneUnit[{i}]", "Hz"));
+
         result = new CircuitRF.Core.Design.HarmonicBalanceAnalysis(analysisName)
         {
             ToneExpr          = kv.GetValueOrDefault("Tone",            "0"),
+            ToneUnit          = kv.GetValueOrDefault("ToneUnit",        "Hz"),
             NumFreqsExpr      = numFreqsExpr,
             ToneExprs         = toneExprs.ToArray(),
+            ToneUnits         = toneUnits.ToArray(),
             MaxMixOrderExpr   = maxMixOrderExpr,
             MaxHarmonicExpr   = kv.GetValueOrDefault("MaxHarm",         "7"),
             FFTOverSampleExpr = kv.GetValueOrDefault("FFTOverSample",    "1"),

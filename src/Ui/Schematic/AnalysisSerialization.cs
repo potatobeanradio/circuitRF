@@ -29,14 +29,20 @@ namespace CircuitRF.Ui.Schematic;
 /// </summary>
 public sealed class CschFrequencySpec
 {
-    public string      StartExpr { get; set; } = "";
-    public string      StopExpr  { get; set; } = "";
+    public string      StartExpr  { get; set; } = "";
+    public string      StopExpr   { get; set; } = "";
     /// <summary>Step-size expression.  Null / absent in PointCount mode.</summary>
-    public string?     StepExpr  { get; set; }
+    public string?     StepExpr   { get; set; }
     /// <summary>Point count.  Null / absent in StepSize mode.</summary>
-    public int?        NumPoints { get; set; }
-    public FreqSpecMode Mode     { get; set; }
-    public SweepKind   Kind      { get; set; }
+    public int?        NumPoints  { get; set; }
+    public FreqSpecMode Mode      { get; set; }
+    public SweepKind   Kind       { get; set; }
+    /// <summary>Unit for StartExpr.  Null / absent → "Hz" (back-compat).</summary>
+    public string?     StartUnit  { get; set; }
+    /// <summary>Unit for StopExpr.  Null / absent → "Hz" (back-compat).</summary>
+    public string?     StopUnit   { get; set; }
+    /// <summary>Unit for StepExpr.  Null / absent → "Hz" (back-compat).</summary>
+    public string?     StepUnit   { get; set; }
 }
 
 /// <summary>
@@ -57,8 +63,12 @@ public sealed class CschAnalysis
 
     // ── HB ────────────────────────────────────────────────────────────────────
     public string?   ToneExpr          { get; set; }
+    /// <summary>Unit for ToneExpr.  Null / absent → "Hz" (back-compat).</summary>
+    public string?   ToneUnit          { get; set; }
     public string?   NumFreqsExpr      { get; set; }
     public string[]? ToneExprs         { get; set; }
+    /// <summary>Units for ToneExprs (parallel).  Null / absent → all "Hz" (back-compat).</summary>
+    public string[]? ToneUnits         { get; set; }
     public string?   MaxMixOrderExpr   { get; set; }
     public string?   MaxHarmonicExpr   { get; set; }
     public string?   FFTOverSampleExpr { get; set; }
@@ -85,6 +95,8 @@ public sealed class CschAnalysis
     public double?          PsaStop           { get; set; }
     public double?          PsaStepOrCount    { get; set; }
     public SweepKind?       PsaKind           { get; set; }
+    /// <summary>Unit for sweep range.  Null / absent → base units (back-compat).</summary>
+    public string?          PsaUnit           { get; set; }
 }
 
 /// <summary>
@@ -238,8 +250,10 @@ public static class AnalysisSerialization
             Name              = hb.Name,
             Enabled           = hb.Enabled,
             ToneExpr          = hb.ToneExpr,
+            ToneUnit          = hb.ToneUnit != "Hz" ? hb.ToneUnit : null,
             NumFreqsExpr      = hb.NumFreqsExpr,
             ToneExprs         = hb.ToneExprs.Length > 0 ? hb.ToneExprs : null,
+            ToneUnits         = hb.ToneUnits.Length > 0 ? hb.ToneUnits : null,
             MaxMixOrderExpr   = hb.MaxMixOrderExpr,
             MaxHarmonicExpr   = hb.MaxHarmonicExpr,
             FFTOverSampleExpr = hb.FFTOverSampleExpr,
@@ -268,6 +282,7 @@ public static class AnalysisSerialization
             PsaStop        = psa.Spec?.Stop,
             PsaStepOrCount = psa.Spec?.StepOrCount,
             PsaKind        = psa.Spec?.Kind,
+            PsaUnit        = !string.IsNullOrEmpty(psa.Spec?.Unit) ? psa.Spec.Unit : null,
             PsaValues      = psa.Spec is null && psa.SweepValues.Length > 0 ? psa.SweepValues : null,
         },
 
@@ -283,6 +298,9 @@ public static class AnalysisSerialization
         NumPoints = fs.Mode == FreqSpecMode.PointCount ? fs.NumPoints : null,
         Mode      = fs.Mode,
         Kind      = fs.Kind,
+        StartUnit = fs.StartUnit != "Hz" ? fs.StartUnit : null,
+        StopUnit  = fs.StopUnit  != "Hz" ? fs.StopUnit  : null,
+        StepUnit  = fs.StepUnit  != "Hz" ? fs.StepUnit  : null,
     };
 
     public static CschMeasurement ToDto(Measurement m) => new()
@@ -307,8 +325,10 @@ public static class AnalysisSerialization
         {
             Enabled           = dto.Enabled,
             ToneExpr          = dto.ToneExpr          ?? "0",
+            ToneUnit          = dto.ToneUnit           ?? "Hz",
             NumFreqsExpr      = dto.NumFreqsExpr      ?? "1",
             ToneExprs         = dto.ToneExprs          ?? [],
+            ToneUnits         = dto.ToneUnits          ?? [],
             MaxMixOrderExpr   = dto.MaxMixOrderExpr   ?? "5",
             MaxHarmonicExpr   = dto.MaxHarmonicExpr   ?? "7",
             FFTOverSampleExpr = dto.FFTOverSampleExpr ?? "1",
@@ -329,7 +349,7 @@ public static class AnalysisSerialization
                      && dto.PsaMode is { } mode && dto.PsaStart is { } st
                      && dto.PsaStop is { } sp && dto.PsaStepOrCount is { } soc =>
             new ParametricSweepAnalysis(dto.Name, dto.PsaVarName,
-                new SweepSpec(st, sp, soc, mode, dto.PsaKind ?? SweepKind.Linear),
+                new SweepSpec(st, sp, soc, mode, dto.PsaKind ?? SweepKind.Linear, dto.PsaUnit ?? ""),
                 dto.PsaInnerName) { Enabled = dto.Enabled },
 
         "sweep" when dto.PsaVarName is not null && dto.PsaInnerName is not null
@@ -341,10 +361,15 @@ public static class AnalysisSerialization
         _ => null,
     };
 
-    public static FrequencySpec FromDto(CschFrequencySpec dto) =>
-        dto.Mode == FreqSpecMode.PointCount && dto.NumPoints is int n
-            ? new FrequencySpec(dto.StartExpr, dto.StopExpr, n, dto.Kind)
-            : new FrequencySpec(dto.StartExpr, dto.StopExpr, dto.StepExpr ?? "0", dto.Kind);
+    public static FrequencySpec FromDto(CschFrequencySpec dto)
+    {
+        string su = dto.StartUnit ?? "Hz";
+        string eu = dto.StopUnit  ?? "Hz";
+        return dto.Mode == FreqSpecMode.PointCount && dto.NumPoints is int n
+            ? new FrequencySpec(dto.StartExpr, dto.StopExpr, n,                dto.Kind, su, eu)
+            : new FrequencySpec(dto.StartExpr, dto.StopExpr, dto.StepExpr ?? "0", dto.Kind, su, eu,
+                                dto.StepUnit ?? "Hz");
+    }
 
     public static Measurement FromDto(CschMeasurement dto) =>
         new(dto.Name, dto.Expression, dto.Unit);

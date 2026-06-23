@@ -47,6 +47,9 @@ public static class ParametricSweepEngine
         for (int si = 0; si < sweep.SweepValues.Length; si++)
         {
             double val = sweep.SweepValues[si];
+            // SweepValues are pre-scaled to base units by ParametricSweepAnalysis's spec ctor
+            // (Part A of brief-sweep-range-units). Injecting without a unit here is correct and
+            // intentional — do NOT add origVar.Unit, which would double-apply the multiplier.
             var overrideVar = new Variable(
                 sweep.SweepVarName,
                 val.ToString("G17", CultureInfo.InvariantCulture));
@@ -96,7 +99,7 @@ public static class ParametricSweepEngine
         switch (inner)
         {
             case HarmonicBalanceAnalysis hba:
-                var p = HbEngine.Resolve(hba, netlist.ResolvedGlobals);
+                var p = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
                 return (DataSet)new HbEngine(netlist, tb, settings).Run(p);
 
             case SParameterAnalysis spa:
@@ -125,7 +128,7 @@ public static class ParametricSweepEngine
         ElaboratedNetlist  netlist,
         AnalysisSettings?  settings)
     {
-        var freqs = spa.Expand(netlist.ResolvedGlobals);
+        var freqs = spa.Expand(netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
         return SParameterEngine.Run(netlist, freqs, settings);
     }
 

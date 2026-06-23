@@ -467,6 +467,35 @@ public sealed class AnalysisSerializationTests
         Assert.Equal( 10.0, sw.Spec.Stop,        precision: 9);
         Assert.Equal(  5.0, sw.Spec.StepOrCount, precision: 9);
     }
+
+    // ── T8: AnalysisSerialization_RoundTrip_PsaUnit ───────────────────────────
+
+    [Fact]
+    public void AnalysisSerialization_RoundTrip_PsaUnit()
+    {
+        var spec = new SweepSpec(1.0, 5.0, 1.0, SweepAxisMode.StepSize, unit: "GHz");
+        var psa  = new ParametricSweepAnalysis("SW1", "RFfreq", spec, "HB1");
+
+        // ToDto preserves unit.
+        var dto = AnalysisSerialization.ToDto(psa);
+        Assert.Equal("GHz", dto.PsaUnit);
+
+        // FromDto restores unit; materialized values are base-unit.
+        var back = Assert.IsType<ParametricSweepAnalysis>(AnalysisSerialization.FromDto(dto));
+        Assert.Equal("GHz", back.Spec!.Unit);
+        Assert.Equal(1.0, back.Spec.Start,       precision: 9);  // coefficients unscaled
+        Assert.Equal(5.0, back.Spec.Stop,        precision: 9);
+        Assert.Equal(1e9, back.SweepValues[0],   precision: 0);  // materialized base-unit
+        Assert.Equal(5e9, back.SweepValues[^1],  precision: 0);
+
+        // A DTO without PsaUnit loads as base (back-compat).
+        var dtoBase = AnalysisSerialization.ToDto(
+            new ParametricSweepAnalysis("SW0", "x", new SweepSpec(1, 3, 1, SweepAxisMode.StepSize), "HB1"));
+        Assert.Null(dtoBase.PsaUnit);
+        var back0 = Assert.IsType<ParametricSweepAnalysis>(AnalysisSerialization.FromDto(dtoBase));
+        Assert.Equal("", back0.Spec!.Unit);
+        Assert.Equal(1.0, back0.SweepValues[0], precision: 9);
+    }
 }
 
 // ── Layer 2 gate: .csch round-trip + SchematicHasAnalyses ────────────────────

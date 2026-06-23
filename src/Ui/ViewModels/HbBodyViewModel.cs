@@ -1,3 +1,4 @@
+using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Ui.Schematic;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -73,8 +74,8 @@ public sealed partial class HbBodyViewModel : ObservableObject
 
     // ── Preview side-effects ──────────────────────────────────────────────────
 
-    partial void OnToneCoeffChanged(string value)  => TonePreview  = Prev(FreqUnitHelper.ToHzExpr(value, ToneUnit));
-    partial void OnTone2CoeffChanged(string value) => Tone2Preview = Prev(FreqUnitHelper.ToHzExpr(value, Tone2Unit));
+    partial void OnToneCoeffChanged(string value)  => TonePreview  = AnalysisPreviewHelper.ComputeFreqPreview(value, ToneUnit,  _model);
+    partial void OnTone2CoeffChanged(string value) => Tone2Preview = AnalysisPreviewHelper.ComputeFreqPreview(value, Tone2Unit, _model);
     partial void OnMaxHarmonicExprChanged(string value)   => MaxHarmonicPreview = Prev(value);
     partial void OnMaxMixOrderExprChanged(string value)   => MaxMixOrderPreview = Prev(value);
 
@@ -82,14 +83,14 @@ public sealed partial class HbBodyViewModel : ObservableObject
     {
         ToneCoeff     = FreqUnitHelper.Rescale(ToneCoeff, _prevToneUnit, value);
         _prevToneUnit = value;
-        TonePreview   = Prev(FreqUnitHelper.ToHzExpr(ToneCoeff, value));
+        TonePreview   = AnalysisPreviewHelper.ComputeFreqPreview(ToneCoeff, value, _model);
     }
 
     partial void OnTone2UnitChanged(string value)
     {
         Tone2Coeff     = FreqUnitHelper.Rescale(Tone2Coeff, _prevTone2Unit, value);
         _prevTone2Unit = value;
-        Tone2Preview   = Prev(FreqUnitHelper.ToHzExpr(Tone2Coeff, value));
+        Tone2Preview   = AnalysisPreviewHelper.ComputeFreqPreview(Tone2Coeff, value, _model);
     }
     partial void OnTolExprChanged(string value)           => TolPreview           = Prev(value);
     partial void OnGuardHarmonicExprChanged(string value) => GuardHarmonicPreview = Prev(value);
@@ -107,14 +108,13 @@ public sealed partial class HbBodyViewModel : ObservableObject
 
     public HarmonicBalanceAnalysis BuildAnalysis(string name, bool enabled)
     {
-        string toneHz  = FreqUnitHelper.ToHzExpr(ToneCoeff,  ToneUnit);
-        string tone2Hz = FreqUnitHelper.ToHzExpr(Tone2Coeff, Tone2Unit);
-
+        // Store raw expr + separate unit — do NOT bake via ToHzExpr.
         HarmonicBalanceAnalysis analysis = MultiTone
             ? new HarmonicBalanceAnalysis(name)
             {
                 NumFreqsExpr      = "2",
-                ToneExprs         = [toneHz, tone2Hz],
+                ToneExprs         = [ToneCoeff, Tone2Coeff],
+                ToneUnits         = [ToneUnit,  Tone2Unit],
                 MaxMixOrderExpr   = MaxMixOrderExpr,
                 MaxHarmonicExpr   = MaxHarmonicExpr,
                 FFTOverSampleExpr = FftOverSampleExpr,
@@ -126,7 +126,8 @@ public sealed partial class HbBodyViewModel : ObservableObject
             }
             : new HarmonicBalanceAnalysis(name)
             {
-                ToneExpr          = toneHz,
+                ToneExpr          = ToneCoeff,
+                ToneUnit          = ToneUnit,
                 MaxHarmonicExpr   = MaxHarmonicExpr,
                 FFTOverSampleExpr = FftOverSampleExpr,
                 TolExpr           = TolExpr,
@@ -146,22 +147,35 @@ public sealed partial class HbBodyViewModel : ObservableObject
     {
         var vm = new HbBodyViewModel(model);
 
-        // Basic: split Hz expressions into (coeff, unit) for display.
+        // Read stored raw expr + unit directly.
         // Set _prevXUnit before ToneUnit so OnToneUnitChanged sees from==to → no rescaling.
-        var (toneCoeff, toneUnit) = FreqUnitHelper.Split(hb.ToneExpr);
+        // Legacy nicety: when ToneUnit=="Hz" and ToneExpr is a plain number, use Split for
+        // pretty display (e.g. "2.4e9" → "2.4" GHz). Never Split a non-numeric expression.
+        string toneExpr = hb.ToneExpr;
+        string toneUnit = string.IsNullOrEmpty(hb.ToneUnit) ? "Hz" : hb.ToneUnit;
+        if (toneUnit == "Hz")
+        {
+            var (tc, tu) = FreqUnitHelper.Split(toneExpr);
+            toneExpr = tc; toneUnit = tu;
+        }
         vm._prevToneUnit = toneUnit;
         vm.ToneUnit      = toneUnit;
-        vm.ToneCoeff     = toneCoeff;
+        vm.ToneCoeff     = toneExpr;
         vm.MaxHarmonicExpr = hb.MaxHarmonicExpr;
 
         if (int.TryParse(hb.NumFreqsExpr, out int n) && n > 1)
         {
             vm.MultiTone = true;
-            string tone2src = hb.ToneExprs.Length > 1 ? hb.ToneExprs[1] : "2e9";
-            var (tone2Coeff, tone2Unit) = FreqUnitHelper.Split(tone2src);
-            vm._prevTone2Unit  = tone2Unit;
-            vm.Tone2Unit       = tone2Unit;
-            vm.Tone2Coeff      = tone2Coeff;
+            string tone2src  = hb.ToneExprs.Length  > 1 ? hb.ToneExprs[1]  : "2e9";
+            string tone2unit = hb.ToneUnits.Length   > 1 ? hb.ToneUnits[1]  : "Hz";
+            if (tone2unit == "Hz")
+            {
+                var (t2c, t2u) = FreqUnitHelper.Split(tone2src);
+                tone2src = t2c; tone2unit = t2u;
+            }
+            vm._prevTone2Unit  = tone2unit;
+            vm.Tone2Unit       = tone2unit;
+            vm.Tone2Coeff      = tone2src;
             vm.MaxMixOrderExpr = hb.MaxMixOrderExpr;
         }
 

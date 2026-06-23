@@ -61,6 +61,8 @@ public sealed class Elaborator
         // and re-evaluate sweep-dependent expressions at each sweep step.
         foreach (var v in tb.GlobalVariables)
         {
+            if (!string.IsNullOrEmpty(v.Unit))
+                netlist.MarkGlobalHasUnit(v.Name);
             try
             {
                 var val = _evaluator.Resolve(v.Name, globalScope);

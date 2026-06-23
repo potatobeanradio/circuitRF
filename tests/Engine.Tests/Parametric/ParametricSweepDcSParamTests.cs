@@ -270,4 +270,75 @@ analysis SW_Vgs  type=parametric_sweep  Var=Vgs  Values=-1,-2  Inner=SW_Vds
         output.WriteLine($"Throws NotSupportedException: {ex.Message}");
         output.WriteLine("Unsupported_StillThrows: PASS.");
     }
+
+    // ── T4: Sweep_OverFrequencyVar_BaseUnits ─────────────────────────────────
+    // Regression guard for the dropped-unit bug: sweeping RFfreq (GHz) over 1..3
+    // with Unit=GHz must inject base-unit values (1e9,2e9,3e9), not 1,2,3.
+
+    private const string FreqVarSweepCnl = @"
+RFfreq = 2 GHz
+
+Port:P1  n1 0  Num=1  Z=50 Ohm
+Port:P2  n2 0  Num=2  Z=50 Ohm
+R:Rs     n1 n2  R=50 Ohm
+
+analysis SP1  type=sparam  start=1e9  stop=1e9  npts=1
+analysis SW1  type=parametric_sweep  Var=RFfreq  Start=1  Stop=3  Step=1  Unit=GHz  Inner=SP1
+";
+
+    [Fact]
+    public void Sweep_OverFrequencyVar_BaseUnits()
+    {
+        var (lib, tb) = new CnlReader().Read(FreqVarSweepCnl);
+        var sw1 = tb.Analyses.OfType<ParametricSweepAnalysis>().First(a => a.Name == "SW1");
+
+        // SweepValues should be base-unit (Hz).
+        Assert.Equal(3, sw1.SweepValues.Length);
+        Assert.Equal(1e9, sw1.SweepValues[0], precision: 0);
+        Assert.Equal(2e9, sw1.SweepValues[1], precision: 0);
+        Assert.Equal(3e9, sw1.SweepValues[2], precision: 0);
+
+        // Run the sweep and capture injected variable values via the S-param cube's sweep axis.
+        var ds = ParametricSweepEngine.Run(sw1, lib, tb);
+        var sCube = ds["S"];
+
+        Assert.Equal("RFfreq", sCube.Axes[0].Name);
+        Assert.Equal(1e9, sCube.Axes[0].Values[0], precision: 0);
+        Assert.Equal(2e9, sCube.Axes[0].Values[1], precision: 0);
+        Assert.Equal(3e9, sCube.Axes[0].Values[2], precision: 0);
+
+        output.WriteLine("Sweep_OverFrequencyVar_BaseUnits: PASS.");
+    }
+
+    // ── T5: Sweep_Hb_FrequencySwept ──────────────────────────────────────────
+    // A frequency VAR used as the HB Tone, swept over GHz values.
+    // Each point must not throw a commensurability error (would happen at 1 Hz, not 1 GHz).
+
+    private const string HbFreqSweepCnl = @"
+RFfreq = 2 GHz
+
+Port:P1   n1 0  Num=1  Z=50 Ohm
+R:R1      n1 0  R=50 Ohm
+
+analysis HB1  type=hb  Tone=""RFfreq""  ToneUnit=GHz  MaxHarm=3
+analysis SW1  type=parametric_sweep  Var=RFfreq  Start=1  Stop=3  Step=1  Unit=GHz  Inner=HB1
+";
+
+    [Fact]
+    public void Sweep_Hb_FrequencySwept()
+    {
+        var (lib, tb) = new CnlReader().Read(HbFreqSweepCnl);
+        var sw1 = tb.Analyses.OfType<ParametricSweepAnalysis>().First(a => a.Name == "SW1");
+
+        // Runs without commensurability exception; each HB point runs at GHz frequency.
+        var ds = ParametricSweepEngine.Run(sw1, lib, tb);
+
+        var vCube = ds["V"];
+        Assert.Equal("RFfreq", vCube.Axes[0].Name);
+        Assert.Equal(3, vCube.Axes[0].Length);
+        Assert.Equal(1e9, vCube.Axes[0].Values[0], precision: 0);
+        Assert.Equal(3e9, vCube.Axes[0].Values[^1], precision: 0);
+
+        output.WriteLine("Sweep_Hb_FrequencySwept: PASS.");
+    }
 }

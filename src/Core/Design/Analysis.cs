@@ -49,11 +49,12 @@ public sealed class SParameterAnalysis : Analysis
     /// Expands all <see cref="Sweeps"/> segments, unions their points, and returns a single
     /// sorted, deduplicated <c>double[]</c> — the flat frequency array the engine expects.
     /// </summary>
-    public double[] Expand(IReadOnlyDictionary<string, Value>? globals = null)
+    public double[] Expand(IReadOnlyDictionary<string, Value>? globals = null,
+                           IReadOnlyCollection<string>? globalsWithUnit = null)
     {
         var all = new SortedSet<double>();
         foreach (var seg in Sweeps)
-            foreach (var f in seg.Expand(globals))
+            foreach (var f in seg.Expand(globals, globalsWithUnit))
                 all.Add(f);
         return [.. all];
     }
@@ -72,17 +73,21 @@ public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
     // Raw expression strings from the .cnl directive; resolved at engine time.
 
     // ── Single-tone spelling ───────────────────────────────────────────────────
-    /// <summary>Single-tone fundamental (Hz). Ignored when NumFreqsExpr &gt; 1.</summary>
+    /// <summary>Single-tone fundamental raw expression (not baked to Hz). Ignored when NumFreqsExpr &gt; 1.</summary>
     public string ToneExpr          { get; init; } = "0";
+    /// <summary>Unit for ToneExpr. Default "Hz" for back-compatibility (field unit × eval = Hz value).</summary>
+    public string ToneUnit          { get; init; } = "Hz";
 
     // ── Multi-tone spelling ────────────────────────────────────────────────────
     /// <summary>Number of independent tones. "1" = single-tone (ToneExpr used). Default "1".</summary>
     public string NumFreqsExpr      { get; init; } = "1";
     /// <summary>
-    /// Multi-tone frequencies: ToneExprs[i] is the expression for Tone[i+1] (0-based).
+    /// Multi-tone frequencies: ToneExprs[i] is the raw expression for Tone[i+1] (0-based).
     /// Empty for single-tone (use ToneExpr instead).
     /// </summary>
     public string[] ToneExprs       { get; init; } = [];
+    /// <summary>Units for ToneExprs (parallel). Missing/short entries default "Hz".</summary>
+    public string[] ToneUnits       { get; init; } = [];
     /// <summary>Diamond mixing-order bound |k₁|+|k₂| ≤ MaxMixOrder (§6). Multi-tone only.</summary>
     public string MaxMixOrderExpr   { get; init; } = "5";
 
@@ -228,8 +233,15 @@ public sealed class ParametricSweepAnalysis : Analysis
     {
         SweepVarName      = sweepVarName;
         Spec              = spec;
-        SweepValues       = SweepExpander.ExpandSweep(spec.Start, spec.Stop,
-                                spec.StepOrCount, spec.Mode, spec.Kind);
+        // Apply unit multiplier so SweepValues are always in base units.
+        // Start and Stop are always scaled; StepOrCount is scaled only in StepSize mode
+        // (in PointCount mode the count is dimensionless and must not be scaled).
+        double m = Units.Scale(spec.Unit) ?? 1.0;
+        SweepValues       = SweepExpander.ExpandSweep(
+                                spec.Start * m,
+                                spec.Stop  * m,
+                                spec.Mode == SweepAxisMode.StepSize ? spec.StepOrCount * m : spec.StepOrCount,
+                                spec.Mode, spec.Kind);
         InnerAnalysisName = innerAnalysisName;
     }
 }
@@ -247,7 +259,8 @@ public enum FreqSpecMode { StepSize, PointCount }
 /// compact Start/Stop/Step or Start/Stop/Npts form on round-trip.
 /// </summary>
 public sealed class SweepSpec(double start, double stop, double stepOrCount,
-                               SweepAxisMode mode, SweepKind kind = SweepKind.Linear)
+                               SweepAxisMode mode, SweepKind kind = SweepKind.Linear,
+                               string unit = "")
 {
     public double        Start        { get; } = start;
     public double        Stop         { get; } = stop;
@@ -256,6 +269,11 @@ public sealed class SweepSpec(double start, double stop, double stepOrCount,
     /// <summary>StepSize or PointCount (never List — use explicit array for list sweeps).</summary>
     public SweepAxisMode Mode         { get; } = mode;
     public SweepKind     Kind         { get; } = kind;
+    /// <summary>
+    /// General unit for Start/Stop/Step coefficients (empty = base units, scale 1).
+    /// Applied at materialization so <see cref="ParametricSweepAnalysis.SweepValues"/> are always in base units.
+    /// </summary>
+    public string        Unit         { get; } = unit;
 }
 
 /// <summary>
@@ -266,29 +284,40 @@ public sealed class SweepSpec(double start, double stop, double stepOrCount,
 public sealed class FrequencySpec
 {
     // ── Stored intent (what the user typed) ───────────────────────────────────
-    public string       StartExpr { get; }
-    public string       StopExpr  { get; }
-    /// <summary>Step-size expression (Hz). Non-empty in <see cref="FreqSpecMode.StepSize"/> mode only.</summary>
-    public string       StepExpr  { get; }
+    public string       StartExpr  { get; }
+    public string       StopExpr   { get; }
+    /// <summary>Step-size raw expression. Non-empty in <see cref="FreqSpecMode.StepSize"/> mode only.</summary>
+    public string       StepExpr   { get; }
     /// <summary>Number of points. Non-null in <see cref="FreqSpecMode.PointCount"/> mode only. ≥ 1.</summary>
-    public int?         NumPoints { get; }
-    public FreqSpecMode Mode      { get; }
-    public SweepKind    Kind      { get; }
+    public int?         NumPoints  { get; }
+    public FreqSpecMode Mode       { get; }
+    public SweepKind    Kind       { get; }
+    /// <summary>Unit for StartExpr. Default "Hz" for back-compatibility.</summary>
+    public string       StartUnit  { get; }
+    /// <summary>Unit for StopExpr. Default "Hz" for back-compatibility.</summary>
+    public string       StopUnit   { get; }
+    /// <summary>Unit for StepExpr. Default "Hz" for back-compatibility.</summary>
+    public string       StepUnit   { get; }
 
     // ── StepSize constructor (expression strings) ─────────────────────────────
     public FrequencySpec(string startExpr, string stopExpr, string stepExpr,
-                         SweepKind kind = SweepKind.Linear)
+                         SweepKind kind = SweepKind.Linear,
+                         string startUnit = "Hz", string stopUnit = "Hz", string stepUnit = "Hz")
     {
         StartExpr = startExpr;
         StopExpr  = stopExpr;
         StepExpr  = stepExpr;
         Mode      = FreqSpecMode.StepSize;
         Kind      = kind;
+        StartUnit = startUnit;
+        StopUnit  = stopUnit;
+        StepUnit  = stepUnit;
     }
 
     // ── PointCount constructor ────────────────────────────────────────────────
     public FrequencySpec(string startExpr, string stopExpr, int numPoints,
-                         SweepKind kind = SweepKind.Linear)
+                         SweepKind kind = SweepKind.Linear,
+                         string startUnit = "Hz", string stopUnit = "Hz")
     {
         if (numPoints < 1)
             throw new ArgumentOutOfRangeException(nameof(numPoints), "NumPoints must be ≥ 1");
@@ -298,6 +327,9 @@ public sealed class FrequencySpec
         NumPoints = numPoints;
         Mode      = FreqSpecMode.PointCount;
         Kind      = kind;
+        StartUnit = startUnit;
+        StopUnit  = stopUnit;
+        StepUnit  = "Hz";
     }
 
     // ── Backward-compat (doubles → expression strings, StepSize) ─────────────
@@ -306,19 +338,20 @@ public sealed class FrequencySpec
         : this(start.ToString("R", CultureInfo.InvariantCulture),
                stop.ToString("R", CultureInfo.InvariantCulture),
                step.ToString("R", CultureInfo.InvariantCulture),
-               kind) { }
+               kind) { }   // units default "Hz": inputs are already in Hz
 
     // ── Expand: resolve expressions → concrete freq-point array ──────────────
 
     /// <summary>
-    /// Resolves <see cref="StartExpr"/>/<see cref="StopExpr"/>/<see cref="StepExpr"/> against
-    /// <paramref name="globals"/> (may be null for pure-literal expressions) and returns the
-    /// concrete double[] of frequency points this segment covers.
+    /// Resolves Start/Stop/Step expressions against <paramref name="globals"/> — applying
+    /// each field's unit via <see cref="FreqUnit.ResolveHz"/> with the var-unit-wins rule —
+    /// and returns the concrete double[] of frequency points this segment covers.
     /// </summary>
-    public double[] Expand(IReadOnlyDictionary<string, Value>? globals = null)
+    public double[] Expand(IReadOnlyDictionary<string, Value>? globals = null,
+                           IReadOnlyCollection<string>? globalsWithUnit = null)
     {
-        double start = ResolveExpr(StartExpr, globals);
-        double stop  = ResolveExpr(StopExpr,  globals);
+        double start = ResolveFreqHz(StartExpr, StartUnit, globals, globalsWithUnit);
+        double stop  = ResolveFreqHz(StopExpr,  StopUnit,  globals, globalsWithUnit);
 
         if (Mode == FreqSpecMode.PointCount)
         {
@@ -328,14 +361,27 @@ public sealed class FrequencySpec
                 : LinSpace(start, stop, n);
         }
 
-        // StepSize mode
-        double step = ResolveExpr(StepExpr, globals);
+        double step = ResolveFreqHz(StepExpr, StepUnit, globals, globalsWithUnit);
         return Kind == SweepKind.Log
             ? LogStepSpace(start, stop, step)
             : LinearStepSpace(start, stop, step);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    // Resolve a frequency expression to Hz using FreqUnit when globals are available.
+    // Falls back to the legacy numeric path (× unit multiplier) when globals is null or throws.
+    private static double ResolveFreqHz(string expr, string unit,
+        IReadOnlyDictionary<string, Value>? globals, IReadOnlyCollection<string>? globalsWithUnit)
+    {
+        if (globals is not null)
+        {
+            try { return FreqUnit.ResolveHz(expr, unit, globals, globalsWithUnit); }
+            catch { }
+        }
+        // Legacy / fallback: resolve numerically and apply the field unit multiplier.
+        return ResolveExpr(expr, globals) * FreqUnit.Multiplier(unit);
+    }
 
     private static double ResolveExpr(string expr, IReadOnlyDictionary<string, Value>? globals)
     {

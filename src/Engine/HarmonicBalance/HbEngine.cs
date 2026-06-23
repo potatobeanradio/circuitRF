@@ -140,10 +140,13 @@ public sealed class HbEngine
 
     /// <summary>
     /// Resolve a HarmonicBalanceAnalysis directive against the elaborated globals.
+    /// Pass <paramref name="globalsWithUnit"/> (from <c>ElaboratedNetlist.GlobalsWithExplicitUnit</c>)
+    /// to enable the var-unit-wins rule for tone frequencies.
     /// </summary>
     public static HbAnalysisParams Resolve(
         HarmonicBalanceAnalysis hba,
-        IReadOnlyDictionary<string, Value> globals)
+        IReadOnlyDictionary<string, Value> globals,
+        IReadOnlyCollection<string>? globalsWithUnit = null)
     {
         double Num(string expr, double def)
         {
@@ -156,6 +159,12 @@ public sealed class HbEngine
                 return val.Kind == ValueKind.Real ? val.AsReal() : val.AsComplex().Real;
             }
             catch { return def; }
+        }
+
+        double ToneHz(string expr, string unit)
+        {
+            try { return FreqUnit.ResolveHz(expr, unit, globals, globalsWithUnit); }
+            catch { return 1e9; }
         }
 
         int    maxH    = (int)Num(hba.MaxHarmonicExpr, 7);
@@ -172,12 +181,15 @@ public sealed class HbEngine
         {
             toneFreqsHz = new double[numFreqs];
             for (int i = 0; i < numFreqs; i++)
-                toneFreqsHz[i] = Num(hba.ToneExprs[i], 1e9);
+            {
+                string unit = i < hba.ToneUnits.Length ? hba.ToneUnits[i] : "Hz";
+                toneFreqsHz[i] = ToneHz(hba.ToneExprs[i], unit);
+            }
         }
         else
         {
-            // Single-tone: use scalar Tone=.
-            toneFreqsHz = [Num(hba.ToneExpr, 1e9)];
+            // Single-tone: use scalar Tone= / ToneUnit=.
+            toneFreqsHz = [ToneHz(hba.ToneExpr, hba.ToneUnit)];
         }
 
         int maxMixOrder = Math.Max(1, (int)Num(hba.MaxMixOrderExpr, 5));
@@ -634,7 +646,8 @@ public sealed class HbEngine
                     if (!onGrid)
                         throw new InvalidOperationException(
                             $"Commensurability check failed: source '{ec.InstancePath}' {key}={fTone:G6} Hz " +
-                            $"is not on the two-tone grid {{f1={f1:G6}, f2={f2:G6}, MaxMixOrder={grid.MaxMixOrder}}}");
+                            $"is not on the two-tone grid {{f1={f1:G6}, f2={f2:G6}, MaxMixOrder={grid.MaxMixOrder}}}" +
+                            UnitMismatchHint(f1, fTone));
                 }
             }
             else if (ec.Model is P1ToneModel p1)
@@ -648,7 +661,8 @@ public sealed class HbEngine
                 if (!onGrid)
                     throw new InvalidOperationException(
                         $"Commensurability check failed: source '{ec.InstancePath}' Freq={fTone:G6} Hz " +
-                        $"is not on the two-tone grid {{f1={f1:G6}, f2={f2:G6}, MaxMixOrder={grid.MaxMixOrder}}}");
+                        $"is not on the two-tone grid {{f1={f1:G6}, f2={f2:G6}, MaxMixOrder={grid.MaxMixOrder}}}" +
+                        UnitMismatchHint(f1, fTone));
             }
         }
     }
@@ -1264,7 +1278,14 @@ public sealed class HbEngine
                 throw new InvalidOperationException(
                     $"Commensurability check failed: source '{ec.InstancePath}' " +
                     $"Freq={freqHz:G6} Hz is not on the HB tone grid " +
-                    $"{{f0={f0:G6} Hz, MaxHarm={K}}}");
+                    $"{{f0={f0:G6} Hz, MaxHarm={K}}}" +
+                    UnitMismatchHint(f0, freqHz));
         }
+    }
+
+    private static string UnitMismatchHint(double f0, double freqHz)
+    {
+        if (FreqUnit.LooksLikeUnitMismatch(f0, freqHz) == 0) return "";
+        return " — this looks like a frequency-unit mismatch (off by ~1000×ⁿ); check the Tone unit and your variable's units.";
     }
 }

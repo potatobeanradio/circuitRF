@@ -28,6 +28,15 @@ public sealed class ElaboratedNetlist
     public IReadOnlyDictionary<string, Value> ResolvedGlobals => _resolvedGlobals;
     private readonly Dictionary<string, Value> _resolvedGlobals = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Names of global variables declared with an explicit unit in the design layer.
+    /// Used by <c>FreqUnit.ResolveHz</c> for the var-unit-wins rule: a referenced variable in
+    /// this set already carries its unit in its resolved Hz value, so the field unit is ignored.
+    /// </summary>
+    public IReadOnlyCollection<string> GlobalsWithExplicitUnit => _globalsWithExplicitUnit;
+    private readonly HashSet<string> _globalsWithExplicitUnit = new(StringComparer.Ordinal);
+    internal void MarkGlobalHasUnit(string name) => _globalsWithExplicitUnit.Add(name);
+
     public void AddComponent(ElaboratedComponent c)
     {
         int idx = Components.Count;

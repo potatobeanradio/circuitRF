@@ -20,28 +20,6 @@ internal static class FreqUnitHelper
     };
 
     /// <summary>
-    /// Converts a (coefficient string, unit string) pair to a compact Hz expression.
-    /// Numeric: "2.4" + "GHz" → "2.4e9". Symbolic: "f0" + "MHz" → "(f0) * 1000000".
-    /// </summary>
-    internal static string ToHzExpr(string coeff, string unit)
-    {
-        double m = Multiplier(unit);
-        if (m == 1.0) return coeff;
-
-        if (double.TryParse(coeff.Trim(),
-                NumberStyles.Float | NumberStyles.AllowLeadingSign,
-                CultureInfo.InvariantCulture, out double v))
-        {
-            string suffix = unit switch { "GHz" => "e9", "MHz" => "e6", "kHz" => "e3", _ => "" };
-            string c = v.ToString("G10", CultureInfo.InvariantCulture);
-            return $"{c}{suffix}";
-        }
-
-        // Symbolic expression — multiply by raw factor
-        return $"({coeff}) * {(long)m}";
-    }
-
-    /// <summary>
     /// Splits a Hz expression into the best (coefficient, unit) pair for display.
     /// Non-numeric expressions are returned as-is with unit "Hz".
     /// </summary>

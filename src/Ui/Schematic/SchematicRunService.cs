@@ -219,7 +219,7 @@ public static class SchematicRunService
         {
             case SParameterAnalysis spa:
             {
-                var freqs = spa.Expand(nl.ResolvedGlobals);
+                var freqs = spa.Expand(nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
                 notes.Add($"S-param '{spa.Name}': {freqs.Length} pts, " +
                           $"{freqs[0] / 1e9:G4}–{freqs[^1] / 1e9:G4} GHz " +
                           $"({spa.Sweeps.Count} segment(s))");
@@ -228,7 +228,7 @@ public static class SchematicRunService
 
             case HarmonicBalanceAnalysis hba:
             {
-                var p     = HbEngine.Resolve(hba, nl.ResolvedGlobals);
+                var p     = HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
                 var sweep = p.HasSweep ? $", sweep {p.SweepVarName}" : "";
                 notes.Add($"HB '{hba.Name}': f0={p.ToneHz / 1e9:G4} GHz, K={p.MaxHarmonic}{sweep}");
                 return new HbEngine(nl, tb).Run(p).DataSet;
