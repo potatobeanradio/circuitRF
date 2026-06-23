@@ -176,11 +176,13 @@ namespace CircuitRF.Ui.DataDisplay
             };
         }
 
-        // Inlined from splotRF.ViewModels.ComplexStringHelper.Format
+        // Inlined from splotRF.ViewModels.ComplexStringHelper.Format.
+        // Engineering convention: j precedes the (unsigned) imaginary magnitude, e.g.
+        // "50+j5" / "50-j5" (not "50+5j").
         private static string FormatRI(Complex c, string fmt)
         {
-            string sign = c.Imaginary >= 0 ? "+" : "";
-            return $"{c.Real.ToString(fmt)}{sign}{c.Imaginary.ToString(fmt)}j";
+            string sign = c.Imaginary >= 0 ? "+" : "-";
+            return $"{c.Real.ToString(fmt)}{sign}j{Math.Abs(c.Imaginary).ToString(fmt)}";
         }
 
         // ---- Equality ---------------------------------------------------

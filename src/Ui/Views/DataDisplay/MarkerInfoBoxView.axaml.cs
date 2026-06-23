@@ -149,7 +149,10 @@ public partial class MarkerInfoBoxView : UserControl
         removeItem.Click += (_, _) => removeMarker();
 
         menu.Items.Add(editItem);
-        menu.Items.Add(changeItem);
+        // "Change to Trace…" is meaningless for a contour marker (it isn't bound to a swept
+        // network/cube trace it could be re-pointed onto), so it is never shown for contours.
+        if (marker.MarkerKind != MarkerKind.Contour)
+            menu.Items.Add(changeItem);
 
         // ---- Grouped toggles (no separators between them) ----
         if (PlotRenderer.VswrAvailableFor(hostPlot, trace, marker))

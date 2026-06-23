@@ -81,8 +81,6 @@ the **identical SDD FET** so HB comparisons test our math, not a different trans
 suite on Windows, macOS, and Linux.
 
 ## Ask before
-- Changing any file format or the **`DataSet`/`DataCube` contract** (affects splotRF interop;
-  splotRF must be upgraded in lockstep and must handle both `DataKind`s).
 - Adding native (non-managed) dependencies (cross-platform risk).
 - Anything marked out-of-scope for v1 in `docs/PRD.md` (transient, full Verilog-A/ASM-HEMT,
   a third-party cell database, layout view).

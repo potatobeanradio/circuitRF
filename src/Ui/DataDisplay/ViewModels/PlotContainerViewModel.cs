@@ -563,6 +563,21 @@ public partial class PlotContainerViewModel : ViewModelBase
     public void RequestInfoBoxRebuild() => _parent.OnContainerPlotChanged(this);
 
     /// <summary>
+    /// Targeted add/remove of a single marker's InfoBox VM in response to a ShowInfoBox
+    /// toggle. Unlike RequestInfoBoxRebuild this does not recreate the other InfoBox VMs,
+    /// so an open MarkerEditor flyout bound to one of them stays alive.
+    /// </summary>
+    public void SetMarkerInfoBoxVisibility(Marker marker, Trace trace)
+        => _parent.SetMarkerInfoBoxVisibility(marker, trace, this);
+
+    /// <summary>
+    /// Returns the live InfoBox VM for a marker, or a transient one (not displayed) when the
+    /// marker's info box is hidden. Lets the editor flyout open regardless of ShowInfoBox.
+    /// </summary>
+    public MarkerInfoBoxViewModel GetOrCreateInfoBoxVm(Marker marker, Trace trace)
+        => _parent.GetOrCreateInfoBoxVm(marker, trace, this);
+
+    /// <summary>
     /// Returns the lowest m-number not currently used by any marker on any
     /// plot in the whole DataDisplay.
     /// </summary>

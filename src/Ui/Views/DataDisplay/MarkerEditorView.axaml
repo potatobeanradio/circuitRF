@@ -86,11 +86,11 @@
             Padding="10">
         <StackPanel Spacing="8">
 
-            <!-- Name -->
-            <StackPanel Spacing="3">
-                <TextBlock Text="Marker Name" Classes="label"/>
-                <TextBox Text="{Binding Name}"/>
-            </StackPanel>
+            <!-- Name — label + box on one row -->
+            <Grid ColumnDefinitions="Auto,8,*">
+                <TextBlock Grid.Column="0" Text="Marker Name" Classes="label"/>
+                <TextBox  Grid.Column="2" Text="{Binding Name}"/>
+            </Grid>
 
             <!-- Frequency — committed on Enter, snapped to nearest data point;
                  hidden for contour and spectrum markers -->
@@ -102,16 +102,6 @@
                          Width="120"
                          HorizontalAlignment="Left"
                          KeyDown="OnFreqTextBoxKeyDown"/>
-            </StackPanel>
-
-            <!-- Impedance — contour markers only; Enter commits + moves marker -->
-            <StackPanel Spacing="3" IsVisible="{Binding ShowImpedanceField}">
-                <TextBlock Text="Impedance (Ω)" Classes="label"/>
-                <TextBox x:Name="ImpedanceTextBox"
-                         Text="{Binding ImpedanceText}"
-                         Width="120"
-                         HorizontalAlignment="Left"
-                         KeyDown="OnImpedanceKeyDown"/>
             </StackPanel>
 
             <!-- Data readout block — card-styled, read-only live values -->
@@ -153,40 +143,59 @@
                 </StackPanel>
             </Border>
 
-            <!-- Format — Smith/Polar only -->
+            <!-- Impedance — contour markers only; label + box on one row; Enter commits + moves marker -->
+            <Grid ColumnDefinitions="Auto,8,*" IsVisible="{Binding ShowImpedanceField}">
+                <TextBlock Grid.Column="0" Text="Impedance (Ω)" Classes="label"/>
+                <TextBox Grid.Column="2"
+                         x:Name="ImpedanceTextBox"
+                         Text="{Binding ImpedanceText}"
+                         KeyDown="OnImpedanceKeyDown"/>
+            </Grid>
+
+            <!-- VSWR: toggle + value on one row — placed above Format -->
+            <Grid ColumnDefinitions="Auto,8,Auto,6,Auto"
+                  IsVisible="{Binding ShowVswrControls}">
+                <ToggleButton Grid.Column="0"
+                              Classes="seg-btn"
+                              IsChecked="{Binding VswrEnabled, Mode=TwoWay}"
+                              ToolTip.Tip="Draw a constant-VSWR circle around this marker">
+                    VSWR
+                </ToggleButton>
+                <TextBlock Grid.Column="2"
+                           Text="VSWR"
+                           Classes="label"
+                           VerticalAlignment="Center"/>
+                <TextBox Grid.Column="4"
+                         x:Name="VswrValueTextBox"
+                         Text="{Binding VswrValueText}"
+                         Width="64"
+                         KeyDown="OnVswrValueKeyDown"/>
+            </Grid>
+
+            <!-- Format — Smith/Polar + contour; shows mA / RI / dB casing -->
             <StackPanel Spacing="3" IsVisible="{Binding ShowFormatSelector}">
                 <TextBlock Text="Format" Classes="label"/>
                 <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllFormats}"
                           SelectedItem="{Binding MatrixFormat}"
                           Width="72"
-                          HorizontalAlignment="Left"/>
+                          HorizontalAlignment="Left">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Converter={x:Static vm:MatrixFormatConverter.Instance}}"
+                                       FontSize="10"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
             </StackPanel>
 
-            <!-- Normalize (ToggleButton) + Display Size (ComboBox) -->
-            <Grid ColumnDefinitions="*,8,Auto" VerticalAlignment="Bottom">
-                <ToggleButton Grid.Column="0"
-                              Classes="seg-btn"
-                              IsChecked="{Binding UseNormalized, Mode=TwoWay}"
-                              HorizontalAlignment="Left"
-                              IsVisible="{Binding ShowNormZ}"
-                              ToolTip.Tip="Normalize to reference impedance">
-                    Norm Z
-                </ToggleButton>
-
-                <StackPanel Grid.Column="2" Spacing="3">
-                    <TextBlock Text="Size" Classes="label"/>
-                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllStyles}"
-                              SelectedItem="{Binding Style}"
-                              Width="68">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Converter={x:Static vm:MarkerStyleConverter.Instance}}"
-                                           FontSize="10"/>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </StackPanel>
-            </Grid>
+            <!-- Normalize (ToggleButton) -->
+            <ToggleButton Classes="seg-btn"
+                          IsChecked="{Binding UseNormalized, Mode=TwoWay}"
+                          HorizontalAlignment="Left"
+                          IsVisible="{Binding ShowNormZ}"
+                          ToolTip.Tip="Normalize to reference impedance">
+                Norm Z
+            </ToggleButton>
 
             <!-- Multi-marker / Δ Delta — Rect only -->
             <StackPanel Orientation="Horizontal" Spacing="4"
@@ -211,26 +220,6 @@
                 Info Box
             </ToggleButton>
 
-            <!-- VSWR: toggle + value on one row -->
-            <Grid ColumnDefinitions="Auto,8,Auto,6,Auto"
-                  IsVisible="{Binding ShowVswrControls}">
-                <ToggleButton Grid.Column="0"
-                              Classes="seg-btn"
-                              IsChecked="{Binding VswrEnabled, Mode=TwoWay}"
-                              ToolTip.Tip="Draw a constant-VSWR circle around this marker">
-                    VSWR
-                </ToggleButton>
-                <TextBlock Grid.Column="2"
-                           Text="VSWR"
-                           Classes="label"
-                           VerticalAlignment="Center"/>
-                <TextBox Grid.Column="4"
-                         x:Name="VswrValueTextBox"
-                         Text="{Binding VswrValueText}"
-                         Width="64"
-                         KeyDown="OnVswrValueKeyDown"/>
-            </Grid>
-
             <!-- Contour mode: snap to grid point vs free/interpolated -->
             <ToggleButton Classes="seg-btn"
                           IsChecked="{Binding ContourSnapped, Mode=TwoWay}"
@@ -239,8 +228,8 @@
                 Snap to Point
             </ToggleButton>
 
-            <!-- Precision / Digits — always at the bottom -->
-            <Grid ColumnDefinitions="Auto,8,Auto">
+            <!-- Precision / Digits / Size — always at the bottom -->
+            <Grid ColumnDefinitions="Auto,8,Auto,8,Auto">
                 <StackPanel Grid.Column="0" Spacing="3">
                     <TextBlock Text="Precision" Classes="label"/>
                     <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllPrecisionFormats}"
@@ -261,6 +250,19 @@
                                    Increment="1"
                                    FormatString="0"
                                    Width="40"/>
+                </StackPanel>
+                <StackPanel Grid.Column="4" Spacing="3">
+                    <TextBlock Text="Size" Classes="label"/>
+                    <ComboBox ItemsSource="{x:Static vm:MarkerEditorViewModel.AllStyles}"
+                              SelectedItem="{Binding Style}"
+                              Width="68">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={x:Static vm:MarkerStyleConverter.Instance}}"
+                                           FontSize="10"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
                 </StackPanel>
             </Grid>
 

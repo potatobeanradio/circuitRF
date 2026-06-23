@@ -193,6 +193,11 @@ namespace CircuitRF.Ui.DataDisplay
             _                             => "",
         };
 
+        /// <summary>Public display unit for this contour's plotted metric (e.g. "dBm" for Pout,
+        /// "%" for efficiency). Empty when the metric has no unit. Used by the marker InfoBox/editor
+        /// so the metric readout reads "Pout=12.3 dBm".</summary>
+        public string MetricUnitString => MetricUnit(MetricName);
+
         private static string FormatCompression(double value)
         {
             string s = value.ToString("G6");

@@ -34,8 +34,10 @@ public partial class WorkspaceWindow : Window
     {
         InitializeComponent();
         // Belt-and-suspenders: also set HostWindowFactory directly on the control so
-        // both Dock dispatch paths (factory locator and DockControl) produce a HostWindow.
-        MainDockControl.HostWindowFactory = () => new HostWindow();
+        // both Dock dispatch paths (factory locator and DockControl) produce a CrfHostWindow,
+        // which neutralizes the OS close box for TOOL tear-offs (whose close path crashes
+        // Dock's teardown); document tear-offs still close normally.
+        MainDockControl.HostWindowFactory = () => new CircuitRF.Ui.ViewModels.Dock.CrfHostWindow();
         AddHandler(InputElement.KeyDownEvent, OnWindowKeyDownTunnel, RoutingStrategies.Tunnel);
     }
 

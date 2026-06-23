@@ -299,7 +299,7 @@ namespace CircuitRF.Ui.DataDisplay
                 // ---- Live VSWR drag readout (unclipped — must not be cut off near the edge) ----
                 if (vswrReadout is { } ro)
                 {
-                    using var font  = new SKFont(CircuitRF.Ui.Renderers.SkiaFonts.PlexBold,
+                    using var font  = new SKFont(CircuitRF.Ui.Renderers.SkiaFonts.PlexRegular,
                                                  (float)(Math.Min(canvasSize.W, canvasSize.H) * 0.0224));
                     using var paint = new SKPaint { Color = SKColors.Black, IsAntialias = true };
                     canvas.DrawText(ro.Text, ro.PointerPx.X + 10f, ro.PointerPx.Y - 10f,

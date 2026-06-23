@@ -193,7 +193,9 @@ public partial class MarkerEditorViewModel : ViewModelBase
         if (!MarkerIsLive) return;
         _marker.ShowInfoBox = value;
         NotifyParent();
-        _parent?.Container.RequestInfoBoxRebuild();
+        // Targeted add/remove of THIS marker's InfoBox only — a full rebuild would recreate
+        // every InfoBox VM (including the one this editor flyout is bound to) and dismiss the flyout.
+        _parent?.Container.SetMarkerInfoBoxVisibility(_marker, _parent.Trace);
     }
 
     // ---- VSWR enable + value -------------------------------------------
@@ -266,13 +268,16 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     public void CommitImpedance()
     {
+        System.Console.WriteLine($"[CommitImpedance] entered. live={MarkerIsLive} parentNull={_parent is null} contour={_parent?.Trace.IsContourTrace} text='{ImpedanceText}'");
         if (!MarkerIsLive || _parent is null || !_parent.Trace.IsContourTrace) return;
-        if (!ComplexStringHelper.TryParse(ImpedanceText, out Complex z)) { SyncImpedanceText(); return; }
+        if (!ComplexStringHelper.TryParse(ImpedanceText, out Complex z)) { System.Console.WriteLine("[CommitImpedance] PARSE FAILED"); SyncImpedanceText(); return; }
         Complex posC = _parent.PlotType == PlotType.Rect
             ? z
             : RfHelpers.Z2G(z / RealZ0());
         var world = new System.Numerics.Vector2((float)posC.Real, (float)posC.Imaginary);
-        _marker.PositionStatic = _parent.Trace.ResolveContourMarkerPosition(_marker, world);
+        var resolved = _parent.Trace.ResolveContourMarkerPosition(_marker, world);
+        System.Console.WriteLine($"[CommitImpedance] plot={_parent.PlotType} z={z} posC={posC} world={world} resolved={resolved} snapped={_marker.ContourSnapped} before={_marker.PositionStatic}");
+        _marker.PositionStatic = resolved;
         SyncImpedanceText();
         NotifyParent();
         _parent.Container.RequestPlotRedraw();
@@ -295,24 +300,35 @@ public partial class MarkerEditorViewModel : ViewModelBase
     /// <summary>True when the host plot is a Rect chart and not a contour trace.</summary>
     public bool ShowMultiDeltaControls => _parent is not null && _parent.PlotType == PlotType.Rect && !IsContour;
 
-    /// <summary>Z0 line hidden for contour-on-Rect and for spectrum.</summary>
-    public bool ShowZ0Line => _parent is not null && !IsSpectrum && !(IsContour && IsRectPlot);
+    /// <summary>Z0 line shows only for network matrix traces (S/Y/Z) — the only traces with a
+    /// meaningful port reference impedance. Hidden for cube-bound traces (HB spectra, families,
+    /// measurement expressions), contours, and derived (stability/gain) traces.</summary>
+    public bool ShowZ0Line =>
+        _parent is not null && !_parent.Trace.IsCubeBound && !_parent.Trace.IsContourTrace
+        && !_parent.Trace.IsDerived;
 
-    /// <summary>Norm Z toggle hidden for contour-on-Rect and spectrum.</summary>
-    public bool ShowNormZ => _parent is not null && !(IsContour && IsRectPlot) && !IsSpectrum;
+    /// <summary>Norm Z toggle shows only when the marker actually displays an impedance readout
+    /// (a reflection S-parameter, Sii, on a complex plane) — the only case the toggle affects.</summary>
+    public bool ShowNormZ => _parent is not null && _parent.Trace.MarkerShowsImpedance(_marker);
 
-    /// <summary>Frequency field shown for network/stability markers only.</summary>
-    public bool ShowFrequencyField => _parent is not null && !IsContour && !IsSpectrum;
+    /// <summary>Frequency field shown only for traces whose X axis is the network 'freq' axis
+    /// (SNP/derived traces). Cube-bound traces (HB spectra, measurement expressions, families,
+    /// contours) are swept on other axes and have no editable frequency.</summary>
+    public bool ShowFrequencyField =>
+        _parent is not null && !_parent.Trace.IsCubeBound && !IsContour && !IsSpectrum;
 
     /// <summary>Impedance field shown for contour markers.</summary>
     public bool ShowImpedanceField => IsContour;
 
     /// <summary>
-    /// Matrix-format selector is only meaningful on Smith/Polar plots where the marker
-    /// displays a complex value.  On Rect plots markers always show scalar values, so
-    /// the Format ComboBox is hidden.  Defaults true when no parent (design time).
+    /// Matrix-format selector is only meaningful where the marker displays a COMPLEX value.
+    /// That covers Smith/Polar plots (markers show complex values) and contour markers (the
+    /// coordinate/impedance readout is complex Z/Γ) — including contour-on-Rect, where the plot
+    /// type alone would otherwise hide it. Hidden for ordinary scalar Rect traces.
+    /// Defaults true when no parent (design time).
     /// </summary>
-    public bool ShowFormatSelector => _parent is null || _parent.PlotType != PlotType.Rect;
+    public bool ShowFormatSelector =>
+        _parent is null || _parent.PlotType != PlotType.Rect || IsContour;
 
     // ---- Design-time instance (AXAML previewer) -------------------------
     //
@@ -413,11 +429,12 @@ public partial class MarkerEditorViewModel : ViewModelBase
             foreach (var t in _parent.Container.PlotVM.Plot.Traces)
             {
                 if (t == _parent.Trace) continue;
+                bool tHasZ0 = !t.IsCubeBound && !t.IsContourTrace && !t.IsDerived;
                 result.Add(new MultiTraceLineItem
                 {
                     // Delegate to Trace.GetMultiMarkerLine so formatting is identical to the InfoBox.
                     DataText = _parent.Trace.GetMultiMarkerLine(_marker, t),
-                    Z0Text   = $"Z0={ComplexStringHelper.Format(t.Z0)} Ω",
+                    Z0Text   = tHasZ0 ? $"Z0={ComplexStringHelper.Format(t.Z0)} Ω" : "",
                 });
             }
             return result;

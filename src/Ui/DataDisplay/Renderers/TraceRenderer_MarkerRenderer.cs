@@ -457,11 +457,21 @@ namespace CircuitRF.Ui.DataDisplay
             var lines = trace.BuildMarkerBoxLines(marker, freqUnit, showFilePrefix, otherTraces);
 
             // Use fallback-aware measure so lines containing ∠ (U+2220) are sized correctly.
-            using var probeFont  = new SKFont(SkiaFonts.PlexRegular,   ts);
-            using var probeFb    = new SKFont(SkiaFonts.DejaVuRegular, ts);
+            // Each line MUST be measured with the same weight DrawInfoBox renders it in — the
+            // first (name) line is bold and bold glyphs are wider, so measuring it with the
+            // regular face undersizes the box whenever the name is the widest line (which depends
+            // on the value string, hence the format-dependent width bug).
+            using var probeReg    = new SKFont(SkiaFonts.PlexRegular,   ts);
+            using var probeRegFb  = new SKFont(SkiaFonts.DejaVuRegular, ts);
+            using var probeBold   = new SKFont(SkiaFonts.PlexBold,      ts);
+            using var probeBoldFb = new SKFont(SkiaFonts.DejaVuBold,    ts);
             float maxW = 0f;
-            foreach (var (text, _) in lines)
-                maxW = Math.Max(maxW, RendererText.MeasureTextWithFallback(text, probeFont, probeFb));
+            foreach (var (text, bold) in lines)
+            {
+                var primary  = bold ? probeBold   : probeReg;
+                var fallback = bold ? probeBoldFb : probeRegFb;
+                maxW = Math.Max(maxW, RendererText.MeasureTextWithFallback(text, primary, fallback));
+            }
 
             float boxW = maxW + padding * 2f;
             float boxH = (ts + padding) * lines.Count + padding;

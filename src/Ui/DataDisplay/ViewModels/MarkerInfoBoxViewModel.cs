@@ -151,13 +151,26 @@ public partial class MarkerInfoBoxViewModel : ViewModelBase
             FormatString           = Marker.FormatString,
             InfoBoxPos             = Marker.InfoBoxPos,
         };
+        // Keep the marker's x-position as close as possible to where it was on the old trace,
+        // so the user can track where it landed. For network (freq-swept) traces x == frequency,
+        // so snap to the new trace's nearest available frequency to the old marker's Freq.
+        if (!newTrace.IsCubeBound && newTrace.Data?.Frequencies is { Length: > 0 } newFreqs)
+        {
+            double best = newFreqs[0], bestDiff = Math.Abs(Marker.Freq - newFreqs[0]);
+            for (int i = 1; i < newFreqs.Length; i++)
+            {
+                double d = Math.Abs(Marker.Freq - newFreqs[i]);
+                if (d < bestDiff) { bestDiff = d; best = newFreqs[i]; }
+            }
+            moved.Freq = best;
+        }
         newTrace.Markers.Add(moved);
         if (newTrace.IsStabilityCircle)
         {
             // temporarily set the current PositionStatic to center so SnapMarkerToStabilityCircle will
             // put the marker glyph on the circle's point closest to center of Smith Chart
-            int fi = Array.FindIndex(newTrace.Data.Frequencies, f => f >= moved.Freq - 1e-6);
-            if (fi < 0) fi = newTrace.Data.Frequencies.Length - 1;
+            int fi = Array.FindIndex(newTrace.Data!.Frequencies, f => f >= moved.Freq - 1e-6);
+            if (fi < 0) fi = newTrace.Data!.Frequencies.Length - 1;
             moved.PositionStatic = new System.Numerics.Vector2(0,0);
             newTrace.SnapMarkerToStabilityCircle(moved, fi);
         }

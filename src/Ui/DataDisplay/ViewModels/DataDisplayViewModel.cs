@@ -105,6 +105,14 @@ public partial class DataDisplayViewModel : ViewModelBase
         foreach (var m in _markerInfoBoxes) m.NotifyViewProperties();
     }
 
+    /// <summary>
+    /// Returns the DataDisplay canvas size in screen pixels (W, H). Injected by
+    /// DisplayWindowViewModel (which owns the view's GetCanvasSize action) so new-plot
+    /// placement can reason about the visible viewport. Null when not wired (tests / headless);
+    /// placement then falls back to a simple cascade.
+    /// </summary>
+    public Func<(double W, double H)>? CanvasSizeProvider { get; set; }
+
     // ---- Marker info-box management ---------------------------------
 
     /// <summary>
@@ -116,6 +124,40 @@ public partial class DataDisplayViewModel : ViewModelBase
         => RebuildMarkerInfoBoxesForContainer(container);
 
     /// <summary>
+    /// Targeted show/hide of a single marker's InfoBox VM, without tearing down and
+    /// recreating every InfoBox in the container (which a full rebuild does). Used by the
+    /// ShowInfoBox toggle so an open MarkerEditor flyout — bound to a specific
+    /// MarkerInfoBoxViewModel — is not orphaned/dismissed when the toggle fires.
+    /// Adds the box when newly shown, removes it when hidden; the marker glyph itself is
+    /// always drawn by PlotRenderer regardless.
+    /// </summary>
+    public void SetMarkerInfoBoxVisibility(Marker marker, Trace trace, PlotContainerViewModel container)
+    {
+        var existing = _markerInfoBoxes.FirstOrDefault(
+            m => m.Container == container && ReferenceEquals(m.Marker, marker));
+
+        if (marker.ShowInfoBox)
+        {
+            if (existing is not null) return;   // already shown
+            var plot = container.PlotVM.Plot;
+            if (double.IsNaN(marker.InfoBoxPos.X))
+                PlaceInfoBoxInLogicalCoords(marker, trace, plot, container);
+            _markerInfoBoxes.Add(new MarkerInfoBoxViewModel(
+                marker, trace, container,
+                () => plot.FreqUnits,
+                () => Theme,
+                this,
+                marker.InfoBoxPos.X,
+                marker.InfoBoxPos.Y));
+        }
+        else if (existing is not null)
+        {
+            _markerInfoBoxes.Remove(existing);
+            RefreshSelection();
+        }
+    }
+
+    /// <summary>
     /// Called by PlotContainerViewModel when PlotControl.MarkerMoved fires
     /// (user dragged a marker symbol to a new frequency).  Refreshes the text
     /// in existing info boxes without a full rebuild.
@@ -125,6 +167,30 @@ public partial class DataDisplayViewModel : ViewModelBase
         foreach (var vm in _markerInfoBoxes)
             if (vm.Container == container)
                 vm.OnMarkerMoved();
+    }
+
+    /// <summary>
+    /// Returns the live InfoBox VM for <paramref name="marker"/> if one exists (ShowInfoBox=true),
+    /// otherwise builds a transient VM that is NOT added to the MarkerInfoBoxes collection.
+    /// Used by the marker context menu's "Edit Properties" action so the editor flyout can open
+    /// even when the marker's info box is hidden (the editor only needs the VM as a model wrapper).
+    /// </summary>
+    public MarkerInfoBoxViewModel GetOrCreateInfoBoxVm(
+        Marker marker, Trace trace, PlotContainerViewModel container)
+    {
+        var existing = _markerInfoBoxes.FirstOrDefault(
+            m => m.Container == container && ReferenceEquals(m.Marker, marker));
+        if (existing is not null) return existing;
+
+        var plot = container.PlotVM.Plot;
+        double left = double.IsNaN(marker.InfoBoxPos.X) ? container.Left : marker.InfoBoxPos.X;
+        double top  = double.IsNaN(marker.InfoBoxPos.Y) ? container.Top  : marker.InfoBoxPos.Y;
+        return new MarkerInfoBoxViewModel(
+            marker, trace, container,
+            () => plot.FreqUnits,
+            () => Theme,
+            this,
+            left, top);
     }
 
     private void RebuildMarkerInfoBoxesForContainer(PlotContainerViewModel container)
@@ -144,13 +210,23 @@ public partial class DataDisplayViewModel : ViewModelBase
 
         var plot = container.PlotVM.Plot;
 
+        // Pass 1: ensure EVERY shown marker has a finite InfoBoxPos before any VM is
+        // created. Restoring selection below sets IsSelected=true, whose setter fires a
+        // RequestPlotRedraw → dirty-check → JSON serialization of ALL markers. If any
+        // not-yet-processed marker still held its placeholder NaN InfoBoxPos, that
+        // mid-rebuild serialization would throw (System.Text.Json rejects NaN/∞). Placing
+        // all positions first guarantees the graph is finite whenever the dirty-check runs.
+        foreach (var trace in plot.Traces)
+            foreach (var marker in trace.Markers)
+                if (marker.ShowInfoBox && double.IsNaN(marker.InfoBoxPos.X))
+                    PlaceInfoBoxInLogicalCoords(marker, trace, plot, container);
+
+        // Pass 2: build the VMs and restore selection (now safe to fire the dirty-check).
         foreach (var trace in plot.Traces)
         {
             foreach (var marker in trace.Markers)
             {
                 if (!marker.ShowInfoBox) continue;   // glyph still drawn by PlotRenderer
-                if (double.IsNaN(marker.InfoBoxPos.X))
-                    PlaceInfoBoxInLogicalCoords(marker, trace, plot, container);
 
                 var vm = new MarkerInfoBoxViewModel(
                     marker, trace, container,
@@ -458,8 +534,20 @@ public partial class DataDisplayViewModel : ViewModelBase
         double w = width  > 0 ? width  : (square ? 420 : 520);
         double h = height > 0 ? height : (square ? 420 : 360);
 
-        double l = left  >= 0 ? left  : 30 + _plots.Count * 30;
-        double t = top   >= 0 ? top   : 30 + _plots.Count * 30;
+        // Auto-place when the caller did not specify a position. ComputeNewPlotPosition
+        // centers the first in-view plot and otherwise grows a square grid (see its docs).
+        double l, t;
+        if (left >= 0 && top >= 0)
+        {
+            l = left;
+            t = top;
+        }
+        else
+        {
+            var (px, py) = ComputeNewPlotPosition(w, h);
+            l = left >= 0 ? left : px;
+            t = top  >= 0 ? top  : py;
+        }
 
         var plot      = new Plot(plotType, freqUnit);
         var plotVm    = new PlotViewModel(plot);
@@ -478,6 +566,170 @@ public partial class DataDisplayViewModel : ViewModelBase
         // Do() executes the command immediately (adds container + selects it).
         UndoRedo.Do(new AddPlotCommand(container, this));
         return container;
+    }
+
+    // ---- New-plot auto-placement ------------------------------------
+    //
+    //  Goal (per spec): drop a newly-added plot somewhere convenient.
+    //   1. If no existing plot is visible in the current viewport, center the new
+    //      plot in the viewport.
+    //   2. Otherwise infer an approximate grid (cell size + margins) from the
+    //      in-view plots and place the new plot in the next grid slot, growing the
+    //      grid as a square. With no user moves the fill order is:
+    //        (1,1)(1,2)(2,1)(2,2)(1,3)(2,3)(3,3)(1,4)(2,4)(3,4)(4,4)(1,5)... (row,col)
+    //      i.e. each new ring fills the new rightmost column top-to-bottom, then the
+    //      new bottom row left-to-right. The next slot is chosen from the COUNT of
+    //      in-view plots, so the canonical cascade reproduces that order exactly.
+
+    private const double PlacementMargin = 24.0;   // logical px gap between grid cells
+    private const double PlacementCluster = 0.40;   // cluster tolerance as a fraction of cell size
+
+    /// <summary>
+    /// Computes the logical (Left, Top) for a new plot of size (w, h). See the section
+    /// comment above for the algorithm. Falls back to a simple cascade when the viewport
+    /// size is unavailable (no CanvasSizeProvider wired).
+    /// </summary>
+    private (double Left, double Top) ComputeNewPlotPosition(double w, double h)
+    {
+        // Visible logical viewport. Without a canvas size we cannot reason about "in view",
+        // so fall back to the historical cascade.
+        if (CanvasSizeProvider is null)
+            return (30 + _plots.Count * 30, 30 + _plots.Count * 30);
+
+        var (canvasW, canvasH) = CanvasSizeProvider();
+        if (canvasW <= 0 || canvasH <= 0)
+            return (30 + _plots.Count * 30, 30 + _plots.Count * 30);
+
+        double zoom = _zoomLevel > 0 ? _zoomLevel : 1.0;
+        double vx0  = -_viewOffsetX / zoom;
+        double vy0  = -_viewOffsetY / zoom;
+        double vx1  = (canvasW - _viewOffsetX) / zoom;
+        double vy1  = (canvasH - _viewOffsetY) / zoom;
+
+        // Plots whose logical rect intersects the visible viewport.
+        var inView = _plots.Where(p =>
+            p.Left < vx1 && p.Left + p.Width  > vx0 &&
+            p.Top  < vy1 && p.Top  + p.Height > vy0).ToList();
+
+        // Case 1: nothing in view -> center the new plot in the viewport.
+        if (inView.Count == 0)
+        {
+            double cx = (vx0 + vx1) / 2.0;
+            double cy = (vy0 + vy1) / 2.0;
+            return (cx - w / 2.0, cy - h / 2.0);
+        }
+
+        // Case 2: infer an approximate grid from the in-view plots.
+        // Cell size = median in-view plot size (robust to one odd-sized plot).
+        double cellW = Median(inView.Select(p => p.Width))  is { } mw && mw > 0 ? mw : w;
+        double cellH = Median(inView.Select(p => p.Height)) is { } mh && mh > 0 ? mh : h;
+
+        // Cluster the in-view origins into columns (by Left) and rows (by Top). The cluster
+        // tolerance scales with cell size so small drags don't fragment the grid.
+        var colXs = ClusterSorted(inView.Select(p => p.Left), cellW * PlacementCluster);
+        var rowYs = ClusterSorted(inView.Select(p => p.Top),  cellH * PlacementCluster);
+
+        // Grid origin = top-left of the inferred grid; step = cell size + margin (use the
+        // observed column/row spacing when available, else cell size + default margin).
+        double originX = colXs[0];
+        double originY = rowYs[0];
+        double stepX   = colXs.Count > 1 ? colXs[1] - colXs[0] : cellW + PlacementMargin;
+        double stepY   = rowYs.Count > 1 ? rowYs[1] - rowYs[0] : cellH + PlacementMargin;
+        if (stepX <= 0) stepX = cellW + PlacementMargin;
+        if (stepY <= 0) stepY = cellH + PlacementMargin;
+
+        // Next slot in the canonical fill order, from the in-view count (1-based index).
+        var (row, col) = GridSlotForIndex(inView.Count + 1);
+
+        // If the user moved plots so the canonical slot is already occupied, scan forward
+        // in fill order for the first free (row, col) so the new plot doesn't land on one.
+        var occupied = new HashSet<(int, int)>();
+        foreach (var p in inView)
+        {
+            int c = NearestIndex(colXs, p.Left, stepX);
+            int r = NearestIndex(rowYs, p.Top,  stepY);
+            occupied.Add((r, c));
+        }
+        for (int probe = inView.Count + 1; occupied.Contains((row, col)); probe++)
+            (row, col) = GridSlotForIndex(probe + 1);
+
+        double left = originX + (col - 1) * stepX;
+        double top  = originY + (row - 1) * stepY;
+        return (left, top);
+    }
+
+    /// <summary>
+    /// Maps a 1-based add index to a (row, col) grid slot (both 1-based). The grid grows as a
+    /// square: ring n (indices (n-1)^2+1..n^2) fills the new rightmost column n top-to-bottom
+    /// (rows 1..n), then the new bottom row n left-to-right (cols 1..n-1). Reproduces the spec
+    /// sequence (1,1)(1,2)(2,1)(2,2)(1,3)(2,3)(3,3)(1,4)...
+    /// </summary>
+    private static (int Row, int Col) GridSlotForIndex(int k)
+    {
+        if (k < 1) k = 1;
+        int n = (int)Math.Ceiling(Math.Sqrt(k));
+        int p = k - (n - 1) * (n - 1);   // 1-based position within ring n (1..2n-1)
+        return p <= n ? (p, n) : (n, p - n);
+    }
+
+    /// <summary>Median of a sequence, or null when empty.</summary>
+    private static double? Median(IEnumerable<double> values)
+    {
+        var sorted = values.OrderBy(v => v).ToList();
+        if (sorted.Count == 0) return null;
+        int mid = sorted.Count / 2;
+        return sorted.Count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2.0;
+    }
+
+    /// <summary>
+    /// Clusters near-equal values (within <paramref name="tol"/>) and returns the sorted list of
+    /// cluster centers (means). Used to recover the distinct column-X or row-Y lines of an
+    /// approximate grid from in-view plot origins.
+    /// </summary>
+    private static List<double> ClusterSorted(IEnumerable<double> values, double tol)
+    {
+        var sorted = values.OrderBy(v => v).ToList();
+        var centers = new List<double>();
+        if (sorted.Count == 0) return centers;
+        if (tol <= 0) tol = 1.0;
+
+        double sum = sorted[0];
+        int    cnt = 1;
+        double anchor = sorted[0];
+        for (int i = 1; i < sorted.Count; i++)
+        {
+            if (sorted[i] - anchor <= tol)
+            {
+                sum += sorted[i];
+                cnt++;
+            }
+            else
+            {
+                centers.Add(sum / cnt);
+                sum = sorted[i];
+                cnt = 1;
+                anchor = sorted[i];
+            }
+        }
+        centers.Add(sum / cnt);
+        return centers;
+    }
+
+    /// <summary>
+    /// Returns the 1-based index of the cluster center nearest <paramref name="value"/>.
+    /// <paramref name="step"/> is unused for the lookup but documents the expected spacing.
+    /// </summary>
+    private static int NearestIndex(List<double> centers, double value, double step)
+    {
+        _ = step;
+        int best = 0;
+        double bestD = double.MaxValue;
+        for (int i = 0; i < centers.Count; i++)
+        {
+            double d = Math.Abs(centers[i] - value);
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        return best + 1;   // 1-based
     }
 
     public void RemoveSelected()
@@ -1310,7 +1562,7 @@ public partial class DataDisplayViewModel : ViewModelBase
             {
                 Name                  = m.Name,
                 Index                 = m.Index,
-                Freq                  = m.Freq,
+                Freq                  = Finite(m.Freq),
                 FreqUnits             = m.FreqUnits,
                 MatrixFormat          = m.MatrixFormat,
                 Style                 = m.Style,
@@ -1318,20 +1570,32 @@ public partial class DataDisplayViewModel : ViewModelBase
                 MaximumFractionDigits = m.MaximumFractionDigits,
                 IsMulti               = m.IsMulti,
                 IsDelta               = m.IsDelta,
-                InfoBoxX              = m.InfoBoxPos.X,
-                InfoBoxY              = m.InfoBoxPos.Y,
-                PositionStaticX       = m.PositionStatic.X,
-                PositionStaticY       = m.PositionStatic.Y,
+                // Guard every persisted floating-point field to a finite value. System.Text.Json
+                // throws on NaN/±∞ (JsonOpts sets no NumberHandling), and the dirty-check serializes
+                // on every redraw — so a single non-finite marker number would crash the app. The
+                // primary cause (a placeholder-NaN InfoBoxPos serialized mid-rebuild) is fixed in
+                // RebuildMarkerInfoBoxesForContainer; this is defense-in-depth for any other path.
+                InfoBoxX              = Finite(m.InfoBoxPos.X),
+                InfoBoxY              = Finite(m.InfoBoxPos.Y),
+                PositionStaticX       = Finite(m.PositionStatic.X),
+                PositionStaticY       = Finite(m.PositionStatic.Y),
                 MarkerKind            = m.MarkerKind,
                 ShowInfoBox           = m.ShowInfoBox,
                 ContourSnapped        = m.ContourSnapped,
                 VswrEnabled           = m.VswrEnabled,
-                VswrValue             = m.VswrValue,
+                VswrValue             = Finite(m.VswrValue, fallback: 2.0),
             });
         }
 
         return tc;
     }
+
+    /// <summary>Returns <paramref name="v"/> when finite, else <paramref name="fallback"/> (default 0).
+    /// Used to keep non-finite marker coordinates out of the JSON serializer, which rejects NaN/±∞.</summary>
+    private static double Finite(double v, double fallback = 0.0) => double.IsFinite(v) ? v : fallback;
+
+    /// <summary>float overload of <see cref="Finite(double,double)"/>.</summary>
+    private static float Finite(float v, float fallback = 0f) => float.IsFinite(v) ? v : fallback;
 
     // ---- Paste ----------------------------------------------------------
 

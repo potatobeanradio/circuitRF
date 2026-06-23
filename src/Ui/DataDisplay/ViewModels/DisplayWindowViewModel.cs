@@ -355,6 +355,10 @@ public partial class DisplayWindowViewModel : ViewModelBase
     {
         var tab = new TabViewModel(DataSourceLibrary, name, Tabs.Count < 1); // add empty plot only if there's no tabs
         tab.DataDisplay.Theme = CurrentTheme;
+        // New-plot auto-placement needs the visible viewport size. _getCanvasSizeAction
+        // resolves the active tab's canvas; add-plot only ever targets the active tab, so
+        // wiring every tab's DataDisplay to it is correct. Null-safe until the action is injected.
+        tab.DataDisplay.CanvasSizeProvider = () => _getCanvasSizeAction?.Invoke() ?? (0.0, 0.0);
         tab.CloseRequested += (sender, _) => RemoveTab(sender as TabViewModel);
         return tab;
     }

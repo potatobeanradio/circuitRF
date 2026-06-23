@@ -580,7 +580,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             VswrReadout? readout = null;
             if (_vswrReadoutActive && _draggingVswrMarker is { } rMark)
                 readout = new VswrReadout(
-                    $"VSWR {rMark.VswrValue:G4}",
+                    $"VSWR: {rMark.VswrValue:F4}",
                     new SkiaSharp.SKPoint((float)_vswrReadoutPt.X, (float)_vswrReadoutPt.Y));
 
             context.Custom(new PlotDrawOperation(
@@ -796,8 +796,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     _draggingVswrMarker = vswrHit.Value.Marker;
                     _draggingVswrTrace  = vswrHit.Value.Trace;
                     _renderDetail = PlotDetail.Full;
+                    // Show the transient VSWR readout on a plain click too (not only while dragging),
+                    // so the user can click the locus to read its value without moving it.
+                    _vswrReadoutPt     = e.GetPosition(this);
+                    _vswrReadoutActive = true;
                     e.Pointer.Capture(this);
                     e.Handled = true;
+                    InvalidateVisual();
                     return;
                 }
 
@@ -1223,7 +1228,17 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var glyphHit = HitTestMarker(pos);
             if (glyphHit.HasValue)
             {
-                ShowMarkerEditorFlyout(glyphHit.Value.Marker);
+                ShowMarkerEditorFlyout(glyphHit.Value.Marker, glyphHit.Value.Trace);
+                return;
+            }
+
+            // Double-tap on a VSWR locus opens its marker's editor flyout (checked after the
+            // glyph so a glyph hit always wins). Without this the tap falls through to the
+            // Plot Properties inspector, which is not what the user expects when aiming at the locus.
+            var vswrDblHit = HitTestVswrLocus(pos);
+            if (vswrDblHit.HasValue)
+            {
+                ShowMarkerEditorFlyout(vswrDblHit.Value.Marker, vswrDblHit.Value.Trace);
                 return;
             }
 
@@ -1286,9 +1301,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             const double SnapPx = 20.0;
             if (bestTrace is null || bestPixDist > SnapPx)
             {
-                // Fall back to a contour trace if one is present (free-roam add at the cursor).
-                var contour = _plot.Traces.FirstOrDefault(t => t.IsContourTrace);
-                if (contour is not null) return TryAddContourMarker(contour, canvasPt);
+                // No trace sample within snap distance. Do NOT free-roam-add a contour marker
+                // here: a double-click on empty plot area should fall through to the Plot
+                // Properties flyout (handled by the caller). Contour markers are still added
+                // explicitly via the right-click "Add Marker" menu (AddMarkerAtCanvasPoint).
                 return false;
             }
 
@@ -1441,8 +1457,19 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 MarkerKind            = MarkerKind.Contour,
                 MaximumFractionDigits = AppSettingsViewModel.Instance.MarkerMaxFractionDigits,
                 FormatString          = AppSettingsViewModel.Instance.MarkerPrecisionFormat,
+                // Initial complex-readout format follows the plot plane: Smith/Polar markers read
+                // their coordinate as Γ (mag∠angle → MA); Rect contour markers read it as Z (R+jX → RI).
+                MatrixFormat          = _plot.PlotType is PlotType.Smith or PlotType.Polar
+                    ? MatrixFormat.MA
+                    : MatrixFormat.RI,
             };
             marker.PositionStatic = trace.ResolveContourMarkerPosition(marker, world);
+
+            // Choose an initial VSWR value whose locus fits inside the plot's current visible
+            // window, preferring 2. The default 2 is often larger than the contour view, so the
+            // circle would be clipped/invisible when the user enables VSWR; step down a ladder of
+            // "nice" values and take the largest that fits. (Value only — VswrEnabled stays user-driven.)
+            marker.VswrValue = ChooseFittingVswr(trace, marker);
 
             trace.Markers.Add(marker);
             _renderDetail = PlotDetail.Full;
@@ -1452,10 +1479,59 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             return true;
         }
 
+        /// <summary>
+        /// Picks an initial VSWR value for a freshly-added contour marker so its locus is visible
+        /// inside the plot's current window. Walks a ladder of "nice" values from 2 downward and
+        /// returns the largest whose locus bounding box fits entirely within the visible window;
+        /// falls back to the smallest ladder value when even that does not fit. Preference to 2.
+        /// </summary>
+        private double ChooseFittingVswr(Trace trace, Marker marker)
+        {
+            // Nice ladder, largest-first; 2 is the preferred default.
+            double[] ladder = { 2.0, 1.5, 1.2, 1.1, 1.05, 1.02, 1.01 };
+
+            if (_plot is null) return ladder[0];
+            var window = _plot.Axes.Window;
+            if (window.Width <= 0 || window.Height <= 0) return ladder[0];
+
+            var (plane, z0Ref) = ResolveVswrPlaneAndZ0(trace);
+            var center = new System.Numerics.Complex(marker.PositionStatic.X, marker.PositionStatic.Y);
+
+            foreach (double v in ladder)
+            {
+                var pts = RfCore.Loadpull.LoadpullSurface.VswrLocus(center, v, plane, z0Ref);
+                if (pts is null || pts.Length < 2) continue;
+
+                double minRe = double.MaxValue, maxRe = double.MinValue;
+                double minIm = double.MaxValue, maxIm = double.MinValue;
+                bool allFinite = true;
+                foreach (var p in pts)
+                {
+                    if (!double.IsFinite(p.Real) || !double.IsFinite(p.Imaginary)) { allFinite = false; break; }
+                    if (p.Real < minRe) minRe = p.Real;
+                    if (p.Real > maxRe) maxRe = p.Real;
+                    if (p.Imaginary < minIm) minIm = p.Imaginary;
+                    if (p.Imaginary > maxIm) maxIm = p.Imaginary;
+                }
+                if (!allFinite) continue;
+
+                // window.Left/Right/Top/Bottom are world-space bounds (Top may be > Bottom
+                // depending on axis orientation), so compare against the min/max of each pair.
+                double wMinX = Math.Min(window.Left, window.Right);
+                double wMaxX = Math.Max(window.Left, window.Right);
+                double wMinY = Math.Min(window.Top,  window.Bottom);
+                double wMaxY = Math.Max(window.Top,  window.Bottom);
+
+                if (minRe >= wMinX && maxRe <= wMaxX && minIm >= wMinY && maxIm <= wMaxY)
+                    return v;
+            }
+
+            return ladder[^1];
+        }
+
         private bool TryAddStemMarker(Trace trace, Point canvasPt)
         {
             if (_plot is null || !trace.IsHarmonicStem) return false;
-
             var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
             var (wx, wy) = trace.UseSecondaryAxis
                 ? tf.SecondaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y)
@@ -1496,13 +1572,18 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             // Family curves iterate the spectral axis (Spectrum kind); a single Pin-swept
             // cube curve is an ordinary Polyline. Either way the marker is keyed by cube-X
             // (PositionStatic.X) + bound curve index (PositionStatic.Y).
+            // Exception: on Smith/Polar, single-curve markers store (Re, Im) so draw-time
+            // resolution uses 2-D nearest instead of X-only (X-only fails on looping loci).
             int idx    = NextMarkerIndexProvider?.Invoke() ?? (trace.Markers.Count + 1);
+            var posStatic = (trace.IsComplexPlanePlot && !trace.IsFamily)
+                ? snap.Value.Pos
+                : new System.Numerics.Vector2(snap.Value.CubeX, snap.Value.CurveIndex);
             var marker = new Marker(trace, 0.0, false, false, idx, _plot.FreqUnits)
             {
                 MarkerKind            = trace.IsFamily ? MarkerKind.Spectrum : MarkerKind.Polyline,
                 MaximumFractionDigits = AppSettingsViewModel.Instance.MarkerMaxFractionDigits,
                 FormatString          = AppSettingsViewModel.Instance.MarkerPrecisionFormat,
-                PositionStatic        = new System.Numerics.Vector2(snap.Value.CubeX, snap.Value.CurveIndex),
+                PositionStatic        = posStatic,
             };
 
             trace.Markers.Add(marker);
@@ -1539,9 +1620,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             MarkerAdded?.Invoke(marker, trace);
         }
 
-        private void ShowMarkerEditorFlyout(Marker marker)
+        private void ShowMarkerEditorFlyout(Marker marker, Trace trace)
         {
-            var infoVm = FindMarkerInfoBoxVmProvider?.Invoke(marker);
+            // Prefer the live InfoBox VM; fall back to a transient one when the marker's
+            // info box is hidden so the editor still opens (item: Edit Properties must work
+            // even when Show Info Box is off).
+            var infoVm = FindMarkerInfoBoxVmProvider?.Invoke(marker)
+                         ?? ContainerProvider?.Invoke()?.GetOrCreateInfoBoxVm(marker, trace);
             if (infoVm is null) return;
 
             var ed = new MarkerEditorView
@@ -1564,7 +1649,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (_plot is null) return;
             var infoVm = FindMarkerInfoBoxVmProvider?.Invoke(marker);
 
-            Action? openEditor = infoVm is null ? null : () => ShowMarkerEditorFlyout(marker);
+            // Always provide an editor opener — ShowMarkerEditorFlyout falls back to a transient
+            // InfoBox VM when the marker's box is hidden, so "Edit Properties" is never disabled.
+            Action openEditor = () => ShowMarkerEditorFlyout(marker, trace);
 
             bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
                 (_library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
@@ -1835,8 +1922,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 if (snap is null) return;
                 var snappedPx = tf.ToCanvas(snap.Value.Pos.X, snap.Value.Pos.Y, trace.UseSecondaryAxis);
                 if (!clipRect.Contains(snappedPx.X, snappedPx.Y)) return;
-                // X = snapped cube X-value, Y = bound family-curve index (0 when single-curve).
-                marker.PositionStatic = new System.Numerics.Vector2(snap.Value.CubeX, snap.Value.CurveIndex);
+                // Smith/Polar single-curve: store (Re, Im) for 2-D draw-time resolution.
+                // Rect/family: store (CubeX, curveIndex) for X-only resolution.
+                marker.PositionStatic = (trace.IsComplexPlanePlot && !trace.IsFamily)
+                    ? snap.Value.Pos
+                    : new System.Numerics.Vector2(snap.Value.CubeX, snap.Value.CurveIndex);
                 return;
             }
 

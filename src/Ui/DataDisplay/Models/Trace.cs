@@ -261,8 +261,11 @@ namespace CircuitRF.Ui.DataDisplay
         /// Matched case-sensitively against CubeXAxisName to drive stem rendering.</summary>
         public const string HarmonicAxisName = "harmonic";
 
-        /// <summary>True when this trace's X-axis is harmonic index (HB spectrum) — drives stem rendering.</summary>
+        /// <summary>True when this trace's X-axis is harmonic index (HB spectrum) — drives stem rendering.
+        /// Single-curve only: a harmonic-X <em>family</em> keeps its geometry in FamilyCurves (not Points),
+        /// so it is handled by the generic cube-X marker path instead (which is family-aware).</summary>
         public bool IsHarmonicStem => IsCubeBound
+            && !IsFamily
             && string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal);
 
         /// <summary>One curve of a family trace: its iterated-axis value (for the legend) + its points.</summary>
@@ -314,6 +317,7 @@ namespace CircuitRF.Ui.DataDisplay
         private string?    _cubeXUnit;
 
         private bool _cubeIsScalar;
+        private PlotType _lastPlotType = PlotType.Rect;
         public  bool CubeIsScalar => _cubeIsScalar;
 
         /// <summary>True when a scalar (rank-0) cube is bound while the plot type is not Table. Scalars render
@@ -453,6 +457,12 @@ namespace CircuitRF.Ui.DataDisplay
                 ? System.IO.Path.GetFileNameWithoutExtension(SourcePath) + ".."
                 : "";
 
+            // Contour: a loadpull contour trace has no S-parameter element, so it must not fall
+            // through to the S(row+1,col+1) branch (which would mislabel it e.g. "dB(S(1,1))").
+            // Use the contour's own human-readable title (e.g. "P-3dB Pout (dBm)").
+            if (IsContourTrace && ContourData is { } cd)
+                return $"{prefix}{cd.TitleString()}";
+
             // Cube-bound: minimal label.
             if (IsCubeBound)
             {
@@ -529,6 +539,7 @@ namespace CircuitRF.Ui.DataDisplay
             _cubeXAxisName     = src._cubeXAxisName;
             _cubeXUnit         = src._cubeXUnit;
             _cubeIsScalar      = src._cubeIsScalar;
+            _lastPlotType      = src._lastPlotType;
             // Per-port Z0 (Phase 7.2f).
             SourceZ0PerPort   = src.SourceZ0PerPort;
             SourceZ0IsUnusual = src.SourceZ0IsUnusual;
@@ -624,6 +635,7 @@ namespace CircuitRF.Ui.DataDisplay
             PlotType plotType, FreqUnit freqUnit, string? familyAxisUnit = null)
         {
             _cubeIsScalar = false;
+            _lastPlotType = plotType;
             _cubeXValues = xValues; _cubeXAxisName = xAxisName; _cubeXUnit = xUnit;
             _cubeComplexValues = null; _cubeRealValues = null;
             FamilyAxisName = familyAxisName;
@@ -664,6 +676,7 @@ namespace CircuitRF.Ui.DataDisplay
 
         private void BuildCubePath(PlotType plotType, FreqUnit freqUnit)
         {
+            _lastPlotType = plotType;
             Points.Clear();
             RectValueInvalid = false;
             ScalarOnNonTableInvalid = false;
@@ -1173,6 +1186,10 @@ namespace CircuitRF.Ui.DataDisplay
         /// (not the harmonic stem axis, not a contour). Single-curve or family.</summary>
         public bool IsCubeXMarker => IsCubeBound && !IsContourTrace && !IsHarmonicStem;
 
+        /// <summary>True when the last <see cref="BuildPath"/> was on a Smith or Polar (complex 2-D) plot.
+        /// Drives 2-D Euclidean snapping and resolution for single-curve cube markers.</summary>
+        public bool IsComplexPlanePlot => _lastPlotType is PlotType.Smith or PlotType.Polar;
+
         /// <summary>The Points list backing a generic cube marker — the bound family curve
         /// when IsFamily, else the trace's own Points. Empty list when unavailable.</summary>
         private IReadOnlyList<Vector2> CubeMarkerPoints(Marker m)
@@ -1195,15 +1212,29 @@ namespace CircuitRF.Ui.DataDisplay
             return Math.Clamp(c, 0, FamilyCurves.Count - 1);
         }
 
-        /// <summary>Index into the bound curve's Points whose X is nearest PositionStatic.X.</summary>
+        /// <summary>Index into the bound curve's Points nearest to the stored marker position.
+        /// On Rect (and families), matches by X-only. On Smith/Polar single-curve, matches by
+        /// 2-D Euclidean distance to the stored (Re, Im) world point in PositionStatic.</summary>
         private int CubeMarkerIndex(Marker m)
         {
             var pts = CubeMarkerPoints(m);
             int idx = 0; float bestD = float.PositiveInfinity;
-            for (int i = 0; i < pts.Count; i++)
+            if (IsComplexPlanePlot && !IsFamily)
             {
-                float d = Math.Abs(pts[i].X - m.PositionStatic.X);
-                if (d < bestD) { bestD = d; idx = i; }
+                var target = new Vector2(m.PositionStatic.X, m.PositionStatic.Y);
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    float d = (float)Dist(target, pts[i]);
+                    if (d < bestD) { bestD = d; idx = i; }
+                }
+            }
+            else
+            {
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    float d = Math.Abs(pts[i].X - m.PositionStatic.X);
+                    if (d < bestD) { bestD = d; idx = i; }
+                }
             }
             return idx;
         }
@@ -1244,10 +1275,21 @@ namespace CircuitRF.Ui.DataDisplay
 
             if (Points.Count == 0) return null;
             int best = 0; float bd = float.PositiveInfinity;
-            for (int i = 0; i < Points.Count; i++)
+            if (IsComplexPlanePlot)
             {
-                float d = Math.Abs(Points[i].X - worldPt.X);
-                if (d < bd) { bd = d; best = i; }
+                for (int i = 0; i < Points.Count; i++)
+                {
+                    float d = (float)Dist(worldPt, Points[i]);
+                    if (d < bd) { bd = d; best = i; }
+                }
+            }
+            else
+            {
+                for (int i = 0; i < Points.Count; i++)
+                {
+                    float d = Math.Abs(Points[i].X - worldPt.X);
+                    if (d < bd) { bd = d; best = i; }
+                }
             }
             return (Points[best], Points[best].X, 0);
         }
@@ -1258,7 +1300,8 @@ namespace CircuitRF.Ui.DataDisplay
         /// shown as a unit-scaled "freq=…" row plus an integer "harmonic=…" row (consistent with the
         /// harmonic-stem InfoBox); otherwise a single "&lt;axis&gt;=&lt;value&gt;" row. Then the X-axis
         /// row (swept variable name + value + unit), then the cube value.</summary>
-        private List<(string, bool)> BuildCubeMarkerBoxLines(Marker m, FreqUnit freqUnit, bool showFilePrefix)
+        private List<(string, bool)> BuildCubeMarkerBoxLines(Marker m, FreqUnit freqUnit, bool showFilePrefix,
+            IReadOnlyList<Trace>? otherTraces = null)
         {
             var lines = new List<(string, bool)> { (m.MarkerString, true) };
 
@@ -1307,17 +1350,112 @@ namespace CircuitRF.Ui.DataDisplay
             // axis really is a frequency).
             int rawIdx = xIdx < _cubeXValues.Length ? xIdx : _cubeXValues.Length - 1;
             double xRaw = _cubeXValues[rawIdx];
-            string xName = string.IsNullOrEmpty(_cubeXAxisName) ? "x" : _cubeXAxisName;
-            string xUnit = string.IsNullOrEmpty(_cubeXUnit) ? "" : $" {_cubeXUnit}";
-            lines.Add(($"{xName}={xRaw:G6}{xUnit}", false));
+            bool xIsHarmonicAxis = string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal);
+            if (IsFreqUnit(_cubeXUnit) || xIsHarmonicAxis)
+            {
+                // Frequency-valued X axis (e.g. an ordinary frequency sweep, or the HB "harmonic"
+                // axis which stores physical frequencies): show a unit-scaled freq row. The integer
+                // "harmonic=" row is ONLY meaningful for the genuine harmonic axis — a plain
+                // frequency-swept S/Z/Y (or other cube) trace must not show it.
+                if (IsFreqUnit(_cubeXUnit))
+                {
+                    double scaledX = xRaw * freqUnit.Scale();
+                    lines.Add(($"freq={scaledX:G6} {freqUnit.Description()}", false));
+                    if (xIsHarmonicAxis)
+                        lines.Add(($"harmonic={rawIdx}", false));
+                }
+                else
+                {
+                    // Unitless "harmonic" X axis whose values are the integer harmonic indices.
+                    lines.Add(($"harmonic={(int)Math.Round(xRaw)}", false));
+                }
+            }
+            else
+            {
+                string xName = string.IsNullOrEmpty(_cubeXAxisName) ? "x" : _cubeXAxisName;
+                string xUnit = string.IsNullOrEmpty(_cubeXUnit) ? "" : $" {_cubeXUnit}";
+                lines.Add(($"{xName}={xRaw:G6}{xUnit}", false));
+            }
 
             // Value row.
             string val = IsFamily
-                ? FormatFamilyCell(curve, xIdx, m.FormatString, m.MaximumFractionDigits)
-                : FormatCubeCell(xIdx, m.FormatString, m.MaximumFractionDigits);
+                ? FormatFamilyCellForMarker(curve, xIdx, m)
+                : FormatCubeCellForMarker(xIdx, m);
             if (string.IsNullOrEmpty(val)) val = "NaN";
             lines.Add(($"{desc}={val}", false));
+
+            // Multi-marker rows: the same X sample read on every other trace in the plot.
+            // Cube traces are keyed by X-index, not frequency, so this uses the cube path.
+            // When the other trace's X axis is incompatible (different length), the value is NaN.
+            if (m.IsMulti && otherTraces != null)
+                foreach (var other in otherTraces)
+                    lines.Add((GetMultiMarkerLine(m, other), false));
+
             return lines;
+        }
+
+        /// <summary>Transformed scalar value of THIS cube trace at X-index <paramref name="i"/> (single-curve
+        /// path). Returns NaN when out of range, when the cube is complex with a non-scalar transform,
+        /// or when this is a family trace (use the family overload). Mirrors FormatCubeCell's numeric path.</summary>
+        private double CubeScalarAt(int i)
+        {
+            if (_cubeXValues is null || i < 0 || i >= _cubeXValues.Length) return double.NaN;
+            if (_cubeComplexValues is not null)
+            {
+                var z = _cubeComplexValues[i];
+                return Transform switch
+                {
+                    CubeTransform.dB20  => 20.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300)),
+                    CubeTransform.dB10 or CubeTransform.dB
+                                        => 10.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300)),
+                    CubeTransform.Mag   => z.Magnitude,
+                    CubeTransform.Phase => z.Phase * 180.0 / Math.PI,
+                    CubeTransform.Real  => z.Real,
+                    CubeTransform.Imag  => z.Imaginary,
+                    _                   => double.NaN,   // None/Conj: complex, not a scalar
+                };
+            }
+            if (_cubeRealValues is not null)
+            {
+                double v = _cubeRealValues[i];
+                return Transform switch
+                {
+                    CubeTransform.dB20 => 20.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
+                    CubeTransform.dB10 or CubeTransform.dB
+                                       => 10.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
+                    CubeTransform.Mag  => Math.Abs(v),
+                    _                  => v,
+                };
+            }
+            return double.NaN;
+        }
+
+        /// <summary>One multi-marker row for a cube-X owner marker: reads <paramref name="other"/> at the
+        /// same X-index. Only single-curve cube traces with a matching X-axis length are read; anything else
+        /// (network trace, family, mismatched X axis) yields NaN, which the user has accepted for
+        /// incompatible axes. Honors delta mode when both values are finite scalars.</summary>
+        private string GetCubeMultiMarkerLine(Marker m, Trace other)
+        {
+            int xIdx = CubeMarkerIndex(m);
+            bool compatible =
+                other.IsCubeXMarker && !other.IsFamily &&
+                other._cubeXValues is not null && _cubeXValues is not null &&
+                other._cubeXValues.Length == _cubeXValues.Length;
+
+            if (m.IsDelta)
+            {
+                double own   = CubeScalarAt(xIdx);
+                double oth   = compatible ? other.CubeScalarAt(xIdx) : double.NaN;
+                double delta = oth - own;
+                string valStr = double.IsFinite(delta) ? delta.ToString($"{m.FormatString}{m.MaximumFractionDigits}") : "NaN";
+                return $"  Δ{other.ShortDescription}={valStr}";
+            }
+
+            string val = compatible
+                ? other.FormatCubeCell(xIdx, m.FormatString, m.MaximumFractionDigits)
+                : "NaN";
+            if (string.IsNullOrEmpty(val)) val = "NaN";
+            return $"{other.ShortDescription}={val}";
         }
 
         /// <summary>Integer harmonic order for a frequency-valued family axis: the family-axis value
@@ -1412,8 +1550,8 @@ namespace CircuitRF.Ui.DataDisplay
                 string metric = string.IsNullOrEmpty(cd.MetricName) ? "value" : cd.MetricName;
                 string fmt    = $"{m.FormatString}{m.MaximumFractionDigits}";
                 string valStr = double.IsFinite(val) ? val.ToString(fmt) : "NaN";
-                string cue    = m.ContourSnapped ? "" : " (interp)";
-                return $"{metric}={valStr}{cue}";
+                string unit   = string.IsNullOrEmpty(cd.MetricUnitString) ? "" : $" {cd.MetricUnitString}";
+                return $"{metric}={valStr}{unit}";
             }
             if (IsHarmonicStem) return GetStemValString(m, showFilePrefix);
             if (IsCubeXMarker)
@@ -1424,8 +1562,8 @@ namespace CircuitRF.Ui.DataDisplay
                     return $"{desc}=NaN";
                 int xIdx = CubeMarkerIndex(m);
                 string val = IsFamily
-                    ? FormatFamilyCell(CubeMarkerCurveIndex(m), xIdx, m.FormatString, m.MaximumFractionDigits)
-                    : FormatCubeCell(xIdx, m.FormatString, m.MaximumFractionDigits);
+                    ? FormatFamilyCellForMarker(CubeMarkerCurveIndex(m), xIdx, m)
+                    : FormatCubeCellForMarker(xIdx, m);
                 if (string.IsNullOrEmpty(val)) val = "NaN";
                 return $"{desc}={val}";
             }
@@ -1615,6 +1753,48 @@ namespace CircuitRF.Ui.DataDisplay
         private static string FormatCubeMA(Complex c, string fmt)
             => $"{c.Magnitude.ToString(fmt)}∠{(c.Phase * 180.0 / Math.PI):F1}°";
 
+        /// <summary>
+        /// Marker-aware cube cell formatter: identical to <see cref="FormatCubeCell"/> except that a
+        /// COMPLEX value with no scalar transform (None/Conj) is formatted through the marker's own
+        /// <see cref="Marker.FormatComplex"/> so the marker's MatrixFormat (MA/RI/DB) is honored on
+        /// Smith/Polar plots. (FormatCubeCell hardcodes MA for the Table renderer, which has no marker.)
+        /// </summary>
+        public string FormatCubeCellForMarker(int i, Marker m)
+        {
+            if (InvalidSpecText is not null) return "";
+            if (!IsCubeBound || _cubeXValues is null || i < 0 || i >= _cubeXValues.Length)
+                return "NaN";
+
+            if (_cubeComplexValues is not null &&
+                (Transform == CubeTransform.None || Transform == CubeTransform.Conj))
+            {
+                var z = Transform == CubeTransform.Conj
+                    ? Complex.Conjugate(_cubeComplexValues[i])
+                    : _cubeComplexValues[i];
+                return m.FormatComplex(z);
+            }
+
+            // Scalar transforms (and real cubes) format identically to the table path.
+            return FormatCubeCell(i, m.FormatString, m.MaximumFractionDigits);
+        }
+
+        /// <summary>Marker-aware family cell formatter — see <see cref="FormatCubeCellForMarker"/>.</summary>
+        public string FormatFamilyCellForMarker(int curveIndex, int xIndex, Marker m)
+        {
+            if (curveIndex < 0 || curveIndex >= FamilyCurves.Count) return "";
+            var fc = FamilyCurves[curveIndex];
+            if (_cubeXValues is null || xIndex < 0 || xIndex >= _cubeXValues.Length) return "";
+
+            if (fc.RawComplex is { } cz && xIndex < cz.Length &&
+                (Transform == CubeTransform.None || Transform == CubeTransform.Conj))
+            {
+                var z = Transform == CubeTransform.Conj ? Complex.Conjugate(cz[xIndex]) : cz[xIndex];
+                return m.FormatComplex(z);
+            }
+
+            return FormatFamilyCell(curveIndex, xIndex, m.FormatString, m.MaximumFractionDigits);
+        }
+
         public string GetMarkerValString(Marker m, bool showFilePrefix = true)
         {
             string suffix = IsStabilityCircle ? " Γ" : "";
@@ -1629,6 +1809,10 @@ namespace CircuitRF.Ui.DataDisplay
 
         public string GetMultiMarkerLine(Marker m, Trace other)
         {
+            // Cube-X owner (HB measurement vs a swept axis): keyed by X-index, not frequency.
+            if (IsCubeXMarker)
+                return GetCubeMultiMarkerLine(m, other);
+
             if (m.IsDelta)
             {
                 double ownVal   = DataPointScalar(m.Freq);
@@ -1719,11 +1903,13 @@ namespace CircuitRF.Ui.DataDisplay
                 string metric = string.IsNullOrEmpty(cd.MetricName) ? "value" : cd.MetricName;
                 string fmt    = $"{m.FormatString}{m.MaximumFractionDigits}";
                 string valStr = double.IsFinite(val) ? val.ToString(fmt) : "NaN";
-                string cue    = m.ContourSnapped ? "" : " (interp)";
-                lines.Add(($"{metric}={valStr}{cue}", false));
+                string unit   = string.IsNullOrEmpty(cd.MetricUnitString) ? "" : $" {cd.MetricUnitString}";
+                lines.Add(($"{metric}={valStr}{unit}", false));
 
                 string coordLbl = cd.GammaPlane ? "Γ" : "Z";
-                lines.Add(($"{coordLbl}={m.FormatComplex(coord)}", false));
+                // Impedance readout carries an Ω unit; the reflection-coefficient (Γ) readout is unitless.
+                string coordUnit = cd.GammaPlane ? "" : " Ω";
+                lines.Add(($"{coordLbl}={m.FormatComplex(coord)}{coordUnit}", false));
                 return lines;
             }
 
@@ -1738,7 +1924,7 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             if (IsCubeXMarker)
-                return BuildCubeMarkerBoxLines(m, freqUnit, showFilePrefix);
+                return BuildCubeMarkerBoxLines(m, freqUnit, showFilePrefix, otherTraces);
 
             var standardLines = new List<(string, bool)>
             {

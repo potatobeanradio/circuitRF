@@ -72,6 +72,29 @@ public sealed class MarkerStyleConverter : IValueConverter
         throw new NotImplementedException();
 }
 
+// ---- MatrixFormatConverter --------------------------------------------------
+//  Used in MarkerEditorView's Format ComboBox to show the conventional display
+//  casing (mA / RI / dB) rather than the raw enum names (MA / RI / DB).
+
+public sealed class MatrixFormatConverter : IValueConverter
+{
+    public static readonly MatrixFormatConverter Instance = new();
+
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is MatrixFormat f
+            ? f switch
+              {
+                  MatrixFormat.MA => "mA",
+                  MatrixFormat.RI => "RI",
+                  MatrixFormat.DB => "dB",
+                  _               => f.ToString(),
+              }
+            : value?.ToString();
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotImplementedException();
+}
+
 // ---- MarkerTypeItem --------------------------------------------------------
 
 public sealed class MarkerTypeItem

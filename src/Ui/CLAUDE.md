@@ -253,6 +253,43 @@ Gate: 65 new tests; all 1042 tests green; firewall green.
 
 ---
 
+## Dock 12.0.0.2 — tool tear-off window close crashes FactoryBase.CloseDockable (FIXED via CrfHostWindow)
+
+**Symptom:** Tearing a **tool** panel (Properties, Analyses, Project Tree, Library/Palette) out into its own
+floating window and then closing that window — either via the window's OS close box, or by closing the tool
+tabs one-by-one down to empty — crashed the app with an unrecoverable `NullReferenceException` thrown from
+`Dock.Model.FactoryBase.CloseDockable`. Document tear-off windows never had the problem.
+
+**Root cause (instrumented, not guessed):** closing a tool float-out cascades closes — each child tool first
+(these succeed), then the now-empty container `ToolDock`. By that final close the floating window's `RootDock`
+is already stripped bare: `VisibleDockables.Count == 0`, `ActiveDockable`/`FocusedDockable == null`, and
+`Window`/`Windows == null`. `FactoryBase.CloseDockable`'s window-management/collapse path dereferences one of
+those nulls → NRE. The throw is **inside the library** (we don't control that code), and the exact null moves
+depending on whether the close arrives as a separate empty-dock call (OS close box) or from inside the
+last-tool collapse (closing tabs). Temp instrumentation in `CircuitRfDockFactory.CloseDockable` dumped the
+full owner/root/window chain and confirmed the bare-floating-root state; it has since been removed.
+
+**What did NOT work (and why it's not in the tree):** guarding `CloseDockable` to detach empty docks before
+`base`, and wrapping `base.CloseDockable` in `try/catch (NullReferenceException)` + manual teardown. Both just
+relocated the NRE (next time it surfaced directly in our own cleanup, posted via `Task.ThrowAsync` on the
+dispatcher). Chasing a moving null through library teardown we can't see was the wrong layer. `CloseDockable`
+is back to its clean original (confirm hook + `base.CloseDockable`).
+
+**Fix (`src/Ui/ViewModels/Dock/CrfHostWindow.cs`):** a `HostWindow` subclass that overrides `OnClosing`. If
+the floated layout contains any `ITool` (walks `Window?.Layout` recursively, all derefs null-guarded), it sets
+`e.Cancel = true` — the tool float window's close box is **inert**; the user re-docks the panel by dragging its
+tab back. Document float windows have no `ITool` in their layout, so they fall through to `base.OnClosing` and
+close normally. Both host-window construction paths build it: `CircuitRfDockFactory.DefaultHostWindowLocator`
+and `WorkspaceWindow.MainDockControl.HostWindowFactory` (the belt-and-suspenders pair) both `=> new
+CrfHostWindow()`. This prevents the crashing entry point rather than patching the library's teardown.
+
+**On Dock version upgrades:** re-test the tool tear-off close path (it may be fixed upstream — if so, this
+workaround can be dropped and the close box restored). Verify `HostWindow.OnClosing(WindowClosingEventArgs)`,
+`HostWindow.Window` (`IDockWindow`) and `IDockWindow.Layout` still exist with those names; if the floated-root
+accessor was renamed, update the one line in `CrfHostWindow.FloatsAnyTool()`.
+
+---
+
 ## Library Palette — glyph tile + inert list (Step 2 — done)
 
 **`PaletteGlyphControl`** (`src/Ui/Controls/PaletteGlyphControl.cs`) — Skia `Control` using the
