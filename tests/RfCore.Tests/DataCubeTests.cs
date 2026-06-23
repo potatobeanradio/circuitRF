@@ -581,4 +581,124 @@ public class DataCubeTests
             new Complex[] { new Complex(1, 0), new Complex(2, 0) });
         Assert.True(DataCube.CubeVaries(cube));
     }
+
+    // ================================================================
+    //  Named-axis broadcasting
+    // ================================================================
+
+    private static Axis RFfreqAxis => new("RFfreq", new[] { 1e9, 2e9, 3e9 }, "Hz");
+    private static Axis PinBcastAxis => new("Pin", new[] { 0.0, 1.0, 2.0, 3.0 }, "dBm");
+
+    [Fact]
+    public void Broadcast_SubsetAxis_Replicates()
+    {
+        // A=[RFfreq(3),Pin(4)] values 0..11; B=[Pin(4)] values 0..3
+        var a = new DataCube(new[] { RFfreqAxis, PinBcastAxis },
+            Enumerable.Range(0, 12).Select(i => (double)i).ToArray());
+        var b = new DataCube(new[] { PinBcastAxis },
+            new double[] { 0, 1, 2, 3 });
+
+        DataCube result = a - b;  // [RFfreq, Pin]
+
+        Assert.Equal(2, result.Rank);
+        Assert.Equal("RFfreq", result.Axes[0].Name);
+        Assert.Equal("Pin",    result.Axes[1].Name);
+        Assert.Equal(12, result.RealValues.Length);
+
+        // Each row r: result[r, p] = a[r, p] - b[p]
+        var vals = result.RealValues;
+        for (int r = 0; r < 3; r++)
+        for (int p = 0; p < 4; p++)
+            Assert.Equal(r * 4 + p - p, vals[r * 4 + p]);  // = r*4
+
+        // Symmetric: B - A = negation of A - B (element-wise)
+        DataCube rev = b - a;
+        var rvals = rev.RealValues;
+        for (int i = 0; i < 12; i++)
+            Assert.Equal(-vals[i], rvals[i], 12);
+    }
+
+    [Fact]
+    public void Broadcast_ResultAxisOrder_HigherRankFirst()
+    {
+        var a = new DataCube(new[] { RFfreqAxis, PinBcastAxis },
+            Enumerable.Range(0, 12).Select(i => (double)i).ToArray());
+        var b = new DataCube(new[] { PinBcastAxis },
+            new double[] { 0, 1, 2, 3 });
+
+        DataCube result = a + b;
+        Assert.Equal("RFfreq", result.Axes[0].Name);
+        Assert.Equal("Pin",    result.Axes[1].Name);
+        Assert.Equal(3, result.Axes[0].Length);
+        Assert.Equal(4, result.Axes[1].Length);
+    }
+
+    [Fact]
+    public void Broadcast_ScalarCube_BroadcastsToAnyShape()
+    {
+        var scalar = DataCube.Scalar(2.0);
+        var b = new DataCube(new[] { PinBcastAxis }, new double[] { 1, 2, 3, 4 });
+
+        DataCube result = scalar * b;
+        Assert.Equal(1, result.Rank);
+        Assert.Equal("Pin", result.Axes[0].Name);
+        var vals = result.RealValues;
+        for (int p = 0; p < 4; p++)
+            Assert.Equal(2.0 * (p + 1), vals[p], 12);
+    }
+
+    [Fact]
+    public void Broadcast_Complex_RealTimesComplex_BroadcastsCorrectly()
+    {
+        // real [Pin(4)] × complex [RFfreq(3), Pin(4)] → complex [RFfreq, Pin]
+        var pin = new DataCube(new[] { PinBcastAxis }, new double[] { 1, 2, 3, 4 });
+        var cdata = new Complex[12];
+        for (int r = 0; r < 3; r++)
+        for (int p = 0; p < 4; p++)
+            cdata[r * 4 + p] = new Complex(r + 1, p + 0.5);
+        var rfpin = new DataCube(new[] { RFfreqAxis, PinBcastAxis }, cdata);
+
+        DataCube result = pin * rfpin;  // real [Pin] × complex [RFfreq, Pin]
+        Assert.Equal(DataKind.Complex, result.DataKind);
+        Assert.Equal(2, result.Rank);
+        Assert.Equal("RFfreq", result.Axes[0].Name);
+        Assert.Equal("Pin",    result.Axes[1].Name);
+
+        var vals = result.ComplexValues;
+        for (int r = 0; r < 3; r++)
+        for (int p = 0; p < 4; p++)
+        {
+            Complex expected = new Complex(p + 1, 0) * cdata[r * 4 + p];
+            Assert.Equal(expected.Real,      vals[r * 4 + p].Real,      10);
+            Assert.Equal(expected.Imaginary, vals[r * 4 + p].Imaginary, 10);
+        }
+    }
+
+    [Fact]
+    public void Broadcast_IncompatibleSharedAxis_Throws()
+    {
+        // Pin(4) vs Pin(5) — same name, different length → ArgumentException
+        var a = new DataCube(new[] { new Axis("Pin", new[] { 0.0, 1.0, 2.0, 3.0 }, "") },
+            new double[] { 1, 2, 3, 4 });
+        var b = new DataCube(new[] { new Axis("Pin", new[] { 0.0, 1.0, 2.0, 3.0, 4.0 }, "") },
+            new double[] { 1, 2, 3, 4, 5 });
+        Assert.Throws<ArgumentException>(() => { var _ = a + b; });
+    }
+
+    [Fact]
+    public void FastPath_IdenticalShape_ByteIdentical()
+    {
+        // Two [RFfreq, Pin] cubes with same axes: fast path must give identical result
+        // to the old RequireSameShape+flat-zip approach.
+        var data1 = Enumerable.Range(0, 12).Select(i => (double)i).ToArray();
+        var data2 = Enumerable.Range(10, 12).Select(i => (double)i).ToArray();
+        var a = new DataCube(new[] { RFfreqAxis, PinBcastAxis }, data1);
+        var b = new DataCube(new[] { RFfreqAxis, PinBcastAxis }, data2);
+
+        DataCube result = a + b;
+        Assert.Equal(2, result.Rank);
+        var vals = result.RealValues;
+        for (int i = 0; i < 12; i++)
+            Assert.Equal(data1[i] + data2[i], vals[i], 12);
+    }
 }

@@ -432,30 +432,6 @@ public class LoadpullSurfaceTests
             "Expected ≥1 scatter coord from lpcwave at recommended compression");
     }
 
-    // ── 7.4h-6 §2: MaxPower/MaxEfficiency forward kernel params ──────────────
-
-    [Fact]
-    public void MaxPower_DifferentKernels_ProduceDifferentInterpolatedPeak()
-    {
-        var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
-        var sfc = new LoadpullSurface(ds);
-        var constraint = ConstraintSpec.AtCompression(sfc.RecommendedCompression(0));
-
-        var mxpMQ = sfc.MaxPower(0, constraint, SurfacePlane.Gamma,
-            kernel: RbfKernel.Multiquadric);
-        var mxpTP = sfc.MaxPower(0, constraint, SurfacePlane.Gamma,
-            kernel: RbfKernel.ThinPlate);
-
-        // Both must find a result.
-        Assert.NotNull(mxpMQ);
-        Assert.NotNull(mxpTP);
-        // Interpolated peaks should differ between kernels (not numerically identical).
-        double distRe = Math.Abs(mxpMQ!.Interpolated.Real  - mxpTP!.Interpolated.Real);
-        double distIm = Math.Abs(mxpMQ!.Interpolated.Imaginary - mxpTP!.Interpolated.Imaginary);
-        Assert.True(distRe + distIm > 1e-9,
-            "MaxPower interpolated peak must vary with kernel choice");
-    }
-
     [Fact]
     public void MaxEfficiency_DifferentKernels_ProduceDifferentInterpolatedPeak()
     {

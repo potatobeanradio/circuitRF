@@ -344,6 +344,7 @@ namespace RfCore.Data
 
         // Helpers used by operators:
 
+        // RequireSameShape is now superseded by SameShapeByName+broadcast path — kept for reference.
         private static void RequireSameShape(DataCube a, DataCube b)
         {
             if (a.Rank != b.Rank)
@@ -384,10 +385,10 @@ namespace RfCore.Data
             return new DataCube(a.AxesArray(), buf, noCopy: true);
         }
 
-        private static DataCube ElementWise(DataCube a, DataCube b,
+        // Fast path: operands have identical axes by name+order+length — byte-identical to the old behavior.
+        private static DataCube ZipIdentical(DataCube a, DataCube b,
             Func<double, double, double> realOp, Func<Complex, Complex, Complex> complexOp)
         {
-            RequireSameShape(a, b);
             int n = a.ElementCount();
             if (a.DataKind == DataKind.Real && b.DataKind == DataKind.Real)
             {
@@ -403,6 +404,100 @@ namespace RfCore.Data
                 cbuf[i] = complexOp(ca, cb);
             }
             return new DataCube(a.AxesArray(), cbuf, noCopy: true);
+        }
+
+        private static DataCube ElementWise(DataCube a, DataCube b,
+            Func<double, double, double> realOp, Func<Complex, Complex, Complex> complexOp)
+        {
+            // Fast path: identical axes by name+order+length → existing tight zip (byte-identical result).
+            if (SameShapeByName(a, b))
+                return ZipIdentical(a, b, realOp, complexOp);
+
+            // Broadcast path: align by axis name; union axis-set; replicate across missing axes.
+            Axis[] axes  = UnionAxes(a, b);   // throws on incompatible shared axis
+            int[]  rstr  = ComputeStrides(axes);
+            int    rank  = axes.Length;
+            int    total = 1; foreach (var ax in axes) total *= ax.Length;
+            int[]  posA  = MapPositions(a, axes);  // posA[e] = index of a.Axes[e] within `axes`
+            int[]  posB  = MapPositions(b, axes);
+            bool   cplx  = a.DataKind == DataKind.Complex || b.DataKind == DataKind.Complex;
+            var    idx   = new int[rank];
+
+            if (!cplx)
+            {
+                var buf = new double[total];
+                for (int f = 0; f < total; f++)
+                {
+                    BroadcastDecode(f, rstr, idx);
+                    buf[f] = realOp(a._realData![BroadcastOperandFlat(a._strides, posA, idx)],
+                                    b._realData![BroadcastOperandFlat(b._strides, posB, idx)]);
+                }
+                return new DataCube(axes, buf, noCopy: true);
+            }
+            else
+            {
+                var buf = new Complex[total];
+                for (int f = 0; f < total; f++)
+                {
+                    BroadcastDecode(f, rstr, idx);
+                    int ia = BroadcastOperandFlat(a._strides, posA, idx);
+                    int ib = BroadcastOperandFlat(b._strides, posB, idx);
+                    var ca = a.DataKind == DataKind.Complex ? a._complexData![ia] : new Complex(a._realData![ia], 0);
+                    var cb = b.DataKind == DataKind.Complex ? b._complexData![ib] : new Complex(b._realData![ib], 0);
+                    buf[f] = complexOp(ca, cb);
+                }
+                return new DataCube(axes, buf, noCopy: true);
+            }
+        }
+
+        private static bool SameShapeByName(DataCube a, DataCube b)
+        {
+            if (a.Rank != b.Rank) return false;
+            for (int d = 0; d < a.Rank; d++)
+                if (a.Axes[d].Name != b.Axes[d].Name || a.Axes[d].Length != b.Axes[d].Length) return false;
+            return true;
+        }
+
+        // Result = higher-rank operand's axes, plus any axis from the lower-rank operand not present by name.
+        // Shared axes must agree in length and coordinates (same sweep provenance).
+        private static Axis[] UnionAxes(DataCube a, DataCube b)
+        {
+            var (big, small) = a.Rank >= b.Rank ? (a, b) : (b, a);
+            var result = new List<Axis>(big.Axes);
+            foreach (var sx in small.Axes)
+            {
+                int j = result.FindIndex(ax => ax.Name == sx.Name);
+                if (j < 0) { result.Add(sx); continue; }
+                if (result[j].Length != sx.Length)
+                    throw new ArgumentException(
+                        $"Cannot align axis '{sx.Name}': lengths {result[j].Length} vs {sx.Length}.");
+                for (int k = 0; k < sx.Length; k++)
+                    if (Math.Abs(result[j].Values[k] - sx.Values[k]) > 1e-12 * (1 + Math.Abs(sx.Values[k])))
+                        throw new ArgumentException($"Cannot align axis '{sx.Name}': differing coordinates.");
+            }
+            return result.ToArray();
+        }
+
+        private static int[] MapPositions(DataCube op, Axis[] resultAxes)
+        {
+            var pos = new int[op.Rank];
+            for (int e = 0; e < op.Rank; e++)
+                pos[e] = Array.FindIndex(resultAxes, ax => ax.Name == op.Axes[e].Name);
+            return pos;
+        }
+
+        private static void BroadcastDecode(int flat, int[] strides, int[] idx)
+        {
+            int rem = flat;
+            for (int d = 0; d < strides.Length; d++) { idx[d] = rem / strides[d]; rem %= strides[d]; }
+        }
+
+        // Sum over the operand's own axes; axes it lacks never contribute → natural replication.
+        private static int BroadcastOperandFlat(int[] opStrides, int[] posInResult, int[] resultIdx)
+        {
+            int f = 0;
+            for (int e = 0; e < opStrides.Length; e++) f += resultIdx[posInResult[e]] * opStrides[e];
+            return f;
         }
 
         // Cube × Cube
