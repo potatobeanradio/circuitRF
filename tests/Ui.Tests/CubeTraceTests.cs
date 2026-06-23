@@ -173,7 +173,7 @@ public sealed class NodeIndexedCurrentFilterTests
     private static DataSet MakeDs()
     {
         var nodeAxis   = new Axis("node",     new[] { 0.0, 1.0 }, "",      new[] { "n_gate", "n_drain" });
-        var harmAxis   = new Axis("harmonic", new[] { 0.0, 1e9 }, "Hz");
+        var harmAxis   = new Axis("harmonic", new[] { 0.0, 1.0 }, "");
         var branchAxis = new Axis("branch",   new[] { 0.0 }, "", new[] { "M1:d" });
         var ds         = new DataSet();
         ds.Add("INl", new DataCube(new[] { nodeAxis, harmAxis },

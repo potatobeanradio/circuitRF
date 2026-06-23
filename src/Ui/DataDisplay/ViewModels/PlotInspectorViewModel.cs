@@ -304,7 +304,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         foreach (var group in ds.Groups)
             foreach (var (bareName, cube) in ds.CubesIn(group))
             {
-                if (bareName == "Z0" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
+                if (bareName == "Z0" || bareName == "ToneFreqs" || bareName == "MetaMixOrder" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
                 // Default-group S is owned by the network/SNP path (Touchstone); grouped S is a
                 // simulated S cube offered as a first-class cube.
                 if (bareName == "S" && group == DataSet.DefaultGroup) continue;
@@ -673,6 +673,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             {
                 t.ExpressionError = null;
                 t.InvalidSpecText = null;
+                t.SetSpectrumFundamentals(null);
                 t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit);
             }
             else
@@ -726,7 +727,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // ── Family path (Phase 7.3b) ──────────────────────────────────────────
         if (Array.Exists(slice, s => s.Role == AxisRole.FamilyIterate))
         {
-            ResolveFamily(t, cube, slice, plotType, freqUnit);
+            ResolveFamily(t, cube, slice, plotType, freqUnit, ds);
             return;
         }
 
@@ -788,12 +789,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
         Complex[]? complexValues = sliced.DataKind == DataKind.Complex ? sliced.ComplexValues : null;
         double[]?  realValues    = sliced.DataKind == DataKind.Real    ? sliced.RealValues    : null;
 
+        var toneFreqs1 = GetToneFreqsCube(ds, t.CubeName);
+        t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs1, slice, xAxis.Values.Length));
         t.SetCubeData(xAxis.Values, complexValues, realValues,
                       xAxis.Name, xAxis.Unit, plotType, freqUnit);
     }
 
     private static void ResolveFamily(Trace t, DataCube cube, AxisSlice[] slice,
-                                      PlotType plotType, FreqUnit freqUnit)
+                                      PlotType plotType, FreqUnit freqUnit, DataSet? ds = null)
     {
         // Find family and X axes by name (slice is name-keyed, order-independent).
         int fDim = -1, xDim = -1;
@@ -847,8 +850,42 @@ public partial class PlotInspectorViewModel : ViewModelBase
                         sliced.DataKind == DataKind.Real    ? sliced.RealValues    : null));
         }
         if (xVals is null) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
+        var toneFreqs2 = GetToneFreqsCube(ds, t.CubeName);
+        t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs2, slice, xVals.Length));
         t.SetFamilyData(xVals, xName, xUnit, fAxis.Name, curves, plotType, freqUnit,
                         familyAxisUnit: string.IsNullOrEmpty(fAxis.Unit) ? null : fAxis.Unit);
+    }
+
+    private static DataCube? GetToneFreqsCube(DataSet? ds, string? cubeName)
+    {
+        if (ds is null || cubeName is null) return null;
+        int dot = cubeName.IndexOf('.');
+        string toneFreqsName = dot < 0 ? "ToneFreqs" : cubeName[..dot] + ".ToneFreqs";
+        return ds.Contains(toneFreqsName) ? ds[toneFreqsName] : null;
+    }
+
+    private static double[]? ResolveFundamentalByX(DataCube? toneFreqs, AxisSlice[]? slice, int xAxisLength)
+    {
+        if (toneFreqs is null || slice is null) return null;
+        var result = new double[xAxisLength];
+        for (int xi = 0; xi < xAxisLength; xi++)
+        {
+            var args = new object[toneFreqs.Rank];
+            for (int d = 0; d < toneFreqs.Rank; d++)
+            {
+                string axName = toneFreqs.Axes[d].Name;
+                if (axName == "tone") { args[d] = 0; continue; }
+                AxisSlice? found = null;
+                foreach (var s in slice) { if (s.AxisName == axName) { found = s; break; } }
+                if (found?.Role == AxisRole.KeepAsX)
+                    args[d] = Math.Clamp(xi, 0, Math.Max(0, toneFreqs.Axes[d].Length - 1));
+                else
+                    args[d] = Math.Clamp(found?.Index ?? 0, 0, Math.Max(0, toneFreqs.Axes[d].Length - 1));
+            }
+            var r = toneFreqs[args];
+            result[xi] = r.IsReal ? r.RealValue!.Value : 0.0;
+        }
+        return result;
     }
 
     /// <summary>

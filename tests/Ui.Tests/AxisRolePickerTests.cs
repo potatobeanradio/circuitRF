@@ -281,4 +281,46 @@ public sealed class AxisRolePickerTests
             if (File.Exists(path)) File.Delete(path);
         }
     }
+
+    // ---- Axis-role label: frequency axis reads in the plot's display FreqUnit ----
+    // A swept frequency VAR ("RFfreq") is tagged with base unit "Hz" but its values are
+    // rendered in the plot's FreqUnit. The axis-role row label must match: "RFfreq (GHz)",
+    // not the base "RFfreq (Hz)".
+    [Fact]
+    public async System.Threading.Tasks.Task AxisRoleLabel_FreqAxis_UsesPlotFreqUnit()
+    {
+        var axFreq = new Axis("RFfreq", new double[] { 1e9, 2e9, 3e9 }, "Hz");
+        var axPin  = new Axis("Pin",    new double[] { 0, 1, 2 },       "");
+        var data   = new double[3 * 3];
+        var ds     = new DataSet();
+        ds.Add("Pout", new DataCube(new[] { axFreq, axPin }, data));
+
+        var (path, lib) = await ExportAndLoad(ds);
+        try
+        {
+            var slice = new[]
+            {
+                new AxisSlice("RFfreq", AxisRole.KeepAsX,     0),
+                new AxisSlice("Pin",    AxisRole.PinToIndex,  0),
+            };
+            var trace = MakeCubeTrace(path, "Pout", slice);
+            var plot  = new Plot(PlotType.Rect, FreqUnit.GHz);
+            plot.Traces.Add(trace);
+
+            var inspector = new PlotInspectorViewModel(plot, () => { }, lib);
+            inspector.RebuildAndNotify();
+            var row = inspector.Traces[0];
+
+            var freqRow = row.AxisRoles.First(r => r.AxisName == "RFfreq");
+            Assert.Equal("RFfreq (GHz)", freqRow.AxisLabel);
+
+            // Non-frequency axis keeps its own (empty) unit → bare name.
+            var pinRow = row.AxisRoles.First(r => r.AxisName == "Pin");
+            Assert.Equal("Pin", pinRow.AxisLabel);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
 }

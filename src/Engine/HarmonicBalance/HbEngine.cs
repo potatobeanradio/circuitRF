@@ -982,8 +982,8 @@ public sealed class HbEngine
         var nodeAxis = new Axis("node", nodeVals, "", nodeNames);
 
         var harmVals = new double[K1];
-        for (int k = 0; k < K1; k++) harmVals[k] = k * f0;
-        var harmAxis = new Axis("harmonic", harmVals, "Hz");
+        for (int k = 0; k < K1; k++) harmVals[k] = k;
+        var harmAxis = new Axis("harmonic", harmVals, "");
 
         var vData   = new Complex[N * K1];
         var inlData = new Complex[N * K1];
@@ -1003,6 +1003,8 @@ public sealed class HbEngine
         ds.Add("INl",       new DataCube([nodeAxis, harmAxis], inlData));
         ds.Add("Converged", DataCube.Scalar(conv));
         ds.Add("Residual",  DataCube.Scalar(res));
+        var toneAxis = new Axis("tone", [1.0], "");
+        ds.Add("ToneFreqs", new DataCube([toneAxis], new double[] { f0 }));
 
         // Provenance: which node-axis entries came from a user net label (for the node-picker filter).
         if (labeledNames is not null)

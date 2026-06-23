@@ -127,7 +127,8 @@ public sealed class MarkerSweepFreqLabelTests
             $"Unexpected 'harmonic=' line: {dump}");
     }
 
-    // T3 — the genuine HB "harmonic" family axis still produces "freq=… GHz" + "harmonic=<order>"
+    // T3 — the genuine HB "harmonic" family axis (integer orders, unit ""; stage 2) produces
+    //       "harmonic=<order>" + "freq=… GHz" (reconstructed from order × injected f0)
     [Fact]
     public void Marker_Family_HarmonicAxis_Preserved()
     {
@@ -140,19 +141,21 @@ public sealed class MarkerSweepFreqLabelTests
         };
         t.Transform = CubeTransform.None;
 
-        double[] xVals         = { -10.0, -5.0, 0.0 };
-        double[] harmonicFreqs = { 1e9, 2e9, 3e9 };   // physical freq in Hz for each harmonic
-        var curves = MakeCurves(harmonicFreqs, xVals);
+        double[] xVals          = { -10.0, -5.0, 0.0 };
+        double[] harmonicOrders = { 0.0, 1.0, 2.0 };  // integer orders (not Hz values)
+        var curves = MakeCurves(harmonicOrders, xVals);
 
+        // Inject f0 = 1 GHz constant across all X points, then set family data.
+        t.SetSpectrumFundamentals(new double[] { 1e9, 1e9, 1e9 });
         t.SetFamilyData(xVals, "Pin", "", "harmonic", curves, PlotType.Rect, FreqUnit.GHz,
-                        familyAxisUnit: "Hz");
+                        familyAxisUnit: "");
 
-        // Marker on curve index 1 → axisValue=2e9, HarmonicOrderOf(2e9)=2 (f0=1e9)
+        // Marker on curve index 1 → order=1, xIdx=1 (Pin=-5.0), f0=1e9 → freq=1 GHz
         var m = MakeMarker(t, -5.0f, curveIndex: 1);
         var lines = t.BuildMarkerBoxLines(m, FreqUnit.GHz);
         string dump = string.Join(" | ", lines.ConvertAll(l => l.Text));
 
-        // Must produce "freq=…" (not "harmonic=…" as label)
+        // Must produce "freq=… GHz" (reconstructed from order × f0)
         Assert.True(lines.Exists(l => l.Text.StartsWith("freq=", StringComparison.Ordinal)
                                    && l.Text.Contains("GHz")),
             $"Expected 'freq=… GHz' for harmonic axis but got: {dump}");
@@ -161,7 +164,7 @@ public sealed class MarkerSweepFreqLabelTests
         Assert.True(lines.Exists(l => l.Text.StartsWith("harmonic=", StringComparison.Ordinal)),
             $"Expected 'harmonic=…' row for harmonic axis but got: {dump}");
 
-        // Must NOT use the variable-name path ("harmonic=2 GHz" would be wrong)
+        // "harmonic=" row must not contain "GHz"
         Assert.False(lines.Exists(l => l.Text.StartsWith("harmonic=", StringComparison.Ordinal)
                                     && l.Text.Contains("GHz")),
             $"'harmonic=' line must not contain 'GHz': {dump}");
@@ -204,7 +207,7 @@ public sealed class MarkerSweepFreqLabelTests
     }
 
     // T5 — X-axis: "RFfreq"/Hz → "RFfreq=2 GHz", not "freq=";
-    //              X-axis "harmonic"/Hz → "freq=… GHz" + "harmonic=<idx>" preserved
+    //              X-axis "harmonic"/"" (stage 2) + injected f0 → "freq=… GHz" + "harmonic=<order>"
     [Fact]
     public void Marker_X_FreqVarSweep_UsesVarName()
     {
@@ -231,19 +234,22 @@ public sealed class MarkerSweepFreqLabelTests
                 $"[RFfreq X] Unexpected 'freq=' label: {dump}");
         }
 
-        // Sub-case B: genuine harmonic X axis still produces "freq=… GHz" + "harmonic=<idx>"
+        // Sub-case B: genuine harmonic X axis (integer orders, unit "", stage 2) + injected f0
+        //             → "freq=… GHz" + "harmonic=<order>"
         {
             var t = MakeTrace();
             t.CubeName  = "V";
             t.Slice     = new[] { new AxisSlice("harmonic", AxisRole.KeepAsX, 0) };
             t.Transform = CubeTransform.None;
 
-            double[] xVals = { 1e9, 2e9, 3e9 };
+            double[] xVals = { 0.0, 1.0, 2.0 };   // integer orders
             double[] yVals = { 1.0, 0.5, 0.2 };
-            t.SetCubeData(xVals, complexValues: null, yVals, "harmonic", "Hz", PlotType.Rect, FreqUnit.GHz);
+            // f0 = 2 GHz → order-1 display position = 1 * 2e9 * 1e-9 = 2.0 in GHz units
+            t.SetSpectrumFundamentals(new double[] { 2e9, 2e9, 2e9 });
+            t.SetCubeData(xVals, complexValues: null, yVals, "harmonic", "", PlotType.Rect, FreqUnit.GHz);
 
-            // Marker closest to 2e9 → rawIdx=1
-            var m = MakeMarker(t, (float)2e9);
+            // Marker at 2.0 (GHz display) → nearest to order-1 point at 2.0 GHz → rawIdx=1
+            var m = MakeMarker(t, 2.0f);
             var lines = t.BuildMarkerBoxLines(m, FreqUnit.GHz);
             string dump = string.Join(" | ", lines.ConvertAll(l => l.Text));
 

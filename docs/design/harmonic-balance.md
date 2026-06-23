@@ -1,6 +1,8 @@
 # circuitRF — Harmonic Balance Engine Design
 
-**Status:** Draft (rev 2) for review · **Date:** 2026-05-31
+**Status:** Draft (rev 2, updated 2026-06-23) for review · **Date:** 2026-05-31
+
+> **Stage 1 landed (2026-06-23):** Every HB run now emits a stacking `ToneFreqs` cube: single-tone `[tone(1)]=[f0]`, two-tone `[tone(2)]=[f1,f2]`. Both are non-`__`, so a parametric sweep that changes the tone frequency yields `ToneFreqs[sweep,tone]` with per-point values — unlike the frozen `k·f0` harmonic-axis values, which are baked at the first sweep point. `HbSpectrum` (`src/Core/Expressions/HbSpectrum.cs`) is the single home for the index/order→frequency rule. `ToneFreqs` and `MetaMixOrder` are hidden from the signal picker. **Stage 2 (next brief)** will flip the harmonic axis to integer orders and reconstruct physical frequency from `HbSpectrum` + `ToneFreqs[slice]`.
 **Reads with:** `docs/design/data-model.md` (§3 elaboration + partition sets, §5 `ComponentModel`/`Evaluate`, §7 result model), `docs/design/linear-engine.md` (§2.1 the three MNA uses, §4.4 `Z_Port`/tone sources, §10 reuse by HB), `docs/design/nonlinear-dc.md` (the Phase-3 nonlinear-DC solver, AD engine, and SDD this engine **consumes**), `docs/design/measurements.md` (§3.4 IMn, §5 V/I retention + `Pdc` from k=0), `docs/design/expressions.md` (§12 AD for `dg`/`dc`), `docs/PRD.md` (§4 Heroes 2–5, §5 HB scope, §14 NFRs).
 **Defers to:** the data-cube note (axis/units, backing store), `src/Engine/CLAUDE.md` (the frozen FFT/sign conventions).
 

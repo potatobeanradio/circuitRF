@@ -550,16 +550,18 @@ namespace CircuitRF.Ui.DataDisplay
                 if (isFamilyPath)
                 {
                     // Emit one TraceValue column per family curve.
-                    string  baseShorthand   = trace.CubeShorthand ?? trace.ShortDescription;
-                    string? familyAxisName  = trace.FamilyAxisName;
-                    int     cap             = Math.Min(trace.FamilyCurves.Count, Trace.MaxFamilyCurves);
+                    string  baseShorthand  = trace.CubeShorthand ?? trace.ShortDescription;
+                    string? familyAxisName = trace.FamilyAxisName;
+                    string? familyUnit     = trace.FamilyAxisUnit;
+                    bool    familyIsFreq   = IsFreqUnit(familyUnit);
+                    int     cap            = Math.Min(trace.FamilyCurves.Count, Trace.MaxFamilyCurves);
                     for (int k = 0; k < cap; k++)
                     {
                         var    fc          = trace.FamilyCurves[k];
                         string familyLabel = fc.AxisLabel
                             ?? (familyAxisName is not null
-                                ? $"{familyAxisName}={fc.AxisValue.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
-                                : fc.AxisValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                                ? $"{familyAxisName} = {FormatFamilyAxisValue(fc.AxisValue, familyUnit, familyIsFreq, plot)}"
+                                : FormatFamilyAxisValue(fc.AxisValue, familyUnit, familyIsFreq, plot));
                         result.Add(new TableColumn
                         {
                             Kind             = TableColKind.TraceValue,
@@ -970,6 +972,20 @@ namespace CircuitRF.Ui.DataDisplay
 
         private static bool IsFreqUnit(string? unit) =>
             unit is "Hz" or "kHz" or "MHz" or "GHz";
+
+        /// <summary>Formats a family-axis value for a table column header, respecting the swept
+        /// variable's unit. A frequency axis (base "Hz") is scaled to the plot's display FreqUnit
+        /// (e.g. "1 GHz"); any other unit is appended verbatim ("48 V"); a unitless axis shows the
+        /// raw value.</summary>
+        private static string FormatFamilyAxisValue(double value, string? unit, bool isFreq, Plot plot)
+        {
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            if (isFreq)
+                return $"{(value * plot.FreqUnits.Scale()).ToString("G6", ci)} {plot.FreqUnits.Description()}";
+            if (!string.IsNullOrEmpty(unit))
+                return $"{value.ToString("G6", ci)} {unit}";
+            return value.ToString(ci);
+        }
 
         /// <summary>
         /// Looks up <paramref name="xValue"/> in <paramref name="trace"/>.CubeXValues and

@@ -210,7 +210,8 @@ namespace CircuitRF.Ui.DataDisplay
                     string? unit    = Traces[0].CubeXUnit;
                     if (string.IsNullOrEmpty(axisName)) axisName = "x";
                     bool isFreq = unit is "Hz" or "kHz" or "MHz" or "GHz";
-                    if (isFreq)
+                    bool isHarmonicAxis = string.Equals(axisName, Trace.HarmonicAxisName, StringComparison.Ordinal);
+                    if (isFreq || isHarmonicAxis)
                         return $"freq ({FreqUnits.Description()})";
                     return string.IsNullOrEmpty(unit) ? axisName : $"{axisName} ({unit})";
                 }

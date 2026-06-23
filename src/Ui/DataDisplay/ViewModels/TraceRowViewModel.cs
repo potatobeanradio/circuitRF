@@ -1792,7 +1792,7 @@ public partial class TraceRowViewModel : ViewModelBase
 
                 foreach (var (bareName, cube) in ds.CubesIn(group))
                 {
-                    if (bareName == "Z0" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
+                    if (bareName == "Z0" || bareName == "ToneFreqs" || bareName == "MetaMixOrder" || bareName.StartsWith("__", StringComparison.Ordinal)) continue;
                     // Default-group S belongs to the network/SNP path (Touchstone). S in a named analysis
                     // group is a simulated S cube (no SNP) — offer it as a first-class cube.
                     if (bareName == "S" && group == DataSet.DefaultGroup) continue;
@@ -2024,6 +2024,11 @@ public partial class TraceRowViewModel : ViewModelBase
             bool axisIsFreq = IsFreqUnit(axis.Unit);
             FreqUnit plotFreqUnit = _parent.FreqUnit;
 
+            // The axis-role row label shows the *display* unit: a frequency axis carries the
+            // base SI unit ("Hz") but its values are rendered in the plot's FreqUnit, so the
+            // label must match (e.g. "RFfreq (GHz)", not "RFfreq (Hz)").
+            string? displayUnit = axisIsFreq ? plotFreqUnit.Description() : axis.Unit;
+
             if (axis.Name == filterAxisName && !showAll && labeledSet is not null)
             {
                 // Filtered: only show options that are in the labeled set.
@@ -2046,7 +2051,7 @@ public partial class TraceRowViewModel : ViewModelBase
                 int displayIdx = filteredIndices.IndexOf(savedTrueIdx);
                 if (displayIdx < 0) displayIdx = 0;
 
-                AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit,
+                AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, displayUnit,
                     filteredOpts, isX, displayIdx, filteredIndices, optionsAreLabels: true, isFamily: isFamily,
                     isFilterableLabelAxis: true));
             }
@@ -2065,7 +2070,7 @@ public partial class TraceRowViewModel : ViewModelBase
                         opts.Add(axis.Values[k].ToString("G3"));
                 }
                 int pinIdx = Math.Clamp(savedTrueIdx, 0, Math.Max(0, axis.Length - 1));
-                AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, axis.Unit, opts, isX, pinIdx,
+                AxisRoles.Add(new AxisRoleRowViewModel(this, axis.Name, displayUnit, opts, isX, pinIdx,
                     optionsAreLabels: hasLabels, isFamily: isFamily,
                     isFilterableLabelAxis: axis.Name == filterAxisName));
             }

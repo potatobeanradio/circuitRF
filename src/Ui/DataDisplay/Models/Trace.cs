@@ -14,6 +14,7 @@ using System.Text;
 using Avalonia;
 using NumFlat;
 using RfCore;
+using CircuitRF.Core.Expressions;
 
 namespace CircuitRF.Ui.DataDisplay
 {
@@ -316,6 +317,11 @@ namespace CircuitRF.Ui.DataDisplay
         private string     _cubeXAxisName = "";
         private string?    _cubeXUnit;
 
+        // Per-X fundamental (Hz) injected by the owner before SetCubeData/SetFamilyData.
+        // Non-null only for single-tone HB spectrum traces; null for all other trace types.
+        private double[]? _f0ByX;
+        public void SetSpectrumFundamentals(double[]? f0ByX) => _f0ByX = f0ByX;
+
         private bool _cubeIsScalar;
         private PlotType _lastPlotType = PlotType.Rect;
         public  bool CubeIsScalar => _cubeIsScalar;
@@ -540,6 +546,7 @@ namespace CircuitRF.Ui.DataDisplay
             _cubeXUnit         = src._cubeXUnit;
             _cubeIsScalar      = src._cubeIsScalar;
             _lastPlotType      = src._lastPlotType;
+            _f0ByX             = src._f0ByX;
             // Per-port Z0 (Phase 7.2f).
             SourceZ0PerPort   = src.SourceZ0PerPort;
             SourceZ0IsUnusual = src.SourceZ0IsUnusual;
@@ -646,6 +653,7 @@ namespace CircuitRF.Ui.DataDisplay
             RectValueInvalid = false;
 
             bool isRect = plotType.IsRect();
+            bool isHarmonicFamilyX = string.Equals(xAxisName, HarmonicAxisName, StringComparison.Ordinal) && _f0ByX is not null;
             double xScale = IsFreqUnit(xUnit) ? freqUnit.Scale() : 1.0;
 
             foreach (var (axisValue, axisLabel, cz, rv) in curves)
@@ -662,7 +670,13 @@ namespace CircuitRF.Ui.DataDisplay
                     if (isRect)
                     {
                         double? y = RectY(isComplex ? cz![i] : (Complex?)null, isComplex ? (double?)null : rv![i]);
-                        if (y is double yy) fc.Points.Add(new Vector2((float)(xValues[i] * xScale), (float)yy));
+                        if (y is double yy)
+                        {
+                            double xCoord = isHarmonicFamilyX
+                                ? xValues[i] * _f0ByX![Math.Min(i, _f0ByX.Length - 1)] * freqUnit.Scale()
+                                : xValues[i] * xScale;
+                            fc.Points.Add(new Vector2((float)xCoord, (float)yy));
+                        }
                     }
                     else if (isComplex)
                     {
@@ -714,10 +728,13 @@ namespace CircuitRF.Ui.DataDisplay
                 return;
             }
 
+            bool isHarmonicX = _cubeXAxisName == HarmonicAxisName && _f0ByX is not null;
             double xScale = IsFreqUnit(_cubeXUnit) ? freqUnit.Scale() : 1.0;
             for (int i = 0; i < n; i++)
             {
-                double x = _cubeXValues[i] * xScale;
+                double x = isHarmonicX
+                    ? _cubeXValues[i] * _f0ByX![Math.Min(i, _f0ByX.Length - 1)] * freqUnit.Scale()
+                    : _cubeXValues[i] * xScale;
                 double y;
 
                 if (isComplex)
@@ -1323,18 +1340,16 @@ namespace CircuitRF.Ui.DataDisplay
                 var fc = FamilyCurves[curve];
 
                 bool familyIsHarmonic = string.Equals(FamilyAxisName, HarmonicAxisName, StringComparison.Ordinal);
-                if (familyIsHarmonic && IsFreqUnit(FamilyAxisUnit))
+                if (familyIsHarmonic)
                 {
-                    // Genuine HB "harmonic" family axis (stores physical frequencies):
-                    // unit-scaled freq row + integer harmonic order.
-                    double scaled = fc.AxisValue * freqUnit.Scale();
-                    lines.Add(($"freq={scaled:G6} {freqUnit.Description()}", false));
-                    lines.Add(($"harmonic={HarmonicOrderOf(fc.AxisValue)}", false));
-                }
-                else if (familyIsHarmonic)
-                {
-                    // Unitless "harmonic" axis whose values are integer harmonic indices.
-                    lines.Add(($"harmonic={(int)Math.Round(fc.AxisValue)}", false));
+                    // HB "harmonic" family axis: integer orders, with frequency reconstructed from _f0ByX.
+                    int order = (int)Math.Round(fc.AxisValue);
+                    lines.Add(($"harmonic={order}", false));
+                    if (_f0ByX is not null)
+                    {
+                        double freqHz = HbSpectrum.HarmonicFreqHz(order, _f0ByX[Math.Min(xIdx, _f0ByX.Length - 1)]);
+                        lines.Add(($"freq={freqHz * freqUnit.Scale():G6} {freqUnit.Description()}", false));
+                    }
                 }
                 else
                 {
@@ -1363,27 +1378,23 @@ namespace CircuitRF.Ui.DataDisplay
             int rawIdx = xIdx < _cubeXValues.Length ? xIdx : _cubeXValues.Length - 1;
             double xRaw = _cubeXValues[rawIdx];
             bool xIsHarmonicAxis = string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal);
-            if (IsFreqUnit(_cubeXUnit) || xIsHarmonicAxis)
+            if (xIsHarmonicAxis)
             {
-                // Frequency-valued X axis (e.g. an ordinary frequency sweep, or the HB "harmonic"
-                // axis which stores physical frequencies): show a unit-scaled freq row. The integer
-                // "harmonic=" row is ONLY meaningful for the genuine harmonic axis — a plain
-                // frequency-swept S/Z/Y (or other cube) trace must not show it.
-                if (IsFreqUnit(_cubeXUnit))
+                // HB "harmonic" X axis: integer orders, with frequency reconstructed from _f0ByX.
+                int order = (int)Math.Round(xRaw);
+                if (_f0ByX is not null)
                 {
-                    double scaledX = xRaw * freqUnit.Scale();
-                    // "freq" only for the genuine harmonic axis; a frequency-variable sweep shows its own name.
-                    string xLabel = (xIsHarmonicAxis || string.IsNullOrEmpty(_cubeXAxisName))
-                        ? "freq" : _cubeXAxisName;
-                    lines.Add(($"{xLabel}={scaledX:G6} {freqUnit.Description()}", false));
-                    if (xIsHarmonicAxis)
-                        lines.Add(($"harmonic={rawIdx}", false));
+                    double freqHz = HbSpectrum.HarmonicFreqHz(order, _f0ByX[Math.Min(rawIdx, _f0ByX.Length - 1)]);
+                    lines.Add(($"freq={freqHz * freqUnit.Scale():G6} {freqUnit.Description()}", false));
                 }
-                else
-                {
-                    // Unitless "harmonic" X axis whose values are the integer harmonic indices.
-                    lines.Add(($"harmonic={(int)Math.Round(xRaw)}", false));
-                }
+                lines.Add(($"harmonic={order}", false));
+            }
+            else if (IsFreqUnit(_cubeXUnit))
+            {
+                // Frequency-valued X axis (e.g. an ordinary frequency sweep): show variable name + scaled freq.
+                double scaledX = xRaw * freqUnit.Scale();
+                string xLabel = string.IsNullOrEmpty(_cubeXAxisName) ? "freq" : _cubeXAxisName;
+                lines.Add(($"{xLabel}={scaledX:G6} {freqUnit.Description()}", false));
             }
             else
             {
@@ -1473,20 +1484,6 @@ namespace CircuitRF.Ui.DataDisplay
             return $"{other.ShortDescription}={val}";
         }
 
-        /// <summary>Integer harmonic order for a frequency-valued family axis: the family-axis value
-        /// divided by the fundamental, where the fundamental is the smallest positive family-axis value
-        /// (handles both fundamental-first axes [f0, 2f0, …] and DC-inclusive axes [0, f0, 2f0, …]).
-        /// Returns 0 when no positive fundamental exists (e.g. a single DC curve).</summary>
-        private int HarmonicOrderOf(double axisValueHz)
-        {
-            double f0 = double.PositiveInfinity;
-            foreach (var c in FamilyCurves)
-                if (c.AxisValue > 0 && c.AxisValue < f0) f0 = c.AxisValue;
-            if (!double.IsFinite(f0) || f0 <= 0)
-                return 0;
-            return (int)Math.Round(axisValueHz / f0);
-        }
-
         private Vector2 StemPointFor(Marker m)
         {
             if (Points.Count == 0) return Vector2.Zero;
@@ -1536,13 +1533,13 @@ namespace CircuitRF.Ui.DataDisplay
             return $"harmonic={FindStemIndex(m)}";
         }
 
-        /// <summary>Physical frequency row for the InfoBox of a stem marker (Branch A: CubeXValues are Hz).</summary>
+        /// <summary>Physical frequency row for the InfoBox of a stem marker (reconstructed from _f0ByX).</summary>
         public string? GetStemFreqString(Marker m)
         {
-            if (CubeXValues is not { } xs || xs.Count == 0 || Points.Count == 0) return null;
-            double fHz   = xs[FindStemIndex(m)];
-            double scaled = fHz * m.FreqUnits.Scale();
-            return $"freq={scaled:G6} {m.FreqUnits.Description()}";
+            if (Points.Count == 0 || _f0ByX is null) return null;
+            int stemIdx = FindStemIndex(m);
+            double freqHz = HbSpectrum.HarmonicFreqHz(stemIdx, _f0ByX[Math.Min(stemIdx, _f0ByX.Length - 1)]);
+            return $"freq={freqHz * m.FreqUnits.Scale():G6} {m.FreqUnits.Description()}";
         }
 
         /// <summary>Marker value string for a harmonic-stem marker.</summary>

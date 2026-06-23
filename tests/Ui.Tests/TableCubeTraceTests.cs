@@ -901,6 +901,85 @@ public sealed class TableImprovementsTests
         Assert.Equal(2, cols[3].FamilyCurveIndex);
     }
 
+    // A frequency family axis (base "Hz") must scale its header value to the plot's
+    // FreqUnit and append the unit: "Pout @ RFfreq = 1 GHz" (not "RFfreq=1000000000").
+    [Fact]
+    public void FamilyTrace_FreqAxis_HeaderScaledToPlotFreqUnit()
+    {
+        double[] xVals      = { -10.0, -5.0, 0.0 };       // Pin
+        double[] rffreqVals = { 1e9, 2e9, 3e9 };          // RFfreq in base Hz
+
+        var t = MakeBaseTrace();
+        t.CubeName  = "Pout";
+        t.Transform = CubeTransform.None;
+        t.Slice = new[]
+        {
+            new AxisSlice("RFfreq", AxisRole.FamilyIterate, 0),
+            new AxisSlice("Pin",    AxisRole.KeepAsX,       0),
+        };
+
+        var curves = new List<(double, string?, Complex[]?, double[]?)>();
+        foreach (double f in rffreqVals)
+        {
+            double[] rv = new double[xVals.Length];
+            for (int i = 0; i < xVals.Length; i++) rv[i] = f * 1e-9 + i;
+            curves.Add((f, null, null, rv));
+        }
+        // familyAxisUnit "Hz" — what ParametricSweepEngine tags for a GHz VAR sweep.
+        t.SetFamilyData(xVals, "Pin", "", "RFfreq", curves, PlotType.Table, FreqUnit.GHz,
+                        familyAxisUnit: "Hz");
+
+        var plot = MakePlot(t);
+        var cols = TableRenderer.BuildColumns(plot);
+
+        // 1 X col + 3 family value cols.
+        Assert.Equal(4, cols.Count);
+
+        // The first family header: RFfreq=1e9 → "1 GHz".
+        Assert.Contains("RFfreq = 1 GHz", cols[1].Header);
+        Assert.Contains("RFfreq = 2 GHz", cols[2].Header);
+        Assert.Contains("RFfreq = 3 GHz", cols[3].Header);
+
+        // Raw Hz value must NOT appear.
+        Assert.DoesNotContain("1000000000", cols[1].Header);
+    }
+
+    // A non-frequency family axis (e.g. Vgs tagged "V") appends its own unit verbatim.
+    [Fact]
+    public void FamilyTrace_NonFreqAxis_HeaderAppendsOwnUnit()
+    {
+        double[] xVals   = { 0.0, 0.5, 1.0 };   // Vds
+        double[] vgsVals = { 0.0, 1.0, 2.0 };
+
+        var t = MakeBaseTrace();
+        t.CubeName  = "Ids";
+        t.Transform = CubeTransform.None;
+        t.Slice = new[]
+        {
+            new AxisSlice("Vgs", AxisRole.FamilyIterate, 0),
+            new AxisSlice("Vds", AxisRole.KeepAsX,       0),
+        };
+
+        var curves = new List<(double, string?, Complex[]?, double[]?)>();
+        foreach (double vgs in vgsVals)
+        {
+            double[] rv = new double[xVals.Length];
+            for (int i = 0; i < xVals.Length; i++) rv[i] = vgs * xVals[i];
+            curves.Add((vgs, null, null, rv));
+        }
+        // familyAxisUnit "V" — the swept Vgs variable's unit.
+        t.SetFamilyData(xVals, "Vds", "V", "Vgs", curves, PlotType.Table, FreqUnit.GHz,
+                        familyAxisUnit: "V");
+
+        var plot = MakePlot(t);
+        var cols = TableRenderer.BuildColumns(plot);
+
+        Assert.Equal(4, cols.Count);
+        Assert.Contains("Vgs = 0 V", cols[1].Header);
+        Assert.Contains("Vgs = 1 V", cols[2].Header);
+        Assert.Contains("Vgs = 2 V", cols[3].Header);
+    }
+
     [Fact]
     public void Item4_FamilyTrace_FormatColumnCell_CorrectValues()
     {

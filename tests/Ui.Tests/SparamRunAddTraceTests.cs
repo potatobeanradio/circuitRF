@@ -136,7 +136,7 @@ public sealed class SparamRunAddTraceTests
         var vCube = new DataCube(
             new[] {
                 new Axis("node",     new double[] { 0, 1 }, "", new[] { "Vin", "Vout" }),
-                new Axis("harmonic", new double[] { 0, 1e9, 2e9 }, "Hz")
+                new Axis("harmonic", new double[] { 0, 1, 2 }, "")
             },
             new Complex[2 * 3]);
         Assert.False(TraceRowViewModel.IsParameterCube(vCube));
