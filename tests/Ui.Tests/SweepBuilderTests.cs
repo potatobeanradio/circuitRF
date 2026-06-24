@@ -14,6 +14,31 @@ namespace CircuitRF.Ui.Tests;
 /// </summary>
 public sealed class SweepBuilderTests
 {
+    // ── Sweep Variable placeholder hint: RFfreq for LP/LPP, Pavl otherwise ───
+    [Fact]
+    public void SweepVariableHint_RFfreqForLpAndLpp_PavlForOthers()
+    {
+        var model = new SchematicEditModel();
+
+        var hb = new AnalysisEditorViewModel(model, AnalysisEditorViewModel.AnalysisKind.HB);
+        hb.AddSweepAxisCommand.Execute(null);
+        Assert.Equal("e.g. Pavl", hb.SweepAxes[0].VariablePlaceholder);
+
+        var lp = new AnalysisEditorViewModel(model, AnalysisEditorViewModel.AnalysisKind.LP);
+        lp.AddSweepAxisCommand.Execute(null);
+        Assert.Equal("e.g. RFfreq", lp.SweepAxes[0].VariablePlaceholder);
+
+        var lpp = new AnalysisEditorViewModel(model, AnalysisEditorViewModel.AnalysisKind.LPP);
+        lpp.AddSweepAxisCommand.Execute(null);
+        Assert.Equal("e.g. RFfreq", lpp.SweepAxes[0].VariablePlaceholder);
+
+        // Switching type updates existing rows.
+        hb.Type = AnalysisEditorViewModel.AnalysisKind.LP;
+        Assert.Equal("e.g. RFfreq", hb.SweepAxes[0].VariablePlaceholder);
+        hb.Type = AnalysisEditorViewModel.AnalysisKind.DC;
+        Assert.Equal("e.g. Pavl", hb.SweepAxes[0].VariablePlaceholder);
+    }
+
     // ── Test 1: two sweep axes around HB → correct chain ─────────────────────
 
     [Fact]

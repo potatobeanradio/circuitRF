@@ -39,6 +39,45 @@ public class LoadpullRecognitionTests
         Add("Gt_dB",        Fom(4, 3));
     }
 
+    // Frequency-swept loadpull: a leading "freq" axis precedes the canonical termination/FOM axes.
+    private static DataCube FreqTermination(int nFreq, int nGrid) =>
+        new(new[] { Named("freq", nFreq), Grid(nGrid) }, new Complex[nFreq * nGrid]);
+    private static DataCube FreqFom(int nFreq, int nGrid, int nPin) =>
+        new(new[] { Named("freq", nFreq), Grid(nGrid), Pin(nPin) }, new double[nFreq * nGrid * nPin]);
+
+    // ── Frequency-swept loadpull (FreqSweptLoadpull brief, Layer G) ────────────
+
+    [Fact]
+    public void FreqSwept_Loadpull_RecognizedWithLeadingFreqAxis()
+    {
+        var ds = new DataSet();
+        ds.Add("GammaLoad", FreqTermination(3, 4));
+        ds.Add("ZLoad",     FreqTermination(3, 4));
+        ds.Add("Pout_dBm",  FreqFom(3, 4, 5));
+        ds.Add("Gt_dB",     FreqFom(3, 4, 5));
+
+        Assert.True(LoadpullRecognition.IsLoadpull(ds));
+        Assert.Null(Assert.Single(LoadpullRecognition.FindLoadpullViews(ds)).Group);
+    }
+
+    // ── Pursuit result: follow-on loadpull cubes + MXP/MXE search scalars coexist ──
+
+    // The LPP follow-on loadpull is embedded under its ORIGINAL cube names (no LP_ prefix), so the
+    // pursuit result is a recognizable loadpull surface; the pursuit's own MXP_*/MXE_*/*Count scalars
+    // coexist in the same group and must not break recognition.
+    [Fact]
+    public void PursuitResult_FollowOnPlusSearchScalars_IsRecognized()
+    {
+        var ds = new DataSet();
+        AddLoadpullCubes(ds, group: null);                 // GammaLoad/ZLoad/Pout_dBm/Gt_dB (follow-on)
+        ds.Add("MXP_PoutDbm",    DataCube.Scalar(40.0));   // pursuit search digest — extra scalars
+        ds.Add("MXE_Eff",        DataCube.Scalar(0.7));
+        ds.Add("RecommTermCount", DataCube.Scalar(48.0));
+
+        Assert.True(LoadpullRecognition.IsLoadpull(ds));
+        Assert.Null(Assert.Single(LoadpullRecognition.FindLoadpullViews(ds)).Group);
+    }
+
     // ── Flat (.spl-style) ─────────────────────────────────────────────────────
 
     [Fact]

@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Engine.HarmonicBalance;
+using CircuitRF.Engine.Loadpull;
 using RfCore.Data;
 
 namespace CircuitRF.Engine;
@@ -25,12 +27,29 @@ public static class ParametricSweepEngine
     /// Returns a DataSet whose every cube has <paramref name="sweep"/>.SweepVarName prepended
     /// as a new axis.
     /// </summary>
+    /// <summary>
+    /// Coordinates OutputGrid <c>.gam</c> writes across a (possibly nested) sweep: the FIRST pursuit
+    /// write across the whole run truncates the file; every subsequent write appends a freq-tagged block.
+    /// One instance is created at the outermost <see cref="Run"/> and threaded through nesting so a nested
+    /// sweep does not re-truncate per outer point.
+    /// </summary>
+    private sealed class OutputWriteState { public bool FirstGamWriteDone; }
+
     public static DataSet Run(
         ParametricSweepAnalysis sweep,
         Library lib,
         TestBench tb,
         AnalysisSettings? settings = null,
         string? baseDirectory = null)
+        => Run(sweep, lib, tb, settings, baseDirectory, new OutputWriteState());
+
+    private static DataSet Run(
+        ParametricSweepAnalysis sweep,
+        Library lib,
+        TestBench tb,
+        AnalysisSettings? settings,
+        string? baseDirectory,
+        OutputWriteState writeState)
     {
         // Locate the inner analysis, skipping disabled sweeps (collapse): a disabled inner sweep is
         // transparent — its dimension is dropped and ITS inner runs here instead.
@@ -77,7 +96,7 @@ public static class ParametricSweepEngine
             try
             {
                 var netlist = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
-                datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory));
+                datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState));
             }
             finally
             {
@@ -92,11 +111,156 @@ public static class ParametricSweepEngine
             }
         }
 
-        // Build sweep axis; tag with base SI unit so marker readouts show "freq=2 GHz".
-        // SweepValues are already in base SI — the unit tag is for display only.
-        // Use the same baseUnit computed above (prefers Spec.Unit over origVar.Unit).
-        var sweepAxis = new Axis(sweep.SweepVarName, sweep.SweepValues, baseUnit);
-        return DataSet.StackSweepAxis(sweepAxis, datasets);
+        // Loadpull frequency sweep: when every per-point DataSet carries a __Freq tone carrier and the
+        // tone varies across points, the swept variable IS the tone frequency. Stack with a "freq" axis
+        // (Hz) built from the resolved per-point tones — LoadpullSurface keys the frequency dimension on
+        // an axis literally named "freq". Reading the resolved __Freq (not the raw swept values) keeps
+        // both a unit-bearing VAR (`RFfreq = 2 GHz`) and a unit-less one (`RFfreq = 2`, freq via ToneUnit)
+        // correct and Hz-valued. Otherwise: the generic variable-named axis.
+        if (TryBuildToneFreqAxis(datasets, out var freqAxis))
+        {
+            // A freq-tagged .gam from a swept pursuit can carry a DIFFERENT number of recommended
+            // terminations per frequency (more points go unscorable at some freqs — e.g. a reactive
+            // output cap), and per-grid-point Pin compression can produce a different pinStep count per
+            // freq. The resulting per-freq loadpull cubes are ragged and won't stack into [freq, …]. Pad
+            // every grid/pinStep axis up to the across-freq maximum with NaN; LoadpullSurface drops NaN
+            // scatter points, so each freq's fit sees only its real terminations.
+            datasets = PadRaggedGridsToCommon(datasets);
+            return DataSet.StackSweepAxis(freqAxis, datasets);
+        }
+        // Tag with base SI unit so marker readouts show "freq=2 GHz". SweepValues are already base SI.
+        return DataSet.StackSweepAxis(new Axis(sweep.SweepVarName, sweep.SweepValues, baseUnit), datasets);
+    }
+
+    /// <summary>
+    /// Pads ragged per-frequency loadpull cubes to a uniform shape so they stack. For each (non-metadata)
+    /// cube present in every dataset with a consistent rank, computes the per-axis maximum length across
+    /// datasets and rebuilds any shorter cube at that shape, filling the new cells (and extended index
+    /// axes) with NaN. Cubes already uniform — and the common non-loadpull case — pass through unchanged.
+    /// </summary>
+    private static List<DataSet> PadRaggedGridsToCommon(List<DataSet> datasets)
+    {
+        if (datasets.Count < 2) return datasets;
+
+        var targets = new Dictionary<string, int[]>(StringComparer.Ordinal);
+        foreach (var key in datasets[0].Cubes.Keys)
+        {
+            if (key.StartsWith("__", StringComparison.Ordinal)) continue;   // metadata: never padded
+            var c0 = datasets[0][key];
+            var max = new int[c0.Rank];
+            for (int d = 0; d < c0.Rank; d++) max[d] = c0.Axes[d].Length;
+
+            bool ragged = false, ok = true;
+            for (int n = 1; n < datasets.Count && ok; n++)
+            {
+                if (!datasets[n].Contains(key)) { ok = false; break; }      // missing cube — let stack report it
+                var cn = datasets[n][key];
+                if (cn.Rank != c0.Rank) { ok = false; break; }
+                for (int d = 0; d < c0.Rank; d++)
+                {
+                    if (cn.Axes[d].Length != max[d]) ragged = true;
+                    if (cn.Axes[d].Length > max[d]) max[d] = cn.Axes[d].Length;
+                }
+            }
+            if (ok && ragged) targets[key] = max;
+        }
+        if (targets.Count == 0) return datasets;   // nothing ragged
+
+        var result = new List<DataSet>(datasets.Count);
+        foreach (var ds in datasets)
+        {
+            var nds = new DataSet();
+            foreach (var (name, cube) in ds.Cubes)
+                nds.Add(name, targets.TryGetValue(name, out var tgt) ? PadCubeTo(cube, tgt) : cube);
+            result.Add(nds);
+        }
+        return result;
+    }
+
+    /// <summary>Rebuilds <paramref name="src"/> at <paramref name="target"/> per-axis lengths, copying
+    /// existing elements into their row-major positions and filling the remainder with NaN. Index-like
+    /// padded axis slots take their position as value.</summary>
+    private static DataCube PadCubeTo(DataCube src, int[] target)
+    {
+        int rank = src.Rank;
+        bool needs = false;
+        for (int d = 0; d < rank; d++) if (src.Axes[d].Length != target[d]) { needs = true; break; }
+        if (!needs) return src;
+
+        var axes = new Axis[rank];
+        for (int d = 0; d < rank; d++)
+        {
+            var a = src.Axes[d];
+            if (a.Length == target[d]) { axes[d] = a; continue; }
+            var vals = new double[target[d]];
+            for (int i = 0; i < target[d]; i++) vals[i] = i < a.Length ? a.Values[i] : i;
+            axes[d] = new Axis(a.Name, vals, a.Unit);
+        }
+
+        var srcLen = new int[rank];
+        for (int d = 0; d < rank; d++) srcLen[d] = src.Axes[d].Length;
+        var tStride = new int[rank];
+        tStride[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; d--) tStride[d] = tStride[d + 1] * target[d + 1];
+        int total = 1; for (int d = 0; d < rank; d++) total *= target[d];
+        int srcTotal = 1; for (int d = 0; d < rank; d++) srcTotal *= srcLen[d];
+
+        // Map source flat index → target flat index (same axis order, larger lengths).
+        int TargetIndex(int s)
+        {
+            int t = 0, rem = s;
+            for (int d = 0; d < rank; d++)
+            {
+                int stride = 1; for (int e = d + 1; e < rank; e++) stride *= srcLen[e];
+                int idx = rem / stride; rem %= stride;
+                t += idx * tStride[d];
+            }
+            return t;
+        }
+
+        if (src.DataKind == DataKind.Complex)
+        {
+            var sd = src.ComplexValues;
+            var td = new Complex[total];
+            var nan = new Complex(double.NaN, double.NaN);
+            for (int i = 0; i < total; i++) td[i] = nan;
+            for (int s = 0; s < srcTotal; s++) td[TargetIndex(s)] = sd[s];
+            return new DataCube(axes, td);
+        }
+        else
+        {
+            var sd = src.RealValues;
+            var td = new double[total];
+            for (int i = 0; i < total; i++) td[i] = double.NaN;
+            for (int s = 0; s < srcTotal; s++) td[TargetIndex(s)] = sd[s];
+            return new DataCube(axes, td);
+        }
+    }
+
+    /// <summary>
+    /// Builds a "freq" (Hz) sweep axis from the per-point <c>__Freq</c> tone carriers when this is a
+    /// loadpull frequency sweep — i.e. EVERY per-point DataSet carries <c>__Freq</c> and the tone value
+    /// actually varies across points. Returns false otherwise (caller uses the variable-named axis: a
+    /// non-tone sweep of a loadpull, e.g. a bias sweep, correctly stays single-frequency).
+    /// </summary>
+    private static bool TryBuildToneFreqAxis(List<DataSet> datasets, out Axis axis)
+    {
+        axis = null!;
+        if (datasets.Count == 0) return false;
+        var freqs = new double[datasets.Count];
+        for (int i = 0; i < datasets.Count; i++)
+        {
+            if (!datasets[i].Contains("__Freq")) return false;
+            var vals = datasets[i]["__Freq"].RealValues;
+            if (vals.Length == 0) return false;
+            freqs[i] = vals[0];
+        }
+        bool varies = false;
+        for (int i = 1; i < freqs.Length; i++)
+            if (System.Math.Abs(freqs[i] - freqs[0]) > 1e-3) { varies = true; break; }
+        if (!varies) return false;
+        axis = new Axis("freq", freqs, "Hz");
+        return true;
     }
 
     // ── Inner dispatch ────────────────────────────────────────────────────────
@@ -107,7 +271,8 @@ public static class ParametricSweepEngine
         TestBench tb,
         ElaboratedNetlist netlist,
         AnalysisSettings? settings,
-        string? baseDirectory)
+        string? baseDirectory,
+        OutputWriteState writeState)
     {
         switch (inner)
         {
@@ -124,13 +289,43 @@ public static class ParametricSweepEngine
             case ParametricSweepAnalysis psa:
                 // Recursive: outer override already injected in tb.GlobalVariables.
                 // This call re-elaborates for each of its own sweep values on top of that.
-                return Run(psa, lib, tb, settings, baseDirectory);
+                // Same writeState threads down so a nested sweep truncates the OutputGrid only once.
+                return Run(psa, lib, tb, settings, baseDirectory, writeState);
+
+            case LoadpullAnalysis lpa:
+            {
+                // Loadpull owns its own Γ-grid × Pin sweep; here it runs once at this point's resolved
+                // tone (LoadpullEngine.Resolve reads the swept tone via var-unit-wins). Enrich per point
+                // so every freq slice carries the canonical display metrics before stacking.
+                var lp = LoadpullEngine.Resolve(lpa, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
+                return RfCore.Loadpull.LoadpullPostProcessor.Enrich(new LoadpullEngine(netlist, tb).Run(lp));
+            }
+
+            case LoadpullPursuitAnalysis lppa:
+            {
+                // Pursuit runs the full MXP/MXE search + (optional) follow-on at this point's resolved
+                // tone (Resolve reads the swept tone via var-unit-wins). The result DataSet carries __Freq,
+                // so a freq sweep stacks the MXP/MXE optima into per-frequency trends; the LP_-prefixed
+                // follow-on cubes stack when their per-freq grid shapes match.
+                var pp = LoadpullPursuitEngine.Resolve(lppa, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
+                // OutputGrid .gam: the FIRST pursuit write across the whole (possibly nested) sweep truncates
+                // the file; every later write appends a freq-tagged block. This produces one multi-frequency
+                // file (ragged per-freq grids are independent blocks) and survives nested sweeps without
+                // re-truncating per outer point. The non-swept path (SchematicRunService) writes a single
+                // block (append=false, its own truncate).
+                bool hasOutput = !string.IsNullOrEmpty(pp.OutputGridPath);
+                bool append    = hasOutput && writeState.FirstGamWriteDone;
+                if (hasOutput) writeState.FirstGamWriteDone = true;
+                return new LoadpullPursuitEngine(new LoadpullEngine(netlist, tb))
+                    .Run(pp, appendOutputBlock: append);
+            }
 
             default:
                 throw new NotSupportedException(
                     $"ParametricSweepEngine: inner analysis type " +
                     $"'{inner.GetType().Name}' is not supported. " +
-                    $"Supported: HarmonicBalanceAnalysis, SParameterAnalysis, DcAnalysis, ParametricSweepAnalysis.");
+                    $"Supported: HarmonicBalanceAnalysis, SParameterAnalysis, DcAnalysis, " +
+                    $"ParametricSweepAnalysis, LoadpullAnalysis, LoadpullPursuitAnalysis.");
         }
     }
 

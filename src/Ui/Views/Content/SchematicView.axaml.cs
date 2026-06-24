@@ -282,6 +282,29 @@ public partial class SchematicView : UserControl
                 SchematicCanvasCtrl.ZoomToFit();
                 e.Handled = true;
                 break;
+            // Q — Disable → Open Circuit (same as the toolbar button).
+            case Key.Q:
+                vm.DisableSelection(DisableState.Open);
+                SchematicCanvasCtrl.InvalidateVisual();
+                e.Handled = true;
+                break;
+            // T — Place Term, P — Place Pin (quick placement, like W for Wire).
+            case Key.T:
+                vm.BeginPlacement(SymbolKind.Term);
+                SchematicCanvasCtrl.Focus();
+                e.Handled = true;
+                break;
+            case Key.P:
+                vm.BeginPlacement(SymbolKind.Pin);
+                SchematicCanvasCtrl.Focus();
+                e.Handled = true;
+                break;
+            // Shift+G — Place Ground (plain G stays snap-mode cycle, below).
+            case Key.G when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
+                vm.BeginPlacement(SymbolKind.Ground);
+                SchematicCanvasCtrl.Focus();
+                e.Handled = true;
+                break;
             case Key.G:
                 vm.CycleSnapMode();
                 UpdateSnapModeButton();
@@ -670,7 +693,12 @@ public partial class SchematicView : UserControl
                 }
             }
 
-            double? anchorGlyphHalfH = editComp.Symbol == SymbolKind.Snp
+            // Match the renderer's DrawLabels (glyphHalfH = GlyphBbMaxY - Y) for every symbol whose
+            // LabelBaseYFor consumes it: SnP and the Tuner family. The Tuner family's glyph grows
+            // downward when ShowBias=true (a bias branch below the box), so passing null here left the
+            // inline editor (and the label hit zone) sitting too high over those tuners.
+            double? anchorGlyphHalfH = editComp.Symbol is SymbolKind.Snp
+                or SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
                 ? editComp.ComputeGlyphBb().MaxY - editComp.Y
                 : null;
             _labelAnchor = new ComponentLabelAnchor(

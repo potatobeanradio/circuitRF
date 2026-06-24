@@ -299,7 +299,11 @@ public sealed class LoadpullPursuitEngine
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
-    public DataSet Run(PursuitParams pp)
+    /// <param name="appendOutputBlock">
+    /// When true, the OutputGrid <c>.gam</c> block is appended (freq-tagged) rather than truncating the
+    /// file — used by a frequency-swept pursuit to accumulate one block per frequency.
+    /// </param>
+    public DataSet Run(PursuitParams pp, bool appendOutputBlock = false)
     {
         var lpp    = pp.LpParams;
         var ctx    = _lp.PrepareContext(lpp);
@@ -471,9 +475,11 @@ public sealed class LoadpullPursuitEngine
         // Optionally write the .gam file (OutputGrid controls file only, not simulation).
         if (!string.IsNullOrEmpty(pp.OutputGridPath))
         {
-            GamWriter.WriteFile(pp.OutputGridPath!, recommendedTerminations);
+            GamWriter.WriteFile(pp.OutputGridPath!, recommendedTerminations,
+                freqHz: lpp.ToneHz, append: appendOutputBlock);
             Console.Error.WriteLine(
-                $"[Pursuit] .gam written → {pp.OutputGridPath}  ({recommendedTerminations.Points.Count} pts)");
+                $"[Pursuit] .gam {(appendOutputBlock ? "appended" : "written")} → {pp.OutputGridPath}  " +
+                $"({recommendedTerminations.Points.Count} pts @ {lpp.ToneHz / 1e9:G4} GHz)");
         }
 
         // ── Optionally run follow-on loadpull (§6.5.2) ───────────────────────
@@ -488,7 +494,8 @@ public sealed class LoadpullPursuitEngine
         }
 
         return BuildPursuitDataSet(mxpResult, mxeResult,
-            cache.All.Count, unscorable.Count, recommendedTerminations, followOnDs);
+            cache.All.Count, unscorable.Count, recommendedTerminations, followOnDs,
+            lpp.ToneHz);
     }
 
     // ── Follow-on loadpull (§6.5.2) ───────────────────────────────────────────
@@ -540,7 +547,10 @@ public sealed class LoadpullPursuitEngine
             if (zsourceOverride.HasValue)
                 followCtx.SrcModel.SetHarmonicOverride(1, zsourceOverride.Value);
 
-            return _lp.Run(followOnLpParams);
+            // Enrich the follow-on with the canonical display metrics (Pout_dBm/Efficiency/Zin_*/AMPM_deg/
+            // IRL_dB) — the same post-processing a standalone loadpull gets — so the follow-on surface is
+            // displayable with friendly names, not raw LP_Pout(W)/LP_DE.
+            return RfCore.Loadpull.LoadpullPostProcessor.Enrich(_lp.Run(followOnLpParams));
         }
         finally
         {
@@ -685,9 +695,14 @@ public sealed class LoadpullPursuitEngine
         int cacheCount,
         int unscorableCount,
         GamWriter.GamBuilderResult recommendedTerminations,
-        DataSet? followOnDs)
+        DataSet? followOnDs,
+        double toneHz)
     {
         var ds = new DataSet();
+
+        // Tone carrier (Hz) — lets a parametric freq sweep recognize this as a per-frequency point and
+        // stack a "freq" axis (ParametricSweepEngine.TryBuildToneFreqAxis), mirroring the loadpull path.
+        ds.Add("__Freq", new DataCube(new[] { new Axis("freq", new[] { toneHz }, "Hz") }, new[] { toneHz }));
 
         // MXP scalars
         ds.Add("MXP_PoutDbm",    DataCube.Scalar(mxp.Converged ? mxp.Value : 0.0));
@@ -712,11 +727,24 @@ public sealed class LoadpullPursuitEngine
         ds.Add("UnscorableCount", DataCube.Scalar((double)unscorableCount));
         ds.Add("RecommTermCount", DataCube.Scalar((double)recommendedTerminations.Points.Count));
 
-        // Embed follow-on loadpull cubes with "LP_" prefix (if present)
+        // Embed the follow-on loadpull cubes (if present) under their ORIGINAL names — not an "LP_"
+        // prefix — so the pursuit result IS a recognizable loadpull surface (LoadpullRecognition keys on
+        // GammaLoad/ZLoad + Pout_dBm/Gt_dB/…), giving the user contours + a summary table + the per-freq
+        // picker over the recommended-termination grid. The follow-on names are disjoint from the pursuit's
+        // own MXP_*/MXE_*/*Count scalars, so there is no collision. The metadata (__-prefixed) cubes keep
+        // their __ prefix (sweep-invariant; StackSweepAxis passes them through unstacked); the follow-on
+        // __Freq is skipped (the pursuit already emits a top-level __Freq tone carrier).
         if (followOnDs is not null)
         {
             foreach (var (name, cube) in followOnDs.Cubes)
-                ds.Add("LP_" + name, cube);
+            {
+                if (name.StartsWith("__", StringComparison.Ordinal))
+                {
+                    if (name != "__Freq" && !ds.Contains(name)) ds.Add(name, cube);
+                    continue;
+                }
+                ds.Add(name, cube);
+            }
         }
 
         return ds;

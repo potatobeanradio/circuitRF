@@ -35,13 +35,49 @@ public sealed class GamReader
     /// <summary>The parsed grid.</summary>
     public sealed record GamGrid(IReadOnlyList<GamPoint> Points, double Z0);
 
+    /// <summary>
+    /// One frequency block of a (possibly multi-frequency) .gam file. <see cref="FreqHz"/> is null for a
+    /// freq-less block (usable at ANY frequency). A freq-tagged file has one block per <c>freq=</c> line.
+    /// </summary>
+    public sealed record GamBlock(double? FreqHz, GamGrid Grid);
+
     // ── Public entry points ────────────────────────────────────────────────────
 
+    /// <summary>Reads the file as a single grid (first block — back-compatible for freq-less files).</summary>
     public static GamGrid ReadFile(string path, double defaultZ0 = 50.0)
         => ReadText(File.ReadAllText(path), defaultZ0);
 
     public static GamGrid ReadText(string text, double defaultZ0 = 50.0)
-        => new GamReader().Parse(text, defaultZ0);
+        => new GamReader().ParseBlocks(text, defaultZ0)[0].Grid;
+
+    /// <summary>All frequency blocks in the file, in file order.</summary>
+    public static IReadOnlyList<GamBlock> ReadBlocks(string path, double defaultZ0 = 50.0)
+        => new GamReader().ParseBlocks(File.ReadAllText(path), defaultZ0);
+
+    public static IReadOnlyList<GamBlock> ReadBlocksText(string text, double defaultZ0 = 50.0)
+        => new GamReader().ParseBlocks(text, defaultZ0);
+
+    /// <summary>
+    /// Selects the grid for <paramref name="targetFreqHz"/>: a freq-less file (single any-freq block) is
+    /// returned as-is; a freq-tagged file returns the block whose <c>freq=</c> is nearest the target. With
+    /// no target, returns the first block.
+    /// </summary>
+    public static GamGrid ReadFileForFreq(string path, double? targetFreqHz, double defaultZ0 = 50.0)
+        => SelectForFreq(ReadBlocks(path, defaultZ0), targetFreqHz);
+
+    public static GamGrid SelectForFreq(IReadOnlyList<GamBlock> blocks, double? targetFreqHz)
+    {
+        if (blocks.Count == 1 || targetFreqHz is null) return blocks[0].Grid;
+        // Freq-tagged: nearest block by |Δf|. Freq-less blocks (null) sort last (apply at any freq).
+        GamBlock best = blocks[0];
+        double bestDelta = double.PositiveInfinity;
+        foreach (var b in blocks)
+        {
+            double d = b.FreqHz is { } f ? Math.Abs(f - targetFreqHz.Value) : double.PositiveInfinity;
+            if (d < bestDelta) { bestDelta = d; best = b; }
+        }
+        return best.Grid;
+    }
 
     // ── Internal state ────────────────────────────────────────────────────────
 
@@ -55,11 +91,21 @@ public sealed class GamReader
 
     // ── Parse ─────────────────────────────────────────────────────────────────
 
-    private GamGrid Parse(string text, double defaultZ0)
+    private List<GamBlock> ParseBlocks(string text, double defaultZ0)
     {
         _z0 = defaultZ0;
-        var points  = new List<GamPoint>();
+        var blocks  = new List<GamBlock>();
         var lines   = text.Split('\n');
+
+        double? curFreq = null;                 // current block's freq (null = freq-less)
+        var     curPts  = new List<GamPoint>();
+        bool    started = false;                // has any data/freq line been seen?
+
+        void Flush()
+        {
+            if (curPts.Count > 0 || curFreq is not null)
+                blocks.Add(new GamBlock(curFreq, new GamGrid(curPts, _z0)));
+        }
 
         for (int i = 0; i < lines.Length; i++)
         {
@@ -71,24 +117,59 @@ public sealed class GamReader
             // Comment lines (';' prefix) — skip entirely.
             if (raw[0] == ';') continue;
 
-            // Header candidate: starts with '#'.
+            // Header candidate: starts with '#'. (# is a comment token, never a freq line — Layer C.)
             if (raw[0] == '#')
             {
                 if (!_headerParsed)
                     ParseHeader(raw[1..]);
-                // Remaining '#' lines after the header are also comments — skip.
+                continue;
+            }
+
+            // Frequency block delimiter: a bare `freq=<value><unit>` directive (not '#'-prefixed). Data
+            // lines start with a digit/sign/dot, so a leading letter 'f' is unambiguous.
+            if (raw.Length > 5 && (raw[0] == 'f' || raw[0] == 'F') &&
+                raw.StartsWith("freq", StringComparison.OrdinalIgnoreCase) &&
+                raw.AsSpan(4).TrimStart() is var afterFreq && afterFreq.Length > 0 && afterFreq[0] == '=')
+            {
+                _headerParsed = true;
+                if (started) Flush();           // close the previous block
+                curFreq = ParseFreqHz(afterFreq[1..].ToString(), lineNum);
+                curPts  = new List<GamPoint>();
+                started = true;
                 continue;
             }
 
             // Data line.
             _headerParsed = true;  // first non-comment, non-header line fixes format inference
+            started = true;
 
             var pt = ParseDataLine(raw, lineNum);
             if (pt is not null)
-                points.Add(pt);
+                curPts.Add(pt);
         }
 
-        return new GamGrid(points, _z0);
+        Flush();
+        // A wholly empty file → one empty freq-less block (keeps [0] valid for back-compat callers).
+        if (blocks.Count == 0) blocks.Add(new GamBlock(null, new GamGrid(curPts, _z0)));
+        return blocks;
+    }
+
+    /// <summary>Parses a `freq=` value with an optional unit suffix: "2e9", "1.8GHz", "900 MHz".</summary>
+    private static double ParseFreqHz(string s, int lineNum)
+    {
+        s = s.Trim();
+        int i = s.Length;
+        while (i > 0 && char.IsLetter(s[i - 1])) i--;   // strip trailing alpha unit (not the 'e' of 1.8e9)
+        string num  = s[..i].Trim();
+        string unit = s[i..].Trim();
+        double val  = ParseDouble(num.Length > 0 ? num : s, lineNum);
+        double scale = unit.ToLowerInvariant() switch
+        {
+            "" or "hz" => 1.0,
+            "khz" => 1e3, "mhz" => 1e6, "ghz" => 1e9, "thz" => 1e12,
+            _     => 1.0,
+        };
+        return val * scale;
     }
 
     // ── Header parsing ────────────────────────────────────────────────────────

@@ -135,7 +135,10 @@ public sealed class LoadpullEngine
         if (!File.Exists(lpa.GridPath))
             throw new FileNotFoundException($"LoadpullAnalysis '{lpa.Name}': Grid file not found: '{lpa.GridPath}'");
 
-        var grid = GamReader.ReadFile(lpa.GridPath);
+        // Select the grid for this tone: a freq-less .gam applies at any frequency; a freq-tagged .gam
+        // (Layer C) returns the block nearest the resolved tone — so a freq-swept loadpull uses each
+        // frequency's own terminations.
+        var grid = GamReader.ReadFileForFreq(lpa.GridPath, tone);
 
         return new LoadpullAnalysisParams(
             tone, maxH, osamp, tol, driveStepping, guard, maxIter,

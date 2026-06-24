@@ -1156,6 +1156,7 @@ public partial class DataDisplayViewModel : ViewModelBase
         plot.TableOptimum                = pc.TableOptimum;
         plot.TableReadMode               = pc.TableReadMode;
         plot.TableCompression            = pc.TableCompression > 0 ? pc.TableCompression : 3.0;
+        plot.SummaryLoadpullGroup        = pc.SummaryLoadpullGroup;
 
         foreach (var traceConfig in pc.Traces)
         {
@@ -1268,6 +1269,7 @@ public partial class DataDisplayViewModel : ViewModelBase
                     ConstraintMetricName  = ct.ConstraintMetricName,
                     ConstraintValue       = ct.ConstraintValue,
                     FreqIndex             = ct.FreqIndex,
+                    LoadpullGroup         = ct.LoadpullGroup,
                     LevelMode             = ct.LevelMode,
                     LevelStart            = ct.LevelStart,
                     LevelStep             = ct.LevelStep,
@@ -1415,6 +1417,7 @@ public partial class DataDisplayViewModel : ViewModelBase
             TableOptimum                = plot.TableOptimum,
             TableReadMode               = plot.TableReadMode,
             TableCompression            = plot.TableCompression,
+            SummaryLoadpullGroup        = plot.SummaryLoadpullGroup,
             Axes = new AxesConfig
             {
                 AutoscaleX      = plot.AutoscaleX,
@@ -1514,6 +1517,7 @@ public partial class DataDisplayViewModel : ViewModelBase
                 ConstraintMetricName = cd.ConstraintMetricName,
                 ConstraintValue      = cd.ConstraintValue,
                 FreqIndex            = cd.FreqIndex,
+                LoadpullGroup        = cd.LoadpullGroup,
                 LevelMode            = cd.LevelMode,
                 LevelStart           = cd.LevelStart,
                 LevelStep            = cd.LevelStep,

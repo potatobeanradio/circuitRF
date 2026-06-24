@@ -223,6 +223,33 @@ public partial class PlotInspectorViewModel : ViewModelBase
     partial void OnTableOptimumChanged(TableOptimum value)
     {
         _plot.TableOptimum = value;
+        OnPropertyChanged(nameof(IsTableOptimumMxp));
+        OnPropertyChanged(nameof(IsTableOptimumMxe));
+        RebuildSummary();
+    }
+
+    // ── MXP / MXE segmented selector (replaces the Load combobox) ──────────────
+    public bool IsTableOptimumMxp => TableOptimum == TableOptimum.Mxp;
+    public bool IsTableOptimumMxe => TableOptimum == TableOptimum.Mxe;
+
+    [RelayCommand] private void SetTableOptimumMxp() => TableOptimum = TableOptimum.Mxp;
+    [RelayCommand] private void SetTableOptimumMxe() => TableOptimum = TableOptimum.Mxe;
+
+    // ── Summary loadpull-analysis picker (mirrors the contour card's analysis picker) ──
+    private bool _suppressSummaryAnalysisSync;
+
+    public ObservableCollection<string> SummaryAvailableAnalyses { get; } = new();
+
+    [ObservableProperty] private string? _summarySelectedAnalysis;
+
+    /// <summary>Show the summary's analysis picker only when the source carries more than one loadpull
+    /// view (e.g. a run.npy with both a standalone Loadpull and a Loadpull-Pursuit follow-on).</summary>
+    public bool ShowSummaryAnalysisPicker => IsSummaryTable && SummaryAvailableAnalyses.Count > 1;
+
+    partial void OnSummarySelectedAnalysisChanged(string? value)
+    {
+        if (_suppressSummaryAnalysisSync) return;
+        _plot.SummaryLoadpullGroup = value;
         RebuildSummary();
     }
 
@@ -409,9 +436,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
             .Where(rv =>
             {
                 var t = rv.Trace;
-                // Contour traces are never stale here — their data lives in ContourData,
-                // keyed by SourcePath, not by t.Data / librarySnps.
-                if (t.IsContourTrace) return false;
+                // Contour and summary-column traces are never stale here — they hold a placeholder SNP and
+                // their data is re-derived from the (path-keyed) loadpull source by RebuildContour/
+                // RebuildSummary, not bound to a library SNP. Removing them on a re-run would wipe the
+                // contour/summary and skip the refresh (IsSummaryTable → false).
+                if (t.IsContourTrace || t.IsSummaryColumn) return false;
                 return t.IsCubeBound
                     ? t.SourcePath is null || !libraryPaths.Contains(t.SourcePath)
                     : t.Data is not null && !librarySnps.Contains(t.Data);
@@ -441,6 +470,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // (no CollectionChanged fires in that case, only LibraryChanged).
         foreach (var vm in Traces)
             vm.RefreshDataSources();
+
+        // Contour traces cache their loadpull surface + metric/freq/analysis pickers keyed by file path.
+        // A re-run overwrites run.npy at the same path, so force a refresh from the reloaded data (else the
+        // analysis picker keeps listing the PREVIOUS run's analyses).
+        foreach (var vm in Traces)
+            vm.RefreshContourAfterReload();
 
         _harmonicWarned = false;   // new source → re-warn once if harmonic cubes found
         _plot.Autoscale();
@@ -906,6 +941,18 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     public void Notify() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>
+    /// Forcibly re-frames the plot to the current data and redraws — called after a loadpull contour's
+    /// frequency changed, so the Rect x/y axes snap to the new frequency's RecommendedBox (MXP/MXE region).
+    /// Uses <c>force: true</c> like <c>AddContourTrace</c>, because a contour plot keeps autoscale off for
+    /// a sticky view, so a non-forced Autoscale() would not re-frame.
+    /// </summary>
+    public void ForceRescaleAndNotify()
+    {
+        _plot.Autoscale(force: true);
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+    }
+
     private void RefreshAddCommand()
     {
         OnPropertyChanged(nameof(CanAddTrace));
@@ -1091,6 +1138,32 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// CellsReal/CellsComplex, read at the per-frequency MXP/MXE optimum using the table-wide
     /// compression and read mode. No-op when the plot is not a summary table. (Phase 7.5d.)
     /// </summary>
+    // Keep the summary analysis picker (SummaryAvailableAnalyses + SummarySelectedAnalysis) in sync with
+    // the recognized loadpull views and the group actually in use. Only mutates the collection when it
+    // changes; syncs the selection under a suppress guard so it never re-triggers a rebuild.
+    private void RebuildSummaryAnalysisList(IReadOnlyList<LoadpullRecognition.LoadpullView> views, string activeGroup)
+    {
+        var groups = views.Select(v => v.Group ?? "").ToList();
+
+        // Suppress the selection callback across the ENTIRE mutation: the live ComboBox sets its
+        // SelectedItem to null while the ItemsSource is being Cleared, which would otherwise re-enter
+        // OnSummarySelectedAnalysisChanged → RebuildSummary → RebuildSummaryAnalysisList mid-loop and
+        // double-add every analysis. (Save/restore so an outer suppress is honored.)
+        bool prevSuppress = _suppressSummaryAnalysisSync;
+        _suppressSummaryAnalysisSync = true;
+        try
+        {
+            if (!groups.SequenceEqual(SummaryAvailableAnalyses, StringComparer.Ordinal))
+            {
+                SummaryAvailableAnalyses.Clear();
+                foreach (var g in groups) SummaryAvailableAnalyses.Add(g);
+                OnPropertyChanged(nameof(ShowSummaryAnalysisPicker));
+            }
+            SummarySelectedAnalysis = activeGroup;
+        }
+        finally { _suppressSummaryAnalysisSync = prevSuppress; }
+    }
+
     public void RebuildSummary()
     {
         var summaryTraces = _plot.Traces.Where(t => t.IsSummaryColumn).ToList();
@@ -1116,8 +1189,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
             _harmonicWarned = true;
 
         // Group-aware: LP cubes may be top level (flat .spl) or under an analysis group (LP run.npy).
+        // When more than one loadpull view exists, honor the user's chosen analysis (persisted on the
+        // Plot); otherwise default to the first. Keep the analysis picker in sync with the views.
         var lpViews = LoadpullRecognition.FindLoadpullViews(ds);
-        string lpGroup = lpViews.Count > 0 ? (lpViews[0].Group ?? "") : "";
+        string? wantedGroup = _plot.SummaryLoadpullGroup;
+        string lpGroup =
+            (!string.IsNullOrEmpty(wantedGroup) && lpViews.Any(v => (v.Group ?? "") == wantedGroup)) ? wantedGroup!
+            : lpViews.Count > 0 ? (lpViews[0].Group ?? "") : "";
+        RebuildSummaryAnalysisList(lpViews, lpGroup);
 
         LoadpullSurface surface;
         try { surface = new LoadpullSurface(ds, lpGroup); }

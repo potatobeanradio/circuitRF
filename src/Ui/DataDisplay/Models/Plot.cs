@@ -238,6 +238,9 @@ namespace CircuitRF.Ui.DataDisplay
         public TableOptimum  TableOptimum     { get; set; } = TableOptimum.Mxp;
         public TableReadMode TableReadMode    { get; set; } = TableReadMode.Interp;
         public double        TableCompression { get; set; } = 3.0;
+        /// <summary>Which recognized loadpull analysis group (e.g. "LP1"/"LPP1") the summary reads when the
+        /// source carries more than one. Null/empty = the first loadpull view.</summary>
+        public string?       SummaryLoadpullGroup { get; set; }
 
         /// <summary>Per-frequency row axis (Hz) for a summary Table, set by the VM's RebuildSummary.
         /// Null/empty for non-summary tables. Not persisted (re-derived on load).</summary>

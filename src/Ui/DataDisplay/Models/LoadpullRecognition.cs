@@ -21,6 +21,7 @@ public static class LoadpullRecognition
 {
     private const string GridPointAxis = "gridPoint";
     private const string PinStepAxis   = "pinStep";
+    private const string FreqAxis      = "freq";
 
     private static readonly string[] TerminationCubes = ["GammaLoad", "ZLoad"];
     private static readonly string[] FomCubes         = ["Pout_dBm", "Gt_dB", "Gp_dB", "Efficiency", "PAE"];
@@ -56,25 +57,27 @@ public static class LoadpullRecognition
 
     // ── Signature checks ──────────────────────────────────────────────────────
 
-    // A termination cube (GammaLoad or ZLoad) over a single axis named gridPoint.
+    // A termination cube (GammaLoad or ZLoad) over a single axis named gridPoint, optionally preceded by
+    // a leading "freq" axis (frequency-swept loadpull: GammaLoad[freq, gridPoint]).
     private static bool HasTermination(IReadOnlyDictionary<string, DataCube> cubes)
     {
         foreach (var name in TerminationCubes)
             if (cubes.TryGetValue(name, out var c)
-                && c.Rank == 1
-                && c.Axes[0].Name == GridPointAxis)
+                && (c.Rank == 1 || (c.Rank == 2 && c.Axes[0].Name == FreqAxis))
+                && c.Axes[^1].Name == GridPointAxis)
                 return true;
         return false;
     }
 
-    // At least one FOM cube over axes {gridPoint, pinStep} (in that order).
+    // At least one FOM cube over trailing axes {gridPoint, pinStep}, optionally preceded by a leading
+    // "freq" axis (frequency-swept loadpull: Pout_dBm[freq, gridPoint, pinStep]).
     private static bool HasFom(IReadOnlyDictionary<string, DataCube> cubes)
     {
         foreach (var name in FomCubes)
             if (cubes.TryGetValue(name, out var c)
-                && c.Rank == 2
-                && c.Axes[0].Name == GridPointAxis
-                && c.Axes[1].Name == PinStepAxis)
+                && (c.Rank == 2 || (c.Rank == 3 && c.Axes[0].Name == FreqAxis))
+                && c.Axes[^2].Name == GridPointAxis
+                && c.Axes[^1].Name == PinStepAxis)
                 return true;
         return false;
     }

@@ -252,21 +252,25 @@ analysis SW_Vgs  type=parametric_sweep  Var=Vgs  Values=-1,-2  Inner=SW_Vds
 
     // ── 5. Unsupported inner type still throws ────────────────────────────────
 
+    // A test-only Analysis subtype the engine knows nothing about — the default arm's guard.
+    private sealed class UnknownAnalysis(string name) : Analysis(name);
+
     [Fact]
     public void Unsupported_StillThrows()
     {
-        // A LoadpullAnalysis as the inner wraps no dispatch in ParametricSweepEngine.
+        // All engine-owning analyses (HB/SP/DC/PSA/LP/LPP) are now dispatched. The default arm still
+        // guards against an unknown Analysis subtype.
         var tb = new TestBench("unsupported-test");
         tb.GlobalVariables.Add(new Variable("Rval", "50"));
-        tb.Analyses.Add(new LoadpullAnalysis("LP1"));
-        var psa = new ParametricSweepAnalysis("SW1", "Rval", [50.0], "LP1");
+        tb.Analyses.Add(new UnknownAnalysis("UNK1"));
+        var psa = new ParametricSweepAnalysis("SW1", "Rval", [50.0], "UNK1");
         tb.Analyses.Add(psa);
         var lib = new Library("test");
 
         var ex = Assert.Throws<NotSupportedException>(
             () => ParametricSweepEngine.Run(psa, lib, tb));
 
-        Assert.Contains("LoadpullAnalysis", ex.Message);
+        Assert.Contains("UnknownAnalysis", ex.Message);
         output.WriteLine($"Throws NotSupportedException: {ex.Message}");
         output.WriteLine("Unsupported_StillThrows: PASS.");
     }

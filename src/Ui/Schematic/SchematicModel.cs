@@ -62,7 +62,15 @@ public sealed class SchematicComponent
     public const double LabelBaseY         =  280.0; // first-row Skia baseline Y from center
     public const double LabelWorldHeight   =   70.0; // font cap-height in world units
     public const double LabelWorldStep     =   72.0; // line-to-line spacing
-    public const double LabelWidthEstimate =  500.0; // conservative text-width estimate
+    public const double LabelWidthEstimate =  500.0; // floor text-width estimate (short labels)
+    public const double LabelCharWidth     =   50.0; // per-character world width — long labels (VAR var
+                                                     // rows, MEAS formulas) need this so the cull BB covers
+                                                     // their full width and they don't vanish at the edge.
+
+    /// <summary>Generous world width of a label string for bounding-box culling: a per-character estimate
+    /// (over-estimating is safe — it only widens the cull BB), floored at <see cref="LabelWidthEstimate"/>.</summary>
+    public static double LabelWidthFor(string label) =>
+        Math.Max(LabelWidthEstimate, (label?.Length ?? 0) * LabelCharWidth);
 
     /// <summary>
     /// First-row label baseline Y (from component center) for this symbol and port count.

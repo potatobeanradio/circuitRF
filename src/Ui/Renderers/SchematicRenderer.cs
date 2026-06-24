@@ -14,7 +14,9 @@ namespace CircuitRF.Ui.Renderers;
 public static class SchematicRenderer
 {
     private const double LodThreshold        = 6.0;
-    private const double SimplifiedThreshold = 22.0;
+    // Labels/port markers fade out below this on-screen component width. Lowered from 22.0 so text stays
+    // rendered ~2 more scroll-wheel zoom-out clicks (ZoomFactor 1.15 → 22.0 / 1.15² ≈ 16.64).
+    private const double SimplifiedThreshold = 16.64;
     private const double MinGridSpacingPx    = 4.0;
     private const double CoarseGridRatio     = 10.0;
 

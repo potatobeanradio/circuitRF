@@ -25,6 +25,48 @@ public sealed class LppAuthoringTests
     private static AnalysisEditorViewModel NewLppEditor(SchematicEditModel model)
         => new(model, AnalysisEditorViewModel.AnalysisKind.LPP);
 
+    private static void Set(object o, string field, object val) =>
+        o.GetType().GetField(field, System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.NonPublic)!.SetValue(o, val);
+
+    // ── Freq-swept pursuit authoring (FreqSweptLoadpull brief, Layers A–F) ────
+
+    [Fact]
+    public void Lpp_SupportsFreqSweep_BuildsChain()
+    {
+        var model = ModelWithTuners();
+        var v = new EditableComponent { InstanceName = "VAR1", Symbol = SymbolKind.Var, X = 800, Y = 0 };
+        v.Parameters.Add(new EditableParameter { Name = "RFfreq", Expression = "2", Unit = "GHz" });
+        model.Components.Add(v);
+
+        var vm = NewLppEditor(model);
+        vm.Name = "LPP1";
+        vm.LppBody.LoadTunerName   = "LoadTuner1";
+        vm.LppBody.SourceTunerName = "SourceTuner1";
+        vm.LppBody.ToneCoeff       = "RFfreq";
+        vm.LppBody.ToneUnit        = "GHz";
+
+        Assert.True(vm.ShowSweeps);   // sweep UI available for LPP
+
+        var axis = new SweepAxisRowViewModel(model);
+        Set(axis, "_varName",         "RFfreq");
+        Set(axis, "_mode",            SweepAxisMode.StepSize);
+        Set(axis, "_startExpr",       "1.8");
+        Set(axis, "_stopExpr",        "2.2");
+        Set(axis, "_stepOrCountExpr", "0.2");
+        vm.SweepAxes.Add(axis);
+
+        var chain = vm.BuildAnalyses();
+        Assert.NotNull(chain);
+        Assert.Equal(2, chain!.Count);
+        var lpp = Assert.IsType<LoadpullPursuitAnalysis>(chain[0]);
+        var psa = Assert.IsType<ParametricSweepAnalysis>(chain[1]);
+        Assert.Equal("LPP1", lpp.Name);
+        Assert.Equal("LPP1", psa.InnerAnalysisName);
+        Assert.Equal("RFfreq", psa.SweepVarName);
+        Assert.Equal(new[] { 1.8e9, 2.0e9, 2.2e9 }, psa.SweepValues);
+    }
+
     // ── BuildAnalyses produces a LoadpullPursuitAnalysis with the set values ──
 
     [Fact]
@@ -170,7 +212,7 @@ public sealed class LppAuthoringTests
         vm.LppBody.SourceTunerName = "SourceTuner1";
         // No Grid field for LPP — still valid.
         Assert.True(vm.LppBody.IsValid);
-        Assert.False(vm.ShowSweeps);   // sweep UI hidden for LPP
+        Assert.True(vm.ShowSweeps);   // sweep UI available for LPP (freq-swept pursuit, Layers A–E)
     }
 
     // ── Persistence smoke: authored LPP survives .csch round-trip (brief 04) ──

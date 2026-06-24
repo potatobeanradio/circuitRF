@@ -32,6 +32,11 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(VarNameError), nameof(HasVarNameError), nameof(Preview))]
     private string _varName = "";
 
+    /// <summary>Placeholder/hint for the Variable box. The editor sets this per analysis type:
+    /// "e.g. RFfreq" for Loadpull/LP-Pursuit (freq sweeps), "e.g. Pavl" otherwise.</summary>
+    [ObservableProperty]
+    private string _variablePlaceholder = "e.g. Pavl";
+
     // ── Mode ──────────────────────────────────────────────────────────────────
 
     [ObservableProperty]

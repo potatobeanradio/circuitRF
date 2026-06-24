@@ -769,6 +769,24 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             if (props.IsLeftButtonPressed)
             {
+                // VSWR locus grab — checked BEFORE the glyph so a tight locus (e.g. VSWR 1.05) sitting
+                // inside the marker's hit radius is still draggable; the marker would otherwise always win.
+                var vswrHit = HitTestVswrLocus(e.GetPosition(this));
+                if (vswrHit.HasValue)
+                {
+                    _draggingVswrMarker = vswrHit.Value.Marker;
+                    _draggingVswrTrace  = vswrHit.Value.Trace;
+                    _renderDetail = PlotDetail.Full;
+                    // Show the transient VSWR readout on a plain click too (not only while dragging),
+                    // so the user can click the locus to read its value without moving it.
+                    _vswrReadoutPt     = e.GetPosition(this);
+                    _vswrReadoutActive = true;
+                    e.Pointer.Capture(this);
+                    e.Handled = true;
+                    InvalidateVisual();
+                    return;
+                }
+
                 var hit = HitTestMarker(e.GetPosition(this));
                 if (hit.HasValue)
                 {
@@ -786,23 +804,6 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     _renderDetail = PlotDetail.Full;
                     e.Pointer.Capture(this);
                     e.Handled = true;
-                    return;
-                }
-
-                // VSWR locus grab — checked after glyph hit so glyph always wins
-                var vswrHit = HitTestVswrLocus(e.GetPosition(this));
-                if (vswrHit.HasValue)
-                {
-                    _draggingVswrMarker = vswrHit.Value.Marker;
-                    _draggingVswrTrace  = vswrHit.Value.Trace;
-                    _renderDetail = PlotDetail.Full;
-                    // Show the transient VSWR readout on a plain click too (not only while dragging),
-                    // so the user can click the locus to read its value without moving it.
-                    _vswrReadoutPt     = e.GetPosition(this);
-                    _vswrReadoutActive = true;
-                    e.Pointer.Capture(this);
-                    e.Handled = true;
-                    InvalidateVisual();
                     return;
                 }
 

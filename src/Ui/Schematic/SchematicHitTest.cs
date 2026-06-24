@@ -259,7 +259,11 @@ public static class SchematicHitTest
             if (suppressed) continue;
 
             var (oDx, oDy) = row < comp.LabelOffsets.Count ? comp.LabelOffsets[row] : (0.0, 0.0);
-            double? glyphHalfH = comp.Symbol == SymbolKind.Snp
+            // SnP and the Tuner family grow their glyph downward (Tuner: a bias branch when
+            // ShowBias=true), so the label band must clear the real glyph extent — matching the
+            // renderer's DrawLabels. Passing null left the clickable zone too high over those tuners.
+            double? glyphHalfH = comp.Symbol is SymbolKind.Snp
+                or SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
                 ? comp.ComputeGlyphBb().MaxY - comp.Y
                 : null;
             var (baseX, _, bandTop, bandBot) =

@@ -144,23 +144,110 @@ public sealed class LpAuthoringTests
         Assert.Null(vm.BuildAnalyses());
     }
 
-    // ── LP ignores sweep axes (v1) ────────────────────────────────────────────
+    // ── LP supports a parametric sweep over the tone VAR (FreqSweptLoadpull brief) ──
+
+    // A VAR component declaring RFfreq with a GHz unit, so the sweep row inherits GHz and materializes
+    // base-SI (Hz) values — the unit contract that makes the engine resolve the swept tone correctly.
+    private static SchematicEditModel ModelWithTunersAndFreqVar()
+    {
+        var m = ModelWithTuners();
+        var v = new EditableComponent { InstanceName = "VAR1", Symbol = SymbolKind.Var, X = 800, Y = 0 };
+        v.Parameters.Add(new EditableParameter { Name = "RFfreq", Expression = "2", Unit = "GHz" });
+        m.Components.Add(v);
+        return m;
+    }
+
+    private static void Set(object o, string field, object val) =>
+        o.GetType().GetField(field, System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.NonPublic)!.SetValue(o, val);
 
     [Fact]
-    public void Lp_IgnoresSweepAxes_ReturnsSingleAnalysis()
+    public void Lp_SupportsFreqSweep_BuildsChain_WithHzValues()
     {
-        var model = ModelWithTuners();
+        var model = ModelWithTunersAndFreqVar();
         var vm = NewLpEditor(model);
+        vm.Name = "LP1";
         vm.LpBody.LoadTunerName   = "LoadTuner1";
         vm.LpBody.SourceTunerName = "SourceTuner1";
         vm.LpBody.GridPath        = "g.gam";
-        Assert.False(vm.ShowSweeps);   // sweep UI hidden for LP
+        vm.LpBody.ToneCoeff       = "RFfreq";
+        vm.LpBody.ToneUnit        = "GHz";
 
-        // Even if a sweep axis sneaks in, LP returns just the base (no chain in v1).
-        vm.SweepAxes.Add(new SweepAxisRowViewModel(model));
-        var result = vm.BuildAnalyses();
-        Assert.Single(result!);
-        Assert.IsType<LoadpullAnalysis>(result![0]);
+        Assert.True(vm.ShowSweeps);   // sweep UI is now available for Loadpull
+
+        // StepSize mode 1.8→2.2 step 0.2; the GHz unit inherited from the VAR scales to base-SI Hz.
+        var axis = new SweepAxisRowViewModel(model);
+        Set(axis, "_varName",         "RFfreq");
+        Set(axis, "_mode",            SweepAxisMode.StepSize);
+        Set(axis, "_startExpr",       "1.8");
+        Set(axis, "_stopExpr",        "2.2");
+        Set(axis, "_stepOrCountExpr", "0.2");
+        vm.SweepAxes.Add(axis);
+        Assert.Equal("GHz", axis.EffectiveUnit);   // inherited from the RFfreq VAR
+
+        var chain = vm.BuildAnalyses();
+        Assert.NotNull(chain);
+        Assert.Equal(2, chain!.Count);
+        var lp  = Assert.IsType<LoadpullAnalysis>(chain[0]);
+        var psa = Assert.IsType<ParametricSweepAnalysis>(chain[1]);
+        Assert.Equal("LP1", lp.Name);
+        Assert.Equal("LP1", psa.InnerAnalysisName);
+        Assert.Equal("RFfreq", psa.SweepVarName);
+        // GHz unit → values materialized in base-SI Hz.
+        Assert.Equal(3, psa.SweepValues.Length);
+        var expect = new[] { 1.8e9, 2.0e9, 2.2e9 };
+        for (int i = 0; i < expect.Length; i++)
+            Assert.Equal(expect[i], psa.SweepValues[i], precision: 0);
+    }
+
+    [Fact]
+    public void FreqSweptLp_EditRoundTrip_LoadsBaseAndSweepRow()
+    {
+        var model = ModelWithTunersAndFreqVar();
+        var lp = new LoadpullAnalysis("LP1")
+        {
+            LoadTunerName = "LoadTuner1", SourceTunerName = "SourceTuner1",
+            GridPath = "g.gam", ToneExpr = "RFfreq", ToneUnit = "GHz",
+        };
+        var psa = new ParametricSweepAnalysis("LP1_sweep_RFfreq", "RFfreq",
+            new[] { 1.8e9, 2.0e9, 2.2e9 }, "LP1");
+        model.Analyses.Add(lp);
+        model.Analyses.Add(psa);
+
+        var vm = new AnalysisEditorViewModel(model, psa);   // edit any chain member → opens the base
+        Assert.True(vm.IsLp);
+        Assert.Single(vm.SweepAxes);
+        Assert.Equal("RFfreq", vm.SweepAxes[0].VarName);
+
+        var rebuilt = vm.BuildAnalyses();
+        Assert.Equal(2, rebuilt!.Count);
+        Assert.IsType<LoadpullAnalysis>(rebuilt[0]);
+        Assert.IsType<ParametricSweepAnalysis>(rebuilt[1]);
+    }
+
+    [Fact]
+    public void FreqSweptLp_Survives_CschRoundTrip()
+    {
+        var lp = new LoadpullAnalysis("LP1")
+        {
+            LoadTunerName = "LoadTuner1", SourceTunerName = "SourceTuner1",
+            GridPath = "g.gam", ToneExpr = "RFfreq", ToneUnit = "GHz",
+        };
+        var psa = new ParametricSweepAnalysis("LP1_sweep_RFfreq", "RFfreq",
+            new[] { 1.8e9, 2.0e9, 2.2e9 }, "LP1");
+
+        var model = new SchematicEditModel { GridSize = 100 };
+        model.Analyses.Add(lp);
+        model.Analyses.Add(psa);
+
+        var (restored, _, _) = SchematicPersistence.Deserialize(SchematicPersistence.Serialize(model));
+
+        var rlp  = restored.Analyses.OfType<LoadpullAnalysis>().Single();
+        var rpsa = restored.Analyses.OfType<ParametricSweepAnalysis>().Single();
+        Assert.Equal("LP1", rlp.Name);
+        Assert.Equal("LP1", rpsa.InnerAnalysisName);
+        Assert.Equal("RFfreq", rpsa.SweepVarName);
+        Assert.Equal(new[] { 1.8e9, 2.0e9, 2.2e9 }, rpsa.SweepValues);
     }
 
     // ── Persistence smoke: authored LP survives .csch round-trip (brief 04) ───

@@ -102,6 +102,7 @@ public sealed class PlotContainerConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public TableReadMode TableReadMode    { get; set; } = TableReadMode.Interp;
     public double        TableCompression { get; set; } = 3.0;
+    public string?       SummaryLoadpullGroup { get; set; }
 
     public List<TraceConfig> Traces { get; set; } = new();
 
@@ -266,6 +267,7 @@ public sealed class ContourTraceConfig
     public string ConstraintMetricName { get; set; } = "";
     public double ConstraintValue      { get; set; } = 3.0;
     public int    FreqIndex            { get; set; } = 0;
+    public string? LoadpullGroup       { get; set; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ContourLevelMode LevelMode  { get; set; } = ContourLevelMode.Range;

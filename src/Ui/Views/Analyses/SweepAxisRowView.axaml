@@ -58,7 +58,7 @@
                                      FontSize="11"
                                      FilterMode="Contains"
                                      MinimumPrefixLength="0"
-                                     PlaceholderText="e.g. Pavl"/>
+                                     PlaceholderText="{Binding VariablePlaceholder}"/>
                     <TextBlock Text="{Binding VarNameError}"
                                FontSize="10"
                                Foreground="{DynamicResource CrfWarningBrush}"

@@ -291,33 +291,7 @@ namespace CircuitRF.Ui.DataDisplay
 
             // §5 — one line color for all iso-lines (per-level variation removed).
             // Derive a single high-contrast color from the colormap midpoint before the loop.
-            SKColor baseLineColor;
-            if (lineColorOverridden)
-            {
-                baseLineColor = lineColor;
-            }
-            else
-            {
-                var mapColor = ContourColormaps.Sample(colorMap, 0.5);
-                float lum = (0.299f * mapColor.Red + 0.587f * mapColor.Green + 0.114f * mapColor.Blue) / 255f;
-                byte hi = lum > 0.5f ? (byte)0 : (byte)255;
-                byte r = LerpByte(mapColor.Red,   hi, 0.5);
-                byte g = LerpByte(mapColor.Green, hi, 0.5);
-                byte b = LerpByte(mapColor.Blue,  hi, 0.5);
-                // §3: luminance ceiling — if the candidate line color is too light (Gray,
-                // Bone, Winter, GistHeat, Copper midpoints land near 0.5 and can lerp
-                // toward white), scale it down until luminance ≤ 0.45 so it stays readable.
-                float lineL = (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
-                const float LumCeiling = 0.45f;
-                if (lineL > LumCeiling)
-                {
-                    float scale = LumCeiling / lineL;
-                    r = (byte)Math.Round(r * scale);
-                    g = (byte)Math.Round(g * scale);
-                    b = (byte)Math.Round(b * scale);
-                }
-                baseLineColor = new SKColor(r, g, b, lineColor.Alpha);
-            }
+            SKColor baseLineColor = ResolveBaseLineColor(lineColor, lineColorOverridden, colorMap);
 
             int ringIndex = 0;  // stagger counter across all labelled polylines
 
@@ -409,6 +383,37 @@ namespace CircuitRF.Ui.DataDisplay
 
         private static byte LerpByte(byte a, byte b, double t)
             => (byte)Math.Round(a + (b - a) * t);
+
+        /// <summary>
+        /// The single iso-line color actually drawn: the user's <paramref name="lineColor"/> when
+        /// <paramref name="lineColorOverridden"/>, otherwise a high-contrast color auto-derived from the
+        /// colormap midpoint (luminance-inverted then capped at 0.45 so it stays readable). Shared with the
+        /// trace card's color-swatch so the indicator matches the rendered lines.
+        /// </summary>
+        internal static SKColor ResolveBaseLineColor(SKColor lineColor, bool lineColorOverridden,
+            ContourColorMap colorMap)
+        {
+            if (lineColorOverridden) return lineColor;
+
+            var mapColor = ContourColormaps.Sample(colorMap, 0.5);
+            float lum = (0.299f * mapColor.Red + 0.587f * mapColor.Green + 0.114f * mapColor.Blue) / 255f;
+            byte hi = lum > 0.5f ? (byte)0 : (byte)255;
+            byte r = LerpByte(mapColor.Red,   hi, 0.5);
+            byte g = LerpByte(mapColor.Green, hi, 0.5);
+            byte b = LerpByte(mapColor.Blue,  hi, 0.5);
+            // §3: luminance ceiling — if the candidate is too light (Gray/Bone/Winter/GistHeat/Copper
+            // midpoints land near 0.5 and can lerp toward white), scale down until luminance ≤ 0.45.
+            float lineL = (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
+            const float LumCeiling = 0.45f;
+            if (lineL > LumCeiling)
+            {
+                float scale = LumCeiling / lineL;
+                r = (byte)Math.Round(r * scale);
+                g = (byte)Math.Round(g * scale);
+                b = (byte)Math.Round(b * scale);
+            }
+            return new SKColor(r, g, b, lineColor.Alpha);
+        }
 
         // ================================================================
         //  HeatMap fill  (§4 in brief — experimental) — VECTOR

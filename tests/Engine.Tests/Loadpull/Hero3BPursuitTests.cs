@@ -588,11 +588,12 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
 
     /// <summary>
     /// Acceptance: with CreateLoadpullResult=true (the directive default), the run produces
-    /// follow-on loadpull data embedded in the pursuit DataSet with LP_ prefix.
-    ///   - LP_ cubes present (e.g. LP_StopCode)
-    ///   - LP grid count matches RecommTermCount
-    ///   - All LP stop codes in range 0-3
-    /// Also verifies: LP_ cubes absent when CreateLoadpullResult=false.
+    /// follow-on loadpull data embedded in the pursuit DataSet under its ORIGINAL cube names
+    /// (so the result is a recognizable loadpull surface).
+    ///   - loadpull cubes present (e.g. StopCode)
+    ///   - grid count matches RecommTermCount
+    ///   - All stop codes in range 0-3
+    /// Also verifies: those cubes are absent when CreateLoadpullResult=false.
     /// </summary>
     [Fact]
     public void Hero3BPursuit_FollowOnLoadpullResult_WhenCreateOn_DataPresent()
@@ -611,20 +612,27 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         Assert.True(recommCount > 0,
             "RecommTermCount is zero — gam builder should produce points around the optima.");
 
-        // ── Follow-on loadpull data present ───────────────────────────────────
-        Assert.True(ds.Contains("LP_StopCode"),
-            "LP_StopCode not found — follow-on loadpull data missing from DataSet.");
+        // ── Follow-on loadpull data present (original names → recognizable loadpull surface) ──
+        Assert.True(ds.Contains("StopCode"),
+            "StopCode not found — follow-on loadpull data missing from DataSet.");
 
-        int lpGridCount = ds["LP_StopCode"].Axes[0].Length;
+        // The follow-on is post-processed (LoadpullPostProcessor.Enrich) just like a standalone loadpull,
+        // and the loadpull surface signature is present (so LoadpullRecognition matches it).
+        Assert.True(ds.Contains("Pout_dBm"),   "Follow-on not enriched — Pout_dBm missing.");
+        Assert.True(ds.Contains("Efficiency"), "Follow-on not enriched — Efficiency missing.");
+        Assert.True(ds.Contains("Zin_real"),   "Follow-on not enriched — Zin_real missing.");
+        Assert.True(ds.Contains("GammaLoad"),  "Loadpull termination cube GammaLoad missing.");
+
+        int lpGridCount = ds["StopCode"].Axes[0].Length;
         Assert.Equal(recommCount, lpGridCount);
 
-        // All LP stop codes must be valid (0-3).
-        var lpStopCodes = ds["LP_StopCode"].RealValues;
+        // All stop codes must be valid (0-3).
+        var lpStopCodes = ds["StopCode"].RealValues;
         for (int i = 0; i < lpStopCodes.Length; i++)
         {
             int code = (int)Math.Round(lpStopCodes[i]);
             Assert.True(code >= 0 && code <= 3,
-                $"Unexpected LP_StopCode {code} at grid point {i}");
+                $"Unexpected StopCode {code} at grid point {i}");
         }
 
         int lpCompressed = lpStopCodes.Count(c => (int)Math.Round(c) == 1);
@@ -654,8 +662,8 @@ public class Hero3BPursuitTests(ITestOutputHelper output)
         Assert.True(RecommTermCount(ds) >= 0);
 
         // No follow-on loadpull cubes.
-        Assert.False(ds.Contains("LP_StopCode"),
-            "LP_StopCode found but CreateLoadpullResult=false — follow-on data should be absent.");
+        Assert.False(ds.Contains("StopCode"),
+            "StopCode found but CreateLoadpullResult=false — follow-on data should be absent.");
 
         output.WriteLine(
             $"CreateLoadpullResult=false → LP_ cubes absent  " +

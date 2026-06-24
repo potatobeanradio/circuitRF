@@ -35,19 +35,19 @@
 
         <StackPanel Spacing="10" Margin="0,0,4,0">
 
-            <!-- ── Tuner pickers ─────────────────────────────────────────────── -->
+            <!-- ── Tuner pickers (Source left, Load right — matches a real RF bench) ─ -->
             <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                 <StackPanel Spacing="2">
-                    <TextBlock Text="Load tuner" FontSize="10" Opacity="0.6"/>
+                    <TextBlock Text="Source tuner" FontSize="10" Opacity="0.6"/>
                     <ComboBox ItemsSource="{Binding TunerInstanceNames}"
-                              SelectedItem="{Binding LoadTunerName, Mode=TwoWay}"
+                              SelectedItem="{Binding SourceTunerName, Mode=TwoWay}"
                               HorizontalAlignment="Stretch"
                               FontSize="11"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Spacing="2">
-                    <TextBlock Text="Source tuner" FontSize="10" Opacity="0.6"/>
+                    <TextBlock Text="Load tuner" FontSize="10" Opacity="0.6"/>
                     <ComboBox ItemsSource="{Binding TunerInstanceNames}"
-                              SelectedItem="{Binding SourceTunerName, Mode=TwoWay}"
+                              SelectedItem="{Binding LoadTunerName, Mode=TwoWay}"
                               HorizontalAlignment="Stretch"
                               FontSize="11"/>
                 </StackPanel>

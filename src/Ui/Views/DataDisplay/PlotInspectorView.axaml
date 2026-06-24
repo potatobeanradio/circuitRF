@@ -367,32 +367,53 @@
             </Grid>
 
             <!-- ── Summary table-wide controls (Phase 7.5d) — visible when IsSummaryTable ── -->
-            <StackPanel Orientation="Horizontal"
-                        Spacing="8"
+            <StackPanel Spacing="4"
                         IsVisible="{Binding IsSummaryTable}">
-                <TextBlock Text="Load" Classes="label"/>
-                <ComboBox ItemsSource="{x:Static vm:PlotInspectorViewModel.AllTableOptima}"
-                          SelectedItem="{Binding TableOptimum, Mode=TwoWay}"
-                          Width="64"
-                          ToolTip.Tip="MXP = max power optimum; MXE = max efficiency optimum">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Converter={StaticResource EnumUpper}}" FontSize="10"/>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-                <CheckBox Content="Interp"
-                          IsChecked="{Binding IsInterp, Mode=TwoWay}"
-                          FontSize="10"
-                          VerticalAlignment="Center"
-                          ToolTip.Tip="On = interpolated value; Off = nearest measured node"/>
-                <TextBlock Text="Comp" Classes="label"/>
-                <NumericUpDown Value="{Binding TableCompression, Mode=TwoWay}"
-                               Minimum="0" Maximum="20" Increment="0.5"
-                               FormatString="F1"
-                               Width="48"
-                               ToolTip.Tip="Table-wide compression point (dB)"/>
-                <TextBlock Text="dB" Classes="label"/>
+                <!-- Analysis picker on its own row (only when the source has >1 loadpull view, e.g. a
+                     Loadpull + a Pursuit follow-on) — selects which analysis the summary reads.
+                     IsVisible is on each control (not the row) so the binding behaves exactly as the
+                     prior inline layout did; the row collapses to nothing when both are hidden. -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Analysis" Classes="label"
+                               IsVisible="{Binding ShowSummaryAnalysisPicker}"/>
+                    <ComboBox ItemsSource="{Binding SummaryAvailableAnalyses}"
+                              SelectedItem="{Binding SummarySelectedAnalysis, Mode=TwoWay}"
+                              Width="80"
+                              IsVisible="{Binding ShowSummaryAnalysisPicker}"
+                              ToolTip.Tip="Which loadpull analysis (e.g. LP1, LPP1) to summarize"/>
+                </StackPanel>
+
+                <!-- Optimum + read-mode + compression row -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                        <Button Classes="seg-btn"
+                                Classes.active="{Binding IsTableOptimumMxp}"
+                                Command="{Binding SetTableOptimumMxpCommand}"
+                                Padding="5,2"
+                                ToolTip.Tip="MXP — max-power optimum">
+                            <TextBlock Text="MXP" FontSize="10"/>
+                        </Button>
+                        <Button Classes="seg-btn"
+                                Classes.active="{Binding IsTableOptimumMxe}"
+                                Command="{Binding SetTableOptimumMxeCommand}"
+                                Padding="5,2"
+                                ToolTip.Tip="MXE — max-efficiency optimum">
+                            <TextBlock Text="MXE" FontSize="10"/>
+                        </Button>
+                    </StackPanel>
+                    <CheckBox Content="Interp"
+                              IsChecked="{Binding IsInterp, Mode=TwoWay}"
+                              FontSize="10"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="On = interpolated value; Off = nearest measured node"/>
+                    <TextBlock Text="Comp" Classes="label"/>
+                    <NumericUpDown Value="{Binding TableCompression, Mode=TwoWay}"
+                                   Minimum="0" Maximum="20" Increment="0.5"
+                                   FormatString="F1"
+                                   Width="48"
+                                   ToolTip.Tip="Table-wide compression point (dB)"/>
+                    <TextBlock Text="dB" Classes="label"/>
+                </StackPanel>
             </StackPanel>
 
             <Separator/>
@@ -532,6 +553,19 @@
                                     <!-- ── Contour trace body (Phase 7.4e) ─────────────────── -->
                                     <StackPanel Spacing="4"
                                                 IsVisible="{Binding IsContourTrace}">
+
+                                        <!-- Loadpull-analysis row (only when the source has >1 loadpull view,
+                                             e.g. a run.npy with both a Loadpull and a Pursuit follow-on) -->
+                                        <Grid ColumnDefinitions="50,*"
+                                              IsVisible="{Binding ShowContourGroupPicker}">
+                                            <TextBlock Grid.Column="0" Text="Analysis"
+                                                       Classes="label"/>
+                                            <ComboBox Grid.Column="1"
+                                                      ItemsSource="{Binding AvailableLoadpullGroups}"
+                                                      SelectedItem="{Binding SelectedLoadpullGroup, Mode=TwoWay}"
+                                                      HorizontalAlignment="Stretch"
+                                                      ToolTip.Tip="Which loadpull analysis (e.g. LP1, LPP1) to contour"/>
+                                        </Grid>
 
                                         <!-- Metric row -->
                                         <Grid ColumnDefinitions="50,*">
@@ -752,7 +786,7 @@
                                                         ToolTip.Tip="Iso-line color">
                                                     <Border CornerRadius="2"
                                                             Width="14" Height="14"
-                                                            Background="{Binding ContourLineColor, Converter={StaticResource SKC}}"/>
+                                                            Background="{Binding ContourLineColorEffective, Converter={StaticResource SKC}}"/>
                                                 </Button>
                                                 <Button Classes="seg-btn"
                                                         Classes.active="{Binding ContourFadeLineOpacity}"

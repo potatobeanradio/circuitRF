@@ -63,6 +63,34 @@ public class LoadpullCnlRoundTripTests
         Assert.Equal("3",   r.GuardHarmonicExpr);
     }
 
+    // ── Freq-swept LP: the parametric-sweep chain over the tone VAR round-trips ──
+    // (FreqSweptLoadpull brief — this is the .cnl path Run uses to reach the engine.)
+
+    [Fact]
+    public void FreqSweptLoadpull_Chain_RoundTrips()
+    {
+        var lp = new LoadpullAnalysis("LP1")
+        {
+            ToneExpr = "RFfreq", ToneUnit = "GHz",
+            LoadTunerName = "LoadTuner1", SourceTunerName = "SourceTuner1",
+            GridPath = "grids/hero3.gam",
+        };
+        var psa = new ParametricSweepAnalysis("LP1_sweep_RFfreq", "RFfreq",
+            new[] { 1.8e9, 2.0e9, 2.2e9 }, "LP1");
+        var tb = new TestBench("tb");
+        tb.Analyses.Add(lp);
+        tb.Analyses.Add(psa);
+
+        var (_, tb2) = new CnlReader().Read(CnlWriter.Write(tb));
+
+        var rlp  = tb2.Analyses.OfType<LoadpullAnalysis>().Single();
+        var rpsa = tb2.Analyses.OfType<ParametricSweepAnalysis>().Single();
+        Assert.Equal("RFfreq", rlp.ToneExpr);
+        Assert.Equal("LP1",    rpsa.InnerAnalysisName);
+        Assert.Equal("RFfreq", rpsa.SweepVarName);
+        Assert.Equal(new[] { 1.8e9, 2.0e9, 2.2e9 }, rpsa.SweepValues);
+    }
+
     // ── LPP: every field round-trips (incl. pursuit keys) ────────────────────
 
     [Fact]

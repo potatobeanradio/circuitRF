@@ -166,6 +166,56 @@ public sealed class ContourTraceCardTests
         Assert.Equal(5.0,                 tc.ContourTrace!.LevelStep);
     }
 
+    // The iso-line color swatch must show the color actually drawn: the auto-derived high-contrast color
+    // when not overridden (NOT the unused stored default), or the user's color when overridden.
+    [Fact]
+    public void IsoLineSwatch_ReflectsRenderedColor()
+    {
+        // Renderer helper: override returns the user's color verbatim.
+        var user = new SKColor(10, 200, 30, 255);
+        Assert.Equal(user, ContourRenderer.ResolveBaseLineColor(user, lineColorOverridden: true, ContourColorMap.Hot));
+
+        // Not overridden → a readable derived color, not the stored default white.
+        var stored = new SKColor(255, 255, 255, 220);
+        var auto   = ContourRenderer.ResolveBaseLineColor(stored, lineColorOverridden: false, ContourColorMap.Hot);
+        Assert.NotEqual(stored, auto);
+        float lum = (0.299f * auto.Red + 0.587f * auto.Green + 0.114f * auto.Blue) / 255f;
+        Assert.True(lum <= 0.46f, $"auto iso-line color should be readable (luminance {lum})");
+
+        // VM swatch property delegates to the same logic for both states.
+        var snp   = new SNP(new[] { 1e9 }, 1);
+        var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);
+        trace.ContourData = new ContourData
+            { ColorMap = ContourColorMap.Hot, LineColor = stored, LineColorOverridden = false };
+        var plot = new Plot(PlotType.Rect, FreqUnit.GHz);
+        plot.Traces.Add(trace);
+        var inspector = new PlotInspectorViewModel(plot, () => { }, library: null);
+        var row = new TraceRowViewModel(trace, inspector);
+
+        Assert.Equal(auto, row.ContourLineColorEffective);            // swatch matches the rendered lines
+        trace.ContourData.LineColor = user;
+        trace.ContourData.LineColorOverridden = true;
+        Assert.Equal(user, row.ContourLineColorEffective);
+    }
+
+    // The chosen loadpull group (e.g. "LPP1" for a pursuit follow-on) persists through .cdd.
+    [Fact]
+    public void ContourTrace_LoadpullGroup_RoundTrips()
+    {
+        var snp = new SNP(new[] { 1e9 }, 1);
+        var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);
+        trace.ContourData = new ContourData { MetricName = "Pout_dBm", LoadpullGroup = "LPP1" };
+
+        var tc = DataDisplayViewModel.BuildTraceConfig(trace, "/tmp");
+        Assert.Equal("LPP1", tc.ContourTrace!.LoadpullGroup);
+
+        // Survives JSON serialize → deserialize.
+        var opts = new JsonSerializerOptions();
+        var json = JsonSerializer.Serialize(tc.ContourTrace, opts);
+        var back = JsonSerializer.Deserialize<ContourTraceConfig>(json, opts);
+        Assert.Equal("LPP1", back!.LoadpullGroup);
+    }
+
     // ── T11 ───────────────────────────────────────────────────────────────────
     [Fact]
     public async Task AddContourTraceCommand_WhenLibraryHasLoadpullEntry_AddsContourTrace()

@@ -58,6 +58,9 @@ namespace CircuitRF.Ui.DataDisplay
         public string         ConstraintMetricName  { get; set; } = "";
         public double         ConstraintValue       { get; set; } = 3.0;
         public int            FreqIndex             { get; set; } = 0;
+        /// <summary>Which recognized loadpull group (analysis name, e.g. "LP1"/"LPP1") this contour is
+        /// built from when the source carries more than one. Null/empty = the first loadpull view.</summary>
+        public string?        LoadpullGroup         { get; set; }
 
         // ---- Level-set authoring -------------------------------------------
 
@@ -227,6 +230,7 @@ namespace CircuitRF.Ui.DataDisplay
             ConstraintMetricName  = ConstraintMetricName,
             ConstraintValue       = ConstraintValue,
             FreqIndex             = FreqIndex,
+            LoadpullGroup         = LoadpullGroup,
             LevelMode             = LevelMode,
             LevelStart            = LevelStart,
             LevelStep             = LevelStep,

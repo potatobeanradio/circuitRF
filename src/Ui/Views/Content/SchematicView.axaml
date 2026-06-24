@@ -184,7 +184,7 @@
                 <!-- Ground symbol -->
                 <Button x:Name="PlaceGroundBtn"
                         Click="OnPlaceGround"
-                        ToolTip.Tip="Place Ground"
+                        ToolTip.Tip="Place Ground  (Shift+G)"
                         Padding="6,3">
                     <ctrl:PaletteGlyphControl Kind="Ground" Width="16" Height="16"
                                               Monochrome="True"
@@ -194,7 +194,7 @@
                 <!-- Term (S-param port) -->
                 <Button x:Name="PlacePortBtn"
                         Click="OnPlaceTerm"
-                        ToolTip.Tip="Place Term"
+                        ToolTip.Tip="Place Term  (T)"
                         Padding="6,3">
                     <ctrl:PaletteGlyphControl Kind="Term" Width="16" Height="16"
                                               Monochrome="True"
@@ -204,7 +204,7 @@
                 <!-- Pin -->
                 <Button x:Name="PlacePinBtn"
                         Click="OnPlacePin"
-                        ToolTip.Tip="Place Pin"
+                        ToolTip.Tip="Place Pin  (P)"
                         Padding="6,3">
                     <ctrl:PaletteGlyphControl Kind="Pin" Width="16" Height="16"
                                               Monochrome="True"
@@ -289,7 +289,7 @@
                 <Button x:Name="DisableOpenBtn"
                         Classes="SelectionBtn"
                         Click="OnDisableOpen"
-                        ToolTip.Tip="Disable → Open circuit (toggles if all selected are already disabled)"
+                        ToolTip.Tip="Disable → Open circuit  (Q) — toggles if all selected are already disabled"
                         IsEnabled="False"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="EyeOff" Width="16" Height="16"/>

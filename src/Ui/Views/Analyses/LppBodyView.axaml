@@ -35,18 +35,18 @@
 
         <StackPanel Spacing="10" Margin="0,0,4,0">
 
-            <!-- ── Tuner pickers ─────────────────────────────────────────────── -->
+            <!-- ── Tuner pickers (Source left, Load right — matches a real RF bench) ─ -->
             <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                 <StackPanel Spacing="2">
-                    <TextBlock Text="Load tuner" FontSize="10" Opacity="0.6"/>
-                    <ComboBox ItemsSource="{Binding TunerInstanceNames}"
-                              SelectedItem="{Binding LoadTunerName, Mode=TwoWay}"
-                              HorizontalAlignment="Stretch" FontSize="11"/>
-                </StackPanel>
-                <StackPanel Grid.Column="1" Spacing="2">
                     <TextBlock Text="Source tuner" FontSize="10" Opacity="0.6"/>
                     <ComboBox ItemsSource="{Binding TunerInstanceNames}"
                               SelectedItem="{Binding SourceTunerName, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock Text="Load tuner" FontSize="10" Opacity="0.6"/>
+                    <ComboBox ItemsSource="{Binding TunerInstanceNames}"
+                              SelectedItem="{Binding LoadTunerName, Mode=TwoWay}"
                               HorizontalAlignment="Stretch" FontSize="11"/>
                 </StackPanel>
             </Grid>
@@ -125,38 +125,40 @@
 
             <Separator Opacity="0.3"/>
 
-            <!-- ── Follow-on / output group ─────────────────────────────────── -->
-            <Expander Header="Output / follow-on"
-                      IsExpanded="{Binding OutputExpanded, Mode=TwoWay}"
-                      FontSize="11">
-                <StackPanel Spacing="8" Margin="0,8,0,0">
+            <!-- ── Follow-on / output group (always visible — no reveal chevron) ─── -->
+            <StackPanel Spacing="8">
 
-                    <CheckBox Content="Create follow-on loadpull"
-                              IsChecked="{Binding CreateLoadpullResult, Mode=TwoWay}"
-                              FontSize="11"/>
-
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="Follow-on source match" FontSize="10" Opacity="0.6"/>
-                        <ComboBox ItemsSource="{x:Static vm:LppBodyViewModel.ZsourceModes}"
-                                  SelectedItem="{Binding LoadpullResultZsource, Mode=TwoWay}"
-                                  IsEnabled="{Binding FollowOnEnabled}"
-                                  HorizontalAlignment="Stretch" FontSize="11"/>
-                    </StackPanel>
-
-                    <StackPanel Spacing="2">
-                        <TextBlock Text="Output .gam grid (optional)" FontSize="10" Opacity="0.6"/>
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBox Text="{Binding OutputGridPath, Mode=TwoWay}" FontSize="11"/>
-                            <Button Grid.Column="1"
-                                    Content="Save as…"
-                                    Classes="hb-btn"
-                                    Margin="6,0,0,0"
-                                    Click="OnBrowseOutputGridClick"/>
-                        </Grid>
-                    </StackPanel>
-
+                <!-- Output .gam grid first (above the follow-on options) -->
+                <StackPanel Spacing="2">
+                    <TextBlock Text="Output .gam grid (optional)" FontSize="10" Opacity="0.6"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBox Text="{Binding OutputGridPath, Mode=TwoWay}" FontSize="11"/>
+                        <Button Grid.Column="1"
+                                Content="Save as…"
+                                Classes="hb-btn"
+                                Margin="6,0,0,0"
+                                Click="OnBrowseOutputGridClick"/>
+                    </Grid>
                 </StackPanel>
-            </Expander>
+
+                <!-- Run follow-on + Source Match on one row -->
+                <Grid ColumnDefinitions="Auto,Auto,*" VerticalAlignment="Center">
+                    <CheckBox Grid.Column="0"
+                              Content="Run follow-on loadpull"
+                              IsChecked="{Binding CreateLoadpullResult, Mode=TwoWay}"
+                              FontSize="11"
+                              VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1"
+                               Text="Source Match" FontSize="10" Opacity="0.6"
+                               VerticalAlignment="Center" Margin="16,0,6,0"/>
+                    <ComboBox Grid.Column="2"
+                              ItemsSource="{x:Static vm:LppBodyViewModel.ZsourceModes}"
+                              SelectedItem="{Binding LoadpullResultZsource, Mode=TwoWay}"
+                              IsEnabled="{Binding FollowOnEnabled}"
+                              HorizontalAlignment="Stretch" FontSize="11"/>
+                </Grid>
+
+            </StackPanel>
 
             <!-- ── Advanced expander (shared LP advanced + grid-builder) ────── -->
             <Expander Header="Advanced"

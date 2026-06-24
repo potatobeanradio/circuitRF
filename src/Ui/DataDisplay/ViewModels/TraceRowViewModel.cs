@@ -65,8 +65,9 @@ public partial class TraceRowViewModel : ViewModelBase
     // Suppresses On…Changed callbacks during SyncContourVmFromData.
     private bool _suppressContourCallback;
 
-    public ObservableCollection<string> AvailableMetrics     { get; } = new();
-    public ObservableCollection<string> AvailableFrequencies { get; } = new();
+    public ObservableCollection<string> AvailableMetrics        { get; } = new();
+    public ObservableCollection<string> AvailableFrequencies    { get; } = new();
+    public ObservableCollection<string> AvailableLoadpullGroups { get; } = new();
 
     // §7 — wrapper items for the const-metric combo so disabled items can grey out.
     public record ConstraintMetricItem(string Name, bool IsEnabled);
@@ -122,6 +123,7 @@ public partial class TraceRowViewModel : ViewModelBase
     [ObservableProperty] private string           _contourConstraintMetric = "";
     [ObservableProperty] private double           _contourConstraintValue = 3.0;
     [ObservableProperty] private int              _contourFreqIndex;
+    [ObservableProperty] private string?          _selectedLoadpullGroup;
     [ObservableProperty] private ContourLevelMode _contourLevelMode;
     [ObservableProperty] private double           _contourLevelStart;
     [ObservableProperty] private double           _contourLevelStep;
@@ -160,6 +162,17 @@ public partial class TraceRowViewModel : ViewModelBase
     public bool IsRangeLevelMode           => ContourLevelMode == ContourLevelMode.Range;
     public bool IsCountLevelMode           => ContourLevelMode == ContourLevelMode.Count;
     public bool ShowContourFreqPicker      => IsContourTrace && AvailableFrequencies.Count > 1;
+    /// <summary>Show the loadpull-group picker only when the source carries more than one loadpull view
+    /// (e.g. a run.npy with both a standalone Loadpull and a Loadpull-Pursuit follow-on).</summary>
+    public bool ShowContourGroupPicker     => IsContourTrace && AvailableLoadpullGroups.Count > 1;
+
+    /// <summary>The iso-line color actually rendered: the user's override, or the high-contrast color
+    /// auto-derived from the colormap when not overridden. The trace card's color swatch binds to THIS
+    /// (not the raw stored LineColor) so the indicator matches the plotted lines.</summary>
+    public SKColor ContourLineColorEffective =>
+        _trace.ContourData is { } cd
+            ? ContourRenderer.ResolveBaseLineColor(cd.LineColor, cd.LineColorOverridden, cd.ColorMap)
+            : ContourLineColor;
 
     // §16 — units label for the constraint value box.
     public string ConstraintUnits => ContourConstraintKind == ConstraintKind.Compression
@@ -232,6 +245,71 @@ public partial class TraceRowViewModel : ViewModelBase
         if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
         cd.FreqIndex = value;
         RebuildContour();
+        // The RecommendedBox (MXP/MXE region) is per-frequency, so re-zoom to the new frequency's box —
+        // a forced re-frame, exactly as AddContourTrace does on first add (the contour plot otherwise
+        // keeps autoscale off for a sticky view, so a plain Autoscale() would no-op).
+        _parent.ForceRescaleAndNotify();
+    }
+
+    partial void OnSelectedLoadpullGroupChanged(string? value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.LoadpullGroup = value;
+        _loadpullSurface = null;          // force rebuild against the newly-chosen loadpull analysis
+        RebuildContourForCurrentSurface();
+    }
+
+    /// <summary>
+    /// Drops the cached loadpull surface and rebuilds the contour from the CURRENT data source. Called
+    /// after a re-run: the run.npy is overwritten at the same path, so the path-keyed surface cache (and
+    /// the metric/frequency/analysis pickers built from it) would otherwise keep serving the PREVIOUS
+    /// run's analyses. No-op for non-contour traces.
+    /// </summary>
+    internal void RefreshContourAfterReload()
+    {
+        if (!IsContourTrace || _trace.ContourData is null) return;
+        _loadpullSurface   = null;
+        _surfaceSourcePath = null;
+        _surfaceGroup      = null;
+        RebuildContourForCurrentSurface();
+    }
+
+    // Rebuild the contour against a freshly-resolved loadpull surface (after the analysis picker changed
+    // or a re-run reloaded the data). Always shows data: keeps the metric if the new surface still offers
+    // it, else falls back to the first available; resets the level set only when the metric had to change.
+    // Picker ComboBox churn is muted (else its transient Clear/Add nulls the bound selection → empty plot),
+    // then one rebuild + re-frame to the new RecommendedBox.
+    private void RebuildContourForCurrentSurface()
+    {
+        if (_trace.ContourData is not { } cd) return;
+        string prevMetric = cd.MetricName;
+        int    prevFreq   = cd.FreqIndex;
+
+        _suppressContourCallback = true;
+        EnsureLoadpullSurface();   // rebuilds surface + metric/freq/analysis lists from the current data
+
+        string metric = AvailableMetrics.Contains(prevMetric)
+            ? prevMetric
+            : (AvailableMetrics.FirstOrDefault() ?? prevMetric);
+        bool metricChanged = !string.Equals(metric, prevMetric, StringComparison.Ordinal);
+
+        ContourMetricName = metric;
+        int freq = AvailableFrequencies.Count > 0
+            ? Math.Clamp(prevFreq, 0, AvailableFrequencies.Count - 1) : 0;
+        ContourFreqIndex  = freq;
+        cd.FreqIndex      = freq;
+        cd.MetricName     = metric;
+        if (metricChanged)
+        {
+            var (s, step, stop) = ContourDefaults.LevelRange(metric);
+            cd.LevelStart = s; cd.LevelStep = step; cd.LevelStop = stop;
+            SyncContourVmFromData(cd);
+            RebuildConstraintMetricOptions();
+        }
+        _suppressContourCallback = false;
+
+        RebuildContour();
+        _parent.ForceRescaleAndNotify();
     }
 
     partial void OnContourLevelModeChanged(ContourLevelMode value)
@@ -308,6 +386,7 @@ public partial class TraceRowViewModel : ViewModelBase
         if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
         cd.ColorMap = value;
         cd.LineColorOverridden = false;
+        OnPropertyChanged(nameof(ContourLineColorEffective));   // swatch follows the new auto-derived color
         _parent.Notify();
     }
 
@@ -383,6 +462,7 @@ public partial class TraceRowViewModel : ViewModelBase
         if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
         cd.LineColor = value;
         cd.LineColorOverridden = true;
+        OnPropertyChanged(nameof(ContourLineColorEffective));
         _parent.Notify();
     }
 
@@ -566,9 +646,14 @@ public partial class TraceRowViewModel : ViewModelBase
 
         // Loadpull cubes may live at top level (flat .spl/.lpcwave) or under an analysis-name group
         // (simulated LP run.npy, e.g. "LP1"). Resolve the group shape-based (brief 08) and build the
-        // surface from it. Default to the first loadpull view; "" = top level (unchanged flat path).
+        // surface from it. When the source carries more than one loadpull view (e.g. a standalone
+        // Loadpull "LP1" + a Loadpull-Pursuit follow-on "LPP1"), honour the user's chosen group
+        // (persisted on ContourData.LoadpullGroup); otherwise default to the first view. "" = top level.
         var views = LoadpullRecognition.FindLoadpullViews(ds);
-        string group = views.Count > 0 ? (views[0].Group ?? "") : "";
+        string? wanted = _trace.ContourData?.LoadpullGroup;
+        string group =
+            (!string.IsNullOrEmpty(wanted) && views.Any(v => (v.Group ?? "") == wanted)) ? wanted!
+            : views.Count > 0 ? (views[0].Group ?? "") : "";
 
         if (_loadpullSurface is null
             || !string.Equals(entry.FilePath, _surfaceSourcePath, StringComparison.OrdinalIgnoreCase)
@@ -588,7 +673,34 @@ public partial class TraceRowViewModel : ViewModelBase
             RebuildMetricList();
             RebuildFrequencyList();
         }
+        RebuildLoadpullGroupList(views, group);
         return _loadpullSurface.Frequencies.Count > 0;
+    }
+
+    // Keep the loadpull-group picker (AvailableLoadpullGroups + SelectedLoadpullGroup) in sync with the
+    // recognized views and the group actually in use. Only mutates the collection when it changes, and
+    // syncs SelectedLoadpullGroup under the suppress guard so it never re-triggers a rebuild.
+    private void RebuildLoadpullGroupList(IReadOnlyList<LoadpullRecognition.LoadpullView> views, string activeGroup)
+    {
+        var groups = views.Select(v => v.Group ?? "").ToList();
+
+        // Suppress the selection callback across the ENTIRE mutation: the live ComboBox sets its
+        // SelectedItem to null while the ItemsSource is being Cleared, which would otherwise re-enter
+        // OnSelectedLoadpullGroupChanged → rebuild → RebuildLoadpullGroupList mid-loop and double-add
+        // every analysis. (Save/restore so an outer suppress is honored.)
+        bool prevSuppress = _suppressContourCallback;
+        _suppressContourCallback = true;
+        try
+        {
+            if (!groups.SequenceEqual(AvailableLoadpullGroups, StringComparer.Ordinal))
+            {
+                AvailableLoadpullGroups.Clear();
+                foreach (var g in groups) AvailableLoadpullGroups.Add(g);
+                OnPropertyChanged(nameof(ShowContourGroupPicker));
+            }
+            SelectedLoadpullGroup = activeGroup;
+        }
+        finally { _suppressContourCallback = prevSuppress; }
     }
 
     // Simulation-only bookkeeping cubes that share the {gridPoint[,pinStep]} shape but are NOT
@@ -734,7 +846,9 @@ public partial class TraceRowViewModel : ViewModelBase
 
     private async Task PickLineColorAsync()
     {
-        var result = await ShowColorPickerAsync(SkColorToRgba(ContourLineColor));
+        // Start from the color actually shown (the auto-derived one when not overridden) so the picker
+        // opens on what the user sees, not the unused stored default.
+        var result = await ShowColorPickerAsync(SkColorToRgba(ContourLineColorEffective));
         if (result is { } rgba) ContourLineColor = RgbaToSkColor(rgba);
     }
 

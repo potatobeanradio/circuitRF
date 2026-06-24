@@ -27,47 +27,51 @@
                        FontWeight="SemiBold"/>
 
             <!-- Type picker -->
-            <StackPanel Spacing="4">
-                <TextBlock Text="Type:"
-                           FontSize="12"
-                           Opacity="0.75"/>
-                <!-- WrapPanel so long labels wrap gracefully at narrow widths -->
-                <WrapPanel Orientation="Horizontal">
-                    <RadioButton x:Name="DcRadio"
-                                 Content="DC"
-                                 GroupName="AnalysisType"
-                                 FontSize="12"
-                                 Margin="0,0,16,4"
-                                 IsCheckedChanged="OnTypeRadioChanged"/>
-                    <RadioButton x:Name="SpRadio"
-                                 Content="S-Parameter"
-                                 GroupName="AnalysisType"
-                                 FontSize="12"
-                                 Margin="0,0,16,4"
-                                 IsCheckedChanged="OnTypeRadioChanged"/>
-                    <RadioButton x:Name="HbRadio"
-                                 Content="Harmonic Balance"
-                                 GroupName="AnalysisType"
-                                 FontSize="12"
-                                 Margin="0,0,24,4"
-                                 IsCheckedChanged="OnTypeRadioChanged"/>
-                    <RadioButton x:Name="LpRadio"
-                                 Content="Load Pull"
-                                 GroupName="AnalysisType"
-                                 FontSize="12"
-                                 Margin="0,0,16,4"
-                                 IsCheckedChanged="OnTypeRadioChanged"/>
-                    <RadioButton x:Name="LppRadio"
-                                 Content="LP Pursuit"
-                                 GroupName="AnalysisType"
-                                 FontSize="12"
-                                 Margin="0,0,0,4"
-                                 IsCheckedChanged="OnTypeRadioChanged"/>
-                </WrapPanel>
-            </StackPanel>
+            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="10,8">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Type:"
+                               FontSize="12"
+                               Opacity="0.75"/>
+                    <!-- Two columns: linear/HB analyses (col 1) and the loadpull family (col 2). -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                        <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="3">
+                            <RadioButton x:Name="DcRadio"
+                                         Content="DC"
+                                         GroupName="AnalysisType"
+                                         FontSize="12"
+                                         IsCheckedChanged="OnTypeRadioChanged"/>
+                            <RadioButton x:Name="SpRadio"
+                                         Content="S-Parameter"
+                                         GroupName="AnalysisType"
+                                         FontSize="12"
+                                         IsCheckedChanged="OnTypeRadioChanged"/>
+                            <RadioButton x:Name="HbRadio"
+                                         Content="Harmonic Balance"
+                                         GroupName="AnalysisType"
+                                         FontSize="12"
+                                         IsCheckedChanged="OnTypeRadioChanged"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="3">
+                            <RadioButton x:Name="LpRadio"
+                                         Content="Load Pull"
+                                         GroupName="AnalysisType"
+                                         FontSize="12"
+                                         IsCheckedChanged="OnTypeRadioChanged"/>
+                            <RadioButton x:Name="LppRadio"
+                                         Content="LP Pursuit"
+                                         GroupName="AnalysisType"
+                                         FontSize="12"
+                                         IsCheckedChanged="OnTypeRadioChanged"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
 
-            <!-- Name + Enabled -->
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+            <!-- Name + Enabled (on the same row) -->
+            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
                 <TextBlock Grid.Row="0" Grid.Column="0"
                            Text="Name:"
                            FontSize="12"
@@ -78,6 +82,13 @@
                            FontSize="12"
                            MaxLength="64"
                            TextChanged="OnNameChanged"/>
+                <CheckBox  Grid.Row="0" Grid.Column="2"
+                           x:Name="EnabledCheck"
+                           Content="Enabled"
+                           FontSize="12"
+                           IsChecked="True"
+                           VerticalAlignment="Center"
+                           Margin="12,0,0,0"/>
                 <TextBlock Grid.Row="1" Grid.Column="1"
                            x:Name="NameErrorLabel"
                            FontSize="11"
@@ -85,12 +96,6 @@
                            IsVisible="False"
                            TextWrapping="Wrap"
                            Margin="0,2,0,0"/>
-                <CheckBox  Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
-                           x:Name="EnabledCheck"
-                           Content="Enabled"
-                           FontSize="12"
-                           IsChecked="True"
-                           Margin="0,6,0,0"/>
             </Grid>
 
             <!-- ── DC body ──────────────────────────────────────────────────────── -->
