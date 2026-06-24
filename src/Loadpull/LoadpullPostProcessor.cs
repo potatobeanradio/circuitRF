@@ -62,20 +62,55 @@ namespace RfCore.Loadpull
                 AddCube(name, new DataCube(cube.Axes.ToArray(), dst));
             }
 
-            // ── Pout_dBm ─────────────────────────────────────────────────────────
-            if (Has("Pout") && !Has("Pout_dBm"))
+            void Remove(string name) => ds.RemoveFromGroup(group.Length > 0 ? group : DataSet.DefaultGroup, name);
+
+            // Rename a cube (same values/axes), dropping the old name so pickers/summary show only the
+            // canonical unit-suffixed name.
+            void RenameRaw(string oldName, string newName)
             {
-                var poutCube = ds[Q("Pout")];
-                var pw       = poutCube.RealValues;
-                var dbm      = new double[pw.Length];
-                for (int i = 0; i < pw.Length; i++)
-                    dbm[i] = (double.IsNaN(pw[i]) || pw[i] <= 0.0)
-                        ? double.NaN
-                        : 10.0 * Math.Log10(pw[i]) + 30.0;
-                AddCube("Pout_dBm", new DataCube(poutCube.Axes.ToArray(), dbm));
+                if (!Has(oldName)) return;
+                if (!Has(newName)) AddCube(newName, ds[Q(oldName)]);
+                Remove(oldName);
+            }
+            // Rename + scale (e.g. fraction → %).
+            void RenameScaled(string oldName, string newName, double f)
+            {
+                if (!Has(oldName)) return;
+                var c = ds[Q(oldName)]; var s = c.RealValues; var d = new double[s.Length];
+                for (int i = 0; i < s.Length; i++) d[i] = double.IsNaN(s[i]) ? double.NaN : s[i] * f;
+                AddCube(newName, new DataCube(c.Axes.ToArray(), d));
+                if (oldName != newName) Remove(oldName);
             }
 
-            // ── Zin_real/Zin_imag, IRL, AMPM (from the interface spectra) ─────────
+            // ── Canonical naming + display-convention fixes (simulated runs only) ──
+            // Gate on __SrcNodeIdx (engine provenance) so a measured .spl/.lpcwave — which already
+            // carries the canonical names, +Idq, and %-efficiency — is never touched. The engine emits
+            // raw physics names/units (Pout in W, DE as a fraction, passive-sign bias); the post-processor
+            // is the single normalization point to the user-facing, unit-suffixed names.
+            if (Has("__SrcNodeIdx"))
+            {
+                // Power: Pout (W) → Pout_W (Watts) + Pout_dBm (dBm); bare "Pout" is dropped (ambiguous).
+                if (Has("Pout"))
+                {
+                    var pc = ds[Q("Pout")]; var pw = pc.RealValues; var axes = pc.Axes.ToArray();
+                    var dbm = new double[pw.Length];
+                    for (int i = 0; i < pw.Length; i++)
+                        dbm[i] = (double.IsNaN(pw[i]) || pw[i] <= 0.0) ? double.NaN
+                               : 10.0 * Math.Log10(pw[i]) + 30.0;
+                    if (!Has("Pout_W"))   AddCube("Pout_W",   new DataCube(axes, (double[])pw.Clone()));
+                    if (!Has("Pout_dBm")) AddCube("Pout_dBm", new DataCube(axes, dbm));
+                    Remove("Pout");
+                }
+                RenameRaw("Gt",  "Gt_dB");
+                RenameRaw("Gp",  "Gp_dB");
+                RenameRaw("Pdc", "Pdc_W");
+                RenameScaled("DE", "Efficiency", 100.0);   // drain efficiency fraction → %
+                TransformInPlace("PAE", v => v * 100.0);   // power-added efficiency fraction → %
+                TransformInPlace("BiasILoad", v => -v);    // drain quiescent current → positive (Idq)
+                TransformInPlace("BiasISrc",  v => -v);    // gate  quiescent current → positive
+            }
+
+            // ── Zin_real/Zin_imag, AMPM_deg, IRL_dB (from the interface spectra) ──
             // Requires V + INl spectra and the source-DUT node index (provenance).
             if (Has("V") && Has("INl") && Has("__SrcNodeIdx"))
             {
@@ -141,7 +176,7 @@ namespace RfCore.Loadpull
                         var foms = new Dictionary<string, double[]>(StringComparer.Ordinal);
                         // Seed the dict with already-present derived cubes so Derive's presence
                         // guard skips them (idempotence across re-runs / measured-then-enriched).
-                        foreach (var k in new[] { "Zin_real", "Zin_imag", "AMPM", "IRL" })
+                        foreach (var k in new[] { "Zin_real", "Zin_imag", "AMPM_deg", "IRL_dB" })
                             if (Has(k)) foms[k] = Array.Empty<double>();
 
                         LoadpullDerivedFields.Derive(
@@ -150,7 +185,8 @@ namespace RfCore.Loadpull
                             transPhaseDeg,
                             reflDb: null, reflLin: null);
 
-                        var poutAxes = ds[Q("Pout")].Axes.ToArray();   // {gridPoint, pinStep}
+                        // FOM axes {gridPoint, pinStep} taken from the spectra cube (Pout was renamed).
+                        var poutAxes = new[] { vCube.Axes[gDim], vCube.Axes[pDim] };
                         foreach (var kv in foms)
                         {
                             if (kv.Value.Length == 0) continue;        // seeded placeholder — already present
@@ -159,19 +195,6 @@ namespace RfCore.Loadpull
                         }
                     }
                 }
-            }
-
-            // ── Display-convention fixes (simulated runs only) ────────────────────
-            // The engine reports bias currents with the passive sign (current into the device node
-            // → drain Idq negative) and efficiency as a 0..1 fraction. The Summary Table / users expect
-            // a positive Idq and efficiency in %. Gate on __SrcNodeIdx so these never touch a measured
-            // .spl/.lpcwave DataSet (which already carries +Idq and %-efficiency and has no such marker).
-            if (Has("__SrcNodeIdx"))
-            {
-                TransformInPlace("BiasILoad", v => -v);   // drain quiescent current → positive
-                TransformInPlace("BiasISrc",  v => -v);   // gate  quiescent current → positive
-                TransformInPlace("DE",  v => v * 100.0);  // drain efficiency  fraction → %
-                TransformInPlace("PAE", v => v * 100.0);  // power-added eff   fraction → %
             }
 
             AddCube("__lpEnriched", new DataCube(Array.Empty<Axis>(), new[] { 1.0 }));

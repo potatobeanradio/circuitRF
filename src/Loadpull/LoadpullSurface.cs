@@ -181,14 +181,14 @@ namespace RfCore.Loadpull
             int freqIdx, ConstraintSpec constraint,
             SurfacePlane plane, double? z0 = null,
             RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
-            => GetMxx(freqIdx, "Pout", constraint, plane, z0, kernel, smooth, epsilon);
+            => GetMxx(freqIdx, "Pout_dBm", constraint, plane, z0, kernel, smooth, epsilon);
 
         /// <summary>Max drain efficiency location (MXE): measured + interpolated Γ or Z.</summary>
         public MxxResult? MaxEfficiency(
             int freqIdx, ConstraintSpec constraint,
             SurfacePlane plane, double? z0 = null,
             RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
-            => GetMxx(freqIdx, "DE", constraint, plane, z0, kernel, smooth, epsilon);
+            => GetMxx(freqIdx, "Efficiency", constraint, plane, z0, kernel, smooth, epsilon);
 
         // ── MetricAtCoord / SourceZ / OperatingPoint (summary-table accessors) ─
 
@@ -251,13 +251,14 @@ namespace RfCore.Loadpull
         /// Auto-view-box enclosing MXP and MXE with VSWR margin, clipped
         /// to the measured data extent.  Port of SPLData.get_recommended_grid.
         /// </summary>
-        public ViewBox RecommendedBox(LoadpullFit fit)
+        /// <summary>
+        /// Bounding box of the fit's scatter nodes — the FULL measured data extent (every load
+        /// termination with a valid reduction). Unlike <see cref="RecommendedBox"/> (which auto-zooms
+        /// to MXP/MXE), this covers all the data, so a Z-plane contour resampled over it renders
+        /// iso-lines wherever data exists — the Rect analog of the Smith plot's full-disk coverage.
+        /// </summary>
+        public ViewBox MeasuredBox(LoadpullFit fit)
         {
-            var fs        = _freqs[fit.FreqIdx];
-            var mxpResult = GetMxx(fit.FreqIdx, "Pout", fit.Constraint, fit.Plane, fit.Z0, fit.Kernel, fit.Smooth, fit.Epsilon);
-            var mxeResult = GetMxx(fit.FreqIdx, "DE",   fit.Constraint, fit.Plane, fit.Z0, fit.Kernel, fit.Smooth, fit.Epsilon);
-
-            // Measured-data bounding box (from RBF node coords)
             double minRe = double.MaxValue, maxRe = double.MinValue;
             double minIm = double.MaxValue, maxIm = double.MinValue;
             for (int i = 0; i < fit.Rbf.NodeCount; i++)
@@ -268,11 +269,45 @@ namespace RfCore.Loadpull
                 if (im < minIm) minIm = im;
                 if (im > maxIm) maxIm = im;
             }
-            var measuredBox = new ViewBox(minRe, maxRe, minIm, maxIm);
+            return new ViewBox(minRe, maxRe, minIm, maxIm);
+        }
 
-            // MXP/MXE locations; fall back to measured-box center if missing
-            Complex mxp = mxpResult?.Measured ?? new Complex((minRe + maxRe) / 2, (minIm + maxIm) / 2);
-            Complex mxe = mxeResult?.Measured ?? mxp;
+        /// <summary>
+        /// Default compression levels (dB) tried, in order, for the MXP/MXE recommended terminations.
+        /// </summary>
+        private static readonly double[] RecommendedCompressionLevels = { 3.0, 1.0 };
+
+        /// <summary>
+        /// The MXP / MXE recommended-termination locations — max-power / max-efficiency loads defined at
+        /// a COMPRESSION level. These are NOT a function of whatever metric/constraint a contour happens
+        /// to plot (e.g. "Efficiency at Constant Pout"); computing them off the contour's constraint puts
+        /// the "MXE" in the wrong load region. Tries P-3dB, then P-1dB; returns (null,null) when the data
+        /// reaches neither (caller falls back to the full data extent / <see cref="MeasuredBox"/>).
+        /// </summary>
+        public (MxxResult? Mxp, MxxResult? Mxe) RecommendedMxx(LoadpullFit fit)
+        {
+            foreach (double dB in RecommendedCompressionLevels)
+            {
+                var c   = ConstraintSpec.AtCompression(dB);
+                var mxp = GetMxx(fit.FreqIdx, "Pout_dBm",   c, fit.Plane, fit.Z0, fit.Kernel, fit.Smooth, fit.Epsilon);
+                var mxe = GetMxx(fit.FreqIdx, "Efficiency", c, fit.Plane, fit.Z0, fit.Kernel, fit.Smooth, fit.Epsilon);
+                if (mxp is not null && mxe is not null) return (mxp, mxe);
+            }
+            return (null, null);
+        }
+
+        public ViewBox RecommendedBox(LoadpullFit fit)
+        {
+            // Measured-data bounding box (from RBF node coords)
+            var measuredBox = MeasuredBox(fit);
+
+            // MXP/MXE are compression-only (P-3dB → P-1dB). If the data reaches neither, there is no
+            // meaningful recommended zoom → fall back to the full measured data extent.
+            var (mxpResult, mxeResult) = RecommendedMxx(fit);
+            if (mxpResult is null || mxeResult is null) return measuredBox;
+
+            Complex mxp = mxpResult.Measured;
+            Complex mxe = mxeResult.Measured;
 
             // VSWR include factors (SPLData: 99 for Gamma "as much as possible"; 1.3 for Z)
             double includeVswr = fit.Plane == SurfacePlane.Gamma ? 99.0 : 1.3;
@@ -375,18 +410,19 @@ namespace RfCore.Loadpull
                 return data.Contains(spec);
             }
 
-            var poutCube     = GetCube("Pout");
-            var gtCube       = GetCube("Gt");
+            var poutCube     = GetCube("Pout_dBm");
+            var gtCube       = GetCube("Gt_dB");
             var gammaCube    = GetCube("GammaLoad");
             var zCube        = GetCube("ZLoad");
             var pinAxisCube  = GetCube("PavlDbm");
 
             // Build optional metric cubes
-            var metricNames  = new[] { "Pout", "Gt", "Gp", "DE", "PAE", "PavlDbm",
+            var metricNames  = new[] { "Pout_dBm", "Pout_W", "Gt_dB", "Gp_dB", "Efficiency", "PAE",
+                                       "PavlDbm", "Pdc_W",
                                        "BiasVLoad", "BiasILoad", "BiasVSrc", "BiasISrc",
                                        // Derived display metrics (post-processor / .spl reader) — must be
                                        // loadable so the summary table's MetricAtCoord can read them.
-                                       "Pout_dBm", "Zin_real", "Zin_imag", "AMPM", "IRL" };
+                                       "Zin_real", "Zin_imag", "AMPM_deg", "IRL_dB" };
             var metricCubes  = new Dictionary<string, DataCube>(StringComparer.Ordinal);
             foreach (var m in metricNames)
                 if (hasCube(m)) metricCubes[m] = GetCube(m);
@@ -465,7 +501,7 @@ namespace RfCore.Loadpull
                 }
 
                 // Compression preprocessing (§1 of brief)
-                var gtDriveUps = driveUps["Gt"];
+                var gtDriveUps = driveUps["Gt_dB"];
                 var compValues = new double[nGrid];
 
                 for (int gi = 0; gi < nGrid; gi++)

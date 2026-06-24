@@ -86,6 +86,11 @@ namespace RfCore.Data
             GetOrCreateGroup(group)[name] = cube;
         }
 
+        /// <summary>Remove a cube from a group (default group when omitted). Returns true if removed.
+        /// Used by post-processing/normalization passes that rename cubes (add-new then drop-old).</summary>
+        public bool RemoveFromGroup(string group, string name)
+            => _groups.TryGetValue(group ?? DefaultGroup, out var g) && g.Remove(name);
+
         // ── Lookup ────────────────────────────────────────────────────────────
 
         /// <summary>

@@ -83,8 +83,9 @@ public sealed class LoadpullPostProcessorTests
         var ds = BuildEngineDataSet(out var expectZinReal);
         LoadpullPostProcessor.Enrich(ds);
 
-        // Pout_dBm = 10·log10(Pw) + 30.
-        var pw  = ds["Pout"].RealValues;
+        // Power: bare "Pout" (W) is renamed to Pout_W; Pout_dBm = 10·log10(Pw)+30.
+        Assert.False(ds.Contains("Pout"));           // ambiguous bare name dropped
+        var pw  = ds["Pout_W"].RealValues;
         var dbm = ds["Pout_dBm"].RealValues;
         for (int i = 0; i < pw.Length; i++)
             Assert.Equal(10.0 * Math.Log10(pw[i]) + 30.0, dbm[i], precision: 9);
@@ -98,24 +99,25 @@ public sealed class LoadpullPostProcessorTests
             Assert.Equal(0.0, zinIm[i], precision: 6);
         }
 
-        // IRL = -20·log10|Γin|, Γin = (Zin-50)/(Zin+50) (real). E.g. Zin=80 → Γ=30/130 → IRL≈12.74 dB.
-        var irl = ds["IRL"].RealValues;
+        // IRL_dB = +20·log10|Γin| (neg = good match). Zin=80 → Γ=30/130 → IRL≈−12.74 dB.
+        var irl = ds["IRL_dB"].RealValues;
         for (int i = 0; i < expectZinReal.Length; i++)
         {
             double z = expectZinReal[i];
             double gmag = Math.Abs((z - 50.0) / (z + 50.0));
-            Assert.Equal(-20.0 * Math.Log10(gmag), irl[i], precision: 6);
+            Assert.Equal(20.0 * Math.Log10(gmag), irl[i], precision: 6);
+            Assert.True(irl[i] < 0.0, "a passive match should give negative IRL_dB");
         }
 
-        // AMPM per grid: trans_phase = 10·pi deg; AM/PM = trans[0]-trans[pi] = -10·pi (no wrap).
-        var ampm = ds["AMPM"].RealValues;
+        // AMPM_deg per grid: trans_phase = 10·pi deg; AM/PM = trans[0]-trans[pi] = -10·pi.
+        var ampm = ds["AMPM_deg"].RealValues;
         for (int gi = 0; gi < NG; gi++)
         for (int pi = 0; pi < NP; pi++)
             Assert.Equal(-10.0 * pi, ampm[gi * NP + pi], precision: 4);
     }
 
     [Fact]
-    public void Enrich_DisplayConventionFixes_SignAndScale()
+    public void Enrich_DisplayConventionFixes_SignScaleRename()
     {
         var ds = BuildEngineDataSet(out _);
         LoadpullPostProcessor.Enrich(ds);
@@ -123,9 +125,10 @@ public sealed class LoadpullPostProcessorTests
         // BiasILoad/BiasISrc negated → positive Idq for display (engine stores passive sign).
         Assert.All(ds["BiasILoad"].RealValues, v => Assert.Equal(0.05, v, precision: 9));
         Assert.All(ds["BiasISrc"].RealValues,  v => Assert.Equal(0.05, v, precision: 9));
-        // DE/PAE fraction → %.
-        Assert.All(ds["DE"].RealValues,  v => Assert.Equal(60.0, v, precision: 9));
-        Assert.All(ds["PAE"].RealValues, v => Assert.Equal(55.0, v, precision: 9));
+        // DE → Efficiency, fraction → %; PAE fraction → % (name kept).
+        Assert.False(ds.Contains("DE"));
+        Assert.All(ds["Efficiency"].RealValues, v => Assert.Equal(60.0, v, precision: 9));
+        Assert.All(ds["PAE"].RealValues,        v => Assert.Equal(55.0, v, precision: 9));
     }
 
     [Fact]
@@ -137,42 +140,45 @@ public sealed class LoadpullPostProcessorTests
 
         LoadpullPostProcessor.Enrich(ds);   // second pass — must not change, double-scale, or duplicate.
         Assert.Equal(firstDbm, ds["Pout_dBm"].RealValues);
-        Assert.All(ds["DE"].RealValues, v => Assert.Equal(60.0, v, precision: 9));   // NOT 6000
-        Assert.All(ds["BiasILoad"].RealValues, v => Assert.Equal(0.05, v, precision: 9)); // NOT back to -0.05
+        Assert.All(ds["Efficiency"].RealValues, v => Assert.Equal(60.0, v, precision: 9));   // NOT 6000
+        Assert.All(ds["BiasILoad"].RealValues, v => Assert.Equal(0.05, v, precision: 9));    // NOT back to -0.05
     }
 
     [Fact]
-    public void Enrich_Measured_NoSrcNodeIdx_LeavesBiasAndEfficiencyUntouched()
+    public void Enrich_Measured_NoSrcNodeIdx_IsUntouched()
     {
-        // A measured-style DataSet (no __SrcNodeIdx) already carries +Idq and %-efficiency — the
-        // display-convention fixes must NOT touch it (no double-scale / no sign flip).
+        // A measured-style DataSet (no __SrcNodeIdx) already carries the canonical names, +Idq, and
+        // %-efficiency — Enrich must leave it entirely alone (no rename, sign flip, or scale).
         var grid = new Axis("gridPoint", new[] { 0.0, 1 });
         var pin  = new Axis("pinStep",   new[] { 0.0, 1 });
         var ds = new DataSet();
-        ds.Add("Pout", new DataCube(new[] { grid, pin }, new[] { 0.1, 0.2, 0.3, 0.4 }));
+        ds.Add("Pout_dBm",  new DataCube(new[] { grid, pin }, new[] { 20.0, 21, 22, 23 }));
         ds.Add("BiasILoad", new DataCube(new[] { grid, pin }, new[] { 0.05, 0.05, 0.05, 0.05 }));
-        ds.Add("DE", new DataCube(new[] { grid, pin }, new[] { 60.0, 60, 60, 60 }));
+        ds.Add("Efficiency",new DataCube(new[] { grid, pin }, new[] { 60.0, 60, 60, 60 }));
 
         LoadpullPostProcessor.Enrich(ds);
 
-        Assert.All(ds["BiasILoad"].RealValues, v => Assert.Equal(0.05, v, precision: 9));
-        Assert.All(ds["DE"].RealValues, v => Assert.Equal(60.0, v, precision: 9));
+        Assert.All(ds["BiasILoad"].RealValues,  v => Assert.Equal(0.05, v, precision: 9));
+        Assert.All(ds["Efficiency"].RealValues, v => Assert.Equal(60.0, v, precision: 9));
     }
 
     [Fact]
-    public void Enrich_NoSpectra_AddsOnlyPoutDbm()
+    public void Enrich_NoSpectra_RenamesPowerButNoSpectraMetrics()
     {
         var grid = new Axis("gridPoint", new[] { 0.0, 1 });
         var pin  = new Axis("pinStep",   new[] { 0.0, 1 });
         var ds = new DataSet();
         ds.Add("Pout", new DataCube(new[] { grid, pin }, new[] { 0.1, 0.2, 0.3, 0.4 }));
+        ds.Add("__SrcNodeIdx", new DataCube(Array.Empty<Axis>(), new[] { 0.0 }));  // engine marker, no V/INl
 
         LoadpullPostProcessor.Enrich(ds);
 
-        Assert.True(ds.Contains("Pout_dBm"));        // Pout present → dBm derived
+        Assert.True(ds.Contains("Pout_dBm"));        // power renamed/derived
+        Assert.True(ds.Contains("Pout_W"));
+        Assert.False(ds.Contains("Pout"));
         Assert.False(ds.Contains("Zin_real"));       // no spectra → no Zin/IRL/AMPM
-        Assert.False(ds.Contains("IRL"));
-        Assert.False(ds.Contains("AMPM"));
+        Assert.False(ds.Contains("IRL_dB"));
+        Assert.False(ds.Contains("AMPM_deg"));
     }
 
     [Fact]
@@ -188,8 +194,10 @@ public sealed class LoadpullPostProcessorTests
         LoadpullPostProcessor.Enrich(grouped, "LP1");
 
         Assert.True(grouped.Contains("LP1.Pout_dBm"));
+        Assert.True(grouped.Contains("LP1.Pout_W"));
         Assert.True(grouped.Contains("LP1.Zin_real"));
-        Assert.True(grouped.Contains("LP1.AMPM"));
-        Assert.True(grouped.Contains("LP1.IRL"));
+        Assert.True(grouped.Contains("LP1.AMPM_deg"));
+        Assert.True(grouped.Contains("LP1.IRL_dB"));
+        Assert.False(grouped.Contains("LP1.Pout"));
     }
 }

@@ -34,27 +34,29 @@ namespace RfCore.Loadpull
         public static readonly IReadOnlyDictionary<string, FomEntry> Map =
             new Dictionary<string, FomEntry>(StringComparer.OrdinalIgnoreCase)
         {
-            // ── Output power ──────────────────────────────────────
-            ["Pout_dBm"]          = new("Pout",      FomScale.DbmToW),
-            ["PoutWaves[dBm]"]    = new("Pout",      FomScale.DbmToW),
+            // Canonical names carry a unit suffix and the stored value is in the displayed unit
+            // (dBm/dB/%) — matching the simulated post-processor output so measured and simulated
+            // loadpull DataSets are interchangeable in the display layer.
+            // ── Output power (kept in dBm; readers also derive Pout_W) ─
+            ["Pout_dBm"]          = new("Pout_dBm",  FomScale.PassThrough),
+            ["PoutWaves[dBm]"]    = new("Pout_dBm",  FomScale.PassThrough),
 
             // ── Transducer gain ───────────────────────────────────
-            ["Gt_dB"]             = new("Gt",        FomScale.PassThrough),
-            ["GainWavesTrd[dB]"]  = new("Gt",        FomScale.PassThrough),
+            ["Gt_dB"]             = new("Gt_dB",     FomScale.PassThrough),
+            ["GainWavesTrd[dB]"]  = new("Gt_dB",     FomScale.PassThrough),
 
             // ── Power gain ────────────────────────────────────────
-            ["Gp_dB"]             = new("Gp",        FomScale.PassThrough),
-            ["GainWavesPwr[dB]"]  = new("Gp",        FomScale.PassThrough),
+            ["Gp_dB"]             = new("Gp_dB",     FomScale.PassThrough),
+            ["GainWavesPwr[dB]"]  = new("Gp_dB",     FomScale.PassThrough),
 
-            // ── Drain efficiency ──────────────────────────────────
-            ["Eff_%%"]            = new("DE",        FomScale.PctToLinear),
-            ["Eff_%"]             = new("DE",        FomScale.PctToLinear),
-            ["OutEffWaves[%]"]    = new("DE",        FomScale.PctToLinear),
+            // ── Drain efficiency (kept in %) ──────────────────────
+            ["Eff_%%"]            = new("Efficiency", FomScale.PassThrough),
+            ["Eff_%"]             = new("Efficiency", FomScale.PassThrough),
+            ["OutEffWaves[%]"]    = new("Efficiency", FomScale.PassThrough),
 
-            // ── PAE ───────────────────────────────────────────────
-            // HarmonicaRF "PAE" column is already in % (0-100)
-            ["PAE"]               = new("PAE",       FomScale.PctToLinear),
-            ["PAEffWaves[%]"]     = new("PAE",       FomScale.PctToLinear),
+            // ── PAE (kept in %) ───────────────────────────────────
+            ["PAE"]               = new("PAE",       FomScale.PassThrough),
+            ["PAEffWaves[%]"]     = new("PAE",       FomScale.PassThrough),
 
             // ── Available source power (PavlDbm axis) ─────────────
             ["Pin_avail_dBm"]     = new("PavlDbm",   FomScale.PassThrough),

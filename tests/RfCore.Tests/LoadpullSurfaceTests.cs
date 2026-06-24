@@ -58,6 +58,59 @@ public class LoadpullSurfaceTests
     private static void Near(double expected, double actual, double tol, string label = "")
         => Assert.InRange(actual, expected - tol, expected + tol);
 
+    // ── Z-plane contour coverage: MeasuredBox encloses the MXP/MXE auto-zoom ──
+    // Regression: a Rect (Z-plane) contour must resample over the FULL measured data extent so
+    // iso-lines render wherever data exists — not only within RecommendedBox's MXP/MXE zoom (which
+    // for a constant-metric contour can sit in a different load region, leaving the user's view empty).
+    [Fact]
+    public void MeasuredBox_EnclosesRecommendedBox_AndResampleCoversExtent()
+    {
+        var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc = new LoadpullSurface(ds);
+        var fit = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Z);
+        Assert.NotNull(fit);
+
+        var mb = sfc.MeasuredBox(fit!);
+        var rb = sfc.RecommendedBox(fit!);
+        // RecommendedBox is clipped to (⊆) the measured extent; MeasuredBox is the full extent.
+        Assert.True(mb.MinRe <= rb.MinRe + 1e-6 && mb.MaxRe >= rb.MaxRe - 1e-6, "MeasuredBox must enclose RecommendedBox");
+        Assert.True(mb.SpanRe > 0, "MeasuredBox must be non-degenerate");
+
+        // Resampling over the full extent yields finite contour data spanning it.
+        var grid = sfc.Resample(fit!, mb);
+        Assert.True(grid.XSpace[0] >= mb.MinRe - 1e-6 && grid.XSpace[^1] <= mb.MaxRe + 1e-6);
+        Assert.Contains(grid.Values, v => !double.IsNaN(v));
+    }
+
+    // Regression: MXP/MXE recommended terminations are COMPRESSION-based (P-3dB), independent of the
+    // contour's own metric/constraint — so "Efficiency at Constant Pout" reuses the same MXP/MXE (and
+    // RecommendedBox zoom) as the power contour, instead of a constant-Pout MXE in a wrong load region.
+    [Fact]
+    public void RecommendedMxx_IsCompressionBased_IndependentOfFitConstraint()
+    {
+        var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
+        var sfc = new LoadpullSurface(ds);
+
+        var compFit = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Z);
+        Assert.NotNull(compFit);
+
+        var (mxp, mxe) = sfc.RecommendedMxx(compFit!);
+        Assert.NotNull(mxp);
+        Assert.NotNull(mxe);
+        // Equal the explicit P-3dB compression optima.
+        Assert.Equal(sfc.MaxPower(0,      ConstraintSpec.AtCompression(3.0), SurfacePlane.Z)!.Measured.Real, mxp!.Measured.Real, precision: 6);
+        Assert.Equal(sfc.MaxEfficiency(0, ConstraintSpec.AtCompression(3.0), SurfacePlane.Z)!.Measured.Real, mxe!.Measured.Real, precision: 6);
+
+        // A constant-metric fit (Efficiency at Constant Pout) yields the SAME recommended MXP/MXE.
+        var cmFit = sfc.Fit(0, "Efficiency", ConstraintSpec.AtConstantMetric("Pout_dBm", 10.0), SurfacePlane.Z);
+        if (cmFit is not null)
+        {
+            var (mxp2, mxe2) = sfc.RecommendedMxx(cmFit);
+            Assert.Equal(mxp!.Measured.Real, mxp2!.Measured.Real, precision: 6);
+            Assert.Equal(mxe!.Measured.Real, mxe2!.Measured.Real, precision: 6);
+        }
+    }
+
     // ── 7.4b-1: Compression preprocessing ────────────────────────────────────
 
     [Fact]
@@ -105,7 +158,7 @@ public class LoadpullSurfaceTests
         var sfc = new LoadpullSurface(ds);
 
         // Reduce at 3 dB compression for Pout — should produce a scatter
-        var scatter = sfc.Reduce(0, "Pout",
+        var scatter = sfc.Reduce(0, "Pout_dBm",
             ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
 
         // At least ~100 out of 145 grid points should have valid Pout at 3 dB
@@ -122,7 +175,7 @@ public class LoadpullSurfaceTests
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
         var sfc = new LoadpullSurface(ds);
 
-        var scatter = sfc.Reduce(0, "Pout",
+        var scatter = sfc.Reduce(0, "Pout_dBm",
             ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
 
         // Should have coords for the majority of grid points
@@ -141,7 +194,7 @@ public class LoadpullSurfaceTests
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
         var sfc = new LoadpullSurface(ds);
 
-        var fit = sfc.Fit(0, "Pout", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
+        var fit = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
 
         Assert.NotNull(fit);
         // NodeCount ≤ 145 and should be close (minus any NaN drops)
@@ -156,8 +209,8 @@ public class LoadpullSurfaceTests
         var sfc = new LoadpullSurface(ds);
 
         var constraint = ConstraintSpec.AtCompression(3.0);
-        var fit1 = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma);
-        var fit2 = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma);
+        var fit1 = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma);
+        var fit2 = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma);
 
         Assert.NotNull(fit1);
         Assert.Same(fit1, fit2);  // exact same reference from cache
@@ -170,8 +223,8 @@ public class LoadpullSurfaceTests
         var sfc = new LoadpullSurface(ds);
 
         var constraint = ConstraintSpec.AtCompression(3.0);
-        var fit1 = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, smooth: 1e-3);
-        var fit2 = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, smooth: 1e-4);
+        var fit1 = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma, smooth: 1e-3);
+        var fit2 = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma, smooth: 1e-4);
 
         Assert.NotNull(fit1);
         Assert.NotNull(fit2);
@@ -184,8 +237,8 @@ public class LoadpullSurfaceTests
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
         var sfc = new LoadpullSurface(ds);
 
-        var fit3dB = sfc.Fit(0, "Pout", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
-        var fit1dB = sfc.Fit(0, "Pout", ConstraintSpec.AtCompression(1.0), SurfacePlane.Gamma);
+        var fit3dB = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
+        var fit1dB = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(1.0), SurfacePlane.Gamma);
 
         Assert.NotNull(fit3dB);
         Assert.NotNull(fit1dB);
@@ -201,8 +254,8 @@ public class LoadpullSurfaceTests
         var sfc        = new LoadpullSurface(ds);
         var constraint = ConstraintSpec.AtCompression(3.0);
 
-        var fitAuto   = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, epsilon: null);
-        var fitCustom = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, epsilon: 2.0);
+        var fitAuto   = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma, epsilon: null);
+        var fitCustom = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma, epsilon: 2.0);
 
         Assert.NotNull(fitAuto);
         Assert.NotNull(fitCustom);
@@ -218,8 +271,8 @@ public class LoadpullSurfaceTests
         var sfc        = new LoadpullSurface(ds);
         var constraint = ConstraintSpec.AtCompression(3.0);
 
-        var fit1 = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, epsilon: 1.5);
-        var fit2 = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma, epsilon: 1.5);
+        var fit1 = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma, epsilon: 1.5);
+        var fit2 = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma, epsilon: 1.5);
 
         Assert.Same(fit1, fit2);
     }
@@ -260,7 +313,7 @@ public class LoadpullSurfaceTests
         var sfc = new LoadpullSurface(ds);
 
         var constraint = ConstraintSpec.AtCompression(3.0);
-        var fit = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma);
+        var fit = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma);
         Assert.NotNull(fit);
 
         var box = sfc.RecommendedBox(fit!);
@@ -289,7 +342,7 @@ public class LoadpullSurfaceTests
         var sfc = new LoadpullSurface(ds);
 
         var constraint = ConstraintSpec.AtCompression(3.0);
-        var fit  = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma);
+        var fit  = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma);
         Assert.NotNull(fit);
 
         var grid = sfc.Resample(fit!, resolution: 50);
@@ -310,7 +363,7 @@ public class LoadpullSurfaceTests
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
         var sfc = new LoadpullSurface(ds);
 
-        var fit  = sfc.Fit(0, "Pout", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
+        var fit  = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
         Assert.NotNull(fit);
 
         // Use a known box that extends outside the unit disk
@@ -332,7 +385,7 @@ public class LoadpullSurfaceTests
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
         var sfc = new LoadpullSurface(ds);
 
-        var fit  = sfc.Fit(0, "Pout", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
+        var fit  = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
         Assert.NotNull(fit);
 
         var grid = sfc.Resample(fit!, resolution: 50);
@@ -387,8 +440,8 @@ public class LoadpullSurfaceTests
         var sfc = new LoadpullSurface(ds);
 
         var constraint = ConstraintSpec.AtCompression(3.0);
-        var fit0 = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma);
-        var fit1 = sfc.Fit(1, "Pout", constraint, SurfacePlane.Gamma);
+        var fit0 = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma);
+        var fit1 = sfc.Fit(1, "Pout_dBm", constraint, SurfacePlane.Gamma);
 
         Assert.NotNull(fit0);
         Assert.NotNull(fit1);
@@ -425,7 +478,7 @@ public class LoadpullSurfaceTests
         var sfc = new LoadpullSurface(ds);
 
         double recComp = sfc.RecommendedCompression(0);
-        var scatter    = sfc.Reduce(0, "Pout",
+        var scatter    = sfc.Reduce(0, "Pout_dBm",
             ConstraintSpec.AtCompression(recComp), SurfacePlane.Gamma);
 
         Assert.True(scatter.Coords.Length > 0,
@@ -465,9 +518,9 @@ public class LoadpullSurfaceTests
         Assert.NotNull(mxp);
         Complex optimum = mxp!.Interpolated;
 
-        double fromAccessor = sfc.MetricAtCoord(0, "Pout", optimum, constraint,
+        double fromAccessor = sfc.MetricAtCoord(0, "Pout_dBm", optimum, constraint,
             SurfacePlane.Gamma, nearest: false);
-        double fromFit      = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma)!
+        double fromFit      = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma)!
                                   .Rbf.Evaluate(optimum.Real, optimum.Imaginary);
 
         Assert.True(double.IsFinite(fromAccessor), $"MetricAtCoord result should be finite, got {fromAccessor}");
@@ -485,10 +538,10 @@ public class LoadpullSurfaceTests
         Assert.NotNull(mxp);
         Complex optimum = mxp!.Measured;
 
-        double result = sfc.MetricAtCoord(0, "Pout", optimum, constraint,
+        double result = sfc.MetricAtCoord(0, "Pout_dBm", optimum, constraint,
             SurfacePlane.Gamma, nearest: true);
 
-        var rbf = sfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma)!.Rbf;
+        var rbf = sfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma)!.Rbf;
         bool isNodeValue = false;
         for (int i = 0; i < rbf.NodeCount; i++)
             if (rbf.NodeValues[i] == result) { isNodeValue = true; break; }

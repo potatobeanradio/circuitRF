@@ -87,13 +87,13 @@ public class LoadpullDerivedFieldsTests
 
         Assert.True(ds.Contains("Zin_real"), "Zin_real cube should be produced");
         Assert.True(ds.Contains("Zin_imag"), "Zin_imag cube should be produced");
-        Assert.True(ds.Contains("AMPM"),     "AMPM cube should be produced");
-        Assert.True(ds.Contains("IRL"),      "IRL cube should be produced (from Refl_dB)");
+        Assert.True(ds.Contains("AMPM_deg"),     "AMPM cube should be produced");
+        Assert.True(ds.Contains("IRL_dB"),      "IRL cube should be produced (from Refl_dB)");
 
         // Shapes must match Pout (same grid × pin)
-        var pout    = ds["Pout"];
+        var pout    = ds["Pout_dBm"];
         var zinReal = ds["Zin_real"];
-        var ampm    = ds["AMPM"];
+        var ampm    = ds["AMPM_deg"];
 
         Assert.Equal(pout.Axes.Count, zinReal.Axes.Count);
         for (int i = 0; i < pout.Axes.Count; i++)
@@ -148,7 +148,7 @@ public class LoadpullDerivedFieldsTests
         // Derived cubes are presence-gated (may or may not be present depending on columns).
         var ds = SplReader.ReadSpl(SplFile("ConvertedFile.spl"));
 
-        Assert.True(ds.Contains("Pout"), "ConvertedFile.spl should have at least a Pout cube");
+        Assert.True(ds.Contains("Pout_dBm"), "ConvertedFile.spl should have at least a Pout cube");
         // If ZSource present, it must be finite
         if (ds.Contains("ZSource"))
         {
@@ -170,7 +170,7 @@ public class LoadpullDerivedFieldsTests
 
         Assert.True(ds.Contains("Zin_real"), "Zin_real should be derived for lpcwave fixture");
         Assert.True(ds.Contains("Zin_imag"), "Zin_imag should be derived for lpcwave fixture");
-        Assert.True(ds.Contains("AMPM"),     "AMPM should be derived for lpcwave fixture");
+        Assert.True(ds.Contains("AMPM_deg"),     "AMPM should be derived for lpcwave fixture");
         Assert.True(ds.Contains("ZSource"),  "ZSource should be produced for lpcwave fixture");
 
         // ZSource rank-1 {freq}

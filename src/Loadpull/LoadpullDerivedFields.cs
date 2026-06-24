@@ -33,6 +33,15 @@ namespace RfCore.Loadpull
         {
             int n = nGrid * nPin;
 
+            // ── Pout_W (Watts, derived from Pout_dBm when present) ───────────────
+            if (foms.TryGetValue("Pout_dBm", out var poutDbm) && !foms.ContainsKey("Pout_W"))
+            {
+                var pw = new double[poutDbm.Length];
+                for (int i = 0; i < pw.Length; i++)
+                    pw[i] = double.IsNaN(poutDbm[i]) ? double.NaN : Math.Pow(10.0, (poutDbm[i] - 30.0) / 10.0);
+                foms["Pout_W"] = pw;
+            }
+
             // ── Zin_real / Zin_imag ──────────────────────────────────────────────
             // SPLData: x,y = pol2cart(GinPhase*pi/180, GinMag); Zin = g2z(x+jy)*50
             if (!foms.ContainsKey("Zin_real") && !foms.ContainsKey("Zin_imag")
@@ -60,7 +69,7 @@ namespace RfCore.Loadpull
 
             // ── AMPM ─────────────────────────────────────────────────────────────
             // SPLData per grid point drive-up: AMPM = trans_phase[0] - trans_phase, then unwrap (deg).
-            if (!foms.ContainsKey("AMPM") && transPhaseDeg is not null)
+            if (!foms.ContainsKey("AMPM_deg") && transPhaseDeg is not null)
             {
                 var ampm = new double[n];
                 for (int gi = 0; gi < nGrid; gi++)
@@ -76,16 +85,18 @@ namespace RfCore.Loadpull
                     UnwrapDegInPlace(rel);
                     Array.Copy(rel, 0, ampm, baseI, nPin);
                 }
-                foms["AMPM"] = ampm;
+                foms["AMPM_deg"] = ampm;
             }
 
-            // ── IRL (input return loss, dB) ──────────────────────────────────────
-            // Priority: stored dB alias → stored linear alias (20log10) → derive from Γin (-20log10|Γin|).
-            if (!foms.ContainsKey("IRL"))
+            // ── IRL_dB (input return loss, dB) ───────────────────────────────────
+            // Sign convention (RF-engineer standard, S11-style): a good input match is NEGATIVE
+            // (e.g. −200 dB ≈ perfect match); 0 dB = total reflection; > 0 = reflection gain (active).
+            // IRL = 20·log10|Γin|.  Priority: stored dB alias → stored linear alias → derive from Γin.
+            if (!foms.ContainsKey("IRL_dB"))
             {
                 if (reflDb is not null)
                 {
-                    foms["IRL"] = (double[])reflDb.Clone();
+                    foms["IRL_dB"] = (double[])reflDb.Clone();
                 }
                 else if (reflLin is not null)
                 {
@@ -93,15 +104,15 @@ namespace RfCore.Loadpull
                     for (int i = 0; i < n; i++)
                         irl[i] = double.IsNaN(reflLin[i]) ? double.NaN
                                : 20.0 * Math.Log10(Math.Max(Math.Abs(reflLin[i]), 1e-300));
-                    foms["IRL"] = irl;
+                    foms["IRL_dB"] = irl;
                 }
                 else if (ginMag is not null)
                 {
                     var irl = new double[n];
                     for (int i = 0; i < n; i++)
                         irl[i] = double.IsNaN(ginMag[i]) ? double.NaN
-                               : -20.0 * Math.Log10(Math.Max(ginMag[i], 1e-300));
-                    foms["IRL"] = irl;
+                               : 20.0 * Math.Log10(Math.Max(ginMag[i], 1e-300));
+                    foms["IRL_dB"] = irl;
                 }
                 // else: no IRL inputs → omit
             }

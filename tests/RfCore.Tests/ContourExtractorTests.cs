@@ -145,7 +145,7 @@ public class ContourExtractorTests
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
         var sfc = new LoadpullSurface(ds);
-        var fit = sfc.Fit(0, "Pout", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
+        var fit = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
         Assert.NotNull(fit);
 
         var grid = sfc.Resample(fit!, resolution: 30);
@@ -164,7 +164,7 @@ public class ContourExtractorTests
         // Resample over full ±1 box so contours hit the NaN-disk boundary
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
         var sfc = new LoadpullSurface(ds);
-        var fit = sfc.Fit(0, "Pout", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
+        var fit = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
         Assert.NotNull(fit);
 
         var bigBox = new ViewBox(-1.0, 1.0, -1.0, 1.0);
@@ -183,7 +183,7 @@ public class ContourExtractorTests
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
         var sfc = new LoadpullSurface(ds);
-        var fit = sfc.Fit(0, "Pout", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
+        var fit = sfc.Fit(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
         Assert.NotNull(fit);
 
         var grid    = sfc.Resample(fit!, resolution: 30);

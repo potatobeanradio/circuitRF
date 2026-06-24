@@ -64,7 +64,7 @@ public class LoadpullPowerSweepTests
         var sfc = new LoadpullSurface(ds);
 
         var ps = sfc.GetPowerSweep(
-            0, new Complex(0.3, 0.0), "Pout", "Pout",
+            0, new Complex(0.3, 0.0), "Pout_dBm", "Pout_dBm",
             compressionVal: 3.0, SurfacePlane.Gamma);
 
         // GetPowerSweep returns null only when stacks can't be built;
@@ -84,7 +84,7 @@ public class LoadpullPowerSweepTests
         var sfc = new LoadpullSurface(ds);
 
         var ps = sfc.GetPowerSweep(
-            0, new Complex(0.0, 0.0), "PavlDbm", "Pout",
+            0, new Complex(0.0, 0.0), "PavlDbm", "Pout_dBm",
             compressionVal: 3.0, SurfacePlane.Gamma);
 
         Assert.NotNull(ps);
@@ -106,7 +106,7 @@ public class LoadpullPowerSweepTests
         var sfc = new LoadpullSurface(ds);
 
         var ps = sfc.GetPowerSweep(
-            0, new Complex(0.0, 0.0), "PavlDbm", "Gt",
+            0, new Complex(0.0, 0.0), "PavlDbm", "Gt_dB",
             compressionVal: 3.0, SurfacePlane.Gamma);
 
         Assert.NotNull(ps);
@@ -128,8 +128,8 @@ public class LoadpullPowerSweepTests
         var sfc = new LoadpullSurface(ds);
 
         var query = new Complex(0.2, 0.1);
-        var ps1   = sfc.GetPowerSweep(0, query, "Pout", "PAE", 3.0, SurfacePlane.Gamma);
-        var ps2   = sfc.GetPowerSweep(0, query, "Pout", "PAE", 3.0, SurfacePlane.Gamma);
+        var ps1   = sfc.GetPowerSweep(0, query, "Pout_dBm", "PAE", 3.0, SurfacePlane.Gamma);
+        var ps2   = sfc.GetPowerSweep(0, query, "Pout_dBm", "PAE", 3.0, SurfacePlane.Gamma);
 
         Assert.NotNull(ps1);
         Assert.NotNull(ps2);
@@ -165,7 +165,7 @@ public class LoadpullPowerSweepTests
         var sfc = new LoadpullSurface(ds);
 
         var ps = sfc.GetPowerSweep(
-            0, new Complex(0.0, 0.0), "PavlDbm", "Pout",
+            0, new Complex(0.0, 0.0), "PavlDbm", "Pout_dBm",
             compressionVal: 3.0, SurfacePlane.Gamma);
 
         Assert.NotNull(ps);
@@ -193,7 +193,7 @@ public class LoadpullPowerSweepTests
         var sfc = new LoadpullSurface(ds);
 
         var ps = sfc.GetPowerSweep(
-            0, new Complex(0.0, 0.0), "PavlDbm", "Pout",
+            0, new Complex(0.0, 0.0), "PavlDbm", "Pout_dBm",
             compressionVal: 3.0, SurfacePlane.Gamma);
 
         Assert.NotNull(ps);
@@ -224,7 +224,7 @@ public class LoadpullPowerSweepTests
 
         // Grid point 72 is near the center of the smith chart (Γ ≈ 0)
         // Use the actual gamma from the scatter at compression
-        var scatter = sfc.Reduce(0, "Pout", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
+        var scatter = sfc.Reduce(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
         Assert.True(scatter.Coords.Length > 70, "Need at least 71 grid points for this test");
 
         // Pick a grid point near the center (|Γ| < 0.2)
@@ -243,7 +243,7 @@ public class LoadpullPowerSweepTests
 
         // Synthesize drive-up at that Γ
         var ps = sfc.GetPowerSweep(
-            0, queryGamma, "PavlDbm", "Pout",
+            0, queryGamma, "PavlDbm", "Pout_dBm",
             compressionVal: 3.0, SurfacePlane.Gamma);
 
         Assert.NotNull(ps);
@@ -266,7 +266,7 @@ public class LoadpullPowerSweepTests
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
         var sfc = new LoadpullSurface(ds);
 
-        var scatter = sfc.Reduce(0, "Pout", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
+        var scatter = sfc.Reduce(0, "Pout_dBm", ConstraintSpec.AtCompression(3.0), SurfacePlane.Gamma);
         Assert.True(scatter.Coords.Length > 50);
 
         // Pick two nearby grid points
@@ -275,9 +275,9 @@ public class LoadpullPowerSweepTests
         Complex gMid = (g1 + g2) / 2.0;
 
         // Synthesize at midpoint
-        var psMid = sfc.GetPowerSweep(0, gMid, "PavlDbm", "Pout", 3.0, SurfacePlane.Gamma);
-        var ps1   = sfc.GetPowerSweep(0, g1,   "PavlDbm", "Pout", 3.0, SurfacePlane.Gamma);
-        var ps2   = sfc.GetPowerSweep(0, g2,   "PavlDbm", "Pout", 3.0, SurfacePlane.Gamma);
+        var psMid = sfc.GetPowerSweep(0, gMid, "PavlDbm", "Pout_dBm", 3.0, SurfacePlane.Gamma);
+        var ps1   = sfc.GetPowerSweep(0, g1,   "PavlDbm", "Pout_dBm", 3.0, SurfacePlane.Gamma);
+        var ps2   = sfc.GetPowerSweep(0, g2,   "PavlDbm", "Pout_dBm", 3.0, SurfacePlane.Gamma);
 
         Assert.NotNull(psMid);
         Assert.NotNull(ps1);
@@ -302,7 +302,7 @@ public class LoadpullPowerSweepTests
 
         // "NonExistentMetric" is not in DriveUps — stacks can't be built
         var ps = sfc.GetPowerSweep(
-            0, new Complex(0.1, 0.1), "NonExistentMetric", "Pout",
+            0, new Complex(0.1, 0.1), "NonExistentMetric", "Pout_dBm",
             compressionVal: 3.0, SurfacePlane.Gamma);
 
         Assert.Null(ps);
@@ -320,7 +320,7 @@ public class LoadpullPowerSweepTests
 
         double recComp = sfc.RecommendedCompression(0);
         var ps = sfc.GetPowerSweep(
-            0, new Complex(0.0, 0.0), "PavlDbm", "Pout",
+            0, new Complex(0.0, 0.0), "PavlDbm", "Pout_dBm",
             compressionVal: recComp, SurfacePlane.Gamma);
 
         // If the file has enough grid points and drive-up depth, this should succeed
@@ -349,7 +349,7 @@ public class LoadpullPowerSweepTests
         bool anySuccess = false;
         foreach (var q in queries)
         {
-            var ps = sfc.GetPowerSweep(0, q, "PavlDbm", "Pout", recComp, SurfacePlane.Gamma);
+            var ps = sfc.GetPowerSweep(0, q, "PavlDbm", "Pout_dBm", recComp, SurfacePlane.Gamma);
             if (ps is null) continue;
             var finiteY = ps.Y.Where(double.IsFinite).ToArray();
             if (finiteY.Length > 20)
@@ -371,7 +371,7 @@ public class LoadpullPowerSweepTests
         Assert.Equal(3, sfc.Frequencies.Count);
 
         var ps = sfc.GetPowerSweep(
-            1, new Complex(0.2, 0.1), "PavlDbm", "Pout",
+            1, new Complex(0.2, 0.1), "PavlDbm", "Pout_dBm",
             compressionVal: 3.0, SurfacePlane.Gamma);
 
         Assert.NotNull(ps);
@@ -390,8 +390,10 @@ public class LoadpullPowerSweepTests
         var sfc = new LoadpullSurface(ds);
 
         var query = new Complex(0.1, 0.0);
-        var ps0 = sfc.GetPowerSweep(0, query, "PavlDbm", "Pout", 3.0, SurfacePlane.Gamma);
-        var ps1 = sfc.GetPowerSweep(1, query, "PavlDbm", "Pout", 3.0, SurfacePlane.Gamma);
+        // Compare in Watts (Pout_W) — the logarithmic dBm scale compresses the per-freq difference
+        // below the relative threshold even though the underlying powers differ.
+        var ps0 = sfc.GetPowerSweep(0, query, "PavlDbm", "Pout_W", 3.0, SurfacePlane.Gamma);
+        var ps1 = sfc.GetPowerSweep(1, query, "PavlDbm", "Pout_W", 3.0, SurfacePlane.Gamma);
 
         Assert.NotNull(ps0);
         Assert.NotNull(ps1);
