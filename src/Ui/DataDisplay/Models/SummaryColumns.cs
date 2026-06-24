@@ -56,12 +56,12 @@ namespace CircuitRF.Ui.DataDisplay
         public static string MetricHeader(string metric) => metric switch
         {
             "Pout_dBm" or "Pout"            => "Power (dBm)",
-            "DE" or "Eff" or "Efficiency"   => "Efficiency (%)",
-            "Gt" or "Gain"                  => "Gain (dB)",
-            "Gp"                            => "Power Gain (dB)",
+            "Efficiency" or "DE" or "Eff"   => "Efficiency (%)",
+            "Gt_dB" or "Gt" or "Gain"       => "Gain (dB)",
+            "Gp_dB" or "Gp"                 => "Power Gain (dB)",
             "PAE"                           => "PAE (%)",
-            "AMPM"                          => "AM/PM (°)",
-            "IRL"                           => "IRL (dB)",
+            "AMPM_deg" or "AMPM"            => "AM/PM (°)",
+            "IRL_dB" or "IRL"               => "IRL (dB)",
             _                               => metric,
         };
 

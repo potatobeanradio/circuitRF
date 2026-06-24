@@ -179,18 +179,27 @@ namespace CircuitRF.Ui.DataDisplay
 
         private static string MetricDisplayName(string metric) => metric switch
         {
-            "Gain" or "Gt" or "Gp"       => "Gain",
-            "DE" or "PAE" or "Efficiency" => "Efficiency",
-            _                             => metric,
+            "Pout_dBm" or "Pout_W"                  => "Pout",
+            "Gp_dB" or "Gp"                         => "Gp",     // power gain — distinct from transducer gain
+            "Gain" or "Gt" or "Gt_dB"               => "Gain",
+            "DE" or "PAE" or "Efficiency"           => "Efficiency",
+            "AMPM_deg"                              => "AM/PM",
+            "IRL_dB"                                => "IRL",
+            "Zin_real"                              => "Zin (real)",
+            "Zin_imag"                              => "Zin (imag)",
+            _                                       => metric,
         };
 
         private static string MetricUnit(string metric) => metric switch
         {
-            "Pout"                        => "dBm",
-            "Gain" or "Gt" or "Gp"       => "dB",
-            "DE" or "PAE" or "Efficiency" => "%",
-            "AMPM"                        => "deg",
-            _                             => "",
+            "Pout_dBm" or "Pout"                    => "dBm",
+            "Pout_W" or "Pdc_W"                     => "W",
+            "Gain" or "Gt" or "Gp" or "Gt_dB" or "Gp_dB" => "dB",
+            "DE" or "PAE" or "Efficiency"           => "%",
+            "AMPM_deg"                              => "deg",
+            "IRL_dB"                                => "dB",
+            "Zin_real" or "Zin_imag"                => "Ω",
+            _                                       => "",
         };
 
         /// <summary>Public display unit for this contour's plotted metric (e.g. "dBm" for Pout,
@@ -272,14 +281,13 @@ namespace CircuitRF.Ui.DataDisplay
         /// Returns a generic 0:1:10 range for unrecognised metrics.</summary>
         public static (double Start, double Step, double Stop) LevelRange(string metric) => metric switch
         {
-            "Pout"  => (-30.0, 0.5,  60.0),
-            "DE"    => (  0.0, 5.0, 100.0),
-            "PAE"   => (  0.0, 5.0, 100.0),
-            "Gain"  => (-10.0, 0.5,  50.0),
-            "Gt"    => (-10.0, 0.5,  50.0),
-            "Gp"    => (-10.0, 0.5,  50.0),
-            "AMPM"  => (-200.0, 5.0, 200.0),
-            _       => (  0.0, 1.0,  10.0),
+            "Pout_dBm" or "Pout"          => (-30.0, 0.5,  60.0),
+            "Efficiency" or "DE"          => (  0.0, 5.0, 100.0),
+            "PAE"                         => (  0.0, 5.0, 100.0),
+            "Gain" or "Gt_dB" or "Gp_dB" or "Gt" or "Gp" => (-10.0, 0.5,  50.0),
+            "AMPM_deg" or "AMPM"          => (-200.0, 5.0, 200.0),
+            "IRL_dB"                      => (-60.0, 2.0,   0.0),
+            _                             => (  0.0, 1.0,  10.0),
         };
 
         /// <summary>ShowFill is OFF by default on Smith/Polar (Γ-plane), ON for Rect (Z-plane).</summary>

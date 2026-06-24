@@ -63,7 +63,7 @@ public sealed class LoadpullIngestUiTests
         await lib.LoadFileAsync(path);
 
         var ds = lib.Entries[0].Data!;
-        foreach (var name in new[] { "Pout", "Gt", "GammaLoad", "PavlDbm" })
+        foreach (var name in new[] { "Pout_dBm", "Gt_dB", "GammaLoad", "PavlDbm" })
             Assert.True(ds.Contains(name), $"Missing cube: {name}");
     }
 
@@ -76,7 +76,7 @@ public sealed class LoadpullIngestUiTests
         await lib.LoadFileAsync(path);
 
         var ds = lib.Entries[0].Data!;
-        foreach (var name in new[] { "Pout", "GammaLoad", "PavlDbm" })
+        foreach (var name in new[] { "Pout_dBm", "GammaLoad", "PavlDbm" })
             Assert.True(ds.Contains(name), $"Missing cube: {name}");
     }
 

@@ -81,6 +81,30 @@ derived FOM** — the engine knows the topology; recording it is free and avoids
 `LoadpullPostProcessor.Enrich(DataSet ds, string group = "")` returns the same `DataSet` with these cubes
 added to `group` (presence-gated — never overwrites an existing key; no-op when an input is absent):
 
+### 3.0 Canonical field names (user-facing)
+
+Both the post-processor (simulated) and the `.spl`/`.lpcwave` readers (measured) emit ONE canonical,
+unit-suffixed name set so the display layer serves both interchangeably. There is **no bare `Pout`**
+(ambiguous W vs dBm). The post-processor renames the engine's raw cubes (drops the old names via
+`DataSet.RemoveFromGroup`):
+
+| Canonical | Unit | From engine raw |
+|---|---|---|
+| `Pout_dBm` | dBm | `Pout` (W) → 10·log10(W)+30 |
+| `Pout_W` | W | `Pout` (W) |
+| `Gt_dB`, `Gp_dB` | dB | `Gt`, `Gp` |
+| `Efficiency` | % | `DE` (fraction × 100) |
+| `PAE` | % | `PAE` (fraction × 100) |
+| `Pdc_W` | W | `Pdc` |
+| `AMPM_deg` | deg | derived (spectra) |
+| `IRL_dB` | dB | derived (spectra) |
+| `Zin_real`, `Zin_imag` | Ω | derived (spectra) |
+| `BiasVLoad`/`BiasVSrc` | V | unchanged |
+| `BiasILoad`/`BiasISrc` | A | unchanged name, sign-flipped → +Idq |
+
+The measured side maps file columns to these names in `LoadpullFomDialect.Map` (PassThrough scales — the
+stored value stays in the displayed unit) and derives `Pout_W` from `Pout_dBm` in `LoadpullDerivedFields`.
+
 ### 3.1 `Pout_dBm` — output power in dBm
 `Pout_dBm = 10·log10(Pout_W) + 30`, element-wise over `{gridPoint, pinStep}`. NaN where `Pout ≤ 0` or NaN.
 This is the headline contour metric most users expect (the `LoadpullSurface` Γ-plane contour of saturated
@@ -104,9 +128,10 @@ CLAUDE.md`), so `V/INl` at the source node is the impedance presented to the sou
 exactly `Zin`. (The pursuit engine's auto-Zsource uses the same quantity; `Zsource = conj(Zin)`.) Points
 with zero/NaN input current → NaN (dropped downstream, same as a measured NaN).
 
-### 3.3 `IRL` — input return loss (dB)
+### 3.3 `IRL_dB` — input return loss (dB)
 `LoadpullDerivedFields` priority: stored dB → stored linear → derive from |Γin|. For the simulated path only
-the last applies: `IRL = −20·log10(|Γin|)`.
+the last applies: `IRL_dB = +20·log10(|Γin|)`. **Sign convention (RF-engineer / S11-style): a good input
+match is NEGATIVE** (−200 dB ≈ perfect match, 0 dB = full reflection, > 0 = reflection gain / active).
 
 ### 3.4 `AMPM` — AM-to-PM conversion (deg)
 The drive-up change in the DUT's transmission phase, per grid point, unwrapped (the reader's definition):

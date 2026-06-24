@@ -1072,10 +1072,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
         AddCol(SummaryColumnKind.Zin,            "",          HasCube(ds, "Zin_real") && HasCube(ds, "Zin_imag"));
         AddCol(SummaryColumnKind.Zload,          "",          HasCube(ds, "ZLoad"));
         AddCol(SummaryColumnKind.Metric,         "Pout_dBm",  HasCube(ds, "Pout_dBm"));
-        AddCol(SummaryColumnKind.Metric,         "DE",        HasCube(ds, "DE"));
-        AddCol(SummaryColumnKind.Metric,         "Gt",        HasCube(ds, "Gt"));
-        AddCol(SummaryColumnKind.Metric,         "AMPM",      HasCube(ds, "AMPM"));
-        AddCol(SummaryColumnKind.Metric,         "IRL",       HasCube(ds, "IRL"));
+        AddCol(SummaryColumnKind.Metric,         "Efficiency",HasCube(ds, "Efficiency"));
+        AddCol(SummaryColumnKind.Metric,         "Gt_dB",     HasCube(ds, "Gt_dB"));
+        AddCol(SummaryColumnKind.Metric,         "AMPM_deg",  HasCube(ds, "AMPM_deg"));
+        AddCol(SummaryColumnKind.Metric,         "IRL_dB",    HasCube(ds, "IRL_dB"));
 
         RebuildSummary();
         RefreshAddCommand();

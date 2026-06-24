@@ -70,8 +70,8 @@ public class LoadpullContourGroupParityTests
         Assert.Equal(flatMxp.Interpolated.Imaginary, groupedMxp.Interpolated.Imaginary, precision: 9);
 
         // Parity 3: same resampled Pout grid maximum (W) — no W↔dBm double-conversion crept in.
-        var flatFit    = flatSfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma);
-        var groupedFit = groupedSfc.Fit(0, "Pout", constraint, SurfacePlane.Gamma);
+        var flatFit    = flatSfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma);
+        var groupedFit = groupedSfc.Fit(0, "Pout_dBm", constraint, SurfacePlane.Gamma);
         Assert.NotNull(flatFit);
         Assert.NotNull(groupedFit);
         var flatGrid    = flatSfc.Resample(flatFit!, resolution: 40);

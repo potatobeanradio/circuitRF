@@ -720,9 +720,9 @@ public sealed class ContourTraceCardTests
         inspector.AddContourTraceCommand.Execute(null);
 
         var metrics = inspector.Traces[0].AvailableMetrics;
-        int poutIdx = metrics.IndexOf("Pout");
+        int poutIdx = metrics.IndexOf("Pout_dBm");
         int paeIdx  = metrics.IndexOf("PAE");
-        int gpIdx   = metrics.IndexOf("Gp");
+        int gpIdx   = metrics.IndexOf("Gp_dB");
 
         // Pout (priority 1) before PAE (priority 6) before Gp (priority 7).
         if (poutIdx >= 0 && paeIdx >= 0) Assert.True(poutIdx < paeIdx, "Pout must precede PAE");
@@ -755,7 +755,7 @@ public sealed class ContourTraceCardTests
         Assert.False(metrics.Any(m => m.StartsWith("__", StringComparison.Ordinal)),
             "__-prefixed metadata cubes must be excluded");
         // Pout is a known varying metric and must appear.
-        Assert.Contains("Pout", metrics);
+        Assert.Contains("Pout_dBm", metrics);
     }
 
     // ── 7.4h-6 gate tests ─────────────────────────────────────────────────────

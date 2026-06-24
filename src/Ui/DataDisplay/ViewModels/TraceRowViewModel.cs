@@ -112,7 +112,7 @@ public partial class TraceRowViewModel : ViewModelBase
 
     private static string MetricAliasGroup(string? metric) => metric switch
     {
-        "Gain" or "Gt" or "Gp"        => "Gain",
+        "Gain" or "Gt" or "Gp" or "Gt_dB" or "Gp_dB" => "Gain",
         "DE" or "PAE" or "Efficiency"  => "Efficiency",
         _                              => metric ?? "",
     };
@@ -168,10 +168,12 @@ public partial class TraceRowViewModel : ViewModelBase
 
     private static string ConstraintMetricUnit(string? metric) => metric switch
     {
-        "Pout"                         => "dBm",
-        "Gain" or "Gt" or "Gp"        => "dB",
+        "Pout_dBm" or "Pout"           => "dBm",
+        "Pout_W" or "Pdc_W"            => "W",
+        "Gain" or "Gt" or "Gp" or "Gt_dB" or "Gp_dB" => "dB",
         "DE" or "PAE" or "Efficiency"  => "%",
-        "AMPM"                         => "deg",
+        "AMPM_deg"                     => "deg",
+        "IRL_dB"                       => "dB",
         _                              => "",
     };
 
@@ -491,10 +493,11 @@ public partial class TraceRowViewModel : ViewModelBase
         cd.GammaPlane = plane == SurfacePlane.Gamma;
 
         // Cache MXP / MXE for the renderer (surface stays out of renderer path).
-        cd.MxpCoord = surface.MaxPower(freqIdx, constraint, plane,
-            kernel: cd.InterpKernel, smooth: cd.Smoothing, epsilon: cd.Epsilon)?.Measured;
-        cd.MxeCoord = surface.MaxEfficiency(freqIdx, constraint, plane,
-            kernel: cd.InterpKernel, smooth: cd.Smoothing, epsilon: cd.Epsilon)?.Measured;
+        // MXP/MXE markers are the compression-based recommended terminations — independent of this
+        // contour's metric/constraint (so they stay put when plotting e.g. Efficiency at Constant Pout).
+        var (mxpR, mxeR) = surface.RecommendedMxx(fit);
+        cd.MxpCoord = mxpR?.Measured;
+        cd.MxeCoord = mxeR?.Measured;
 
         // Marker surface-evaluation hooks — capture locals so the closures are stable.
         var      evalSurface = surface;
@@ -604,8 +607,8 @@ public partial class TraceRowViewModel : ViewModelBase
     private static readonly HashSet<string> KnownFomCubes = new(StringComparer.Ordinal)
     {
         // Engine core FOMs + post-processor derived FOMs (loadpull-postprocessor.md) — always offered.
-        "Pout", "Gt", "Gp", "DE", "PAE",
-        "Pout_dBm", "Zin_real", "Zin_imag", "IRL", "AMPM",
+        "Pout_dBm", "Pout_W", "Gt_dB", "Gp_dB", "Efficiency", "PAE", "Pdc_W",
+        "Zin_real", "Zin_imag", "IRL_dB", "AMPM_deg",
     };
 
     private void RebuildMetricList()
@@ -652,6 +655,7 @@ public partial class TraceRowViewModel : ViewModelBase
         string norm = key.ToLowerInvariant().Trim();
         if      (norm.EndsWith("_dbm", StringComparison.Ordinal)) norm = norm[..^4];
         else if (norm.EndsWith("_db",  StringComparison.Ordinal)) norm = norm[..^3];
+        else if (norm.EndsWith("_deg", StringComparison.Ordinal)) norm = norm[..^4];
 
         // 1. Pout
         if (norm == "pout") return 1;
@@ -767,7 +771,7 @@ public partial class TraceRowViewModel : ViewModelBase
     private void RebuildSummaryMetricOptions()
     {
         SummaryMetricOptions.Clear();
-        foreach (var m in new[] { "Pout", "DE", "Gt", "AMPM", "IRL" })
+        foreach (var m in new[] { "Pout_dBm", "Efficiency", "Gt_dB", "Gp_dB", "PAE", "AMPM_deg", "IRL_dB", "Pdc_W" })
             if (AvailableMetrics.Contains(m)) SummaryMetricOptions.Add(m);
         SummaryMetricOptions.Add("Zload");
         // Zin is offered when the Zin_real cube EXISTS in the dataset — not gated on AvailableMetrics,
@@ -787,7 +791,13 @@ public partial class TraceRowViewModel : ViewModelBase
     private bool SummaryDataHasCube(string name)
     {
         var ds = _parent.Library?.SelectedEntry?.Data;
-        return ds is not null && ds.Contains(name);
+        if (ds is null) return false;
+        // Group-aware: a simulated LP run nests cubes under an analysis group (e.g. "LP1"); a flat
+        // .spl is top level. ds.Contains(bare) only resolves the default/measurements group.
+        if (ds.Contains(name)) return true;
+        foreach (var g in ds.Groups)
+            if (ds.CubesIn(g).ContainsKey(name)) return true;
+        return false;
     }
 
     private static string? SummaryMetricForColumn(SummaryColumnData? sc) => sc?.Kind switch
@@ -841,9 +851,10 @@ public partial class TraceRowViewModel : ViewModelBase
                     : sc.UnitLabel,                                  // magnitude-inferred (bug 5 option b)
                 SummaryColumnKind.Metric  => sc.MetricName switch
                 {
-                    "Pout"            => "dBm",
-                    "DE" or "PAE"     => "%",
-                    "AMPM"            => "°",
+                    "Pout_dBm"        => "dBm",
+                    "Pout_W" or "Pdc_W" => "W",
+                    "Efficiency" or "PAE" => "%",
+                    "AMPM_deg"        => "°",
                     _                 => "dB",
                 },
                 _ => "dB",
@@ -1713,7 +1724,24 @@ public partial class TraceRowViewModel : ViewModelBase
             _contourStrokeWidth       = cd.StrokeWidth;
             // Build surface and populate metric/frequency lists; trigger initial fit.
             if (EnsureLoadpullSurface())
+            {
+                // A brand-new contour (or one whose saved metric is absent — e.g. after a cube rename)
+                // defaults to the first available metric (priority order → Pout_dBm) so the +Contour
+                // button immediately renders something. AddContourTrace then autoscales (Rect).
+                if (string.IsNullOrEmpty(cd.MetricName) || !AvailableMetrics.Contains(cd.MetricName))
+                {
+                    string firstMetric = AvailableMetrics.FirstOrDefault() ?? "";
+                    if (firstMetric.Length > 0)
+                    {
+                        cd.MetricName      = firstMetric;
+                        _contourMetricName = firstMetric;
+                        var (s, step, stop) = ContourDefaults.LevelRange(firstMetric);
+                        cd.LevelStart = s; cd.LevelStep = step; cd.LevelStop = stop;
+                        _contourLevelStart = s; _contourLevelStep = step; _contourLevelStop = stop;
+                    }
+                }
                 RebuildContour();
+            }
         }
 
         // Build YAxis items once — plot type doesn't change within a VM lifetime

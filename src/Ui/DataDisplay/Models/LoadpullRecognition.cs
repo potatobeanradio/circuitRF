@@ -23,7 +23,7 @@ public static class LoadpullRecognition
     private const string PinStepAxis   = "pinStep";
 
     private static readonly string[] TerminationCubes = ["GammaLoad", "ZLoad"];
-    private static readonly string[] FomCubes         = ["Pout", "Gt", "Gp", "DE", "PAE"];
+    private static readonly string[] FomCubes         = ["Pout_dBm", "Gt_dB", "Gp_dB", "Efficiency", "PAE"];
 
     /// <summary>
     /// A loadpull-shaped view inside a source DataSet: the group holding the loadpull cubes.

@@ -36,7 +36,7 @@ public class LpcwaveReaderTests
         var path = Path.Combine(LpwaveDir(), "4x150_new_wavecal_24012020.lpcwave");
         var ds   = LpcwaveReader.ReadLpcwave(path);
 
-        var pout = ds["Pout"];
+        var pout = ds["Pout_dBm"];
         Assert.Equal("gridPoint", pout.Axis(0).Name);
         Assert.Equal("pinStep",   pout.Axis(1).Name);
         Assert.Equal(19, pout.Axis(0).Length); // 19 # grid-point lines
@@ -89,7 +89,7 @@ public class LpcwaveReaderTests
         double poutDbm = 3.05;
         double poutW   = Math.Pow(10.0, poutDbm / 10.0) / 1000.0;
 
-        var pout = ds["Pout"].RealValues;
+        var pout = ds["Pout_W"].RealValues;
         Near(poutW, pout[0], 5e-5, "Pout[0,0] W");
     }
 
@@ -101,7 +101,7 @@ public class LpcwaveReaderTests
         var ds   = LpcwaveReader.ReadLpcwave(path);
 
         var pae = ds["PAE"].RealValues;
-        Near(0.82 / 100.0, pae[0], 1e-4, "PAE[0,0]");
+        Near(0.82, pae[0], 1e-2, "PAE[0,0] %");
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public class LpcwaveReaderTests
         var ds   = LpcwaveReader.ReadLpcwave(path);
 
         // Basic file has no OutEffWaves[%] → DE absent; OPT file (below) tests DE.
-        foreach (var name in new[] { "Pout", "Gt", "Gp", "PAE", "PavlDbm",
+        foreach (var name in new[] { "Pout_dBm", "Pout_W", "Gt_dB", "Gp_dB", "PAE", "PavlDbm",
                                      "BiasVLoad", "BiasILoad", "GammaLoad", "ZLoad" })
             Assert.True(ds.Contains(name), $"Missing cube: {name}");
     }
@@ -136,7 +136,7 @@ public class LpcwaveReaderTests
         var path = Path.Combine(LpwaveDir(), "compression-LP-OPT-pattern.lpcwave");
         var ds   = LpcwaveReader.ReadLpcwave(path);
 
-        var pout = ds["Pout"];
+        var pout = ds["Pout_dBm"];
         Assert.Equal(27, pout.Axis(0).Length); // 27 grid points
         Assert.Equal(34, pout.Axis(1).Length); // 34 drive steps
     }
@@ -185,7 +185,7 @@ public class LpcwaveReaderTests
         var ds   = LpcwaveReader.ReadLpcwave(path);
 
         var pae = ds["PAE"].RealValues;
-        Near(0.08 / 100.0, pae[0], 1e-5, "PAE[0,0]");
+        Near(0.08, pae[0], 1e-3, "PAE[0,0] %");
     }
 
     // ── Harmonic-nesting files — parse-without-error + grid count ────────────
@@ -242,8 +242,8 @@ public class LpcwaveReaderTests
         var ds = LpcwaveReader.ReadLpcwave(reader);
 
         // Should have 2 grid points, 2 pin steps
-        Assert.Equal(2, ds["Pout"].Axis(0).Length);
-        Assert.Equal(2, ds["Pout"].Axis(1).Length);
+        Assert.Equal(2, ds["Pout_dBm"].Axis(0).Length);
+        Assert.Equal(2, ds["Pout_dBm"].Axis(1).Length);
 
         // Second grid point: Γ = 0.200 ∠ 90°
         var gl = ds["GammaLoad"].ComplexValues;

@@ -259,6 +259,23 @@ public sealed class ContourPlotRendererTests
         Assert.Equal("P-3dB Gain (dB)", cd.TitleString());
     }
 
+    [Fact]
+    public void ContourData_TitleString_PowerGain_ShowsGpDb()
+    {
+        // Gp_dB (power gain) is distinct from transducer gain — its title reads "Gp", not "Gain".
+        var cd = new ContourData
+        {
+            MetricName            = "Gp_dB",
+            ContourConstraintKind = ConstraintKind.Compression,
+            ConstraintValue       = 3.0,
+        };
+        Assert.Equal("P-3dB Gp (dB)", cd.TitleString());
+
+        // Transducer gain still reads "Gain".
+        var gt = new ContourData { MetricName = "Gt_dB", ContourConstraintKind = ConstraintKind.Compression, ConstraintValue = 3.0 };
+        Assert.Equal("P-3dB Gain (dB)", gt.TitleString());
+    }
+
     // ── T17 ───────────────────────────────────────────────────────────────────
     [Fact]
     public void ContourData_TitleString_PAEAtConstantPout_ShowsEfficiencyForm()

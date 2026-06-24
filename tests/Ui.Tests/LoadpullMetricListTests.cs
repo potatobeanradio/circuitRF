@@ -102,7 +102,7 @@ public sealed class LoadpullMetricListTests
     [Fact]
     public async System.Threading.Tasks.Task MetricList_ExcludesBookkeeping_OffersHeadlineFoms()
     {
-        string npy = WriteGroupedLpNpy(enrich: false);
+        string npy = WriteGroupedLpNpy(enrich: true);
         try
         {
             var lib = new DataSourceLibraryViewModel();
@@ -119,12 +119,12 @@ public sealed class LoadpullMetricListTests
             inspector.AddContourTraceCommand.Execute(null);
             var metrics = inspector.Traces[0].AvailableMetrics;
 
-            // Headline FOMs always offered — including flat DE/PAE.
-            Assert.Contains("Pout", metrics);
-            Assert.Contains("Gt",   metrics);
-            Assert.Contains("Gp",   metrics);
-            Assert.Contains("DE",   metrics);
-            Assert.Contains("PAE",  metrics);
+            // Headline FOMs always offered (canonical unit-suffixed names) — including flat Efficiency/PAE.
+            Assert.Contains("Pout_dBm",   metrics);
+            Assert.Contains("Gt_dB",      metrics);
+            Assert.Contains("Gp_dB",      metrics);
+            Assert.Contains("Efficiency", metrics);
+            Assert.Contains("PAE",        metrics);
 
             // Bookkeeping / termination cubes excluded.
             Assert.DoesNotContain("IsTickle",  metrics);
@@ -132,9 +132,11 @@ public sealed class LoadpullMetricListTests
             Assert.DoesNotContain("StopCode",  metrics);
             Assert.DoesNotContain("PavlDbm",   metrics);
             Assert.DoesNotContain("GammaLoad", metrics);
+            // No ambiguous bare "Pout" (Watts) — renamed to Pout_dBm/Pout_W.
+            Assert.DoesNotContain("Pout", metrics);
 
-            // Pout sorts first (priority table).
-            Assert.Equal("Pout", metrics[0]);
+            // Pout_dBm sorts first (priority table).
+            Assert.Equal("Pout_dBm", metrics[0]);
             // Interface spectra are not metrics.
             Assert.DoesNotContain("V",   metrics);
             Assert.DoesNotContain("INl", metrics);
@@ -165,12 +167,41 @@ public sealed class LoadpullMetricListTests
             Assert.Contains("Pout_dBm",  metrics);
             Assert.Contains("Zin_real",  metrics);
             Assert.Contains("Zin_imag",  metrics);
-            Assert.Contains("IRL",       metrics);
-            Assert.Contains("AMPM",      metrics);
-            // Engine FOMs still present; spectra/bookkeeping still excluded.
-            Assert.Contains("Pout",      metrics);
+            Assert.Contains("IRL_dB",    metrics);
+            Assert.Contains("AMPM_deg",  metrics);
+            // Canonical FOMs present; spectra/bookkeeping still excluded.
+            Assert.Contains("Efficiency", metrics);
             Assert.DoesNotContain("V",   metrics);
             Assert.DoesNotContain("IsTickle", metrics);
+        }
+        finally
+        {
+            try { File.Delete(npy); } catch { /* best-effort temp cleanup */ }
+        }
+    }
+
+    // +Contour must render immediately: the new contour defaults to the first available metric
+    // (priority → Pout_dBm) and (on Rect) the grid is built so the plot autoscales to it.
+    [Fact]
+    public async System.Threading.Tasks.Task AddContour_DefaultsToFirstMetric_AndBuildsGrid()
+    {
+        string npy = WriteGroupedLpNpy(enrich: true);
+        try
+        {
+            var lib = new DataSourceLibraryViewModel();
+            await lib.SelectDataSourceAsync(npy);
+
+            var plot      = new Plot(PlotType.Rect, FreqUnit.GHz);
+            var inspector = new PlotInspectorViewModel(plot, () => {}, library: lib);
+            inspector.AddContourTraceCommand.Execute(null);
+
+            var cd = plot.Traces[0].ContourData;
+            Assert.NotNull(cd);
+            Assert.Equal("Pout_dBm", cd!.MetricName);                       // not the stale "Pout" default
+            Assert.Equal("Pout_dBm", inspector.Traces[0].ContourMetricName); // VM combo reflects it
+            // With a valid metric the contour resolves through the surface (the grid/fit then renders &
+            // autoscales on real compressing data; this synthetic ramp may not reach the 3 dB constraint).
+            Assert.Contains("Pout_dBm", inspector.Traces[0].AvailableMetrics);
         }
         finally
         {

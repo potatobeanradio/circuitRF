@@ -35,8 +35,8 @@ public class LoadpullRecognitionTests
         }
         Add("GammaLoad", Termination("GammaLoad", 4));
         Add("ZLoad",     Termination("ZLoad", 4));
-        Add("Pout",      Fom(4, 3));
-        Add("Gt",        Fom(4, 3));
+        Add("Pout_dBm",      Fom(4, 3));
+        Add("Gt_dB",        Fom(4, 3));
     }
 
     // ── Flat (.spl-style) ─────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ public class LoadpullRecognitionTests
     {
         var ds = new DataSet();
         ds.Add("ZLoad", Termination("ZLoad", 4));   // no GammaLoad
-        ds.Add("Pout",  Fom(4, 3));
+        ds.Add("Pout_dBm",  Fom(4, 3));
 
         Assert.True(LoadpullRecognition.IsLoadpull(ds));
     }
@@ -126,7 +126,7 @@ public class LoadpullRecognitionTests
     public void FomWithoutTermination_NotLoadpull()
     {
         var ds = new DataSet();
-        ds.Add("Pout", Fom(4, 3));   // FOM but no GammaLoad/ZLoad
+        ds.Add("Pout_dBm", Fom(4, 3));   // FOM but no GammaLoad/ZLoad
 
         Assert.False(LoadpullRecognition.IsLoadpull(ds));
     }
@@ -137,7 +137,7 @@ public class LoadpullRecognitionTests
         var ds = new DataSet();
         // GammaLoad over a non-gridPoint axis → not a loadpull termination.
         ds.Add("GammaLoad", new DataCube(new[] { Named("freq", 4) }, new Complex[4]));
-        ds.Add("Pout",      Fom(4, 3));
+        ds.Add("Pout_dBm",      Fom(4, 3));
 
         Assert.False(LoadpullRecognition.IsLoadpull(ds));
     }

@@ -36,7 +36,7 @@ public class SplReaderTests
         var path = Path.Combine(SplDataDir(), "Ideal_GaN_FET_1p6_mm_1p8_GHz.spl");
         var ds   = SplReader.ReadSpl(path);
 
-        var pout = ds["Pout"];
+        var pout = ds["Pout_dBm"];
         Assert.Equal("gridPoint", pout.Axis(0).Name);
         Assert.Equal("pinStep",   pout.Axis(1).Name);
         Assert.Equal(145, pout.Axis(0).Length);
@@ -79,7 +79,7 @@ public class SplReaderTests
         double poutDbm = -7.569553; // from file row 1
         double poutW   = Math.Pow(10.0, poutDbm / 10.0) / 1000.0;
 
-        var pout = ds["Pout"].RealValues;
+        var pout = ds["Pout_W"].RealValues;
         Near(poutW, pout[0], 1e-7, "Pout[0,0] W");
     }
 
@@ -90,8 +90,8 @@ public class SplReaderTests
         var path = Path.Combine(SplDataDir(), "Ideal_GaN_FET_1p6_mm_1p8_GHz.spl");
         var ds   = SplReader.ReadSpl(path);
 
-        var de = ds["DE"].RealValues;
-        Near(0.004638 / 100.0, de[0], 1e-8, "DE[0,0]");
+        var de = ds["Efficiency"].RealValues;
+        Near(0.004638, de[0], 1e-6, "Efficiency[0,0] %");
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public class SplReaderTests
         var path = Path.Combine(SplDataDir(), "Ideal_GaN_FET_1p6_mm_1p8_GHz.spl");
         var ds   = SplReader.ReadSpl(path);
 
-        foreach (var name in new[] { "Pout", "Gt", "Gp", "DE", "PAE", "PavlDbm",
+        foreach (var name in new[] { "Pout_dBm", "Pout_W", "Gt_dB", "Gp_dB", "Efficiency", "PAE", "PavlDbm",
                                      "GammaLoad", "ZLoad" })
             Assert.True(ds.Contains(name), $"Missing cube: {name}");
     }
@@ -123,7 +123,7 @@ public class SplReaderTests
         var path = Path.Combine(SplDataDir(), "Ideal_GaN_FET_1p6_mm_1p8_GHz.spl");
         var ds   = SplReader.ReadSpl(path);
 
-        var gt = ds["Gt"].RealValues;
+        var gt = ds["Gt_dB"].RealValues;
         Assert.True(gt[0] > 5.0, $"Gt[0,0] = {gt[0]} dB — expected > 5 dB");
     }
 
@@ -135,7 +135,7 @@ public class SplReaderTests
         var path = Path.Combine(SplDataDir(), "GaN_FET_1p6_mm_3_Freq.spl");
         var ds   = SplReader.ReadSpl(path);
 
-        var pout = ds["Pout"];
+        var pout = ds["Pout_dBm"];
         Assert.Equal(3, pout.Rank);
         Assert.Equal("freq",      pout.Axis(0).Name);
         Assert.Equal("gridPoint", pout.Axis(1).Name);
@@ -148,7 +148,7 @@ public class SplReaderTests
         var path = Path.Combine(SplDataDir(), "GaN_FET_1p6_mm_3_Freq.spl");
         var ds   = SplReader.ReadSpl(path);
 
-        var pout = ds["Pout"];
+        var pout = ds["Pout_dBm"];
         Assert.Equal(3,   pout.Axis(0).Length);
         Assert.Equal(145, pout.Axis(1).Length);
         Assert.Equal(70,  pout.Axis(2).Length);
@@ -162,7 +162,7 @@ public class SplReaderTests
         var path = Path.Combine(SplDataDir(), "ConvertedFile.spl");
         var ds   = SplReader.ReadSpl(path);
 
-        var pout = ds["Pout"];
+        var pout = ds["Pout_dBm"];
         Assert.Equal("gridPoint", pout.Axis(0).Name);
         Assert.Equal("pinStep",   pout.Axis(1).Name);
         // 38 grid points × 13 pin steps (from header "2.4 38 13")
@@ -192,7 +192,7 @@ public class SplReaderTests
         double poutDbm = 16.72; // from file
         double poutW   = Math.Pow(10.0, poutDbm / 10.0) / 1000.0;
 
-        var pout = ds["Pout"].RealValues;
+        var pout = ds["Pout_W"].RealValues;
         Near(poutW, pout[0], 0.002, "Pout[0,0] W");
     }
 
@@ -202,7 +202,7 @@ public class SplReaderTests
         var path = Path.Combine(SplDataDir(), "ConvertedFile.spl");
         var ds   = SplReader.ReadSpl(path);
 
-        foreach (var name in new[] { "Pout", "Gt", "Gp", "DE", "PAE", "GammaLoad", "ZLoad" })
+        foreach (var name in new[] { "Pout_dBm", "Gt_dB", "Gp_dB", "Efficiency", "PAE", "GammaLoad", "ZLoad" })
             Assert.True(ds.Contains(name), $"Missing cube: {name}");
     }
 
