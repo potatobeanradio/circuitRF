@@ -75,6 +75,23 @@ namespace RfCore.Loadpull
             ["Iq_in_mA"]          = new("BiasISrc",  FomScale.MaToA),
             ["I1[mA]"]            = new("BiasISrc",  FomScale.MaToA),
             ["I1[uA]"]            = new("BiasISrc",  FomScale.UaToA),
+
+            // ── Canonical self-mapping entries ─────────────────────────────────
+            // circuitRF's SplWriter/LpcwaveWriter emit the simulation's own canonical cube names as
+            // column headers (the user-approved choice — see docs/design/loadpull-postprocessor.md §6),
+            // so a written file round-trips back through these readers. Values are stored in the same
+            // unit they are displayed in, so every entry is PassThrough. These never collide with the
+            // vendor names above (a measured file carries Eff_%/Iq_out_mA, not Efficiency/BiasILoad).
+            ["Efficiency"]        = new("Efficiency", FomScale.PassThrough),
+            ["Pdc_W"]             = new("Pdc_W",      FomScale.PassThrough),
+            ["BiasVLoad"]         = new("BiasVLoad",  FomScale.PassThrough),
+            ["BiasILoad"]         = new("BiasILoad",  FomScale.PassThrough),  // stored in A (canonical)
+            ["BiasVSrc"]          = new("BiasVSrc",   FomScale.PassThrough),
+            ["BiasISrc"]          = new("BiasISrc",   FomScale.PassThrough),  // stored in A (canonical)
+            ["Zin_real"]          = new("Zin_real",   FomScale.PassThrough),
+            ["Zin_imag"]          = new("Zin_imag",   FomScale.PassThrough),
+            ["IRL_dB"]            = new("IRL_dB",      FomScale.PassThrough),
+            ["AMPM_deg"]          = new("AMPM_deg",   FomScale.PassThrough),
         };
 
         public static double Apply(double v, FomScale scale) => scale switch
