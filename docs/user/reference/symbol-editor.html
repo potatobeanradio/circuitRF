@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Symbol Editor</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Symbol Editor</p>
+
+  <h1>Symbol Editor</h1>
+  <p class="lede">The Symbol Editor draws the glyph a cell shows on a schematic — its body art plus the pins
+  that connect it. It is a focused drawing tool, not a cell editor: it never changes a cell's port count or
+  parameters, only how the cell looks.</p>
+
+  <nav class="toc">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#what">What it edits</a></li>
+      <li><a href="#primitives">Drawing primitives</a></li>
+      <li><a href="#pins">Pins &amp; ports</a></li>
+      <li><a href="#grids">Two grids: pins vs. art</a></li>
+      <li><a href="#orientation">Orientation convention</a></li>
+      <li><a href="#tools">Tools &amp; editing</a></li>
+      <li><a href="#locked">Locked symbols</a></li>
+      <li><a href="#autogen">Auto-generated symbols</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="what">What it edits</h2>
+  <p>A symbol (<code>.csym</code>) is a <strong>dumb glyph</strong>: a list of drawing primitives plus a set of
+  pins, each mapped to one of the cell's ports. It owns geometry only — the <em>cell</em> owns the port count,
+  parameters, and identity, and decides which of its (possibly several) symbols is primary. A schematic instance
+  draws the cell's primary symbol; editing the symbol updates every instance of that cell, live.</p>
+  <p>Open it from <em>View → Open Symbol Editor</em> (docked or as a tear-off window), or by opening a
+  <code>.csym</code> file. New scratch symbols can be created without a workspace.</p>
+
+  <h2 id="primitives">Drawing primitives</h2>
+  <p>A symbol is built from typed primitives in component-local coordinates (100 units = one connection-grid
+  square):</p>
+  <table>
+    <thead><tr><th>Primitive</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td>Line, Polyline / Path</td><td>leads, zigzags, general open shapes (free-angle, not Manhattan-routed)</td></tr>
+      <tr><td>Rect, Rounded Rect</td><td>device boxes, terminating-impedance frames</td></tr>
+      <tr><td>Circle / Ellipse</td><td>source bodies, dots</td></tr>
+      <tr><td>Arc</td><td>inductor coils</td></tr>
+      <tr><td>Triangle / Polygon</td><td>ground symbol, arrowheads (stroked or filled)</td></tr>
+      <tr><td>Quad / Cubic curve</td><td>the capacitor's curved plate</td></tr>
+      <tr><td>Sine, Half-wave</td><td>parameterized smart-paths (amplitude, cycles) for AC/tone-source art</td></tr>
+      <tr><td>Text</td><td>labels — string, anchor, font size, style (regular / bold / italic / condensed)</td></tr>
+      <tr><td>Bitmap</td><td>a reference image to trace over (lowest Z, editable opacity, lockable; not grid-snapped)</td></tr>
+    </tbody>
+  </table>
+  <p>Each drawable primitive carries a <strong>stroke width</strong>, a <strong>fill flag</strong>, and a
+  <strong>color role</strong> — never a literal RGB. Symbols draw in theme roles (<em>symbol-line</em>,
+  <em>symbol-text</em>), so they stay correct in light and dark mode automatically. There is no color picker;
+  stroke width and font size/style are editable, color is not.</p>
+
+  <h2 id="pins">Pins &amp; ports</h2>
+  <p>A <strong>pin</strong> is a placed marker mapped to one of the cell's ports. The editor shows the cell's
+  ports as the set you can map; you place a pin and assign it a port.</p>
+  <div class="callout note">
+    <span class="label">An unmapped port is legal — it's an open circuit</span>
+    <p>If a port has no pin, the symbol still works: that port is treated as an open circuit. A half-authored
+    symbol is always safe, and a soft panel flags any unmapped port without blocking editing.</p>
+  </div>
+  <p>A pin's <em>position</em> is body geometry; its <em>identity</em> is the port mapping. The lead you draw from
+  the body to the pin is ordinary art, but the pin tip itself always lands on the connection grid.</p>
+  <div class="callout warn">
+    <span class="label">Moving a pin can disconnect wires (for now)</span>
+    <p>In this release, connectivity is positional, so moving a pin relocates it on every instance and wires at
+    the old location become unconnected — the editor warns before applying such a move. circuitRF is committed
+    to migrating to logical pin binding (where wires follow a moved pin, as in other schematic editors); the
+    position-vs-identity split above is designed to make that a clean addition.</p>
+  </div>
+
+  <h2 id="grids">Two grids: pins vs. art</h2>
+  <p>This is the <a href="grid.html">two-grid rule</a> applied to symbols: <strong>pins snap to the connection
+  grid <code>P</code> (100 units)</strong> so placed instances always connect, while <strong>body art snaps to
+  the fine authoring grid <code>p</code> (5 units)</strong> for drawing freedom. Bitmaps are exempt from both —
+  placed and resized freely as tracing aids. You can toggle the art-grid snap; the pin grid is always
+  enforced.</p>
+
+  <h2 id="orientation">Orientation convention</h2>
+  <p>The standard library follows the conventional EDA look:</p>
+  <ul>
+    <li><strong>2-terminal parts are vertical</strong> — Resistor, Inductor, Capacitor, sources, Term, Ground:
+      port 1 at top <code>(0,-200)</code>, port 2 at bottom <code>(0,+200)</code>. Place them rotated 90° in a
+      horizontal signal path (the normal workflow).</li>
+    <li><strong>Multi-terminal boxes/devices are horizontal</strong> — FET, ZPort, SDD, and the auto-generated
+      box use left/right ports.</li>
+  </ul>
+
+  <h2 id="tools">Tools &amp; editing</h2>
+  <p>The editor has its own toolbar: a Select tool, the fourteen drawing tools, the Pin tool, and property
+  controls (stroke width, font size, font style; opacity/lock for a selected bitmap). Gestures:</p>
+  <ul>
+    <li><strong>Two-point drag</strong> — Line, Rect, Rounded Rect, Circle, Ellipse, Arc, Sine, Half-wave.</li>
+    <li><strong>Multi-point click</strong> — Polyline, Polygon, Triangle, Quad/Cubic curve (Enter or double-click
+      to commit).</li>
+    <li><strong>Text</strong> — click an anchor, type, Enter to commit.</li>
+    <li><strong>Esc</strong> — cancels the gesture in progress, or clears the selection when idle.</li>
+  </ul>
+  <p>Everything is undoable on the symbol's own undo stack, with full select / move / delete / rotate, an
+  inspector for the selected primitive's coordinates and text, a resize gripper, and copy/paste (including
+  between symbols). Any schematic showing the cell re-renders live as you edit.</p>
+
+  <h2 id="locked">Locked symbols</h2>
+  <p>The standard-library symbols (R, L, C, V, Tone, Term, GND, Port, FET, ZPort, SDD) and the annotation symbols
+  (VAR, MEAS, the analysis directive) are <strong>defined but not user-editable</strong>. You can place them but
+  not edit them; the editor opens a locked symbol read-only. This is a cell-level flag, so the cell — not the
+  symbol file — owns it.</p>
+
+  <h2 id="autogen">Auto-generated symbols</h2>
+  <p>For a cell with no symbol yet, circuitRF can generate one on command (never automatically): an outer
+  rectangle with a thinner inset, odd-numbered ports down the left edge and even down the right, each with a
+  short lead and a port-number label inside the box; the box grows in height with the port count. Pin tips land
+  on the connection grid by construction. A <strong>3-port</strong> symbol is special-cased to the conventional
+  device look — port 1 on the left at center, ports 2 and 3 on the right (matching the FET). The result is an
+  ordinary editable symbol you then refine; re-running generation is an explicit command that regenerates from
+  scratch (discarding manual edits, with a warning).</p>
+
+  <hr>
+  <p class="small">See also: <a href="dynamic-symbols.html">Dynamic symbols</a> (how SDD/ZPort pins grow) ·
+  <a href="grid.html">Grid &amp; Connectivity</a> · <a href="file-formats.html">File formats</a>
+  (<code>.csym</code>). Full design: <code>docs/design/symbol-editor.md</code>.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="index.html">Reference home</a>
+</footer>
+
+</body>
+</html>

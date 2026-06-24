@@ -4350,6 +4350,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ---- Test messages command (Help → Post Test Messages) ------------------
 
+    /// <summary>Open the bundled User Documentation in the default browser (Help menu).</summary>
+    [RelayCommand]
+    private void OpenDocumentation() => DocLauncher.Open();
+
     [RelayCommand]
     private void PostTestMessages()
     {

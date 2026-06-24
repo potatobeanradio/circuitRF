@@ -96,6 +96,14 @@
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
+
+            <NativeMenuItem Header="Help">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="circuitRF Documentation" Command="{Binding OpenDocumentationCommand}"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
         </NativeMenu>
     </NativeMenu.Menu>
 
@@ -328,6 +336,11 @@
             </MenuItem>
 
             <MenuItem Header="_Help" Padding="8,4">
+                <MenuItem Header="circuitRF _Documentation"
+                          Command="{Binding OpenDocumentationCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="BookOpenVariant" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
                 <MenuItem Header="About circuitRF…"
                           Click="OnAboutMenuItemClick">
                     <MenuItem.Icon><mi:MaterialIcon Kind="InformationOutline" Width="16" Height="16"/></MenuItem.Icon>

@@ -1,0 +1,284 @@
+/* ============================================================================
+   circuitRF — User Documentation stylesheet
+   ----------------------------------------------------------------------------
+   ONE stylesheet drives all three guides (Quick Start, New User's Guide,
+   Reference Guide). Every page links it with a RELATIVE path, e.g.:
+
+       <link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+
+   so the docs work both online and offline (open the .html straight from disk).
+
+   ----------------------------------------------------------------------------
+   HOW TO CHANGE THE LOOK  (read this first)
+   ----------------------------------------------------------------------------
+   Almost everything is a CSS variable in the :root and the dark-mode block
+   below. To re-theme the docs you should only need to touch THOSE TWO BLOCKS:
+
+     • Brand colors ....... --crf-cyan / --crf-coral / --crf-ink  (the brand kit)
+     • Page colors ........ --bg, --surface, --text, --muted, --border, --link
+     • Type & rhythm ...... --font-sans, --font-mono, --maxw, --radius, --gap
+
+   Light vs. dark is automatic: the dark palette lives in the
+   `@media (prefers-color-scheme: dark)` block and simply re-points the SAME
+   variable names. Add a new color = add ONE variable in BOTH blocks.
+
+   Section map (search these banners to jump around):
+     [VARS]      theme variables (light)        [VARS-DARK] dark overrides
+     [BASE]      page / typography               [CHROME]   header + footer
+     [NAV]       breadcrumb + table of contents  [CONTENT]  prose elements
+     [TABLE]     parameter / data tables         [CALLOUT]  note/tip/warning
+     [SYMBOL]    component symbol figures         [SHOT]     screenshot frames
+     [CODE]      code + netlist blocks           [UTIL]     helpers / print
+   ============================================================================ */
+
+/* ---------------------------------------------------------------- [VARS] --- */
+:root {
+  /* Brand kit (src/Ui/Assets/artwork/colors.css) — keep in sync with the app */
+  --crf-ink:    #0F2233;
+  --crf-cyan:   #22D3EE;
+  --crf-coral:  #FF6A3D;
+
+  /* Page palette (LIGHT) */
+  --bg:         #FFFFFF;   /* page background                       */
+  --surface:    #F6F8FA;   /* cards, code, table header background  */
+  --surface-2:  #EEF2F5;   /* zebra rows, subtle fills             */
+  --text:       #1A2632;   /* body text                            */
+  --muted:      #5C6B7A;   /* captions, secondary text             */
+  --border:     #DCE3EA;   /* hairlines, table borders             */
+  --link:       #0E7C99;   /* links (cyan, darkened for contrast)  */
+  --link-hover: #0A5E74;
+  --accent:     var(--crf-coral);   /* the coral dot / active accent */
+
+  /* Callout tints (LIGHT) */
+  --note-bg:    #EAF6FA;  --note-bar:  var(--crf-cyan);
+  --tip-bg:     #ECF7EE;  --tip-bar:   #34A853;
+  --warn-bg:    #FFF3EC;  --warn-bar:  var(--crf-coral);
+
+  /* Type & rhythm — change these to restyle spacing/width globally */
+  --font-sans: "IBM Plex Sans", "Inter", -apple-system, BlinkMacSystemFont,
+               "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
+  --maxw:      52rem;     /* reading column width                   */
+  --radius:    10px;      /* card / figure corner radius            */
+  --gap:       1.25rem;   /* default vertical rhythm                */
+}
+
+/* ----------------------------------------------------------- [VARS-DARK] --- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:         #0E1820;
+    --surface:    #15222D;
+    --surface-2:  #1C2C39;
+    --text:       #E6EDF3;
+    --muted:      #9DB0C0;
+    --border:     #283A48;
+    --link:       #56D7EE;   /* brighter cyan for dark bg */
+    --link-hover: #8BE6F5;
+    --accent:     var(--crf-coral);
+
+    --note-bg:    #102832;  --note-bar:  var(--crf-cyan);
+    --tip-bg:     #14271A;  --tip-bar:   #4CC366;
+    --warn-bg:    #2A1B12;  --warn-bar:  var(--crf-coral);
+  }
+}
+
+/* ---------------------------------------------------------------- [BASE] --- */
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 1rem; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.page {                      /* the centered reading column */
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 1.25rem 4rem;
+}
+
+h1, h2, h3, h4 { line-height: 1.25; font-weight: 600; scroll-margin-top: 1rem; }
+h1 { font-size: 2.0rem;  margin: 1.6rem 0 0.4rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; margin: 2.4rem 0 0.6rem; padding-top: 0.4rem;
+     border-top: 1px solid var(--border); }
+h3 { font-size: 1.15rem; margin: 1.6rem 0 0.4rem; }
+h4 { font-size: 1.0rem;  margin: 1.2rem 0 0.3rem; color: var(--muted); }
+p, li { font-size: 1rem; }
+.lede { font-size: 1.12rem; color: var(--muted); margin-top: 0.2rem; }
+
+a       { color: var(--link); text-decoration: none; }
+a:hover { color: var(--link-hover); text-decoration: underline; }
+
+strong { font-weight: 600; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+/* ------------------------------------------------------------- [CHROME] --- */
+.doc-header {
+  display: flex; align-items: center; gap: 0.8rem;
+  max-width: var(--maxw); margin: 0 auto; padding: 1.1rem 1.25rem 0.9rem;
+}
+/* Brand lock-up: the favicon mark (a rounded ink tile that reads on light AND dark, so no
+   per-mode swap needed) + a text wordmark. Change the mark by swapping the <img src>. */
+.doc-header .brand { display: inline-flex; align-items: center; gap: 0.55rem;
+  text-decoration: none; color: inherit; }
+.doc-header .logo { height: 32px; width: 32px; display: inline-block; }
+.doc-header .wordmark { font-weight: 600; font-size: 1.2rem; letter-spacing: -0.01em; color: var(--text); }
+.doc-header a.brand:hover .wordmark { color: var(--link); }
+.doc-header .doc-kind {
+  margin-left: auto; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 0.2rem 0.7rem;
+}
+.doc-headrule {                /* thin brand gradient rule under the header */
+  height: 3px; border: 0; margin: 0;
+  background: linear-gradient(90deg, var(--crf-cyan), var(--crf-coral));
+  opacity: 0.9;
+}
+
+.doc-footer {
+  max-width: var(--maxw); margin: 3rem auto 1.5rem; padding: 1.2rem 1.25rem 0;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0.7rem;
+  font-size: 0.85rem; color: var(--muted);
+}
+.doc-footer img { height: 22px; width: 22px; }
+.doc-footer .spacer { margin-left: auto; }
+
+/* ---------------------------------------------------------------- [NAV] --- */
+.breadcrumb { font-size: 0.85rem; color: var(--muted); margin: 0.4rem 0 0; }
+.breadcrumb a { color: var(--muted); }
+.breadcrumb a:hover { color: var(--link); }
+
+nav.toc {                      /* on-page table of contents card */
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 0.9rem 1.1rem; margin: 1.4rem 0;
+}
+nav.toc h2 { border: 0; margin: 0 0 0.4rem; padding: 0; font-size: 0.8rem;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+nav.toc ol { margin: 0; padding-left: 1.2rem; }
+nav.toc li { margin: 0.15rem 0; }
+
+/* Card grid for the landing page */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--gap); margin: 1.6rem 0; }
+.card {
+  display: block; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.1rem 1.2rem; color: inherit;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.card:hover { border-color: var(--crf-cyan); text-decoration: none; transform: translateY(-2px); }
+.card h3 { margin: 0 0 0.3rem; }
+.card p  { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+/* ------------------------------------------------------------ [CONTENT] --- */
+ul, ol { padding-left: 1.4rem; }
+li { margin: 0.25rem 0; }
+kbd {
+  font-family: var(--font-mono); font-size: 0.82em;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-bottom-width: 2px; border-radius: 5px; padding: 0.05em 0.4em;
+}
+.term { font-weight: 600; color: var(--text); }          /* a defined term */
+abbr { text-decoration: none; border-bottom: 1px dotted var(--muted); cursor: help; }
+
+/* ---------------------------------------------------------------- [TABLE] -- */
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95rem; }
+caption { caption-side: bottom; color: var(--muted); font-size: 0.85rem; padding-top: 0.4rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.5rem 0.7rem; border: 1px solid var(--border); }
+thead th { background: var(--surface); font-weight: 600; }
+tbody tr:nth-child(even) { background: var(--surface-2); }
+td code, th code { font-size: 0.88em; }
+.param-table td:first-child { font-family: var(--font-mono); white-space: nowrap; font-weight: 600; }
+
+/* -------------------------------------------------------------- [CALLOUT] -- */
+.callout { border-left: 4px solid var(--note-bar); background: var(--note-bg);
+  border-radius: 0 var(--radius) var(--radius) 0; padding: 0.7rem 1rem; margin: 1.1rem 0; }
+.callout p:first-child { margin-top: 0; } .callout p:last-child { margin-bottom: 0; }
+.callout .label { font-weight: 700; font-size: 0.78rem; letter-spacing: 0.04em;
+  text-transform: uppercase; display: block; margin-bottom: 0.2rem; }
+.callout.tip  { border-color: var(--tip-bar);  background: var(--tip-bg); }
+.callout.warn { border-color: var(--warn-bar); background: var(--warn-bg); }
+.callout.note .label { color: var(--note-bar); }
+.callout.tip  .label { color: var(--tip-bar); }
+.callout.warn .label { color: var(--warn-bar); }
+
+/* --------------------------------------------------------------- [SYMBOL] -- */
+/* Component symbol figures. The SVGs are generated from the live drawing engine
+   (see assets/symbols/README.md) as a baked-color LIGHT file and DARK file per
+   component, e.g. resistor.svg / resistor-dark.svg. The figure embeds both and
+   swaps with the media query below — same approach as the header logo.
+   Markup:
+     <figure class="symbol"><span class="frame">
+       <img class="sym-light" src="../assets/symbols/resistor.svg"      alt="R symbol">
+       <img class="sym-dark"  src="../assets/symbols/resistor-dark.svg" alt="">
+     </span><figcaption>Resistor (R)</figcaption></figure>
+   To refresh after a symbol changes: re-run the generator (README) — no HTML/CSS edit. */
+figure.symbol { margin: 1.2rem 0; text-align: center; }
+figure.symbol .frame {
+  display: inline-block; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 0.6rem 1rem; color: var(--text);
+}
+figure.symbol svg, figure.symbol img { max-width: 240px; height: auto; vertical-align: middle; }
+figure.symbol figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+figure.symbol .sym-dark { display: none; }
+.symbol-inline { vertical-align: middle; height: 1.6em; width: auto; }
+.symbol-inline.sym-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  figure.symbol .sym-light { display: none; }
+  figure.symbol .sym-dark  { display: inline-block; }
+  .symbol-inline.sym-light { display: none; }
+  .symbol-inline.sym-dark  { display: inline-block; }
+}
+
+/* ----------------------------------------------------------------- [SHOT] -- */
+/* GUI screenshots are raster (PNG). Until captured, a labeled placeholder box
+   stands in. Replace <div class="shot-todo"> with <img> when the PNG exists. */
+figure.shot { margin: 1.4rem 0; }
+figure.shot img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius); display: block; }
+figure.shot figcaption { color: var(--muted); font-size: 0.85rem; margin-top: 0.5rem; }
+.shot-todo {
+  border: 2px dashed var(--border); border-radius: var(--radius);
+  background: repeating-linear-gradient(45deg, transparent, transparent 12px,
+              var(--surface) 12px, var(--surface) 24px);
+  color: var(--muted); padding: 2rem 1.2rem; text-align: center; font-size: 0.92rem;
+}
+.shot-todo .tag { display: inline-block; font-family: var(--font-mono); font-size: 0.8rem;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.1rem 0.5rem; margin-top: 0.5rem; }
+
+/* ----------------------------------------------------------------- [CODE] -- */
+code { font-family: var(--font-mono); font-size: 0.9em;
+  background: var(--surface-2); border-radius: 5px; padding: 0.08em 0.35em; }
+pre { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.9rem 1.1rem; overflow-x: auto; line-height: 1.5; }
+pre code { background: none; border: 0; padding: 0; font-size: 0.86rem; }
+pre.netlist { border-left: 4px solid var(--crf-cyan); }      /* .cnl listings */
+.cmd { display: block; }
+.cmd .prompt { color: var(--muted); user-select: none; }     /* shell $ prompt */
+
+/* ----------------------------------------------------------------- [UTIL] -- */
+.small { font-size: 0.85rem; color: var(--muted); }
+.center { text-align: center; }
+.nowrap { white-space: nowrap; }
+.steps { counter-reset: step; list-style: none; padding-left: 0; }
+.steps > li { counter-increment: step; position: relative; padding-left: 2.2rem; margin: 0.7rem 0; }
+.steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: 0.05rem;
+  width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--crf-cyan);
+  color: var(--crf-ink); font-weight: 700; font-size: 0.85rem;
+  display: flex; align-items: center; justify-content: center;
+}
+
+@media print {
+  .doc-header .doc-kind, nav.toc { display: none; }
+  a { color: var(--text); text-decoration: underline; }
+  body { font-size: 11pt; }
+}

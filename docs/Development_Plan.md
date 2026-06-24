@@ -1,15 +1,26 @@
 # circuitRF — Development Plan & AI Workflow Strategy
 
-**Status:** Updated to match approved PRD v1.1; Phase 0 (design) complete · **Date:** 2026-05-30
+**Status:** Phases 0–7 substantially complete; v1 (alpha) in polish · **Date:** 2026-06-24
 *Companion to `docs/PRD.md`. The PRD defines scope and acceptance; this plan defines the roadmap, the AI workflow, and the engineering strategy. Where the two overlap, the PRD wins.*
 
-> **Update note (2026-05-30):** Phase 0 is complete — all five design notes exist and are approved
-> (`data-model.md`, `expressions.md`, `linear-engine.md`, `measurements.md`, `harmonic-balance.md`),
-> and six `CLAUDE.md` files are in place. Key refinements since the original draft: the result model
-> is a **`DataSet`** of single-kind **`DataCube`s** (not one complex cube); **RfCore is an external
-> sibling project** (`ProjectReference`), not `src/RfCore`; the device base is **`ComponentModel`**
-> (not `IDevice`); analyses **and measurements** attach to a **`TestBench`**; `.npy` exports the
-> whole DataSet as one packed structured array. **Implementation has not started** — Phase 1 is next.
+> **Update note (2026-06-24):** circuitRF is now a working application, not a plan. Phases 0–7 are
+> substantially built and validated: the three-layer model + expression engine + `.cnl`/JSON I/O
+> (Phase 1); complex sparse MNA + S-parameters + Touchstone via the extracted `RfCore` sibling
+> (Phase 2); nonlinear DC + device models + the SDD with automatic differentiation (Phase 3);
+> single-tone and two-tone harmonic balance with continuation (Phase 4); parametric sweeps + the
+> `DataSet`/`DataCube` model + loadpull/sourcepull + `.mat`/`.npy`/Touchstone/`.spl`/`.lpcwave`
+> export (Phase 5); the Avalonia 12 schematic editor, symbol editor, library palette, workspace/
+> project tree, and hierarchy navigation (Phase 6); and the `DataCube`-native Data Display with
+> Smith/polar/rect/table plots, markers, the loadpull surface/contour engine, **end-to-end loadpull
+> contour plotting** (simulated and measured), and **interactive markers that operate on the contour
+> surface** (Phase 7).
+> **What's left for v1:** Phase-8 hardening — installers, docs, and CI. **Deferred to v2:**
+> the Layout editor, a sparse block Jacobian for HB at scale, the Verilog-A/OSDI backend
+> (→ ASM-HEMT), and **noise analysis** (see §11). The earlier refinements still hold: the result
+> model is a **`DataSet`** of single-kind **`DataCube`s**; **`RfCore` is an external sibling**
+> (`ProjectReference`); the device base is **`ComponentModel`**; analyses **and measurements**
+> attach to a **`TestBench`**; `.npy` exports the whole DataSet as one packed structured array.
+> Per-subsystem detail lives in the nested `CLAUDE.md` files and `docs/design/`.
 
 ---
 
@@ -137,13 +148,23 @@ Update each at the end of the phase that touches its subsystem.
 
 ## 9. Status & immediate next steps
 
-**Done:** PRD approved (`docs/PRD.md`, v1.1); repo skeleton; **all six `CLAUDE.md` files**; **all five design notes** (`data-model`, `expressions`, `linear-engine`, `measurements`, `harmonic-balance`), each reviewed and approved; splotRF relationship decided (shared external `RfCore` sibling); license decided (MIT, clean boundary for a future commercial circuitRF+). **Phase 0 is complete.**
+**Done (Phases 0–7, substantially):** the spine (three-layer model, expression engine + cell parameters +
+cycle detection, `.cnl`/JSON I/O, elaboration); the linear engine (sparse complex MNA, S-parameters,
+renormalization, SNP interpolation, Touchstone I/O via the extracted `RfCore` sibling); nonlinear DC +
+diode/FET/BJT + the SDD with forward-mode AD; single- and two-tone harmonic balance with power-step
+continuation; the generic parametric sweep, the `DataSet`/`DataCube` result model, loadpull/sourcepull
+(incl. the pursuit engine and the post-processor), and `.mat`/`.npy`/Touchstone/`.spl`/`.lpcwave` export;
+the Avalonia 12 GUI (virtualized schematic canvas, symbol editor, library palette, workspace + project
+tree, hierarchy push/pop, undo/redo); and the `DataCube`-native Data Display (Smith/polar/rect/table,
+markers, the RBF loadpull surface + contour extractor/renderer). **End-to-end loadpull contour plotting**
+(simulated and measured) and **interactive markers that read/drag on the contour surface** are both done.
+The firewall check (no Avalonia below `src/Ui`) runs in CI.
 
-**Next, in order:**
-1. **Begin Phase 1 implementation** — the expression engine + elaboration + `.cnl` reader, validated by the cycle-detection fixtures (`recursion.log` chain → `2`; synthetic `a=b, b=a` → reported). Per the AI-workflow split, the high-complexity core design happens with Opus in Chat; the high-volume implementation moves to **Sonnet in Claude Code**. Phase 1 does **not** need RfCore.
-2. **Seed `testdata/`** with the Phase-1 `.cnl` fixtures and (for Phase 2) the Hero-1 reference Touchstone; stand up CI on the three OSes.
-3. **Extract `RfCore`** from splotRF in parallel (needed at Phase 2, not Phase 1).
-4. Resolve the remaining PRD §17 items as inputs arrive (FET model → power-sweep range; reference IM data → Hero-5 tolerances; a benchmark machine → NFR numbers).
+**Remaining for the v1 (alpha) release:**
+1. **Hardening (Phase 8)** — installers for Windows/macOS/Linux (mirroring splotRF's recipes), broader
+   docs, and keeping the `testdata/` regression suite green in CI on all three OSes.
+2. Resolve the remaining PRD §17 items as inputs arrive (FET model → power-sweep range; reference IM data
+   → Hero-5 tolerances; a benchmark machine → NFR numbers).
 
 ## 10. Resolved decisions (was "open questions")
 
@@ -154,3 +175,13 @@ Update each at the end of the phase that touches its subsystem.
 - PRD written **before** the Swift review (done); Swift review is the next step.
 
 *Remaining genuinely-open items are tracked in PRD §17 (power-sweep range; Hero-5 IM tolerances; NFR numbers).*
+
+## 11. Noise analysis — a deliberate green field (v2 candidate)
+
+circuitRF v1 has **no noise analysis** — no noise figure, no phase noise, no noise-parameter (Fmin, Γopt,
+Rn) extraction. This is not a technical wall: the linear engine already builds the MNA system noise analysis
+needs, the SDD/device interface could carry noise-current contributions, and `.spl`/`.lpcwave` ingest already
+parses noise columns. It is simply **unbuilt** — a clean, well-bounded feature left open on purpose for a
+contributor (an LNA designer or a device-modeling expert) who wants to own it. A solid noise pass — small-
+signal noise figure and noise parameters over frequency, then nonlinear/HB noise for mixers and oscillators —
+is a strong candidate for a **major v2 addition**. If that's you, this is a great place to make a mark.

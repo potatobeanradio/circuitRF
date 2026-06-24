@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186">
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 24L120 67.35"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M109.8 67.35L130.2 67.35"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M114.9 72.45L125.1 72.45"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M109.8 77.55L130.2 77.55"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M114.9 82.65L125.1 82.65"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 82.65L120 126"/>
+	<text fill="#D26328" transform="translate(113.625 49.5)" font-size="9.1800003" font-family="IBM Plex Sans" x="-2.7540002, " y="3.4424999, ">
+			+
+	</text>
+	<text fill="#2D14C3" transform="translate(113.625 100.5)" font-size="9.1800003" font-family="IBM Plex Sans" x="-2.7540002, " y="3.4424999, ">
+			−
+	</text>
+	<text fill="#6A8EF6" font-size="15" font-weight="500" font-family="IBM Plex Sans SemiBold, IBM Plex Sans" x="106.8675, 116.4375, 125.4375, " y="172.32001, ">
+			Vdc
+	</text>
+</svg>

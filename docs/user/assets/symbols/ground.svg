@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186">
+	<path fill="none" stroke="#2D14C3" stroke-width="4.3714285" stroke-linecap="round" stroke-linejoin="round" d="M120 24L120 82.2857"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="4.3714285" stroke-linecap="round" stroke-linejoin="round" d="M54.4286 82.2857L185.571 82.2857"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="4.3714285" stroke-linecap="round" stroke-linejoin="round" d="M76.2857 104.143L163.714 104.143"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="4.3714285" stroke-linecap="round" stroke-linejoin="round" d="M98.1429 126L141.857 126"/>
+	<text fill="#6A8EF6" font-size="15" font-weight="500" font-family="IBM Plex Sans SemiBold, IBM Plex Sans" x="104.1, 114.78, 125.565, " y="172.32001, ">
+			GND
+	</text>
+</svg>

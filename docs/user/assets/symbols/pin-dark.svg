@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186">
+	<path fill="none" stroke="#9684FA" stroke-width="2.8800001" stroke-linecap="round" stroke-linejoin="round" d="M67.2 27L129.6 27L168 75L129.6 123L67.2 123L24 75L67.2 27Z"/>
+	<path fill="none" stroke="#9684FA" stroke-width="2.8800001" stroke-linecap="round" stroke-linejoin="round" d="M168 75L216 75"/>
+	<text fill="#8CAEFF" font-size="15" font-weight="500" font-family="IBM Plex Sans SemiBold, IBM Plex Sans" x="108.72, 118.335, 122.46, " y="172.32001, ">
+			Pin
+	</text>
+</svg>

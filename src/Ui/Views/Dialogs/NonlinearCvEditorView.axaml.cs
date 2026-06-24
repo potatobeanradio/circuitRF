@@ -75,4 +75,7 @@ public partial class NonlinearCvEditorView : UserControl
         var win = TopLevel.GetTopLevel(this) as Window;
         win?.Close();
     }
+
+    private void OnHelpClick(object? sender, RoutedEventArgs e)
+        => DocLauncher.Open("reference/nonlinear-capacitor.html");
 }

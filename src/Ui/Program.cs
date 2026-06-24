@@ -18,6 +18,20 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Dev tool: regenerate the User-Documentation component artwork from the live drawing engine,
+        // then exit. No GUI window opens. Usage:
+        //   dotnet run --project src/Ui -- --generate-symbols docs/user/assets/symbols
+        if (args.Length >= 1 && args[0] == "--generate-symbols")
+        {
+            string outDir = args.Length >= 2
+                ? args[1]
+                : Path.Combine(AppContext.BaseDirectory, "symbols-out");
+            BuildAvaloniaApp().SetupWithoutStarting();   // registers the asset loader so fonts resolve
+            var files = Diagnostics.SymbolArtworkGenerator.GenerateAll(outDir);
+            Console.WriteLine($"Wrote {files.Count} symbol SVG files to {Path.GetFullPath(outDir)}");
+            return;
+        }
+
         if (OperatingSystem.IsWindows())
         {
             using var mutex = new Mutex(true, $"Local\\{PipeName}", out bool isFirst);

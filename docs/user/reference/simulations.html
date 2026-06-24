@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Simulations Reference</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Simulations</p>
+
+  <h1>Simulations</h1>
+  <p class="lede">Every analysis circuitRF runs, what it computes, a short overview of the method, and the
+  full set of settings. Algorithm details are deferred to the design notes / white papers; this chapter is
+  the operational reference.</p>
+
+  <nav class="toc">
+    <h2>Analyses</h2>
+    <ol>
+      <li><a href="#dc">DC (operating point)</a></li>
+      <li><a href="#s-parameters">S-Parameters</a></li>
+      <li><a href="#harmonic-balance">Harmonic Balance</a></li>
+      <li><a href="#parametric-sweep">Parametric Sweep</a></li>
+      <li><a href="#loadpull">Loadpull / Sourcepull</a></li>
+      <li><a href="#loadpull-pursuit">Loadpull Pursuit</a></li>
+    </ol>
+  </nav>
+
+  <div class="callout note">
+    <span class="label">How results are stored</span>
+    <p>Every analysis returns a <strong>DataSet</strong> — a named bundle of labeled, unit-bearing arrays
+    (<strong>DataCube</strong>s), written to <code>results/&lt;name&gt;/run.npy</code>. Each cube is a single
+    kind: real or complex. This is what the Data Display plots and what <code>.npy</code>/<code>.mat</code>
+    export produces.</p>
+  </div>
+
+  <h2 id="dc">DC (operating point)</h2>
+  <p><strong>Computes:</strong> the steady-state node voltages and branch currents with no signal applied —
+  the bias point. For nonlinear circuits this is the prerequisite to harmonic balance.</p>
+  <p><strong>Method:</strong> modified nodal analysis (MNA); nonlinear devices solved by Newton–Raphson with
+  <em>gmin</em> and source stepping for convergence robustness.</p>
+  <table class="param-table">
+    <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Tol</td><td>Newton convergence tolerance on the residual.</td></tr>
+      <tr><td>MaxIter</td><td>Maximum Newton iterations.</td></tr>
+      <tr><td>gmin / source stepping</td><td>Continuation aids that ease a hard bias point into convergence.</td></tr>
+    </tbody>
+  </table>
+  <p class="small">Read currents directly with an <a href="components.html#iprobe">IProbe</a> in series.</p>
+
+  <h2 id="s-parameters">S-Parameters</h2>
+  <p><strong>Computes:</strong> the linear, small-signal multiport network parameters over a frequency sweep —
+  the S-matrix at each frequency, with renormalization to the port reference impedances. Ports are defined by
+  <a href="components.html#term">Term</a> components (or <a href="components.html#p1tone">P1Tone</a> port
+  numbers).</p>
+  <p><strong>Method:</strong> complex MNA solved per frequency point; each port is excited in turn and the
+  scattered waves are extracted and renormalized. Embedded <a href="components.html#snp">Touchstone (SnP)
+  blocks</a> are interpolated onto the sweep.</p>
+  <table class="param-table">
+    <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Frequency sweep</td><td>Start / Stop / Step (or point count); one or more segments. Units accepted (<code>GHz</code>, <code>MHz</code>, …).</td></tr>
+      <tr><td>Reference impedance</td><td>Per-port reference (from each Term's <code>Z</code>); the result renormalizes to it.</td></tr>
+    </tbody>
+  </table>
+  <p class="small">From the CLI: <code>circuitrf sparam circuit.cnl --freq 1GHz:10GHz:50MHz -o out.s2p</code>.</p>
+
+  <h2 id="harmonic-balance">Harmonic Balance</h2>
+  <p><strong>Computes:</strong> the steady-state response of a nonlinear circuit driven by one or two tones —
+  the spectrum (DC + harmonics, and mixing products for two tones) at every node. From it come Pout, gain,
+  efficiency, PAE, compression, and intermodulation.</p>
+  <p><strong>Method:</strong> the circuit is split into a <em>linear</em> sub-network (solved in the frequency
+  domain) and <em>nonlinear</em> devices (evaluated in the time domain and transformed by FFT). A
+  multidimensional Newton solve drives the harmonic-balance residual — frequency-domain KCL — to zero, using a
+  conversion-matrix Jacobian. Power/source <strong>continuation</strong> ramps the drive to reach convergence
+  deep into compression. Two-tone analysis uses a diamond-truncated mixing spectrum.</p>
+  <table class="param-table">
+    <thead><tr><th>Setting</th><th>Meaning</th><th>Typical</th></tr></thead>
+    <tbody>
+      <tr><td>Tone</td><td>The fundamental frequency (a value or a variable such as <code>RFfreq</code>). Two tones for intermodulation.</td><td>2 GHz</td></tr>
+      <tr><td>ToneUnit</td><td>Unit for the tone value when it doesn't carry its own (a unit on the referenced variable wins).</td><td>GHz</td></tr>
+      <tr><td>MaxHarm</td><td>Highest harmonic order retained (5 → DC plus 5 harmonics). Higher captures sharper nonlinearity at more cost.</td><td>5–7</td></tr>
+      <tr><td>FFTOverSample</td><td>Oversampling factor for the time grid used by the nonlinear FFT. Raise to reduce aliasing on stiff devices.</td><td>1–2</td></tr>
+      <tr><td>Tol</td><td>Newton convergence tolerance on the HB residual.</td><td>1e-6</td></tr>
+      <tr><td>DriveStepping</td><td>Power/source continuation: <code>IfNecessary</code> (ramp only when a direct solve stalls), or always/never.</td><td>IfNecessary</td></tr>
+      <tr><td>GuardHarmonic</td><td>Extra guard harmonic(s) beyond <code>MaxHarm</code> for anti-alias safety.</td><td>0</td></tr>
+      <tr><td>Lambda</td><td>Newton damping factor (1 = full step; lower damps an unstable solve).</td><td>1</td></tr>
+      <tr><td>MaxIter</td><td>Maximum Newton iterations per solve point.</td><td>100</td></tr>
+    </tbody>
+    <caption>Two-tone analysis adds the second tone and a mixing order (≥ 5 to capture close-in IM products).</caption>
+  </table>
+
+  <h2 id="parametric-sweep">Parametric Sweep</h2>
+  <p><strong>Computes:</strong> nothing new on its own — it <em>wraps</em> another analysis and re-runs it
+  across one or more variables (drive power, a bias voltage, frequency, any user variable). Nest sweeps to
+  cover several variables; the innermost analysis is what each point solves.</p>
+  <table class="param-table">
+    <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Var</td><td>The variable to sweep (e.g. <code>Pin</code>, <code>RFfreq</code>).</td></tr>
+      <tr><td>Start / Stop</td><td>Sweep endpoints (units accepted).</td></tr>
+      <tr><td>Step <em>or</em> Npts</td><td>Step size, or a point count; linear or logarithmic.</td></tr>
+      <tr><td>Inner</td><td>The analysis (or inner sweep) this sweep wraps — how sweeps nest.</td></tr>
+    </tbody>
+    <caption>A whole sweep tree writes a single results file named after its innermost analysis.</caption>
+  </table>
+
+  <h2 id="loadpull">Loadpull / Sourcepull</h2>
+  <p><strong>Computes:</strong> figures of merit (Pout, gain, efficiency, PAE) as the load (or source)
+  reflection coefficient is swept over a grid on the Smith chart — the classic loadpull experiment — ready to
+  draw as <strong>contours</strong>. Harmonic terminations can be swept too (harmonic loadpull).</p>
+  <p><strong>Method:</strong> a programmable <a href="components.html#tuner">Tuner</a> presents each grid
+  termination; a harmonic-balance solve runs per point (with previous-point continuation for convergence); the
+  FOMs are collected into the DataSet over the Γ-grid. The Data Display fits a surface and extracts contour
+  lines; measured loadpull files (<code>.spl</code>/<code>.lpcwave</code>) plot identically.</p>
+  <table class="param-table">
+    <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Tuned port / role</td><td>Load or source side, and which DUT port the tuner terminates.</td></tr>
+      <tr><td>Γ grid</td><td>The set of reflection-coefficient points (a Smith-chart grid, typically within \|Γ\| ≤ 0.9).</td></tr>
+      <tr><td>Tuned harmonic</td><td>Fundamental, or a specified harmonic for harmonic loadpull.</td></tr>
+      <tr><td>Power / bias</td><td>The drive level and bias at which the pull is performed (often a power sweep too).</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="loadpull-pursuit">Loadpull Pursuit</h2>
+  <p><strong>Computes:</strong> the load (or source) terminations that optimize a figure of merit — found
+  <em>automatically</em> by a query-minimizing search rather than by gridding the whole Smith chart. It
+  reports two optima at constant compression — <strong>MXP</strong> (maximum output power) and
+  <strong>MXE</strong> (maximum efficiency) — recommends a conjugate-match <strong>source impedance</strong>
+  for each, and can run a focused high-fidelity loadpull around them, all from one analysis.</p>
+
+  <p><strong>Why use it:</strong> it automates the real-world PA loadpull procedure — find the optimum, then
+  loadpull a focused grid around it with a sensible source match — into a single unattended run. Point it at a
+  DUT whose optimal terminations are unknown, run, and come back to a complete loadpull dataset already
+  concentrated at the right terminations. It is repeatable (great for characterizing many devices with one
+  netlist), avoids wasted query points far from the optima, and avoids non-convergent terminations.</p>
+
+  <p><strong>It complements, it doesn't replace, a standard loadpull.</strong> Pursuit finds the useful
+  terminations and the region of interest; a standard loadpull then shows the performance tradeoffs across that
+  region. Pursuit shares all <a href="#loadpull">Loadpull</a> settings <em>except the Γ grid</em> (it generates
+  terminations rather than reading them), plus the keys below.</p>
+
+  <h3>How a pursuit run works</h3>
+  <ol class="steps">
+    <li><strong>Search</strong> — a steepest-ascent search in the VSWR plane finds MXP, then MXE (seeded from
+      MXP, so the second search is cheap). Each "query" is one drive-to-compression harmonic-balance run;
+      queries are cached so MXE reuses MXP's data.</li>
+    <li><strong>Recommend</strong> — builds a focused-around-the-optima set of recommended terminations (dense
+      near MXP/MXE, sparse further out) and a conjugate-match source impedance for each optimum.</li>
+    <li><strong>Loadpull</strong> — optionally runs a standard loadpull over those recommended terminations,
+      using a recommended source match, producing the high-fidelity contour data.</li>
+  </ol>
+
+  <h3>Search method</h3>
+  <ul>
+    <li><strong>SteepestAscent</strong> (default) — fits the gradient and ascends along a fixed direction,
+      shrinking the step on rejection; a final polynomial refinement pins the optimum. Fast and adequate for
+      the near-1-D real-axis optima typical of PA loadpull.</li>
+    <li><strong>IteratedQuadratic</strong> — a trust-region search that re-fits the local curvature at every
+      step, so it follows a curved 2-D ridge instead of committing to one direction. Reuses the same query
+      cache, so its query count stays comparable.</li>
+  </ul>
+
+  <h3>Pursuit settings</h3>
+  <table class="param-table">
+    <thead><tr><th>Key</th><th>Meaning</th><th>Default</th></tr></thead>
+    <tbody>
+      <tr><td>EffType</td><td>The MXE (efficiency) criterion: drain efficiency <code>DE</code> or <code>PAE</code>.</td><td>DE</td></tr>
+      <tr><td>SearchMethod</td><td><code>SteepestAscent</code> or <code>IteratedQuadratic</code> (above).</td><td>SteepestAscent</td></tr>
+      <tr><td>ZsourceOBO</td><td>Output back-off (dB from compression) at which the input impedance is sampled for the auto-Zsource report. Granularity set by <code>PinStep</code>.</td><td>5</td></tr>
+      <tr><td>VSWR1 (focused)</td><td>Focused box size (VSWR-circle radius) around MXP and MXE — the dense sampling region.</td><td>1.5</td></tr>
+      <tr><td>VSWR1_resolution</td><td>Grid spacing (N×N samples) inside each focused box.</td><td>4</td></tr>
+      <tr><td>VSWR2 (broad)</td><td>Broad box size (VSWR-circle radius) for the surrounding coarse grid.</td><td>3</td></tr>
+      <tr><td>VSWR2_resolution</td><td>Grid spacing (N×N samples) for the broad box.</td><td>4</td></tr>
+      <tr><td>keepNonconvergingPoints</td><td>If false, drop recommended points near terminations found non-convergent during the search (and warn).</td><td>false</td></tr>
+      <tr><td>nonconvergentVSWR</td><td>Exclusion radius (VSWR) around known non-convergent terminations.</td><td>1.05</td></tr>
+      <tr><td>OutputGrid</td><td>Path to write the recommended terminations as a <code>.gam</code> file. Absent → no file written.</td><td>none</td></tr>
+      <tr><td>CreateLoadpullResult</td><td>Run the follow-on standard loadpull over the recommended terminations. Independent of <code>OutputGrid</code>.</td><td>on</td></tr>
+      <tr><td>LoadpullResultZsource</td><td>Source match the follow-on loadpull uses: <code>MXE</code>, <code>MXP</code>, or <code>None</code> (use the Source Tuner's own Z1).</td><td>MXE</td></tr>
+    </tbody>
+    <caption>The recommended terminations always exist in memory; <code>OutputGrid</code> controls only the file, <code>CreateLoadpullResult</code> controls only the follow-on simulation — the two are orthogonal.</caption>
+  </table>
+
+  <div class="callout note">
+    <span class="label">Auto-Zsource — a recommended source match</span>
+    <p>After each optimum is found, pursuit backs the drive off by <code>ZsourceOBO</code> dB, computes the DUT
+    input impedance Zin there, and reports <strong>Zsource = Zin*</strong> (the conjugate match) — a
+    ready-to-use input-match target, per optimum, without a separate sourcepull.</p>
+  </div>
+
+  <div class="callout warn">
+    <span class="label">The DUT must compress</span>
+    <p>MXP/MXE are defined <em>at compression</em>. If the DUT does not reach <code>Compression</code> within
+    <code>PinMax</code>, the search aborts with a clear message (raise <code>PinMax</code> or check
+    bias/load) — it never silently raises your <code>PinMax</code> cap.</p>
+  </div>
+
+  <p class="small">Full design + algorithm: <code>docs/design/loadpull_pursuit.md</code> (in the repo).</p>
+
+  <hr>
+  <p class="small">See also: <a href="netlist.html">the netlist format</a> (how analyses are written) ·
+  <a href="components.html">Components</a> · <a href="plot-types.html">Plot types</a>.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="index.html">Reference home</a>
+</footer>
+
+</body>
+</html>

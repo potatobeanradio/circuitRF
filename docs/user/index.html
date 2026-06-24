@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Documentation</title>
+<!-- Relative paths only, so the docs work online or offline -->
+<link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/circuitrf-docs.css">
+</head>
+<body>
+
+<!-- ============ HEADER (copy this block to every page; fix the relative ../ depth) ============ -->
+<header class="doc-header">
+  <span class="brand"><img class="logo" src="assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></span>
+  <span class="doc-kind">Documentation</span>
+</header>
+<hr class="doc-headrule">
+<!-- ============ /HEADER ============ -->
+
+<main class="page">
+
+  <h1>circuitRF Documentation</h1>
+  <p class="lede">A lightweight, cross-platform RF circuit simulator — DC, S-parameters, harmonic
+  balance, and loadpull. Pick the guide that fits where you are.</p>
+
+  <div class="card-grid">
+    <a class="card" href="quick-start/index.html">
+      <h3>Quick Start →</h3>
+      <p>For engineers who already know circuit simulators. Run a simulation and see a plot in a couple of
+      pages. Start here if you've used SPICE or a vendor RF tool.</p>
+    </a>
+    <a class="card" href="new-user-guide/index.html">
+      <h3>New User's Guide →</h3>
+      <p>Never used a circuit simulator? Start here. What a library, a cell, and a simulation are — explained
+      from the ground up, with worked examples.</p>
+    </a>
+    <a class="card" href="reference/index.html">
+      <h3>Reference Guide →</h3>
+      <p>The complete technical reference. Every simulation, every component and its parameters, the plot
+      types, the netlist format, and the symbol conventions.</p>
+    </a>
+  </div>
+
+  <h2>What is circuitRF?</h2>
+  <p>circuitRF studies the frequency response and nonlinear behavior of RF circuits — from a handful of
+  components to hierarchical, multi-port designs. It is an <strong>RF simulator, not a SPICE simulator</strong>:
+  the analyses and workflow are built around the RF/microwave problem, the file formats are human-readable,
+  and loadpull is a first-class experiment. Simulation results are stored as NumPy <code>.npy</code> datasets,
+  so they drop straight into Python/MATLAB workflows.</p>
+
+  <div class="callout note">
+    <span class="label">Alpha</span>
+    <p>circuitRF is in active development. These docs track the current build; some screenshots are
+    placeholders until captured, and details may shift between releases.</p>
+  </div>
+
+</main>
+
+<!-- ============ FOOTER (copy to every page; fix the relative ../ depth) ============ -->
+<footer class="doc-footer">
+  <img src="assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <span>MIT-licensed · docs build: alpha</span>
+</footer>
+<!-- ============ /FOOTER ============ -->
+
+</body>
+</html>

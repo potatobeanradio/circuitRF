@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186">
+	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 24L188 24"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 24L188 126"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 126L52 126"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 126L52 24"/>
+	<text fill="#2D14C3" transform="translate(120 75)" font-size="40.799999" font-family="IBM Plex Sans" x="-38.556, -13.708799, 12.444, " y="15.300001, ">
+			VAR
+	</text>
+	<text fill="#6A8EF6" font-size="15" font-weight="500" font-family="IBM Plex Sans SemiBold, IBM Plex Sans" x="105.195, 114.765, 124.845, " y="172.32001, ">
+			VAR
+	</text>
+</svg>

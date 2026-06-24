@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186">
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 24L120 71.94"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M107.25 71.94L132.75 71.94"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M107.25 80.61Q120 75.51 132.75 80.61"/>
+	<path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 78.06L120 126"/>
+	<text fill="#6A8EF6" font-size="15" font-weight="500" font-family="IBM Plex Sans SemiBold, IBM Plex Sans" x="115.185, " y="172.32001, ">
+			C
+	</text>
+</svg>

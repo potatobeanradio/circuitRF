@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — SDD (Symbolically-Defined Device)</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › SDD</p>
+
+  <h1>The SDD (Symbolically-Defined Device)</h1>
+  <p class="lede">circuitRF's user-authored nonlinear device. You write each port's current (and charge) as an
+  equation in the port voltages; the engine differentiates it automatically and balances it like any built-in
+  device. It is how the FET models in the examples are defined, and the extension point for any nonlinearity
+  the built-in parts don't cover.</p>
+
+  <figure class="symbol"><span class="frame">
+    <img class="sym-light" src="../assets/symbols/sdd.svg" alt="SDD symbol">
+    <img class="sym-dark"  src="../assets/symbols/sdd-dark.svg" alt="">
+  </span><figcaption>SDD at 2 ports</figcaption></figure>
+
+  <nav class="toc">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#what">What an SDD is</a></li>
+      <li><a href="#ports">Ports &amp; nets (2N differential pins)</a></li>
+      <li><a href="#vars">Equation variables</a></li>
+      <li><a href="#eqns">The equations: <code>I[p,w]</code>, <code>Q[p]</code></a></li>
+      <li><a href="#weights">Weighting functions <code>H[w]</code></a></li>
+      <li><a href="#control">Control currents — referencing another device's current</a></li>
+      <li><a href="#params">Parameter summary</a></li>
+      <li><a href="#analyses">Which analyses honor each feature</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="what">What an SDD is</h2>
+  <p>Instead of compiled physics, an SDD defines a device's terminal behavior with <strong>expressions</strong>.
+  Per port, you write the port current (and optionally charge) as a function of the port voltages. The engine
+  evaluates those expressions in the time domain, differentiates them by automatic differentiation for the
+  Jacobian, and solves them in DC, harmonic balance, and S-parameters. The equation notation deliberately
+  mirrors other simulators' SDD/EDD so reference models transcribe directly.</p>
+
+  <h2 id="ports">Ports &amp; nets (2N differential pins)</h2>
+  <p>An <strong>N-port SDD binds 2N nets</strong>, in <code>+/−</code> pairs: <code>p1+ p1− p2+ p2− … pN+
+  pN−</code>. The port count is half the net count. The voltage the equations see for port p is the
+  differential <code>_vp = V(p+) − V(p−)</code>. An odd net count — or an equation referencing a port beyond
+  the nets supplied — is a setup <strong>error</strong> (named, never silently truncated). Terminal names follow
+  the FET convention for 2–4 ports (<code>g d</code>, <code>g d s</code>, <code>g d s t</code>).</p>
+  <pre class="netlist"><code>SDD:X1  p1+ p1−             I[1,0]=_v1/50        ; a 50 Ω conductance at port 1
+SDD:X2  g 0  d 0           I[1,0]=…  I[2,0]=…   ; a 2-port (FET-style), each port's minus to ground</code></pre>
+
+  <h2 id="vars">Equation variables</h2>
+  <p>Inside an SDD equation you may reference:</p>
+  <table>
+    <thead><tr><th>Variable</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>_v1 … _vN</code></td><td>The differential <strong>port voltages</strong> (the device's own ports).</td></tr>
+      <tr><td><code>_c1 … _cM</code></td><td><strong>Control currents</strong> — the current flowing in <em>another</em> device, bound via <code>C[n]</code> (see <a href="#control">below</a>).</td></tr>
+      <tr><td>scope variables</td><td>Any named parameter/variable in scope (model coefficients <code>B</code>, <code>Sc</code>, <code>TV0</code>, …).</td></tr>
+      <tr><td><code>freq</code></td><td>The frequency global (Hz) — used <strong>only</strong> in weighting-function <code>H[w]</code> expressions, never in the time-domain current/charge equations.</td></tr>
+    </tbody>
+  </table>
+  <p>SDD equations are <strong>real-only</strong> (real time-domain voltages → real current/charge); the
+  imaginary unit <code>j</code> is not allowed in an <code>I[p,w]</code>/<code>Q[p]</code> expression. The full
+  function set and operators are the shared <a href="expressions.html">expression language</a>.</p>
+
+  <h2 id="eqns">The equations: <code>I[p,w]</code>, <code>Q[p]</code></h2>
+  <p>The core assignment is <strong><code>I[p,w]</code></strong> — the contribution to <strong>port p</strong>'s
+  current through <strong>weighting function w</strong>:</p>
+  <ul>
+    <li><code>p</code> — the 1-based port index.</li>
+    <li><code>w</code> — the weighting-function index: <code>0</code>, <code>1</code>, or a user-defined
+      <code>w ≥ 2</code>.</li>
+  </ul>
+  <p><strong>Single-index shorthand:</strong> <code>I[p]</code> ≡ <code>I[p,0]</code> (a memoryless current);
+  <code>Q[p]</code> ≡ <code>I[p,1]</code> (a charge — the capacitive path). The two-index forms always work
+  too.</p>
+  <p>Each expression is parsed once and evaluated per time sample in dual arithmetic, so the value
+  <em>and</em> its derivatives (the conductance/capacitance the solver needs) come out together. Domain
+  errors (e.g. <code>log</code>/<code>sqrt</code> of a non-positive argument on an overshooting solver
+  iterate) <strong>clamp and warn</strong> rather than killing the solve.</p>
+
+  <h2 id="weights">Weighting functions <code>H[w]</code></h2>
+  <p>A weighting function <code>H[w](ω)</code> is a frequency-domain multiplier applied to the spectrum of
+  <code>I[p,w]</code>. The total port current sums over all weights:</p>
+  <pre><code>i_p(t) = Σ_w  IFT{ H[w](ω) · FT{ I[p,w]( v(t) ) } }</code></pre>
+  <p>That is: evaluate <code>I[p,w]</code> in the <strong>time domain</strong>, transform, scale each frequency
+  by <code>H[w](ω)</code> (evaluated in the <strong>frequency domain</strong>), sum, transform back. This split
+  is the whole point — it lets a memoryless voltage expression acquire frequency-dependent (reactive,
+  dispersive) behavior.</p>
+  <h3>The two built-in weights</h3>
+  <ul>
+    <li><strong><code>H[0] = 1</code></strong> (identity) — <code>I[p,0]</code> contributes its spectrum
+      unchanged: a memoryless/conductive current. This is the <code>I[p]</code> path.</li>
+    <li><strong><code>H[1] = jω</code></strong> (time derivative) — assigning a charge here,
+      <code>I[p,1] = Q(v)</code>, yields the current <code>i = dQ/dt</code>: the capacitive path. (At DC,
+      <code>ω = 0</code>, so charge passes no DC current — exactly as a capacitor should.) This is the
+      <code>Q[p]</code> path.</li>
+  </ul>
+  <h3>User-defined weights <code>H[w]</code>, w ≥ 2</h3>
+  <p>Higher weights are SDD parameters, declared as expressions of <code>freq</code> (<code>ω = 2π·freq</code>):</p>
+  <pre class="netlist"><code>SDD:X1  p1+ p1−   I[1,2]=_v1   H[2]=1/(1 + j*2*pi*freq*tau)   tau=1n</code></pre>
+  <p>Here <code>I[1,2] = _v1</code> is scaled in the frequency domain by a single-pole low-pass <code>H[2]</code>
+  — a port current that is the voltage filtered by a first-order RC response. <code>H[w]</code> is shared across
+  all ports; an <code>I[p,w]</code> whose <code>H[w]</code> is undeclared is a setup error naming the missing
+  weight.</p>
+
+  <div class="callout note">
+    <span class="label">Example — a nonlinear capacitor as a 1-port SDD</span>
+    <p>For a charge <code>Q(V)</code>, one assignment on the <code>H[1]=jω</code> (charge) path gives
+    <code>i = dQ/dt</code>:</p>
+    <pre class="netlist"><code>SDD:X1  c+ c−   I[1,1] = 10e-12*_v1 − 0.75e-12*_v1^2 + (0.1e-12/3)*_v1^3</code></pre>
+    <p>This is physically identical to the dedicated <a href="components.html#nonlinearc">NonlinearC</a> device
+    (the compiled fast path). See also the <a href="nonlinear-capacitor.html">C–V Editor</a>.</p>
+  </div>
+
+  <h2 id="control">Control currents — referencing another device's current</h2>
+  <p>An SDD equation can reference the <strong>current flowing in another device</strong> and use it like any
+  other variable — the current-controlled complement to the voltage-controlled <code>_vn</code>. This is how
+  you build current mirrors, current feedback, and sensed-current behavior.</p>
+
+  <h3>Binding a control current</h3>
+  <p>Two instance parameters declare the reference; the equation then reads it as <code>_cn</code>:</p>
+  <pre class="netlist"><code>C[n]     = &lt;instance&gt;     ; bind _cn to the current in device &lt;instance&gt;
+Cport[n] = &lt;port&gt;         ; (multi-port referenced devices only) which port's current</code></pre>
+  <ul>
+    <li><code>n</code> is the 1-based control index — <code>C[1]</code> defines <code>_c1</code>,
+      <code>C[2]</code> defines <code>_c2</code>, …</li>
+    <li><code>&lt;instance&gt;</code> is the instance name of a sibling device <strong>in the same
+      schematic</strong> (no cross-hierarchy paths in this release).</li>
+    <li><code>Cport[n]</code> is required only for multi-port referenced devices (SnP, ZnP); omit it (or set 1)
+      for two-terminal devices.</li>
+    <li>Every <code>_cn</code> used in an equation must have a matching <code>C[n]</code>, or it is a setup
+      error naming the missing index.</li>
+  </ul>
+
+  <h3>Which devices' current can be sensed</h3>
+  <table>
+    <thead><tr><th>Device</th><th>Cport needed?</th><th>What <code>_cn</code> is</th></tr></thead>
+    <tbody>
+      <tr><td>DC voltage source (<code>Vdc</code>)</td><td>no</td><td>source branch current</td></tr>
+      <tr><td>Tone source (<code>VTone</code>)</td><td>no</td><td>source branch current</td></tr>
+      <tr><td>Current probe (<code>IProbe</code>)</td><td>no</td><td>the probed series current</td></tr>
+      <tr><td>Inductor (<code>L</code>)</td><td>no</td><td>inductor branch current</td></tr>
+      <tr><td>Touchstone N-port (<code>SnP</code>)</td><td><strong>yes</strong></td><td>the selected port's current</td></tr>
+      <tr><td>Impedance N-port (<code>ZPort</code>)</td><td><strong>yes</strong></td><td>the selected port's current</td></tr>
+    </tbody>
+    <caption>Referencing any other device kind (R, C, a node) is a setup error listing the allowed kinds.</caption>
+  </table>
+
+  <h3>Sign convention</h3>
+  <p><code>_cn</code> carries the branch-current sign of the referenced device: current flows from the device's
+  <strong>first net to its second</strong>. For an <code>IProbe:IP1 a b</code>, <code>_cn &gt; 0</code> means
+  conventional current flows <code>a → b</code> through the probe. If a mirror comes out inverted, flip the sign
+  in the equation (<code>-beta*_c1</code>) rather than re-wiring.</p>
+
+  <h3>Examples</h3>
+  <p><strong>(a) Current mirror / sense-and-scale.</strong> A drain current proportional to the current sensed
+  in an inductor:</p>
+  <pre class="netlist"><code>L:Lsense    nsrc nx   L=1n
+SDD:Xmirror g 0  d 0
+    I[1,0] = _v1/1e6            ; high-Z gate (a DC path for the solver)
+    I[2,0] = beta*_c1          ; drain current = beta × the sensed current
+    C[1]   = Lsense            ; _c1 = current in Lsense
+    beta   = 5</code></pre>
+
+  <p><strong>(b) Current-feedback transconductor.</strong> Sense a bias supply's current and fold it into a
+  gate-controlled drain current:</p>
+  <pre class="netlist"><code>Vdc:Vdd     vdd 0    Vdc=5
+SDD:Xcc     g 0  d 0
+    I[2,0] = gm*_v1 - kfb*_c1  ; drain current: gm·Vgs minus feedback on supply current
+    C[1]   = Vdd               ; _c1 = current drawn from the 5 V supply
+    gm     = 0.05
+    kfb    = 0.1</code></pre>
+
+  <p><strong>(c) Control current on the reactive path.</strong> <code>_cn</code> can appear in any
+  <code>I[p,w]</code>, including the <code>H[1]=jω</code> charge path — here a current sensed in port 2 of a
+  Touchstone block drives a displacement-like term:</p>
+  <pre class="netlist"><code>SnP:S1      in 0 out 0   File=coupler.s2p
+SDD:Xq      g 0  d 0
+    I[2,1] = tau*_c1           ; charge ∝ sensed current → current = d/dt(tau·_c1) via H[1]=jω
+    C[1]   = S1
+    Cport[1] = 2               ; _c1 = current in port 2 of the S-parameter block
+    tau    = 1n</code></pre>
+
+  <h2 id="params">Parameter summary</h2>
+  <table class="param-table"><thead><tr><th>Name</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>NumPorts</td><td>Number of ports N (drives the 2N differential pins). Hidden.</td></tr>
+      <tr><td>I[p,w]</td><td>Port-p current contribution through weight w. <code>I[p]</code>=<code>I[p,0]</code> (current); <code>Q[p]</code>=<code>I[p,1]</code> (charge).</td></tr>
+      <tr><td>H[w]</td><td>User weighting function (w ≥ 2), an expression of <code>freq</code>. (<code>H[0]=1</code>, <code>H[1]=jω</code> are built in.)</td></tr>
+      <tr><td>C[n] / Cport[n]</td><td>Bind control current <code>_cn</code> to another device's (port's) current.</td></tr>
+      <tr><td><em>(scope vars)</em></td><td>Any named model coefficients you reference in the equations.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="analyses">Which analyses honor each feature</h2>
+  <p><strong>Every simulation type honors the SDD</strong> — DC, S-parameters, Harmonic Balance, Loadpull, and
+  Loadpull Pursuit. Loadpull and Loadpull Pursuit are built on the harmonic-balance engine, so the full
+  <code>I[p,w]</code> / <code>Q[p]</code> / <code>H[w]</code> behavior applies to the DUT at every termination
+  they evaluate.</p>
+  <ul>
+    <li><strong>Nonlinear DC</strong> — full <code>I[p,w]</code>, charge (drops at DC), and control currents
+      (exact — the referenced current is a solver unknown).</li>
+    <li><strong>Harmonic Balance</strong> — full weighting sum, with the control-current Jacobian coupling for
+      fast convergence.</li>
+    <li><strong>Loadpull &amp; Loadpull Pursuit</strong> — the SDD is balanced by HB at each termination, so all
+      SDD behavior is honored throughout the sweep/search.</li>
+    <li><strong>S-parameters</strong> — small-signal linearization at the DC bias, including the
+      control-current coupling. A nonlinear capacitor reduces to <code>jω·C(0)</code>, matching NonlinearC.</li>
+  </ul>
+  <p class="small">Note on control currents specifically: the <code>_cn</code> control-current path is wired for
+  single-tone HB; multi-tone / two-tone control-current coupling is a follow-on. The SDD's own current/charge
+  equations are honored in all analyses regardless.</p>
+
+  <hr>
+  <p class="small">See also: <a href="components.html#sdd">Components › SDD</a> (the symbol + at-a-glance
+  parameters) · <a href="dynamic-symbols.html#sdd">Dynamic symbols</a> (how the pin count grows) ·
+  <a href="expressions.html">Expressions</a> (the language) · <a href="netlist.html">Netlist format</a> (a
+  worked GaN-FET SDD). Full design: <code>docs/design/sdd.md</code> + <code>docs/design/sdd-control-current.md</code>.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="index.html">Reference home</a>
+</footer>
+
+</body>
+</html>

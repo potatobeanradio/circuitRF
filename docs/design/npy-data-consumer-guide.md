@@ -17,19 +17,44 @@
 
 A circuitRF export is a single **NumPy structured array** saved to a `.npy` file.  The
 file is self-describing: the NumPy dtype header names every field and its sub-shape; the
-`__meta__` JSON blob carries axis names, units, values, and labels.  No sidecar files,
-no `.npz` archives, no manifest.
+`__meta__` JSON blob carries axis names, units, values, labels, and **group membership**.
+No sidecar files, no `.npz` archives, no manifest.
+
+**Current `format_version` is `2`** (see §2.1 — format_version 2 added DataSet *groups*).
+Verify it before reading (§6); an alpha file from a different generation is not
+compatible.
 
 **Two levels of consumption:**
 
 | Level | What you get | How |
 |-------|-------------|-----|
-| **Level 1** | All `DataSet` cubes rehydrated: DataKinds, shapes, axes, numeric values | Read `__meta__`, index cube fields |
+| **Level 1** | All `DataSet` cubes rehydrated: groups, DataKinds, shapes, axes, numeric values | Read `__meta__`, index cube fields |
 | **Level 2** | Any linear-interior node voltage or branch current reconstructed from the linear MNA system | Solve `G(ω_k)·x = bSrc − iNl` with the `__linnet_*` payload (see §5) |
 
 Level 1 is implemented in C# (`DataSetImporter`) and trivially accessible from Python.
 Level 2 is **documented here but not yet implemented in C#** — Phase 7 (splotRF
 interactive reconstruction) will add the C# solve; see §5 for the full recipe.
+
+**Producing a file (C#):**
+
+```csharp
+using RfCore.Export;
+
+// Minimal: one DataSet to a .npy
+DataSetExporter.Export(ds, "run.npy", ExportFormat.Npy);
+
+// With options + the linear-network payload for Level-2 reconstruction
+var opts = new ExportOptions {
+    IncludeLinearNetwork = true,             // emit the __linnet_* fields (§4)
+    LinearEvalMode       = LinearEvalMode.EvaluateNone,   // None | EvaluateAll | EvaluateSpecified
+};
+DataSetExporter.Export(ds, "run.npy", ExportFormat.Npy, opts, linearPayload);
+```
+
+`ExportFormat` also offers `Mat` (MATLAB `.mat`) and `Tsv` (tab-delimited); this guide
+covers the `Npy` layout. `LinearEvalMode` (`EvaluateAll` / `EvaluateSpecified` with
+`EvalNodeNames`/`EvalBranchRefs`) pre-evaluates extra linear-interior nodes/branches into
+the exported cubes so a consumer need not do the §5 solve for them.
 
 ---
 
@@ -45,10 +70,11 @@ Each field in the structured dtype corresponds to one cube or metadata blob:
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  Data section — one element of the struct, laid out field-by-field:          │
 │                                                                              │
-│  per-cube fields (one per DataSet cube, in ds.Cubes order):                  │
+│  per-cube fields (one per DataSet cube, in ds.Groups × CubesIn order):       │
 │    ('V',         '<c16', (2, 5, 4))   # complex128, shape = axis lengths     │
 │    ('Pout',      '<f8',  (4,))        # float64                              │
 │    ('I:M1:g',   '<c16', (5, 4))       # colons OK in NumPy field names       │
+│    ('HB1.V',     '<c16', (2, 5, 4))   # group-qualified on a name collision  │
 │    …                                                                         │
 │                                                                              │
 │  metadata field:                                                             │
@@ -67,33 +93,71 @@ Each field in the structured dtype corresponds to one cube or metadata blob:
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Cube-name escaping:** the DataSet cube name is used verbatim as the NumPy field name
-*except* that a `/` is replaced with `__slash__` (avoids confusion with HDF5-style paths
-on some tools).  Reverse this when reading: `field_name.replace('__slash__', '/')`.
+**The NumPy field name is an OPAQUE key — do not parse it.**  The authoritative
+`(group, cube)` pair for every field lives in `__meta__` (the `group`/`cube` keys on each
+entry).  Field names are assigned to be unique within the file:
 
-**`__meta__` JSON schema:**
+1. Base = the cube name, with `/` replaced by `__slash__` (avoids HDF5-style path
+   confusion).  Reverse with `field_name.replace('__slash__', '/')` *only* if you need the
+   bare cube name — but prefer reading `cube`/`group` from `__meta__`.
+2. **On a name collision** (two groups hold a same-named cube), the loser becomes
+   `EscapeName(group) + "." + EscapeName(cube)` — e.g. `HB1.V`.  The `.` here is a literal
+   field-name character, **not** a structural delimiter; don't split on it.
+3. **On a further collision**, a `~N` suffix is appended (`HB1.V~2`).
+
+**`__meta__` JSON schema (format_version 2):**
 ```json
 {
-  "format_version": 1,
+  "format_version": 2,
+  "groups": ["HB1", "SP1", "measurements"],
   "V": {
-    "kind": "Complex",
+    "group": "HB1",
+    "cube":  "V",
+    "kind":  "Complex",
     "axes": [
-      {"name": "node",     "unit": "",    "values": [0, 1],
-       "labels": ["n_gate", "n_drain"]},
+      {"name": "node",     "unit": "V",   "values": [1, 2],
+       "labels": ["X1.gate", "X1.drain"]},
       {"name": "harmonic", "unit": "",    "values": [0, 1, 2, 3, 4]},
       {"name": "Pin/dBm",  "unit": "dBm", "values": [-20, -18, -16, -14]}
     ]
   },
-  "Pout": { "kind": "Real", "axes": [ … ] },
+  "S": { "group": "SP1", "cube": "S", "kind": "Complex", "axes": [ … ] },
+  "Gain": { "group": "measurements", "cube": "Gain", "kind": "Real", "axes": [ … ] },
   "__linnet_node_names":   ["n_src", "n_zs", "n_gate", "n_gbias", "n_drain", "n_zl", "n_dbias"],
   "__linnet_branch_names": ["branch#0", "branch#1", "branch#2", "L:Lchoke_g", "branch#4", "L:Lchoke_d", "branch#6"]
 }
 ```
 
-`kind` is `"Complex"` or `"Real"`.  `labels` is present only when the axis has string
-labels (e.g. the node axis of `V` and branch-current cubes).  Node/branch name arrays
-are stored in `__meta__` (not as separate structured fields) because NumPy structured
-arrays cannot hold variable-length strings without pickling.
+Per-entry keys: **`group`** (the group name; `""` for the default group), **`cube`** (the
+cube name within that group), **`kind`** (`"Complex"` or `"Real"`), and **`axes`**.  Each
+axis has `name`, `unit`, `values` (G17 round-trip precision), and an optional `labels`
+array (present only when the axis carries string labels, e.g. the `node` axis of `V` and
+branch-current cubes).  Node/branch name arrays are stored in `__meta__` (not as separate
+structured fields) because NumPy structured arrays cannot hold variable-length strings
+without pickling.
+
+---
+
+## 2.1  Groups (added in format_version 2)
+
+A single run now produces **one grouped DataSet**: a group per analysis (keyed by the
+analysis's results name — `HB1`, `SP1`, `DC1`, …) plus a `measurements` group holding the
+post-run [measurements](../user/reference/measurements.html).  The export preserves this
+structure:
+
+- `__meta__["groups"]` lists the group names **in order**.  The default (unnamed) group is
+  the empty string `""`.
+- Every cube entry names its `group` and `cube`.  Reconstruct the grouping by walking the
+  entries, not by parsing field names.
+
+The C# importer rebuilds the groups automatically: `DataSetImporter.Import` returns a
+`DataSet` whose `Groups`, `CubesIn(group)`, and qualified lookup (`ds["HB1.V"]`) all work
+as they did at write time.  A **bare** cube name (`ds["V"]`) resolves in the default group
+first, then the `measurements` group — the same rule the measurement evaluator uses.
+
+> **Single-analysis files** (e.g. a CLI `sparam` export) typically have just the default
+> group `""` plus possibly `measurements`; `groups` may be `[""]`.  Code that handles the
+> grouped case handles this trivially.
 
 ---
 
@@ -110,14 +174,26 @@ arr  = np.load('hero2_result.npy', allow_pickle=False)
 meta = json.loads(arr['__meta__'][0])      # bytes → dict
 
 # Check format version
-assert meta['format_version'] == 1, f"Unsupported version {meta['format_version']}"
+assert meta['format_version'] == 2, f"Unsupported version {meta['format_version']}"
 
-# Pull a cube
-V = arr['V'][0]           # shape (N_nodes, K+1, S), dtype complex128
+# Groups present in this run (e.g. analyses + a measurements group)
+print("groups:", meta['groups'])          # e.g. ['HB1', 'SP1', 'measurements']
+
+# Build a (group, cube) → numpy-field-name index from __meta__.
+# NEVER parse the field name yourself — read group/cube from the entry.
+by_group_cube = {
+    (entry['group'], entry['cube']): field
+    for field, entry in meta.items()
+    if isinstance(entry, dict) and 'cube' in entry
+}
+v_field = by_group_cube[('HB1', 'V')]     # the opaque numpy field name, e.g. 'V' or 'HB1.V'
+
+# Pull the cube
+V = arr[v_field][0]       # shape (N_nodes, K+1, S), dtype complex128
 # V[node_idx, harmonic_k, sweep_si]
 
-# Read axis metadata
-v_axes = meta['V']['axes']
+# Read axis metadata (keyed by the same field name)
+v_axes = meta[v_field]['axes']
 node_axis  = v_axes[0]    # {"name": "node", "labels": ["n_gate", "n_drain"]}
 harm_axis  = v_axes[1]    # {"name": "harmonic", "values": [0, 1, 2, 3, 4]}
 sweep_axis = v_axes[2]    # {"name": "Pin/dBm", "values": [-20, -18, -16, -14]}
@@ -142,15 +218,17 @@ print(f"Pout at Pin=-20 dBm: {pout[0]:.2f} dBm")
 ```csharp
 using RfCore.Export;
 
-// Load Level-1: reconstructed DataSet + optional linnet payload
+// Load Level-1: reconstructed DataSet (groups preserved) + optional linnet payload
 var (ds, linnet) = DataSetImporter.Import("hero2_result.npy");
 
-// ds is a DataSet; iterate cubes
-foreach (var (name, cube) in ds.Cubes)
-    Console.WriteLine($"{name}: kind={cube.DataKind}, shape=[{string.Join(",", cube.Axes.Select(a => a.Length))}]");
+// ds is a grouped DataSet; iterate groups → cubes
+foreach (var group in ds.Groups)                              // e.g. "HB1", "SP1", "measurements"
+    foreach (var (name, cube) in ds.CubesIn(group))
+        Console.WriteLine($"{group}.{name}: kind={cube.DataKind}, " +
+                          $"shape=[{string.Join(",", cube.Axes.Select(a => a.Length))}]");
 
-// Index the voltage cube
-var V = ds["V"];                              // DataCube, DataKind.Complex
+// Index the voltage cube — qualified ("HB1.V") or bare ("V", resolves default→measurements)
+var V = ds["HB1.V"];                          // DataCube, DataKind.Complex
 var axes = V.Axes;
 string[] nodeLabels = axes[0].Labels!;        // ["n_gate", "n_drain"]
 int drainIdx = Array.IndexOf(nodeLabels, "n_drain");
@@ -460,7 +538,7 @@ Both the C# importer and any Python consumer should verify the version before pr
 
 ```python
 meta = json.loads(arr['__meta__'][0])
-SUPPORTED_VERSION = 1
+SUPPORTED_VERSION = 2
 if meta.get('format_version') != SUPPORTED_VERSION:
     raise ValueError(
         f"circuitRF .npy format_version mismatch: "
@@ -494,6 +572,8 @@ implementation against a known answer.
 
 ---
 
-*See also: `docs/design/data-export.md` (writer/format design); `RfCore/src/Export/NpyWriter.cs`,
-`NpyReader.cs`, `DataSetImporter.cs`, `ImportedLinearNetwork.cs` (implementation);
-`tests/Engine.Tests/Export/NpyRoundTripTests.cs` (12-test round-trip oracle).*
+*See also: `docs/design/data-export.md` (writer/format design); the end-user
+[Results &amp; .npy export](../user/reference/npy-export.html) chapter; `RfCore/src/Export/`
+(`DataSetExporter.cs`, `ExportOptions.cs`, `NpyWriter.cs`, `NpyReader.cs`,
+`DataSetImporter.cs`, `ImportedLinearNetwork.cs`); `RfCore/src/Data/` (`DataSet.cs`,
+`DataCube.cs`); `tests/Engine.Tests/Export/` (round-trip oracle).*

@@ -22,6 +22,15 @@ public partial class PlotInspectorView : UserControl
         _traceScrollViewer = this.FindControl<ScrollViewer>("TraceScrollViewer");
     }
 
+    // Plot-type Help: open the Reference Guide's Plot Types chapter at the current type.
+    private void OnPlotTypeHelp(object? sender, RoutedEventArgs e)
+    {
+        string? anchor = DataContext is PlotInspectorViewModel vm
+            ? (vm.IsSmithPlot ? "smith" : vm.IsPolarPlot ? "polar" : vm.IsTablePlot ? "table" : "rectangular")
+            : null;
+        DocLauncher.OpenPlotType(anchor);
+    }
+
     /// <summary>
     /// Subscribe to the new ViewModel's Traces collection whenever the DataContext changes,
     /// and unsubscribe from the old one to avoid memory leaks.

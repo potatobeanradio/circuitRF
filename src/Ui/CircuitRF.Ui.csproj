@@ -64,6 +64,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Bundle the User Documentation into the app output (docs/user/) so the in-app Help menu and the
+         component/analysis Help buttons (DocLauncher) open it offline. The .md files (regeneration notes)
+         are excluded; not needed at runtime. Component symbols are refreshed by running the Ui app with
+         the generate-symbols argument (see SymbolArtworkGenerator / Program.cs). -->
+    <None Include="../../docs/user/**/*.*" Exclude="../../docs/user/**/*.md">
+      <Link>docs/user/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Avalonia UI framework (match splotRF versions) -->
     <PackageReference Include="Avalonia" Version="12.0.3" />
     <PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.0.3" />

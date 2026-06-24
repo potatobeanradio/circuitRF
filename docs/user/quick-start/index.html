@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Quick Start</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+</head>
+<body>
+
+<!-- ============ HEADER (depth: ../) ============ -->
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Quick Start</span>
+</header>
+<hr class="doc-headrule">
+<!-- ============ /HEADER ============ -->
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › Quick Start</p>
+
+  <h1>circuitRF Quick Start</h1>
+  <p class="lede">For engineers who already know circuit simulators. In a couple of pages: what circuitRF
+  is, how it's organized, and how to run a simulation and see a plot.</p>
+
+  <nav class="toc">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#what">What circuitRF is</a></li>
+      <li><a href="#organize">How a project is organized</a></li>
+      <li><a href="#build">Build a schematic: components, wires, the pin grid</a></li>
+      <li><a href="#ppt">Pins vs. Ports vs. Terms</a></li>
+      <li><a href="#run">Run a simulation</a></li>
+      <li><a href="#plot">See the result on the Data Display</a></li>
+      <li><a href="#cli">Headless / command line</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="what">What circuitRF is</h2>
+  <p>circuitRF is a lightweight, cross-platform RF circuit simulator. If you've used a SPICE tool or a
+  commercial RF/microwave EDA suite, you'll be at home — but the analyses and the workflow are built around
+  the <strong>RF problem</strong>, not the time-domain transient problem. It is deliberately
+  <strong>not a SPICE simulator</strong>.</p>
+
+  <p><strong>Simulations available:</strong></p>
+  <ul>
+    <li><strong>DC</strong> — operating point (linear and nonlinear), the bias prerequisite for HB.</li>
+    <li><strong>S-parameters</strong> — linear multiport network parameters over a frequency sweep, with
+      renormalization and embedded Touchstone (<code>.sNp</code>) blocks.</li>
+    <li><strong>Harmonic Balance (HB)</strong> — steady-state nonlinear analysis, single- and two-tone, with
+      power/source continuation for convergence at drive. Reports Pout, gain, efficiency, PAE, spectra,
+      intermodulation.</li>
+    <li><strong>Loadpull / sourcepull</strong> — a first-class experiment: sweep the source/load reflection
+      coefficient over a Smith-chart grid and contour the figures of merit. <strong>Loadpull Pursuit</strong>
+      automatically searches for the terminations that optimize a metric.</li>
+    <li><strong>Parametric sweeps</strong> — wrap <em>any</em> analysis in one or more swept variables
+      (available power, a bias voltage, a frequency, any user variable).</li>
+  </ul>
+
+  <p><strong>Data Display:</strong> results plot on rectangular, Smith, and polar charts, and in tables.
+  Measured data (Touchstone, <code>.spl</code>, <code>.lpcwave</code>) overlays simulated data on the same
+  axes — a measured loadpull contour plots exactly like a simulated one.</p>
+
+  <div class="callout note">
+    <span class="label">Results are Python-native</span>
+    <p>Every run writes its results as a NumPy <code>.npy</code> dataset (a named bundle of labeled,
+    unit-bearing arrays — the <code>DataSet</code>/<code>DataCube</code> model). You can plot it in
+    circuitRF or load it straight into Python/MATLAB. Export to <code>.mat</code>, Touchstone,
+    <code>.spl</code>, and <code>.lpcwave</code> is built in.</p>
+  </div>
+
+  <h2 id="organize">How a project is organized</h2>
+  <p>circuitRF is a <strong>hierarchical, cell-based</strong> tool (like the commercial RF suites, not like a
+  flat SPICE deck). The pieces:</p>
+  <ul>
+    <li><strong>Library</strong> — a collection of cells you can reuse and reference. circuitRF can reference
+      several libraries at once.</li>
+    <li><strong>Cell</strong> — a reusable building block with up to three views: a <strong>Symbol</strong>
+      (the glyph drawn when the cell is instanced, and where its ports sit), a <strong>Schematic</strong>
+      (the electrical contents), and a <strong>Layout</strong> (placeholder in this release). A cell declares
+      <strong>parameters</strong> that an instance can override — this is how hierarchy passes values
+      top-down.</li>
+    <li><strong>Hierarchy</strong> — a schematic can instance other cells as sub-cells. Push into a sub-cell
+      to edit it, pop back out; an edit to a cell affects every instance.</li>
+    <li><strong>TestBench</strong> — the thing you actually simulate: a top schematic plus its analyses and
+      measurements.</li>
+  </ul>
+
+  <div class="callout tip">
+    <span class="label">No project? No problem</span>
+    <p>You don't have to build a cell library to try something. Use <strong>File → New Schematic</strong> to
+    open a <strong>standalone schematic</strong> — a scratch sheet you can wire up and simulate immediately,
+    with no workspace or cell structure. Save it into a workspace later if it's worth keeping.</p>
+  </div>
+
+  <figure class="shot">
+    <!-- SCREENSHOT TODO — capture and save to ../assets/screenshots/quickstart-schematic.png, then
+         replace this <div> with: <img src="../assets/screenshots/quickstart-schematic.png" alt="..."> -->
+    <div class="shot-todo">
+      Screenshot: the schematic editor with a small S-parameter test bench — two <code>Term</code>s and an
+      L/C matching network — plus the Library Palette (left) and the Analyses panel (right).
+      <span class="tag">../assets/screenshots/quickstart-schematic.png</span>
+    </div>
+    <figcaption>The schematic editor. Drag from the Library Palette, wire, set values, then Run.</figcaption>
+  </figure>
+
+  <h2 id="build">Build a schematic: components, wires, the pin grid</h2>
+  <ol class="steps">
+    <li><strong>Place a component.</strong> Click a tile in the <strong>Library Palette</strong> (or drag it
+      onto the canvas). A ghost follows the cursor; click to drop. The tool stays armed so you can place
+      several. Press <kbd>R</kbd> to rotate the ghost, <kbd>Esc</kbd> to stop placing.</li>
+    <li><strong>Wire it up.</strong> Press <kbd>W</kbd> (or the Wire button) and click from one pin to
+      another. <kbd>Enter</kbd> or double-click finishes a wire; <kbd>Esc</kbd> cancels it.</li>
+    <li><strong>Edit a value.</strong> <strong>Double-click a component's value label</strong> right on the
+      schematic to edit it inline — type <code>50 Ω</code>, <code>1.2 nH</code>, <code>2 GHz</code> and press
+      <kbd>Enter</kbd>. (Double-clicking the body opens the full parameter editor.)</li>
+  </ol>
+
+  <div class="callout note">
+    <span class="label">The pin grid</span>
+    <p>Connections are exact, not fuzzy. Every component pin, wire vertex, and junction lands on the
+    <strong>connection grid</strong> (the coarse grid), and two things are connected only when they sit on the
+    <em>same</em> grid point. A separate, finer <strong>authoring grid</strong> positions labels and
+    annotations. Keep pins on the connection grid and wiring "just works"; a red marker flags an unconnected
+    pin.</p>
+  </div>
+
+  <h2 id="ppt">Pins vs. Ports vs. Terms</h2>
+  <p>Three things sound similar but do different jobs. The distinction matters because it controls what
+  becomes an external interface versus an excitation/measurement point:</p>
+  <table>
+    <thead><tr><th>Concept</th><th>What it is</th><th>When you use it</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="nowrap"><strong>Pin</strong></td>
+        <td>An <em>interface terminal of a cell</em>. Pins on a cell's symbol are how the cell connects to the
+          parent schematic that instances it. Connectivity only — no electrical model.</td>
+        <td>Inside a cell you intend to reuse hierarchically, to expose its connection points.</td>
+      </tr>
+      <tr>
+        <td class="nowrap"><strong>Term</strong></td>
+        <td>An <em>S-parameter port termination</em> — a numbered reference-impedance port (default 50 Ω). Each
+          <code>Term</code> carries a <code>Num</code> (port index).</td>
+        <td>On a test bench, to define the ports an S-parameter analysis measures between.</td>
+      </tr>
+      <tr>
+        <td class="nowrap"><strong>Port</strong></td>
+        <td>The general term for an external connection point. In a <em>cell</em> a port is realized by a
+          <strong>Pin</strong>; in an <em>S-parameter test bench</em> a port is realized by a
+          <strong>Term</strong>.</td>
+        <td>Conceptually — "this circuit is a 2-port." How you realize it depends on the context above.</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="small">The Reference Guide has a fuller treatment with diagrams; for Quick Start: use
+  <strong>Term</strong> to define S-parameter ports on a test bench, and <strong>Pin</strong> to expose a
+  reusable cell's connections.</p>
+
+  <h2 id="run">Run a simulation</h2>
+  <ol class="steps">
+    <li>Open the <strong>Analyses</strong> panel and add an analysis (e.g. <em>S-Parameter</em>, 1–10 GHz).
+      For an HB example, add <em>Harmonic Balance</em> and drive the input with a <code>P1Tone</code>
+      (available-power) source.</li>
+    <li>Press <strong>Run ▶</strong>. circuitRF extracts a netlist from the schematic, elaborates it, and runs
+      the analysis on a background thread.</li>
+    <li>The run writes <code>results/&lt;name&gt;/run.npy</code>. Open <strong>Data Displays</strong> that are
+      already showing this result refresh automatically.</li>
+  </ol>
+
+  <h2 id="plot">See the result on the Data Display</h2>
+  <ol class="steps">
+    <li>Open a <strong>Data Display</strong> (<kbd>Ctrl/⌘+Shift+D</kbd>) and add a plot — Rectangular, Smith,
+      Polar, or Table.</li>
+    <li>In the trace card, pick the data source (your run), then the signal — e.g. <code>S(2,1)</code>. On a
+      rectangular plot choose a transform such as <code>dB20</code>; on a Smith chart the complex value plots
+      directly.</li>
+    <li>For loadpull, choose the loadpull run and a contour metric (Pout, PAE). The optimum (max-power /
+      max-efficiency) markers and interactive markers read values off the contour surface.</li>
+  </ol>
+
+  <figure class="shot">
+    <!-- SCREENSHOT TODO — ../assets/screenshots/quickstart-dataset-plot.png -->
+    <div class="shot-todo">
+      Screenshot: the Data Display showing an <code>S(2,1)</code> magnitude (dB) trace on a rectangular plot,
+      with the trace inspector card on the right.
+      <span class="tag">../assets/screenshots/quickstart-dataset-plot.png</span>
+    </div>
+    <figcaption>The Data Display. Rectangular for scalar magnitudes; Smith/polar for complex; Table for both.</figcaption>
+  </figure>
+
+  <h2 id="cli">Headless / command line</h2>
+  <p>The engine runs without the GUI — useful for scripting and batch sweeps. From a <code>.cnl</code> netlist
+  (a human-readable circuit description):</p>
+  <pre><code class="cmd"><span class="prompt">$ </span>circuitrf sparam mycircuit.cnl --freq 1GHz:3GHz:50MHz -o mycircuit.s2p</code></pre>
+  <p>This reads the netlist, runs the S-parameter analysis, and writes a Touchstone file. (Make sure the
+  circuit's port count matches the extension, or omit <code>-o</code> to let circuitRF name it
+  <code>.sNp</code> automatically.) Harmonic-balance and loadpull runs are driven from the GUI's Run button in
+  this release.</p>
+
+  <div class="callout tip">
+    <span class="label">Next</span>
+    <p>New to circuit simulators in general? The <a href="../new-user-guide/index.html">New User's Guide</a>
+    starts from first principles. Need exact parameters, algorithms, or the netlist format? See the
+    <a href="../reference/index.html">Reference Guide</a>.</p>
+  </div>
+
+</main>
+
+<!-- ============ FOOTER (depth: ../) ============ -->
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Docs home</a>
+</footer>
+<!-- ============ /FOOTER ============ -->
+
+</body>
+</html>

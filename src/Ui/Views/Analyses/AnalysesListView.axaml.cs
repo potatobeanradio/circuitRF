@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using CircuitRF.Core.Design;
 using CircuitRF.Ui.ViewModels;
 
 namespace CircuitRF.Ui.Views.Analyses;
@@ -12,7 +13,18 @@ public partial class AnalysesListView : UserControl
 
     private void OnHelp(object? sender, RoutedEventArgs e)
     {
-        // TODO: open Analyses help. Stub for now.
+        // Open the Simulations chapter, anchored to the selected analysis when there is one.
+        string? anchor = (DataContext as AnalysesListViewModel)?.SelectedRow?.Analysis switch
+        {
+            DcAnalysis              => "dc",
+            SParameterAnalysis      => "s-parameters",
+            HarmonicBalanceAnalysis => "harmonic-balance",
+            ParametricSweepAnalysis => "parametric-sweep",
+            LoadpullPursuitAnalysis => "loadpull-pursuit",
+            LoadpullAnalysis        => "loadpull",
+            _                       => null,
+        };
+        DocLauncher.OpenAnalysis(anchor);
     }
 
     // ── Selection ─────────────────────────────────────────────────────────────

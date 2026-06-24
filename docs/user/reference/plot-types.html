@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Plot Types Reference</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Plot types</p>
+
+  <h1>Plot Types</h1>
+  <p class="lede">The Data Display offers four plot types. Which one you can use depends on whether the data is
+  real (scalar) or complex — that's the single most important rule below.</p>
+
+  <div class="callout note">
+    <span class="label">Scalar vs. complex — the rule</span>
+    <p><strong>Rectangular</strong> shows <em>scalar</em> (real) data only. <strong>Smith</strong> and
+    <strong>Polar</strong> show <em>complex</em> data only. <strong>Table</strong> is the exception — it shows
+    <em>both complex and scalar data together</em> in one grid. So a complex quantity like <code>S(1,1)</code>
+    goes on a Smith/Polar/Table; a real quantity like Pout in dBm goes on a Rectangular/Table; and a Table can
+    hold both at once.</p>
+  </div>
+
+  <nav class="toc">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#rectangular">Rectangular</a></li>
+      <li><a href="#smith">Smith</a></li>
+      <li><a href="#polar">Polar</a></li>
+      <li><a href="#table">Table</a></li>
+      <li><a href="#traces">Adding traces &amp; transforms</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="rectangular">Rectangular</h2>
+  <p>The familiar Cartesian X–Y plot. <strong>Scalar data only.</strong> A complex signal must be reduced to a
+  real quantity first via a per-trace transform — magnitude in dB (<code>dB20</code>/<code>dB10</code>), phase
+  in degrees, real part, imaginary part, magnitude. This is the plot for gain vs. frequency, Pout vs. drive,
+  efficiency vs. load, harmonic levels, and most swept results.</p>
+  <figure class="shot">
+    <!-- SCREENSHOT TODO — ../assets/screenshots/plot-rectangular.png -->
+    <div class="shot-todo">Screenshot: a rectangular plot of <code>S(2,1)</code> in dB vs. frequency, with a
+    second trace and a marker. <span class="tag">../assets/screenshots/plot-rectangular.png</span></div>
+    <figcaption>Rectangular: scalar quantities vs. a swept axis.</figcaption>
+  </figure>
+
+  <h2 id="smith">Smith</h2>
+  <p>The Smith chart maps impedance/reflection onto the unit disk. <strong>Complex data only</strong> — it
+  plots the complex value directly (no transform needed). Use it for reflection coefficients
+  (<code>S(1,1)</code>), input/output impedance, and matching-network design. Loadpull contours are drawn on
+  the Smith chart's Γ-plane.</p>
+  <figure class="shot">
+    <!-- SCREENSHOT TODO — ../assets/screenshots/plot-smith.png -->
+    <div class="shot-todo">Screenshot: a Smith chart with <code>S(1,1)</code> swept over frequency and a
+    marker reading impedance. <span class="tag">../assets/screenshots/plot-smith.png</span></div>
+    <figcaption>Smith: complex reflection / impedance on the unit disk.</figcaption>
+  </figure>
+
+  <h2 id="polar">Polar</h2>
+  <p>A magnitude-and-angle plot on concentric circles. <strong>Complex data only.</strong> Use it when you
+  care about a complex quantity's phase and magnitude but don't want the Smith chart's impedance grid — e.g.
+  viewing a reflection or transmission coefficient as a vector.</p>
+  <figure class="shot">
+    <!-- SCREENSHOT TODO — ../assets/screenshots/plot-polar.png -->
+    <div class="shot-todo">Screenshot: a polar plot of a complex S-parameter swept over frequency.
+    <span class="tag">../assets/screenshots/plot-polar.png</span></div>
+    <figcaption>Polar: complex magnitude/angle.</figcaption>
+  </figure>
+
+  <h2 id="table">Table</h2>
+  <p>The numbers in a grid. <strong>Table is special: it shows complex <em>and</em> scalar data
+  simultaneously</strong> in the same table — something no other plot type does. A complex column displays in
+  a chosen complex format (magnitude/angle, real/imag, or dB/angle), and a scalar column shows its real value,
+  side by side. It's ideal for reading exact values, building a results summary, and copying data out. (The
+  loadpull <em>summary table</em> is a specialized Table view.)</p>
+  <figure class="shot">
+    <!-- SCREENSHOT TODO — ../assets/screenshots/plot-table.png -->
+    <div class="shot-todo">Screenshot: a Table mixing a complex <code>S(2,1)</code> column (mag/angle) with a
+    scalar Pout-dBm column. <span class="tag">../assets/screenshots/plot-table.png</span></div>
+    <figcaption>Table: complex and scalar columns together.</figcaption>
+  </figure>
+
+  <h2 id="traces">Adding traces &amp; transforms</h2>
+  <p>Each plot holds one or more <strong>traces</strong>, configured in the trace card:</p>
+  <ul>
+    <li><strong>Data source</strong> — which run/file the trace reads from. Measured files overlay simulated
+      ones on the same axes.</li>
+    <li><strong>Signal</strong> — the quantity: an S-parameter (<code>S(2,1)</code>), a node voltage, a branch
+      current, a measurement, or a cube slice.</li>
+    <li><strong>Transform</strong> (Rectangular/Table) — how a complex value becomes scalar:
+      <code>dB20</code>, <code>dB10</code>, <code>Mag</code>, <code>Phase</code>, <code>Real</code>,
+      <code>Imag</code>. Not needed on Smith/Polar (they take the complex value directly).</li>
+    <li><strong>Complex format</strong> (Table) — magnitude/angle, real/imag, or dB/angle for complex
+      columns.</li>
+    <li><strong>Markers</strong> — drop interactive markers to read values; on a loadpull contour, markers
+      read the surface, and the max-power / max-efficiency optima are flagged.</li>
+  </ul>
+
+  <hr>
+  <p class="small">See also: <a href="simulations.html">Simulations</a> (what each analysis produces) ·
+  <a href="components.html">Components</a>.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="index.html">Reference home</a>
+</footer>
+
+</body>
+</html>

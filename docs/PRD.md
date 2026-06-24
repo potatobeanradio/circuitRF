@@ -221,4 +221,4 @@ Dominant risks: **HB convergence and two-tone frequency indexing** (now with a h
 
 ---
 
-*Next step: Phase 2 implementation (linear engine: MNA, DC, S-parameters) against `docs/design/linear-engine.md` (rev 3), consuming the extracted RfCore — validated by Hero 1 (`1e-6` vs the 4-port reference) and Hero 1B (the 10k-component scale anchor).*
+*Implementation status (2026-06-24): Phases 1–7 are substantially complete — the engine (MNA/S-parameters, nonlinear DC, single/two-tone HB, sweeps, loadpull) runs the heroes from the CLI and the GUI, and the Avalonia editors + `DataCube`-native Data Display are in place, including end-to-end loadpull contour plotting (simulated and measured) and interactive markers that operate on the contour surface. Remaining for the v1 (alpha) release: Phase-8 packaging/hardening. Noise analysis is a deliberate green-field deferral (see `docs/Development_Plan.md` §11). Roadmap and current status live in `docs/Development_Plan.md`.*

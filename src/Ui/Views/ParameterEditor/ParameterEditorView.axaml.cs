@@ -168,7 +168,11 @@ public partial class ParameterEditorView : UserControl
 
     private void OnHelpClick(object? sender, RoutedEventArgs e)
     {
-        // Placeholder: opens local HTML doc for the component type. Real docs wired in a later phase.
+        // Open the Reference Guide section for this component (offline, bundled docs).
+        if (DataContext is ParameterEditorViewModel { Target: { } target })
+            DocLauncher.OpenComponent(target.Symbol);
+        else
+            DocLauncher.Open("reference/components.html");
     }
 
     private void OnCloseClick(object? sender, RoutedEventArgs e)

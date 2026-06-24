@@ -304,6 +304,13 @@
                     <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
                 </Button>
 
+                <Button Classes="seg-btn"
+                        Click="OnPlotTypeHelp"
+                        Margin="8,0,0,0"
+                        ToolTip.Tip="Plot type help">
+                    <mi:MaterialIcon Kind="HelpCircleOutline" Width="15" Height="15"/>
+                </Button>
+
             </StackPanel>
 
             <!-- ── §B Row 2: + Trace (left) / Freq + Font Size (right) ─── -->

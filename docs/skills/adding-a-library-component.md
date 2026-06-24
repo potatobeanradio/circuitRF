@@ -14,7 +14,7 @@ before writing anything.
 
 **Device component** — has ports, stamps/evaluates in the engine, and its `EngineReference` resolves to
 a real component-model in the elaborator's factory (R, L, C, Vdc, SnP, ZPort, SDD, …). This is the
-common case and is fully documented step-by-step in `docs/palette-contributor-guide.md`. Follow that
+common case and is fully documented step-by-step in `docs/sonnet-briefs/palette-contributor-guide.md`. Follow that
 guide for the **UI/palette** edits (enum, registry, ports, glyph, default params, code-parse). Two
 corrections to that guide, verified against current code:
 - Its variadic-port section describes ZPort/Sdd as "N+1 pins with a `ref` pin → `RefNetBinding`." The
@@ -211,7 +211,7 @@ block with ground as the common return.
 
 ## See also
 
-- `docs/palette-contributor-guide.md` — the full device-component **UI/palette** step-by-step (fields,
+- `docs/sonnet-briefs/palette-contributor-guide.md` — the full device-component **UI/palette** step-by-step (fields,
   glyph helpers, worked attenuator example). Does **not** cover the engine model — see
   "Device-component engine implementation" above (TLIN) for the stamp + factory wiring.
 - `src/Core/Devices/TLineModel.cs` + `ComponentModelFactory.CreateTLineModel` — reference

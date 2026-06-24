@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Reference Guide</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+</head>
+<body>
+
+<!-- ============ HEADER (depth: ../) ============ -->
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+</header>
+<hr class="doc-headrule">
+<!-- ============ /HEADER ============ -->
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › Reference Guide</p>
+
+  <h1>circuitRF Reference Guide</h1>
+  <p class="lede">The complete technical reference — every simulation and its parameters, every library
+  component, the plot types, the netlist format, and the symbol conventions. Plain and direct; look things
+  up here.</p>
+
+  <h2>Chapters</h2>
+
+  <h3>1 · Simulations</h3>
+  <p><a href="simulations.html">simulations.html</a> — one section per analysis (DC, S-parameters, Harmonic
+  Balance, Loadpull/Pursuit, Parametric Sweep). Each covers what it computes, a brief algorithm overview with
+  key equations (referencing the white papers rather than deriving), and <strong>every setting</strong> — max
+  harmonic order, tolerances, continuation, grid definition, and so on.</p>
+
+  <h3>2 · Components</h3>
+  <p><a href="components.html">components.html</a> — one section per library component, each with its
+  <strong>symbol rendering</strong> and a full <strong>parameter table</strong>. Written to grow as the
+  library grows.</p>
+
+  <h3>2a · The SDD (Symbolically-Defined Device)</h3>
+  <p><a href="sdd.html">sdd.html</a> — circuitRF's user-authored nonlinear device, in depth: the equation
+  grammar (<code>I[p,w]</code>, <code>Q[p]</code>), weighting functions <code>H[w]</code>, and
+  <strong>how to reference another device's current</strong> (control currents <code>_cn</code> /
+  <code>C[n]</code>) — with worked current-mirror and feedback examples.</p>
+
+  <h3>3 · Pins, Ports &amp; Terms</h3>
+  <p><a href="pins-ports-terms.html">pins-ports-terms.html</a> — the definitive treatment of the three
+  concepts, with rendered symbol diagrams, and why distinguishing them matters.</p>
+
+  <h3>4 · Dynamic symbols (SDD, ZPort, SnP)</h3>
+  <p><a href="dynamic-symbols.html">dynamic-symbols.html</a> — components whose symbol grows with port count,
+  including the SnP <strong>pin arrangement</strong>, <strong>pitch</strong>, and <strong>floating reference
+  pin</strong> options.</p>
+
+  <h3>5 · The Nonlinear Capacitor &amp; the C–V Editor</h3>
+  <p><a href="nonlinear-capacitor.html">nonlinear-capacitor.html</a> — the polynomial (Taylor-series) C(V)
+  model, how the C–V Editor generates the coefficients, and the <strong>Apply</strong> step that commits
+  them.</p>
+
+  <h3>6 · Plot types</h3>
+  <p><a href="plot-types.html">plot-types.html</a> — Rectangular, Smith, Polar, and Table, step by step.
+  Notably: <strong>Table shows complex and scalar data together</strong>, while Rectangular is scalar-only
+  and Smith/Polar are complex-only.</p>
+
+  <h3>7 · The netlist (<code>.cnl</code>) format</h3>
+  <p><a href="netlist.html">netlist.html</a> — what a circuitRF netlist is, what it's for, and a fully
+  annotated example explaining each line.</p>
+
+  <h3>8 · Expressions</h3>
+  <p><a href="expressions.html">expressions.html</a> — the one expression language used everywhere (variables,
+  parameters, SDD equations, measurements): values, operators, functions, units, scope, user-defined functions,
+  and cycle detection.</p>
+
+  <h3>9 · Measurements</h3>
+  <p><a href="measurements.html">measurements.html</a> — named figures of merit computed from results, the two
+  cube-reference notations (accessor vs. bracket), S-parameter port indexing, composition, and swept variables.</p>
+
+  <h3>10 · Grid &amp; Connectivity</h3>
+  <p><a href="grid.html">grid.html</a> — the two-grid model (coarse connection grid, fine authoring grid), why
+  connection is exact equality, and how cross-grid paste is handled.</p>
+
+  <h3>11 · File formats</h3>
+  <p><a href="file-formats.html">file-formats.html</a> — schematic vs. netlist, the full <code>.csch</code> /
+  <code>.csym</code> / <code>.ccell</code> / <code>.cdd</code> / <code>.cws</code> family, and how
+  Workspace › Library › Cell map to folders.</p>
+
+  <h3>12 · Symbol Editor</h3>
+  <p><a href="symbol-editor.html">symbol-editor.html</a> — authoring a cell's glyph: drawing primitives, pins
+  and port mapping, the two snap grids, orientation conventions, locked symbols, and the auto-generator.</p>
+
+  <h3>13 · Results &amp; Data Export</h3>
+  <p><a href="npy-export.html">npy-export.html</a> — where a run's results live, the DataSet/DataCube model,
+  exporting to <code>.npy</code> / <code>.mat</code> / TSV / Touchstone / loadpull formats, grouped results, and
+  a Python quick-start for reading the <code>.npy</code>.</p>
+
+  <!-- NEW CHAPTER: add an <h3> + paragraph here and create the matching .html page. -->
+
+  <!-- =====================================================================
+       FOR DEVELOPERS — in-app Help buttons link directly here.
+       Anchor scheme (stable contract):
+         Component Parameter Editor "Help"  →  reference/components.html#<symbolkind-lowercase>
+                                               e.g. components.html#resistor , components.html#sdd
+                                               (the #sdd section links on to the full sdd.html chapter)
+         Analyses "Help"                    →  reference/simulations.html#<analysis>
+                                               e.g. simulations.html#harmonic-balance , #s-parameters , #loadpull-pursuit
+         Plot-type Help                     →  reference/plot-types.html#<type>   (#rectangular #smith #polar #table)
+         Nonlinear-C / C–V Editor Help      →  reference/nonlinear-capacitor.html
+       Keep these anchors in sync with the headings on each chapter page. The #sdd anchor in
+       components.html MUST be preserved (Help deep-link target) even though the detail now lives in sdd.html.
+       ===================================================================== -->
+
+</main>
+
+<!-- ============ FOOTER (depth: ../) ============ -->
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Docs home</a>
+</footer>
+<!-- ============ /FOOTER ============ -->
+
+</body>
+</html>
