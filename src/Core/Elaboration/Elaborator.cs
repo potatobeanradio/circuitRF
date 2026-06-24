@@ -72,8 +72,11 @@ public sealed class Elaborator
             catch { /* skip variables that cannot resolve (e.g. forward refs) */ }
         }
 
-        // Layer-3 linter: check top-level Terms for Num consistency.
-        LintTopLevelTerms(netlist);
+        // Layer-3 linter: check top-level Terms for Num consistency. The Num parameter is meaningful
+        // ONLY to S-parameter analysis, so this lint runs only when an S-parameter analysis will
+        // actually run — otherwise it fires spuriously on HB/DC/loadpull-only test benches.
+        if (HasRunnableSParam(tb))
+            LintTopLevelTerms(netlist);
 
         return netlist;
     }
@@ -594,6 +597,46 @@ public sealed class Elaborator
     }
 
     // ── Layer-3 linter ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// True when the test bench has an S-parameter analysis that will actually run — a directly
+    /// enabled <see cref="SParameterAnalysis"/>, an enabled parametric-sweep chain that bottoms out
+    /// at one, or an enabled raw <c>type=sparam</c> directive. Gates the Term-Num lint so it never
+    /// fires on a bench that runs only HB / DC / loadpull (where Num is irrelevant).
+    /// </summary>
+    private static bool HasRunnableSParam(TestBench tb)
+    {
+        // Names referenced as the inner of any sweep are chain members, not roots.
+        var innerNames = tb.Analyses
+            .OfType<ParametricSweepAnalysis>()
+            .Select(ps => ps.InnerAnalysisName)
+            .ToHashSet(System.StringComparer.Ordinal);
+
+        foreach (var top in tb.Analyses)
+        {
+            if (innerNames.Contains(top.Name)) continue;        // not a chain root
+            if (!AnalysisChain.IsChainRunnable(top, tb)) continue;
+
+            // Descend past sweeps to the runnable base.
+            Analysis? baseAnalysis = top;
+            int guard = 0;
+            while (baseAnalysis is ParametricSweepAnalysis ps && guard++ < 64)
+                baseAnalysis = AnalysisChain.ResolveEffectiveInner(ps.InnerAnalysisName, tb);
+
+            if (baseAnalysis is SParameterAnalysis) return true;
+        }
+
+        // Raw directives: an "analysis … type=sparam" line that is not explicitly disabled.
+        foreach (var d in tb.RawDirectives)
+        {
+            if (!d.Kind.Equals("analysis", System.StringComparison.OrdinalIgnoreCase)) continue;
+            if (d.RawLine.IndexOf("type=sparam", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+            if (d.RawLine.IndexOf("enabled=false", System.StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            return true;
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Checks top-level Term/Port components for duplicate or missing port Num values.

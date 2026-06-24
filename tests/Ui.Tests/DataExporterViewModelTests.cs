@@ -229,4 +229,107 @@ public sealed class DataExporterViewModelTests : IDisposable
         vm.ExportMode = ExportMode.Tsv;
         Assert.EndsWith(".txt", vm.SuggestedFileName);
     }
+
+    // ── Loadpull (.spl / .lpcwave) export ──────────────────────────────────────
+
+    // A canonical loadpull DataSet grouped under "LP1": GammaLoad over {gridPoint} +
+    // FOMs over {gridPoint, pinStep} (the LoadpullRecognition signature).
+    private DataSet MakeLoadpullDataSet()
+    {
+        const int ng = 3, np = 2;
+        var grid = new Axis("gridPoint", new[] { 0.0, 1.0, 2.0 });
+        var pin  = new Axis("pinStep",   new[] { -5.0, 0.0 });
+
+        var gamma = new Complex[ng];
+        for (int gi = 0; gi < ng; gi++)
+            gamma[gi] = Complex.FromPolarCoordinates(0.3 + 0.1 * gi, gi);
+
+        DataCube Fom(double b)
+        {
+            var buf = new double[ng * np];
+            for (int gi = 0; gi < ng; gi++)
+                for (int pi = 0; pi < np; pi++)
+                    buf[gi * np + pi] = b + gi + pi;
+            return new DataCube(new[] { grid, pin }, buf);
+        }
+
+        var ds = new DataSet();
+        ds.AddToGroup("LP1", "GammaLoad",  new DataCube(new[] { grid }, gamma));
+        ds.AddToGroup("LP1", "Pout_dBm",   Fom(30.0));
+        ds.AddToGroup("LP1", "Gt_dB",      Fom(12.0));
+        ds.AddToGroup("LP1", "Efficiency", Fom(40.0));
+        ds.AddToGroup("LP1", "PAE",        Fom(35.0));
+        ds.AddToGroup("LP1", "__Freq",
+            new DataCube(new[] { new Axis("freq", new[] { 2.4e9 }, "Hz") }, new[] { 2.4e9 }));
+        return ds;
+    }
+
+    // T11 — loadpull source enables the .spl/.lpcwave formats; a plain S-param source does not.
+    [Fact]
+    public void T11_IsLoadpullAvailable_OnlyForLoadpullSource()
+    {
+        MakeRunNpy("LP", MakeLoadpullDataSet());
+        MakeRunNpy("SP", MakeSpDataSet());
+
+        var lp = new DataExporterViewModel(_tmpDir, "LP");
+        Assert.True(lp.IsLoadpullAvailable);
+
+        var sp = new DataExporterViewModel(_tmpDir, "SP");
+        Assert.False(sp.IsLoadpullAvailable);
+    }
+
+    // T12 — .spl mode lists loadpull groups (single-select) and can export.
+    [Fact]
+    public void T12_SplMode_ListsLoadpullGroup_CanExport()
+    {
+        MakeRunNpy("LP", MakeLoadpullDataSet());
+        var vm = new DataExporterViewModel(_tmpDir, "LP") { ExportMode = ExportMode.Spl };
+
+        Assert.Single(vm.IncludeRows);
+        Assert.Equal("LP1", vm.IncludeRows[0].GroupName);
+        Assert.NotNull(vm.SelectedLoadpullGroup);
+        Assert.True(vm.CanExport);
+        Assert.EndsWith(".spl", vm.SuggestedFileName);
+
+        vm.ExportMode = ExportMode.Lpcwave;
+        Assert.EndsWith(".lpcwave", vm.SuggestedFileName);
+    }
+
+    // T13 — ExportLoadpull(.spl) writes a file that reads back with matching FOMs.
+    [Fact]
+    public void T13_ExportSpl_RoundTrips()
+    {
+        MakeRunNpy("LP", MakeLoadpullDataSet());
+        var vm = new DataExporterViewModel(_tmpDir, "LP") { ExportMode = ExportMode.Spl };
+
+        string outPath = Path.Combine(_tmpDir, "LP.spl");
+        vm.ExportLoadpull(outPath);
+        Assert.True(File.Exists(outPath));
+
+        var read = RfCore.Loadpull.SplReader.ReadSpl(outPath);
+        var src  = MakeLoadpullDataSet();
+        var a = src["LP1.Pout_dBm"].RealValues;
+        var b = read["Pout_dBm"].RealValues;
+        Assert.Equal(a.Length, b.Length);
+        for (int i = 0; i < a.Length; i++) Assert.Equal(a[i], b[i], precision: 4);
+    }
+
+    // T14 — ExportLoadpull(.lpcwave) writes a file that reads back with matching FOMs.
+    [Fact]
+    public void T14_ExportLpcwave_RoundTrips()
+    {
+        MakeRunNpy("LP", MakeLoadpullDataSet());
+        var vm = new DataExporterViewModel(_tmpDir, "LP") { ExportMode = ExportMode.Lpcwave };
+
+        string outPath = Path.Combine(_tmpDir, "LP.lpcwave");
+        vm.ExportLoadpull(outPath);
+        Assert.True(File.Exists(outPath));
+
+        var read = RfCore.Loadpull.LpcwaveReader.ReadLpcwave(outPath);
+        var src  = MakeLoadpullDataSet();
+        var a = src["LP1.Efficiency"].RealValues;
+        var b = read["Efficiency"].RealValues;
+        Assert.Equal(a.Length, b.Length);
+        for (int i = 0; i < a.Length; i++) Assert.Equal(a[i], b[i], precision: 4);
+    }
 }

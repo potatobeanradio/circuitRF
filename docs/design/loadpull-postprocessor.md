@@ -1,7 +1,7 @@
 # circuitRF — Loadpull Simulation Post-Processor (design)
 
-**Status:** Phase 1 (derived-field enrichment) implemented; Phase 2 (`.spl`/`.lpcwave` export) designed,
-not yet implemented.
+**Status:** Phase 1 (derived-field enrichment) implemented; Phase 2 (`.spl`/`.lpcwave` export) implemented
+(multi-frequency; `SplWriter`/`LpcwaveWriter` in `RfCore.Loadpull`, wired into `DataExporterDialog`).
 
 **Reads with:** `docs/design/loadpull.md` (the LP engine + Tuner), `docs/design/loadpull-contours.md`
 (the `LoadpullSurface` consumer + contour rendering), `src/Engine/Loadpull/CLAUDE.md` (engine conventions,
@@ -215,11 +215,35 @@ derived display metric.
 
 ---
 
-## 6. Phase 2 — export to `.spl` / `.lpcwave`
+## 6. Phase 2 — export to `.spl` / `.lpcwave`  (IMPLEMENTED)
 
-The enriched `DataSet` is the single source for export. A `SplWriter` (and `LpcwaveWriter`) consumes it and
-emits the vendor column layout the readers parse, so a simulated run can be saved as a measured-style file
-and re-opened (round-trip) or handed to external tools.
+The enriched `DataSet` is the single source for export. `SplWriter` and `LpcwaveWriter` (in
+`RfCore.Loadpull`) consume it and emit the vendor column layout the readers parse, so a simulated run can be
+saved as a measured-style file and re-opened (round-trip).
+
+**As built:**
+- **`LoadpullExportModel.Build(ds, group)`** flattens the canonical loadpull DataSet into one
+  `LoadpullFreqBlock` per frequency (a leading `freq` axis ⇒ multi-frequency; otherwise the `__Freq` carrier
+  supplies the single tone). The two writers share this model — which is *why* `.spl` ↔ `.lpcwave` is a free
+  conversion: both formats read into, and write out of, the one canonical DataSet, so a DataSet parsed from
+  either reader serializes to either writer (round-trip parity test `CrossFormat_SplToLpcwaveToSpl`).
+- **Canonical column names.** Per the owner's decision, the writers emit the *simulation's own* canonical cube
+  names as column headers (`Pout_dBm`, `Gt_dB`, `Efficiency`, `PAE`, `BiasILoad` (A), `Zin_real/imag`,
+  `IRL_dB`, `AMPM_deg`, …) rather than deriving the exact HarmonicaRF/lpcwave spellings. The
+  readers recognize them via **self-mapping `PassThrough` entries** added to `LoadpullFomDialect.Map` (e.g.
+  `Efficiency → Efficiency`). Files therefore round-trip within circuitRF; they are not intended to feed
+  external vendor tools (which expect `Eff_%`/`Iq_out_mA`). The pin/drive axis is written as `Psource[dBm]`
+  (recognized by both readers); the source termination round-trips via `gamma_src1` (.spl) / `|GS@F0|`+
+  `PhiS@F0[deg]` (.lpcwave).
+- **Multi-frequency** is fully supported: `SplWriter` emits `Number of Frequencies = N` + per-freq
+  `<fGHz> <nGrid> <nPin>` lines + one `Freq = X GHz` block each; `LpcwaveWriter` emits one
+  `! Frequency = X GHz` block each. Read-back yields cubes over `{freq, gridPoint, pinStep}`.
+- **UI:** two formats (`.spl`, `.lpcwave`) were added to `DataExporterViewModel`/`DataExporterDialog`. The
+  format buttons appear **only** when the selected `run.npy` is loadpull-shaped (`LoadpullRecognition`); the
+  INCLUDE panel becomes a single-select "LOADPULL ANALYSIS" group picker. `Zin_real/imag`/`IRL_dB`/`AMPM_deg`
+  derived metrics (Phase 1) are exported when present.
+
+Original design sketch (still accurate):
 
 **Column mapping (`.spl`, HarmonicaRF layout — from `SplReader`):** per (grid point, drive step):
 `Pavl[dBm]` (← `PavlDbm`), `Pout[dBm]` (← `Pout_dBm`), `Gt[dB]`/`Gp[dB]` (← `Gt`/`Gp`), `Eff[%]`/`PAE[%]`
@@ -227,11 +251,12 @@ and re-opened (round-trip) or handed to external tools.
 `trans_phase` (← from `AMPM` reconstruction or stored), bias columns (← `Bias*`). One block per frequency
 (simulated runs are single-frequency today → one block); `ZSource` rank-1 `{freq}` from the source match.
 
-**Open items for Phase 2:** exact `.spl` header/column spelling and required vs optional columns (derive from
-`SplReader.Parse`, do not invent); `.lpcwave` wave-quantity columns (`PoutWaves[dBm]` etc.); a writer↔reader
-round-trip test (write enriched sim DataSet → `SplReader.ReadSpl` → assert cube parity); wiring an Export
-action in the Data Display / a CLI export verb. The post-processor (Phase 1) is a prerequisite — the writer
-serializes its output, it does not re-derive.
+**Resolved during implementation:** column spelling settled on canonical names + dialect self-mapping (above);
+writer↔reader round-trip tests live in `LoadpullWriterTests` (single/multi-freq `.spl`+`.lpcwave`,
+cross-format, and a real measured file); the Export action reuses the existing `DataExporterDialog`. The
+post-processor (Phase 1) remains the prerequisite — the writer serializes its output, it does not re-derive.
+**Still open:** a CLI export verb (the dialog covers the GUI path); optional emission of vendor-native column
+spellings for external-tool interop.
 
 ---
 
@@ -243,7 +268,10 @@ serializes its output, it does not re-derive.
 - **dBm correctness:** `Pout_dBm = 10log10(Pw)+30` (a known Pout → known dBm) — guards against a W↔dBm slip.
 - **End-to-end (run pipeline):** a small LP run → enrich → the Data Display contour metric list offers
   `Pout`/`Pout_dBm`/`Zin_real`/`Zin_imag`/`IRL`/`AMPM` (extends the metric-list regression test).
-- **Phase 2:** the writer↔reader round-trip parity test above.
+- **Phase 2 (done):** writer↔reader round-trip parity (`LoadpullWriterTests`, RfCore.Tests) — single- and
+  multi-frequency `.spl`/`.lpcwave`, the `.spl`→`.lpcwave`→`.spl` cross-format hop, and a real measured file
+  written to the other format and re-read; plus `DataExporterViewModelTests` T11–T14 (loadpull gating +
+  `.spl`/`.lpcwave` export round-trip through the VM).
 
 ---
 
@@ -254,5 +282,7 @@ serializes its output, it does not re-derive.
 - **No new on-disk format** for `run.npy` — derived cubes are ordinary `DataSet` cubes, exported by the
   existing `.npy` path. Firewall: `LoadpullPostProcessor` is headless RfCore (no Avalonia); only the run
   pipeline call site is in `src/Ui`.
-- **Multi-frequency:** the engine is single-frequency per LP run today; the post-processor and the Phase-2
-  writer carry a `freq` axis only if the engine begins emitting one (the readers already support `{freq, …}`).
+- **Multi-frequency:** the post-processor and the Phase-2 writers carry a `freq` axis when one is present
+  (frequency-swept LP stacks `freq` outermost) and write one block per frequency; a single-frequency run
+  uses the `__Freq` carrier. Both writers and the readers handle `{freq, gridPoint, pinStep}` and the bare
+  `{gridPoint, pinStep}` shapes.

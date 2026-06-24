@@ -81,6 +81,10 @@ public partial class DataExporterDialog : Window
         MatBtn.Click += (_, _) => vm.ExportMode = ExportMode.Mat;
         TsvBtn.Click += (_, _) => vm.ExportMode = ExportMode.Tsv;
         TsBtn.Click  += (_, _) => vm.ExportMode = ExportMode.Touchstone;
+        SplBtn.Click     += (_, _) => vm.ExportMode = ExportMode.Spl;
+        LpcwaveBtn.Click += (_, _) => vm.ExportMode = ExportMode.Lpcwave;
+
+        UpdateLoadpullButtons();
 
         FmtFBtn.Click += (_, _) => vm.DigitFormat = 'f';
         FmtGBtn.Click += (_, _) => vm.DigitFormat = 'g';
@@ -109,15 +113,19 @@ public partial class DataExporterDialog : Window
                 if (SchematicCombo.SelectedItem as string != vm.SelectedSchematic)
                     SchematicCombo.SelectedItem = vm.SelectedSchematic;
                 IncludeListBox.ItemsSource  = vm.IncludeRows;
-                MeasurementsCheck.IsVisible = vm.MeasurementsAvailable;
                 MeasurementsCheck.IsChecked = vm.IncludeMeasurements;
                 SweepSliceItems.ItemsSource = vm.SweepSliceRows;
+                UpdateLoadpullButtons();
+                UpdatePanelVisibility(vm.ExportMode);
+                break;
+            case nameof(DataExporterViewModel.IsLoadpullAvailable):
+                UpdateLoadpullButtons();
                 break;
             case nameof(DataExporterViewModel.IncludeRows):
                 IncludeListBox.ItemsSource = vm.IncludeRows;
                 break;
             case nameof(DataExporterViewModel.MeasurementsAvailable):
-                MeasurementsCheck.IsVisible = vm.MeasurementsAvailable;
+                UpdatePanelVisibility(vm.ExportMode);
                 break;
             case nameof(DataExporterViewModel.SweepSliceRows):
                 SweepSliceItems.ItemsSource = vm.SweepSliceRows;
@@ -145,6 +153,14 @@ public partial class DataExporterDialog : Window
         MatBtn.IsChecked = mode == ExportMode.Mat;
         TsvBtn.IsChecked = mode == ExportMode.Tsv;
         TsBtn.IsChecked  = mode == ExportMode.Touchstone;
+        SplBtn.IsChecked     = mode == ExportMode.Spl;
+        LpcwaveBtn.IsChecked = mode == ExportMode.Lpcwave;
+    }
+
+    // The loadpull format row is offered only when the selected datasource is loadpull-shaped.
+    private void UpdateLoadpullButtons()
+    {
+        LoadpullFormatRow.IsVisible = Vm.IsLoadpullAvailable;
     }
 
     private void SyncDigitFormatButtons(char fmt)
@@ -164,11 +180,21 @@ public partial class DataExporterDialog : Window
     private void UpdatePanelVisibility(ExportMode mode)
     {
         bool isTs = mode == ExportMode.Touchstone;
-        IncludePanel.IsVisible    = !isTs;
-        IncludeLabel.IsVisible    = !isTs;
-        TsOptionsPanel.IsVisible  = isTs;
+        bool isLp = mode is ExportMode.Spl or ExportMode.Lpcwave;
+
+        // The INCLUDE group list is shown for every mode except Touchstone (which has its own
+        // single-group selection via the slicing panel). Loadpull reuses it as a single-select
+        // analysis picker — the VM enforces single-select and restricts rows to loadpull groups.
+        IncludePanel.IsVisible = !isTs;
+        IncludeLabel.IsVisible = !isTs;
+        IncludeLabel.Text      = isLp ? "LOADPULL ANALYSIS" : "INCLUDE";
+
+        // Measurements checkbox only applies to the dataset (npy/mat/tsv) formats.
+        MeasurementsCheck.IsVisible = !isTs && !isLp && Vm.MeasurementsAvailable;
+
+        TsOptionsPanel.IsVisible = isTs;
         bool hasSweep = isTs && Vm.SweepSliceRows.Count > 0;
-        TsSlicingPanel.IsVisible  = hasSweep;
+        TsSlicingPanel.IsVisible = hasSweep;
     }
 
     private void UpdateNoticePanel()
@@ -199,6 +225,10 @@ public partial class DataExporterDialog : Window
             else if (vm.ExportMode == ExportMode.Touchstone)
             {
                 await DoSingleTouchstoneExport(sp, vm);
+            }
+            else if (vm.ExportMode is ExportMode.Spl or ExportMode.Lpcwave)
+            {
+                await DoLoadpullExport(sp, vm);
             }
             else
             {
@@ -243,6 +273,32 @@ public partial class DataExporterDialog : Window
         if (file is null) return;
 
         vm.ExportDataSet(file.Path.LocalPath);
+        Close();
+    }
+
+    private async Task DoLoadpullExport(IStorageProvider sp, DataExporterViewModel vm)
+    {
+        bool isSpl = vm.ExportMode == ExportMode.Spl;
+        string ext = isSpl ? "spl" : "lpcwave";
+        string typeName = isSpl ? "HarmonicaRF Loadpull" : "lpcwave Loadpull";
+
+        var file = await sp.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title             = "Export Loadpull Data",
+            // Keep the full name WITH extension — a non-standard extension like ".lpcwave" is not
+            // auto-appended by the OS picker from DefaultExtension alone, so the default name must carry it.
+            SuggestedFileName = vm.SuggestedFileName,
+            DefaultExtension  = ext,
+            FileTypeChoices   =
+            [
+                new FilePickerFileType($"{typeName} (.{ext})") { Patterns = [$"*.{ext}"] },
+                new FilePickerFileType("All Files") { Patterns = ["*.*"] }
+            ]
+        });
+
+        if (file is null) return;
+
+        vm.ExportLoadpull(file.Path.LocalPath);
         Close();
     }
 

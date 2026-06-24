@@ -212,6 +212,7 @@ R:R1  n1 0  R=50 Ohm
 Port:P1  n1 0  Num=1 Z=50 Ohm
 Port:P2  n2 0  Num=1 Z=50 Ohm
 R:R1  n1 n2  R=50 Ohm
+analysis SP type=sparam start=1 GHz stop=3 GHz step=1 GHz
 ";
         var (lib, tb) = new CnlReader().Read(cnl);
         var nl = new Elaborator(lib).Elaborate(tb);
@@ -230,6 +231,7 @@ R:R1  n1 n2  R=50 Ohm
 Port:P1  n1 0  Num=1 Z=50 Ohm
 Port:P3  n3 0  Num=3 Z=50 Ohm
 R:R13  n1 n3  R=50 Ohm
+analysis SP type=sparam start=1 GHz stop=3 GHz step=1 GHz
 ";
         var (lib, tb) = new CnlReader().Read(cnl);
         var nl = new Elaborator(lib).Elaborate(tb);
@@ -241,11 +243,13 @@ R:R13  n1 n3  R=50 Ohm
     [Fact]
     public void Linter_CleanTestbench_NoWarnings()
     {
-        // A well-formed 2-port testbench should produce no warnings.
+        // A well-formed 2-port testbench (with the S-param analysis that activates the lint) should
+        // produce no warnings.
         var cnl = @"
 Port:P1  n1 0  Num=1 Z=50 Ohm
 Port:P2  n2 0  Num=2 Z=50 Ohm
 R:R1  n1 n2  R=50 Ohm
+analysis SP type=sparam start=1 GHz stop=3 GHz step=1 GHz
 ";
         var (lib, tb) = new CnlReader().Read(cnl);
         var nl = new Elaborator(lib).Elaborate(tb);

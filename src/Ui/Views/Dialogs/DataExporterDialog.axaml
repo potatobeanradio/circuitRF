@@ -47,6 +47,12 @@
                 <ToggleButton Classes="seg-btn" x:Name="TsvBtn"    Content="Tab-delimited"/>
                 <ToggleButton Classes="seg-btn" x:Name="TsBtn"     Content="Touchstone"  />
             </StackPanel>
+            <!-- Loadpull export — own row, shown only when the selected datasource is loadpull-shaped -->
+            <StackPanel x:Name="LoadpullFormatRow" Orientation="Horizontal" Spacing="2" Margin="0,0,0,4"
+                        IsVisible="False">
+                <ToggleButton Classes="seg-btn" x:Name="SplBtn"     Content=".spl"     />
+                <ToggleButton Classes="seg-btn" x:Name="LpcwaveBtn" Content=".lpcwave" />
+            </StackPanel>
 
             <!-- ── Datasource ── -->
             <TextBlock Classes="label" Text="DATASOURCE"/>

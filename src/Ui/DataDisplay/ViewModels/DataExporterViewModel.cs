@@ -17,12 +17,13 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using RfCore;
 using RfCore.Data;
 using RfCore.Export;
+using RfCore.Loadpull;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
 // ── Local enums ───────────────────────────────────────────────────────────────
 
-public enum ExportMode { Npy, Mat, Tsv, Touchstone }
+public enum ExportMode { Npy, Mat, Tsv, Touchstone, Spl, Lpcwave }
 
 // ── Helper row types ──────────────────────────────────────────────────────────
 
@@ -105,6 +106,18 @@ public partial class DataExporterViewModel : ObservableObject
 
     /// <summary>The currently selected Touchstone group (single-select in Touchstone mode).</summary>
     public IncludeRow? SelectedTouchstoneGroup
+        => IncludeRows.FirstOrDefault(r => r.IsChecked);
+
+    // ── Loadpull (.spl / .lpcwave) export ──────────────────────────────────────
+
+    /// <summary>True for the single-select loadpull export formats.</summary>
+    public bool IsLoadpullMode => ExportMode is ExportMode.Spl or ExportMode.Lpcwave;
+
+    /// <summary>True when the loaded DataSet has at least one loadpull-shaped group.</summary>
+    public bool IsLoadpullAvailable { get; private set; }
+
+    /// <summary>The currently selected loadpull group (single-select, mirrors Touchstone).</summary>
+    public IncludeRow? SelectedLoadpullGroup
         => IncludeRows.FirstOrDefault(r => r.IsChecked);
 
     // ── Z0 notice ────────────────────────────────────────────────────────────
@@ -203,7 +216,22 @@ public partial class DataExporterViewModel : ObservableObject
             _loadedDataSet = ds;
         }
         catch { /* file unreadable — leave null, CanExport = false */ }
+
+        // Loadpull (.spl/.lpcwave) export is offered only for loadpull-shaped results.
+        _loadpullGroups = _loadedDataSet is null
+            ? new List<string>()
+            : LoadpullRecognition.FindLoadpullViews(_loadedDataSet)
+                                  .Select(v => v.Group ?? DataSet.DefaultGroup)
+                                  .ToList();
+        IsLoadpullAvailable = _loadpullGroups.Count > 0;
+        OnPropertyChanged(nameof(IsLoadpullAvailable));
+
+        // If a loadpull format was selected for a now-non-loadpull source, fall back to .npy.
+        if (IsLoadpullMode && !IsLoadpullAvailable)
+            ExportMode = ExportMode.Npy;
     }
+
+    private List<string> _loadpullGroups = new();
 
     // ── Include rows ─────────────────────────────────────────────────────────
 
@@ -213,6 +241,8 @@ public partial class DataExporterViewModel : ObservableObject
         if (_loadedDataSet is null) return;
 
         bool isTs = ExportMode == ExportMode.Touchstone;
+        bool isLp = IsLoadpullMode;
+        bool singleSelect = isTs || isLp;
 
         foreach (var group in _loadedDataSet.Groups)
         {
@@ -223,20 +253,26 @@ public partial class DataExporterViewModel : ObservableObject
                 // Touchstone: only S-bearing groups
                 if (!_loadedDataSet.CubesIn(group).ContainsKey("S")) continue;
             }
+            else if (isLp)
+            {
+                // Loadpull export: only loadpull-shaped groups (recognized by cube signature).
+                if (!_loadpullGroups.Contains(group)) continue;
+            }
 
             var row = new IncludeRow(group) { IsChecked = true };
             row.PropertyChanged += (_, _) =>
             {
-                if (isTs) EnforceSingleTouchstoneSelect(row);
+                if (singleSelect) EnforceSingleSelect(row);
                 RebuildSweepSliceRows();
                 UpdateNoticesAndValidation();
                 OnPropertyChanged(nameof(SelectedTouchstoneGroup));
+                OnPropertyChanged(nameof(SelectedLoadpullGroup));
             };
             IncludeRows.Add(row);
         }
 
-        // Touchstone: enforce single-select → first checked
-        if (isTs && IncludeRows.Count > 1)
+        // Single-select modes: keep only the first checked.
+        if (singleSelect && IncludeRows.Count > 1)
         {
             for (int i = 1; i < IncludeRows.Count; i++)
                 IncludeRows[i].IsChecked = false;
@@ -245,9 +281,10 @@ public partial class DataExporterViewModel : ObservableObject
         MeasurementsAvailable = _loadedDataSet.ContainsGroup(DataSet.MeasurementsGroup);
         OnPropertyChanged(nameof(MeasurementsAvailable));
         OnPropertyChanged(nameof(SelectedTouchstoneGroup));
+        OnPropertyChanged(nameof(SelectedLoadpullGroup));
     }
 
-    private void EnforceSingleTouchstoneSelect(IncludeRow checkedRow)
+    private void EnforceSingleSelect(IncludeRow checkedRow)
     {
         if (!checkedRow.IsChecked) return;
         foreach (var r in IncludeRows)
@@ -307,6 +344,8 @@ public partial class DataExporterViewModel : ObservableObject
                     IncludeRows.Any(r => r.IsChecked) || (MeasurementsAvailable && IncludeMeasurements),
                 ExportMode.Touchstone =>
                     SelectedTouchstoneGroup != null,
+                ExportMode.Spl or ExportMode.Lpcwave =>
+                    IsLoadpullAvailable && SelectedLoadpullGroup != null,
                 _ => false
             };
         }
@@ -323,6 +362,8 @@ public partial class DataExporterViewModel : ObservableObject
             ExportMode.Mat        => ".mat",
             ExportMode.Tsv        => ".txt",
             ExportMode.Touchstone => TouchstoneExt(),
+            ExportMode.Spl        => ".spl",
+            ExportMode.Lpcwave    => ".lpcwave",
             _                     => ".npy",
         };
         SuggestedFileName = schematic + ext;
@@ -387,6 +428,26 @@ public partial class DataExporterViewModel : ObservableObject
             pinnedByAxis,
             allSweepFiles: SaveAllSweepFiles,
             baseFilePathNoSuffix);
+    }
+
+    /// <summary>
+    /// Export the selected loadpull group to a measured-style <c>.spl</c> or <c>.lpcwave</c> file
+    /// (Phase 2 of the loadpull post-processor). The caller supplies the full path including extension.
+    /// Multi-frequency loadpull results are written as one block per frequency.
+    /// </summary>
+    public void ExportLoadpull(string path)
+    {
+        if (_loadedDataSet is null) throw new InvalidOperationException("No DataSet loaded.");
+
+        var group = SelectedLoadpullGroup?.GroupName
+            ?? throw new InvalidOperationException("No loadpull group selected.");
+
+        switch (ExportMode)
+        {
+            case ExportMode.Spl:     SplWriter.WriteSpl(_loadedDataSet, path, group); break;
+            case ExportMode.Lpcwave: LpcwaveWriter.WriteLpcwave(_loadedDataSet, path, group); break;
+            default: throw new InvalidOperationException($"ExportLoadpull called in {ExportMode} mode.");
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
