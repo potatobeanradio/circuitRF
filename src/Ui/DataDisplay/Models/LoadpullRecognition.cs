@@ -21,7 +21,6 @@ public static class LoadpullRecognition
 {
     private const string GridPointAxis = "gridPoint";
     private const string PinStepAxis   = "pinStep";
-    private const string FreqAxis      = "freq";
 
     private static readonly string[] TerminationCubes = ["GammaLoad", "ZLoad"];
     private static readonly string[] FomCubes         = ["Pout_dBm", "Gt_dB", "Gp_dB", "Efficiency", "PAE"];
@@ -57,25 +56,28 @@ public static class LoadpullRecognition
 
     // ── Signature checks ──────────────────────────────────────────────────────
 
-    // A termination cube (GammaLoad or ZLoad) over a single axis named gridPoint, optionally preceded by
-    // a leading "freq" axis (frequency-swept loadpull: GammaLoad[freq, gridPoint]).
+    // A termination cube (GammaLoad or ZLoad) whose trailing axis is gridPoint, optionally preceded by a
+    // single leading sweep axis of ANY name — a built-in frequency sweep ("freq") OR a parametric sweep
+    // wrapping the loadpull/pursuit over any variable (e.g. "RFfreq", "Vds"). Recognition keys on the
+    // trailing signature, NOT the leading axis name; LoadpullSurface.BuildFreqSlices slices that leading
+    // axis by position, so any name works.
     private static bool HasTermination(IReadOnlyDictionary<string, DataCube> cubes)
     {
         foreach (var name in TerminationCubes)
             if (cubes.TryGetValue(name, out var c)
-                && (c.Rank == 1 || (c.Rank == 2 && c.Axes[0].Name == FreqAxis))
+                && (c.Rank == 1 || c.Rank == 2)
                 && c.Axes[^1].Name == GridPointAxis)
                 return true;
         return false;
     }
 
-    // At least one FOM cube over trailing axes {gridPoint, pinStep}, optionally preceded by a leading
-    // "freq" axis (frequency-swept loadpull: Pout_dBm[freq, gridPoint, pinStep]).
+    // At least one FOM cube over trailing axes {gridPoint, pinStep}, optionally preceded by a single
+    // leading sweep axis of any name (see HasTermination — covers parametric-swept loadpull/pursuit).
     private static bool HasFom(IReadOnlyDictionary<string, DataCube> cubes)
     {
         foreach (var name in FomCubes)
             if (cubes.TryGetValue(name, out var c)
-                && (c.Rank == 2 || (c.Rank == 3 && c.Axes[0].Name == FreqAxis))
+                && (c.Rank == 2 || c.Rank == 3)
                 && c.Axes[^2].Name == GridPointAxis
                 && c.Axes[^1].Name == PinStepAxis)
                 return true;

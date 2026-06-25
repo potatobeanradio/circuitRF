@@ -60,6 +60,31 @@ public class LoadpullRecognitionTests
         Assert.Null(Assert.Single(LoadpullRecognition.FindLoadpullViews(ds)).Group);
     }
 
+    // A leading axis with an arbitrary name — built by Named(name, n).
+    private static DataCube LeadTermination(string axis, int nLead, int nGrid) =>
+        new(new[] { Named(axis, nLead), Grid(nGrid) }, new Complex[nLead * nGrid]);
+    private static DataCube LeadFom(string axis, int nLead, int nGrid, int nPin) =>
+        new(new[] { Named(axis, nLead), Grid(nGrid), Pin(nPin) }, new double[nLead * nGrid * nPin]);
+
+    // Bug regression: a Loadpull Pursuit wrapped in a PARAMETRIC SWEEP over a variable (e.g. RFfreq)
+    // prepends a leading axis named after the variable — NOT "freq". Recognition must key on the
+    // trailing {gridPoint[,pinStep]} signature, so the "+Summary" gate stays enabled. (Bug: the
+    // leading axis name was hardcoded to "freq", disabling +Summary for parametric-swept loadpull.)
+    [Theory]
+    [InlineData("RFfreq")]   // swept frequency variable (the reported case)
+    [InlineData("Vds")]      // any other swept variable wrapping the pursuit
+    public void ParametricSwept_Loadpull_RecognizedRegardlessOfLeadingAxisName(string sweptVar)
+    {
+        var ds = new DataSet();
+        ds.AddToGroup("LPP1", "GammaLoad", LeadTermination(sweptVar, 3, 4));
+        ds.AddToGroup("LPP1", "ZLoad",     LeadTermination(sweptVar, 3, 4));
+        ds.AddToGroup("LPP1", "Pout_dBm",  LeadFom(sweptVar, 3, 4, 5));
+        ds.AddToGroup("LPP1", "Gt_dB",     LeadFom(sweptVar, 3, 4, 5));
+
+        Assert.True(LoadpullRecognition.IsLoadpull(ds));
+        Assert.Equal("LPP1", Assert.Single(LoadpullRecognition.FindLoadpullViews(ds)).Group);
+    }
+
     // ── Pursuit result: follow-on loadpull cubes + MXP/MXE search scalars coexist ──
 
     // The LPP follow-on loadpull is embedded under its ORIGINAL cube names (no LP_ prefix), so the

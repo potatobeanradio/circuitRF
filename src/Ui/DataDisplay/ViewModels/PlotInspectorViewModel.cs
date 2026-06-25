@@ -1203,6 +1203,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
         catch
         {
             _plot.SummaryFreqs = null;
+            _plot.SummaryAxisName = null;
+            _plot.SummaryAxisUnit = null;
             ClearSummaryCells(summaryTraces);
             PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
             return;
@@ -1212,6 +1214,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
         var freqs = new double[nFreq];
         for (int i = 0; i < nFreq; i++) freqs[i] = surface.Frequencies[i];
         _plot.SummaryFreqs = freqs;
+        _plot.SummaryAxisName = surface.LeadingAxisName;
+        _plot.SummaryAxisUnit = surface.LeadingAxisUnit;
 
         var constraint = ConstraintSpec.AtCompression(_plot.TableCompression);
         var plane      = SurfacePlane.Z;

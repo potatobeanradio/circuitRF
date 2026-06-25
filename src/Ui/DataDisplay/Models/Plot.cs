@@ -242,9 +242,18 @@ namespace CircuitRF.Ui.DataDisplay
         /// source carries more than one. Null/empty = the first loadpull view.</summary>
         public string?       SummaryLoadpullGroup { get; set; }
 
-        /// <summary>Per-frequency row axis (Hz) for a summary Table, set by the VM's RebuildSummary.
+        /// <summary>Per-slice row axis values for a summary Table, set by the VM's RebuildSummary.
         /// Null/empty for non-summary tables. Not persisted (re-derived on load).</summary>
         public double[]? SummaryFreqs { get; set; }
+
+        /// <summary>Name of the summary row axis — "freq" for a frequency-swept loadpull, or the swept
+        /// variable name (e.g. "RFfreq", "Vds") for a parametric-swept loadpull/pursuit. Drives the
+        /// summary "Freq" anchor-column header. Not persisted (re-derived on load).</summary>
+        public string? SummaryAxisName { get; set; }
+
+        /// <summary>Unit of the summary row axis — "Hz" for a frequency sweep (shown in FreqUnits), or the
+        /// swept variable's unit otherwise ("V", or "" when unitless). Not persisted.</summary>
+        public string? SummaryAxisUnit { get; set; }
 
         public PrecisionFormat FormatString               { get; set; } = PrecisionFormat.F;
         public int            MaximumFractionDigits       { get; set; } = 3;

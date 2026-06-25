@@ -158,6 +158,8 @@ A representative scale table (extensible):
 
 **Logarithmic units are not unit-suffixes.** `dB`/`dBm` are not linear scale factors, so they are handled by functions (`dB(...)`, `dBm(...)`), never as a trailing unit on a value.
 
+**Var-unit-wins (no double-scaling).** A unit applies *once*. When an evaluation **site** carries a unit (e.g. a tone field `Freq = RFfreq GHz`, or a swept override injected with a base unit) **and** the expression references a variable that already declares its own unit, the site unit is **skipped** — the variable's unit was already applied when it resolved. Without this, `Freq = RFfreq GHz` where `RFfreq = 2 GHz` would scale by 1e9 twice. The rule is implemented in `Evaluator.Eval(expr, scope, unit)`: it skips the site `unit` when the expression references any unit-bearing name in scope; literals and unit-less references still take the site unit. This is what makes a mixed-unit compound resolve exactly (each reference contributes its own unit).
+
 **Deferred:** units *inside* expressions (per-term units, unit algebra/checking). v1 uses a single assignment-level unit. This is the PRD §7 "units-in-expressions … grows later" item.
 
 ---
@@ -176,6 +178,46 @@ Scope is **structural**, not string-keyed. This replaces the prototype's `(name,
 - `C`'s component values and the overrides it passes to *its* sub-instances are then evaluated in `C`'s instance scope.
 
 **Resolution order for a name inside a cell:** local cell variables/parameters first, then global. A cell does **not** see its parent's local variables (only what was passed in as parameters) or any sibling's — this is the encapsulation that keeps a cell's meaning independent of where it is instanced.
+
+### 9.1 Design-time value preview (the `=` / `≈` editor hint)
+
+The Add/Edit Analysis dialog (and the parameter editor) show a small live hint next to each expression
+field — e.g. a tone-frequency field reading `RFfreq` shows `= 2e9`, a `2.4` with a `GHz` unit dropdown
+shows `= 2.4e9`. This is a **convenience preview**, evaluated by `AnalysisPreviewHelper` against a
+**flat, read-only design-time mirror** of the schematic's variables (`DesignScope`), *before* any
+elaboration. It is not the authoritative resolved value — the elaborator (§9) is — and it never blocks
+editing or raises an error; an expression it can't resolve simply shows no hint.
+
+**What it does.** It collects every named parameter expression in the model into a single flat scope
+(last-wins on duplicate names; SDD/FetSdd equation slots are excluded), evaluates the field expression
+against it, and renders the result.
+
+**Two scope modes** (the only difference is whether variable *units* are bound):
+- **Unit-aware** (`DesignScope.BuildResolved`) — binds each variable's declared unit, converted from
+  editor glyphs (`Ω`, `µH`) to engine ASCII (`Ohm`, `uH`). A reference to a unit-bearing variable then
+  resolves to its true base-unit value (`Cval = 1 pF` → `1e-12`; `RFfreq = 2 GHz` → `2e9`). The
+  **var-unit-wins** rule (§8) applies each variable's unit exactly once, so a *mixed-unit
+  compound* like `RFfreq + Voff` (GHz + MHz) is **exact**, not a single-multiplier approximation. This
+  is the mode the analysis-editor field previews use.
+- **Unit-stripped** (`DesignScope.Build`) — binds bare expressions (no unit). Used by the
+  parametric-sweep row, which intentionally treats the field as a raw **coefficient** and applies its
+  own range unit on top; binding units here would double-scale it.
+
+**Honest prefix.** The leading symbol tells the truth about the displayed digits:
+- `= value` — the shown digits reconstruct the value (to ~1e-12 relative, so plain floating-point
+  representation noise does not force a `≈`).
+- `≈ value` — the value had to be rounded to fit the display budget (G4 → G6 → G8 ladder; if none
+  round-trips, it is shown at G4 with `≈`).
+- `unknown: <name>` — a referenced name is not present in the flat scope (no value to prefix).
+- *(empty)* — a bare literal (no `= 2.5` noise), a blank field, or anything otherwise unresolvable.
+
+**Limitations (why a preview may be approximate or absent).** The scope is a *flat* mirror, so it does
+**not** model: cell hierarchy or per-instance parameter overrides (§9 proper); parametric sweeps;
+post-run measurement context (`HB1.V(...)`, §13); or SDD device equations (evaluated in the SDD's own
+context, §12). An expression that depends on any of those resolves only approximately or not at all. An
+unrecognised unit binds *raw* rather than throwing, so such a field degrades to a unit-stripped preview
+rather than disappearing. Treat the hint as a sanity check, not a contract — the elaborated value is
+authoritative.
 
 ---
 

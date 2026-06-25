@@ -642,16 +642,16 @@
                                             </ComboBox>
                                         </Grid>
 
-                                        <!-- Frequency pin row (only when multi-freq) -->
+                                        <!-- Slice-axis pin row (only when the loadpull has >1 slice) -->
                                         <Grid ColumnDefinitions="50,*"
                                               IsVisible="{Binding ShowContourFreqPicker}">
-                                            <TextBlock Grid.Column="0" Text="Freq"
+                                            <TextBlock Grid.Column="0" Text="{Binding ContourLeadingAxisLabel}"
                                                        Classes="label"/>
                                             <ComboBox Grid.Column="1"
                                                       ItemsSource="{Binding AvailableFrequencies}"
                                                       SelectedIndex="{Binding ContourFreqIndex, Mode=TwoWay}"
                                                       HorizontalAlignment="Stretch"
-                                                      ToolTip.Tip="Frequency to slice at"/>
+                                                      ToolTip.Tip="Swept-axis value to slice at"/>
                                         </Grid>
 
                                         <!-- Level-set mode toggle -->

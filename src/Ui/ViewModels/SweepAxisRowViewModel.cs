@@ -30,7 +30,15 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(VarNameError), nameof(HasVarNameError), nameof(Preview))]
+    [NotifyPropertyChangedFor(nameof(EffectiveUnit))]
     private string _varName = "";
+
+    // Changing the swept variable invalidates any unit inherited from the PREVIOUS variable.
+    // Example bug: a Loadpull/Pursuit freq sweep restored with Unit="GHz" (the LPP hint is "RFfreq"),
+    // then re-pointed at a drain-voltage var "VDD", kept scaling VDD by 1e9. Clearing lets EffectiveUnit
+    // re-derive from the new variable's own declared unit — a unit is applied only when the swept
+    // variable itself declares one. FromPsa sets VarName BEFORE Unit, so restore is unaffected.
+    partial void OnVarNameChanged(string value) => Unit = "";
 
     /// <summary>Placeholder/hint for the Variable box. The editor sets this per analysis type:
     /// "e.g. RFfreq" for Loadpull/LP-Pursuit (freq sweeps), "e.g. Pavl" otherwise.</summary>
@@ -250,21 +258,10 @@ public sealed partial class SweepAxisRowViewModel : ObservableObject
                 CultureInfo.InvariantCulture, out value))
             return true;
 
-        // Try evaluating via the schematic's VAR scope
-        try
-        {
-            var preview = AnalysisPreviewHelper.ComputePreview(expr, _model);
-            // Preview returns "≈ 1.23e9" — strip the prefix and parse
-            if (preview.StartsWith("≈ ") &&
-                double.TryParse(preview[2..].Trim(),
-                    NumberStyles.Float | NumberStyles.AllowLeadingSign,
-                    CultureInfo.InvariantCulture, out value))
-                return true;
-        }
-        catch { /* fall through */ }
-
-        value = 0;
-        return false;
+        // Expression-valued coefficient (e.g. a VAR reference): resolve its RAW value against the
+        // unit-stripped design scope. The row's own EffectiveUnit scaling is applied by BuildValues,
+        // so this must NOT apply units (and must keep full precision, not the display-rounded text).
+        return AnalysisPreviewHelper.TryResolveCoefficient(expr, _model, out value);
     }
 
     private static string Fmt(double v) =>

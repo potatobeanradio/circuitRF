@@ -69,7 +69,17 @@ namespace CircuitRF.Ui.DataDisplay
         public static bool IsComplexColumn(SummaryColumnKind kind) =>
             kind is SummaryColumnKind.Zload or SummaryColumnKind.Zsource or SummaryColumnKind.Zin;
 
-        /// <summary>The freq anchor-column header for a given unit, e.g. "Freq (GHz)".</summary>
-        public static string FreqHeader(FreqUnit unit) => $"Freq ({unit.Description()})";
+        /// <summary>The summary anchor-column header. A frequency axis (unit "Hz") is shown in the plot's
+        /// FreqUnits, e.g. "Freq (GHz)"; any other swept axis is shown in its own unit, e.g. "Vds (V)".
+        /// A null/empty or "freq" axis name displays as "Freq".</summary>
+        public static string SummaryAxisHeader(string? axisName, string? axisUnit, FreqUnit freqUnits)
+        {
+            string name = string.IsNullOrEmpty(axisName)
+                       || string.Equals(axisName, "freq", System.StringComparison.OrdinalIgnoreCase)
+                ? "Freq" : axisName!;
+            bool isFreq = axisUnit is "Hz" or "kHz" or "MHz" or "GHz" or "THz";
+            if (isFreq) return $"{name} ({freqUnits.Description()})";
+            return string.IsNullOrEmpty(axisUnit) ? name : $"{name} ({axisUnit})";
+        }
     }
 }

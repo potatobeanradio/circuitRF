@@ -601,15 +601,19 @@ namespace CircuitRF.Ui.DataDisplay
             for (int i = 0; i < plot.Traces.Count; i++)
                 if (plot.Traces[i].IsSummaryColumn) { firstSummary = i; break; }
 
-            // Leading Freq anchor column.
+            // Leading slice-axis anchor column — frequency for a freq-swept loadpull, or the swept
+            // variable (e.g. Vds) for a parametric-swept loadpull/pursuit. A frequency axis is scaled to
+            // FreqUnits; any other axis renders its raw value with its own unit in the header.
+            string axisUnit = plot.SummaryAxisUnit ?? "Hz";
+            bool   axisIsFreq = IsFreqUnit(axisUnit);
             result.Add(new TableColumn
             {
                 Kind            = TableColKind.XAxis,
                 FirstTraceIndex = firstSummary,
-                Header          = SummaryColumns.FreqHeader(plot.FreqUnits),
-                Unit            = "Hz",
+                Header          = SummaryColumns.SummaryAxisHeader(plot.SummaryAxisName, axisUnit, plot.FreqUnits),
+                Unit            = axisUnit,
                 XValues         = freqs,
-                IsFreqUnit      = true,
+                IsFreqUnit      = axisIsFreq,
             });
 
             // One value column per summary trace, in trace order.

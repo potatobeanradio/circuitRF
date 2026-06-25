@@ -162,6 +162,17 @@ public partial class TraceRowViewModel : ViewModelBase
     public bool IsRangeLevelMode           => ContourLevelMode == ContourLevelMode.Range;
     public bool IsCountLevelMode           => ContourLevelMode == ContourLevelMode.Count;
     public bool ShowContourFreqPicker      => IsContourTrace && AvailableFrequencies.Count > 1;
+    /// <summary>Label for the contour slice-axis picker — "Freq" for a frequency-swept loadpull, or the
+    /// swept-variable name (e.g. "RFfreq", "Vds") for a parametric-swept loadpull/pursuit.</summary>
+    public string ContourLeadingAxisLabel
+    {
+        get
+        {
+            var n = _loadpullSurface?.LeadingAxisName;
+            return string.IsNullOrEmpty(n) || string.Equals(n, "freq", System.StringComparison.OrdinalIgnoreCase)
+                ? "Freq" : n;
+        }
+    }
     /// <summary>Show the loadpull-group picker only when the source carries more than one loadpull view
     /// (e.g. a run.npy with both a standalone Loadpull and a Loadpull-Pursuit follow-on).</summary>
     public bool ShowContourGroupPicker     => IsContourTrace && AvailableLoadpullGroups.Count > 1;
@@ -794,10 +805,20 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         AvailableFrequencies.Clear();
         if (_loadpullSurface is null) return;
+        // A frequency leading axis is shown in GHz; any other swept variable (e.g. Vds) in its own unit.
+        bool   isFreq = IsFrequencyUnit(_loadpullSurface.LeadingAxisUnit);
+        string unit   = _loadpullSurface.LeadingAxisUnit;
         foreach (var f in _loadpullSurface.Frequencies)
-            AvailableFrequencies.Add($"{f / 1e9:G4} GHz");
+            AvailableFrequencies.Add(
+                isFreq                       ? $"{f / 1e9:G4} GHz"
+              : string.IsNullOrEmpty(unit)   ? $"{f:G4}"
+                                             : $"{f:G4} {unit}");
         OnPropertyChanged(nameof(ShowContourFreqPicker));
+        OnPropertyChanged(nameof(ContourLeadingAxisLabel));
     }
+
+    private static bool IsFrequencyUnit(string? u) =>
+        u is "Hz" or "kHz" or "MHz" or "GHz" or "THz";
 
     private void SyncContourVmFromData(ContourData cd)
     {

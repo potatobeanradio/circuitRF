@@ -17,15 +17,22 @@ public class FreqExprUnitTests
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static SchematicEditModel ModelWithVar(string varName, string expression, string unit)
+        => ModelWithVars([(varName, expression, unit)]);
+
+    private static SchematicEditModel ModelWithVars((string name, string expr, string unit)[] vars)
     {
         var model = new SchematicEditModel();
         var comp  = new EditableComponent { Symbol = SymbolKind.Var, X = 0, Y = 0, InstanceName = "VAR1" };
-        comp.Parameters.Add(new EditableParameter { Name = varName, Expression = expression, Unit = unit });
+        foreach (var (n, e, u) in vars)
+            comp.Parameters.Add(new EditableParameter { Name = n, Expression = e, Unit = u });
         model.Components.Add(comp);
         return model;
     }
 
     // ── Brief brief-analysis-freq-preview-units.md gate tests ────────────────
+
+    // Note: these previews are now EXACT, so the prefix is an honest "=" (not "≈"). The resolved
+    // values are unchanged — only the prefix reflects that the displayed digits are lossless.
 
     [Fact]
     public void FreqPreview_VarUnitWins_DifferentFieldUnit()
@@ -34,7 +41,7 @@ public class FreqExprUnitTests
         // Var-unit-wins → 2 * 1e9 = 2e9, NOT 2 * 1e6 = 2e6.
         var model  = ModelWithVar("RFfreq", "2", "GHz");
         var result = AnalysisPreviewHelper.ComputeFreqPreview("RFfreq", "MHz", model);
-        Assert.Equal("≈ 2E+09", result);
+        Assert.Equal("= 2E+09", result);
     }
 
     [Fact]
@@ -43,7 +50,7 @@ public class FreqExprUnitTests
         // RFfreq=2 GHz; field unit also GHz → 2 * 1e9.
         var model  = ModelWithVar("RFfreq", "2", "GHz");
         var result = AnalysisPreviewHelper.ComputeFreqPreview("RFfreq", "GHz", model);
-        Assert.Equal("≈ 2E+09", result);
+        Assert.Equal("= 2E+09", result);
     }
 
     [Fact]
@@ -52,7 +59,7 @@ public class FreqExprUnitTests
         // RFfreq=2, no unit; field unit GHz applies → 2 * 1e9.
         var model  = ModelWithVar("RFfreq", "2", "");
         var result = AnalysisPreviewHelper.ComputeFreqPreview("RFfreq", "GHz", model);
-        Assert.Equal("≈ 2E+09", result);
+        Assert.Equal("= 2E+09", result);
     }
 
     [Fact]
@@ -60,17 +67,18 @@ public class FreqExprUnitTests
     {
         var model = Model();
         // Bare number + GHz → show preview (confirms multiplier applied).
-        Assert.Equal("≈ 2.4E+09", AnalysisPreviewHelper.ComputeFreqPreview("2.4", "GHz", model));
-        // Bare number + Hz → suppress (no "≈ 2.4" noise).
+        Assert.Equal("= 2.4E+09", AnalysisPreviewHelper.ComputeFreqPreview("2.4", "GHz", model));
+        // Bare number + Hz → suppress (no "= 2.4" noise).
         Assert.Equal("", AnalysisPreviewHelper.ComputeFreqPreview("2.4", "Hz", model));
     }
 
     [Fact]
     public void FreqPreview_Unknown()
     {
+        // An unresolved name reports the missing name with no value prefix (it is not a value).
         var model  = Model();
         var result = AnalysisPreviewHelper.ComputeFreqPreview("Nope", "GHz", model);
-        Assert.Equal("≈ unknown: Nope", result);
+        Assert.Equal("unknown: Nope", result);
     }
 
     [Fact]
@@ -79,7 +87,44 @@ public class FreqExprUnitTests
         // 2*RFfreq where RFfreq=2 GHz: value=4, var-unit=GHz → 4 * 1e9 = 4e9.
         var model  = ModelWithVar("RFfreq", "2", "GHz");
         var result = AnalysisPreviewHelper.ComputeFreqPreview("2*RFfreq", "MHz", model);
-        Assert.Equal("≈ 4E+09", result);
+        Assert.Equal("= 4E+09", result);
+    }
+
+    // Mixed-unit compound: RFfreq (GHz) + Voff (MHz) — each reference applies its OWN unit, so the
+    // result is EXACT (2e9 + 100e6 = 2.1e9), not the old single-multiplier approximation.
+    [Fact]
+    public void FreqPreview_Compound_MixedUnits_Exact()
+    {
+        var model  = ModelWithVars([("RFfreq", "2", "GHz"), ("Voff", "100", "MHz")]);
+        var result = AnalysisPreviewHelper.ComputeFreqPreview("RFfreq + Voff", "GHz", model);
+        Assert.Equal("= 2.1E+09", result);
+    }
+
+    // A value that needs more than the display budget stays honestly approximate ("≈").
+    [Fact]
+    public void Preview_RoundedValue_StaysApproximate()
+    {
+        var model  = ModelWithVar("X", "1.23456789", "");
+        var result = AnalysisPreviewHelper.ComputePreview("X", model);
+        Assert.StartsWith("≈ ", result);
+    }
+
+    // A clean value resolves to an honest "=".
+    [Fact]
+    public void Preview_ExactValue_UsesEquals()
+    {
+        var model  = ModelWithVar("X", "2.5", "");
+        var result = AnalysisPreviewHelper.ComputePreview("3*X", model);
+        Assert.Equal("= 7.5", result);
+    }
+
+    // Unit-bearing reference resolves to its base value (pF → 1e-12), exactly.
+    [Fact]
+    public void Preview_UnitBearingVar_ResolvesToBaseUnit()
+    {
+        var model  = ModelWithVar("Cval", "1", "pF");
+        var result = AnalysisPreviewHelper.ComputePreview("2*Cval", model);
+        Assert.Equal("= 2E-12", result);
     }
 
     [Fact]
