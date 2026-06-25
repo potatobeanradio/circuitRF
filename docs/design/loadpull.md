@@ -92,7 +92,25 @@ Format: an **optional header line declares the form**, then one complex point pe
 - **Forgiving inference when the format tag is absent:** if a data line's value contains `j` or `i` (an imaginary marker, e.g. `0.5+j*0.3`), parse it as the `re+j*imag` literal form; otherwise assume **`re imag`** (two columns). So a header-less file of `re imag` pairs, and a header-less file of `re+j*imag` literals, both parse correctly without the user declaring anything.
 - The engine converts Γ↔Z via **RfCore** against `Z0` and the `TuneHarm` reference. Each line is one grid point; the engine visits them with warm-start ordering (§3.3). Blank lines and `;`/`#` comment lines are skipped.
 
-The `Loadpull` directive references the file by path: `Grid="hero3_load.gam"`.
+**Reading & Γ↔Z conversion (`GamReader`).** Every point is stored as **both** Γ and Z, converted once against the file's `Z0`: `Z = Z0·(1+Γ)/(1−Γ)`, `Γ = (Z−Z0)/(Z+Z0)` — with the degenerate cases guarded (a point on the unit circle maps to a large finite Z; `Z ≈ 0` maps to `Γ = −1`). `mag_ang` angles are **degrees**; the `re+j*imag` form accepts the `.cnl` complex-literal variants (`80+j*10`, `0.5-j*0.3`, suffix `0.3j`, pure-imaginary `j*0.5` / `-j`). Header tags are case-insensitive and order-independent; an inline `;` truncates the rest of a data line.
+
+The `Loadpull` directive references the file by path: `Grid="hero3_load.gam"` — resolved **relative to the netlist directory** (absolute paths used as-is).
+
+### 2.2.1 Multi-frequency grids (frequency-swept loadpull)
+A single `.gam` file can carry **one termination grid per frequency**, so a frequency-swept loadpull (a parametric sweep over a tone-frequency variable wrapping the loadpull) reads the right grid at each frequency. Frequency blocks are delimited by a bare **`freq=<value><unit>`** directive line — **not** `#`-prefixed, since `#` is the header/comment token. The unit is one of `Hz` (default), `kHz`, `MHz`, `GHz`, `THz` (case-insensitive); every data line after a `freq=` line belongs to that block until the next `freq=`:
+```
+# impedance Z0=50 re+j*imag
+freq=1.8GHz
+80+j*10
+60-j*5
+freq=2.2GHz
+85+j*5
+70+j*0
+```
+- A file with **no** `freq=` line is one **freq-less** block, applied at **any** frequency (the back-compatible single-grid case).
+- A frequency-tagged file is read **per analysis frequency**: the engine (`GamReader.ReadFileForFreq`) selects the block whose `freq=` is **nearest** the current frequency by `|Δf|`; freq-less blocks apply at any frequency (they sort last). So one file can hold a measured grid per band, or a single grid reused across all frequencies.
+
+A wholly empty or comment-only file parses to one empty block (no grid points) rather than an error.
 
 ### 2.3 How the sweep overrides the Tuner
 Per grid point, the engine overrides the swept Tuner's termination **at the `TuneHarm` harmonic** with the grid value and re-runs the inner HB power sweep, leaving the Tuner's other-harmonic terminations (`Z[1]`/`Z[2]`/… except the tuned one, and `Zdefault`) at their declared values. Mechanism: the tuned harmonic's value references a **swept variable** the loadpull engine sets each grid point (the same "set a variable, re-run" mechanism as Hero 2's `Pavl_dbm` power sweep and the HB directive's `Sweep=`), rather than a bespoke "reach in and mutate the component" path. So loadpull is "vary the variable that the Tuner's `TuneHarm` band reads, across the grid; at each grid value, run the adaptive Pin sweep."

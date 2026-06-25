@@ -133,6 +133,68 @@
     </tbody>
   </table>
 
+  <h3 id="gam-file">The termination grid file (<code>.gam</code>)</h3>
+  <p>The grid of terminations a loadpull visits lives in a small, human-readable text file with a
+  <code>.gam</code> extension — one termination per line. It is kept <em>out</em> of the netlist on purpose:
+  a grid is <strong>data</strong> (often hundreds of points), and a real tuner system works the same way,
+  reading a "pattern file" of impedance states to visit. A loadpull analysis <strong>points its grid at a
+  <code>.gam</code> file</strong>; a <a href="#loadpull-pursuit">Loadpull Pursuit</a> can <strong>write
+  one</strong> for you (its recommended terminations).</p>
+
+  <p>Each point is either an <strong>impedance</strong> (Ω) or a <strong>reflection coefficient Γ</strong>, in
+  one of three column layouts. An optional header line (starting <code>#</code>) declares the form, the
+  reference impedance, and the layout; if you omit it, circuitRF assumes <strong>impedance</strong> and infers
+  the layout from the first data line. The parser is deliberately forgiving — blank lines and <code>;</code> or
+  <code>#</code> comment lines are skipped.</p>
+
+  <table class="param-table">
+    <thead><tr><th>Header token</th><th>Meaning</th><th>Default</th></tr></thead>
+    <tbody>
+      <tr><td><code>gamma</code> / <code>impedance</code></td><td>Values are reflection coefficients Γ, or impedances in Ω.</td><td><code>impedance</code></td></tr>
+      <tr><td><code>Z0=&lt;value&gt;</code></td><td>Reference impedance for the Γ↔Z conversion.</td><td>50 Ω</td></tr>
+      <tr><td><code>re_im</code></td><td>Two columns: real, imaginary.</td><td rowspan="3">inferred from the first line: a <code>j</code>/<code>i</code> marker ⇒ <code>re+j*imag</code>, else <code>re_im</code></td></tr>
+      <tr><td><code>mag_ang</code></td><td>Two columns: magnitude, then angle in <strong>degrees</strong>.</td></tr>
+      <tr><td><code>re+j*imag</code></td><td>One column, a complex literal (e.g. <code>80+j*10</code>, <code>0.5-j*0.3</code>).</td></tr>
+    </tbody>
+    <caption>Header tokens are case-insensitive and may appear in any order, e.g. <code># gamma Z0=50 mag_ang</code>.</caption>
+  </table>
+
+  <p>A Γ grid in magnitude/angle form (rings on the Smith chart):</p>
+  <pre class="netlist"><code># gamma Z0=50 mag_ang
+; concentric rings of load reflection coefficient
+0.00    0
+0.20    0
+0.20   90
+0.40    0
+0.40   90
+0.40  180
+0.60    0
+0.80   30</code></pre>
+
+  <div class="callout note">
+    <span class="label">Multi-frequency grids</span>
+    <p>One <code>.gam</code> file can hold a <strong>different grid per frequency</strong>, for frequency-swept
+    loadpull. Start each block with a bare <code>freq=&lt;value&gt;&lt;unit&gt;</code> line
+    (<code>Hz</code>/<code>kHz</code>/<code>MHz</code>/<code>GHz</code>/<code>THz</code>); every point below it
+    belongs to that frequency until the next <code>freq=</code> line. circuitRF reads the block whose frequency
+    is <strong>nearest</strong> the one being simulated. A file with no <code>freq=</code> line is a single grid
+    used at <em>every</em> frequency.</p>
+    <pre class="netlist"><code># impedance Z0=50 re+j*imag
+freq=1.8GHz
+80+j*10
+60-j*5
+freq=2.2GHz
+85+j*5
+70+j*0</code></pre>
+  </div>
+
+  <p><strong>Using one.</strong> In the Loadpull editor, set the grid field to your <code>.gam</code> file
+  (paths are resolved relative to the netlist). <strong>Getting one.</strong> A Loadpull Pursuit with an
+  <code>OutputGrid</code> path writes its recommended terminations as a <code>.gam</code> — always in
+  <code>impedance … re+j*imag</code> form, with a generated-by header and a <code># WARNING:</code> line if any
+  near-non-convergent points were dropped. That output reads straight back into a standard loadpull, including
+  the multi-frequency layout for a frequency-swept pursuit.</p>
+
   <h2 id="loadpull-pursuit">Loadpull Pursuit</h2>
   <p><strong>Computes:</strong> the load (or source) terminations that optimize a figure of merit — found
   <em>automatically</em> by a query-minimizing search rather than by gridding the whole Smith chart. It
@@ -185,7 +247,7 @@
       <tr><td>VSWR2_resolution</td><td>Grid spacing (N×N samples) for the broad box.</td><td>4</td></tr>
       <tr><td>keepNonconvergingPoints</td><td>If false, drop recommended points near terminations found non-convergent during the search (and warn).</td><td>false</td></tr>
       <tr><td>nonconvergentVSWR</td><td>Exclusion radius (VSWR) around known non-convergent terminations.</td><td>1.05</td></tr>
-      <tr><td>OutputGrid</td><td>Path to write the recommended terminations as a <code>.gam</code> file. Absent → no file written.</td><td>none</td></tr>
+      <tr><td>OutputGrid</td><td>Path to write the recommended terminations as a <a href="#gam-file"><code>.gam</code> file</a>. Absent → no file written.</td><td>none</td></tr>
       <tr><td>CreateLoadpullResult</td><td>Run the follow-on standard loadpull over the recommended terminations. Independent of <code>OutputGrid</code>.</td><td>on</td></tr>
       <tr><td>LoadpullResultZsource</td><td>Source match the follow-on loadpull uses: <code>MXE</code>, <code>MXP</code>, or <code>None</code> (use the Source Tuner's own Z1).</td><td>MXE</td></tr>
     </tbody>
