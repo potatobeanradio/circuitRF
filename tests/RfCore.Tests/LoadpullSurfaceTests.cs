@@ -58,6 +58,63 @@ public class LoadpullSurfaceTests
     private static void Near(double expected, double actual, double tol, string label = "")
         => Assert.InRange(actual, expected - tol, expected + tol);
 
+    // ── Generalized leading slice axis: name/unit come from the data, not a hardcoded "freq"/"Hz" ──
+    // A loadpull/pursuit wrapped in a PARAMETRIC SWEEP prepends a leading axis named after the swept
+    // variable (e.g. "RFfreq", "Vds"). LoadpullSurface must expose that axis's name + unit so the Data
+    // Display labels the contour slice picker and the summary anchor column correctly — not always
+    // "Freq"/GHz. (Regression for the "+Summary disabled on parametric-swept loadpull" bug.)
+
+    private static DataSet SyntheticSweptLoadpull(string leadName, string leadUnit, int nLead, int nGrid, int nPin)
+    {
+        var lead = new Axis(leadName, Enumerable.Range(0, nLead).Select(i => (i + 1) * 1e9).ToArray(), leadUnit);
+        var grid = new Axis("gridPoint", Enumerable.Range(0, nGrid).Select(i => (double)i).ToArray());
+        var pin  = new Axis("pinStep",   Enumerable.Range(0, nPin).Select(i => (double)i).ToArray());
+
+        DataCube R3() => new(new[] { lead, grid, pin }, new double[nLead * nGrid * nPin]);
+        DataCube C2() => new(new[] { lead, grid }, new Complex[nLead * nGrid]);
+
+        var ds = new DataSet();
+        ds.Add("GammaLoad", C2());
+        ds.Add("ZLoad",     C2());
+        ds.Add("Pout_dBm",  R3());
+        ds.Add("Gt_dB",     R3());
+        ds.Add("PavlDbm",   R3());
+        return ds;
+    }
+
+    [Theory]
+    [InlineData("RFfreq", "Hz")]   // swept frequency variable (the reported case)
+    [InlineData("Vds",    "V")]    // any other swept variable wrapping the loadpull
+    [InlineData("freq",   "Hz")]   // built-in frequency-swept loadpull (unchanged)
+    public void LeadingAxis_NameAndUnit_ComeFromData(string leadName, string leadUnit)
+    {
+        var sfc = new LoadpullSurface(SyntheticSweptLoadpull(leadName, leadUnit, nLead: 3, nGrid: 4, nPin: 5));
+
+        Assert.Equal(3, sfc.Frequencies.Count);
+        Assert.Equal(leadName, sfc.LeadingAxisName);
+        Assert.Equal(leadUnit, sfc.LeadingAxisUnit);
+    }
+
+    [Fact]
+    public void SingleSlice_NoLeadingAxis_DefaultsToFreqHz()
+    {
+        // Canonical single-freq loadpull: GammaLoad[gridPoint], Pout_dBm[gridPoint, pinStep] — no lead axis.
+        var grid = new Axis("gridPoint", new double[] { 0, 1, 2, 3 });
+        var pin  = new Axis("pinStep",   new double[] { 0, 1, 2, 3, 4 });
+        DataCube R2() => new(new[] { grid, pin }, new double[4 * 5]);
+        var ds = new DataSet();
+        ds.Add("GammaLoad", new DataCube(new[] { grid }, new Complex[4]));
+        ds.Add("ZLoad",     new DataCube(new[] { grid }, new Complex[4]));
+        ds.Add("Pout_dBm",  R2());
+        ds.Add("Gt_dB",     R2());
+        ds.Add("PavlDbm",   R2());
+
+        var sfc = new LoadpullSurface(ds);
+        Assert.Single(sfc.Frequencies);
+        Assert.Equal("freq", sfc.LeadingAxisName);
+        Assert.Equal("Hz",   sfc.LeadingAxisUnit);
+    }
+
     // ── Z-plane contour coverage: MeasuredBox encloses the MXP/MXE auto-zoom ──
     // Regression: a Rect (Z-plane) contour must resample over the FULL measured data extent so
     // iso-lines render wherever data exists — not only within RecommendedBox's MXP/MXE zoom (which

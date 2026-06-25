@@ -97,12 +97,28 @@ namespace RfCore.Loadpull
 
         public IReadOnlyList<double> Frequencies { get; }
 
+        /// <summary>
+        /// Name of the leading slice axis — "freq" for a built-in frequency-swept loadpull, or the swept
+        /// variable name (e.g. "RFfreq", "Vds") for a loadpull/pursuit wrapped in a parametric sweep.
+        /// Consumers (contour freq picker, summary "Freq" column) label by this instead of assuming "Freq".
+        /// </summary>
+        public string LeadingAxisName { get; }
+
+        /// <summary>
+        /// Unit of the leading slice axis ("Hz" for a frequency sweep; the variable's base unit otherwise,
+        /// e.g. "V"; "" when the swept variable is unitless). A frequency unit is shown in the plot's
+        /// FreqUnits (GHz); any other unit is shown verbatim.
+        /// </summary>
+        public string LeadingAxisUnit { get; }
+
         public LoadpullSurface(DataSet data, string group = "")
         {
             _freqs = BuildFreqSlices(data, group);
             var freqs = new double[_freqs.Length];
             for (int i = 0; i < _freqs.Length; i++) freqs[i] = _freqs[i].FreqHz;
             Frequencies = Array.AsReadOnly(freqs);
+            LeadingAxisName = _freqs.Length > 0 ? _freqs[0].LeadAxisName : "freq";
+            LeadingAxisUnit = _freqs.Length > 0 ? _freqs[0].LeadAxisUnit : "Hz";
         }
 
         public int GridPointCount(int freqIdx) => _freqs[freqIdx].NGrid;
@@ -427,14 +443,24 @@ namespace RfCore.Loadpull
             foreach (var m in metricNames)
                 if (hasCube(m)) metricCubes[m] = GetCube(m);
 
-            // Detect freq axis (by name)
-            bool hasFreq   = poutCube.Axes.Any(a => a.Name == "freq");
-            int  nFreq     = hasFreq ? poutCube.Axis("freq").Length : 1;
+            // Detect a leading sweep axis by POSITION, not by name. The FOM cube is canonically
+            // [gridPoint, pinStep] (rank 2); a sweep prepends ONE leading axis (rank 3), which may be a
+            // built-in frequency sweep (named "freq") OR a parametric sweep wrapping the loadpull/pursuit
+            // over any variable (named "RFfreq", "Vds", …). All slicing below is position-based, so any
+            // leading-axis name works — matching LoadpullRecognition, which keys on the trailing signature.
+            bool hasFreq   = poutCube.Rank == 3;
+            int  nFreq     = hasFreq ? poutCube.Axes[0].Length : 1;
             int  nGrid     = poutCube.Axis("gridPoint").Length;
             int  nPin      = poutCube.Axis("pinStep").Length;
 
+            // Leading-axis identity — "freq"/"Hz" for a single or built-in frequency sweep; the swept
+            // variable's name/base-unit for a parametric-swept loadpull/pursuit (e.g. "RFfreq"/"Hz",
+            // "Vds"/"V"). The display layer labels by this instead of assuming "Freq"/GHz.
+            string leadAxisName = hasFreq ? poutCube.Axes[0].Name : "freq";
+            string leadAxisUnit = hasFreq ? poutCube.Axes[0].Unit : "Hz";
+
             double[]  pinAxisVals = pinAxisCube.Axis("pinStep").Values;
-            double[]? freqVals   = hasFreq ? poutCube.Axis("freq").Values : null;
+            double[]? freqVals   = hasFreq ? poutCube.Axes[0].Values : null;
 
             // Single-freq datasets carry no "freq" axis on the FOM cubes; the importer preserves
             // the measured frequency on a rank-1 "__Freq" carrier cube (or on "ZSource" when a
@@ -532,6 +558,8 @@ namespace RfCore.Loadpull
                 slices[fi] = new FreqSlice
                 {
                     FreqHz              = freqVals != null ? freqVals[fi] : 0.0,
+                    LeadAxisName        = leadAxisName,
+                    LeadAxisUnit        = leadAxisUnit,
                     NGrid               = nGrid,
                     Gammas              = gammas,
                     Zs                  = zs,
@@ -1233,6 +1261,8 @@ namespace RfCore.Loadpull
         private sealed class FreqSlice
         {
             public double    FreqHz;
+            public string    LeadAxisName = "freq";
+            public string    LeadAxisUnit = "Hz";
             public int       NGrid;
             public Complex[] Gammas  = Array.Empty<Complex>();
             public Complex[] Zs      = Array.Empty<Complex>();
