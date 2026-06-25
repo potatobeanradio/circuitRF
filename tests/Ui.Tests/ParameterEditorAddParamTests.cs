@@ -231,6 +231,7 @@ public sealed class ParameterEditorAddParamTests
 
     [Theory]
     [InlineData(SymbolKind.P1Tone,    true)]
+    [InlineData(SymbolKind.PnTone,    true)]
     [InlineData(SymbolKind.ToneSource, true)]
     [InlineData(SymbolKind.ZPort,     true)]
     [InlineData(SymbolKind.Sdd,       true)]

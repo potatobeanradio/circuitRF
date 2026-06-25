@@ -207,6 +207,9 @@ public partial class MarkerInfoBoxView : UserControl
                     ? MaterialIconKind.CheckboxOutline
                     : MaterialIconKind.CheckboxBlankOutline,
             },
+            // A Table forces every info box on (no on-canvas way to re-open a hidden box), so the
+            // off-toggle is disabled there.
+            IsEnabled = hostPlot.PlotType != PlotType.Table,
         };
         showBoxItem.Click += (_, _) =>
         {

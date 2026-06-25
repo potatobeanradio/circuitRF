@@ -17,6 +17,28 @@ both single traces and family traces. Point markers remain additive. Autoscale o
 clip at viewport floor; no autoscale Y-min extension. 3 gate tests in `HarmonicStemPlotTests.cs`
 (T1 harmonic=true, T2 freq=false, T3 SNP=false). Build 0W/0E; 1998 total tests pass.
 
+**Two-tone mixIndex stem (2026-06-25):** the two-tone spectral axis `"mixIndex"` also renders as stems.
+`Trace.MixIndexAxisName="mixIndex"` + `Trace.IsMixIndexStem`; `PlotRenderer` `stemMode = plotIsRect &&
+(IsHarmonicStem || IsMixIndexStem)`. The mixIndex axis VALUES are already the signed product frequencies
+(`k1·f1+k2·f2`, unit "Hz"), so X positions are physical freqs (negatives included) with NO order→freq
+reconstruction — unlike harmonic, mixIndex is NOT excluded from `IsCubeXMarker` (markers use the generic
+cube-X path). T4/T5 in `HarmonicStemPlotTests`.
+
+## Table plots lock marker info boxes ON (2026-06-25)
+
+A Table has no on-canvas way to re-open a hidden marker info box — the box itself is the only place
+the toggle lives, so once `ShowInfoBox=false` on a Table the box (and its context menu) vanish with no
+way back. Rule: **info-box visibility is locked ON for Table plots.** Switching a plot to Table forces
+every marker's box on; the off-toggle is disabled while the plot is a Table.
+
+- **Force-on:** `PlotContainerViewModel.EnsureInfoBoxesShownForTable` (called from the `PlotStructureChanged`
+  handler, which fires on plot-type change AND trace add/remove) → static `ForceMarkerInfoBoxesOnForTable(Plot)`
+  sets `ShowInfoBox=true` on every marker when `PlotType==Table`, then `RequestInfoBoxRebuild()`.
+- **Disabled toggle, two surfaces:** `MarkerEditorViewModel.CanToggleInfoBox` (`_parent.PlotType != Table`)
+  gates the editor checkbox's `IsEnabled`; `MarkerInfoBoxView.PopulateMarkerMenu` sets the "Show Info Box"
+  menu item `IsEnabled = hostPlot.PlotType != Table`.
+- Test `TableMarkerInfoBoxTests`. Ui 1534.
+
 ## Slice grammar — one parser, two consumers
 
 **`SliceTokenParser`** (`SliceTokenParser.cs`) is the single authority for the per-axis bracket

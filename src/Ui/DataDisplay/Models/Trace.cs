@@ -262,12 +262,26 @@ namespace CircuitRF.Ui.DataDisplay
         /// Matched case-sensitively against CubeXAxisName to drive stem rendering.</summary>
         public const string HarmonicAxisName = "harmonic";
 
+        /// <summary>Axis name emitted by HbEngine for the two-tone spectral axis. Its VALUES are the
+        /// signed mixing-product frequencies (k₁f₁+k₂f₂, can be negative), so a stem plot over it is a
+        /// spectrum directly — no order→frequency reconstruction needed.</summary>
+        public const string MixIndexAxisName = "mixIndex";
+
         /// <summary>True when this trace's X-axis is harmonic index (HB spectrum) — drives stem rendering.
         /// Single-curve only: a harmonic-X <em>family</em> keeps its geometry in FamilyCurves (not Points),
         /// so it is handled by the generic cube-X marker path instead (which is family-aware).</summary>
         public bool IsHarmonicStem => IsCubeBound
             && !IsFamily
             && string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal);
+
+        /// <summary>True when this trace's X-axis is the two-tone mixIndex spectral axis. Drives stem
+        /// rendering (a connected line would zig-zag, since mix products are stored in lattice order,
+        /// not frequency order). Markers use the generic cube-X path (the axis values are the physical
+        /// frequencies), so — unlike <see cref="IsHarmonicStem"/> — this is NOT excluded from
+        /// <see cref="IsCubeXMarker"/>.</summary>
+        public bool IsMixIndexStem => IsCubeBound
+            && !IsFamily
+            && string.Equals(_cubeXAxisName, MixIndexAxisName, StringComparison.Ordinal);
 
         /// <summary>One curve of a family trace: its iterated-axis value (for the legend) + its points.</summary>
         public sealed class FamilyCurve
@@ -316,6 +330,24 @@ namespace CircuitRF.Ui.DataDisplay
         private double[]?  _cubeRealValues;
         private string     _cubeXAxisName = "";
         private string?    _cubeXUnit;
+        // Per-X axis labels (e.g. two-tone "(k1,k2)" mix-product tags) — used by the marker readout.
+        private string[]?  _cubeXLabels;
+
+        // When a spectral axis ("harmonic"/"mixIndex") is PINNED (not the X axis) — e.g. the user plots
+        // one harmonic/product vs a Pin sweep — this carries the pinned line's tag + frequency so the
+        // marker box still reports which spectral line is shown. Null name = no pinned spectral axis.
+        private string? _pinnedSpectralName;
+        private string? _pinnedSpectralLabel;
+        private double  _pinnedSpectralFreqHz = double.NaN;
+
+        /// <summary>Owner-supplied: identifies a pinned spectral line ("harmonic"/"mixIndex"), its tag
+        /// (order or "(k1,k2)"), and its frequency (Hz; NaN to omit the freq row), for the marker box.</summary>
+        public void SetPinnedSpectral(string? axisName, string? label, double freqHz)
+        {
+            _pinnedSpectralName   = axisName;
+            _pinnedSpectralLabel  = label;
+            _pinnedSpectralFreqHz = freqHz;
+        }
 
         // Per-X fundamental (Hz) injected by the owner before SetCubeData/SetFamilyData.
         // Non-null only for single-tone HB spectrum traces; null for all other trace types.
@@ -544,6 +576,10 @@ namespace CircuitRF.Ui.DataDisplay
             _cubeRealValues    = src._cubeRealValues;
             _cubeXAxisName     = src._cubeXAxisName;
             _cubeXUnit         = src._cubeXUnit;
+            _cubeXLabels       = src._cubeXLabels;
+            _pinnedSpectralName   = src._pinnedSpectralName;
+            _pinnedSpectralLabel  = src._pinnedSpectralLabel;
+            _pinnedSpectralFreqHz = src._pinnedSpectralFreqHz;
             _cubeIsScalar      = src._cubeIsScalar;
             _lastPlotType      = src._lastPlotType;
             _f0ByX             = src._f0ByX;
@@ -580,14 +616,23 @@ namespace CircuitRF.Ui.DataDisplay
         /// </summary>
         public void SetCubeData(double[] xValues, Complex[]? complexValues, double[]? realValues,
                                 string xAxisName, string? xUnit,
-                                PlotType plotType, FreqUnit freqUnit)
+                                PlotType plotType, FreqUnit freqUnit, string[]? xLabels = null)
         {
             _cubeIsScalar      = false;
-            _cubeXValues       = xValues;
+            SetPinnedSpectral(null, null, double.NaN);   // derived state — reset on data-set (the VM
+                                                         // re-applies it for a single-curve pinned trace)
+            // Two-tone spectrum is single-sided: each mixing product is shown at its ABSOLUTE
+            // frequency |k1·f1+k2·f2| (negative-frequency reps fold onto the positive side, matching
+            // single-tone). The "(k1,k2)" label still identifies the product. Magnitudes are unchanged
+            // (conjugate reps), and the retained upper-half-plane reps don't collide after folding.
+            _cubeXValues = string.Equals(xAxisName, MixIndexAxisName, StringComparison.Ordinal)
+                ? Array.ConvertAll(xValues, Math.Abs)
+                : xValues;
             _cubeComplexValues = complexValues;
             _cubeRealValues    = realValues;
             _cubeXAxisName     = xAxisName;
             _cubeXUnit         = xUnit;
+            _cubeXLabels       = xLabels;
             BuildCubePath(plotType, freqUnit);
         }
 
@@ -597,6 +642,7 @@ namespace CircuitRF.Ui.DataDisplay
                                       PlotType plotType, FreqUnit freqUnit)
         {
             _cubeIsScalar      = true;
+            SetPinnedSpectral(null, null, double.NaN);                           // reset derived state
             _cubeXValues       = new[] { 0.0 };                                  // synthetic 1-row anchor
             _cubeComplexValues = complexValue is Complex c ? new[] { c } : null;
             _cubeRealValues    = realValue   is double  r ? new[] { r } : null;
@@ -642,6 +688,8 @@ namespace CircuitRF.Ui.DataDisplay
             PlotType plotType, FreqUnit freqUnit, string? familyAxisUnit = null)
         {
             _cubeIsScalar = false;
+            SetPinnedSpectral(null, null, double.NaN);   // a family trace shows the per-curve tag, not a
+                                                         // pinned line — clear any stale pinned context
             _lastPlotType = plotType;
             _cubeXValues = xValues; _cubeXAxisName = xAxisName; _cubeXUnit = xUnit;
             _cubeComplexValues = null; _cubeRealValues = null;
@@ -1263,6 +1311,21 @@ namespace CircuitRF.Ui.DataDisplay
             return pts[CubeMarkerIndex(m)];
         }
 
+        /// <summary>Index of the cube X sample nearest to <paramref name="x"/> (a raw cube X value).
+        /// Used for Table markers, whose position is the row's X value (Marker.Freq), not a pixel/Points
+        /// coordinate. Returns 0 when there are no X values.</summary>
+        private int NearestCubeXIndex(double x)
+        {
+            if (_cubeXValues is null || _cubeXValues.Length == 0) return 0;
+            int idx = 0; double best = double.PositiveInfinity;
+            for (int i = 0; i < _cubeXValues.Length; i++)
+            {
+                double d = Math.Abs(_cubeXValues[i] - x);
+                if (d < best) { best = d; idx = i; }
+            }
+            return idx;
+        }
+
         /// <summary>Snaps a world point to the nearest sample of a generic cube trace and returns
         /// the values to store on the marker: snapped display position, the X to keep in
         /// PositionStatic.X, and the bound family-curve index (0 when not a family).
@@ -1325,13 +1388,19 @@ namespace CircuitRF.Ui.DataDisplay
             var pts = CubeMarkerPoints(m);
             string desc = showFilePrefix ? Description : ShortDescription;
 
-            if (pts.Count == 0 || _cubeXValues is null || _cubeXValues.Length == 0)
+            // NaN only when there is genuinely no data. A Table real-valued cube builds NO Points
+            // (BuildCubePath skips the Rect/Smith geometry), yet still has _cubeXValues — so an empty
+            // Points list alone must NOT force NaN, or every Table marker reads NaN.
+            if (_cubeXValues is null || _cubeXValues.Length == 0)
             {
                 lines.Add(($"{desc}=NaN", false));
                 return lines;
             }
 
-            int xIdx = CubeMarkerIndex(m);
+            // On a Table the marker stores its X in Marker.Freq (PlotControl sets it from the row's
+            // XValues), not PositionStatic.X — and Points may be empty — so resolve the index against
+            // _cubeXValues directly. Rect/Smith/Polar use the Points-based CubeMarkerIndex.
+            int xIdx = _lastPlotType == PlotType.Table ? NearestCubeXIndex(m.Freq) : CubeMarkerIndex(m);
             int curve = CubeMarkerCurveIndex(m);
 
             // Family: identify the bound curve via its iterated-axis value.
@@ -1340,6 +1409,7 @@ namespace CircuitRF.Ui.DataDisplay
                 var fc = FamilyCurves[curve];
 
                 bool familyIsHarmonic = string.Equals(FamilyAxisName, HarmonicAxisName, StringComparison.Ordinal);
+                bool familyIsMixIndex = string.Equals(FamilyAxisName, MixIndexAxisName, StringComparison.Ordinal);
                 if (familyIsHarmonic)
                 {
                     // HB "harmonic" family axis: integer orders, with frequency reconstructed from _f0ByX.
@@ -1350,6 +1420,15 @@ namespace CircuitRF.Ui.DataDisplay
                         double freqHz = HbSpectrum.HarmonicFreqHz(order, _f0ByX[Math.Min(xIdx, _f0ByX.Length - 1)]);
                         lines.Add(($"freq={freqHz * freqUnit.Scale():G6} {freqUnit.Description()}", false));
                     }
+                }
+                else if (familyIsMixIndex)
+                {
+                    // Two-tone "mixIndex" family axis: the (k1,k2) tag identifies the product (the axis
+                    // value IS a frequency, but the user reads it by tag) — then the folded |frequency|.
+                    // This is the bug fix: previously the freq-unit path below showed "mixIndex=<f> GHz".
+                    string tag = !string.IsNullOrEmpty(fc.AxisLabel) ? fc.AxisLabel : $"{fc.AxisValue:G6}";
+                    lines.Add(($"mixIndex={tag}", false));
+                    lines.Add(($"freq={Math.Abs(fc.AxisValue) * freqUnit.Scale():G6} {freqUnit.Description()}", false));
                 }
                 else
                 {
@@ -1389,6 +1468,15 @@ namespace CircuitRF.Ui.DataDisplay
                 }
                 lines.Add(($"harmonic={order}", false));
             }
+            else if (string.Equals(_cubeXAxisName, MixIndexAxisName, StringComparison.Ordinal))
+            {
+                // Two-tone mixIndex: row 1 = the (k1,k2) mix-product tag, row 2 = its frequency
+                // (already folded to the absolute, single-sided value in _cubeXValues).
+                string tag = _cubeXLabels is not null && rawIdx < _cubeXLabels.Length
+                    ? _cubeXLabels[rawIdx] : "(?,?)";
+                lines.Add(($"mixIndex={tag}", false));
+                lines.Add(($"freq={xRaw * freqUnit.Scale():G6} {freqUnit.Description()}", false));
+            }
             else if (IsFreqUnit(_cubeXUnit))
             {
                 // Frequency-valued X axis (e.g. an ordinary frequency sweep): show variable name + scaled freq.
@@ -1401,6 +1489,16 @@ namespace CircuitRF.Ui.DataDisplay
                 string xName = string.IsNullOrEmpty(_cubeXAxisName) ? "x" : _cubeXAxisName;
                 string xUnit = string.IsNullOrEmpty(_cubeXUnit) ? "" : $" {_cubeXUnit}";
                 lines.Add(($"{xName}={xRaw:G6}{xUnit}", false));
+            }
+
+            // Pinned spectral line: when the harmonic/mixIndex axis is PINNED (X is the sweep), still
+            // surface which line this trace shows + its frequency — the same two rows the spectral-X
+            // marker box gives, so a pinned-line plot reads the same as a spectral-axis-X plot.
+            if (_pinnedSpectralName is not null)
+            {
+                lines.Add(($"{_pinnedSpectralName}={_pinnedSpectralLabel}", false));
+                if (!double.IsNaN(_pinnedSpectralFreqHz))
+                    lines.Add(($"freq={_pinnedSpectralFreqHz * freqUnit.Scale():G6} {freqUnit.Description()}", false));
             }
 
             // Value row.

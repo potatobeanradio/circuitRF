@@ -38,11 +38,13 @@ public static class TraceExpression
         out double[]?  realValues,
         out string     xAxisName,
         out string?    xUnit,
+        out string[]?  xLabels,
         out string     error)
     {
         xValues       = Array.Empty<double>();
         complexValues = null;
         realValues    = null;
+        xLabels       = null;
         xAxisName     = "";
         xUnit         = null;
         error         = "";
@@ -279,6 +281,7 @@ public static class TraceExpression
         xUnit     = string.IsNullOrEmpty(uniqueRefs[0].XAxis!.Unit)
             ? null
             : uniqueRefs[0].XAxis!.Unit;
+        xLabels   = uniqueRefs[0].XAxis!.Labels;   // e.g. the two-tone "(k1,k2)" mix-product labels
         return true;
     }
 

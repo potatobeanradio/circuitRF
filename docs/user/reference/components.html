@@ -139,6 +139,33 @@
       <tr><td>Z[k]</td><td>—</td><td>Ω</td><td>Per-harmonic source termination: <code>Z[0]</code> = baseband/DC, <code>Z[2]</code> = 2nd harmonic, etc. (added in the editor).</td></tr>
     </tbody></table>
 
+  <h3 id="pntone">Multi-Tone RF Power Source (PnTone)</h3>
+  <figure class="symbol"><span class="frame">
+    <img class="sym-light" src="../assets/symbols/pntone.svg" alt="PnTone symbol">
+    <img class="sym-dark"  src="../assets/symbols/pntone-dark.svg" alt="">
+  </span><figcaption>Multi-tone available-power RF source</figcaption></figure>
+  <p>The multi-tone sibling of <a href="#p1tone">P1Tone</a> — an available-power RF source that injects
+  <strong>several carriers at once from a single component</strong>, the natural drive for two-tone
+  intermodulation work. A freshly placed PnTone is already a <strong>two-tone source</strong> (tones 1 and 2,
+  at 1.99 and 2.01 GHz); the <strong>+</strong>/<strong>−</strong> buttons in the editor add or remove tones.
+  Each tone has its own <code>Freq[i]</code>, <code>Pavl[i]</code>, and <code>Phase[i]</code>; all tones share
+  one source impedance <code>Z</code> and the same per-band terminations <code>Z[k]</code>.</p>
+  <p>Unlike P1Tone, PnTone is <em>not</em> an S-parameter port (no <code>Num</code>). The tones a PnTone drives
+  must match the tones declared on the <a href="simulations.html#two-tone">Harmonic Balance analysis</a> —
+  the analysis owns the mixing grid; the source just supplies power at those frequencies.</p>
+  <table class="param-table"><thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Freq[1]</td><td>1.99</td><td>GHz</td><td>Frequency of tone 1 (shown).</td></tr>
+      <tr><td>Pavl[1]</td><td>0</td><td>dBm</td><td>Available power of tone 1 (shown).</td></tr>
+      <tr><td>Phase[1]</td><td>0</td><td>deg</td><td>Phase of tone 1 (hidden).</td></tr>
+      <tr><td>Freq[2]</td><td>2.01</td><td>GHz</td><td>Frequency of tone 2 (shown).</td></tr>
+      <tr><td>Pavl[2]</td><td>0</td><td>dBm</td><td>Available power of tone 2 (shown).</td></tr>
+      <tr><td>Phase[2]</td><td>0</td><td>deg</td><td>Phase of tone 2 (hidden).</td></tr>
+      <tr><td>Freq[i]…</td><td>—</td><td>GHz</td><td>Add tone 3, 4, … with the <strong>+</strong> button (tone 1 cannot be removed).</td></tr>
+      <tr><td>Z</td><td>50</td><td>Ω</td><td>Shared source impedance (the reference / fundamental Z, shown).</td></tr>
+      <tr><td>Z[k]</td><td>—</td><td>Ω</td><td>Per-band source termination shared by all tones: <code>Z[0]</code> = baseband/DC, <code>Z[2]</code> = 2nd-harmonic band, etc. Each mixing product is terminated by the band its frequency falls in (added in the editor).</td></tr>
+    </tbody></table>
+
   <h2>Terminals &amp; ports</h2>
 
   <h3 id="ground">Ground (GND)</h3>

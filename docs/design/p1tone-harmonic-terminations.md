@@ -161,3 +161,27 @@ matches the S-param port-extraction invariant that `Num` values must be unique a
   "bands" are just `round(|f|/f_c)` bins.
 - Only **band-resolution** control is offered (one Z per harmonic band), not per-mixing-product control. That is
   intentional: per-product termination is not physically realizable by a passive network and would over-specify.
+
+## 8. PnTone — the multi-tone authoring variant (brief-pntone, 2026-06-24)
+
+P1Tone drives a SINGLE tone. To author a two-tone (or higher) HB from the Schematic Editor conveniently,
+**PnTone** is a clone of P1Tone that injects multiple tones from one component — the power-domain analog of
+`V_nTone` (which is `V_1Tone` with indexed tones).
+
+- **Same symbol & 2-pin geometry as P1Tone** (`SymbolKind.PnTone` → P1Tone glyph; default 2-pin vertical).
+- **Per-tone fields** `Freq[i]` / `Pavl[i]` / `Phase[i]`, added/removed with the parameter editor's "+"/"−"
+  (mirrors `V_nTone`'s `Freq[i]`/`V[i]`/`Phase[i]`). Seeded with **two tones** so a freshly-placed PnTone is a
+  ready two-tone source. Shared `Z` (= Zdefault reference) and optional band `Z[k]` terminations, exactly as
+  P1Tone — the §3 band rule applies to the whole multi-tone spectrum.
+- **Topology** = P1Tone's, but the drive branch injects each tone's phasor at its own frequency:
+  `nRef --[V_drive(ω)]-- nDrv --[Z_Port GetZ(ω)]-- nExt`, where at a spectral line ω the drive equals the
+  matching tone's `|Vs_i|∠Phase_i` (`|Vs_i| = sqrt(8·Re(Z(Freq_i))·Pavl_i_W)`), else 0.
+- **HB engine.** `Run`/`RunTwoTone` call `PnToneModel.SetToneContext(f_c)` (the band ruler — `f0`, resp.
+  `(f1+f2)/2`); PnTone drives at its own `Freq[i]`. The commensurability checks validate each tone lands on the
+  HB grid. The two fundamentals for the mixing grid still come from the **HB directive** (`NumFreqs`, `Tone[i]`);
+  PnTone supplies the drive at those frequencies. `Model`: `src/Core/Devices/PnToneModel.cs`; engine reference
+  `"PnTone"`; factory scans consecutive `Freq[i]` (no `NumFreqs` needed).
+- **Not an S-param port** (no `Num`): in S-param mode it is passive — presents `Z[1]` between its terminals and
+  ties off its internal node (self-contained; no port-pool/lint changes).
+- Gate tests: `PnToneTwoToneTests` (Engine — one PnTone drives both carriers + produces IM3 through a cubic SDD);
+  `PnToneComponentTests` (Ui — registry, seeded two-tone defaults, per-tone template, shared symbol, extraction).

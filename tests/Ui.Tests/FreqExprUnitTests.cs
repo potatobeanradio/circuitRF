@@ -1,5 +1,7 @@
+using System.Numerics;
 using System.Reflection;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
 using Xunit;
@@ -127,6 +129,25 @@ public class FreqExprUnitTests
         Assert.Equal("= 2E-12", result);
     }
 
+    // ── FormatValueHonest: the §9.1 prefix the component-instance parameter editor now uses ──
+    // (The component parameter editor previously hardcoded "≈"; it now shares this honest formatter.)
+
+    [Fact]
+    public void FormatValueHonest_ExactReal_UsesEquals()
+        => Assert.Equal("= 2E+09", AnalysisPreviewHelper.FormatValueHonest(new Value(2e9)));
+
+    [Fact]
+    public void FormatValueHonest_RoundedReal_StaysApproximate()
+        => Assert.StartsWith("≈ ", AnalysisPreviewHelper.FormatValueHonest(new Value(1.0 / 3.0)));
+
+    [Fact]
+    public void FormatValueHonest_ExactComplex_UsesEquals()
+        => Assert.StartsWith("= ", AnalysisPreviewHelper.FormatValueHonest(new Value(new Complex(50, -25))));
+
+    [Fact]
+    public void FormatValueHonest_NonScalar_IsEmpty()
+        => Assert.Equal("", AnalysisPreviewHelper.FormatValueHonest(new Value(true)));
+
     [Fact]
     public void No_ToHzExpr_Callers()
     {
@@ -203,6 +224,48 @@ public class FreqExprUnitTests
         var built = vm.BuildAnalysis("HB1", enabled: true);
         Assert.Equal("f2",  built.ToneExprs[1]);
         Assert.Equal("MHz", built.ToneUnits[1]);
+    }
+
+    // Regression: with Multi enabled, Tone 1 must survive Build → reopen (the dialog-OK bug where
+    // Tone 1 was written only to ToneExprs[0] but read back from the scalar ToneExpr default "0").
+    // Uses a var/expression tone to confirm expressions round-trip, not just numbers.
+    [Fact]
+    public void HbBody_MultiTone_RoundTrip_KeepsTone1()
+    {
+        var vm = new HbBodyViewModel(Model())
+        {
+            MultiTone = true,
+            ToneCoeff = "RFf1", ToneUnit = "GHz",
+            Tone2Coeff = "RFf2", Tone2Unit = "GHz",
+        };
+
+        var built = vm.BuildAnalysis("HB1", enabled: true);
+        // Tone 1 lands in BOTH the engine's multi-tone slot and the scalar field.
+        Assert.Equal("RFf1", built.ToneExprs[0]);
+        Assert.Equal("RFf1", built.ToneExpr);
+        Assert.Equal("RFf2", built.ToneExprs[1]);
+
+        // Reopening the dialog preserves both tones (previously Tone 1 became "0").
+        var vm2 = HbBodyViewModel.FromAnalysis(built, Model());
+        Assert.True(vm2.MultiTone);
+        Assert.Equal("RFf1", vm2.ToneCoeff);
+        Assert.Equal("RFf2", vm2.Tone2Coeff);
+    }
+
+    // A legacy/engine-shaped multi-tone analysis (ToneExprs set, scalar ToneExpr left at "0") must
+    // still load Tone 1 from ToneExprs[0].
+    [Fact]
+    public void HbBody_MultiTone_LoadsTone1_FromToneExprs()
+    {
+        var hba = new HarmonicBalanceAnalysis("HB1")
+        {
+            ToneExprs    = ["fa", "fb"],
+            ToneUnits    = ["GHz", "GHz"],
+            NumFreqsExpr = "2",
+        };
+        var vm = HbBodyViewModel.FromAnalysis(hba, Model());
+        Assert.Equal("fa", vm.ToneCoeff);   // not "0"
+        Assert.Equal("fb", vm.Tone2Coeff);
     }
 
     // ── T10: AnalysisSerialization round-trips units ─────────────────────────

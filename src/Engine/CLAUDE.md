@@ -66,7 +66,10 @@ The HB `V` cube's `node` axis now includes **all non-ground user-facing nodes** 
 - **`INl`** at linear-only nodes is 0 at all harmonics (no nonlinear device current there). The `V` and `INl` cubes keep the same `node` axis.
 - **`__`-prefixed internal mint nodes** (e.g. `__p1tone_*_drv`, `__tuner_*_block/bias`) are **excluded** to reduce clutter; only user-named nets appear.
 - **Stable order**: nodes emitted in ascending circuit-node-index order (topology-invariant across sweep points — required for `ParametricSweepEngine` axis stacking).
-- **Two-tone** linear-node recovery is a noted follow-up: `RunTwoTone` still emits interface-only nodes (no back-solver there yet).
+- **Two-tone** linear-node + IProbe recovery is **DONE** (2026-06-25): `RunTwoTone` back-solves the linear network
+  per mixing product (`SolveMixFull`; negative-ω reps solved at `|ω|` with conjugated excitation + result, reusing
+  `ExtractMix`'s cached LU), expands the V cube to all user nodes, and fills IProbe currents. See
+  [[twotone-result-completeness-and-spectrum]].
 - **`ParametricSweepEngine`** is unaffected: each per-point DataSet already carries the full node axis; stacking works unchanged.
 - 5 gate tests: `HbLinearNodeTests` T1–T5 (`tests/Engine.Tests/HarmonicBalance/HbLinearNodeTests.cs`).
 - `Hero2Tests.ExtractVMatrix` updated to filter to interface nodes (using `HbLinearExtractor`) for `RunJacobianDiagnostic` (which needs Newton unknowns only).

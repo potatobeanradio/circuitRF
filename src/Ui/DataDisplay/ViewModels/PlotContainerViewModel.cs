@@ -274,10 +274,36 @@ public partial class PlotContainerViewModel : ViewModelBase
         {
             CoerceAspectForPlotType();
             UpdateLabelStrips();
+            EnsureInfoBoxesShownForTable();
             OnPropertyChanged(nameof(IsSquareAspect));
             NotifyViewProperties();
         };
 
+    }
+
+    /// <summary>
+    /// On a Table plot every marker's info box is forced visible. A Table has no on-canvas way to
+    /// re-open a hidden box (the box IS the only place the toggle lives), so switching to Table turns
+    /// them all on — and the off-toggle is disabled while the plot is a Table (see MarkerEditorViewModel
+    /// .CanToggleInfoBox and the info-box context menu). Fired on every structural change so the
+    /// invariant also holds when a marker is added while the plot is already a Table.
+    /// </summary>
+    private void EnsureInfoBoxesShownForTable()
+    {
+        if (ForceMarkerInfoBoxesOnForTable(PlotVM.Plot))
+            RequestInfoBoxRebuild();
+    }
+
+    /// <summary>Forces every marker's info box on when <paramref name="plot"/> is a Table; returns true
+    /// if any marker changed. No-op (returns false) for non-Table plots. Pure model logic — testable.</summary>
+    internal static bool ForceMarkerInfoBoxesOnForTable(Plot plot)
+    {
+        if (plot.PlotType != PlotType.Table) return false;
+        bool changed = false;
+        foreach (var trace in plot.Traces)
+            foreach (var marker in trace.Markers)
+                if (!marker.ShowInfoBox) { marker.ShowInfoBox = true; changed = true; }
+        return changed;
     }
 
     // ---- Library observer -------------------------------------------

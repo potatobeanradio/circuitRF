@@ -242,8 +242,11 @@ by `AddBranch()`).
   through sweep-invariantly.
 - `DcResultPacker` now also emits `__ProbeBranches` for DC runs, so the display filter treats DC and
   HB identically.
-- **Two-tone gap**: `RunTwoTone` builds no `HbLinearBackSolver`, so no two-tone IProbe current
-  spectrum is available. A TODO comment marks the gap pending a mixing-lattice back-solver.
+- **Two-tone CLOSED (2026-06-25):** `RunTwoTone` now back-solves the linear network per mixing product
+  (`SolveMixFull`) to recover linear-only node voltages AND IProbe currents over the mix lattice — V cube spans
+  all user nodes, I cube carries IProbe branches (`__ProbeBranches`). Negative-ω reps solve at `|ω|` with
+  conjugated injection/source + conjugated result (reusing `ExtractMix`'s cached LU). See
+  [[twotone-result-completeness-and-spectrum]].
 - 5 gate tests: `HbIProbeCurrentTests` (T1–T4 HB; T5 DC) in
   `tests/Engine.Tests/HarmonicBalance/HbIProbeCurrentTests.cs`.
   solves k = 0 self-consistently with the RF, capturing drive-dependent self-biasing. The k = 0

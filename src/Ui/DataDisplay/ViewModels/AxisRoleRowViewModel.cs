@@ -23,8 +23,12 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     public string          AxisName   { get; }
     public string?         Unit       { get; }
 
-    /// <summary>Display label: "name" or "name (unit)" when unit is non-empty.</summary>
-    public string AxisLabel => string.IsNullOrEmpty(Unit) ? AxisName : $"{AxisName} ({Unit})";
+    /// <summary>Display label: "name", or "name (unit)" when unit is non-empty. Spectral axes
+    /// (single-tone "harmonic", two-tone "mixIndex") show the bare name — they are spectral-line
+    /// identifiers, not unit-bearing quantities (the per-line frequency lives in the values/marker).</summary>
+    public string AxisLabel => AxisName is "harmonic" or "mixIndex" || string.IsNullOrEmpty(Unit)
+        ? AxisName
+        : $"{AxisName} ({Unit})";
 
     /// <summary>Selectable index labels (Axis.Labels[k] ?? Values[k].ToString("G3")).</summary>
     public IReadOnlyList<string> PinOptions { get; }

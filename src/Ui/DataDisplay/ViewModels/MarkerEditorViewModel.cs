@@ -185,6 +185,10 @@ public partial class MarkerEditorViewModel : ViewModelBase
 
     // ---- ShowInfoBox toggle ---------------------------------------------
 
+    /// <summary>Info-box visibility is locked ON for Table plots — a Table has no on-canvas way to
+    /// re-open a hidden box, so switching to Table forces all boxes on and disables this toggle.</summary>
+    public bool CanToggleInfoBox => _parent is null || _parent.PlotType != PlotType.Table;
+
     [ObservableProperty]
     private bool _showInfoBox;
 

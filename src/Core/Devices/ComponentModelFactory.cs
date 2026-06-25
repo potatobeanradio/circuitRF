@@ -27,7 +27,7 @@ public static class ComponentModelFactory
 
     // Types that require resolved parameters at construction time.
     private static readonly HashSet<string> _parameterizedTypes =
-        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "NonlinearC", "TLIN" };
+        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "PnTone", "NonlinearC", "TLIN" };
 
     /// <summary>
     /// Returns a new ComponentModel, using resolved parameters when needed.
@@ -51,6 +51,8 @@ public static class ComponentModelFactory
             return CreateTunerModel(parameters);
         if (typeName.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
             return CreateP1ToneModel(parameters);
+        if (typeName.Equals("PnTone", StringComparison.OrdinalIgnoreCase))
+            return CreatePnToneModel(parameters);
         if (typeName.Equals("NonlinearC", StringComparison.OrdinalIgnoreCase))
             return CreateNonlinearCModel(parameters);
         if (typeName.Equals("TLIN", StringComparison.OrdinalIgnoreCase))
@@ -350,6 +352,66 @@ public static class ComponentModelFactory
         }
 
         return new P1ToneModel(instanceName, harmonicZ, zDefault, pavlDbm, freqHz, phaseDeg);
+    }
+
+    // ── PnTone (multi-tone power source) ──────────────────────────────────────────
+
+    private static PnToneModel CreatePnToneModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        string instanceName = parameters.TryGetValue("PnToneName", out var nm) && nm.Kind == ValueKind.String
+            ? nm.AsString() : "PnTone";
+
+        // Z is both the Zdefault (catch-all) and the Z0 for Γ→Z conversion (same as P1Tone).
+        double z0 = parameters.TryGetValue("Z", out var zv) && zv.Kind == ValueKind.Real
+            ? zv.AsReal() : 50.0;
+        var zDefault = new Complex(z0, 0);
+
+        // Scan consecutive tones Freq[i]/Pavl[i]/Phase[i], i = 1, 2, … until Freq[i] is absent.
+        // (Mirrors how the parameter editor's "+" adds indexed tone groups; no NumFreqs needed.)
+        var tones = new List<PnToneModel.Tone>();
+        for (int i = 1; ; i++)
+        {
+            if (!parameters.TryGetValue($"Freq[{i}]", out var fv) || fv.Kind != ValueKind.Real) break;
+            double pavl  = GetReal(parameters, $"Pavl[{i}]",  0.0);
+            double phase = GetReal(parameters, $"Phase[{i}]", 0.0);
+            tones.Add(new PnToneModel.Tone(pavl, fv.AsReal(), phase));
+        }
+        // Fallback: a scalar Freq (P1Tone-style single tone) lets a degenerate PnTone still resolve.
+        if (tones.Count == 0 && parameters.TryGetValue("Freq", out var f0) && f0.Kind == ValueKind.Real)
+            tones.Add(new PnToneModel.Tone(GetReal(parameters, "Pavl", 0.0), f0.AsReal(),
+                                           GetReal(parameters, "Phase", 0.0)));
+
+        // Per-harmonic-band Z[k]/G[k] terminations (shared across tones; same logic as P1Tone).
+        var harmonicZ = new Dictionary<int, Complex>();
+        var hasZ      = new HashSet<int>();
+        var hasG      = new HashSet<int>();
+        foreach (var kv in parameters)
+        {
+            var mz = RxTunerZ.Match(kv.Key);
+            if (mz.Success)
+            {
+                int k = int.Parse(mz.Groups[1].Value);
+                if (hasG.Contains(k))
+                    throw new InvalidOperationException(
+                        $"PnTone '{instanceName}': harmonic {k} has both Z[{k}] and G[{k}] — only one allowed.");
+                harmonicZ[k] = ToComplex(kv.Value);
+                hasZ.Add(k);
+                continue;
+            }
+            var mg = RxTunerG.Match(kv.Key);
+            if (mg.Success)
+            {
+                int k = int.Parse(mg.Groups[1].Value);
+                if (hasZ.Contains(k))
+                    throw new InvalidOperationException(
+                        $"PnTone '{instanceName}': harmonic {k} has both Z[{k}] and G[{k}] — only one allowed.");
+                var gamma = ToComplex(kv.Value);
+                harmonicZ[k] = z0 * (Complex.One + gamma) / (Complex.One - gamma);
+                hasG.Add(k);
+            }
+        }
+
+        return new PnToneModel(instanceName, tones.ToArray(), harmonicZ, zDefault);
     }
 
     // ── NonlinearC ────────────────────────────────────────────────────────────

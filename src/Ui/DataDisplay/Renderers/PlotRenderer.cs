@@ -252,7 +252,7 @@ namespace CircuitRF.Ui.DataDisplay
                     continue;
                 }
                 TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
-                    stemMode: plotIsRect && trace.IsHarmonicStem);
+                    stemMode: plotIsRect && (trace.IsHarmonicStem || trace.IsMixIndexStem));
             }
 
             if (plot.PlotType == PlotType.Rect)

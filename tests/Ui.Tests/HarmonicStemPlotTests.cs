@@ -66,4 +66,37 @@ public sealed class HarmonicStemPlotTests
         Assert.False(trace.IsCubeBound);
         Assert.False(trace.IsHarmonicStem);
     }
+
+    // T4 — two-tone mixIndex axis → IsMixIndexStem=true (drives the spectrum stem plot), not harmonic.
+    // Single-sided: negative-frequency products fold to +|f| (no negative x).
+    [Fact]
+    public void IsMixIndexStem_MixIndexAxis_True_AndFoldsToPositiveFrequencies()
+    {
+        var trace = MakeCubeTrace();
+        // mixIndex VALUES are the signed product frequencies: DC, f1, f2, f1−f2 (negative).
+        trace.SetCubeData(
+            new double[] { 0, 1.95e9, 2.05e9, -0.1e9 },
+            complexValues: null,
+            new double[] { 0.1, 1.0, 1.0, 0.2 },
+            xAxisName: Trace.MixIndexAxisName,
+            xUnit:     "Hz",
+            PlotType.Rect, FreqUnit.GHz);
+
+        Assert.True(trace.IsMixIndexStem);
+        Assert.False(trace.IsHarmonicStem);
+
+        // Single-sided: ALL stems are at non-negative x; the f1−f2 product folds onto +0.1 GHz.
+        Assert.All(trace.Points, p => Assert.True(p.X >= -1e-6f));
+        Assert.Contains(trace.Points, p => System.Math.Abs(p.X - 0.1f) < 1e-3f);  // |f1−f2| = +0.1 GHz
+    }
+
+    // T5 — harmonic axis is NOT a mixIndex stem.
+    [Fact]
+    public void IsMixIndexStem_HarmonicAxis_False()
+    {
+        var trace = MakeCubeTrace();
+        trace.SetCubeData(new double[] { 0, 1, 2 }, null, new double[] { 1, 2, 3 },
+            Trace.HarmonicAxisName, null, PlotType.Rect, FreqUnit.GHz);
+        Assert.False(trace.IsMixIndexStem);
+    }
 }

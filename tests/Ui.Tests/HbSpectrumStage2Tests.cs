@@ -47,6 +47,78 @@ public sealed class HbSpectrumStage2Tests
         return list;
     }
 
+    // ── Two-tone mixIndex family marker box ───────────────────────────────────
+    // mag(HB1.V[:, "Vout", ~]): X = Pin, family = mixIndex. The marker must show "mixIndex=(k1,k2)"
+    // (the product tag) + "freq=<|f|> GHz" — NOT "mixIndex=<value> GHz" (the old freq-unit bug).
+    [Fact]
+    public void Marker_MixIndexFamily_ShowsTag_AndFoldedFreq_NotValueGHz()
+    {
+        var t = MakeTrace();
+        t.CubeName  = "HB1.V";
+        t.Slice     = new[]
+        {
+            new AxisSlice("mixIndex", AxisRole.FamilyIterate, 0),
+            new AxisSlice("Pin",      AxisRole.KeepAsX,       0),
+        };
+        t.Transform = CubeTransform.None;
+
+        double[] pinVals = { -10.0, -5.0, 0.0 };
+        var curves = new List<(double, string?, Complex[]?, double[]?)>
+        {
+            (1.95e9,  "(1,0)",  null, new double[] { 1, 2, 3 }),
+            (-0.1e9,  "(1,-1)", null, new double[] { 0.5, 1, 1.5 }),   // negative rep → folds to +0.1
+        };
+        // familyAxisUnit "Hz" mirrors ResolveFamily for a mixIndex family.
+        t.SetFamilyData(pinVals, "Pin", "", "mixIndex", curves, PlotType.Rect, FreqUnit.GHz, familyAxisUnit: "Hz");
+
+        // Marker on the (1,-1) curve (index 1) at Pin=-5.
+        var m = MakeMarker(t, -5.0f, curveIndex: 1);
+        var lines = t.BuildMarkerBoxLines(m, FreqUnit.GHz);
+        string dump = string.Join(" | ", lines.ConvertAll(l => l.Text));
+
+        Assert.True(lines.Exists(l => l.Text == "mixIndex=(1,-1)"), $"expected '(k1,k2)' tag row: {dump}");
+        Assert.True(lines.Exists(l => l.Text.StartsWith("freq=") && l.Text.Contains("0.1")),
+            $"expected folded 'freq=0.1 GHz' row: {dump}");
+        Assert.False(lines.Exists(l => l.Text.StartsWith("mixIndex=") && l.Text.Contains("GHz")),
+            $"should NOT show 'mixIndex=<num> GHz' but got: {dump}");
+    }
+
+    // Regression: toggling a trace from a PINNED spectral line (which sets the pinned-spectral marker
+    // context) back to a FAMILY (~) must not leave the stale pinned rows in the marker box —
+    // SetFamilyData resets the derived pinned context.
+    [Fact]
+    public void Marker_PinnedThenFamily_DropsStalePinnedRows()
+    {
+        var t = MakeTrace();
+        t.CubeName = "HB1.V";
+
+        // Prior pinned-mixIndex state (as ApplyPinnedSpectral would set it).
+        t.SetCubeData(new double[] { 0, 5 }, new Complex[] { new(1, 0), new(2, 0) }, null,
+            "Pin", "dBm", PlotType.Rect, FreqUnit.GHz);
+        t.SetPinnedSpectral("mixIndex", "(0,0)", 0.0);
+
+        // Toggle to a family over mixIndex — SetFamilyData must clear the pinned context.
+        t.Slice = new[]
+        {
+            new AxisSlice("mixIndex", AxisRole.FamilyIterate, 0),
+            new AxisSlice("Pin",      AxisRole.KeepAsX,       0),
+        };
+        var curves = new List<(double, string?, Complex[]?, double[]?)>
+        {
+            (1.95e9, "(1,0)", null, new double[] { 1, 2 }),
+        };
+        t.SetFamilyData(new double[] { 0, 5 }, "Pin", "", "mixIndex", curves,
+            PlotType.Rect, FreqUnit.GHz, familyAxisUnit: "Hz");
+
+        var m = MakeMarker(t, 5.0f, curveIndex: 0);
+        var lines = t.BuildMarkerBoxLines(m, FreqUnit.GHz);
+        string dump = string.Join(" | ", lines.ConvertAll(l => l.Text));
+
+        Assert.DoesNotContain(lines, l => l.Text == "mixIndex=(0,0)");   // stale tag gone
+        Assert.DoesNotContain(lines, l => l.Text == "freq=0 GHz");       // stale freq gone
+        Assert.True(lines.Exists(l => l.Text == "mixIndex=(1,0)"), $"family tag expected: {dump}");
+    }
+
     // ── T2: the regression ────────────────────────────────────────────────────
     // Scenario: mag(HB1.V[1, :, "Vout", ~])
     //   RFfreq pinned at index 1 (f0 = 5.5 GHz), X = Pin, family = harmonic (orders {0,1,2,3}).

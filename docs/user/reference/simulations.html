@@ -32,6 +32,7 @@
       <li><a href="#parametric-sweep">Parametric Sweep</a></li>
       <li><a href="#loadpull">Loadpull / Sourcepull</a></li>
       <li><a href="#loadpull-pursuit">Loadpull Pursuit</a></li>
+      <li><a href="#two-tone">Two-Tone Harmonic Balance</a></li>
     </ol>
   </nav>
 
@@ -83,7 +84,7 @@
   domain) and <em>nonlinear</em> devices (evaluated in the time domain and transformed by FFT). A
   multidimensional Newton solve drives the harmonic-balance residual — frequency-domain KCL — to zero, using a
   conversion-matrix Jacobian. Power/source <strong>continuation</strong> ramps the drive to reach convergence
-  deep into compression. Two-tone analysis uses a diamond-truncated mixing spectrum.</p>
+  deep into compression. <a href="#two-tone">Two-tone analysis</a> uses a diamond-truncated mixing spectrum.</p>
   <table class="param-table">
     <thead><tr><th>Setting</th><th>Meaning</th><th>Typical</th></tr></thead>
     <tbody>
@@ -269,6 +270,121 @@ freq=2.2GHz
   </div>
 
   <p class="small">Full design + algorithm: <code>docs/design/loadpull_pursuit.md</code> (in the repo).</p>
+
+  <h2 id="two-tone">Two-Tone Harmonic Balance</h2>
+  <p><strong>Computes:</strong> the steady-state spectrum of a nonlinear circuit driven by <strong>two
+  carriers at once</strong> — every harmonic <em>and</em> every intermodulation (mixing) product. This is the
+  standard test for <strong>linearity</strong>: third-order intermodulation (IM3), intercept points, spectral
+  regrowth, and the asymmetry between the lower and upper IM products.</p>
+  <p>Two-tone is not a separate analysis — it is <a href="#harmonic-balance">Harmonic Balance</a> with a second
+  tone. Everything from the single-tone chapter (the linear/nonlinear split, the Newton solve, drive
+  continuation, all the convergence knobs) still applies. This chapter covers only what is different.</p>
+
+  <h3 id="two-tone-setup">Setting it up</h3>
+  <p>In the Harmonic Balance analysis editor, switch the <strong>Single&nbsp;/&nbsp;Multi-tone</strong> toggle to
+  <strong>Multi-tone</strong>. Three things change:</p>
+  <ul>
+    <li>The single <strong>Tone&nbsp;(f₀)</strong> field becomes <strong>Tone&nbsp;1</strong> (f₁), and a
+      <strong>Tone&nbsp;2</strong> (f₂) field appears.</li>
+    <li><strong>Max harmonics</strong> is replaced by <strong>Max mix order</strong> — the truncation that
+      bounds the two-dimensional mixing spectrum (see below).</li>
+    <li>Both tones accept expressions, so a common pattern is
+      <code>Tone&nbsp;1 = RFfreq − Spacing/2</code>, <code>Tone&nbsp;2 = RFfreq + Spacing/2</code> with
+      <code>RFfreq</code> and <code>Spacing</code> as variables you can sweep.</li>
+  </ul>
+  <div class="callout note">
+    <span class="label">The analysis owns the tones, not the source</span>
+    <p>The two fundamentals <strong>f₁ and f₂ come from the HB analysis</strong> (<code>Tone&nbsp;1</code> /
+    <code>Tone&nbsp;2</code>, written as <code>NumFreqs=2</code> in the netlist), not from the source. A
+    <a href="components.html#pntone">PnTone</a> (or <code>V_nTone</code>) just supplies power at those
+    frequencies. Every source tone must land <strong>exactly</strong> on the analysis grid — an off-grid drive
+    frequency is rejected at setup with a clear message rather than producing silent garbage.</p>
+  </div>
+
+  <h3 id="two-tone-grid">The mixing grid and mixing order</h3>
+  <p>With two fundamentals, a spectral line is no longer indexed by a single harmonic number. Each line is a
+  pair of integers <strong>(k₁,&nbsp;k₂)</strong> sitting at the physical frequency</p>
+  <p style="text-align:center"><code>f = k₁·f₁ + k₂·f₂</code></p>
+  <p>and its <strong>mixing order</strong> is <code>m = |k₁| + |k₂|</code>. The carriers are (1,&nbsp;0) and
+  (0,&nbsp;1) at order 1; a third-order intermod such as 2f₁−f₂ is (2,&nbsp;−1) at order 3. Solving for every
+  possible (k₁,&nbsp;k₂) is infinite, so circuitRF keeps a finite set bounded by <strong>Max mix order</strong>:</p>
+  <p style="text-align:center"><code>retain (k₁, k₂)&nbsp; ⟺ &nbsp;|k₁| + |k₂| ≤ MaxMixOrder</code></p>
+  <p>That inequality is a <strong>diamond</strong> (a rotated square) in the (k₁,&nbsp;k₂) plane — hence
+  "diamond truncation." A diamond rather than a full rectangular box because the high–high corner products
+  (e.g. 5f₁+5f₂) carry no meaningful energy in a real intermod test, while every low-order product that
+  <em>does</em> matter is inside the diamond. <code>MaxMixOrder</code> is the two-tone analog of single-tone
+  <code>MaxHarm</code>: order 5 retains products down to IM5. The number of products grows
+  <em>quadratically</em> with the order (≈&nbsp;2·order² lines), so a two-tone run is much larger than a
+  single-tone run at the same order — order 5 yields dozens of mixing products versus a handful of harmonics.</p>
+
+  <table class="param-table">
+    <thead><tr><th>(k₁, k₂)</th><th>Order</th><th>Frequency</th><th>What it is</th><th>At f₁=1.99, f₂=2.01 GHz</th></tr></thead>
+    <tbody>
+      <tr><td>(0, 0)</td><td>0</td><td>0</td><td>DC / baseband</td><td>0</td></tr>
+      <tr><td>(1, −1)</td><td>2</td><td>f₁ − f₂</td><td>IM2, the tone spacing (baseband)</td><td>0.02 GHz</td></tr>
+      <tr><td>(1, 0)</td><td>1</td><td>f₁</td><td>Carrier 1</td><td>1.99 GHz</td></tr>
+      <tr><td>(0, 1)</td><td>1</td><td>f₂</td><td>Carrier 2</td><td>2.01 GHz</td></tr>
+      <tr><td>(2, −1)</td><td>3</td><td>2f₁ − f₂</td><td><strong>IM3 lower</strong></td><td>1.97 GHz</td></tr>
+      <tr><td>(−1, 2)</td><td>3</td><td>2f₂ − f₁</td><td><strong>IM3 upper</strong></td><td>2.03 GHz</td></tr>
+      <tr><td>(3, −2)</td><td>5</td><td>3f₁ − 2f₂</td><td>IM5 lower</td><td>1.95 GHz</td></tr>
+      <tr><td>(−2, 3)</td><td>5</td><td>3f₂ − 2f₁</td><td>IM5 upper</td><td>2.05 GHz</td></tr>
+      <tr><td>(2, 0)</td><td>2</td><td>2f₁</td><td>2nd harmonic of carrier 1</td><td>3.98 GHz</td></tr>
+      <tr><td>(1, 1)</td><td>2</td><td>f₁ + f₂</td><td>2nd-harmonic sum band</td><td>4.00 GHz</td></tr>
+    </tbody>
+    <caption>The IM "order" is the sum of the integer coefficients: IM3 = |2|+|−1|, IM5 = |3|+|−2|. Choose
+    closely-spaced tones (small Δ) so the IM3 and IM5 products fall right beside the carriers.</caption>
+  </table>
+
+  <div class="callout note">
+    <span class="label">Reading the spectrum in the Data Display</span>
+    <p>A two-tone result plotted as a spectrum uses a <strong>mixIndex</strong> axis: each stem is a mixing
+    product, drawn at its physical frequency, labelled with its <strong>(k₁,&nbsp;k₂)</strong> tag. The spectrum
+    is shown <strong>single-sided</strong> — the negative-frequency products (the conjugate halves, e.g. f₁−f₂
+    and f₂−f₁) are folded onto their positive frequency, so each product appears once.</p>
+  </div>
+
+  <h3 id="two-tone-z">Source impedance and harmonic terminations</h3>
+  <p>With dozens of products spread across the spectrum, each one needs a source termination. circuitRF assigns
+  it <strong>by frequency</strong>, not by mixing order. It defines a band-center fundamental — for two tones
+  the average <code>f_c = (f₁ + f₂) / 2</code> — and places each product in the harmonic band nearest its
+  frequency:</p>
+  <p style="text-align:center"><code>band n = round( |f| / f_c )</code>&nbsp;→&nbsp;<code>Z[n]</code> if declared, else the shared <code>Z</code></p>
+  <p>So band&nbsp;0 (|f|&nbsp;&lt;&nbsp;f_c/2) is the baseband and uses <code>Z[0]</code>; band&nbsp;1 (around
+  f_c) holds both carriers and all the close-in IM3/IM5 products and uses <code>Z[1]</code> (or the default
+  <code>Z</code>); band&nbsp;2 (around 2·f_c) holds the second-harmonic products and uses <code>Z[2]</code>; and
+  so on. The decision is purely the product's frequency: as a high-order product such as (3,&nbsp;−1) drifts
+  down past the band-1/band-2 boundary it switches from <code>Z[2]</code> to <code>Z[1]</code> automatically —
+  no order threshold is hard-coded. This is the same harmonic-termination model as
+  <a href="components.html#p1tone">P1Tone</a>, and a <a href="components.html#pntone">PnTone</a> presents its
+  shared <code>Z</code> and per-band <code>Z[k]</code> to the whole multi-tone spectrum this way.</p>
+  <div class="callout note">
+    <span class="label">Why baseband termination matters</span>
+    <p>In single-tone HB the baseband is decoupled. In two-tone it is not — the IM2 product (1,&nbsp;−1) at
+    f₁−f₂ lands at baseband, and its termination <code>Z[0]</code> feeds back into the carriers and the IM3
+    levels. Studying source/load <strong>baseband-termination effects</strong> is a primary reason to run
+    two-tone, so set <code>Z[0]</code> deliberately.</p>
+  </div>
+
+  <h3 id="two-tone-vs-single">What's different from single-tone</h3>
+  <ul>
+    <li><strong>IM3 asymmetry.</strong> The lower IM3 (2f₁−f₂) and upper IM3 (2f₂−f₁) generally have
+      <em>different</em> levels in dBc, not just a phase difference — a direct consequence of the device's
+      nonlinear I–V/Q–V behaviour and its loading. The full diamond resolves both, so the asymmetry is a real
+      output of the run, not an artifact.</li>
+    <li><strong>A fully coupled solve.</strong> The two-tone result is <em>not</em> two single-tone solutions
+      superimposed. The carriers, harmonics, IM products, and baseband are all unknowns in one Newton solve
+      with a single conversion-matrix Jacobian — so the IM levels capture the true bidirectional coupling
+      between the carriers and the baseband.</li>
+    <li><strong>A bigger spectrum, a bigger cost.</strong> Because the product count grows quadratically with
+      <code>MaxMixOrder</code>, raise it only as far as you need: 5 captures IM5 (usually enough); higher
+      captures IM7+ at noticeably more cost.</li>
+    <li><strong>Commensurate tones.</strong> f₁ and f₂ must be commensurate (a rational ratio) so every mixing
+      product lands exactly on the grid and the waveform is exactly periodic — closely-spaced tones like
+      1.99 / 2.01 GHz satisfy this naturally.</li>
+  </ul>
+
+  <p class="small">Full design + algorithm: <code>docs/design/harmonic-balance.md</code> and the
+  harmonic-termination model in <code>docs/design/p1tone-harmonic-terminations.md</code> (in the repo).</p>
 
   <hr>
   <p class="small">See also: <a href="netlist.html">the netlist format</a> (how analyses are written) ·

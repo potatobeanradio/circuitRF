@@ -101,6 +101,20 @@ internal static class AnalysisPreviewHelper
         catch { return false; }
     }
 
+    /// <summary>
+    /// Formats an already-evaluated scalar <see cref="Value"/> with the HONEST "=" / "≈" prefix of
+    /// expressions.md §9.1: "= value" when the displayed digits reconstruct the value (to ~1e-12
+    /// relative — floating-point dust does not force "≈"), "≈ value" only when the value had to be
+    /// rounded to fit the G4→G6→G8 display budget. Non-scalar kinds (Cube/Bool/String) yield "".
+    /// Shared by the component-instance parameter editor so it matches the analysis-dialog hint.
+    /// </summary>
+    public static string FormatValueHonest(Value value) => value.Kind switch
+    {
+        ValueKind.Real    => Prefixed(FormatRealHonest(value.AsReal())),
+        ValueKind.Complex => PrefixedComplex(value.AsComplex()),
+        _                 => "",
+    };
+
     // ── prefix + honest formatting ─────────────────────────────────────────────
 
     private static string Prefixed((string Text, bool Exact) f) => (f.Exact ? "= " : "≈ ") + f.Text;

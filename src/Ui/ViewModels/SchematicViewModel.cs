@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Commands;
@@ -2702,6 +2703,12 @@ public sealed partial class SchematicViewModel : ObservableObject
             if (numParam != null)
                 numParam.Expression = NextFreeTermNum(EditModel).ToString();
         }
+        // PnTone: if a two-tone HB analysis already exists, adopt its tone frequencies so the source
+        // and the analysis agree out of the box. Graceful no-op when no two-tone HB is present.
+        else if (kind == SymbolKind.PnTone)
+        {
+            AdoptHbTonesIntoPnTone(comp, EditModel);
+        }
         // Auto-assign next-free Num for Pin — same pattern as Term.
         if (kind == SymbolKind.Pin)
         {
@@ -2839,6 +2846,28 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     private string GenerateInstanceName(SymbolKind symbol)
         => SchematicEditModel.NextAvailableName(EditModel.Components, symbol);
+
+    // When a PnTone is placed and a two-tone HB analysis already exists, copy that analysis's tone
+    // frequencies (expression + unit, preserving vars/expressions) into the PnTone's Freq[1]/Freq[2].
+    // Graceful: no two-tone HB, or a missing Freq[i] param → leaves the seeded defaults untouched.
+    internal static void AdoptHbTonesIntoPnTone(EditableComponent pnTone, SchematicEditModel model)
+    {
+        var hb = model.Analyses.OfType<HarmonicBalanceAnalysis>()
+            .FirstOrDefault(a => a.ToneExprs.Length >= 2
+                && int.TryParse(a.NumFreqsExpr, out int n) && n > 1);
+        if (hb is null) return;
+
+        for (int i = 1; i <= 2; i++)
+        {
+            var fp = pnTone.Parameters.FirstOrDefault(p => p.Name == $"Freq[{i}]");
+            if (fp is null) continue;
+            string expr = hb.ToneExprs[i - 1];
+            if (string.IsNullOrWhiteSpace(expr)) continue;
+            fp.Expression = expr;
+            fp.Unit = i - 1 < hb.ToneUnits.Length && !string.IsNullOrEmpty(hb.ToneUnits[i - 1])
+                ? hb.ToneUnits[i - 1] : "Hz";
+        }
+    }
 
     // Term and P1Tone share the same s-param port-number space so they never collide as ports.
     private static int NextFreeTermNum(SchematicEditModel model)

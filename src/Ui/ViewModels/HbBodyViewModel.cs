@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using CircuitRF.Core.Design;
 using CircuitRF.Ui.Schematic;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -102,7 +103,47 @@ public sealed partial class HbBodyViewModel : ObservableObject
     // ── Single / Multi-tone commands ──────────────────────────────────────────
 
     [RelayCommand] private void SetSingleTone() => MultiTone = false;
-    [RelayCommand] private void SetMultiTone()  => MultiTone = true;
+
+    [RelayCommand]
+    private void SetMultiTone()
+    {
+        MultiTone = true;
+        // Convenience: adopt the tone frequencies from a PnTone on the schematic so the dialog matches
+        // the multi-tone source. Graceful no-op if there's no PnTone (or it has no Freq[i]).
+        AdoptPnToneTones();
+    }
+
+    /// <summary>
+    /// Copies Freq[1]/Freq[2] (expression + unit, var/expression-preserving) from the first PnTone on
+    /// the schematic into Tone 1 / Tone 2. No-op when no PnTone exists or a tone field is blank.
+    /// </summary>
+    private void AdoptPnToneTones()
+    {
+        var pn = _model.Components.FirstOrDefault(c => c.Symbol == SymbolKind.PnTone);
+        if (pn is null) return;
+
+        if (TryReadFreq(pn, 1, out string f1, out string u1))
+        {
+            _prevToneUnit = u1;   // set before ToneUnit so OnToneUnitChanged sees from==to (no rescale)
+            ToneUnit  = u1;
+            ToneCoeff = f1;
+        }
+        if (TryReadFreq(pn, 2, out string f2, out string u2))
+        {
+            _prevTone2Unit = u2;
+            Tone2Unit  = u2;
+            Tone2Coeff = f2;
+        }
+    }
+
+    private static bool TryReadFreq(EditableComponent pn, int i, out string expr, out string unit)
+    {
+        var p = pn.Parameters.FirstOrDefault(q => q.Name == $"Freq[{i}]");
+        if (p is null || string.IsNullOrWhiteSpace(p.Expression)) { expr = ""; unit = ""; return false; }
+        expr = p.Expression;
+        unit = string.IsNullOrEmpty(p.Unit) ? "Hz" : p.Unit;
+        return true;
+    }
 
     // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -112,6 +153,11 @@ public sealed partial class HbBodyViewModel : ObservableObject
         HarmonicBalanceAnalysis analysis = MultiTone
             ? new HarmonicBalanceAnalysis(name)
             {
+                // Mirror Tone 1 into the scalar ToneExpr/ToneUnit as well as ToneExprs[0]. The engine
+                // reads ToneExprs[0] for multi-tone, but FromAnalysis and other consumers read the
+                // scalar field — keeping both in sync makes the dialog round-trip lossless.
+                ToneExpr          = ToneCoeff,
+                ToneUnit          = ToneUnit,
                 NumFreqsExpr      = "2",
                 ToneExprs         = [ToneCoeff, Tone2Coeff],
                 ToneUnits         = [ToneUnit,  Tone2Unit],
@@ -151,8 +197,14 @@ public sealed partial class HbBodyViewModel : ObservableObject
         // Set _prevXUnit before ToneUnit so OnToneUnitChanged sees from==to → no rescaling.
         // Legacy nicety: when ToneUnit=="Hz" and ToneExpr is a plain number, use Split for
         // pretty display (e.g. "2.4e9" → "2.4" GHz). Never Split a non-numeric expression.
-        string toneExpr = hb.ToneExpr;
-        string toneUnit = string.IsNullOrEmpty(hb.ToneUnit) ? "Hz" : hb.ToneUnit;
+        bool multi = int.TryParse(hb.NumFreqsExpr, out int n) && n > 1;
+
+        // Tone 1's canonical source in multi-tone is ToneExprs[0] (what the engine reads); single-tone
+        // uses the scalar ToneExpr. Reading the right field makes a multi-tone round-trip lossless even
+        // for analyses whose scalar ToneExpr was never populated (the original dialog-OK bug).
+        string toneExpr = multi && hb.ToneExprs.Length > 0 ? hb.ToneExprs[0] : hb.ToneExpr;
+        string toneUnit = multi && hb.ToneUnits.Length > 0 ? hb.ToneUnits[0]
+                        : string.IsNullOrEmpty(hb.ToneUnit) ? "Hz" : hb.ToneUnit;
         if (toneUnit == "Hz")
         {
             var (tc, tu) = FreqUnitHelper.Split(toneExpr);
@@ -163,7 +215,7 @@ public sealed partial class HbBodyViewModel : ObservableObject
         vm.ToneCoeff     = toneExpr;
         vm.MaxHarmonicExpr = hb.MaxHarmonicExpr;
 
-        if (int.TryParse(hb.NumFreqsExpr, out int n) && n > 1)
+        if (multi)
         {
             vm.MultiTone = true;
             string tone2src  = hb.ToneExprs.Length  > 1 ? hb.ToneExprs[1]  : "2e9";

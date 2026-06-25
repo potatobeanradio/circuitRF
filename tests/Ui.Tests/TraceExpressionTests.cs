@@ -60,7 +60,7 @@ public sealed class TraceExpressionTests
         bool ok = TraceExpression.TryEvaluate(
             "mag(V[:, 0])", ds, PlotType.Rect,
             out var xVals, out var cz, out var rz,
-            out _, out _, out var err);
+            out _, out _, out _, out var err);
 
         Assert.True(ok, err);
         Assert.NotNull(rz);
@@ -81,7 +81,7 @@ public sealed class TraceExpressionTests
         var ds = MakeDs();
         bool ok = TraceExpression.TryEvaluate(
             "mag(V[:, 0]) + mag(V[:, 1])", ds, PlotType.Rect,
-            out _, out _, out var rz, out _, out _, out var err);
+            out _, out _, out var rz, out _, out _, out _, out var err);
 
         Assert.True(ok, err);
         Assert.NotNull(rz);
@@ -101,7 +101,7 @@ public sealed class TraceExpressionTests
         var ds = MakeDs();
         bool ok = TraceExpression.TryEvaluate(
             "dB20(V[:, 1]) - dB20(V[:, 0])", ds, PlotType.Rect,
-            out _, out _, out var rz, out _, out _, out var err);
+            out _, out _, out var rz, out _, out _, out _, out var err);
 
         Assert.True(ok, err);
         Assert.NotNull(rz);
@@ -119,7 +119,7 @@ public sealed class TraceExpressionTests
         var ds = MakeDs();
         bool ok = TraceExpression.TryEvaluate(
             "V[:, 0]", ds, PlotType.Rect,
-            out _, out var cz, out var rz, out _, out _, out var err);
+            out _, out var cz, out var rz, out _, out _, out _, out var err);
 
         Assert.True(ok, err);
         Assert.NotNull(cz);
@@ -138,7 +138,7 @@ public sealed class TraceExpressionTests
         var ds = MakeDs2Cubes();
         bool ok = TraceExpression.TryEvaluate(
             "mag(A[:, 0]) + mag(B[:, 0])", ds, PlotType.Rect,
-            out _, out _, out _, out _, out _, out var err);
+            out _, out _, out _, out _, out _, out _, out var err);
 
         Assert.False(ok);
         // Error message should mention both lengths.
@@ -154,7 +154,7 @@ public sealed class TraceExpressionTests
         var ds = MakeDs();
         bool ok = TraceExpression.TryEvaluate(
             "mag(V[:, 0]) +", ds, PlotType.Rect,
-            out _, out _, out _, out _, out _, out var err);
+            out _, out _, out _, out _, out _, out _, out var err);
 
         Assert.False(ok);
         Assert.Contains("parse", err, StringComparison.OrdinalIgnoreCase);
@@ -168,7 +168,7 @@ public sealed class TraceExpressionTests
         var ds = MakeDs();
         bool ok = TraceExpression.TryEvaluate(
             "foo(V[:, 0])", ds, PlotType.Rect,
-            out _, out _, out _, out _, out _, out var err);
+            out _, out _, out _, out _, out _, out _, out var err);
 
         Assert.False(ok);
         Assert.Contains("foo", err);
@@ -201,7 +201,7 @@ public sealed class TraceExpressionTests
         // And TraceExpression must parse it successfully.
         bool ok = TraceExpression.TryEvaluate(
             shorthand, ds, PlotType.Rect,
-            out _, out _, out var rz, out _, out _, out var err);
+            out _, out _, out var rz, out _, out _, out _, out var err);
         Assert.True(ok, err);
         Assert.NotNull(rz);
     }
@@ -214,7 +214,7 @@ public sealed class TraceExpressionTests
         var ds = MakeDs();
         bool ok = TraceExpression.TryEvaluate(
             "mag(V[:, 0])", ds, PlotType.Smith,
-            out _, out _, out _, out _, out _, out var err);
+            out _, out _, out _, out _, out _, out _, out var err);
 
         Assert.False(ok);
         Assert.Contains("complex", err, StringComparison.OrdinalIgnoreCase);
@@ -227,9 +227,9 @@ public sealed class TraceExpressionTests
     {
         var ds = MakeDs();
         bool ok1 = TraceExpression.TryEvaluate("V[:, 0]",   ds, PlotType.Rect,
-            out var x1, out var c1, out _, out _, out _, out _);
+            out var x1, out var c1, out _, out _, out _, out _, out _);
         bool ok2 = TraceExpression.TryEvaluate("V[All, 0]", ds, PlotType.Rect,
-            out var x2, out var c2, out _, out _, out _, out _);
+            out var x2, out var c2, out _, out _, out _, out _, out _);
 
         Assert.True(ok1);
         Assert.True(ok2);
@@ -248,7 +248,7 @@ public sealed class TraceExpressionTests
     {
         var ds = MakeDs();
         bool ok = TraceExpression.TryEvaluate("V[:, :]", ds, PlotType.Rect,
-            out _, out _, out _, out _, out _, out var error);
+            out _, out _, out _, out _, out _, out _, out var error);
 
         Assert.False(ok);
         Assert.Contains("more than one X axis", error, StringComparison.OrdinalIgnoreCase);
@@ -262,7 +262,7 @@ public sealed class TraceExpressionTests
         var ds = MakeDs();
         bool ok = TraceExpression.TryEvaluate(
             "mag(V[:, 0])", ds, PlotType.Table,
-            out _, out _, out var rz, out _, out _, out var err);
+            out _, out _, out var rz, out _, out _, out _, out var err);
 
         Assert.True(ok, err);
         Assert.NotNull(rz);

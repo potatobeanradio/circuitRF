@@ -41,6 +41,11 @@ public enum SymbolKind
     /// (pin = DUT-facing = Nodes[0]; reference Nodes[1] hard-coded ground "0"). Pin on the LEFT. Must be
     /// named LoadTuner= in the analysis. Reference pin deferred.</summary>
     LoadTuner,
+
+    /// <summary>Multi-tone RF power source (engine "PnTone"). A convenience clone of <see cref="P1Tone"/>
+    /// for two-tone HB authoring: per-tone Freq[i]/Pavl[i]/Phase[i] fields, shared Z/Z[k]. Reuses
+    /// P1Tone's symbol and 2-pin geometry. Not an S-param port (no Num).</summary>
+    PnTone,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

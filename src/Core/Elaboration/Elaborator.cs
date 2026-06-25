@@ -221,6 +221,13 @@ public sealed class Elaborator
                     resolvedNodes = [..resolvedNodes, nDrv];
                 }
 
+                // PnTone: same single internal drive node (multi-tone V-source ↔ Z_Port junction).
+                if (inst.Reference.Equals("PnTone", StringComparison.OrdinalIgnoreCase))
+                {
+                    int nDrv = netlist.Nodes.GetOrAssign($"__pntone_{childPath}_drv");
+                    resolvedNodes = [..resolvedNodes, nDrv];
+                }
+
                 // Layer-2 + Layer-3 linter: a Term/Port inside an instantiated sub-cell is a
                 // design error — it will be treated as inert and never become an S-param port.
                 if ((model is PortModel or TermModel) && instancePathPrefix.Length > 0)
@@ -270,6 +277,8 @@ public sealed class Elaborator
             return ResolveToneSourceParameters(inst, parentScope);
         if (inst.Reference.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
             return ResolveP1ToneParameters(inst, parentScope);
+        if (inst.Reference.Equals("PnTone", StringComparison.OrdinalIgnoreCase))
+            return ResolvePnToneParameters(inst, parentScope);
         if (inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))
             return ResolveSnpParameters(inst, parentScope);
 
@@ -499,6 +508,25 @@ public sealed class Elaborator
                 try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
                 catch { /* skip unresolvable */ }
             }
+        }
+
+        return result;
+    }
+
+    // ── PnTone parameter resolution (per-tone Freq[i]/Pavl[i]/Phase[i] + shared Z/Z[k]) ──────────
+
+    private IReadOnlyDictionary<string, Value> ResolvePnToneParameters(
+        Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        result["PnToneName"] = new Value(inst.InstanceName);
+
+        // All PnTone overrides are numeric expressions with units (Freq[i] in Hz/GHz, Pavl[i] in dBm,
+        // Phase[i] in deg, Z/Z[k] in Ω). Evaluate each with its declared unit, like P1Tone.
+        foreach (var ov in inst.Overrides)
+        {
+            try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+            catch { /* skip unresolvable — degrades gracefully */ }
         }
 
         return result;

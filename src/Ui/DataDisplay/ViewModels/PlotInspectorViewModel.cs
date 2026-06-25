@@ -704,12 +704,13 @@ public partial class PlotInspectorViewModel : ViewModelBase
             }
             if (TraceExpression.TryEvaluate(t.Expression, ds, plotType,
                     out var xVals, out var cz, out var rz,
-                    out var xName, out var xUnit, out var exprErr))
+                    out var xName, out var xUnit, out var xLabels, out var exprErr))
             {
                 t.ExpressionError = null;
                 t.InvalidSpecText = null;
                 t.SetSpectrumFundamentals(null);
-                t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit);
+                t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit, xLabels);
+                ApplyPinnedSpectral(t, ds);
             }
             else
             {
@@ -827,7 +828,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
         var toneFreqs1 = GetToneFreqsCube(ds, t.CubeName);
         t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs1, slice, xAxis.Values.Length));
         t.SetCubeData(xAxis.Values, complexValues, realValues,
-                      xAxis.Name, xAxis.Unit, plotType, freqUnit);
+                      xAxis.Name, xAxis.Unit, plotType, freqUnit, xAxis.Labels);
+        ApplyPinnedSpectral(t, ds);
     }
 
     private static void ResolveFamily(Trace t, DataCube cube, AxisSlice[] slice,
@@ -897,6 +899,49 @@ public partial class PlotInspectorViewModel : ViewModelBase
         int dot = cubeName.IndexOf('.');
         string toneFreqsName = dot < 0 ? "ToneFreqs" : cubeName[..dot] + ".ToneFreqs";
         return ds.Contains(toneFreqsName) ? ds[toneFreqsName] : null;
+    }
+
+    // When a spectral axis ("harmonic"/"mixIndex") is PINNED in the slice (X is a sweep, e.g. Pin),
+    // surface which spectral line the trace shows + its frequency so the marker box reads the same
+    // two rows the spectral-axis-X plot gives. Clears it when no spectral axis is pinned (incl. when
+    // the spectral axis is the X axis — then the X-axis marker rows already report it).
+    private static void ApplyPinnedSpectral(Trace t, DataSet? ds)
+    {
+        t.SetPinnedSpectral(null, null, double.NaN);
+        if (ds is null || t.CubeName is null || t.Slice is null || !ds.Contains(t.CubeName)) return;
+
+        AxisSlice? pin = null;
+        foreach (var s in t.Slice)
+            if (s.Role == AxisRole.PinToIndex &&
+                (s.AxisName == Trace.HarmonicAxisName || s.AxisName == Trace.MixIndexAxisName))
+            { pin = s; break; }
+        if (pin is null) return;
+
+        var cube = ds[t.CubeName];
+        Axis? axis = null;
+        foreach (var a in cube.Axes) if (a.Name == pin.Value.AxisName) { axis = a; break; }
+        if (axis is null || axis.Length == 0) return;
+        int idx = Math.Clamp(pin.Value.Index, 0, axis.Length - 1);
+
+        string label = axis.Labels is not null && idx < axis.Labels.Length
+            ? axis.Labels[idx]
+            : axis.Values[idx].ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
+
+        double freqHz;
+        if (pin.Value.AxisName == Trace.MixIndexAxisName)
+        {
+            // The mixIndex value IS the signed product frequency → fold to the single-sided |f|.
+            freqHz = Math.Abs(axis.Values[idx]);
+        }
+        else
+        {
+            // harmonic: order × f0 (representative fundamental; exact for a non-frequency sweep).
+            var tf = GetToneFreqsCube(ds, t.CubeName);
+            double f0 = tf is not null && tf.RealValues.Length > 0 ? tf.RealValues[0] : double.NaN;
+            freqHz = double.IsNaN(f0) ? double.NaN : Math.Round(axis.Values[idx]) * f0;
+        }
+
+        t.SetPinnedSpectral(pin.Value.AxisName, label, freqHz);
     }
 
     private static double[]? ResolveFundamentalByX(DataCube? toneFreqs, AxisSlice[]? slice, int xAxisLength)

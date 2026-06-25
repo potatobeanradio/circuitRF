@@ -187,6 +187,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Sources,
             SearchTerms: ["P1Tone", "power", "Pavl", "available power", "RF source", "drive", "harmonic"],
             IsCommon: true),
+        [SymbolKind.PnTone]        = new("PnTone", "P",
+            Category: ComponentCategory.Sources,
+            SearchTerms: ["PnTone", "multi-tone", "two-tone", "2-tone", "two tone", "IM3", "intermod", "power", "Pavl", "RF source"],
+            IsCommon: true),
         [SymbolKind.Snp]           = new("SnP",   "S",
             Category: ComponentCategory.DataFiles,
             SearchTerms: ["SnP", "Touchstone", "snp", "s2p", "sparam file", "data file", "network"],
@@ -271,6 +275,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Var           => "VAR",   // sentinel — never emitted as an Instance; not a factory primitive
         SymbolKind.Meas          => "MEAS",  // sentinel — never emitted as an Instance; rows route to tb.Measurements
         SymbolKind.P1Tone        => "P1Tone",
+        SymbolKind.PnTone        => "PnTone",
         SymbolKind.Snp           => "SnP",
         SymbolKind.NonlinearC    => "NonlinearC",
         SymbolKind.Mutual        => "Mutual",
@@ -319,6 +324,18 @@ public static class ComponentTypeRegistry
                 new("Z",    "50",   "Ω",   true,  UnitDimension.Resistance),
                 new("Freq",  "1",   "GHz", true,  UnitDimension.Frequency),
                 new("Phase", "0",   "deg", false, UnitDimension.Angle)];
+
+            // PnTone: multi-tone power source — seeded with TWO tones so a freshly-placed PnTone is a
+            // ready two-tone source. Per-tone Freq[i]/Pavl[i]/Phase[i]; shared Z (= Zdefault reference).
+            // The "+"/"−" buttons add/remove tones (UserParamTemplate). Not an S-param port (no Num).
+            case SymbolKind.PnTone: return [
+                new("Freq[1]",  "1.99", "GHz", true,  UnitDimension.Frequency),
+                new("Pavl[1]",  "0",    "dBm", true,  UnitDimension.Power),
+                new("Phase[1]", "0",    "deg", false, UnitDimension.Angle),
+                new("Freq[2]",  "2.01", "GHz", true,  UnitDimension.Frequency),
+                new("Pavl[2]",  "0",    "dBm", true,  UnitDimension.Power),
+                new("Phase[2]", "0",    "deg", false, UnitDimension.Angle),
+                new("Z",       "50",    "Ω",   true,  UnitDimension.Resistance)];
 
             case SymbolKind.ZPort:
             {
@@ -467,6 +484,7 @@ public static class ComponentTypeRegistry
             case "VAR":    kind = SymbolKind.Var;           return true;
             case "MEAS":   kind = SymbolKind.Meas;          return true;
             case "P1TONE": kind = SymbolKind.P1Tone;        return true;
+            case "PNTONE": kind = SymbolKind.PnTone;        return true;
             case "NONLINEARC":
             case "NLC":    kind = SymbolKind.NonlinearC;  return true;
             case "MUTUAL":
@@ -536,6 +554,17 @@ public static class ComponentTypeRegistry
             DefaultUnits:    ["GHz", "V", "deg"],
             ShowOnSchematic: [true, true, false],
             Dimensions:      [UnitDimension.Frequency, UnitDimension.Voltage, UnitDimension.Angle],
+            FirstAddIndex:   2,
+            SkipIndices:     null),
+
+        // PnTone: each group = Freq[n]/Pavl[n]/Phase[n] (the power-source analog of ToneSource). The
+        //         component is seeded with tones 1 & 2 (DefaultParameters); "+" adds tone 3, 4, …
+        //         FirstAddIndex=2 keeps tone 1 from being removed (it's always the first tone).
+        SymbolKind.PnTone => new IndexedParamGroup(
+            NameFormats:     ["Freq[{0}]", "Pavl[{0}]", "Phase[{0}]"],
+            DefaultUnits:    ["GHz", "dBm", "deg"],
+            ShowOnSchematic: [true, true, false],
+            Dimensions:      [UnitDimension.Frequency, UnitDimension.Power, UnitDimension.Angle],
             FirstAddIndex:   2,
             SkipIndices:     null),
 

@@ -106,6 +106,7 @@ public static class BuiltInSymbols
             case SymbolKind.Var:        return _var;
             case SymbolKind.Meas:       return _meas;
             case SymbolKind.P1Tone:     return _p1Tone;
+            case SymbolKind.PnTone:     return _p1Tone;   // shares P1Tone's glyph (multi-tone variant)
             case SymbolKind.Tuner:       return _tuner;
             case SymbolKind.SourceTuner: return _sourceTuner;
             case SymbolKind.LoadTuner:   return _loadTuner;

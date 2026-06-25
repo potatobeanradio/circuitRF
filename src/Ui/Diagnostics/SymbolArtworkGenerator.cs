@@ -37,6 +37,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Vdc,         "vdc",          2),
         (SymbolKind.ToneSource,  "tone-source",  2),
         (SymbolKind.P1Tone,      "p1tone",       2),
+        (SymbolKind.PnTone,      "pntone",       2),
         (SymbolKind.Ground,      "ground",       1),
         (SymbolKind.Term,        "term",         1),
         (SymbolKind.Pin,         "pin",          1),

@@ -121,7 +121,7 @@ public sealed class GroupedDataSetStage3Tests
         bool ok = TraceExpression.TryEvaluate(
             "mag(HB1.V[:, 0])", ds, PlotType.Rect,
             out var xVals, out var cz, out var rz,
-            out _, out _, out string error);
+            out _, out _, out _, out string error);
 
         Assert.True(ok, error);
         Assert.Null(cz);
@@ -147,7 +147,7 @@ public sealed class GroupedDataSetStage3Tests
         bool ok = TraceExpression.TryEvaluate(
             "HB1.Pout[:] - SP1.Pin[:]", ds, PlotType.Rect,
             out _, out _, out var rz,
-            out _, out _, out string error);
+            out _, out _, out _, out string error);
 
         Assert.True(ok, error);
         Assert.NotNull(rz);

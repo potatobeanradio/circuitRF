@@ -13,7 +13,7 @@ namespace CircuitRF.Ui.ViewModels;
 /// <summary>
 /// VM for one row in the ParameterEditorView — wraps a single EditableParameter.
 /// Expression/Unit/ShowOnSchematic are staged; the row commits through the command stack.
-/// Also computes the inline "≈ value" preview (parameter-editor.md, "Value preview").
+/// Also computes the inline value preview with an honest "=" / "≈" prefix (expressions.md §9.1).
 /// When NameEditable is true (extensible component types), StagedName can be committed
 /// via CommitName().
 /// </summary>
@@ -48,7 +48,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     partial void OnNameErrorChanged(string? oldValue, string newValue)
         => OnPropertyChanged(nameof(HasNameError));
 
-    // ── Value preview ("≈ <evaluated>") ───────────────────────────────────────
+    // ── Value preview ("= <evaluated>" / "≈ <rounded>") ───────────────────────
     // Subtle grey, non-interactive (the view makes it selectable-but-read-only). Empty string ⇒
     // the view hides it. Recomputed when the staged expression changes and on RefreshFromModel.
 
@@ -223,10 +223,11 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     // ── Preview computation ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Recomputes the "≈ value" preview from the current staged expression, evaluated against the
-    /// schematic's current state. Shows a preview ONLY when (parameter-editor.md "Value preview"):
+    /// Recomputes the value preview from the current staged expression, evaluated against the
+    /// schematic's current state, with the honest "=" / "≈" prefix of expressions.md §9.1. Shows a
+    /// preview ONLY when:
     ///   • the owner is not an SDD/FetSdd device (their equations aren't scalar-evaluable here);
-    ///   • the expression is more than a bare number/blank (no "≈ 2.5" noise on a literal);
+    ///   • the expression is more than a bare number/blank (no "= 2.5" noise on a literal);
     ///   • evaluation succeeds and yields a single Real (or Complex) value.
     /// Any parse/resolve/cycle/type error, or a non-scalar result (e.g. a Cube/sweep), yields an
     /// empty preview (no error surfaced). All failure is swallowed — a preview never throws.
@@ -253,13 +254,10 @@ public sealed partial class ParameterRowViewModel : ObservableObject
             // and the engine's Units table is ASCII-keyed, mismatching the glyph ComboBox strings).
             var value = new Evaluator().Eval(expr, scope);
 
-            return value.Kind switch
-            {
-                // Gate 3: only scalar Real / Complex preview. Cube/Bool/String/All ⇒ no preview.
-                ValueKind.Real    => "≈ " + FormatReal(value.AsReal()),
-                ValueKind.Complex => "≈ " + FormatComplex(value.AsComplex()),
-                _                 => "",
-            };
+            // Gate 3: only scalar Real / Complex preview (Cube/Bool/String/All ⇒ no preview).
+            // Honest "=" / "≈" prefix per expressions.md §9.1 — shared with the analysis-dialog hint:
+            // "=" when the shown digits reconstruct the value, "≈" only when genuinely rounded.
+            return AnalysisPreviewHelper.FormatValueHonest(value);
         }
         catch
         {
@@ -273,20 +271,4 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     private static bool IsBareNumber(string s)
         => double.TryParse(s, NumberStyles.Float | NumberStyles.AllowLeadingSign,
                            CultureInfo.InvariantCulture, out _);
-
-    /// <summary>Formats a real preview value compactly (engineering-ish, ~4 significant digits).</summary>
-    private static string FormatReal(double v)
-    {
-        if (double.IsNaN(v) || double.IsInfinity(v)) return v.ToString(CultureInfo.InvariantCulture);
-        // "G4" gives ~4 significant digits and switches to exponent form for very large/small mags.
-        return v.ToString("G4", CultureInfo.InvariantCulture);
-    }
-
-    private static string FormatComplex(Complex c)
-    {
-        string re = FormatReal(c.Real);
-        string im = FormatReal(Math.Abs(c.Imaginary));
-        string sign = c.Imaginary < 0 ? "-" : "+";
-        return $"{re} {sign} {im}j";
-    }
 }
