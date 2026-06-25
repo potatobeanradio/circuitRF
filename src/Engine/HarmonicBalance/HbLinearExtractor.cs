@@ -117,8 +117,10 @@ public sealed class HbLinearExtractor
             if (_settings.InductanceRegularization == RegularizationMode.Never)
                 ThrowSingularDiagnostic(zNN);
 
-            // IfNecessary: warn and retry with inductance regularization.
-            WarnInductanceReg(singularIdxs);
+            // IfNecessary: regularize and retry. The notice is a per-solve diagnostic (it would
+            // otherwise repeat every point of a sweep) — gate it behind HbConsoleDiagnostics. The
+            // regularization itself always runs; it converges to the exact answer as R→0.
+            if (_settings.HbConsoleDiagnostics) WarnInductanceReg(singularIdxs);
             (zNN, _) = ComputeZnn(applyIndReg: true);
         }
 

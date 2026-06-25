@@ -1,3 +1,4 @@
+using System.Numerics;
 using RfCore.Data;
 using RfCore.Export;
 
@@ -23,10 +24,23 @@ public sealed class HbRunResult
     /// </summary>
     public ILinearNetworkPayload? LinearPayload  { get; }
 
-    public HbRunResult(DataSet ds, HbLinearBackSolver? backSolver = null)
+    /// <summary>Whether the Newton solve converged (false ⇒ best-available result stored).</summary>
+    public bool Converged { get; }
+
+    /// <summary>
+    /// The converged interface-node voltage spectrum <c>[N, K+1]</c> for a single-tone run — the seed
+    /// used to warm-start the next point of a parametric sweep (continuation; see
+    /// docs/design/harmonic-balance.md §11). Null for two-tone runs.
+    /// </summary>
+    public Complex[,]? InterfaceV { get; }
+
+    public HbRunResult(DataSet ds, HbLinearBackSolver? backSolver = null,
+        bool converged = true, Complex[,]? interfaceV = null)
     {
         DataSet       = ds;
         BackSolver    = backSolver;
+        Converged     = converged;
+        InterfaceV    = interfaceV;
         LinearPayload = backSolver is not null
             ? new HbLinearNetworkPayload(backSolver)
             : null;

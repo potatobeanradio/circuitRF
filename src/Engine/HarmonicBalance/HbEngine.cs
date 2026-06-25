@@ -242,7 +242,7 @@ public sealed class HbEngine
     /// and, for single-tone runs, a lazy <see cref="HbLinearBackSolver"/> for recovering
     /// linear-interior node voltages (C1).  Implicit conversion to DataSet is available.
     /// </summary>
-    public HbRunResult Run(HbAnalysisParams p)
+    public HbRunResult Run(HbAnalysisParams p, Complex[,]? warmStart = null)
     {
         if (p.IsMultiTone) return new HbRunResult(RunTwoTone(p));
 
@@ -288,12 +288,6 @@ public sealed class HbEngine
             iSrc[k]       = s;
         }
 
-        // ── DC operating point (Phase-3 NonlinearDcEngine) ─────────────────
-        var dcResult = NonlinearDcEngine.Run(_netlist, _settings);
-        if (!dcResult.Converged)
-            _netlist.AddWarningOnce("hb-dc-nonconverge",
-                "HB: DC operating point did not converge; proceeding with best available.");
-
         var trace = new HbConvergenceTrace();
 
         // C2: Per-branch current accumulator: "instancePath:terminalName" → spectra.
@@ -307,7 +301,22 @@ public sealed class HbEngine
             bSrcThisPoint[k] = extractor.BuildSourceRhs(omegaSnap);
         }
 
-        var V = InitialGuess(null, dcResult, N, K, ifNodes);
+        // Initial guess: continuation warm-start from the previous sweep point's converged spectrum
+        // when supplied (skips the per-point nonlinear-DC solve — harmonic-balance.md §11); otherwise
+        // seed from a fresh DC operating point.
+        Complex[,] V;
+        if (warmStart is not null && warmStart.GetLength(0) == N && warmStart.GetLength(1) == K + 1)
+        {
+            V = (Complex[,])warmStart.Clone();
+        }
+        else
+        {
+            var dcResult = NonlinearDcEngine.Run(_netlist, _settings);
+            if (!dcResult.Converged)
+                _netlist.AddWarningOnce("hb-dc-nonconverge",
+                    "HB: DC operating point did not converge; proceeding with best available.");
+            V = InitialGuess(null, dcResult, N, K, ifNodes);
+        }
 
         // Re-extract source excitation (drive amplitude baked into I_src).
         // Y_{N×N} is topology-based (constant); only I_src changes with drive level.
@@ -368,14 +377,17 @@ public sealed class HbEngine
                 $"[HB] Non-convergence: ‖F‖={res:E3} after {solveResult.Iterations} iterations.");
         }
 
-        Console.Error.Write("[HB-DC]:");
-        for (int n = 0; n < N; n++)
+        if (_settings.HbConsoleDiagnostics)
         {
-            string nm = n < nodeNames.Length ? nodeNames[n] : $"if[{n}]";
-            Console.Error.Write(
-                $"  {nm} V={V[n,0].Real:F3}V I_nl={solveResult.INl[n,0].Real*1e3:F2}mA");
+            Console.Error.Write("[HB-DC]:");
+            for (int n = 0; n < N; n++)
+            {
+                string nm = n < nodeNames.Length ? nodeNames[n] : $"if[{n}]";
+                Console.Error.Write(
+                    $"  {nm} V={V[n,0].Real:F3}V I_nl={solveResult.INl[n,0].Real*1e3:F2}mA");
+            }
+            Console.Error.WriteLine();
         }
-        Console.Error.WriteLine();
 
         // C2: Post-convergence per-device port-current extraction (not in Newton hot path).
         // Pass cc + converged INl so SDDs with C[n] refs get the correct _cn values.
@@ -388,7 +400,7 @@ public sealed class HbEngine
             lst.Add(spec);
         }
 
-        trace.Print();
+        if (_settings.HbConsoleDiagnostics) trace.Print();
 
         // C1: Lazy linear back-solver — recovers linear-interior node voltages on demand.
         var backSolver = new HbLinearBackSolver(
@@ -450,7 +462,9 @@ public sealed class HbEngine
             Vfull, INlfull, namesFull, f0, K, trace, portCurrentsByBranch,
             _netlist.Nodes.LabeledNames, probeCurrents);
 
-        return new HbRunResult(ds, backSolver);
+        // V holds the converged interface spectrum [N, K+1]; expose it so a parametric sweep can
+        // warm-start the next point (continuation — §11). Only propagate a converged seed.
+        return new HbRunResult(ds, backSolver, solveResult.Converged, V);
     }
 
     // ── Two-tone engine entry point (harmonic-balance.md §6) ─────────────────
@@ -541,11 +555,14 @@ public sealed class HbEngine
                 $"[HB2D] Non-convergence: ‖F‖={res2d:E3} after {solveResult.Iterations} iters.");
         }
 
-        Console.Error.Write("[HB2D-DC]:");
-        for (int n = 0; n < N; n++)
-            Console.Error.Write(
-                $"  {nodeNames[n]} V={V[n,0].Real:F3}V I_nl={solveResult.INl[n,0].Real*1e3:F2}mA");
-        Console.Error.WriteLine();
+        if (_settings.HbConsoleDiagnostics)
+        {
+            Console.Error.Write("[HB2D-DC]:");
+            for (int n = 0; n < N; n++)
+                Console.Error.Write(
+                    $"  {nodeNames[n]} V={V[n,0].Real:F3}V I_nl={solveResult.INl[n,0].Real*1e3:F2}mA");
+            Console.Error.WriteLine();
+        }
 
         // C2: post-convergence per-device port-current extraction over the mixing lattice.
         var pointPortCurrents = HbNewton2D.ComputeDevicePortCurrents2D(
@@ -557,7 +574,7 @@ public sealed class HbEngine
             lst.Add(spec);
         }
 
-        trace.Print();
+        if (_settings.HbConsoleDiagnostics) trace.Print();
 
         return BuildTwoToneDataSet(
             V, solveResult.INl, nodeNames, grid, f1, f2, trace, portCurrentsByBranch,

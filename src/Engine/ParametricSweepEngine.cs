@@ -70,6 +70,13 @@ public static class ParametricSweepEngine
 
         var datasets = new List<DataSet>(sweep.SweepValues.Length);
 
+        // Continuation (§11): warm-start each HB point from the previous point's converged spectrum.
+        // The seed chains only along THIS (innermost) axis; for a nested-sweep inner the per-point
+        // RunInner returns a null seed, so each outer step's inner sweep restarts cold. Reset to null
+        // whenever a point does not converge (or the inner is non-HB) so a bad seed never propagates.
+        bool warmStart = settings?.HbSweepWarmStart ?? true;
+        Complex[,]? seed = null;
+
         for (int si = 0; si < sweep.SweepValues.Length; si++)
         {
             double val = sweep.SweepValues[si];
@@ -96,7 +103,9 @@ public static class ParametricSweepEngine
             try
             {
                 var netlist = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
-                datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState));
+                datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState,
+                    warmStart ? seed : null, out var nextSeed));
+                seed = warmStart ? nextSeed : null;
             }
             finally
             {
@@ -272,13 +281,25 @@ public static class ParametricSweepEngine
         ElaboratedNetlist netlist,
         AnalysisSettings? settings,
         string? baseDirectory,
-        OutputWriteState writeState)
+        OutputWriteState writeState,
+        Complex[,]? hbWarmStart,
+        out Complex[,]? hbConvergedSeed)
     {
+        // Only a single-tone HB inner produces a chainable seed; every other inner leaves it null so
+        // the sweep does not warm-start across it (continuation is innermost-axis only — §11).
+        hbConvergedSeed = null;
+
         switch (inner)
         {
             case HarmonicBalanceAnalysis hba:
-                var p = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
-                return (DataSet)new HbEngine(netlist, tb, settings).Run(p);
+            {
+                var p  = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);
+                var rr = new HbEngine(netlist, tb, settings).Run(p, hbWarmStart);
+                // Chain this point's converged spectrum into the next point's seed. Two-tone returns a
+                // null InterfaceV → no chaining; a non-converged point also resets the chain.
+                hbConvergedSeed = rr.Converged ? rr.InterfaceV : null;
+                return rr.DataSet;
+            }
 
             case SParameterAnalysis spa:
                 return RunSParam(spa, netlist, settings);

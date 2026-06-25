@@ -188,4 +188,31 @@ public sealed class AnalysisSettings
     /// default so engine-direct callers (tests, CLI) also get 100 iterations.
     /// </summary>
     public int HbMaxIter { get; init; } = 100;
+
+    /// <summary>
+    /// When true, the HB engine prints per-solve diagnostics to stderr: the auto-regularization notice
+    /// (<c>[HB] ExtractDC: …</c>), the DC operating point (<c>[HB-DC]:</c> / <c>[HB2D-DC]:</c>), and the
+    /// per-point convergence trace (<c>[HB trace]</c>).
+    ///
+    /// Default <c>false</c>. These fire once per HB Newton solve, so in a parametric sweep they would
+    /// otherwise repeat at every point (e.g. a Pin sweep prints the inductance-regularization notice for
+    /// every power step). The auto-regularization is benign — it converges to the exact answer as the
+    /// series R→0 — so it does not need to nag per point; enable this only when debugging convergence.
+    /// (Non-convergence warnings are always surfaced via the diagnostics channel, independent of this.)
+    /// </summary>
+    public bool HbConsoleDiagnostics { get; init; } = false;
+
+    /// <summary>
+    /// When true (default), a parametric sweep whose innermost analysis is a single-tone HB
+    /// <strong>warm-starts</strong> each point from the previous point's converged spectrum — the
+    /// continuation method (harmonic-balance.md §11). This skips the per-point nonlinear-DC seed solve
+    /// and follows the solution branch, cutting Newton iterations (benchmarked ~45% fewer iters and
+    /// N→1 DC solves on a GaN-PA Pin sweep, with bit-identical results).
+    ///
+    /// The seed chains <em>only along the innermost sweep axis</em> and resets at each outer-sweep step
+    /// (each outer step runs a fresh inner sweep, whose first point is DC-seeded). A non-converged point
+    /// also resets the chain. Set false to force a cold DC seed at every point (e.g. to study
+    /// branch-dependence near a bifurcation).
+    /// </summary>
+    public bool HbSweepWarmStart { get; init; } = true;
 }

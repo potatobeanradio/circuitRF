@@ -4,6 +4,24 @@ Standing instructions for `src/Engine/HarmonicBalance`. Read with the root `CLAU
 This is the hardest math in the project — design on paper (see `docs/design/harmonic-balance.md`)
 before implementing, and keep the pieces below independently testable.
 
+## Parametric-sweep warm-start + quiet diagnostics (harmonic-balance.md §11.1) — COMPLETE
+
+- **Warm-start (continuation) for the generic HB sweep.** `HbEngine.Run(p, warmStart=null)` takes an
+  optional interface-V seed `[N,K+1]`; when supplied it is the Newton guess and the per-point
+  `NonlinearDcEngine.Run` DC seed is **skipped**. `HbRunResult` now carries `Converged` + `InterfaceV`
+  (the converged interface spectrum). `ParametricSweepEngine.RunInner` returns the converged seed via an
+  `out` param; `Run` chains it into the next point — **innermost sweep axis only** (nested/outer sweeps
+  return a null seed → each outer step restarts cold), resets on non-convergence, falls back to cold on a
+  dimension change. Gated by `AnalysisSettings.HbSweepWarmStart` (**default true**). Two-tone unchanged
+  (cold). Benchmark: GaN-PA Pin sweep 22→12 Newton iters, 11→1 DC solves, bit-identical interface
+  spectrum. Gate: `HbPinSweepWarmStartBenchTests` (iteration/DC counts + production warm-vs-cold
+  equivalence through `ParametricSweepEngine.Run`). All 454 Engine tests green.
+- **Quiet by default.** The per-solve stderr traces (`[HB]`/`[HB-DC]`/`[HB2D-DC]`/`[HB trace]` and the
+  inductance-regularization notice) repeated once per sweep point. They are now gated behind
+  `AnalysisSettings.HbConsoleDiagnostics` (**default false**). The regularization itself always runs
+  (it converges to the exact answer as R→0); only its console notice is suppressed. Non-convergence
+  warnings still flow through the `AddWarning` channel regardless.
+
 ## SDD control-current HB Jacobian `J_cc` (brief-sdd-control-current-hb-jacobian, 2026-06-19) — COMPLETE
 
 Restores quadratic-quality convergence for SDD `_cn` references in HB by adding the
