@@ -1350,6 +1350,11 @@ public partial class TraceRowViewModel : ViewModelBase
         _parent.RebuildAndNotify();
     }
 
+    /// <summary>False for a real multi-cube expression result — the transform lives in the expression text,
+    /// so the combo is disabled (and forced to None). Enabled for complex expressions, picker/bare-cube, and
+    /// network traces.</summary>
+    public bool IsTransformComboEnabled => !_trace.TransformIsInert;
+
     /// <summary>Returns the per-trace transform list: all-enabled for cube, network-filtered otherwise.</summary>
     public IReadOnlyList<CubeTransformItem> TraceTransformItems =>
         _trace.IsCubeBound
@@ -1363,6 +1368,10 @@ public partial class TraceRowViewModel : ViewModelBase
     /// </summary>
     private void SyncTransformItem()
     {
+        // A real expression result is inert — pin the combo to None (it's also disabled in the view).
+        if (_trace.TransformIsInert && _trace.Transform != CubeTransform.None)
+            _trace.Transform = CubeTransform.None;
+
         CubeTransformItem? item;
         if (_trace.IsCubeBound)
         {
@@ -2514,9 +2523,11 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowEmptyQuantity));
         OnPropertyChanged(nameof(EmptyQuantityMessage));
         OnPropertyChanged(nameof(ShowAxisRoles));
-        // Unified transform combo: rebuild list and re-sync selection to trace state.
+        // Unified transform combo: rebuild list, re-sync selection, refresh enabled state (inert for a
+        // real expression result). SyncTransformItem pins Transform→None when inert, so notify after it.
         OnPropertyChanged(nameof(TraceTransformItems));
         SyncTransformItem();
+        OnPropertyChanged(nameof(IsTransformComboEnabled));
     }
 
     // ---- Inline spec editor (#4) -------------------------------------------

@@ -1029,6 +1029,8 @@
                                             <!-- Transform combo (Rect/Table; both cube and network) -->
                                             <ComboBox Grid.Column="0"
                                                       IsVisible="{Binding IsRectOrTablePlot}"
+                                                      IsEnabled="{Binding IsTransformComboEnabled}"
+                                                      ToolTip.Tip="Disabled for a real expression result — its transform is set in the expression text."
                                                       Width="90"
                                                       Margin="0,0,3,0"
                                                       ItemsSource="{Binding TraceTransformItems}"

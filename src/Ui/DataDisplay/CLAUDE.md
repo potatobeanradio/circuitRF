@@ -3,6 +3,29 @@
 Standing instructions for `src/Ui/DataDisplay`. Read with the root `CLAUDE.md`, `src/Ui/CLAUDE.md`,
 and `docs/design/data-display.md`.
 
+## Expression-baked transform — combo must not double-apply (2026-06-25)
+
+A multi-cube `TraceExpression` (e.g. `10*log10(Pout_W*1000)`) is evaluated **in full** by `TraceExpression`
+— the transform functions are already in the expression text, so a REAL result is the final value. But
+`BuildCubePath`/`RectY`/`FormatCubeCell` then re-applied `Trace.Transform` on top → an "invisible" double
+transform (changing the combo silently re-scaled the rendered curve). Fix: `Trace._transformBaked` (bool),
+set by the Expression path only (`PlotInspectorViewModel.TrySetCubeData` passes `transformBaked: true` to
+`SetCubeData`; the single-slice/scalar/family setters reset it to false). When baked, the **real-value**
+render branches render `v` as-is (skip the `Transform` switch). The **complex** branch is unaffected — a
+complex multi-cube expression (`V[:,0]+V[:,1]`) still needs the combo to reduce to a scalar on Rect.
+Discriminator: a bare cube / picker spec (`Pout_W`, `V[:, 0]`) is `singleCube` → single-slice path → NOT
+baked → combo applies (it's the authoring mechanism); an expression with operators → Expression path →
+baked. Copy ctor copies `_transformBaked`. Tests `ExpressionBakedTransformTests`
+(`RealExpression_ComboTransformIsNoOp`, `BareCube_ComboTransformStillApplies`).
+
+**Combo disabled for inert traces (Option A, 2026-06-25):** `Trace.TransformIsInert` = baked AND real
+(`_cubeComplexValues is null && _cubeRealValues is not null`) — a complex expression result still needs the
+combo for scalar reduction, so it is NOT inert. `TraceRowViewModel.IsTransformComboEnabled => !TransformIsInert`
+gates the combo's `IsEnabled` (PlotInspectorView.axaml). `SyncTransformItem` pins `Transform→None` when inert
+(so a stale transform is cleared and the disabled combo shows None); `RefreshDescription` raises
+`IsTransformComboEnabled` after it. The transform for a real expression lives in the expression text only.
+Tests `RealExpression_ComboDisabledAndForcedNone`, `BareCube_ComboEnabled`.
+
 Harmonic stem plot (brief-datadisplay-harmonic-stem-plot, 2026-06-20) — COMPLETE: HB single-tone
 Rect traces whose X-axis is `"harmonic"` are rendered as discrete lollipop/stem plots instead of a
 connected polyline. **Detection:** `Trace.HarmonicAxisName = "harmonic"` (const); `Trace.IsHarmonicStem`

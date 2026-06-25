@@ -358,6 +358,19 @@ namespace CircuitRF.Ui.DataDisplay
         private PlotType _lastPlotType = PlotType.Rect;
         public  bool CubeIsScalar => _cubeIsScalar;
 
+        // True when the values were produced by a multi-cube TraceExpression (e.g. "10*log10(Pout_W*1000)"):
+        // the expression text already encodes any transform, so a REAL result is the final value and the
+        // transform combo must NOT be re-applied during rendering (else a chosen dB/Mag double-transforms it).
+        // A COMPLEX expression result still needs the combo to reduce to a scalar on Rect, so it is unaffected.
+        private bool _transformBaked;
+        public  bool TransformBaked => _transformBaked;
+
+        /// <summary>True when the transform combo has no effect on this trace: a REAL multi-cube expression
+        /// result, whose transform is already encoded in the expression text. (A complex expression result
+        /// still needs the combo for scalar reduction, so it is NOT inert.) The combo is disabled + forced
+        /// to None in that case so the rendered value always equals the expression.</summary>
+        public bool TransformIsInert => _transformBaked && _cubeComplexValues is null && _cubeRealValues is not null;
+
         /// <summary>True when a scalar (rank-0) cube is bound while the plot type is not Table. Scalars render
         /// only on a Table; elsewhere the trace draws nothing and its label shows a soft "&lt;invalid&gt;".</summary>
         public bool ScalarOnNonTableInvalid { get; private set; }
@@ -581,6 +594,7 @@ namespace CircuitRF.Ui.DataDisplay
             _pinnedSpectralLabel  = src._pinnedSpectralLabel;
             _pinnedSpectralFreqHz = src._pinnedSpectralFreqHz;
             _cubeIsScalar      = src._cubeIsScalar;
+            _transformBaked    = src._transformBaked;
             _lastPlotType      = src._lastPlotType;
             _f0ByX             = src._f0ByX;
             // Per-port Z0 (Phase 7.2f).
@@ -616,9 +630,11 @@ namespace CircuitRF.Ui.DataDisplay
         /// </summary>
         public void SetCubeData(double[] xValues, Complex[]? complexValues, double[]? realValues,
                                 string xAxisName, string? xUnit,
-                                PlotType plotType, FreqUnit freqUnit, string[]? xLabels = null)
+                                PlotType plotType, FreqUnit freqUnit, string[]? xLabels = null,
+                                bool transformBaked = false)
         {
             _cubeIsScalar      = false;
+            _transformBaked    = transformBaked;
             SetPinnedSpectral(null, null, double.NaN);   // derived state — reset on data-set (the VM
                                                          // re-applies it for a single-curve pinned trace)
             // Two-tone spectrum is single-sided: each mixing product is shown at its ABSOLUTE
@@ -642,6 +658,7 @@ namespace CircuitRF.Ui.DataDisplay
                                       PlotType plotType, FreqUnit freqUnit)
         {
             _cubeIsScalar      = true;
+            _transformBaked    = false;
             SetPinnedSpectral(null, null, double.NaN);                           // reset derived state
             _cubeXValues       = new[] { 0.0 };                                  // synthetic 1-row anchor
             _cubeComplexValues = complexValue is Complex c ? new[] { c } : null;
@@ -671,7 +688,8 @@ namespace CircuitRF.Ui.DataDisplay
                 return double.IsFinite(y) ? y : (double?)null;
             }
             double v = rv!.Value;
-            double yr = Transform switch
+            // Expression-baked real value: the transform is already in the expression text — render as-is.
+            double yr = _transformBaked ? v : Transform switch
             {
                 CubeTransform.dB20 => 20.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
                 CubeTransform.dB10 or CubeTransform.dB => 10.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
@@ -688,6 +706,7 @@ namespace CircuitRF.Ui.DataDisplay
             PlotType plotType, FreqUnit freqUnit, string? familyAxisUnit = null)
         {
             _cubeIsScalar = false;
+            _transformBaked = false;
             SetPinnedSpectral(null, null, double.NaN);   // a family trace shows the per-curve tag, not a
                                                          // pinned line — clear any stale pinned context
             _lastPlotType = plotType;
@@ -803,7 +822,8 @@ namespace CircuitRF.Ui.DataDisplay
                 else
                 {
                     double v = _cubeRealValues![i];
-                    y = Transform switch
+                    // Expression-baked real value: transform is already in the expression — render as-is.
+                    y = _transformBaked ? v : Transform switch
                     {
                         CubeTransform.dB20 => 20.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
                         CubeTransform.dB10 => 10.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
@@ -1799,7 +1819,8 @@ namespace CircuitRF.Ui.DataDisplay
             if (_cubeRealValues is not null)
             {
                 double v = _cubeRealValues[i];
-                double y = Transform switch
+                // Expression-baked real value: transform is already in the expression — show as-is.
+                double y = _transformBaked ? v : Transform switch
                 {
                     CubeTransform.dB20 => 20.0 * Math.Log10(Math.Max(Math.Abs(v), 1e-300)),
                     CubeTransform.dB10 or CubeTransform.dB

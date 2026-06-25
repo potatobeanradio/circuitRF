@@ -708,7 +708,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 t.ExpressionError = null;
                 t.InvalidSpecText = null;
                 t.SetSpectrumFundamentals(null);
-                t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit, xLabels);
+                // The multi-cube expression text already encodes any transform — mark the values baked so a
+                // real result renders as-is (the transform combo must not double-apply on top of it).
+                t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit, xLabels, transformBaked: true);
                 ApplyPinnedSpectral(t, ds);
             }
             else
