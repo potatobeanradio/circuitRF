@@ -1497,9 +1497,22 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
     /// </summary>
     public event Action<string>? SymbolSaved;
 
-    private void PerformSave(string path)
+    /// <summary>Raised when a save fails (e.g. a read-only / unwritable location). The workspace routes
+    /// it to the Messages pane. A failed save must surface an error, never crash the app.</summary>
+    public event Action<string>? SaveError;
+
+    internal void PerformSave(string path)   // internal for the save-error regression test
     {
-        SymbolPersistence.SaveToFile(path, EditableSymbol.ToSymbol());
+        try
+        {
+            SymbolPersistence.SaveToFile(path, EditableSymbol.ToSymbol());
+        }
+        catch (Exception ex)
+        {
+            // Do NOT mark the document saved or raise SymbolSaved — the file was not written.
+            SaveError?.Invoke($"Couldn't save symbol to '{path}': {ex.Message}");
+            return;
+        }
         CurrentSymbolPath = path;
         _undoRedo.MarkSaved();   // record the clean baseline → IsModified false → IsDirty false
         SymbolSaved?.Invoke(path);

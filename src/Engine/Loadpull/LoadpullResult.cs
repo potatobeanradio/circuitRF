@@ -47,14 +47,20 @@ public sealed class GridPointResult
     public IReadOnlyList<PinStepResult> PinSteps   { get; }
     public string                        StopReason { get; }  // "Compression", "PinMax", "NonConvergence", "NoConvergedSeed"
 
+    /// <summary>The impedance the source tuner presents at the fundamental for this grid point
+    /// (the grid Z for source-pull, the declared Z[1] or pursuit Zsource override otherwise).
+    /// Input return loss is referenced to this, not 50 Ω.</summary>
+    public Complex SourceZFund { get; }
+
     public GridPointResult(int gridIndex, Complex gamma, Complex z,
-        IReadOnlyList<PinStepResult> pinSteps, string stopReason)
+        IReadOnlyList<PinStepResult> pinSteps, string stopReason, Complex sourceZFund = default)
     {
-        GridIndex  = gridIndex;
-        Gamma      = gamma;
-        Z          = z;
-        PinSteps   = pinSteps;
-        StopReason = stopReason;
+        GridIndex   = gridIndex;
+        Gamma       = gamma;
+        Z           = z;
+        PinSteps    = pinSteps;
+        StopReason  = stopReason;
+        SourceZFund = sourceZFund;
     }
 
     /// <summary>Returns the last converged Pin step, or null if none converged.</summary>
@@ -75,6 +81,15 @@ public sealed class PinStepResult
     public Complex[,] V   { get; }
     /// <summary>INl[node_idx, harmonic_k] — nonlinear device currents.</summary>
     public Complex[,] INl { get; }
+    /// <summary>
+    /// ISrcIn[harmonic_k] — the current the source tuner delivers INTO the DUT input node
+    /// (= source Z_Port branch current − choke branch current, recovered from the HB linear
+    /// back-solver). This is the true "current at the input to the DUT node": in the canonical
+    /// case (nothing but the source tuner + FET on the gate) it equals INl[src]; when the user
+    /// wires passives at the gate it also includes their currents. Zin / Zsource / Pin_delivered
+    /// divide by this, not INl[src]. Falls back to the INl[src] column if no back-solver.
+    /// </summary>
+    public Complex[] ISrcIn { get; }
 
     // ── Live FOMs (fundamental k=1 only; loadpull.md §4) ─────────────────────
     public double PavlW          { get; }   // available source power (W)
@@ -104,7 +119,7 @@ public sealed class PinStepResult
 
     public PinStepResult(
         double pavlDbm, bool isTickle,
-        Complex[,] v, Complex[,] iNl,
+        Complex[,] v, Complex[,] iNl, Complex[] iSrcIn,
         double pavlW, double pinDeliveredW, double poutW, double gtDb, double gpDb,
         double biasVoltageLoadV, double biasCurrentLoadA,
         double biasVoltageSrcV,  double biasCurrentSrcA,
@@ -114,6 +129,7 @@ public sealed class PinStepResult
         IsTickle          = isTickle;
         V                 = v;
         INl               = iNl;
+        ISrcIn            = iSrcIn;
         PavlW             = pavlW;
         PinDeliveredW     = pinDeliveredW;
         PoutW             = poutW;

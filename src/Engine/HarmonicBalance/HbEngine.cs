@@ -721,7 +721,11 @@ public sealed class HbEngine
         bool       Converged,
         int        Iterations,
         string?    FailReason, // non-null only on non-convergence or errors
-        IReadOnlyList<HbConvergenceTrace.IterRecord> IterTrace);
+        IReadOnlyList<HbConvergenceTrace.IterRecord> IterTrace,
+        HbLinearBackSolver? BackSolver = null);  // lazy linear back-solver (linear-interior node
+                                                 // voltages + every linear branch current); null on
+                                                 // a singular DC extraction. Used by the loadpull
+                                                 // engine to recover source-tuner branch currents.
 
     /// <summary>
     /// Runs a single HB Newton solve at the current netlist operating point (no sweep loop).
@@ -809,7 +813,16 @@ public sealed class HbEngine
         if (!sr.Converged)
             failReason = $"Newton non-convergence: ‖F‖={sr.IterTrace.LastOrDefault()?.ResidualNorm:E3} after {sr.Iterations} iters";
 
-        return new SinglePointResult(V, sr.INl, sr.Converged, sr.Iterations, failReason, sr.IterTrace);
+        // Lazy linear back-solver: snapshot the per-harmonic source RHS while component state is still
+        // current (it must be captured now — BuildSourceRhs reflects only the latest stamp), then hand
+        // it the converged NL currents. The actual linear solves happen only if a consumer (the loadpull
+        // engine recovering source-tuner branch currents) calls GetSolution. Same construction as Run().
+        var bSrcThisPoint = new Complex[K + 1][];
+        for (int k = 0; k <= K; k++)
+            bSrcThisPoint[k] = extractor.BuildSourceRhs(k == 0 ? 0.0 : k * omega0);
+        var backSolver = new HbLinearBackSolver(extractor, f0, K, [sr.INl], [bSrcThisPoint], _netlist);
+
+        return new SinglePointResult(V, sr.INl, sr.Converged, sr.Iterations, failReason, sr.IterTrace, backSolver);
     }
 
     // ── Initial guess ────────────────────────────────────────────────────────

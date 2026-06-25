@@ -3,6 +3,57 @@
 Standing instructions for `src/Engine/Loadpull`. Read with root `CLAUDE.md` and
 `src/Engine/CLAUDE.md`. Design note: `docs/design/loadpull.md`.
 
+## Zin uses the source-delivered current, not INl[gate] (brief-loadpull-zin-passives, 2026-06-24)
+
+**Bug fixed:** Zin / Zsource / Pin_delivered divided by `INl[src]` (the SDD's nonlinear gate
+current). That equals the source-delivered current ONLY when the gate node carries nothing but the
+source tuner + FET. With passives wired at the gate (input match, parasitics, a shunt) the source
+also feeds them, so `INl[gate]` is just the FET's *intrinsic* gate impedance — e.g. a `I[1,0]=_v1/5000`
+SDD reported Zin ≈ 5000 Ω no matter what else was on the node.
+
+**Fix:** `LoadpullEngine.ComputeSourceInputCurrent` recovers the true current INTO the DUT input node
+per harmonic: `ISrcIn[k] = I_srcZport[k] − I_choke[k]` — two **branch** currents of the SourceTuner
+(its series Z_Port and its bias-tee choke), read from `HbEngine.RunSinglePoint`'s `HbLinearBackSolver`
+(`x[branchIdx]`). By KCL at the gate this equals `INl[gate] + Σ I_passive`, and **reduces to
+`INl[gate]` in the canonical case → Hero 3/3B goldens unchanged**.
+
+Plumbing:
+- `TunerModel.SourceZPortBranchIndex` (new) — captured in `StampSource`; `ChokeBranchIndex` already
+  existed. Both are `-1` for the Load role / S-param mode → fallback to `INl[src]`.
+- `HbEngine.SinglePointResult.BackSolver` (new, lazy; null on singular DC extraction).
+- `PinStepResult.ISrcIn[k]` carries the spectrum; `ComputeFoms` uses `ISrcIn[1]` for Pin_delivered;
+  `LoadpullPursuitEngine.ComputeZsource` uses it for Zsource.
+- New **`Iin`** cube `{gridPoint, pinStep, harmonic}` in the result DataSet. The RfCore
+  `LoadpullPostProcessor` prefers `Iin` over `INl[src]` for the summary-table Zin (`= V[src]/Iin`).
+  Falls back to `INl[src]` when `Iin` is absent (e.g. imported `.spl`/`.lpcwave` data).
+
+## IRL referenced to the source impedance, not 50 Ω (brief-loadpull-irl-source-ref, 2026-06-24)
+
+Input return loss must be referenced to the impedance the **source tuner presents at the fundamental**
+(declared `Z[1]`, or the pursuit `Zsource` the follow-on sets via `LoadpullResultZsource`), NOT a fixed
+50 Ω. The old `Γin = (Zin−50)/(Zin+50)` mis-reported the match whenever the source ≠ 50 Ω — e.g. an
+MXE-matched follow-on read a poor IRL even though the input was conjugate-matched.
+
+- `TunerModel.FundamentalZ(toneFreqHz)` (new) = `GetZ(2π·f0)` (respects the harmonic-1 override).
+- `GridPointResult.SourceZFund` (new) captured in `RunOneTermination` after the grid override applies.
+- Engine emits **`__SrcZ`** `{gridPoint}` (Complex) — `__`-prefixed and hidden, deliberately NOT named
+  `ZSource` (the `.spl`/`.lpcwave` importers already use rank-1 `{freq}` "ZSource"; `LoadpullSurface`
+  assumes that shape — a same-name `{gridPoint}` cube crashes its slicer).
+- `LoadpullPostProcessor` computes the **power-wave (Kurokawa) reflection** `Γs = (Zin − Zs*)/(Zin + Zs)`
+  → `IRL_dB = 20·log10|Γs|`, passed to `LoadpullDerivedFields.Derive` as `reflDb`. `Γs → 0` at conjugate
+  match (`Zin = Zs*`) → IRL → −∞, exactly what a matched source-pull expects. Absent `__SrcZ` → `reflDb`
+  null → Derive's legacy 50 Ω `Γin` (so `Zs = 50` reduces to the old value; back-compatible).
+- `Zin_real/imag` are reference-free (`V/Iin`) and unchanged — only the IRL reference moved.
+
+Gate tests: `LoadpullPostProcessorTests.Enrich_IRL_ReferencedToSourceImpedance_NotFixed50` (conjugate
+match → IRL < −100 dB; `Zs=50` → −12.74 dB) + `LoadpullZinPassivesTests` asserts `GridPointResult.SourceZFund`.
+- The **DC bias readback is unchanged** (`-INl[node,0]`): at DC the gate passives carry no current
+  (caps block; a cap-fed R path is DC-open), so the bias-supply current still equals `INl[gate,0]`.
+
+Gate test: `tests/Engine.Tests/Loadpull/LoadpullZinPassivesTests.cs` — with a 200 Ω gate shunt,
+`ISrcIn = INl[gate] + V/Rg` to ~1e-12 and Zin = 192.3 Ω (= 5000∥200), vs the old 5000 Ω; canonical
+(no shunt) gives `ISrcIn == INl[gate]`.
+
 ## What lives here
 - **`GamReader`** — `.gam` grid file parser (Γ or Z points, mag_ang / re_im / re+j*imag).
 - **`LoadpullEngine`** — 2-D sweep orchestrator: outer Γ/Z grid × inner adaptive Pin drive-up.

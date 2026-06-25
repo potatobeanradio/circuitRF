@@ -677,13 +677,18 @@ public sealed class LoadpullPursuitEngine
         int K = lo.V.GetLength(1) - 1;
         if (K < 1) return null;
 
-        Complex vSrc  = lo.V[ctx.SrcIfIdx, 1]   + frac2 * (hi.V[ctx.SrcIfIdx, 1]   - lo.V[ctx.SrcIfIdx, 1]);
-        Complex iNlSrc= lo.INl[ctx.SrcIfIdx, 1] + frac2 * (hi.INl[ctx.SrcIfIdx, 1] - lo.INl[ctx.SrcIfIdx, 1]);
+        Complex iLoFund = lo.ISrcIn.Length > 1 ? lo.ISrcIn[1] : Complex.Zero;
+        Complex iHiFund = hi.ISrcIn.Length > 1 ? hi.ISrcIn[1] : Complex.Zero;
+
+        Complex vSrc  = lo.V[ctx.SrcIfIdx, 1] + frac2 * (hi.V[ctx.SrcIfIdx, 1] - lo.V[ctx.SrcIfIdx, 1]);
+        // I_into_DUT = the true source-delivered current at the gate node (ISrcIn), which accounts for
+        // any passives wired there — NOT INl[gate] alone (see LoadpullEngine.ComputeSourceInputCurrent).
+        Complex iSrcIn = iLoFund + frac2 * (iHiFund - iLoFund);
 
         // Zin = V[gate,k=1] / I_into_DUT (B1 fix: no negation — see CLAUDE.md §B1).
-        if (iNlSrc.Magnitude < 1e-30) return null;
+        if (iSrcIn.Magnitude < 1e-30) return null;
 
-        Complex zIn = vSrc / iNlSrc;
+        Complex zIn = vSrc / iSrcIn;
         return Complex.Conjugate(zIn);   // Zsource = Zin*
     }
 

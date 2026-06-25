@@ -756,13 +756,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (_filterStateHandler is not null) fs.PropertyChanged += _filterStateHandler;
     }
 
-    [RelayCommand]
-    private async Task AddLibrary(Window? owner)
-    {
-        // Stub for 6b — library management wired in 6c.
-        Messages.Info("Add Library: not yet implemented (6c).");
-        await Task.CompletedTask;
-    }
+    // Library management is not implemented yet. Keep the menu item present but DISABLED (greyed) —
+    // driving the disabled state through CanExecute greys both the in-window MenuItem and the macOS
+    // NativeMenuItem reliably. When library support lands, make this return true (or remove it).
+    private bool CanAddLibrary => false;
+
+    [RelayCommand(CanExecute = nameof(CanAddLibrary))]
+    private async Task AddLibrary(Window? owner) => await Task.CompletedTask;
 
     [RelayCommand]
     private async Task ImportData(Window? owner)
@@ -1448,6 +1448,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var editable = new EditableSymbol { UserEditable = true };
         var vm       = new SymbolEditorViewModel(editable);
         vm.SymbolSaved += OnSymbolSaved;
+        vm.SaveError   += OnSymbolSaveError;
         var doc = new SymbolEditorDocument(title, vm);  // filePath = null → scratch
         _scratchSymbols.Add(doc);
         _factory.OpenDocument(doc);
@@ -1680,8 +1681,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand]
     private async Task OpenSymbolFile(Window? owner)
     {
-        if (owner is null) return;
-        var result = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        // NativeMenu passes a null owner on macOS ($parent[Window] is null there) — resolve the host
+        // window the same way the other File commands do, or the picker never opens.
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var result = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title          = "Open Symbol",
             AllowMultiple  = false,
@@ -1693,22 +1698,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         });
 
         if (result.Count == 0) return;
-        var path = result[0].Path.LocalPath;
 
-        try
-        {
-            var symbol   = SymbolPersistence.LoadFromFile(path);
-            var editable = EditableSymbol.FromSymbol(symbol);
-            editable.UserEditable = true;  // user file — editable
-            var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = path };
-            var doc = new SymbolEditorDocument(Path.GetFileName(path), vm, path);
-            _factory.OpenDocument(doc);
-            Messages.Info("Opened", path);
-        }
-        catch (Exception ex)
-        {
-            Messages.Error($"Failed to open symbol: {ex.Message}");
-        }
+        // Delegate to the shared open path so File→Open Symbol gets the same wiring as the project tree:
+        // dedup (don't reopen the same file twice), SymbolSaved/SaveError routing (so save errors surface),
+        // and the cell-dirty hook. This works for an ORPHAN .csym (one not inside a cell) too — it opens
+        // materialized at its own path, so editing and saving writes straight back to that file on disk.
+        OpenOrActivateSymbol(result[0].Path.LocalPath);
     }
 
     [RelayCommand]
@@ -1799,6 +1794,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             editable.ExternalPortCount = TryCellPortCount(absolutePath);
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = absolutePath };
             vm.SymbolSaved += OnSymbolSaved;
+            vm.SaveError   += OnSymbolSaveError;
             var doc = new SymbolEditorDocument(Path.GetFileName(absolutePath), vm, absolutePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
@@ -2033,6 +2029,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// and triggers a render-model rebuild on all open schematics.
     /// Call after any .csym save or Make-Primary change that affects a symbol view.
     /// </summary>
+    // A symbol save failed (e.g. read-only / unwritable location) — surface it instead of crashing.
+    private void OnSymbolSaveError(string message) => Messages.Error(message);
+
     private void OnSymbolSaved(string savedSymPath)
     {
         // Derive cell folder: .../CellName/symbol/foo.csym → .../CellName
@@ -2958,6 +2957,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var editable = new EditableSymbol { UserEditable = true };
             var vm  = new SymbolEditorViewModel(editable) { CurrentSymbolPath = filePath };
             vm.SymbolSaved += OnSymbolSaved;
+            vm.SaveError   += OnSymbolSaveError;
             var doc = new SymbolEditorDocument(name + ext, vm, filePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;

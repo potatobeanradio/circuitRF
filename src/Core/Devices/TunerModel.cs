@@ -113,6 +113,16 @@ public sealed class TunerModel : ComponentModel
     /// <summary>Branch index of the internal bias supply (DC voltage source).</summary>
     public int BiasSupplyBranchIndex { get; private set; } = -1;
 
+    /// <summary>
+    /// Branch index of the SourceTuner's series Z_Port (the RF-drive impedance between n_outer and
+    /// n_block). Its branch current is the RF current the source delivers toward the DUT through the
+    /// DC-block cap — i.e. the current arriving at n_dut from the source side. The LoadpullEngine uses
+    /// it (minus the choke branch current) to form the true source-delivered input current, so Zin /
+    /// Zsource / Pin_delivered account for any passives the user wired at the gate node, not just the
+    /// device's INl[gate]. −1 for the Load role (the load Z_Port is not a source-delivery branch).
+    /// </summary>
+    public int SourceZPortBranchIndex { get; private set; } = -1;
+
     // ── Constructor ───────────────────────────────────────────────────────────
 
     public TunerModel(
@@ -142,8 +152,9 @@ public sealed class TunerModel : ComponentModel
         int nOuter = c.Nodes.Length > 4 ? c.Nodes[4] : 0;
         bool isDC  = Math.Abs(omega) < OmegaTolRad;
 
-        ChokeBranchIndex      = -1;  // reset each stamp pass
-        BiasSupplyBranchIndex = -1;
+        ChokeBranchIndex        = -1;  // reset each stamp pass
+        BiasSupplyBranchIndex   = -1;
+        SourceZPortBranchIndex  = -1;
 
         if (Role == TunerRole.Load)
             StampLoad(mna, nDut, nRef, nBlock, nBias, omega, isDC);
@@ -196,8 +207,9 @@ public sealed class TunerModel : ComponentModel
             mna.AddSourceValue(brDrive, driveV);
         }
 
-        // 2. Z_Port (source impedance): between nOuter and nBlock.
-        StampZPort(mna, nOuter, nBlock, GetZ(omega));
+        // 2. Z_Port (source impedance): between nOuter and nBlock. Capture its branch index so the
+        //    LoadpullEngine can read the RF current the source delivers toward the DUT.
+        SourceZPortBranchIndex = StampZPort(mna, nOuter, nBlock, GetZ(omega));
 
         // 3. DC-block cap C=1F: admittance jωC between nBlock and nDut.
         if (!isDC)
@@ -217,13 +229,14 @@ public sealed class TunerModel : ComponentModel
     /// Stamps a 1-port Z element as a Group-2 branch (linear-engine §2, Group-2).
     /// Constraint: V(na) − V(nb) − Z·I = 0; KCL: I from na to nb.
     /// </summary>
-    private static void StampZPort(IMnaContext mna, int na, int nb, Complex z)
+    private static int StampZPort(IMnaContext mna, int na, int nb, Complex z)
     {
         int br = mna.AddBranch();
         mna.AddBranchCurrent(br, na, nb);
         mna.AddConstraint(br, na, new Complex(+1, 0));
         if (nb > 0) mna.AddConstraint(br, nb, new Complex(-1, 0));
         mna.AddBranchConstraint(br, br, -z);
+        return br;
     }
 
     /// <summary>
@@ -300,6 +313,15 @@ public sealed class TunerModel : ComponentModel
     /// <summary>Returns the declared Z for harmonic k (falls back to Zdefault).</summary>
     public Complex GetDeclaredZ(int k)
         => _harmonicZ.TryGetValue(k, out var z) ? z : _zDefault;
+
+    /// <summary>
+    /// The impedance this tuner presents at the fundamental tone (k=1), respecting any harmonic-1
+    /// override — e.g. the loadpull grid point (source-pull) or a pursuit Zsource (the follow-on's
+    /// LoadpullResultZsource). This is the actual source impedance the DUT input is driven from, so
+    /// input return loss is referenced to it (NOT a fixed 50 Ω). Identical to the value SetSourceDrive
+    /// uses for the Pavl↔|Vs| calibration.
+    /// </summary>
+    public Complex FundamentalZ(double toneFreqHz) => GetZ(2.0 * Math.PI * toneFreqHz);
 }
 
 /// <summary>Role of a Tuner within a Loadpull analysis (assigned by the LoadpullEngine).</summary>

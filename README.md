@@ -54,9 +54,6 @@ contribution where *your* RF expertise — not your C# fluency — is the scarce
 
 ## Screenshots
 
-> **Note for maintainers:** the images below are placeholders. Capture the described screenshots and drop
-> them at the referenced paths under `docs/images/`.
-
 ### Schematic editor
 ![circuitRF schematic editor](docs/images/schematic-editor.png)
 <!-- IMAGE TO CREATE: docs/images/schematic-editor.png

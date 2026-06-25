@@ -343,17 +343,24 @@ public sealed class LoadpullEngine
         var zLoad     = new Complex[nG];
         var gammaLoad = new Complex[nG];
         var stopCode  = new double[nG];
+        var zSource   = new Complex[nG];   // source impedance presented at the fundamental (IRL reference)
 
         // Spectra {gridPoint, pinStep, node, harmonic}
         int specLen = nG * nP * nN * nH;
         var vData   = new Complex[specLen];
         var inlData = new Complex[specLen];
 
+        // Source-delivered input current {gridPoint, pinStep, harmonic} — the true current into the
+        // DUT input node (see PinStepResult.ISrcIn). Zin/Γin are derived from V[src]/Iin downstream.
+        int iinLen  = nG * nP * nH;
+        var iinData = new Complex[iinLen];
+
         for (int gi = 0; gi < nG; gi++)
         {
             var gpr = gridPoints[gi];
             zLoad[gi]     = gpr.Z;
             gammaLoad[gi] = gpr.Gamma;
+            zSource[gi]   = gpr.SourceZFund;
             stopCode[gi]  = gpr.StopReason switch
             {
                 "PinMax"          => 0,
@@ -395,6 +402,9 @@ public sealed class LoadpullEngine
                             vData[sIdx]   = step.V[ni, hi];
                             inlData[sIdx] = step.INl[ni, hi];
                         }
+                        if (step.ISrcIn is not null)
+                            for (int hi = 0; hi < nH && hi < step.ISrcIn.Length; hi++)
+                                iinData[(gi * nP + pi) * nH + hi] = step.ISrcIn[hi];
                     }
                 }
                 // else: pi >= PinSteps.Count — padded with 0 (default)
@@ -422,6 +432,7 @@ public sealed class LoadpullEngine
         {
             ds.Add("V",   new DataCube(new[] { gridAxis, pinAxis, nodeAxis, harmAxis }, vData));
             ds.Add("INl",   new DataCube(new[] { gridAxis, pinAxis, nodeAxis, harmAxis }, inlData));
+            ds.Add("Iin",   new DataCube(new[] { gridAxis, pinAxis, harmAxis }, iinData));
         }
 
         // Node-identity provenance (loadpull-postprocessor.md §2): rank-0 metadata cubes naming the
@@ -430,6 +441,11 @@ public sealed class LoadpullEngine
         // __-prefixed → hidden from pickers, passed through StackSweepAxis unstacked. −1 = unknown.
         ds.Add("__SrcNodeIdx",  new DataCube(Array.Empty<Axis>(), new[] { (double)ctx.SrcIfIdx }));
         ds.Add("__LoadNodeIdx", new DataCube(Array.Empty<Axis>(), new[] { (double)ctx.LoadIfIdx }));
+
+        // Source impedance presented at the fundamental, per grid point — the reference plane for input
+        // return loss (NOT 50 Ω). `__`-prefixed so it is hidden from pickers and passed through sweep
+        // stacking unstacked; distinct from the importers' rank-1 {freq} "ZSource" (no name collision).
+        ds.Add("__SrcZ", new DataCube(new[] { gridAxis }, zSource));
 
         // Single-frequency carrier so the summary surface reports the real tone frequency (not 0) for
         // these freq-axis-less FOM cubes — same convention the .spl/.lpcwave readers use (__Freq).
@@ -470,7 +486,11 @@ public sealed class LoadpullEngine
 
             var sr = _hbEngine.RunSinglePoint(ctx.HbParams, innerSeed, ctx.SolveSettings);
 
-            var foms  = ComputeFoms(sr.V, sr.INl, ctx.LoadIfIdx, ctx.SrcIfIdx, pavlW, ctx.K);
+            // True current the source delivers into the DUT input node (includes any passives the user
+            // wired at the gate, not just INl[gate]). Drives Zin / Zsource / Pin_delivered.
+            Complex[] iSrcIn = ComputeSourceInputCurrent(sr, ctx);
+
+            var foms  = ComputeFoms(sr.V, iSrcIn, sr.INl, ctx.LoadIfIdx, ctx.SrcIfIdx, pavlW, ctx.K);
 
             double vLoad = ctx.LoadIfIdx >= 0 && sr.V.GetLength(1) > 0 ? sr.V[ctx.LoadIfIdx, 0].Real : 0;
             double iLoad = ctx.LoadIfIdx >= 0 && sr.INl.GetLength(1) > 0 ? -sr.INl[ctx.LoadIfIdx, 0].Real : 0;
@@ -479,7 +499,7 @@ public sealed class LoadpullEngine
 
             pinSteps.Add(new PinStepResult(
                 pavlDbm, isTickle,
-                sr.V, sr.INl,
+                sr.V, sr.INl, iSrcIn,
                 foms.PavlW, foms.PinDeliveredW, foms.PoutW, foms.GtDb, foms.GpDb,
                 vLoad, iLoad, vSrc, iSrc2,
                 sr.Converged, sr.Iterations, sr.FailReason));
@@ -522,7 +542,12 @@ public sealed class LoadpullEngine
             }
         }
 
-        return new GridPointResult(gridIndex, gamma, z, pinSteps, stopReason);
+        // The source impedance the DUT input is actually driven from at the fundamental (grid Z for
+        // source-pull; declared Z[1] or a pursuit Zsource override otherwise). Input return loss is
+        // referenced to this, captured after the grid point's harmonic override is in effect.
+        Complex srcZFund = ctx.SrcModel.FundamentalZ(p.ToneHz);
+
+        return new GridPointResult(gridIndex, gamma, z, pinSteps, stopReason, srcZFund);
     }
 
     // ── Pin sequence ─────────────────────────────────────────────────────────
@@ -594,7 +619,7 @@ public sealed class LoadpullEngine
     ///   Pin_delivered = +½·Re(V[srcIdx,  1] · conj(I_nl[srcIdx,  1]))  → positive for PA
     /// </summary>
     private static FomResult ComputeFoms(
-        Complex[,] v, Complex[,] iNl,
+        Complex[,] v, Complex[] iSrcIn, Complex[,] iNl,
         int loadIdx, int srcIdx,
         double pavlW, int K)
     {
@@ -604,7 +629,10 @@ public sealed class LoadpullEngine
         var vLoad = loadIdx >= 0 ? v[loadIdx,   1] : Complex.Zero;
         var iLoad = loadIdx >= 0 ? iNl[loadIdx, 1] : Complex.Zero;
         var vSrc  = srcIdx  >= 0 ? v[srcIdx,    1] : Complex.Zero;
-        var iSrc  = srcIdx  >= 0 ? iNl[srcIdx,  1] : Complex.Zero;
+        // Pin_delivered uses the true current INTO the DUT input node (source-delivered), not the
+        // device's INl[gate] — they differ when passives are wired at the gate. ISrcIn[1] reduces to
+        // INl[src,1] in the canonical case, so Hero references are unchanged.
+        var iSrc  = iSrcIn.Length > 1 ? iSrcIn[1] : Complex.Zero;
 
         double pout         = -0.5 * (vLoad * Complex.Conjugate(iLoad)).Real;
         double pinDelivered =  0.5 * (vSrc  * Complex.Conjugate(iSrc)).Real;
@@ -613,6 +641,43 @@ public sealed class LoadpullEngine
         double gpDb = pinDelivered > 1e-30  ? RatioToDb(pout / pinDelivered)  : double.NegativeInfinity;
 
         return new FomResult(pavlW, pinDelivered, pout, gtDb, gpDb);
+    }
+
+    /// <summary>
+    /// The current the source tuner delivers INTO the DUT input node, per harmonic. By KCL at n_dut
+    /// the source's net delivery equals (source Z_Port branch current) − (choke branch current); both
+    /// are well-conditioned branch unknowns recovered from the HB linear back-solver. This is exactly
+    /// the current flowing into everything on the gate node EXCEPT the source tuner — the FET plus any
+    /// user-wired input passives. In the canonical loadpull case (only the source tuner + FET on the
+    /// gate) it reduces to INl[src], so Zin/Zsource/Pin and the Hero references are unchanged.
+    ///
+    /// Falls back to the INl[src] column when the back-solver is unavailable (singular DC extraction)
+    /// or the source tuner's branches weren't captured (e.g. S-param mode), preserving prior behavior.
+    /// </summary>
+    private static Complex[] ComputeSourceInputCurrent(HbEngine.SinglePointResult sr, PursuitContext ctx)
+    {
+        int K   = sr.V.GetLength(1) - 1;
+        var iin = new Complex[K + 1];
+
+        int zb = ctx.SrcModel.SourceZPortBranchIndex;   // source RF-drive Z_Port branch
+        int cb = ctx.SrcModel.ChokeBranchIndex;         // bias-tee choke branch
+        if (sr.BackSolver is not null && zb >= 0 && cb >= 0)
+        {
+            for (int k = 0; k <= K; k++)
+            {
+                var x = sr.BackSolver.GetSolution(k, 0);
+                Complex iZ = zb < x.Length ? x[zb] : Complex.Zero;
+                Complex iL = cb < x.Length ? x[cb] : Complex.Zero;
+                iin[k] = iZ - iL;
+            }
+            return iin;
+        }
+
+        // Fallback: canonical KCL assumption I_into_DUT = INl[src].
+        if (ctx.SrcIfIdx >= 0)
+            for (int k = 0; k <= K && k < sr.INl.GetLength(1); k++)
+                iin[k] = sr.INl[ctx.SrcIfIdx, k];
+        return iin;
     }
 
     // ── Tuner lookup ─────────────────────────────────────────────────────────

@@ -160,6 +160,11 @@
                           InputGesture="Ctrl+Shift+D">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="Open S_ymbol…"
+                          Command="{Binding OpenSymbolFileCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <MenuItem Header="Open Data _Display…"
                           Command="{Binding OpenDataDisplayFileCommand}"
                           CommandParameter="{Binding $parent[Window]}">

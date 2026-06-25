@@ -178,6 +178,16 @@ The absence of negation in Zin is required; negating would make Re(Zin) negative
 
 Do NOT introduce per-site sign flips to "make a number look positive." Derive from this convention.
 
+**Caveat — the `I_from_source = INl[gate,k]` identity assumes the gate node carries ONLY the source
+tuner + FET.** If the user wires passives at the gate (an input-matching network, package
+parasitics, a gate shunt), the source also feeds those, so `I_from_source = INl[gate,k] + Σ I_passive`
+≠ `INl[gate,k]`. Using `INl[gate]` then reports the FET's *intrinsic* gate impedance (e.g. exactly
+the `I[1,0]=_v1/Rg` value) instead of what the source actually sees. The **loadpull engine** therefore
+does NOT use `INl[gate]` for Zin/Zsource/Pin_delivered — it recovers the true source-delivered current
+`ISrcIn = I_srcZport − I_choke` (two source-tuner branch currents, via `HbLinearBackSolver`), which by
+KCL equals `INl[gate] + Σ I_passive` and reduces to `INl[gate]` in the canonical case. See
+`src/Engine/Loadpull/CLAUDE.md` (ISrcIn / `Iin` cube) and `LoadpullEngine.ComputeSourceInputCurrent`.
+
 ## Interface to the linear engine
 The linear engine (`docs/design/linear-engine.md` §2.1, §10) provides the HB engine **two** things
 per harmonic at the nonlinear-facing nodes, not one:

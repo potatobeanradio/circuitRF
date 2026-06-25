@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using Avalonia.Input;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Symbol;
@@ -34,6 +36,53 @@ public class SymbolEditorViewModelTests
         Assert.Null(vm.Overlay.RubberBand);
         Assert.Equal((0.0, 0.0), vm.Overlay.LiveDragOffset);
         Assert.NotNull(vm.RenderSymbol);
+    }
+
+    // ── Save-failure must surface an error, never crash the app ────────────────
+    // Repro: saving a .csym to a read-only / unwritable location threw an unhandled IOException
+    // from PerformSave, which the AsyncRelayCommand rethrew on the dispatcher → crash.
+
+    [Fact]
+    public void PerformSave_UnwritablePath_RaisesSaveError_DoesNotThrow()
+    {
+        var (_, vm, _) = MakeVm();
+        string? err = null;
+        bool savedOk = false;
+        vm.SaveError   += m => err = m;
+        vm.SymbolSaved += _ => savedOk = true;
+
+        // A path under a non-existent directory: the atomic write throws, exactly as the
+        // read-only-root case did — but PerformSave must catch it.
+        string badPath = Path.Combine($"/no_such_dir_{Guid.NewGuid():N}", "MyFET.csym");
+
+        var ex = Record.Exception(() => vm.PerformSave(badPath));
+
+        Assert.Null(ex);                              // no crash
+        Assert.NotNull(err);                          // error surfaced
+        Assert.Contains("MyFET.csym", err);           // names the target
+        Assert.False(savedOk);                        // not reported as saved
+        Assert.Null(vm.CurrentSymbolPath);            // path not adopted on failure
+    }
+
+    [Fact]
+    public void PerformSave_GoodPath_Succeeds_RaisesSymbolSaved()
+    {
+        var (_, vm, _) = MakeVm();
+        string? saved = null;
+        bool errored = false;
+        vm.SymbolSaved += p => saved = p;
+        vm.SaveError   += _ => errored = true;
+
+        string path = Path.Combine(Path.GetTempPath(), $"sym_{Guid.NewGuid():N}.csym");
+        try
+        {
+            vm.PerformSave(path);
+            Assert.False(errored);
+            Assert.Equal(path, saved);
+            Assert.Equal(path, vm.CurrentSymbolPath);
+            Assert.True(File.Exists(path));
+        }
+        finally { try { File.Delete(path); } catch { /* ignore */ } }
     }
 
     [Fact]

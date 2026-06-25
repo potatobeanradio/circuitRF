@@ -34,9 +34,9 @@ metrics, using the *same* `LoadpullDerivedFields` math the readers use. This kee
 ```
                     raw + core FOMs + node provenance          enriched DataSet
   LoadpullEngine  ───────────────────────────────────▶  LoadpullPostProcessor  ───────────▶ run.npy
-   (the solve)      V, INl, GammaLoad, ZLoad, Pout(W),      (adds Pout_dBm,           (Data Display
-                    Gt, Gp, DE, PAE, Pdc, Bias*,             Zin_real/imag,           reads derived
-                    __SrcNodeIdx, __LoadNodeIdx              IRL, AMPM)               metrics directly)
+   (the solve)      V, INl, Iin, GammaLoad, ZLoad,          (adds Pout_dBm,           (Data Display
+                    Pout(W), Gt, Gp, DE, PAE, Pdc, Bias*,    Zin_real/imag,           reads derived
+                    __SrcNodeIdx, __LoadNodeIdx, __SrcZ      IRL, AMPM)               metrics directly)
                                                                    │
                                                                    ▼
                                                           SplWriter / LpcwaveWriter   (Phase 2)
@@ -61,6 +61,7 @@ spectra):
 | `GammaLoad`, `ZLoad` | gridPoint | Complex | load termination (the Γ/Z plane coordinate) |
 | `StopCode` | gridPoint | Real | per-grid stop reason |
 | `V`, `INl` | gridPoint, pinStep, node, harmonic | Complex | interface spectra |
+| `Iin` | gridPoint, pinStep, harmonic | Complex | **source-delivered current into the DUT input node** (see §3.2) |
 
 **New engine provenance (this work):** two rank-0 metadata cubes naming the DUT interface nodes so a
 DataSet-only consumer can locate the input/output ports without re-deriving topology:
@@ -69,10 +70,17 @@ DataSet-only consumer can locate the input/output ports without re-deriving topo
 |---|---|---|
 | `__SrcNodeIdx` | Real (scalar) | index into the `node` axis of the **source-side DUT** node (DUT input / gate). −1 if unknown. |
 | `__LoadNodeIdx` | Real (scalar) | index into the `node` axis of the **load-side DUT** node (DUT output / drain). −1 if unknown. |
+| `__SrcZ` | Complex, `{gridPoint}` | the impedance the **source tuner presents at the fundamental**, per grid point — the reference plane for input return loss (see §3.3). |
 
-These mirror `ctx.SrcIfIdx`/`ctx.LoadIfIdx` already used internally by `ComputeFoms`. They are `__`-prefixed
-(metadata: hidden from pickers, passed through `StackSweepAxis` unstacked). They are **provenance, not a
-derived FOM** — the engine knows the topology; recording it is free and avoids the post-processor guessing.
+`__SrcNodeIdx`/`__LoadNodeIdx` mirror `ctx.SrcIfIdx`/`ctx.LoadIfIdx` already used internally by `ComputeFoms`.
+All three are `__`-prefixed (metadata: hidden from pickers, passed through `StackSweepAxis` unstacked). They
+are **provenance, not a derived FOM** — the engine knows the topology and the presented source impedance;
+recording them is free and avoids the post-processor guessing.
+
+> **Name note — `__SrcZ`, not `ZSource`.** The `.spl`/`.lpcwave` importers already emit a rank-1 `{freq}`
+> cube named `ZSource` (one source match per frequency), and `LoadpullSurface` reads it *assuming that
+> shape*. A same-named `{gridPoint}` cube from the engine would collide and crash the surface's slicer, so
+> the engine's per-grid-point source impedance is the distinct, hidden `__SrcZ`.
 
 ---
 
@@ -113,25 +121,81 @@ but a discrete `Pout_dBm` cube gives parity with the reader (which emits `Pout_d
 selectable metric.
 
 ### 3.2 `Zin_real` / `Zin_imag` — input impedance (Ω)
-Computed by `LoadpullDerivedFields.Derive` from the **input reflection coefficient** Γin (mag + phase):
-`Zin = G2Z(Γin)·50`. The post-processor produces Γin from the engine spectra at the source-DUT node,
-fundamental (harmonic index 1):
+
+`Zin` is the impedance looking **into the DUT input node**, fundamental (harmonic index 1):
 
 ```
-Zin(gi,pi)  = V[gi,pi, srcNode, 1] / INl[gi,pi, srcNode, 1]      // input impedance looking INTO the DUT
-Γin(gi,pi)  = Z2G( Zin / 50 )                                     // normalized reflection coefficient
+Zin(gi,pi) = V[gi,pi, srcNode, 1] / I_in(gi,pi)
+```
+
+**The denominator is the current the source actually delivers into the DUT input node — `Iin`, NOT
+`INl[srcNode]`.** This distinction is the whole correctness story:
+
+- `INl[srcNode]` is only the **nonlinear device** current at the gate (what the FET draws). It equals the
+  source-delivered current *only* when nothing but the source tuner and the FET touch the gate node.
+- When the user wires passives at the gate (an input-matching network, package parasitics, a shunt), the
+  source also feeds those, so `I_from_source = INl[gate] + Σ I_passive`. Dividing `V` by `INl[gate]` then
+  reports the FET's **intrinsic** gate impedance — e.g. exactly the `I[1,0]=_v1/5000` SDD value (≈ 5000 Ω) —
+  regardless of what is actually attached. That was the original bug (a circuit whose true input was ≈ 140 Ω
+  reported `Zin ≈ 5000 Ω`).
+
+The **engine** therefore recovers the true source-delivered current and emits it as the `Iin` cube. It does so
+from the source tuner's own **branch currents** (well-conditioned, via the HB linear back-solver), not from a
+node-voltage difference across the near-ideal DC-block cap:
+
+```
+Iin(gi,pi) = I_srcZport − I_choke        // two SourceTuner branch currents (LoadpullEngine.ComputeSourceInputCurrent)
+```
+
+By KCL at the gate this equals `INl[gate] + Σ I_passive`, and **reduces to `INl[gate]` in the canonical case**
+(so the hero references are unchanged). See `src/Engine/Loadpull/CLAUDE.md` and the HB CLAUDE.md KCL caveat for
+the derivation; `Pin_delivered` and the pursuit's auto-`Zsource = conj(Zin)` use the same `Iin`.
+
+The post-processor consumes `Iin` (falling back to `INl[srcNode]` only when `Iin` is absent, e.g. imported
+`.spl`/`.lpcwave` data), forms Γin, and hands it to the shared `LoadpullDerivedFields.Derive`, which
+reconstructs `Zin = G2Z(Γin)·50`:
+
+```
+Iin(gi,pi)  = Iin[gi,pi, 1]   (engine cube)  — fall back to INl[gi,pi, srcNode, 1] if Iin absent
+Zin(gi,pi)  = V[gi,pi, srcNode, 1] / Iin                  // input impedance looking INTO the DUT
+Γin(gi,pi)  = Z2G( Zin / 50 )                              // 50 Ω-normalized — used ONLY to round-trip Zin
 ginMag      = |Γin| ,  ginPhaseDeg = ∠Γin (deg)
 ```
 
-Sign convention: `INl[n,k]` is current **into** the device at node n (passive sign, `src/Engine/HarmonicBalance/
-CLAUDE.md`), so `V/INl` at the source node is the impedance presented to the source by the DUT input —
-exactly `Zin`. (The pursuit engine's auto-Zsource uses the same quantity; `Zsource = conj(Zin)`.) Points
-with zero/NaN input current → NaN (dropped downstream, same as a measured NaN).
+`Zin` itself is **reference-free** (a ratio of two phasors); the 50 Ω normalization here is just the carrier
+`LoadpullDerivedFields` uses to round-trip Γ→Z (`G2Z(Z2G(Zin/50))·50 = Zin` exactly), so `Zin_real`/`Zin_imag`
+come out correct regardless of reference. The *reference* only matters for IRL (§3.3). Points with zero/NaN
+input current → NaN (dropped downstream, same as a measured NaN).
 
-### 3.3 `IRL_dB` — input return loss (dB)
-`LoadpullDerivedFields` priority: stored dB → stored linear → derive from |Γin|. For the simulated path only
-the last applies: `IRL_dB = +20·log10(|Γin|)`. **Sign convention (RF-engineer / S11-style): a good input
-match is NEGATIVE** (−200 dB ≈ perfect match, 0 dB = full reflection, > 0 = reflection gain / active).
+### 3.3 `IRL_dB` — input return loss (dB), referenced to the **source impedance**
+
+Input return loss is a **mismatch** between the DUT input and the impedance the source presents — so it MUST
+be referenced to the source impedance, **not a fixed 50 Ω**. Referencing to 50 Ω is wrong whenever the source
+tuner presents anything else, which is the *normal* case in a source-pull or in a loadpull-pursuit follow-on
+(where the SourceTuner presents the recommended `Zsource`, e.g. `LoadpullResultZsource=MXE`). A 50 Ω-referenced
+IRL would call a perfectly conjugate-matched input "poorly matched."
+
+The reference is the engine's `__SrcZ` cube — the impedance the source tuner presents at the fundamental,
+per grid point (`TunerModel.FundamentalZ`, which honours any harmonic-1 override such as the swept source-pull
+point or the pursuit `Zsource`). The post-processor forms the **power-wave (Kurokawa, conjugate) reflection**
+referenced to that `Zs` and converts to dB:
+
+```
+Zs(gi)      = __SrcZ[gi]
+Γs(gi,pi)   = (Zin − conj(Zs)) / (Zin + Zs)               // power-wave reflection referenced to the source
+IRL_dB      = 20·log10|Γs|
+```
+
+- **Power-wave / conjugate form** is the physically meaningful one for power transfer: `Γs → 0` at the
+  conjugate match `Zin = Zs*` → `IRL → −∞` (a perfectly matched input). This is consistent with circuitRF's
+  S-parameter engine (Kurokawa power waves) and with the pursuit, which sets `Zsource = conj(Zin)` — so at the
+  operating point where `Zsource` was extracted, the input reads as fully matched, as it should.
+- **Sign convention (RF-engineer / S11-style):** a good match is **negative** (−∞ ≈ perfect, 0 dB = full
+  reflection, > 0 = reflection gain / active). Only the *reference* changed in this work; the sign did not.
+- **Back-compatible / graceful fallback:** the value is passed to `LoadpullDerivedFields.Derive` as its
+  `reflDb` input (its highest-priority IRL source: stored dB → stored linear → derive from |Γin50|). When
+  `__SrcZ` is absent the post-processor passes `reflDb = null` and Derive falls back to the legacy 50 Ω
+  `IRL = 20·log10|Γin50|`. When `Zs = 50` the two agree exactly, so a genuinely-50 Ω source is unaffected.
 
 ### 3.4 `AMPM` — AM-to-PM conversion (deg)
 The drive-up change in the DUT's transmission phase, per grid point, unwrapped (the reader's definition):
@@ -147,9 +211,15 @@ phase reference cancels — any consistent transmission-phase definition yields 
 
 ### 3.5 Reuse, don't fork
 The Zin/IRL/AMPM math lives **only** in `LoadpullDerivedFields.Derive`. The post-processor's job is to (a)
-compute the *raw inputs* (`ginMag`, `ginPhaseDeg`, `transPhaseDeg`) from the simulated spectra, then (b) call
-the shared helper — byte-identical to how `SplReader`/`LpcwaveReader` capture those inputs from file columns
-and call the same helper. This guarantees simulated and measured derivations agree.
+compute the *raw inputs* from the simulated spectra — `ginMag`/`ginPhaseDeg` (Γin for the Zin round-trip),
+`transPhaseDeg` (for AM/PM), and `reflDb` (the source-referenced IRL of §3.3, computed from `Zin` + `__SrcZ`) —
+then (b) call the shared helper — byte-identical to how `SplReader`/`LpcwaveReader` capture those inputs from
+file columns and call the same helper. This guarantees simulated and measured derivations agree.
+
+The one asymmetry: IRL's *reference impedance*. A simulated run knows the exact source impedance the tuner
+presents (`__SrcZ`) and references IRL to it via `reflDb`; a measured `.spl`/`.lpcwave` either carries its own
+return-loss column (used as-is) or, lacking one, falls back to the 50 Ω `|Γin|`. Both flow through the same
+`reflDb → reflLin → |Γin|` priority in `Derive`.
 
 ### 3.6 Display-convention fixes (simulated runs only)
 The engine reports two quantities in physics conventions that differ from what the Summary Table and
@@ -266,6 +336,13 @@ spellings for external-tool interop.
   `__SrcNodeIdx`/`__LoadNodeIdx`, `Pout`) → `Enrich` adds `Pout_dBm`, `Zin_real`/`Zin_imag`, `IRL`, `AMPM`;
   values match hand-computed `LoadpullDerivedFields` output; idempotent re-run; no-op when inputs absent.
 - **dBm correctness:** `Pout_dBm = 10log10(Pw)+30` (a known Pout → known dBm) — guards against a W↔dBm slip.
+- **Zin from `Iin`, not `INl`** (`Enrich_PrefersIinOverINl_ForZinAndIrl`, RfCore): a DataSet whose
+  `INl[src]` implies `Zin = 5000 Ω` but whose `Iin` implies `Zin = 80 Ω` → both `Zin_real` and the IRL are
+  derived from `Iin`. Paired with the engine-side `LoadpullZinPassivesTests` (a 200 Ω gate shunt: `Iin =
+  INl[gate] + V/Rg` to ~1e-12, `Zin = 192.3 Ω = 5000∥200`, canonical case `Iin == INl[gate]`).
+- **IRL referenced to the source** (`Enrich_IRL_ReferencedToSourceImpedance_NotFixed50`, RfCore): with
+  `__SrcZ` set to the conjugate match → `IRL < −100 dB` (near-perfect); with `__SrcZ = 50 Ω` → the legacy
+  `−12.74 dB` (reference reduces out). `Zin_real` is unchanged (reference-free) across both.
 - **End-to-end (run pipeline):** a small LP run → enrich → the Data Display contour metric list offers
   `Pout`/`Pout_dBm`/`Zin_real`/`Zin_imag`/`IRL`/`AMPM` (extends the metric-list regression test).
 - **Phase 2 (done):** writer↔reader round-trip parity (`LoadpullWriterTests`, RfCore.Tests) — single- and
