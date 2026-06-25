@@ -3281,6 +3281,38 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _factory.PropertiesTool?.SetActiveDataDisplay(window.ActiveInspector);
     }
 
+    // Points the Analyses panel (and the Run target) at a schematic document.
+    private void PointAnalysesAt(SchematicDocument sd)
+    {
+        _lastActiveSchematicDoc = sd;
+        string? schName = sd.FilePath is { } fp ? System.IO.Path.GetFileName(fp) : sd.Id;
+        _factory.AnalysesTool?.SetActiveSchematic(sd.ViewModel, schName);
+    }
+
+    /// <summary>
+    /// Cross-pane link: returns the open schematic whose base filename (sans extension) matches the
+    /// focused Data Display's, so focusing a <c>.cdd</c> tab can show the like-named <c>.csch</c>'s
+    /// analyses; null when none matches (the caller then retains the last schematic). Match is on the
+    /// filename only (directory ignored), case-insensitive. Pure/static so it is unit-testable without
+    /// the Avalonia runtime.
+    /// </summary>
+    internal static SchematicDocument? MatchSchematicForDataDisplay(
+        DataDisplayDocument dataDisplay, IEnumerable<SchematicDocument> openSchematics)
+    {
+        static string? BaseName(string? filePath, string? fallbackId)
+            => filePath is { } fp
+                ? System.IO.Path.GetFileNameWithoutExtension(fp)
+                : (string.IsNullOrEmpty(fallbackId) ? null : fallbackId);
+
+        string? cddBase = BaseName(dataDisplay.FilePath, dataDisplay.Id);
+        if (string.IsNullOrEmpty(cddBase)) return null;
+
+        foreach (var sd in openSchematics)
+            if (string.Equals(BaseName(sd.FilePath, sd.Id), cddBase, StringComparison.OrdinalIgnoreCase))
+                return sd;
+        return null;
+    }
+
     private void OnDocumentDockPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != "ActiveDockable") return;
@@ -3314,12 +3346,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         // Analyses panel — retain the last schematic so focusing a data display / symbol / cell tab
-        // does NOT blank it. Only update when a schematic document becomes active.
+        // does NOT blank it. A schematic document updates it directly; a Data Display whose base
+        // filename matches an OPEN schematic redirects it to that schematic, so its analyses show
+        // beside the plots (otherwise the last schematic is retained, as before).
         if (activeDockable is SchematicDocument sd)
         {
-            _lastActiveSchematicDoc = sd;
-            string? schName = sd.FilePath is { } fp ? System.IO.Path.GetFileName(fp) : sd.Id;
-            _factory.AnalysesTool?.SetActiveSchematic(sd.ViewModel, schName);
+            PointAnalysesAt(sd);
+        }
+        else if (activeDockable is DataDisplayDocument ddForAnalyses
+                 && MatchSchematicForDataDisplay(
+                        ddForAnalyses,
+                        _openDocsByPath.Values.OfType<SchematicDocument>().Concat(_scratchDocs)) is { } linked)
+        {
+            PointAnalysesAt(linked);
         }
 
         // Undo routing — follows any IUndoableDocument for main-window tabs.
