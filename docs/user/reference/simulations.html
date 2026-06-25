@@ -343,6 +343,28 @@ freq=2.2GHz
     and f₂−f₁) are folded onto their positive frequency, so each product appears once.</p>
   </div>
 
+  <h3 id="two-tone-meas">Measuring intermodulation (IMD2 / IMD3)</h3>
+  <p>A <a href="measurements.html">measurement</a> reads a mixing product out of the result by its
+  <strong>(k₁,&nbsp;k₂) tag</strong>. The classic figures of merit are the intermodulation ratios in
+  <strong>dBc</strong> — an IM product relative to its carrier:</p>
+  <pre class="netlist"><code>IMD2 = dB( HB1.V("Vout", "(1,-1)") ) - dB( HB1.V("Vout", "(1,0)") )   dB
+IMD3 = dB( HB1.V("Vout", "(2,-1)") ) - dB( HB1.V("Vout", "(1,0)") )   dB</code></pre>
+  <p>Replace <code>HB1</code> with your analysis name and <code>"Vout"</code> with your output node. IMD2 uses
+  the baseband product (1,−1) = f₁−f₂; IMD3 uses the lower third-order product (2,−1) = 2f₁−f₂ (use (−1,2),
+  referenced to the (0,1) carrier, for the upper IM3). To get the curve <em>vs Pin</em>, sweep the drive power
+  (a parametric sweep over the variable your source <code>Pavl</code> references) — the same expression then
+  returns IMD vs Pin instead of a single value.</p>
+  <div class="callout note">
+    <span class="label">Two ways to address a product — use the accessor for IMD</span>
+    <p>The <strong>accessor</strong> <code>HB1.V("Vout", "(1,-1)")</code> names the node and the product tag and
+    <strong>keeps any swept axes automatically</strong>, so the same expression works whether or not you have
+    added a Pin sweep — one value without it, a curve over Pin with it. The <strong>bracket</strong> form
+    <code>HB1.V[:,&nbsp;"Vout",&nbsp;"(1,-1)"]</code> is positional: one token per cube axis (a leading
+    <code>:</code> to keep the Pin sweep), so it must be re-edited when a sweep is added or removed. Prefer the
+    accessor for IMD metrics you keep; reach for the bracket when copy-pasting from a trace card. See
+    <a href="measurements.html#refs">Referencing analysis results</a>.</p>
+  </div>
+
   <h3 id="two-tone-z">Source impedance and harmonic terminations</h3>
   <p>With dozens of products spread across the spectrum, each one needs a source termination. circuitRF assigns
   it <strong>by frequency</strong>, not by mixing order. It defines a band-center fundamental — for two tones

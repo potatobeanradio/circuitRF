@@ -655,7 +655,31 @@ public partial class DataDisplayViewModel : ViewModelBase
 
         double left = originX + (col - 1) * stepX;
         double top  = originY + (row - 1) * stepY;
+
+        // Visibility guarantee (per spec): the user must always SEE the newly-added plot. If the grid
+        // slot would fall outside the viewport — e.g. the in-view plots already fill the visible area,
+        // so the grid grows off-screen — place the new plot INSIDE the viewport instead. Otherwise the
+        // user presses "Add Plot" and nothing appears to happen.
+        if (left < vx0 || top < vy0 || left + w > vx1 || top + h > vy1)
+            (left, top) = PlaceInsideViewport(w, h, vx0, vy0, vx1, vy1, inView.Count);
+
         return (left, top);
+    }
+
+    /// <summary>
+    /// Places a new plot of size (w, h) inside the visible viewport: cascaded from the top-left by the
+    /// in-view plot count so consecutive adds don't perfectly stack, and clamped so the plot stays fully
+    /// visible (or, when the plot is larger than the viewport, pinned to the top-left so its title shows).
+    /// </summary>
+    private static (double Left, double Top) PlaceInsideViewport(
+        double w, double h, double vx0, double vy0, double vx1, double vy1, int inViewCount)
+    {
+        const double margin = 24.0, cascade = 28.0;
+        double left    = vx0 + margin + inViewCount * cascade;
+        double top     = vy0 + margin + inViewCount * cascade;
+        double maxLeft = Math.Max(vx0, vx1 - w);   // collapses to vx0 when the plot is wider than the view
+        double maxTop  = Math.Max(vy0, vy1 - h);
+        return (Math.Clamp(left, vx0, maxLeft), Math.Clamp(top, vy0, maxTop));
     }
 
     /// <summary>

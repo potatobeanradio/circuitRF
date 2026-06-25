@@ -566,10 +566,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
         // sweep to Family or repins i/j via the axis-role editor.
         trace.Slice = TraceRowViewModel.BuildDefaultSlice(cube);
 
-        // First-add nicety on Rect: complex cubes would render <invalid>. S/Y/Z parameter cubes default to
-        // dB20 (the natural S-parameter view); other complex cubes to mag(). Seed-time only.
-        if (_plot.PlotType == PlotType.Rect && cube.DataKind == DataKind.Complex)
-            trace.Transform = TraceRowViewModel.IsParameterCube(cube) ? CubeTransform.dB20 : CubeTransform.Mag;
+        // First-add nicety on Rect: only COMPLEX cubes get an auto-transform (so they don't render
+        // <invalid>); REAL cubes are shown raw — no annoying "mag". (Shared with the signal-switch path.)
+        trace.Transform = TraceRowViewModel.DefaultTransformFor(cube, _plot.PlotType);
 
         trace.Expression = trace.BuildPickerExpression();
         return trace;

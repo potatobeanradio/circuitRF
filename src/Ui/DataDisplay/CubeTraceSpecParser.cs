@@ -42,19 +42,36 @@ namespace CircuitRF.Ui.DataDisplay
             // Bare cube name (no '[') — synthesize all-':' tokens for the whole cube.
             if (bracketPos < 0)
             {
-                // The whole text (after any transform prefix) must be a cube name.
-                // Determine if there's a transform prefix by checking for a space.
+                // The whole text (after any transform prefix) must be a cube name. A transform can be
+                // attached two ways with NO brackets:
+                //   "mag(IMD2)"  — function-call form (what BuildPickerExpression emits for a transformed
+                //                  bare measurement; it MUST round-trip).
+                //   "mag IMD2"   — space-separated (legacy spec-box entry).
                 string barePrefix = text;
                 CubeTransform bareTransform = CubeTransform.None;
-                int spaceIdx = text.IndexOf(' ');
-                if (spaceIdx >= 0)
+                int fnParen = text.IndexOf('(');
+                if (fnParen > 0 && text.EndsWith(")"))
                 {
-                    string potentialTransform = text[..spaceIdx].Trim();
-                    string potentialCube      = text[(spaceIdx + 1)..].Trim();
-                    if (TryParseTransform(potentialTransform, out var bt) && ds.Contains(potentialCube))
+                    string potentialTransform = text[..fnParen].Trim();
+                    string potentialCube      = text[(fnParen + 1)..^1].Trim();
+                    if (TryParseTransform(potentialTransform, out var ft) && ds.Contains(potentialCube))
                     {
-                        bareTransform = bt;
+                        bareTransform = ft;
                         barePrefix    = potentialCube;
+                    }
+                }
+                else
+                {
+                    int spaceIdx = text.IndexOf(' ');
+                    if (spaceIdx >= 0)
+                    {
+                        string potentialTransform = text[..spaceIdx].Trim();
+                        string potentialCube      = text[(spaceIdx + 1)..].Trim();
+                        if (TryParseTransform(potentialTransform, out var bt) && ds.Contains(potentialCube))
+                        {
+                            bareTransform = bt;
+                            barePrefix    = potentialCube;
+                        }
                     }
                 }
                 if (!ds.Contains(barePrefix))
@@ -148,9 +165,7 @@ namespace CircuitRF.Ui.DataDisplay
             }
 
             string sliceStr = text[(bracketPos + 1)..closeBracket];
-            var tokens = string.IsNullOrWhiteSpace(sliceStr)
-                ? Array.Empty<string>()
-                : sliceStr.Split(',').Select(t => t.Trim()).ToArray();
+            var tokens = SliceTokenParser.SplitTokens(sliceStr);
 
             if (tokens.Length != cube.Rank)
             {

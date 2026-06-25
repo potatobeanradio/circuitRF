@@ -1783,23 +1783,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 matrixFmtMenu.Items.Add(item);
             }
 
-            var yAxisMenu = new MenuItem { Header = "Y Axis" };
-            foreach (DependentVarFormat yf in Enum.GetValues<DependentVarFormat>())
-            {
-                var item = new MenuItem
-                {
-                    Header = yf.Description(),
-                    Icon   = trace.YAxis == yf ? new MaterialIcon { Kind = MaterialIconKind.Check, Width = 12, Height = 12 } : null,
-                };
-                var capYf = yf;
-                item.Click += (_, _) => { trace.YAxis = capYf; Rebuild(); };
-                yAxisMenu.Items.Add(item);
-            }
-
             var menu = new ContextMenu();
-            menu.Items.Add(matrixTypeMenu);
+            // Matrix Type (S/Z/Y conversion) is only meaningful for network/Touchstone traces — NOT for
+            // DataCube slices from a simulation (mirrors TraceRowViewModel.ShowMatrixTypeCombo). "Y Axis" is
+            // gone entirely: the dependent variable is now chosen via the trace-card expression.
+            if (!trace.IsCubeBound && trace.Data is { } d && !d.IsEmpty)
+                menu.Items.Add(matrixTypeMenu);
             menu.Items.Add(matrixFmtMenu);
-            menu.Items.Add(yAxisMenu);
             menu.Open(this);
         }
 

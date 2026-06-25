@@ -1782,8 +1782,9 @@ namespace CircuitRF.Ui.DataDisplay
                 var z = _cubeComplexValues[i];
                 return Transform switch
                 {
-                    CubeTransform.None  => FormatCubeMA(z, f),
-                    CubeTransform.Conj  => FormatCubeMA(Complex.Conjugate(z), f),
+                    // No scalar transform → complex value shown in the user's Number Format (MA/RI/DB).
+                    CubeTransform.None  => FormatCubeComplex(z, f),
+                    CubeTransform.Conj  => FormatCubeComplex(Complex.Conjugate(z), f),
                     CubeTransform.dB20  => (20.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300))).ToString(f),
                     CubeTransform.dB10 or CubeTransform.dB
                                         => (10.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300))).ToString(f),
@@ -1829,8 +1830,9 @@ namespace CircuitRF.Ui.DataDisplay
                 var z = cz[xIndex];
                 return Transform switch
                 {
-                    CubeTransform.None  => FormatCubeMA(z, f),
-                    CubeTransform.Conj  => FormatCubeMA(Complex.Conjugate(z), f),
+                    // No scalar transform → complex value shown in the user's Number Format (MA/RI/DB).
+                    CubeTransform.None  => FormatCubeComplex(z, f),
+                    CubeTransform.Conj  => FormatCubeComplex(Complex.Conjugate(z), f),
                     CubeTransform.dB20  => (20.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300))).ToString(f),
                     CubeTransform.dB10 or CubeTransform.dB
                                         => (10.0 * Math.Log10(Math.Max(z.Magnitude, 1e-300))).ToString(f),
@@ -1862,6 +1864,21 @@ namespace CircuitRF.Ui.DataDisplay
 
         private static string FormatCubeMA(Complex c, string fmt)
             => $"{c.Magnitude.ToString(fmt)}∠{(c.Phase * 180.0 / Math.PI):F1}°";
+
+        private static string FormatCubeRI(Complex c, string fmt)
+            => $"{c.Real.ToString(fmt)}{(c.Imaginary >= 0 ? "+" : "-")}j{Math.Abs(c.Imaginary).ToString(fmt)}";
+
+        private static string FormatCubeDB(Complex c, string fmt)
+            => $"{(20.0 * Math.Log10(Math.Max(c.Magnitude, 1e-300))).ToString(fmt)}∠{(c.Phase * 180.0 / Math.PI):F1}°";
+
+        /// <summary>Formats a complex cube value in the trace's Number Format (<see cref="MatrixFormat"/>):
+        /// MA (Mag∠Angle), RI (Real±jImag), or DB (dB∠Angle). Used for Table cells with no scalar transform.</summary>
+        private string FormatCubeComplex(Complex c, string fmt) => MatrixFormat switch
+        {
+            MatrixFormat.RI => FormatCubeRI(c, fmt),
+            MatrixFormat.DB => FormatCubeDB(c, fmt),
+            _               => FormatCubeMA(c, fmt),
+        };
 
         /// <summary>
         /// Marker-aware cube cell formatter: identical to <see cref="FormatCubeCell"/> except that a

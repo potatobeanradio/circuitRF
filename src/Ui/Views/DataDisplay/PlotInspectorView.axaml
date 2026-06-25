@@ -1053,6 +1053,7 @@
                                                      Text="{Binding SpecShorthand, Mode=OneWay}"
                                                      FontSize="{StaticResource FontSize}"
                                                      Padding="4,2"
+                                                     GotFocus="OnSpecEditGotFocus"
                                                      LostFocus="OnSpecEditLostFocus"
                                                      KeyDown="OnSpecEditKeyDown"
                                                      ToolTip.Tip="Type a cube shorthand, e.g. dB20 V[0, 1, :]"/>

@@ -48,6 +48,23 @@ harmonic; the engine locates each axis by name, so adding or reordering sweep ax
 expression. This is the right choice for measurements you author by hand and keep — figures of merit
 that should survive sweep changes and re-runs.
 
+**Two-tone (mixIndex).** In a two-tone HB run the spectral axis is `mixIndex`, not `harmonic`, and its
+members are labelled by their integer mix-product pair `"(k₁,k₂)"`. The accessor's spectral argument
+accepts that **label string** — resolved against the axis labels by `Evaluator.ResolveSpectralArg` →
+`ResolvePin` — so you address a product by its tag rather than an opaque grid index:
+
+```
+IMD2 = dB( HB1.V("Vout", "(1,-1)") ) - dB( HB1.V("Vout", "(1,0)") )   # IM2 (f₁−f₂) rel. carrier, dBc
+IMD3 = dB( HB1.V("Vout", "(2,-1)") ) - dB( HB1.V("Vout", "(1,0)") )   # lower IM3 (2f₁−f₂), dBc
+```
+
+Because the accessor keeps swept axes automatically, the **same** expression evaluates whether or not the
+HB is wrapped in a Pin sweep — a single value with no sweep, a curve over Pin with one. That
+sweep-agnostic behaviour is the main reason to prefer the accessor for two-tone IMD figures of merit (the
+Pin sweep is often added later). The positional bracket equivalent is `HB1.V[:, "Vout", "(1,-1)"]` **with**
+a Pin sweep (3 axes) but `HB1.V["Vout", "(1,-1)"]` **without** (2 axes) — both correct, but the token count
+must track the cube's axis count, so a bracket expression breaks when the sweep is added or removed.
+
 ### 2. Bracket — positional: `HB1.V[:, "Vout", 1]`
 
 You write **one token per cube axis, in cube-axis order** (numpy-style):

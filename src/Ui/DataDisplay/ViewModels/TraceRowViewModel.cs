@@ -1162,6 +1162,10 @@ public partial class TraceRowViewModel : ViewModelBase
             {
                 _trace.Slice = BuildCarriedSlice(value, oldSlice);
             }
+            // Re-apply the first-add nicety for the NEW signal: an auto-transform only for COMPLEX data
+            // (so it shows a curve), None for REAL data (raw, no annoying "mag"). Matches the seed path.
+            if (cubeForRank is not null)
+                _trace.Transform = DefaultTransformFor(cubeForRank, _parent.PlotType);
             _trace.InvalidSpecText = null;
             _trace.ExpressionError = null;
             _trace.Expression      = _trace.BuildPickerExpression();
@@ -1322,16 +1326,26 @@ public partial class TraceRowViewModel : ViewModelBase
     private void ApplySelectedTransform(CubeTransformItem? value)
     {
         if (value is null || !value.Enabled) return;
-        if (_trace.IsCubeBound)
+
+        if (_trace.CubeName is not null)
         {
-            _trace.Transform = value.Transform;
-            // Recompute the expression from the updated picker state (Transform changed).
-            _trace.Expression = null;
+            // Genuine picker cube trace — rebuild the bracket expression from the updated picker state.
+            _trace.Transform  = value.Transform;
             _trace.Expression = _trace.BuildPickerExpression();
         }
         else
         {
-            _trace.YAxis = CubeTransformToYAxis(value.Transform);
+            // No CubeName → a network/SNP trace OR a typed multi-cube expression. The transform maps to
+            // YAxis (network rendering); the combo records the selection. NEVER call BuildPickerExpression
+            // here — with no CubeName it returns the network description string (e.g. "dB(S(1,1))"), which
+            // stored as Expression would falsely mark the trace cube-bound and break it.
+            // Self-heal: a network trace must have no Expression to render via its S-matrix, so clear an
+            // Expression that currently FAILS to parse (a stale network description) — but PRESERVE a valid
+            // typed expression (no error).
+            if (_trace.ExpressionError is not null)
+                _trace.Expression = null;
+            _trace.Transform = value.Transform;
+            _trace.YAxis     = CubeTransformToYAxis(value.Transform);
         }
         _parent.RebuildAndNotify();
     }
@@ -2391,6 +2405,14 @@ public partial class TraceRowViewModel : ViewModelBase
         => cube.Axes.Any(a => a.Name == "freq")
         && cube.Axes.Any(a => a.Name == "i")
         && cube.Axes.Any(a => a.Name == "j");
+
+    /// <summary>The auto-applied "first-add nicety" transform for a cube on a given plot type. Only
+    /// COMPLEX data on a Rect plot gets a transform (dB20 for S/Y/Z parameter cubes, mag otherwise) so the
+    /// user sees a curve instead of <c>&lt;invalid&gt;</c>; REAL data is shown raw (None) — no annoying "mag".</summary>
+    internal static CubeTransform DefaultTransformFor(RfCore.Data.DataCube cube, PlotType plotType)
+        => plotType == PlotType.Rect && cube.DataKind == RfCore.Data.DataKind.Complex
+            ? (IsParameterCube(cube) ? CubeTransform.dB20 : CubeTransform.Mag)
+            : CubeTransform.None;
 
     private AxisSlice[] BuildCarriedSlice(TraceDataItem value, AxisSlice[]? oldSlice)
     {

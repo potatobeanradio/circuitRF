@@ -115,10 +115,24 @@ public partial class PlotInspectorView : UserControl
 
     // ---- Spec editor event handlers (#4) ------------------------------------
 
+    // The spec TextBox is OneWay-bound to SpecShorthand. A focused TextBox does NOT pick up a model
+    // change made via the transform combo, so committing its (stale) text on LostFocus would overwrite
+    // the combo's change. Track the value at focus time and commit ONLY if the user actually edited it;
+    // otherwise re-sync the box to the current model (which the combo may have moved).
+    private string _specPristine = "";
+
+    private void OnSpecEditGotFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb) _specPristine = tb.Text ?? "";
+    }
+
     private void OnSpecEditLostFocus(object? sender, RoutedEventArgs e)
     {
-        if (sender is TextBox tb && tb.DataContext is TraceRowViewModel vm)
-            vm.CommitSpec(tb.Text ?? "");
+        if (sender is not TextBox tb || tb.DataContext is not TraceRowViewModel vm) return;
+        if ((tb.Text ?? "") != _specPristine)
+            vm.CommitSpec(tb.Text ?? "");        // user edited the text → commit it
+        else
+            tb.Text = vm.SpecShorthand;          // unedited → re-sync to model (the combo may have changed it)
     }
 
     private void OnSpecEditKeyDown(object? sender, KeyEventArgs e)
@@ -126,6 +140,7 @@ public partial class PlotInspectorView : UserControl
         if (e.Key == Key.Enter && sender is TextBox tb && tb.DataContext is TraceRowViewModel vm)
         {
             vm.CommitSpec(tb.Text ?? "");
+            _specPristine = vm.SpecShorthand;    // committed — this is the new pristine baseline
             e.Handled = true;
         }
     }

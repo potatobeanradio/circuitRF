@@ -306,7 +306,9 @@ public sealed class Evaluator
 
             if (axisIdx + 1 < cube.Rank)
                 sliceArgs[axisIdx + 1] = cl.Args.Length > 1
-                    ? ArgToSliceObj(EvalExpr(cl.Args[1], scope), cl.Name, 1)
+                    // Spectral axis (harmonic / mixIndex): accept an integer index, "All", OR a quoted
+                    // label — e.g. the two-tone mixIndex tag "(1,-1)" — so V("Vout", "(1,-1)") works.
+                    ? ResolveSpectralArg(EvalExpr(cl.Args[1], scope), cube.Axes[axisIdx + 1])
                     : (object)Range.All;
 
             for (int a = 0; a < numSweepAxes; a++)
@@ -412,6 +414,11 @@ public sealed class Evaluator
         _ => throw new ExpressionException(
             $"{name}: argument {idx} must be an integer index or All, got {v.Kind}")
     };
+
+    /// <summary>Resolves a spectral-axis (harmonic / mixIndex) accessor argument: <c>All</c> keeps the
+    /// axis; an integer is an index; a quoted string is a label (e.g. the mixIndex tag "(1,-1)").</summary>
+    private static object ResolveSpectralArg(Value v, RfCore.Data.Axis axis)
+        => v.Kind == ValueKind.All ? (object)Range.All : ResolvePin(v, axis);
 
     // ── Positional cube index: Target[token, …]  (numpy-style; mirrors the accessor) ──────────
 

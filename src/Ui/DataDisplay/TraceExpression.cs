@@ -57,10 +57,13 @@ public static class TraceExpression
         }
 
         // ── Step 1: Extract cube refs ─────────────────────────────────────────
-        // Sort cube names descending by length so longer names match first (e.g. "VGain" before "V").
+        // Candidate names: analysis-group cubes qualified ("HB1.V"); default- and measurements-group
+        // cubes BARE ("V", "IMD2") — these bare-resolve via DataSet.BareResolve. Sorted longest-first so
+        // a longer name matches before a shorter one it contains (e.g. "HB1.V" before "V").
         var cubeNames = ds.Groups
-            .SelectMany(g => ds.CubesIn(g).Keys
-                .Select(c => g == DataSet.DefaultGroup ? c : $"{g}.{c}"))
+            .SelectMany(g => ds.CubesIn(g).Keys.Select(c =>
+                (g == DataSet.DefaultGroup || g == DataSet.MeasurementsGroup) ? c : $"{g}.{c}"))
+            .Distinct(StringComparer.Ordinal)
             .OrderByDescending(n => n.Length)
             .ToList();
 
@@ -69,6 +72,8 @@ public static class TraceExpression
         var refMap      = new Dictionary<string, int>(StringComparer.Ordinal);
         var uniqueRefs  = new List<CubeRefInfo>();
         var substitutions = new List<(int start, int end, int pIdx)>();
+
+        static bool IsIdent(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '.';
 
         int pos = 0;
         while (pos < expression.Length)
@@ -79,23 +84,41 @@ public static class TraceExpression
                 if (pos + name.Length > expression.Length) continue;
                 if (!expression.AsSpan(pos, name.Length).SequenceEqual(name.AsSpan())) continue;
 
-                // Require '[' immediately after the cube name (no whitespace).
+                // Left word boundary: the char before must not continue an identifier, so "V" never
+                // matches inside "Vout"/"RFfreq" and a qualified "HB1.V" matches whole.
+                if (pos > 0 && IsIdent(expression[pos - 1])) continue;
+
                 int after = pos + name.Length;
-                if (after >= expression.Length || expression[after] != '[') continue;
 
-                // Find the matching ']' — no nesting in slice syntax.
-                int closeBracket = expression.IndexOf(']', after + 1);
-                if (closeBracket < 0) continue;
+                string refStr, body;
+                if (after < expression.Length && expression[after] == '[')
+                {
+                    // Bracketed reference CubeName[…].
+                    int closeBracket = expression.IndexOf(']', after + 1);
+                    if (closeBracket < 0) continue;        // unterminated — let a later candidate try
+                    refStr = expression[pos..(closeBracket + 1)];
+                    body   = expression[(after + 1)..closeBracket];
+                }
+                else if (after >= expression.Length || (!IsIdent(expression[after]) && expression[after] != '('))
+                {
+                    // Bare reference CubeName (e.g. a measurement like "IMD2"): keep every axis (all ':')
+                    // and reuse the bracketed slicing path. A trailing '(' is excluded (call-like, not a cube).
+                    refStr = name;
+                    body   = string.Join(", ", Enumerable.Repeat(":", ds[name].Rank));
+                }
+                else
+                {
+                    continue;   // 'name' is a prefix of a longer identifier we don't recognize
+                }
 
-                string refStr = expression[pos..(closeBracket + 1)];
                 if (!refMap.TryGetValue(refStr, out int pIdx))
                 {
                     pIdx = uniqueRefs.Count;
                     refMap[refStr] = pIdx;
-                    uniqueRefs.Add(new CubeRefInfo(name, refStr, expression[(after + 1)..closeBracket]));
+                    uniqueRefs.Add(new CubeRefInfo(name, refStr, body));
                 }
-                substitutions.Add((pos, closeBracket + 1, pIdx));
-                pos = closeBracket + 1;
+                substitutions.Add((pos, pos + refStr.Length, pIdx));
+                pos += refStr.Length;
                 matched = true;
                 break;
             }
@@ -104,7 +127,7 @@ public static class TraceExpression
 
         if (uniqueRefs.Count == 0)
         {
-            error = "No cube references found. Use the form CubeName[:, 0, …].";
+            error = "No cube references found. Use a cube name (e.g. IMD2) or the form CubeName[:, 0, …].";
             return false;
         }
 
@@ -117,10 +140,7 @@ public static class TraceExpression
                 return false;
             }
             var cube   = ds[info.CubeName];
-            var tokens = info.SliceTokensStr
-                .Split(',')
-                .Select(t => t.Trim())
-                .ToArray();
+            var tokens = SliceTokenParser.SplitTokens(info.SliceTokensStr);
 
             if (tokens.Length != cube.Rank)
             {

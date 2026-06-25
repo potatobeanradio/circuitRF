@@ -24,6 +24,77 @@ clip at viewport floor; no autoscale Y-min extension. 3 gate tests in `HarmonicS
 reconstruction — unlike harmonic, mixIndex is NOT excluded from `IsCubeXMarker` (markers use the generic
 cube-X path). T4/T5 in `HarmonicStemPlotTests`.
 
+## Spec text box ↔ transform combo two-way sync (2026-06-25)
+
+The spec TextBox is OneWay-bound to `SpecShorthand`; the transform combo is TwoWay-bound to
+`SelectedTransformItem`. `RefreshDescription` (called by `RebuildAndNotify`) raises BOTH, so the VM side
+syncs in both directions — `CommitSpec` → `SelectedTransformItem` is covered by `SpecTransformSyncTests`.
+The bug was the **focused TextBox**: a focused OneWay TextBox does NOT pick up a model change made via the
+combo, and `OnSpecEditLostFocus` then committed its STALE text, **overwriting** the combo's change. Fix
+(`PlotInspectorView.axaml.cs`): `OnSpecEditGotFocus` records the text at focus time (`_specPristine`);
+`OnSpecEditLostFocus` commits ONLY if the text actually changed (user edited), otherwise re-syncs the box to
+`vm.SpecShorthand` (the combo may have moved it); the Enter handler resets `_specPristine` after committing.
+
+**Measurement round-trip:** `BuildPickerExpression` emits the **function-call** form `mag(IMD2)` for a
+transformed bare measurement (no brackets), but `CubeTraceSpecParser`'s bare-name path only handled the
+space-separated form (`mag IMD2`) — so `mag(IMD2)` failed to parse, `CommitSpec` dropped `CubeName`/`Transform`,
+and the combo couldn't sync. The bare-name path now also parses `transform(bareName)` (the `(`/`)` form). Tests
+`SpecTransformSyncTests.CommitSpec_TransformedMeasurement_UpdatesTransformCombo` and
+`BareNameExprTests.CubeTraceSpecParser_TransformedBareMeasurement_RoundTrips`.
+
+## Auto-transform on add only for COMPLEX data (2026-06-25)
+
+The "first-add nicety" auto-transform (so a Rect trace shows a curve, not `<invalid>`) applies **only to
+complex cubes**: `TraceRowViewModel.DefaultTransformFor(cube, plotType)` = dB20 for S/Y/Z parameter cubes,
+`mag` for other complex cubes on Rect, else **None**. Real data shows raw — no annoying "mag". This is the
+single source of truth used by BOTH the seed (`PlotInspectorViewModel.BuildSeedCubeTrace`) AND the
+signal-switch (`OnSelectedSignalChanged` cube branch) — the latter previously did NOT re-apply it, so a `Mag`
+from a complex default cube (e.g. V) **persisted** when switching the signal to a real cube (e.g. a real
+measurement), which was the user-visible bug. Switching to a complex cube now also (re)applies the transform
+so it doesn't render `<invalid>`. Test `AutoTransformOnAddTests`.
+
+## Transform combo must not corrupt a network trace (2026-06-25)
+
+`BuildPickerExpression` returns the network **description** (`dB(S(1,1))`, parens form) when a trace has no
+`CubeName` (line 453 → `ShortDescription`). `ApplySelectedTransform` (the unified transform combo) used to
+store that into `Expression` whenever `IsCubeBound` was true — but a network trace with a *stale* `Expression`
+has `IsCubeBound==true`, so changing Mag→None wrote `dB(S(1,1))` into `Expression`, falsely marking it
+cube-bound → "No cube references found". Fix: gate the `BuildPickerExpression` rebuild on **`CubeName != null`**
+(a genuine picker cube trace). For `CubeName==null` map the transform to `YAxis` and **self-heal** — clear an
+`Expression` that currently fails to parse (`ExpressionError != null`, a stale network description) while
+**preserving** a valid typed multi-cube expression (no error). Never call `BuildPickerExpression` to set
+`Expression` on a non-`CubeName` trace. Test `NetworkTraceTransformHealTests`.
+
+## Table trace Number Format + trace-header context menu (2026-06-25)
+
+- **Number Format (MA/RI/DB) on Table cube cells:** `Trace.FormatCubeCell` previously hard-coded MA for a
+  complex value with no scalar transform (`CubeTransform.None`/`Conj`). It now routes through
+  `FormatCubeComplex(z, f)` which honors `trace.MatrixFormat` (MA `mag∠ang`, RI `re±jim`, DB `dB∠ang`) —
+  so the right-click "Number Format" menu is respected on Table cube slices. Network (Touchstone) cells
+  already honored it via `TableRenderer.FormatTraceCell` (`YAxis == Complex` branch). For real-valued / scalar-
+  transform traces (mag/dB/…) the value is a plain number and Number Format does not apply. **Do NOT touch
+  `FormatSummaryCell`** — the contour Performance Summary table is out of scope. `MatrixFormat` persists in
+  `.cdd` via `TraceConfig.MatrixFormat` (saved/loaded in `DataDisplayViewModel`, default MA).
+- **Trace-header context menu** (`PlotControl.ShowTraceHeaderContextMenu`): the **"Y Axis"** submenu is
+  removed (the dependent variable is chosen via the trace-card expression / YAxis combo). **"Matrix Type"**
+  (S/Z/Y) is shown only for network traces — gated `!trace.IsCubeBound && trace.Data is { } d && !d.IsEmpty`
+  (mirrors `TraceRowViewModel.ShowMatrixTypeCombo`), so it never appears on a simulation DataCube slice.
+  Test `NumberFormatTableTests`.
+
+## Add Plot always lands in the viewport (2026-06-25)
+
+`DataDisplayViewModel.ComputeNewPlotPosition` must keep a newly-added plot **visible** so the user never
+presses "Add Plot" to no apparent effect. Three cases (viewport = current pan/zoom logical rect, from
+`CanvasSizeProvider` + `_zoomLevel`/`_viewOffsetX/Y`; pan syncs via `PlotCanvasView.OnCanvasPanMoved` →
+`ViewOffsetX/Y`, scroll-zoom via `ZoomAtPoint`):
+1. **Nothing in view** → center the new plot in the viewport.
+2. **In-view plots, grid slot fits** → next slot of the inferred grid (nice grid growth).
+3. **In-view plots, grid slot off-screen** (the 2026-06-25 fix) → `PlaceInsideViewport` cascades the plot
+   from the viewport top-left (clamped fully visible) instead of letting the grid grow off-screen. Without
+   this, once the in-view plots fill the visible area the next slot lands off-screen — the user's bug.
+The historical `(30 + count·30)` cascade is only the fallback when `CanvasSizeProvider` is null/zero (pre-load
+first plot at 30,30). Tests `AddPlotPlacementTests` (grid-off-screen stays visible; pan-away lands in view).
+
 ## Arrow-key marker fine-movement on Rect plots (2026-06-25)
 
 A selected marker on a Rect (non-contour) plot steps one x-axis sample per arrow key: Up/Right → next
@@ -78,6 +149,12 @@ token grammar shared by:
 Never add a second token recogniser for `:` / `All` / `a..b` / integer / `"label"` anywhere in the
 codebase — extend `SliceTokenParser` instead. Diverging the two parsers is the bug this was created
 to prevent.
+
+**Comma-splitting is also centralized: `SliceTokenParser.SplitTokens(body)` (2026-06-25).** It splits a
+bracket body into per-axis tokens on **top-level commas only** — a comma inside a double-quoted label (the
+two-tone mixIndex tag `"(1,-1)"`) is NOT a separator. Both consumers call it; a naive `Split(',')` used to
+break the label into two tokens (`'… got 4'`). The ref-scanner in `TraceExpression` already scans to the
+matching `]` (labels have no `]`), so only the per-axis split needed the fix. Test `CommaLabelSliceTests`.
 
 Token forms accepted:
 - `:` or `All` (case-insensitive) — keep the whole axis (becomes `Range.All` / `AxisRole.KeepAsX`).
@@ -147,9 +224,13 @@ After these changes `CommitSpec("PDC")` sets `CubeName="PDC"`, `Slice=[]`, clear
 and `TrySetCubeData` calls `SetScalarCubeData` (already present from the scalars-table brief).
 `BuildPickerExpression` with an empty slice returns the bare cube name (no `[]`).
 
-Bare names inside **multi-cube expressions** (e.g. `mag(PDC)`) are NOT resolved — `TraceExpression`
-only recognises `Name[` references and builds its candidate list from qualified names. This is future
-work; it is not attempted here.
+Bare names inside **expressions** (e.g. `(IMD2)`, `mag(PDC)`, `IMD2 + 5`) ARE now resolved (2026-06-25).
+`TraceExpression`'s ref-scanner recognises a bare cube name (not followed by `[`) as a whole-cube reference
+(synthesizes an all-`:` slice → reuses the bracketed slicing path), with identifier word-boundary checks
+(`IsIdent` = letter/digit/`_`/`.`) so `V` never matches inside `Vout`/`HB1.V`; a trailing `(` is excluded
+(call-like). The candidate list now emits BARE names for the default AND measurements groups (both
+bare-resolve via `DataSet.BareResolve`), so a measurement like `IMD2` resolves. A bare rank-1 cube → its
+axis is X; rank-0 scalar → "no X axis" (use a Table). Tests `BareNameExprTests`.
 
 5 gate tests in `BareMeasurementNameTests.cs`. Build 0W/0E; 1726 total tests pass.
 

@@ -73,6 +73,12 @@ DC1.I("Iout")          no sweep → a scalar</code></pre>
   <p><strong>Why use it:</strong> it is order-independent — the engine locates each axis by name, so adding or
   reordering sweep axes never breaks the expression. This is the right choice for measurements you author by
   hand and keep.</p>
+  <p>For a <strong>two-tone</strong> run the spectral axis is <code>mixIndex</code>, so the second argument is
+  the mixing-product tag <code>"(k₁,k₂)"</code> instead of a harmonic number:</p>
+  <pre><code>HB1.V("Vout", "(1,0)")    carrier 1 (f₁)
+HB1.V("Vout", "(1,-1)")   IM2 product (f₁−f₂)</code></pre>
+  <p>Because the accessor keeps swept axes automatically, the same expression works with or without a Pin
+  sweep (one value vs a curve) — see <a href="simulations.html#two-tone-meas">measuring intermodulation</a>.</p>
 
   <h3>2. Bracket — positional (fast copy/paste)</h3>
   <p>One token per cube axis, in cube-axis order (numpy-style): <code>:</code> keeps the axis, a name or integer

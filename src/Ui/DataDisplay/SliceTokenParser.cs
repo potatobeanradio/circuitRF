@@ -12,6 +12,7 @@
 // ================================================================
 
 using System;
+using System.Collections.Generic;
 using RfCore.Data;
 
 namespace CircuitRF.Ui.DataDisplay;
@@ -24,6 +25,32 @@ namespace CircuitRF.Ui.DataDisplay;
 public static class SliceTokenParser
 {
     public enum Kind { KeepWhole, KeepRange, PinIndex, PinLabel, Invalid, Family }
+
+    /// <summary>Splits a bracket slice body into per-axis tokens on <b>top-level</b> commas only — a comma
+    /// inside a double-quoted label (e.g. the two-tone mixIndex tag <c>"(1,-1)"</c>) is NOT a separator.
+    /// A blank body yields an empty array (a bare / rank-0 reference). This is the single comma-splitter
+    /// for cube slice bodies; both CubeTraceSpecParser and TraceExpression call it so a naive
+    /// <c>Split(',')</c> can never break a quoted label again.</summary>
+    public static string[] SplitTokens(string sliceBody)
+    {
+        if (string.IsNullOrWhiteSpace(sliceBody)) return Array.Empty<string>();
+
+        var tokens  = new List<string>();
+        int start   = 0;
+        bool inQuote = false;
+        for (int i = 0; i < sliceBody.Length; i++)
+        {
+            char c = sliceBody[i];
+            if (c == '"') inQuote = !inQuote;
+            else if (c == ',' && !inQuote)
+            {
+                tokens.Add(sliceBody[start..i].Trim());
+                start = i + 1;
+            }
+        }
+        tokens.Add(sliceBody[start..].Trim());
+        return tokens.ToArray();
+    }
 
     public readonly record struct Token(
         Kind Kind, int Index = 0, int RangeStart = 0, int RangeEndExclusive = 0, string Label = "");
