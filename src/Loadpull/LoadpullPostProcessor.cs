@@ -116,6 +116,10 @@ namespace RfCore.Loadpull
             {
                 var vCube   = ds[Q("V")];
                 var inlCube = ds[Q("INl")];
+                // Prefer the engine-provided source-delivered input current (Iin) for Zin/Γin: it is the
+                // true current INTO the DUT input node (accounts for passives at the gate), whereas
+                // INl[src] is only the device gate current. Absent (imported data) → fall back to INl[src].
+                var iinCube = Has("Iin") ? ds[Q("Iin")] : null;
                 int srcIdx  = NodeIdx(ds, Q("__SrcNodeIdx"));
                 int loadIdx = Has("__LoadNodeIdx") ? NodeIdx(ds, Q("__LoadNodeIdx")) : -1;
 
@@ -145,24 +149,58 @@ namespace RfCore.Loadpull
                         int Vi(int gi, int pi, int ni) =>
                             ((gi * nP + pi) * nN + ni) * nH + FundamentalHarmonic;
 
+                        // Iin is {gridPoint, pinStep, harmonic} (no node axis) — flat index helper.
+                        var iin  = iinCube?.ComplexValues;
+                        int nHi  = iinCube is not null ? AxisDim(iinCube, "harmonic") >= 0
+                                       ? iinCube.Axes[AxisDim(iinCube, "harmonic")].Length : nH
+                                   : nH;
+                        int Ii(int gi, int pi) => (gi * nP + pi) * nHi + FundamentalHarmonic;
+                        bool useIin = iin is not null && nHi > FundamentalHarmonic;
+
+                        // Input return loss is referenced to the SOURCE impedance the tuner presents at
+                        // the fundamental (ZSource, per grid point) — NOT a fixed 50 Ω. When ZSource is
+                        // present we compute the power-wave (conjugate-match) reflection Γ_s and pass it
+                        // to Derive as the IRL; absent it, Derive falls back to the 50 Ω Γin (legacy).
+                        var zsVals = Has("__SrcZ") ? ds[Q("__SrcZ")].ComplexValues : null;
+                        var irlSrc = zsVals is not null ? new double[n] : null;
+
                         for (int gi = 0; gi < nG; gi++)
                         for (int pi = 0; pi < nP; pi++)
                         {
                             int fom   = gi * nP + pi;
                             Complex vs = v[Vi(gi, pi, srcIdx)];
-                            Complex isr = inl[Vi(gi, pi, srcIdx)];
+                            Complex isr = useIin ? iin![Ii(gi, pi)] : inl[Vi(gi, pi, srcIdx)];
 
                             if (isr == Complex.Zero || IsNan(vs) || IsNan(isr))
                             {
                                 ginMag[fom] = double.NaN; ginPhaseDeg[fom] = double.NaN;
                                 if (transPhaseDeg is not null) transPhaseDeg[fom] = double.NaN;
+                                if (irlSrc is not null) irlSrc[fom] = double.NaN;
                                 continue;
                             }
 
                             Complex zin = vs / isr;                 // input impedance into the DUT
-                            Complex gin = RfHelpers.Z2G(zin / Z0);  // normalized reflection coefficient
+                            Complex gin = RfHelpers.Z2G(zin / Z0);  // 50 Ω-normalized Γ (for Zin reconstruction)
                             ginMag[fom]      = gin.Magnitude;
                             ginPhaseDeg[fom] = gin.Phase * 180.0 / Math.PI;
+
+                            // Source-referenced input match: Γ_s = (Zin − Zs*)/(Zin + Zs) (Kurokawa
+                            // power wave). Γ_s → 0 at conjugate match (Zin = Zs*) → IRL → −∞, exactly
+                            // what a source-pull expects when the tuner presents the matched Zsource.
+                            if (irlSrc is not null)
+                            {
+                                Complex zs  = gi < zsVals!.Length ? zsVals[gi] : new Complex(Z0, 0);
+                                Complex den = zin + zs;
+                                if (IsNan(zs) || den == Complex.Zero)
+                                {
+                                    irlSrc[fom] = double.NaN;
+                                }
+                                else
+                                {
+                                    double gs = ((zin - Complex.Conjugate(zs)) / den).Magnitude;
+                                    irlSrc[fom] = 20.0 * Math.Log10(Math.Max(gs, 1e-300));
+                                }
+                            }
 
                             if (transPhaseDeg is not null)
                             {
@@ -183,7 +221,7 @@ namespace RfCore.Loadpull
                             foms, nG, nP,
                             ginMag, ginPhaseDeg,
                             transPhaseDeg,
-                            reflDb: null, reflLin: null);
+                            reflDb: irlSrc, reflLin: null);   // source-referenced IRL (null → 50 Ω legacy)
 
                         // FOM axes {gridPoint, pinStep} taken from the spectra cube (Pout was renamed).
                         var poutAxes = new[] { vCube.Axes[gDim], vCube.Axes[pDim] };
