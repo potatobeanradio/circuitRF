@@ -16,9 +16,36 @@ public partial class DataDisplayView : UserControl
     public DataDisplayView()
     {
         InitializeComponent();
+        Focusable             = true;   // so the Ctrl/Cmd+A (and other) key bindings fire after a tab-switch focus
         Loaded               += OnLoaded;
         AttachedToVisualTree += OnAttachedToVisualTree;
+        DataContextChanged   += OnDataContextChangedFocus;
     }
+
+    // ── Activation focus — claim keyboard focus when this document's tab is activated ──
+    private DataDisplayDocument? _focusDoc;
+
+    private void OnDataContextChangedFocus(object? sender, System.EventArgs e)
+    {
+        if (_focusDoc is not null) _focusDoc.ActivationFocusRequested -= OnActivationFocusRequested;
+        _focusDoc = DataContext as DataDisplayDocument;
+        if (_focusDoc is not null)
+        {
+            _focusDoc.ActivationFocusRequested += OnActivationFocusRequested;
+            // If the tab was activated before this view bound (first open), the request is pending.
+            if (_focusDoc.ConsumeActivationFocus()) FocusDeferred();
+        }
+    }
+
+    private void OnActivationFocusRequested()
+    {
+        _focusDoc?.ConsumeActivationFocus();
+        FocusDeferred();
+    }
+
+    private void FocusDeferred() =>
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () => Focus(), Avalonia.Threading.DispatcherPriority.Background);
 
     private void OnAttachedToVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
     {

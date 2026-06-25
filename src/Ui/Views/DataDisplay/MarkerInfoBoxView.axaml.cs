@@ -48,6 +48,8 @@ public partial class MarkerInfoBoxView : UserControl
     {
         InitializeComponent();
 
+        Focusable = true;   // so a selected info box receives arrow keys for marker fine-movement
+
         PointerPressed  += OnPointerPressed;
         PointerMoved    += OnPointerMoved;
         PointerReleased += OnPointerReleased;
@@ -312,11 +314,33 @@ public partial class MarkerInfoBoxView : UserControl
         if (isCtrlOrMeta) Vm?.ToggleSelect();
         else              Vm?.SelectOnly();
 
+        Focus();   // claim keyboard focus so arrow keys drive marker fine-movement
+
         var root = TopLevel.GetTopLevel(this);
         var pt   = root is not null ? e.GetPosition(root) : e.GetPosition(this);
         Vm?.StartGroupDrag(pt);
         e.Pointer.Capture(this);
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Arrow keys step the selected marker(s) by one x-axis sample (Up/Right → higher x, Down/Left →
+    /// lower; spectral axes step in frequency) — the same handler the plot canvas uses, so the behavior
+    /// is identical whether the canvas or this info box has focus. Only on Rect plots.
+    /// </summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (Vm is { } vm && vm.PlotType.IsRect() &&
+            e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
+        {
+            int direction = e.Key is Key.Up or Key.Right ? +1 : -1;
+            if (vm.Container.StepSelectedMarkers(direction))
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+        base.OnKeyDown(e);
     }
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)

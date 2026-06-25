@@ -99,4 +99,62 @@ public sealed class HarmonicStemPlotTests
             Trace.HarmonicAxisName, null, PlotType.Rect, FreqUnit.GHz);
         Assert.False(trace.IsMixIndexStem);
     }
+
+    // T6 — arrow-key stepping over a mixIndex spectrum follows FREQUENCY order, not the array/lattice
+    // order the products are stored in (the crux for tight two-tone IMD spacings).
+    [Fact]
+    public void StepMarker_MixIndex_FollowsFrequencyOrder_AndStopsAtEnds()
+    {
+        var t = MakeCubeTrace();
+        // mixIndex VALUES in lattice order (NOT sorted): f1, f2, DC, |f1−f2|. Frequency order is
+        // 0.0, 0.1, 1.95, 2.05 GHz — different from array order.
+        t.SetCubeData(
+            new double[] { 1.95e9, 2.05e9, 0.0, 0.1e9 },
+            complexValues: null,
+            new double[] { 1.0, 1.0, 0.1, 0.2 },
+            xAxisName: Trace.MixIndexAxisName,
+            xUnit:     "Hz",
+            PlotType.Rect, FreqUnit.GHz);
+
+        var m = new Marker(t, freq: 0, isMulti: false, isDelta: false, index: 1)
+        {
+            PositionStatic = new Vector2(0f, 0f),   // start on the DC product (0 GHz)
+        };
+
+        // Up steps to the next HIGHER frequency, regardless of array position.
+        Assert.True(t.StepMarkerAlongX(m, +1));
+        Assert.Equal(0.10, (double)m.PositionStatic.X, 3);   // |f1−f2| (array index 3)
+        Assert.True(t.StepMarkerAlongX(m, +1));
+        Assert.Equal(1.95, (double)m.PositionStatic.X, 3);   // f1 (array index 0)
+        Assert.True(t.StepMarkerAlongX(m, +1));
+        Assert.Equal(2.05, (double)m.PositionStatic.X, 3);   // f2 (array index 1)
+
+        // At the top — no wrap, no move.
+        Assert.False(t.StepMarkerAlongX(m, +1));
+        Assert.Equal(2.05, (double)m.PositionStatic.X, 3);
+
+        // Down steps back to the next lower frequency.
+        Assert.True(t.StepMarkerAlongX(m, -1));
+        Assert.Equal(1.95, (double)m.PositionStatic.X, 3);
+    }
+
+    // T7 — a plain monotonic cube X (e.g. a Pin sweep) steps one sample per key.
+    [Fact]
+    public void StepMarker_MonotonicCubeX_StepsOneSample()
+    {
+        var t = MakeCubeTrace();
+        t.SetCubeData(
+            new double[] { 0, 5, 10, 15 }, complexValues: null, new double[] { -3, 0, 2, 3 },
+            xAxisName: "Pin", xUnit: "dBm", PlotType.Rect, FreqUnit.GHz);
+
+        var m = new Marker(t, freq: 0, isMulti: false, isDelta: false, index: 1)
+        {
+            PositionStatic = new Vector2(5f, 0f),   // Pin = 5 (no freq scaling on a non-freq axis)
+        };
+
+        Assert.True(t.StepMarkerAlongX(m, +1));
+        Assert.Equal(10.0, (double)m.PositionStatic.X, 3);
+        Assert.True(t.StepMarkerAlongX(m, -1));
+        Assert.Equal(5.0, (double)m.PositionStatic.X, 3);
+    }
 }

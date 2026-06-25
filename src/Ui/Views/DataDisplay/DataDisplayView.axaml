@@ -12,6 +12,8 @@
     <UserControl.KeyBindings>
         <KeyBinding Gesture="Ctrl+Shift+A"  Command="{Binding ViewModel.Window.AddPlotCommand}"/>
         <KeyBinding Gesture="Meta+Shift+A"  Command="{Binding ViewModel.Window.AddPlotCommand}"/>
+        <KeyBinding Gesture="Ctrl+A"        Command="{Binding ViewModel.Window.SelectAllCommand}"/>
+        <KeyBinding Gesture="Meta+A"        Command="{Binding ViewModel.Window.SelectAllCommand}"/>
         <KeyBinding Gesture="Ctrl+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
         <KeyBinding Gesture="Meta+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
         <KeyBinding Gesture="Delete"        Command="{Binding ViewModel.Window.DeleteSelectedCommand}"/>

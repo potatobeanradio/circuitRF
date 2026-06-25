@@ -84,22 +84,36 @@ public partial class SchematicView : UserControl
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
-        // Unsubscribe from the previous document's ActiveViewModelChanged event.
+        // Unsubscribe from the previous document's events.
         if (_subscribedDoc is not null)
         {
-            _subscribedDoc.ActiveViewModelChanged -= OnActiveViewModelChanged;
+            _subscribedDoc.ActiveViewModelChanged   -= OnActiveViewModelChanged;
+            _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
             _subscribedDoc = null;
         }
 
         RebindActiveViewModel();
 
-        // Subscribe to the new document's ActiveViewModelChanged event.
+        // Subscribe to the new document's events.
         if (DataContext is SchematicDocument doc)
         {
             _subscribedDoc = doc;
-            doc.ActiveViewModelChanged += OnActiveViewModelChanged;
+            doc.ActiveViewModelChanged   += OnActiveViewModelChanged;
+            doc.ActivationFocusRequested += OnActivationFocusRequested;
+            // If this tab was activated before the view bound (first open), the request is pending.
+            if (doc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
     }
+
+    // Tab activated → grab keyboard focus so Select All / nudges work without a click.
+    private void OnActivationFocusRequested()
+    {
+        _subscribedDoc?.ConsumeActivationFocus();
+        FocusCanvasDeferred();
+    }
+
+    private void FocusCanvasDeferred() =>
+        Dispatcher.UIThread.Post(() => SchematicCanvasCtrl.Focus(), DispatcherPriority.Background);
 
     private void OnActiveViewModelChanged(object? sender, EventArgs e)
     {

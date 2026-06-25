@@ -828,6 +828,15 @@ public partial class DataDisplayViewModel : ViewModelBase
         RefreshSelection();
     }
 
+    /// <summary>Selects everything selectable in this display (Ctrl/Cmd+A): every plot AND every marker
+    /// info box.</summary>
+    public void SelectAll()
+    {
+        foreach (var p in _plots)           p.IsSelected = true;
+        foreach (var m in _markerInfoBoxes) m.IsSelected = true;
+        RefreshSelection();
+    }
+
     /// <summary>
     /// Toggles <paramref name="vm"/> selection without disturbing any other
     /// selected items — the Ctrl+click path.

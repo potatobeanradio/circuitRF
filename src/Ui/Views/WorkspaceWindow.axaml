@@ -61,7 +61,6 @@
                         <NativeMenuItem Header="Cut"        Command="{Binding CutCommand}"/>
                         <NativeMenuItem Header="Copy"       Command="{Binding CopyCommand}"/>
                         <NativeMenuItem Header="Paste"      Command="{Binding PasteCommand}"/>
-                        <NativeMenuItem Header="Select All" Command="{Binding SelectAllCommand}"/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -264,11 +263,6 @@
                           Command="{Binding PasteCommand}"
                           InputGesture="Ctrl+V">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentPaste" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Select _All"
-                          Command="{Binding SelectAllCommand}"
-                          InputGesture="Ctrl+A">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="SelectAll" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 

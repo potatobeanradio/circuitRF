@@ -211,6 +211,35 @@ and causes double-handling if the tunnel handler is also present. The tunnel han
 authoritative path; the canvas's `KeyDown` handler remains for canvas-specific keys (Ctrl+C/X/V, F5,
 Delete, R, nudge).
 
+### Select All (Ctrl/Cmd+A) is per-editor and focus-gated — NO window-level binding (2026-06-25)
+There is intentionally **no** window-level Ctrl+A binding and **no** Edit→Select All menu (both removed —
+the menu's command was a dead no-op and its `InputGesture="Ctrl+A"` risked hijacking Ctrl+A in a docked
+panel's text box). Each editor owns Ctrl/Cmd+A, fired only when that editor has keyboard focus, checking
+`(Control | Meta)` so Cmd works on macOS:
+- **Schematic** — `SchematicCanvas.OnKeyDown` → `vm.OnKeyDown` → `Key.A when ctrl` → `SelectAll()` (components +
+  wires + canvas objects). Focus-gated because the canvas only receives keys when focused.
+- **Symbol** — `SymbolEditorView` tunnel handler: `ctrl && Key.A && !IsTypingText` → `vm.SelectAll()` (all
+  `EditableSymbol.Primitives`). Gated by `IsKeyboardFocusWithin`; suppressed while typing a text primitive.
+- **Data Display** — `DataDisplayView.axaml` `Ctrl+A`/`Meta+A` KeyBindings → `Window.SelectAllCommand` →
+  `DataDisplayViewModel.SelectAll()` (everything selectable: all plot containers **and** all marker info
+  boxes). A focused `TextBox` inside the view consumes Ctrl+A first (select-all-text), so the binding doesn't
+  hijack it; the Properties inspector lives in a separate dock, so its text boxes are unaffected.
+Tests: `SymbolEditorViewModelTests.SelectAll_SelectsEveryPrimitive`, `DataDisplaySelectAllTests`. Ui 1539.
+
+### Editor view grabs keyboard focus on tab activation (2026-06-25)
+Bug: after switching Content tabs, shortcuts (Select All, nudges) didn't work until the user clicked the
+canvas — the activated view had no keyboard focus. Fix via `IActivatableDocument` (`src/Ui/Commands/`):
+`{ event ActivationFocusRequested; RequestActivationFocus(); ConsumeActivationFocus(); }`, implemented by
+`SchematicDocument`/`SymbolEditorDocument`/`DataDisplayDocument` (sets a pending flag + raises the event).
+`WorkspaceViewModel.OnDocumentDockPropertyChanged` (the canonical tab-switch hook — views stay realized, so
+`OnAttachedToVisualTree` does NOT reliably re-fire on tab-switch) calls `RequestActivationFocus()` on the new
+`activeDockable`. Each editor view, in its `DataContextChanged`, subscribes to `ActivationFocusRequested`
+(focus when already bound) **and** checks `ConsumeActivationFocus()` (focus when it binds AFTER the request —
+first open, view built on the next layout pass). Focus is deferred via `Dispatcher.Post(Background)` and
+targets the canvas (`SchematicCanvasCtrl`/`SymbolEditorCanvasCtrl`) or — for the data display — the
+`DataDisplayView` itself (`Focusable=true`, so its `UserControl.KeyBindings` fire). Contract test
+`ActivationFocusTests`.
+
 ---
 
 ## Library Palette — catalog metadata + LibraryCatalog projection (Step 1 — done, updated for multi-category)

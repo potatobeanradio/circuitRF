@@ -24,6 +24,35 @@ clip at viewport floor; no autoscale Y-min extension. 3 gate tests in `HarmonicS
 reconstruction — unlike harmonic, mixIndex is NOT excluded from `IsCubeXMarker` (markers use the generic
 cube-X path). T4/T5 in `HarmonicStemPlotTests`.
 
+## Arrow-key marker fine-movement on Rect plots (2026-06-25)
+
+A selected marker on a Rect (non-contour) plot steps one x-axis sample per arrow key: Up/Right → next
+higher x, Down/Left → next lower. Stepping is in **ascending display-x order**, so harmonic/mixIndex
+spectral axes step in **frequency** (mixIndex values are folded freqs stored in lattice order, not sorted).
+
+- **Engine:** `Trace.StepMarkerAlongX(Marker, int direction)` — cube/harmonic/family traces rank
+  `CubeMarkerPoints(m)` by `Points[i].X` (the marker-space x for both cube-X and stem markers; folded for
+  mixIndex), find the nearest current sample, and set `PositionStatic = (target.X, IsFamily ? curveIdx : 0)`.
+  Network/SNP traces reuse the existing `IncrementMarkerFreq`/`DecrementMarkerFreq` (step `Data.Frequencies`).
+  Returns false at an axis end (no wrap) and for contour/Smith/Polar.
+- **One handler, two surfaces:** `PlotContainerViewModel.StepSelectedMarkers(int direction) → bool` is the
+  single entry point — steps every selected marker (`GetSelectedMarkers`), repositioning each box via the
+  **light** `FindMarkerInfoBoxVm(m).OnMarkerMoved()` + `RequestPlotRedraw` path (NOT a full info-box rebuild),
+  so a focused info box keeps focus across repeated presses; the redraw also marks the doc dirty
+  (`PlotNeedsRedraw → ContentChanged`). Both surfaces route here so behavior is identical:
+  - **Plot canvas:** `PlotControl.OnKeyDown` → `StepSelectedMarkersHandler` (a `Func<int,bool>` set to
+    `vm.StepSelectedMarkers` in `PlotContainerView.axaml.cs`, beside the other providers). The control is
+    `Focusable` and gets `Focus()` on `PointerPressed`.
+  - **Info box:** `MarkerInfoBoxView` is `Focusable`, calls `Focus()` in `OnPointerPressed` (so a clicked/
+    selected box receives keys), and `OnKeyDown` → `Vm.Container.StepSelectedMarkers(dir)`.
+  Consumes the arrow key whenever a marker is eligible (prevents scroll at axis ends). Rect-only.
+- **Why not the drag's `PlotChanged` path:** it fires `OnContainerPlotChanged` →
+  `RebuildMarkerInfoBoxesForContainer`, which recreates every info-box control — fine for the canvas, but it
+  would steal focus from a focused info box on each keypress. So the keyboard path repositions in place.
+- Tests `HarmonicStemPlotTests` T6 (mixIndex → frequency order + end-stop) / T7 (monotonic cube X). The
+  container-level wiring isn't unit-tested headlessly (the info-box VM ctor measures text via Avalonia-loaded
+  Skia fonts). Ui 1536.
+
 ## Table plots lock marker info boxes ON (2026-06-25)
 
 A Table has no on-canvas way to re-open a hidden marker info box — the box itself is the only place

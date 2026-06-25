@@ -110,6 +110,15 @@ public partial class SymbolEditorView : UserControl
         if (vm is null) return;
 
         bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+
+        // Ctrl/Cmd+A → select all primitives (but not while typing a text primitive, where it is
+        // select-all-text). Other Ctrl combos are left to their own handlers.
+        if (ctrl && e.Key == Key.A && !vm.IsTypingText)
+        {
+            vm.SelectAll();
+            e.Handled = true;
+            return;
+        }
         if (ctrl) return;
 
         // While the user is typing a text primitive, suppress all global shortcuts except
@@ -162,12 +171,32 @@ public partial class SymbolEditorView : UserControl
 
     // ── Inline text edit ──────────────────────────────────────────────────────
 
+    private SymbolEditorDocument? _subscribedDoc;
+
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_subscribedVm is not null) _subscribedVm.TextEditRequested -= OnTextEditRequested;
         _subscribedVm = (DataContext as SymbolEditorDocument)?.ViewModel;
         if (_subscribedVm is not null) _subscribedVm.TextEditRequested += OnTextEditRequested;
+
+        // Tab activated → grab keyboard focus so Select All etc. work without a click.
+        if (_subscribedDoc is not null) _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
+        _subscribedDoc = DataContext as SymbolEditorDocument;
+        if (_subscribedDoc is not null)
+        {
+            _subscribedDoc.ActivationFocusRequested += OnActivationFocusRequested;
+            if (_subscribedDoc.ConsumeActivationFocus()) FocusCanvasDeferred();
+        }
     }
+
+    private void OnActivationFocusRequested()
+    {
+        _subscribedDoc?.ConsumeActivationFocus();
+        FocusCanvasDeferred();
+    }
+
+    private void FocusCanvasDeferred() =>
+        Dispatcher.UIThread.Post(() => SymbolEditorCanvasCtrl.Focus(), DispatcherPriority.Background);
 
     private void OnTextEditRequested(SymbolEditorViewModel.TextEditRequest req)
     {

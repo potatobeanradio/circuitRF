@@ -676,6 +676,35 @@ public partial class PlotContainerViewModel : ViewModelBase
                .Select(m => m.Marker);
 
     /// <summary>
+    /// Arrow-key fine movement: steps every selected marker by one x-axis sample
+    /// (<paramref name="direction"/> &gt; 0 = next higher x, &lt; 0 = next lower; spectral axes step in
+    /// frequency). Drives the move from EITHER the plot canvas or a focused info box, so both surfaces
+    /// behave identically. Rect, non-contour only. Repositions each info box and redraws via the light
+    /// <c>OnMarkerMoved</c> path — NOT a full info-box rebuild — so keyboard focus on the info box
+    /// survives repeated presses; the redraw also marks the document dirty. Returns true when at least
+    /// one selected marker was eligible (so the caller consumes the arrow key even at an axis end).
+    /// </summary>
+    public bool StepSelectedMarkers(int direction)
+    {
+        if (direction == 0 || PlotVM.Plot.PlotType != PlotType.Rect) return false;
+
+        bool eligible = false, moved = false;
+        foreach (var marker in GetSelectedMarkers().ToList())
+        {
+            var trace = PlotVM.Plot.Traces.FirstOrDefault(t => t.Markers.Contains(marker));
+            if (trace is null || trace.IsContourTrace) continue;
+            eligible = true;
+            if (trace.StepMarkerAlongX(marker, direction))
+            {
+                moved = true;
+                FindMarkerInfoBoxVm(marker)?.OnMarkerMoved();   // reposition box + redraw + dirty
+            }
+        }
+        if (moved) RequestPlotRedraw();   // ensure the glyph redraws (and dirty fires) even if a box is hidden
+        return eligible;
+    }
+
+    /// <summary>
     /// Selects all marker InfoBoxes that belong to this container,
     /// deselecting all plots and other containers' InfoBoxes.
     /// </summary>

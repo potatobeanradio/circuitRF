@@ -1051,7 +1051,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand] private async Task Cut()   => await InvokeClipboardAsync(cut: true,  paste: false);
     [RelayCommand] private async Task Copy()  => await InvokeClipboardAsync(cut: false, paste: false);
     [RelayCommand] private async Task Paste() => await InvokeClipboardAsync(cut: false, paste: true);
-    [RelayCommand] private void SelectAll() { }
+    // No window-level "Select All": each editor owns a focus-gated Ctrl/Cmd+A handler (schematic canvas,
+    // symbol-editor tunnel, data-display key bindings) so it never hijacks Ctrl+A in a docked panel's text box.
 
     private async Task InvokeClipboardAsync(bool cut, bool paste)
     {
@@ -3318,6 +3319,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (e.PropertyName != "ActiveDockable") return;
 
         var activeDockable = _factory.DocumentDock?.ActiveDockable;
+
+        // The activated editor view should grab keyboard focus so shortcuts (Select All, nudges, …)
+        // work without a preliminary click on the canvas. The view focuses its canvas on the event, or
+        // — if it binds after this fires (first open) — by consuming the pending flag on DataContext change.
+        (activeDockable as IActivatableDocument)?.RequestActivationFocus();
 
         // Properties panel — route to data display, schematic, symbol-editor, or cell inspector.
         if (activeDockable is DataDisplayDocument ddDoc)

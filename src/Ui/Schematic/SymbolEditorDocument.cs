@@ -1,3 +1,4 @@
+using System;
 using Dock.Model.Mvvm.Controls;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.ViewModels;
@@ -10,8 +11,14 @@ namespace CircuitRF.Ui.Schematic;
 /// dirty from creation, and invisible to the project tree.
 /// A materialized document has a real on-disk path (set at save time).
 /// </summary>
-public sealed class SymbolEditorDocument : Document, IUndoableDocument
+public sealed class SymbolEditorDocument : Document, IUndoableDocument, IActivatableDocument
 {
+    // ── Activation focus — view grabs keyboard focus on tab-switch (Select All etc. without a click) ──
+    private bool _activationFocusPending;
+    public event Action? ActivationFocusRequested;
+    public void RequestActivationFocus() { _activationFocusPending = true; ActivationFocusRequested?.Invoke(); }
+    public bool ConsumeActivationFocus() { var p = _activationFocusPending; _activationFocusPending = false; return p; }
+
     private string _baseTitle;
 
     public SymbolEditorViewModel ViewModel { get; }

@@ -462,6 +462,9 @@ public partial class DisplayWindowViewModel : ViewModelBase
     [RelayCommand] private void AddPolarPlot() => DataDisplay?.AddPlot(PlotType.Polar);
     [RelayCommand] private void AddTablePlot() => DataDisplay?.AddPlot(PlotType.Table);
 
+    /// <summary>Ctrl/Cmd+A in the data display — select everything (plots + markers) in the active tab.</summary>
+    [RelayCommand] private void SelectAll() => DataDisplay?.SelectAll();
+
     [RelayCommand(CanExecute = nameof(CanRemovePlot))]
     private void RemovePlot() => DataDisplay?.RemoveSelected();
     private bool CanRemovePlot() => DataDisplay?.HasAnySelection ?? false;

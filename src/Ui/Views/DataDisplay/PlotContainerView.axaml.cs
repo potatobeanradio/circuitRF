@@ -142,6 +142,7 @@ public partial class PlotContainerView : UserControl
             _plotControl.FindMarkerInfoBoxVmProvider  = vm.FindMarkerInfoBoxVm;
             _plotControl.ContainerProvider            = () => DataContext as PlotContainerViewModel;
             _plotControl.SelectedMarkersProvider      = vm.GetSelectedMarkers;
+            _plotControl.StepSelectedMarkersHandler   = vm.StepSelectedMarkers;
         }
     }
 

@@ -914,6 +914,16 @@ public sealed partial class SymbolEditorViewModel : ObservableObject
         RebuildOverlay();
     }
 
+    /// <summary>Selects every primitive in the symbol (Ctrl/Cmd+A). Pins are a separate selection set, so
+    /// they are left unselected. Safe on an empty symbol.</summary>
+    public void SelectAll()
+    {
+        _selectedPins.Clear();
+        _selection.Clear();
+        for (int i = 0; i < EditableSymbol.Primitives.Count; i++) _selection.Add(i);
+        RebuildOverlay();
+    }
+
     // ── Select-tool helpers ───────────────────────────────────────────────────
 
     private void SelectToolPress(double lx, double ly, KeyModifiers mods, int clickCount = 1)

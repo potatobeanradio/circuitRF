@@ -2083,6 +2083,56 @@ namespace CircuitRF.Ui.DataDisplay
             SnapMarkerToStabilityCircle(m, fi);
         }
 
+        /// <summary>
+        /// Moves a Rect-plot marker to the next x-axis sample: <paramref name="direction"/> &gt; 0 steps to
+        /// the next HIGHER x (Up/Right arrow), &lt; 0 to the next lower (Down/Left). Stepping is done in
+        /// ascending display-x order, so spectral axes (harmonic, mixIndex) step in <em>frequency</em> — the
+        /// products are stored in lattice order, not sorted. Network/SNP traces step along the frequency axis.
+        /// Returns true if the marker actually moved (false at an axis end, or for contour / Smith / Polar).
+        /// </summary>
+        public bool StepMarkerAlongX(Marker m, int direction)
+        {
+            if (direction == 0 || IsContourTrace || IsComplexPlanePlot) return false;
+
+            // ── Cube-bound traces: normal sweep X, mixIndex spectra, harmonic stems, and families ──
+            if (IsCubeBound)
+            {
+                if (!IsCubeXMarker && !IsHarmonicStem) return false;   // scalar/contour cube — no x to step
+                var pts = CubeMarkerPoints(m);                          // the marker's bound curve's samples
+                if (pts.Count < 2) return false;
+
+                // Rank the samples by ascending display-x. Points[i].X is the marker-space x for both
+                // cube-X and stem traces (SnapToStem/SnapToCubeMarker both store Points[i].X), so a
+                // mixIndex spectrum — whose values are folded freqs in lattice order — steps by frequency.
+                var order = new int[pts.Count];
+                for (int i = 0; i < order.Length; i++) order[i] = i;
+                Array.Sort(order, (a, b) => pts[a].X.CompareTo(pts[b].X));
+
+                // Current rank = the sample nearest the marker's stored x.
+                int curRank = 0; float best = float.PositiveInfinity;
+                for (int r = 0; r < order.Length; r++)
+                {
+                    float d = Math.Abs(pts[order[r]].X - m.PositionStatic.X);
+                    if (d < best) { best = d; curRank = r; }
+                }
+
+                int nextRank = curRank + direction;
+                if (nextRank < 0 || nextRank >= order.Length) return false;   // at an end — no wrap
+
+                // target is an exact sample on the bound curve, so store its X directly (matches the
+                // index lookups in CubeMarkerIndex / FindStemIndex) and keep the family curve index.
+                var target = pts[order[nextRank]];
+                m.PositionStatic = new Vector2(target.X, IsFamily ? m.PositionStatic.Y : 0f);
+                return true;
+            }
+
+            // ── Network/SNP traces: step along the (ascending) frequency axis ──
+            if (Data is null || Data.Frequencies.Length < 2) return false;
+            double before = m.Freq;
+            if (direction > 0) IncrementMarkerFreq(m); else DecrementMarkerFreq(m);
+            return m.Freq != before;
+        }
+
         public void SnapMarkerToStabilityCircle(Marker m, int freqIndex)
         {
             if (!IsStabilityCircle) return;

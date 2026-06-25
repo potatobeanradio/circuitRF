@@ -1,13 +1,21 @@
+using System;
 using System.IO;
 using Dock.Model.Mvvm.Controls;
+using CircuitRF.Ui.Commands;
 
 namespace CircuitRF.Ui.DataDisplay;
 
 /// <summary>
 /// Dock Document representing an open Data Display.
 /// </summary>
-public sealed class DataDisplayDocument : Document
+public sealed class DataDisplayDocument : Document, IActivatableDocument
 {
+    // ── Activation focus — view grabs keyboard focus on tab-switch (Select All etc. without a click) ──
+    private bool _activationFocusPending;
+    public event Action? ActivationFocusRequested;
+    public void RequestActivationFocus() { _activationFocusPending = true; ActivationFocusRequested?.Invoke(); }
+    public bool ConsumeActivationFocus() { var p = _activationFocusPending; _activationFocusPending = false; return p; }
+
     private string _baseTitle;
 
     public DataDisplayDocumentViewModel ViewModel { get; }

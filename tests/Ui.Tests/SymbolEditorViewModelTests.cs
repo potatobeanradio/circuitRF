@@ -104,6 +104,18 @@ public class SymbolEditorViewModelTests
         Assert.Empty(vm.Overlay.SelectedIndices);
     }
 
+    // Ctrl/Cmd+A → SelectAll selects every primitive in the symbol (the VM logic the tunnel handler calls).
+    [Fact]
+    public void SelectAll_SelectsEveryPrimitive()
+    {
+        var (sym, vm, _) = MakeVm();   // 3 primitives
+        vm.SelectAll();
+        Assert.Equal(sym.Primitives.Count, vm.Overlay.SelectedIndices.Count);
+        Assert.Contains(0, vm.Overlay.SelectedIndices);
+        Assert.Contains(1, vm.Overlay.SelectedIndices);
+        Assert.Contains(2, vm.Overlay.SelectedIndices);
+    }
+
     [Fact]
     public void ShiftClick_TogglesSelection()
     {

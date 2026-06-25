@@ -282,6 +282,37 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             InvalidateVisual();
 
         // ============================================================
+        //  Arrow-key fine movement of the selected marker(s)
+        // ============================================================
+
+        /// <summary>
+        /// Steps the selected marker(s) by one x-axis sample. Set by the host container to the same
+        /// handler the info box uses, so arrow keys behave identically whether the canvas or an info box
+        /// has focus. Returns true when a selected marker was eligible (the arrow key is then consumed).
+        /// </summary>
+        public Func<int, bool>? StepSelectedMarkersHandler { get; set; }
+
+        /// <summary>
+        /// On a Rect plot, Up/Right steps the selected marker(s) to the next-higher x-axis sample and
+        /// Down/Left to the next-lower — fine movement that snaps to actual data points. For harmonic /
+        /// mixIndex spectral axes the step follows frequency (useful for tight two-tone IMD spacings).
+        /// </summary>
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (_plot is not null && _plot.PlotType.IsRect() &&
+                e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
+            {
+                int direction = e.Key is Key.Up or Key.Right ? +1 : -1;
+                if (StepSelectedMarkersHandler?.Invoke(direction) == true)
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+            base.OnKeyDown(e);
+        }
+
+        // ============================================================
         //  Context menu
         // ============================================================
 
