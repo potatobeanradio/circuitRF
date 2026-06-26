@@ -106,8 +106,11 @@ public sealed class PaletteGlyphControl : Control
 
         private void Draw(SKCanvas canvas)
         {
-            canvas.Clear(SKColors.Transparent);
-
+            // Do NOT canvas.Clear(SKColors.Transparent) here. SKCanvas.Clear uses Src blend mode, which
+            // REPLACES the leased region with fully-transparent pixels — erasing the tile background that
+            // Avalonia already composited behind this control. On macOS the opaque window backing masks the
+            // hole; on Windows it punches straight through to the desktop (the reported transparency bug).
+            // This control is a glyph-only overlay: draw the symbol on top of the existing composited content.
             if (_bounds.Width < 2 || _bounds.Height < 2) return;
 
             var prims = BuiltInSymbols.Primitives(_kind).Primitives;

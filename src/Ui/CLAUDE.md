@@ -339,8 +339,16 @@ accessor was renamed, update the one line in `CrfHostWindow.FloatsAnyTool()`.
   with 12% padding (same math as `SymbolEditorCanvas.ZoomToFitInternal`).
 - Calls `SchematicRenderer.DrawSymbol(canvas, prims, compX:0, compY:0, R0, mirrorX:false, panX, panY, zoom, theme)`
   — the exact same glyph-only call the symbol editor uses. **No second renderer.**
-- Transparent background (the hosting button supplies the tile background).
+- Transparent background (the hosting tile supplies the tile background).
 - Subscribes to `ThemeService.ThemeChanged` for reactive redraws; uses `SchematicRenderTheme.FromTheme`.
+
+**GOTCHA — never `canvas.Clear(SKColors.Transparent)` in a transparent-overlay custom-draw op (Windows
+desktop punch-through, 2026-06-25).** `SKCanvas.Clear` uses **Src** blend mode: it REPLACES the leased
+region with fully-transparent pixels, erasing the tile background Avalonia already composited behind the
+control. On macOS the opaque window backing masks it; on Windows the cleared pixels punch through to the
+desktop (the Library Palette rendered see-through). A glyph-only overlay must draw on TOP of the existing
+composited content — do not clear at all. (`PlotControl`'s `Clear(SKColors.Transparent)` is safe: it only
+fires in the null-plot branch and sits over the opaque parent DataDisplay canvas, never window chrome.)
 
 **`PaletteTile`** (`src/Ui/Controls/PaletteTile.axaml(.cs)`) — `UserControl` (DataContext = `PaletteItem`):
 - Layout: `StackPanel` → square `Button` (60×60) containing a 50×50 `PaletteGlyphControl` + `TextBlock` caption.
