@@ -50,6 +50,23 @@ public static class RunResultsWriter
     }
 
     /// <summary>
+    /// Resolves the directory that holds per-run results subfolders — the READ-side companion to
+    /// <see cref="WriteRun"/>'s <c>baseDir/results</c>. It MUST mirror where runs are actually written:
+    /// the workspace root when a workspace is open, otherwise the scratch recovery-session dir (so a
+    /// scratch simulation's results are discoverable in the Data Display without saving anything).
+    /// </summary>
+    public static string ResolveResultsRoot(string? workspaceCwsPath, string scratchSessionDir)
+    {
+        if (workspaceCwsPath is not null)
+        {
+            var wsDir = Path.GetDirectoryName(workspaceCwsPath);
+            if (wsDir is not null)
+                return Path.Combine(wsDir, "results");
+        }
+        return Path.Combine(scratchSessionDir, "results");
+    }
+
+    /// <summary>
     /// Returns the stable owner identity used for collision detection.
     /// Cell-homed:  absolute path of the cell folder (above schematic/).
     /// Loose:       absolute path of the .csch file.

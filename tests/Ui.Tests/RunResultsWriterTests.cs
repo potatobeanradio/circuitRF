@@ -155,6 +155,30 @@ public sealed class RunResultsWriterTests : IDisposable
         Assert.Empty(sink.Warnings);
     }
 
+    // ── ResolveResultsRoot — workspace vs scratch ─────────────────────────────
+
+    [Fact]
+    public void ResolveResultsRoot_Workspace_ReturnsWorkspaceResults()
+    {
+        var wsDir   = Path.Combine(Path.GetTempPath(), "MyProject");
+        var cws     = Path.Combine(wsDir, ".cws");
+        var scratch = Path.Combine(Path.GetTempPath(), "session1");
+
+        Assert.Equal(Path.Combine(wsDir, "results"),
+            RunResultsWriter.ResolveResultsRoot(cws, scratch));
+    }
+
+    [Fact]
+    public void ResolveResultsRoot_NoWorkspace_ReturnsScratchResults()
+    {
+        // The scratch (no-workspace) case is the bug: results must resolve to the session dir so a
+        // scratch sim's output is discoverable in the Data Display without saving anything.
+        var scratch = Path.Combine(Path.GetTempPath(), "session1");
+
+        Assert.Equal(Path.Combine(scratch, "results"),
+            RunResultsWriter.ResolveResultsRoot(null, scratch));
+    }
+
     // ── WriteRun — moved workspace is not a collision ─────────────────────────
 
     [Fact]

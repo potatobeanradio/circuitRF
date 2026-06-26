@@ -1586,12 +1586,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
     }
 
+    // Results root MUST mirror WriteNetlist's destination: workspace root when a workspace is open,
+    // otherwise the scratch recovery-session dir — so a scratch sim's results (written under
+    // <SessionDir>/results/) are discoverable in the Data Display without saving the .csch/.cdd.
     private string? GetResultsRoot()
-    {
-        if (CurrentWorkspacePath is not { } cwsPath) return null;
-        var wsDir = Path.GetDirectoryName(cwsPath);
-        return wsDir is not null ? Path.Combine(wsDir, "results") : null;
-    }
+        => RunResultsWriter.ResolveResultsRoot(CurrentWorkspacePath, _recovery.SessionDir);
 
     private IReadOnlyList<string> GetKnownTouchstoneFiles()
     {
