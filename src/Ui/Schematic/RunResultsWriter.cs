@@ -94,11 +94,16 @@ public static class RunResultsWriter
             var dir    = Path.Combine(baseDir, "results", schematicKey);
             var source = Path.Combine(dir, ".source");
 
+            // Record the owner RELATIVE to the workspace root (baseDir) when it lives inside it, so moving
+            // the whole workspace — which relocates baseDir, results/, and the cells together — keeps the
+            // identity stable and never looks like a collision.
+            var ownerNorm = NormalizeOwnerIdentity(ownerIdentity, baseDir);
+
             // ── Collision check ───────────────────────────────────────────────
             if (Directory.Exists(dir) && File.Exists(source))
             {
                 var existing = File.ReadAllText(source, Encoding.UTF8).Trim();
-                if (!string.Equals(existing, ownerIdentity, StringComparison.OrdinalIgnoreCase))
+                if (!SameOwner(existing, ownerNorm))
                 {
                     messages?.Warning(
                         $"results/{schematicKey}/ belongs to a different cell — " +
@@ -109,7 +114,7 @@ public static class RunResultsWriter
             }
 
             Directory.CreateDirectory(dir);
-            File.WriteAllText(source, ownerIdentity, Encoding.UTF8);
+            File.WriteAllText(source, ownerNorm, Encoding.UTF8);
 
             // ── Clear stale outputs ───────────────────────────────────────────
             foreach (var stale in Directory.GetFiles(dir, "*.npy"))
@@ -133,6 +138,44 @@ public static class RunResultsWriter
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Normalizes an owner identity for storage/comparison. An owner that lives INSIDE the workspace
+    /// (<paramref name="baseDir"/>) is recorded as a path RELATIVE to baseDir, so a whole-workspace move
+    /// keeps it stable. Owners outside baseDir (e.g. a loose file elsewhere) and the "scratch:" sentinel
+    /// are kept verbatim.
+    /// </summary>
+    internal static string NormalizeOwnerIdentity(string identity, string baseDir)
+    {
+        if (!Path.IsPathRooted(identity)) return identity;   // "scratch:…" or already relative
+        string rel;
+        try { rel = Path.GetRelativePath(Path.GetFullPath(baseDir), Path.GetFullPath(identity)); }
+        catch { return identity; }
+        // Inside the workspace (no "../", not re-rooted) → use the relative form.
+        return !rel.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(rel)
+            ? rel
+            : identity;
+    }
+
+    /// <summary>
+    /// True when an owner whose normalized identity is <paramref name="normalizedNew"/> may write to a
+    /// results dir currently marked <paramref name="stored"/>.
+    /// </summary>
+    internal static bool SameOwner(string stored, string normalizedNew)
+    {
+        if (string.Equals(stored, normalizedNew, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Migration: a results dir written before identities were workspace-relative carries a legacy
+        // ABSOLUTE marker. After a workspace move that marker points at the OLD location and cannot be
+        // compared. If the cell being run lives INSIDE this workspace (normalizedNew is a relative path),
+        // it legitimately owns these results here — adopt them (a moved workspace, not a collision). A
+        // genuinely different owner from OUTSIDE the workspace keeps an absolute identity and still warns.
+        bool storedIsLegacyAbsolute = Path.IsPathRooted(stored);
+        bool newIsInsideWorkspace   = !Path.IsPathRooted(normalizedNew)
+                                      && !normalizedNew.StartsWith("scratch:", StringComparison.Ordinal);
+        return storedIsLegacyAbsolute && newIsInsideWorkspace;
+    }
 
     // Replaces invalid filename characters with '_'. Mirrors RecoveryManager.SafeFileName
     // but without the .csch suffix.

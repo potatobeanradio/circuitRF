@@ -155,6 +155,55 @@ public sealed class RunResultsWriterTests : IDisposable
         Assert.Empty(sink.Warnings);
     }
 
+    // ── WriteRun — moved workspace is not a collision ─────────────────────────
+
+    [Fact]
+    public void WriteRun_WorkspaceMoved_AdoptsResultsWithoutCollision()
+    {
+        // baseDir simulates the workspace at its NEW location; the cell lives inside it.
+        var baseDir  = MakeTempDir();
+        var key      = "FET_curve_tracer";
+        var newOwner = Path.Combine(baseDir, key);   // absolute, as OwnerIdentity returns for a cell
+        var sink     = new FakeSink();
+
+        // .source carries a stale ABSOLUTE path from the OLD location (it moved with the workspace).
+        var dir = Path.Combine(baseDir, "results", key);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".source"), "/old/location/" + key);
+
+        RunResultsWriter.WriteRun(baseDir, key, newOwner, MakeGroupedDataSet(), sink);
+
+        Assert.True(File.Exists(Path.Combine(dir, "run.npy")),
+            "a moved workspace must still write results");
+        Assert.Empty(sink.Warnings);
+        Assert.Single(sink.Successes);
+        // Marker rewritten to the stable workspace-relative form so future moves are seamless.
+        Assert.Equal(key, File.ReadAllText(Path.Combine(dir, ".source")).Trim());
+    }
+
+    // ── WriteRun — genuine in-workspace collision still warns ──────────────────
+
+    [Fact]
+    public void WriteRun_DifferentInWorkspaceOwners_StillCollide()
+    {
+        var baseDir = MakeTempDir();
+        var key     = "Amp";
+        var sink    = new FakeSink();
+
+        // Already owned (post-migration relative marker) by the cell folder "Amp".
+        var dir = Path.Combine(baseDir, "results", key);
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, ".source"), "Amp");
+
+        // A different in-workspace owner with the same key: a loose Amp.csch (relative "Amp.csch").
+        var looseOwner = Path.Combine(baseDir, "Amp.csch");
+        RunResultsWriter.WriteRun(baseDir, key, looseOwner, MakeGroupedDataSet(), sink);
+
+        Assert.Empty(Directory.GetFiles(dir, "*.npy"));
+        Assert.Single(sink.Warnings);
+        Assert.Contains("different cell", sink.Warnings[0].Text);
+    }
+
     // ── WriteRun — null grouped skips silently ────────────────────────────────
 
     [Fact]

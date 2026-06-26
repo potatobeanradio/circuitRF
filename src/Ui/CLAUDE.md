@@ -2421,6 +2421,15 @@ address them without re-running the simulation.
 - Scratch: `Sanitize(scratchId)`
 
 **Collision guard:** `.source` marker file in the results dir; warns and skips if owned by a different cell.
+The marker stores the owner identity **relative to `baseDir`** (the workspace root) when the owner lives
+inside the workspace (`RunResultsWriter.NormalizeOwnerIdentity`), so **moving the whole workspace anywhere on
+disk is NOT a collision** — baseDir, `results/`, and the cells move together and the relative path is stable.
+`OwnerIdentity` still computes an absolute path; `WriteRun` relativizes it before storing/comparing. Migration:
+a legacy ABSOLUTE marker that mismatches an inside-workspace (relative) owner is treated as a moved workspace
+(`SameOwner` adopts + rewrites the marker to the relative form), not a collision. Genuinely different owners
+(two cells with the same key, or an outside-workspace owner that keeps an absolute identity) still warn. Tests:
+`WriteRun_WorkspaceMoved_AdoptsResultsWithoutCollision`, `WriteRun_DifferentInWorkspaceOwners_StillCollide`,
+`WriteRun_DifferentOwner_PostsWarningWritesNothing`. **Do NOT revert the marker to an absolute path.**
 
 **Within-run dedup:** `_2`, `_3`, … suffix appended when multiple analyses share a name in one run.
 
