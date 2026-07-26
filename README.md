@@ -426,5 +426,7 @@ future commercial superset, if any, layers on through a clean extension boundary
   the `RfCore` library and the same philosophy, frameworks, and AI-assisted approach.
 - **[Avalonia](https://avaloniaui.net/)** (cross-platform UI), **[SkiaSharp](https://github.com/mono/SkiaSharp)**
   (2D rendering), **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU),
-  **NumFlat** (dense linear algebra), and **[CommunityToolkit.MVVM](https://github.com/CommunityToolkit/dotnet)**.
+  **NumFlat** (dense linear algebra), **[Clipper2](https://github.com/AngusJohnson/Clipper2)**
+  (integer-coordinate polygon clipping and offsetting, used by the layout editor — Boost Software
+  License), and **[CommunityToolkit.MVVM](https://github.com/CommunityToolkit/dotnet)**.
 ```
