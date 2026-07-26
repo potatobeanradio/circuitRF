@@ -1,0 +1,81 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Layout.LayoutEditorView"
+             x:DataType="lay:LayoutDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <DockPanel>
+
+        <!-- ── Metadata bar ─────────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Bottom"
+                Background="{DynamicResource SystemChromeMediumLowColor}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="10,4">
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <StackPanel.Styles>
+                    <Style Selector="TextBlock.label">
+                        <Setter Property="FontSize" Value="11"/>
+                        <Setter Property="VerticalAlignment" Value="Center"/>
+                        <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+                    </Style>
+                    <Style Selector="TextBlock.value">
+                        <Setter Property="FontSize" Value="11"/>
+                        <Setter Property="VerticalAlignment" Value="Center"/>
+                    </Style>
+                </StackPanel.Styles>
+
+                <TextBlock Classes="label" Text="{Binding ViewModel.ResolutionText}"/>
+
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Classes="label" Text="Technology:"/>
+                    <TextBlock Classes="value" Text="{Binding ViewModel.TechSummaryText}"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Classes="label" Text="Unit:"/>
+                    <ComboBox ItemsSource="{x:Static lay:LayoutEditorViewModel.AllUnits}"
+                              SelectedItem="{Binding ViewModel.DisplayUnit, Mode=TwoWay}"
+                              FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Classes="label" Text="Snap:"/>
+                    <TextBlock Classes="value" Text="{Binding ViewModel.SnapText}"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Classes="label" Text="Shapes:"/>
+                    <TextBlock Classes="value" Text="{Binding ViewModel.ShapeCountText}"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Classes="label" Text="Instances:"/>
+                    <TextBlock Classes="value" Text="{Binding ViewModel.InstanceCountText}"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Classes="label" Text="Extent:"/>
+                    <TextBlock Classes="value" Text="{Binding ViewModel.ExtentText}"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- ── Placeholder canvas — no geometry drawn; drawing tools arrive in L1 ── -->
+        <Border Background="{DynamicResource SystemRegionColor}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                <mi:MaterialIcon Kind="VectorSquareEdit" Width="40" Height="40"
+                                 Foreground="{DynamicResource SystemBaseMediumColor}"
+                                 HorizontalAlignment="Center" Opacity="0.6"/>
+                <TextBlock Text="Layout canvas — drawing tools arrive in L1."
+                           FontSize="13"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+    </DockPanel>
+
+</UserControl>

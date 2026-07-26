@@ -224,7 +224,7 @@ public class ProjectTreeNodeViewModelTests : IDisposable
     [InlineData(NodeKind.UserFolder,      "/tmp/x/results",    true)]
     [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csch",   true)]
     [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csym",   true)]
-    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.clay",   false)]
+    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.clay",   true)]
     [InlineData(NodeKind.DataDisplayFile, "/tmp/x/disp.cdd",   false)]
     [InlineData(NodeKind.Cell,            "/tmp/x/Amp",        false)]
     [InlineData(NodeKind.KnownFile,       "/tmp/x/data.snp",   false)]
@@ -239,12 +239,112 @@ public class ProjectTreeNodeViewModelTests : IDisposable
     [InlineData(NodeKind.DataDisplayFile, "/tmp/x/disp.cdd",  true)]
     [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csch",  true)]
     [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csym",  true)]
-    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.clay",  false)]
+    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.clay",  true)]
     [InlineData(NodeKind.OtherFile,       "/tmp/x/foo.npy",   false)]
     [InlineData(NodeKind.Cell,            "/tmp/x/Amp",       false)]
+    [InlineData(NodeKind.TechFile,        "/tmp/x/pcb.ctech", true)]  // L0d: the .ctech editor
     public void IsOpenableFile_CorrectForKindAndExtension(NodeKind kind, string absPath, bool expected)
     {
         var vm = MakeVm(kind, absPath);
         Assert.Equal(expected, vm.IsOpenableFile);
+    }
+
+    // ── L0c: .ctech node ────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(NodeKind.TechFile,        true)]
+    [InlineData(NodeKind.ColorThemeFile,  false)]
+    [InlineData(NodeKind.DataDisplayFile, false)]
+    [InlineData(NodeKind.OtherFile,       false)]
+    public void IsTechFile_CorrectForKind(NodeKind kind, bool expected)
+    {
+        var vm = MakeVm(kind, Path.Combine(_root, "pcb.ctech"));
+        Assert.Equal(expected, vm.IsTechFile);
+    }
+
+    [Fact]
+    public void TechFile_IconKind_IsLayersOutline()
+    {
+        var vm = MakeVm(NodeKind.TechFile, Path.Combine(_root, "pcb.ctech"));
+        Assert.Equal(Material.Icons.MaterialIconKind.LayersOutline, vm.IconKind);
+    }
+
+    [Fact]
+    public void TechFile_CanReveal_IsTrue()
+    {
+        var vm = MakeVm(NodeKind.TechFile, Path.Combine(_root, "pcb.ctech"));
+        Assert.True(vm.CanReveal);
+    }
+
+    [Fact]
+    public void TechFile_NoActions_IsWorkspaceDefaultTechIsFalse_CommandsDisabled()
+    {
+        var vm = MakeVm(NodeKind.TechFile, Path.Combine(_root, "pcb.ctech"));
+        Assert.False(vm.IsWorkspaceDefaultTech);
+        Assert.False(vm.SetAsWorkspaceDefaultCommand.CanExecute(null));
+        Assert.False(vm.ReloadTechnologyCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void Filter_TechFilesOff_HidesTechFileNodes()
+    {
+        var techDir = Path.Combine(_root, "tech");
+        Directory.CreateDirectory(techDir);
+        File.WriteAllText(Path.Combine(techDir, "pcb-2layer.ctech"), "");
+
+        var filter = AllOn();
+        var root   = WorkspaceScanner.Scan(_root);
+        var vm     = new ProjectTreeNodeViewModel(root, filter);
+        var folder = vm.FilteredChildren.Single(c => c.Name == "tech");
+
+        Assert.Contains(folder.FilteredChildren, c => c.Kind == NodeKind.TechFile);
+
+        filter.TechFiles = false;
+        Assert.DoesNotContain(folder.FilteredChildren, c => c.Kind == NodeKind.TechFile);
+    }
+}
+
+// ── L0b gate 6: "Open Layout" enabled when a primary layout resolves ───────────
+
+public class ProjectTreeNodeViewModelLayoutTests : IDisposable
+{
+    private readonly string _root;
+
+    public ProjectTreeNodeViewModelLayoutTests()
+    {
+        _root = Path.Combine(Path.GetTempPath(), $"crftest_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_root);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, recursive: true); } catch { }
+    }
+
+    private static ProjectTreeFilterState AllOn() => new();
+
+    [Fact]
+    public void Cell_NoLayout_CanOpenLayoutFalse()
+    {
+        CellFolder.CreateCellFolder(_root, "NoLayout");
+        var root = WorkspaceScanner.Scan(_root);
+        var vm   = new ProjectTreeNodeViewModel(root, AllOn());
+
+        var cellVm = vm.Children.Single(c => c.Name == "NoLayout");
+        Assert.False(cellVm.CanOpenLayout);
+    }
+
+    [Fact]
+    public void Cell_SoleLayout_CanOpenLayoutTrue()
+    {
+        var cellDir   = CellFolder.CreateCellFolder(_root, "HasLayout");
+        var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        File.WriteAllText(Path.Combine(layoutDir, "amp.clay"), "{}");
+
+        var root = WorkspaceScanner.Scan(_root);
+        var vm   = new ProjectTreeNodeViewModel(root, AllOn());
+
+        var cellVm = vm.Children.Single(c => c.Name == "HasLayout");
+        Assert.True(cellVm.CanOpenLayout);
     }
 }

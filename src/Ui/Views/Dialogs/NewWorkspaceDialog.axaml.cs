@@ -7,12 +7,16 @@ using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
+/// <summary>The starter technology chosen in the New Workspace dialog.</summary>
+public enum NewWorkspaceTechChoice { Pcb, Mmic, None }
+
 /// <summary>
 /// Result returned by NewWorkspaceDialog on OK.  ParentDir is the chosen parent folder;
 /// Name is the validated workspace name.  The workspace folder = ParentDir/Name/ and must
 /// not already exist — the dialog gates OK on this and the caller re-checks at create time.
+/// Technology is the starter technology chosen (or None) — see docs/design/layout-view.md §2.4.
 /// </summary>
-public sealed record NewWorkspaceResult(string ParentDir, string Name);
+public sealed record NewWorkspaceResult(string ParentDir, string Name, NewWorkspaceTechChoice Technology);
 
 /// <summary>
 /// Custom "New Workspace" modal.  Returns NewWorkspaceResult via ShowDialog, or null on cancel.
@@ -84,7 +88,12 @@ public partial class NewWorkspaceDialog : Window
         if (_parentDir is null) return;
         if (File.Exists(Path.Combine(_parentDir, ".cws"))) return;
         if (Directory.Exists(Path.Combine(_parentDir, name))) return;
-        Close(new NewWorkspaceResult(_parentDir, name));
+
+        var tech = TechMmicRadio.IsChecked == true ? NewWorkspaceTechChoice.Mmic
+            : TechNoneRadio.IsChecked == true       ? NewWorkspaceTechChoice.None
+            : NewWorkspaceTechChoice.Pcb;
+
+        Close(new NewWorkspaceResult(_parentDir, name, tech));
     }
 
     // Sets NameBox.Text to the next free Untitled-Workspace-N for _parentDir,

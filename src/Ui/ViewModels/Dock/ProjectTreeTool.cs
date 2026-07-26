@@ -183,6 +183,18 @@ public partial class ProjectTreeTool : Tool
             node.IsDirty = isDirty;
     }
 
+    /// <summary>
+    /// Sets (or clears) the dirty indicator on a .ctech node. Called by WorkspaceViewModel when an
+    /// open TechEditorViewModel's dirty state changes. Mirrors <see cref="SetCellDirty"/>.
+    /// </summary>
+    public void SetTechFileDirty(string techAbsPath, bool isDirty)
+    {
+        if (RootItems.Count == 0) return;
+        var node = FindNodeByPath(RootItems[0], techAbsPath);
+        if (node is { Kind: NodeKind.TechFile })
+            node.IsDirty = isDirty;
+    }
+
     private static ProjectTreeNodeViewModel? FindNodeByPath(
         ProjectTreeNodeViewModel root, string absPath)
     {

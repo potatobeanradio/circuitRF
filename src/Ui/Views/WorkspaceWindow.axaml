@@ -40,7 +40,10 @@
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Close Workspace" Command="{Binding CloseWorkspaceCommand}"/>
                         <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="New Layout"      Command="{Binding NewLayoutCommand}"/>
+                        <NativeMenuItem Header="New Technology…" Command="{Binding NewTechnologyCommand}"      CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Open Symbol…"    Command="{Binding OpenSymbolFileCommand}"        CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Open Layout…"    Command="{Binding OpenLayoutFileCommand}"        CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Open Data Display…" Command="{Binding OpenDataDisplayFileCommand}" CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Export…"        Command="{Binding ExportDataCommand}"/>
                         <NativeMenuItemSeparator/>
@@ -159,8 +162,22 @@
                           InputGesture="Ctrl+Shift+D">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="New _Layout"
+                          Command="{Binding NewLayoutCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="LayersPlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New _Technology…"
+                          Command="{Binding NewTechnologyCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
                 <MenuItem Header="Open S_ymbol…"
                           Command="{Binding OpenSymbolFileCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open _Layout…"
+                          Command="{Binding OpenLayoutFileCommand}"
                           CommandParameter="{Binding $parent[Window]}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>

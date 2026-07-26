@@ -178,6 +178,7 @@ public static class WorkspaceScanner
             ".clay"   => NodeKind.ViewFile,
             ".cdd"    => NodeKind.DataDisplayFile,
             ".ccolor" => NodeKind.ColorThemeFile,
+            ".ctech"  => NodeKind.TechFile,
             _         => NodeKind.OtherFile,
         };
         return new ProjectTreeNode(kind, FileName(file), file, Rel(file, workspaceRoot));

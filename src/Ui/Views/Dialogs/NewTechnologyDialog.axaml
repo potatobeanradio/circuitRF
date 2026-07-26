@@ -1,8 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="CircuitRF.Ui.Views.Dialogs.NewWorkspaceDialog"
-        Title="New Workspace"
-        Width="460"
+        x:Class="CircuitRF.Ui.Views.Dialogs.NewTechnologyDialog"
+        Title="New Technology"
+        Width="420"
         SizeToContent="Height"
         MinHeight="200"
         CanResize="False"
@@ -12,45 +12,35 @@
     <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
 
         <StackPanel Grid.Row="0" Spacing="8">
-            <TextBlock Text="Workspace name:" FontSize="12"/>
-            <TextBox   x:Name="NameBox"
-                       FontSize="12"
-                       MaxLength="200"
-                       TextChanged="OnNameChanged"
-                       KeyDown="OnKeyDown"/>
+            <TextBlock Text="Technology name:" FontSize="12"/>
+            <TextBox x:Name="NameBox"
+                     FontSize="12"
+                     MaxLength="200"
+                     TextChanged="OnNameChanged"
+                     KeyDown="OnKeyDown"/>
             <TextBlock x:Name="ValidationMessage"
                        FontSize="11"
                        Foreground="{DynamicResource CrfWarningBrush}"
                        IsVisible="False"
                        TextWrapping="Wrap"/>
 
-            <TextBlock Text="Location:" FontSize="12" Margin="0,4,0,0"/>
-            <Grid ColumnDefinitions="*,Auto">
-                <TextBox x:Name="LocationBox"
-                         Grid.Column="0"
-                         FontSize="12"
-                         IsReadOnly="True"
-                         PlaceholderText="Choose a parent folder…"/>
-                <Button x:Name="ChooseButton"
-                        Grid.Column="1"
-                        Content="Choose…"
-                        FontSize="12"
-                        Margin="8,0,0,0"
-                        Click="OnChooseClick"/>
-            </Grid>
+            <TextBlock Text="Starting point:" FontSize="12" Margin="0,4,0,0"/>
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <RadioButton x:Name="StarterPcbRadio"   GroupName="Starter" Content="PCB starter"  FontSize="12" IsChecked="True"/>
+                <RadioButton x:Name="StarterMmicRadio"  GroupName="Starter" Content="MMIC starter"  FontSize="12"/>
+                <RadioButton x:Name="StarterEmptyRadio" GroupName="Starter" Content="Empty"         FontSize="12"/>
+            </StackPanel>
+
+            <CheckBox x:Name="SetAsDefaultCheck"
+                      Content="Set as workspace default"
+                      FontSize="12"
+                      Margin="0,4,0,0"/>
 
             <TextBlock x:Name="PreviewLabel"
                        FontSize="11"
                        Opacity="0.7"
                        IsVisible="False"
                        TextWrapping="Wrap"/>
-
-            <TextBlock Text="Technology:" FontSize="12" Margin="0,4,0,0"/>
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <RadioButton x:Name="TechPcbRadio"   GroupName="Tech" Content="PCB (2-layer FR-4)" FontSize="12" IsChecked="True"/>
-                <RadioButton x:Name="TechMmicRadio"  GroupName="Tech" Content="MMIC (GaAs)"         FontSize="12"/>
-                <RadioButton x:Name="TechNoneRadio"  GroupName="Tech" Content="None"                FontSize="12"/>
-            </StackPanel>
         </StackPanel>
 
         <StackPanel Grid.Row="1"

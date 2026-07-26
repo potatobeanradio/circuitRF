@@ -1,0 +1,16 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:layDoc="using:CircuitRF.Ui.Layout"
+        xmlns:layv="using:CircuitRF.Ui.Views.Layout"
+        x:Class="CircuitRF.Ui.Views.LayoutEditorWindow"
+        x:DataType="layDoc:LayoutDocument"
+        Title="{Binding Title}"
+        Width="700"
+        Height="600"
+        MinWidth="400"
+        MinHeight="300"
+        Background="{DynamicResource SystemChromeLowColor}">
+
+    <layv:LayoutEditorView/>
+
+</Window>

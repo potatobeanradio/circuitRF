@@ -1,0 +1,370 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Layout.TechEditorView"
+             x:DataType="lay:TechDocument"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.colhdr">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="TextBox.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ComboBox.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+
+        <!-- ── Header ───────────────────────────────────────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"
+                                     Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+                    <TextBlock Text="{Binding ViewModel.Working.Name}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                    <TextBlock Text="· Technology" Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="12" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Undo" Command="{Binding ViewModel.UndoCommand}" FontSize="11" Padding="8,3" Margin="4,0,0,0"/>
+                <Button Grid.Column="2" Content="Redo" Command="{Binding ViewModel.RedoCommand}" FontSize="11" Padding="8,3" Margin="4,0,0,0"/>
+                <Button Grid.Column="3" Content="Save" Command="{Binding ViewModel.SaveCommand}" FontSize="11" Padding="8,3" Margin="4,0,0,0"/>
+            </Grid>
+        </Border>
+
+        <!-- ── Validation banner — live, never blocks Save ─────────────────── -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding ViewModel.HasValidationIssues}"
+                Background="{DynamicResource SystemChromeMediumLowColor}"
+                BorderBrush="{DynamicResource CrfWarningBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="8,6"
+                MaxHeight="120">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding ViewModel.ValidationIssues}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1">
+                                <mi:MaterialIcon Kind="AlertCircleOutline" Width="12" Height="12"
+                                                 Foreground="{DynamicResource CrfWarningBrush}"/>
+                                <TextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource CrfWarningBrush}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <!-- ── Sections ─────────────────────────────────────────────────────── -->
+        <TabControl>
+
+            <!-- Layer table ────────────────────────────────────────────────── -->
+            <TabItem Header="Layers">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="4" Margin="6,4">
+                        <Button Content="＋ Add Layer" Command="{Binding ViewModel.AddLayerCommand}" FontSize="11" Padding="8,3"/>
+                    </StackPanel>
+
+                    <!-- Both the header row and every item row below declare the SAME column list
+                         (SharedSizeGroup names, matching ColumnSpacing) so a header always sits
+                         exactly above its control — no per-cell margin drift between two
+                         independently-sized Grids. -->
+                    <Grid RowDefinitions="Auto,*" Grid.IsSharedSizeScope="True">
+                        <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"                                  MinWidth="110"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LLayer"      MinWidth="44"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LDatatype"   MinWidth="52"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LColor"       MinWidth="60"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LFill"        MinWidth="44"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LZ"           MinWidth="70"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LVis"         MinWidth="28"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LSel"         MinWidth="28"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LPurpose"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LActions"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Classes="colhdr" Text="Name"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Layer"     HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Datatype"  HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Classes="colhdr" Text="Color"     HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Fill"      HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="5" Classes="colhdr" Text="Z"         HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="6" Classes="colhdr" Text="Vis"       HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="7" Classes="colhdr" Text="Sel"       HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="8" Classes="colhdr" Text="Purpose"   HorizontalAlignment="Center"/>
+                        </Grid>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding ViewModel.Layers}" Margin="4,0,4,4">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="lay:LayerRowViewModel">
+                                        <Border BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1" Padding="0,3">
+                                            <Grid ColumnSpacing="4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"                                  MinWidth="110"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LLayer"      MinWidth="44"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LDatatype"   MinWidth="52"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LColor"       MinWidth="60"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LFill"        MinWidth="44"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LZ"           MinWidth="70"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LVis"         MinWidth="28"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LSel"         MinWidth="28"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LPurpose"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LActions"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <TextBox Grid.Column="0" Classes="cell" Tag="Name"
+                                                         HorizontalAlignment="Stretch"
+                                                         Text="{Binding StagedName}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBox Grid.Column="1" Classes="cell" Width="44" Tag="LayerNumber"
+                                                         Text="{Binding StagedLayerNumber}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBox Grid.Column="2" Classes="cell" Width="52" Tag="Datatype"
+                                                         Text="{Binding StagedDatatype}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <Button Grid.Column="3" Width="60" Padding="2"
+                                                        Command="{Binding PickColorCommand}"
+                                                        CommandParameter="{Binding $parent[Window]}">
+                                                    <Border Width="40" Height="14" CornerRadius="2"
+                                                            BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1">
+                                                        <Border.Background>
+                                                            <SolidColorBrush Color="{Binding SwatchColor}"/>
+                                                        </Border.Background>
+                                                    </Border>
+                                                </Button>
+                                                <TextBox Grid.Column="4" Classes="cell" Width="44" Tag="FillOpacity"
+                                                         Text="{Binding StagedFillOpacity}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <StackPanel Grid.Column="5" Orientation="Horizontal" Width="70" Spacing="2">
+                                                    <TextBox Classes="cell" Width="36" Tag="ZOrder"
+                                                             Text="{Binding StagedZOrder}"
+                                                             LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                    <Button Content="↑" Padding="2,0" FontSize="10" Command="{Binding MoveUpCommand}"/>
+                                                    <Button Content="↓" Padding="2,0" FontSize="10" Command="{Binding MoveDownCommand}"/>
+                                                </StackPanel>
+                                                <CheckBox Grid.Column="6" HorizontalAlignment="Center" IsChecked="{Binding Visible}"/>
+                                                <CheckBox Grid.Column="7" HorizontalAlignment="Center" IsChecked="{Binding Selectable}"/>
+                                                <TextBox Grid.Column="8" Classes="cell" Tag="Purpose" Width="140"
+                                                         Text="{Binding StagedPurpose}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <StackPanel Grid.Column="9" Orientation="Horizontal" Spacing="3">
+                                                    <Button Content="Dup" FontSize="10" Padding="4,2"
+                                                            Command="{Binding DuplicateCommand}"/>
+                                                    <Button FontSize="10" Padding="4,2"
+                                                            Command="{Binding RemoveCommand}">
+                                                        <mi:MaterialIcon Kind="Close" Width="11" Height="11"/>
+                                                    </Button>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+
+            <!-- Stackup ────────────────────────────────────────────────────── -->
+            <TabItem Header="Stackup">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,Auto,Auto" Margin="6,6">
+                        <TextBlock Grid.Column="0" Text="Top:" VerticalAlignment="Center" FontSize="11" Margin="0,0,4,0"/>
+                        <ComboBox Grid.Column="1" Classes="cell"
+                                  ItemsSource="{x:Static lay:TechEditorViewModel.BoundaryConditions}"
+                                  SelectedItem="{Binding ViewModel.StackupTop, Mode=TwoWay}"/>
+                        <TextBlock Grid.Column="2" Text="Bottom:" VerticalAlignment="Center" FontSize="11" Margin="12,0,4,0"/>
+                        <ComboBox Grid.Column="3" Classes="cell"
+                                  ItemsSource="{x:Static lay:TechEditorViewModel.BoundaryConditions}"
+                                  SelectedItem="{Binding ViewModel.StackupBottom, Mode=TwoWay}"/>
+                    </Grid>
+
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="4" Margin="6,4">
+                        <Button Content="＋ Dielectric" Command="{Binding ViewModel.AddDielectricLayerCommand}" FontSize="11" Padding="8,3"/>
+                        <Button Content="＋ Conductor" Command="{Binding ViewModel.AddConductorLayerCommand}" FontSize="11" Padding="8,3"/>
+                        <Button Content="＋ Via" Command="{Binding ViewModel.AddViaLayerCommand}" FontSize="11" Padding="8,3"/>
+                    </StackPanel>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding ViewModel.StackupLayers}" Margin="6,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="lay:StackupLayerRowViewModel">
+                                    <Border BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1" CornerRadius="4"
+                                            Margin="0,3" Padding="8,6">
+                                        <StackPanel Spacing="4">
+                                            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                                <TextBlock Grid.Column="0" Text="{Binding Kind}" FontSize="10"
+                                                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                                                           VerticalAlignment="Center" Width="70"/>
+                                                <TextBox Grid.Column="1" Classes="cell" Tag="Name"
+                                                         Text="{Binding StagedName}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <Button Grid.Column="2" Content="↑" Padding="4,2" FontSize="10" Margin="4,0,0,0"
+                                                        Command="{Binding MoveUpCommand}"/>
+                                                <Button Grid.Column="3" Content="↓" Padding="4,2" FontSize="10" Margin="4,0,0,0"
+                                                        Command="{Binding MoveDownCommand}"/>
+                                                <Button Grid.Column="4" Padding="4,2" FontSize="10" Margin="4,0,0,0"
+                                                        Command="{Binding RemoveCommand}">
+                                                    <mi:MaterialIcon Kind="Close" Width="11" Height="11"/>
+                                                </Button>
+                                            </Grid>
+
+                                            <!-- Label column is a fixed width shared between the Thickness and σ
+                                                 rows so their TextBoxes start at the same x, even though
+                                                 "Thickness:" and "σ (S/m):" are different lengths. -->
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock Text="Thickness:" Width="70" FontSize="11" VerticalAlignment="Center"/>
+                                                <TextBox Classes="cell" Width="60" Tag="Thickness"
+                                                         Text="{Binding StagedThicknessText}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBlock Text="{Binding ThicknessUnitSuffix}" FontSize="10"
+                                                           VerticalAlignment="Center" Opacity="0.6"
+                                                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                                                <TextBlock Text="{Binding ThicknessError}" FontSize="10"
+                                                           IsVisible="{Binding HasThicknessError}"
+                                                           Foreground="{DynamicResource CrfWarningBrush}"/>
+                                            </StackPanel>
+
+                                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsConductor}">
+                                                <TextBlock Text="σ (S/m):" Width="70" FontSize="11" VerticalAlignment="Center"/>
+                                                <TextBox Classes="cell" Width="60" Tag="Sigma"
+                                                         Text="{Binding StagedSigmaSm}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                            </StackPanel>
+
+                                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsDielectric}">
+                                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                                    <TextBlock Text="εr:" FontSize="11" VerticalAlignment="Center"/>
+                                                    <TextBox Classes="cell" Width="60" Tag="Epsr" Text="{Binding StagedEpsr}"
+                                                             LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                                    <TextBlock Text="tanδ:" FontSize="11" VerticalAlignment="Center"/>
+                                                    <TextBox Classes="cell" Width="70" Tag="TanD" Text="{Binding StagedTanD}"
+                                                             LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="3">
+                                                    <TextBlock Text="µr:" FontSize="11" VerticalAlignment="Center"/>
+                                                    <TextBox Classes="cell" Width="60" Tag="Mur" Text="{Binding StagedMur}"
+                                                             LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <StackPanel Orientation="Horizontal" Spacing="0">
+                                                <TextBlock Text="{Binding DrawingLayersLabel}" FontSize="11" VerticalAlignment="Top" Margin="0,2,6,0"/>
+                                                <ItemsControl ItemsSource="{Binding DrawingLayerOptions}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="lay:DrawingLayerCheckItem">
+                                                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked}"
+                                                                      FontSize="11" Margin="0,0,8,2"/>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </TabItem>
+
+            <!-- DRC rules ──────────────────────────────────────────────────── -->
+            <TabItem Header="DRC Rules">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="4" Margin="6,4">
+                        <Button Content="＋ Add Rule" Command="{Binding ViewModel.AddDrcRuleCommand}" FontSize="11" Padding="8,3"/>
+                    </StackPanel>
+
+                    <!-- Same shared-column convention as the Layers tab — header and row Grids
+                         declare identical ColumnDefinitions so nothing drifts out of alignment. -->
+                    <Grid RowDefinitions="Auto,*" Grid.IsSharedSizeScope="True">
+                        <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"    SharedSizeGroup="DName"     MinWidth="120"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="DKind"     MinWidth="100"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="DLayer"    MinWidth="140"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="DValue"    MinWidth="90"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="DSeverity" MinWidth="80"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="DActions"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Classes="colhdr" Text="Name"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="Kind"     HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="Layer"    HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Classes="colhdr" Text="Value"    HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Severity" HorizontalAlignment="Center"/>
+                        </Grid>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding ViewModel.DrcRules}" Margin="4,0,4,4">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="lay:DrcRuleRowViewModel">
+                                        <Grid Margin="0,2" ColumnSpacing="4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"    SharedSizeGroup="DName"     MinWidth="120"/>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DKind"     MinWidth="100"/>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DLayer"    MinWidth="140"/>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DValue"    MinWidth="90"/>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DSeverity" MinWidth="80"/>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="DActions"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Classes="cell" Tag="Name" HorizontalAlignment="Stretch"
+                                                     Text="{Binding StagedName}"
+                                                     LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                            <ComboBox Grid.Column="1" Classes="cell" Width="100" Tag="Kind"
+                                                      ItemsSource="{x:Static lay:TechEditorViewModel.DrcRuleKinds}"
+                                                      SelectedItem="{Binding StagedKind}"
+                                                      SelectionChanged="OnComboSelectionChanged"/>
+                                            <ComboBox Grid.Column="2" Classes="cell" Width="140" Tag="Layer"
+                                                      ItemsSource="{Binding LayerOptions}"
+                                                      SelectedItem="{Binding StagedLayer}"
+                                                      DisplayMemberBinding="{Binding Label}"
+                                                      SelectionChanged="OnComboSelectionChanged"/>
+                                            <StackPanel Grid.Column="3" Spacing="1">
+                                                <TextBox Classes="cell" Width="90" Tag="Value"
+                                                         Text="{Binding StagedValueText}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBlock Text="{Binding ValueError}" FontSize="9"
+                                                           IsVisible="{Binding HasValueError}"
+                                                           TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource CrfWarningBrush}"/>
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="4" Classes="cell" Width="80" Tag="Severity"
+                                                      ItemsSource="{x:Static lay:TechEditorViewModel.DrcSeverities}"
+                                                      SelectedItem="{Binding StagedSeverity}"
+                                                      SelectionChanged="OnComboSelectionChanged"/>
+                                            <Button Grid.Column="5" Padding="4,2" FontSize="10"
+                                                    Command="{Binding RemoveCommand}">
+                                                <mi:MaterialIcon Kind="Close" Width="11" Height="11"/>
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+
+        </TabControl>
+
+    </DockPanel>
+
+</UserControl>

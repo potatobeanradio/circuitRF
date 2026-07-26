@@ -75,6 +75,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         (NodeKind.ViewFile,        _)     => MaterialIconKind.FileOutline,
         (NodeKind.DataDisplayFile, _)     => MaterialIconKind.ChartLine,
         (NodeKind.ColorThemeFile,  _)     => MaterialIconKind.Palette,
+        (NodeKind.TechFile,        _)     => MaterialIconKind.LayersOutline,
         (NodeKind.KnownFile,       _)     => _node.IsDirectory
                                                 ? MaterialIconKind.FolderOutline
                                                 : MaterialIconKind.FileOutline,
@@ -94,6 +95,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>True for .cdd Data Display files — drives "Remove Data Display" context item.</summary>
     public bool IsDataDisplayFile => Kind == NodeKind.DataDisplayFile;
 
+    /// <summary>True for .ctech technology files — drives the "Set as Workspace Default" /
+    /// "Reload Technology" context items. No editor yet (L0d); double-click stays a no-op.</summary>
+    public bool IsTechFile => Kind == NodeKind.TechFile;
+
+    /// <summary>True when this .ctech node is the workspace's current default technology.
+    /// Resolved through the host so it reflects the live .cws state when the menu opens.</summary>
+    public bool IsWorkspaceDefaultTech => _actions?.IsWorkspaceDefaultTech(this) ?? false;
+
     /// <summary>
     /// True for nodes that can be removed via Trash: .csch/.csym view files, results directories
     /// (UserFolder), and .npy/other files under results dirs (OtherFile).
@@ -101,14 +110,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// </summary>
     public bool IsRemovableFile =>
         (Kind == NodeKind.ViewFile &&
-            Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym")
+            Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay")
         || Kind == NodeKind.OtherFile
         || Kind == NodeKind.UserFolder;
 
-    /// <summary>True for openable leaf files (.csch / .csym / .cdd) — drives the "Open" context item.</summary>
+    /// <summary>True for openable leaf files (.csch / .csym / .clay / .cdd / .ctech) — drives the "Open" context item.</summary>
     public bool IsOpenableFile =>
-        Kind == NodeKind.DataDisplayFile
-        || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym");
+        Kind is NodeKind.DataDisplayFile or NodeKind.TechFile
+        || (Kind == NodeKind.ViewFile && Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay");
 
     /// <summary>True when this node has unsaved work — drives the "Save" context item.
     /// Resolved through the host so it reflects live dirty state when the menu opens.</summary>
@@ -119,8 +128,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     {
         NodeKind.Cell            => "Save Cell",
         NodeKind.DataDisplayFile => "Save Data Display",
+        NodeKind.TechFile        => "Save Technology",
         NodeKind.ViewFile when Path.GetExtension(AbsolutePath).ToLowerInvariant() == ".csch" => "Save Schematic",
         NodeKind.ViewFile when Path.GetExtension(AbsolutePath).ToLowerInvariant() == ".csym" => "Save Symbol",
+        NodeKind.ViewFile when Path.GetExtension(AbsolutePath).ToLowerInvariant() == ".clay" => "Save Layout",
         _                        => "Save",
     };
 
@@ -141,6 +152,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                                           or NodeKind.UserFolder
                                           or NodeKind.DataDisplayFile
                                           or NodeKind.ColorThemeFile
+                                          or NodeKind.TechFile
                                           or NodeKind.KnownFile
                                           or NodeKind.OtherFile;
 
@@ -164,6 +176,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>New Cell on workspace/library nodes.</summary>
     public IAsyncRelayCommand NewCellCommand { get; }
 
+    /// <summary>New Technology… on workspace/library nodes.</summary>
+    public IAsyncRelayCommand NewTechnologyCommand { get; }
+
     /// <summary>New Symbol on cell nodes.</summary>
     public IAsyncRelayCommand NewSymbolCommand { get; }
 
@@ -185,6 +200,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>Open this cell's primary symbol in a Content tab.</summary>
     public IRelayCommand OpenSymbolCommand { get; }
 
+    /// <summary>Open this cell's primary layout in a Content tab.</summary>
+    public IRelayCommand OpenLayoutCommand { get; }
+
     /// <summary>Remove this .cdd Data Display file (moves to Trash). Visible only for DataDisplayFile nodes.</summary>
     public IRelayCommand RemoveDataDisplayCommand { get; }
 
@@ -203,10 +221,17 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>Save this node: cell saves all dirty views; file saves only itself.</summary>
     public IAsyncRelayCommand SaveCommand { get; }
 
+    /// <summary>Write this .ctech node into .cws as the workspace default technology.</summary>
+    public IRelayCommand SetAsWorkspaceDefaultCommand { get; }
+
+    /// <summary>Invalidate the cached Technology for this .ctech node.</summary>
+    public IRelayCommand ReloadTechnologyCommand { get; }
+
     // ── Primary-view availability (computed once at construction for cell nodes) ──
 
     public bool CanOpenSchematic { get; }
     public bool CanOpenSymbol    { get; }
+    public bool CanOpenLayout    { get; }
 
     // ── Tree state ─────────────────────────────────────────────────────────────
 
@@ -263,6 +288,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                 is PrimaryState.SoleFile or PrimaryState.NamedPresent;
             CanOpenSymbol = CellFolder.ResolvePrimary(node.AbsolutePath, ViewType.Symbol).State
                 is PrimaryState.SoleFile or PrimaryState.NamedPresent;
+            CanOpenLayout = CellFolder.ResolvePrimary(node.AbsolutePath, ViewType.Layout).State
+                is PrimaryState.SoleFile or PrimaryState.NamedPresent;
         }
 
         // Build child VMs recursively; each child applies the same filter state.
@@ -288,6 +315,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         NewCellCommand = new AsyncRelayCommand(
             () => _actions?.NewCellAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsWorkspaceOrLibrary);
+
+        NewTechnologyCommand = new AsyncRelayCommand(
+            () => _actions?.NewTechnologyAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsWorkspaceOrLibrary);
 
         NewSymbolCommand = new AsyncRelayCommand(
@@ -318,6 +349,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             () => _actions?.OpenCellSymbol(this),
             () => _actions is not null && IsCell && CanOpenSymbol);
 
+        OpenLayoutCommand = new RelayCommand(
+            () => _actions?.OpenCellLayout(this),
+            () => _actions is not null && IsCell && CanOpenLayout);
+
         RemoveDataDisplayCommand = new RelayCommand(
             () => _actions?.RemoveDataDisplay(this),
             () => _actions is not null && IsDataDisplayFile);
@@ -340,6 +375,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         SaveCommand = new AsyncRelayCommand(
             () => _actions?.SaveNodeAsync(this) ?? Task.CompletedTask);
+
+        SetAsWorkspaceDefaultCommand = new RelayCommand(
+            () => _actions?.SetAsWorkspaceDefault(this),
+            () => _actions is not null && IsTechFile);
+
+        ReloadTechnologyCommand = new RelayCommand(
+            () => _actions?.ReloadTechnology(this),
+            () => _actions is not null && IsTechFile);
     }
 
     /// <summary>
@@ -350,6 +393,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(IsSaveable));
         OnPropertyChanged(nameof(SaveHeader));
+        OnPropertyChanged(nameof(IsWorkspaceDefaultTech));
     }
 
     // ── Filter ─────────────────────────────────────────────────────────────────
@@ -383,6 +427,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             NodeKind.LibrariesGroup  => f.Libraries,
             NodeKind.DataDisplayFile => f.DataDisplays,
             NodeKind.ColorThemeFile  => f.ColorThemes,
+            NodeKind.TechFile        => f.TechFiles,
             NodeKind.KnownFile       => f.KnownFiles,
             NodeKind.KnownFilesGroup => f.KnownFiles,
             NodeKind.UserFolder      => f.WorkspaceFileSystem,

@@ -41,6 +41,7 @@ public sealed class CwsTreeViewState
     public bool TestBenches         { get; set; } = true;
     public bool DataDisplays        { get; set; } = true;
     public bool ColorThemes         { get; set; } = true;
+    public bool TechFiles           { get; set; } = true;
     public bool KnownFiles          { get; set; } = true;
     public bool WorkspaceFileSystem { get; set; } = true;
 
@@ -102,6 +103,15 @@ public sealed class CwsFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ActiveDocumentPath { get; set; }
+
+    /// <summary>
+    /// Relative path (from the workspace root) to the .ctech that TechnologyResolver falls back to
+    /// when a .clay's own TechRef is null (docs/design/layout-view.md §2.4 "one default per
+    /// workspace"). Null means "no default" — a valid state that resolves to the fallback palette.
+    /// No FormatVersion bump: an absent field on an older .cws loads gracefully as null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DefaultTechRef { get; set; }
 }
 
 /// <summary>

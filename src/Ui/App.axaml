@@ -14,6 +14,8 @@
              xmlns:palv="using:CircuitRF.Ui.Views.Palette"
              xmlns:dd="using:CircuitRF.Ui.DataDisplay"
              xmlns:ddv="using:CircuitRF.Ui.Views.DataDisplay"
+             xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:layv="using:CircuitRF.Ui.Views.Layout"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:dockCtrl="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
@@ -67,6 +69,12 @@
         </DataTemplate>
         <DataTemplate DataType="{x:Type dd:DataDisplayDocument}">
             <ddv:DataDisplayView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type lay:LayoutDocument}">
+            <layv:LayoutEditorView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type lay:TechDocument}">
+            <layv:TechEditorView/>
         </DataTemplate>
     </Application.DataTemplates>
 

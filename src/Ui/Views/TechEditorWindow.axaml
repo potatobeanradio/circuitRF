@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:layDoc="using:CircuitRF.Ui.Layout"
+        xmlns:layv="using:CircuitRF.Ui.Views.Layout"
+        x:Class="CircuitRF.Ui.Views.TechEditorWindow"
+        x:DataType="layDoc:TechDocument"
+        Title="{Binding Title}"
+        Width="760"
+        Height="640"
+        MinWidth="480"
+        MinHeight="360"
+        Background="{DynamicResource SystemChromeLowColor}">
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Z"       Command="{Binding ViewModel.UndoCommand}"/>
+        <KeyBinding Gesture="Meta+Z"       Command="{Binding ViewModel.UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding ViewModel.RedoCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+Z" Command="{Binding ViewModel.RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y"       Command="{Binding ViewModel.RedoCommand}"/>
+    </Window.KeyBindings>
+
+    <layv:TechEditorView/>
+
+</Window>

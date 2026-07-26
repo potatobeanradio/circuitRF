@@ -1,6 +1,6 @@
 # circuitRF — Layout View (design + plan)
 
-**Status:** Proposal — rev 3, all open questions answered · **Date:** 2026-07-26 · **Phase:** 8 (proposed)
+**Status:** Proposal — rev 4 (§4 JSON example corrected to real serializer output after L0a landed) · **Date:** 2026-07-26 · **Phase:** 8 (proposed)
 
 **Decisions taken (owner, 2026-07-26).** All are folded into the body below; §13 keeps the record.
 1. **MoM kernel: quasi-static 2D per-unit-length first**, then full-wave single-dielectric, then the
@@ -392,38 +392,59 @@ an undo system, and every geometric operation is exactly the kind of change that
 
 Follows the house conventions exactly: `System.Text.Json`, `format_version` with reject-on-mismatch, no
 `Id` ever persisted, polymorphic `$type` discriminators as in `SymbolModel.cs`, written through
-`AtomicFile`.
+`AtomicFile`. **Landed in L0a** (`src/Ui/Layout/LayoutPersistence.cs`) — the block below is real
+`LayoutPersistence.Serialize` output, not an illustrative sketch. Two points the original sketch got
+wrong, now corrected: property names are **PascalCase with no naming policy** (`FormatVersion`, not
+`format_version`) — `.clay` follows `.csym` exactly, snake_case was shorthand and never what ships; and
+`Label` is a **shape** living in `Shapes` like every other primitive, not a separate top-level `labels`
+array.
 
 ```jsonc
 {
-  "format_version": 1,
-  "dbu_per_micron": 1000,
-  "display_unit": "mil",
-  "snap_dbu": 1000,
-  "angle_mode": "AnyAngle",
-  "tech_ref": "../../tech/pcb-2layer.ctech",
-  "shapes": [
-    { "$type": "Rect", "layer": [1, 0], "net": "RFin", "b": [0, 0, 2900000, 20000000] },
-    { "$type": "Poly", "layer": [1, 0], "xy": [0,0, 500,0, 500,300, 0,300] },
-    { "$type": "Circle", "layer": [2, 0], "net": "GND", "c": [4000000, 1000000], "r": 300000 },
-    { "$type": "RRect", "layer": [1, 0], "b": [0, 0, 1000000, 600000], "cr": 150000 },
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Mil",
+  "SnapDbu": 1000,
+  "AngleMode": "AnyAngle",
+  "TechRef": "../../tech/pcb-2layer.ctech",
+  "Shapes": [
+    { "$type": "Rect", "X1": 0, "Y1": 0, "X2": 2900000, "Y2": 20000000,
+      "Layer": { "Layer": 1, "Datatype": 0 }, "Net": "RFin" },
+    { "$type": "Poly", "Xy": [0,0, 500,0, 500,300, 0,300],
+      "Layer": { "Layer": 1, "Datatype": 0 } },
+    { "$type": "Circle", "Cx": 4000000, "Cy": 1000000, "R": 300000,
+      "Layer": { "Layer": 2, "Datatype": 0 }, "Net": "GND" },
+    { "$type": "RRect", "X1": 0, "Y1": 0, "X2": 1000000, "Y2": 600000, "CornerRadius": 150000,
+      "Layer": { "Layer": 1, "Datatype": 0 } },
 
-    // Curve: closed edge list. "e" gives one entry per edge — "L" line, "A" arc (bulge),
-    // "C" cubic (two control points). Absent "e" means all-line, i.e. a plain polygon.
-    { "$type": "Curve", "layer": [1, 0], "tol": 1000,
-      "xy": [0,0, 2000000,0, 2000000,2000000],
-      "e":  ["L", { "A": 0.4142 }, "L"] },
+    // Curve: closed edge list, parallel to Xy — Edges[i] is the edge leaving vertex i. Every edge is
+    // a full LayoutEdge object (Kind + Bulge + C1X/C1Y/C2X/C2Y); Bulge is meaningful only for Arc,
+    // the control points only for Cubic. A null Edges list (omitted here per WhenWritingNull) means
+    // every edge is a straight line, i.e. a plain polygon.
+    { "$type": "Curve", "Xy": [0,0, 2000000,0, 2000000,2000000], "FlattenTolDbu": 1000,
+      "Layer": { "Layer": 1, "Datatype": 0 },
+      "Edges": [
+        { "Kind": "Line", "Bulge": 0, "C1X": 0, "C1Y": 0, "C2X": 0, "C2Y": 0 },
+        { "Kind": "Arc",  "Bulge": 0.4142, "C1X": 0, "C1Y": 0, "C2X": 0, "C2Y": 0 },
+        { "Kind": "Line", "Bulge": 0, "C1X": 0, "C1Y": 0, "C2X": 0, "C2Y": 0 }
+      ] },
 
-    // Path: same edge vocabulary on the centerline — a radiused bend, still one editable trace.
-    { "$type": "Path", "layer": [1, 0], "net": "RFin", "w": 2900000, "end": "Flush", "tol": 1000,
-      "xy": [0,0, 5000000,0, 5000000,3000000],
-      "e":  ["L", { "A": 0.4142 }] }
+    // Path: same edge vocabulary on the centerline (N-1 edges for N vertices, open) — a radiused
+    // bend is still one editable trace, not a hand-built polygon.
+    { "$type": "Path", "Xy": [0,0, 5000000,0, 5000000,3000000], "Width": 2900000, "End": "Flush",
+      "FlattenTolDbu": 1000, "Layer": { "Layer": 1, "Datatype": 0 }, "Net": "RFin",
+      "Edges": [
+        { "Kind": "Line", "Bulge": 0, "C1X": 0, "C1Y": 0, "C2X": 0, "C2Y": 0 },
+        { "Kind": "Arc",  "Bulge": 0.4142, "C1X": 0, "C1Y": 0, "C2X": 0, "C2Y": 0 }
+      ] },
+
+    // Label: a shape like any other — the port/pin marker §9/§10.6 key on, not a separate section.
+    { "$type": "Label", "X": 0, "Y": 0, "Text": "P1", "Height": 500000, "Rotation": "R0", "IsPort": true,
+      "Layer": { "Layer": 1, "Datatype": 0 } }
   ],
-  "instances": [
-    { "cell": "../../inductor_2n5", "at": [100000, 0], "rot": "R90", "mx": false }
-  ],
-  "labels": [
-    { "layer": [1, 0], "at": [0, 0], "text": "P1", "port": true }
+  "Instances": [
+    { "CellRef": "../../inductor_2n5", "X": 100000, "Y": 0, "Rot": "R90", "MirrorX": false,
+      "Mag": 1, "Rows": 1, "Cols": 1, "PitchX": 0, "PitchY": 0 }
   ]
 }
 ```
@@ -431,16 +452,17 @@ Follows the house conventions exactly: `System.Text.Json`, `format_version` with
 **Format notes.**
 - Flat integer arrays for vertices, not `[[x,y],[x,y]]`. Roughly half the bytes and it parses faster.
 - Integers stringify shorter than the equivalent doubles — another argument for §1.1.
-- Curved primitives store their **edge list**, not their flattened form. A circle is four numbers, a
-  rounded rect five — keeping curves as primitives (§3.2) makes files *smaller*, not larger, since a
-  flattened circle at 1 µm tolerance is hundreds of vertices.
+- Curved primitives store their **edge list**, not their flattened form — a flattened circle at 1 µm
+  tolerance is hundreds of vertices. The actual wire encoding is a full `LayoutEdge` object per edge
+  (uniform shape regardless of `Kind`, per the house "no per-type wire shorthand" convention), not the
+  terse per-kind tags (`"L"`, `{"A": …}`) an earlier sketch of this section showed.
 - **Decided: plain JSON, uncompressed.** A 100k-polygon layout lands around 20–40 MB, which in practice
   most cells never approach because hierarchy keeps them small. **Gzip stays in reserve**: gzipping the
   bytes while keeping the `.clay` extension and JSON *content* is one line of code, roughly 10× smaller,
   and still trivially inspectable through `gunzip` — so switching later costs almost nothing and needs
-  no format-version bump if the reader sniffs the gzip magic bytes. **Write that sniff into the reader
-  from day one** so the switch is a writer-side change only. A synthetic large-layout test lands in L0
-  so the ceiling is measured rather than guessed.
+  no format-version bump if the reader sniffs the gzip magic bytes. `LayoutPersistence.LoadFromFile`
+  sniffs the gzip magic bytes (`0x1F 0x8B`) from day one (L0a), so the eventual switch is a writer-side
+  change only. A synthetic large-layout test lands in L0 so the ceiling is measured rather than guessed.
 
 ---
 

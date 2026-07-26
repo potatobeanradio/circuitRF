@@ -227,6 +227,23 @@ public class WorkspaceScannerTests : IDisposable
         Assert.True(viewFile.IsPrimary);
     }
 
+    // ── Cell – .clay is scanned like any other view file (L0b: no scanner change needed) ─
+
+    [Fact]
+    public void Scan_Cell_SoleLayout_MarkedPrimary()
+    {
+        string cellDir = MakeCell("AmpStage");
+        AddView(cellDir, ViewType.Layout, "amp.clay");
+
+        var tree = WorkspaceScanner.Scan(_root);
+        var cell = tree.Children.Single(n => n.Name == "AmpStage");
+        var layoutFolder = cell.Children.Single(n => n.Kind == NodeKind.CellViewFolder);
+        Assert.Equal("layout", layoutFolder.Name);
+        var viewFile = Assert.Single(layoutFolder.Children);
+        Assert.Equal("amp.clay", viewFile.Name);
+        Assert.True(viewFile.IsPrimary);
+    }
+
     // ── Cell – multiple views, named primary ──────────────────────────────────
 
     [Fact]
@@ -334,6 +351,7 @@ public class WorkspaceScannerTests : IDisposable
         Directory.CreateDirectory(uf);
         File.WriteAllText(Path.Combine(uf, "sweep.cdd"), "");
         File.WriteAllText(Path.Combine(uf, "midnight.ccolor"), "");
+        File.WriteAllText(Path.Combine(uf, "pcb-2layer.ctech"), "");
         File.WriteAllText(Path.Combine(uf, "notes.txt"), "");
 
         var tree = WorkspaceScanner.Scan(_root);
@@ -342,11 +360,64 @@ public class WorkspaceScannerTests : IDisposable
 
         var cdd    = folder.Children.Single(n => n.Name == "sweep.cdd");
         var ccolor = folder.Children.Single(n => n.Name == "midnight.ccolor");
+        var ctech  = folder.Children.Single(n => n.Name == "pcb-2layer.ctech");
         var txt    = folder.Children.Single(n => n.Name == "notes.txt");
 
         Assert.Equal(NodeKind.DataDisplayFile, cdd.Kind);
         Assert.Equal(NodeKind.ColorThemeFile, ccolor.Kind);
+        Assert.Equal(NodeKind.TechFile, ctech.Kind);
         Assert.Equal(NodeKind.OtherFile, txt.Kind);
+    }
+
+    // ── L0c: tech/ folder appears as a UserFolder; .ctech files classified ───
+
+    [Fact]
+    public void Scan_TechFolder_AppearsAsUserFolder_CtechFilesClassified()
+    {
+        string techDir = Path.Combine(_root, "tech");
+        Directory.CreateDirectory(techDir);
+        File.WriteAllText(Path.Combine(techDir, "pcb-2layer.ctech"), "");
+
+        var tree = WorkspaceScanner.Scan(_root);
+        var folder = tree.Children.Single(n => n.Name == "tech");
+        Assert.Equal(NodeKind.UserFolder, folder.Kind);
+
+        var ctech = folder.Children.Single(n => n.Name == "pcb-2layer.ctech");
+        Assert.Equal(NodeKind.TechFile, ctech.Kind);
+    }
+
+    // ── L0c: .cws DefaultTechRef + CwsTreeViewState.TechFiles round-trip ─────
+
+    [Fact]
+    public void CwsFile_DefaultTechRef_RoundTrips()
+    {
+        var cws = new CwsFile { DefaultTechRef = "tech/pcb-2layer.ctech" };
+        WriteCws(cws);
+
+        var reloaded = WorkspacePersistence.LoadFromFile(Path.Combine(_root, ".cws"));
+        Assert.Equal("tech/pcb-2layer.ctech", reloaded.DefaultTechRef);
+    }
+
+    [Fact]
+    public void CwsFile_DefaultTechRef_AbsentOnOlderFile_LoadsAsNull()
+    {
+        // An older .cws written without DefaultTechRef must still load cleanly (alpha policy:
+        // an absent field means "no default", not a load failure).
+        WriteCws(new CwsFile());
+
+        var reloaded = WorkspacePersistence.LoadFromFile(Path.Combine(_root, ".cws"));
+        Assert.Null(reloaded.DefaultTechRef);
+    }
+
+    [Fact]
+    public void CwsTreeViewState_TechFiles_DefaultsTrue_AndRoundTrips()
+    {
+        var cws = new CwsFile { TreeViewState = new CwsTreeViewState { TechFiles = false } };
+        WriteCws(cws);
+
+        var reloaded = WorkspacePersistence.LoadFromFile(Path.Combine(_root, ".cws"));
+        Assert.False(reloaded.TreeViewState!.TechFiles);
+        Assert.True(new CwsTreeViewState().TechFiles);
     }
 
     // ── Hidden files (.DS_Store / .source) ───────────────────────────────────

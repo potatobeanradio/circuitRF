@@ -14,14 +14,15 @@ public partial class ProjectTreeFilterState : ObservableObject
     [ObservableProperty] private bool _testBenches         = true;
     [ObservableProperty] private bool _dataDisplays        = true;
     [ObservableProperty] private bool _colorThemes         = true;
+    [ObservableProperty] private bool _techFiles            = true;
     [ObservableProperty] private bool _knownFiles          = true;
     [ObservableProperty] private bool _workspaceFileSystem = true;
 
     public bool IsAllOn =>
-        Cells && Libraries && TestBenches && DataDisplays && ColorThemes && KnownFiles && WorkspaceFileSystem;
+        Cells && Libraries && TestBenches && DataDisplays && ColorThemes && TechFiles && KnownFiles && WorkspaceFileSystem;
 
     public void SetAll(bool value)
     {
-        Cells = Libraries = TestBenches = DataDisplays = ColorThemes = KnownFiles = WorkspaceFileSystem = value;
+        Cells = Libraries = TestBenches = DataDisplays = ColorThemes = TechFiles = KnownFiles = WorkspaceFileSystem = value;
     }
 }

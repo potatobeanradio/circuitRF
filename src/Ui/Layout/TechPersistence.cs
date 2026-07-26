@@ -1,0 +1,87 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using CircuitRF.Ui.Schematic;
+
+namespace CircuitRF.Ui.Layout;
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  .ctech file format — rev 1 (alpha, no back-compat per policy).
+//  Clones LayoutPersistence/SymbolPersistence conventions exactly, including the gzip sniff on load.
+// ──────────────────────────────────────────────────────────────────────────────
+
+public sealed class CtechFile
+{
+    public int FormatVersion { get; set; } = 1;
+    public string Name { get; set; } = "";
+    public LayoutUnit DefaultDisplayUnit { get; set; }
+    public long DefaultSnapDbu { get; set; }
+    public long DefaultFlattenTolDbu { get; set; }
+    public List<LayerDef> Layers { get; set; } = [];
+    public Stackup Stackup { get; set; } = new();
+    public List<DrcRule> DrcRules { get; set; } = [];
+}
+
+/// <summary>Reads and writes .ctech files. Framework-free (no Avalonia / Skia).</summary>
+public static class TechPersistence
+{
+    public const int CurrentFormatVersion = 1;
+
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        WriteIndented               = true,
+        DefaultIgnoreCondition      = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true,
+        Converters                  = { new JsonStringEnumConverter() },
+    };
+
+    // ── Write ─────────────────────────────────────────────────────────────────
+
+    public static string Serialize(Technology tech)
+        => JsonSerializer.Serialize(ToFileModel(tech), JsonOpts);
+
+    public static void SaveToFile(string path, Technology tech)
+        => AtomicFile.WriteAllText(path, Serialize(tech));
+
+    // ── Read ──────────────────────────────────────────────────────────────────
+
+    public static Technology Deserialize(string json)
+    {
+        var file = JsonSerializer.Deserialize<CtechFile>(json, JsonOpts)
+            ?? throw new InvalidDataException("Failed to deserialize .ctech file.");
+
+        if (file.FormatVersion > CurrentFormatVersion)
+            throw new InvalidDataException(
+                $".ctech format_version {file.FormatVersion} is newer than " +
+                $"expected {CurrentFormatVersion}. Update the application.");
+
+        return FromFileModel(file);
+    }
+
+    public static Technology LoadFromFile(string path)
+        => Deserialize(GzipTextFile.ReadAllTextAutoGzip(path));
+
+    // ── Convert Technology <-> CtechFile ──────────────────────────────────────
+
+    private static CtechFile ToFileModel(Technology tech) => new()
+    {
+        FormatVersion        = CurrentFormatVersion,
+        Name                 = tech.Name,
+        DefaultDisplayUnit   = tech.DefaultDisplayUnit,
+        DefaultSnapDbu       = tech.DefaultSnapDbu,
+        DefaultFlattenTolDbu = tech.DefaultFlattenTolDbu,
+        Layers               = [.. tech.Layers],
+        Stackup              = tech.Stackup,
+        DrcRules             = [.. tech.DrcRules],
+    };
+
+    private static Technology FromFileModel(CtechFile file) => new()
+    {
+        Name                 = file.Name,
+        DefaultDisplayUnit   = file.DefaultDisplayUnit,
+        DefaultSnapDbu       = file.DefaultSnapDbu,
+        DefaultFlattenTolDbu = file.DefaultFlattenTolDbu,
+        Layers               = [.. file.Layers],
+        Stackup              = file.Stackup,
+        DrcRules             = [.. file.DrcRules],
+    };
+}

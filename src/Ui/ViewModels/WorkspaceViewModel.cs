@@ -20,6 +20,7 @@ using CircuitRF.Core.Netlist;
 using RfCore.Data;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
@@ -72,6 +73,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private readonly List<SchematicDocument>    _scratchDocs         = [];
     private readonly List<SymbolEditorDocument> _scratchSymbols      = [];
     private readonly List<DataDisplayDocument>  _scratchDataDisplays = [];
+    private readonly List<LayoutDocument>       _scratchLayouts      = [];
+
+    // ---- Technology cache (L0c) -----------------------------------------------
+
+    // Owned for the lifetime of a workspace; replaced (not just cleared) on every
+    // NewWorkspace/SwitchToWorkspace/ResetToBlankShell so a fresh subscription always matches
+    // the current instance — see ResetTechCache.
+    private TechnologyCache _techCache = new();
 
     [ObservableProperty] private IRootDock? _layout;
 
@@ -254,7 +263,80 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Avalonia.Threading.Dispatcher.UIThread.Post(
             CheckForRecovery, Avalonia.Threading.DispatcherPriority.Background);
 
+        ResetTechCache();
+
         Messages.Info("circuitRF ready.");
+    }
+
+    // ---- Technology resolution (L0c) ------------------------------------------
+
+    /// <summary>
+    /// Replaces the technology cache with a fresh instance and (re)subscribes the live-refresh
+    /// handler. Called once from the constructor and again from every workspace-lifetime reset
+    /// (NewWorkspace / SwitchToWorkspace / ResetToBlankShell) so stale cached entries from the
+    /// previous workspace can never leak into the new one.
+    /// </summary>
+    private void ResetTechCache()
+    {
+        _techCache = new TechnologyCache();
+        _techCache.TechnologyChanged += OnTechnologyChanged;
+    }
+
+    /// <summary>
+    /// Resolves the effective Technology for a layout and posts every diagnostic to Messages at
+    /// Warning level (TechnologyResolver itself never posts — see its header). <paramref name="techRef"/>
+    /// is the layout's own LayoutView.TechRef; <paramref name="clayPath"/> is the absolute .clay path,
+    /// or null for a not-yet-saved scratch layout (workspace-default resolution still applies).
+    /// </summary>
+    private TechResolution ResolveTechFor(string? techRef, string? clayPath)
+    {
+        string? workspaceDir = CurrentWorkspacePath is null
+            ? null : Path.GetDirectoryName(CurrentWorkspacePath);
+
+        string? defaultTechRef = null;
+        if (CurrentWorkspacePath is not null)
+        {
+            try { defaultTechRef = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath).DefaultTechRef; }
+            catch { /* corrupt .cws — treated as "no default", matches TryLoadCws elsewhere */ }
+        }
+
+        string? clayDir = clayPath is null ? null : Path.GetDirectoryName(clayPath);
+        var resolution = TechnologyResolver.Resolve(techRef, clayDir, workspaceDir, defaultTechRef, _techCache);
+
+        foreach (var diagnostic in resolution.Diagnostics)
+            Messages.Warning(diagnostic);
+
+        return resolution;
+    }
+
+    /// <summary>
+    /// The live-refresh seam: fires when the cache invalidates a .ctech path (Reload Technology,
+    /// or Set as Workspace Default invalidating the newly-chosen default). Re-resolves and pushes
+    /// the technology into every open LayoutDocument whose resolution used that path. In L0c the
+    /// visible effect is limited to the metadata bar; L1/L2 hook the renderer to this same event.
+    /// </summary>
+    private void OnTechnologyChanged(string changedPath)
+    {
+        foreach (var doc in _scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>()))
+        {
+            if (!string.Equals(doc.ViewModel.ResolvedTechPath, changedPath, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var resolution = ResolveTechFor(doc.ViewModel.Model.TechRef, doc.FilePath);
+            doc.ViewModel.ApplyTechResolution(resolution);
+        }
+    }
+
+    /// <summary>Re-resolves every open layout document, regardless of which path it previously
+    /// resolved against. Used by SetAsWorkspaceDefault, where the default itself changed —
+    /// the OnTechnologyChanged path-match alone would miss documents that move from the old
+    /// default to the new one.</summary>
+    private void RefreshAllOpenLayoutTech()
+    {
+        foreach (var doc in _scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>()))
+        {
+            var resolution = ResolveTechFor(doc.ViewModel.Model.TechRef, doc.FilePath);
+            doc.ViewModel.ApplyTechResolution(resolution);
+        }
     }
 
     // ---- Helpers -------------------------------------------------------------
@@ -357,7 +439,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try
         {
             Directory.CreateDirectory(workspaceDir);
-            WorkspacePersistence.SaveToFileAtomic(cwsPath, new CwsFile());
+
+            // Technology choice (L0c): PCB/MMIC create tech/<starter>.ctech + a .cws default ref;
+            // None creates neither — a perfectly valid workspace that resolves to the fallback palette.
+            var cws = new CwsFile();
+            if (result.Technology != NewWorkspaceTechChoice.None)
+            {
+                var techDir = Path.Combine(workspaceDir, "tech");
+                Directory.CreateDirectory(techDir);
+                var (starterTech, fileName) = result.Technology == NewWorkspaceTechChoice.Mmic
+                    ? (StarterTechnologies.MmicGaAs(), "mmic-gaas.ctech")
+                    : (StarterTechnologies.Pcb2Layer(), "pcb-2layer.ctech");
+                var techPath = Path.Combine(techDir, fileName);
+                TechPersistence.SaveToFile(techPath, starterTech);
+                cws.DefaultTechRef = Path.GetRelativePath(workspaceDir, techPath);
+            }
+            WorkspacePersistence.SaveToFileAtomic(cwsPath, cws);
 
             // Update tracked location to the chosen parent (seeds the next New Workspace dialog).
             _lastWorkspaceParentDir = result.ParentDir;
@@ -367,8 +464,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _openDocsByPath.Clear();
             _scratchDocs.Clear();
             _scratchSymbols.Clear();
+            _scratchLayouts.Clear();
             _scratchDataDisplays.Clear();
             _registry.Clear();
+            ResetTechCache();
             CurrentWorkspacePath = cwsPath;
 
             var newLayout = _factory.CreateDefaultLayout();
@@ -525,6 +624,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         docPath = dd.FilePath;
                         kind    = "datadisplay";
                     }
+                    else if (dockable is LayoutDocument lad && lad.FilePath is not null)
+                    {
+                        docPath = lad.FilePath;
+                        kind    = "layout";
+                    }
+                    else if (dockable is TechDocument techDocKind)
+                    {
+                        docPath = techDocKind.FilePath;
+                        kind    = "tech";
+                    }
 
                     if (docPath is null || kind is null) continue;
 
@@ -562,6 +671,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 {
                     try   { activePath = Path.GetRelativePath(wsDir, add.FilePath); }
                     catch { activePath = add.FilePath; }
+                }
+                else if (active is LayoutDocument alad && alad.FilePath is not null)
+                {
+                    try   { activePath = Path.GetRelativePath(wsDir, alad.FilePath); }
+                    catch { activePath = alad.FilePath; }
+                }
+                else if (active is TechDocument atech)
+                {
+                    try   { activePath = Path.GetRelativePath(wsDir, atech.FilePath); }
+                    catch { activePath = atech.FilePath; }
                 }
                 ws.ActiveDocumentPath = activePath;
             }
@@ -638,8 +757,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _openDocsByPath.Clear();
         _scratchDocs.Clear();
         _scratchSymbols.Clear();
+        _scratchLayouts.Clear();
         _scratchDataDisplays.Clear();
         _registry.Clear();
+        ResetTechCache();
         CurrentWorkspacePath = cwsPath;
 
         var newLayout = _factory.CreateDefaultLayout();
@@ -703,6 +824,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     break;
                 case "datadisplay" when File.Exists(absPath):
                     OpenOrActivateDataDisplay(absPath);
+                    break;
+                case "layout" when File.Exists(absPath):
+                    OpenOrActivateLayout(absPath);
+                    break;
+                case "tech" when File.Exists(absPath):
+                    OpenOrActivateTech(absPath);
                     break;
             }
         }
@@ -858,8 +985,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _openDocsByPath.Clear();
         _scratchDocs.Clear();
         _scratchSymbols.Clear();
+        _scratchLayouts.Clear();
         _scratchDataDisplays.Clear();
         _registry.Clear();
+        ResetTechCache();
 
         CurrentWorkspacePath = null;   // fires OnCurrentWorkspacePathChanged → tree.ClearWorkspace()
 
@@ -1479,6 +1608,243 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
     }
 
+    // ---- New Layout (File menu) — scratch, no workspace needed --------------
+
+    /// <summary>
+    /// Creates an in-memory scratch layout tab immediately, with no workspace or cell required.
+    /// Save/materialize happen on first save. TechRef stays null (§1's "null means workspace
+    /// default" convention) — DisplayUnit/SnapDbu are seeded from the resolved workspace default
+    /// technology; with no technology, L0b's hardcoded defaults apply.
+    /// </summary>
+    [RelayCommand]
+    private void NewLayout()
+    {
+        var title      = NextScratchLayoutTitle();
+        var resolution = ResolveTechFor(techRef: null, clayPath: null);
+        var tech       = resolution.Tech;
+
+        var model = new LayoutView
+        {
+            DbuPerMicron = LayoutUnits.DefaultDbuPerMicron,
+            DisplayUnit  = tech?.DefaultDisplayUnit ?? LayoutUnit.Um,
+            SnapDbu      = tech?.DefaultSnapDbu ?? 1000,
+            AngleMode    = AngleMode.AnyAngle,
+            TechRef      = null,
+        };
+        var vm = new LayoutEditorViewModel(model);
+        vm.ApplyTechResolution(resolution);
+        vm.SaveError += OnLayoutSaveError;
+        var doc = new LayoutDocument(title, vm);  // filePath = null → scratch
+        _scratchLayouts.Add(doc);
+        _factory.OpenDocument(doc);
+        HookLayoutCellDirty(doc);
+    }
+
+    /// <summary>
+    /// Returns the lowest free "Untitled-Layout-N" title across all current scratch
+    /// and path-keyed open layout documents.
+    /// </summary>
+    private string NextScratchLayoutTitle()
+    {
+        const string prefix = "Untitled-Layout-";
+
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in _scratchLayouts)
+            used.Add(d.Id);
+        foreach (var d in _openDocsByPath.Values)
+            if (d is LayoutDocument ld)
+                used.Add(ld.Id);
+
+        for (int n = 1; ; n++)
+        {
+            var candidate = $"{prefix}{n}";
+            if (!used.Contains(candidate))
+                return candidate;
+        }
+    }
+
+    /// <summary>Opens a .clay file and loads it into a docked Layout Editor tab.</summary>
+    [RelayCommand]
+    private async Task OpenLayoutFile(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var result = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Open Layout",
+            AllowMultiple  = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("circuitRF Layout") { Patterns = ["*.clay"] },
+                new FilePickerFileType("All Files")        { Patterns = ["*.*"] },
+            ],
+        });
+
+        if (result.Count == 0) return;
+
+        OpenOrActivateLayout(result[0].Path.LocalPath);
+    }
+
+    private void OpenOrActivateLayout(string absolutePath)
+    {
+        if (ActivateIfOpen(absolutePath)) return;
+
+        try
+        {
+            var model = LayoutPersistence.LoadFromFile(absolutePath);
+            var vm    = new LayoutEditorViewModel(model, absolutePath);
+            vm.ApplyTechResolution(ResolveTechFor(model.TechRef, absolutePath));
+            vm.SaveError += OnLayoutSaveError;
+            var doc = new LayoutDocument(Path.GetFileName(absolutePath), vm, absolutePath);
+            _factory.OpenDocument(doc);
+            _openDocsByPath[absolutePath] = doc;
+            HookLayoutCellDirty(doc);
+            Messages.Info("Opened", absolutePath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to open layout: {ex.Message}");
+        }
+    }
+
+    // A layout save failed (e.g. read-only / unwritable location) — surface it instead of crashing.
+    private void OnLayoutSaveError(string message) => Messages.Error(message);
+
+    // ---- Technology (.ctech) editor (L0d) --------------------------------------
+
+    /// <summary>
+    /// File-menu "New Technology…" entry point. Delegates to the same core logic as the
+    /// tree-header/context-menu command (<see cref="NewTechnologyAsync"/>).
+    /// </summary>
+    [RelayCommand]
+    private async Task NewTechnology(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+        await NewTechnologyCoreAsync(window);
+    }
+
+    /// <inheritdoc/>
+    public async Task NewTechnologyAsync(ProjectTreeNodeViewModel node)
+    {
+        var window = ResolveOwner(null);
+        if (window is null) return;
+        await NewTechnologyCoreAsync(window);
+    }
+
+    private async Task NewTechnologyCoreAsync(Window window)
+    {
+        if (CurrentWorkspacePath is null)
+        {
+            Messages.Info("Open or create a workspace first.");
+            return;
+        }
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var techDir      = Path.Combine(workspaceDir, "tech");
+        var suggested    = NextFreeTechName(techDir);
+
+        var result = await new NewTechnologyDialog(techDir, suggested).ShowDialog<NewTechnologyResult?>(window);
+        if (result is null) return;
+
+        try
+        {
+            Directory.CreateDirectory(techDir);
+
+            var tech = result.Starter switch
+            {
+                NewTechnologyStarter.Mmic  => StarterTechnologies.MmicGaAs(),
+                NewTechnologyStarter.Empty => StarterTechnologies.Empty(),
+                _                          => StarterTechnologies.Pcb2Layer(),
+            };
+            tech.Name = result.Name;
+
+            var techPath = Path.Combine(techDir, $"{result.Name}.ctech");
+            TechPersistence.SaveToFile(techPath, tech);
+
+            if (result.SetAsDefault)
+            {
+                CwsFile cws;
+                try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
+                catch { cws = new CwsFile(); }
+                cws.DefaultTechRef = Path.GetRelativePath(workspaceDir, techPath);
+                WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
+                _techCache.Invalidate(techPath);
+                RefreshAllOpenLayoutTech();
+            }
+
+            _factory.ProjectTreeTool?.Refresh();
+            OpenOrActivateTech(techPath);
+            Messages.Success("Created technology", techPath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to create technology: {ex.Message}");
+        }
+    }
+
+    private static string NextFreeTechName(string techDir)
+    {
+        for (int n = 1; n <= 9999; n++)
+        {
+            var candidate = $"Untitled-Technology-{n}";
+            if (!File.Exists(Path.Combine(techDir, $"{candidate}.ctech")))
+                return candidate;
+        }
+        return "Untitled-Technology";
+    }
+
+    /// <summary>
+    /// Opens or activates a .ctech editor tab. A .ctech that fails to load (corrupt JSON, a newer
+    /// <c>FormatVersion</c>) surfaces the error and does NOT open a blank document — silently
+    /// offering an empty editor over a file that couldn't be parsed invites saving over it.
+    /// </summary>
+    private void OpenOrActivateTech(string absolutePath)
+    {
+        if (ActivateIfOpen(absolutePath)) return;
+
+        try
+        {
+            var tech = TechPersistence.LoadFromFile(absolutePath);
+            var vm   = new TechEditorViewModel(absolutePath, tech);
+            vm.TechSaved += OnTechSaved;
+            vm.SaveError += OnTechSaveError;
+            var doc = new TechDocument(Path.GetFileName(absolutePath), vm, absolutePath);
+            _factory.OpenDocument(doc);
+            _openDocsByPath[absolutePath] = doc;
+            HookTechFileDirty(doc);
+            Messages.Info("Opened", absolutePath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to open technology: {ex.Message}");
+        }
+    }
+
+    /// <summary>Reflects a .ctech editor's dirty state onto its tree node's dirty dot — mirrors
+    /// <see cref="HookLayoutCellDirty"/>, except a technology has no owning cell: the node
+    /// updated is the .ctech file node itself.</summary>
+    private void HookTechFileDirty(TechDocument doc)
+    {
+        doc.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(TechEditorViewModel.IsDirty))
+                _factory.ProjectTreeTool?.SetTechFileDirty(doc.FilePath, doc.ViewModel.IsDirty);
+        };
+    }
+
+    // The single call that fires L0c's live-refresh seam: every open layout resolved against
+    // this path re-resolves via TechnologyCache.TechnologyChanged → OnTechnologyChanged.
+    private void OnTechSaved(string path)
+    {
+        _techCache.Invalidate(path);
+        Messages.Success("Saved", path);
+    }
+
+    // A technology save failed (e.g. read-only / unwritable location) — surface it instead of crashing.
+    private void OnTechSaveError(string message) => Messages.Error(message);
+
     // ---- Data Display commands ----------------------------------------------
 
     /// <summary>
@@ -1741,6 +2107,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <inheritdoc/>
     public void OpenCellSchematic(ProjectTreeNodeViewModel cellNode) => OpenCellPrimary(cellNode, ViewType.Schematic);
     public void OpenCellSymbol(ProjectTreeNodeViewModel cellNode)    => OpenCellPrimary(cellNode, ViewType.Symbol);
+    public void OpenCellLayout(ProjectTreeNodeViewModel cellNode)    => OpenCellPrimary(cellNode, ViewType.Layout);
 
     private void OpenCellPrimary(ProjectTreeNodeViewModel cellNode, ViewType viewType)
     {
@@ -1748,13 +2115,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var pr      = CellFolder.ResolvePrimary(cellDir, viewType);
         if (pr.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || pr.ResolvedName is null)
         {
-            var what = viewType == ViewType.Schematic ? "schematic" : "symbol";
+            var what = viewType switch
+            {
+                ViewType.Schematic => "schematic",
+                ViewType.Layout    => "layout",
+                _                  => "symbol",
+            };
             Messages.Info($"Cell '{Path.GetFileName(cellDir)}' has no primary {what}.");
             return;
         }
         var path = Path.Combine(CellFolder.SubFolderPath(cellDir, viewType), pr.ResolvedName);
-        if (viewType == ViewType.Schematic) OpenOrActivateSchematic(path);
-        else                                OpenOrActivateSymbol(path);
+        if (viewType == ViewType.Schematic)    OpenOrActivateSchematic(path);
+        else if (viewType == ViewType.Layout)  OpenOrActivateLayout(path);
+        else                                    OpenOrActivateSymbol(path);
     }
 
     public void OpenNode(ProjectTreeNodeViewModel node)
@@ -1765,7 +2138,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 var ext = Path.GetExtension(node.AbsolutePath).ToLowerInvariant();
                 if (ext == ".csym")  { OpenOrActivateSymbol(node.AbsolutePath);    return; }
                 if (ext == ".csch")  { OpenOrActivateSchematic(node.AbsolutePath); return; }
-                // .clay (layout) and other view-file types → deferred no-op
+                if (ext == ".clay")  { OpenOrActivateLayout(node.AbsolutePath);    return; }
+                // other view-file types → deferred no-op
                 return;
 
             case NodeKind.Cell:
@@ -1774,6 +2148,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             case NodeKind.DataDisplayFile:
                 OpenOrActivateDataDisplay(node.AbsolutePath);
+                return;
+
+            case NodeKind.TechFile:
+                OpenOrActivateTech(node.AbsolutePath);
                 return;
 
             default:
@@ -2347,7 +2725,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private bool IsCellDirty(string cellDir) =>
         _registry.AllDirtyPaths.Any(p => IsViewInCell(p, cellDir))
         || _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d =>
-               d.IsDirty && d.ViewModel.CurrentSymbolPath is { } sp && IsViewInCell(sp, cellDir));
+               d.IsDirty && d.ViewModel.CurrentSymbolPath is { } sp && IsViewInCell(sp, cellDir))
+        || _openDocsByPath.Values.OfType<LayoutDocument>().Any(d =>
+               d.IsDirty && d.FilePath is { } lp && IsViewInCell(lp, cellDir));
 
     private void RefreshCellDirty(string cellDir)
         => _factory.ProjectTreeTool?.SetCellDirty(cellDir, IsCellDirty(cellDir));
@@ -2363,6 +2743,30 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             if (e.PropertyName is nameof(SymbolEditorViewModel.IsDirty))
                 RefreshCellDirtyForSymbol(doc);
+        };
+    }
+
+    /// <summary>
+    /// Updates the owning cell's dirty indicator when an open layout editor changes dirty state.
+    /// No-op for layouts with no cell path yet (scratch / loose).
+    /// </summary>
+    private void RefreshCellDirtyForLayout(LayoutDocument doc)
+    {
+        if (doc.FilePath is not { } lp) return;
+        if (CellDirOfView(lp) is { } cellDir)
+            RefreshCellDirty(cellDir);
+    }
+
+    /// <summary>
+    /// Subscribes a layout editor document's dirty state to its owning cell's tree indicator so
+    /// editing or saving a .clay flips the cell node dirty/clean.  Mirrors <see cref="HookSymbolCellDirty"/>.
+    /// </summary>
+    private void HookLayoutCellDirty(LayoutDocument doc)
+    {
+        doc.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(LayoutEditorViewModel.IsDirty))
+                RefreshCellDirtyForLayout(doc);
         };
     }
 
@@ -2398,6 +2802,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     return _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d =>
                         d.IsDirty && d.ViewModel.CurrentSymbolPath is { } sp
                         && string.Equals(Path.GetFullPath(sp), key, StringComparison.OrdinalIgnoreCase));
+                if (ext == ".clay")
+                    return _openDocsByPath.Values.OfType<LayoutDocument>().Any(d =>
+                        d.IsDirty && d.FilePath is { } lp
+                        && string.Equals(Path.GetFullPath(lp), key, StringComparison.OrdinalIgnoreCase));
                 return false;
             }
             case NodeKind.DataDisplayFile:
@@ -2407,6 +2815,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     d.FilePath is { } fp
                     && string.Equals(Path.GetFullPath(fp), ddKey, StringComparison.OrdinalIgnoreCase)
                     && d.ViewModel.Window.HasUnsavedChanges());
+            }
+            case NodeKind.TechFile:
+            {
+                var techKey = Path.GetFullPath(node.AbsolutePath);
+                return _openDocsByPath.Values.OfType<TechDocument>().Any(d =>
+                    d.IsDirty && string.Equals(Path.GetFullPath(d.FilePath), techKey, StringComparison.OrdinalIgnoreCase));
             }
             default:
                 return false;
@@ -2429,15 +2843,27 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 var ext = Path.GetExtension(node.AbsolutePath).ToLowerInvariant();
                 if (ext == ".csch")      SaveSchematicByPath(node.AbsolutePath);
                 else if (ext == ".csym") await SaveSymbolByPathAsync(node.AbsolutePath, owner);
+                else if (ext == ".clay") await SaveLayoutByPathAsync(node.AbsolutePath, owner);
                 break;
             }
             case NodeKind.DataDisplayFile:
                 await SaveDataDisplayByPathAsync(node.AbsolutePath, owner);
                 break;
+            case NodeKind.TechFile:
+                SaveTechByPath(node.AbsolutePath);
+                break;
         }
 
         if (CurrentWorkspacePath is not null)
             WriteWorkspaceFile(CurrentWorkspacePath, silent: true);
+    }
+
+    private void SaveTechByPath(string absPath)
+    {
+        var key = Path.GetFullPath(absPath);
+        var doc = _openDocsByPath.Values.OfType<TechDocument>().FirstOrDefault(d =>
+            string.Equals(Path.GetFullPath(d.FilePath), key, StringComparison.OrdinalIgnoreCase));
+        if (doc is { IsDirty: true }) doc.ViewModel.SaveCommand.Execute(null);
     }
 
     private void SaveSchematicByPath(string absPath)
@@ -2472,6 +2898,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             await SaveDataDisplayDoc(doc, owner);
     }
 
+    private async Task SaveLayoutByPathAsync(string absPath, Window owner)
+    {
+        var key = Path.GetFullPath(absPath);
+        var doc = _openDocsByPath.Values.OfType<LayoutDocument>().FirstOrDefault(d =>
+            d.FilePath is { } lp
+            && string.Equals(Path.GetFullPath(lp), key, StringComparison.OrdinalIgnoreCase));
+        if (doc is { IsDirty: true }) await SaveMaterializedLayoutDoc(doc, owner);
+    }
+
     private async Task SaveCellViewsAsync(string cellDir, Window owner)
     {
         foreach (var p in _registry.AllDirtyPaths.Where(p => IsViewInCell(p, cellDir)).ToList())
@@ -2480,6 +2915,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                      .Where(d => d.IsDirty && d.ViewModel.CurrentSymbolPath is { } sp && IsViewInCell(sp, cellDir))
                      .ToList())
             await SaveMaterializedSymbolDoc(doc, owner);
+        foreach (var doc in _openDocsByPath.Values.OfType<LayoutDocument>()
+                     .Where(d => d.IsDirty && d.FilePath is { } lp && IsViewInCell(lp, cellDir))
+                     .ToList())
+            await SaveMaterializedLayoutDoc(doc, owner);
         RefreshCellDirty(cellDir);
     }
 
@@ -2690,6 +3129,55 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
         _factory.ProjectTreeTool?.Refresh();
         Messages.Info($"Reference removed (file not deleted):\n  {path}");
+    }
+
+    // ── Technology (.ctech) node actions (L0c) ────────────────────────────────
+
+    /// <inheritdoc/>
+    public void SetAsWorkspaceDefault(ProjectTreeNodeViewModel node)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        string relPath;
+        try   { relPath = Path.GetRelativePath(workspaceDir, node.AbsolutePath); }
+        catch { relPath = node.AbsolutePath; }
+
+        CwsFile cws;
+        try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
+        catch { cws = new CwsFile(); }
+
+        cws.DefaultTechRef = relPath;
+        WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
+
+        // The new default's cached entry (if any) may be stale relative to what's on disk now;
+        // Invalidate forces a fresh load, then every open layout re-resolves against it.
+        _techCache.Invalidate(node.AbsolutePath);
+        RefreshAllOpenLayoutTech();
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Success("Set as workspace default technology", node.AbsolutePath);
+    }
+
+    /// <inheritdoc/>
+    public void ReloadTechnology(ProjectTreeNodeViewModel node)
+    {
+        _techCache.Invalidate(node.AbsolutePath);
+        Messages.Info("Technology reloaded", node.AbsolutePath);
+    }
+
+    /// <inheritdoc/>
+    public bool IsWorkspaceDefaultTech(ProjectTreeNodeViewModel node)
+    {
+        if (CurrentWorkspacePath is null) return false;
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        string? defaultTechRef;
+        try   { defaultTechRef = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath).DefaultTechRef; }
+        catch { return false; }
+        if (defaultTechRef is null) return false;
+
+        var defaultAbsPath = Path.GetFullPath(Path.Combine(workspaceDir, defaultTechRef));
+        return string.Equals(defaultAbsPath, node.AbsolutePath, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc/>
@@ -3521,6 +4009,52 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
         }
 
+        // Layout editor document.
+        if (dockable is LayoutDocument layDoc && layDoc.IsDirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{layDoc.Id}' before closing?",
+                title: "Unsaved Changes");
+            await dlg.ShowDialog(window);
+
+            switch (dlg.Result)
+            {
+                case SaveChangesResult.Cancel:
+                    return false;
+                case SaveChangesResult.DontSave:
+                    return true;
+                case SaveChangesResult.Save:
+                    await SaveSingleLayoutDocument(layDoc, window);
+                    // Cancel in the save-target dialog counts as "save cancelled" → cancel close.
+                    return !layDoc.IsDirty;
+                default:
+                    return false;
+            }
+        }
+
+        // Technology editor document — always materialized, never scratch, so Save is a direct
+        // write (no offer-target dialog like Layout/Symbol).
+        if (dockable is TechDocument techDoc && techDoc.IsDirty)
+        {
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Save '{techDoc.Id}' before closing?",
+                title: "Unsaved Changes");
+            await dlg.ShowDialog(window);
+
+            switch (dlg.Result)
+            {
+                case SaveChangesResult.Cancel:
+                    return false;
+                case SaveChangesResult.DontSave:
+                    return true;
+                case SaveChangesResult.Save:
+                    techDoc.ViewModel.SaveCommand.Execute(null);
+                    return !techDoc.IsDirty;
+                default:
+                    return false;
+            }
+        }
+
         // Data display document.
         if (dockable is DataDisplayDocument ddDoc && ddDoc.ViewModel.Window.HasUnsavedChanges())
         {
@@ -3551,6 +4085,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchSymbols.Remove(scratchSymbol);
         if (dockable is DataDisplayDocument scratchDisplay)
             _scratchDataDisplays.Remove(scratchDisplay);
+        if (dockable is LayoutDocument scratchLayout)
+            _scratchLayouts.Remove(scratchLayout);
 
         // Unsubscribe from cell edit model events to prevent memory leaks.
         if (dockable is CellParameterEditorDocument cellDoc)
@@ -3634,6 +4170,32 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return;
             }
 
+            // SingleDoc scope for an active layout editor — scratch → offer dialog; materialized → PerformSave.
+            if (ActiveSaveScope == SaveScope.SingleDoc &&
+                _factory.DocumentDock?.ActiveDockable is LayoutDocument singleLayDoc)
+            {
+                if (!singleLayDoc.IsDirty)
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                await SaveSingleLayoutDocument(singleLayDoc, window);
+                return;
+            }
+
+            // SingleDoc scope for an active technology editor — always materialized, direct write.
+            if (ActiveSaveScope == SaveScope.SingleDoc &&
+                _factory.DocumentDock?.ActiveDockable is TechDocument singleTechDoc)
+            {
+                if (!singleTechDoc.IsDirty)
+                {
+                    Messages.Info("Nothing to save.");
+                    return;
+                }
+                singleTechDoc.ViewModel.SaveCommand.Execute(null);
+                return;
+            }
+
             // AllDocs scope: save every dirty document.
             var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
             var dirtyMaterialized = _openDocsByPath.Values
@@ -3645,9 +4207,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 .OfType<SymbolEditorDocument>()
                 .Where(d => d.IsDirty && !d.IsScratch)
                 .ToList();
+            var dirtyScratchLayouts = _scratchLayouts.Where(d => d.IsDirty).ToList();
+            var dirtyMaterializedLayouts = _openDocsByPath.Values
+                .OfType<LayoutDocument>()
+                .Where(d => d.IsDirty && !d.IsScratch)
+                .ToList();
+            var dirtyTechDocs = _openDocsByPath.Values
+                .OfType<TechDocument>()
+                .Where(d => d.IsDirty)
+                .ToList();
 
             bool anyDirty = dirtyScratch.Count > 0 || dirtyMaterialized.Count > 0
-                         || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0;
+                         || dirtyScratchSymbols.Count > 0 || dirtyMaterializedSymbols.Count > 0
+                         || dirtyScratchLayouts.Count > 0 || dirtyMaterializedLayouts.Count > 0
+                         || dirtyTechDocs.Count > 0;
             if (!anyDirty)
             {
                 Messages.Info("Nothing to save.");
@@ -3709,6 +4282,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Already-materialized dirty symbol docs — write directly via VM.
             foreach (var symDoc in dirtyMaterializedSymbols)
                 await SaveMaterializedSymbolDoc(symDoc, window);
+
+            // Scratch layout docs — per-doc offer dialog.
+            foreach (var layDoc in dirtyScratchLayouts)
+                await SaveScratchLayout(layDoc, window);
+
+            // Already-materialized dirty layout docs — write directly via VM.
+            foreach (var layDoc in dirtyMaterializedLayouts)
+                await SaveMaterializedLayoutDoc(layDoc, window);
+
+            // Dirty technology docs — always materialized, direct write via VM.
+            foreach (var techDoc in dirtyTechDocs)
+                techDoc.ViewModel.SaveCommand.Execute(null);
         }
         finally
         {
@@ -3787,6 +4372,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         || _openDocsByPath.Values.OfType<SchematicDocument>().Any(d => d.IsDirty)
         || _scratchSymbols.Any(d => d.IsDirty)
         || _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d => d.IsDirty)
+        || _scratchLayouts.Any(d => d.IsDirty)
+        || _openDocsByPath.Values.OfType<LayoutDocument>().Any(d => d.IsDirty)
+        || _openDocsByPath.Values.OfType<TechDocument>().Any(d => d.IsDirty)
         || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges())
         || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges())
         || HasOrphanedDirtySession();
@@ -3812,11 +4400,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var dirtyMatDisplays = _openDocsByPath.Values
             .OfType<DataDisplayDocument>()
             .Where(d => d.ViewModel.Window.HasUnsavedChanges()).ToList();
+        var dirtyScratchLayouts = _scratchLayouts.Where(d => d.IsDirty).ToList();
+        var dirtyMatLayouts     = _openDocsByPath.Values
+            .OfType<LayoutDocument>()
+            .Where(d => d.IsDirty && !d.IsScratch)
+            .ToList();
+        var dirtyTechDocs = _openDocsByPath.Values
+            .OfType<TechDocument>()
+            .Where(d => d.IsDirty)
+            .ToList();
         var dirtyOrphanedSessions = _registry.GetOrphanedDirtyPaths(IsSessionReferenced);
 
         int total = dirtyScratch.Count + dirtyMat.Count
                   + dirtyScratchSymbols.Count + dirtyMatSymbols.Count
                   + dirtyScratchDisplays.Count + dirtyMatDisplays.Count
+                  + dirtyScratchLayouts.Count + dirtyMatLayouts.Count
+                  + dirtyTechDocs.Count
                   + dirtyOrphanedSessions.Count;
         if (total == 0) return true;
 
@@ -3824,8 +4423,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         string? firstId =
               dirtyScratch.Count          > 0 ? dirtyScratch[0].Id
             : dirtyScratchSymbols.Count   > 0 ? dirtyScratchSymbols[0].Id
+            : dirtyScratchLayouts.Count   > 0 ? dirtyScratchLayouts[0].Id
             : dirtyMat.Count              > 0 ? dirtyMat[0].Id
             : dirtyMatSymbols.Count       > 0 ? dirtyMatSymbols[0].Id
+            : dirtyMatLayouts.Count       > 0 ? dirtyMatLayouts[0].Id
+            : dirtyTechDocs.Count         > 0 ? dirtyTechDocs[0].Id
             : dirtyMatDisplays.Count      > 0 ? dirtyMatDisplays[0].Id
             : dirtyScratchDisplays.Count  > 0 ? dirtyScratchDisplays[0].Id
             : dirtyOrphanedSessions.Count > 0 ? Path.GetFileNameWithoutExtension(dirtyOrphanedSessions[0])
@@ -3895,6 +4497,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // Materialized dirty symbols → write directly via VM.
                 foreach (var symDoc in dirtyMatSymbols)
                     await SaveMaterializedSymbolDoc(symDoc, owner);
+                // Scratch layouts → per-doc offer dialog (same as AllDocs scope).
+                foreach (var layDoc in dirtyScratchLayouts)
+                    await SaveScratchLayout(layDoc, owner);
+                // Materialized dirty layouts → write directly via VM.
+                foreach (var layDoc in dirtyMatLayouts)
+                    await SaveMaterializedLayoutDoc(layDoc, owner);
+                // Dirty technology docs — always materialized, direct write via VM.
+                foreach (var techDoc in dirtyTechDocs)
+                    techDoc.ViewModel.SaveCommand.Execute(null);
                 // Dirty data displays → save in place (materialized) or via picker (scratch).
                 foreach (var dd in dirtyMatDisplays)
                     await SaveDataDisplayDoc(dd, owner);
@@ -4380,6 +4991,134 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // PerformSave already set vm.CurrentSymbolPath + vm.IsDirty=false + fired SymbolSaved.
         // Complete the scratch → materialized transition on the document.
         _scratchSymbols.Remove(doc);
+        doc.Materialize(pathAfter);
+        _openDocsByPath[pathAfter] = doc;
+
+        Messages.Success("Saved", pathAfter);
+    }
+
+    // ---- Save scratch layout --------------------------------------------------
+
+    /// <summary>
+    /// Routes ⌘S for a single LayoutDocument.
+    /// Scratch → two-option offer dialog ("Save to Cell…" / "Save as File").
+    /// Materialized → VM's existing SaveLayoutCommand (writes to CurrentLayoutPath).
+    /// </summary>
+    private async Task SaveSingleLayoutDocument(LayoutDocument doc, Window window)
+    {
+        if (doc.IsScratch)
+            await SaveScratchLayout(doc, window);
+        else
+            await SaveMaterializedLayoutDoc(doc, window);
+    }
+
+    /// <summary>Saves an already-materialized layout via its VM command and logs one "Saved" message.</summary>
+    private async Task SaveMaterializedLayoutDoc(LayoutDocument doc, Window owner)
+    {
+        var path = doc.ViewModel.CurrentLayoutPath;
+        await doc.ViewModel.SaveLayoutCommand.ExecuteAsync(owner);
+        if (path is not null && !doc.IsDirty)   // dirty cleared ⇒ save succeeded
+            Messages.Success("Saved", path);
+    }
+
+    /// <summary>
+    /// Shows the two-option offer dialog for a scratch layout and dispatches to the
+    /// chosen path: "Save to Cell…" (cell + layout/ subfolder) or "Save as File" (orphan .clay).
+    /// </summary>
+    private async Task SaveScratchLayout(LayoutDocument doc, Window window)
+    {
+        var offerDialog = new Views.Dialogs.SaveChangesDialog(
+            "Save this layout to a cell, or as a standalone file?",
+            saveLabel:     "Save to Cell…",
+            dontSaveLabel: "Save as File",
+            cancelLabel:   "Cancel",
+            title:         "Save Layout");
+        await offerDialog.ShowDialog(window);
+
+        switch (offerDialog.Result)
+        {
+            case SaveChangesResult.Save:  // "Save to Cell…"
+                if (CurrentWorkspacePath is not null)
+                    await SaveScratchLayoutToCell(doc, window);
+                else
+                    await SaveScratchLayoutAsFile(doc, window);  // no workspace — fall through to file
+                break;
+
+            case SaveChangesResult.DontSave:  // "Save as File"
+                await SaveScratchLayoutAsFile(doc, window);
+                break;
+        }
+        // Cancel → no-op.
+    }
+
+    /// <summary>
+    /// "Save to Cell…" branch: prompts for a cell name, creates the cell folder if needed,
+    /// writes the .clay into cell/layout/, and materializes the document.
+    /// </summary>
+    private async Task SaveScratchLayoutToCell(LayoutDocument doc, Window window)
+    {
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+
+        var dialog   = new InputNameDialog("Save to Cell", "Cell name:");
+        var cellName = await dialog.ShowDialog<string?>(window);
+        if (cellName is null) return;
+
+        var reason = NameValidator.Validate(cellName);
+        if (reason is not null)
+        {
+            Messages.Error($"Invalid cell name: {reason}");
+            return;
+        }
+
+        var cellDir   = Path.Combine(workspaceDir, cellName);
+        var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        var ext       = CellFolder.ViewExtension(ViewType.Layout);
+        var filePath  = Path.Combine(layoutDir, cellName + ext);
+
+        if (File.Exists(filePath))
+        {
+            Messages.Error($"Layout '{cellName}{ext}' already exists in cell '{cellName}'.");
+            return;
+        }
+
+        try
+        {
+            // Create cell folder + layout subfolder (idempotent if cell already exists).
+            if (!Directory.Exists(cellDir))
+                CellFolder.CreateCellFolder(workspaceDir, cellName);
+            else if (!Directory.Exists(layoutDir))
+                Directory.CreateDirectory(layoutDir);
+
+            LayoutPersistence.SaveToFile(filePath, doc.ViewModel.Model);
+
+            _scratchLayouts.Remove(doc);
+            doc.Materialize(filePath);
+            _openDocsByPath[filePath] = doc;
+
+            _factory.ProjectTreeTool?.Refresh();
+            Messages.Success("Saved", filePath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to save layout: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// "Save as File" branch: shows the file picker via the VM's existing SaveLayoutAsCommand,
+    /// then materializes the document so it is no longer tracked as scratch.
+    /// </summary>
+    private async Task SaveScratchLayoutAsFile(LayoutDocument doc, Window window)
+    {
+        var pathBefore = doc.ViewModel.CurrentLayoutPath;
+        await doc.ViewModel.SaveLayoutAsCommand.ExecuteAsync(window);
+        var pathAfter = doc.ViewModel.CurrentLayoutPath;
+
+        if (pathAfter is null || pathAfter == pathBefore) return;  // user cancelled the picker
+
+        // PerformSave already set vm.CurrentLayoutPath + vm.IsDirty=false + fired LayoutSaved.
+        // Complete the scratch → materialized transition on the document.
+        _scratchLayouts.Remove(doc);
         doc.Materialize(pathAfter);
         _openDocsByPath[pathAfter] = doc;
 

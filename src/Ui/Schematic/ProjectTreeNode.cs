@@ -40,6 +40,9 @@ public enum NodeKind
     /// <summary>A .ccolor color-theme file.</summary>
     ColorThemeFile,
 
+    /// <summary>A .ctech technology file.</summary>
+    TechFile,
+
     /// <summary>Any other file not covered by the above kinds.</summary>
     OtherFile,
 

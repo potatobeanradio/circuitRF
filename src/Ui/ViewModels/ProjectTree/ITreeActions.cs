@@ -46,6 +46,9 @@ public interface ITreeActions
     /// <summary>Open (or activate) the cell's primary symbol in a Content tab.</summary>
     void OpenCellSymbol(ProjectTreeNodeViewModel cellNode);
 
+    /// <summary>Open (or activate) the cell's primary layout in a Content tab.</summary>
+    void OpenCellLayout(ProjectTreeNodeViewModel cellNode);
+
     /// <summary>Remove a .cdd Data Display file (moves to Trash). Confirms; no usage check.</summary>
     void RemoveDataDisplay(ProjectTreeNodeViewModel node);
 
@@ -87,4 +90,22 @@ public interface ITreeActions
 
     /// <summary>Rename the given cell folder, rewrite all workspace references, and optionally rename primaries.</summary>
     Task RenameCellAsync(ProjectTreeNodeViewModel cellNode);
+
+    // ── Technology (.ctech) node actions (L0c) ────────────────────────────────
+
+    /// <summary>Writes this .ctech node's workspace-relative path into .cws DefaultTechRef,
+    /// invalidates the technology cache for it, and refreshes every open layout's resolution.</summary>
+    void SetAsWorkspaceDefault(ProjectTreeNodeViewModel node);
+
+    /// <summary>Invalidates the cached Technology for this .ctech node so a hand-edited file takes
+    /// effect without restarting — the live-refresh seam for open layouts using it.</summary>
+    void ReloadTechnology(ProjectTreeNodeViewModel node);
+
+    /// <summary>True when this .ctech node is the workspace's current default technology — drives
+    /// the check/radio affordance on the node.</summary>
+    bool IsWorkspaceDefaultTech(ProjectTreeNodeViewModel node);
+
+    /// <summary>New Technology… — prompts for a name and starting point (PCB / MMIC / Empty),
+    /// writes tech/&lt;name&gt;.ctech, optionally sets it as the workspace default, opens it.</summary>
+    Task NewTechnologyAsync(ProjectTreeNodeViewModel node);
 }
