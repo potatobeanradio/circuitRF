@@ -28,6 +28,9 @@ public interface ITreeActions
     /// <summary>New Schematic on cell node — prompts for name, creates .csch, opens tab, Refresh.</summary>
     Task NewSchematicAsync(ProjectTreeNodeViewModel cellNode);
 
+    /// <summary>New Layout on cell node — prompts for name, creates .clay, opens editor, Refresh.</summary>
+    Task NewLayoutAsync(ProjectTreeNodeViewModel cellNode);
+
     /// <summary>Register a file or directory path as a Known File in the workspace .cws.</summary>
     void AddKnownFile(string path);
 

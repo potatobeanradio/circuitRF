@@ -1631,7 +1631,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             AngleMode    = AngleMode.AnyAngle,
             TechRef      = null,
         };
-        var vm = new LayoutEditorViewModel(model);
+        var vm = new LayoutEditorViewModel(model, messageSink: Messages);
         vm.ApplyTechResolution(resolution);
         vm.SaveError += OnLayoutSaveError;
         var doc = new LayoutDocument(title, vm);  // filePath = null → scratch
@@ -1693,7 +1693,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try
         {
             var model = LayoutPersistence.LoadFromFile(absolutePath);
-            var vm    = new LayoutEditorViewModel(model, absolutePath);
+            var vm    = new LayoutEditorViewModel(model, absolutePath, messageSink: Messages);
             vm.ApplyTechResolution(ResolveTechFor(model.TechRef, absolutePath));
             vm.SaveError += OnLayoutSaveError;
             var doc = new LayoutDocument(Path.GetFileName(absolutePath), vm, absolutePath);
@@ -3514,6 +3514,73 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         catch (Exception ex)
         {
             Messages.Error($"Failed to create schematic: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task NewLayoutAsync(ProjectTreeNodeViewModel cellNode)
+    {
+        var cellDir   = cellNode.AbsolutePath;
+        var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+
+        if (!Directory.Exists(layoutDir))
+        {
+            Messages.Error($"Layout sub-folder not found in '{cellNode.Name}'.");
+            return;
+        }
+
+        var mainWindow = ResolveOwner(null);
+        if (mainWindow is null) return;
+
+        var dialog = new InputNameDialog("New Layout", "Layout file name (without extension):");
+        var name   = await dialog.ShowDialog<string?>(mainWindow);
+        if (name is null) return;
+
+        var reason = NameValidator.Validate(name);
+        if (reason is not null)
+        {
+            Messages.Error($"Invalid layout name: {reason}");
+            return;
+        }
+
+        var ext      = CellFolder.ViewExtension(ViewType.Layout);
+        var filePath = Path.Combine(layoutDir, name + ext);
+        if (File.Exists(filePath))
+        {
+            Messages.Error($"A file named '{name}{ext}' already exists.");
+            return;
+        }
+
+        try
+        {
+            var resolution = ResolveTechFor(techRef: null, clayPath: filePath);
+            var tech = resolution.Tech;
+            var model = new LayoutView
+            {
+                DbuPerMicron = LayoutUnits.DefaultDbuPerMicron,
+                DisplayUnit  = tech?.DefaultDisplayUnit ?? LayoutUnit.Um,
+                SnapDbu      = tech?.DefaultSnapDbu ?? 1000,
+                AngleMode    = AngleMode.AnyAngle,
+                TechRef      = null,
+            };
+            LayoutPersistence.SaveToFile(filePath, model);
+
+            _factory.ProjectTreeTool?.Refresh();
+
+            // Open in a Layout Editor tab (materialized — has a real file path).
+            var vm = new LayoutEditorViewModel(model, filePath, messageSink: Messages);
+            vm.ApplyTechResolution(resolution);
+            vm.SaveError += OnLayoutSaveError;
+            var doc = new LayoutDocument(name + ext, vm, filePath);
+            _factory.OpenDocument(doc);
+            _openDocsByPath[filePath] = doc;
+            HookLayoutCellDirty(doc);
+
+            Messages.Success("Created", filePath);
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Failed to create layout: {ex.Message}");
         }
     }
 

@@ -1,12 +1,167 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:ctrl="using:CircuitRF.Ui.Controls"
+             xmlns:converters="using:CircuitRF.Ui.Converters"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Layout.LayoutEditorView"
              x:DataType="lay:LayoutDocument"
              Background="{DynamicResource SystemChromeLowColor}">
 
+    <UserControl.Resources>
+        <converters:EnumEqualsToBoolConverter x:Key="EnumEqualsBool"/>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <Style Selector="Button.ToolActive">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.ToolActive /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColor}"/></Setter.Value>
+            </Setter>
+        </Style>
+        <Style Selector="Button.ToolActive:pointerover /template/ ContentPresenter">
+            <Setter Property="Background">
+                <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/></Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Styles>
+
     <DockPanel>
+
+        <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
+        <Border x:Name="ToolbarBorder" DockPanel.Dock="Top"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,2">
+            <!-- WrapPanel (not a horizontal StackPanel in a ScrollViewer): a ScrollViewer set to
+                 Auto/unbounded width can give its content effectively-infinite measure space on the
+                 first layout pass, which for non-wrapping horizontal content can leave it painted
+                 with a zero/degenerate size until a later invalidation (e.g. a pointer move) forces
+                 a relayout — see PaletteToolView's WrapPanel note for the same gotcha. Wrapping
+                 avoids the unbounded-width measurement entirely: it always reflows to the toolbar's
+                 actual width, and does not need a ScrollViewer at all. -->
+            <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+                        <Button Click="OnZoomToFit" ToolTip.Tip="Zoom to Fit" Padding="6,3">
+                            <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                        </Button>
+                        <Button Click="OnZoomIn" ToolTip.Tip="Zoom In" Padding="6,3">
+                            <mi:MaterialIcon Kind="MagnifyPlusOutline" Width="16" Height="16"/>
+                        </Button>
+                        <Button Click="OnZoomOut" ToolTip.Tip="Zoom Out" Padding="6,3">
+                            <mi:MaterialIcon Kind="MagnifyMinusOutline" Width="16" Height="16"/>
+                        </Button>
+                        <Button Click="OnZoom1To1" ToolTip.Tip="Zoom 1:1 (1 px per display-unit tick)" Padding="6,3">
+                            <mi:MaterialIcon Kind="Magnify" Width="16" Height="16"/>
+                        </Button>
+
+                        <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Select}"
+                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Select"
+                                ToolTip.Tip="Select (L1c)" Padding="6,3">
+                            <mi:MaterialIcon Kind="CursorDefault" Width="16" Height="16"/>
+                        </Button>
+                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Rect}"
+                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Rect"
+                                ToolTip.Tip="Rectangle" Padding="6,3">
+                            <mi:MaterialIcon Kind="RectangleOutline" Width="16" Height="16"/>
+                        </Button>
+                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=RoundedRect}"
+                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="RoundedRect"
+                                ToolTip.Tip="Rounded Rectangle" Padding="6,3">
+                            <mi:MaterialIcon Kind="SquareRoundedOutline" Width="16" Height="16"/>
+                        </Button>
+                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Circle}"
+                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Circle"
+                                ToolTip.Tip="Circle (center-radius)" Padding="6,3">
+                            <mi:MaterialIcon Kind="VectorCircle" Width="16" Height="16"/>
+                        </Button>
+                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Polygon}"
+                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Polygon"
+                                ToolTip.Tip="Polygon  (double-click/Enter to close, Backspace removes last vertex)" Padding="6,3">
+                            <mi:MaterialIcon Kind="VectorPolygon" Width="16" Height="16"/>
+                        </Button>
+                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"
+                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Path"
+                                ToolTip.Tip="Path (trace)" Padding="6,3">
+                            <mi:MaterialIcon Kind="VectorLine" Width="16" Height="16"/>
+                        </Button>
+                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Label}"
+                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Label"
+                                ToolTip.Tip="Label" Padding="6,3">
+                            <mi:MaterialIcon Kind="LabelOutline" Width="16" Height="16"/>
+                        </Button>
+
+                        <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                        <TextBlock Text="Layer:" VerticalAlignment="Center" FontSize="11" Margin="4,0,0,0"/>
+                        <ComboBox ItemsSource="{Binding ViewModel.AvailableLayers}"
+                                  SelectedItem="{Binding ViewModel.CurrentLayerItem, Mode=TwoWay}"
+                                  FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"
+                                  MinWidth="120">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="lay:LayerPickerItem">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Border Width="12" Height="12" CornerRadius="2"
+                                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+                                            <Border.Background>
+                                                <SolidColorBrush Color="{Binding SwatchColor}"/>
+                                            </Border.Background>
+                                        </Border>
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                        <!-- RoundedRect corner radius -->
+                        <TextBlock Text="Radius:" VerticalAlignment="Center" FontSize="11"
+                                   IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=RoundedRect}"/>
+                        <TextBox Text="{Binding ViewModel.CornerRadiusText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=RoundedRect}"
+                                 LostFocus="OnCornerRadiusCommit" KeyDown="OnCornerRadiusKeyDown"/>
+
+                        <!-- Path width + end style -->
+                        <TextBlock Text="Width:" VerticalAlignment="Center" FontSize="11"
+                                   IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"/>
+                        <TextBox Text="{Binding ViewModel.PathWidthText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"
+                                 LostFocus="OnPathWidthCommit" KeyDown="OnPathWidthKeyDown"/>
+                        <ComboBox ItemsSource="{x:Static lay:LayoutEditorViewModel.AllPathEndStyles}"
+                                  SelectedItem="{Binding ViewModel.CurrentPathEndStyle, Mode=TwoWay}"
+                                  FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"
+                                  IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"/>
+
+                        <!-- Label height -->
+                        <TextBlock Text="Height:" VerticalAlignment="Center" FontSize="11"
+                                   IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Label}"/>
+                        <TextBox Text="{Binding ViewModel.LabelHeightText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Label}"
+                                 LostFocus="OnLabelHeightCommit" KeyDown="OnLabelHeightKeyDown"/>
+
+                        <!-- Live Rect W/H — typed commit while a Rect drag is live (gate 9) -->
+                        <TextBlock Text="W:" VerticalAlignment="Center" FontSize="11"
+                                   IsVisible="{Binding ViewModel.IsDrawingRect}"/>
+                        <TextBox x:Name="DrawWidthBox" Text="{Binding ViewModel.DrawWidthText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ViewModel.IsDrawingRect}"
+                                 LostFocus="OnDrawWidthCommit" KeyDown="OnDrawWidthKeyDown"/>
+                        <TextBlock Text="H:" VerticalAlignment="Center" FontSize="11"
+                                   IsVisible="{Binding ViewModel.IsDrawingRect}"/>
+                        <TextBox x:Name="DrawHeightBox" Text="{Binding ViewModel.DrawHeightText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ViewModel.IsDrawingRect}"
+                                 LostFocus="OnDrawHeightCommit" KeyDown="OnDrawHeightKeyDown"/>
+
+                        <TextBlock Text="{Binding ViewModel.DrawReadoutText}" VerticalAlignment="Center" FontSize="11"
+                                   FontWeight="SemiBold" Margin="8,0,0,0"/>
+            </WrapPanel>
+        </Border>
 
         <!-- ── Metadata bar ─────────────────────────────────────────────────── -->
         <Border DockPanel.Dock="Bottom"
@@ -60,21 +215,54 @@
                     <TextBlock Classes="label" Text="Extent:"/>
                     <TextBlock Classes="value" Text="{Binding ViewModel.ExtentText}"/>
                 </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Classes="label" Text="X:"/>
+                    <TextBlock Classes="value" Text="{Binding ViewModel.CursorXText}"/>
+                    <TextBlock Classes="label" Text="Y:"/>
+                    <TextBlock Classes="value" Text="{Binding ViewModel.CursorYText}"/>
+                </StackPanel>
             </StackPanel>
         </Border>
 
-        <!-- ── Placeholder canvas — no geometry drawn; drawing tools arrive in L1 ── -->
-        <Border Background="{DynamicResource SystemRegionColor}">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-                <mi:MaterialIcon Kind="VectorSquareEdit" Width="40" Height="40"
-                                 Foreground="{DynamicResource SystemBaseMediumColor}"
-                                 HorizontalAlignment="Center" Opacity="0.6"/>
-                <TextBlock Text="Layout canvas — drawing tools arrive in L1."
-                           FontSize="13"
-                           Foreground="{DynamicResource SystemBaseMediumColor}"
-                           HorizontalAlignment="Center"/>
-            </StackPanel>
-        </Border>
+        <!-- ── Canvas + rulers ──────────────────────────────────────────────── -->
+        <!-- Nested DockPanels (not a Grid) — the same hosting shape SchematicCanvas/SymbolEditorCanvas
+             already use, kept here for consistency. See the L1b post-ship-fix-2 note in
+             src/Ui/CLAUDE.md for what is and is not confirmed about the reported toolbar-visibility
+             issue — the Grid-vs-DockPanel choice was never actually shown to matter. -->
+        <DockPanel>
+
+            <!-- Top row: corner box + horizontal ruler -->
+            <DockPanel DockPanel.Dock="Top" Height="22">
+                <Border DockPanel.Dock="Left" Width="22"
+                        Background="{DynamicResource SystemChromeMediumLowColor}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                        BorderThickness="0,0,1,1"/>
+                <ctrl:LayoutRulerControl x:Name="HRuler" Orientation="Horizontal" ClipToBounds="True"/>
+            </DockPanel>
+
+            <ctrl:LayoutRulerControl x:Name="VRuler" DockPanel.Dock="Left" Width="22" Orientation="Vertical" ClipToBounds="True"/>
+
+            <Panel>
+                <ctrl:LayoutCanvas x:Name="LayoutCanvasCtrl" ViewModel="{Binding ViewModel}" ClipToBounds="True"/>
+
+                <!-- L0b's centered placeholder — kept for an empty layout instead of a bare canvas. -->
+                <Border Background="{DynamicResource SystemRegionColor}"
+                        IsVisible="{Binding ViewModel.IsEmpty}"
+                        IsHitTestVisible="False">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                        <mi:MaterialIcon Kind="VectorSquareEdit" Width="40" Height="40"
+                                         Foreground="{DynamicResource SystemBaseMediumColor}"
+                                         HorizontalAlignment="Center" Opacity="0.6"/>
+                        <TextBlock Text="Empty layout — pick a tool and start drawing."
+                                   FontSize="13"
+                                   Foreground="{DynamicResource SystemBaseMediumColor}"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+            </Panel>
+
+        </DockPanel>
 
     </DockPanel>
 

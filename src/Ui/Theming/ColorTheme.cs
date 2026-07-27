@@ -68,6 +68,13 @@ public sealed class ColorTheme
             [ColorRole.SchematicSymbolLine]        = new( 45,  20, 195),
             [ColorRole.SchematicSymbolPlus]        = new(210,  99,  40),
             [ColorRole.SystemWarning]              = new(206,  74,  36),
+            [ColorRole.LayoutBackground]           = new(246, 246, 244),
+            [ColorRole.LayoutGridMinor]             = new(120, 120, 120,  60),
+            [ColorRole.LayoutGridMajor]             = new( 90,  90,  90, 110),
+            [ColorRole.LayoutRulerBackground]      = new(232, 232, 228),
+            [ColorRole.LayoutRulerText]            = new( 60,  60,  60),
+            [ColorRole.LayoutRulerTick]             = new(120, 120, 120),
+            [ColorRole.LayoutCursorIndicator]       = new(206,  74,  36),
         },
         new Dictionary<string, Rgba>
         {
@@ -84,5 +91,12 @@ public sealed class ColorTheme
             [ColorRole.SchematicSymbolLine]        = new(150, 132, 250),
             [ColorRole.SchematicSymbolPlus]        = new(245, 140,  75),
             [ColorRole.SystemWarning]              = new(240, 120,  70),
+            [ColorRole.LayoutBackground]           = new( 32,  32,  34),
+            [ColorRole.LayoutGridMinor]             = new(150, 150, 160,  55),
+            [ColorRole.LayoutGridMajor]             = new(190, 190, 200, 100),
+            [ColorRole.LayoutRulerBackground]      = new( 44,  44,  47),
+            [ColorRole.LayoutRulerText]            = new(210, 210, 210),
+            [ColorRole.LayoutRulerTick]             = new(150, 150, 155),
+            [ColorRole.LayoutCursorIndicator]       = new(240, 120,  70),
         });
 }

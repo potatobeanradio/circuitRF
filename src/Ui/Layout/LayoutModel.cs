@@ -2,6 +2,18 @@
 // Coordinates are integer DBU (docs/design/layout-view.md §1.1 R1).
 // No Schematic types are referenced here (SymbolRotation etc.) — layout borrows
 // patterns from Schematic, not types.
+//
+// The promotion rule (docs/design/layout-view.md §3.2, brief-L1b-drawing-tools §4 — decided now,
+// implemented in L1c): PolygonShape and CurveShape differ only in carrying an edge list. There is
+// deliberately no "Curve" drawing tool in L1b — the interaction that actually creates a curved edge
+// (drag a segment's midpoint to set its bulge) is the same interaction as L1c's bulge handle, so it
+// is built once there and reused at draw time rather than implemented twice in ways that drift.
+// A PolygonShape whose edge is converted to an Arc or Cubic (via that L1c bulge-handle / "convert
+// edge" gesture) is REPLACED by an equivalent CurveShape carrying the same Xy plus the new edge
+// list — Polygon is the "all edges are Line" special case of Curve, not a separate lineage.
+// PathShape already carries an edge list from L0a, so it simply gains the curved edge in place;
+// no promotion is needed there. This is a rule that gets decided twice, differently, if left
+// implicit — do not add a Curve tool or an ad hoc Polygon->Curve conversion without reading this.
 
 using System.Text.Json.Serialization;
 
@@ -170,4 +182,12 @@ public sealed class LayoutView
 
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];
+
+    /// <summary>Raised after any mutation of <see cref="Shapes"/>/<see cref="Instances"/> —
+    /// <c>LayoutCanvas</c> subscribes to repaint (mirrors <c>EditableSymbol.Changed</c>). Commands
+    /// under <c>src/Ui/Commands/Layout/</c> call <see cref="NotifyChanged"/> after every mutation,
+    /// in both Execute and Undo.</summary>
+    public event EventHandler? Changed;
+
+    public void NotifyChanged() => Changed?.Invoke(this, EventArgs.Empty);
 }

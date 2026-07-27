@@ -11,6 +11,14 @@
         MinHeight="300"
         Background="{DynamicResource SystemChromeLowColor}">
 
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+Z"       Command="{Binding ViewModel.UndoCommand}"/>
+        <KeyBinding Gesture="Meta+Z"       Command="{Binding ViewModel.UndoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+Z" Command="{Binding ViewModel.RedoCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+Z" Command="{Binding ViewModel.RedoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Y"       Command="{Binding ViewModel.RedoCommand}"/>
+    </Window.KeyBindings>
+
     <layv:LayoutEditorView/>
 
 </Window>

@@ -1,5 +1,290 @@
 # UI (Avalonia) — local conventions
 
+L1 fix — unclipped `SKCanvas.Clear` and the nonsense default zoom (brief-L1-fix-clear-and-default-zoom,
+2026-07-26) — COMPLETE: the real root causes of the two items the L1b post-ship entry below left
+unresolved, found by reading the code rather than by rendering. **(1) The toolbar, both rulers, and the
+metadata bar were wiped by the canvas — "invisible until hover, invisible again on exit."** Avalonia
+hands an `ICustomDrawOperation` the WHOLE render-surface canvas; `ICustomDrawOperation.Bounds` is used
+for invalidation/hit-testing only, it does **not** clip Skia. `LayoutRenderer.Draw` and
+`LayoutRulerRenderer.Draw` both called `canvas.Clear(...)` with no clip in force, which fills the
+*entire current clip region* — the whole window — wiping every sibling control already painted that
+frame (`LayoutEditorView.axaml` paints `ToolbarBorder` → metadata `Border` → `HRuler` → `VRuler` →
+`LayoutCanvas` → placeholder, in that order, so the canvas's `Clear` destroyed all four controls
+painted before it). `SymbolEditorRenderer.Draw` calls `canvas.Clear` too, and gets away with it for
+exactly one reason: `SymbolEditorView.axaml` sets `ClipToBounds="True"` on `SymbolEditorCanvas`, which
+makes Avalonia push a clip before rendering the control, constraining `Clear` to that control's own
+rectangle — `LayoutCanvas`/`LayoutRulerControl` did not have it. That single attribute was the entire
+difference between the two editors, never the `WrapPanel`↔`ScrollViewer` swap and never a
+Grid-vs-DockPanel choice (both ruled out during the investigation; neither was ever the cause). It also
+explains the exact hover signature reported: hovering a toolbar button invalidates only that button's
+small rect, which the canvas does not intersect, so the button paints normally and the toolbar
+"appears"; any pointer move over the canvas calls `InvalidateVisual()`, forcing a full repaint in which
+the unclipped `Clear` wipes the toolbar again. **Fix, both applied:** `LayoutRenderer.Draw` and
+`LayoutRulerRenderer.Draw` now `canvas.Save()`/`canvas.ClipRect(...)` before drawing anything (a cached,
+`[ThreadStatic]` `SKPaint` fills the background via `DrawRect` instead of `Clear`, restored in
+`finally`); `LayoutEditorView.axaml` also gained `ClipToBounds="True"` on `LayoutCanvas` and both
+`LayoutRulerControl`s, matching `SymbolEditorView.axaml`. Do both — the renderer fix is the one that
+does not depend on a caller remembering an attribute; the AXAML fix is correct anyway. Regression gate:
+`LayoutRendererTests.Draw_NeverPaintsOutsideTheViewportRect` and
+`LayoutRulerRendererTests.Draw_NeverPaintsOutsideTheStripRect` render into an `SKSurface`
+**larger** than the viewport, pre-fill it with a sentinel color, and assert every pixel outside the
+viewport rect is untouched — this is the contract directly, no compositor and nothing to distrust. **A
+correction about the investigation itself:** the headless test harness used throughout was **not**
+defective — an earlier session concluded it was, because a minimal probe (a plain toolbar next to any
+custom-draw control, including `SymbolEditorCanvas`) reproduced "toolbar absent" 100% of the time
+including for a control with no reported real bug. That was a true positive: `SymbolEditorCanvas`
+*does* carry the same latent unclipped `Clear`, protected only by the caller-side `ClipToBounds`
+attribute — the harness was correctly showing that the known-good editor has the same bug when that one
+attribute is missing from its host. **Do not discard the headless harness over this again; restore and
+reuse it.** **(2) The default zoom made the first shape impossible to draw** — not a placeholder bug;
+the `IsEmpty`/`PropertyChanged` wiring from the L1b entry below is correct and stays. `LayoutViewport`'s
+`Zoom` is **device pixels per DBU** (confirmed by `LayoutCanvas.Zoom1To1`); `LayoutViewport.Default`
+hardcoded `zoom = 1.0`, and at the default `DbuPerMicron = 1000` (1 DBU = 1 nm) that is **1 screen pixel
+per nanometre** — a brand-new empty layout showed a window roughly 1.5 µm wide. The PCB starter
+technology's `DefaultSnapDbu` is 1 mil (25,400 DBU), so the entire visible canvas was ~6% of one snap
+step: every pointer position in the whole window snapped to the same grid coordinate, `BuildTwoPointShape`
+saw a zero-width/zero-height/zero-radius result on every drag, and returned null every time — `IsEmpty`
+never had a chance to go false. **World-coordinate unit tests structurally cannot catch this class of
+bug** — every existing gesture test called `OnPointerPressed(wx, wy, …)` with world coordinates
+directly, bypassing `ScreenToWorld` and the default viewport entirely; the bug lives exactly in the gap
+those tests skip over, which is why the new regression tests route through `LayoutViewport.ScreenToWorldX/Y`.
+**Fix:** `LayoutViewport.Default` now takes the layout's own `SnapDbu`/`DbuPerMicron` and frames ~200 snap
+steps across the viewport width (clamped to `[MinZoom, MaxZoom]`, with a plain micron-scale fallback span
+when `SnapDbu <= 0`) instead of a fixed `zoom = 1.0` — physically meaningful and immediately drawable for
+both starter technologies. `LayoutCanvas.OnLayoutUpdated`'s initial-fit guard no longer requires
+`Shapes`/`Instances` to already be non-empty — it now fits exactly once per bound ViewModel as soon as
+`Bounds` is valid, empty or not, so an empty layout gets the new sane default instead of the raw
+`zoom = 1.0` field default. The auto-fit-on-first-shape hack added in L1b's `LayoutCanvas.OnModelChanged`
+is removed — it existed only to compensate for the broken default zoom, and once the default is sane it
+actively hurts (every first shape would yank the viewport to frame that one shape alone).
+`OnModelChanged` is back to a plain `InvalidateVisual()`. Separately, a real drag can still legitimately
+collapse to zero after snapping even when the raw (unsnapped) pointer movement was non-zero — `Rect`/
+`RoundedRect`/`Circle` now expand the affected axis (or radius) to one snap step instead of silently
+returning null in that case, via `TryExpandDegenerateAxis`/raw press-vs-current tracking
+(`_drawP1RawX/Y`/`_drawP2RawX/Y`, never persisted — only ever compared against, to distinguish "the
+pointer moved and the grid ate it" from "the pointer never moved on this axis," which still correctly
+yields no shape). Regression gates: `LayoutL1FixTests.DefaultViewport_TwoScreenPointsApart_MapToDistinctSnappedWorldCells`
+(both starter techs — this is the test that would have caught the bug), `..._GridIsVisible_AtOrAboveTheEightPixelThreshold`,
+`EndToEnd_ScreenCoordinates_PcbTech_DrawsRectShape_AndClearsIsEmpty` (drives the tool state machine with
+screen points converted through `ScreenToWorld`, not world coordinates), `SubSnapStepDrag_NonDegenerateRaw_YieldsOneSnapStepRect_NotNull`,
+and `ZeroLengthClick_NoRawMovement_StillYieldsNoShape` (the negative case). 9 new tests; 1783 Ui.Tests
+total, all green; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing
+skip). **Not interactively re-verified on a real machine** (no visual driver in this sandboxed
+environment) — but unlike every prior round on this bug, both root causes here were found by reading
+the code, are mechanically certain (not "sometimes" or compositor-timing-dependent), and are covered by
+tests that pin the actual contract (never paint outside the viewport rect; the default viewport is
+provably drawable) rather than relying on a screenshot. Please confirm on your end that the toolbar
+now renders on first paint and stays visible, and that drawing a shape into a brand-new layout shows up
+immediately.
+
+L1b post-ship fixes (2026-07-26) — COMPLETE: three owner-reported issues after trying the Layout
+Editor for the first time. **(1) Drawing a shape appeared to do nothing / the canvas stayed on the
+"Empty layout" placeholder:** two independent bugs, both now fixed. **(1a)** `IsEmpty`/`ShapeCountText`/
+`InstanceCountText`/`ExtentText` on `LayoutEditorViewModel` are all computed from `Model.Shapes`, but
+nothing ever raised `PropertyChanged` for them when the model mutated — `LayoutView.Changed` fires (so
+`LayoutCanvas` itself repaints correctly), but the *view's* `IsEmpty`-bound placeholder `Border` (drawn
+on top of the canvas per the L1a XAML) never rehid itself, so a successfully-drawn shape rendered
+underneath a placeholder that never went away. Fixed: the `LayoutEditorViewModel` constructor now
+subscribes to `Model.Changed` and re-raises `PropertyChanged` for all four. **Rule: any VM property
+computed from `Model.Shapes`/`Model.Instances` must be re-raised from that same `Model.Changed`
+subscription — it will not update on its own.** **(1b)** `LayoutCanvas`'s initial zoom-to-fit only ever
+ran from `OnLayoutUpdated`, whose guard requires `Shapes`/`Instances` to already be non-empty — so a
+layout that *started* empty never cleared `_needsInitialFit`, and drawing the very first shape left the
+view at its default pan/zoom (screen-pixel-scale around the origin), which for typical DBU-scale
+geometry could put the new shape completely out of the visible viewport even though it was correctly in
+the model and correctly rendered. Fixed: `LayoutCanvas.OnModelChanged` (the `Model.Changed` handler)
+now also performs the initial-fit check, so the first shape drawn into an empty layout auto-fits the
+view exactly like loading a non-empty `.clay` already did. **(2) The toolbar appeared invisible until
+the pointer moved over it, and went invisible again on pointer-exit:** the real root cause (an
+unclipped `SKCanvas.Clear` in `LayoutRenderer`/`LayoutRulerRenderer` wiping the whole render surface —
+`ICustomDrawOperation.Bounds` does not clip Skia) is **fixed**; see the "L1 fix" entry at the top of
+this file for the full story, including a correction of two theories floated here originally (the
+`WrapPanel`↔`ScrollViewer` swap and a Grid-vs-DockPanel choice) — neither was ever the cause, and the
+headless test harness used to investigate this was not defective either.
+**(3) Project Tree "New Layout" was hardcoded `IsEnabled="False"`:** a leftover stub from Phase 6g
+(2026-06-19-era), written before the Layout Editor existed at all ("New Layout → IsEnabled=False,
+greyed, v2" — see the 6g history further down this file) and never revisited once L0-L1b landed.
+`ITreeActions.NewLayoutAsync` + `ProjectTreeNodeViewModel.NewLayoutCommand` + `WorkspaceViewModel.
+NewLayoutAsync` now mirror `NewSchematicAsync`/`NewSymbolAsync` exactly (prompt for a name, validate,
+write an empty `.clay` via `LayoutPersistence.SaveToFile`, seed `DisplayUnit`/`SnapDbu` from the
+resolved workspace-default technology exactly like the File-menu `NewLayout` command, open a materialized
+`LayoutDocument`, `Messages.Success`). `Open Layout`'s enablement (`CanOpenLayout`, resolved via
+`CellFolder.ResolvePrimary(..., ViewType.Layout)`) was already correct and already covered by
+`ProjectTreeNodeViewModelTests` (`Cell_SoleLayout_CanOpenLayoutTrue` et al.) — nothing to fix there.
+2 new tests in `LayoutDrawingToolsTests.cs` (`DrawingAShape_RaisesPropertyChanged_ForIsEmptyAndMetadataBarCounts`,
+`UndoingTheOnlyShape_RaisesPropertyChanged_IsEmptyBecomesTrueAgain`) cover fix (1a) directly; item (2)'s
+real fix and its own regression tests are in the "L1 fix" entry at the top of this file. 1774 Ui.Tests
+total at the time; see the L1 fix entry above for the current total. **Not interactively re-verified**
+(no visual driver in this environment) — reasoned from the binding/layout mechanics above, exactly as
+flagged for every prior Layout Editor phase.
+
+Phase L1b — drawing tools, snap, and undo (brief-L1b-drawing-tools, 2026-07-26) — COMPLETE: a layout
+can now be *drawn* — pick a layer, pick a tool, draw a shape, watch it land in the layout's color with
+a live dimension readout, Ctrl+Z removes it. No selection/hit-testing/handles/move/delete-by-picking/
+clipboard/booleans — those are L1c/L1d. **Fine-grained commands, not snapshot undo — a deliberate
+departure from L0d's `.ctech` editor.** `TechEditorViewModel` snapshots the whole `Technology` per
+edit because a technology is tens of layers and a handful of stackup entries — cheap to clone every
+time. A layout can hold 10³–10⁶ shapes (§5.1 of the design doc), so cloning the whole model per edit is
+exactly what that budget forbids; `LayoutEditorViewModel` instead owns its own `UndoRedoStack` and
+every drawn shape is one `AddShapeCommand` (`src/Ui/Commands/Layout/`), the house `IUiCommand` pattern.
+Only one command exists in L1b, but the plumbing is built for the dozen more L1c/L1d add on top (that's
+why `AddShapeCommand` exists as a real command rather than an inline lambda). **Restore-at-original-
+index, not append.** Z-order within a layer is list order (§2.3), so `AddShapeCommand` captures the
+shape's index on its *first* `Execute` and every subsequent Undo/Redo re-inserts at that exact
+position (`_view.Shapes.Insert(_index, _shape)`) — this is what makes "draw A, B, C; undo C; undo B;
+redo B" put B back at index 1, never appended past C's old slot; an Undo that quietly re-appended would
+be a rendering-order bug that only surfaces much later as a silent z-order swap. **`LayoutView` gained
+a `Changed` event + `NotifyChanged()`** (mirrors `EditableSymbol.Changed`) so `LayoutCanvas` can repaint
+on mutation — `LayoutCanvas.ViewModel`'s setter subscribes to `Model.Changed` once (the VM's `Model`
+reference itself never changes post-construction, so no re-subscription logic is needed). **Dirty
+tracking combines two independent sources**: `_prefsDirty` (a DisplayUnit/SnapDbu edit — still
+deliberately carries NO undo entry, per §1.3/§1.5) OR'd with `_undoRedo.IsModified` (a geometry edit);
+`MarkSaved()` clears both together and is what `LayoutDocument.Materialize`/`OnSavedAs` now call instead
+of setting `IsDirty` directly (mirrors `SymbolEditorDocument.Materialize` calling
+`ViewModel.UndoRedo.MarkSaved()`). **The current-layer combo is session state, deliberately NOT
+persisted in `.clay`** — `LayoutEditorViewModel.AvailableLayers`/`CurrentLayerKey` are populated from
+`Technology.Layers` (ordered by ZOrder) or a small fixed fallback set (`1/0`…`4/0` via
+`FallbackPalette`) when there is no technology, repopulated on every `ApplyTechResolution` (keeps the
+current selection if its key survives, else falls back to the first layer — never throws, gate 11
+covers the removed-current-layer case explicitly). **There is deliberately no `Curve` drawing tool.**
+`LayoutEditorViewModel.Tool` is `Select, Rect, RoundedRect, Circle, Polygon, Path, Label` — no `Curve`,
+because the interaction that actually creates a curved edge (drag a segment's midpoint to set its
+bulge) is the *same* interaction as L1c's bulge handle; building it once there and reusing it at draw
+time beats two implementations that drift. **The promotion rule** (documented in `LayoutModel.cs`'s
+header now, implemented in L1c): a `PolygonShape` whose edge is converted to an Arc/Cubic via that
+future bulge-handle gesture is replaced by an equivalent `CurveShape` carrying the same `Xy` plus the
+new edge list — Polygon is the "all edges are Line" special case of Curve, not a separate lineage;
+`PathShape` already carries an edge list from L0a and just gains the curved edge in place. **Snap +
+angle mode** (`LayoutSnapping.cs`, framework-free): `SnapValue`/`SnapPoint` snap to `LayoutView.SnapDbu`
+(Alt suspends per-point, `SnapDbu &lt;= 0` means none); `ConstrainAndSnap` constrains a candidate vertex
+relative to the previous one per `AngleMode` (Manhattan/Deg45/AnyAngle) and snaps a **single scalar
+distance along the already-chosen direction**, never X/Y independently — this guarantees "never emit an
+off-mode segment" *by construction* (both axis components are always exact multiples of the same
+snapped magnitude — equal for a 45° diagonal, one of them exactly zero for an axis direction) rather
+than needing the brief's suggested independent-snap-then-fallback-check. Angle mode never applies to
+`Circle`/`RoundedRect`. **Live readout + typed entry (§1 R6):** `LayoutEditorViewModel.DrawReadoutText`
+updates every pointer move (W×H / radius / running-segment-and-total, via `LayoutUnits.Format`); the
+toolbar's corner-radius/path-width+end-style/label-height fields are staged text committed through
+`LayoutUnits.TryParse` — invalid text reverts to the last good value and never throws (gate 8).
+**Typed Rect commit** (gate 9, the §10.10 "click start, click end, type W=2.9mm" step): `CommitDrawWidthText`/
+`CommitDrawHeightText` stage overrides on a live Rect drag without finalizing it;
+`CommitTypedRect` (wired to Enter in either field) finalizes at exactly the staged W/H — anchored at
+the original press point, extended in +X/+Y, regardless of where the drag currently sits — as one
+undo entry, same as a normal release. **`LayoutCanvas` now takes a single `ViewModel` DirectProperty**
+(not separate `Model`/`Technology` properties, as in L1a) so it can dispatch left-press/move/release
+and keyboard/text input directly to the VM's tool state machine, mirroring `SymbolEditorCanvas`; middle-
+drag pan and wheel zoom are checked *before* any VM dispatch, so both keep working mid-gesture (panning
+mid-polygon is normal). Crosshair cursor for every drawing tool, arrow for `Select` (inert in L1b — a
+registered tool that does nothing, same as the brief specifies). **The in-progress ghost** renders via
+`LayoutRenderer`'s new `LayoutRenderOptions.Overlay` — reuses `BuildShapePath` (no second geometry
+path), drawn above every committed layer in the ghost's own resolved layer color with a faint fill and
+a dashed hairline outline; never contributes to `LayoutRenderResult.UnknownLayers` (an uncommitted
+shape's layer choice isn't a gap to warn about). Test file: `LayoutDrawingToolsTests.cs` (gates 2–12:
+every tool produces the right primitive on the current layer; 12-vertex polygon is one undo entry;
+draw-A-B-C/undo/redo restores B at its original index; snap incl. Alt-suspend and `SnapDbu=0`; Manhattan/
+Deg45/AnyAngle segment constraints; snap/angle-mode changes leave serialized `Shapes` byte-identical;
+typed entry parse+revert; typed Rect commit regardless of pointer position; Escape leaves the model
+untouched and clears the overlay; Backspace drops exactly one vertex; fallback-layer usability and the
+removed-current-layer fallback; dirty-tracks-undo-and-clears-on-undo-to-saved; save+reload round-trips
+every drawn shape) — 27 new tests; 1772 Ui.Tests total, all green; full solution green (Firewall 4/4,
+Core 388/388, Engine 461/462 — 1 pre-existing skip, matching the L1a baseline exactly). **Not
+interactively verified** (no visual driver in this environment, matching every L0/L1a phase's
+precedent) — correctness here rests on the headless VM-level gesture tests above, which drive the tool
+state machine with synthetic pointer/key events exactly as the canvas would call it.
+**Next: L1c** (selection with overlap cycling, vertex/edge/bulge/control-point editing, move, delete,
+edge conversion — the Curve-promotion rule's real implementation — and the properties panel with layer
+and net).
+
+Phase L1a — the layout canvas: rendering, pan/zoom, grid, rulers (brief-L1a-layout-canvas, 2026-07-26)
+— COMPLETE: a layout is now *visible* — geometry draws in the resolved technology's layer colors over
+a decimated grid, framed by rulers, with fluid Y-up pan/zoom. No editing at all (no tools, no
+selection, no hit-testing) — that is L1b/L1c/L1d. **`LayoutRenderer`** (`src/Ui/Renderers/LayoutRenderer.cs`)
+is the new Skia entry point (`Draw(canvas, LayoutView?, Technology?, LayoutViewport, LayoutRenderOptions) ->
+LayoutRenderResult`); `SchematicRenderer.DrawSymbol` is **not** reused (§0 of the design doc: one
+`SKPath` per primitive per frame is right for ~20 symbol primitives and wrong for 10³–10⁶ layout shapes).
+**The path-space coordinate convention (R-L1a-1/2) — the thing this phase had to get right first:**
+`SKPath` is float32 (24-bit mantissa, ~16.7M distinct values); a 300mm board at 1nm resolution is
+~3×10⁸ DBU, so feeding raw DBU into a path quantizes badly far from the origin — and the artefacts
+only appear when someone zooms in far from (0,0), the worst possible time to discover it. The fix
+(`LayoutRenderer.PathSpace`, private struct): every vertex is mapped to `(dbu - origin) * dbuToUm`,
+where `origin` is a per-frame anchor near the viewport centre, quantized to a power-of-two step
+(`ComputeOrigin`) so it changes only roughly once per screen's worth of panning — magnitudes are then
+bounded by the *visible extent* in micrometres, not by absolute position, so a sub-micron feature
+300mm from the origin still renders at full precision (gate 9, `SmallFeature_AtLargeCoordinate_
+RendersCorrectSize_NoQuantization`). Pan/zoom are then a single positive-scale `SKMatrix`
+(`SKMatrix.CreateScaleTranslation`) applied to the whole path-space geometry once per frame — panning
+never rebuilds a single path. **Y is flipped once, at path-space construction** (layout's own
+coordinate system is Y-up/physical/GDSII convention, unlike the schematic/symbol canvases' Y-down
+screen sense — see `LayoutViewport`), which is exactly why arc math is the one place this file has a
+sharp edge: **arc parameters (center/radius/start-angle/sweep) must always be derived from the
+original DBU (Y-up) endpoints via `LayoutArc.FromBulge`, never re-derived from the already-flipped
+path-space floats** — a flip is a reflection (determinant -1) that reverses an arc's sweep sense, so
+re-deriving from flipped points with the same signed bulge silently fits a *different* arc through the
+same two endpoints (same sweep magnitude, wrong center) rather than the mirrored version of the
+original one. The fix is a single negation of the world-computed start angle and sweep when converting
+to Skia's `ArcTo(SKRect, startDeg, sweepDeg, forceMoveTo)` convention (`AppendEdge`). This bug is
+genuinely silent — it still draws *a* curve, just the wrong one — which is why it has a dedicated
+regression test (`ClosedCurve_OfFourQuarterArcs_FillsLikeACircle`, four 90° arcs that must fill like a
+circle, not some other bulgy shape) rather than relying on the softer "everything draws" gate alone; it
+was caught by that test during development, not by inspection. **The compositing contract (§2.3 R8a) —
+per-shape fill / batched hairline stroke:** fills are drawn individually per shape at the layer's
+`FillOpacity` (so same-layer overlap composites darker — the owner's decision, `OverlappingSameLayer
+ShapesUnitLayer_CompositeDarkerThanSingleCoverage`), while every shape's outline is accumulated into one
+`SKPath` per layer and stroked once with `StrokeWidth = 0` — Skia's hairline special case, exactly 1
+device pixel at any zoom regardless of the CTM (`OutlineStroke_SamePixelThickness_At1xAnd100xZoom`).
+One `SKPaint` per layer per role (fill/stroke), reused across every shape on that layer; the R8b merge
+tier (an LOD fallback above ~20k shapes) is explicitly **not** built yet — L1a always draws per-shape
+fills. **Curves render natively, no flattener**: `Line`→`LineTo`, `Arc`→`ArcTo`, `Cubic`→`CubicTo`,
+`Circle`→`AddCircle`, `RoundedRect`→`AddRoundRect` — Skia tessellates adaptively at the current
+transform, which **is** §3.2 R9c's "rendering flattens adaptively at screen resolution," for free.
+`PathShape` (a trace) builds its centerline via the same edge-list path builder, then
+`SKPaint.GetFillPath` (stroke-to-fill, with the mapped cap: `Flush`→`Butt`, `Round`→`Round`,
+`Square`→`Square`, `Extended`→`Butt` with the centerline pre-extended by `width/2` in DBU space before
+any transform) produces the real outline, which is then filled/stroked like any other shape.
+**Layer resolution + the fallback palette:** `LayerDef` if the resolved `Technology` defines the key,
+else `FallbackPalette.For(key)` — gap-filling only the missing layer, never the whole technology.
+Unknown keys are collected during the frame (never posted from inside the render loop — `LayoutRenderer`
+never touches `IMessageSink`) and returned via `LayoutRenderResult.UnknownLayers`; `LayoutCanvas` raises
+`FrameUnknownLayers` after each paint, `LayoutEditorView` forwards it to
+`LayoutEditorViewModel.ReportUnknownLayers`, which dedupes against a per-document `HashSet<LayerKey>` so
+a layer with thousands of shapes warns exactly once per load, not once per shape (this is the "not yet
+wired" seam L0c deliberately left open, now wired). **`LayoutCanvas`** (`src/Ui/Controls/LayoutCanvas.cs`)
+clones `SymbolEditorCanvas`'s shape (viewport state owned by the canvas, mirrored out via
+`ViewportChanged`/`CursorWorldChanged` for readouts) but is Y-up throughout; middle-mouse pans always,
+Space+left-drag is the alternative; wheel zoom is cursor-anchored (`LayoutViewport.WithZoomAnchoredAt`,
+gate 5); `ZoomToFit`/`ZoomIn`/`ZoomOut`/`Zoom1To1` are plain public methods called directly from toolbar
+`Button.Click` handlers in code-behind, exactly like `SymbolEditorCanvas.ZoomToFit()` — no VM commands
+own the viewport. **Zoom 1:1 is defined as 1 device pixel per one tick of the document's display unit**
+(1 px = 1 mil on a PCB layout, 1 px = 1 µm on an MMIC layout) via `LayoutUnits.ToDbu(1, DisplayUnit,
+DbuPerMicron)` — a stable, physically-meaningful "actual size," not an arbitrary 1:1 DBU ratio. Left
+mouse is a no-op with a clearly-marked seam comment for L1b's tool dispatch. Initial fit-on-first-render
+only when the layout is non-empty; the L0b centered placeholder ("Empty layout — drawing tools arrive in
+L1b.") stays for an empty one (`LayoutEditorViewModel.IsEmpty`). **The grid** (`LayoutRenderer.DrawGrid`)
+is computed entirely in **screen space** (never touches the path-space float32 path — R-L1a-3's "never
+draws sub-pixel" and R-L1a-1's quantization concern are two different problems with two different fixes):
+`LayoutGridMath.ComputeGridPitch` (framework-free, `src/Ui/Layout/`) decimates the snap pitch through the
+1/2/5×10ⁿ sequence until the on-screen dot spacing clears an 8px floor, or returns null (grid disappears
+rather than degenerating) if it never can. Major dots every 5 minor steps (`MajorGridStepCount`).
+**Rulers** (`LayoutRulerRenderer` + `LayoutRulerControl`) reuse the same 1/2/5×10ⁿ chooser
+(`LayoutGridMath.ComputeRulerTickStepDbu`) in the document's `DisplayUnit` so labels never collide, plus
+a cursor position indicator on each ruler and an X/Y readout in the metadata bar
+(`LayoutEditorViewModel.CursorXText`/`CursorYText`, `SetCursorWorld`) — switching the display-unit combo
+relabels both (already proven not to touch geometry by L0b's `DisplayUnitChange_IsSerializationNoOp`
+test). Test files: `LayoutRendererTests.cs` (gates 2/3/4/9 — every shape type, R8a darkening, circle
+area within 2%, hairline thickness invariant under 100× zoom, fill opacity, fallback palette + gap-fill
++ once-per-layer warning, the arc-handedness regression, large-coordinate fidelity),
+`LayoutGridMathTests.cs` (gate 7 — grid decimation never sub-pixel across a wide zoom sweep, disappears
+rather than degenerating; gate 8 — ruler tick step never collides), `LayoutViewportTests.cs` (gates 5/6 —
+zoom-anchors-at-cursor, Zoom Fit on tiny and ~300mm fixtures), `LayoutEditorViewModelL1aTests.cs`
+(`IsEmpty`, cursor-readout formatting, unknown-layer warn-once across many frames/shapes, and gate 10 —
+"the L0 loop closes": re-resolving a `Technology` with an edited layer color changes the rendered pixel).
+35 new tests; 1745 Ui.Tests total, all green; full solution green (Firewall 4/4, Core 388/388,
+Engine 461/462 — 1 pre-existing skip, matching the L0 baseline exactly). **Not interactively verified**
+(no visual driver in this environment, matching every L0 phase's precedent) — correctness here rests on
+the pixel-oracle test suite above, which is deliberately stronger than usual for exactly that reason.
+**Next: L1b** (drawing tools — Rect/RoundedRect/Circle/Polygon/Curve/Path/Label/Port, snap and angle
+mode, live dimension readout during draw/drag, and fine-grained `IUiCommand` undo).
+
 L0d post-ship fixes (2026-07-26) — COMPLETE: four owner-reported issues in the `.ctech` editor.
 **(1) Color swatches always rendered grey:** `Border.Background="{Binding SwatchColor}"` does NOT
 auto-convert a bound `Avalonia.Media.Color` to a `Brush` — that implicit conversion only applies to

@@ -20,6 +20,17 @@ public static class ColorRole
     public const string SchematicSymbolPlus        = "Schematic.SymbolPlus";
     public const string SystemWarning              = "System.Warning";
 
+    // Layout chrome (docs/design/layout-view.md §2.2): the layer colors themselves are literal
+    // Rgba stamped on LayerDef, not a role — these roles cover only the surrounding chrome
+    // (background, grid, rulers, cursor indicator), which themes normally.
+    public const string LayoutBackground      = "Layout.Background";
+    public const string LayoutGridMinor       = "Layout.GridMinor";
+    public const string LayoutGridMajor       = "Layout.GridMajor";
+    public const string LayoutRulerBackground = "Layout.RulerBackground";
+    public const string LayoutRulerText       = "Layout.RulerText";
+    public const string LayoutRulerTick       = "Layout.RulerTick";
+    public const string LayoutCursorIndicator = "Layout.CursorIndicator";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -29,5 +40,7 @@ public static class ColorRole
         SchematicConnectedPin, SchematicWireJunctionDot,
         SchematicSymbolLine, SchematicSymbolPlus,
         SystemWarning,
+        LayoutBackground, LayoutGridMinor, LayoutGridMajor,
+        LayoutRulerBackground, LayoutRulerText, LayoutRulerTick, LayoutCursorIndicator,
     ];
 }

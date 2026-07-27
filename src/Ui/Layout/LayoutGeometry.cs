@@ -38,6 +38,14 @@ public static class LayoutArc
     /// <summary>Converts a chord + bulge into center/radius/start-angle/sweep. Bulge must be non-zero
     /// (a zero bulge is a straight edge, not an arc).</summary>
     public static ArcParams FromBulge(long x0, long y0, long x1, long y1, double bulge)
+        => FromBulge((double)x0, (double)y0, (double)x1, (double)y1, bulge);
+
+    /// <summary>Double-precision overload — used by the L1a renderer to derive arc parameters
+    /// directly from already-transformed path-space coordinates rather than DBU integers. The
+    /// derivation is purely local (chord direction + a perpendicular offset), so it is correct in
+    /// any consistent coordinate space, including one with a flipped Y axis (path space is built
+    /// Y-down/screen-sense — see LayoutRenderer) — do not re-derive this math from DBU-space output.</summary>
+    public static ArcParams FromBulge(double x0, double y0, double x1, double y1, double bulge)
     {
         double dx = x1 - x0, dy = y1 - y0;
         double d = Math.Sqrt(dx * dx + dy * dy);

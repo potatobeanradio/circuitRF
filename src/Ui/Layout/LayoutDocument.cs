@@ -10,11 +10,15 @@ namespace CircuitRF.Ui.Layout;
 /// A scratch document has <see cref="FilePath"/> == null: it is in-memory only,
 /// starts clean, and is invisible to the project tree until saved.
 /// A materialized document has a real on-disk .clay path (set at save time).
-/// Clones <c>SymbolEditorDocument</c>'s shape, minus undo — there is nothing to undo yet;
-/// undo arrives with L1's drawing tools.
+/// Clones <c>SymbolEditorDocument</c>'s shape — including undo as of L1b
+/// (<see cref="UndoRedo"/> delegates to <see cref="LayoutEditorViewModel.UndoRedo"/>, so the
+/// window-level Undo/Redo routing (<c>WorkspaceViewModel.SetActiveUndoTarget</c>) picks this
+/// document up automatically via <see cref="IUndoableDocument"/> — no new routing code needed).
 /// </summary>
-public sealed class LayoutDocument : Document, IActivatableDocument
+public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDocument
 {
+    public UndoRedoStack UndoRedo => ViewModel.UndoRedo;
+
     // ── Activation focus — view grabs keyboard focus on tab-switch ────────────
     private bool _activationFocusPending;
     public event Action? ActivationFocusRequested;
@@ -96,8 +100,7 @@ public sealed class LayoutDocument : Document, IActivatableDocument
     {
         FilePath                    = filePath;
         ViewModel.CurrentLayoutPath = filePath;
-        ViewModel.IsDirty           = false;
-        // IsDirty on the document clears via the PropertyChanged subscription above.
+        ViewModel.MarkSaved();   // clean baseline (undo stack + pref edits) -> IsDirty clears via the subscription above
     }
 
     /// <summary>
@@ -110,7 +113,7 @@ public sealed class LayoutDocument : Document, IActivatableDocument
         ViewModel.CurrentLayoutPath = filePath;
         _baseTitle                  = cellName;
         Id                          = cellName;
-        ViewModel.IsDirty           = false;
+        ViewModel.MarkSaved();
         Title                       = _baseTitle; // explicit refresh even if IsDirty didn't change
     }
 }

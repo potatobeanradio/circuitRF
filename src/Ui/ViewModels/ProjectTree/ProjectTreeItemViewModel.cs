@@ -203,6 +203,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>Open this cell's primary layout in a Content tab.</summary>
     public IRelayCommand OpenLayoutCommand { get; }
 
+    /// <summary>New Layout — prompts for a name, creates .clay in this cell's layout/ folder, opens it.</summary>
+    public IAsyncRelayCommand NewLayoutCommand { get; }
+
     /// <summary>Remove this .cdd Data Display file (moves to Trash). Visible only for DataDisplayFile nodes.</summary>
     public IRelayCommand RemoveDataDisplayCommand { get; }
 
@@ -327,6 +330,10 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         NewSchematicCommand = new AsyncRelayCommand(
             () => _actions?.NewSchematicAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsCell);
+
+        NewLayoutCommand = new AsyncRelayCommand(
+            () => _actions?.NewLayoutAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsCell);
 
         OpenExternalCommand = new RelayCommand(
