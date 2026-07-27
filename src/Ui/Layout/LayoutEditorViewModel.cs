@@ -220,6 +220,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         });
 
         InitBooleanCommands();   // L1e — src/Ui/Layout/LayoutEditorViewModel.Booleans.cs
+        InitClipboardCommands(); // L1f — src/Ui/Layout/LayoutEditorViewModel.Clipboard.cs
 
         _pathWidthText     = LayoutUnits.Format(_pathWidthDbu, DisplayUnit, Model.DbuPerMicron);
         _cornerRadiusText  = LayoutUnits.Format(_cornerRadiusDbu, DisplayUnit, Model.DbuPerMicron);
@@ -1209,6 +1210,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <see cref="Tool.Select"/>; every drawing tool ignores it.</summary>
     public void OnPointerPressed(double wx, double wy, KeyModifiers mods, int clickCount = 1, long hitTolDbu = 0)
     {
+        // L1f: a paste placement in progress takes priority over every other gesture — a click
+        // commits it, regardless of the currently active drawing tool.
+        if (_pastePlacementShapes is not null) { CommitPastePlacement(); return; }
+
         if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0)); return; }
 
         bool suspend = (mods & KeyModifiers.Alt) != 0;
@@ -1255,6 +1260,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     public void OnPointerMoved(double wx, double wy, bool leftDown, KeyModifiers mods, long hitTolDbu = 0)
     {
+        if (_pastePlacementShapes is not null)
+        {
+            bool pasteSuspend = (mods & KeyModifiers.Alt) != 0;
+            UpdatePastePlacementCursor(wx, wy, pasteSuspend);
+            return;
+        }
+
         if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0)); return; }
 
         bool suspend = (mods & KeyModifiers.Alt) != 0;
@@ -1300,6 +1312,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     public void OnKeyDown(Key key, KeyModifiers mods)
     {
+        if (_pastePlacementShapes is not null)
+        {
+            if (key == Key.Escape) CancelPastePlacement();
+            return;
+        }
+
         if (_isTypingLabel)
         {
             if (key == Key.Escape) { CancelDrawOp(); ActiveTool = Tool.Select; return; }
@@ -1567,12 +1585,21 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             dragOverrides = new Dictionary<int, LayoutShape> { [_handleDragShapeIndex] = _handleDragPreview };
         }
 
+        IReadOnlyList<LayoutShape>? pastePreview = null;
+        if (_pastePlacementShapes is { Count: > 0 } pasteShapes)
+        {
+            long dx = _pasteCursorX - _pastePlacementAnchorX;
+            long dy = _pasteCursorY - _pastePlacementAnchorY;
+            pastePreview = LayoutFragment.Translate(pasteShapes, dx, dy);
+        }
+
         Overlay = new LayoutOverlay
         {
             InProgressPrimitive = inProgress,
             SelectedIndices = _selectedIndices.ToArray(),
             Marquee = marquee,
             DragOverrides = dragOverrides,
+            PastePreview = pastePreview,
         };
     }
 

@@ -1641,6 +1641,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var vm = new LayoutEditorViewModel(model, messageSink: Messages);
         vm.ApplyTechResolution(resolution);
         vm.SaveError += OnLayoutSaveError;
+        vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
         var doc = new LayoutDocument(title, vm);  // filePath = null → scratch
         _scratchLayouts.Add(doc);
         _factory.OpenDocument(doc);
@@ -1703,6 +1704,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var vm    = new LayoutEditorViewModel(model, absolutePath, messageSink: Messages);
             vm.ApplyTechResolution(ResolveTechFor(model.TechRef, absolutePath));
             vm.SaveError += OnLayoutSaveError;
+            vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
             var doc = new LayoutDocument(Path.GetFileName(absolutePath), vm, absolutePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
@@ -1717,6 +1719,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // A layout save failed (e.g. read-only / unwritable location) — surface it instead of crashing.
     private void OnLayoutSaveError(string message) => Messages.Error(message);
+
+    // L1f — a paste's "Add to the technology" choice installs a live (unsaved) technology override,
+    // exactly mirroring OnTechLiveChanged's SetLive call for the .ctech editor itself.
+    private void OnLayoutRequestAddLayerToTechnology(string path, Technology tech) => _techCache.SetLive(path, tech);
 
     // ---- Technology (.ctech) editor (L0d) --------------------------------------
 
@@ -3620,6 +3626,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var vm = new LayoutEditorViewModel(model, filePath, messageSink: Messages);
             vm.ApplyTechResolution(resolution);
             vm.SaveError += OnLayoutSaveError;
+            vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
             var doc = new LayoutDocument(name + ext, vm, filePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;

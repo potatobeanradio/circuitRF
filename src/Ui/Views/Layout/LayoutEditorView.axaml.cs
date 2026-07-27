@@ -1,9 +1,14 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.Layout;
 
@@ -19,6 +24,12 @@ public partial class LayoutEditorView : UserControl
         LayoutCanvasCtrl.LayoutUpdated       += (_, _) => SyncRulers();
         LayoutCanvasCtrl.CursorWorldChanged  += OnCanvasCursorWorldChanged;
         LayoutCanvasCtrl.FrameUnknownLayers  += OnFrameUnknownLayers;
+
+        LayoutCanvasCtrl.ClipboardCopyRequested        += async (_, _) => await OnClipboardCopy();
+        LayoutCanvasCtrl.ClipboardCutRequested         += async (_, _) => await OnClipboardCut();
+        LayoutCanvasCtrl.ClipboardPasteRequested        += async (_, _) => await OnClipboardPaste(inPlace: false);
+        LayoutCanvasCtrl.ClipboardPasteInPlaceRequested += async (_, _) => await OnClipboardPaste(inPlace: true);
+        LayoutCanvasCtrl.DuplicateRequested             += (_, _) => { Vm?.Duplicate(); LayoutCanvasCtrl.InvalidateVisual(); };
 
         DataContextChanged += (_, _) => SyncRulerUnits();
         DataContextChanged += OnDataContextChangedForFocus;
@@ -172,5 +183,94 @@ public partial class LayoutEditorView : UserControl
         Vm?.CommitDrawHeightText(tb.Text ?? "");
         Vm?.CommitTypedRect();
         LayoutCanvasCtrl.Focus();
+    }
+
+    // ── Clipboard (L1f, docs/sonnet-briefs/brief-L1f-clipboard.md) ──────────────────────────────
+    // Mirrors SchematicView.axaml.cs's OnClipboardCopy/Cut/Paste exactly: this view owns the actual
+    // IClipboard traffic (via LayoutClipboard) and the layer-reconciliation dialog loop; the VM never
+    // touches IClipboard or shows a dialog itself.
+
+    private async Task OnClipboardCopy()
+    {
+        if (Vm is not { } vm) return;
+        var payload = vm.BuildCopyPayload();
+        if (payload is null) return;
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+
+        var shapes = vm.SelectedIndices.Select(i => vm.Model.Shapes[i]).ToList();
+        IntPtr ownerHwnd = TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        await LayoutClipboard.CopyAsync(clipboard, shapes, vm.Technology, vm.Model.DbuPerMicron, ownerHwnd);
+    }
+
+    private async Task OnClipboardCut()
+    {
+        await OnClipboardCopy();
+        Vm?.CutSelectionAfterCopy();
+        LayoutCanvasCtrl.InvalidateVisual();
+    }
+
+    private async Task OnClipboardPaste(bool inPlace)
+    {
+        if (Vm is not { } vm) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+
+        var payload = await LayoutClipboard.PasteAsync(clipboard);
+        if (payload is null) return;   // no marker, or nothing on the clipboard — a clean no-op
+
+        var rescale = vm.RescaleFragment(payload);
+        var missing = vm.GetMissingFragmentLayers(rescale.Shapes);
+
+        Dictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>? choices = null;
+        if (missing.Count > 0)
+        {
+            choices = await ResolveLayerReconciliationAsync(vm, missing, payload.Layers);
+            if (choices is null) return;   // user cancelled a reconciliation prompt — paste nothing
+        }
+
+        var reconciled = vm.ApplyFragmentReconciliation(rescale.Shapes, payload.Layers, choices);
+
+        if (inPlace)
+            vm.PasteInPlace(reconciled);
+        else
+            vm.BeginPastePlacement(reconciled, rescale.AnchorX, rescale.AnchorY);
+
+        LayoutCanvasCtrl.InvalidateVisual();
+        LayoutCanvasCtrl.Focus();
+    }
+
+    /// <summary>Prompts once per distinct missing layer key (R-L1f-3), honouring "Apply to all
+    /// remaining" once the user checks it. Returns null if the user cancels any prompt — the caller
+    /// treats that as "abandon the whole paste."</summary>
+    private async Task<Dictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?> ResolveLayerReconciliationAsync(
+        LayoutEditorViewModel vm, IReadOnlyList<LayerKey> missing, IReadOnlyList<LayerDef> fragmentLayers)
+    {
+        var choices = new Dictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>();
+        LayoutFragment.LayerReconciliationChoice? applyToAll = null;
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return null;
+
+        foreach (var key in missing)
+        {
+            LayoutFragment.LayerReconciliationChoice choice;
+            if (applyToAll is { } all)
+            {
+                choice = all;
+            }
+            else
+            {
+                var dialog = new LayerReconciliationDialog(vm, key, fragmentLayers);
+                var result = await dialog.ShowDialog<LayerReconciliationDialogResult?>(owner);
+                if (result is not { } r) return null;
+                choice = r.Choice;
+                if (r.ApplyToAllRemaining) applyToAll = choice;
+            }
+            choices[key] = choice;
+        }
+
+        return choices;
     }
 }

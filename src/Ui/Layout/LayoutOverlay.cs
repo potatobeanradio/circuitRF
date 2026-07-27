@@ -38,4 +38,11 @@ public sealed record class LayoutOverlay
     /// is in progress.</summary>
     public IReadOnlyDictionary<int, LayoutShape> DragOverrides { get; init; } =
         new Dictionary<int, LayoutShape>();
+
+    /// <summary>Live paste-ghost preview (L1f, docs/sonnet-briefs/brief-L1f-clipboard.md §3):
+    /// the fragment's shapes, already translated to the current (snapped) cursor position, or null
+    /// when no paste placement is in progress. Unlike <see cref="DragOverrides"/> these shapes have
+    /// no index into <c>LayoutView.Shapes</c> yet — nothing is in the model until the placement
+    /// commits.</summary>
+    public IReadOnlyList<LayoutShape>? PastePreview { get; init; }
 }

@@ -17,6 +17,18 @@ public readonly struct LayoutRenderOptions
     /// <see cref="LayoutRenderResult.UnknownLayers"/> (it is provisional, not committed geometry).</summary>
     public LayoutOverlay? Overlay { get; init; }
 
+    /// <summary>
+    /// Export mode (L1f, R-L1f-5): when true, the background fill is skipped entirely instead of
+    /// painting <see cref="LayoutRenderTheme.Background"/> — the destination surface (a fresh
+    /// <c>SKBitmap</c> the caller has already erased to transparent, or a fresh PDF/SVG canvas,
+    /// which start blank) is left as-is. Combined with <c>ShowGrid = false</c> and
+    /// <c>Overlay = null</c> (which alone already suppresses grid/ghost/selection/handles/marquee —
+    /// see the checks below), this produces a clean geometry-only render: a dark-theme layout pasted
+    /// onto a white document page must not paint an opaque dark rectangle. Rulers are a separate
+    /// control (<c>LayoutRulerRenderer</c>) and are never part of this call regardless.
+    /// </summary>
+    public bool TransparentBackground { get; init; }
+
     public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true };
 }
 
@@ -126,7 +138,8 @@ public static class LayoutRenderer
         {
             var clipRect = SKRect.Create(0, 0, (float)vp.Width, (float)vp.Height);
             canvas.ClipRect(clipRect);
-            canvas.DrawRect(clipRect, BackgroundPaint(theme.Background));
+            if (!opts.TransparentBackground)
+                canvas.DrawRect(clipRect, BackgroundPaint(theme.Background));
 
             if (view is not null && opts.ShowGrid)
                 DrawGrid(canvas, view, vp, theme);
@@ -193,7 +206,11 @@ public static class LayoutRenderer
                 }
 
                 if (opts.Overlay?.InProgressPrimitive is { } ghost)
-                    DrawGhost(canvas, ghost, layerMap, ps);
+                    DrawGhostShape(canvas, ghost, layerMap, ps);
+
+                if (opts.Overlay?.PastePreview is { Count: > 0 } pastePreview)
+                    foreach (var previewShape in pastePreview)
+                        DrawGhostShape(canvas, previewShape, layerMap, ps);
 
                 if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
                 {
@@ -283,12 +300,13 @@ public static class LayoutRenderer
 
     // ── In-progress draw ghost (L1b) ────────────────────────────────────────────
 
-    /// <summary>Draws the not-yet-committed shape above every layer, in its own resolved layer
+    /// <summary>Draws a not-yet-committed shape above every layer, in its own resolved layer
     /// color, with a faint fill and a dashed outline so it reads as provisional. Reuses
     /// <see cref="BuildShapePath"/> — no second geometry path for the ghost. Never touches
     /// <c>unknownLayers</c>: an uncommitted shape's layer choice isn't a gap to warn about — if it
-    /// is placed, the very next frame's normal per-shape resolution will do that.</summary>
-    private static void DrawGhost(SKCanvas canvas, LayoutShape ghost, Dictionary<LayerKey, LayerDef>? layerMap, PathSpace ps)
+    /// is placed, the very next frame's normal per-shape resolution will do that. Shared by the L1b
+    /// in-progress draw ghost (one shape) and the L1f paste-ghost preview (a whole fragment).</summary>
+    private static void DrawGhostShape(SKCanvas canvas, LayoutShape ghost, Dictionary<LayerKey, LayerDef>? layerMap, PathSpace ps)
     {
         Rgba rgba = layerMap is not null && layerMap.TryGetValue(ghost.Layer, out var found)
             ? found.Color

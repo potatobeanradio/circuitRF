@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.LayerReconciliationDialog"
+        Title="Layer Not Found"
+        Width="380"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="10">
+            <TextBlock x:Name="HeaderText" FontSize="12" TextWrapping="Wrap"/>
+
+            <StackPanel Spacing="6">
+                <RadioButton x:Name="KeepUnknownRadio"
+                             GroupName="LayerChoice"
+                             Content="Keep as unknown"
+                             FontSize="12"
+                             IsChecked="True"/>
+                <TextBlock Text="The shape keeps its original layer and renders with a generated color. Non-destructive and reversible."
+                           FontSize="10" Opacity="0.55" TextWrapping="Wrap" Margin="24,0,0,0"/>
+
+                <RadioButton x:Name="MapRadio"
+                             GroupName="LayerChoice"
+                             Content="Map to an existing layer:"
+                             FontSize="12"/>
+                <ComboBox x:Name="MapTargetCombo"
+                          Margin="24,0,0,0"
+                          FontSize="12"
+                          HorizontalAlignment="Stretch"
+                          SelectionChanged="OnMapTargetChanged"/>
+
+                <RadioButton x:Name="AddRadio"
+                             GroupName="LayerChoice"
+                             Content="Add to the technology"
+                             FontSize="12"/>
+                <TextBlock Text="Marks the technology dirty (undoable in the tech editor); nothing is written to disk until you save it there."
+                           FontSize="10" Opacity="0.55" TextWrapping="Wrap" Margin="24,0,0,0"/>
+            </StackPanel>
+
+            <CheckBox x:Name="ApplyToAllCheck" Content="Apply to all remaining unknown layers" FontSize="12"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="Continue" Width="80" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center" Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

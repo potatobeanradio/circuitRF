@@ -114,6 +114,14 @@ public sealed class LayoutCanvas : Control
     /// </summary>
     public event Action<IReadOnlyList<LayerKey>>? FrameUnknownLayers;
 
+    // ── Clipboard (L1f) — handled async by code-behind, mirroring SchematicCanvas ───────────────
+
+    public event EventHandler? ClipboardCopyRequested;
+    public event EventHandler? ClipboardCutRequested;
+    public event EventHandler? ClipboardPasteRequested;
+    public event EventHandler? ClipboardPasteInPlaceRequested;
+    public event EventHandler? DuplicateRequested;
+
     // ── Pan (middle-mouse always; Space-drag as an alternative) ─────────────────
 
     private bool   _isPanning;
@@ -481,6 +489,25 @@ public sealed class LayoutCanvas : Control
     private void OnKeyDown(object? _, KeyEventArgs e)
     {
         if (e.Key == Key.Space) { _spaceHeld = true; UpdateCursor(); return; }
+
+        // A paste ghost in progress owns every key itself (Escape cancels it) — never let a
+        // clipboard shortcut race with an already-armed placement.
+        if (_viewModel?.IsPastePlacementActive == true)
+        {
+            _viewModel.OnKeyDown(e.Key, e.KeyModifiers);
+            InvalidateVisual();
+            return;
+        }
+
+        bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        bool shift = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+
+        if (ctrl && e.Key == Key.C) { ClipboardCopyRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.X) { ClipboardCutRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+        if (ctrl && shift && e.Key == Key.V) { ClipboardPasteInPlaceRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.V) { ClipboardPasteRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+        if (ctrl && e.Key == Key.D) { DuplicateRequested?.Invoke(this, EventArgs.Empty); e.Handled = true; return; }
+
         _viewModel?.OnKeyDown(e.Key, e.KeyModifiers);
         InvalidateVisual();
     }

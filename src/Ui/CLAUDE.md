@@ -1,5 +1,158 @@
 # UI (Avalonia) — local conventions
 
+Phase L1f — cross-cell cut/copy/paste (brief-L1f-clipboard.md, 2026-07-26) — COMPLETE: **Phase L1 is
+now complete.** A layout selection can be cut/copied/pasted/duplicated within one document, across
+cells, and across a different circuitRF workspace/technology/process — with layers, nets, and holes
+intact, correctly rescaled across DBU resolutions, warning rather than silently mangling, and pasting
+into Office/iWork as a real vector graphic.
+
+**`LayoutFragment.cs` (pure, framework-free) / `LayoutClipboard.cs` (Avalonia) — the split that makes
+this phase testable.** `LayoutFragment` decides what a paste MEANS: building a fragment from a
+selection, rescaling it across DBU resolutions, reconciling layers against a destination technology,
+and translating shapes for placement — none of it touches `IClipboard`, Skia, or any Avalonia type.
+`LayoutClipboard` is thin glue on top: JSON text + PDF/SVG/PNG rendering + `IClipboard` traffic,
+mirroring `SchematicClipboard` end to end (same Windows-bypass-Avalonia branch, same
+`ClipboardFormats`/`WindowsClipboard` reuse). This is why the hard parts — rescale math, layer
+reconciliation, the marker guard — have 40+ direct unit tests, while the clipboard I/O itself has
+**zero**, exactly like `SchematicClipboard` before it: `IClipboard`/`Avalonia.Media.Imaging.Bitmap`
+both require a live Avalonia platform (`IPlatformRenderInterface`) a headless xunit run doesn't have —
+confirmed by deliberately calling `new Bitmap(stream)` in a test and observing the exact
+`InvalidOperationException` this environment throws for it, not by assumption. `LayoutClipboard`'s
+three private renderers are `internal` (not `private`) specifically so tests can call them directly,
+mirroring `LayoutRenderer.PathSpace`'s existing "internal so a test can drive it" precedent.
+
+**R-L1f-1 — the payload is self-describing.** `LayoutFragment.Payload` carries its source
+`DbuPerMicron` and the `LayerDef`s the selection actually uses (never the whole technology) — nothing
+else in the fragment depends on ambient state, which is the entire reason a fragment survives a paste
+into a different technology, a different resolution, and a different running circuitRF instance for
+free (the payload rides the system clipboard as plain marker-guarded JSON text — the marker is
+`"circuitrf/layout-clipboard-v1"`, checked before anything is parsed; `Instances` are deliberately NOT
+carried — nothing can create one until L3 hierarchy).
+
+**Paste warns-and-proceeds on a lossy rescale; `LayoutScaling.TryChangeResolution` refuses — and
+that's correct, not an inconsistency to fix.** `LayoutFragment.Rescale` scales every fragment
+coordinate (including holes and Cubic control points, the same easy-to-miss list `LayoutScaling`
+already documented) by the exact ratio between source and destination `DbuPerMicron`; where the ratio
+is non-integer or a specific coordinate doesn't divide evenly, it rounds, names the affected shape in
+a returned warning list, and returns the shapes anyway. `TryChangeResolution` mutates an EXISTING
+design in place, so a silent snap would be a real, hard-to-notice loss — refusing is right there.
+`Rescale` only ever ADDS brand-new geometry the user can undo in one keystroke — proceeding-with-a-
+warning is right here. Same underlying math (mirrors `LayoutScaling`'s per-shape coordinate walk),
+opposite failure policy, on purpose.
+
+**Layer reconciliation (R-L1f-3), three branches, Keep-as-unknown the default:** a layer the
+destination technology already defines needs no choice at all — the shape keeps its `LayerKey` and
+the renderer resolves it against the DESTINATION's own `LayerDef` (never re-added, never overridden by
+the fragment's copy). An absent layer gets exactly one prompt per distinct key (`LayerReconciliationDialog`,
+never once per shape), with an "Apply to all remaining" checkbox the caller (`LayoutEditorView`'s
+paste orchestration) honors for every later absent key in the same paste: **Keep as unknown**
+(default, non-destructive, renders via `FallbackPalette`), **Map to an existing layer** (rewrites the
+shape's `LayerKey`), or **Add to the technology** (leaves the key alone; the fragment's own `LayerDef`
+is installed into a live, unsaved clone of the technology via a new `LayoutEditorViewModel.
+RequestAddLayerToTechnology` event — `WorkspaceViewModel.OnLayoutRequestAddLayerToTechnology` subscribes
+at every `new LayoutEditorViewModel(...)` call site and forwards straight to `TechnologyCache.SetLive`,
+exactly mirroring the L1-fix `TechEditorViewModel.TechLiveChanged`/`OnTechLiveChanged` seam — nothing is
+ever written to the `.ctech` file directly; the user still decides whether to persist it, and it is
+undoable in the tech editor). Cancelling any reconciliation prompt abandons the WHOLE paste rather than
+partially reconciling it. Nothing is ever dropped in any branch — `LayoutFragment.ApplyReconciliation`
+always returns exactly as many shapes as it was given.
+
+**Duplicate (Ctrl/Cmd+D) deliberately bypasses the system clipboard entirely.** It clones the
+selection and places it offset by one snap step (`LayoutEditorViewModel.OneSnapStepDbu`, the same
+"snap step, or 1 DBU with snapping off" helper nudge already uses) as one undo entry — never touching
+`IClipboard`, because clobbering the user's clipboard as a side effect of Duplicate is a small betrayal
+people notice. Cut is Copy (writes to the clipboard) then `DeleteSelection()` (the existing L1c
+command) as one undo entry — `CutSelectionAfterCopy` is nothing more than that one call. Paste and
+Paste in Place both land via the same empty-removed-set `ReplaceShapesCommand` call
+(`InsertPastedShapes`) L1e's boolean/offset/flatten operations already established for N→M
+replacements — appended topmost within their layers, one undo entry, and the newly placed/duplicated
+shapes become the selection.
+
+**Paste's live ghost is a new `LayoutOverlay.PastePreview` (a shape LIST, not the single-shape
+`InProgressPrimitive` the L1b draw ghost uses)**, rendered by a renamed-but-otherwise-identical
+`LayoutRenderer.DrawGhostShape` (was `DrawGhost`) called once per preview shape — no second ghost-
+drawing code path. `LayoutEditorViewModel`'s paste-placement state
+(`_pastePlacementShapes`/`_pastePlacementAnchorX/Y`/`_pasteCursorX/Y`) is checked FIRST in
+`OnPointerPressed`/`OnPointerMoved`/`OnKeyDown` — ahead of the Select-tool dispatch and ahead of every
+drawing tool — exactly like `_isTypingLabel` already is, so an armed paste ghost owns every gesture
+regardless of whatever tool happens to be active underneath it. A click commits at the current snapped
+cursor (`LayoutSnapping.SnapPoint`, the same primitive drag/draw already use); Escape cancels and
+pushes no command; the ghost renders at the fragment's own anchor (zero delta) until the first pointer
+move arrives. Paste in Place skips all of this — it has no ghost, lands at the fragment's original
+(rescaled/reconciled) coordinates immediately.
+
+**`WindowsClipboard` and `ClipboardFormats` were reused completely unchanged** (§6.1 of the brief) —
+`LayoutClipboard.CopyAsync` calls `WindowsClipboard.SetClipboard(hwnd, pdf, svg, json, bitmap, pageW,
+pageH)` with its own rendered bytes and strings, exactly like `SchematicClipboard` does; nothing in
+`WindowsClipboard.cs` needed to change, and `ClipboardFormats.PdfNativeMacFormat`/`SvgNativeFormat`
+(already `internal` in the same assembly/namespace) are referenced directly with zero duplication of
+the UTI strings.
+
+**Export-mode render flags (R-L1f-5/R-L1f-6).** `LayoutRenderOptions` gained one new field,
+`TransparentBackground` — when true, `LayoutRenderer.Draw` skips its background-fill `DrawRect`
+entirely (the destination surface must already arrive transparent: `LayoutClipboard`'s bitmap path
+calls `SKBitmap.Erase(SKColors.Transparent)` before rendering; a fresh PDF page or SVG canvas starts
+blank on its own). Combined with the export call sites always passing `ShowGrid = false` and
+`Overlay = null`, this suppresses background/grid/selection-outlines/handles/marquee/ghost with no
+other renderer change — every one of those was already conditional on `opts.ShowGrid`/`opts.Overlay?.X`
+before this phase. **Hairline strokes already carried a real, non-zero world-space width before this
+phase** (`LayoutRenderer.DrawLayer`'s `GeometryStrokeDevicePixels`-derived `StrokeWidth`, an earlier
+owner-feedback fix, not a literal Skia `StrokeWidth = 0` hairline) — R-L1f-6 needed no renderer change
+at all, only an export call site that passes a non-degenerate `LayoutViewport`, which
+`LayoutClipboard`'s bbox-derived viewport always is. **Export renders the SELECTION, not the current
+view (R-L1f-4)** — `LayoutClipboard`'s render helpers take only `shapes`/`tech`/`theme`/`transparent`,
+never a viewport parameter; the export `LayoutViewport` is always freshly computed from
+`LayoutGeometry.BboxOf` over the exported shapes, so the same selection renders identically regardless
+of whatever the user's on-screen pan/zoom happen to be — provable by construction (no on-screen
+viewport can reach these methods) and pinned by a test that varies shape order into the same bbox and
+asserts identical output.
+
+**R-L1f-7 (EMF alpha) — not independently re-verified in this environment, and said so rather than
+assumed.** The EMF pipeline (SVG→GDI+ metafile via `Svg.NET`, inside `WindowsClipboard.SetClipboard`)
+is byte-for-byte the same untouched code `SchematicClipboard` already uses — this phase changes
+nothing about it, only supplies layout's own rendered SVG bytes into the same call. Whatever alpha
+fidelity that pipeline has (or lacks) applies identically here; verifying it means pasting overlapping
+same-layer shapes into PowerPoint on Windows and zooming in, which no interactive Windows environment
+is available to do from this session. Flagging rather than silently assuming correctness, per the
+brief's explicit instruction.
+
+**Cross-editor safety** — a Layout paste of a symbol-clipboard-shaped JSON blob (or arbitrary text, or
+truncated JSON) is a clean no-op with no exception: `LayoutFragment.TryDeserialize` checks
+`Payload.Marker == "circuitrf/layout-clipboard-v1"` before trusting anything else in the blob, and
+`System.Text.Json` silently ignores JSON properties `Payload` doesn't declare rather than throwing, so
+a schematic/symbol-clipboard payload (an entirely different JSON shape) simply deserializes into an
+all-default `Payload` whose `Marker` is null and fails the check. The reverse direction (a layout
+payload pasted into the symbol editor) needed no new code — `SymbolClipboard`/`SchematicClipboard` are
+untouched per the brief's guardrail, and their own paste paths already reject a JSON shape they don't
+recognize the same way.
+
+Test files: `LayoutFragmentTests.cs` (gates 2/4/5/6/7 — round-trip fidelity across every shape kind
+incl. a polygon-with-hole/arc-bearing Curve/curved Path/net-carrying shapes, the marker guard against
+arbitrary text/truncated JSON/a symbol-clipboard-shaped payload, exact-integer-ratio rescale, the
+reverse-direction non-dividing-coordinate warn-and-proceed case, Cubic-control-point and hole
+rescaling, all three reconciliation branches, and the shape-count-never-changes invariant across every
+reconciliation choice), `LayoutClipboardViewModelTests.cs` (gates 3/6/8/9/10/11 — Cut as one undo
+entry, Duplicate's one-snap-step offset and undo, Paste in Place at original coordinates, paste
+appended topmost, the screen-coordinate-driven ghost-anchor-lands-on-snapped-cursor gate on both
+starter technologies via `LayoutViewport.ScreenToWorldX/Y`, Escape-during-ghost pushing no command,
+cross-technology paste defaulting to Keep-as-unknown with nothing dropped, cross-DBU-resolution paste
+rescaling before reconciliation, and the live-technology-override event firing an independent clone),
+`LayoutClipboardExportTests.cs` (gates 13/14 — page dimensions as a pure function of the selection
+bbox regardless of shape order, and a pixel-oracle proving export mode paints no background/grid/
+overlay while the shape outline still covers a real, non-zero-width area). 43 new tests; 2042 Ui.Tests
+total, all green; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing
+skip, matching the L1e baseline exactly). **Not interactively verified** (no visual driver in this
+environment, matching every prior Layout Editor phase) — gate 12 (graphic paste into PowerPoint/Word/
+Keynote/Pages, verified by hand) and gate 15 (Windows SVG-failure robustness, exercising
+`WindowsClipboard.SetClipboard` directly) are both explicitly hands-on/Windows-only per the brief and
+were not run; correctness rests on the gate tests above plus direct code reading of the untouched
+`WindowsClipboard`/`ClipboardFormats` reuse.
+
+**Phase L1 (layout draw & edit — primitives, snap, selection, handles, booleans/offsets, and the
+clipboard) is now complete. Next: L2 — performance**: the R-tree spatial index, per-shape path
+caching, the §2.3 R8b merge tier with its threshold set from data, LOD culling, and the CI benchmark
+harness at 1k / 50k / 500k shapes measuring both the darkening and merged paths.
+
 Phase L1e — Clipper2 geometry operations and Flatten to Polygon (brief-L1e-clipper-operations.md,
 2026-07-26) — COMPLETE: a layout shape can now be **booleaned** (Union/Intersect/Difference/XOR),
 **merged** per layer, **offset** (grow/shrink), **self-intersection repaired**, and **flattened to a
