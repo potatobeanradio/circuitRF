@@ -148,6 +148,7 @@ public static class LayoutGeometry
 
             case PolygonShape p:
                 TranslatePoints(p.Xy, dx, dy);
+                TranslateHoles(p.Holes, dx, dy);
                 break;
 
             case RoundedRectShape rr:
@@ -161,6 +162,7 @@ public static class LayoutGeometry
             case CurveShape curve:
                 TranslatePoints(curve.Xy, dx, dy);
                 TranslateEdges(curve.Edges, dx, dy);
+                TranslateHoles(curve.Holes, dx, dy);
                 break;
 
             case PathShape path:
@@ -190,6 +192,15 @@ public static class LayoutGeometry
         }
     }
 
+    /// <summary>Holes (§3.1a) are absolute-coordinate rings, exactly like the outer <c>Xy</c> — easy
+    /// to miss (they are NOT part of the vertex list a move command usually reaches for). Mirrors
+    /// <see cref="LayoutScaling"/>'s "the same easy-to-miss list as cubic control points" note.</summary>
+    private static void TranslateHoles(List<long[]>? holes, long dx, long dy)
+    {
+        if (holes is null) return;
+        foreach (var hole in holes) TranslatePoints(hole, dx, dy);
+    }
+
     private static void TranslateEdges(List<LayoutEdge>? edges, long dx, long dy)
     {
         if (edges is null) return;
@@ -207,10 +218,10 @@ public static class LayoutGeometry
     public static LayoutShape Clone(LayoutShape shape) => shape switch
     {
         RectShape r        => new RectShape { Layer = r.Layer, Net = r.Net, X1 = r.X1, Y1 = r.Y1, X2 = r.X2, Y2 = r.Y2 },
-        PolygonShape p     => new PolygonShape { Layer = p.Layer, Net = p.Net, Xy = (long[])p.Xy.Clone() },
+        PolygonShape p     => new PolygonShape { Layer = p.Layer, Net = p.Net, Xy = (long[])p.Xy.Clone(), Holes = CloneHoles(p.Holes) },
         RoundedRectShape rr => new RoundedRectShape { Layer = rr.Layer, Net = rr.Net, X1 = rr.X1, Y1 = rr.Y1, X2 = rr.X2, Y2 = rr.Y2, CornerRadius = rr.CornerRadius },
         CircleShape c      => new CircleShape { Layer = c.Layer, Net = c.Net, Cx = c.Cx, Cy = c.Cy, R = c.R },
-        CurveShape curve   => new CurveShape { Layer = curve.Layer, Net = curve.Net, Xy = (long[])curve.Xy.Clone(), Edges = CloneEdges(curve.Edges), FlattenTolDbu = curve.FlattenTolDbu },
+        CurveShape curve   => new CurveShape { Layer = curve.Layer, Net = curve.Net, Xy = (long[])curve.Xy.Clone(), Edges = CloneEdges(curve.Edges), FlattenTolDbu = curve.FlattenTolDbu, Holes = CloneHoles(curve.Holes) },
         PathShape path     => new PathShape { Layer = path.Layer, Net = path.Net, Xy = (long[])path.Xy.Clone(), Edges = CloneEdges(path.Edges), Width = path.Width, End = path.End, FlattenTolDbu = path.FlattenTolDbu },
         ViaShape via       => new ViaShape { Layer = via.Layer, Net = via.Net, X = via.X, Y = via.Y, PadSize = via.PadSize, DrillSize = via.DrillSize, LandingLayer = via.LandingLayer },
         LabelShape label   => new LabelShape { Layer = label.Layer, Net = label.Net, X = label.X, Y = label.Y, Text = label.Text, Height = label.Height, Rotation = label.Rotation, IsPort = label.IsPort },
@@ -220,6 +231,29 @@ public static class LayoutGeometry
     private static List<LayoutEdge>? CloneEdges(List<LayoutEdge>? edges) =>
         edges?.Select(e => new LayoutEdge { Kind = e.Kind, Bulge = e.Bulge, C1X = e.C1X, C1Y = e.C1Y, C2X = e.C2X, C2Y = e.C2Y }).ToList();
 
+    private static List<long[]>? CloneHoles(List<long[]>? holes) =>
+        holes?.Select(h => (long[])h.Clone()).ToList();
+
+    /// <summary>Twice the signed area of a flat closed ring (shoelace formula) — positive for
+    /// counter-clockwise winding, negative for clockwise, in the layout's own Y-up sense. Used to
+    /// decide a hole's required winding relative to its outer ring (§3.1a) — never called on an open
+    /// polyline.</summary>
+    public static double SignedArea(long[] xy)
+    {
+        int n = xy.Length / 2;
+        if (n < 3) return 0.0;
+        double sum = 0.0;
+        for (int i = 0; i < n; i++)
+        {
+            int j = (i + 1) % n;
+            sum += (double)xy[2 * i] * xy[2 * j + 1] - (double)xy[2 * j] * xy[2 * i + 1];
+        }
+        return sum;
+    }
+
+    /// <summary>Bounding boxes and hit-testing (§3.1a): a hole is a cut-out of the filled region, so
+    /// it can never extend a shape's bbox beyond its outer ring — <see cref="BboxOf"/> deliberately
+    /// never reads <c>PolygonShape.Holes</c>/<c>CurveShape.Holes</c> for exactly this reason.</summary>
     public static Bbox BboxOf(LayoutShape shape) => shape switch
     {
         RectShape r        => new Bbox(Math.Min(r.X1, r.X2), Math.Min(r.Y1, r.Y2), Math.Max(r.X1, r.X2), Math.Max(r.Y1, r.Y2)),

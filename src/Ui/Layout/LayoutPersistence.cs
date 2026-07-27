@@ -99,7 +99,11 @@ public static class LayoutPersistence
         foreach (var shape in file.Shapes)
         {
             PadEdgesIfShort(shape);
-            view.Shapes.Add(shape);
+            // §3.1a R10b / R-L1e-0: a hand-edited (or otherwise not-Clipper2-produced) shape may carry
+            // an invalid hole — enforce validity on load rather than trust it. A no-op for the
+            // overwhelming common case (no holes, or holes already valid).
+            foreach (var normalized in LayoutClipper.EnsureValidHoles(shape))
+                view.Shapes.Add(normalized);
         }
         view.Instances.AddRange(file.Instances);
 

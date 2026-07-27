@@ -1,5 +1,141 @@
 # UI (Avalonia) — local conventions
 
+Phase L1e — Clipper2 geometry operations and Flatten to Polygon (brief-L1e-clipper-operations.md,
+2026-07-26) — COMPLETE: a layout shape can now be **booleaned** (Union/Intersect/Difference/XOR),
+**merged** per layer, **offset** (grow/shrink), **self-intersection repaired**, and **flattened to a
+polygon** — all via Clipper2. `Polygon`/`Curve` gained explicit holes. Cross-cell clipboard is
+explicitly **not** in this phase (L1f).
+
+**The hole decision (§0), and why it survives:** `PolygonShape`/`CurveShape` gained
+`List<long[]>? Holes` — inner rings, same flat-vertex-list convention as `Xy`, null/absent meaning "no
+holes" (purely additive, **no `.clay` `FormatVersion` bump**). This was forced, not chosen for
+elegance: subtracting a via pad from a ground pour — *the* most common PCB layout operation — produces
+a polygon with a hole, and keyholing it in the database (cutting a zero-width slit to the outer ring)
+would be **lossy and irreversible** — the hole stops being a distinct entity, later booleans behave
+differently, and L6's mesher would be asked to mesh a degenerate zero-width channel. Three of the four
+consumers already handled multi-contour geometry natively (`SKPath` under one fill rule, point-in-
+polygon hit-testing is the same ray cast run once more, Clipper2's own `PolyTree64` output *is* this
+structure) — only the flattener's return shape changed, and its signature (`IReadOnlyList<long[]>`)
+was already built to allow it. **Only GDSII genuinely cannot express a hole** — that is a format
+limitation resolved at the export boundary (§8), exactly like curve flattening; the database keeps its
+holes regardless of what any one writer can carry. **Forward requirement for L4, since there is no
+GDSII writer file yet to carry the comment directly: the GDSII writer must keyhole on export** (cut a
+zero-width slit from each inner ring to the outer, emitting one self-touching contour — standard
+practice, what every GDSII writer does) and state this in the export dialog's per-format fidelity note
+next to curve flattening; re-importing that GDSII yields a keyholed polygon, not the original, which is
+inherent to the format. DXF and Gerber both express holes natively and need no such treatment.
+
+**R-L1e-0 (§3.1a R10b): a hole must lie inside its outer ring and intersect neither that ring nor
+another hole.** Clipper2's own `PolyTree64` output (every boolean/offset/repair below) satisfies this
+by construction — normal editing never produces an invalid hole. `LayoutClipper.EnsureValidHoles`
+enforces it on the one OTHER construction path that exists today, a hand-edited `.clay`
+(`LayoutPersistence.FromFileModel` calls it for every loaded shape; a future paste (L1f) or import (L4)
+should call it too). **Deliberately cheap-no-op-first, not "always re-derive":** it runs a pure
+containment/intersection check first (point-in-polygon + segment-intersection, no Clipper2 call) and
+only re-derives the shape via a Clipper2 `Union` when that check actually fails — re-deriving
+unconditionally would have been simpler to write, but a `Union` pass can reorder vertices/holes even on
+an already-valid shape, which would have silently broken exact round-trip equality (gate 2) for the
+overwhelming common case (every shape a boolean op below actually produces).
+
+**DBU integers feed Clipper2 with zero scaling — the payoff for the integer-database decision.**
+`LayoutClipper.ToClipperPaths`/`FromClipperTree` (`src/Ui/Layout/LayoutClipper.cs`) is the **one**
+conversion point §6.1 of the design doc requires — booleans, offsets, DRC (L5b), the mesher (L6), and
+export (L4) all funnel through it, so the flattening tolerance is never chosen twice with two different
+answers. Clipper2's `Path64`/`Point64` are `long`-based, exactly §1.1's storage type: no "scale to a
+working integer grid" step (which every other clipping library needs and we don't), no float
+conversion, no precision loss anywhere in the pipeline. **`FillRule.NonZero` everywhere, stated once**
+(`LayoutClipper.Rule`) — it is what makes self-intersection repair produce the outer region rather than
+a checkerboard. `PathShape` gets its geometry outline here too, via `InflatePaths` on the flattened
+centerline at `Width/2`, with `Flush→Butt`/`Round→Round`/`Square`&`Extended→Square` (both extend by the
+same half-width amount — see the L1a `PathEndStyle` note in this file for why they currently render
+identically).
+
+**R-L1e-1 — this is NOT the display outline, and the two stay separate, on purpose.**
+`LayoutRenderer.BuildPathOutline` (the L1-fix-era Skia-stroker-plus-`Simplify` path) is **completely
+untouched** by this phase — Skia tessellates a curved trace adaptively at the current zoom, while
+Clipper2 works on flattened (polygonal) geometry, so a curved trace's Clipper2 outline is correctly
+polygonal for booleans/DRC/export and would be visibly faceted if it were ever used for display. Two
+outlines, two purposes, never unify them; `LayoutClipper.ToClipperPaths`'s doc comment says so directly
+now, alongside the pre-existing warning on `BuildPathOutline` itself. Gate 10's seam test
+(`LayoutPathOutlineSeamTests.cs`) still passes untouched, proving nothing here disturbed it.
+
+**Boolean layer/net attribute rules (§3), implemented once in `LayoutBooleans.Combine` and reused by
+every op:** result **layer** = the first operand's layer (for Difference, "first-selected" = the shape
+being subtracted from — selection ORDER matters, and `LayoutEditorViewModel.ApplyBoolean` deliberately
+passes operands in `_selectedIndices`' own click order, never re-sorted by index, or Difference would
+silently subtract the wrong direction). Result **net** = the shared net if every operand agrees,
+else **cleared and reported** via Messages — never picked arbitrarily. Curved operands are flattened by
+`ToClipperPaths`; the "warn once per session" rule (§3.2 R9e) is session (open-document) state on the
+VM (`_warnedCurvedOperandThisSession`), not a pure-function concern — `LayoutBooleans` itself is
+stateless and just reports `AnyCurvedOperand`/`NetsDiffered` back to the VM in its result record.
+
+**One `LayoutBooleans` fold serves Union/Intersect/Difference/XOR for any operand count.**
+`Combine(ClipType, operands, tech)` pairwise-folds `A op B op C …` in operand order — this generalizes
+correctly to N operands for every op the brief lists: Union/Intersection/XOR are associative, and
+Difference folded left-to-right is exactly "first minus the rest." No separate N-ary special-casing was
+needed. `Merge` groups operands by layer and calls `Combine(Union, …)` once per group. `Offset` and
+`Repair` are their own direct `InflatePaths`/`Union` calls (not folds — they operate on one shape).
+
+**`ReplaceShapesCommand` (`src/Ui/Commands/Layout/`) generalizes L1d's `ReplaceShapeCommand` from 1→1
+to N→M**, for every op in this phase (a boolean/merge/offset/repair/flatten can turn K selected shapes
+into 0..N results). Same rule as L1b's single-shape restore, extended: insert added shapes at the
+**lowest removed index**; Undo removes them from there and reinserts every original at its own original
+index, ascending. `LayoutEditorViewModel.CommitReplace` is the one place every L1e operation builds this
+command and re-selects the newly-added shapes — one undo entry per operation, always (gate 13).
+
+**All the actual operation logic lives in three new framework-free files under `src/Ui/Layout/`**
+(`LayoutClipper.cs`, `LayoutBooleans.cs`, `LayoutFlattenToPolygon.cs`) — `LayoutEditorViewModel.
+Booleans.cs` (a second partial-class file, kept separate from the already-1600-line main VM file) is
+pure selection/undo/Messages plumbing on top, mirroring how the rest of this VM is organized.
+`LayoutFlattenToPolygon` deliberately does **not** go through Clipper2 at all — flattening a curve into
+its polygon export is a direct `LayoutFlattener` consumer with nothing to union or re-derive winding
+for. A `PathShape` with curved centerline edges flattens those edges to `Line` and **stays a
+`PathShape`** (width/end style intact) — turning a trace into a filled polygon outline is a different,
+lossy operation users flattening a trace do not expect.
+
+**Context menu wiring** (`LayoutCanvas.ShowShapeContextMenu`, renamed from `ShowEdgeConversionMenu`):
+Union/Intersect/Difference/XOR (≥2 selected), Merge (≥1 selected), Repair Self-Intersection (single
+selection, only when `LayoutSelfIntersection.Test` is currently true), Flatten to Polygon / Flatten to
+Polygon… (only when the selection has curved geometry) — all selection-scoped, so they show regardless
+of exactly what (if anything) is directly under the right-click point, unlike the edge-conversion/
+delete-vertex items above them which stay click-target-scoped. **Offset has no context-menu entry** —
+its "Dimension field, unit-suffixed" (§3) is a staged text field (`OffsetText`/`CommitOffsetText`,
+identical pattern to `CornerRadiusText` elsewhere on this VM) meant for a toolbar/properties-panel
+control, not an instant menu click; the VM surface (`ApplyOffsetToSelection`, `ApplyOffsetCommand`) is
+complete and fully tested, but no AXAML control binds to it yet — a small follow-up if the owner wants
+a toolbar affordance before L1f. `FlattenToPolygonDialog` (`src/Ui/Views/Dialogs/`) is the "…" tolerance
+prompt with a live vertex-count preview, computed against the first curved shape in the selection and
+then applied uniformly to the whole selection.
+
+**Empty results are legal and structural, not a special case anywhere** — `LayoutBooleans.Combine`/
+`Offset` just produce zero `LayoutShape`s (e.g. disjoint Intersect, or an over-shrunk Offset), and
+`ReplaceShapesCommand` removes the operand(s) and inserts nothing; the VM reports it via Messages but
+never throws and never leaves the originals in place.
+
+Test files: `LayoutClipperTests.cs` (ToClipperPaths for every shape kind incl. holes and the Path
+outline via `InflatePaths`, `FromClipperTree`'s hole/island tree walk, `EnsureValidHoles`'s no-op-when-
+valid vs. repair-when-invalid paths), `LayoutBooleansTests.cs` (gate 4's canonical rect-minus-circle,
+gate 5's overlapping/disjoint/fully-contained/empty-intersection cases for every op, gate 6's split-in-
+two, gate 7's net propagation + layer attribution + selection-order-for-Difference, Merge's per-layer
+grouping, gate 8's offset grow/shrink/annihilate, gate 9's determinism both repeated and through a
+serialize/reload round-trip, gate 12's bowtie repair), `LayoutHolesTests.cs` (gate 2's round-trip
+byte-equality using a REAL Clipper2-produced hole shape — hand-authored geometry would risk the
+`EnsureValidHoles` re-derivation path and defeat the point of the test — gate 3's bbox/hit-test/
+scaling/translate/clone coverage, and the pixel-oracle donut render), `LayoutBooleanOperationsViewModelTests.cs`
+(gate 13's one-undo-entry-restores-both-operands-at-original-indices, gate 6 at the VM/undo level, gate
+7's Messages warning + "warn once per session" across two ops, gate 8 via the staged `OffsetText`
+field, gate 11's circle→polygon/preview-count-matches/multi-selection-skips-non-curved/curved-Path-
+stays-a-Path/`FlattenAllCurves`-layer-filter, gate 12 via the VM). 54 new tests; 1999 Ui.Tests total,
+all green; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip,
+matching the L1d baseline exactly). **Not interactively verified** (no visual driver in this
+environment, matching every prior Layout Editor phase) — the context-menu construction itself
+(`ShowShapeContextMenu`'s `MenuItem`/`ContextMenu` wiring, `FlattenToPolygonDialog`'s AXAML) cannot be
+unit-tested headlessly for the same reason every prior phase's menu/dialog code couldn't be; correctness
+rests on the VM-level gate tests above, which drive the exact same public methods
+(`ApplyUnion`/`ApplyDifference`/`RepairSelfIntersection`/`FlattenSelectionToPolygon`/…) the menu items
+call. **Next: L1f** (cross-cell cut/copy/paste — `.clay` fragment format, DBU rescale on paste, layer
+reconciliation against the destination technology — the last brief of Phase L1).
+
 L1d post-ship fix round 3 — Rect/RoundedRect edge-drag, and a "Delete Vertex" context menu item
 (2026-07-26) — COMPLETE: two owner follow-ups after round 2. (1) "Drag edge midpoint / edge line"
 was, by the brief's own §2 handle table, deliberately Polygon/Curve/Path-only — but the owner wanted

@@ -49,6 +49,11 @@ public static class LayoutFlattener
     /// closed (never repeats the first vertex at the end). <c>Rect</c>/<c>PolygonShape</c> (and any
     /// edge list whose edges are all <c>Line</c>) are returned as-is — no allocation churn beyond the
     /// one array a <c>Rect</c> needs to synthesize its four corners.
+    ///
+    /// <b>Holes (§3.1a):</b> when <c>Polygon</c>/<c>Curve</c> carries <c>Holes</c>, element 0 of the
+    /// result is always the OUTER ring and every subsequent element is one hole — already flat vertex
+    /// lists, so they need no further flattening of their own. Callers that pre-date holes (hit-test,
+    /// self-intersection) already iterate every returned ring, so this is purely additive.
     /// </summary>
     public static IReadOnlyList<long[]> Flatten(LayoutShape shape, long tolDbu)
     {
@@ -57,15 +62,24 @@ public static class LayoutFlattener
         return shape switch
         {
             RectShape r        => [[r.X1, r.Y1, r.X2, r.Y1, r.X2, r.Y2, r.X1, r.Y2]],
-            PolygonShape p     => [p.Xy],
+            PolygonShape p     => WithHoles(p.Xy, p.Holes),
             CircleShape c      => [FlattenCircle(c.Cx, c.Cy, c.R, tolDbu)],
             RoundedRectShape rr => [FlattenRoundedRect(rr, tolDbu)],
-            CurveShape curve   => [FlattenClosedEdgeList(curve.Xy, curve.Edges, tolDbu)],
+            CurveShape curve   => WithHoles(FlattenClosedEdgeList(curve.Xy, curve.Edges, tolDbu), curve.Holes),
             _ => throw new ArgumentOutOfRangeException(nameof(shape), shape,
                 "LayoutFlattener.Flatten supports Rect/Polygon/RoundedRect/Circle/Curve only — " +
                 "Path is a centerline (offset to an outline is an L1e boolean concern), and " +
                 "Via/Label are not filled-region primitives."),
         };
+    }
+
+    private static IReadOnlyList<long[]> WithHoles(long[] outer, List<long[]>? holes)
+    {
+        if (holes is not { Count: > 0 }) return [outer];
+        var rings = new long[holes.Count + 1][];
+        rings[0] = outer;
+        for (int i = 0; i < holes.Count; i++) rings[i + 1] = holes[i];
+        return rings;
     }
 
     /// <summary>Flattens an OPEN edge list (a <c>Path</c>'s centerline) — not part of the public

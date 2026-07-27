@@ -107,5 +107,11 @@
     <!-- NOTE: Verify Dock.Avalonia styles path at runtime; see CircuitRfDockFactory.cs -->
     <PackageReference Include="Dock.Avalonia" Version="12.0.0.2" />
     <PackageReference Include="Dock.Model.Mvvm" Version="12.0.0.2" />
+
+    <!-- Clipper2 — polygon booleans/offsets for the layout editor (docs/design/layout-view.md §6.1).
+         Managed C#, Boost licence, integer (long) coordinates — matches our DBU storage type exactly,
+         no native dependency, clears the root CLAUDE.md bar on native deps. README acknowledgment
+         already in place. -->
+    <PackageReference Include="Clipper2" Version="1.5.4" />
   </ItemGroup>
 </Project>

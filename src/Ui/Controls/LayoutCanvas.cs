@@ -1,5 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -11,6 +14,7 @@ using Avalonia.Threading;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Theming;
+using CircuitRF.Ui.Views.Dialogs;
 using SkiaSharp;
 
 namespace CircuitRF.Ui.Controls;
@@ -276,7 +280,7 @@ public sealed class LayoutCanvas : Control
                 return;
             }
 
-            ShowEdgeConversionMenu(wx, wy);
+            ShowShapeContextMenu(wx, wy);
             e.Handled = true;
             return;
         }
@@ -289,11 +293,10 @@ public sealed class LayoutCanvas : Control
         }
     }
 
-    // ── Edge conversion + delete-vertex context menu (L1d §4: right-click an edge -> Convert to
-    // Line/Arc/Cubic; §3: right-click a vertex -> Delete Vertex, an explicit alternative to the
-    // invisible click-to-pick-then-press-Delete gesture) ──────────────────────────────────────────
+    // ── Shape context menu: edge conversion + delete-vertex (L1d §4/§3) + L1e booleans/offset/
+    // repair/flatten (docs/sonnet-briefs/brief-L1e-clipper-operations.md §3/§4/§5) ─────────────────
 
-    private void ShowEdgeConversionMenu(double wx, double wy)
+    private void ShowShapeContextMenu(double wx, double wy)
     {
         if (_viewModel is null) return;
 
@@ -323,10 +326,81 @@ public sealed class LayoutCanvas : Control
             items.Add(deleteVertex);
         }
 
+        AddBooleanAndFlattenMenuItems(items);
+
         if (items.Count == 0) return;
 
         var menu = new ContextMenu { ItemsSource = items };
         menu.Open(this);
+    }
+
+    /// <summary>L1e — items that act on the current SELECTION, independent of what (if anything) is
+    /// directly under the right-click point.</summary>
+    private void AddBooleanAndFlattenMenuItems(List<object> items)
+    {
+        if (_viewModel is null) return;
+
+        void AddItem(string header, Action action)
+        {
+            var mi = new MenuItem { Header = header };
+            mi.Click += (_, _) => { action(); InvalidateVisual(); };
+            items.Add(mi);
+        }
+
+        bool addedSeparator = false;
+        void Sep() { if (items.Count > 0 && !addedSeparator) { items.Add(new Separator()); addedSeparator = true; } }
+
+        if (_viewModel.CanBooleanOp)
+        {
+            Sep();
+            AddItem("Union", _viewModel.ApplyUnion);
+            AddItem("Intersect", _viewModel.ApplyIntersect);
+            AddItem("Difference", _viewModel.ApplyDifference);
+            AddItem("XOR", _viewModel.ApplyXor);
+        }
+
+        if (_viewModel.CanMergeSelection)
+        {
+            Sep();
+            AddItem("Merge", _viewModel.ApplyMerge);
+        }
+
+        if (_viewModel.CanRepairSelected)
+        {
+            Sep();
+            AddItem("Repair Self-Intersection", () => _viewModel.RepairSelfIntersection(_viewModel.SelectedIndices[0]));
+        }
+
+        if (_viewModel.CanFlattenSelection)
+        {
+            Sep();
+            AddItem("Flatten to Polygon", () => _viewModel.FlattenSelectionToPolygon(null));
+
+            var ellipsis = new MenuItem { Header = "Flatten to Polygon…" };
+            ellipsis.Click += async (_, _) => await ShowFlattenToPolygonDialogAsync();
+            items.Add(ellipsis);
+        }
+    }
+
+    private async Task ShowFlattenToPolygonDialogAsync()
+    {
+        if (_viewModel is null) return;
+        int previewIndex = _viewModel.SelectedIndices.FirstOrDefault(_viewModel.HasCurvedGeometryAt, -1);
+        if (previewIndex < 0) return;
+
+        long defaultTol = LayoutFlattener.ResolveTolDbu(_viewModel.Model.Shapes[previewIndex], _viewModel.Technology);
+        var dialog = new FlattenToPolygonDialog(_viewModel, previewIndex, defaultTol);
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        long? chosen = owner is not null
+            ? await dialog.ShowDialog<long?>(owner)
+            : null;
+
+        if (chosen is { } tolDbu)
+        {
+            _viewModel.FlattenSelectionToPolygon(tolDbu);
+            InvalidateVisual();
+        }
     }
 
     private void OnPointerMoved(object? _, PointerEventArgs e)

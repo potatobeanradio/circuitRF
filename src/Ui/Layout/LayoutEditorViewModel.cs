@@ -219,6 +219,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             _cycleCache = null;
         });
 
+        InitBooleanCommands();   // L1e — src/Ui/Layout/LayoutEditorViewModel.Booleans.cs
+
         _pathWidthText     = LayoutUnits.Format(_pathWidthDbu, DisplayUnit, Model.DbuPerMicron);
         _cornerRadiusText  = LayoutUnits.Format(_cornerRadiusDbu, DisplayUnit, Model.DbuPerMicron);
         _labelHeightText   = LayoutUnits.Format(_labelHeightDbu, DisplayUnit, Model.DbuPerMicron);

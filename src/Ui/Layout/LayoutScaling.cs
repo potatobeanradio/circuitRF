@@ -112,6 +112,7 @@ public static class LayoutScaling
                 break;
             case PolygonShape p:
                 ScaleArray(p.Xy, f);
+                ScaleHoles(p.Holes, f);
                 break;
             case RoundedRectShape rr:
                 rr.X1 = f(rr.X1); rr.Y1 = f(rr.Y1); rr.X2 = f(rr.X2); rr.Y2 = f(rr.Y2);
@@ -123,6 +124,7 @@ public static class LayoutScaling
             case CurveShape curve:
                 ScaleArray(curve.Xy, f);
                 ScaleCubicControlPoints(curve.Edges, f);
+                ScaleHoles(curve.Holes, f);
                 if (curve.FlattenTolDbu is { } ctol) curve.FlattenTolDbu = f(ctol);
                 break;
             case PathShape path:
@@ -161,6 +163,14 @@ public static class LayoutScaling
         }
     }
 
+    /// <summary>Holes (§3.1a) are absolute-coordinate rings — the same "easy to miss" list as cubic
+    /// control points, and equally not part of the Xy vertex list.</summary>
+    private static void ScaleHoles(List<long[]>? holes, Func<long, long> f)
+    {
+        if (holes == null) return;
+        foreach (var hole in holes) ScaleArray(hole, f);
+    }
+
     // ── Read-only scan pass (same coordinate set as ScaleView) ───────────────
 
     private static void ScanView(LayoutView view, Action<long, string> check)
@@ -191,6 +201,7 @@ public static class LayoutScaling
                 break;
             case PolygonShape p:
                 ScanArray(p.Xy, tag, check);
+                ScanHoles(p.Holes, tag, check);
                 break;
             case RoundedRectShape rr:
                 check(rr.X1, $"{tag}.X1"); check(rr.Y1, $"{tag}.Y1");
@@ -203,6 +214,7 @@ public static class LayoutScaling
             case CurveShape curve:
                 ScanArray(curve.Xy, tag, check);
                 ScanCubicControlPoints(curve.Edges, tag, check);
+                ScanHoles(curve.Holes, tag, check);
                 if (curve.FlattenTolDbu is { } ctol) check(ctol, $"{tag}.FlattenTolDbu");
                 break;
             case PathShape path:
@@ -238,5 +250,12 @@ public static class LayoutScaling
             check(e.C1X, $"{tag}.Edges[{i}].C1X"); check(e.C1Y, $"{tag}.Edges[{i}].C1Y");
             check(e.C2X, $"{tag}.Edges[{i}].C2X"); check(e.C2Y, $"{tag}.Edges[{i}].C2Y");
         }
+    }
+
+    private static void ScanHoles(List<long[]>? holes, string tag, Action<long, string> check)
+    {
+        if (holes == null) return;
+        for (int i = 0; i < holes.Count; i++)
+            ScanArray(holes[i], $"{tag}.Holes[{i}]", check);
     }
 }

@@ -541,6 +541,7 @@ public static class LayoutRenderer
 
             case PolygonShape p:
                 AddPolygonPath(path, p.Xy, ps);
+                AddHoleRings(path, p.Xy, p.Holes, ps);
                 break;
 
             case RoundedRectShape rr:
@@ -557,6 +558,7 @@ public static class LayoutRenderer
 
             case CurveShape curve:
                 AddEdgeListPath(path, curve.Xy, curve.Edges, closed: true, ps);
+                AddHoleRings(path, curve.Xy, curve.Holes, ps);
                 break;
 
             case ViaShape via:
@@ -581,6 +583,37 @@ public static class LayoutRenderer
         for (int i = 1; i < n; i++)
             path.LineTo(ps.X(xy[2 * i]), ps.Y(xy[2 * i + 1]));
         path.Close();
+    }
+
+    /// <summary>Appends every hole ring (§3.1a) to <paramref name="path"/>, in the SAME contour path
+    /// as the outer shape so Skia's default <c>Winding</c> fill rule can cut them out — which requires
+    /// each hole to be wound OPPOSITE the outer ring. Rather than trust that whatever produced
+    /// <paramref name="holes"/> already stored them with the opposite winding, this compares signed
+    /// area and reverses on the fly — cheap, and correct regardless of the construction path (normal
+    /// Clipper2 output, a hand-edited file, or a future paste/import). <paramref name="outerRef"/> is
+    /// the outer ring's own vertex list (its polygon-area sign is a reliable proxy for a Curve's
+    /// overall winding sense even when some edges are curved).</summary>
+    private static void AddHoleRings(SKPath path, long[] outerRef, List<long[]>? holes, PathSpace ps)
+    {
+        if (holes is not { Count: > 0 }) return;
+        bool outerCcw = LayoutGeometry.SignedArea(outerRef) >= 0;
+        foreach (var hole in holes)
+        {
+            bool holeCcw = LayoutGeometry.SignedArea(hole) >= 0;
+            AddPolygonPath(path, holeCcw == outerCcw ? ReverseRing(hole) : hole, ps);
+        }
+    }
+
+    private static long[] ReverseRing(long[] xy)
+    {
+        int n = xy.Length / 2;
+        var result = new long[xy.Length];
+        for (int i = 0; i < n; i++)
+        {
+            result[2 * i]     = xy[2 * (n - 1 - i)];
+            result[2 * i + 1] = xy[2 * (n - 1 - i) + 1];
+        }
+        return result;
     }
 
     /// <summary>Builds an open or closed edge-list path in path space — shared by <c>Curve</c> and

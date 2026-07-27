@@ -79,6 +79,14 @@ public sealed class RectShape : LayoutShape
 public sealed class PolygonShape : LayoutShape
 {
     public long[] Xy { get; set; } = [];
+
+    /// <summary>Inner rings (docs/design/layout-view.md §3.1a). Each is a flat, implicitly-closed
+    /// vertex list, same convention as <see cref="Xy"/>. Null/absent means no holes — every existing
+    /// hole-free <c>.clay</c> loads unchanged, no <c>FormatVersion</c> bump. R10b: a hole must lie
+    /// inside <see cref="Xy"/> and must not intersect it or another hole — Clipper2's <c>PolyTree64</c>
+    /// output satisfies this by construction; any other construction path is normalized through
+    /// <c>LayoutClipper.EnsureValidHoles</c> rather than trusted (§3.1a R10b, R-L1e-0).</summary>
+    public List<long[]>? Holes { get; set; }
 }
 
 /// <summary>Axis-aligned rounded rectangle. Normalized so X1&lt;X2, Y1&lt;Y2.</summary>
@@ -108,6 +116,11 @@ public sealed class CurveShape : LayoutShape
 
     /// <summary>Null inherits the technology default (docs/design/layout-view.md §3.2 R9b).</summary>
     public long? FlattenTolDbu { get; set; }
+
+    /// <summary>Inner rings — see <see cref="PolygonShape.Holes"/> for the full contract. A
+    /// <c>Curve</c>'s holes are always plain flat vertex lists (never their own edge list): a hole cut
+    /// by a boolean is Clipper2 output, which is polygonal by construction (§6.1).</summary>
+    public List<long[]>? Holes { get; set; }
 }
 
 /// <summary>Open edge-list centerline with width — a parametric trace.</summary>

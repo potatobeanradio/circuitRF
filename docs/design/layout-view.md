@@ -17,6 +17,8 @@
 9. **An EM run produces an `.snp` artifact** the schematic consumes through the existing SnP component,
    preserving the TestBench invariant (§10.8).
 10. **DRC is in scope**, starting with a minimal width/spacing check that establishes the framework (§9A).
+11. **Polygons and curves carry explicit holes** (§3.1a). GDSII keyholes them at export; the database keeps
+    them.
 
 The layout view holds a cell's **physical geometry**: the 2D shapes that get manufactured. Two consumers
 justify it, and they pull in slightly different directions:
@@ -293,11 +295,11 @@ is not "is it useful to draw?" but "what exactly ships when this is exported?"
 
 | Primitive | Fields | Notes |
 |---|---|---|
-| `Polygon` | layer, `long[] xy` (flat, implicitly closed) | The workhorse. Everything degrades to this. |
+| `Polygon` | layer, `long[] xy` (flat, implicitly closed), optional inner rings | The workhorse. Everything degrades to this. See §3.1a for holes. |
 | `Rect` | layer, x1 y1 x2 y2 | Axis-aligned. Not just sugar — the most common shape by far, and a specialised path is meaningfully faster to hit-test, index, and render. |
 | `RoundedRect` | layer, x1 y1 x2 y2, corner radius | Pads, keepouts, rounded apertures. Native in DXF; flattened for GDSII. |
 | `Circle` | layer, center, radius | Pads, via barrels, guard rings. Native in DXF (`CIRCLE`) and Gerber (circular aperture or G02/G03); flattened for GDSII. |
-| `Curve` | layer, closed edge list (see §3.2) | A filled region whose boundary edges may be lines, circular arcs, or cubic Béziers. Spiral inductors, tapers, curved guard structures. |
+| `Curve` | layer, closed edge list (see §3.2), optional inner rings | A filled region whose boundary edges may be lines, circular arcs, or cubic Béziers. Spiral inductors, tapers, curved guard structures. |
 | `Path` | layer, centerline **edge list**, width, end style (flush / round / square / extended) | Keeps a trace *parametric*: change the width of a 40-segment route in one edit. The centerline uses the same edge vocabulary as `Curve`, so a **curved trace** — a swept bend, a radiused corner — is a `Path`, not a hand-built polygon. Maps to GDSII PATH and to Gerber D01 stroking. |
 | `Via` | layer(s), position, pad size, drill size | PCB needs a drill file, and a drill is not a polygon. Carrying it explicitly is what makes Excellon export possible without heuristics. |
 | `Label` | layer, position, text, size, rotation, `IsPort` | Two roles: annotation, and the port/pin marker that §9 and §10.6 key on. |
@@ -306,6 +308,37 @@ is not "is it useful to draw?" but "what exactly ships when this is exported?"
 One thing is deliberately **not** a primitive: **text as geometry.** A `Label` is metadata. If a fab
 needs a text marking as real copper, that is an explicit "convert text to polygons" command using a
 stroked vector font — the same shape of operation as §3.2's flatten.
+
+### 3.1a Holes
+
+**Decided: `Polygon` and `Curve` carry explicit holes** — an optional list of inner rings alongside the
+outer one. Not keyholed slits in the database, and not an operation that gets refused.
+
+This is forced by the most ordinary operation in PCB layout: subtracting a via pad, an antipad or a
+clearance from a ground pour. Holes are the common case for pours and keepouts, not an edge case.
+
+Why explicit rings rather than a keyhole:
+
+- Three of the four consumers already handle multi-contour geometry natively — `SKPath` renders it under one
+  fill rule, point-in-polygon hit-testing is the same ray cast, and Clipper2 produces exactly this structure
+  in its `PolyTree`. Only the flattener changes shape, and it already returns a list of rings.
+- A keyhole is **lossy and irreversible**. Once the slit is cut the hole stops being a distinct entity,
+  subsequent booleans behave differently, and §10.5's mesher would be asked to mesh a degenerate zero-width
+  channel — which is exactly the geometry a mesher handles worst.
+- Only **GDSII** genuinely cannot express a hole. That is a property of one interchange format, and §8's
+  standing rule is that format limitations are resolved at the export boundary with a reported note. Letting
+  GDSII's restriction reshape the database would be the same mistake §1 refuses to make when it keeps the
+  display unit out of storage.
+
+**R10b. A hole lies strictly inside its outer ring and intersects neither that ring nor another hole.**
+Clipper2 output satisfies this by construction; any other path into the model — paste, import, a hand-edited
+file — is normalized through a union rather than trusted. A hole that escapes its outer ring renders and
+hit-tests as nonsense, and the resulting bug reads as a rendering fault rather than a data fault.
+
+**At export**: GDSII keyholes (§8) — a zero-width slit from each inner ring to the outer, emitting one
+self-touching contour, which is what every GDSII writer does. DXF and Gerber both express holes natively and
+need no such treatment. Re-importing keyholed GDSII yields a keyholed polygon rather than the original; that
+is inherent to the format and belongs in the export dialog's fidelity note next to curve flattening.
 
 ### 3.2 Curved primitives and flattening
 
@@ -644,15 +677,16 @@ Format-specific code touches only bytes and records, never editor state.
 
 | Format | Direction | Maps to | Principal risks |
 |---|---|---|---|
-| **GDSII** | Read + write | Near-identity. BOUNDARY→Polygon, PATH→Path, SREF/AREF→Instance/Array, TEXT→Label, UNITS→DBU. **All curved primitives auto-flatten on write** (§3.2 R9e) with a Messages note stating tolerance and count. | Vendor dialects; 200-char structure-name limit; PATH end types 0/1/2/4 (type 4 has explicit extensions); no arcs, no colors, no layer names. Write from the public spec — never ingest GPL sources. ~1200–1800 lines total. |
+| **GDSII** | Read + write | Near-identity. BOUNDARY→Polygon, PATH→Path, SREF/AREF→Instance/Array, TEXT→Label, UNITS→DBU. **All curved primitives auto-flatten on write** (§3.2 R9e) and **holes are keyholed on write** (§3.1a), both with a Messages note stating what was converted and how much. | Vendor dialects; 200-char structure-name limit; PATH end types 0/1/2/4 (type 4 has explicit extensions); no arcs, no colors, no layer names, **no holes**. Write from the public spec — never ingest GPL sources. ~1200–1800 lines total. |
 | **DXF** | Write first-class; read a documented subset | LWPOLYLINE / POLYLINE / LINE / ARC / CIRCLE / SOLID / INSERT+BLOCK / TEXT. **Curves survive**: `Circle`→`CIRCLE`, `RoundedRect` and arc-bearing outlines→`LWPOLYLINE` with bulge factors, Béziers→`SPLINE` (or flattened, per an export option). Layers are *named*, so the name↔(layer,datatype) map is required. | Import is the hard direction: dozens of producers, SPLINE, HATCH, unit ambiguity when `$INSUNITS` is unset. Define the accepted subset explicitly and report everything skipped to Messages, per-entity. Bulge factors are the one DXF feature worth importing carefully — dropping them silently turns arcs into chords. |
 | **Gerber RS-274X / X2** + **Excellon** | **Export only for v1** | One file per copper/mask/silk layer. Polygons → G36/G37 region fills; constant-width `Path` → circular-aperture D01 strokes; **arcs → G02/G03 circular interpolation** and `Circle` → a circular aperture flash, so curves stay curves; Béziers flatten; `Via` → Excellon drill hits + pad flashes. X2 attributes (`.FileFunction`) so the fab identifies layers automatically. | Gerber *import* is genuinely hard — aperture macros, arc interpolation modes, LPD/LPC polarity, and the "assemble a board from a folder of files" problem. Recommend deferring import entirely rather than shipping a half-version; a partial Gerber importer that silently loses a clearance region is worse than none. |
 
-**Curve fidelity across the three.** DXF is the only format that carries everything; Gerber carries
-arcs and circles but not Béziers; GDSII carries none. That ordering is worth surfacing in the export
-dialog as a one-line note per format, so a user exporting a spiral inductor to GDSII learns *before*
-the fact that it ships flattened, and at what tolerance. Nothing here is a defect — it is what the
-formats are — but silently different output from the same design is how trust is lost.
+**Curve and hole fidelity across the three.** DXF is the only format that carries every curve type; Gerber
+carries arcs and circles but not Béziers; GDSII carries none. DXF and Gerber both express holes; GDSII
+keyholes them. That ordering is worth surfacing in the export dialog as a one-line note per format, so a user
+exporting a spiral inductor or a via-pierced pour to GDSII learns *before* the fact what will change, and by
+how much. Nothing here is a defect — it is what the formats are — but silently different output from the same
+design is how trust is lost.
 
 Cross-cutting import rules:
 - Source units map into DBU; if the source resolution is **finer** than the target DBU, warn and name

@@ -69,12 +69,23 @@ public static class LayoutHitTest
                 // curved edge.
                 long shapeTol = LayoutFlattener.ResolveTolDbu(shape, tech);
                 long flattenTol = Math.Max(1, Math.Min(shapeTol, Math.Max(tolDbu, 1)));
-                foreach (var ring in LayoutFlattener.Flatten(shape, flattenTol))
+                var rings = LayoutFlattener.Flatten(shape, flattenTol);
+
+                // §3.1a holes: element 0 is the outer ring, every following element a hole. A point
+                // near ANY ring's edge (outer or hole boundary) is a hit — the boundary is still part
+                // of the shape. A point strictly inside a hole is NOT a hit, even though it is inside
+                // the outer ring, since the hole is a cut-out of the filled region.
+                var outer = rings[0];
+                if (DistanceToRingEdges(outer, x, y) <= tolDbu) return true;
+                if (!PointInPolygon(outer, x, y)) return false;
+
+                for (int i = 1; i < rings.Count; i++)
                 {
-                    if (PointInPolygon(ring, x, y)) return true;
-                    if (DistanceToRingEdges(ring, x, y) <= tolDbu) return true;
+                    var hole = rings[i];
+                    if (DistanceToRingEdges(hole, x, y) <= tolDbu) return true;
+                    if (PointInPolygon(hole, x, y)) return false;
                 }
-                return false;
+                return true;
             }
 
             case PathShape path:
