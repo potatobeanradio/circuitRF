@@ -359,6 +359,14 @@ public sealed class LayoutCanvas : Control
             AddItem("XOR", _viewModel.ApplyXor);
         }
 
+        if (_viewModel.CanOffsetSelection)
+        {
+            Sep();
+            var offset = new MenuItem { Header = "Offset…" };
+            offset.Click += async (_, _) => await ShowOffsetDialogAsync();
+            items.Add(offset);
+        }
+
         if (_viewModel.CanMergeSelection)
         {
             Sep();
@@ -401,6 +409,20 @@ public sealed class LayoutCanvas : Control
             _viewModel.FlattenSelectionToPolygon(tolDbu);
             InvalidateVisual();
         }
+    }
+
+    private async Task ShowOffsetDialogAsync()
+    {
+        if (_viewModel is null) return;
+        var dialog = new OffsetDialog(_viewModel);
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        string? text = owner is not null ? await dialog.ShowDialog<string?>(owner) : null;
+        if (text is null) return;
+
+        _viewModel.CommitOffsetText(text);
+        _viewModel.ApplyOffsetToSelection();
+        InvalidateVisual();
     }
 
     private void OnPointerMoved(object? _, PointerEventArgs e)

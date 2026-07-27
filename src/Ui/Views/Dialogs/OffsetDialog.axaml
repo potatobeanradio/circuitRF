@@ -1,0 +1,39 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.OffsetDialog"
+        Title="Offset"
+        Width="320"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+            <TextBlock Text="Offset distance:" FontSize="12"/>
+            <TextBox x:Name="OffsetBox"
+                     FontSize="12"
+                     KeyDown="OnKeyDown"
+                     TextChanged="OnOffsetChanged"/>
+            <TextBlock Text="Positive grows the selection; negative shrinks it. Each selected shape is offset independently."
+                       FontSize="10" Opacity="0.55" TextWrapping="Wrap"/>
+            <TextBlock x:Name="ValidationMessage"
+                       Text="Enter a dimension, e.g. 1mm or -500nm."
+                       FontSize="11"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       IsVisible="False"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="Apply" Width="80" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center" Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

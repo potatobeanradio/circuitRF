@@ -94,18 +94,20 @@ for. A `PathShape` with curved centerline edges flattens those edges to `Line` a
 lossy operation users flattening a trace do not expect.
 
 **Context menu wiring** (`LayoutCanvas.ShowShapeContextMenu`, renamed from `ShowEdgeConversionMenu`):
-Union/Intersect/Difference/XOR (≥2 selected), Merge (≥1 selected), Repair Self-Intersection (single
-selection, only when `LayoutSelfIntersection.Test` is currently true), Flatten to Polygon / Flatten to
-Polygon… (only when the selection has curved geometry) — all selection-scoped, so they show regardless
-of exactly what (if anything) is directly under the right-click point, unlike the edge-conversion/
-delete-vertex items above them which stay click-target-scoped. **Offset has no context-menu entry** —
-its "Dimension field, unit-suffixed" (§3) is a staged text field (`OffsetText`/`CommitOffsetText`,
-identical pattern to `CornerRadiusText` elsewhere on this VM) meant for a toolbar/properties-panel
-control, not an instant menu click; the VM surface (`ApplyOffsetToSelection`, `ApplyOffsetCommand`) is
-complete and fully tested, but no AXAML control binds to it yet — a small follow-up if the owner wants
-a toolbar affordance before L1f. `FlattenToPolygonDialog` (`src/Ui/Views/Dialogs/`) is the "…" tolerance
-prompt with a live vertex-count preview, computed against the first curved shape in the selection and
-then applied uniformly to the whole selection.
+Union/Intersect/Difference/XOR (≥2 selected), **Offset…** (≥1 selected), Merge (≥1 selected), Repair
+Self-Intersection (single selection, only when `LayoutSelfIntersection.Test` is currently true),
+Flatten to Polygon / Flatten to Polygon… (only when the selection has curved geometry) — all
+selection-scoped, so they show regardless of exactly what (if anything) is directly under the
+right-click point, unlike the edge-conversion/delete-vertex items above them which stay
+click-target-scoped. `FlattenToPolygonDialog` (`src/Ui/Views/Dialogs/`) is the "…" tolerance prompt
+with a live vertex-count preview, computed against the first curved shape in the selection and then
+applied uniformly to the whole selection. `OffsetDialog` (same folder, same shape) prompts for the
+dimension (unit-suffixed, negative allowed — validation only rejects unparseable text, never a sign)
+and pre-fills with the VM's last-used `OffsetText` so repeated offsets in one session don't require
+re-typing the same distance; on Apply, `LayoutCanvas.ShowOffsetDialogAsync` calls
+`CommitOffsetText`/`ApplyOffsetToSelection` — the same staged-field pattern every other typed dimension
+field on this VM already uses (`CornerRadiusText`, `PathWidthText`, …), reused rather than adding a
+second parse path.
 
 **Empty results are legal and structural, not a special case anywhere** — `LayoutBooleans.Combine`/
 `Offset` just produce zero `LayoutShape`s (e.g. disjoint Intersect, or an over-shrunk Offset), and
