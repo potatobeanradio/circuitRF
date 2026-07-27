@@ -258,12 +258,75 @@ public sealed class LayoutCanvas : Control
             return;
         }
 
+        if (props.IsRightButtonPressed && _viewModel is not null)
+        {
+            var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
+
+            // macOS reports "Control + left-click" as a secondary (right) button press at the OS
+            // level -- the classic one-button-mouse "Control-click = right-click" convention. Without
+            // this check, holding Control to insert a vertex (L1d gesture) on macOS would silently pop
+            // the edge-conversion context menu instead. Route that case through the ordinary press
+            // path (which already handles Ctrl/Cmd+click-insert) instead; a genuine right-click with
+            // no Control held still opens the context menu.
+            if ((e.KeyModifiers & KeyModifiers.Control) != 0)
+            {
+                _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu());
+                InvalidateVisual();
+                e.Handled = true;
+                return;
+            }
+
+            ShowEdgeConversionMenu(wx, wy);
+            e.Handled = true;
+            return;
+        }
+
         if (props.IsLeftButtonPressed && _viewModel is not null)
         {
             var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
             _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu());
             InvalidateVisual();
         }
+    }
+
+    // ── Edge conversion + delete-vertex context menu (L1d §4: right-click an edge -> Convert to
+    // Line/Arc/Cubic; §3: right-click a vertex -> Delete Vertex, an explicit alternative to the
+    // invisible click-to-pick-then-press-Delete gesture) ──────────────────────────────────────────
+
+    private void ShowEdgeConversionMenu(double wx, double wy)
+    {
+        if (_viewModel is null) return;
+
+        var items = new List<object>();
+
+        var foundEdge = _viewModel.FindEdgeForContextMenu(wx, wy, HitTolDbu());
+        if (foundEdge is { } f)
+        {
+            void AddItem(string header, EdgeKind kind)
+            {
+                if (f.CurrentKind == kind) return; // no point offering to convert to what it already is
+                var mi = new MenuItem { Header = header };
+                mi.Click += (_, _) => { _viewModel.ConvertEdge(f.ShapeIndex, f.EdgeIndex, kind); InvalidateVisual(); };
+                items.Add(mi);
+            }
+            AddItem("Convert to Line", EdgeKind.Line);
+            AddItem("Convert to Arc", EdgeKind.Arc);
+            AddItem("Convert to Cubic", EdgeKind.Cubic);
+        }
+
+        var foundVertex = _viewModel.FindVertexForContextMenu(wx, wy, HitTolDbu());
+        if (foundVertex is { } v)
+        {
+            if (items.Count > 0) items.Add(new Separator());
+            var deleteVertex = new MenuItem { Header = "Delete Vertex" };
+            deleteVertex.Click += (_, _) => { _viewModel.DeleteVertex(v.ShapeIndex, v.VertexIndex); InvalidateVisual(); };
+            items.Add(deleteVertex);
+        }
+
+        if (items.Count == 0) return;
+
+        var menu = new ContextMenu { ItemsSource = items };
+        menu.Open(this);
     }
 
     private void OnPointerMoved(object? _, PointerEventArgs e)

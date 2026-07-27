@@ -1,5 +1,264 @@
 # UI (Avalonia) — local conventions
 
+L1d post-ship fix round 3 — Rect/RoundedRect edge-drag, and a "Delete Vertex" context menu item
+(2026-07-26) — COMPLETE: two owner follow-ups after round 2. (1) "Drag edge midpoint / edge line"
+was, by the brief's own §2 handle table, deliberately Polygon/Curve/Path-only — but the owner wanted
+it on `Rect`/`RoundedRect` too, a reasonable ask (widening one side of a box is a completely ordinary
+rectangle-editing gesture). (2) The owner still couldn't discover vertex-picking at all ("I don't
+even know how to select an individual vertex") — clicking a vertex handle with no drag silently picks
+it for the NEXT Delete keypress, with zero visual feedback that anything happened; asked for an
+explicit "Delete Vertex" context-menu item instead.
+
+**(1) Rect/RoundedRect edge-drag.** `Rect`/`RoundedRect` have no vertex list (`X1/Y1/X2/Y2` fields
+only), so this could not reuse `TranslateEdgeEndpoints`/`FindEdgeLineHit`'s vertex-list machinery
+as-is — it needed a parallel, axis-aligned-specific path, added everywhere that machinery is
+consulted: **Handles** — `LayoutHandles.BuildAxisAlignedEdgeMidpoints` adds 4 `EdgeMidpoint` handles
+(same edge-index convention as the corners: 0=bottom, 1=right, 2=top, 3=left) to both `Rect` and
+`RoundedRect`; a `RoundedRect`'s corner rounding only shortens the ENDS of each straight run
+symmetrically, so the midpoint position is unaffected by it and needs no special-casing. **Hit-test**
+— `LayoutShapeEditing.FindEdgeLineHit` now dispatches `Rect`/`RoundedRect` to a new
+`FindAxisAlignedEdgeLineHit` (tests the 4 corner-to-corner segments directly — no `Xy` array to walk)
+instead of its early `!IsVertexListShape → null` return, so a plain click ANYWHERE along a Rect's edge
+line (not just the exact midpoint handle) begins the drag, matching the Polygon/Curve/Path behavior
+exactly. **Geometry builder** — `LayoutShapeEditing.TranslateRectEdge`/`TranslateRoundedRectEdge`:
+since a rectangle's 4 edges are each defined by a SINGLE field, "translate this edge perpendicular to
+itself" is just `Y1 += delta` / `X2 += delta` / `Y2 += delta` / `X1 += delta` per edge index — no
+vector projection needed, the axis is fixed by which edge it is (unlike the general vertex-list case,
+where the perpendicular direction must be derived from the edge's own vector). **VM wiring** — a new
+`HandleDragKind.RectEdge` (parallel to the existing `RectCorner`, which similarly re-maps the generic
+`Vertex`/`EdgeMidpoint` handle kinds for these two shape types in `BeginHandleDrag`); a new
+`ComputeRectEdgePerpendicularOffset` projects the drag delta onto whichever single axis that edge
+index owns (Y for edges 0/2, X for edges 1/3) and snaps it, mirroring `ComputeEdgePerpendicularOffset`'s
+"snap the perpendicular offset, not each endpoint" rule; `FinalizeHandleDragShape` normalizes
+`RectEdge` results at commit exactly like `RectCorner` (an edge dragged past its opposite edge is a
+well-defined "inside-out" rect mid-drag, corrected only once, at release). **Ctrl+click-insert
+deliberately still excludes Rect/RoundedRect** — extending `FindEdgeLineHit` to those shapes meant the
+existing Ctrl-branch in `TryHandleSelectPressOnHandles` would otherwise reach `InsertVertexOnEdge`,
+which calls `XyOf` and would throw for a shape with no vertex list; the Ctrl-insert branch now guards
+on `LayoutShapeEditing.IsVertexListShape(shape)` first (there is genuinely nothing to insert into — a
+`Rect` cannot gain a 5th point without becoming a different shape kind entirely, which is out of scope
+here and not requested).
+
+**(2) "Delete Vertex" context menu item.** A new `LayoutEditorViewModel.FindVertexForContextMenu(wx,
+wy, tolDbu)` mirrors `FindEdgeForContextMenu` exactly (single-selection only, reuses the SAME
+`LayoutHandles.Build` + `LayoutHandleHitTest.HitTest` a left-click-drag would use, so "the vertex you
+can right-click to delete" is always the same one dragging would grab) but filters to
+`LayoutHandleKind.Vertex` hits and requires `IsVertexListShape` — a `Rect`/`RoundedRect` corner is a
+resize handle, not a removable vertex, exactly the same distinction round 2's picked-vertex-bookkeeping
+fix made. `LayoutEditorViewModel.DeleteVertex` changed from `private` to `public` (no behavior change)
+so the canvas can call it directly. `LayoutCanvas.ShowEdgeConversionMenu` (right-click handler) now
+independently probes for BOTH an edge hit (existing Convert-to-… items) and a vertex hit (new "Delete
+Vertex" item), adding a `Separator` between them only when both are present — right-clicking a
+Polygon/Curve/Path vertex (which is always also "near" one of its two adjacent edges, so both hits
+normally fire together) shows Convert-to-… / separator / Delete Vertex in one menu, exactly the layout
+requested. The already-correct "blocked below 3/2 vertices" no-op (§3) is unchanged — the menu item is
+always offered when a vertex is found; clicking it while blocked harmlessly does nothing, identical to
+the existing keyboard-Delete behavior (no new blocking UI was requested).
+
+Test files: `LayoutHandlesTests.cs` (Rect/RoundedRect handle-count tests updated for the 4 new
+edge-midpoint handles each), `LayoutShapeEditingTests.cs` (`TranslateRectEdge`/`TranslateRoundedRectEdge`
+per-edge-index field mapping, `FindEdgeLineHit` on both Rect and RoundedRect for all 4 sides plus the
+dead-center-miss case), `LayoutHandleGesturesTests.cs` (full-VM-gesture Rect/RoundedRect edge-midpoint
+drag, a plain click away from the midpoint still beginning the drag, inside-out-past-the-opposite-edge
+normalizing at commit, `FindVertexForContextMenu` finding a Polygon vertex vs. correctly refusing a
+Rect corner, and `DeleteVertex` via the context-menu lookup path both succeeding and correctly staying
+blocked at the 3-vertex minimum). 19 new tests; 1945 Ui.Tests total, all green; full solution green
+(Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip). **Not interactively verified** (no
+visual driver in this environment) — the context-menu wiring in particular (`ContextMenu`/`MenuItem`/
+`Separator` construction in `LayoutCanvas.cs`) cannot be unit-tested headlessly (any `Control` requires
+the Avalonia runtime); correctness rests on the VM-level `FindVertexForContextMenu`/`DeleteVertex` gate
+tests above plus direct code reading of the menu-building logic.
+
+L1d post-ship fix round 2 — macOS Ctrl-click-as-right-click, and picked-vertex bookkeeping on
+Rect/RoundedRect/Circle (2026-07-26) — COMPLETE: owner report that Ctrl/Cmd+click-insert *still*
+didn't work after the round-1 fix below, plus "Delete on a selected vertex" appearing broken and
+undiscoverable. Two independent bugs, both in gesture wiring the round-1 fix didn't touch.
+
+**(1) macOS reports Control+left-click as a SECONDARY (right) button press at the OS/Avalonia level**
+— the classic one-button-mouse "Control-click = right-click" convention, inherited from AppKit.
+`LayoutCanvas.OnPointerPressed`'s `props.IsRightButtonPressed` branch ran unconditionally BEFORE the
+left-click branch that carries the round-1 Ctrl-insert fix — so on macOS, holding Control and clicking
+never reached that logic at all; it always opened the edge-conversion context menu instead, no matter
+how the VM-level priority ordering was fixed. This explains why the round-1 fix (verified correct at
+the VM level, with a passing regression test) produced no visible change for the owner — the bug was
+one layer up, in the canvas's button-type dispatch, never exercised by a VM-level test (this class of
+bug is exactly why `LayoutCanvas.cs` — any `Control` subclass — cannot be unit-tested headlessly; see
+"Testing without the Avalonia runtime" below). **Fix:** the right-button branch now checks
+`KeyModifiers.Control` first; if held, it forwards to the ordinary press path (which already handles
+Ctrl/Cmd+click-insert correctly) instead of opening the context menu. A genuine right-click with no
+Control held is unaffected. **Not unit-tested** (requires the Avalonia runtime's button/modifier
+translation, which this environment cannot construct) — reasoned from the documented AppKit convention
+and the exact code shape; Cmd (Meta)+click does NOT trigger this OS-level button substitution — only
+literal Control does — so Cmd+click was already working correctly via the existing left-click path and
+needed no change.
+
+**(2) `_pickedVertexIndex` (the "Delete on a selected vertex" bookkeeping, §3) was set for ANY
+Vertex-kind handle click, including a `Rect`/`RoundedRect` corner** — which reports as a Vertex-kind
+`LayoutHandle` but maps to `HandleDragKind.RectCorner` (a resize), not a removable vertex.
+`LayoutShapeEditing.RemoveVertex` correctly refuses a non-vertex-list shape (returns null), but
+`OnKeyDown`'s Delete branch called `DeleteVertex(...)` and returned UNCONDITIONALLY, whether or not it
+actually did anything — so clicking a Rect's corner (a completely ordinary thing to do while selecting
+it) silently broke the Delete key for that shape: neither a vertex was removed (correctly — Rect has
+none) NOR did the whole shape get deleted (the bug — Delete just did nothing). **Fix:**
+`_pickedVertexIndex` is now only set when the handle is Vertex-kind AND
+`LayoutShapeEditing.IsVertexListShape(shape)` — false for Rect/RoundedRect/Circle, so Delete on those
+shapes now falls through to `DeleteSelection()` exactly as it did before any handle was ever clicked.
+The already-correct "blocked below 3/2 vertices" behavior for a true vertex-list shape (Polygon/Curve/
+Path) is unchanged — that case must stay a no-op, not escalate to deleting the whole shape.
+
+**Clarifying, not a bug: "Drag edge midpoint / edge line" and "Ctrl/Cmd+click an edge" per §2's handle
+table only exist on `Polygon`/`Curve`/`Path` — a `Rect`/`RoundedRect`/`Circle` has ONLY corner/radius
+handles (no edge-midpoint, no edge-line insert), because those shapes have no vertex list to insert
+into.** A new regression test drives a plain (non-Ctrl) click a quarter of the way along a long
+Polygon edge — deliberately clear of the midpoint handle's own tolerance window — and confirms
+`LayoutShapeEditing.FindEdgeLineHit`'s fallback still begins the perpendicular edge-drag correctly;
+the underlying VM/geometry logic for both edge gestures was already correct on the shapes that support
+them. If edge-drag/insert still seem unavailable, first confirm the shape under test is a Polygon
+(or Curve/Path), not a Rect — this is the most likely remaining explanation. Regression tests:
+`LayoutHandleGesturesTests.ClickRectCornerThenDelete_FallsThroughToDeletingTheWholeShape` and
+`..._PlainClickOnEdgeLine_AwayFromTheMidpointHandle_StillBeginsTheEdgeDrag`. 1926 Ui.Tests total, all
+green; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip).
+
+L1d post-ship fix — Ctrl/Cmd+click-insert was shadowed by the EdgeMidpoint handle (2026-07-26) —
+COMPLETE: owner report ("Ctrl/Cmd+click an edge doesn't seem to work"). Root cause:
+`TryHandleSelectPressOnHandles` tested `LayoutHandleHitTest.HitTest` (the handle-priority test)
+BEFORE checking `ctrl` at all — and every straight edge already carries an `EdgeMidpoint` drag-handle
+sitting exactly at that edge's midpoint, the single most natural spot to click "the edge." A
+Ctrl+click landing on (or within tolerance of) that handle hit the handle branch first, called
+`BeginHandleDrag` unconditionally, and returned — the `ctrl` check for insert-a-vertex lived further
+down and was never reached. Programmatic gesture tests at the time all clicked deliberately clear of
+any handle (to isolate the insert path), so this shadowing went uncaught until interactive use.
+**Fix:** `TryHandleSelectPressOnHandles` now checks `ctrl` FIRST — if held, `FindEdgeLineHit` runs
+immediately and inserts on a hit, before the handle hit-test ever runs; only when Ctrl is held but no
+edge is under the click does it fall through to the normal handle test. Ctrl+click now means "insert
+a vertex" unconditionally, regardless of what handle happens to occupy the same pixel. Regression test:
+`LayoutHandleGesturesTests.CtrlClickExactlyOnTheEdgeMidpointHandle_StillInsertsAVertex_NotAnEdgeDrag`
+clicks at the exact edge-midpoint coordinate with Ctrl held and asserts an insert (not a drag) occurs.
+1924 Ui.Tests total, all green.
+
+Phase L1d — vertex/edge/bulge/control-point editing handles (brief-L1d-shape-editing-handles.md,
+2026-07-26) — COMPLETE: a layout shape can now be **reshaped**, not just moved/deleted — drag a
+vertex, drag an edge, drag a bulge or a cubic control point, insert/remove a vertex, resize a
+Circle's radius or a RoundedRect's corner radius or a Rect's corner, and convert an edge
+Line↔Arc↔Cubic via a right-click menu. Clipper2 booleans/offsets, Flatten-to-Polygon, and
+self-intersection *repair* are explicitly **not** in this phase (L1e).
+
+**`ReplaceShapeCommand` (`src/Ui/Commands/Layout/`) is the SINGLE command for every geometry-reshape
+edit** — vertex move, edge move, insert, remove, bulge/control-point change, radius/corner-radius
+resize, Rect corner resize, AND edge-kind conversion. Not a family of per-operation commands, because
+the promotion rule (below) **changes the shape's runtime type** (`PolygonShape` → `CurveShape`) — a
+command that mutates a shape in place cannot express a type change, while one that swaps the whole
+instance at a fixed index expresses every edit (type-preserving or not) uniformly. Undo is trivially
+the reverse swap at the same index. All the actual geometry math lives in `LayoutShapeEditing.cs`
+(`src/Ui/Layout/`), whose builders are **immutable-style by rule**: given a shape, build and return a
+brand-new one (`LayoutGeometry.Clone` + a targeted field change) — never mutate the shape the renderer
+or the model may currently be reading. `LayoutEditorViewModel` is the only caller that ever swaps a
+built shape into `LayoutView.Shapes`, and only via `ReplaceShapeCommand`.
+
+**Three different snapping rules, deliberately different and living together in
+`LayoutEditorViewModel.BuildHandleDragPreview` so they read as one considered system rather than an
+inconsistency:**
+1. **Whole-shape move** (L1c, unchanged) snaps the **delta** — one rigid translation applied to every
+   vertex, so an off-grid shape's internal geometry survives a move exactly.
+2. **Vertex drag** snaps the **resulting position** — the user is placing a single point and no other
+   vertex is affected, so snapping this one point can't mangle anything else.
+3. **Edge drag** snaps the **perpendicular offset** (a scalar projected onto the edge's unit normal),
+   then applies the identical snapped delta to both endpoints — like a move, this must snap the delta
+   and not each endpoint independently, or a 45° edge could silently become some other angle.
+Bulge, cubic-control, radius, and corner-radius drags snap their own scalar result (bulge is
+deliberately **not** grid-snapped — it's geometric/unbounded, not a coordinate; radius and
+corner-radius ARE snapped, being lengths on the same grid as everything else).
+
+**Hit priority (R-L1d-2), `LayoutHandleHitTest.cs`: CubicControl > Bulge > Vertex/Radius/CornerRadius >
+EdgeMidpoint**, nearest-within-tier as the tiebreak. This matters because a Cubic edge's control-point
+handle can sit very close to a vertex handle, and a straight edge's midpoint handle always exists
+alongside any vertex/bulge handle on the same edge — without an explicit order the "wrong" handle
+would win arbitrarily depending on pixel rounding.
+
+**Handle grab radii are PIXEL quantities, computed fresh on every hit-test query from the CURRENT
+zoom — never cached, never derived from `SnapDbu`.** This is the exact class of bug the L1-fix-clear-
+and-default-zoom entry (below) already burned the project on once for the drawing tools; L1d repeats
+the same discipline for handles. `LayoutHandleHitTest.HitTest` takes a `tolDbu` the caller computes
+per-call (`pixels / zoom`), same as L1c's selection hit-testing.
+
+**The promotion rule (R-L1d-3):** `PolygonShape` carries no edge list (every edge is implicitly Line);
+converting one of its edges to Arc/Cubic via the right-click menu (`LayoutShapeEditing.ConvertEdge`)
+replaces it with an equivalent `CurveShape` — same `Layer`/`Net`/`Xy`, now with an edge list — swapped
+in at the **same index** by `ReplaceShapeCommand`, so Undo restores the exact original `PolygonShape`
+instance (not an equivalent copy). A `CurveShape`/`PathShape` (already carrying an edge list) just
+gains the converted edge in place, no type change. Reverse demotion (converting every edge back to
+Line) is deliberately NOT automatic.
+
+**Insert vertex** (Ctrl/Cmd+click an edge): a Line edge inserts at the **snapped** click point (an
+ordinary new vertex); an Arc or Cubic edge instead splits at the **exact parameter** nearest the
+click, deliberately **unsnapped** — both resulting sub-edges share the source arc's center/radius (or
+are an exact de Casteljau split of the source cubic), so the shape is visually unchanged. Forcing that
+point onto the grid would pull it off the original curve. **Remove vertex** is blocked below 3
+vertices for a closed shape (Polygon/Curve) or below 2 for an open Path; removing a middle vertex
+merges its two adjacent edges into one straight Line (curvature is not preserved through a removed
+vertex — there's no principled way to merge two arbitrary curved edges into one equivalent curve); an
+open Path's true endpoint removal just drops the one adjacent edge instead of merging.
+
+**Self-intersection is flagged, never blocked or repaired** (`LayoutSelfIntersection.cs`, an O(n²)
+segment-pair sweep with adjacency-skip, deliberately excluding the wraparound-adjacent pair for closed
+shapes): `LayoutEditorViewModel.WarnIfSelfIntersecting` runs after every committed handle-drag edit and
+posts a `Messages.Warning` if the resulting shape self-intersects — the edit is kept either way.
+Clipper2-based repair is explicitly out of scope (L1e).
+
+**One gesture, one undo entry, always.** A handle drag calls `BuildHandleDragPreview` on every
+`OnPointerMoved` tick (updating only `Overlay.DragOverrides` for the live preview — never mutating
+`Model.Shapes` mid-drag) and executes exactly one `ReplaceShapeCommand` at `OnPointerRelease`, no
+matter how many intermediate move events fired. **Escape mid-drag restores the original shape and
+pushes no command** — `_handleDragOriginal` (the pre-drag shape) is only ever consumed by the eventual
+`ReplaceShapeCommand.Execute`; `CancelDrawOp`'s `ResetHandleDragState()` simply discards the live
+preview and drops back to the untouched model, mirroring the same Escape contract every other
+Layout/Symbol editor gesture already follows.
+
+Test files: `LayoutHandlesTests.cs` (gate 2's data — `LayoutHandles.Build` produces the right handle
+set per shape kind: Rect/RoundedRect corners, Circle radius, Polygon vertex+edge-midpoint, Curve
+Arc→Bulge/Cubic→two-control-points, Path's N−1 edges, Via/Label have none), `LayoutHandleRenderingTests.cs`
+(gate 2's pixel proof — a single selection's edge-midpoint handle paints just outside the shape, a
+multi-selection shows none; probes an edge midpoint rather than a corner specifically to avoid the
+selection outline's own miter-join overshoot at a vertex, which is easily mistaken for a handle),
+`LayoutHandleHitTestTests.cs` (gate 3 — the R-L1d-2 priority order with deliberately overlapping
+handles, plus the nearest-within-tier tiebreak), `LayoutShapeEditingTests.cs` (direct unit tests of
+every `LayoutShapeEditing` builder — SetVertex/TranslateEdgeEndpoints/SetBulge/SetCubicControl/
+SetRadius/SetCornerRadius/ResizeRectCorner, RemoveVertex's three edge-list-surgery cases, InsertVertexOnEdge
+for Line/Arc/Cubic edges including the arc-split center/radius/on-circle exactness gate, ConvertEdge's
+promotion rule and the plain-Path no-type-change case), `LayoutHandleGesturesTests.cs` (gates 4–12,
+driven through `OnPointerPressed/Moved/Released` exactly as the canvas would: grab-radius tolerance
+derived from zoom on both starter technologies' snap scales, vertex-drag-snaps-position vs.
+move-drag-still-snaps-delta as an explicit regression pairing, 45°-edge-drag-preserves-direction,
+Ctrl+click insert and click-vertex-then-Delete/blocked-at-minimum removal, bulge sign-flip-past-chord
+and bulge=0-renders-straight, the promotion rule through the VM's `ConvertEdge`/`FindEdgeForContextMenu`
+public API with `Assert.Same` proving Undo restores the exact original instance, 50-intermediate-
+pointer-moves collapsing to one undo entry with byte-identical `LayoutPersistence.Serialize` round-trip
+through Undo/Redo, Escape mid-drag leaving the model provably untouched, and a self-intersecting
+vertex-drag posting a Warning while keeping the edit). 65 new tests; 1923 Ui.Tests total, all green;
+full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip, matching the L1c
+baseline exactly). **Not interactively verified** (no visual driver in this environment, matching every
+prior Layout Editor phase) — correctness rests on the gate test suite above, including the pixel-oracle
+handle-rendering tests and the full-VM-gesture tests that drive the actual press/move/release state
+machine rather than only the underlying geometry builders. **Next: L1e** (Clipper2 booleans/offsets,
+Flatten-to-Polygon, self-intersection repair, cross-cell clipboard).
+
+Escape-key bug fix — `LayoutEditorView` never wired the activation-focus seam (2026-07-26) — COMPLETE:
+owner report ("I press Esc but nothing happens") root-caused to two compounding gaps. **(1)**
+`WorkspaceWindow.axaml`'s `<KeyBinding Gesture="Escape" Command="{Binding DisarmPlacementCommand}"/>`
+is processed by Avalonia before visual-tree routing begins and always marks the event `Handled`,
+silently pre-empting `LayoutCanvas`'s plain bubble-phase `KeyDown +=` handler before it ever runs.
+**(2)** `LayoutEditorView` never wired the `ActivationFocusRequested`/`ConsumeActivationFocus` seam
+that `LayoutDocument` already exposes (unlike `SchematicView`/`SymbolEditorView`), so the canvas likely
+never had keyboard focus at all after a tab switch — see this file's "Keyboard shortcut routing" and
+"Editor view grabs keyboard focus on tab activation" sections below, which already document the
+authoritative pattern. **Fix:** `LayoutEditorView.axaml.cs` now mirrors `SymbolEditorView.axaml.cs`
+exactly — a tunnel `KeyDownEvent` handler (`handledEventsToo: true`, gated on
+`LayoutCanvasCtrl.IsKeyboardFocusWithin`) forwards Escape to `vm.OnKeyDown`, and a
+`DataContextChanged` handler subscribes to `ActivationFocusRequested`/calls `ConsumeActivationFocus()`
+to focus the canvas on tab activation, deferred via `Dispatcher.UIThread.Post(Background)`. No new
+tests — this is a straight application of an already-documented, already-tested pattern to a view that
+had missed it; the fix was confirmed working by the owner interactively.
+
 L1 fix (path seams + live tech) — brief-L1-fix-path-seams-and-live-tech.md, 2026-07-26 — COMPLETE:
 two independent owner-reported items.
 

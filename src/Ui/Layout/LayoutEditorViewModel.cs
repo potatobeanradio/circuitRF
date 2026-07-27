@@ -240,7 +240,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // Any model mutation (draw, move, delete, undo, redo — every one of them calls
             // NotifyChanged) invalidates the overlap-cycling cache (R-L1c-2). Selected indices may
             // also have shifted or been removed by the mutation, so drop any that are now stale.
+            // The picked-vertex index (L1d) is unconditionally cleared too — a ReplaceShapeCommand
+            // can change the shape's vertex count/order at the very index that's still selected.
             _cycleCache = null;
+            _pickedVertexIndex = null;
             if (_selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0)
             {
                 SelectionStatusText = ComputeGenericSelectionStatus();
@@ -329,6 +332,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         _selectedIndices.Clear();
         _selectedIndices.AddRange(distinct);
+        _pickedVertexIndex = null;
         SelectionStatusText = ComputeGenericSelectionStatus();
         RebuildOverlay();
     }
@@ -393,6 +397,25 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     private static readonly IReadOnlyDictionary<int, LayoutShape> EmptyDragOverrides = new Dictionary<int, LayoutShape>();
 
+    // ── Handle drag state (L1d) ────────────────────────────────────────────────
+    // docs/design/layout-view.md §6.3 R14, L1d brief. Independent of _selectDragKind — a handle drag
+    // pre-empts move/marquee entirely and is checked first in every gesture handler.
+
+    private enum HandleDragKind { None, Vertex, EdgeMidpoint, RectEdge, Bulge, CubicControl, Radius, CornerRadius, RectCorner }
+    private HandleDragKind _handleDragKind = HandleDragKind.None;
+    private int _handleDragShapeIndex;
+    private int _handleDragIndex;      // vertex/edge/corner index
+    private int _handleDragSubIndex;   // cubic control point: 0 = C1, 1 = C2
+    private LayoutShape? _handleDragOriginal; // shape BEFORE the drag — also the Escape-restore/undo "before"
+    private LayoutShape? _handleDragPreview;  // current live preview, rendered via Overlay.DragOverrides
+    private long _handleDragAnchorX, _handleDragAnchorY; // press point — edge-drag/bulge project against this
+    private bool _handleDragMoved;
+
+    /// <summary>The last VERTEX handle clicked (press+release, no drag) on the single selection, or
+    /// null. Delete/Backspace removes this vertex instead of the whole shape when set (§3 "Delete on
+    /// a selected vertex"). Cleared on any selection change, model mutation, or Escape.</summary>
+    private int? _pickedVertexIndex;
+
     private void HandleSelectPress(double wx, double wy, KeyModifiers mods, long tolDbu)
     {
         bool shift = (mods & KeyModifiers.Shift) != 0;
@@ -401,6 +424,14 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
         _selectPressWX = px; _selectPressWY = py;
+
+        // L1d: handles (and the edge-line fallback below them) take absolute priority over L1c's
+        // selection/cycling logic when exactly one shape is selected — "a press on a handle must not
+        // disturb the selection or the overlap-cycling cache" (§2). Only a single-shape selection
+        // shows handles at all (§2: "multi-selection shows no handles — it is a move/delete selection").
+        if (_selectedIndices.Count == 1 && TryHandleSelectPressOnHandles(_selectedIndices[0], px, py, ctrl, alt, tolDbu))
+            return;
+        _pickedVertexIndex = null;
 
         long thresh = Math.Max(tolDbu, 1);
         bool cacheUsable = _cycleCache is { } c0 && c0.Stack.Count > 0
@@ -435,6 +466,338 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         UpdateSelectionStatusFromCycle();
 
         if (!shift && !ctrl) BeginMoveDrag(px, py);
+    }
+
+    /// <summary>Tests Ctrl/Cmd+click-insert FIRST, then handles (R-L1d-2 priority order), then the
+    /// plain-click edge-drag fallback, for the single selected shape. Returns true if the press was
+    /// consumed by one of these — the caller must return immediately without touching selection/cycling
+    /// state.</summary>
+    private bool TryHandleSelectPressOnHandles(int shapeIndex, long px, long py, bool ctrl, bool alt, long tolDbu)
+    {
+        if (shapeIndex < 0 || shapeIndex >= Model.Shapes.Count) return false;
+        var shape = Model.Shapes[shapeIndex];
+
+        if (ctrl && LayoutShapeEditing.IsVertexListShape(shape))
+        {
+            // Ctrl/Cmd+click an edge -> insert a vertex there (one command, not a drag). Only applies
+            // to a true vertex-list shape (Polygon/Curve/Path) — a Rect/RoundedRect has no vertex list
+            // to insert into (its 4 edges are each a single X1/Y1/X2/Y2 field), so it's excluded here
+            // rather than crashing inside InsertVertexOnEdge. Checked BEFORE the handle hit-test,
+            // deliberately: every straight edge already carries an EdgeMidpoint handle sitting exactly
+            // at the point a user most naturally clicks to "click the edge" — without this ordering, a
+            // Ctrl+click landing on (or near) that handle would silently begin an edge-DRAG instead of
+            // inserting, since handles otherwise take absolute priority. Ctrl declares unambiguous
+            // intent ("insert here"), which must win regardless of what handle occupies the same pixel.
+            int? ctrlEdgeHit = LayoutShapeEditing.FindEdgeLineHit(shape, px, py, tolDbu);
+            if (ctrlEdgeHit is { } ctrlEdgeIndex)
+            {
+                var after = LayoutShapeEditing.InsertVertexOnEdge(shape, ctrlEdgeIndex, px, py, Model.SnapDbu, alt);
+                Execute(new Commands.Layout.ReplaceShapeCommand(Model, shapeIndex, shape, after));
+                _pickedVertexIndex = null;
+                return true;
+            }
+            // No edge under the click even with Ctrl held (e.g. Ctrl+click on empty space, or on a
+            // non-edge handle like Radius/CornerRadius) -- fall through to the normal handle test below.
+        }
+
+        var handles = LayoutHandles.Build(shape);
+        var hit = LayoutHandleHitTest.HitTest(handles, px, py, tolDbu);
+        if (hit is { } handle)
+        {
+            BeginHandleDrag(shapeIndex, shape, handle, px, py);
+            // "Picked vertex" bookkeeping (for the Delete key, §3 "Delete on a selected vertex") only
+            // applies to true vertex-list shapes (Polygon/Curve/Path). A Rect/RoundedRect corner is
+            // ALSO reported as a Vertex-kind handle (it maps to HandleDragKind.RectCorner, a resize —
+            // not a removable vertex) — without this guard, clicking a Rect's corner would silently
+            // make the next Delete keypress a no-op (LayoutShapeEditing.RemoveVertex correctly refuses
+            // a non-vertex-list shape) instead of falling through to deleting the whole shape.
+            _pickedVertexIndex = handle.Kind == LayoutHandleKind.Vertex && LayoutShapeEditing.IsVertexListShape(shape)
+                ? handle.Index : null;
+            return true;
+        }
+
+        int? edgeHit = LayoutShapeEditing.FindEdgeLineHit(shape, px, py, tolDbu);
+        if (edgeHit is not { } edgeIndex) return false;
+
+        if (LayoutShapeEditing.IsStraightEdge(shape, edgeIndex))
+        {
+            // A plain click on a straight edge's LINE (not exactly its midpoint handle) begins the
+            // same perpendicular edge-drag the midpoint handle would. Curved (Arc/Cubic) edges have
+            // no line-drag gesture of their own — only their Bulge/CubicControl handles reshape them
+            // (handled above); clicking their curve body falls through to the shape's normal
+            // body/move-drag instead.
+            BeginHandleDrag(shapeIndex, shape, new LayoutHandle(LayoutHandleKind.EdgeMidpoint, 0, 0, edgeIndex), px, py);
+            _pickedVertexIndex = null;
+            return true;
+        }
+
+        return false;
+    }
+
+    private void BeginHandleDrag(int shapeIndex, LayoutShape shape, LayoutHandle handle, long px, long py)
+    {
+        _handleDragKind = handle.Kind switch
+        {
+            LayoutHandleKind.Vertex when shape is RectShape or RoundedRectShape => HandleDragKind.RectCorner,
+            LayoutHandleKind.Vertex       => HandleDragKind.Vertex,
+            LayoutHandleKind.EdgeMidpoint when shape is RectShape or RoundedRectShape => HandleDragKind.RectEdge,
+            LayoutHandleKind.EdgeMidpoint => HandleDragKind.EdgeMidpoint,
+            LayoutHandleKind.Bulge        => HandleDragKind.Bulge,
+            LayoutHandleKind.CubicControl => HandleDragKind.CubicControl,
+            LayoutHandleKind.Radius       => HandleDragKind.Radius,
+            LayoutHandleKind.CornerRadius => HandleDragKind.CornerRadius,
+            _ => HandleDragKind.None,
+        };
+        _handleDragShapeIndex = shapeIndex;
+        _handleDragOriginal = shape;
+        _handleDragPreview = null;
+        _handleDragIndex = handle.Index;
+        _handleDragSubIndex = handle.SubIndex;
+        _handleDragAnchorX = px; _handleDragAnchorY = py;
+        _handleDragMoved = false;
+        RebuildOverlay();
+    }
+
+    /// <summary>
+    /// R-L1d — three snapping rules, deliberately written next to each other so they read as one
+    /// considered system rather than an inconsistency (the brief's own framing):
+    /// <list type="bullet">
+    /// <item><b>Vertex drag snaps the resulting POSITION.</b> The user is placing a single point; the
+    /// other vertices are untouched, so snapping this one to the grid mangles nothing.</item>
+    /// <item><b>Edge drag snaps the perpendicular OFFSET</b> (a scalar), then applies the identical
+    /// snapped delta to both endpoints — a rigid translation of just those two vertices, which is
+    /// why it (like a whole-shape move, R-L1c-3) must snap the delta and not each vertex
+    /// independently: rounding each endpoint on its own could turn a 45° edge into something else.</item>
+    /// <item><b>Bulge / cubic-control / radius / corner-radius / Rect-corner drags snap their own
+    /// scalar result</b> (the bulge value is unbounded and geometric rather than a coordinate, so it
+    /// is intentionally NOT grid-snapped; radius and corner-radius ARE snapped, being lengths on the
+    /// same grid as everything else).</item>
+    /// </list>
+    /// </summary>
+    private LayoutShape? BuildHandleDragPreview(long px, long py, bool suspendSnap)
+    {
+        if (_handleDragOriginal is null) return null;
+        var original = _handleDragOriginal;
+
+        switch (_handleDragKind)
+        {
+            case HandleDragKind.Vertex:
+            {
+                var (sx, sy) = LayoutSnapping.SnapPoint(px, py, Model.SnapDbu, suspendSnap);
+                return LayoutShapeEditing.SetVertex(original, _handleDragIndex, sx, sy);
+            }
+
+            case HandleDragKind.EdgeMidpoint:
+            {
+                var (dx, dy) = ComputeEdgePerpendicularOffset(original, _handleDragIndex, px, py, suspendSnap);
+                return LayoutShapeEditing.TranslateEdgeEndpoints(original, _handleDragIndex, dx, dy);
+            }
+
+            case HandleDragKind.RectEdge:
+            {
+                long delta = ComputeRectEdgePerpendicularOffset(_handleDragIndex, px, py, suspendSnap);
+                return original switch
+                {
+                    RectShape r         => LayoutShapeEditing.TranslateRectEdge(r, _handleDragIndex, delta),
+                    RoundedRectShape rr => LayoutShapeEditing.TranslateRoundedRectEdge(rr, _handleDragIndex, delta),
+                    _ => null,
+                };
+            }
+
+            case HandleDragKind.Bulge:
+            {
+                double bulge = ComputeBulgeFromDrag(original, _handleDragIndex, px, py);
+                return LayoutShapeEditing.SetBulge(original, _handleDragIndex, bulge);
+            }
+
+            case HandleDragKind.CubicControl:
+            {
+                var (sx, sy) = LayoutSnapping.SnapPoint(px, py, Model.SnapDbu, suspendSnap);
+                return LayoutShapeEditing.SetCubicControl(original, _handleDragIndex, _handleDragSubIndex, sx, sy);
+            }
+
+            case HandleDragKind.Radius when original is CircleShape c:
+            {
+                double dx = px - c.Cx, dy = py - c.Cy;
+                long rawR = (long)Math.Round(Math.Sqrt(dx * dx + dy * dy));
+                long snappedR = LayoutSnapping.SnapValue(rawR, Model.SnapDbu, suspendSnap);
+                return LayoutShapeEditing.SetRadius(c, snappedR);
+            }
+
+            case HandleDragKind.CornerRadius when original is RoundedRectShape rr:
+            {
+                long x1 = Math.Min(rr.X1, rr.X2);
+                long rawR = px - x1;
+                long snappedR = LayoutSnapping.SnapValue(rawR, Model.SnapDbu, suspendSnap);
+                return LayoutShapeEditing.SetCornerRadius(rr, snappedR);
+            }
+
+            case HandleDragKind.RectCorner:
+            {
+                var (sx, sy) = LayoutSnapping.SnapPoint(px, py, Model.SnapDbu, suspendSnap);
+                return original switch
+                {
+                    RectShape r        => LayoutShapeEditing.ResizeRectCorner(r, _handleDragIndex, sx, sy),
+                    RoundedRectShape rr => LayoutShapeEditing.ResizeRoundedRectCorner(rr, _handleDragIndex, sx, sy),
+                    _ => null,
+                };
+            }
+
+            default:
+                return null;
+        }
+    }
+
+    private (long Dx, long Dy) ComputeEdgePerpendicularOffset(LayoutShape original, int edgeIndex, long px, long py, bool suspendSnap)
+    {
+        var xy = LayoutShapeEditing.XyOf(original);
+        int n = xy.Length / 2;
+        bool closed = LayoutShapeEditing.IsClosed(original);
+        int j = closed ? (edgeIndex + 1) % n : edgeIndex + 1;
+        long x0 = xy[2 * edgeIndex], y0 = xy[2 * edgeIndex + 1];
+        long x1 = xy[2 * j], y1 = xy[2 * j + 1];
+
+        double ex = x1 - x0, ey = y1 - y0;
+        double len = Math.Sqrt(ex * ex + ey * ey);
+        if (len < 1e-9) return (0, 0);
+        double nx = -ey / len, ny = ex / len; // unit perpendicular to the edge
+
+        double totalDx = px - _handleDragAnchorX, totalDy = py - _handleDragAnchorY;
+        double offset = totalDx * nx + totalDy * ny; // scalar projection onto the perpendicular
+        long snapped = LayoutSnapping.SnapValue(offset, Model.SnapDbu, suspendSnap);
+
+        return ((long)Math.Round(snapped * nx), (long)Math.Round(snapped * ny));
+    }
+
+    /// <summary>Same "snap the perpendicular offset" rule as <see cref="ComputeEdgePerpendicularOffset"/>,
+    /// simplified for a Rect/RoundedRect's always-axis-aligned edges: edges 0/2 (bottom/top) are
+    /// horizontal, so their perpendicular is vertical (project the drag's Y delta); edges 1/3
+    /// (right/left) are vertical, so their perpendicular is horizontal (project the drag's X delta).
+    /// No vector math needed — the axis is fixed by which edge it is.</summary>
+    private long ComputeRectEdgePerpendicularOffset(int edgeIndex, long px, long py, bool suspendSnap)
+    {
+        double totalDx = px - _handleDragAnchorX, totalDy = py - _handleDragAnchorY;
+        double raw = edgeIndex is 0 or 2 ? totalDy : totalDx;
+        return LayoutSnapping.SnapValue(raw, Model.SnapDbu, suspendSnap);
+    }
+
+    private double ComputeBulgeFromDrag(LayoutShape original, int edgeIndex, long px, long py)
+    {
+        var xy = LayoutShapeEditing.XyOf(original);
+        int n = xy.Length / 2;
+        bool closed = LayoutShapeEditing.IsClosed(original);
+        int j = closed ? (edgeIndex + 1) % n : edgeIndex + 1;
+        long x0 = xy[2 * edgeIndex], y0 = xy[2 * edgeIndex + 1];
+        long x1 = xy[2 * j], y1 = xy[2 * j + 1];
+
+        double dx = x1 - x0, dy = y1 - y0;
+        double d = Math.Sqrt(dx * dx + dy * dy);
+        if (d < 1e-9) return 0;
+        double ux = dx / d, uy = dy / d;
+        double nx = uy, ny = -ux; // SAME right-perpendicular convention as LayoutArc.FromBulge, so the
+                                  // drag position and the resulting rendered arc agree on which side bulges.
+
+        double mx = (x0 + x1) / 2.0, my = (y0 + y1) / 2.0;
+        double h = (px - mx) * nx + (py - my) * ny; // signed distance of the drag point from the chord midpoint
+        double bulge = 2.0 * h / d;                  // inverts LayoutArc.FromBulge's h = bulge*d/2
+
+        // Dragging past the chord (h changes sign) flips the sweep sign by construction — no special
+        // casing needed. Clamp only to guard against a runaway value very close to a full circle.
+        return Math.Clamp(bulge, -50.0, 50.0);
+    }
+
+    private void CommitHandleDrag()
+    {
+        if (_handleDragMoved && _handleDragPreview is not null && _handleDragOriginal is not null)
+        {
+            var finalShape = FinalizeHandleDragShape(_handleDragPreview);
+            Execute(new Commands.Layout.ReplaceShapeCommand(Model, _handleDragShapeIndex, _handleDragOriginal, finalShape));
+            WarnIfSelfIntersecting(finalShape);
+        }
+        ResetHandleDragState();
+    }
+
+    private LayoutShape FinalizeHandleDragShape(LayoutShape preview)
+    {
+        // Rect/RoundedRect corner AND edge drags normalize (X1<X2, Y1<Y2) only NOW, at commit —
+        // keeping the corner/edge-index-to-position mapping stable and simple throughout the whole
+        // live preview (an edge dragged past its opposite edge is a well-defined "inside-out" rect
+        // mid-drag, exactly like a corner drag).
+        return (preview, _handleDragKind) switch
+        {
+            (RectShape r, HandleDragKind.RectCorner or HandleDragKind.RectEdge)         => LayoutShapeEditing.NormalizeRect(r),
+            (RoundedRectShape rr, HandleDragKind.RectCorner or HandleDragKind.RectEdge) => LayoutShapeEditing.NormalizeRoundedRect(rr),
+            _ => preview,
+        };
+    }
+
+    private void WarnIfSelfIntersecting(LayoutShape shape)
+    {
+        // §5: allow freely during the drag; on release, flag (never block, never auto-repair).
+        if (LayoutSelfIntersection.Test(shape, Technology))
+            _messageSink?.Warning($"{ShapeTypeName(shape)} on layer {LayerDisplayName(shape.Layer)} self-intersects after this edit.");
+    }
+
+    private void ResetHandleDragState()
+    {
+        _handleDragKind = HandleDragKind.None;
+        _handleDragOriginal = null;
+        _handleDragPreview = null;
+        _handleDragMoved = false;
+    }
+
+    // ── Edge-kind conversion (§4) — called from the canvas's right-click context menu ──────────
+
+    /// <summary>Finds the edge nearest (wx,wy) on the single selected shape, within
+    /// <paramref name="tolDbu"/> — the canvas's right-click handler uses this to decide whether/what
+    /// conversion menu to show. Returns null when there is no single-shape selection, the shape has
+    /// no edges, or nothing is within tolerance.</summary>
+    public (int ShapeIndex, int EdgeIndex, EdgeKind CurrentKind)? FindEdgeForContextMenu(double wx, double wy, long tolDbu)
+    {
+        if (_selectedIndices.Count != 1) return null;
+        int shapeIndex = _selectedIndices[0];
+        if (shapeIndex < 0 || shapeIndex >= Model.Shapes.Count) return null;
+        var shape = Model.Shapes[shapeIndex];
+        if (!LayoutShapeEditing.IsVertexListShape(shape)) return null;
+
+        long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+        int? edgeIndex = LayoutShapeEditing.FindEdgeLineHit(shape, px, py, tolDbu);
+        if (edgeIndex is not { } ei) return null;
+
+        var edges = LayoutShapeEditing.EdgesOf(shape);
+        var kind = edges is not null && ei < edges.Count ? edges[ei].Kind : EdgeKind.Line;
+        return (shapeIndex, ei, kind);
+    }
+
+    /// <summary>Converts one edge to Line/Arc/Cubic (§4) — one undo entry. Handles the Polygon→Curve
+    /// promotion rule (R-L1d-3) internally via <see cref="LayoutShapeEditing.ConvertEdge"/>.</summary>
+    public void ConvertEdge(int shapeIndex, int edgeIndex, EdgeKind newKind)
+    {
+        if (shapeIndex < 0 || shapeIndex >= Model.Shapes.Count) return;
+        var shape = Model.Shapes[shapeIndex];
+        var after = LayoutShapeEditing.ConvertEdge(shape, edgeIndex, newKind);
+        Execute(new Commands.Layout.ReplaceShapeCommand(Model, shapeIndex, shape, after));
+    }
+
+    /// <summary>Finds the vertex nearest (wx,wy) on the single selected shape, within
+    /// <paramref name="tolDbu"/> — the canvas's right-click handler uses this to offer a "Delete
+    /// Vertex" menu item as an explicit, discoverable alternative to click-to-pick-then-press-Delete.
+    /// Only a true vertex-list shape (Polygon/Curve/Path) has a removable vertex — a Rect/RoundedRect
+    /// corner is a resize handle, not a vertex, so it is excluded here just like the Ctrl+click-insert
+    /// gesture. Reuses the exact same handle hit-test/priority a drag would, so "the vertex you can
+    /// right-click to delete" is always the same one a left-click-drag would grab.</summary>
+    public (int ShapeIndex, int VertexIndex)? FindVertexForContextMenu(double wx, double wy, long tolDbu)
+    {
+        if (_selectedIndices.Count != 1) return null;
+        int shapeIndex = _selectedIndices[0];
+        if (shapeIndex < 0 || shapeIndex >= Model.Shapes.Count) return null;
+        var shape = Model.Shapes[shapeIndex];
+        if (!LayoutShapeEditing.IsVertexListShape(shape)) return null;
+
+        long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+        var handles = LayoutHandles.Build(shape);
+        var hit = LayoutHandleHitTest.HitTest(handles, px, py, tolDbu);
+        return hit is { Kind: LayoutHandleKind.Vertex } handle ? (shapeIndex, handle.Index) : null;
     }
 
     private void ApplyClickSelection(int hitIndex, bool shift, bool ctrl)
@@ -512,6 +875,16 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 _cycleCache = null;
         }
 
+        if (_handleDragKind != HandleDragKind.None)
+        {
+            if (!leftDown) { ResetHandleDragState(); RebuildOverlay(); return; }
+            bool suspend = (mods & KeyModifiers.Alt) != 0;
+            var preview = BuildHandleDragPreview(px, py, suspend);
+            if (preview is not null) { _handleDragPreview = preview; _handleDragMoved = true; }
+            RebuildOverlay();
+            return;
+        }
+
         if (!leftDown)
         {
             if (_selectDragKind != SelectDragKind.None)
@@ -546,6 +919,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private void HandleSelectRelease(double wx, double wy)
     {
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+
+        if (_handleDragKind != HandleDragKind.None)
+        {
+            CommitHandleDrag();
+            RebuildOverlay();
+            return;
+        }
 
         switch (_selectDragKind)
         {
@@ -628,6 +1008,20 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         Execute(new Commands.Layout.DeleteShapesCommand(Model, indices));
         SetSelection([]);
         _cycleCache = null;
+    }
+
+    /// <summary>§3 "Delete on a selected vertex" — blocked below 3 vertices for a closed shape, below
+    /// 2 for a Path (<see cref="LayoutShapeEditing.RemoveVertex"/> returns null in that case and this
+    /// is a no-op, matching gate 7). One <see cref="Commands.Layout.ReplaceShapeCommand"/>. Public so
+    /// the canvas's right-click "Delete Vertex" menu item (an explicit alternative to the invisible
+    /// click-to-pick-then-press-Delete gesture) can call it directly.</summary>
+    public void DeleteVertex(int shapeIndex, int vertexIndex)
+    {
+        if (shapeIndex < 0 || shapeIndex >= Model.Shapes.Count) return;
+        var shape = Model.Shapes[shapeIndex];
+        var after = LayoutShapeEditing.RemoveVertex(shape, vertexIndex);
+        if (after is null) return;
+        Execute(new Commands.Layout.ReplaceShapeCommand(Model, shapeIndex, shape, after));
     }
 
     private void NudgeSelection(Key key, KeyModifiers mods)
@@ -924,17 +1318,24 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             bool hasActiveOp = ActiveTool != Tool.Select
                              || _isDrawingTwoPoint
                              || _drawPoints.Count > 0
-                             || _selectDragKind != SelectDragKind.None;
+                             || _selectDragKind != SelectDragKind.None
+                             || _handleDragKind != HandleDragKind.None;
             if (hasActiveOp) { CancelDrawOp(); ActiveTool = Tool.Select; }
             else { SetSelection([]); _cycleCache = null; }
             return;
         }
 
-        if (ActiveTool == Tool.Select && _selectDragKind == SelectDragKind.None)
+        if (ActiveTool == Tool.Select && _selectDragKind == SelectDragKind.None && _handleDragKind == HandleDragKind.None)
         {
             bool ctrlOrMeta = (mods & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
             if (ctrlOrMeta && key == Key.A) { SelectAllCommand.Execute(null); return; }
-            if ((key == Key.Delete || key == Key.Back) && _selectedIndices.Count > 0) { DeleteSelection(); return; }
+            if (key == Key.Delete || key == Key.Back)
+            {
+                // §3 "Delete on a selected vertex" takes priority over whole-shape delete when a
+                // vertex handle was the last thing clicked (no drag) on the single selection.
+                if (_selectedIndices.Count == 1 && _pickedVertexIndex is { } vIdx) { DeleteVertex(_selectedIndices[0], vIdx); return; }
+                if (_selectedIndices.Count > 0) { DeleteSelection(); return; }
+            }
             if (key is Key.Left or Key.Right or Key.Up or Key.Down) { NudgeSelection(key, mods); return; }
         }
 
@@ -952,7 +1353,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
     }
 
-    /// <summary>Escape — leaves the model untouched and clears the overlay (gate 10).</summary>
+    /// <summary>Escape — leaves the model untouched and clears the overlay (gate 10). Restores the
+    /// original shape for an in-progress handle drag (gate 11: "restores the original shape and
+    /// pushes no command") — the drag never mutated anything in the model, only the live preview.</summary>
     private void CancelDrawOp()
     {
         _isDrawingTwoPoint = false;
@@ -963,6 +1366,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _typedHeightDbu  = null;
         _selectDragKind  = SelectDragKind.None;
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
+        ResetHandleDragState();
         OnPropertyChanged(nameof(IsDrawingRect));
         RebuildOverlay();
     }
@@ -1153,6 +1557,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 dict[idx] = clone;
             }
             dragOverrides = dict;
+        }
+        else if (_handleDragKind != HandleDragKind.None && _handleDragPreview is not null)
+        {
+            // L1d: the live handle-drag preview reuses the SAME dragOverrides mechanism L1c's move
+            // uses (brief §1: "render a preview through the existing dragOverrides mechanism").
+            dragOverrides = new Dictionary<int, LayoutShape> { [_handleDragShapeIndex] = _handleDragPreview };
         }
 
         Overlay = new LayoutOverlay

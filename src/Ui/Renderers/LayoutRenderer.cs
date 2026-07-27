@@ -196,7 +196,14 @@ public static class LayoutRenderer
                     DrawGhost(canvas, ghost, layerMap, ps);
 
                 if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
+                {
                     DrawSelectionOutlines(canvas, view, selected, dragOverrides, theme, ps, scaleUm);
+
+                    // L1d §2: handles ONLY for a single-shape selection — a multi-selection is a
+                    // move/delete selection, not a reshape target.
+                    if (selected.Count == 1)
+                        DrawHandles(canvas, view, selected[0], dragOverrides, theme, ps, scaleUm);
+                }
 
                 if (opts.Overlay?.Marquee is { } marquee)
                     DrawMarquee(canvas, marquee, theme, ps);
@@ -439,6 +446,81 @@ public static class LayoutRenderer
 
         canvas.DrawRect(rect, fillPaint);
         canvas.DrawRect(rect, strokePaint);
+    }
+
+    // ── Shape-reshape handles (L1d, docs/design/layout-view.md §6.3) ───────────────────────────
+
+    /// <summary>Device-pixel target for a handle's on-screen size — computed per query from the
+    /// current zoom (never cached, never derived from SnapDbu — the exact class of bug the brief's
+    /// "Read first" section calls out), via the same <see cref="DevicePixelsToPathSpace"/> helper
+    /// the doubled geometry/selection strokes already use.</summary>
+    private const double HandleSizeDevicePixels = 8.0;
+
+    private static void DrawHandles(SKCanvas canvas, LayoutView view, int shapeIndex,
+        IReadOnlyDictionary<int, LayoutShape> dragOverrides, LayoutRenderTheme theme, PathSpace ps, double scaleUm)
+    {
+        if (shapeIndex < 0 || shapeIndex >= view.Shapes.Count) return;
+        var shape = dragOverrides.TryGetValue(shapeIndex, out var ov) ? ov : view.Shapes[shapeIndex];
+        var handles = LayoutHandles.Build(shape);
+        if (handles.Count == 0) return;
+
+        float half = DevicePixelsToPathSpace(scaleUm, HandleSizeDevicePixels) / 2f;
+        float hairline = DevicePixelsToPathSpace(scaleUm, 1.5);
+
+        using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Selection };
+        using var strokePaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = hairline, Color = theme.Selection };
+
+        foreach (var h in handles)
+        {
+            float cx = ps.X(h.X), cy = ps.Y(h.Y);
+            switch (h.Kind)
+            {
+                case LayoutHandleKind.Vertex:
+                case LayoutHandleKind.Radius:
+                case LayoutHandleKind.CornerRadius:
+                    // Filled square.
+                    canvas.DrawRect(new SKRect(cx - half, cy - half, cx + half, cy + half), fillPaint);
+                    break;
+
+                case LayoutHandleKind.EdgeMidpoint:
+                    // Hollow circle.
+                    canvas.DrawCircle(cx, cy, half, strokePaint);
+                    break;
+
+                case LayoutHandleKind.Bulge:
+                {
+                    // Hollow diamond.
+                    using var diamond = new SKPath();
+                    diamond.MoveTo(cx, cy - half);
+                    diamond.LineTo(cx + half, cy);
+                    diamond.LineTo(cx, cy + half);
+                    diamond.LineTo(cx - half, cy);
+                    diamond.Close();
+                    canvas.DrawPath(diamond, strokePaint);
+                    break;
+                }
+
+                case LayoutHandleKind.CubicControl:
+                {
+                    // Small filled circle, with a thin tangent line to its anchor vertex.
+                    var (ax, ay) = CubicControlAnchorWorld(shape, h.Index, h.SubIndex);
+                    canvas.DrawLine(ps.X(ax), ps.Y(ay), cx, cy, strokePaint);
+                    canvas.DrawCircle(cx, cy, half * 0.6f, fillPaint);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>The vertex a Cubic edge's control point is anchored to — C1 (SubIndex 0) anchors to
+    /// the edge's start vertex, C2 (SubIndex 1) to its end vertex.</summary>
+    private static (long X, long Y) CubicControlAnchorWorld(LayoutShape shape, int edgeIndex, int subIndex)
+    {
+        var xy = LayoutShapeEditing.XyOf(shape);
+        int n = xy.Length / 2;
+        bool closed = LayoutShapeEditing.IsClosed(shape);
+        int vertexIndex = subIndex == 0 ? edgeIndex : (closed ? (edgeIndex + 1) % n : edgeIndex + 1);
+        return (xy[2 * vertexIndex], xy[2 * vertexIndex + 1]);
     }
 
     // ── Shape -> path-space SKPath ───────────────────────────────────────────────

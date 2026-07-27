@@ -7,15 +7,9 @@
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#getting-started)
 [![UI: Avalonia](https://img.shields.io/badge/UI-Avalonia%2012-7B68EE.svg)](https://avaloniaui.net/)
 
-circuitRF studies the frequency response and nonlinear behavior of RF circuits — from a handful of
-components to hierarchical, multi-port designs with thousands of components — using **DC**, **S-parameter**, 
-and **harmonic-balance** analyses, plus first-class **loadpull / sourcepull**. It is **an RF simulator, not 
-a SPICE simulator**: the analyses and the workflow are built around the RF/microwave problem, the file formats are human-readable, and the headline goal is to make loadpull as easy as a few clicks.
+circuitRF is an EDA tool for developing RF circuits.  It can analyze the frequency response and nonlinear behavior of RF circuits — from a handful of components to hierarchical, multi-port designs with thousands of components — using **DC**, **S-parameter**, and **harmonic-balance** analyses, plus first-class **loadpull / sourcepull**. The analyses and the workflow are built around the RF/microwave problem, the file formats are human-readable, and the headline goal is to make loadpull as easy as a few clicks. circuitRF also supports layout for PCB and MMIC design and includes export capabilities to Gerber, DXF and GSDII formats.
 
-It targets RF practitioners who can't justify the cost of traditional tools (or find those tools too heavy
-for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling
-engineers; academic researchers; and capable hobbyists.** It is written in **C# / .NET 10**, with an
-**Avalonia 12** GUI rendered through **SkiaSharp**, and it was built largely **AI-assisted** (see
+circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; academic researchers; and capable hobbyists.** It is written in **C# / .NET 10**, with an **Avalonia 12** GUI rendered through **SkiaSharp**, and it was built largely **AI-assisted** (see
 [AI-assisted development](#ai-assisted-development)).
 
 > **Status:** v1 *alpha*. The engine (S-parameters, nonlinear DC, single/two-tone harmonic balance,
@@ -422,8 +416,6 @@ future commercial superset, if any, layers on through a clean extension boundary
 
 ## Acknowledgments
 
-- **[splotRF](https://github.com/potatobeanradio/splotRF)** — the sibling S-parameter viewer that shares
-  the `RfCore` library and the same philosophy, frameworks, and AI-assisted approach.
 - **[Avalonia](https://avaloniaui.net/)** (cross-platform UI), **[SkiaSharp](https://github.com/mono/SkiaSharp)**
   (2D rendering), **[CSparse.NET](https://github.com/wo80/CSparse.NET)** (sparse complex LU),
   **NumFlat** (dense linear algebra), **[Clipper2](https://github.com/AngusJohnson/Clipper2)**
