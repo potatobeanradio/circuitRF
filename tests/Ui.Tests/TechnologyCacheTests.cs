@@ -114,4 +114,98 @@ public class TechnologyCacheTests : IDisposable
         Assert.Contains(Path.GetFullPath(path1), changed);
         Assert.Contains(Path.GetFullPath(path2), changed);
     }
+
+    // ── L1 fix §2: live (unsaved) overrides — brief-L1-fix-path-seams-and-live-tech.md ──
+
+    [Fact]
+    public void SetLive_TakesPrecedenceOverTheFileBackedCache()
+    {
+        var path = Path.Combine(_root, "pcb.ctech");
+        TechPersistence.SaveToFile(path, StarterTechnologies.Pcb2Layer());
+
+        var cache = new TechnologyCache();
+        var onDisk = cache.Get(path);
+
+        var live = StarterTechnologies.MmicGaAs();
+        cache.SetLive(path, live);
+
+        Assert.Same(live, cache.Get(path));
+        Assert.NotSame(onDisk, cache.Get(path));
+    }
+
+    [Fact]
+    public void SetLive_FiresTechnologyChanged()
+    {
+        var path = Path.Combine(_root, "pcb.ctech");
+        TechPersistence.SaveToFile(path, StarterTechnologies.Pcb2Layer());
+        var cache = new TechnologyCache();
+
+        string? changed = null;
+        cache.TechnologyChanged += p => changed = p;
+        cache.SetLive(path, StarterTechnologies.MmicGaAs());
+
+        Assert.Equal(Path.GetFullPath(path), changed);
+    }
+
+    [Fact]
+    public void ClearLive_FallsBackToTheLastKnownOnDiskValue_WithoutRereadingTheFile()
+    {
+        var path = Path.Combine(_root, "pcb.ctech");
+        TechPersistence.SaveToFile(path, StarterTechnologies.Pcb2Layer());
+
+        var cache = new TechnologyCache();
+        var onDisk = cache.Get(path); // populates the plain file-backed cache
+        cache.SetLive(path, StarterTechnologies.MmicGaAs());
+        Assert.True(cache.HasLiveOverride(path));
+
+        cache.ClearLive(path);
+
+        Assert.False(cache.HasLiveOverride(path));
+        Assert.Same(onDisk, cache.Get(path)); // reverts to the cached on-disk instance, no reload
+    }
+
+    [Fact]
+    public void ClearLive_NoOverrideInstalled_IsANoOp_NoEventFired()
+    {
+        var path = Path.Combine(_root, "pcb.ctech");
+        TechPersistence.SaveToFile(path, StarterTechnologies.Pcb2Layer());
+        var cache = new TechnologyCache();
+        cache.Get(path);
+
+        bool fired = false;
+        cache.TechnologyChanged += _ => fired = true;
+        cache.ClearLive(path);
+
+        Assert.False(fired);
+    }
+
+    [Fact]
+    public void HasLiveOverride_ReflectsInstalledAndCleared_IsCaseInsensitiveOnPath()
+    {
+        var path = Path.Combine(_root, "pcb.ctech");
+        TechPersistence.SaveToFile(path, StarterTechnologies.Pcb2Layer());
+        var cache = new TechnologyCache();
+
+        Assert.False(cache.HasLiveOverride(path));
+        cache.SetLive(path, StarterTechnologies.MmicGaAs());
+        Assert.True(cache.HasLiveOverride(path.ToUpperInvariant()));
+        cache.ClearLive(path);
+        Assert.False(cache.HasLiveOverride(path));
+    }
+
+    [Fact]
+    public void Invalidate_AlsoClearsALiveOverride()
+    {
+        var path = Path.Combine(_root, "pcb.ctech");
+        TechPersistence.SaveToFile(path, StarterTechnologies.Pcb2Layer());
+        var cache = new TechnologyCache();
+        cache.Get(path);
+        cache.SetLive(path, StarterTechnologies.MmicGaAs());
+
+        cache.Invalidate(path);
+
+        Assert.False(cache.HasLiveOverride(path));
+        // The plain cache entry is gone too, so Get reloads fresh from whatever is on disk now.
+        Assert.Equal("PCB 2-Layer", cache.Get(path)!.Name);
+    }
 }

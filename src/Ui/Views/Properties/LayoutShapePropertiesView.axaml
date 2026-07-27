@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:lay="using:CircuitRF.Ui.Layout"
+             x:Class="CircuitRF.Ui.Views.Properties.LayoutShapePropertiesView"
+             x:DataType="vm:LayoutShapePropertiesViewModel">
+
+    <Grid RowDefinitions="*">
+
+        <!-- Empty state -->
+        <TextBlock IsVisible="{Binding IsEmptyState}"
+                   Text="{Binding EmptyMessage}"
+                   Foreground="{DynamicResource SystemBaseMediumColor}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   TextWrapping="Wrap"
+                   Margin="8"
+                   FontSize="11"
+                   Opacity="0.5"/>
+
+        <!-- Active state -->
+        <ScrollViewer IsVisible="{Binding IsNotEmptyState}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="6,4" Spacing="4">
+
+                <TextBlock Text="{Binding SelectionSummaryText}" FontWeight="SemiBold" FontSize="13" Margin="0,2,0,4"/>
+
+                <!-- ── Layer (common) ───────────────────────────────────────────────── -->
+                <Grid ColumnDefinitions="56,*">
+                    <TextBlock Grid.Column="0" Text="Layer" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding AvailableLayers}"
+                              SelectedItem="{Binding SelectedLayerItem, Mode=TwoWay}"
+                              HorizontalAlignment="Stretch"
+                              FontSize="11" Padding="4,2">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="lay:LayerPickerItem">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Border Width="12" Height="12" CornerRadius="2"
+                                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+                                        <Border.Background>
+                                            <SolidColorBrush Color="{Binding SwatchColor}"/>
+                                        </Border.Background>
+                                    </Border>
+                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </Grid>
+
+                <!-- ── Net (common) ─────────────────────────────────────────────────── -->
+                <Grid ColumnDefinitions="56,*">
+                    <TextBlock Grid.Column="0" Text="Net" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBox x:Name="NetBox" Grid.Column="1" Text="{Binding NetText}"
+                             LostFocus="OnNetCommit" KeyDown="OnNetKeyDown"
+                             FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── RoundedRect ───────────────────────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowRoundedRect}" ColumnDefinitions="56,*">
+                    <TextBlock Grid.Column="0" Text="Corner R" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBox x:Name="CornerRadiusBox" Grid.Column="1" Text="{Binding CornerRadiusText}"
+                             LostFocus="OnCornerRadiusCommit" KeyDown="OnCornerRadiusKeyDown"
+                             FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── Circle ────────────────────────────────────────────────────────── -->
+                <Grid IsVisible="{Binding ShowCircle}" ColumnDefinitions="56,*">
+                    <TextBlock Grid.Column="0" Text="Radius" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    <TextBox x:Name="RadiusBox" Grid.Column="1" Text="{Binding RadiusText}"
+                             LostFocus="OnRadiusCommit" KeyDown="OnRadiusKeyDown"
+                             FontSize="11" Padding="4,2"/>
+                </Grid>
+
+                <!-- ── Path ──────────────────────────────────────────────────────────── -->
+                <StackPanel IsVisible="{Binding ShowPath}" Spacing="4">
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Width" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBox x:Name="PathWidthBox" Grid.Column="1" Text="{Binding PathWidthText}"
+                                 LostFocus="OnPathWidthCommit" KeyDown="OnPathWidthKeyDown"
+                                 FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="End" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.PathEndStyleOptions}"
+                                  SelectedItem="{Binding PathEndStyleValue, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- ── Label ─────────────────────────────────────────────────────────── -->
+                <StackPanel IsVisible="{Binding ShowLabel}" Spacing="4">
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Text" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBox x:Name="LabelTextBox" Grid.Column="1" Text="{Binding LabelText}"
+                                 LostFocus="OnLabelTextCommit" KeyDown="OnLabelTextKeyDown"
+                                 FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Height" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBox x:Name="LabelHeightBox" Grid.Column="1" Text="{Binding LabelHeightText}"
+                                 LostFocus="OnLabelHeightCommit" KeyDown="OnLabelHeightKeyDown"
+                                 FontSize="11" Padding="4,2"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Rotation" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RotationOptions}"
+                                  SelectedItem="{Binding LabelRotationValue, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- ── Flatten tolerance (Curve / Path) — blank = inherit ──────────────── -->
+                <Grid IsVisible="{Binding ShowFlattenTol}" ColumnDefinitions="56,*">
+                    <TextBlock Grid.Column="0" Text="Flatten" VerticalAlignment="Center" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               ToolTip.Tip="Flatten tolerance override. Blank inherits the technology default."/>
+                    <TextBox x:Name="FlattenTolBox" Grid.Column="1" Text="{Binding FlattenTolText}"
+                             PlaceholderText="inherit"
+                             LostFocus="OnFlattenTolCommit" KeyDown="OnFlattenTolKeyDown"
+                             FontSize="11" Padding="4,2"/>
+                </Grid>
+
+            </StackPanel>
+        </ScrollViewer>
+
+    </Grid>
+</UserControl>

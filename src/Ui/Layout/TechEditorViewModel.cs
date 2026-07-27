@@ -72,6 +72,15 @@ public sealed partial class TechEditorViewModel : ObservableObject
         CommitEdit(before, "Change bottom boundary condition");
     }
 
+    /// <summary>
+    /// Fired after every committed edit AND after every undo/redo (both go through
+    /// <see cref="ApplySnapshot"/> — see there) with a deep clone of the new <see cref="Working"/> —
+    /// the workspace's cue to call <c>TechnologyCache.SetLive(path, clone)</c> so open layouts see
+    /// the in-progress edit immediately, without a Save (brief-L1-fix-path-seams-and-live-tech.md §2).
+    /// Always a clone, never <see cref="Working"/> itself — see <see cref="ApplySnapshot"/>.
+    /// </summary>
+    public event Action<string, Technology>? TechLiveChanged;
+
     /// <summary>Fired after a successful save with the absolute path — the workspace's cue to
     /// call <c>TechnologyCache.Invalidate(path)</c>, which is what fires L0c's live-refresh seam.</summary>
     public event Action<string>? TechSaved;
@@ -132,11 +141,22 @@ public sealed partial class TechEditorViewModel : ObservableObject
     }
 
     /// <summary>Replaces <see cref="Working"/> wholesale and re-projects every row collection.
-    /// Called by <see cref="TechSnapshotCommand"/> Execute/Undo — never call directly.</summary>
+    /// Called by <see cref="TechSnapshotCommand"/> Execute/Undo — never call directly. This is the
+    /// ONE choke point for both a fresh commit (<see cref="CommitEdit"/> pushes a
+    /// <see cref="TechSnapshotCommand"/> whose Execute() calls back in here) and undo/redo, which is
+    /// exactly why <see cref="TechLiveChanged"/> only needs to fire from this one place to cover
+    /// every case the brief's event table lists.</summary>
     internal void ApplySnapshot(string json)
     {
         Working = TechPersistence.Deserialize(json);
         RebuildAll();
+
+        // R-fix-1: a SEPARATE deserialize of the same json, never Working itself — Working keeps
+        // mutating in place until the next commit, and a later undo/redo replaces the Working
+        // reference wholesale, so a consumer holding Working directly would either observe
+        // half-applied edits or silently stop updating after the first undo. Reusing `json` (already
+        // in hand) rather than re-serializing Working is the "one extra deserialize" the brief notes.
+        TechLiveChanged?.Invoke(FilePath, TechPersistence.Deserialize(json));
     }
 
     private void RebuildAll()

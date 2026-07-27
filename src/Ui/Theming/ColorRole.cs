@@ -31,6 +31,11 @@ public static class ColorRole
     public const string LayoutRulerTick       = "Layout.RulerTick";
     public const string LayoutCursorIndicator = "Layout.CursorIndicator";
 
+    /// <summary>Selection accent — the outline drawn above every layer on a selected shape, and the
+    /// marquee rectangle (docs/design/layout-view.md §6.2, L1c). Never changes a selected shape's
+    /// fill: the layer color is the information the user is reading.</summary>
+    public const string LayoutSelection = "Layout.Selection";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -42,5 +47,6 @@ public static class ColorRole
         SystemWarning,
         LayoutBackground, LayoutGridMinor, LayoutGridMajor,
         LayoutRulerBackground, LayoutRulerText, LayoutRulerTick, LayoutCursorIndicator,
+        LayoutSelection,
     ];
 }

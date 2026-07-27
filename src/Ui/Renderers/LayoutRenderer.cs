@@ -62,9 +62,11 @@ public readonly record struct LayoutRenderResult(IReadOnlyList<LayerKey> Unknown
 ///
 /// <b>The compositing contract (§2.3 R8a):</b> fills are drawn per-shape (so same-layer overlap
 /// composites darker — this is the owner's decision, see the design doc); strokes are fully opaque
-/// hairlines (<c>StrokeWidth = 0</c>, exactly 1 device pixel at any zoom) and are batched into one
-/// path per layer, since opaque-stroke overlap is idempotent. One <see cref="SKPaint"/> per layer per
-/// role (fill/stroke), reused across every shape on that layer.
+/// and a CONSTANT device-pixel width at any zoom (<see cref="GeometryStrokeDevicePixels"/> — a
+/// scale-compensated width, <see cref="DevicePixelsToPathSpace"/>, rather than Skia's <c>StrokeWidth
+/// = 0</c> hairline special case, which can only ever mean exactly 1 device pixel) and are batched
+/// into one path per layer, since opaque-stroke overlap is idempotent. One <see cref="SKPaint"/> per
+/// layer per role (fill/stroke), reused across every shape on that layer.
 ///
 /// <b>Curves render natively</b> — <c>Line</c>→<c>LineTo</c>, <c>Arc</c>→<c>ArcTo</c>, <c>Cubic</c>→
 /// <c>CubicTo</c>, <c>Circle</c>→<c>AddCircle</c>, <c>RoundedRect</c>→<c>AddRoundRect</c>. No
@@ -80,7 +82,10 @@ public static class LayoutRenderer
     /// <summary>Maps DBU (world, Y-up) coordinates to path-space floats (Y-down/screen-sense),
     /// bounded by the visible extent rather than absolute position (R-L1a-1). The X axis is not
     /// flipped; only Y is, to convert layout's physical Y-up convention to Skia's Y-down one.</summary>
-    private readonly struct PathSpace(long originX, long originY, double dbuToUm)
+    /// <summary>Internal (not private) so <c>LayoutPathOutlineSeamTests</c> can construct one directly
+    /// and call <see cref="BuildPathOutline"/> for a precise, isolated regression test of the
+    /// GetFillPath-seam fix — see that method's doc comment.</summary>
+    internal readonly struct PathSpace(long originX, long originY, double dbuToUm)
     {
         public double DbuToUm { get; } = dbuToUm;
 
@@ -133,17 +138,20 @@ public static class LayoutRenderer
                 return new LayoutRenderResult([]);
 
             // ── Group shapes by layer, resolve each layer once ──────────────────
-            var byLayer = new Dictionary<LayerKey, List<LayoutShape>>();
-            foreach (var shape in view.Shapes)
+            // Carries the shape's own index so a live move-drag can substitute a translated clone
+            // (opts.Overlay.DragOverrides) without ever mutating view.Shapes mid-drag (L1c).
+            var byLayer = new Dictionary<LayerKey, List<(int Index, LayoutShape Shape)>>();
+            for (int i = 0; i < view.Shapes.Count; i++)
             {
+                var shape = view.Shapes[i];
                 if (!byLayer.TryGetValue(shape.Layer, out var list))
                     byLayer[shape.Layer] = list = [];
-                list.Add(shape);
+                list.Add((i, shape));
             }
 
             var layerMap = tech?.Layers.ToDictionary(l => l.Key);
             var unknownLayers = new HashSet<LayerKey>();
-            var resolved = new List<(LayerDef Def, List<LayoutShape> Shapes)>(byLayer.Count);
+            var resolved = new List<(LayerDef Def, List<(int Index, LayoutShape Shape)> Shapes)>(byLayer.Count);
             foreach (var (key, shapes) in byLayer)
             {
                 LayerDef def;
@@ -177,14 +185,21 @@ public static class LayoutRenderer
             try
             {
                 canvas.Concat(in matrix);
+                var dragOverrides = opts.Overlay?.DragOverrides ?? EmptyDragOverrides;
                 foreach (var (def, shapes) in resolved)
                 {
                     if (!def.Visible) continue;
-                    DrawLayer(canvas, def, shapes, ps);
+                    DrawLayer(canvas, def, shapes, ps, dragOverrides, scaleUm);
                 }
 
                 if (opts.Overlay?.InProgressPrimitive is { } ghost)
                     DrawGhost(canvas, ghost, layerMap, ps);
+
+                if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
+                    DrawSelectionOutlines(canvas, view, selected, dragOverrides, theme, ps, scaleUm);
+
+                if (opts.Overlay?.Marquee is { } marquee)
+                    DrawMarquee(canvas, marquee, theme, ps);
             }
             finally
             {
@@ -294,17 +309,45 @@ public static class LayoutRenderer
 
     // ── Per-layer draw: per-shape fills, one batched hairline stroke ────────────
 
-    private static void DrawLayer(SKCanvas canvas, LayerDef def, List<LayoutShape> shapes, PathSpace ps)
+    private static readonly IReadOnlyDictionary<int, LayoutShape> EmptyDragOverrides = new Dictionary<int, LayoutShape>();
+
+    /// <summary>Device-pixel target for the per-shape outline stroke — doubled from the plain
+    /// Skia hairline (which is exactly 1 device pixel) per owner feedback, 2026-07-26.</summary>
+    private const double GeometryStrokeDevicePixels = 2.0;
+
+    /// <summary>Device-pixel target for the selection accent outline — also doubled, so a selected
+    /// shape reads unmistakably as selected next to its now-thicker geometry outline.</summary>
+    private const double SelectionStrokeDevicePixels = 2.0;
+
+    /// <summary>Converts a desired ON-SCREEN stroke width (device pixels) to the equivalent width in
+    /// path space, given the current frame's device-pixels-per-micron scale — this is what keeps a
+    /// stroke's apparent thickness constant across zoom levels without relying on Skia's <c>StrokeWidth
+    /// = 0</c> hairline special case (which can only ever mean exactly 1 device pixel, not N).</summary>
+    private static float DevicePixelsToPathSpace(double scaleUm, double devicePixels)
+        => (float)(devicePixels / System.Math.Max(scaleUm, 1e-12));
+
+    private static void DrawLayer(SKCanvas canvas, LayerDef def, List<(int Index, LayoutShape Shape)> shapes,
+        PathSpace ps, IReadOnlyDictionary<int, LayoutShape> dragOverrides, double scaleUm)
     {
         var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
         byte fillAlpha = (byte)System.Math.Clamp(System.Math.Round(def.FillOpacity * 255.0), 0, 255);
 
         using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(fillAlpha) };
-        using var strokePaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 0, Color = color.WithAlpha(255) };
+        using var strokePaint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
+            Color = color.WithAlpha(255),
+        };
         using var strokeBatch = new SKPath();
 
-        foreach (var shape in shapes)
+        foreach (var (index, original) in shapes)
         {
+            // A shape being live-move-dragged (Select tool) renders at its translated preview
+            // position instead of its stored one — the model itself is untouched until the drag
+            // commits as one MoveShapesCommand (R-L1c-3).
+            var shape = dragOverrides.TryGetValue(index, out var ov) ? ov : original;
+
             if (shape is LabelShape label)
             {
                 DrawLabelText(canvas, label, ps, color);
@@ -320,6 +363,82 @@ public static class LayoutRenderer
 
         if (!strokeBatch.IsEmpty)
             canvas.DrawPath(strokeBatch, strokePaint);
+    }
+
+    // ── Selection outline + marquee (L1c) ───────────────────────────────────────
+
+    /// <summary>Accent outline for every selected shape, drawn above every layer, batched into one
+    /// stroked path. Never touches fill — the layer color stays the information the user reads.</summary>
+    private static void DrawSelectionOutlines(SKCanvas canvas, LayoutView view, IReadOnlyList<int> selected,
+        IReadOnlyDictionary<int, LayoutShape> dragOverrides, LayoutRenderTheme theme, PathSpace ps, double scaleUm)
+    {
+        using var batch = new SKPath();
+        foreach (var idx in selected)
+        {
+            if (idx < 0 || idx >= view.Shapes.Count) continue;
+            var shape = dragOverrides.TryGetValue(idx, out var ov) ? ov : view.Shapes[idx];
+            using var outline = BuildOutlinePathForSelection(shape, ps);
+            if (outline is null || outline.IsEmpty) continue;
+            batch.AddPath(outline);
+        }
+        if (batch.IsEmpty) return;
+
+        using var paint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, SelectionStrokeDevicePixels),
+            Color = theme.Selection,
+        };
+        canvas.DrawPath(batch, paint);
+    }
+
+    /// <summary>Same geometry every other draw call uses, plus the two shapes that have no direct
+    /// <see cref="BuildShapePath"/> entry: <c>Label</c> (an approximate text footprint, mirroring
+    /// <c>LayoutHitTest</c>'s hit-box formula since neither layer has font metrics) and <c>Via</c>
+    /// (a circle at its pad radius).</summary>
+    private static SKPath? BuildOutlinePathForSelection(LayoutShape shape, PathSpace ps)
+    {
+        switch (shape)
+        {
+            case LabelShape label:
+            {
+                if (string.IsNullOrEmpty(label.Text)) return null;
+                long w = System.Math.Max(1, (long)System.Math.Round(label.Text.Length * label.Height * 0.62));
+                long h = System.Math.Max(1, label.Height);
+                (long x1, long y1, long x2, long y2) = label.Rotation switch
+                {
+                    LayoutRotation.R0   => (label.X, label.Y, label.X + w, label.Y + h),
+                    LayoutRotation.R180 => (label.X - w, label.Y - h, label.X, label.Y),
+                    LayoutRotation.R90  => (label.X, label.Y, label.X + h, label.Y + w),
+                    LayoutRotation.R270 => (label.X - h, label.Y - w, label.X, label.Y),
+                    _                   => (label.X, label.Y, label.X + w, label.Y + h),
+                };
+                var path = new SKPath();
+                path.AddRect(NormalizedRect(ps.X(x1), ps.Y(y1), ps.X(x2), ps.Y(y2)));
+                return path;
+            }
+
+            case ViaShape via:
+            {
+                var path = new SKPath();
+                path.AddCircle(ps.X(via.X), ps.Y(via.Y), ps.Len(via.PadSize / 2.0));
+                return path;
+            }
+
+            default:
+                return BuildShapePath(shape, ps);
+        }
+    }
+
+    private static void DrawMarquee(SKCanvas canvas, LayoutMarquee m, LayoutRenderTheme theme, PathSpace ps)
+    {
+        var rect = NormalizedRect(ps.X(m.X1), ps.Y(m.Y1), ps.X(m.X2), ps.Y(m.Y2));
+
+        using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Selection.WithAlpha(50) };
+        using var strokePaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 0, Color = theme.Selection.WithAlpha(255) };
+
+        canvas.DrawRect(rect, fillPaint);
+        canvas.DrawRect(rect, strokePaint);
     }
 
     // ── Shape -> path-space SKPath ───────────────────────────────────────────────
@@ -450,7 +569,31 @@ public static class LayoutRenderer
 
     // ── PathShape (trace): centerline -> outline via GetFillPath (§1.5 of the L1a brief) ────────
 
-    private static SKPath? BuildPathOutline(PathShape trace, PathSpace ps)
+    /// <summary>
+    /// Builds a <c>PathShape</c>'s DISPLAY outline — curves stay curves, via Skia's own stroker plus
+    /// <see cref="SKPath.Simplify"/>. <c>GetFillPath</c> does not produce a single merged contour: Skia's
+    /// stroker emits one contour per segment plus a wedge per join, all overlapping at every bend. That
+    /// is invisible when FILLING (the default Winding fill rule composites the overlaps exactly once,
+    /// which is why nothing looked wrong for a solid trace) and very visible when hairline-STROKING the
+    /// same path (<c>DrawLayer</c>'s batched outline stroke traces every contour edge in the path,
+    /// including the internal boundaries where segment quads and join wedges abut one another — those
+    /// internal boundaries are the seam artifacts a bent trace showed at each vertex). <c>Simplify</c>
+    /// unions the overlapping contours into the real silhouette (plus any genuine holes), so both the
+    /// fill and the (now correctly seam-free) stroke are built from the SAME single-contour path — do
+    /// not keep an unsimplified copy for the fill and a simplified one for the stroke.
+    ///
+    /// <b>This is deliberately a SEPARATE outline from L1e's Clipper2 geometry offset, and must stay
+    /// that way.</b> Clipper2 operates on flattened (polygonal) geometry, so a curved trace's Clipper2
+    /// outline is polygonal — correct for booleans/DRC/Gerber export, wrong for display, which needs
+    /// the adaptive, zoom-correct curve tessellation §3.2 R9c specifies. Two outlines, two purposes:
+    /// display (here, Skia stroker + Simplify, curves stay curves) vs. geometry (L1e, Clipper2 offset
+    /// on the flattened centerline, exact and integer). Do not "unify" them later.
+    ///
+    /// <c>// L2: cache with the shape path</c> — <c>Simplify</c> is an <c>SkPathOps</c> call, meaningfully
+    /// more expensive than plain path construction; fine at L1 scale (paths rebuild every frame anyway),
+    /// but it must ride along with L2's per-shape path cache rather than recompute every frame.
+    /// </summary>
+    internal static SKPath? BuildPathOutline(PathShape trace, PathSpace ps)
     {
         int n = trace.Xy.Length / 2;
         if (n < 2) return null;
@@ -478,7 +621,16 @@ public static class LayoutRenderer
 
         var outline = new SKPath();
         strokeForFill.GetFillPath(centerline, outline);
-        return outline;
+
+        // L2: cache with the shape path — Simplify is an SkPathOps call, not free.
+        var simplified = new SKPath();
+        if (outline.Simplify(simplified))
+        {
+            outline.Dispose();
+            return simplified;
+        }
+        simplified.Dispose();
+        return outline;   // degenerate input (e.g. zero-width / duplicate-point) — fall back rather than dropping the trace
     }
 
     /// <summary>Extends the first/last vertex of a centerline outward by <c>width/2</c> along the

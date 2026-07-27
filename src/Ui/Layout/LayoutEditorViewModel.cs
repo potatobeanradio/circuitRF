@@ -208,6 +208,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             if (name is not null && Enum.TryParse<Tool>(name, out var t)) ActiveTool = t;
         });
 
+        SelectAllCommand = new RelayCommand(() =>
+        {
+            SetSelection(Enumerable.Range(0, Model.Shapes.Count));
+            _cycleCache = null;
+        });
+        DeselectAllCommand = new RelayCommand(() =>
+        {
+            SetSelection([]);
+            _cycleCache = null;
+        });
+
         _pathWidthText     = LayoutUnits.Format(_pathWidthDbu, DisplayUnit, Model.DbuPerMicron);
         _cornerRadiusText  = LayoutUnits.Format(_cornerRadiusDbu, DisplayUnit, Model.DbuPerMicron);
         _labelHeightText   = LayoutUnits.Format(_labelHeightDbu, DisplayUnit, Model.DbuPerMicron);
@@ -225,6 +236,16 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             OnPropertyChanged(nameof(ShapeCountText));
             OnPropertyChanged(nameof(InstanceCountText));
             OnPropertyChanged(nameof(ExtentText));
+
+            // Any model mutation (draw, move, delete, undo, redo — every one of them calls
+            // NotifyChanged) invalidates the overlap-cycling cache (R-L1c-2). Selected indices may
+            // also have shifted or been removed by the mutation, so drop any that are now stale.
+            _cycleCache = null;
+            if (_selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0)
+            {
+                SelectionStatusText = ComputeGenericSelectionStatus();
+                RebuildOverlay();
+            }
         };
     }
 
@@ -282,6 +303,351 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     private static bool IsTwoPointDragTool(Tool t) => t is Tool.Rect or Tool.RoundedRect or Tool.Circle;
     private static bool IsMultiPointTool(Tool t)   => t is Tool.Polygon or Tool.Path;
+
+    // ── Selection (L1c) ───────────────────────────────────────────────────────
+    // docs/design/layout-view.md §6.2 R13 (overlap cycling), §1.5 R5 / R-L1c-3 (snap the delta).
+
+    private readonly List<int> _selectedIndices = [];
+
+    /// <summary>Currently selected shape indices, in the order they were added to the selection.
+    /// Mirrors <c>Overlay.SelectedIndices</c> (which is what actually drives rendering) — read this
+    /// property, and watch for <see cref="Overlay"/> to change via <c>PropertyChanged</c>, exactly
+    /// as <c>SymbolPrimitiveInspectorViewModel</c> watches <c>SymbolEditorViewModel.Overlay</c>.</summary>
+    public IReadOnlyList<int> SelectedIndices => _selectedIndices;
+
+    [ObservableProperty] private string _selectionStatusText = "";
+
+    public IRelayCommand SelectAllCommand { get; private set; } = null!;
+    public IRelayCommand DeselectAllCommand { get; private set; } = null!;
+
+    private void SetSelection(IEnumerable<int> indices)
+    {
+        var distinct = new List<int>();
+        foreach (var i in indices)
+            if (i >= 0 && i < Model.Shapes.Count && !distinct.Contains(i))
+                distinct.Add(i);
+
+        _selectedIndices.Clear();
+        _selectedIndices.AddRange(distinct);
+        SelectionStatusText = ComputeGenericSelectionStatus();
+        RebuildOverlay();
+    }
+
+    private string ComputeGenericSelectionStatus()
+    {
+        if (_selectedIndices.Count == 0) return "";
+        if (_selectedIndices.Count == 1)
+        {
+            int idx = _selectedIndices[0];
+            if (idx < 0 || idx >= Model.Shapes.Count) return "";
+            var shape = Model.Shapes[idx];
+            return $"{ShapeTypeName(shape)} · {LayerDisplayName(shape.Layer)}";
+        }
+        return $"{_selectedIndices.Count} selected";
+    }
+
+    private static string ShapeTypeName(LayoutShape shape) => shape switch
+    {
+        RectShape         => "Rect",
+        PolygonShape      => "Polygon",
+        RoundedRectShape  => "RoundedRect",
+        CircleShape       => "Circle",
+        CurveShape        => "Curve",
+        PathShape         => "Path",
+        ViaShape          => "Via",
+        LabelShape        => "Label",
+        _                 => shape.GetType().Name,
+    };
+
+    private LayerDef ResolveLayerDef(LayerKey key)
+    {
+        if (Technology is { } tech)
+            foreach (var l in tech.Layers)
+                if (l.Key == key) return l;
+        return FallbackPalette.For(key);
+    }
+
+    private string LayerDisplayName(LayerKey key) => ResolveLayerDef(key).Name;
+
+    // ── Overlap cycling cache (R-L1c-2) ────────────────────────────────────────
+    // (ClickX, ClickY) is the world point (rounded to DBU) of the press that built this cache;
+    // Stack is the ordered hit list from that press; Index is which stack entry is CURRENTLY
+    // selected. Invalidated by: pointer movement beyond the tolerance threshold (HandleSelectMove),
+    // any model mutation (the Model.Changed subscription in the constructor), and any selection
+    // change originating elsewhere (SelectAll/DeselectAll/marquee/delete below).
+    private (long ClickX, long ClickY, IReadOnlyList<int> Stack, int Index)? _cycleCache;
+
+    // ── Select-tool gesture state ─────────────────────────────────────────────
+
+    private enum SelectDragKind { None, Move, Marquee }
+    private SelectDragKind _selectDragKind = SelectDragKind.None;
+
+    private long _selectPressWX, _selectPressWY;   // world press point (rounded to DBU)
+    private long _marqueeCurX, _marqueeCurY;       // live marquee far corner
+    private bool _marqueeAdd, _marqueeToggle;      // Shift / Ctrl captured at press
+    private List<int> _marqueeBaseSelection = [];
+
+    private long _moveAnchorX, _moveAnchorY;       // press point the move delta is measured from
+    private long _moveLiveDx, _moveLiveDy;         // current snapped delta (0,0) until the drag moves
+    private bool _moveHasMoved;                    // true once the live delta has been non-zero at least once
+
+    private static readonly IReadOnlyDictionary<int, LayoutShape> EmptyDragOverrides = new Dictionary<int, LayoutShape>();
+
+    private void HandleSelectPress(double wx, double wy, KeyModifiers mods, long tolDbu)
+    {
+        bool shift = (mods & KeyModifiers.Shift) != 0;
+        bool ctrl  = (mods & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        bool alt   = (mods & KeyModifiers.Alt) != 0;
+
+        long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+        _selectPressWX = px; _selectPressWY = py;
+
+        long thresh = Math.Max(tolDbu, 1);
+        bool cacheUsable = _cycleCache is { } c0 && c0.Stack.Count > 0
+            && (alt || (Math.Abs(c0.ClickX - px) <= thresh && Math.Abs(c0.ClickY - py) <= thresh));
+
+        IReadOnlyList<int> stack;
+        int stackIndex;
+
+        if (cacheUsable)
+        {
+            var c = _cycleCache!.Value;
+            stack = c.Stack;
+            stackIndex = (c.Index + 1) % stack.Count;
+        }
+        else
+        {
+            stack = LayoutHitTest.HitStack(Model, Technology, px, py, tolDbu);
+            stackIndex = 0;
+        }
+
+        if (stack.Count == 0)
+        {
+            _cycleCache = null;
+            if (!shift && !ctrl) SetSelection([]);
+            BeginMarquee(px, py, shift, ctrl);
+            return;
+        }
+
+        _cycleCache = (px, py, stack, stackIndex);
+        int hitIndex = stack[stackIndex];
+        ApplyClickSelection(hitIndex, shift, ctrl);
+        UpdateSelectionStatusFromCycle();
+
+        if (!shift && !ctrl) BeginMoveDrag(px, py);
+    }
+
+    private void ApplyClickSelection(int hitIndex, bool shift, bool ctrl)
+    {
+        if (ctrl)
+        {
+            SetSelection(_selectedIndices.Contains(hitIndex)
+                ? _selectedIndices.Where(i => i != hitIndex)
+                : _selectedIndices.Append(hitIndex));
+        }
+        else if (shift)
+        {
+            SetSelection(_selectedIndices.Contains(hitIndex)
+                ? _selectedIndices
+                : _selectedIndices.Append(hitIndex));
+        }
+        else
+        {
+            // A plain click on a shape that is already part of a MULTI-selection preserves the
+            // whole selection — this is what makes "drag from inside any selected shape translates
+            // the whole selection" true rather than collapsing the group to just the clicked member
+            // before the drag even starts. A click on anything else (an unselected shape, or the
+            // sole member of a single-shape selection — which still needs to replace-with-itself so
+            // cycling continues to work) replaces the selection with just the hit.
+            if (!(_selectedIndices.Count > 1 && _selectedIndices.Contains(hitIndex)))
+                SetSelection([hitIndex]);
+        }
+    }
+
+    private void UpdateSelectionStatusFromCycle()
+    {
+        if (_selectedIndices.Count == 1 && _cycleCache is { } cache && cache.Stack.Count > 1)
+        {
+            int idx = _selectedIndices[0];
+            int pos = -1;
+            for (int i = 0; i < cache.Stack.Count; i++) if (cache.Stack[i] == idx) { pos = i; break; }
+            if (pos >= 0 && idx >= 0 && idx < Model.Shapes.Count)
+            {
+                var shape = Model.Shapes[idx];
+                SelectionStatusText = $"{ShapeTypeName(shape)} · {LayerDisplayName(shape.Layer)} · {pos + 1} of {cache.Stack.Count}";
+                return;
+            }
+        }
+        SelectionStatusText = ComputeGenericSelectionStatus();
+    }
+
+    private void BeginMoveDrag(long px, long py)
+    {
+        if (_selectedIndices.Count == 0) return;
+        _selectDragKind = SelectDragKind.Move;
+        _moveAnchorX = px; _moveAnchorY = py;
+        _moveLiveDx = 0; _moveLiveDy = 0;
+        _moveHasMoved = false;
+    }
+
+    private void BeginMarquee(long px, long py, bool shift, bool ctrl)
+    {
+        _selectDragKind = SelectDragKind.Marquee;
+        _selectPressWX = px; _selectPressWY = py;
+        _marqueeCurX = px; _marqueeCurY = py;
+        _marqueeAdd = shift;
+        _marqueeToggle = ctrl;
+        _marqueeBaseSelection = _selectedIndices.ToList();
+        RebuildOverlay();
+    }
+
+    private void HandleSelectMove(double wx, double wy, bool leftDown, KeyModifiers mods, long tolDbu)
+    {
+        long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+
+        if (_cycleCache is { } cache)
+        {
+            long thresh = Math.Max(tolDbu, 1);
+            if (Math.Abs(cache.ClickX - px) > thresh || Math.Abs(cache.ClickY - py) > thresh)
+                _cycleCache = null;
+        }
+
+        if (!leftDown)
+        {
+            if (_selectDragKind != SelectDragKind.None)
+            {
+                _selectDragKind = SelectDragKind.None;
+                _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
+                RebuildOverlay();
+            }
+            return;
+        }
+
+        switch (_selectDragKind)
+        {
+            case SelectDragKind.Move:
+            {
+                bool suspend = (mods & KeyModifiers.Alt) != 0;
+                long dx = LayoutSnapping.SnapValue(px - _moveAnchorX, Model.SnapDbu, suspend);
+                long dy = LayoutSnapping.SnapValue(py - _moveAnchorY, Model.SnapDbu, suspend);
+                if (dx != _moveLiveDx || dy != _moveLiveDy) _moveHasMoved = true;
+                _moveLiveDx = dx; _moveLiveDy = dy;
+                RebuildOverlay();
+                break;
+            }
+
+            case SelectDragKind.Marquee:
+                _marqueeCurX = px; _marqueeCurY = py;
+                RebuildOverlay();
+                break;
+        }
+    }
+
+    private void HandleSelectRelease(double wx, double wy)
+    {
+        long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+
+        switch (_selectDragKind)
+        {
+            case SelectDragKind.Move:
+                CommitMoveDrag();
+                break;
+            case SelectDragKind.Marquee:
+                CommitMarquee(px, py);
+                break;
+        }
+
+        _selectDragKind = SelectDragKind.None;
+        RebuildOverlay();
+    }
+
+    private void CommitMoveDrag()
+    {
+        if (_moveHasMoved && (_moveLiveDx != 0 || _moveLiveDy != 0) && _selectedIndices.Count > 0)
+        {
+            var shapes = _selectedIndices
+                .Where(i => i >= 0 && i < Model.Shapes.Count)
+                .Select(i => Model.Shapes[i])
+                .ToList();
+            if (shapes.Count > 0)
+                Execute(new Commands.Layout.MoveShapesCommand(Model, shapes, _moveLiveDx, _moveLiveDy));
+        }
+        _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
+    }
+
+    private void CommitMarquee(long releaseX, long releaseY)
+    {
+        bool leftToRight = releaseX >= _selectPressWX;
+        long minX = Math.Min(_selectPressWX, releaseX), maxX = Math.Max(_selectPressWX, releaseX);
+        long minY = Math.Min(_selectPressWY, releaseY), maxY = Math.Max(_selectPressWY, releaseY);
+        var marqueeBb = new Bbox(minX, minY, maxX, maxY);
+
+        var hits = new List<int>();
+        for (int i = 0; i < Model.Shapes.Count; i++)
+        {
+            var shape = Model.Shapes[i];
+            var def = ResolveLayerDef(shape.Layer);
+            if (!def.Visible || !def.Selectable) continue;
+
+            var bb = LayoutGeometry.BboxOf(shape);
+            if (bb.IsEmpty) continue;
+
+            bool matches = leftToRight
+                ? bb.MinX >= marqueeBb.MinX && bb.MaxX <= marqueeBb.MaxX && bb.MinY >= marqueeBb.MinY && bb.MaxY <= marqueeBb.MaxY
+                : bb.Intersects(marqueeBb);
+            if (matches) hits.Add(i);
+        }
+
+        IEnumerable<int> result;
+        if (_marqueeToggle)
+        {
+            var set = new List<int>(_marqueeBaseSelection);
+            foreach (var h in hits)
+            {
+                if (!set.Remove(h)) set.Add(h);
+            }
+            result = set;
+        }
+        else if (_marqueeAdd)
+        {
+            result = _marqueeBaseSelection.Concat(hits).Distinct();
+        }
+        else
+        {
+            result = hits;
+        }
+
+        SetSelection(result);
+        _cycleCache = null;
+    }
+
+    private void DeleteSelection()
+    {
+        var indices = _selectedIndices.ToList();
+        if (indices.Count == 0) return;
+        Execute(new Commands.Layout.DeleteShapesCommand(Model, indices));
+        SetSelection([]);
+        _cycleCache = null;
+    }
+
+    private void NudgeSelection(Key key, KeyModifiers mods)
+    {
+        if (_selectedIndices.Count == 0) return;
+        long step = OneSnapStepDbu;
+        if ((mods & KeyModifiers.Shift) != 0) step *= 10;
+
+        long dx = key switch { Key.Left => -step, Key.Right => step, _ => 0 };
+        long dy = key switch { Key.Up => step, Key.Down => -step, _ => 0 };
+        if (dx == 0 && dy == 0) return;
+
+        var shapes = _selectedIndices
+            .Where(i => i >= 0 && i < Model.Shapes.Count)
+            .Select(i => Model.Shapes[i])
+            .ToList();
+        if (shapes.Count == 0) return;
+
+        Execute(new Commands.Layout.MoveShapesCommand(Model, shapes, dx, dy));
+    }
 
     // ── Current layer (session state — deliberately NOT persisted in .clay; §2 of the brief) ────
 
@@ -441,9 +807,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     // ── Pointer handlers — filled from LayoutCanvas (L1a's marked seam) ─────────────────────────
 
-    public void OnPointerPressed(double wx, double wy, KeyModifiers mods, int clickCount = 1)
+    /// <summary><paramref name="hitTolDbu"/> is the ~4-screen-pixel hit tolerance already converted
+    /// to DBU by the caller using the CURRENT zoom (never cached, never derived from <c>SnapDbu</c> —
+    /// see the brief's "Read first" section). Only meaningful when <see cref="ActiveTool"/> is
+    /// <see cref="Tool.Select"/>; every drawing tool ignores it.</summary>
+    public void OnPointerPressed(double wx, double wy, KeyModifiers mods, int clickCount = 1, long hitTolDbu = 0)
     {
-        if (ActiveTool == Tool.Select) return;   // inert in L1b — hit-testing arrives in L1c
+        if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0)); return; }
 
         bool suspend = (mods & KeyModifiers.Alt) != 0;
 
@@ -487,8 +857,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
     }
 
-    public void OnPointerMoved(double wx, double wy, bool leftDown, KeyModifiers mods)
+    public void OnPointerMoved(double wx, double wy, bool leftDown, KeyModifiers mods, long hitTolDbu = 0)
     {
+        if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0)); return; }
+
         bool suspend = (mods & KeyModifiers.Alt) != 0;
 
         if (_isDrawingTwoPoint)
@@ -511,6 +883,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     public void OnPointerReleased(double wx, double wy, KeyModifiers mods)
     {
+        if (ActiveTool == Tool.Select) { HandleSelectRelease(wx, wy); return; }
+
         if (!_isDrawingTwoPoint) return;
         bool suspend = (mods & KeyModifiers.Alt) != 0;
         var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
@@ -532,13 +906,37 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         if (_isTypingLabel)
         {
-            if (key == Key.Escape) { CancelDrawOp(); return; }
+            if (key == Key.Escape) { CancelDrawOp(); ActiveTool = Tool.Select; return; }
             if (key == Key.Enter || key == Key.Return) { CommitLabel(); return; }
             if (key == Key.Back && _labelBuffer.Length > 0) { _labelBuffer = _labelBuffer[..^1]; RebuildOverlay(); }
             return;
         }
 
-        if (key == Key.Escape) { CancelDrawOp(); return; }
+        // Mirrors SymbolEditorViewModel.OnKeyDown's Escape contract exactly: any in-progress
+        // operation (a non-Select tool being active counts as one) cancels and switches to Select;
+        // only when genuinely idle ON the Select tool does Escape clear the selection instead.
+        // CancelDrawOp() must be called explicitly here (not left to OnActiveToolChanged alone) —
+        // when ActiveTool is ALREADY Select but a marquee/move drag is in progress, assigning
+        // `ActiveTool = Tool.Select` is a no-op (same value) and its partial change handler never
+        // fires, so relying on that alone would silently leave the drag running.
+        if (key == Key.Escape)
+        {
+            bool hasActiveOp = ActiveTool != Tool.Select
+                             || _isDrawingTwoPoint
+                             || _drawPoints.Count > 0
+                             || _selectDragKind != SelectDragKind.None;
+            if (hasActiveOp) { CancelDrawOp(); ActiveTool = Tool.Select; }
+            else { SetSelection([]); _cycleCache = null; }
+            return;
+        }
+
+        if (ActiveTool == Tool.Select && _selectDragKind == SelectDragKind.None)
+        {
+            bool ctrlOrMeta = (mods & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+            if (ctrlOrMeta && key == Key.A) { SelectAllCommand.Execute(null); return; }
+            if ((key == Key.Delete || key == Key.Back) && _selectedIndices.Count > 0) { DeleteSelection(); return; }
+            if (key is Key.Left or Key.Right or Key.Up or Key.Down) { NudgeSelection(key, mods); return; }
+        }
 
         if (key == Key.Back && _drawPoints.Count > 0)
         {
@@ -563,6 +961,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _labelBuffer     = "";
         _typedWidthDbu   = null;
         _typedHeightDbu  = null;
+        _selectDragKind  = SelectDragKind.None;
+        _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
         OnPropertyChanged(nameof(IsDrawingRect));
         RebuildOverlay();
     }
@@ -737,7 +1137,31 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             DrawReadoutText = "";
         }
 
-        Overlay = new LayoutOverlay { InProgressPrimitive = inProgress };
+        LayoutMarquee? marquee = _selectDragKind == SelectDragKind.Marquee
+            ? new LayoutMarquee(_selectPressWX, _selectPressWY, _marqueeCurX, _marqueeCurY)
+            : null;
+
+        IReadOnlyDictionary<int, LayoutShape> dragOverrides = EmptyDragOverrides;
+        if (_selectDragKind == SelectDragKind.Move && (_moveLiveDx != 0 || _moveLiveDy != 0))
+        {
+            var dict = new Dictionary<int, LayoutShape>();
+            foreach (var idx in _selectedIndices)
+            {
+                if (idx < 0 || idx >= Model.Shapes.Count) continue;
+                var clone = LayoutGeometry.Clone(Model.Shapes[idx]);
+                LayoutGeometry.TranslateBy(clone, _moveLiveDx, _moveLiveDy);
+                dict[idx] = clone;
+            }
+            dragOverrides = dict;
+        }
+
+        Overlay = new LayoutOverlay
+        {
+            InProgressPrimitive = inProgress,
+            SelectedIndices = _selectedIndices.ToArray(),
+            Marquee = marquee,
+            DragOverrides = dragOverrides,
+        };
     }
 
     private string ComputeTwoPointReadout()

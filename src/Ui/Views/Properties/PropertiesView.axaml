@@ -30,6 +30,11 @@
                 <body:CellParameterBodyView DataContext="{Binding CellEditorVm}"/>
             </Panel>
 
+            <!-- Layout Shape Properties (shown when a layout editor document is active) -->
+            <Panel IsVisible="{Binding IsLayoutActive}">
+                <symInsp:LayoutShapePropertiesView DataContext="{Binding LayoutInspectorVm}"/>
+            </Panel>
+
             <!-- Data Display Plot Inspector (shown when a data display is active with a single plot selected) -->
             <Panel IsVisible="{Binding IsDataDisplayActive}">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">

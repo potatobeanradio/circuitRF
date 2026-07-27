@@ -20,6 +20,10 @@ public sealed class LayoutRenderTheme
     public SKColor RulerTick       { get; init; }
     public SKColor CursorIndicator { get; init; }
 
+    /// <summary>Selection accent — outline drawn above every layer on a selected shape, and the
+    /// marquee rectangle fill/stroke (L1c).</summary>
+    public SKColor Selection { get; init; }
+
     public static LayoutRenderTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         SKColor SK(string role)
@@ -37,6 +41,7 @@ public sealed class LayoutRenderTheme
             RulerText       = SK(ColorRole.LayoutRulerText),
             RulerTick       = SK(ColorRole.LayoutRulerTick),
             CursorIndicator = SK(ColorRole.LayoutCursorIndicator),
+            Selection       = SK(ColorRole.LayoutSelection),
         };
     }
 

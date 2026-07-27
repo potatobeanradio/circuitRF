@@ -2,12 +2,15 @@ using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using CircuitRF.Ui.Layout;
 
 namespace CircuitRF.Ui.Views.Layout;
 
 public partial class LayoutEditorView : UserControl
 {
+    private LayoutDocument? _subscribedDoc;
+
     public LayoutEditorView()
     {
         InitializeComponent();
@@ -18,7 +21,55 @@ public partial class LayoutEditorView : UserControl
         LayoutCanvasCtrl.FrameUnknownLayers  += OnFrameUnknownLayers;
 
         DataContextChanged += (_, _) => SyncRulerUnits();
+        DataContextChanged += OnDataContextChangedForFocus;
+
+        // Focus-independent Escape handler — mirrors SchematicView/SymbolEditorView's
+        // OnViewKeyDownTunnel. Window.KeyBindings (WorkspaceWindow.axaml's "Escape" ->
+        // DisarmPlacementCommand) are processed before visual-tree routing and always mark the
+        // event Handled, so LayoutCanvas's own plain bubble-phase KeyDown handler never fires for
+        // Escape otherwise — this tunnel handler (registered with handledEventsToo: true) claims
+        // Escape first and forwards it to the VM directly.
+        this.AddHandler(
+            InputElement.KeyDownEvent,
+            OnViewKeyDownTunnel,
+            RoutingStrategies.Tunnel,
+            handledEventsToo: true);
     }
+
+    // ── Keyboard shortcuts (tunnel — see constructor comment) ─────────────────
+
+    private void OnViewKeyDownTunnel(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        if (!LayoutCanvasCtrl.IsKeyboardFocusWithin) return; // a toolbar text field owns its own Escape
+        var vm = (DataContext as LayoutDocument)?.ViewModel;
+        if (vm is null) return;
+
+        vm.OnKeyDown(e.Key, e.KeyModifiers);
+        e.Handled = true;
+    }
+
+    // ── Activation focus — tab switch grabs keyboard focus (mirrors SchematicView/SymbolEditorView) ──
+
+    private void OnDataContextChangedForFocus(object? sender, System.EventArgs e)
+    {
+        if (_subscribedDoc is not null) _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
+        _subscribedDoc = DataContext as LayoutDocument;
+        if (_subscribedDoc is not null)
+        {
+            _subscribedDoc.ActivationFocusRequested += OnActivationFocusRequested;
+            if (_subscribedDoc.ConsumeActivationFocus()) FocusCanvasDeferred();
+        }
+    }
+
+    private void OnActivationFocusRequested()
+    {
+        _subscribedDoc?.ConsumeActivationFocus();
+        FocusCanvasDeferred();
+    }
+
+    private void FocusCanvasDeferred() =>
+        Dispatcher.UIThread.Post(() => LayoutCanvasCtrl.Focus(), DispatcherPriority.Background);
 
     private void SyncRulers()
     {

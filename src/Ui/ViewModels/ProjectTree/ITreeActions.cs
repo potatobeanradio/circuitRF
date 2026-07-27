@@ -101,8 +101,10 @@ public interface ITreeActions
     void SetAsWorkspaceDefault(ProjectTreeNodeViewModel node);
 
     /// <summary>Invalidates the cached Technology for this .ctech node so a hand-edited file takes
-    /// effect without restarting — the live-refresh seam for open layouts using it.</summary>
-    void ReloadTechnology(ProjectTreeNodeViewModel node);
+    /// effect without restarting — the live-refresh seam for open layouts using it. Prompts for
+    /// confirmation first when a live (unsaved editor) override exists for the path, since reloading
+    /// would otherwise silently discard those unsaved changes; cancelling leaves the override intact.</summary>
+    Task ReloadTechnologyAsync(ProjectTreeNodeViewModel node);
 
     /// <summary>True when this .ctech node is the workspace's current default technology — drives
     /// the check/radio affordance on the node.</summary>

@@ -2,14 +2,15 @@ using Dock.Model.Mvvm.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.DataDisplay.ViewModels;
+using CircuitRF.Ui.Layout;
 
 namespace CircuitRF.Ui.ViewModels.Dock;
 
 /// <summary>
 /// Dock Tool for the Properties region.
-/// Hosts four mutually-exclusive contexts: schematic component editor, symbol primitive
-/// inspector, cell properties, and data display plot inspector. The <see cref="HeaderText"/>
-/// observable reflects which context is active.
+/// Hosts five mutually-exclusive contexts: schematic component editor, symbol primitive
+/// inspector, cell properties, data display plot inspector, and the layout shape-selection
+/// properties panel (L1c). The <see cref="HeaderText"/> observable reflects which context is active.
 /// </summary>
 public partial class PropertiesTool : Tool
 {
@@ -18,6 +19,14 @@ public partial class PropertiesTool : Tool
 
     [ObservableProperty]
     private SymbolPrimitiveInspectorViewModel _symbolInspectorVm = new();
+
+    [ObservableProperty]
+    private LayoutShapePropertiesViewModel _layoutInspectorVm = new();
+
+    /// <summary>True when a layout editor document is active; the Properties pane shows the
+    /// layout shape properties panel rather than the schematic parameter editor.</summary>
+    [ObservableProperty]
+    private bool _isLayoutActive;
 
     /// <summary>
     /// True when a symbol editor document is active; the Properties pane shows the
@@ -58,7 +67,7 @@ public partial class PropertiesTool : Tool
 
     /// <summary>
     /// Observable header text driven by the active context.
-    /// "Cell" / "Component" / "Symbol" / "Plot" / "Properties" (fallback).
+    /// "Cell" / "Component" / "Symbol" / "Plot" / "Layout" / "Properties" (fallback).
     /// Use this instead of Title — Dock Tool.Title changes are not reliably picked
     /// up by Avalonia compiled bindings (see ui-CLAUDE.md §Dock gotchas).
     /// </summary>
@@ -66,15 +75,17 @@ public partial class PropertiesTool : Tool
     private string _headerText = "Properties";
 
     /// <summary>
-    /// True when none of the specific contexts (symbol/cell/data-display/file-info) is active —
-    /// i.e., when the schematic parameter editor (or empty placeholder) should be shown.
+    /// True when none of the specific contexts (symbol/cell/data-display/file-info/layout) is
+    /// active — i.e., when the schematic parameter editor (or empty placeholder) should be shown.
     /// </summary>
-    public bool IsSchematicContextActive => !IsSymbolEditorActive && !IsCellActive && !IsDataDisplayActive && !IsFileInfoActive;
+    public bool IsSchematicContextActive =>
+        !IsSymbolEditorActive && !IsCellActive && !IsDataDisplayActive && !IsFileInfoActive && !IsLayoutActive;
 
     partial void OnIsSymbolEditorActiveChanged(bool value)  => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsCellActiveChanged(bool value)          => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsDataDisplayActiveChanged(bool value)   => OnPropertyChanged(nameof(IsSchematicContextActive));
     partial void OnIsFileInfoActiveChanged(bool value)      => OnPropertyChanged(nameof(IsSchematicContextActive));
+    partial void OnIsLayoutActiveChanged(bool value)        => OnPropertyChanged(nameof(IsSchematicContextActive));
 
     public PropertiesTool()
     {
@@ -101,11 +112,13 @@ public partial class PropertiesTool : Tool
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
+        IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
         FileInfoVm            = null;
         EditorVm.SetContext(vm);
         SymbolInspectorVm.SetContext(null);
+        LayoutInspectorVm.SetContext(null);
         HeaderText = EditorVm.IsEmptyState ? "Properties" : "Component";
     }
 
@@ -116,11 +129,13 @@ public partial class PropertiesTool : Tool
         IsSymbolEditorActive  = vm is not null;
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
+        IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
         FileInfoVm            = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(vm);
+        LayoutInspectorVm.SetContext(null);
         HeaderText = vm is not null ? "Symbol" : "Properties";
     }
 
@@ -131,11 +146,13 @@ public partial class PropertiesTool : Tool
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = false;
         IsFileInfoActive      = false;
+        IsLayoutActive        = false;
         CellEditorVm          = vm;
         PlotInspectorVm       = null;
         FileInfoVm            = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
+        LayoutInspectorVm.SetContext(null);
         HeaderText = vm is not null ? "Cell" : "Properties";
     }
 
@@ -149,11 +166,13 @@ public partial class PropertiesTool : Tool
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = vm is not null;
         IsFileInfoActive      = false;
+        IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = vm;
         FileInfoVm            = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
+        LayoutInspectorVm.SetContext(null);
         HeaderText = vm is not null ? "Plot" : "Properties";
     }
 
@@ -166,12 +185,31 @@ public partial class PropertiesTool : Tool
         IsCellActive          = false;
         IsSymbolEditorActive  = false;
         IsDataDisplayActive   = false;
+        IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
+        LayoutInspectorVm.SetContext(null);
         IsFileInfoActive      = vm is not null;
         FileInfoVm            = vm;
         HeaderText            = vm is not null ? "File" : "Properties";
+    }
+
+    /// <summary>Called by WorkspaceViewModel when the active layout editor document changes.</summary>
+    public void SetActiveLayout(LayoutEditorViewModel? vm)
+    {
+        IsCellActive          = false;
+        IsSymbolEditorActive  = false;
+        IsDataDisplayActive   = false;
+        IsFileInfoActive      = false;
+        IsLayoutActive        = vm is not null;
+        CellEditorVm          = null;
+        PlotInspectorVm       = null;
+        FileInfoVm            = null;
+        EditorVm.SetContext(null);
+        SymbolInspectorVm.SetContext(null);
+        LayoutInspectorVm.SetContext(vm);
+        HeaderText = vm is not null ? "Layout" : "Properties";
     }
 }

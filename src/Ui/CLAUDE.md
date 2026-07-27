@@ -1,5 +1,263 @@
 # UI (Avalonia) — local conventions
 
+L1 fix (path seams + live tech) — brief-L1-fix-path-seams-and-live-tech.md, 2026-07-26 — COMPLETE:
+two independent owner-reported items.
+
+**(1) `Path` rendered internal seam lines at every bend.** Root cause: `LayoutRenderer.BuildPathOutline`
+built the trace outline via `strokeForFill.GetFillPath(centerline, outline)`, and `GetFillPath` does
+**not** produce one merged contour — Skia's stroker emits one contour per segment plus a wedge per
+join, all overlapping at every bend. That is invisible when **filling** (`DrawLayer`'s
+`canvas.DrawPath(shapePath, fillPaint)` uses the default Winding rule, which composites the overlaps
+exactly once) and very visible when hairline-**stroking** the same path (`DrawLayer`'s batched outline
+stroke traces every contour edge in the path, including the internal boundaries where segment quads
+and join wedges abut — those internal boundaries are the seam artifacts a bent trace showed at each
+vertex). **Fix:** `outline.Simplify(simplified)` before returning, using the simplified path for BOTH
+fill and stroke (never keep two versions); falls back to the unsimplified path only if `Simplify`
+itself fails (degenerate input), so a trace is never silently dropped. **This is deliberately a
+SEPARATE outline from L1e's Clipper2 geometry offset, and must stay that way** — Clipper2 works on
+flattened (polygonal) geometry, so a curved trace's Clipper2 outline is correctly polygonal for
+booleans/DRC/Gerber export but WRONG for display, which needs the adaptive, zoom-correct curve
+tessellation §3.2 R9c specifies. Two outlines, two purposes: display (here, Skia stroker + Simplify,
+curves stay curves) vs. geometry (L1e, Clipper2 offset on the flattened centerline, exact and
+integer) — do not "unify" them later; the doc comment on `BuildPathOutline` now carries this warning
+directly so it survives. `PathSpace` and `BuildPathOutline` were changed from `private` to `internal`
+so `LayoutPathOutlineSeamTests.cs` can drive them directly and pixel-verify the fix precisely, rather
+than only through a full `Technology`/viewport setup. **`// L2: cache with the shape path`** is left
+at the call site — `Simplify` is an `SkPathOps` call, meaningfully more expensive than plain path
+construction; fine at L1 scale (paths rebuild every frame anyway) but it must ride along with L2's
+per-shape path cache rather than recompute every frame for thousands of traces. Test file:
+`LayoutPathOutlineSeamTests.cs` — a 3-vertex 90°-bend `PathShape`, low fill opacity so the opaque
+stroke color is unambiguous, scanned along the horizontal segment's own centerline (which runs
+straight through the joint with no cap) asserting **exactly 2** stroke-color pixel runs (the two true
+silhouette edges, nothing in between); a bounds-preservation check against a hand-built raw
+`GetFillPath` result for the same geometry; and a 3-case degenerate-input theory (identical points,
+zero width, both) asserting no throw and a non-null (never-dropped) outline.
+
+**(2) Technology edits now apply live, and closing dirty prompts.** Editing a `.ctech` — color,
+`Visible`, `Selectable`, anything — reflects in every open layout **immediately**, without Save;
+Save is now purely "write to disk, then let the live copy be superseded by the just-saved on-disk
+value." **`TechnologyCache` gained a second dictionary, `_live`** (absolute path → `Technology`),
+checked by `Get` BEFORE the file-backed `_cache` — deliberately a separate dictionary rather than a
+value stored inside `_cache`, because `ClearLive` (discard-without-saving) must be able to drop the
+override and fall back to the last known on-disk value WITHOUT forcing a disk re-read of a file that
+was never touched. `SetLive(path, tech)` installs an override and fires `TechnologyChanged` (existing
+consumers need zero changes — they already react to that event); `ClearLive(path)` removes only the
+live entry (no-op, no event, if none was installed); `HasLiveOverride(path)` gates the reload-confirm
+guard below; `Invalidate(path)` now drops BOTH the live override and the plain cache entry (a save, an
+external edit, or "Reload Technology" makes either kind of cached value stale); `InvalidateAll` covers
+both dictionaries too. **`TechEditorViewModel` gained `event Action<string, Technology>? TechLiveChanged`,
+fired from exactly one place: `ApplySnapshot`.** That method is already the single choke point for
+both a fresh commit (`CommitEdit` pushes a `TechSnapshotCommand` whose `Execute()` calls back into
+`ApplySnapshot`) and undo/redo (`TechSnapshotCommand.Undo` also calls it) — so firing there once covers
+every case the brief's event table lists, with no duplicate call in `CommitEdit` itself. **R-fix-1:
+the fired value is always an independent clone — `TechPersistence.Deserialize(json)` on the SAME
+`json` string that was just used to rebuild `Working`, never `Working` itself.** Two concrete failure
+modes if that rule is skipped: `Working` keeps mutating in place before the next commit, so a consumer
+holding it directly would observe half-applied edits; and undo/redo **replaces** the `Working`
+reference wholesale, so a consumer holding the old instance would silently stop receiving updates
+after the first undo. Reusing the already-in-hand `json` (rather than re-serializing `Working`) is the
+"one extra deserialize per committed edit" the brief notes — cheap on a small `Technology` object.
+**`WorkspaceViewModel` wiring:** `vm.TechLiveChanged += OnTechLiveChanged` alongside the existing
+`TechSaved`/`SaveError` subscriptions in `OpenOrActivateTech`. **Coalesce, don't throttle** —
+`OnTechLiveChanged` stashes the latest clone per path in `_pendingTechLive` (a dictionary, so a burst
+of commits in one gesture — e.g. a multi-selection apply — collapses to the LATEST value per path) and
+schedules at most one `Dispatcher.UIThread.Post` per burst; `FlushPendingTechLive` drains the
+dictionary and calls `_techCache.SetLive` once per path, so the canvas repaints once per burst, not
+once per keystroke-equivalent commit. `ResetTechCache` (called on every workspace-lifetime reset)
+also clears `_pendingTechLive`/`_techLiveFlushScheduled` as a belt-and-suspenders guard against a
+reset landing in the same dispatcher tick as a pending flush. **The L0c invariant still holds and now
+matters more:** `ApplyTechResolution` (unchanged) never re-seeds `DisplayUnit`/`SnapDbu` — with
+updates now streaming continuously instead of only at Save, a regression here would silently fight
+the user mid-edit; a dedicated test streams five live edits and asserts both stay untouched.
+**Discard/save/reload semantics**, all driven through the SAME `SetLive`/`ClearLive`/`Invalidate`
+primitives: Save → `OnTechSaved` calls `_techCache.Invalidate(path)` (unchanged code — `Invalidate` now
+clears the live override too, so no separate `ClearLive` call was needed there); Close → Don't Save →
+`ConfirmCloseDockable`'s `TechDocument` branch now calls `_techCache.ClearLive(techDoc.FilePath)`
+before returning (open layouts revert to on-disk); Close → Cancel → nothing changes, override stays;
+`PromptSaveBeforeClose`'s bulk Don't-Save branch (quit / workspace-switch with multiple dirty docs)
+also clears every dirty tech doc's override; `OnDockableClosed` unconditionally calls `ClearLive` for
+ANY closing `TechDocument` as a safety net for a path that skips the confirm hook (a no-op for a
+clean/already-saved document). **Close-prompt participation itself was already fully wired** — a code
+read of `ConfirmCloseDockable`/`HasAnyDirtyWork`/`PromptSaveBeforeClose`/`SaveAllDocuments` found
+`TechDocument` already present in every one of them (Save/Don't Save/Cancel, on quit and on workspace
+switch) before this fix — nothing there was actually missing; only the live-override lifecycle needed
+adding on top. **"Reload Technology" now guards against silently discarding unsaved edits:**
+`ITreeActions.ReloadTechnology` → `ReloadTechnologyAsync` (an `AsyncRelayCommand` now, was a plain
+`RelayCommand`); when `_techCache.HasLiveOverride(path)` is true it shows a 2-button
+`SaveChangesDialog` ("Discard unsaved changes to '{name}'?", `saveLabel: "Discard"`,
+`dontSaveLabel: null`) before calling `Invalidate` — Cancel returns without touching the cache, so the
+override survives. Test files: `TechnologyCacheTests.cs` gained 6 tests for `SetLive`/`ClearLive`/
+`HasLiveOverride`/`Invalidate`-clears-both; `LayoutLiveTechnologyTests.cs` composes `TechnologyCache` +
+`TechEditorViewModel` + `LayoutEditorViewModel` exactly as `WorkspaceViewModel` wires them (mirroring
+the existing L0d gate-3 "simulated seam" test) for live color/Visible/Selectable propagation, the
+deep-clone-and-undo behavior, discard-reverts, save-clears-the-override, and units-never-re-seeded;
+plus two small "simulate the production switch" tests each (mirroring this codebase's established
+pattern for `WorkspaceViewModel`-only logic that needs the Avalonia runtime to construct for real) for
+the close-prompt Cancel/Don't-Save branches and the reload-guard Cancel/Discard branches. 23 new tests
+across both fixes; 1858 Ui.Tests total, all green; full solution green (Firewall 4/4, Core 388/388,
+Engine 461/462 — 1 pre-existing skip, matching the L1c baseline exactly). **Not interactively verified**
+(no visual driver in this environment, matching every prior Layout Editor phase) — correctness rests on
+the pixel-oracle seam test and the composed-real-types live-propagation tests above.
+
+
+
+Phase L1c — flattener, hit-testing, selection, move, delete, properties (brief-L1c-selection-and-properties,
+2026-07-26) — COMPLETE: a layout shape can now be **selected, cycled through when stacked, dragged, deleted,
+nudged, and edited** in a properties panel. Vertex/edge/bulge/control-point handles, Clipper2 booleans, and
+the clipboard are explicitly **not** in this phase (L1d/L1e). **Why the flattener (`LayoutFlattener.cs`)
+lands here rather than with L1e's booleans:** §6.1 of the design doc calls for **one**
+`ToClipperPaths(shape, tolerance)`-equivalent helper shared by booleans, offsets, DRC, the mesher, hit-test,
+and export, so the flattening tolerance is never chosen twice with two different answers — hit-testing a
+`Curve`/`Circle`/`RoundedRect` is the *first* consumer of that shared helper, so it is built now and L1e's
+booleans will simply wrap it for Clipper2 rather than inventing their own. `LayoutFlattener.Flatten(shape,
+tolDbu)` returns closed rings for `Rect`/`Polygon` (pass-through, no allocation churn beyond the one array a
+`Rect` needs) / `RoundedRect` (4 lines + 4 sagitta-bounded quarter arcs) / `Circle` (sagitta-bounded full
+revolution) / `Curve` (edge-list walk: `Line` verbatim, `Arc` via `LayoutArc.FromBulge` + sagitta subdivision,
+`Cubic` via recursive de Casteljau split against a chord-distance flatness test); `Path`'s centerline uses
+the same edge-walking code through an internal `FlattenOpenEdgeList`, since turning a centerline+width into
+a closed *outline* is an offset operation that belongs to L1e's Clipper2 work, not this phase — hit-testing a
+`Path` uses distance-to-centerline instead (see below), so nothing here needs the outline. **The sagitta
+formula is `2·acos(1 − s/r)` maximum sweep per segment**, clamped from below by a fixed `MinSweepPerSegment`
+(2π/4096) so a pathologically large radius can't demand an unbounded segment count — this is the "clamped to
+something sane for very large r" the brief calls for. **R-L1c-1 (determinism) is structural, not tested-in**:
+every computation is a fixed sequence of double-precision arithmetic over the shape's own integer fields in a
+fixed loop order (no dictionaries, no parallelism, nothing machine- or process-dependent), and the closed-ring
+implicit-closure convention (never repeat vertex 0 at the end) is enforced by explicitly stripping the
+duplicate closing point after both `Curve` and `RoundedRect` assembly. Pinned by
+`LayoutFlattenerTests.Flatten_SameShapeAndTolerance_100Times_ByteIdentical` and
+`..._AfterSerializeDeserializeRoundTrip_ByteIdentical`.
+
+**`LayoutHitTest.HitStack(view, tech, x, y, tolDbu)`** — framework-free, no spatial index (L2 adds the R-tree;
+this signature deliberately doesn't presuppose one). **Ordering, exactly per §6.2 R13**: `ZOrder` descending,
+then **ascending bbox area** (reusing `LayoutGeometry.BboxOf` as the size proxy for every shape kind, rather
+than an exact per-type area formula — a small shape on a large one on the same layer is reachable, which is
+the case that actually matters), then ascending list index as the deterministic tie-break. Filled shapes
+(`Rect`/`Polygon`/`RoundedRect`/`Circle`/`Curve`) are tested via `LayoutFlattener.Flatten` at
+`min(shape/tech tolerance, click tolerance)` — never coarser than the click tolerance itself, so the polygon
+approximation can't hide a hit near a curved edge — then point-in-polygon (ray cast) OR distance-to-edge ≤
+tolDbu. `Path` uses distance-to-flattened-centerline ≤ `Width/2 + tolDbu`. `Via` is a direct circle-distance
+check (pad radius); `Label` uses an approximate text footprint (character-count × height × a fixed aspect
+ratio — framework-free, no font metrics at this layer) duplicated in `LayoutRenderer`'s selection-outline
+builder for the same reason (both need it, neither can reach Skia's real text metrics without becoming
+Avalonia-coupled). Skips shapes on a layer whose resolved `LayerDef` is `Visible == false` or
+`Selectable == false`; unknown layers resolve through `FallbackPalette` (always selectable).
+
+**R-L1c-2 (overlap cycling)** — `LayoutEditorViewModel` caches `(ClickX, ClickY, Stack, Index)` on every
+Select-tool press. The next press advances `Index` modulo the stack length **only if** the click is within the
+tolerance of the cached point (or Alt is held, which bypasses the distance check entirely — a deliberate
+"next candidate regardless of exact pixel" escape hatch) **and** the cache hasn't been invalidated. Three
+independent invalidation paths, all required: (1) pointer movement beyond the tolerance threshold, checked in
+`HandleSelectMove` before the `leftDown` early-return so a **hover-only** move (no button down) still
+invalidates it; (2) **any** model mutation — the constructor's existing `Model.Changed` subscription (already
+there for L1b's dirty-tracking) now also nulls the cache and strips any now-out-of-range selected indices,
+since every command (`AddShapeCommand`, `MoveShapesCommand`, `DeleteShapesCommand`, `SetShapeFieldCommand<T>`,
+undo, redo) calls `NotifyChanged()` — one subscription point covers all of them; (3) a selection change from
+anywhere else (marquee commit, Select All, Deselect All, Delete) explicitly nulls it. The status readout
+(`LayoutEditorViewModel.SelectionStatusText`) shows `"Rect · M2 · 2 of 5"` only when the current single
+selection came from a cache with `Stack.Count > 1` — this is the "without it, cycling reads as a glitch"
+requirement; a plain single selection outside a stack shows just `"Rect · M2"`, and a multi-selection shows
+`"N selected"`.
+
+**R-L1c-3 — move snaps the delta, not the vertices — is the test this phase is most likely to get wrong
+silently.** `MoveShapesCommand` (`src/Ui/Commands/Layout/`) receives an already-snapped `(Dx, Dy)` and adds it
+to every vertex of every selected shape via `LayoutGeometry.TranslateBy` — including Cubic edges' `C1X/C1Y/
+C2X/C2Y` control points, which are absolute DBU coordinates, not relative offsets, and are easy to forget.
+**The wrong version — rounding each moved vertex independently onto the snap grid — looks completely correct
+in every test that only uses on-grid fixtures**, because on-grid vertices round to themselves. It only shows
+its bug on off-grid geometry (imported GDSII, a 45° diagonal, a flattened arc), where it silently re-snaps and
+destroys the shape's internal relationships — exactly what §1.5 R5 forbids. `LayoutEditorViewModel`'s
+move-drag computes the delta via `LayoutSnapping.SnapValue(pointerDelta, SnapDbu, altSuspends)` — the *same*
+snap primitive L1b already uses for point-snapping, applied to a delta instead of a coordinate, which is
+mathematically identical and needed no new snapping code. Pinned by
+`LayoutMoveDeleteNudgeTests.Move_OffGridPolygon_EveryVertexMovesByExactlyTheSameSnappedDelta` — a
+deliberately off-grid polygon whose vertices must all shift by the exact same integer delta.
+
+**Live move preview never mutates the model mid-drag.** Mirroring the schematic editor's rule ("during an
+active drag, do not call BuildRenderModel() per tick — update the overlay only, commit once at drag-end"),
+`LayoutOverlay` gained `DragOverrides: IReadOnlyDictionary<int, LayoutShape>` — shape index → a translated
+**clone** (`LayoutGeometry.Clone`, deep including edge lists) rendered in place of the real shape.
+`LayoutRenderer.DrawLayer` now groups shapes by layer as `(int Index, LayoutShape Shape)` pairs specifically
+so it can substitute the override at render time; the real `Model.Shapes[i]` is untouched until
+`OnPointerReleased` computes the final total delta and executes exactly one `MoveShapesCommand`. Arrow-key
+nudge (one `SnapDbu` step, ten with Shift) goes straight to `MoveShapesCommand` with no drag/preview phase —
+each keypress is its own undo entry.
+
+**Selection rendering** — `LayoutOverlay.SelectedIndices` (an accent outline batched into one stroked path,
+drawn above every layer, **never touching fill** — the layer color stays the information the user is
+reading, per the brief) and `LayoutOverlay.Marquee` (`LayoutMarquee`, a *non-normalized* rect — direction is
+meaningful: left-to-right encloses, right-to-left crosses — rendered with the same filled+opaque-edge look
+§2.3 gives ordinary geometry, just in the new `ColorRole.LayoutSelection` accent instead of a layer color).
+Both are new theme role additions (`ColorTheme.cs`/`LayoutRenderTheme.cs`), light/dark pairs supplied.
+
+**A plain click on a shape already inside a multi-selection preserves the whole selection —
+`ApplyClickSelection`'s non-modifier branch does NOT unconditionally replace with `[hitIndex]`.** The naive
+version (replace on every plain click, full stop) looks completely correct for single-shape selection and
+for cycling, and only breaks the one case that actually matters: Shift-select {A, B}, then plain-click+drag
+starting *inside* A intending to drag the pair — the naive version collapses the selection to `{A}` at press
+time, before the drag even starts, silently defeating "drag from inside any selected shape translates the
+whole selection." The fix: replace-with-hit only when the hit is NOT already part of a `Count > 1` selection;
+a click on an unselected shape, or the sole member of an existing single-shape selection (needed so cycling
+still replaces-with-itself each step), still replaces normally. Pinned by
+`LayoutMoveDeleteNudgeTests.Move_DragFromInsideAnyMultiSelectedShape_TranslatesTheWholeSelection`.
+
+**Marquee** (`LayoutEditorViewModel.HandleSelectPress/Move/Release`, `SelectDragKind.Marquee`) starts only
+when a Select-tool press hits **empty space** — a press on a shape always means click-select (+ arms a
+move-drag), never a marquee, by construction. Enclose (left-to-right: press.X ≤ release.X) requires the
+shape's bbox fully inside the marquee bbox; crossing (right-to-left) requires `Bbox.Intersects`. Shift/Ctrl
+captured **at press** (`_marqueeAdd`/`_marqueeToggle`) and applied against a snapshot of the pre-drag
+selection at commit — add unions, toggle XORs, plain replaces. A marquee also respects the same
+Visible/Selectable layer gate `HitStack` uses (`LayoutEditorViewModel.ResolveLayerDef`, a small local mirror
+of the same resolution order — `Technology.Layers` then `FallbackPalette`).
+
+**Properties panel** (`LayoutShapePropertiesViewModel` + `LayoutShapePropertiesView`, wired as `PropertiesTool`'s
+fifth mutually-exclusive context via `SetActiveLayout`) — common Layer (swatch+name combo, reusing
+`LayoutEditorViewModel.AvailableLayers` directly) and Net (free text); type-specific groups (`RoundedRect`
+corner radius, `Circle` radius, `Path` width+end-style, `Label` text/height/rotation, `Curve`/`Path` flatten
+tolerance — blank means inherit) show **only when every selected shape is that one type**; a mixed-type
+multi-selection shows just the common fields. A shared value displays normally; a **differing** value across
+a homogeneous-type selection displays blank, and committing a new value applies it to every shape that has
+that field **as one undo entry** — `LayoutShapePropertiesViewModel.ApplyToEach<T>` folds one
+`SetShapeFieldCommand<T>` per actually-changing shape into a `CompositeCommand` chain (the same
+`CompositeCommand` the schematic editor already uses for multi-step commits; it is binary, so N shapes fold
+as N-1 nested pairs). Text/dimension fields are staged (commit on LostFocus/Enter, mirroring
+`LayoutEditorView`'s own toolbar fields exactly — invalid text reverts to the canonical-formatted current
+value and never throws); combo selections (Layer, End style, Rotation) commit immediately. Dimension parsing
+goes through `LayoutUnits.TryParse`/`Format`, per §1 R6.
+
+**Known gap, deliberate:** no literal "Select All / Deselect All" Edit-menu entry — `src/Ui/CLAUDE.md`'s
+existing standing rule ("there is intentionally no window-level Ctrl+A binding... each editor owns Ctrl+A
+when focused") took precedence over the brief's literal wording. `LayoutEditorViewModel.SelectAllCommand`/
+`DeselectAllCommand` exist and are fully wired (Ctrl/Cmd+A routes to Select All inside `OnKeyDown` when the
+Select tool is active); a toolbar/menu affordance for them is a small follow-up if the owner wants one.
+
+Test files: `LayoutFlattenerTests.cs` (gate 2 + R-L1c-1 — circle tolerance/monotonic vertex count,
+Rect/Polygon pass-through, RoundedRect corner geometry, cubic subdivision terminates, 100× + serialize
+round-trip determinism, `ResolveTolDbu` precedence), `LayoutHitTestTests.cs` (gates 3/4/5 — stacking order,
+per-primitive accuracy including an arc-bearing `Curve` and `RoundedRect`, `Path` centerline distance,
+hidden/non-selectable layer exclusion, fallback-layer selectability), `LayoutSelectionTests.cs` (gates 6/7/
+12/13/14 — five-deep cycling incl. wraparound and the status readout, threshold-based and mutation-based
+cache invalidation, click-on-empty clears, marquee enclose/crossing/Shift/Ctrl, undo-past-a-delete never
+leaves a stale index, screen-pixel hit-testing through `LayoutViewport.ScreenToWorldX/Y` on **both** starter
+technologies, and a dedicated proof that the hit tolerance differs by orders of magnitude between a very low
+and a very high zoom rather than being cached or derived from `SnapDbu`), `LayoutMoveDeleteNudgeTests.cs`
+(gates 8/9/10 — the off-grid-preserving move, Alt-suspends-snap, arrow-key nudge incl. Shift×10, one-undo-
+entry-per-nudge, multi-selection delete+undo byte-identical serialization), `LayoutShapePropertiesViewModelTests.cs`
+(gate 11 — multi-selection net/radius edits as one undo entry, blank-on-differing-values, `2.9mm`/`nm` parse
+and garbage-revert, blank flatten-tolerance means inherit), and `LayoutSelectionRenderingTests.cs` (pixel
+oracles in `LayoutRendererTests.cs`'s own style: a selected shape's fill is untouched while its accent
+outline appears; the marquee renders its filled accent rect; a `DragOverrides` entry renders the shape at
+its translated position and NOT its original one). 52 new tests; 1835 Ui.Tests total, all green; full
+solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip, matching the L1b baseline
+exactly). **Not interactively verified** (no visual driver in this environment, matching every prior
+Layout Editor phase) — correctness rests on the gate test suite above, which — per the brief's explicit
+"Read first" lesson from the L1 fix round — deliberately includes screen-pixel-driven tests through
+`LayoutViewport.ScreenToWorldX/Y` rather than only world-coordinate tests, specifically because world-
+coordinate tests structurally cannot catch a screen-to-world tolerance bug. **Next: L1d** (vertex/edge/bulge/
+control-point handles, insert/remove vertex, edge conversion Line↔Arc↔Cubic, and the Polygon→Curve promotion
+rule this file's header has been describing since L1b).
+
+
+
 L1 fix — unclipped `SKCanvas.Clear` and the nonsense default zoom (brief-L1-fix-clear-and-default-zoom,
 2026-07-26) — COMPLETE: the real root causes of the two items the L1b post-ship entry below left
 unresolved, found by reading the code rather than by rendering. **(1) The toolbar, both rulers, and the

@@ -227,8 +227,9 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// <summary>Write this .ctech node into .cws as the workspace default technology.</summary>
     public IRelayCommand SetAsWorkspaceDefaultCommand { get; }
 
-    /// <summary>Invalidate the cached Technology for this .ctech node.</summary>
-    public IRelayCommand ReloadTechnologyCommand { get; }
+    /// <summary>Invalidate the cached Technology for this .ctech node (prompts first if a live,
+    /// unsaved editor override exists for it).</summary>
+    public IAsyncRelayCommand ReloadTechnologyCommand { get; }
 
     // ── Primary-view availability (computed once at construction for cell nodes) ──
 
@@ -387,8 +388,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             () => _actions?.SetAsWorkspaceDefault(this),
             () => _actions is not null && IsTechFile);
 
-        ReloadTechnologyCommand = new RelayCommand(
-            () => _actions?.ReloadTechnology(this),
+        ReloadTechnologyCommand = new AsyncRelayCommand(
+            () => _actions?.ReloadTechnologyAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsTechFile);
     }
 

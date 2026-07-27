@@ -126,9 +126,100 @@ public static class LayoutArc
     }
 }
 
-/// <summary>Bounding boxes only in L0a — the flattener and ToClipperPaths belong to L1.</summary>
+/// <summary>Bounding boxes (L0a) plus whole-shape translation (L1c — <see cref="TranslateBy"/>).
+/// The flattener and ToClipperPaths belong to L1e.</summary>
 public static class LayoutGeometry
 {
+    /// <summary>
+    /// Translates every coordinate of <paramref name="shape"/> by <c>(dx, dy)</c> in place — used
+    /// by <c>MoveShapesCommand</c> (docs/design/layout-view.md L1c). <b>R-L1c-3: callers must snap
+    /// the DELTA before calling this, never the resulting vertices</b> — this method adds the same
+    /// (already-snapped) integer delta to every vertex, which is what keeps off-grid geometry
+    /// (imported GDSII, 45° diagonals, flattened arcs) exactly self-consistent after a move. Cubic
+    /// control points (absolute DBU coordinates, not relative) translate along with their edge list.
+    /// </summary>
+    public static void TranslateBy(LayoutShape shape, long dx, long dy)
+    {
+        switch (shape)
+        {
+            case RectShape r:
+                r.X1 += dx; r.Y1 += dy; r.X2 += dx; r.Y2 += dy;
+                break;
+
+            case PolygonShape p:
+                TranslatePoints(p.Xy, dx, dy);
+                break;
+
+            case RoundedRectShape rr:
+                rr.X1 += dx; rr.Y1 += dy; rr.X2 += dx; rr.Y2 += dy;
+                break;
+
+            case CircleShape c:
+                c.Cx += dx; c.Cy += dy;
+                break;
+
+            case CurveShape curve:
+                TranslatePoints(curve.Xy, dx, dy);
+                TranslateEdges(curve.Edges, dx, dy);
+                break;
+
+            case PathShape path:
+                TranslatePoints(path.Xy, dx, dy);
+                TranslateEdges(path.Edges, dx, dy);
+                break;
+
+            case ViaShape via:
+                via.X += dx; via.Y += dy;
+                break;
+
+            case LabelShape label:
+                label.X += dx; label.Y += dy;
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(shape), shape, null);
+        }
+    }
+
+    private static void TranslatePoints(long[] xy, long dx, long dy)
+    {
+        for (int i = 0; i < xy.Length; i += 2)
+        {
+            xy[i]     += dx;
+            xy[i + 1] += dy;
+        }
+    }
+
+    private static void TranslateEdges(List<LayoutEdge>? edges, long dx, long dy)
+    {
+        if (edges is null) return;
+        foreach (var e in edges)
+        {
+            if (e.Kind != EdgeKind.Cubic) continue;
+            e.C1X += dx; e.C1Y += dy;
+            e.C2X += dx; e.C2Y += dy;
+        }
+    }
+
+    /// <summary>Deep-clones a shape (including its edge list, where present) — used for a live
+    /// move-drag preview (<c>LayoutOverlay.DragOverrides</c>), which must never mutate the model's
+    /// own shape instance mid-drag.</summary>
+    public static LayoutShape Clone(LayoutShape shape) => shape switch
+    {
+        RectShape r        => new RectShape { Layer = r.Layer, Net = r.Net, X1 = r.X1, Y1 = r.Y1, X2 = r.X2, Y2 = r.Y2 },
+        PolygonShape p     => new PolygonShape { Layer = p.Layer, Net = p.Net, Xy = (long[])p.Xy.Clone() },
+        RoundedRectShape rr => new RoundedRectShape { Layer = rr.Layer, Net = rr.Net, X1 = rr.X1, Y1 = rr.Y1, X2 = rr.X2, Y2 = rr.Y2, CornerRadius = rr.CornerRadius },
+        CircleShape c      => new CircleShape { Layer = c.Layer, Net = c.Net, Cx = c.Cx, Cy = c.Cy, R = c.R },
+        CurveShape curve   => new CurveShape { Layer = curve.Layer, Net = curve.Net, Xy = (long[])curve.Xy.Clone(), Edges = CloneEdges(curve.Edges), FlattenTolDbu = curve.FlattenTolDbu },
+        PathShape path     => new PathShape { Layer = path.Layer, Net = path.Net, Xy = (long[])path.Xy.Clone(), Edges = CloneEdges(path.Edges), Width = path.Width, End = path.End, FlattenTolDbu = path.FlattenTolDbu },
+        ViaShape via       => new ViaShape { Layer = via.Layer, Net = via.Net, X = via.X, Y = via.Y, PadSize = via.PadSize, DrillSize = via.DrillSize, LandingLayer = via.LandingLayer },
+        LabelShape label   => new LabelShape { Layer = label.Layer, Net = label.Net, X = label.X, Y = label.Y, Text = label.Text, Height = label.Height, Rotation = label.Rotation, IsPort = label.IsPort },
+        _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, null),
+    };
+
+    private static List<LayoutEdge>? CloneEdges(List<LayoutEdge>? edges) =>
+        edges?.Select(e => new LayoutEdge { Kind = e.Kind, Bulge = e.Bulge, C1X = e.C1X, C1Y = e.C1Y, C2X = e.C2X, C2Y = e.C2Y }).ToList();
+
     public static Bbox BboxOf(LayoutShape shape) => shape switch
     {
         RectShape r        => new Bbox(Math.Min(r.X1, r.X2), Math.Min(r.Y1, r.Y2), Math.Max(r.X1, r.X2), Math.Max(r.Y1, r.Y2)),

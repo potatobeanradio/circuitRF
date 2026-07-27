@@ -9,6 +9,27 @@ layer, snap and angle mode).
 bulge and control-point handles are **L1d**; Clipper2 booleans, Flatten-to-Polygon and the clipboard are
 **L1e**.
 
+---
+
+## Read first: two lessons from the L1 fix round
+
+The L1b bugs (`brief-L1-fix-clear-and-default-zoom.md`) were both invisible to a full, passing test suite.
+L1c is the phase most likely to repeat the same mistake, so apply these deliberately:
+
+**1. World-coordinate tests structurally cannot catch screen-to-world bugs.** Every L1b test drove
+`OnPointerPressed(wx, wy, ...)` with world coordinates, which is exactly why nobody noticed that the default
+viewport made the PCB snap grid larger than the entire canvas. **Hit-testing is a screen-to-world feature** —
+its tolerance is *"about 4 pixels"* converted to DBU through the current zoom. `LayoutHitTest` itself takes
+DBU and stays headless-testable, but **at least one test per interactive behaviour must start from screen
+pixels**, go through the canvas's conversion at a realistic default viewport, and run on **both** starter
+technologies. A tolerance that is right in DBU and wrong in pixels is exactly this class of bug.
+
+**2. A pixel tolerance is not a fixed DBU number.** `tolDbu = pixels / zoom`, computed per query from the
+live viewport — never cached, never stored on the view model, never derived from `SnapDbu`. Across a 1000x
+zoom range the same 4 px spans three orders of magnitude of DBU.
+
+---
+
 ## Goal
 
 Click a shape and it selects — clicking again cycles through whatever is stacked under the pointer. Drag it
@@ -181,6 +202,13 @@ Mirror the existing Properties view (`src/Ui/Views/Properties/`) rather than inv
     reverts cleanly on garbage.
 12. **Selection survives undo/redo sensibly** — it never references a stale index after an undo (assert no
     out-of-range access after undoing a delete).
+13. **Screen-to-world coverage** (see "Read first") — on **both** starter technologies, at the default
+    viewport for a realistic canvas size: click a shape by **screen pixel** coordinates through the canvas's
+    conversion and assert it selects; click ~4 px outside it and assert it still selects; click well outside
+    and assert it does not. World-coordinate tests alone do not satisfy this item.
+14. **Tolerance scales with zoom** — the same shape is hittable from ~4 screen pixels away at both a very
+    low and a very high zoom, and the DBU tolerance used differs by orders of magnitude between the two.
+    This fails immediately if the tolerance is cached or derived from `SnapDbu`.
 
 ## On completion
 

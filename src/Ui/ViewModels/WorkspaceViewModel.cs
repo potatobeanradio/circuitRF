@@ -280,6 +280,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         _techCache = new TechnologyCache();
         _techCache.TechnologyChanged += OnTechnologyChanged;
+
+        // Drop any not-yet-flushed live-tech update targeting the OLD cache — every workspace-reset
+        // path closes open documents first, but this guards the (rare) case of a reset landing in
+        // the same dispatcher tick as a pending flush, which would otherwise install a stale edit
+        // into the brand-new cache under a coincidentally-matching absolute path.
+        _pendingTechLive.Clear();
+        _techLiveFlushScheduled = false;
     }
 
     /// <summary>
@@ -1810,6 +1817,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var vm   = new TechEditorViewModel(absolutePath, tech);
             vm.TechSaved += OnTechSaved;
             vm.SaveError += OnTechSaveError;
+            vm.TechLiveChanged += OnTechLiveChanged;
             var doc = new TechDocument(Path.GetFileName(absolutePath), vm, absolutePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
@@ -1835,7 +1843,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     // The single call that fires L0c's live-refresh seam: every open layout resolved against
-    // this path re-resolves via TechnologyCache.TechnologyChanged → OnTechnologyChanged.
+    // this path re-resolves via TechnologyCache.TechnologyChanged → OnTechnologyChanged. This also
+    // clears any live override for the path (Invalidate now drops both — see TechnologyCache) so
+    // disk and the cache agree once saved; no separate ClearLive call is needed here.
     private void OnTechSaved(string path)
     {
         _techCache.Invalidate(path);
@@ -1844,6 +1854,32 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // A technology save failed (e.g. read-only / unwritable location) — surface it instead of crashing.
     private void OnTechSaveError(string message) => Messages.Error(message);
+
+    // ---- Live technology edits (brief-L1-fix-path-seams-and-live-tech.md §2) -----------------
+
+    // Coalesce, don't throttle: a multi-selection apply in the .ctech editor can fire several
+    // TechLiveChanged events in one user gesture (each commits on its own focus-loss/Enter). Only
+    // the LATEST clone per path survives in this dictionary; one dispatcher post per burst applies
+    // them all, so the canvas repaints once per burst rather than once per commit.
+    private readonly Dictionary<string, Technology> _pendingTechLive = new(StringComparer.OrdinalIgnoreCase);
+    private bool _techLiveFlushScheduled;
+
+    private void OnTechLiveChanged(string path, Technology clone)
+    {
+        _pendingTechLive[path] = clone;
+        if (_techLiveFlushScheduled) return;
+        _techLiveFlushScheduled = true;
+        Avalonia.Threading.Dispatcher.UIThread.Post(FlushPendingTechLive, Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    private void FlushPendingTechLive()
+    {
+        _techLiveFlushScheduled = false;
+        var snapshot = _pendingTechLive.ToList();
+        _pendingTechLive.Clear();
+        foreach (var (path, tech) in snapshot)
+            _techCache.SetLive(path, tech);
+    }
 
     // ---- Data Display commands ----------------------------------------------
 
@@ -3159,8 +3195,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <inheritdoc/>
-    public void ReloadTechnology(ProjectTreeNodeViewModel node)
+    public async Task ReloadTechnologyAsync(ProjectTreeNodeViewModel node)
     {
+        if (_techCache.HasLiveOverride(node.AbsolutePath))
+        {
+            var window = ResolveOwner(null);
+            if (window is null) return;
+
+            var dlg = new Views.Dialogs.SaveChangesDialog(
+                $"Discard unsaved changes to '{node.Name}'?",
+                saveLabel: "Discard", dontSaveLabel: null, cancelLabel: "Cancel",
+                title: "Discard Changes");
+            await dlg.ShowDialog(window);
+            if (dlg.Result != SaveChangesResult.Save) return; // Cancel — leave the override intact
+        }
+
         _techCache.Invalidate(node.AbsolutePath);
         Messages.Info("Technology reloaded", node.AbsolutePath);
     }
@@ -3898,6 +3947,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             RouteDataDisplayProperties(null);
             _factory.PropertiesTool?.SetActiveCell(cpd.ViewModel);
         }
+        else if (activeDockable is LayoutDocument layDocForProps)
+        {
+            RouteDataDisplayProperties(null);
+            _factory.PropertiesTool?.SetActiveLayout(layDocForProps.ViewModel);
+        }
         else
         {
             RouteDataDisplayProperties(null);
@@ -4111,11 +4165,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             switch (dlg.Result)
             {
                 case SaveChangesResult.Cancel:
-                    return false;
+                    return false; // override stays in force — nothing changes
                 case SaveChangesResult.DontSave:
+                    _techCache.ClearLive(techDoc.FilePath); // open layouts revert to the on-disk technology
                     return true;
                 case SaveChangesResult.Save:
-                    techDoc.ViewModel.SaveCommand.Execute(null);
+                    techDoc.ViewModel.SaveCommand.Execute(null); // clears the override itself, via OnTechSaved -> Invalidate
                     return !techDoc.IsDirty;
                 default:
                     return false;
@@ -4154,6 +4209,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchDataDisplays.Remove(scratchDisplay);
         if (dockable is LayoutDocument scratchLayout)
             _scratchLayouts.Remove(scratchLayout);
+
+        // A .ctech editor being disposed for ANY reason (not just the confirmed-dirty-close path
+        // above — e.g. a force-close, or a bug in some other path that skips the confirm hook) must
+        // never leave a live override dangling in the cache. No-op when nothing was installed (a
+        // clean or already-saved document has none), so this is safe to call unconditionally.
+        if (dockable is TechDocument closedTechDoc)
+            _techCache.ClearLive(closedTechDoc.FilePath);
 
         // Unsubscribe from cell edit model events to prevent memory leaks.
         if (dockable is CellParameterEditorDocument cellDoc)
@@ -4512,7 +4574,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return false;
 
             case SaveChangesResult.DontSave:
-                return true; // discard everything — caller proceeds
+                // Discarding a dirty .ctech must revert open layouts to the on-disk technology —
+                // clear its live override rather than leaving unsaved edits visible after "discard".
+                foreach (var techDoc in dirtyTechDocs)
+                    _techCache.ClearLive(techDoc.FilePath);
+                return true; // discard everything else — caller proceeds
 
             case SaveChangesResult.Save:
                 // Scratch schematics → plan dialog.

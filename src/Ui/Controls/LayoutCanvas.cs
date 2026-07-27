@@ -77,6 +77,15 @@ public sealed class LayoutCanvas : Control
     private const double MinZoom    = 1e-9;
     private const double MaxZoom    = 1e5;
 
+    /// <summary>Screen-pixel hit/cycling tolerance for the Select tool (§6.2/§6.3) — converted to
+    /// DBU HERE, from the CURRENT zoom, on every call. Never cached and never derived from
+    /// <c>SnapDbu</c>: across a 1000x zoom range the same 4 px spans three orders of magnitude of
+    /// DBU, and a tolerance that is right in DBU and wrong in pixels is exactly the class of bug
+    /// the L1b/L1-fix round already made once (see the brief's "Read first" section).</summary>
+    private const double SelectHitTolerancePixels = 4.0;
+
+    private long HitTolDbu() => _zoom > 0 ? (long)Math.Round(SelectHitTolerancePixels / _zoom) : 0;
+
     public double CurrentZoom => _zoom;
     public double CurrentPanX => _panX;
     public double CurrentPanY => _panY;
@@ -252,7 +261,7 @@ public sealed class LayoutCanvas : Control
         if (props.IsLeftButtonPressed && _viewModel is not null)
         {
             var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
-            _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount);
+            _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu());
             InvalidateVisual();
         }
     }
@@ -276,7 +285,7 @@ public sealed class LayoutCanvas : Control
         CursorWorldChanged?.Invoke(this, (wx, wy));
 
         bool leftDown = e.GetCurrentPoint(this).Properties.IsLeftButtonPressed;
-        _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers);
+        _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu());
         InvalidateVisual();
     }
 
