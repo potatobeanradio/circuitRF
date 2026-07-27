@@ -59,6 +59,17 @@ public static class LayoutShapeEditing
 
     public static bool IsVertexListShape(LayoutShape shape) => shape is PolygonShape or CurveShape or PathShape;
 
+    /// <summary>Inner rings, when the shape kind carries them (Polygon/Curve only — a Path is open and
+    /// has no holes). Each is always a plain flat vertex list, never its own edge list (§3.1a — a hole
+    /// is Clipper2 output, polygonal by construction), which is why the L1j vertex list's Edge column
+    /// always reads "Line" for a hole vertex regardless of the outer ring's edge kinds.</summary>
+    internal static List<long[]>? HolesOf(LayoutShape shape) => shape switch
+    {
+        PolygonShape p => p.Holes,
+        CurveShape c   => c.Holes,
+        _ => null,
+    };
+
     /// <summary>True when edge <paramref name="edgeIndex"/> is Line-kind (or the shape has no edge
     /// list at all, e.g. <see cref="PolygonShape"/>, where every edge is implicitly Line).</summary>
     public static bool IsStraightEdge(LayoutShape shape, int edgeIndex)
@@ -76,6 +87,19 @@ public static class LayoutShapeEditing
         var xy = XyOf(clone);
         xy[2 * vertexIndex] = x;
         xy[2 * vertexIndex + 1] = y;
+        return clone;
+    }
+
+    /// <summary>Same contract as <see cref="SetVertex"/>, for a vertex in inner ring
+    /// <paramref name="holeIndex"/> instead of the outer ring — used by the L1j properties-panel
+    /// vertex list (docs/sonnet-briefs/brief-L1j-properties-inspector.md §3.1a). The outer ring is
+    /// never touched.</summary>
+    public static LayoutShape SetHoleVertex(LayoutShape shape, int holeIndex, int vertexIndex, long x, long y)
+    {
+        var clone = LayoutGeometry.Clone(shape);
+        var hole = HolesOf(clone)![holeIndex];
+        hole[2 * vertexIndex] = x;
+        hole[2 * vertexIndex + 1] = y;
         return clone;
     }
 

@@ -29,6 +29,11 @@ public sealed record class LayoutOverlay
     /// layer. Empty when nothing is selected.</summary>
     public IReadOnlyList<int> SelectedIndices { get; init; } = [];
 
+    /// <summary>L1h (R-L1h-5): true when the selection's bbox scale handles should render INSTEAD of
+    /// L1d's single-shape vertex/edge/bulge handles — always true for a 2+ selection, or for a single
+    /// selection with Scale mode toggled on.</summary>
+    public bool ShowScaleHandles { get; init; }
+
     /// <summary>The live marquee rectangle while dragging on empty canvas with the Select tool, or
     /// null when no marquee is in progress.</summary>
     public LayoutMarquee? Marquee { get; init; }

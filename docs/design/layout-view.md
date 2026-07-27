@@ -19,6 +19,8 @@
 10. **DRC is in scope**, starting with a minimal width/spacing check that establishes the framework (§9A).
 11. **Polygons and curves carry explicit holes** (§3.1a). GDSII keyholes them at export; the database keeps
     them.
+12. **Bitmaps are a primitive** (§3.1b) — reference images to trace over, stored by path, always painted
+    behind the geometry, and never exported to a fabrication format.
 
 The layout view holds a cell's **physical geometry**: the 2D shapes that get manufactured. Two consumers
 justify it, and they pull in slightly different directions:
@@ -303,6 +305,7 @@ is not "is it useful to draw?" but "what exactly ships when this is exported?"
 | `Path` | layer, centerline **edge list**, width, end style (flush / round / square / extended) | Keeps a trace *parametric*: change the width of a 40-segment route in one edit. The centerline uses the same edge vocabulary as `Curve`, so a **curved trace** — a swept bend, a radiused corner — is a `Path`, not a hand-built polygon. Maps to GDSII PATH and to Gerber D01 stroking. |
 | `Via` | layer(s), position, pad size, drill size | PCB needs a drill file, and a drill is not a polygon. Carrying it explicitly is what makes Excellon export possible without heuristics. |
 | `Label` | layer, position, text, size, rotation, `IsPort` | Two roles: annotation, and the port/pin marker that §9 and §10.6 key on. |
+| `Bitmap` | layer, placement rect, image **path reference**, opacity, locked | A reference image — a scanned drawing, a die photo, a datasheet figure — to trace over. See §3.1b; it is the one primitive that is not geometry at all. |
 | `Instance` | cell ref, transform (translate + R0/R90/R180/R270 + mirror-X + magnification), optional array (rows, cols, pitch) | §7. Arrays matter enormously for MMIC. |
 
 One thing is deliberately **not** a primitive: **text as geometry.** A `Label` is metadata. If a fab
@@ -340,6 +343,33 @@ self-touching contour, which is what every GDSII writer does. DXF and Gerber bot
 need no such treatment. Re-importing keyholed GDSII yields a keyholed polygon rather than the original; that
 is inherent to the format and belongs in the export dialog's fidelity note next to curve flattening.
 
+### 3.1b Bitmaps
+
+Every other primitive in §3.1 is manufacturable geometry that some target format can express, however
+lossily. A `Bitmap` is neither: it exists so the user can place a reference image — a scanned board, a die
+photo, a mechanical drawing — and draw real geometry over it. The symbol editor already has this primitive;
+layout reuses its model, its decode cache and its broken-path handling rather than growing a second one.
+
+**R10c. A bitmap is stored as a path reference, never as embedded bytes.** `.clay` stays a readable JSON
+text file, and a 4 MB die photo does not become part of the design database. The cost is that a moved or
+renamed image breaks the reference, so a missing file renders a visible placeholder box — never an invisible
+gap — and a **Resolve Path…** command repairs it.
+
+**R10d. Bitmaps always paint behind all layers, whatever their layer's `ZOrder`.** A bitmap's layer governs
+its **visibility and selectability only**, never paint order. The use case is tracing, and §2.3's
+semi-transparent fills reading on top of a photograph is exactly the intent. This is a deliberate exception
+to the layer ordering rule and is stated here so it does not read as a bug.
+
+**R10e. A bitmap is not geometry, and every geometric consumer skips it — with a note, never silently.**
+It is **never** exported to GDSII, DXF or Gerber (§8); DRC (§9A) ignores it; the mesher (§10.5) ignores it;
+and the boolean, offset and flatten commands are disabled against it with a reason, per R13a. It **is**
+rendered in the clipboard's PDF/SVG/EMF graphic export, because that is a picture rather than a fabrication
+artifact. Selection, move, scale, clipboard and undo all treat it as an ordinary shape.
+
+Because a bitmap has no vertices, a single selected bitmap shows §6.1's bounding-box scale handles rather
+than vertex handles, and non-uniform scaling is legitimate stretching — there is no arc-to-cubic promotion
+to worry about.
+
 ### 3.2 Curved primitives and flattening
 
 **Decided:** `Curve`, `Circle` and `RoundedRect` are stored as themselves, not silently converted at
@@ -365,13 +395,19 @@ ships is slightly coarser than what is drawn. Two things resolve that honestly:
   shipped geometry is inspectable without committing to it;
 - **"Flatten to Polygon"** below, which makes it literal and permanent.
 
-**R9d. "Flatten to Polygon" is a context-menu command on any curved primitive.** Right-click a selected
-`Curve`, `Circle`, `RoundedRect`, or arc-bearing `Path` → **Flatten to Polygon**. It replaces the shape
-in place with the polygon that export would have produced, as **one undoable action**. Variants:
-- **Flatten to Polygon…** (with the ellipsis) opens a small tolerance prompt showing the resulting
-  vertex count live, for the cases where the default is wrong.
-- The command applies to a multi-selection, skipping shapes that have nothing to flatten.
-- **Flatten All Curves** on a layer or on the whole layout, for pre-export cleanup.
+**R9d. "Flatten to Polygon…" is a context-menu command on any curved primitive, and it always prompts.**
+Right-click a selected `Curve`, `Circle`, `RoundedRect`, or arc-bearing `Path` → **Flatten to Polygon…**.
+It replaces the shape in place with the polygon that export would have produced, as **one undoable action**.
+- **There is exactly one entry and it carries the ellipsis.** Flattening is irreversible except by undo and
+  its resolution is the point of the operation, so the tolerance is shown and confirmed rather than
+  inferred. The dialog pre-fills from the shape's own `FlattenTolDbu` if set, otherwise the technology
+  default — labelled so the user can see which — and shows the resulting vertex count live as it is typed.
+- The dialog does **not** write its value back: every shape it touches stops being curved, so there is
+  nothing left for a tolerance to govern. The persistent per-shape value lives in the properties panel
+  (available on all four curved primitives, per R9b) and is what **GDSII export** reads for shapes the user
+  never flattens manually. Both surfaces agree by reading the same source.
+- The command applies to a multi-selection, naming how many shapes will be skipped for having no curvature.
+- **Flatten All Curves** on a layer or on the whole layout uses the same dialog, prompting once.
 - After flattening, the primitive is an ordinary `Polygon` — there is no un-flatten beyond undo.
 
 **R9e. Two operations flatten implicitly, and both must say so.**
@@ -571,11 +607,23 @@ document's own `UndoRedoStack`; every mutation an `IUiCommand`; toolbar buttons 
 **Drawing:** Select · Rect · RoundedRect · Circle · Polygon · Curve · Path · Label · Port ·
 Instance-place · Array · Ruler/measure.
 
-**Edit operations:** Boolean (AND / OR / NOT / XOR) · Size (grow/shrink by a signed offset) · Merge ·
-Slice · Align/distribute · Move-to-layer · Set net · **Flatten to Polygon** (§3.2, curve → polygon) ·
+**Edit operations:** Boolean — **Union grouped per layer** (one result per distinct layer among the
+operands; this is what the deleted `Merge` command used to do); Intersect/Difference/XOR require a
+same-layer pair to enable but still combine across the whole selection, unchanged from L1e · Size
+(grow/shrink by a signed offset) · **Scale** (numeric factor or target size, plus bbox handles:
+corner = uniform, side = one axis) · Slice · Align/distribute · Move-to-layer · Set net ·
+**Flatten to Polygon…** (§3.2, curve → polygon; always prompts for the tolerance) ·
 **Flatten Hierarchy** (§7, instance → geometry) · Group-into-cell. The two flattens are different
 operations on different things; label them distinctly in the UI, because "Flatten" alone will be
 misread.
+
+**R13a. Every command is either disabled with a stated reason, or it does something — never a silent
+no-op.** Context-menu items are disabled rather than hidden, so positions stay stable, and each disabled
+item's tooltip names the condition (*"Select 2 or more shapes on the same layer"*). A command that is
+legitimately enabled but changes nothing in a particular case — a union of shapes that do not touch —
+reports through Messages instead of appearing to fail. There is no separate `Merge`: it was indistinguishable
+from a per-layer `Union` for any single-layer selection, and two commands differing by a subtlety nobody
+reads a tooltip for are worse than one that does the obvious thing.
 
 **Clipper2 is approved** for boolean ops and offsetting: `Clipper2Lib`, fully managed C#, Boost
 Software License (permissive, MIT-compatible, not GPL), integer-coordinate native which matches §1.1
@@ -683,10 +731,12 @@ Format-specific code touches only bytes and records, never editor state.
 
 **Curve and hole fidelity across the three.** DXF is the only format that carries every curve type; Gerber
 carries arcs and circles but not Béziers; GDSII carries none. DXF and Gerber both express holes; GDSII
-keyholes them. That ordering is worth surfacing in the export dialog as a one-line note per format, so a user
-exporting a spiral inductor or a via-pierced pour to GDSII learns *before* the fact what will change, and by
-how much. Nothing here is a defect — it is what the formats are — but silently different output from the same
-design is how trust is lost.
+keyholes them. **No format carries bitmaps** — reference images are skipped by all three (§3.1b R10e) with a
+count reported, since they are aids to drawing rather than things to manufacture. That ordering is worth
+surfacing in the export dialog as a one-line note per format, so a user exporting a spiral inductor or a
+via-pierced pour to GDSII learns *before* the fact what will change, and by how much. Nothing here is a
+defect — it is what the formats are — but silently different output from the same design is how trust is
+lost.
 
 Cross-cutting import rules:
 - Source units map into DBU; if the source resolution is **finer** than the target DBU, warn and name

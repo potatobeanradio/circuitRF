@@ -178,6 +178,10 @@ public static class LayoutGeometry
                 label.X += dx; label.Y += dy;
                 break;
 
+            case BitmapShape bmp:
+                bmp.X += dx; bmp.Y += dy;
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(shape), shape, null);
         }
@@ -219,12 +223,13 @@ public static class LayoutGeometry
     {
         RectShape r        => new RectShape { Layer = r.Layer, Net = r.Net, X1 = r.X1, Y1 = r.Y1, X2 = r.X2, Y2 = r.Y2 },
         PolygonShape p     => new PolygonShape { Layer = p.Layer, Net = p.Net, Xy = (long[])p.Xy.Clone(), Holes = CloneHoles(p.Holes) },
-        RoundedRectShape rr => new RoundedRectShape { Layer = rr.Layer, Net = rr.Net, X1 = rr.X1, Y1 = rr.Y1, X2 = rr.X2, Y2 = rr.Y2, CornerRadius = rr.CornerRadius },
-        CircleShape c      => new CircleShape { Layer = c.Layer, Net = c.Net, Cx = c.Cx, Cy = c.Cy, R = c.R },
+        RoundedRectShape rr => new RoundedRectShape { Layer = rr.Layer, Net = rr.Net, X1 = rr.X1, Y1 = rr.Y1, X2 = rr.X2, Y2 = rr.Y2, CornerRadius = rr.CornerRadius, FlattenTolDbu = rr.FlattenTolDbu },
+        CircleShape c      => new CircleShape { Layer = c.Layer, Net = c.Net, Cx = c.Cx, Cy = c.Cy, R = c.R, FlattenTolDbu = c.FlattenTolDbu },
         CurveShape curve   => new CurveShape { Layer = curve.Layer, Net = curve.Net, Xy = (long[])curve.Xy.Clone(), Edges = CloneEdges(curve.Edges), FlattenTolDbu = curve.FlattenTolDbu, Holes = CloneHoles(curve.Holes) },
         PathShape path     => new PathShape { Layer = path.Layer, Net = path.Net, Xy = (long[])path.Xy.Clone(), Edges = CloneEdges(path.Edges), Width = path.Width, End = path.End, FlattenTolDbu = path.FlattenTolDbu },
         ViaShape via       => new ViaShape { Layer = via.Layer, Net = via.Net, X = via.X, Y = via.Y, PadSize = via.PadSize, DrillSize = via.DrillSize, LandingLayer = via.LandingLayer },
-        LabelShape label   => new LabelShape { Layer = label.Layer, Net = label.Net, X = label.X, Y = label.Y, Text = label.Text, Height = label.Height, Rotation = label.Rotation, IsPort = label.IsPort },
+        LabelShape label   => new LabelShape { Layer = label.Layer, Net = label.Net, X = label.X, Y = label.Y, Text = label.Text, Height = label.Height, Rotation = label.Rotation, IsPort = label.IsPort, Style = label.Style },
+        BitmapShape bmp    => new BitmapShape { Layer = bmp.Layer, Net = bmp.Net, ImagePathRef = bmp.ImagePathRef, X = bmp.X, Y = bmp.Y, W = bmp.W, H = bmp.H, Opacity = bmp.Opacity, Locked = bmp.Locked },
         _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, null),
     };
 
@@ -264,6 +269,7 @@ public static class LayoutGeometry
         PathShape path      => BboxOfPath(path),
         ViaShape via        => new Bbox(via.X - via.PadSize / 2, via.Y - via.PadSize / 2, via.X + via.PadSize / 2, via.Y + via.PadSize / 2),
         LabelShape label    => new Bbox(label.X, label.Y, label.X, label.Y),
+        BitmapShape bmp     => new Bbox(bmp.X, bmp.Y, bmp.X + bmp.W, bmp.Y + bmp.H),
         _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, null),
     };
 

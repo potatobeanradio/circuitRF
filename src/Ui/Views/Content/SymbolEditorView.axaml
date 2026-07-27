@@ -370,6 +370,15 @@
                         <mi:MaterialIcon Kind="MapMarker" Width="16" Height="16"/>
                     </Button>
 
+                    <!-- ── Insert Bitmap (R-bmp-5, brief-layout-bitmaps-and-insert-button.md) ── -->
+
+                    <Button Click="OnInsertBitmap"
+                            IsEnabled="{Binding ViewModel.IsEditable}"
+                            ToolTip.Tip="Insert Bitmap…"
+                            Padding="6,3">
+                        <mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/>
+                    </Button>
+
                     <!-- Separator -->
                     <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                             Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>

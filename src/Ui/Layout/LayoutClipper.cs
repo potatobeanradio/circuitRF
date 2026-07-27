@@ -39,6 +39,18 @@ public static class LayoutClipper
         return paths;
     }
 
+    /// <summary>Wraps rings a caller already flattened itself (e.g. <c>LayoutTextFlatten</c>'s glyph
+    /// contours, each flattened individually via <see cref="LayoutFlattener.Flatten"/> since they are
+    /// not one shape's own rings) into Clipper2 <see cref="Paths64"/> — for callers that need the
+    /// DBU-to-Clipper2 conversion without also re-flattening through <see cref="ToClipperPaths"/>'s
+    /// single-shape path.</summary>
+    public static Paths64 RingsToClipperPaths(IEnumerable<long[]> rings)
+    {
+        var paths = new Paths64();
+        foreach (var ring in rings) paths.Add(RingToPath64(ring));
+        return paths;
+    }
+
     /// <summary>Rebuilds shapes from a Clipper2 boolean/offset result, preserving the hole structure
     /// (§3.1a) the tree already encodes: every non-hole node becomes one <see cref="PolygonShape"/>
     /// whose immediate hole children become its <c>Holes</c>; islands nested inside a hole recurse as

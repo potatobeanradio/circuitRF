@@ -1642,6 +1642,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.ApplyTechResolution(resolution);
         vm.SaveError += OnLayoutSaveError;
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
+        WireRetargetSeam(vm);
         var doc = new LayoutDocument(title, vm);  // filePath = null → scratch
         _scratchLayouts.Add(doc);
         _factory.OpenDocument(doc);
@@ -1705,6 +1706,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             vm.ApplyTechResolution(ResolveTechFor(model.TechRef, absolutePath));
             vm.SaveError += OnLayoutSaveError;
             vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
+            WireRetargetSeam(vm);
             var doc = new LayoutDocument(Path.GetFileName(absolutePath), vm, absolutePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
@@ -1723,6 +1725,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // L1f — a paste's "Add to the technology" choice installs a live (unsaved) technology override,
     // exactly mirroring OnTechLiveChanged's SetLive call for the .ctech editor itself.
     private void OnLayoutRequestAddLayerToTechnology(string path, Technology tech) => _techCache.SetLive(path, tech);
+
+    // L1g — Change Technology needs to enumerate the workspace's tech/ folder and resolve
+    // "(Workspace default)" without LayoutEditorViewModel depending on WorkspaceViewModel directly.
+    // Wired once per document at every `new LayoutEditorViewModel(...)` call site, alongside the
+    // RequestAddLayerToTechnology seam above.
+    private void WireRetargetSeam(LayoutEditorViewModel vm)
+    {
+        vm.WorkspaceTechDir = CurrentWorkspacePath is null
+            ? null : Path.Combine(Path.GetDirectoryName(CurrentWorkspacePath)!, "tech");
+        vm.ResolveWorkspaceDefaultTech = () => ResolveTechFor(techRef: null, clayPath: null);
+    }
 
     // ---- Technology (.ctech) editor (L0d) --------------------------------------
 
@@ -3627,6 +3640,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             vm.ApplyTechResolution(resolution);
             vm.SaveError += OnLayoutSaveError;
             vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
+            WireRetargetSeam(vm);
             var doc = new LayoutDocument(name + ext, vm, filePath);
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;

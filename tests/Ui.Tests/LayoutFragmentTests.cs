@@ -217,42 +217,9 @@ public class LayoutFragmentTests
     }
 
     // ── Gate 5: layer reconciliation — three branches ────────────────────────────
-
-    [Fact]
-    public void GetMissingLayers_LayerAlreadyInDestTech_NotReportedAsMissing()
-    {
-        var shapes = new List<LayoutShape> { new RectShape { Layer = Layer1, X1 = 0, Y1 = 0, X2 = 100, Y2 = 100 } };
-        var destTech = TechWithLayers();
-
-        var missing = LayoutFragment.GetMissingLayers(shapes, destTech);
-
-        Assert.Empty(missing);
-    }
-
-    [Fact]
-    public void GetMissingLayers_NoTechnologyAtAll_NothingIsMissing()
-    {
-        var shapes = new List<LayoutShape> { new RectShape { Layer = UnknownLayer, X1 = 0, Y1 = 0, X2 = 100, Y2 = 100 } };
-
-        var missing = LayoutFragment.GetMissingLayers(shapes, null);
-
-        Assert.Empty(missing);
-    }
-
-    [Fact]
-    public void GetMissingLayers_AbsentLayer_ReportedOncePerDistinctKey_NotOncePerShape()
-    {
-        var shapes = new List<LayoutShape>
-        {
-            new RectShape { Layer = UnknownLayer, X1 = 0, Y1 = 0, X2 = 100, Y2 = 100 },
-            new RectShape { Layer = UnknownLayer, X1 = 200, Y1 = 0, X2 = 300, Y2 = 100 },
-            new RectShape { Layer = Layer1, X1 = 0, Y1 = 200, X2 = 100, Y2 = 300 },
-        };
-
-        var missing = LayoutFragment.GetMissingLayers(shapes, TechWithLayers());
-
-        Assert.Equal([UnknownLayer], missing);
-    }
+    // The trigger question ("which layers need confirmation?") moved to LayoutLayerMapping.Propose
+    // (docs/sonnet-briefs/brief-L1g-technology-retarget.md §1 — see LayoutLayerMappingTests.cs for its
+    // match-kind coverage); ApplyReconciliation itself (below) is unchanged by L1g.
 
     [Fact]
     public void ApplyReconciliation_KeepUnknown_ShapeKeepsItsOriginalLayerKey()

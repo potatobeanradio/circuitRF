@@ -252,6 +252,13 @@ public sealed class SymbolEditorCanvas : Control
     private double ScreenToWorldX(double sx) => sx / _zoom + _panX;
     private double ScreenToWorldY(double sy) => sy / _zoom + _panY;
 
+    /// <summary>R-bmp-5's Insert Bitmap toolbar button — routes through the EXISTING
+    /// <see cref="SymbolEditorViewModel.DropBitmap"/> with no new placement logic, exactly the way
+    /// dragging a file onto the canvas already does; the only difference is the placement point is
+    /// the current viewport centre instead of a drop position.</summary>
+    public void InsertBitmapAtViewportCenter(string path)
+        => _viewModel?.DropBitmap(path, ScreenToWorldX(Bounds.Width / 2.0), ScreenToWorldY(Bounds.Height / 2.0));
+
     // ── Pointer ───────────────────────────────────────────────────────────────
 
     private void OnPointerPressed(object? _, PointerPressedEventArgs e)

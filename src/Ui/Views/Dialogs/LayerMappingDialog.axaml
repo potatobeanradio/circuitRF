@@ -1,0 +1,108 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="using:CircuitRF.Ui.Views.Dialogs"
+        xmlns:lay="using:CircuitRF.Ui.Layout"
+        x:Class="CircuitRF.Ui.Views.Dialogs.LayerMappingDialog"
+        Title="Layer Mapping"
+        Width="620"
+        Height="480"
+        MinWidth="480"
+        MinHeight="320"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock x:Name="TitleText" Grid.Row="0" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <TextBlock x:Name="HeaderText" Grid.Row="1" FontSize="12" Opacity="0.75" TextWrapping="Wrap" Margin="0,0,0,10"/>
+
+        <Border Grid.Row="2"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="1" CornerRadius="4" Padding="0">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+
+                <!-- Header and rows declare IDENTICAL ColumnDefinitions (SharedSizeGroup) so columns
+                     never drift — mirrors TechEditorView.axaml's layer-table pattern. -->
+                <Grid RowDefinitions="Auto,*" Grid.IsSharedSizeScope="True">
+
+                    <Grid Grid.Row="0" Margin="8,6" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"    SharedSizeGroup="MLayer"  MinWidth="140"/>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="MCount"  MinWidth="50"/>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="MMatch"  MinWidth="140"/>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="MAction" MinWidth="120"/>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="MTarget" MinWidth="120"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Source layer" FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="1" Text="Shapes"      FontSize="11" FontWeight="SemiBold" Opacity="0.7" HorizontalAlignment="Right"/>
+                        <TextBlock Grid.Column="2" Text="Match"       FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="3" Text="Action"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                        <TextBlock Grid.Column="4" Text="Map to"      FontSize="11" FontWeight="SemiBold" Opacity="0.7"/>
+                    </Grid>
+
+                    <ItemsControl x:Name="RowsControl" Grid.Row="1" Margin="8,0,8,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="d:LayerMappingRowViewModel">
+                                <Grid ColumnSpacing="8" Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"    SharedSizeGroup="MLayer"  MinWidth="140"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MCount"  MinWidth="50"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MMatch"  MinWidth="140"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MAction" MinWidth="120"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="MTarget" MinWidth="120"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <TextBlock Grid.Column="0" Text="{Binding SourceLabel}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding ShapeCountText}" FontSize="12" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding MatchLabel}" FontSize="11" Opacity="0.65" VerticalAlignment="Center" TextWrapping="Wrap"/>
+
+                                    <ComboBox Grid.Column="3" ItemsSource="{Binding Actions}"
+                                              SelectedItem="{Binding SelectedAction, Mode=TwoWay}"
+                                              FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"/>
+
+                                    <ComboBox Grid.Column="4" ItemsSource="{Binding MapTargets}"
+                                              SelectedItem="{Binding SelectedMapTarget, Mode=TwoWay}"
+                                              IsVisible="{Binding ShowMapTargetCombo}"
+                                              FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="lay:LayerPickerItem">
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <Border Width="10" Height="10" CornerRadius="2"
+                                                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+                                                        <Border.Background>
+                                                            <SolidColorBrush Color="{Binding SwatchColor}"/>
+                                                        </Border.Background>
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </ScrollViewer>
+        </Border>
+
+        <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*" Margin="0,10,0,0">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="Map all unmatched to:" FontSize="11" VerticalAlignment="Center"/>
+                <ComboBox x:Name="MapAllUnmatchedCombo" FontSize="11" Padding="6,2" MinHeight="0"
+                          VerticalContentAlignment="Center" MinWidth="120"/>
+                <Button Content="Apply" FontSize="11" Padding="8,2" Click="OnMapAllUnmatchedClick"/>
+            </StackPanel>
+            <Button Grid.Column="1" Content="Keep All Unknown" FontSize="11" Padding="8,2" Margin="10,0,0,0"
+                    Click="OnKeepAllUnknownClick"/>
+            <TextBlock Grid.Column="2" x:Name="SummaryText" FontSize="11" Opacity="0.7"
+                       HorizontalAlignment="Right" VerticalAlignment="Center"/>
+        </Grid>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,14,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="Continue" Width="80" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center" Click="OnOkClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

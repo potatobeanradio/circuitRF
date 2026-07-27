@@ -67,6 +67,62 @@ public class LayoutBooleanOperationsViewModelTests
         Assert.Equal(jsonBefore, LayoutPersistence.Serialize(model));
     }
 
+    // ── L1h gate 2 (brief-L1h-scale-and-context-menu.md R-L1h-1): Union groups by layer — this is
+    // what "Merge" used to do; Merge is deleted, and this is now what Union itself does. ───────────
+
+    [Fact]
+    public void ApplyUnion_CrossLayerSelection_UnionsWithinEachLayer_OneShapePerLayer_OneUndoEntry()
+    {
+        var model = FreshModel();
+        var layer2 = new LayerKey(2, 0);
+        var a1 = new RectShape { Layer = Layer1, X1 = 0, Y1 = 0, X2 = 10_000, Y2 = 10_000 };
+        var a2 = new RectShape { Layer = Layer1, X1 = 5_000, Y1 = 5_000, X2 = 15_000, Y2 = 15_000 };
+        var b1 = new RectShape { Layer = layer2, X1 = 100_000, Y1 = 0, X2 = 110_000, Y2 = 10_000 };
+        var b2 = new RectShape { Layer = layer2, X1 = 105_000, Y1 = 5_000, X2 = 115_000, Y2 = 15_000 };
+        model.Shapes.Add(a1); model.Shapes.Add(a2); model.Shapes.Add(b1); model.Shapes.Add(b2);
+
+        var vm = new LayoutEditorViewModel(model) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        vm.SelectAllCommand.Execute(null);
+
+        vm.ApplyUnion();
+
+        Assert.Equal(2, model.Shapes.Count); // one union'd shape per layer, both still on their own layer
+        Assert.Contains(model.Shapes, s => s.Layer == Layer1);
+        Assert.Contains(model.Shapes, s => s.Layer == layer2);
+        Assert.True(vm.UndoRedo.CanUndo);
+
+        vm.UndoRedo.Undo();
+        Assert.Equal(4, model.Shapes.Count);
+        Assert.Same(a1, model.Shapes[0]);
+        Assert.Same(a2, model.Shapes[1]);
+        Assert.Same(b1, model.Shapes[2]);
+        Assert.Same(b2, model.Shapes[3]);
+    }
+
+    // ── L1h gate 5: an enabled Union that combines nothing (disjoint same-layer shapes) reports
+    // through Messages rather than silently no-op'ing (R-L1h-3). ─────────────────────────────────
+
+    [Fact]
+    public void ApplyUnion_DisjointSameLayerShapes_PostsMessagesNote_NothingCombined()
+    {
+        var model = FreshModel();
+        var a = new RectShape { Layer = Layer1, X1 = 0, Y1 = 0, X2 = 1_000, Y2 = 1_000 };
+        var b = new RectShape { Layer = Layer1, X1 = 100_000, Y1 = 0, X2 = 101_000, Y2 = 1_000 }; // far away, no overlap
+        model.Shapes.Add(a); model.Shapes.Add(b);
+
+        var sink = new FakeMessageSink();
+        var vm = new LayoutEditorViewModel(model, messageSink: sink) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        Click(vm, 500, 500);
+        Click(vm, 100_500, 500, KeyModifiers.Shift);
+
+        Assert.True(vm.BooleanOpAvailability.CanExecute); // legitimately enabled — 2 shapes share a layer
+
+        vm.ApplyUnion();
+
+        Assert.Equal(2, model.Shapes.Count); // both shapes survive, untouched, just not combined
+        Assert.Contains(sink.Posted, m => m.Level == MessageLevel.Info && m.Text.Contains("did not overlap"));
+    }
+
     // ── Gate 6: multiple disjoint results, undo restores the single original at its original index ──
 
     [Fact]
@@ -321,9 +377,76 @@ public class LayoutBooleanOperationsViewModelTests
         model.Shapes.Add(circleOnLayer2);
 
         var vm = new LayoutEditorViewModel(model) { ActiveTool = LayoutEditorViewModel.Tool.Select };
-        vm.FlattenAllCurves(Layer1);
+        vm.FlattenAllCurves(Layer1, null);
 
         Assert.IsType<PolygonShape>(model.Shapes[0]);
         Assert.Same(circleOnLayer2, model.Shapes[1]);
+    }
+
+    // ── L1h gate 6: "Flatten to Polygon" collapsed to ONE always-prompting entry (R-L1h-2) ────────
+
+    [Fact]
+    public void FlattenSelectionToPolygon_Null_IsANoOp_TheNoDialogVariantIsGone()
+    {
+        var model = FreshModel();
+        var circle = new CircleShape { Layer = Layer1, Cx = 0, Cy = 0, R = 10_000 };
+        model.Shapes.Add(circle);
+        var vm = new LayoutEditorViewModel(model) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        Click(vm, 0, 0);
+
+        vm.FlattenSelectionToPolygon(null); // the removed no-dialog call shape — must do nothing
+
+        Assert.Same(circle, model.Shapes[0]); // still a Circle, untouched
+        Assert.False(vm.UndoRedo.CanUndo);
+    }
+
+    // ── L1h gate 6b: pre-fill chain (own value vs. technology default) ────────────────────────────
+
+    [Fact]
+    public void OwnTolDbu_ReturnsShapesOwnValue_WhenSet_NullWhenInherited()
+    {
+        var withOwn = new CircleShape { Layer = Layer1, Cx = 0, Cy = 0, R = 5000, FlattenTolDbu = 250 };
+        var inherited = new CircleShape { Layer = Layer1, Cx = 0, Cy = 0, R = 5000 };
+
+        Assert.Equal(250, LayoutFlattener.OwnTolDbu(withOwn));
+        Assert.Null(LayoutFlattener.OwnTolDbu(inherited));
+    }
+
+    [Fact]
+    public void PreviewFlattenVertexCounts_SkipsNonCurvedShapes_TotalsMatchIndividualPreviews()
+    {
+        var model = FreshModel();
+        var circle = new CircleShape { Layer = Layer1, Cx = 0, Cy = 0, R = 10_000 };
+        var rect = new RectShape { Layer = Layer1, X1 = 100_000, Y1 = 0, X2 = 110_000, Y2 = 10_000 }; // no curvature
+        model.Shapes.Add(circle);
+        model.Shapes.Add(rect);
+        var vm = new LayoutEditorViewModel(model) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        vm.SelectAllCommand.Execute(null);
+
+        var counts = vm.PreviewFlattenVertexCounts(vm.SelectedIndices, 1000);
+
+        var only = Assert.Single(counts); // the Rect is skipped — nothing to flatten
+        Assert.Equal(0, only.Index);
+        Assert.Equal(vm.PreviewFlattenVertexCount(0, 1000), only.VertexCount);
+    }
+
+    [Fact]
+    public void FlattenSelectionToPolygon_WithExplicitTolerance_NeverWritesTheToleranceBackOntoAnyShape()
+    {
+        // R-L1h-2a: the dialog's chosen value is applied via FlattenSelectionToPolygon directly — it
+        // must never appear written onto any surviving/replaced shape's own FlattenTolDbu field,
+        // because every shape it touches stops being curved (there's nothing left for it to govern).
+        var model = FreshModel();
+        var circle = new CircleShape { Layer = Layer1, Cx = 0, Cy = 0, R = 10_000 };
+        model.Shapes.Add(circle);
+        var vm = new LayoutEditorViewModel(model) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        Click(vm, 0, 0);
+
+        vm.FlattenSelectionToPolygon(1234);
+
+        var flattened = Assert.IsType<PolygonShape>(model.Shapes[0]);
+        Assert.NotSame(circle, flattened); // the Circle is gone
+        // PolygonShape has no FlattenTolDbu field at all — there is structurally nowhere for the
+        // dialog's value to have been "written back" to.
     }
 }

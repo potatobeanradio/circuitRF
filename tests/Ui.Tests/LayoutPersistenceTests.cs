@@ -192,4 +192,62 @@ public class LayoutPersistenceTests
         Assert.Equal(EdgeKind.Line, curve.Edges[1].Kind);
         Assert.Equal(EdgeKind.Line, curve.Edges[2].Kind);
     }
+
+    // ── L1h gate 6a: CircleShape/RoundedRectShape.FlattenTolDbu round-trips with NO FormatVersion
+    // change, and a file written before those fields existed still loads. ───────────────────────
+
+    [Fact]
+    public void CircleAndRoundedRect_FlattenTolDbu_RoundTrips_NoFormatVersionChange()
+    {
+        var view = new LayoutView();
+        view.Shapes.Add(new CircleShape { Layer = new LayerKey(1, 0), Cx = 0, Cy = 0, R = 5000, FlattenTolDbu = 750 });
+        view.Shapes.Add(new RoundedRectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10_000, Y2 = 10_000, CornerRadius = 1000, FlattenTolDbu = 1250 });
+
+        var json = LayoutPersistence.Serialize(view);
+        Assert.Contains("\"FormatVersion\": 1", json);
+
+        var restored = LayoutPersistence.Deserialize(json);
+        var circle = Assert.IsType<CircleShape>(restored.Shapes[0]);
+        var roundedRect = Assert.IsType<RoundedRectShape>(restored.Shapes[1]);
+        Assert.Equal(750, circle.FlattenTolDbu);
+        Assert.Equal(1250, roundedRect.FlattenTolDbu);
+    }
+
+    [Fact]
+    public void CircleAndRoundedRect_WithoutFlattenTolDbu_SerializesWithoutTheField_AndLoadsAsNull()
+    {
+        var view = new LayoutView();
+        view.Shapes.Add(new CircleShape { Layer = new LayerKey(1, 0), Cx = 0, Cy = 0, R = 5000 });
+        var json = LayoutPersistence.Serialize(view);
+
+        Assert.DoesNotContain("FlattenTolDbu", json);
+
+        var restored = LayoutPersistence.Deserialize(json);
+        Assert.Null(((CircleShape)restored.Shapes[0]).FlattenTolDbu);
+    }
+
+    [Fact]
+    public void PreExistingClayFile_WithoutTheNewFields_StillLoads()
+    {
+        // Simulates a file written before L1h added FlattenTolDbu to Circle/RoundedRect — the exact
+        // same FormatVersion, simply missing the new (additive, nullable) property.
+        const string legacyJson = """
+        {
+          "FormatVersion": 1,
+          "DbuPerMicron": 1000,
+          "DisplayUnit": "Um",
+          "SnapDbu": 1000,
+          "AngleMode": "AnyAngle",
+          "Shapes": [
+            { "$type": "Circle", "Layer": { "Layer": 1, "Datatype": 0 }, "Cx": 0, "Cy": 0, "R": 5000 }
+          ],
+          "Instances": []
+        }
+        """;
+
+        var restored = LayoutPersistence.Deserialize(legacyJson);
+        var circle = Assert.IsType<CircleShape>(Assert.Single(restored.Shapes));
+        Assert.Equal(5000, circle.R);
+        Assert.Null(circle.FlattenTolDbu);
+    }
 }

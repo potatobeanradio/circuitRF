@@ -74,18 +74,18 @@ public sealed partial class LayoutEditorViewModel
         return result;
     }
 
-    /// <summary>Layer keys in <paramref name="shapes"/> the current <see cref="Technology"/> does
-    /// not define (R-L1f-3) — the caller (the view) prompts once per key, offering Keep-as-unknown /
-    /// Map to existing / Add to the technology, before calling
-    /// <see cref="ApplyFragmentReconciliation"/>.</summary>
-    public IReadOnlyList<LayerKey> GetMissingFragmentLayers(IReadOnlyList<LayoutShape> shapes) =>
-        LayoutFragment.GetMissingLayers(shapes, Technology);
-
-    /// <summary>Display name for a fragment layer key, preferring the fragment's own captured
-    /// <see cref="LayerDef"/> (the layer's name AS the source technology called it) over the raw
-    /// numeric key — used by the reconciliation prompt.</summary>
-    public static string FragmentLayerDisplayName(LayerKey key, IReadOnlyList<LayerDef> fragmentLayers) =>
-        fragmentLayers.FirstOrDefault(l => l.Key == key)?.Name ?? $"{key.Layer}/{key.Datatype}";
+    /// <summary>
+    /// Proposes a layer mapping for a fragment landing in this document's current <see cref="Technology"/>
+    /// (docs/sonnet-briefs/brief-L1g-technology-retarget.md §1) — the caller (the view) shows the
+    /// shared mapping dialog whenever <see cref="LayoutLayerMapping.RequiresConfirmation"/> says so
+    /// (R-L1g-2), then calls <see cref="ApplyFragmentReconciliation"/> with the settled choices. This
+    /// replaces L1f's <c>GetMissingLayers</c> trigger, which only asked "which keys are absent" —
+    /// wrong when both technologies happen to use the same key range with different meanings (the
+    /// Drill→Substrate trap).
+    /// </summary>
+    public IReadOnlyList<LayerMappingRow> ProposeFragmentLayerMapping(
+        IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayerDef> fragmentLayers) =>
+        LayoutLayerMapping.Propose(shapes, fragmentLayers, Technology);
 
     /// <summary>Applies the caller-collected reconciliation choices (R-L1f-3) and, for any
     /// Add-to-technology choice, installs the fragment's <see cref="LayerDef"/>s into a live

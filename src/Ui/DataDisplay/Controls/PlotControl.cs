@@ -148,6 +148,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private bool        _rightButtonDown;
         private bool        _rightDragOccurred;
         private ContextMenu _contextMenu = null!;
+        // brief-datadisplay-fix-context-menu-stacking.md: one reused instance per DYNAMIC-content
+        // menu (Pattern B — populate-then-open, never `new ContextMenu()` per click). _contextMenu
+        // above is the existing correct Pattern A (static content, cached once).
+        private ContextMenu? _markerContextMenu;
+        private ContextMenu? _traceHeaderContextMenu;
+        private ContextMenu? _tableContextMenu;
         private MaterialIcon _iconAxesLocked = new MaterialIcon();
 
         // Marker symbol drag state
@@ -1067,8 +1073,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     ShowTraceHeaderContextMenu(_rightClickedTrace);
                 else
                 {
-                    var tableMenu = BuildTableContextMenu();
-                    tableMenu.Open(this);
+                    _tableContextMenu ??= new ContextMenu();
+                    PopulateTableContextMenu(_tableContextMenu);
+                    _tableContextMenu.Close(); // a second right-click while up replaces, not re-opens
+                    _tableContextMenu.Open(this);
                 }
                 _rightButtonDown    = false;
                 _rightDragOccurred  = false;
@@ -1687,7 +1695,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
                 (_library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
-            var menu = new ContextMenu();
+            _markerContextMenu ??= new ContextMenu();
+            var menu = _markerContextMenu;
             MarkerInfoBoxView.PopulateMarkerMenu(
                 menu, marker, trace, _plot.Traces, _plot,
                 openEditor,
@@ -1737,6 +1746,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     InvalidateVisual();
                     PlotChanged?.Invoke(this, EventArgs.Empty);
                 });
+            menu.Close(); // a second right-click while the menu is still up replaces, not re-opens
             menu.Open(this);
         }
 
@@ -1749,6 +1759,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 InvalidateVisual();
                 PlotChanged?.Invoke(this, EventArgs.Empty);
             }
+
+            _traceHeaderContextMenu ??= new ContextMenu();
+            var menu = _traceHeaderContextMenu;
+            menu.Items.Clear();
 
             var matrixTypeMenu = new MenuItem { Header = "Matrix Type" };
             foreach (MatrixType mt in Enum.GetValues<MatrixType>())
@@ -1783,19 +1797,25 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 matrixFmtMenu.Items.Add(item);
             }
 
-            var menu = new ContextMenu();
             // Matrix Type (S/Z/Y conversion) is only meaningful for network/Touchstone traces — NOT for
             // DataCube slices from a simulation (mirrors TraceRowViewModel.ShowMatrixTypeCombo). "Y Axis" is
             // gone entirely: the dependent variable is now chosen via the trace-card expression.
             if (!trace.IsCubeBound && trace.Data is { } d && !d.IsEmpty)
                 menu.Items.Add(matrixTypeMenu);
             menu.Items.Add(matrixFmtMenu);
+            menu.Close(); // a second right-click while the menu is still up replaces, not re-opens
             menu.Open(this);
         }
 
-        private ContextMenu BuildTableContextMenu()
+        /// <summary>Populates (never constructs) the shared table-menu instance — its content
+        /// (whether "Add Marker" is enabled, and which cell it targets) depends on
+        /// <see cref="_rightClickedDataTrace"/>/<see cref="_rightClickedDataFreq"/>, which change per
+        /// click, so this must be a Pattern-B populate step, not a Pattern-A build-once cache
+        /// (brief-datadisplay-fix-context-menu-stacking.md §3.1 — despite taking no parameters, its
+        /// content is NOT click-independent; it reads that ambient per-click state via fields).</summary>
+        private void PopulateTableContextMenu(ContextMenu menu)
         {
-            var menu = new ContextMenu();
+            menu.Items.Clear();
 
             bool canAddMarker = _rightClickedDataTrace is not null && !double.IsNaN(_rightClickedDataFreq);
             var icon = new MaterialIcon { Kind = MaterialIconKind.TriangleDown };
@@ -1852,8 +1872,6 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             menu.Items.Add(itemExport);
             menu.Items.Add(new Separator());
             menu.Items.Add(itemDelete);
-
-            return menu;
         }
 
         private void AddMarkerAtTableCell(Trace trace, double freq)

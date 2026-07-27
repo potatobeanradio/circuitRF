@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Layout;
@@ -128,6 +130,41 @@ public partial class LayoutEditorView : UserControl
     private void OnZoomOut(object? sender, RoutedEventArgs e)   => LayoutCanvasCtrl.ZoomOut();
     private void OnZoom1To1(object? sender, RoutedEventArgs e)  => LayoutCanvasCtrl.Zoom1To1();
 
+    // ── Insert Bitmap (R-bmp-5, docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md) ──────
+    // UI firewall: the StorageProvider file picker lives here in code-behind; the VM only ever sees
+    // the resulting path. Placement (viewport-centred sizing) is LayoutCanvas.InsertBitmapAtViewportCenter.
+
+    private async void OnInsertBitmap(object? sender, RoutedEventArgs e)
+    {
+        var picker = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (picker is null) return;
+
+        var files = await picker.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Insert Bitmap",
+            AllowMultiple = false,
+            FileTypeFilter = new List<FilePickerFileType>
+            {
+                new("Image Files") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.tiff", "*.tif", "*.webp" } }
+            }
+        });
+        if (files.Count > 0)
+            LayoutCanvasCtrl.InsertBitmapAtViewportCenter(files[0].Path.LocalPath);
+    }
+
+    // ── Shape context menu (L1-fix, brief-L1-fix-context-menu-stacking.md) ─────────────────────────
+    // The ONE ContextMenu instance is declared in this view's XAML on LayoutCanvasCtrl; this handler
+    // rebuilds its ItemsSource fresh from LayoutCanvasCtrl's recorded click, and cancels when nothing
+    // should show (mirrors SymbolEditorView.axaml.cs's OnBitmapContextMenuOpening exactly).
+    private void OnLayoutContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        var target = LayoutCanvasCtrl.ConsumeContextMenuTarget();
+        if (target is not { } t) { e.Cancel = true; return; }
+
+        var items = LayoutCanvasCtrl.BuildContextMenuItems(t.Wx, t.Wy);
+        if (sender is ContextMenu menu) menu.ItemsSource = items;
+    }
+
     // ── Toolbar field commit (§1 R6 typed entry — LostFocus commits; Enter commits + refocuses canvas) ──
 
     private LayoutEditorViewModel? Vm => (DataContext as LayoutDocument)?.ViewModel;
@@ -221,15 +258,22 @@ public partial class LayoutEditorView : UserControl
         if (payload is null) return;   // no marker, or nothing on the clipboard — a clean no-op
 
         var rescale = vm.RescaleFragment(payload);
-        var missing = vm.GetMissingFragmentLayers(rescale.Shapes);
+        var mapping = vm.ProposeFragmentLayerMapping(rescale.Shapes, payload.Layers);
 
-        Dictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>? choices = null;
-        if (missing.Count > 0)
+        // R-L1g-2: confirmation is required whenever any row is a low-confidence proposal
+        // (same key, different name — the Drill->Substrate trap) or has no proposal at all. Every
+        // row being a confident match (same-tech paste, or a confidently-renamed layer) stays
+        // silent — this is what keeps ordinary same-technology paste frictionless.
+        if (LayoutLayerMapping.RequiresConfirmation(mapping))
         {
-            choices = await ResolveLayerReconciliationAsync(vm, missing, payload.Layers);
-            if (choices is null) return;   // user cancelled a reconciliation prompt — paste nothing
+            // Propose() only returns rows when a technology resolved (§1's null-destTech short
+            // circuit) — RequiresConfirmation can only be true here when vm.Technology is non-null.
+            var resolved = await ResolveLayerMappingAsync("Paste", payload.TechName, vm.Technology!, mapping);
+            if (resolved is null) return;   // user cancelled — abandon the whole paste
+            mapping = resolved;
         }
 
+        var choices = LayoutLayerMapping.BuildChoices(mapping);
         var reconciled = vm.ApplyFragmentReconciliation(rescale.Shapes, payload.Layers, choices);
 
         if (inPlace)
@@ -237,40 +281,101 @@ public partial class LayoutEditorView : UserControl
         else
             vm.BeginPastePlacement(reconciled, rescale.AnchorX, rescale.AnchorY);
 
+        ReportLayerMappingSummary("Pasted", vm.Technology?.Name, reconciled.Count, mapping);
+
         LayoutCanvasCtrl.InvalidateVisual();
         LayoutCanvasCtrl.Focus();
     }
 
-    /// <summary>Prompts once per distinct missing layer key (R-L1f-3), honouring "Apply to all
-    /// remaining" once the user checks it. Returns null if the user cancels any prompt — the caller
-    /// treats that as "abandon the whole paste."</summary>
-    private async Task<Dictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?> ResolveLayerReconciliationAsync(
-        LayoutEditorViewModel vm, IReadOnlyList<LayerKey> missing, IReadOnlyList<LayerDef> fragmentLayers)
+    /// <summary>Shows the shared layer-mapping dialog (docs/sonnet-briefs/brief-L1g-technology-retarget.md
+    /// §2) framed for <paramref name="verb"/> ("Paste" / "Change technology"). Returns the user's
+    /// settled rows, or null on cancel — the caller treats that as "abandon the whole operation,"
+    /// since partially reconciling a fragment (or a whole layout) is more confusing than not
+    /// proceeding at all. <paramref name="destTech"/> is passed explicitly rather than read off
+    /// <c>vm.Technology</c> — for a retarget it is the TARGET technology, not the document's current
+    /// one.</summary>
+    private async Task<IReadOnlyList<LayerMappingRow>?> ResolveLayerMappingAsync(
+        string verb, string? sourceTechName, Technology destTech, IReadOnlyList<LayerMappingRow> mapping)
     {
-        var choices = new Dictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>();
-        LayoutFragment.LayerReconciliationChoice? applyToAll = null;
-
         var owner = TopLevel.GetTopLevel(this) as Window;
         if (owner is null) return null;
 
-        foreach (var key in missing)
+        var title = $"{verb} into '{destTech.Name}'";
+        var dialog = new LayerMappingDialog(title, sourceTechName, destTech, mapping);
+        var result = await dialog.ShowDialog<LayerMappingDialogResult?>(owner);
+        return result?.Rows;
+    }
+
+    /// <summary>Posts a Messages summary after a bulk layer-mapping operation (gate 13) — a record of
+    /// a bulk change to the user's geometry that they can read after the dialog is gone.</summary>
+    private void ReportLayerMappingSummary(string verb, string? techName, int shapeCount, IReadOnlyList<LayerMappingRow> mapping)
+    {
+        if (Vm is not { } vm) return;
+        if (mapping.Count == 0) return; // same-tech (or no-tech) paste — nothing to report
+
+        string techPart = techName is { Length: > 0 } ? $" into {techName}" : "";
+        string layerSummary = LayoutLayerMapping.SummarizeMapping(mapping, vm.Technology);
+        vm.ReportMessage($"{verb}{techPart} · {shapeCount} shape(s) · {layerSummary}");
+    }
+
+    // ── Change Technology (L1g Gap 1) — metadata-bar affordance ─────────────────────────────────
+
+    private async void OnChangeTechnologyClick(object? sender, RoutedEventArgs e) => await OnChangeTechnologyAsync();
+
+    private async Task OnChangeTechnologyAsync()
+    {
+        if (Vm is not { } vm) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        var dialog = new ChangeTechnologyDialog(vm);
+        var choice = await dialog.ShowDialog<ChangeTechnologyResult?>(owner);
+        if (choice is null) return;
+
+        TechResolution target;
+        string? newTechRef;
+        if (choice.AbsoluteTechPath is null)
         {
-            LayoutFragment.LayerReconciliationChoice choice;
-            if (applyToAll is { } all)
-            {
-                choice = all;
-            }
-            else
-            {
-                var dialog = new LayerReconciliationDialog(vm, key, fragmentLayers);
-                var result = await dialog.ShowDialog<LayerReconciliationDialogResult?>(owner);
-                if (result is not { } r) return null;
-                choice = r.Choice;
-                if (r.ApplyToAllRemaining) applyToAll = choice;
-            }
-            choices[key] = choice;
+            target = vm.ResolveWorkspaceDefaultTech?.Invoke() ?? new TechResolution(null, null, TechResolutionSource.None, []);
+            newTechRef = null;
+        }
+        else
+        {
+            Technology tech;
+            try { tech = TechPersistence.LoadFromFile(choice.AbsoluteTechPath); }
+            catch (Exception ex) { vm.ReportError($"Failed to load technology: {ex.Message}"); return; }
+            target = new TechResolution(tech, choice.AbsoluteTechPath, TechResolutionSource.LayoutRef, TechValidation.Validate(tech));
+            newTechRef = ComputeRelativeTechRef(vm, choice.AbsoluteTechPath);
         }
 
-        return choices;
+        var sourceLayers = vm.Technology?.Layers ?? [];
+        var mapping = LayoutLayerMapping.Propose(vm.Model.Shapes, sourceLayers, target.Tech);
+
+        if (LayoutLayerMapping.RequiresConfirmation(mapping))
+        {
+            var resolved = await ResolveLayerMappingAsync("Change technology", vm.Technology?.Name, target.Tech!, mapping);
+            if (resolved is null) return;   // user cancelled — abandon the whole retarget
+            mapping = resolved;
+        }
+
+        var summary = vm.RetargetTo(newTechRef, target, choice.AdoptUnits, mapping);
+        vm.ReportMessage(
+            $"Retargeted to {summary.TechName ?? "(no technology)"} · {summary.ShapeCount} shape(s) · " +
+            LayoutLayerMapping.SummarizeMapping(summary.Rows, target.Tech));
+
+        LayoutCanvasCtrl.InvalidateVisual();
+    }
+
+    /// <summary>A retargeted <c>TechRef</c> always resolves relative to the .clay file's own
+    /// directory (L0c's resolution order) — falls back to the workspace root, then the chosen
+    /// technology's own directory, only for a not-yet-saved scratch layout with no workspace open
+    /// (a rare edge case: per <c>TechnologyResolver</c>, a non-null TechRef cannot resolve at all
+    /// without a clay directory, so the persisted string only matters once this document is saved).</summary>
+    private static string ComputeRelativeTechRef(LayoutEditorViewModel vm, string absoluteTechPath)
+    {
+        string baseDir = vm.CurrentLayoutPath is { } clay ? Path.GetDirectoryName(clay)!
+            : vm.WorkspaceTechDir is { } td ? Path.GetDirectoryName(td)!
+            : Path.GetDirectoryName(absoluteTechPath)!;
+        return Path.GetRelativePath(baseDir, absoluteTechPath);
     }
 }

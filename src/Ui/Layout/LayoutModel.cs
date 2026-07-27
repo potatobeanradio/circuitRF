@@ -58,6 +58,7 @@ public sealed class LayoutEdge
 [JsonDerivedType(typeof(PathShape),        "Path")]
 [JsonDerivedType(typeof(ViaShape),         "Via")]
 [JsonDerivedType(typeof(LabelShape),       "Label")]
+[JsonDerivedType(typeof(BitmapShape),      "Bitmap")]
 public abstract class LayoutShape
 {
     public LayerKey Layer { get; set; }
@@ -97,6 +98,11 @@ public sealed class RoundedRectShape : LayoutShape
     public long X2 { get; set; }
     public long Y2 { get; set; }
     public long CornerRadius { get; set; }
+
+    /// <summary>Null inherits the technology default (docs/design/layout-view.md §3.2 R9b — every
+    /// curved primitive carries a flatten tolerance; L1h added this field to close the gap where only
+    /// Curve/Path had it).</summary>
+    public long? FlattenTolDbu { get; set; }
 }
 
 public sealed class CircleShape : LayoutShape
@@ -104,6 +110,11 @@ public sealed class CircleShape : LayoutShape
     public long Cx { get; set; }
     public long Cy { get; set; }
     public long R  { get; set; }
+
+    /// <summary>Null inherits the technology default (docs/design/layout-view.md §3.2 R9b — every
+    /// curved primitive carries a flatten tolerance; L1h added this field to close the gap where only
+    /// Curve/Path had it).</summary>
+    public long? FlattenTolDbu { get; set; }
 }
 
 /// <summary>Closed edge-list region — a filled boundary whose edges may be lines, arcs, or cubics.</summary>
@@ -147,6 +158,10 @@ public sealed class ViaShape : LayoutShape
     public LayerKey? LandingLayer { get; set; }
 }
 
+/// <summary>Mirrors the symbol editor's <c>SymbolFontStyle</c> PATTERN, deliberately not the type
+/// (this file's header: "Layout borrows patterns from Schematic, not types") — same four options.</summary>
+public enum LabelFontStyle { Regular, Bold, Italic, Condensed }
+
 public sealed class LabelShape : LayoutShape
 {
     public long X { get; set; }
@@ -155,6 +170,50 @@ public sealed class LabelShape : LayoutShape
     public long Height { get; set; }
     public LayoutRotation Rotation { get; set; } = LayoutRotation.R0;
     public bool IsPort { get; set; }
+
+    /// <summary>Additive (no <c>.clay</c> <c>FormatVersion</c> bump) — a newly-placed label always
+    /// defaults to Regular; edited via the Properties Inspector.</summary>
+    public LabelFontStyle Style { get; set; } = LabelFontStyle.Regular;
+}
+
+/// <summary>A reference image (docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md) — a
+/// tracing underlay, ported from the symbol editor's <c>BitmapPrimitive</c>. Stored as a path
+/// reference, never embedded bytes, matching the symbol/schematic convention exactly.
+///
+/// <b>Not geometry (§3):</b> <see cref="LayoutClipper"/>/<see cref="LayoutBooleans"/>/
+/// <see cref="LayoutFlattener"/> never see a <c>BitmapShape</c> — Union/Intersect/Difference/XOR/
+/// Offset/Flatten/Repair all exclude it from their operand set (disabled with a reason when a
+/// selection is bitmap-only; silently skipped, never a crash, in a mixed selection). // L4: never
+/// exported to GDSII/DXF/Gerber — one Messages note per export counting how many were skipped, since
+/// a reference image is not manufacturable geometry. // L5b: skipped by DRC. // L6: skipped by MoM
+/// meshing. It DOES participate in bbox/hit-test/select/move/scale/clipboard/undo, and — because it IS
+/// a visual — is rendered into the clipboard's PDF/SVG/EMF graphic export (L1f).
+///
+/// <b><see cref="LayoutShape.Layer"/> governs visibility/selectability ONLY, never paint order
+/// (R-bmp-2):</b> a bitmap ALWAYS renders behind every layer, regardless of that layer's
+/// <c>ZOrder</c> — the use case is tracing over a reference photo, and a semi-transparent layer fill
+/// reading on top of it is exactly what is wanted. This is a deliberate exception to every other
+/// shape's "Layer determines both" rule; say so here because it is otherwise a surprise.</summary>
+public sealed class BitmapShape : LayoutShape
+{
+    /// <summary>Path to the image file — absolute, or relative to the containing <c>.clay</c>, same
+    /// convention (and same "may not resolve after a cross-workspace paste" limitation, fixed the
+    /// same way — Resolve Path…) as <c>BitmapPrimitive.ImagePathRef</c>.</summary>
+    public string ImagePathRef { get; set; } = "";
+
+    /// <summary>Placement rect: minimum corner + size, in DBU — never doubles (§1.1 R1: every layout
+    /// coordinate is integer DBU; the symbol editor's own <c>BitmapPrimitive</c> uses <c>double</c>
+    /// only because symbol-local units already are one).</summary>
+    public long X { get; set; }
+    public long Y { get; set; }
+    public long W { get; set; }
+    public long H { get; set; }
+
+    public double Opacity { get; set; } = 1.0;
+
+    /// <summary>When locked, accidental click/drag does not move or scale the bitmap — exactly right
+    /// for a tracing underlay the user does not want to disturb while drawing on top of it.</summary>
+    public bool Locked { get; set; }
 }
 
 // ── Instance ────────────────────────────────────────────────────────────────

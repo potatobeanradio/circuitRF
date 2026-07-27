@@ -153,10 +153,14 @@ public static class LayoutRenderer
             // ── Group shapes by layer, resolve each layer once ──────────────────
             // Carries the shape's own index so a live move-drag can substitute a translated clone
             // (opts.Overlay.DragOverrides) without ever mutating view.Shapes mid-drag (L1c).
+            // BitmapShape is excluded here — R-bmp-2: a bitmap's Layer governs visibility/
+            // selectability only, never paint order, so it is never part of the per-layer,
+            // ZOrder-sorted draw below. It is drawn separately, always first (see DrawBitmapShapes).
             var byLayer = new Dictionary<LayerKey, List<(int Index, LayoutShape Shape)>>();
             for (int i = 0; i < view.Shapes.Count; i++)
             {
                 var shape = view.Shapes[i];
+                if (shape is BitmapShape) continue;
                 if (!byLayer.TryGetValue(shape.Layer, out var list))
                     byLayer[shape.Layer] = list = [];
                 list.Add((i, shape));
@@ -199,6 +203,12 @@ public static class LayoutRenderer
             {
                 canvas.Concat(in matrix);
                 var dragOverrides = opts.Overlay?.DragOverrides ?? EmptyDragOverrides;
+
+                // R-bmp-2: bitmaps ALWAYS render first — beneath every layer, regardless of the
+                // layer's own ZOrder. This is the one deliberate exception to "Layer determines both
+                // visibility and paint order" every other shape follows.
+                DrawBitmapShapes(canvas, view, layerMap, unknownLayers, tech, dragOverrides, ps, theme);
+
                 foreach (var (def, shapes) in resolved)
                 {
                     if (!def.Visible) continue;
@@ -206,19 +216,21 @@ public static class LayoutRenderer
                 }
 
                 if (opts.Overlay?.InProgressPrimitive is { } ghost)
-                    DrawGhostShape(canvas, ghost, layerMap, ps);
+                    DrawGhostShape(canvas, ghost, layerMap, ps, scaleUm);
 
                 if (opts.Overlay?.PastePreview is { Count: > 0 } pastePreview)
                     foreach (var previewShape in pastePreview)
-                        DrawGhostShape(canvas, previewShape, layerMap, ps);
+                        DrawGhostShape(canvas, previewShape, layerMap, ps, scaleUm);
 
                 if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
                 {
                     DrawSelectionOutlines(canvas, view, selected, dragOverrides, theme, ps, scaleUm);
 
-                    // L1d §2: handles ONLY for a single-shape selection — a multi-selection is a
-                    // move/delete selection, not a reshape target.
-                    if (selected.Count == 1)
+                    // L1h R-L1h-5: bbox scale handles replace L1d's single-shape handles when showing
+                    // (always for a 2+ selection; for a single shape, only while Scale mode is on).
+                    if (opts.Overlay?.ShowScaleHandles == true)
+                        DrawScaleHandles(canvas, view, selected, dragOverrides, theme, ps, scaleUm);
+                    else if (selected.Count == 1)
                         DrawHandles(canvas, view, selected[0], dragOverrides, theme, ps, scaleUm);
                 }
 
@@ -298,7 +310,77 @@ public static class LayoutRenderer
         if (majorPts.Count > 0) canvas.DrawPoints(SKPointMode.Points, majorPts.ToArray(), majorPaint);
     }
 
+    // ── Bitmaps (docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md, R-bmp-2) ─────────────
+    // Always drawn first — beneath every layer, regardless of the resolved layer's own ZOrder. A
+    // bitmap's Layer governs visibility/selectability only; see the call site in Draw() and
+    // BitmapShape's own doc comment for why.
+
+    private static void DrawBitmapShapes(
+        SKCanvas canvas, LayoutView view, Dictionary<LayerKey, LayerDef>? layerMap,
+        HashSet<LayerKey> unknownLayers, Technology? tech,
+        IReadOnlyDictionary<int, LayoutShape> dragOverrides, PathSpace ps, LayoutRenderTheme theme)
+    {
+        for (int i = 0; i < view.Shapes.Count; i++)
+        {
+            if (view.Shapes[i] is not BitmapShape) continue;
+            if ((dragOverrides.TryGetValue(i, out var ov) ? ov : view.Shapes[i]) is not BitmapShape bmp) continue;
+
+            LayerDef def;
+            if (layerMap is not null && layerMap.TryGetValue(bmp.Layer, out var found))
+                def = found;
+            else
+            {
+                if (tech is not null) unknownLayers.Add(bmp.Layer);
+                def = FallbackPalette.For(bmp.Layer);
+            }
+            if (!def.Visible) continue;
+
+            var rect = BitmapPlacementRect(bmp, ps);
+            if (rect.Width < 0.5f || rect.Height < 0.5f) continue;
+
+            var skBmp = BitmapCache.Load(bmp.ImagePathRef);
+            if (skBmp is null)
+            {
+                BitmapCache.DrawBrokenPlaceholder(canvas, rect.Left, rect.Top, rect.Width, rect.Height, theme.Warning);
+            }
+            else
+            {
+                byte alpha = (byte)System.Math.Clamp(bmp.Opacity * 255, 0, 255);
+                using var paint = new SKPaint { IsAntialias = true, Color = SKColors.White.WithAlpha(alpha) };
+                canvas.DrawBitmap(skBmp, rect, paint);
+            }
+        }
+    }
+
     // ── In-progress draw ghost (L1b) ────────────────────────────────────────────
+
+    /// <summary>Device-pixel floor for a label's on-screen font size — both the in-progress ghost
+    /// (R-lbl-2) AND, since the owner report that a committed label could still "disappear" the
+    /// instant Enter was pressed (a technology-appropriate height, R-lbl-1, can still be well under
+    /// one device pixel at a zoomed-out view), the COMMITTED shape's height at the moment it's placed
+    /// (<c>LayoutEditorViewModel.CommitLabel</c>). Never retroactively applied to an existing label —
+    /// only at the moment of typing/placement, using the zoom captured when typing started.</summary>
+    internal const float MinVisibleLabelDevicePixels = 8f;
+
+    /// <summary>The pure-arithmetic visibility-floor computation — split out from
+    /// <see cref="DrawGhostShape"/>'s Label branch (and reused directly by
+    /// <c>LayoutEditorViewModel.CommitLabel</c>) specifically so it is headlessly testable: drawing the
+    /// actual glyph touches <c>SkiaFonts.PlexRegular</c>, which cannot load without a live Avalonia app
+    /// host (confirmed empirically — <c>Avalonia.Platform.AssetLoader</c> throws
+    /// <c>InvalidOperationException</c> with no app host, exactly as this project's other font-touching
+    /// renderer tests already document), but this arithmetic needs no font at all. <paramref
+    /// name="zoomPxPerDbu"/> is device pixels per DBU (<c>LayoutViewport.Zoom</c>/<c>LayoutCanvas</c>'s
+    /// own <c>_zoom</c> field directly — path-space's <c>dbuToUm</c> cancels out of the on-screen-pixel
+    /// computation entirely, so it is deliberately not a parameter here). Returns
+    /// <paramref name="heightDbu"/> unchanged when it would already render at or above
+    /// <see cref="MinVisibleLabelDevicePixels"/>, or when <paramref name="zoomPxPerDbu"/> is unknown
+    /// (0 or less — never boosts on a "don't know the zoom" caller).</summary>
+    internal static long EffectiveVisibleLabelHeightDbu(long heightDbu, double zoomPxPerDbu)
+    {
+        double pixelHeight = heightDbu * zoomPxPerDbu;
+        if (pixelHeight <= 0 || pixelHeight >= MinVisibleLabelDevicePixels) return heightDbu;
+        return (long)System.Math.Ceiling(MinVisibleLabelDevicePixels / zoomPxPerDbu);
+    }
 
     /// <summary>Draws a not-yet-committed shape above every layer, in its own resolved layer
     /// color, with a faint fill and a dashed outline so it reads as provisional. Reuses
@@ -306,19 +388,29 @@ public static class LayoutRenderer
     /// <c>unknownLayers</c>: an uncommitted shape's layer choice isn't a gap to warn about — if it
     /// is placed, the very next frame's normal per-shape resolution will do that. Shared by the L1b
     /// in-progress draw ghost (one shape) and the L1f paste-ghost preview (a whole fragment).</summary>
-    private static void DrawGhostShape(SKCanvas canvas, LayoutShape ghost, Dictionary<LayerKey, LayerDef>? layerMap, PathSpace ps)
+    private static void DrawGhostShape(SKCanvas canvas, LayoutShape ghost, Dictionary<LayerKey, LayerDef>? layerMap, PathSpace ps, double scaleUm)
     {
         Rgba rgba = layerMap is not null && layerMap.TryGetValue(ghost.Layer, out var found)
             ? found.Color
             : FallbackPalette.For(ghost.Layer).Color;
         var color = new SKColor(rgba.R, rgba.G, rgba.B);
 
-        using var shapePath = ghost is LabelShape ? null : BuildShapePath(ghost, ps);
         if (ghost is LabelShape label)
         {
-            DrawLabelText(canvas, label, ps, color);
+            long effectiveHeight = EffectiveVisibleLabelHeightDbu(label.Height, ps.DbuToUm * scaleUm);
+            LabelShape effective = effectiveHeight == label.Height ? label : new LabelShape
+            {
+                Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
+                Height = effectiveHeight, Rotation = label.Rotation, IsPort = label.IsPort, Style = label.Style,
+            };
+            DrawLabelText(canvas, effective, ps, color);
             return;
         }
+
+        // Bitmaps have no BuildShapePath entry (R-bmp-3: not geometry) — a paste-ghost preview
+        // containing a bitmap still needs to show SOMETHING at its placement rect, even though the
+        // L1b draw-ghost path never reaches this case (there is no Bitmap drawing tool).
+        using var shapePath = ghost is BitmapShape bmp ? BuildBitmapPlacementRectPath(bmp, ps) : BuildShapePath(ghost, ps);
         if (shapePath is null || shapePath.IsEmpty) return;
 
         using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(60) };
@@ -417,29 +509,68 @@ public static class LayoutRenderer
         canvas.DrawPath(batch, paint);
     }
 
+    /// <summary>
+    /// Owner report: the label selection box was not centered on R0/R180 text and rendered in the
+    /// completely wrong spot for R90/R270 — <see cref="LayoutHitTest"/>'s hand-derived approximate
+    /// footprint (duplicated here, since neither layer originally had font metrics) had BOTH a rotation
+    /// sign bug (R90/R270's local "top-right" corner landed on the wrong side of the anchor — see
+    /// <c>LayoutHitTest.LabelHitBbox</c>'s fix for the corrected corner table) and a loose fit (a fixed
+    /// 0.62-of-height-per-character estimate, not the real rendered width). Unlike hit-testing (which
+    /// must stay framework-free), this file already has SkiaSharp — so the selection box now measures
+    /// the REAL font metrics via <see cref="SKFont.MeasureText(string, out SKRect)"/> (cheap: one
+    /// measurement call, not a full glyph-outline extraction like <c>LayoutTextOutline</c> uses for
+    /// flattening) and transforms all four corners through the exact same rotation
+    /// <c>DrawLabelText</c>/<c>LayoutTextOutline</c> use, so it can never drift from what's actually
+    /// rendered and is correct for every rotation by construction, not by a re-derived formula.
+    /// </summary>
+    internal static Bbox? MeasureLabelWorldBbox(LabelShape label)
+    {
+        if (string.IsNullOrEmpty(label.Text) || label.Height <= 0) return null;
+
+        using var font = new SKFont(LayoutTextOutline.ResolveTypeface(label.Style), label.Height);
+        font.MeasureText(label.Text, out SKRect bounds);
+        if (bounds.Width <= 0 && bounds.Height <= 0) return null;
+
+        // Mirrors DrawLabelText's rotation table exactly (see that method's own Y-down-path-space
+        // rotation-sign comment) — all four corners, since a rotated rect's world-space bbox isn't
+        // just its two "opposite" corners once rotation is involved.
+        float rotationDeg = label.Rotation switch
+        {
+            LayoutRotation.R90  => -90f,
+            LayoutRotation.R180 => 180f,
+            LayoutRotation.R270 => 90f,
+            _                   => 0f,
+        };
+        var m = SKMatrix.CreateRotationDegrees(rotationDeg);
+        SKPoint[] corners =
+        [
+            new SKPoint(bounds.Left, bounds.Top), new SKPoint(bounds.Right, bounds.Top),
+            new SKPoint(bounds.Right, bounds.Bottom), new SKPoint(bounds.Left, bounds.Bottom),
+        ];
+
+        Bbox bb = Bbox.Empty;
+        foreach (var c in corners)
+        {
+            var r = m.MapPoint(c);
+            long dbuX = label.X + (long)System.Math.Round(r.X);
+            long dbuY = label.Y - (long)System.Math.Round(r.Y); // the one Y-flip: path space is Y-down, DBU is Y-up
+            bb = bb.Union(new Bbox(dbuX, dbuY, dbuX, dbuY));
+        }
+        return bb;
+    }
+
     /// <summary>Same geometry every other draw call uses, plus the two shapes that have no direct
-    /// <see cref="BuildShapePath"/> entry: <c>Label</c> (an approximate text footprint, mirroring
-    /// <c>LayoutHitTest</c>'s hit-box formula since neither layer has font metrics) and <c>Via</c>
-    /// (a circle at its pad radius).</summary>
+    /// <see cref="BuildShapePath"/> entry: <c>Label</c> (real font metrics — see
+    /// <see cref="MeasureLabelWorldBbox"/>) and <c>Via</c> (a circle at its pad radius).</summary>
     private static SKPath? BuildOutlinePathForSelection(LayoutShape shape, PathSpace ps)
     {
         switch (shape)
         {
             case LabelShape label:
             {
-                if (string.IsNullOrEmpty(label.Text)) return null;
-                long w = System.Math.Max(1, (long)System.Math.Round(label.Text.Length * label.Height * 0.62));
-                long h = System.Math.Max(1, label.Height);
-                (long x1, long y1, long x2, long y2) = label.Rotation switch
-                {
-                    LayoutRotation.R0   => (label.X, label.Y, label.X + w, label.Y + h),
-                    LayoutRotation.R180 => (label.X - w, label.Y - h, label.X, label.Y),
-                    LayoutRotation.R90  => (label.X, label.Y, label.X + h, label.Y + w),
-                    LayoutRotation.R270 => (label.X - h, label.Y - w, label.X, label.Y),
-                    _                   => (label.X, label.Y, label.X + w, label.Y + h),
-                };
+                if (MeasureLabelWorldBbox(label) is not { IsEmpty: false } bb) return null;
                 var path = new SKPath();
-                path.AddRect(NormalizedRect(ps.X(x1), ps.Y(y1), ps.X(x2), ps.Y(y2)));
+                path.AddRect(NormalizedRect(ps.X(bb.MinX), ps.Y(bb.MinY), ps.X(bb.MaxX), ps.Y(bb.MaxY)));
                 return path;
             }
 
@@ -450,17 +581,31 @@ public static class LayoutRenderer
                 return path;
             }
 
+            // Bitmaps have no BuildShapePath entry (they are not geometry — R-bmp-3) but must still
+            // show a selection outline (§3: full participation in select/move/scale).
+            case BitmapShape bmp:
+                return BuildBitmapPlacementRectPath(bmp, ps);
+
             default:
                 return BuildShapePath(shape, ps);
         }
     }
 
+    /// <summary>L1i R-L1i-4: solid = enclose (left-to-right), dashed = crossing (right-to-left) — the
+    /// standard CAD affordance. Now that the highlight updates live (<c>Overlay.SelectedIndices</c> is
+    /// the marquee preview while a drag is active — see <c>LayoutEditorViewModel.RebuildOverlay</c>),
+    /// dragging back across the press point flips mode AND highlight mid-gesture; the rectangle style
+    /// is the visible cue that makes that flip legible instead of mysterious.</summary>
     private static void DrawMarquee(SKCanvas canvas, LayoutMarquee m, LayoutRenderTheme theme, PathSpace ps)
     {
         var rect = NormalizedRect(ps.X(m.X1), ps.Y(m.Y1), ps.X(m.X2), ps.Y(m.Y2));
 
         using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Selection.WithAlpha(50) };
-        using var strokePaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 0, Color = theme.Selection.WithAlpha(255) };
+        using var strokePaint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 0, Color = theme.Selection.WithAlpha(255),
+            PathEffect = m.IsLeftToRight ? null : SKPathEffect.CreateDash([6f, 4f], 0),
+        };
 
         canvas.DrawRect(rect, fillPaint);
         canvas.DrawRect(rect, strokePaint);
@@ -530,6 +675,31 @@ public static class LayoutRenderer
         }
     }
 
+    /// <summary>L1h (R-L1h-4/5) — 8 square handles (4 corners + 4 side midpoints) at the selection's
+    /// combined bbox, drawn instead of L1d's per-shape handles whenever they're showing.</summary>
+    private static void DrawScaleHandles(SKCanvas canvas, LayoutView view, IReadOnlyList<int> selected,
+        IReadOnlyDictionary<int, LayoutShape> dragOverrides, LayoutRenderTheme theme, PathSpace ps, double scaleUm)
+    {
+        var bb = Bbox.Empty;
+        foreach (var idx in selected)
+        {
+            if (idx < 0 || idx >= view.Shapes.Count) continue;
+            var shape = dragOverrides.TryGetValue(idx, out var ov) ? ov : view.Shapes[idx];
+            bb = bb.Union(LayoutGeometry.BboxOf(shape));
+        }
+        if (bb.IsEmpty) return;
+
+        var handles = LayoutScaleHandles.Build(bb);
+        float half = DevicePixelsToPathSpace(scaleUm, HandleSizeDevicePixels) / 2f;
+
+        using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Selection };
+        foreach (var h in handles)
+        {
+            float cx = ps.X(h.X), cy = ps.Y(h.Y);
+            canvas.DrawRect(new SKRect(cx - half, cy - half, cx + half, cy + half), fillPaint);
+        }
+    }
+
     /// <summary>The vertex a Cubic edge's control point is anchored to — C1 (SubIndex 0) anchors to
     /// the edge's start vertex, C2 (SubIndex 1) to its end vertex.</summary>
     private static (long X, long Y) CubicControlAnchorWorld(LayoutShape shape, int edgeIndex, int subIndex)
@@ -592,6 +762,18 @@ public static class LayoutRenderer
 
     private static SKRect NormalizedRect(float x1, float y1, float x2, float y2) =>
         new(System.Math.Min(x1, x2), System.Math.Min(y1, y2), System.Math.Max(x1, x2), System.Math.Max(y1, y2));
+
+    /// <summary>A bitmap's placement rect in path space — the one place this is computed, shared by
+    /// <see cref="DrawBitmapShapes"/> (pixel draw), the ghost preview, and the selection outline.</summary>
+    private static SKRect BitmapPlacementRect(BitmapShape bmp, PathSpace ps) =>
+        NormalizedRect(ps.X(bmp.X), ps.Y(bmp.Y), ps.X(bmp.X + bmp.W), ps.Y(bmp.Y + bmp.H));
+
+    private static SKPath BuildBitmapPlacementRectPath(BitmapShape bmp, PathSpace ps)
+    {
+        var path = new SKPath();
+        path.AddRect(BitmapPlacementRect(bmp, ps));
+        return path;
+    }
 
     private static void AddPolygonPath(SKPath path, long[] xy, PathSpace ps)
     {
@@ -799,7 +981,7 @@ public static class LayoutRenderer
         if (string.IsNullOrEmpty(label.Text)) return;
 
         float sizeUm = System.Math.Max(0.001f, ps.Len(label.Height));
-        using var font = new SKFont(SkiaFonts.PlexRegular, sizeUm);
+        using var font = new SKFont(LayoutTextOutline.ResolveTypeface(label.Style), sizeUm);
         using var paint = new SKPaint { IsAntialias = true, Color = color };
 
         canvas.Save();

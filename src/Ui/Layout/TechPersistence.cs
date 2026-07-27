@@ -16,6 +16,7 @@ public sealed class CtechFile
     public LayoutUnit DefaultDisplayUnit { get; set; }
     public long DefaultSnapDbu { get; set; }
     public long DefaultFlattenTolDbu { get; set; }
+    public long DefaultLabelHeightDbu { get; set; }
     public List<LayerDef> Layers { get; set; } = [];
     public Stackup Stackup { get; set; } = new();
     public List<DrcRule> DrcRules { get; set; } = [];
@@ -69,6 +70,7 @@ public static class TechPersistence
         DefaultDisplayUnit   = tech.DefaultDisplayUnit,
         DefaultSnapDbu       = tech.DefaultSnapDbu,
         DefaultFlattenTolDbu = tech.DefaultFlattenTolDbu,
+        DefaultLabelHeightDbu = tech.DefaultLabelHeightDbu,
         Layers               = [.. tech.Layers],
         Stackup              = tech.Stackup,
         DrcRules             = [.. tech.DrcRules],
@@ -80,6 +82,7 @@ public static class TechPersistence
         DefaultDisplayUnit   = file.DefaultDisplayUnit,
         DefaultSnapDbu       = file.DefaultSnapDbu,
         DefaultFlattenTolDbu = file.DefaultFlattenTolDbu,
+        DefaultLabelHeightDbu = file.DefaultLabelHeightDbu,
         Layers               = [.. file.Layers],
         Stackup              = file.Stackup,
         DrcRules             = [.. file.DrcRules],

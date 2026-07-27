@@ -5,6 +5,15 @@
              x:Class="CircuitRF.Ui.Views.Properties.LayoutShapePropertiesView"
              x:DataType="vm:LayoutShapePropertiesViewModel">
 
+    <UserControl.Styles>
+        <!-- R-L1j: shared visible-invalid-state cue — a field/row commits nothing and keeps the
+             user's text while HasXxxError is true; the reason is available via ToolTip.Tip. -->
+        <Style Selector="TextBox.error">
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid RowDefinitions="*">
 
         <!-- Empty state -->
@@ -18,126 +27,283 @@
                    FontSize="11"
                    Opacity="0.5"/>
 
-        <!-- Active state -->
-        <ScrollViewer IsVisible="{Binding IsNotEmptyState}"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="6,4" Spacing="4">
+        <!-- Active state: fields (top, bounded+scrollable) / vertex list (bottom, bounded+scrollable,
+             ONLY when shown — R-L1j-5: the list must never sit inside the fields' own ScrollViewer,
+             or virtualization degrades to nothing with no visible symptom until a huge polygon freezes
+             the UI. Two independently-bounded regions, never one unbounded one. -->
+        <Grid IsVisible="{Binding IsNotEmptyState}" RowDefinitions="Auto,*">
 
-                <TextBlock Text="{Binding SelectionSummaryText}" FontWeight="SemiBold" FontSize="13" Margin="0,2,0,4"/>
+            <ScrollViewer Grid.Row="0"
+                          MaxHeight="340"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <!-- R-L1j-2: disabled (not hidden) while a drag preview is live — fields keep showing
+                     live values (R-L1j-1) but cannot be typed into; _selected holds throwaway clones
+                     mid-drag, and a commit against them would write into geometry about to be discarded. -->
+                <StackPanel Margin="6,4" Spacing="4" IsEnabled="{Binding IsEditingEnabled}">
 
-                <!-- ── Layer (common) ───────────────────────────────────────────────── -->
-                <Grid ColumnDefinitions="56,*">
-                    <TextBlock Grid.Column="0" Text="Layer" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                    <ComboBox Grid.Column="1"
-                              ItemsSource="{Binding AvailableLayers}"
-                              SelectedItem="{Binding SelectedLayerItem, Mode=TwoWay}"
-                              HorizontalAlignment="Stretch"
-                              FontSize="11" Padding="4,2">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="lay:LayerPickerItem">
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Border Width="12" Height="12" CornerRadius="2"
-                                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
-                                        <Border.Background>
-                                            <SolidColorBrush Color="{Binding SwatchColor}"/>
-                                        </Border.Background>
-                                    </Border>
-                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </Grid>
+                    <TextBlock Text="{Binding SelectionSummaryText}" FontWeight="SemiBold" FontSize="13" Margin="0,2,0,4"/>
 
-                <!-- ── Net (common) ─────────────────────────────────────────────────── -->
-                <Grid ColumnDefinitions="56,*">
-                    <TextBlock Grid.Column="0" Text="Net" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                    <TextBox x:Name="NetBox" Grid.Column="1" Text="{Binding NetText}"
-                             LostFocus="OnNetCommit" KeyDown="OnNetKeyDown"
-                             FontSize="11" Padding="4,2"/>
-                </Grid>
-
-                <!-- ── RoundedRect ───────────────────────────────────────────────────── -->
-                <Grid IsVisible="{Binding ShowRoundedRect}" ColumnDefinitions="56,*">
-                    <TextBlock Grid.Column="0" Text="Corner R" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                    <TextBox x:Name="CornerRadiusBox" Grid.Column="1" Text="{Binding CornerRadiusText}"
-                             LostFocus="OnCornerRadiusCommit" KeyDown="OnCornerRadiusKeyDown"
-                             FontSize="11" Padding="4,2"/>
-                </Grid>
-
-                <!-- ── Circle ────────────────────────────────────────────────────────── -->
-                <Grid IsVisible="{Binding ShowCircle}" ColumnDefinitions="56,*">
-                    <TextBlock Grid.Column="0" Text="Radius" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                    <TextBox x:Name="RadiusBox" Grid.Column="1" Text="{Binding RadiusText}"
-                             LostFocus="OnRadiusCommit" KeyDown="OnRadiusKeyDown"
-                             FontSize="11" Padding="4,2"/>
-                </Grid>
-
-                <!-- ── Path ──────────────────────────────────────────────────────────── -->
-                <StackPanel IsVisible="{Binding ShowPath}" Spacing="4">
+                    <!-- ── Layer (common) ───────────────────────────────────────────────── -->
                     <Grid ColumnDefinitions="56,*">
-                        <TextBlock Grid.Column="0" Text="Width" VerticalAlignment="Center" FontSize="11"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                        <TextBox x:Name="PathWidthBox" Grid.Column="1" Text="{Binding PathWidthText}"
-                                 LostFocus="OnPathWidthCommit" KeyDown="OnPathWidthKeyDown"
-                                 FontSize="11" Padding="4,2"/>
-                    </Grid>
-                    <Grid ColumnDefinitions="56,*">
-                        <TextBlock Grid.Column="0" Text="End" VerticalAlignment="Center" FontSize="11"
+                        <TextBlock Grid.Column="0" Text="Layer" VerticalAlignment="Center" FontSize="11"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                         <ComboBox Grid.Column="1"
-                                  ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.PathEndStyleOptions}"
-                                  SelectedItem="{Binding PathEndStyleValue, Mode=TwoWay}"
+                                  ItemsSource="{Binding AvailableLayers}"
+                                  SelectedItem="{Binding SelectedLayerItem, Mode=TwoWay}"
                                   HorizontalAlignment="Stretch"
+                                  FontSize="11" Padding="4,2">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="lay:LayerPickerItem">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Border Width="12" Height="12" CornerRadius="2"
+                                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+                                            <Border.Background>
+                                                <SolidColorBrush Color="{Binding SwatchColor}"/>
+                                            </Border.Background>
+                                        </Border>
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+
+                    <!-- ── Net (common — hidden for an all-bitmap selection, meaningless for an image) ── -->
+                    <Grid IsVisible="{Binding ShowNet}" ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Net" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBox Grid.Column="1" Text="{Binding NetText}" Tag="Net"
+                                  GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                   FontSize="11" Padding="4,2"/>
                     </Grid>
-                </StackPanel>
 
-                <!-- ── Label ─────────────────────────────────────────────────────────── -->
-                <StackPanel IsVisible="{Binding ShowLabel}" Spacing="4">
-                    <Grid ColumnDefinitions="56,*">
-                        <TextBlock Grid.Column="0" Text="Text" VerticalAlignment="Center" FontSize="11"
+                    <!-- ── Rect / RoundedRect size + position (L1j §2) ─────────────────────── -->
+                    <StackPanel IsVisible="{Binding ShowRectSize}" Spacing="2">
+                        <Grid ColumnDefinitions="56,*,56,*" RowDefinitions="Auto,Auto" ColumnSpacing="4" RowSpacing="2">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Width" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       ToolTip.Tip="Keeps the left edge fixed; moves the right edge."/>
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding RectWidthText}" Tag="RectWidth"
+                                      Classes.error="{Binding HasRectWidthError}" ToolTip.Tip="{Binding RectWidthError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Height" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       ToolTip.Tip="Keeps the bottom edge fixed; moves the top edge."/>
+                            <TextBox Grid.Row="0" Grid.Column="3" Text="{Binding RectHeightText}" Tag="RectHeight"
+                                      Classes.error="{Binding HasRectHeightError}" ToolTip.Tip="{Binding RectHeightError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       ToolTip.Tip="Minimum corner — moves the whole shape; size is preserved."/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RectXText}" Tag="RectX"
+                                      Classes.error="{Binding HasRectXError}" ToolTip.Tip="{Binding RectXError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="Y" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       ToolTip.Tip="Minimum corner — moves the whole shape; size is preserved."/>
+                            <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding RectYText}" Tag="RectY"
+                                      Classes.error="{Binding HasRectYError}" ToolTip.Tip="{Binding RectYError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- ── RoundedRect ───────────────────────────────────────────────────── -->
+                    <Grid IsVisible="{Binding ShowRoundedRect}" ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Corner R" VerticalAlignment="Center" FontSize="11"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                        <TextBox x:Name="LabelTextBox" Grid.Column="1" Text="{Binding LabelText}"
-                                 LostFocus="OnLabelTextCommit" KeyDown="OnLabelTextKeyDown"
-                                 FontSize="11" Padding="4,2"/>
-                    </Grid>
-                    <Grid ColumnDefinitions="56,*">
-                        <TextBlock Grid.Column="0" Text="Height" VerticalAlignment="Center" FontSize="11"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                        <TextBox x:Name="LabelHeightBox" Grid.Column="1" Text="{Binding LabelHeightText}"
-                                 LostFocus="OnLabelHeightCommit" KeyDown="OnLabelHeightKeyDown"
-                                 FontSize="11" Padding="4,2"/>
-                    </Grid>
-                    <Grid ColumnDefinitions="56,*">
-                        <TextBlock Grid.Column="0" Text="Rotation" VerticalAlignment="Center" FontSize="11"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                        <ComboBox Grid.Column="1"
-                                  ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RotationOptions}"
-                                  SelectedItem="{Binding LabelRotationValue, Mode=TwoWay}"
-                                  HorizontalAlignment="Stretch"
+                        <TextBox Grid.Column="1" Text="{Binding CornerRadiusText}" Tag="CornerRadius"
+                                  Classes.error="{Binding HasCornerRadiusError}" ToolTip.Tip="{Binding CornerRadiusError}"
+                                  GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                   FontSize="11" Padding="4,2"/>
                     </Grid>
+
+                    <!-- ── Circle ────────────────────────────────────────────────────────── -->
+                    <Grid IsVisible="{Binding ShowCircle}" ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Radius" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBox Grid.Column="1" Text="{Binding RadiusText}" Tag="Radius"
+                                  Classes.error="{Binding HasRadiusError}" ToolTip.Tip="{Binding RadiusError}"
+                                  GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+
+                    <!-- ── Path ──────────────────────────────────────────────────────────── -->
+                    <StackPanel IsVisible="{Binding ShowPath}" Spacing="4">
+                        <Grid ColumnDefinitions="56,*">
+                            <TextBlock Grid.Column="0" Text="Width" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="1" Text="{Binding PathWidthText}" Tag="PathWidth"
+                                      Classes.error="{Binding HasPathWidthError}" ToolTip.Tip="{Binding PathWidthError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*">
+                            <TextBlock Grid.Column="0" Text="End" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <ComboBox Grid.Column="1"
+                                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.PathEndStyleOptions}"
+                                      SelectedItem="{Binding PathEndStyleValue, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- ── Label ─────────────────────────────────────────────────────────── -->
+                    <StackPanel IsVisible="{Binding ShowLabel}" Spacing="4">
+                        <Grid ColumnDefinitions="56,*">
+                            <TextBlock Grid.Column="0" Text="Text" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="1" Text="{Binding LabelText}" Tag="LabelText"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*">
+                            <TextBlock Grid.Column="0" Text="Height" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="1" Text="{Binding LabelHeightText}" Tag="LabelHeight"
+                                      Classes.error="{Binding HasLabelHeightError}" ToolTip.Tip="{Binding LabelHeightError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*">
+                            <TextBlock Grid.Column="0" Text="Rotation" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <ComboBox Grid.Column="1"
+                                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RotationOptions}"
+                                      SelectedItem="{Binding LabelRotationValue, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*">
+                            <TextBlock Grid.Column="0" Text="Style" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <ComboBox Grid.Column="1"
+                                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.LabelStyleOptions}"
+                                      SelectedItem="{Binding LabelStyleValue, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                            <TextBlock Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="1" Text="{Binding LabelXText}" Tag="LabelX"
+                                      Classes.error="{Binding HasLabelXError}" ToolTip.Tip="{Binding LabelXError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                            <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="3" Text="{Binding LabelYText}" Tag="LabelY"
+                                      Classes.error="{Binding HasLabelYError}" ToolTip.Tip="{Binding LabelYError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- ── Bitmap (docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md) ──────── -->
+                    <StackPanel IsVisible="{Binding ShowBitmap}" Spacing="4">
+                        <Grid ColumnDefinitions="56,*,Auto">
+                            <TextBlock Grid.Column="0" Text="Path" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="1" Text="{Binding BitmapPathText}" Tag="BitmapPath"
+                                      Classes.error="{Binding BitmapIsBroken}"
+                                      ToolTip.Tip="{Binding BitmapPathText}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2" Margin="0,0,4,0"/>
+                            <Button Grid.Column="2" Content="Browse…" Click="OnBitmapBrowseClick" FontSize="11" Padding="6,2"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Width" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="1" Text="{Binding BitmapWidthText}" Tag="BitmapWidth"
+                                      Classes.error="{Binding HasBitmapWidthError}" ToolTip.Tip="{Binding BitmapWidthError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                            <TextBlock Grid.Column="2" Text="Height" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="3" Text="{Binding BitmapHeightText}" Tag="BitmapHeight"
+                                      Classes.error="{Binding HasBitmapHeightError}" ToolTip.Tip="{Binding BitmapHeightError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*">
+                            <TextBlock Grid.Column="0" Text="Opacity" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <Grid Grid.Column="1" ColumnDefinitions="*,Auto">
+                                <TextBox Grid.Column="0" Text="{Binding BitmapOpacityText}" Tag="BitmapOpacity"
+                                          Classes.error="{Binding HasBitmapOpacityError}" ToolTip.Tip="{Binding BitmapOpacityError}"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                          FontSize="11" Padding="4,2"/>
+                                <TextBlock Grid.Column="1" Text="%" VerticalAlignment="Center" FontSize="11" Margin="4,0,0,0"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            </Grid>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*">
+                            <TextBlock Grid.Column="0" Text="Locked" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <CheckBox Grid.Column="1" IsThreeState="True" IsChecked="{Binding BitmapLockedValue, Mode=TwoWay}"
+                                      ToolTip.Tip="Locked bitmaps stay selectable but cannot be moved or scaled."/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- ── Flatten tolerance (Curve / Path / Circle / RoundedRect) — blank = inherit ── -->
+                    <Grid IsVisible="{Binding ShowFlattenTol}" ColumnDefinitions="56,*">
+                        <TextBlock Grid.Column="0" Text="Flatten" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   ToolTip.Tip="Flatten tolerance override. Blank inherits the technology default."/>
+                        <TextBox Grid.Column="1" Text="{Binding FlattenTolText}" Tag="FlattenTol"
+                                  PlaceholderText="{Binding FlattenTolPlaceholder}"
+                                  Classes.error="{Binding HasFlattenTolError}" ToolTip.Tip="{Binding FlattenTolError}"
+                                  GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                  FontSize="11" Padding="4,2"/>
+                    </Grid>
+
                 </StackPanel>
+            </ScrollViewer>
 
-                <!-- ── Flatten tolerance (Curve / Path) — blank = inherit ──────────────── -->
-                <Grid IsVisible="{Binding ShowFlattenTol}" ColumnDefinitions="56,*">
-                    <TextBlock Grid.Column="0" Text="Flatten" VerticalAlignment="Center" FontSize="11"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                               ToolTip.Tip="Flatten tolerance override. Blank inherits the technology default."/>
-                    <TextBox x:Name="FlattenTolBox" Grid.Column="1" Text="{Binding FlattenTolText}"
-                             PlaceholderText="inherit"
-                             LostFocus="OnFlattenTolCommit" KeyDown="OnFlattenTolKeyDown"
-                             FontSize="11" Padding="4,2"/>
-                </Grid>
+            <!-- ── Vertex list (L1j §3) — last in the panel, its OWN bounded+scrollable region,
+                 deliberately NOT inside the fields' ScrollViewer above (R-L1j-5). Uses ListBox (not a
+                 bare ItemsControl — a bare ItemsControl's default Fluent-theme template does NOT wire
+                 up scrolling on its own; this bit the first cut of this feature, and is why
+                 ScrollViewer.VerticalScrollBarVisibility is set explicitly below) with an explicit
+                 ScrollViewer.VerticalScrollBarVisibility="Auto", the exact same pattern
+                 SymbolPrimitiveInspectorView.axaml's own virtualized coordinate list already
+                 established for this codebase — match it, don't reinvent it. -->
+            <Grid Grid.Row="1" IsVisible="{Binding ShowVertexList}" RowDefinitions="Auto,*" Margin="6,2,6,4" MinHeight="60">
+                <TextBlock Grid.Row="0" Text="Vertices" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,2"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                <ListBox Grid.Row="1" ItemsSource="{Binding VertexRows}" IsEnabled="{Binding IsEditingEnabled}"
+                         Background="Transparent" BorderThickness="0" Padding="0"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.DataTemplates>
+                        <DataTemplate DataType="vm:RingHeaderRow">
+                            <TextBlock Text="{Binding Text}" FontSize="10" FontWeight="SemiBold" Margin="0,5,0,1"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        </DataTemplate>
+                        <DataTemplate DataType="vm:VertexRowViewModel">
+                            <Grid ColumnDefinitions="22,*,*,40" Margin="0,1" ToolTip.Tip="{Binding Error}">
+                                <TextBlock Grid.Column="0" Text="{Binding VertexIndex}" FontSize="10" Opacity="0.6"
+                                           VerticalAlignment="Center"/>
+                                <TextBox Grid.Column="1" Text="{Binding XText}" Tag="X" FontSize="10" Padding="3,1" Margin="0,0,1,0"
+                                          Classes.error="{Binding HasError}"
+                                          GotFocus="OnVertexFieldGotFocus" LostFocus="OnVertexFieldLostFocus" KeyDown="OnVertexFieldKeyDown"/>
+                                <TextBox Grid.Column="2" Text="{Binding YText}" Tag="Y" FontSize="10" Padding="3,1" Margin="1,0,0,0"
+                                          Classes.error="{Binding HasError}"
+                                          GotFocus="OnVertexFieldGotFocus" LostFocus="OnVertexFieldLostFocus" KeyDown="OnVertexFieldKeyDown"/>
+                                <TextBlock Grid.Column="3" Text="{Binding EdgeText}" FontSize="9" Opacity="0.6"
+                                           VerticalAlignment="Center" Margin="4,0,0,0"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.DataTemplates>
+                </ListBox>
+            </Grid>
 
-            </StackPanel>
-        </ScrollViewer>
+        </Grid>
 
     </Grid>
 </UserControl>

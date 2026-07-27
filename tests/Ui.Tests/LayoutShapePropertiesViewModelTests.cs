@@ -113,6 +113,73 @@ public class LayoutShapePropertiesViewModelTests
         Assert.Null(curve.FlattenTolDbu);
     }
 
+    // ── L1h §1.3.0: the tolerance field is reachable on all four curved types ────────────────────
+
+    [Fact]
+    public void FlattenTolerance_ReachableOnCircleAndRoundedRect_NotOnRect()
+    {
+        var model = FreshModel();
+        var circle = new CircleShape { Layer = new LayerKey(1, 0), Cx = 0, Cy = 0, R = 5000, FlattenTolDbu = 250 };
+        var roundedRect = new RoundedRectShape { Layer = new LayerKey(1, 0), X1 = 20_000, Y1 = 0, X2 = 30_000, Y2 = 10_000, CornerRadius = 1000 };
+        var rect = new RectShape { Layer = new LayerKey(1, 0), X1 = 50_000, Y1 = 0, X2 = 60_000, Y2 = 10_000 };
+        model.Shapes.Add(circle); model.Shapes.Add(roundedRect); model.Shapes.Add(rect);
+        var (vm, props) = Setup(model);
+
+        Click(vm, 0, 0);
+        Assert.True(props.ShowFlattenTol);
+        Assert.NotEqual("", props.FlattenTolText); // circle's own explicit value
+
+        Click(vm, 25_000, 5000);
+        Assert.True(props.ShowFlattenTol);
+        Assert.Equal("", props.FlattenTolText); // no explicit value -> blank, inherits
+
+        Click(vm, 55_000, 5000);
+        Assert.False(props.ShowFlattenTol); // Rect has no tolerance field at all
+    }
+
+    [Fact]
+    public void FlattenTolerance_MixedSelectionOfAllFourCurvedTypes_ShowsAndAppliesToAll()
+    {
+        var model = FreshModel();
+        var circle = new CircleShape { Layer = new LayerKey(1, 0), Cx = 0, Cy = 0, R = 5000 };
+        var roundedRect = new RoundedRectShape { Layer = new LayerKey(1, 0), X1 = 20_000, Y1 = 0, X2 = 30_000, Y2 = 10_000, CornerRadius = 1000 };
+        var curve = new CurveShape { Layer = new LayerKey(1, 0), Xy = [50_000, 0, 60_000, 0, 55_000, 10_000] };
+        var path = new PathShape { Layer = new LayerKey(1, 0), Xy = [70_000, 0, 80_000, 0], Width = 1000 };
+        model.Shapes.Add(circle); model.Shapes.Add(roundedRect); model.Shapes.Add(curve); model.Shapes.Add(path);
+        var (vm, props) = Setup(model);
+
+        vm.SelectAllCommand.Execute(null);
+        Assert.True(props.ShowFlattenTol);
+
+        props.CommitFlattenTolText("2000nm");
+        Assert.Equal(2000, circle.FlattenTolDbu);
+        Assert.Equal(2000, roundedRect.FlattenTolDbu);
+        Assert.Equal(2000, curve.FlattenTolDbu);
+        Assert.Equal(2000, path.FlattenTolDbu);
+
+        vm.UndoRedo.Undo(); // one undo entry restores all four together
+        Assert.Null(circle.FlattenTolDbu);
+        Assert.Null(roundedRect.FlattenTolDbu);
+        Assert.Null(curve.FlattenTolDbu);
+        Assert.Null(path.FlattenTolDbu);
+    }
+
+    [Fact]
+    public void FlattenTolerance_BlankField_PlaceholderShowsInheritedTechnologyValue()
+    {
+        var model = FreshModel();
+        var circle = new CircleShape { Layer = new LayerKey(1, 0), Cx = 0, Cy = 0, R = 5000 };
+        model.Shapes.Add(circle);
+        var (vm, props) = Setup(model);
+        vm.Technology = new Technology { DefaultFlattenTolDbu = 3000 };
+
+        Click(vm, 0, 0);
+        Assert.True(props.ShowFlattenTol);
+        Assert.Equal("", props.FlattenTolText); // blank — no explicit value
+        Assert.Contains("technology", props.FlattenTolPlaceholder);
+        Assert.Contains(LayoutUnits.Format(3000, model.DisplayUnit, model.DbuPerMicron), props.FlattenTolPlaceholder);
+    }
+
     [Fact]
     public void NoSelection_IsEmptyState()
     {

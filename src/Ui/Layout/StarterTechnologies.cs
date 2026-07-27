@@ -19,6 +19,7 @@ public static class StarterTechnologies
         DefaultDisplayUnit = LayoutUnit.Um,
         DefaultSnapDbu = Um(1),
         DefaultFlattenTolDbu = Um(1),
+        DefaultLabelHeightDbu = Um(5),
     };
 
     private static long Um(decimal v) => LayoutUnits.ToDbu(v, LayoutUnit.Um, Dbu);
@@ -43,6 +44,7 @@ public static class StarterTechnologies
             DefaultDisplayUnit = LayoutUnit.Mil,
             DefaultSnapDbu = Mil(1),
             DefaultFlattenTolDbu = Um(1),
+            DefaultLabelHeightDbu = Mil(40),
             Layers =
             [
                 new LayerDef { Key = topCopper,       Name = "Top Copper",       Color = new Rgba(0xC8, 0x7A, 0x3E), ZOrder = 8, Purpose = "drawing" },
@@ -108,6 +110,7 @@ public static class StarterTechnologies
             DefaultDisplayUnit = LayoutUnit.Um,
             DefaultSnapDbu = Nm(5),
             DefaultFlattenTolDbu = Nm(10),
+            DefaultLabelHeightDbu = Um(5),
             Layers =
             [
                 new LayerDef { Key = metal1,       Name = "Metal1",        Color = new Rgba(0xE0, 0xB0, 0x40), ZOrder = 8, Purpose = "drawing" },

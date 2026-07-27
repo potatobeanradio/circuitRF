@@ -247,6 +247,12 @@
         </Style>
         <Style Selector="Button">
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
+            <!-- Owner-reported 3 times now (ScaleDialog, FlattenToPolygonDialog, ...): a Button wider
+                 than its content (any fixed-Width dialog button, e.g. Cancel/OK) left-aligns its label
+                 by Avalonia's own default, reading as visually off. Centering it ONCE, globally, here
+                 is the fix that makes this class of bug impossible to reintroduce per-dialog — do NOT
+                 go back to fixing it button-by-button in each new dialog's AXAML. -->
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
         </Style>
         <Style Selector="CheckBox">
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>

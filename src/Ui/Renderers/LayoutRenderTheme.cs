@@ -24,6 +24,10 @@ public sealed class LayoutRenderTheme
     /// marquee rectangle fill/stroke (L1c).</summary>
     public SKColor Selection { get; init; }
 
+    /// <summary>A broken bitmap's placeholder box (docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md) —
+    /// mirrors <c>SchematicRenderTheme.Warning</c>, same role (<c>System.Warning</c>).</summary>
+    public SKColor Warning { get; init; }
+
     public static LayoutRenderTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         SKColor SK(string role)
@@ -42,6 +46,7 @@ public sealed class LayoutRenderTheme
             RulerTick       = SK(ColorRole.LayoutRulerTick),
             CursorIndicator = SK(ColorRole.LayoutCursorIndicator),
             Selection       = SK(ColorRole.LayoutSelection),
+            Warning         = SK(ColorRole.SystemWarning),
         };
     }
 

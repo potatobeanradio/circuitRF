@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using CircuitRF.Ui.Schematic;
 using SkiaSharp;
@@ -37,36 +36,13 @@ public static class SchematicRenderer
     private const double LabelWorldStep   = SchematicComponent.LabelWorldStep;
 
     // ── Bitmap image cache ─────────────────────────────────────────────────────
-    // null value = path tried and failed (broken ref); avoids repeated I/O each frame.
-    private static readonly ConcurrentDictionary<string, SKBitmap?> _bitmapCache =
-        new(StringComparer.Ordinal);
+    // Extracted to BitmapCache (docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md §2,
+    // R-bmp-1) — the ONE decode cache shared with LayoutRenderer. These two forwarders exist so no
+    // existing caller (SchematicViewModel, SymbolEditorViewModel) needed to change.
 
-    private static SKBitmap? LoadCachedBitmap(string path)
-    {
-        if (string.IsNullOrEmpty(path)) return null;
-        return _bitmapCache.GetOrAdd(path, static p =>
-        {
-            try   { return SKBitmap.Decode(p); }
-            catch { return null; }
-        });
-    }
+    public static void InvalidateBitmapCache(string? path) => BitmapCache.Invalidate(path);
 
-    public static void InvalidateBitmapCache(string? path)
-    {
-        if (!string.IsNullOrEmpty(path))
-            _bitmapCache.TryRemove(path, out _);
-    }
-
-    /// <summary>
-    /// Returns the native pixel dimensions of the image at <paramref name="path"/> via the shared
-    /// decode cache, or null if the path is empty/unreadable. Used to size a freshly-dropped bitmap
-    /// to its true aspect ratio (avoids skew from a hardcoded W/H).
-    /// </summary>
-    public static (int Width, int Height)? TryGetBitmapPixelSize(string path)
-    {
-        var bmp = LoadCachedBitmap(path);
-        return bmp is null ? null : (bmp.Width, bmp.Height);
-    }
+    public static (int Width, int Height)? TryGetBitmapPixelSize(string path) => BitmapCache.TryGetPixelSize(path);
 
     public static void Draw(
         SKCanvas canvas,
@@ -403,7 +379,7 @@ public static class SchematicRenderer
                 float pixH = (float)Math.Sqrt((px2 - px0) * (px2 - px0) + (py2 - py0) * (py2 - py0));
                 if (pixW < 2 || pixH < 2) continue;
 
-                var skBmp = LoadCachedBitmap(bmp.ImagePathRef);
+                var skBmp = BitmapCache.Load(bmp.ImagePathRef);
                 if (skBmp is null)
                 {
                     // Broken link: dashed quad outline + X diagonals
@@ -1272,10 +1248,10 @@ public static class SchematicRenderer
             float pixH = py1 - py0;
             if (pixW < 2 || pixH < 2) continue;
 
-            var skBmp = LoadCachedBitmap(bm.ImagePath);
+            var skBmp = BitmapCache.Load(bm.ImagePath);
             if (skBmp is null)
             {
-                DrawBrokenBitmapBox(canvas, px0, py0, pixW, pixH, theme);
+                BitmapCache.DrawBrokenPlaceholder(canvas, px0, py0, pixW, pixH, theme.Warning);
             }
             else
             {
@@ -1284,24 +1260,6 @@ public static class SchematicRenderer
                 canvas.DrawBitmap(skBmp, new SKRect(px0, py0, px1, py1), paint);
             }
         }
-    }
-
-    private static void DrawBrokenBitmapBox(
-        SKCanvas canvas, float x, float y, float w, float h,
-        SchematicRenderTheme theme)
-    {
-        using var dashEffect = SKPathEffect.CreateDash(new float[] { 6f, 4f }, 0);
-        using var strokePaint = new SKPaint
-        {
-            IsAntialias = true, Style = SKPaintStyle.Stroke,
-            StrokeWidth = 1.5f, Color = theme.Warning.WithAlpha(180),
-            PathEffect = dashEffect,
-        };
-        canvas.DrawRect(SKRect.Create(x, y, w, h), strokePaint);
-        strokePaint.PathEffect = null;
-        strokePaint.StrokeWidth = 1f;
-        canvas.DrawLine(x,     y,     x + w, y + h, strokePaint);
-        canvas.DrawLine(x + w, y,     x,     y + h, strokePaint);
     }
 
     // ── Transform helpers ─────────────────────────────────────────────────────

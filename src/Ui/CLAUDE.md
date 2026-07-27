@@ -1,5 +1,951 @@
 # UI (Avalonia) — local conventions
 
+Layout labels — owner follow-up round, 5 reports (2026-07-27) — COMPLETE: after the label-fix brief
+below shipped, five more owner reports landed in one pass.
+
+**(1) A committed label could still "disappear" the instant Enter was pressed.** The R-lbl-2 ghost boost
+(below) only ever applied to the temporary IN-PROGRESS ghost — the COMMITTED shape used the raw
+technology/fallback height unboosted, which can still render sub-pixel at a zoomed-out view even though
+it's perfectly sensible at the technology's own typical zoom. `LayoutRenderer.EffectiveGhostLabelHeightDbu`
+was generalized and renamed `EffectiveVisibleLabelHeightDbu` (its `dbuToUm` parameter dropped — it
+cancels out of the on-screen-pixel computation entirely, so the caller now only needs the zoom directly,
+device px per DBU), and `LayoutEditorViewModel.CommitLabel` now applies the SAME visibility floor to the
+real committed `Height`, using the zoom captured when typing started. Never retroactive — an existing
+label is never touched.
+
+**(2) The selection highlight box was wrong for rotated labels.** Two independent bugs in the SAME
+hand-derived approximate-footprint formula, duplicated in `LayoutHitTest.LabelHitBbox` (hit-testing,
+must stay framework-free) and `LayoutRenderer.BuildOutlinePathForSelection` (the renderer, which has
+Skia): R90/R270 had the local "far corner" landing on the WRONG SIDE of the anchor entirely (verified
+against `DrawLabelText`'s real transform via a from-scratch rotation-matrix derivation, not by guessing)
+— fixed in both places. Separately, R0/R180 were positionally correct but loosely FIT (a fixed
+0.62-of-height-per-character estimate, same for "W" and "i"). Since the renderer already has SkiaSharp,
+`BuildOutlinePathForSelection`'s LabelShape case was replaced entirely with a new
+`LayoutRenderer.MeasureLabelWorldBbox` — real font metrics via `SKFont.MeasureText` (cheap: one
+measurement call, not a full glyph-outline extraction like `LayoutTextOutline` uses for flattening),
+all four corners transformed through the exact same rotation table `DrawLabelText` uses, so it is
+correct for every rotation by construction and can never drift from what's actually rendered.
+`LayoutHitTest.LabelHitBbox` keeps the cheap approximation (framework-free constraint is real) but got
+the same rotation-sign fix. Proven with a REAL pixel-oracle test (not just a formula check) by also
+threading `LayoutTextOutline`'s `TestOverrideTypeface`/`ResolveTypeface` seam into `DrawLabelText` itself
+— see item (4) below for what that seam is.
+
+**(3) Flatten dialog button text not centered — reported for the 3rd time.** Every prior fix was
+per-dialog (`ScaleDialog`, `OffsetDialog`, `LayerMappingDialog`, …, each individually gained
+`HorizontalContentAlignment="Center"` on its buttons). `FlattenToPolygonDialog.axaml`'s buttons were
+simply never patched. Fixed ONCE, globally, in `App.axaml`'s existing `Style Selector="Button"` — added
+`HorizontalContentAlignment="Center"` there instead of a fourth per-dialog patch. **This class of bug is
+now structurally impossible to reintroduce — do not go back to fixing individual dialog buttons.** Every
+existing per-dialog explicit override becomes redundant-but-harmless (same value); new dialogs need no
+button-centering code at all.
+
+**(4) `LabelShape` gained a `Style` property** (`LabelFontStyle { Regular, Bold, Italic, Condensed }`,
+additive, no `.clay` `FormatVersion` bump, defaults Regular) — mirrors the symbol editor's
+`SymbolFontStyle` PATTERN, deliberately not the type (`LayoutModel.cs`'s own header: "Layout borrows
+patterns from Schematic, not types"). The style-to-typeface mapping is now centralized in ONE place,
+`LayoutTextOutline.ResolveTypeface(LabelFontStyle)` (mirrors `SchematicRenderer`'s `TextPrimitive.
+FontStyle` mapping exactly, including Condensed → the Light weight, matching that precedent, not a
+typo) — `LayoutRenderer.DrawLabelText` AND `LayoutTextOutline.BuildGlyphContours` both call it now,
+which is a STRONGER "same font" guarantee than the original brief's "both reference the same constant"
+(there is only one place a style→typeface mapping could ever drift, period). `ResolveTypeface` still
+checks `TestOverrideTypeface` first (now also threaded into `DrawLabelText`, not just the flatten path),
+which is what makes a genuine pixel-oracle test of the SELECTION BOX FIX above possible. Editable in the
+Properties Inspector (new Style combo in the Label section, immediate-commit, same pattern as Rotation).
+
+**(5) Properties Inspector: label position (X/Y) is now editable.** A label's X/Y is a plain anchor
+point, not a min-corner-and-size pair like Rect — so unlike `ApplyRectResize`/`ApplyRectPosition`'s two
+different semantics, editing it is a single straight translate (`CommitLabelXText`/`CommitLabelYText`,
+staged text, `LayoutUnits` parsing, `ApplyToEach` for multi-selection-as-one-undo-entry — the same shape
+every other typed dimension field in this panel already uses).
+
+Test file: `LayoutLabelOwnerFollowUpFixesTests.cs` — the corrected R90/R270 hit-box quadrants (and R0/R180
+unaffected), `MeasureLabelWorldBbox`'s quadrant-per-rotation and real-vs-fixed-width metrics, a genuine
+pixel-oracle proving the R90 selection fix with actual rendered glyph pixels (not just a formula), the
+global Button style + a documentation-by-test that `FlattenToPolygonDialog`'s buttons carry no redundant
+per-button override, `LabelShape.Style` defaulting/cloning/persistence round-trip and Properties-Inspector
+commit-as-one-undo-entry, and label X/Y position commit/error/multi-selection-undo. Plus 6 new tests in
+`LayoutLabelFixAndTextFlattenTests.cs` (`CommitLabel_*`/`EffectiveVisibleLabelHeightDbu_*`) for item (1),
+folded into that file since they're a direct continuation of its own gates. 2256 Ui.Tests total, all
+green; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip, matching
+the layout-label-fix-and-text-flatten baseline exactly). **Not interactively verified** (no visual driver
+in this environment) — the R90 selection-box fix in particular rests on a real pixel-oracle rendering
+test (stronger evidence than most items in this file get), but please still confirm on your end: a new
+label is visible immediately after pressing Enter even when zoomed out; the selection box hugs a rotated
+label correctly at all four rotations; the Flatten dialog's buttons read centered; a label's Style combo
+in the Properties Inspector visibly changes its rendered weight/slant; and a label's X/Y fields move it
+when edited.
+
+Layout labels: invisible on PCB, and Flatten-to-Polygon for text (brief-layout-label-fix-and-text-
+flatten.md, 2026-07-27) — COMPLETE: owner report "placing a label with the toolbar button appears to do
+nothing," plus a request for text-to-polygon. **The label pipeline (tool, typing buffer, ghost caret,
+Enter/Escape/Backspace, `CommitLabel`, `DrawLabelText`) was never broken** — the label WAS created, just
+too small to see. Root cause: `_labelHeightDbu = 5_000` was a hardcoded absolute size (5 µm at 1000
+DBU/µm) chosen at one scale in a database whose scales span six orders of magnitude — **the exact same
+failure mode as the L1a default-zoom bug** (see that entry further down this file): on the PCB starter
+technology (1 mil snap, ~20 mm default viewport), a 5 µm label is ~1/4000 of the view width, comfortably
+sub-pixel; `DrawLabelText` even clamps its font size to `Math.Max(0.001f, …)`, so it drew something
+infinitesimal rather than visibly nothing, which is what made this look like a dead button rather than a
+sizing bug.
+
+**R-lbl-1 — the default label height now comes from the technology, seeded once at construction, never
+re-seeded.** `Technology.DefaultLabelHeightDbu` (new, additive, no `.ctech` `FormatVersion` bump — 0 =
+unset) is seeded per starter tech (**40 mil** for PCB 2-Layer, **5 µm** for MMIC GaAs, matching each
+process's own drafting convention) and applied in `LayoutEditorViewModel.ApplyTechResolution`, guarded by
+a one-shot `_labelHeightSeededFromTech` flag — exactly like `DisplayUnit`/`SnapDbu` are seeded once at
+construction and never re-seeded by a later technology change (retarget, live `.ctech` edit), so a user's
+own typed label-height edit is never silently discarded. **Why technology-provided here, and deliberately
+NOT viewport-relative like the bitmap brief's R-bmp-4** — say so explicitly, because the two look
+inconsistent otherwise: a bitmap is a reference image the user resizes immediately, so "sensible on
+screen right now" is correct; a label height is a *drafting convention of the process/board*, wanted
+consistent across a design and across sessions — deriving it from the current zoom would make the same
+typed command produce different persistent geometry depending on how far the user happened to be zoomed
+in. Different defaults for different reasons, on purpose. No technology resolved → falls back to the
+original hardcoded 5 µm, now correctly scoped as "no-technology fallback" rather than "the default."
+
+**R-lbl-2 — typing feedback.** The Label tool's status hint reuses the EXISTING toolbar `DrawReadoutText`
+readout (was hardcoded to `""` while typing) rather than inventing a second status property — "Typing
+label — Enter to commit, Esc to cancel," clearing the instant `CommitLabel`/`CancelDrawOp` flips
+`_isTypingLabel` false. A ghost that would render below `LayoutRenderer.MinGhostLabelDevicePixels` (8px)
+is boosted to exactly that floor for DISPLAY ONLY (the committed shape's real `Height` is never touched)
+— the boost math is deliberately split into a pure function, `LayoutRenderer.EffectiveGhostLabelHeightDbu`,
+specifically so it is headlessly testable (see the SkiaFonts constraint below); the hint also notes when
+the label is smaller than the zoom captured at typing-start can show. **R-lbl-3** — `LayoutCanvas`'s Space
+branch now checks `_viewModel?.IsTypingLabel != true` before arming the pan modifier: Space itself already
+reached the label buffer correctly via Avalonia's separate `TextInput` event (verified, not assumed — the
+`KeyDown` handler never set `e.Handled`), but `_spaceHeld` stayed true through the rest of the gesture,
+so a subsequent left-drag panned instead of doing nothing.
+
+**Text-to-polygon flattening (R-lbl-4/R-lbl-6) extends the EXISTING "Flatten to Polygon…" command —
+no second menu entry.** `HasCurvedGeometryAt`'s predicate widened to include any non-port `LabelShape`
+with text; the dialog's message now names curves and labels separately ("3 curves and 1 label will
+become polygon(s)") and calls out port-label skips by name rather than folding them into "has no
+curvature." **R-lbl-5 — a port label (`IsPort`) is a terminal marker (§9/§10.6) and is NEVER flattened,
+even when explicitly selected** — excluded from `HasCurvedGeometryAt` (so a sole-port-label selection
+shows Flatten disabled with a reason) and defended a second time inside `FlattenLabel` itself (returns
+empty) in case a future caller ever bypasses that filter; a mixed selection flattens everything else and
+reports the skip via Messages, never silently dropping the label with no trace.
+
+**The pipeline is split at the Skia boundary, matching this codebase's framework-free convention for
+`src/Ui/Layout/`:** `src/Ui/Renderers/LayoutTextOutline.cs` (Skia — the ONE place this feature touches
+`SkiaSharp`) extracts one `CurveShape` per glyph CONTOUR from `SKFont.GetTextPath` (the SAME
+`SkiaFonts.PlexRegular` typeface `LayoutRenderer.DrawLabelText` renders with — WYSIWYG, and deterministic
+across machines since the font is bundled), mirroring `DrawLabelText`'s transform EXACTLY (same
+Y-down-path-space rotation-sign table) rather than re-deriving it, with each TrueType quadratic segment
+degree-elevated to an exact Cubic edge (`LayoutEdge` has no Quad kind; elevation, unlike flattening, loses
+nothing). `src/Ui/Layout/LayoutTextFlatten.cs` (framework-free) takes those contours, flattens each via
+the SAME shared `LayoutFlattener` every other curved primitive uses (no second flattener), and — this is
+the part worth over-explaining — **resolves nesting (which contour is an outer boundary vs. a hole) via
+Clipper2's `Union`/`PolyTree64` (`LayoutClipper.FromClipperTree`, already the single nesting-resolution
+point every other multi-contour boolean result in this codebase uses), NEVER by inferring nesting from
+contour winding by hand** — glyph fill rules vary by font, and hand-winding-inference is a classic source
+of filled-in letters (a hole silently vanishing). This is a real end-to-end exercise of §3.1a holes: `O`
+→ 1 polygon with 1 hole, `8` → 1 polygon with 2 holes, `i` → 2 SEPARATE polygons (dot + stem, neither
+nested in the other) — without hole support every rounded letter would come out as a solid blob. One
+`ReplaceShapesCommand` covers the WHOLE selection per Flatten operation (not one per label) — a label
+expanding to N polygons is simply N `added` entries against its ONE `removed` entry, which
+`ReplaceShapesCommand`'s existing N-removed→M-added contract already handles with no changes; undo
+restores the exact original `LabelShape` instance at its original index.
+
+**`SkiaFonts.PlexRegular` cannot load in this project's headless xunit tests at all** (confirmed
+empirically, not assumed: `Avalonia.Platform.AssetLoader` throws `InvalidOperationException` with no live
+Avalonia app host — the same constraint `LayoutRulerRendererTests.cs` already documented for tick-label
+text). `LayoutTextOutline.BuildGlyphContours` gained an `internal TestOverrideTypeface` (via
+`InternalsVisibleTo`, production code never sets it) substituting `SKTypeface.Default` — the ONE typeface
+guaranteed loadable without the asset system — so the REAL algorithm (glyph extraction, quad-to-cubic
+elevation, DBU transform, `LayoutFlattener`, Clipper2 nesting) runs genuinely end-to-end in tests, through
+the actual VM entry points (`FlattenSelectionToPolygon`/`FlattenAllCurves`), not a mock. Verified by hand
+against a scratch console probe before writing test assertions: `SKTypeface.Default` resolves to
+Helvetica on macOS and produces the exact same glyph topology (O=1 hole, 8=2 holes, i=2 disjoint parts)
+any reasonable Latin sans-serif does — a safe, portable bet for these specific glyphs. Gate 11 ("same
+font") and the ghost's pixel-level visibility (R-lbl-2's second half) genuinely cannot be exercised at
+all here — pinned instead by a source-text-scan (both `LayoutRenderer.cs` and `LayoutTextOutline.cs`
+reference `SkiaFonts.PlexRegular` verbatim) and by testing `EffectiveGhostLabelHeightDbu` as the pure
+arithmetic it was deliberately split out to be, respectively — matching this codebase's established
+answer to "the thing under test needs a live Avalonia app host this project's tests don't have."
+
+Test file: `LayoutLabelFixAndTextFlattenTests.cs` — the PCB-technology headline regression (a placed
+label renders ≥ 4 device px at the default viewport; a direct negative-control proving the OLD 5000 DBU
+constant would have been sub-pixel there), both starter techs seed `CurrentLabelHeightDbu` from
+`DefaultLabelHeightDbu` and a later technology change never re-seeds it, no-technology fallback to 5 µm,
+`.ctech` round-trip of the new field plus a hand-stripped-field file still loading, the typing hint
+appearing/clearing on commit/Escape and noting/omitting the too-small-for-zoom case, the ghost min-size
+boost as pure arithmetic, Space appending to the label buffer while typing (VM-level, since `LayoutCanvas`
+is a `Control` and cannot be constructed headlessly) plus a source-scan pin of the guard clause itself,
+the O/8/i hole-count gates and a raw-glyph-vs-flattened-polygon bounding-box cross-check, the same-font
+source-scan, port-label-alone-disabled and mixed-selection-skip-and-report, the Rect/Circle/label
+enablement matrix, and flatten-a-label undo restoring the original `LabelShape` at its original index
+byte-identically. 28 new tests; 2227 Ui.Tests total, all green; full solution green (Firewall 4/4, Core
+388/388, Engine 461/462 — 1 pre-existing skip, matching the layout-bitmaps-and-insert-button baseline
+exactly). **Not interactively verified** (no visual driver in this environment) — please confirm placing
+a label on a PCB-technology layout is now visibly readable at the default zoom, that typing shows the
+status hint, that Space in label text still types a space without arming pan, and that flattening a
+label (Right-click → Flatten to Polygon… with a Label selected) produces geometry matching the rendered
+glyph.
+
+Layout bitmaps + Insert Bitmap (brief-layout-bitmaps-and-insert-button.md, 2026-07-27) — COMPLETE: the
+Layout Editor gained a `BitmapShape : LayoutShape` (image path reference, X/Y/W/H DBU placement rect,
+Opacity, Locked) — a min-corner-and-size shape, unlike every other primitive's own coordinate shape —
+plus an "Insert Bitmap" toolbar button in **both** the symbol editor and the Layout Editor.
+
+**`src/Ui/Renderers/BitmapCache.cs` (new, R-bmp-1) is the single shared decode cache**, extracted from
+`SchematicRenderer`'s former private `ConcurrentDictionary<string, SKBitmap?>` — `Load`/`Invalidate`/
+`TryGetPixelSize`/`DrawBrokenPlaceholder`, used by both the schematic/symbol renderer and the new
+layout renderer. `SchematicRenderer.InvalidateBitmapCache`/`TryGetBitmapPixelSize` are now one-line
+forwarders (`=> BitmapCache.Invalidate(path)` / `=> BitmapCache.TryGetPixelSize(path)`) — every existing
+caller (`SchematicViewModel`, `SymbolEditorViewModel`) needed zero changes.
+
+**R-bmp-2 — a bitmap's Layer governs visibility/selectability only, NEVER paint order; bitmaps always
+render first, beneath every layer, regardless of the layer's own ZOrder.** This is the one deliberate
+exception to every other shape's "Layer determines both visibility and z-order" rule, and is enforced in
+exactly one place: `LayoutRenderer.Draw` excludes `BitmapShape` from the ZOrder-sorted `byLayer` grouping
+entirely and calls a new `DrawBitmapShapes` unconditionally right after the path-space matrix is set up,
+before the per-layer loop runs. `DrawBitmapShapes` still respects the bitmap's OWN layer's `Visible` flag
+(and reports unknown layers the same way `Draw`'s main loop does) — "always behind" is about paint
+ORDER, not visibility. A missing/undecodable file draws `BitmapCache.DrawBrokenPlaceholder` (a dashed
+warning-colored box + X) instead of throwing or silently vanishing. Both the selection-outline builder
+(`BuildOutlinePathForSelection`) and the ghost/paste-preview builder (`DrawGhostShape`) gained their own
+`BitmapShape` case for the same reason — `BuildShapePath` (the shared per-shape path builder every other
+draw call funnels through) deliberately has NO `BitmapShape` case, since a bitmap isn't geometry, so
+these two callers needed a small dedicated rect-path branch (`BuildBitmapPlacementRectPath`) instead.
+
+**R-bmp-3 — a bitmap is NOT geometry.** `LayoutEditorViewModel.Booleans.cs`'s `GeometricSelectedIndices`
+(`ValidSelectedIndices.Where(i => Model.Shapes[i] is not BitmapShape)`) is the ONE place this is
+enforced — Union/Intersect/Difference/XOR/Offset all gather their operands through it, so a bitmap in a
+mixed selection is silently excluded (never throws, never partially applies) rather than needing a
+defensive case added to `LayoutFlattener`/`LayoutClipper`, which would still throw if ever handed a
+`BitmapShape` (their switches have no matching arm) — the exclusion happens upstream, at operand
+gathering, not downstream, at the geometry engine. `LayoutFlattener.HasCurvedGeometry`/
+`LayoutSelfIntersection.Test`/`LayoutClipper.EnsureValidHoles`/`LayoutHandles.Build`/
+`LayoutArcPromotion.PromoteArcsToCubics` all needed NO change — each already has a safe default/`_`
+arm that handles an unrecognized shape type correctly (false/no-op/passthrough), confirmed by direct
+code reading, not assumed. **Forward-only comments** (Flatten/Export/DRC/Mesh don't exist yet) live on
+`BitmapShape`'s own doc comment in `LayoutModel.cs`: excluded from Flatten-to-Polygon, future GDSII/DXF/
+Gerber export, DRC, and MoM meshing — but full participation in bbox/hit-test/select/move/scale/
+clipboard/undo (all confirmed working via the generic, shape-type-agnostic machinery in `LayoutGeometry`/
+`LayoutHitTest`/`LayoutCoordinateWalk`/`LayoutFragment`, extended with one `BitmapShape` case each), and
+IS rendered into the clipboard's PDF/SVG/EMF graphic export (`LayoutClipboard`'s renderers call
+`LayoutRenderer.Draw` directly on the exported selection — the always-behind bitmap pass runs
+unconditionally, so this needed no clipboard-side change at all).
+
+**R-bmp-4 — sizing is viewport-relative, never a fixed DBU constant** (`LayoutEditorViewModel.Bitmaps.cs`'s
+`ComputeBitmapPlacementSize`): a newly-placed bitmap's long edge spans ~25% of the CURRENT viewport
+width in DBU (`LayoutCanvas.ViewportWidthDbu()`, computed fresh per placement from `VisibleMaxX -
+VisibleMinX` — never cached, since DBU are nanometres and a stale width would be meaningless after any
+zoom/pan), preserving the source image's pixel aspect ratio via `BitmapCache.TryGetPixelSize`. An
+undecodable file falls back to a 4:3 box (still 25%-of-viewport sized) plus a one-time Messages warning
+— insertion never silently fails. `PlaceBitmap` is the ONE construction+insertion point, shared by drag-
+drop (`DropBitmap`, top-left lands at the drop point — same convention the symbol editor's `DropBitmap`
+already established) and the Insert Bitmap button (`InsertBitmapAtViewportCenter`, centres the placed
+rect on the viewport centre instead) — no second placement path to keep in sync.
+
+**The three bitmap models — `BitmapPrimitive` (symbol editor), `SchematicBitmap` (schematic canvas
+objects), `BitmapShape` (layout) — remain deliberately separate, per the brief's explicit guardrail.**
+Different coordinate systems (symbol-editor local units vs. layout DBU), different hosts, no payoff to
+unifying them; `LayoutGeometry.Clone`'s `BitmapShape` arm and the other two models' equivalent clone
+code are near-identical by convention, not by shared type.
+
+**Locked (a NEW enforcement, not ported from anywhere)** — `BitmapPrimitive.Locked`/`SchematicBitmap`-
+adjacent precedent turned out to be persisted-but-never-enforced in this codebase (confirmed by grep: no
+caller ever reads `bmp.Locked`), so layout's `BitmapShape.Locked` needed real enforcement built from
+scratch: "blocks move and scale, never selection." `LayoutEditorViewModel.Bitmaps.cs`'s
+`MovableSelectedIndices` (`indices.Where(... && !IsLockedBitmap(...))`) is the one filter every move
+path (`CommitMoveDrag`, `NudgeSelection`, the live drag-preview loop in `RebuildOverlay`) and every scale
+path (`ApplyScale`, `TryBeginScaleDrag`) routes through — a locked bitmap stays in the selection set (its
+outline still renders, `ShowScaleHandles` still shows handles for a lone selected one) but is excluded
+from whatever a move/scale operation actually acts on; a LONE locked-bitmap scale drag has nothing left
+to move after filtering, so `TryBeginScaleDrag` returns false and the drag never begins.
+
+**Properties panel** (`LayoutShapePropertiesViewModel`/`LayoutShapePropertiesView.axaml`) — Path (staged
+text + a Browse… button, file picker in code-behind per the UI firewall) / Width / Height / Opacity
+(0-100%, staged text, no `LayoutUnits` dimension since it isn't a length) / Locked (tri-state checkbox,
+null = differs across a multi-bitmap selection, committed immediately like a combo). `ShowNet` (`=>
+!ShowBitmap`) hides the Net row for an all-bitmap selection — meaningless for an image.
+
+**Insert Bitmap toolbar button (R-bmp-5)** — Layout: `LayoutEditorView.axaml`'s toolbar, opens a
+`StorageProvider` file picker in code-behind, calls `LayoutCanvas.InsertBitmapAtViewportCenter(path)`.
+Symbol editor: same button shape, routes through the EXISTING `SymbolEditorViewModel.DropBitmap` via a
+new `SymbolEditorCanvas.InsertBitmapAtViewportCenter(path)` (viewport-centre world coords, no new
+placement logic) — `IsEnabled="{Binding ViewModel.IsEditable}"` matches every other tool button in that
+toolbar. The Layout Editor has no document-level "locked" concept to gate against (confirmed by grep —
+nothing else in `LayoutEditorViewModel` reads/writes such a flag), so its button has nothing to disable
+against and is always enabled; inventing one was out of scope.
+
+Test file: `LayoutBitmapTests.cs` — persistence round-trip (`$type: "Bitmap"`, byte-identical), Bbox/
+Clone/TranslateBy/coordinate-walk geometry, hit-test select/deselect, R-bmp-3's Union-skips-bitmap and
+Offset-disabled-with-reason, the R-bmp-2 pixel oracle (a bitmap on a HIGH-ZOrder layer still paints
+BENEATH a rect on a LOW-ZOrder layer), broken-path placeholder renders with no exception, `BitmapCache`'s
+load-once/invalidate/missing-file/pixel-size behavior, R-bmp-4 sizing (aspect-preserving quarter-viewport-
+width, undecodable-file fallback + Messages warning), the right-click Resolve Path…/Refresh Cache VM
+entry points, Locked blocking move (multi-selection: others move, the locked bitmap doesn't, still
+selected) and scale (lone locked selection: handles show, drag never commits; mixed selection: the
+locked bitmap is skipped), and `LayoutFragment` round-trip + translate (the clipboard's pure half). 25
+new tests; 2199 Ui.Tests total, all green; full solution green (Firewall 4/4, Core 388/388, Engine
+461/462 — 1 pre-existing skip, matching the datadisplay-fix-context-menu-stacking baseline exactly).
+**Not interactively verified** (no visual driver in this environment, matching every prior phase) — the
+toolbar button placement, drag-and-drop, and the properties-panel Browse… file picker cannot be
+exercised headlessly for the same reason every prior phase's dialog/menu/DnD code couldn't be;
+correctness rests on the VM-level gate tests above plus direct code reading of the generic (shape-type-
+agnostic) machinery each new `BitmapShape` case was added to.
+
+Data Display fix (context menu stacking) — brief-datadisplay-fix-context-menu-stacking.md, 2026-07-27 —
+COMPLETE: same class of defect as the layout-canvas context-menu-stacking fix, in `src/Ui/DataDisplay/`.
+A convergence job, not a design job — this codebase already contained three correct implementations of
+the two patterns needed, two of them in the very file being fixed.
+
+**Audit — four right-click menus in `PlotControl.cs`, three broken:** the **main plot menu** (`_contextMenu
+??= BuildContextMenu(); _contextMenu.Open(this);`) was already correct (**Pattern A** — static content,
+cache the built instance, never `new`-ed again). `MarkerInfoBoxView.axaml.cs`'s **marker-box menu**
+(`var menu = new ContextMenu(); menu.Opening += (_, _) => RebuildContextMenu(menu); ContextMenu = menu;`,
+constructed once in `OnDataContextChanged`) was already correct too (**Pattern B** — dynamic content,
+one instance, rebuilt on `Opening`, Avalonia owns open/close). The **marker context menu**
+(`ShowMarkerContextMenu`), **trace-header menu** (`ShowTraceHeaderContextMenu`), and **table menu**
+(was `BuildTableContextMenu`) each constructed a fresh `ContextMenu` and called `.Open(this)` on every
+right-click, never tracking or closing the previous one — the identical bug the layout-canvas fix
+addressed, just three sites instead of one.
+
+**Fix — converge onto the two patterns already proven correct in these same two files, invent nothing:**
+new `_markerContextMenu`/`_traceHeaderContextMenu`/`_tableContextMenu` fields, each `??= new
+ContextMenu()` (constructed at most once), repopulated on every click (`menu.Items.Clear()` then
+fresh `MenuItem`s — the same discipline `PopulateMarkerMenu` already had), then `menu.Close(); menu.Open(this);`
+(`Close()` first so a second right-click while the menu is still up replaces rather than re-opens —
+Avalonia's own `Control.ContextMenu`+`Opening` auto-open mechanism doesn't fit here: which of FOUR
+different menus opens is decided by hand in `OnPointerReleased` from per-click state
+(`_rightClickedMarker`/`_rightClickedTrace`/`_plot?.PlotType`), not by Avalonia's own right-click
+gesture recognition on a single declared menu, so the brief's own documented fallback — explicit
+`Close()`/`Open()` on a reused instance — is the correct choice here, not the layout fix's `Opening`-
+attached-to-XAML approach). **The table menu needed MORE than the brief's own suggested one-line
+Pattern-A fix**: `BuildTableContextMenu()` takes no parameters, which the brief flagged as suggestive of
+click-independent content — but it actually reads `_rightClickedDataTrace`/`_rightClickedDataFreq` (mutable
+fields, not parameters) to decide "Add Marker"'s enabled state AND which cell a click captures, so a
+naively-cached build would go stale after the FIRST right-click, silently adding markers at the wrong
+cell on every subsequent one. Converted to `PopulateTableContextMenu(ContextMenu menu)` (Pattern B, like
+the other two) instead of the brief's suggested `_tableContextMenu ??= BuildTableContextMenu()` — the
+brief explicitly asked to "check first," and checking found the click-dependency it flagged as unlikely.
+
+**`MarkerInfoBoxView.PopulateMarkerMenu` needed no change** — already `menu.Items.Clear()` first, always
+builds fresh `MenuItem`s, so it was already safe to call repeatedly on the same instance; that's exactly
+why Pattern B already worked in the info box and why `ShowMarkerContextMenu` could adopt it unchanged.
+
+**Wider audit (guardrail):** grepped the rest of `src/Ui` for `new ContextMenu`/`.Open(` on a menu —
+nothing outside these two files does either; no further sites to report.
+
+Test file: `DataDisplayContextMenuStackingTests.cs` — `PlotControl` is a `Control` subclass and this
+project's tests must not call any Avalonia runtime API, so (matching the layout fix's own precedent)
+this is a source-text-scan test: exactly one unguarded `new ContextMenu()` remains in `PlotControl.cs`
+(`BuildContextMenu()`'s own internal construction, itself only ever called from behind `_contextMenu
+??=`), the three previously-broken menus are each guarded and clear `Items` before repopulating and
+`Close()` before `Open()`, and `MarkerInfoBoxView.axaml.cs` is unchanged (still exactly one `new
+ContextMenu()`, still the `Opening`-rebuild pattern, `PopulateMarkerMenu` still clears first). 5 new
+tests; 2174 Ui.Tests total, all green; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 —
+1 pre-existing skip, matching the L1j baseline exactly). **Not interactively verified** (no visual
+driver in this environment) — please confirm ten consecutive right-clicks on a marker, a trace header,
+and the plot table each leave exactly one menu open, and that right-clicking marker A then marker B
+shows B's options, not A's stale ones.
+
+L1j post-ship fix — vertex list couldn't scroll (2026-07-27) — COMPLETE: owner report, same day as
+L1j shipped. Root cause: the vertex list used a bare `ItemsControl`, on the (wrong) assumption that its
+default Fluent-theme template already wires up a `ScrollViewer` the way `ListBox`'s does. It doesn't —
+scrolling was silently inert, no error, no visible symptom in the empty/short-list case that got
+exercised during development. **Fix:** switched to `ListBox` (still with `ListBox.DataTemplates` for
+the `RingHeaderRow`/`VertexRowViewModel` polymorphic dispatch, unchanged) with an EXPLICIT
+`ScrollViewer.VerticalScrollBarVisibility="Auto"` (+ `HorizontalScrollBarVisibility="Disabled"`) attached
+property — this is not a new pattern: `SymbolPrimitiveInspectorView.axaml`'s own "virtualized coord
+list" (`PolylineCoords`, the closest sibling feature in this codebase — an editable, bounded-height row
+list in a properties panel) already established exactly this `ListBox` + explicit attached-property
+shape, and this fix now matches it instead of diverging. **Rule for any future bounded/virtualized row
+list in this codebase: use `ListBox`, not a bare `ItemsControl`, and always set
+`ScrollViewer.VerticalScrollBarVisibility` explicitly — do not rely on the theme's default.** No VM
+change — `LazyIndexedList`/`RebuildOrRefreshVertexRows`/virtualization semantics (R-L1j-5/R-L1j-6) are
+unaffected; this was AXAML-only. Full solution green (Firewall 4/4, Core 388/388, Ui.Tests 2169/2169 —
+unchanged count, no new tests since this is a pure control-choice fix with no new VM-observable
+behavior; the underlying `LazyIndexedList` gate-11 test already covers the data side). **Not
+interactively re-verified** (no visual driver in this environment) — please confirm the vertex list now
+scrolls with the mouse wheel/scrollbar for a polygon with more vertices than fit in the panel.
+
+Phase L1j — richer, live Properties Inspector (brief-L1j-properties-inspector.md, 2026-07-27) —
+COMPLETE: the Layout Editor's shape-properties panel now updates live during a drag, gained Rect/
+RoundedRect width/height/position fields, an editable virtualized vertex list (with holes), and
+visible-invalid-state validation uniformly across every field, old and new.
+
+**R-L1j-1 — the inspector reads EFFECTIVE (drag-override-aware) geometry, which is what makes every
+field live and why the refresh plumbing needed no change at all.** `LayoutEditorViewModel.
+EffectiveShapeAt(int)`/`EffectiveSelectedShapes()` (new) return the live `Overlay.DragOverrides` preview
+clone for an index when a drag is in flight, otherwise the committed `Model.Shapes[i]`. `_selected`
+(`LayoutShapePropertiesViewModel`) is now built from `EffectiveSelectedShapes()` instead of
+`Model.Shapes[i]` directly — that one change is the entire liveness fix; `RefreshFromVm`'s existing
+triggers (`_vm.Model.Changed` and `_vm.PropertyChanged` on `Overlay`, both already subscribed since L1c)
+already fire on every pointer move of a drag, exactly as the brief's own diagnosis predicted ("the
+trigger is not the problem").
+
+**R-L1j-2 — read-only mid-drag, because `_selected` holds throwaway preview clones then.**
+`IsEditingEnabled` (`false` whenever `Overlay.DragOverrides.Count > 0`) gates the whole editable region
+via one `IsEnabled` binding on the fields' `StackPanel` and the vertex list's `ItemsControl` — fields
+stay visible (live) but not typeable. Belt-and-braces: every Commit* method independently re-checks
+`DragBlocksEdits()` at the moment it runs, so a commit is refused even if something bypassed the view's
+binding (the direct regression gate for this).
+
+**R-L1j-3 — a refresh never clobbers the field currently under the caret.** `SetFocusedField(string?)`
+is called by the view's new GotFocus/LostFocus handlers (Tag-keyed, see below); every text write
+`RefreshFromVm` makes goes through `SetTextIfNotFocused(fieldKey, value, getter, setter)`, which skips
+the one field matching `_focusedField`. LostFocus clears the focus key **before** calling the field's
+own Commit* method, so that field's own just-committed reformat is NOT skipped (only a refresh
+triggered by something else, while still focused, is protected) — Escape (`RevertField`/`VertexRowViewModel.
+Revert`) is the one deliberate bypass, forcing exactly that field back to canonical and clearing its error.
+
+**Width/Height/Position (§2), R-L1j-4 — size and position are two DIFFERENT semantics, not one.**
+`ShowRectSize` gates a new block (above the RoundedRect corner-radius field) for any selection that is
+all `Rect`/`RoundedRect`. Editing **Width/Height** (`ApplyRectResize`) keeps the minimum corner (X1,Y1)
+FIXED and moves the far edge (X2/Y2) — matches how the shape was drawn; the tooltip states this
+directly. Editing **X/Y** (`ApplyRectPosition`, the "also add position" addition — kept, not struck)
+instead TRANSLATES the shape, preserving width/height. A `RoundedRect`'s `CornerRadius` is clamped to
+half the (possibly new) shorter side by `ApplyRectResize` and reported via the new
+`LayoutEditorViewModel.ReportWarning` — otherwise shrinking the width below `2×CornerRadius` would
+silently produce a geometrically invalid shape. Both helpers chain per-shape
+`SetShapeFieldCommand<long>`s (X1/Y1/X2/Y2, and the clamp, when it fires) into one `CompositeCommand`
+per multi-selection edit — no `ReplaceShapeCommand`/cloning needed here, since Rect/RoundedRect are
+plain-field shapes and `_selected[i]` is the live model reference whenever editing is enabled (R-L1j-2
+guarantees no drag is in flight at commit time).
+
+**The vertex list (§3) — last in the panel, shown for exactly one `Polygon`/`Curve`/`Path`.**
+Columns: `#` (read-only), `X`/`Y` (editable, `LayoutUnits` fields), `Edge` (read-only — `Line`/`Arc`/
+`Cubic`, blank for an open `Path`'s last vertex, which has no outgoing edge; edge CONVERSION stays on
+L1d's canvas context menu, never here). Holes (§3.1a) are grouped under their own ring header — "Outer
+(12)", "Hole 1 (8)", outer first, via `LayoutShapeEditing.HolesOf`/`SetHoleVertex` (new, mirroring the
+existing `XyOf`/`SetVertex` for the outer ring — a hole vertex is always Line-kind, since a hole is
+always Clipper2-polygonal, never its own edge list). **Committing a vertex edit is exactly one
+`ReplaceShapeCommand`** (`LayoutShapePropertiesViewModel.CommitVertexField`) — the SAME command L1d's
+own canvas vertex-drag commits, so undo restores the exact original shape instance at its original
+index and the Polygon→Curve promotion rule needs no special-casing here.
+
+**R-L1j-5/R-L1j-6 — the two virtualization traps, both silent, both invisible until a huge imported
+polygon freezes the UI.** (5) The vertex list is its OWN bounded region (`Grid RowDefinitions="Auto,*"`,
+the fields' `ScrollViewer` capped at `MaxHeight="340"`), never nested inside the fields' `ScrollViewer` —
+an unbounded-height `ItemsControl` measures and realizes every item, degrading virtualization to
+nothing with zero visible symptom until someone selects a 20,000-vertex polygon. Avalonia's `ItemsControl`
+already wraps its content in its own `ScrollViewer` + `VirtualizingStackPanel` by default (no explicit
+wrapper `ScrollViewer` was added — that would be the exact same trap one level up). (6) `LazyIndexedList<T>`
+(new, `src/Ui/ViewModels/`) is an index-addressed `IReadOnlyList<T>` that constructs (and caches) a row
+on FIRST access only — `Count` and "what kind of row is at index i" are computed from ring VERTEX
+COUNTS (`BuildRingPlan`, O(numRings)), never by walking every vertex. `RebuildOrRefreshVertexRows`
+rebuilds `VertexRows` (a brand-new `LazyIndexedList`) only when the ring STRUCTURE changes (ring/vertex
+counts, e.g. insert/remove-vertex or a Polygon→Curve promotion elsewhere); for an unchanged structure —
+including every pointer move of a live canvas vertex-drag — it instead calls `RefreshFromShape()` on
+only the ALREADY-REALIZED rows (`LazyIndexedList.MaterializedIndices`), so a drag never rebuilds the
+collection (would thrash scroll position/focus) and a 20,000-vertex polygon materializes only the ~30
+rows actually on screen. `LazyIndexedList.MaterializedCount` is the gate-11 test hook proving this holds.
+
+**Validation (§4) — one visible-invalid-state idiom, reused everywhere, not invented per field.**
+Every dimension field parses through `LayoutUnits.TryParse`; on invalid/out-of-range input the Commit*
+method sets that field's `XxxError` string (a specific reason — `"Width must be greater than 0"`, not a
+generic rejection) and returns WITHOUT touching the field's Text or calling `RefreshFromVm` — the user's
+typed text is never silently discarded. `Classes.error="{Binding HasXxxError}"` (a `TextBox.error` style,
+`CrfWarningBrush` border — the same brush `TechEditorView`'s validation banner already uses) plus
+`ToolTip.Tip="{Binding XxxError}"` is the visible cue, applied uniformly to every field, old and new —
+no bespoke per-field error `TextBlock`, matching "reuse the existing idiom." Escape reverts explicitly
+(`RevertField`/row `Revert`); LostFocus naturally reverts too once focus has genuinely left (R-L1j-3's
+guard no longer protects a field once `_focusedField` is cleared). Multi-selection blank-on-differing/
+apply-to-all-as-one-undo-entry was already `ApplyToEach`'s behavior and needed no change.
+
+**View wiring is Tag-keyed, mirroring `TechEditorView`'s `CommitField`/`OnComboSelectionChanged`
+dispatcher** — three generic handlers (`OnFieldGotFocus`/`OnFieldLostFocus`/`OnFieldKeyDown`, reading
+`TextBox.Tag` as the field key) cover every STATIC field in the panel instead of one handler pair per
+field; three more (`OnVertexFieldGotFocus`/`...LostFocus`/`...KeyDown`, reading `Tag` = `"X"`/`"Y"` plus
+`DataContext` as the specific `VertexRowViewModel`) cover every vertex row. `LayoutShapePropertiesViewModel.
+CommitField(key, text)`/`RevertField(key)` are new generic entry points that dispatch to the SAME
+granular `Commit*Text` methods (`CommitCornerRadiusText`, `CommitRectWidthText`, …) that already existed
+(or were added) with their original public names/signatures — existing tests calling those directly are
+untouched.
+
+Test files: `LayoutShapePropertiesLivenessTests.cs` (gates 2-7, 13 — a `Rect` corner/`Circle` radius/
+`RoundedRect` corner-radius handle drag all update their text fields on EVERY pointer move before
+release; a whole-shape move drag updates X/Y continuously; undo refreshes the panel; a commit attempted
+mid-drag is refused and the model is unchanged, fields re-enable on release; a focused field survives a
+refresh triggered by an unrelated model change and only reformats once focus genuinely leaves; Width/
+Height keep the min corner fixed while a RoundedRect's corner radius clamps-and-reports; every
+`LayoutUnits` input form is accepted; invalid text shows the error state without mutating the model or
+discarding what was typed; Escape reverts; a differing multi-selection Rect-width edit applies to all as
+one undo entry), `LayoutVertexListTests.cs` (gates 8-12 — visibility restricted to exactly one Polygon/
+Curve/Path; a row edit is one `ReplaceShapeCommand` that undoes/redoes at the original index with the
+list reflecting it; an invalid vertex commit pushes no command; a hole polygon shows both ring headers
+with correct counts and a hole vertex edits correctly; a 20,000-vertex polygon selects near-instantly
+with `MaterializedCount == 0` until rows are actually accessed, then stays in the tens; a live canvas
+vertex-drag never replaces the `VertexRows` collection instance while updating the realized row's text).
+24 new tests; 2169 Ui.Tests total, all green; full solution green (Firewall 4/4, Core 388/388, Engine
+461/462 — 1 pre-existing skip, matching the L1-fix-context-menu baseline exactly). **Not interactively
+verified** (no visual driver in this environment, matching every prior Layout Editor phase) — the
+`ItemsControl` virtualization itself (container realization, actual scroll behavior) cannot be driven
+headlessly (this project's test suite must not call any Avalonia runtime API at all — a stricter bar
+than the usual "no `Window` subclass" note); correctness rests on `LazyIndexedList`'s own gate-11 test
+(proving the DATA STRUCTURE never eagerly materializes) plus direct code reading of the `ItemsControl`
+placement (its own default template already provides `ScrollViewer` + `VirtualizingStackPanel` — no
+custom wrapper was added that could defeat it).
+
+L1 fix (context menu stacking) — LayoutCanvas built a new ContextMenu per right-click
+(brief-L1-fix-context-menu-stacking.md, 2026-07-27) — COMPLETE: owner report — right-clicking the layout
+canvas opened a menu, but every subsequent right-click opened ANOTHER one underneath it without
+dismissing the first, so N right-clicks left N stacked popups (peeled off one dismissal at a time).
+Root cause: `LayoutCanvas.ShowShapeContextMenu` ended with `var menu = new ContextMenu { ItemsSource =
+items }; menu.Open(this);` — a brand-new instance, manually opened, never tracked, never closed. This
+is the second bug in a row caused by the layout editor diverging from an established house convention
+(the Scale dialog's `TextChanged` commit, fixed the same session, was the first) — the fix converges on
+the pattern rather than patching the divergent one.
+
+**The reference pattern, copied exactly:** `SymbolEditorCanvas`/`SchematicCanvas` already do this
+correctly — ONE `ContextMenu` declared once in the hosting view's XAML (`<ctrl:SymbolEditorCanvas.
+ContextMenu><ContextMenu Opening="..."/></...>`), and the canvas's `OnPointerPressed` right-click branch
+only RECORDS what was under the click into a field; Avalonia opens the declared menu itself and raises
+`Opening`, where the handler rebuilds `ItemsSource` fresh (or cancels). `LayoutCanvas` now follows the
+identical shape: **`LayoutEditorView.axaml`** declares the single `<ContextMenu Opening=
+"OnLayoutContextMenuOpening"/>` on `LayoutCanvasCtrl`; **`LayoutCanvas.OnPointerPressed`**'s right-click
+branch (non-Ctrl) now only sets `ContextMenuTarget = (wx, wy)` — no `e.Handled = true` here, mirroring
+the reference exactly, since marking the pointer-pressed event handled risks suppressing Avalonia's own
+right-click-opens-ContextMenu gesture recognition (a separate mechanism from ours); the Ctrl+right-click
+branch (routes to ordinary press handling per the macOS one-button-mouse convention) explicitly clears
+`ContextMenuTarget = null` before returning, so the `Opening` handler cancels via `e.Cancel = true`
+rather than "just not calling Show" as before. **`LayoutCanvas.BuildContextMenuItems(wx, wy)`**
+(`internal`, replacing the old `private void ShowShapeContextMenu`) is the exact same item-building logic
+(edge-conversion items, Delete Vertex, `AddBooleanAndFlattenMenuItems`'s selection-scoped booleans/
+offset/scale/repair/flatten) — unchanged in content, only its ending changed: it now `return`s the
+`List<object>` instead of constructing-and-opening a `ContextMenu` itself. **`LayoutEditorView.axaml.cs`
+'s `OnLayoutContextMenuOpening`** is the thin glue: `LayoutCanvasCtrl.ConsumeContextMenuTarget()` (an
+atomic get-and-clear, so a stale target can never leak into a later, unrelated opening) returns null →
+cancel; otherwise `BuildContextMenuItems` runs fresh and its result becomes `ItemsSource`. **Fresh
+`MenuItem`s every opening, never reused item instances with re-subscribed `Click`** — that would fire an
+action N times on the Nth opening, a worse bug than the one being fixed; `BuildContextMenuItems`
+already built fresh items every call before this fix (nothing to change there), so this property was
+free, not something newly engineered.
+
+**§4 audit — the other canvases:** `SchematicCanvas` was checked and is NOT affected — it already uses
+the correct framework-owned pattern (`ContextMenuTargetId`, recorded-only on right-click, matching
+`SymbolEditorCanvas`'s `BitmapContextPrimIdx`). `MarkerInfoBoxView.axaml.cs` (Data Display) is also
+correct — a single `ContextMenu` instance assigned once in `OnDataContextChanged`, rebuilt via its own
+`Opening` handler. **`PlotControl.cs` (Data Display's plot canvas) DOES have this bug, in THREE of its
+four context-menu paths**: `ShowMarkerContextMenu`, `ShowTraceHeaderContextMenu`, and the Table
+right-click path via `BuildTableContextMenu()` all construct `new ContextMenu()` fresh and call
+`.Open(this)` on every invocation with nothing tracked or closed — the identical stacking bug this brief
+fixed for layout. (The plain-canvas right-click path in the same file, `_contextMenu ??=
+BuildContextMenu()`, is already correctly cached and reused — so the file is inconsistent internally,
+not uniformly wrong.) **Not fixed in this pass per the brief's explicit guardrail** ("layout canvas
+context menu only... do not fix [another canvas] even if it has the same pattern... it gets its own
+brief") — flagging here so a follow-up brief can target `PlotControl.cs` specifically; the fix shape is
+already proven (mirror `MarkerInfoBoxView.axaml.cs`'s own correct sibling code in the same file family).
+
+Test file: `LayoutContextMenuStackingTests.cs` — `LayoutCanvas` is a `Control` subclass and this
+project's test suite must not call any Avalonia runtime API (`tests/Ui.Tests/CircuitRF.Ui.Tests.csproj`'s
+own header comment), so the menu-building/event-wiring behavior itself cannot be driven directly —
+matching every prior Layout Editor phase's note that context-menu construction "cannot be unit-tested
+headlessly." Per the brief's own fallback (gate 2's second sentence): 3 structural/source-level tests
+assert the invariant that makes stacking impossible by construction — `LayoutCanvas.cs` contains no `new
+ContextMenu` and no `.Open(this)` call anywhere, and `LayoutEditorView.axaml` declares exactly one
+`<ContextMenu>` element, wired to `OnLayoutContextMenuOpening`. 3 new tests; 2145 Ui.Tests total, all
+green; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip, matching
+the L1i baseline exactly). Gates 3–7 (rebuild-per-opening content correctness, click-fires-exactly-once,
+Ctrl-suppression, enablement preservation) rest on code reading and the unchanged-by-this-fix VM-level
+enablement tests (`LayoutEnablementTests.cs`) — not on a new behavioral test, for the same "cannot
+construct a Control headlessly" reason every prior phase's menu/dialog code has cited. **Not
+interactively verified** (no visual driver in this environment) — please confirm ten consecutive
+right-clicks now leave exactly one menu open.
+
+Phase L1i — live marquee selection feedback (brief-L1i-live-marquee-selection.md, 2026-07-27) —
+COMPLETE: one owner report — while dragging a selection marquee, nothing highlighted until release, so
+the user couldn't see what they were about to select. Root cause: `LayoutEditorViewModel.CommitMarquee`
+(the hit computation) was called only from `HandleSelectRelease`; the move handler just redrew the
+rectangle.
+
+**R-L1i-1 — one hit computation, two callers, by construction, not by discipline.** `CommitMarquee`'s
+old body (bbox scan + enclose/crossing test + Shift/Ctrl combination against `_marqueeBaseSelection`)
+is now `ComputeMarqueeSelection(curX, curY)` — called from the move handler on every qualifying pointer
+move AND from `CommitMarquee` (now just `SetSelection(ComputeMarqueeSelection(...))`) at release. This
+is the point of the refactor: if the preview computed hits differently from the commit, the highlight
+would lie about the outcome — with one shared function, that divergence is structurally impossible, not
+just untested. `RebuildOverlay` computes ONE "effective highlight" — `_marqueePreview` while
+`_selectDragKind == Marquee`, `_selectedIndices` otherwise — so there is one render path, not a
+committed one and a preview one; the highlight uses the same accent as a settled selection.
+
+**R-L1i-2 — the preview NEVER writes into `_selectedIndices`.** `ComputeMarqueeSelection` mutates and
+returns a separate reused scratch buffer, `_marqueePreview` — the modifier combination is computed
+*against* `_marqueeBaseSelection` (the pre-drag selection snapshot), so a preview that wrote into the
+real selection would corrupt the very base it's derived from on the next pointer move. Escape
+(`CancelMarqueeIfActive`, called from `CancelDrawOp` before `_selectDragKind` resets) and an off-canvas
+button-release both clear `_marqueePreview` and restore `SelectionStatusText` from the (untouched)
+`_selectedIndices` — never a special "was it a marquee?" branch, since that field was simply never
+written during the drag.
+
+**R-L1i-3 — the preview IS the prospective final selection, not the raw hits.**
+`ComputeMarqueeSelection` already folds in Shift (add) and Ctrl (toggle) against the base selection, so
+highlighting its result directly means a Ctrl-drag crossing an already-selected shape visibly
+**un-highlights** it mid-drag — the owner's "unhighlight" request falls out of this rule with no
+separate code path.
+
+**R-L1i-4 — solid = enclose, dashed = crossing** (`LayoutRenderer.DrawMarquee`, keyed off
+`LayoutMarquee.IsLeftToRight`) — the standard CAD affordance, now load-bearing rather than decorative
+since the highlight set can visibly change when a drag crosses back over the press point.
+
+**Perf — skip the recompute below one device pixel of movement**, a genuinely realistic gate (not just
+a micro-optimization): pointer-move events far outnumber meaningful rectangle changes.
+`LayoutEditorViewModel.OnPointerMoved` gained a `pixelDbu` parameter (world-space size of one device
+pixel at the current zoom, computed fresh per call by `LayoutCanvas.OnePixelDbu()` — deliberately NOT
+derived from the existing several-pixel `HitTolDbu()`, a different concern); the move handler compares
+the new corner against `_marqueeLastComputedCorner` (the corner used for the last actual compute, not
+the raw pointer position) and only calls `ComputeMarqueeSelection` when it moved by at least that much.
+`pixelDbu` defaults to 0 (always recompute) so every pre-existing call site/test that doesn't pass it is
+unaffected. `MarqueeRecomputeCount` (internal, `InternalsVisibleTo`) is test-only instrumentation
+proving the skip actually skips (gate 9) — there was no other way to observe "did the expensive path
+run" without it. `_marqueeHitsScratch`/`_marqueePreview` are both persistent, cleared-and-refilled
+buffers, never reallocated per pointer move.
+
+Test file: `LayoutMarqueePreviewTests.cs` — gate 2 (live highlight before release, un-highlight on
+leaving), gate 3 (preview-at-release-moment == committed selection, for all three modifier states,
+asserted by direct comparison rather than a reimplementation), gate 4 (plain/Shift/Ctrl preview
+semantics, including the Ctrl un-highlight), gate 5 (50 intermediate moves under Shift match one move
+to the same endpoint — the direct regression for "does the preview corrupt the base"), gate 6 (a
+direction flip mid-drag changes both the rectangle style and the highlight set, and the commit matches
+the FINAL direction), gate 7 (Escape restores the rendered highlight, not just the model), gate 8
+(hidden/non-selectable layers never preview), gate 9 (`MarqueeRecomputeCount` proves sub-pixel moves are
+skipped and a crossing move recomputes), gate 10 (a full gesture through `LayoutViewport.ScreenToWorldX/
+Y` on both starter technologies at a realistic default viewport). 15 new tests; 2142 Ui.Tests total, all
+green; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip, matching
+the L1h-fix baseline exactly). **Not interactively verified** (no visual driver in this environment,
+matching every prior Layout Editor phase) — correctness rests on the gate tests above, which drive the
+exact same public `OnPointerPressed`/`OnPointerMoved`/`OnPointerReleased` state machine the canvas calls
+and read the live highlight through `Overlay.SelectedIndices`, the same property the renderer consumes.
+
+L1h fix (Scale dialog) — the untestable shim held the bug, not the linker (2026-07-27) — COMPLETE: third
+report on "typing a Width/Height into the Scale dialog gets silently corrupted." Two prior rounds fixed
+the wrong layer — **`ScaleFieldLinker`'s exact-factor math was already correct through both of them.**
+`ScaleDialog.axaml.cs` is a `Window` subclass, the one layer that cannot be constructed in this project's
+headless test suite — so it was the only place a policy bug could hide and survive two "fixed and tested"
+rounds. The actual defect: every box committed on **`TextChanged`** (per keystroke). A programmatic write
+to one box (echoing a just-typed value into another, both rounded to 4 decimals for display) could itself
+raise a live commit if its delivery landed after the `_updating` reentrancy guard had already been reset —
+`OnHeightChanged` would then re-derive `FactorY` from that ROUNDED height text, and because Uniform mode
+cross-assigns, silently overwrite the EXACT `FactorX` the user's own edit had just set. The fix (per
+`docs/sonnet-briefs/brief-L1h-fix-scale-dialog-width.md`) is to **remove the policy from the shim, not
+patch it again**: `ScaleFieldLinker` (`src/Ui/Views/Dialogs/ScaleFieldLinker.cs`) now owns "which field is
+authoritative and must never be written back" directly, and every rule that makes the bug structurally
+impossible lives there, where it's testable.
+
+**`ScaleField` enum + `Edit(field, text)`/`DisplayFor(field)` replace the old `TrySet*Text` methods.**
+`Edit` records the committed field as `AuthoritativeField`; `DisplayFor` returns `null` for that field —
+never a string to write back — so `ScaleDialog.axaml.cs` has no `skip*` flags left to pass correctly or
+forget: it loops all four boxes and assigns `DisplayFor(field)` only where non-null. **R-fix-1 — commit is
+LostFocus + Enter, never TextChanged**, matching every other typed dimension field in this editor
+(`LayoutShapePropertiesView.axaml.cs`'s own header comment states the same convention) — per-keystroke
+commit was wrong on its own terms regardless of the reentrancy bug (typing "400" would have momentarily
+committed a width of "4", then "40", rewriting the other fields through nonsense on the way).
+
+**R-fix-5 — a genuinely realistic second trigger, closed by treating a same-text commit as a pure no-op.**
+Even with LostFocus/Enter, tabbing THROUGH an unedited field still fires its LostFocus with whatever the
+last refresh wrote in its box — `DisplayFor(Height)`'s own rounded text, not anything the user typed.
+`Edit` now compares the incoming text against the field's OWN current display (`RawDisplayFor`, the
+authoritative-gating-free internal getter `DisplayFor` wraps) **before** doing anything else; an exact
+match is a no-op — returns `true`, but recomputes nothing and leaves `AuthoritativeField` untouched. This
+is what actually makes "Uniform mode must not let a derived field overwrite the authoritative one" hold:
+without it, tabbing through Height after typing Width would still silently corrupt `FactorX`, LostFocus
+convention or not.
+
+**Test file (`ScaleFieldLinkerTests.cs`, rewritten):** now exercises the public `Edit`/`DisplayFor` API
+(the old `TrySetWidthText` etc. are `private`, only reachable through `Edit`) — the headline typed-width
+survival case, idempotent-refresh (100 re-reads never drift `FactorX`), the "no round-trip through display
+text" invariant stated directly (`DisplayFor` returns null for the authoritative field), and the R-fix-5
+regression itself: type Width, Tab through Height untouched, assert `Edit` accepts it as a no-op and
+`FactorX` is bit-identical to before. 12 Ui.Tests (was 11 — one gate replaced, no count regression). Full
+solution green (Firewall 4/4, Core 388/388, Ui.Tests 2127/2127, Engine 461/462 — 1 pre-existing skip).
+**Still not interactively verified** (no visual driver in this environment) — gate 6 of the brief (type
+400, Tab away, confirm the box still reads 400, click Scale, confirm the resulting shape measures 400) is
+manual and was not run; correctness rests on the linker-level tests above plus the shim being reduced to
+a loop with no decision left to get wrong.
+
+L1h post-ship fix — Scale dialog button centering + Width/Height not respected (2026-07-27) — COMPLETE:
+two owner reports after trying L1h. **(1) Cancel/Scale button text not centered:** `HorizontalContentAlignment="Center"`
+added to both buttons in `ScaleDialog.axaml` — trivial. **(2) Typing a Width/Height was silently corrupted**
+(e.g. typing `400` redisplayed as `400.9001`) — reported twice; the first fix attempt (tracking `_factorX`/
+`_factorY` as private fields on `ScaleDialog.axaml.cs` read at commit) built clean and passed the full suite,
+but the owner reported the bug persisting. Root cause, confirmed by re-reading rather than re-guessing: nothing
+in the shipped code re-parsed the rounded `"0.####"` Factor display string — the most likely explanation for
+"still broken" is that the owner was re-testing an already-running (unrebuilt) compiled desktop app, since this
+project has no interactive GUI driver available to confirm directly. Rather than re-assert the same fix, the
+live field-linking logic was extracted into a new pure, Avalonia-free class, **`ScaleFieldLinker`**
+(`src/Ui/Views/Dialogs/ScaleFieldLinker.cs`) — `ScaleDialog.axaml.cs` is now a thin shim that only wires TextBox
+events to it. `FactorX`/`FactorY` are the sole source of truth for a commit (full-precision `double`);
+`FactorText`/`FactorYText` (`"0.####"`) exist ONLY for redisplay and are never re-parsed. `TrySetWidthText`/
+`TrySetHeightText` derive the exact factor via `(double)parsedDbu / origDbu` directly from the parsed DBU value,
+never through any rounded intermediate. This is the same class of fix the rest of L1h already established
+(pull the logic that needs a real test into a framework-free class, since a `Window` subclass cannot be
+constructed headlessly here) — `ScaleFieldLinkerTests.cs` (11 tests) pins the exact reported scenario with a
+deliberately unfriendly fixture (`3,728,000 / 1,000,000` DBU) where `400/3728` needs more precision than the
+4-decimal display can hold, proving the round-trip is exact and that redisplaying the rounded factor repeatedly
+never drifts the typed width. 2126 Ui.Tests total (11 new), all green; full solution green (Firewall 4/4, Core
+388/388, Engine 461/462 — 1 pre-existing skip). **If width/height still looks wrong after this fix, fully quit
+and relaunch the compiled app** — this is a desktop executable, not a hot-reloading dev server; re-testing an
+already-running instance would not pick up either fix.
+
+Phase L1h — Scale, and fixing the shape context menu (brief-L1h-scale-and-context-menu.md, 2026-07-27)
+— COMPLETE: two owner-reported items. The context menu's three confusing commands (`Merge`, `Flatten
+to Polygon`, `Flatten to Polygon…`) are gone/collapsed, every selection-scoped command now says why
+it's disabled instead of silently vanishing, and the layout editor gained **Scale** — a numeric
+dialog and bbox-handle mouse drags sharing one set of semantics.
+
+**Why `Merge` was removed rather than fixed, and `Union` is now per-layer (R-L1h-1):** L1e's `Merge`
+("union restricted to shapes sharing a layer, applied per layer") and `Union` ("all selected shapes
+merged") were IDENTICAL for the overwhelmingly common single-layer selection — two commands differing
+only in a subtlety nobody reads a tooltip for. `ApplyUnion()` now does exactly what `ApplyMerge()`
+used to (`LayoutBooleans.Merge` — unchanged, already existed, already correctly per-layer-grouped),
+and `Merge`/`CanMergeSelection`/`MergeSelectionCommand` are deleted outright rather than kept as a
+second, redundant answer. Intersect/Difference/XOR are **not** grouped per layer (the brief's own
+R-L1h-1 and gate 2 only cover Union) — they still fold across the whole selection exactly as L1e built
+them — but now share Union's enablement rule ("≥2 selected shapes share a layer"), since combining
+across layers with no shared context was never a meaningful boolean input; cross-layer combination,
+when genuinely intended, is Move-to-Layer then Union — two explicit steps, never one silent one.
+
+**The one-Flatten-entry decision (R-L1h-2):** the no-dialog "Flatten to Polygon" menu item is gone;
+"Flatten to Polygon…" is the ONLY surviving entry and it always prompts — flattening is irreversible
+except by undo and its resolution is the whole point of the operation, so the tolerance is shown and
+confirmed, never inferred. `FlattenSelectionToPolygon(null)` is now a documented no-op (kept only
+because `null` is also the harmless "nothing selected" shape every other `Apply*` method already
+uses) — the removed call site (`FlattenSelectionToPolygon(null)` from the menu) is simply gone.
+**R-L1h-2a — the dialog never writes its chosen tolerance back onto any shape**: every shape it
+touches stops being curved (a flattened circle is a `PolygonShape`, which has no `FlattenTolDbu` field
+at all), so there is structurally nowhere for a written-back value to land. **R-L1h-2b — the tolerance
+LIVES in the properties panel**, which is exactly what the dialog pre-fills from
+(`LayoutFlattener.OwnTolDbu`, a new sibling of `ResolveTolDbu` that reports which of its two branches
+— the shape's own value vs. the technology default — actually won, without duplicating the resolver)
+— the two surfaces agree by reading the same source, never by writing to each other. §1.3.0's real
+prerequisite gap: `CircleShape`/`RoundedRectShape` had NO `FlattenTolDbu` field at all before this
+phase, contradicting §3.2 R9b ("every curved primitive carries a flatten tolerance") — both gained the
+field (additive, nullable, **no `FormatVersion` bump** — the same `Holes` precedent), and
+`LayoutShapePropertiesViewModel`'s gating predicate/getter/setter and `LayoutFlattener.ResolveTolDbu`
+were all widened from `CurveShape or PathShape` to include both.
+
+**R-L1h-3 is now a standing rule for every future selection-scoped command in this editor: a command
+is either disabled with a stated reason, or it does something — never a silent no-op.** New shared
+type `LayoutCommandAvailability` (`bool CanExecute, string? DisabledReason`) — every selection-gated
+command (`BooleanOpAvailability`, `OffsetAvailability`, `ScaleAvailability`, `FlattenAvailability`,
+`RepairAvailability`, `DeleteVertexAvailability`, `CutCopyDeleteDuplicateAvailability`, the static
+`PasteAvailability(bool)`) answers through this one type, so the menu, a future toolbar, and any
+keyboard binding can never disagree. `LayoutCanvas.AddBooleanAndFlattenMenuItems` now ALWAYS adds
+every item (never conditionally omits one) and sets `IsEnabled`/`ToolTip.Tip` from the availability —
+disable, don't hide, so menu position stays stable and a missing item never reads as a bug. The
+companion half: a command that is legitimately enabled but achieves nothing — Union of two same-layer
+shapes that don't overlap — reports through Messages (`"Union: selected shapes did not overlap —
+nothing was combined."`) rather than appearing to silently succeed; detected as `added.Count >=
+operands.Count` per layer group, since Clipper2 does not annihilate operands that never touch (the
+existing `result.Shapes.Count == 0` check, still correct for Intersect/XOR's genuinely-empty-result
+case, does NOT catch this — a disjoint Union still produces one output shape per input). **Scope note:**
+`Cut`/`Copy`/`Delete`/`Duplicate`/`Paste`/`Paste in Place` gained availability properties (for
+headless testability against the brief's audit table) but were deliberately NOT added as new context-
+menu items — they were never the owner's reported problem (keyboard-only, unreported, working), and
+`Paste`'s availability needs an async clipboard peek this phase didn't wire into the menu. `Align`/
+`Distribute`/a dedicated `Move to Layer`/`Set Net` command do not exist anywhere in this codebase —
+the brief's §1.5 table lists them for completeness of the pattern, not as things this phase built;
+building them is future scope, not a gap in this phase.
+
+**R-L1h-4/R-L1h-5 — Scale's mouse handles and the three handle-mode rows:** corner handles scale
+uniformly (factor = drag distance from anchor ÷ original distance); side handles stretch ONE axis
+only (the handle's own axis; the other factor stays 1.0) — no modifier decides which, so non-uniform
+scaling is a deliberate act (drag a side) rather than an accidental one (Shift-something). Anchor is
+the OPPOSITE corner/side (`LayoutScaleHandles.Opposite`, `(Index + 2) % 4` in either handle vocabulary
+— corners and sides each reuse `LayoutHandles`' own existing 0..3 conventions so "opposite" is one
+formula); **Alt** anchors the selection's bbox centre instead. Handle modes, driven by a NEW property
+`ShowScaleHandles` (`_selectedIndices.Count >= 2 || (Count == 1 && ScaleModeActive)`): one shape shows
+L1d's vertex/edge/bulge/control-point handles, unchanged; two or more shapes show bbox scale handles
+(new — a multi-selection previously had NO handles at all); one shape with **Scale mode** toggled on
+(new context-menu item, `ToggleScaleModeCommand`) TEMPORARILY replaces L1d's handles with bbox scale
+handles, and **Escape (with no drag in progress) exits Scale mode and restores L1d's handles without
+touching the selection** — a new, deliberately separate branch in `OnKeyDown`'s Escape handling, ahead
+of the general "cancel active op" check, since toggling a mode off is not the same kind of action as
+cancelling a drag. The mouse-drag state machine (`_scaleDragKind`/`_scaleDragIndices`/
+`_scaleDragOriginals` in `LayoutEditorViewModel.Scale.cs`) is a THIRD state machine living alongside
+`_selectDragKind` (Move/Marquee) and `_handleDragKind` (L1d reshape) — checked first in
+`HandleSelectPress`/`Move`/`Release`, exactly like those two already were, and reusing
+`Overlay.DragOverrides` for the live preview (already N-shape-capable from L1c's move-drag). Typed
+override mid-drag (`CommitTypedScale`) mirrors L1b's typed Rect W/H commit: text that parses as a bare
+number is a factor, text that parses as a dimension is the resulting size along the dragged axis —
+either commits the drag immediately at that exact value, discarding wherever the pointer currently is.
+
+**R-L1h-6 — one shared coordinate walk, not three hand-maintained copies.** New
+`LayoutCoordinateWalk.Transform(shape, LayoutCoordinateTransform)` (`LayoutCoordinateTransform` = `{X,
+Y, Magnitude}`, three `Func<long,long>`, with `.Uniform(f)` for the degenerate case where all three
+coincide) is now the ONE place that walks the full field list: outer vertices, hole rings, cubic
+control points, circle radius, rounded-rect corner radius, path width, via pad/drill, label
+position/height, `FlattenTolDbu` — bulge is NEVER in this list, deliberately (dimensionless, would
+silently change curvature). Before this phase, `LayoutScaling.ScaleShape` (DBU resolution change) and
+`LayoutFragment.RescaleShape` (paste rescale) were two independently hand-maintained copies of this
+EXACT switch — proven to already be genuinely at risk of drift, not a hypothetical: both had
+independently omitted `CircleShape`/`RoundedRectShape.FlattenTolDbu` identically, simply because
+neither field existed yet. Both now call `LayoutCoordinateWalk.Transform` instead of their own copy;
+Scale (`LayoutEditorViewModel.Scale.cs`'s `BuildScaledShapes`) is the third caller and was built
+against the shared walk from day one. `Magnitude` exists because a uniform transform is the case where
+`X`/`Y`/`Magnitude` all coincide, but a non-uniform Scale needs `X`/`Y` to differ — for length fields
+with no single axis of their own (radius, corner radius, width, pad/drill, label height, flatten
+tolerance), there is no EXACT answer under a non-uniform transform, so Scale supplies the isotropic-
+equivalent factor `sqrt(fx*fy)` rather than leaving them untouched. `LayoutScaling`'s read-only
+coarsening pre-scan (`ScanShape`) is a deliberately separate, untouched code path (it needs per-field
+offender LABELS the mutate-only `Transform` signature has no room for) — it gained the same two new
+`FlattenTolDbu` checks by hand, since it is the one place in this codebase that is allowed to still be
+a hand-maintained parallel list (it always was, even before this phase — the mutate/scan duality is
+`LayoutScaling`'s own internal concern, not the cross-file drift R-L1h-6 targets).
+
+**R-L1h-7 — non-uniform scale promotes arcs to cubics, because cubics are closed under affine
+transforms and circular arcs are not.** A circular arc scaled non-uniformly is an ellipse, which the
+edge-list model cannot represent (`Line`/`Arc`/`Cubic` only) — new `LayoutArcPromotion.PromoteArcsToCubics`
+converts every `Arc` edge (and a `CircleShape`'s implicit one) to `Cubic` edges FIRST, exactly the same
+"promote to the more general representation because the simpler one cannot express the result" move as
+L1d's Polygon→Curve rule (R-L1d-3). A `CircleShape` becomes a `CurveShape` with exactly 4 cubic
+quadrants (the standard circle-as-4-Béziers construction, `kappa = 0.5522847…`, accurate to a small
+fraction of a percent of radius — the same convention vector tools use for the same reason); an
+existing `Arc` edge inside a `Curve`/`Path` is split into ≤90°-sweep cubic segments (more than one
+cubic when the arc's sweep exceeds 90°, since one cubic per segment is only accurate to that range) via
+the standard control-point formula `d = (4/3)tan(Δθ/4)·r` along each endpoint's tangent — general
+enough to cover both the whole-circle promotion and any arbitrary Arc edge, not just literal circles.
+**Only under a NON-uniform scale** — under a uniform one, arcs stay arcs and a `Circle` stays a
+`Circle` (checked once, `Math.Abs(factorX - factorY) < 1e-9`, in `BuildScaledShapes`, shared by both
+the numeric dialog and the mouse-drag commit so the two can never disagree). The conversion is reported
+once per operation through Messages (`"Scale: circular arc(s) were converted to cubic curves to scale
+non-uniformly."`), never silently.
+
+**Trap 2 — rounding, and scaling is deliberately NOT exactly reversible.** Every scaled coordinate
+rounds to the nearest DBU (`MidpointRounding.AwayFromZero`, matching `LayoutFragment.Rescale`'s existing
+convention) and is **never** snapped to the snap grid — off-grid vertices are legitimate (§1.5 R5), and
+snapping a scaled result would deform it, the same mistake R-L1c-3 already avoids for Move. This means
+scaling by 3 then by 1/3 may leave a shape a DBU or two off from where it started — a direct, unavoidable
+consequence of integer coordinate storage, not a bug to chase. **Guards**: a factor of 0 or negative is
+rejected with a Messages error and the model is left untouched (mirroring is a separate, out-of-scope
+operation); a scale that would shrink any selected shape below 1 DBU in its defining dimension
+(`WouldCollapse` — bbox width/height, circle radius, path width, via pad/drill, label height) is
+rejected WHOLESALE (no partial application) and named in the error.
+
+**Numeric vs. mouse: one semantics, shared by construction, not by discipline.** Both
+`LayoutEditorViewModel.ApplyScale` (the `ScaleDialog`'s numeric path) and the mouse-drag commit
+(`CommitScaleDrag`) call the SAME private `BuildScaledShapes`/`WouldCollapse` — there is no separate
+`ScaleShapesCommand` type; both paths build the scaled shape list and hand it to the existing
+`ReplaceShapesCommand` (N→N, already exactly the right shape for "possibly-type-changing replace,
+restore at original index" — the identical precedent L1d's Polygon→Curve promotion already established),
+so "share one set of semantics" (§2.1) is enforced by the two callers literally invoking the same method,
+not by keeping two implementations in sync by hand.
+
+Test files: `LayoutEnablementTests.cs` (the full R-L1h-3 audit — every table row's enabled/disabled
+CanExecute plus non-empty reason strings), `LayoutScaleTests.cs` (the numeric path: exact factor math,
+all 3 representative anchors, the full R-L1h-6 field-list fixture with a hole/cubic/path-width/via/label
+and bulge-unchanged, the shared-traversal-is-actually-shared comparison against both
+`LayoutScaling.TryChangeResolution` and `LayoutFragment.Rescale` at matching ratios, non-uniform arc
+promotion with a flattened-outline-vs-analytic-ellipse check, rounding/no-snap, both guards, one undo
+entry), `LayoutScaleGesturesTests.cs` (mouse: corner/side drag, Alt-anchors-centre, typed factor AND
+typed size override mid-drag, Escape-pushes-nothing, all three handle-mode rows including Escape-exits-
+Scale-mode, and one drag driven through actual screen-pixel `LayoutViewport` conversion per the standing
+screen→world rule), plus additions to `LayoutBooleanOperationsViewModelTests.cs` (Union-groups-by-layer
+with one undo entry, the disjoint-shapes Messages note, `FlattenSelectionToPolygon(null)` is now a no-op,
+`OwnTolDbu`, `PreviewFlattenVertexCounts`), `LayoutShapePropertiesViewModelTests.cs` (the tolerance field
+reachable on all four curved types, a mixed-four-type selection applying as one undo entry, the inherited-
+value placeholder text), and `LayoutPersistenceTests.cs` (the two new `FlattenTolDbu` fields round-trip
+with no `FormatVersion` change, and a hand-authored pre-L1h `.clay` JSON — missing the fields entirely —
+still loads). 66 new tests; 2115 Ui.Tests total, all green; full solution green (Firewall 4/4, Core
+388/388, Engine 461/462 — 1 pre-existing skip, matching the L1g baseline exactly). **Not interactively
+verified** (no visual driver in this environment, matching every prior Layout Editor phase) — the
+context-menu construction, `ScaleDialog`'s live factor/size linking, and the bbox-handle rendering
+cannot be unit-tested headlessly for the same reason every prior phase's dialog/menu/render code
+couldn't be; correctness rests on the VM-level gate tests above, which drive the exact same public
+methods (`ApplyScale`, the `OnPointerPressed`/`Moved`/`Released` gesture state machine, and the
+`LayoutCommandAvailability` properties) the dialog/menu/renderer call.
+
+Phase L1g — technology retargeting (brief-L1g-technology-retarget.md, 2026-07-27) — COMPLETE: **Phase
+L1 is now complete, including L1g** (L1f's own "Phase L1 is now complete" below was written one brief
+early). Two owner-reported gaps closed with one shared component: there is now a UI to change a
+layout's technology, and cross-technology paste can no longer silently mangle geometry.
+
+**Why `GetMissingLayers` was the wrong question.** It asked *"which layer keys are absent from the
+destination technology?"* — but both starter technologies use the identical `(1,0)`..`(8,0)` key
+range with completely different meanings (PCB's `(7,0)` is Drill; MMIC GaAs's `(7,0)` is Substrate).
+So pasting a PCB selection into an MMIC layout found **nothing missing** — no dialog, no warning,
+every shape silently adopted a semantically unrelated layer (Drill geometry rendered as Substrate,
+Soldermask as Via). This is not a violation of §2.1's "identity is `(Layer, Datatype)`" rule — that
+rule is correct *within* one technology. **Across** two technologies the numeric key carries no
+meaning at all, because each process numbers its own layers independently; names are what survive the
+crossing. The right question is *"which layers need the user's confirmation?"*, answered by the new
+`LayoutLayerMapping.Propose` (`src/Ui/Layout/LayoutLayerMapping.cs`, framework-free) — shared verbatim
+by both cross-technology paste (replacing L1f's `GetMissingLayers` trigger, now deleted — nothing else
+called it) and the new technology-retargeting command, so the answer can never drift between the two
+callers (R-L1g-1).
+
+**Matching order is name-before-number, and here is the exact reason it has to be:** `Propose` checks
+1) same key + same name (case-/whitespace-insensitive) → `SameKeySameName`, 2) exact name match on a
+*different* key → `ExactName`, 3) same key + different name → `SameKeyDifferentName` (the Drill→
+Substrate trap itself — proposed for display, but **never pre-selected**), 4) otherwise →
+`NoMatch`. Checking name-match-at-a-different-key (step 2) *before* falling back to same-key (step 3)
+is what makes a confident rename beat a low-confidence numeric coincidence — pinned by
+`LayoutLayerMappingTests.Propose_ExactNameMatch_BeatsACompetingSameKeyNumericMatch`. `(Layer,
+Datatype)` still identifies a layer *within* one technology (§2.1, unchanged); it identifies nothing
+at all *across* two, which is exactly why name has to be tried first.
+
+**R-L1g-2 is the single rule that keeps ordinary same-tech paste frictionless while making
+cross-tech paste safe:** confirmation (the shared `LayerMappingDialog`, one table row per source
+layer, sorted by shape count descending, replacing L1f's per-key `LayerReconciliationDialog` loop —
+now deleted) is required whenever **any** row is `SameKeyDifferentName` or `NoMatch`
+(`LayoutLayerMapping.RequiresConfirmation`); if every row is `SameKeySameName` or `ExactName`
+(the same-technology case, or a confidently-renamed layer), the mapping applies silently. One rule,
+checked once, shared by both callers — never two independent "should I ask?" decisions that could
+answer differently.
+
+**`RetargetTechnologyCommand`** (`src/Ui/Commands/Layout/`) is the one undo entry §4 requires:
+rewrites `LayoutView.TechRef`, every affected shape's `LayerKey` (via a captured `(Index, Before,
+After)` list — geometry itself is never touched, so it stays byte-identical), and — only when the
+user checks the opt-in box — `DisplayUnit`/`SnapDbu`. Undo restores all of it together from one
+before/after `LayoutEditorViewModel.RetargetState` snapshot; a half-undone retarget would be worse
+than no undo at all. **`DbuPerMicron` is deliberately never touched by retargeting** — it is not even
+a field on `Technology`, and resolution is a property of the layout, not of the process; a different
+resolution remains `LayoutScaling.TryChangeResolution`, a separate, guarded operation. **Unit adoption
+is opt-in, default OFF** — silently overwriting a user's working `DisplayUnit`/`SnapDbu` mid-retarget
+is exactly the kind of helpfulness that erodes trust; the `ChangeTechnologyDialog` checkbox must be
+checked explicitly, and even then only `DisplayUnit`/`SnapDbu` move, never `DbuPerMicron`.
+
+**Entry point (Gap 1 — there was previously no UI to change a layout's technology at all):** a
+"Technology: *PCB 2-Layer* ▾" button in the metadata bar (`LayoutEditorView.axaml`, replacing the
+plain readout `TextBlock`) is the ONE entry point. The brief's literal "a Layout-menu item" was tried
+as a second entry point on the shape context menu (this codebase has no top-level "Layout" menu to
+hang a real menu-bar item from) and then **removed on owner review**: retargeting is a whole-layout
+operation, not a per-shape one, and a right-click on a shape is the wrong place to reach for it when a
+single, always-visible metadata-bar affordance already covers the case — do not re-add it there.
+`ChangeTechnologyDialog` offers **(Workspace default)**
+(writes `TechRef = null`, always present and selectable, not just reachable by never having chosen —
+L0c's convention), every `.ctech` in the workspace's `tech/` folder, and **Browse…** for one outside
+the workspace; `LayoutEditorViewModel.WorkspaceTechDir`/`ResolveWorkspaceDefaultTech` are wired once
+per document by `WorkspaceViewModel.WireRetargetSeam` (all three `new LayoutEditorViewModel(...)` call
+sites) so the picker never depends on `WorkspaceViewModel` directly.
+
+**Add to technology reuses the exact live-tech seam paste already established** — `RetargetTechnologyCommand`
+never writes a `.ctech` file; `LayoutEditorViewModel.ApplyAddToTechnologyChoices` clones the
+just-applied destination `Technology` and fires the same `RequestAddLayerToTechnology` event
+`WorkspaceViewModel.OnLayoutRequestAddLayerToTechnology` already subscribes, landing in
+`TechnologyCache.SetLive` — undoable in the tech editor, dirty until saved there.
+
+**Report what happened (§5):** both a retarget and a cross-tech paste post one Messages summary via
+`LayoutEditorViewModel.ReportMessage` — e.g. *"Retargeted to MMIC GaAs · 1,204 shapes · Top
+Copper→Metal1 (name), Drill→(unknown)"* — built by `LayoutLayerMapping.SummarizeMapping`, the single
+formatter shared by both callers so the wording can't drift between them either.
+
+Test files: `LayoutLayerMappingTests.cs` (the Drill/Soldermask match-kind coverage, all four
+`LayerMatchKind`s, case-/whitespace-insensitive name matching, the name-beats-numeric-coincidence
+priority test, shape-count sort order, `RequiresConfirmation`, `BuildChoices`), `LayoutRetargetTests.cs`
+(the round-trip byte-identical-geometry/nets/holes gate, `(Workspace default)` re-resolution, opt-in
+unit adoption with `DbuPerMicron` unchanged either way, one-undo-entry via `LayoutPersistence.Serialize`
+equality, Add-to-technology's live-override seam, Keep-as-unknown, nothing-ever-dropped across every
+choice combination, and the Messages summary), plus new/renamed cases in `LayoutClipboardViewModelTests.cs`
+(`Paste_PcbDrillAndSoldermask_IntoMmic_RequiresConfirmation_NeverSilentlyRewritesOntoUnrelatedLayer` —
+the Gap 2 regression test, which fails against the old `GetMissingLayers`-driven trigger — and
+`Paste_SameTechnologyBothSides_RaisesNoConfirmation_AndRewritesNothing` for gate 3) and
+`LayoutFragmentTests.cs` (the three obsolete `GetMissingLayers` tests removed; `ApplyReconciliation`'s
+own three-branch coverage is unchanged by this phase). 24 new tests; 2066 Ui.Tests total, all green;
+full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip, matching the
+L1f baseline exactly). **Not interactively verified** (no visual driver in this environment, matching
+every prior Layout Editor phase) — the metadata-bar button, context-menu item, and both new dialogs
+(`LayerMappingDialog`, `ChangeTechnologyDialog`) cannot be unit-tested headlessly for the same reason
+every prior phase's dialog/menu code couldn't be; correctness rests on the VM-level gate tests above,
+which drive the exact same public methods (`RetargetTo`, `ProposeFragmentLayerMapping`,
+`ApplyFragmentReconciliation`) the dialogs' code-behind calls.
+
+**Phase L1 (layout draw & edit — primitives, snap, selection, handles, booleans/offsets, clipboard,
+and technology retargeting) is now complete.**
+
 Phase L1f — cross-cell cut/copy/paste (brief-L1f-clipboard.md, 2026-07-26) — COMPLETE: **Phase L1 is
 now complete.** A layout selection can be cut/copied/pasted/duplicated within one document, across
 cells, and across a different circuitRF workspace/technology/process — with layers, nets, and holes

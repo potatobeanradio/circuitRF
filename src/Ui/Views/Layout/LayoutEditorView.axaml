@@ -94,6 +94,9 @@
                                 ToolTip.Tip="Label" Padding="6,3">
                             <mi:MaterialIcon Kind="LabelOutline" Width="16" Height="16"/>
                         </Button>
+                        <Button Click="OnInsertBitmap" ToolTip.Tip="Insert Bitmap…" Padding="6,3">
+                            <mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/>
+                        </Button>
 
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
@@ -186,7 +189,13 @@
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Technology:"/>
-                    <TextBlock Classes="value" Text="{Binding ViewModel.TechSummaryText}"/>
+                    <Button Padding="2,0" MinHeight="0" Background="Transparent" BorderThickness="0"
+                            Click="OnChangeTechnologyClick" ToolTip.Tip="Change Technology…">
+                        <StackPanel Orientation="Horizontal" Spacing="2">
+                            <TextBlock Classes="value" Text="{Binding ViewModel.TechSummaryText}"/>
+                            <TextBlock Classes="value" Text="▾"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
@@ -244,7 +253,14 @@
             <ctrl:LayoutRulerControl x:Name="VRuler" DockPanel.Dock="Left" Width="22" Orientation="Vertical" ClipToBounds="True"/>
 
             <Panel>
-                <ctrl:LayoutCanvas x:Name="LayoutCanvasCtrl" ViewModel="{Binding ViewModel}" ClipToBounds="True"/>
+                <ctrl:LayoutCanvas x:Name="LayoutCanvasCtrl" ViewModel="{Binding ViewModel}" ClipToBounds="True">
+                    <!-- L1-fix (brief-L1-fix-context-menu-stacking.md): ONE ContextMenu instance,
+                         declared here and opened by Avalonia itself — mirrors SymbolEditorView.axaml's
+                         bitmap context menu. LayoutCanvas never constructs a ContextMenu of its own. -->
+                    <ctrl:LayoutCanvas.ContextMenu>
+                        <ContextMenu Opening="OnLayoutContextMenuOpening"/>
+                    </ctrl:LayoutCanvas.ContextMenu>
+                </ctrl:LayoutCanvas>
 
                 <!-- L0b's centered placeholder — kept for an empty layout instead of a bare canvas. -->
                 <Border Background="{DynamicResource SystemRegionColor}"

@@ -85,14 +85,15 @@ public static class LayoutScaling
         return true;
     }
 
-    // ── Mutating pass ─────────────────────────────────────────────────────────
+    // ── Mutating pass — routes through the shared field walk (R-L1h-6) ───────────
 
     private static void ScaleView(LayoutView view, Func<long, long> f)
     {
         view.SnapDbu = f(view.SnapDbu);
 
+        var t = LayoutCoordinateTransform.Uniform(f);
         foreach (var shape in view.Shapes)
-            ScaleShape(shape, f);
+            LayoutCoordinateWalk.Transform(shape, t);
 
         foreach (var inst in view.Instances)
         {
@@ -101,74 +102,6 @@ public static class LayoutScaling
             inst.PitchX = f(inst.PitchX);
             inst.PitchY = f(inst.PitchY);
         }
-    }
-
-    private static void ScaleShape(LayoutShape shape, Func<long, long> f)
-    {
-        switch (shape)
-        {
-            case RectShape r:
-                r.X1 = f(r.X1); r.Y1 = f(r.Y1); r.X2 = f(r.X2); r.Y2 = f(r.Y2);
-                break;
-            case PolygonShape p:
-                ScaleArray(p.Xy, f);
-                ScaleHoles(p.Holes, f);
-                break;
-            case RoundedRectShape rr:
-                rr.X1 = f(rr.X1); rr.Y1 = f(rr.Y1); rr.X2 = f(rr.X2); rr.Y2 = f(rr.Y2);
-                rr.CornerRadius = f(rr.CornerRadius);
-                break;
-            case CircleShape c:
-                c.Cx = f(c.Cx); c.Cy = f(c.Cy); c.R = f(c.R);
-                break;
-            case CurveShape curve:
-                ScaleArray(curve.Xy, f);
-                ScaleCubicControlPoints(curve.Edges, f);
-                ScaleHoles(curve.Holes, f);
-                if (curve.FlattenTolDbu is { } ctol) curve.FlattenTolDbu = f(ctol);
-                break;
-            case PathShape path:
-                ScaleArray(path.Xy, f);
-                ScaleCubicControlPoints(path.Edges, f);
-                path.Width = f(path.Width);
-                if (path.FlattenTolDbu is { } ptol) path.FlattenTolDbu = f(ptol);
-                break;
-            case ViaShape via:
-                via.X = f(via.X); via.Y = f(via.Y);
-                via.PadSize = f(via.PadSize); via.DrillSize = f(via.DrillSize);
-                break;
-            case LabelShape label:
-                label.X = f(label.X); label.Y = f(label.Y);
-                label.Height = f(label.Height);
-                break;
-        }
-    }
-
-    private static void ScaleArray(long[] xy, Func<long, long> f)
-    {
-        for (int i = 0; i < xy.Length; i++)
-            xy[i] = f(xy[i]);
-    }
-
-    /// <summary>Bulge is a dimensionless sweep-angle descriptor, not a coordinate — never scaled.
-    /// Cubic control points are coordinates and are easy to miss (they are NOT in the Xy vertex list).</summary>
-    private static void ScaleCubicControlPoints(List<LayoutEdge>? edges, Func<long, long> f)
-    {
-        if (edges == null) return;
-        foreach (var e in edges)
-        {
-            if (e.Kind != EdgeKind.Cubic) continue;
-            e.C1X = f(e.C1X); e.C1Y = f(e.C1Y);
-            e.C2X = f(e.C2X); e.C2Y = f(e.C2Y);
-        }
-    }
-
-    /// <summary>Holes (§3.1a) are absolute-coordinate rings — the same "easy to miss" list as cubic
-    /// control points, and equally not part of the Xy vertex list.</summary>
-    private static void ScaleHoles(List<long[]>? holes, Func<long, long> f)
-    {
-        if (holes == null) return;
-        foreach (var hole in holes) ScaleArray(hole, f);
     }
 
     // ── Read-only scan pass (same coordinate set as ScaleView) ───────────────
@@ -207,9 +140,11 @@ public static class LayoutScaling
                 check(rr.X1, $"{tag}.X1"); check(rr.Y1, $"{tag}.Y1");
                 check(rr.X2, $"{tag}.X2"); check(rr.Y2, $"{tag}.Y2");
                 check(rr.CornerRadius, $"{tag}.CornerRadius");
+                if (rr.FlattenTolDbu is { } rrtol) check(rrtol, $"{tag}.FlattenTolDbu");
                 break;
             case CircleShape c:
                 check(c.Cx, $"{tag}.Cx"); check(c.Cy, $"{tag}.Cy"); check(c.R, $"{tag}.R");
+                if (c.FlattenTolDbu is { } ctol2) check(ctol2, $"{tag}.FlattenTolDbu");
                 break;
             case CurveShape curve:
                 ScanArray(curve.Xy, tag, check);
@@ -230,6 +165,10 @@ public static class LayoutScaling
             case LabelShape label:
                 check(label.X, $"{tag}.X"); check(label.Y, $"{tag}.Y");
                 check(label.Height, $"{tag}.Height");
+                break;
+            case BitmapShape bmp:
+                check(bmp.X, $"{tag}.X"); check(bmp.Y, $"{tag}.Y");
+                check(bmp.W, $"{tag}.W"); check(bmp.H, $"{tag}.H");
                 break;
         }
     }

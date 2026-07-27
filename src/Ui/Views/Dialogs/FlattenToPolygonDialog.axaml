@@ -2,8 +2,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CircuitRF.Ui.Views.Dialogs.FlattenToPolygonDialog"
         Title="Flatten to Polygon"
-        Width="360"
-        Height="180"
+        Width="380"
+        SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -11,7 +11,12 @@
     <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
 
         <StackPanel Grid.Row="0" Spacing="8">
-            <TextBlock Text="Flatten tolerance:" FontSize="12"/>
+            <TextBlock x:Name="SkipText" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="Flatten tolerance:" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock x:Name="SourceText" FontSize="10" Opacity="0.55" VerticalAlignment="Center"/>
+            </StackPanel>
             <TextBox x:Name="ToleranceBox"
                      FontSize="12"
                      KeyDown="OnKeyDown"
@@ -19,12 +24,16 @@
             <TextBlock x:Name="CountLabel" FontSize="11" Opacity="0.7"/>
             <TextBlock Text="After flattening there is no un-flatten beyond undo."
                        FontSize="10" Opacity="0.55" TextWrapping="Wrap"/>
+            <TextBlock x:Name="TextBecomesGeometryNote"
+                       Text="A flattened label is no longer editable text — it becomes ordinary geometry and will now be exported."
+                       FontSize="10" Opacity="0.55" TextWrapping="Wrap" IsVisible="False"/>
         </StackPanel>
 
         <StackPanel Grid.Row="1"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
-                    Spacing="8">
+                    Spacing="8"
+                    Margin="0,14,0,0">
             <Button Content="Cancel" Width="80" FontSize="12" Click="OnCancelClick"/>
             <Button Content="Flatten" Width="80" IsDefault="True" FontSize="12" Click="OnOkClick"/>
         </StackPanel>

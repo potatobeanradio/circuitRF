@@ -248,6 +248,32 @@ public partial class SymbolEditorView : UserControl
         SymbolEditorCanvasCtrl.Focus();
     }
 
+    // ── Insert Bitmap (R-bmp-5, docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md) ────
+    // UI firewall: the file picker lives here in code-behind. Placement routes through the EXISTING
+    // SymbolEditorCanvas.InsertBitmapAtViewportCenter -> SymbolEditorViewModel.DropBitmap — no new
+    // placement logic.
+
+    private async void OnInsertBitmap(object? sender, RoutedEventArgs e)
+    {
+        var picker = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (picker is null) return;
+
+        var files = await picker.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Insert Bitmap",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Image Files")
+                {
+                    Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.tiff", "*.tif", "*.webp" }
+                }
+            }
+        });
+        if (files.Count > 0)
+            SymbolEditorCanvasCtrl.InsertBitmapAtViewportCenter(files[0].Path.LocalPath);
+    }
+
     // ── Bitmap context menu ───────────────────────────────────────────────────
 
     private void OnBitmapContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)

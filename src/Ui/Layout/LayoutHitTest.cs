@@ -110,6 +110,14 @@ public static class LayoutHitTest
                 return grown.Contains(x, y);
             }
 
+            case BitmapShape bmp:
+            {
+                // Full participation in select/move/scale (§3) — a plain rect hit-test against the
+                // placement bbox, grown by the click tolerance, same shape as ViaShape/LabelShape above.
+                var grown = new Bbox(bmp.X - tolDbu, bmp.Y - tolDbu, bmp.X + bmp.W + tolDbu, bmp.Y + bmp.H + tolDbu);
+                return grown.Contains(x, y);
+            }
+
             default:
                 return false;
         }
@@ -130,12 +138,18 @@ public static class LayoutHitTest
         long w = Math.Max(1, (long)Math.Round(label.Text.Length * label.Height * LabelApproxCharWidthRatio));
         long h = Math.Max(1, label.Height);
 
+        // Owner report: the R90/R270 selection box rendered in the completely wrong spot — this table
+        // had the local "far corner" (the text's top-right in its own pre-rotation frame) landing on
+        // the WRONG SIDE of the anchor for a 90°-rotated label. Verified against the actual rendered
+        // transform (LayoutRenderer.DrawLabelText: translate to the anchor, THEN rotate, THEN draw at
+        // local (0,0) extending +X/-Y) via each rotation's real corner mapping — R0 and R180 were
+        // already correct; only R90/R270's X range was backwards.
         return label.Rotation switch
         {
             LayoutRotation.R0   => new Bbox(label.X, label.Y, label.X + w, label.Y + h),
+            LayoutRotation.R90  => new Bbox(label.X - h, label.Y, label.X, label.Y + w),
             LayoutRotation.R180 => new Bbox(label.X - w, label.Y - h, label.X, label.Y),
-            LayoutRotation.R90  => new Bbox(label.X, label.Y, label.X + h, label.Y + w),
-            LayoutRotation.R270 => new Bbox(label.X - h, label.Y - w, label.X, label.Y),
+            LayoutRotation.R270 => new Bbox(label.X, label.Y - w, label.X + h, label.Y),
             _                   => new Bbox(label.X, label.Y, label.X + w, label.Y + h),
         };
     }

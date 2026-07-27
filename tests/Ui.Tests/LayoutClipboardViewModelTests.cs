@@ -229,7 +229,7 @@ public class LayoutClipboardViewModelTests
     // ── Gate 3: cross-cell / cross-technology paste ───────────────────────────────────────────────
 
     [Fact]
-    public void Paste_AcrossDifferentTechnologies_UnknownLayerDefaultsToKeepUnknown_NothingDropped()
+    public void Paste_AcrossDifferentTechnologies_NoMatchRequiresConfirmation_DefaultsToKeepUnknown_NothingDropped()
     {
         var srcModel = FreshModel();
         var srcTech = new Technology { Layers = [new LayerDef { Key = Layer1, Name = "SourceCopper" }] };
@@ -246,14 +246,96 @@ public class LayoutClipboardViewModelTests
         destVm.Technology = destTech;
 
         var rescale = destVm.RescaleFragment(payload!);
-        var missing = destVm.GetMissingFragmentLayers(rescale.Shapes);
-        Assert.Equal([Layer1], missing);
+        var mapping = destVm.ProposeFragmentLayerMapping(rescale.Shapes, payload!.Layers);
+        var row = Assert.Single(mapping);
+        Assert.Equal(Layer1, row.Source);
+        Assert.Equal(LayerMatchKind.NoMatch, row.Match);
+        Assert.True(LayoutLayerMapping.RequiresConfirmation(mapping)); // R-L1g-2: this MUST be confirmed
 
-        var reconciled = destVm.ApplyFragmentReconciliation(rescale.Shapes, payload!.Layers, null); // no choice -> Keep-as-unknown
+        var choices = LayoutLayerMapping.BuildChoices(mapping); // rows default to Keep-as-unknown
+        var reconciled = destVm.ApplyFragmentReconciliation(rescale.Shapes, payload.Layers, choices);
         destVm.PasteInPlace(reconciled);
 
         var pasted = Assert.Single(destModel.Shapes);
         Assert.Equal(Layer1, pasted.Layer); // unresolved key preserved, renders via FallbackPalette
+    }
+
+    // ── L1g gate 2: the Gap 2 regression test (docs/sonnet-briefs/brief-L1g-technology-retarget.md §0)
+    // — Drill (7,0) and Soldermask Top (3,0) both exist at those SAME keys in MMIC GaAs, meaning WRONG
+    // MEANING (Via, Cap Dielectric). This is the exact scenario that used to sail through silently
+    // under L1f's GetMissingLayers ("which keys are absent?" — none, since both starter techs share a
+    // key range). The right question (LayoutLayerMapping.Propose, "which layers need confirmation?")
+    // must flag both as requiring it, and without any user choice, neither is silently rewritten onto
+    // the numerically-coincident MMIC layer.
+    [Fact]
+    public void Paste_PcbDrillAndSoldermask_IntoMmic_RequiresConfirmation_NeverSilentlyRewritesOntoUnrelatedLayer()
+    {
+        var pcb = StarterTechnologies.Pcb2Layer();
+        var mmic = StarterTechnologies.MmicGaAs();
+        var drill = new LayerKey(7, 0);
+        var soldermaskTop = new LayerKey(3, 0);
+
+        var srcModel = FreshModel();
+        srcModel.Shapes.Add(new RectShape { Layer = drill, X1 = 0, Y1 = 0, X2 = 1_000, Y2 = 1_000 });
+        srcModel.Shapes.Add(new RectShape { Layer = soldermaskTop, X1 = 0, Y1 = 0, X2 = 1_000, Y2 = 1_000 });
+        var srcVm = new LayoutEditorViewModel(srcModel) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        srcVm.Technology = pcb;
+        srcVm.SelectAllCommand.Execute(null);
+        var payload = srcVm.BuildCopyPayload();
+        Assert.NotNull(payload);
+
+        var destModel = FreshModel();
+        var destVm = new LayoutEditorViewModel(destModel);
+        destVm.Technology = mmic;
+
+        var rescale = destVm.RescaleFragment(payload!);
+        var mapping = destVm.ProposeFragmentLayerMapping(rescale.Shapes, payload!.Layers);
+
+        // The confirmation dialog is REQUIRED — this is what fails against the old GetMissingLayers-
+        // driven trigger, which found nothing missing (both keys exist in MMIC GaAs already, just
+        // under a completely different meaning — Via/Substrate, not Soldermask/Drill).
+        Assert.True(LayoutLayerMapping.RequiresConfirmation(mapping));
+        Assert.All(mapping, r => Assert.Equal(LayerMatchKind.SameKeyDifferentName, r.Match));
+
+        // Without any user choice, nothing is silently rewritten onto Via/Cap Dielectric.
+        var choices = LayoutLayerMapping.BuildChoices(mapping);
+        var reconciled = destVm.ApplyFragmentReconciliation(rescale.Shapes, payload.Layers, choices);
+
+        Assert.Equal(2, reconciled.Count); // gate 12 — nothing dropped
+        Assert.Contains(reconciled, s => s.Layer == drill);          // NOT rewritten onto Via (3,0)
+        Assert.Contains(reconciled, s => s.Layer == soldermaskTop);  // NOT rewritten onto anything else
+    }
+
+    // ── L1g gate 3: same-technology paste stays silent — R-L1g-2's confirmation rule must not make
+    // the ordinary same-tech case noisy ───────────────────────────────────────────────────────────
+    [Fact]
+    public void Paste_SameTechnologyBothSides_RaisesNoConfirmation_AndRewritesNothing()
+    {
+        var pcb = StarterTechnologies.Pcb2Layer();
+        var drill = new LayerKey(7, 0);
+
+        var srcModel = FreshModel();
+        srcModel.Shapes.Add(new RectShape { Layer = drill, X1 = 0, Y1 = 0, X2 = 1_000, Y2 = 1_000 });
+        var srcVm = new LayoutEditorViewModel(srcModel) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+        srcVm.Technology = pcb;
+        Click(srcVm, 500, 500);
+        var payload = srcVm.BuildCopyPayload();
+        Assert.NotNull(payload);
+
+        var destModel = FreshModel();
+        var destVm = new LayoutEditorViewModel(destModel);
+        destVm.Technology = pcb; // same technology instance/content as the source
+
+        var rescale = destVm.RescaleFragment(payload!);
+        var mapping = destVm.ProposeFragmentLayerMapping(rescale.Shapes, payload!.Layers);
+
+        Assert.False(LayoutLayerMapping.RequiresConfirmation(mapping));
+        Assert.All(mapping, r => Assert.Equal(LayerMatchKind.SameKeySameName, r.Match));
+
+        var choices = LayoutLayerMapping.BuildChoices(mapping);
+        var reconciled = destVm.ApplyFragmentReconciliation(rescale.Shapes, payload.Layers, choices);
+
+        Assert.Equal(drill, Assert.Single(reconciled).Layer); // key unchanged
     }
 
     [Fact]

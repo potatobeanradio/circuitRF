@@ -20,32 +20,6 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 
 ---
 
-## Contributors are welcome — *especially RF domain experts*
-
-circuitRF is meant to be **community-driven, by and for the RF engineering community.** We value **RF
-domain knowledge as much as software experience.** If you design power amplifiers, LNAs, or mixers; build
-RF EDA tooling; do device modeling; or develop transistor technology (GaN-on-SiC, GaN-on-Si, LDMOS, …),
-**you are exactly who this project needs** — and circuitRF is a great place to use AI to build the
-simulation features *you* want.
-
-You do **not** need to be a professional software developer. If you've scripted in MATLAB or Python, you
-have enough to start. Pair yourself with [Claude Code](https://www.anthropic.com/claude-code) (or your
-AI assistant of choice) and let it do the heavy lifting on the C#.
-
-**The recommended first contribution:** browse the [component library](#adding-a-standard-library-component)
-for a part you wish were there — a diode, a BJT, a microstrip line, an ideal transformer, a coupler — and
-add it. circuitRF ships a step-by-step skill for exactly this:
-
-> **[`docs/skills/adding-a-library-component.md`](docs/skills/adding-a-library-component.md)** — hand this
-> file to Claude Code, tell it which component you want, and it will walk the whole procedure (palette,
-> symbol, ports, the engine stamp, the factory, and a regression test).
-
-It's the fastest way to learn the codebase, it's genuinely useful to other users, and it's the kind of
-contribution where *your* RF expertise — not your C# fluency — is the scarce ingredient. See
-[Contributing](#contributing) for the full picture.
-
----
-
 ## Screenshots
 
 ### Schematic editor
@@ -77,6 +51,32 @@ parameters and sweeps, and Run.*
      metric/colormap selection. Optionally a second rectangular plot (power sweep) docked alongside. -->
 *Plot S-parameters, spectra, power sweeps, and loadpull contours; overlay measured Touchstone/`.spl`/
 `.lpcwave` data on simulated results.*
+
+---
+
+## Contributors are welcome — *especially RF domain experts*
+
+circuitRF is meant to be **community-driven, by and for the RF engineering community.** We value **RF
+domain knowledge as much as software experience.** If you design power amplifiers, LNAs, or mixers; build
+RF EDA tooling; do device modeling; or develop transistor technology (GaN-on-SiC, GaN-on-Si, LDMOS, …),
+**you are exactly who this project needs** — and circuitRF is a great place to use AI to build the
+simulation features *you* want.
+
+You do **not** need to be a professional software developer. If you've scripted in MATLAB or Python, you
+have enough to start. Pair yourself with [Claude Code](https://www.anthropic.com/claude-code) (or your
+AI assistant of choice) and let it do the heavy lifting on the C#.
+
+**The recommended first contribution:** browse the [component library](#adding-a-standard-library-component)
+for a part you wish were there — a diode, a BJT, a microstrip line, an ideal transformer, a coupler — and
+add it. circuitRF ships a step-by-step skill for exactly this:
+
+> **[`docs/skills/adding-a-library-component.md`](docs/skills/adding-a-library-component.md)** — hand this
+> file to Claude Code, tell it which component you want, and it will walk the whole procedure (palette,
+> symbol, ports, the engine stamp, the factory, and a regression test).
+
+It's the fastest way to learn the codebase, it's genuinely useful to other users, and it's the kind of
+contribution where *your* RF expertise — not your C# fluency — is the scarce ingredient. See
+[Contributing](#contributing) for the full picture.
 
 ---
 

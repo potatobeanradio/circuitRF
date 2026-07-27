@@ -10,6 +10,7 @@ using Avalonia.Platform.Storage;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Layout;
 using CircuitRF.Ui.Messages;
+using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Theming;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -122,6 +123,23 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         ResolvedTechPath = resolution.ResolvedPath;
         Technology        = resolution.Tech;
+
+        // R-lbl-1 (docs/sonnet-briefs/brief-layout-label-fix-and-text-flatten.md): seed the label-
+        // height default from the technology exactly once — the first time a technology resolves for
+        // this document (this method always runs synchronously right after construction at every
+        // `new LayoutEditorViewModel(...)` call site, so "once" here is equivalent to "at construction,
+        // like DisplayUnit/SnapDbu"). A LATER technology change (retarget, live .ctech edit) must NOT
+        // re-seed — that would silently discard whatever the user has since typed into the Label
+        // toolbar field, the same reason DisplayUnit/SnapDbu are never touched here at all.
+        if (!_labelHeightSeededFromTech)
+        {
+            _labelHeightSeededFromTech = true;
+            if (resolution.Tech is { DefaultLabelHeightDbu: > 0 } tech)
+            {
+                _labelHeightDbu = tech.DefaultLabelHeightDbu;
+                LabelHeightText = LayoutUnits.Format(_labelHeightDbu, DisplayUnit, Model.DbuPerMicron);
+            }
+        }
     }
 
     // ── Metadata bar (read-only, derived) ─────────────────────────────────────
@@ -221,6 +239,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         InitBooleanCommands();   // L1e — src/Ui/Layout/LayoutEditorViewModel.Booleans.cs
         InitClipboardCommands(); // L1f — src/Ui/Layout/LayoutEditorViewModel.Clipboard.cs
+        InitScaleCommands();     // L1h — src/Ui/Layout/LayoutEditorViewModel.Scale.cs
 
         _pathWidthText     = LayoutUnits.Format(_pathWidthDbu, DisplayUnit, Model.DbuPerMicron);
         _cornerRadiusText  = LayoutUnits.Format(_cornerRadiusDbu, DisplayUnit, Model.DbuPerMicron);
@@ -277,6 +296,40 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         CursorXText = LayoutUnits.Format((long)Math.Round(worldX.Value), DisplayUnit, Model.DbuPerMicron) + " " + UnitSuffix(DisplayUnit);
         CursorYText = LayoutUnits.Format((long)Math.Round(worldY.Value), DisplayUnit, Model.DbuPerMicron) + " " + UnitSuffix(DisplayUnit);
     }
+
+    /// <summary>Posts a Messages summary (docs/sonnet-briefs/brief-L1g-technology-retarget.md §5 —
+    /// "report what happened"). Used after a technology retarget and after a cross-tech paste, both
+    /// of which are bulk changes to the user's geometry that deserve a readable record once the
+    /// dialog is gone.</summary>
+    public void ReportMessage(string text) => _messageSink?.Success(text);
+
+    /// <summary>Posts a Messages error — used when a user-chosen <c>.ctech</c> (Change Technology's
+    /// "each .ctech in tech/" or "Browse…" options) fails to load.</summary>
+    public void ReportError(string text) => _messageSink?.Error(text);
+
+    /// <summary>Posts a Messages warning — e.g. the L1j Properties Inspector's "corner radius was
+    /// clamped to fit the new size" notice.</summary>
+    public void ReportWarning(string text) => _messageSink?.Warning(text);
+
+    // ── Effective (drag-override-aware) geometry — L1j, docs/sonnet-briefs/brief-L1j-properties-
+    // inspector.md R-L1j-1 ──────────────────────────────────────────────────────────────────────
+    // A drag (move/handle/scale) deliberately never mutates Model.Shapes — one gesture is one undo
+    // entry, pushed at release; the pending geometry lives only in Overlay.DragOverrides. Any UI that
+    // wants to show what the user is CURRENTLY seeing (not what is merely committed) must read
+    // through these, not Model.Shapes directly — this is the single source the Properties Inspector
+    // reads so it updates live during a drag without a second code path.
+
+    /// <summary>The shape currently rendered at <paramref name="index"/> — the live drag-preview clone
+    /// when one exists for this index, otherwise the committed shape. Never mutate the result when it
+    /// came from a preview: it is a throwaway clone, about to be discarded or superseded next frame.</summary>
+    public LayoutShape EffectiveShapeAt(int index) =>
+        Overlay.DragOverrides.TryGetValue(index, out var preview) ? preview : Model.Shapes[index];
+
+    /// <summary>Every currently selected shape's EFFECTIVE geometry, in <see cref="SelectedIndices"/>
+    /// order. Out-of-range indices (a stale selection during an in-flight undo) are skipped, mirroring
+    /// every other selection-reading loop in this class.</summary>
+    public IReadOnlyList<LayoutShape> EffectiveSelectedShapes() =>
+        SelectedIndices.Where(i => i >= 0 && i < Model.Shapes.Count).Select(EffectiveShapeAt).ToList();
 
     // ── Unknown-layer warning — once per layer per load (L0c's deliberately-unwired seam) ───────
 
@@ -394,6 +447,20 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private bool _marqueeAdd, _marqueeToggle;      // Shift / Ctrl captured at press
     private List<int> _marqueeBaseSelection = [];
 
+    // ── Live marquee preview (L1i, docs/sonnet-briefs/brief-L1i-live-marquee-selection.md) ────────
+    // R-L1i-2: _marqueePreview is a SEPARATE list from _selectedIndices — it is what the highlight
+    // renders while a marquee drag is active, and it is NEVER written into the real selection until
+    // commit (HandleSelectRelease -> CommitMarquee -> SetSelection). Both are reused scratch buffers
+    // (cleared and refilled in place, never reallocated per pointer move) per the brief's perf note.
+    private readonly List<int> _marqueeHitsScratch = [];
+    private readonly List<int> _marqueePreview = [];
+    private (long X, long Y)? _marqueeLastComputedCorner; // null = "not computed yet this drag"
+
+    /// <summary>How many times <see cref="ComputeMarqueeSelection"/> actually ran (as opposed to being
+    /// skipped by the &lt;1-device-pixel-movement guard). Test-only instrumentation for gate 9 —
+    /// internal, exposed to <c>CircuitRF.Ui.Tests</c> via <c>InternalsVisibleTo</c>.</summary>
+    internal int MarqueeRecomputeCount { get; private set; }
+
     private long _moveAnchorX, _moveAnchorY;       // press point the move delta is measured from
     private long _moveLiveDx, _moveLiveDy;         // current snapped delta (0,0) until the drag moves
     private bool _moveHasMoved;                    // true once the live delta has been non-zero at least once
@@ -428,11 +495,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
         _selectPressWX = px; _selectPressWY = py;
 
+        // L1h: bbox scale handles take priority over everything else when they're showing (R-L1h-5) —
+        // a 2+ selection always has them; a single selection has them only while Scale mode is toggled
+        // on, in which case they TEMPORARILY REPLACE L1d's handles rather than coexist with them.
+        if (TryBeginScaleDrag(px, py, alt, tolDbu))
+            return;
+
         // L1d: handles (and the edge-line fallback below them) take absolute priority over L1c's
         // selection/cycling logic when exactly one shape is selected — "a press on a handle must not
         // disturb the selection or the overlap-cycling cache" (§2). Only a single-shape selection
         // shows handles at all (§2: "multi-selection shows no handles — it is a move/delete selection").
-        if (_selectedIndices.Count == 1 && TryHandleSelectPressOnHandles(_selectedIndices[0], px, py, ctrl, alt, tolDbu))
+        if (_selectedIndices.Count == 1 && !ScaleModeActive && TryHandleSelectPressOnHandles(_selectedIndices[0], px, py, ctrl, alt, tolDbu))
             return;
         _pickedVertexIndex = null;
 
@@ -864,10 +937,95 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _marqueeAdd = shift;
         _marqueeToggle = ctrl;
         _marqueeBaseSelection = _selectedIndices.ToList();
+        _marqueeLastComputedCorner = null;
+        ComputeMarqueeSelection(px, py);
+        _marqueeLastComputedCorner = (px, py);
+        UpdateMarqueeSelectionStatus();
         RebuildOverlay();
     }
 
-    private void HandleSelectMove(double wx, double wy, bool leftDown, KeyModifiers mods, long tolDbu)
+    /// <summary>R-L1i-1: the ONE hit computation shared by the live preview (called every qualifying
+    /// pointer move) and the commit (called once at release, via <see cref="CommitMarquee"/>) — if the
+    /// preview computed hits differently from the commit, the highlight would lie about the outcome.
+    /// Folds in the Shift (add) / Ctrl (toggle) semantics against <see cref="_marqueeBaseSelection"/>,
+    /// so the result IS the prospective final selection (R-L1i-3) — a Ctrl-drag crossing an
+    /// already-selected shape visibly un-highlights it with no separate code path. Mutates and returns
+    /// the reused <see cref="_marqueePreview"/> scratch buffer (never <c>_selectedIndices</c> — that is
+    /// R-L1i-2, enforced structurally: nothing in this method touches that field).</summary>
+    private List<int> ComputeMarqueeSelection(long curX, long curY)
+    {
+        MarqueeRecomputeCount++;
+
+        bool leftToRight = curX >= _selectPressWX;
+        long minX = Math.Min(_selectPressWX, curX), maxX = Math.Max(_selectPressWX, curX);
+        long minY = Math.Min(_selectPressWY, curY), maxY = Math.Max(_selectPressWY, curY);
+        var marqueeBb = new Bbox(minX, minY, maxX, maxY);
+
+        _marqueeHitsScratch.Clear();
+        for (int i = 0; i < Model.Shapes.Count; i++)
+        {
+            var shape = Model.Shapes[i];
+            var def = ResolveLayerDef(shape.Layer);
+            if (!def.Visible || !def.Selectable) continue; // gate 8: hidden/non-selectable never previewed
+
+            // L2: query the spatial index instead of scanning all shapes
+            var bb = LayoutGeometry.BboxOf(shape);
+            if (bb.IsEmpty) continue;
+
+            bool matches = leftToRight
+                ? bb.MinX >= marqueeBb.MinX && bb.MaxX <= marqueeBb.MaxX && bb.MinY >= marqueeBb.MinY && bb.MaxY <= marqueeBb.MaxY
+                : bb.Intersects(marqueeBb);
+            if (matches) _marqueeHitsScratch.Add(i);
+        }
+
+        _marqueePreview.Clear();
+        if (_marqueeToggle)
+        {
+            _marqueePreview.AddRange(_marqueeBaseSelection);
+            foreach (var h in _marqueeHitsScratch)
+            {
+                int existing = _marqueePreview.IndexOf(h);
+                if (existing >= 0) _marqueePreview.RemoveAt(existing);
+                else _marqueePreview.Add(h);
+            }
+        }
+        else if (_marqueeAdd)
+        {
+            _marqueePreview.AddRange(_marqueeBaseSelection);
+            foreach (var h in _marqueeHitsScratch)
+                if (!_marqueePreview.Contains(h)) _marqueePreview.Add(h);
+        }
+        else
+        {
+            _marqueePreview.AddRange(_marqueeHitsScratch);
+        }
+
+        return _marqueePreview;
+    }
+
+    private void UpdateMarqueeSelectionStatus()
+    {
+        SelectionStatusText = _marqueePreview.Count switch
+        {
+            0 => "",
+            1 => "1 shape",
+            var n => $"{n} shapes",
+        };
+    }
+
+    /// <summary>Escape (or any other abandonment of an in-progress marquee, e.g. the pointer button
+    /// being released off-canvas) must clear the preview and restore the status readout WITHOUT
+    /// touching <c>_selectedIndices</c> — that field was never written during the drag (R-L1i-2), so
+    /// simply recomputing the generic status from it is correct.</summary>
+    private void CancelMarqueeIfActive()
+    {
+        if (_selectDragKind != SelectDragKind.Marquee) return;
+        _marqueePreview.Clear();
+        _marqueeLastComputedCorner = null;
+        SelectionStatusText = ComputeGenericSelectionStatus();
+    }
+
+    private void HandleSelectMove(double wx, double wy, bool leftDown, KeyModifiers mods, long tolDbu, long pixelDbu = 0)
     {
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
 
@@ -876,6 +1034,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             long thresh = Math.Max(tolDbu, 1);
             if (Math.Abs(cache.ClickX - px) > thresh || Math.Abs(cache.ClickY - py) > thresh)
                 _cycleCache = null;
+        }
+
+        if (_scaleDragKind != ScaleDragKind.None)
+        {
+            if (!leftDown) { ResetScaleDragState(); RebuildOverlay(); return; }
+            UpdateScaleDragPreview(px, py);
+            return;
         }
 
         if (_handleDragKind != HandleDragKind.None)
@@ -892,6 +1057,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             if (_selectDragKind != SelectDragKind.None)
             {
+                CancelMarqueeIfActive();
                 _selectDragKind = SelectDragKind.None;
                 _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
                 RebuildOverlay();
@@ -913,15 +1079,39 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             }
 
             case SelectDragKind.Marquee:
+            {
                 _marqueeCurX = px; _marqueeCurY = py;
+
+                // Perf: skip the O(shapes) recompute when the rectangle has not moved by at least one
+                // device pixel — pointer moves arrive far faster than the rectangle meaningfully
+                // changes (gate 9). pixelDbu <= 0 (the default, e.g. any caller/test that doesn't pass
+                // it) always recomputes — a safe, conservative fallback.
+                long thresh = Math.Max(pixelDbu, 0);
+                bool moved = _marqueeLastComputedCorner is not { } last
+                    || Math.Abs(last.X - px) >= thresh || Math.Abs(last.Y - py) >= thresh;
+
+                if (moved)
+                {
+                    ComputeMarqueeSelection(px, py);
+                    _marqueeLastComputedCorner = (px, py);
+                    UpdateMarqueeSelectionStatus();
+                }
                 RebuildOverlay();
                 break;
+            }
         }
     }
 
     private void HandleSelectRelease(double wx, double wy)
     {
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+
+        if (_scaleDragKind != ScaleDragKind.None)
+        {
+            CommitScaleDragFromPointer();
+            RebuildOverlay();
+            return;
+        }
 
         if (_handleDragKind != HandleDragKind.None)
         {
@@ -948,60 +1138,24 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         if (_moveHasMoved && (_moveLiveDx != 0 || _moveLiveDy != 0) && _selectedIndices.Count > 0)
         {
-            var shapes = _selectedIndices
-                .Where(i => i >= 0 && i < Model.Shapes.Count)
-                .Select(i => Model.Shapes[i])
-                .ToList();
+            var shapes = MovableSelectedIndices(_selectedIndices).Select(i => Model.Shapes[i]).ToList();
             if (shapes.Count > 0)
                 Execute(new Commands.Layout.MoveShapesCommand(Model, shapes, _moveLiveDx, _moveLiveDy));
         }
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
     }
 
+    /// <summary>R-L1i-1: commit is just "settle on whatever the shared compute says," via the exact
+    /// same function the live preview calls — so the preview can never lie about the outcome (gate 3).
+    /// <see cref="ComputeMarqueeSelection"/> returns the reused <c>_marqueePreview</c> buffer; passing
+    /// it straight to <see cref="SetSelection"/> is safe because that method copies into
+    /// <c>_selectedIndices</c> before this method goes on to clear it below.</summary>
     private void CommitMarquee(long releaseX, long releaseY)
     {
-        bool leftToRight = releaseX >= _selectPressWX;
-        long minX = Math.Min(_selectPressWX, releaseX), maxX = Math.Max(_selectPressWX, releaseX);
-        long minY = Math.Min(_selectPressWY, releaseY), maxY = Math.Max(_selectPressWY, releaseY);
-        var marqueeBb = new Bbox(minX, minY, maxX, maxY);
-
-        var hits = new List<int>();
-        for (int i = 0; i < Model.Shapes.Count; i++)
-        {
-            var shape = Model.Shapes[i];
-            var def = ResolveLayerDef(shape.Layer);
-            if (!def.Visible || !def.Selectable) continue;
-
-            var bb = LayoutGeometry.BboxOf(shape);
-            if (bb.IsEmpty) continue;
-
-            bool matches = leftToRight
-                ? bb.MinX >= marqueeBb.MinX && bb.MaxX <= marqueeBb.MaxX && bb.MinY >= marqueeBb.MinY && bb.MaxY <= marqueeBb.MaxY
-                : bb.Intersects(marqueeBb);
-            if (matches) hits.Add(i);
-        }
-
-        IEnumerable<int> result;
-        if (_marqueeToggle)
-        {
-            var set = new List<int>(_marqueeBaseSelection);
-            foreach (var h in hits)
-            {
-                if (!set.Remove(h)) set.Add(h);
-            }
-            result = set;
-        }
-        else if (_marqueeAdd)
-        {
-            result = _marqueeBaseSelection.Concat(hits).Distinct();
-        }
-        else
-        {
-            result = hits;
-        }
-
-        SetSelection(result);
+        SetSelection(ComputeMarqueeSelection(releaseX, releaseY));
         _cycleCache = null;
+        _marqueePreview.Clear();
+        _marqueeLastComputedCorner = null;
     }
 
     private void DeleteSelection()
@@ -1037,10 +1191,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         long dy = key switch { Key.Up => step, Key.Down => -step, _ => 0 };
         if (dx == 0 && dy == 0) return;
 
-        var shapes = _selectedIndices
-            .Where(i => i >= 0 && i < Model.Shapes.Count)
-            .Select(i => Model.Shapes[i])
-            .ToList();
+        var shapes = MovableSelectedIndices(_selectedIndices).Select(i => Model.Shapes[i]).ToList();
         if (shapes.Count == 0) return;
 
         Execute(new Commands.Layout.MoveShapesCommand(Model, shapes, dx, dy));
@@ -1118,7 +1269,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         CornerRadiusText = LayoutUnits.Format(_cornerRadiusDbu, DisplayUnit, Model.DbuPerMicron);
     }
 
-    private long _labelHeightDbu = 5_000;   // arbitrary reasonable default (5 um at 1000 dbu/um)
+    // R-lbl-1: this hardcoded value is ONLY the no-technology-resolved fallback now — the real default
+    // comes from Technology.DefaultLabelHeightDbu, seeded once in ApplyTechResolution (see there for why
+    // a sub-pixel-on-PCB constant was the actual bug, not the label pipeline itself).
+    private long _labelHeightDbu = 5_000;   // fallback: 5 um at 1000 dbu/um
+    private bool _labelHeightSeededFromTech;
     [ObservableProperty] private string _labelHeightText = "";
 
     public void CommitLabelHeightText(string text)
@@ -1198,6 +1353,21 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private long _labelAnchorX, _labelAnchorY;
     private string _labelBuffer = "";
 
+    /// <summary>R-lbl-2: the zoom (device px per DBU) captured when Label typing started, used only to
+    /// note in the typing status hint when the label is smaller than the current zoom can show. 0 means
+    /// unknown (the caller didn't pass it) — the note is simply skipped, never a divide-by-zero.</summary>
+    private double _labelZoomPxPerDbu;
+
+    /// <summary>R-lbl-3 (docs/sonnet-briefs/brief-layout-label-fix-and-text-flatten.md): the canvas
+    /// reads this to suspend the Space-arms-pan-modifier gesture while a label is being typed — Space
+    /// is an ordinary character in label text, not a pan trigger, while <see cref="_isTypingLabel"/>
+    /// is true.</summary>
+    public bool IsTypingLabel => _isTypingLabel;
+
+    /// <summary>The label height (DBU) that will be used for the NEXT committed label — test/tooling
+    /// visibility into the R-lbl-1 default (technology-seeded, or the 5 µm fallback).</summary>
+    public long CurrentLabelHeightDbu => _labelHeightDbu;
+
     /// <summary>True while any drawing gesture is in progress — the view uses this (or checks
     /// <see cref="ActiveTool"/>) to decide whether the live W/H fields should be enabled.</summary>
     public bool IsDrawingRect => _isDrawingTwoPoint && ActiveTool == Tool.Rect;
@@ -1207,8 +1377,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <summary><paramref name="hitTolDbu"/> is the ~4-screen-pixel hit tolerance already converted
     /// to DBU by the caller using the CURRENT zoom (never cached, never derived from <c>SnapDbu</c> —
     /// see the brief's "Read first" section). Only meaningful when <see cref="ActiveTool"/> is
-    /// <see cref="Tool.Select"/>; every drawing tool ignores it.</summary>
-    public void OnPointerPressed(double wx, double wy, KeyModifiers mods, int clickCount = 1, long hitTolDbu = 0)
+    /// <see cref="Tool.Select"/>; every drawing tool ignores it. <paramref name="zoomPxPerDbu"/> (R-lbl-2,
+    /// docs/sonnet-briefs/brief-layout-label-fix-and-text-flatten.md) is the CURRENT device-pixels-
+    /// per-DBU zoom, used only by the Label tool to note in the typing status hint when the label is
+    /// smaller than the current zoom can show — 0 (the default) skips that note.</summary>
+    public void OnPointerPressed(double wx, double wy, KeyModifiers mods, int clickCount = 1, long hitTolDbu = 0, double zoomPxPerDbu = 0)
     {
         // L1f: a paste placement in progress takes priority over every other gesture — a click
         // commits it, regardless of the currently active drawing tool.
@@ -1254,11 +1427,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             _labelAnchorX  = sx;
             _labelAnchorY  = sy;
             _labelBuffer   = "";
+            _labelZoomPxPerDbu = zoomPxPerDbu;
             RebuildOverlay();
         }
     }
 
-    public void OnPointerMoved(double wx, double wy, bool leftDown, KeyModifiers mods, long hitTolDbu = 0)
+    /// <summary><paramref name="pixelDbu"/>: the world-space size of one device pixel at the CURRENT
+    /// zoom, in DBU (0 — the default — always recomputes; used only by the Select tool's marquee drag
+    /// to skip the O(shapes) recompute for sub-pixel pointer moves, per L1i's perf note).</summary>
+    public void OnPointerMoved(double wx, double wy, bool leftDown, KeyModifiers mods, long hitTolDbu = 0, long pixelDbu = 0)
     {
         if (_pastePlacementShapes is not null)
         {
@@ -1267,7 +1444,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
-        if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0)); return; }
+        if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0)); return; }
 
         bool suspend = (mods & KeyModifiers.Alt) != 0;
 
@@ -1335,11 +1512,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // fires, so relying on that alone would silently leave the drag running.
         if (key == Key.Escape)
         {
+            // L1h R-L1h-5: Scale mode (no drag in progress) is its own escape-able state — Escape
+            // exits it and restores L1d's single-shape handles, exactly like leaving a drawing tool,
+            // WITHOUT also clearing the selection (a mode toggle isn't a destructive operation).
+            if (_scaleDragKind == ScaleDragKind.None && ScaleModeActive) { ScaleModeActive = false; return; }
+
             bool hasActiveOp = ActiveTool != Tool.Select
                              || _isDrawingTwoPoint
                              || _drawPoints.Count > 0
                              || _selectDragKind != SelectDragKind.None
-                             || _handleDragKind != HandleDragKind.None;
+                             || _handleDragKind != HandleDragKind.None
+                             || _scaleDragKind != ScaleDragKind.None;
             if (hasActiveOp) { CancelDrawOp(); ActiveTool = Tool.Select; }
             else { SetSelection([]); _cycleCache = null; }
             return;
@@ -1384,9 +1567,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _labelBuffer     = "";
         _typedWidthDbu   = null;
         _typedHeightDbu  = null;
+        CancelMarqueeIfActive(); // gate 7: leaves _selectedIndices untouched, clears the preview
         _selectDragKind  = SelectDragKind.None;
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
         ResetHandleDragState();
+        ResetScaleDragState();
         OnPropertyChanged(nameof(IsDrawingRect));
         RebuildOverlay();
     }
@@ -1419,13 +1604,22 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         if (!string.IsNullOrWhiteSpace(_labelBuffer))
         {
+            // Owner report: a label could still "disappear" the instant Enter was pressed — the
+            // in-progress ghost was already boosted to a visible minimum (R-lbl-2), but the COMMITTED
+            // shape used the raw technology/fallback default unboosted, which can still be sub-pixel at
+            // a zoomed-out view even though it's a perfectly sensible size at the technology's own
+            // typical zoom. The committed height now gets the SAME visibility floor as the ghost,
+            // using the zoom captured when typing started — never retroactive, never touches an
+            // existing label, and a no-op when the caller didn't supply a zoom (matches every prior
+            // caller/test that doesn't pass one).
+            long height = LayoutRenderer.EffectiveVisibleLabelHeightDbu(_labelHeightDbu, _labelZoomPxPerDbu);
             var shape = new LabelShape
             {
                 Layer    = CurrentLayerKey,
                 X        = _labelAnchorX,
                 Y        = _labelAnchorY,
                 Text     = _labelBuffer,
-                Height   = _labelHeightDbu,
+                Height   = height,
                 Rotation = LayoutRotation.R0,
                 IsPort   = false,   // port placement belongs with the EM work, not here
             };
@@ -1434,6 +1628,24 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _isTypingLabel = false;
         _labelBuffer   = "";
         RebuildOverlay();
+    }
+
+    /// <summary>R-lbl-2: the "Typing label…" hint shown in the toolbar's <see cref="DrawReadoutText"/>
+    /// readout while <see cref="_isTypingLabel"/> — appears on the first keypress/click that arms
+    /// typing and clears the instant <see cref="CommitLabel"/> or <see cref="CancelDrawOp"/> runs
+    /// (both flip <c>_isTypingLabel</c> false then call <see cref="RebuildOverlay"/>, so there is no
+    /// separate clear path to keep in sync). Notes when the label is smaller than the zoom captured at
+    /// typing-start can show — <see cref="_labelZoomPxPerDbu"/> is 0 (skip the note) whenever the
+    /// caller didn't supply it.</summary>
+    private string BuildLabelTypingStatus()
+    {
+        const string Hint = "Typing label — Enter to commit, Esc to cancel";
+        if (_labelZoomPxPerDbu <= 0) return Hint;
+
+        double pixelHeight = _labelHeightDbu * _labelZoomPxPerDbu;
+        return pixelHeight < LayoutRenderer.MinVisibleLabelDevicePixels
+            ? Hint + " (smaller than the current zoom can show)"
+            : Hint;
     }
 
     // ── Shape builders ─────────────────────────────────────────────────────────
@@ -1554,7 +1766,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 Layer = CurrentLayerKey, X = _labelAnchorX, Y = _labelAnchorY,
                 Text  = (_labelBuffer.Length > 0 ? _labelBuffer : "") + "|", Height = _labelHeightDbu,
             };
-            DrawReadoutText = "";
+            DrawReadoutText = BuildLabelTypingStatus();
         }
         else
         {
@@ -1569,9 +1781,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_selectDragKind == SelectDragKind.Move && (_moveLiveDx != 0 || _moveLiveDy != 0))
         {
             var dict = new Dictionary<int, LayoutShape>();
-            foreach (var idx in _selectedIndices)
+            foreach (var idx in MovableSelectedIndices(_selectedIndices))
             {
-                if (idx < 0 || idx >= Model.Shapes.Count) continue;
                 var clone = LayoutGeometry.Clone(Model.Shapes[idx]);
                 LayoutGeometry.TranslateBy(clone, _moveLiveDx, _moveLiveDy);
                 dict[idx] = clone;
@@ -1584,6 +1795,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // uses (brief §1: "render a preview through the existing dragOverrides mechanism").
             dragOverrides = new Dictionary<int, LayoutShape> { [_handleDragShapeIndex] = _handleDragPreview };
         }
+        else if (_scaleDragKind != ScaleDragKind.None && _scaleDragMoved)
+        {
+            // L1h: the live bbox-scale preview reuses the SAME mechanism — it is already N-shape-
+            // capable (L1c's move preview built it that way), so a multi-shape scale needs no new
+            // preview plumbing beyond computing the scaled clones themselves.
+            var (scaled, _) = BuildScaledShapes(_scaleDragOriginals, _scaleLiveFactorX, _scaleLiveFactorY, _scaleAnchorX, _scaleAnchorY);
+            var dict = new Dictionary<int, LayoutShape>();
+            for (int k = 0; k < _scaleDragIndices.Count; k++) dict[_scaleDragIndices[k]] = scaled[k];
+            dragOverrides = dict;
+            UpdateScaleReadoutText();
+        }
 
         IReadOnlyList<LayoutShape>? pastePreview = null;
         if (_pastePlacementShapes is { Count: > 0 } pasteShapes)
@@ -1593,13 +1815,21 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             pastePreview = LayoutFragment.Translate(pasteShapes, dx, dy);
         }
 
+        // L1i: one highlight path, not a committed one and a preview one — the marquee preview IS the
+        // prospective outcome (R-L1i-3), so it renders with the exact same accent as a settled
+        // selection while a marquee drag is active, and _selectedIndices otherwise.
+        IReadOnlyList<int> effectiveHighlight = _selectDragKind == SelectDragKind.Marquee
+            ? _marqueePreview
+            : _selectedIndices;
+
         Overlay = new LayoutOverlay
         {
             InProgressPrimitive = inProgress,
-            SelectedIndices = _selectedIndices.ToArray(),
+            SelectedIndices = effectiveHighlight.ToArray(),
             Marquee = marquee,
             DragOverrides = dragOverrides,
             PastePreview = pastePreview,
+            ShowScaleHandles = ShowScaleHandles,
         };
     }
 

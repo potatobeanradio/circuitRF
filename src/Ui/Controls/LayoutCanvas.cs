@@ -7,6 +7,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using Avalonia.Styling;
@@ -90,6 +91,17 @@ public sealed class LayoutCanvas : Control
 
     private long HitTolDbu() => _zoom > 0 ? (long)Math.Round(SelectHitTolerancePixels / _zoom) : 0;
 
+    /// <summary>L1i: one device pixel's world-space size in DBU at the CURRENT zoom — computed fresh
+    /// per call, same discipline as <see cref="HitTolDbu"/> above, and NOT derived from it (that
+    /// constant is a several-pixel hit-test tolerance, a different concern from "did the marquee
+    /// rectangle move at all"). Used only to gate the marquee-preview recompute.</summary>
+    private long OnePixelDbu() => _zoom > 0 ? Math.Max(1, (long)Math.Round(1.0 / _zoom)) : 1;
+
+    /// <summary>R-bmp-4: the current viewport's world-space width in DBU — a newly-placed bitmap's
+    /// long edge is sized as ~25% of this, computed fresh per placement (never cached, DBU are
+    /// nanometres so a stale width would be meaningless after any zoom/pan).</summary>
+    private double ViewportWidthDbu() => CurrentViewport.VisibleMaxX - CurrentViewport.VisibleMinX;
+
     public double CurrentZoom => _zoom;
     public double CurrentPanX => _panX;
     public double CurrentPanY => _panY;
@@ -148,6 +160,13 @@ public sealed class LayoutCanvas : Control
         TextInput           += OnTextInput;
         ((IResourceHost)this).ResourcesChanged += (_, _) => InvalidateVisual();
         LayoutUpdated += OnLayoutUpdated;
+
+        // Image file drop target (docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md) —
+        // mirrors SymbolEditorCanvas's image-file DnD exactly; only the placement SIZE rule differs
+        // (R-bmp-4: viewport-relative, not a fixed local-unit constant).
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnImageFileDragOver);
+        AddHandler(DragDrop.DropEvent,     OnImageFileDrop);
     }
 
     // Fits exactly once per bound ViewModel, as soon as Bounds becomes valid — for a layout that
@@ -282,33 +301,116 @@ public sealed class LayoutCanvas : Control
             // no Control held still opens the context menu.
             if ((e.KeyModifiers & KeyModifiers.Control) != 0)
             {
+                ContextMenuTarget = null; // L1-fix: no pending target -> the Opening handler cancels
                 _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu());
                 InvalidateVisual();
                 e.Handled = true;
                 return;
             }
 
-            ShowShapeContextMenu(wx, wy);
-            e.Handled = true;
+            // L1-fix (brief-L1-fix-context-menu-stacking.md): only RECORD the click here — mirrors
+            // SymbolEditorCanvas's right-click branch (see BitmapContextPrimIdx there) exactly. The
+            // single ContextMenu instance is declared once in LayoutEditorView.axaml on this control;
+            // Avalonia opens it itself and raises Opening, which calls ConsumeContextMenuTarget and
+            // rebuilds ItemsSource fresh. Deliberately NOT e.Handled = true here — that would risk
+            // suppressing Avalonia's own right-click-opens-ContextMenu gesture recognition, the same
+            // reason the reference implementation leaves this branch unhandled.
+            ContextMenuTarget = (wx, wy);
             return;
         }
 
         if (props.IsLeftButtonPressed && _viewModel is not null)
         {
             var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
-            _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu());
+            _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), _zoom);
             InvalidateVisual();
         }
     }
 
-    // ── Shape context menu: edge conversion + delete-vertex (L1d §4/§3) + L1e booleans/offset/
-    // repair/flatten (docs/sonnet-briefs/brief-L1e-clipper-operations.md §3/§4/§5) ─────────────────
+    // ── Bitmap image-file DnD + Insert Bitmap (docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md) ──
 
-    private void ShowShapeContextMenu(double wx, double wy)
+    private void OnImageFileDragOver(object? _, DragEventArgs e)
+    {
+        if (TryExtractImagePath(e) is not null) { e.DragEffects = DragDropEffects.Copy; e.Handled = true; }
+        else e.DragEffects = DragDropEffects.None;
+    }
+
+    private void OnImageFileDrop(object? _, DragEventArgs e)
+    {
+        var path = TryExtractImagePath(e);
+        if (path is null || _viewModel is null) return;
+        var pos = e.GetPosition(this);
+        var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
+        _viewModel.DropBitmap(path, wx, wy, ViewportWidthDbu());
+        e.Handled = true;
+        InvalidateVisual();
+    }
+
+    // Mirrors SymbolEditorCanvas.TryExtractImagePath — the OS surfaces a dropped file under
+    // DataFormat.File; the payload TYPE varies by platform (a single IStorageItem on macOS,
+    // IEnumerable<IStorageItem> elsewhere), handled defensively alongside a bare path string.
+    private static string? TryExtractImagePath(DragEventArgs e)
+    {
+        foreach (var item in e.DataTransfer.Items)
+        {
+            var raw = item.TryGetRaw(DataFormat.File);
+            string? path = raw switch
+            {
+                IStorageItem single             => single.Path?.LocalPath,
+                IEnumerable<IStorageItem> files => files.FirstOrDefault()?.Path?.LocalPath,
+                string s                        => s,
+                _                                => null,
+            };
+            if (path is not null) return path;
+        }
+        return null;
+    }
+
+    /// <summary>R-bmp-5 — the Insert Bitmap toolbar button's entry point; centres the placed rect on
+    /// the CURRENT viewport centre. Called from the hosting view's code-behind after the file picker
+    /// returns a path (UI firewall — the picker itself never lives here).</summary>
+    public void InsertBitmapAtViewportCenter(string path)
     {
         if (_viewModel is null) return;
+        var vp = CurrentViewport;
+        double centerX = (vp.VisibleMinX + vp.VisibleMaxX) / 2.0;
+        double centerY = (vp.VisibleMinY + vp.VisibleMaxY) / 2.0;
+        _viewModel.InsertBitmapAtViewportCenter(path, centerX, centerY, ViewportWidthDbu());
+        InvalidateVisual();
+    }
 
+    // ── Shape context menu: edge conversion + delete-vertex (L1d §4/§3) + L1e booleans/offset/
+    // repair/flatten (docs/sonnet-briefs/brief-L1e-clipper-operations.md §3/§4/§5) ─────────────────
+    //
+    // L1-fix (brief-L1-fix-context-menu-stacking.md): the single ContextMenu instance lives in
+    // LayoutEditorView.axaml, declared once on this control — never `new`-ed per click (that was the
+    // bug: every right-click built and manually opened its OWN ContextMenu, which stacked). This
+    // control only RECORDS the click (see OnPointerPressed's ContextMenuTarget) and, on request,
+    // BUILDS a fresh item list — it never constructs or opens a ContextMenu itself.
+
+    /// <summary>World-space point of the pending right-click, or null when no menu should open (Ctrl
+    /// was held, routing to ordinary press handling instead — see <c>OnPointerPressed</c>). The
+    /// hosting view's <c>ContextMenu.Opening</c> handler calls <see cref="ConsumeContextMenuTarget"/>
+    /// once per opening and cancels the menu when it returns null.</summary>
+    public (double Wx, double Wy)? ContextMenuTarget { get; private set; }
+
+    /// <summary>Returns and clears the pending target — atomic so a stale target can never be reused
+    /// for a later, unrelated opening.</summary>
+    internal (double Wx, double Wy)? ConsumeContextMenuTarget()
+    {
+        var t = ContextMenuTarget;
+        ContextMenuTarget = null;
+        return t;
+    }
+
+    /// <summary>Builds a FRESH list of menu items for a right-click at <paramref name="wx"/>/<paramref
+    /// name="wy"/> — called anew on every <c>ContextMenu.Opening</c>, never reused across openings
+    /// (reusing item instances and re-subscribing <c>Click</c> would fire an action N times on the
+    /// Nth opening — the exact mistake this fix must not reintroduce).</summary>
+    internal List<object> BuildContextMenuItems(double wx, double wy)
+    {
         var items = new List<object>();
+        if (_viewModel is null) return items;
 
         var foundEdge = _viewModel.FindEdgeForContextMenu(wx, wy, HitTolDbu());
         if (foundEdge is { } f)
@@ -329,83 +431,95 @@ public sealed class LayoutCanvas : Control
         if (foundVertex is { } v)
         {
             if (items.Count > 0) items.Add(new Separator());
-            var deleteVertex = new MenuItem { Header = "Delete Vertex" };
+            // R-L1h-3: shown whenever a vertex is under the click (matches the table's "opened...on a
+            // vertex" precondition), but disabled with its reason when removal is blocked by the
+            // minimum-vertex-count rule — never a silent no-op click.
+            var avail = _viewModel.DeleteVertexAvailability(v.ShapeIndex, v.VertexIndex);
+            var deleteVertex = new MenuItem { Header = "Delete Vertex", IsEnabled = avail.CanExecute };
+            if (!avail.CanExecute && avail.DisabledReason is { } reason) ToolTip.SetTip(deleteVertex, reason);
             deleteVertex.Click += (_, _) => { _viewModel.DeleteVertex(v.ShapeIndex, v.VertexIndex); InvalidateVisual(); };
             items.Add(deleteVertex);
         }
 
+        // docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md — click-target-scoped, same
+        // shape as the edge/vertex items above: only present when the right-click actually landed on
+        // a bitmap.
+        var foundBitmap = _viewModel.FindBitmapForContextMenu(wx, wy, HitTolDbu());
+        if (foundBitmap is { } bmp)
+        {
+            if (items.Count > 0) items.Add(new Separator());
+            var resolvePath = new MenuItem { Header = "Resolve Path…" };
+            resolvePath.Click += async (_, _) => await ShowResolveBitmapPathDialogAsync(bmp.ShapeIndex);
+            items.Add(resolvePath);
+
+            var refreshCache = new MenuItem { Header = "Refresh Cache" };
+            refreshCache.Click += (_, _) => { _viewModel.RefreshBitmapCache(bmp.ShapeIndex); InvalidateVisual(); };
+            items.Add(refreshCache);
+        }
+
         AddBooleanAndFlattenMenuItems(items);
-
-        if (items.Count == 0) return;
-
-        var menu = new ContextMenu { ItemsSource = items };
-        menu.Open(this);
+        return items;
     }
 
-    /// <summary>L1e — items that act on the current SELECTION, independent of what (if anything) is
-    /// directly under the right-click point.</summary>
+    /// <summary>
+    /// L1e/L1h — items that act on the current SELECTION, independent of what (if anything) is
+    /// directly under the right-click point. R-L1h-3: every one of these is ALWAYS present (never
+    /// conditionally omitted) — disabled with a stated reason (its tooltip) when it cannot run, so
+    /// muscle memory and menu position both stay stable and a missing item never reads as a bug.
+    /// "Merge" is gone (R-L1h-1 — Union now groups by layer, which is what Merge always did) and
+    /// "Flatten to Polygon" (the no-dialog variant) is gone (R-L1h-2 — the "…" prompt is the one
+    /// surviving entry, since flattening is irreversible-except-by-undo and its resolution is the
+    /// whole point of the operation).
+    /// </summary>
     private void AddBooleanAndFlattenMenuItems(List<object> items)
     {
         if (_viewModel is null) return;
 
-        void AddItem(string header, Action action)
+        MenuItem AddAvailItem(string header, LayoutCommandAvailability avail)
         {
-            var mi = new MenuItem { Header = header };
-            mi.Click += (_, _) => { action(); InvalidateVisual(); };
+            var mi = new MenuItem { Header = header, IsEnabled = avail.CanExecute };
+            if (!avail.CanExecute && avail.DisabledReason is { } reason)
+                ToolTip.SetTip(mi, reason);
             items.Add(mi);
+            return mi;
         }
 
-        bool addedSeparator = false;
-        void Sep() { if (items.Count > 0 && !addedSeparator) { items.Add(new Separator()); addedSeparator = true; } }
+        void Sep() { if (items.Count > 0) items.Add(new Separator()); }
 
-        if (_viewModel.CanBooleanOp)
-        {
-            Sep();
-            AddItem("Union", _viewModel.ApplyUnion);
-            AddItem("Intersect", _viewModel.ApplyIntersect);
-            AddItem("Difference", _viewModel.ApplyDifference);
-            AddItem("XOR", _viewModel.ApplyXor);
-        }
+        Sep();
+        var boolAvail = _viewModel.BooleanOpAvailability;
+        AddAvailItem("Union", boolAvail).Click      += (_, _) => { _viewModel.ApplyUnion(); InvalidateVisual(); };
+        AddAvailItem("Intersect", boolAvail).Click  += (_, _) => { _viewModel.ApplyIntersect(); InvalidateVisual(); };
+        AddAvailItem("Difference", boolAvail).Click += (_, _) => { _viewModel.ApplyDifference(); InvalidateVisual(); };
+        AddAvailItem("XOR", boolAvail).Click        += (_, _) => { _viewModel.ApplyXor(); InvalidateVisual(); };
 
-        if (_viewModel.CanOffsetSelection)
-        {
-            Sep();
-            var offset = new MenuItem { Header = "Offset…" };
-            offset.Click += async (_, _) => await ShowOffsetDialogAsync();
-            items.Add(offset);
-        }
+        Sep();
+        AddAvailItem("Offset…", _viewModel.OffsetAvailability).Click += async (_, _) => await ShowOffsetDialogAsync();
+        AddAvailItem("Scale…", _viewModel.ScaleAvailability).Click   += async (_, _) => await ShowScaleDialogAsync();
 
-        if (_viewModel.CanMergeSelection)
-        {
-            Sep();
-            AddItem("Merge", _viewModel.ApplyMerge);
-        }
+        // R-L1h-5 row 3: the only way to reach bbox scale handles on a SINGLE shape (a 2+ selection
+        // always shows them — see LayoutEditorViewModel.ShowScaleHandles). "Enabled" here always,
+        // matching Offset/Scale… — toggling it on an empty selection is harmless (no handles to show).
+        var scaleModeItem = AddAvailItem(
+            _viewModel.ScaleModeActive ? "Exit Scale Mode" : "Scale Mode",
+            LayoutCommandAvailability.Enabled);
+        scaleModeItem.Click += (_, _) => { _viewModel.ToggleScaleModeCommand.Execute(null); InvalidateVisual(); };
 
-        if (_viewModel.CanRepairSelected)
-        {
-            Sep();
-            AddItem("Repair Self-Intersection", () => _viewModel.RepairSelfIntersection(_viewModel.SelectedIndices[0]));
-        }
+        Sep();
+        AddAvailItem("Repair Self-Intersection", _viewModel.RepairAvailability).Click +=
+            (_, _) => { _viewModel.RepairSelfIntersection(_viewModel.SelectedIndices[0]); InvalidateVisual(); };
 
-        if (_viewModel.CanFlattenSelection)
-        {
-            Sep();
-            AddItem("Flatten to Polygon", () => _viewModel.FlattenSelectionToPolygon(null));
-
-            var ellipsis = new MenuItem { Header = "Flatten to Polygon…" };
-            ellipsis.Click += async (_, _) => await ShowFlattenToPolygonDialogAsync();
-            items.Add(ellipsis);
-        }
+        Sep();
+        AddAvailItem("Flatten to Polygon…", _viewModel.FlattenAvailability).Click += async (_, _) => await ShowFlattenToPolygonDialogAsync();
     }
 
     private async Task ShowFlattenToPolygonDialogAsync()
     {
         if (_viewModel is null) return;
-        int previewIndex = _viewModel.SelectedIndices.FirstOrDefault(_viewModel.HasCurvedGeometryAt, -1);
-        if (previewIndex < 0) return;
+        var indices = _viewModel.SelectedIndices.ToList();
+        if (indices.Count == 0) return;
 
-        long defaultTol = LayoutFlattener.ResolveTolDbu(_viewModel.Model.Shapes[previewIndex], _viewModel.Technology);
-        var dialog = new FlattenToPolygonDialog(_viewModel, previewIndex, defaultTol);
+        var dialog = new FlattenToPolygonDialog(_viewModel, indices);
 
         var owner = TopLevel.GetTopLevel(this) as Window;
         long? chosen = owner is not null
@@ -415,6 +529,28 @@ public sealed class LayoutCanvas : Control
         if (chosen is { } tolDbu)
         {
             _viewModel.FlattenSelectionToPolygon(tolDbu);
+            InvalidateVisual();
+        }
+    }
+
+    private async Task ShowResolveBitmapPathDialogAsync(int shapeIndex)
+    {
+        if (_viewModel is null) return;
+        var picker = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (picker is null) return;
+
+        var files = await picker.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Resolve Bitmap Path",
+            AllowMultiple = false,
+            FileTypeFilter = new List<FilePickerFileType>
+            {
+                new("Image Files") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.tiff", "*.tif", "*.webp" } }
+            }
+        });
+        if (files.Count > 0)
+        {
+            _viewModel.ResolveBitmapPath(shapeIndex, files[0].Path.LocalPath);
             InvalidateVisual();
         }
     }
@@ -430,6 +566,19 @@ public sealed class LayoutCanvas : Control
 
         _viewModel.CommitOffsetText(text);
         _viewModel.ApplyOffsetToSelection();
+        InvalidateVisual();
+    }
+
+    private async Task ShowScaleDialogAsync()
+    {
+        if (_viewModel is null) return;
+        var dialog = new ScaleDialog(_viewModel);
+
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        var result = owner is not null ? await dialog.ShowDialog<ScaleDialogResult?>(owner) : null;
+        if (result is not { } r) return;
+
+        _viewModel.ApplyScale(r.FactorX, r.FactorY, r.AnchorX, r.AnchorY);
         InvalidateVisual();
     }
 
@@ -452,7 +601,7 @@ public sealed class LayoutCanvas : Control
         CursorWorldChanged?.Invoke(this, (wx, wy));
 
         bool leftDown = e.GetCurrentPoint(this).Properties.IsLeftButtonPressed;
-        _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu());
+        _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu());
         InvalidateVisual();
     }
 
@@ -488,7 +637,12 @@ public sealed class LayoutCanvas : Control
 
     private void OnKeyDown(object? _, KeyEventArgs e)
     {
-        if (e.Key == Key.Space) { _spaceHeld = true; UpdateCursor(); return; }
+        // R-lbl-3 (docs/sonnet-briefs/brief-layout-label-fix-and-text-flatten.md): Space is an
+        // ordinary character while typing a label — arming the pan modifier here would leave a
+        // subsequent left-drag panning instead of doing nothing (labels have no drag gesture), even
+        // though Space itself still reaches the label buffer via TextInput regardless (a separate,
+        // unhandled routed event) — this guard only stops the SIDE EFFECT, not the character.
+        if (e.Key == Key.Space && _viewModel?.IsTypingLabel != true) { _spaceHeld = true; UpdateCursor(); return; }
 
         // A paste ghost in progress owns every key itself (Escape cancels it) — never let a
         // clipboard shortcut race with an already-armed placement.

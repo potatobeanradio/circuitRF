@@ -25,13 +25,32 @@ public static class LayoutFlattener
     {
         long? shapeTol = shape switch
         {
-            CurveShape c => c.FlattenTolDbu,
-            PathShape p  => p.FlattenTolDbu,
-            _            => null,
+            CurveShape c       => c.FlattenTolDbu,
+            PathShape p        => p.FlattenTolDbu,
+            CircleShape c      => c.FlattenTolDbu,
+            RoundedRectShape r => r.FlattenTolDbu,
+            _                  => null,
         };
         if (shapeTol is > 0) return shapeTol.Value;
         if (tech is { DefaultFlattenTolDbu: > 0 }) return tech.DefaultFlattenTolDbu;
         return DefaultTolDbu;
+    }
+
+    /// <summary>The shape's own explicit tolerance, or null when it inherits — the one place that
+    /// knows which of <see cref="ResolveTolDbu"/>'s two branches fired, without duplicating its
+    /// switch. Used by the "Flatten to Polygon…" dialog (R-L1h-2b) to label the pre-fill "own" vs.
+    /// "from technology".</summary>
+    public static long? OwnTolDbu(LayoutShape shape)
+    {
+        long? tol = shape switch
+        {
+            CurveShape c       => c.FlattenTolDbu,
+            PathShape p        => p.FlattenTolDbu,
+            CircleShape c      => c.FlattenTolDbu,
+            RoundedRectShape r => r.FlattenTolDbu,
+            _                  => null,
+        };
+        return tol is > 0 ? tol : null;
     }
 
     /// <summary>Caps the number of segments a single arc/circle may expand to, regardless of how

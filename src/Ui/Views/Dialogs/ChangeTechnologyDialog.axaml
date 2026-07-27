@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.ChangeTechnologyDialog"
+        Title="Change Technology"
+        Width="380"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock x:Name="CurrentText" Grid.Row="0" FontSize="12" Opacity="0.7" Margin="0,0,0,10"/>
+
+        <ListBox x:Name="ChoiceList" Grid.Row="1" MaxHeight="220" FontSize="12"/>
+
+        <Button x:Name="BrowseButton" Grid.Row="2" Content="Browse…" FontSize="12" Padding="8,3"
+                HorizontalAlignment="Left" Margin="0,8,0,0"/>
+
+        <CheckBox x:Name="AdoptUnitsCheck" Grid.Row="3"
+                  Content="Adopt this technology's default display unit and snap grid"
+                  FontSize="12" Margin="0,12,0,0"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button x:Name="CancelButton" Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center"/>
+            <Button x:Name="OkButton" Content="Change" Width="80" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

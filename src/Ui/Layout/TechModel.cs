@@ -73,6 +73,15 @@ public sealed class Technology
     public LayoutUnit DefaultDisplayUnit { get; set; }
     public long DefaultSnapDbu { get; set; }
     public long DefaultFlattenTolDbu { get; set; }
+
+    /// <summary>Default height (DBU) for a newly-placed <see cref="LabelShape"/> — a drafting
+    /// convention of the process/board, deliberately NOT viewport-relative (docs/sonnet-briefs/
+    /// brief-layout-label-fix-and-text-flatten.md R-lbl-1): unlike the bitmap brief's R-bmp-4, a label's
+    /// size should stay consistent across a design and across sessions, not depend on how far the user
+    /// happened to be zoomed in when they typed it. 0 = unset — <c>LayoutEditorViewModel</c> falls back
+    /// to a hardcoded 5 µm only when no technology resolves at all.</summary>
+    public long DefaultLabelHeightDbu { get; set; }
+
     public List<LayerDef> Layers { get; set; } = [];
     public Stackup Stackup { get; set; } = new();
     public List<DrcRule> DrcRules { get; set; } = [];
