@@ -39,6 +39,16 @@ public sealed class LayoutCanvas : Control
             nameof(ViewModel), o => o.ViewModel, (o, v) => o.ViewModel = v);
 
     private LayoutEditorViewModel? _viewModel;
+
+    /// <summary>L2c §3 (docs/sonnet-briefs/brief-L2c-lod-merge-and-caching.md) — one path cache per
+    /// bound document, for exactly as long as this canvas is showing it. A fresh instance every time
+    /// <see cref="ViewModel"/> changes: cache entries are keyed by shape INDEX, which is meaningful only
+    /// within the ONE <see cref="LayoutView"/> that index came from — reusing a cache across two
+    /// different models would silently draw the wrong geometry at a reused index. Invalidated
+    /// incrementally by <see cref="OnModelChanged"/> (below), riding the same <see cref="LayoutChangeInfo"/>
+    /// notification the L2b spatial index already consumes — no second notification path.</summary>
+    private LayoutPathCache? _pathCache;
+
     public LayoutEditorViewModel? ViewModel
     {
         get => _viewModel;
@@ -51,6 +61,7 @@ public sealed class LayoutCanvas : Control
             }
 
             SetAndRaise(ViewModelProperty, ref _viewModel, value);
+            _pathCache = _viewModel is not null ? new LayoutPathCache() : null;
 
             if (_viewModel is not null)
             {
@@ -63,7 +74,11 @@ public sealed class LayoutCanvas : Control
         }
     }
 
-    private void OnModelChanged(object? sender, EventArgs e) => InvalidateVisual();
+    private void OnModelChanged(object? sender, LayoutChangeInfo e)
+    {
+        _pathCache?.Apply(e);
+        InvalidateVisual();
+    }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -213,7 +228,7 @@ public sealed class LayoutCanvas : Control
         var variant = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
         var theme = LayoutRenderTheme.FromTheme(_activeTheme, variant);
         var vp = CurrentViewport;
-        var opts = new LayoutRenderOptions { Theme = theme, ShowGrid = true, Overlay = _viewModel?.Overlay };
+        var opts = new LayoutRenderOptions { Theme = theme, ShowGrid = true, Overlay = _viewModel?.Overlay, PathCache = _pathCache };
 
         context.Custom(new LayoutDrawOperation(
             new Rect(Bounds.Size), _viewModel?.Model, _viewModel?.Technology, vp, opts,

@@ -25,7 +25,13 @@ public static class LayoutHitTest
         var layerMap = tech?.Layers.ToDictionary(l => l.Key);
         var candidates = new List<(int ZOrder, double Area, int Index)>();
 
-        for (int i = 0; i < view.Shapes.Count; i++)
+        // L2b: the tolerance is still computed per query from the live viewport by the caller and
+        // expands the QUERY rect here — it is never cached or index-derived (docs/sonnet-briefs/
+        // brief-L2b-spatial-index.md §3). The per-shape exact test (HitTestShape) and the ordering
+        // below are byte-for-byte the same as the pre-index linear scan; only which shapes are
+        // CONSIDERED changes.
+        var queryRect = new Bbox(x - tolDbu, y - tolDbu, x + tolDbu, y + tolDbu);
+        foreach (var i in view.SpatialIndex.QueryIntersecting(view.Shapes, queryRect))
         {
             var shape = view.Shapes[i];
             LayerDef def = layerMap is not null && layerMap.TryGetValue(shape.Layer, out var found)

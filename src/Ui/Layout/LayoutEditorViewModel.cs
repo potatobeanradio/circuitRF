@@ -962,13 +962,19 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         var marqueeBb = new Bbox(minX, minY, maxX, maxY);
 
         _marqueeHitsScratch.Clear();
-        for (int i = 0; i < Model.Shapes.Count; i++)
+        // L2b: the R-tree query is an INTERSECT test against a possibly-larger-than-exact conservative
+        // bbox (LayoutSpatialIndex.ConservativeBboxOf) — a safe superset for BOTH enclose and crossing
+        // mode, since containment implies intersection. The candidates below still get the EXACT SAME
+        // predicate (LayoutGeometry.BboxOf, unchanged) applied afterward, so the index only changes
+        // which shapes are CONSIDERED, never the decision (R-L2b-3) — a candidate whose conservative
+        // bbox intersects but whose real BboxOf does not simply fails the check below, exactly as it
+        // would have failed the pre-index linear scan.
+        foreach (var i in Model.SpatialIndex.QueryIntersecting(Model.Shapes, marqueeBb))
         {
             var shape = Model.Shapes[i];
             var def = ResolveLayerDef(shape.Layer);
             if (!def.Visible || !def.Selectable) continue; // gate 8: hidden/non-selectable never previewed
 
-            // L2: query the spatial index instead of scanning all shapes
             var bb = LayoutGeometry.BboxOf(shape);
             if (bb.IsEmpty) continue;
 
@@ -1138,9 +1144,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         if (_moveHasMoved && (_moveLiveDx != 0 || _moveLiveDy != 0) && _selectedIndices.Count > 0)
         {
-            var shapes = MovableSelectedIndices(_selectedIndices).Select(i => Model.Shapes[i]).ToList();
-            if (shapes.Count > 0)
-                Execute(new Commands.Layout.MoveShapesCommand(Model, shapes, _moveLiveDx, _moveLiveDy));
+            var indices = MovableSelectedIndices(_selectedIndices);
+            if (indices.Count > 0)
+                Execute(new Commands.Layout.MoveShapesCommand(Model, indices, _moveLiveDx, _moveLiveDy));
         }
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
     }
@@ -1191,10 +1197,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         long dy = key switch { Key.Up => step, Key.Down => -step, _ => 0 };
         if (dx == 0 && dy == 0) return;
 
-        var shapes = MovableSelectedIndices(_selectedIndices).Select(i => Model.Shapes[i]).ToList();
-        if (shapes.Count == 0) return;
+        var indices = MovableSelectedIndices(_selectedIndices);
+        if (indices.Count == 0) return;
 
-        Execute(new Commands.Layout.MoveShapesCommand(Model, shapes, dx, dy));
+        Execute(new Commands.Layout.MoveShapesCommand(Model, indices, dx, dy));
     }
 
     // ── Current layer (session state — deliberately NOT persisted in .clay; §2 of the brief) ────

@@ -231,15 +231,21 @@ shape to be composited separately, so a layer's fills cannot collapse into one b
 handles this with per-shape fills, batched *strokes* (opaque, so they may still merge into one path per
 layer), and an automatic fallback:
 
-**R8b. Merge is an automatic LOD tier, not a mode the user manages.** Above a visible-shape threshold
-(start at ~20k, tune against the §5.1 benchmark) the renderer switches that layer to a single merged
-fill. This is not a compromise of intent — at the zoom level where 20k shapes are on screen, individual
-overlaps are sub-pixel and imperceptible anyway. A preference forces merge permanently for anyone who
-prefers it or who works on machines where the threshold still hurts.
+**R8b. Merge is an automatic LOD tier, not a mode the user manages.** Above a visible-shape threshold the
+renderer switches that layer to a single merged fill. This is not a compromise of intent — at the zoom level
+where that many shapes are on screen, individual overlaps are sub-pixel and imperceptible anyway. A
+preference forces merge permanently for anyone who prefers it.
 
-If the benchmark shows darkening is untenable even at modest counts, flipping the default to merge is a
-one-line change to the tier threshold — the architecture supports both paths from the start rather than
-betting on one.
+**Measured, L2a (2026-07-27): there is no performance crossover — merging is *always* cheaper.** A
+single-layer sweep from 500 to 100,000 shapes found merged fills faster than per-shape fills at every
+density, by a margin that *shrinks* with density (1.21× at 500 shapes/layer down to 1.02× at 100,000) — the
+opposite of the break-even cliff this rule originally assumed when it suggested starting at ~20k. The real
+lever is **draw-call count across many layers**, not per-layer fill cost: in the 200-layer scenario merged
+wins 15–25% even at only 1k–50k total shapes.
+
+So the threshold is a **UX** decision, not a performance one. The only cost of merging early is the one R8a
+names — same-layer overlap stops reading as darker — and the performance case for a low threshold is
+stronger than "start at ~20k" implied.
 
 ### 2.4 The technology file `.ctech`
 

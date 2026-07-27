@@ -255,11 +255,31 @@ public sealed class LayoutView
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];
 
+    /// <summary>The R-tree spatial index (L2b, docs/design/layout-view.md §5.2 R11) over
+    /// <see cref="Shapes"/> — every query self-heals lazily (see its own doc comment), so it is always
+    /// safe to read even for a <see cref="LayoutView"/> whose <see cref="Shapes"/> were populated by
+    /// direct list mutation and never once ran through <see cref="NotifyChanged"/>.</summary>
+    public LayoutSpatialIndex SpatialIndex { get; } = new();
+
     /// <summary>Raised after any mutation of <see cref="Shapes"/>/<see cref="Instances"/> —
     /// <c>LayoutCanvas</c> subscribes to repaint (mirrors <c>EditableSymbol.Changed</c>). Commands
     /// under <c>src/Ui/Commands/Layout/</c> call <see cref="NotifyChanged"/> after every mutation,
     /// in both Execute and Undo.</summary>
-    public event EventHandler? Changed;
+    public event EventHandler<LayoutChangeInfo>? Changed;
 
-    public void NotifyChanged() => Changed?.Invoke(this, EventArgs.Empty);
+    /// <summary>
+    /// <paramref name="info"/> describes what changed, for <see cref="SpatialIndex"/>'s incremental
+    /// maintenance (L2b, R-L2b-2 — "one hook, not update calls sprinkled through a dozen commands":
+    /// the index's own <see cref="LayoutSpatialIndex.Apply"/> is that one hook, called from here,
+    /// before <see cref="Changed"/> fires, so every subscriber — including a future one — always sees
+    /// a fresh index by the time it runs). Omit it (or pass <c>null</c>) for any mutation not worth
+    /// classifying precisely — <see cref="LayoutChangeInfo.Full"/> is always correct, just triggers a
+    /// full index rebuild instead of an incremental update.
+    /// </summary>
+    public void NotifyChanged(LayoutChangeInfo? info = null)
+    {
+        info ??= LayoutChangeInfo.Full;
+        SpatialIndex.Apply(Shapes, info);
+        Changed?.Invoke(this, info);
+    }
 }

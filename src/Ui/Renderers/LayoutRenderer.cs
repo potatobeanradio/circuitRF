@@ -29,6 +29,36 @@ public readonly struct LayoutRenderOptions
     /// </summary>
     public bool TransparentBackground { get; init; }
 
+    /// <summary>L2c §1/§2 (docs/sonnet-briefs/brief-L2c-lod-merge-and-caching.md) — the ONE aggregated,
+    /// batched-per-layer-fill mechanism that serves both LOD (R-L2c-1: a shape whose on-screen bbox
+    /// falls below this many device pixels contributes a minimal clamped rect instead of its full
+    /// geometry) and the R8b merge tier (below). 0 (the default) means "expose it, tune from
+    /// measurement" already happened — see the L2c completion note for the value and the data behind
+    /// it; a caller may still override for testing/tuning. <b>Never cached, never derived from zoom —
+    /// see <see cref="LayoutRenderer.DrawLayer"/> for why.</b></summary>
+    public double LodPixelThreshold { get; init; }
+
+    /// <summary>L2c §2 (R-L2c-2) — the OTHER trigger for the same batched-fill mechanism: a layer whose
+    /// VISIBLE (candidate) shape count exceeds this switches every shape on it into the batched path,
+    /// same as a sub-pixel shape would individually. 0 means "use <see cref="LayoutRenderer.
+    /// DefaultMergeShapeCountThreshold"/>" — see that constant's doc comment for the reasoning and the
+    /// measurement behind the chosen value.</summary>
+    public int MergeShapeCountThreshold { get; init; }
+
+    /// <summary>§2.3 R8b's "a preference forces merge permanently for anyone who prefers it" — when
+    /// true, EVERY layer uses the batched-fill path regardless of shape count or size. The mechanism
+    /// exists here; wiring an actual Settings toggle to it is a small follow-up, not required to close
+    /// the full-extent perf gap this phase targets.</summary>
+    public bool ForceMergeTier { get; init; }
+
+    /// <summary>L2c §3 (R-L2c-3/4) — the per-shape path cache, or <c>null</c> to disable caching
+    /// entirely (every existing test and one-shot export render passes <c>null</c> and gets exactly
+    /// L2b's behavior — paths built fresh in current path space every call). Owned by the CALLER
+    /// (<c>LayoutCanvas</c>, for the lifetime of one document) since it must persist across frames to
+    /// do any good at all — <see cref="LayoutRenderer.Draw"/> is a stateless static method and cannot
+    /// own it itself.</summary>
+    public LayoutPathCache? PathCache { get; init; }
+
     public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true };
 }
 
@@ -39,8 +69,52 @@ public readonly struct LayoutRenderOptions
 /// The caller (the canvas / view model) is responsible for deduping against what has already been
 /// warned about "once per layer per load" and posting to Messages — this is a pure render call and
 /// never posts anything itself.
+///
+/// <b>The trailing fields (L2a, docs/sonnet-briefs/brief-L2a-performance-harness.md §2) are counters,
+/// not timings</b> — deterministic, machine-independent work counts the CI benchmark gate asserts
+/// against, since a millisecond assertion flakes on a shared runner and a shape/draw-call count does
+/// not. All default to 0 so the two pre-existing single-argument call sites need no change.
+/// <list type="bullet">
+/// <item><see cref="ShapesExamined"/> — shapes considered for this frame: the candidate count the
+/// spatial index's viewport-rect query returns (L2b), not <c>view.Shapes.Count</c> — at a zoomed-in
+/// view this is O(visible), proving culling actually happened; at full extent it equals the total,
+/// since a query rect covering everything returns everything.</item>
+/// <item><see cref="ShapesDrawn"/> — of those candidates, the ones that actually issued a fill/text/
+/// bitmap draw call (a hidden/non-selectable layer's candidates are examined but never drawn — see
+/// <c>Counters_HiddenLayer_ExaminedButNotDrawn</c>).</item>
+/// <item><see cref="PathsConstructed"/> — <c>SKPath</c> objects allocated this frame building shape
+/// geometry (<see cref="BuildShapePath"/>'s own path, plus <see cref="BuildPathOutline"/>'s three —
+/// centerline, stroke-to-fill outline, and the <c>Simplify</c> destination — for every <c>PathShape</c>).
+/// Excludes the ghost/selection/handle/marquee overlay paths, which are editor-interaction geometry, not
+/// per-frame committed-layer cost, and are never present in a benchmark frame (no live selection).</item>
+/// <item><see cref="DrawCalls"/> — <c>canvas.Draw*</c> calls issued for committed geometry: one per
+/// drawn shape's fill, one per layer for its batched hairline stroke (only when the batch is
+/// non-empty), one per drawn label's text, one per drawn bitmap. Background/grid draws are excluded —
+/// they are O(viewport), not O(shapes), and already have their own separate accounting (grid pitch).</item>
+/// <item><see cref="LayersVisited"/> — resolved layers whose <see cref="LayerDef.Visible"/> was true
+/// and which therefore actually entered <see cref="DrawLayer"/> this frame.</item>
+/// </list>
 /// </summary>
-public readonly record struct LayoutRenderResult(IReadOnlyList<LayerKey> UnknownLayers);
+public readonly record struct LayoutRenderResult(
+    IReadOnlyList<LayerKey> UnknownLayers,
+    int ShapesExamined = 0,
+    int ShapesDrawn = 0,
+    int PathsConstructed = 0,
+    int DrawCalls = 0,
+    int LayersVisited = 0);
+
+/// <summary>Plain-field, no-dictionary per-frame work counters (L2a) — threaded through the private
+/// draw helpers below by reference. A class (not a struct) so passing it around never copies; fields
+/// are incremented directly with no logging/formatting, per the L2a brief's "must not itself cost
+/// measurable time" guardrail (gate 6).</summary>
+internal sealed class LayoutFrameCounters
+{
+    public int ShapesExamined;
+    public int ShapesDrawn;
+    public int PathsConstructed;
+    public int DrawCalls;
+    public int LayersVisited;
+}
 
 /// <summary>
 /// Separable Skia renderer for the layout canvas (docs/design/layout-view.md §2.3/§3.2, L1a brief).
@@ -150,14 +224,50 @@ public static class LayoutRenderer
             if (view is null || vp.Width < 1 || vp.Height < 1 || vp.Zoom <= 0)
                 return new LayoutRenderResult([]);
 
-            // ── Group shapes by layer, resolve each layer once ──────────────────
+            var counters = new LayoutFrameCounters();
+            var dragOverrides = opts.Overlay?.DragOverrides ?? EmptyDragOverrides;
+
+            // ── L2b render culling — query the index once for the whole frame ───
+            // The stored bbox is exact for every shape kind (LayoutSpatialIndex.ConservativeBboxOf ==
+            // LayoutGeometry.BboxOf except for labels — see that method's doc comment), but the drawn
+            // PIXELS extend a little beyond it: the batched per-layer hairline stroke
+            // (GeometryStrokeDevicePixels) plus antialiasing softening. Expanding the QUERY rect (never
+            // the stored bbox — that stays exact and shared with hit-test/marquee) by a device-pixel
+            // margin, converted to world units at the CURRENT zoom, is what keeps a shape whose fill is
+            // just outside the viewport but whose stroke would still paint a pixel or two into it from
+            // being wrongly culled — the gate-4 "pixel-identical output" requirement depends on this.
+            double marginDbu = RenderCullMarginDevicePixels / vp.Zoom;
+            var viewportRect = new Bbox(
+                (long)System.Math.Floor(vp.VisibleMinX - marginDbu), (long)System.Math.Floor(vp.VisibleMinY - marginDbu),
+                (long)System.Math.Ceiling(vp.VisibleMaxX + marginDbu), (long)System.Math.Ceiling(vp.VisibleMaxY + marginDbu));
+            var candidates = view.SpatialIndex.QueryIntersecting(view.Shapes, viewportRect);
+
+            // R-L2b-2: "drags do not churn the index" — a live move/scale/handle-drag preview
+            // (Overlay.DragOverrides) never calls NotifyChanged, so the index still reflects each
+            // dragged shape's PRE-drag position for the whole gesture. A shape dragged from off-screen
+            // into view would be wrongly culled if candidates came from the index query alone. Drag
+            // selections are always small (bounded by what the user selected), so force-including them
+            // unconditionally is cheap; a dragged shape whose LIVE position is off-screen is still
+            // correctly invisible — the canvas clip rect (set above) discards it, exactly as it always
+            // would have.
+            if (dragOverrides.Count > 0)
+            {
+                var withDrag = new HashSet<int>(candidates);
+                withDrag.UnionWith(dragOverrides.Keys);
+                var merged = new List<int>(withDrag);
+                merged.Sort();
+                candidates = merged;
+            }
+            counters.ShapesExamined = candidates.Count;
+
+            // ── Group candidates by layer, resolve each layer once ──────────────
             // Carries the shape's own index so a live move-drag can substitute a translated clone
             // (opts.Overlay.DragOverrides) without ever mutating view.Shapes mid-drag (L1c).
             // BitmapShape is excluded here — R-bmp-2: a bitmap's Layer governs visibility/
             // selectability only, never paint order, so it is never part of the per-layer,
             // ZOrder-sorted draw below. It is drawn separately, always first (see DrawBitmapShapes).
             var byLayer = new Dictionary<LayerKey, List<(int Index, LayoutShape Shape)>>();
-            for (int i = 0; i < view.Shapes.Count; i++)
+            foreach (var i in candidates)
             {
                 var shape = view.Shapes[i];
                 if (shape is BitmapShape) continue;
@@ -202,17 +312,17 @@ public static class LayoutRenderer
             try
             {
                 canvas.Concat(in matrix);
-                var dragOverrides = opts.Overlay?.DragOverrides ?? EmptyDragOverrides;
 
                 // R-bmp-2: bitmaps ALWAYS render first — beneath every layer, regardless of the
                 // layer's own ZOrder. This is the one deliberate exception to "Layer determines both
                 // visibility and paint order" every other shape follows.
-                DrawBitmapShapes(canvas, view, layerMap, unknownLayers, tech, dragOverrides, ps, theme);
+                DrawBitmapShapes(canvas, view, candidates, layerMap, unknownLayers, tech, dragOverrides, ps, theme, counters);
 
                 foreach (var (def, shapes) in resolved)
                 {
                     if (!def.Visible) continue;
-                    DrawLayer(canvas, def, shapes, ps, dragOverrides, scaleUm);
+                    counters.LayersVisited++;
+                    DrawLayer(canvas, def, shapes, ps, dragOverrides, scaleUm, opts, counters);
                 }
 
                 if (opts.Overlay?.InProgressPrimitive is { } ghost)
@@ -242,7 +352,13 @@ public static class LayoutRenderer
                 canvas.Restore();
             }
 
-            return new LayoutRenderResult(unknownLayers.Count == 0 ? [] : unknownLayers.ToArray());
+            return new LayoutRenderResult(
+                unknownLayers.Count == 0 ? [] : unknownLayers.ToArray(),
+                ShapesExamined: counters.ShapesExamined,
+                ShapesDrawn: counters.ShapesDrawn,
+                PathsConstructed: counters.PathsConstructed,
+                DrawCalls: counters.DrawCalls,
+                LayersVisited: counters.LayersVisited);
         }
         finally
         {
@@ -316,11 +432,12 @@ public static class LayoutRenderer
     // BitmapShape's own doc comment for why.
 
     private static void DrawBitmapShapes(
-        SKCanvas canvas, LayoutView view, Dictionary<LayerKey, LayerDef>? layerMap,
+        SKCanvas canvas, LayoutView view, IReadOnlyList<int> candidates, Dictionary<LayerKey, LayerDef>? layerMap,
         HashSet<LayerKey> unknownLayers, Technology? tech,
-        IReadOnlyDictionary<int, LayoutShape> dragOverrides, PathSpace ps, LayoutRenderTheme theme)
+        IReadOnlyDictionary<int, LayoutShape> dragOverrides, PathSpace ps, LayoutRenderTheme theme,
+        LayoutFrameCounters counters)
     {
-        for (int i = 0; i < view.Shapes.Count; i++)
+        foreach (var i in candidates)
         {
             if (view.Shapes[i] is not BitmapShape) continue;
             if ((dragOverrides.TryGetValue(i, out var ov) ? ov : view.Shapes[i]) is not BitmapShape bmp) continue;
@@ -338,6 +455,8 @@ public static class LayoutRenderer
             var rect = BitmapPlacementRect(bmp, ps);
             if (rect.Width < 0.5f || rect.Height < 0.5f) continue;
 
+            counters.ShapesDrawn++;
+            counters.DrawCalls++;
             var skBmp = BitmapCache.Load(bmp.ImagePathRef);
             if (skBmp is null)
             {
@@ -432,6 +551,12 @@ public static class LayoutRenderer
     /// Skia hairline (which is exactly 1 device pixel) per owner feedback, 2026-07-26.</summary>
     private const double GeometryStrokeDevicePixels = 2.0;
 
+    /// <summary>L2b render-culling query-rect margin, in device pixels — generously covers
+    /// <see cref="GeometryStrokeDevicePixels"/>'s half-width (the stroke straddles the fill boundary)
+    /// plus antialiasing softening, so a shape whose fill bbox sits just outside the viewport but whose
+    /// stroke would still paint a pixel or two into it is never wrongly culled.</summary>
+    private const double RenderCullMarginDevicePixels = 8.0;
+
     /// <summary>Device-pixel target for the selection accent outline — also doubled, so a selected
     /// shape reads unmistakably as selected next to its now-thicker geometry outline.</summary>
     private const double SelectionStrokeDevicePixels = 2.0;
@@ -443,8 +568,39 @@ public static class LayoutRenderer
     private static float DevicePixelsToPathSpace(double scaleUm, double devicePixels)
         => (float)(devicePixels / System.Math.Max(scaleUm, 1e-12));
 
+    // ── L2c §1/§2 — LOD aggregation and the R8b merge tier, ONE mechanism, two triggers ──────────
+    // docs/sonnet-briefs/brief-L2c-lod-merge-and-caching.md. R-L2c-1: a shape whose on-screen bbox is
+    // under LodPixelThreshold contributes a MINIMAL RECT (never dropped — a dense cluster of sub-pixel
+    // shapes must still read as filled, not empty, at full extent) to a single batched-per-layer fill
+    // path instead of building its real geometry. R-L2c-2: a layer whose candidate count exceeds
+    // MergeShapeCountThreshold (or ForceMergeTier) sends every one of its NON-sub-pixel shapes into the
+    // SAME batched path too, with their real geometry (still built once, just not drawn/composited
+    // individually) — gate 6 requires both triggers route through the identical aggregate, and they do
+    // by construction: there is exactly one `aggregate` SKPath per layer, filled once, below.
+
+    /// <summary>Default LOD engagement threshold, device pixels — §5.3 item 3's own starting guess,
+    /// confirmed (not just assumed) by the LOD-only measurement in the L2c completion note before the
+    /// merge tier or path cache were built at all (gate 2's explicit ordering).</summary>
+    internal const double DefaultLodPixelThreshold = 2.0;
+
+    /// <summary>The minimal rect a sub-pixel shape contributes is clamped to at least this many device
+    /// pixels per side (not the LOD threshold itself, which only decides WHETHER to aggregate) — small
+    /// enough to stay visually negligible individually, large enough that Skia does not silently drop a
+    /// truly-zero-area rect.</summary>
+    private const double MinimalRectDevicePixels = 1.0;
+
+    /// <summary>Default R8b merge-tier shape-count threshold. L2a's own single-layer sweep (§5 of that
+    /// phase's data) found merged fills cheaper than per-shape darkening at EVERY density tested (500 to
+    /// 100,000 shapes/layer, ratio never below 1.0×) — there is no performance cliff to tune to, per L2c
+    /// §2's framing. The remaining question is purely R8a's UX trade-off (same-layer overlap stops
+    /// reading as darker once merged), so the threshold is set where a genuinely dense layer's
+    /// individual-shape darkening feedback has already become visual noise rather than information —
+    /// see the L2c completion note for the measured full-extent numbers this value was chosen against.</summary>
+    internal const int DefaultMergeShapeCountThreshold = 2_000;
+
     private static void DrawLayer(SKCanvas canvas, LayerDef def, List<(int Index, LayoutShape Shape)> shapes,
-        PathSpace ps, IReadOnlyDictionary<int, LayoutShape> dragOverrides, double scaleUm)
+        PathSpace ps, IReadOnlyDictionary<int, LayoutShape> dragOverrides, double scaleUm,
+        LayoutRenderOptions opts, LayoutFrameCounters counters)
     {
         var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
         byte fillAlpha = (byte)System.Math.Clamp(System.Math.Round(def.FillOpacity * 255.0), 0, 255);
@@ -457,6 +613,12 @@ public static class LayoutRenderer
             Color = color.WithAlpha(255),
         };
         using var strokeBatch = new SKPath();
+        using var aggregate = new SKPath();
+
+        double lodThreshold = opts.LodPixelThreshold > 0 ? opts.LodPixelThreshold : DefaultLodPixelThreshold;
+        int mergeThreshold = opts.MergeShapeCountThreshold > 0 ? opts.MergeShapeCountThreshold : DefaultMergeShapeCountThreshold;
+        bool layerMerges = opts.ForceMergeTier || shapes.Count > mergeThreshold;
+        double devicePxPerDbu = scaleUm * ps.DbuToUm;
 
         foreach (var (index, original) in shapes)
         {
@@ -467,19 +629,92 @@ public static class LayoutRenderer
 
             if (shape is LabelShape label)
             {
+                if (string.IsNullOrEmpty(label.Text)) continue;
+                counters.ShapesDrawn++;
+                counters.DrawCalls++;
                 DrawLabelText(canvas, label, ps, color);
                 continue;
             }
 
-            using var shapePath = BuildShapePath(shape, ps);
-            if (shapePath is null || shapePath.IsEmpty) continue;
+            var bb = LayoutGeometry.BboxOf(shape);
+            if (bb.IsEmpty) continue;
 
-            canvas.DrawPath(shapePath, fillPaint);
-            strokeBatch.AddPath(shapePath);
+            // R-L2c-1: sub-pixel-size is a PER-SHAPE, per-frame decision (never cached, never derived
+            // from anything but the current zoom) — it can engage even on a layer well under the merge
+            // count threshold, and must, or a dense small-feature layer viewed zoomed-out would still
+            // pay full per-shape path-construction cost for geometry nobody can see the shape of anyway.
+            double screenW = (bb.MaxX - bb.MinX) * devicePxPerDbu;
+            double screenH = (bb.MaxY - bb.MinY) * devicePxPerDbu;
+            if (System.Math.Max(screenW, screenH) < lodThreshold)
+            {
+                AddMinimalRect(aggregate, bb, ps, scaleUm);
+                counters.ShapesDrawn++;
+                continue;
+            }
+
+            if (layerMerges)
+            {
+                // Full geometry, same as the individual tier below — just added to the shared
+                // aggregate instead of drawn/composited on its own (R-L2c-2's "same mechanism").
+                using var mergedPath = BuildShapePath(shape, ps, counters);
+                if (mergedPath is null || mergedPath.IsEmpty) continue;
+                aggregate.AddPath(mergedPath);
+                counters.ShapesDrawn++;
+                continue;
+            }
+
+            // ── Individual per-shape darkening tier — R-L2c-3's path cache applies HERE only ──────
+            if (opts.PathCache is { } cache)
+            {
+                var (localPath, refX, refY) = cache.GetOrBuild(index, shape, ps.DbuToUm, counters, out _);
+                if (localPath.IsEmpty) continue;
+
+                float dx = ps.X(refX), dy = ps.Y(refY);
+                counters.ShapesDrawn++;
+                counters.DrawCalls++;
+                canvas.Save();
+                canvas.Translate(dx, dy);
+                canvas.DrawPath(localPath, fillPaint);
+                canvas.Restore();
+                strokeBatch.AddPath(localPath, dx, dy);
+            }
+            else
+            {
+                using var shapePath = BuildShapePath(shape, ps, counters);
+                if (shapePath is null || shapePath.IsEmpty) continue;
+
+                counters.ShapesDrawn++;
+                counters.DrawCalls++;
+                canvas.DrawPath(shapePath, fillPaint);
+                strokeBatch.AddPath(shapePath);
+            }
+        }
+
+        if (!aggregate.IsEmpty)
+        {
+            counters.DrawCalls++;
+            canvas.DrawPath(aggregate, fillPaint);
+            strokeBatch.AddPath(aggregate);
         }
 
         if (!strokeBatch.IsEmpty)
+        {
+            counters.DrawCalls++;
             canvas.DrawPath(strokeBatch, strokePaint);
+        }
+    }
+
+    /// <summary>R-L2c-1's minimal rect — the shape's real (sub-pixel) bbox, clamped up to at least
+    /// <see cref="MinimalRectDevicePixels"/> per side so it survives rasterization, centered on the
+    /// shape's own bbox center so a clamp never shifts a cluster's apparent position.</summary>
+    private static void AddMinimalRect(SKPath aggregate, Bbox bb, PathSpace ps, double scaleUm)
+    {
+        var rect = NormalizedRect(ps.X(bb.MinX), ps.Y(bb.MinY), ps.X(bb.MaxX), ps.Y(bb.MaxY));
+        float halfMin = (float)(0.5 * MinimalRectDevicePixels / System.Math.Max(scaleUm, 1e-12));
+        float cx = (rect.Left + rect.Right) / 2f, cy = (rect.Top + rect.Bottom) / 2f;
+        float w = System.Math.Max(rect.Width, halfMin * 2f);
+        float h = System.Math.Max(rect.Height, halfMin * 2f);
+        aggregate.AddRect(new SKRect(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f));
     }
 
     // ── Selection outline + marquee (L1c) ───────────────────────────────────────
@@ -713,14 +948,18 @@ public static class LayoutRenderer
 
     // ── Shape -> path-space SKPath ───────────────────────────────────────────────
 
-    private static SKPath? BuildShapePath(LayoutShape shape, PathSpace ps)
+    /// <summary>Internal (not private) so <see cref="LayoutPathCache"/> can build a shape's path in
+    /// LOCAL space (a <see cref="PathSpace"/> whose origin is the shape's own bbox min, not the
+    /// per-frame one) — see that type's doc comment for why (R-L2c-3).</summary>
+    internal static SKPath? BuildShapePath(LayoutShape shape, PathSpace ps, LayoutFrameCounters? counters = null)
     {
         // Path (a trace) needs its own outline construction (centerline -> GetFillPath), not the
         // generic per-shape builder below.
         if (shape is PathShape trace)
-            return BuildPathOutline(trace, ps);
+            return BuildPathOutline(trace, ps, counters);
 
         var path = new SKPath();
+        if (counters is not null) counters.PathsConstructed++;
         switch (shape)
         {
             case RectShape r:
@@ -908,7 +1147,7 @@ public static class LayoutRenderer
     /// more expensive than plain path construction; fine at L1 scale (paths rebuild every frame anyway),
     /// but it must ride along with L2's per-shape path cache rather than recompute every frame.
     /// </summary>
-    internal static SKPath? BuildPathOutline(PathShape trace, PathSpace ps)
+    internal static SKPath? BuildPathOutline(PathShape trace, PathSpace ps, LayoutFrameCounters? counters = null)
     {
         int n = trace.Xy.Length / 2;
         if (n < 2) return null;
@@ -916,6 +1155,7 @@ public static class LayoutRenderer
         var xy = trace.End == PathEndStyle.Extended ? ExtendedCenterline(trace.Xy, trace.Width) : trace.Xy;
 
         using var centerline = new SKPath();
+        if (counters is not null) counters.PathsConstructed++;
         AddEdgeListPath(centerline, xy, trace.Edges, closed: false, ps);
 
         var cap = trace.End switch
@@ -935,10 +1175,12 @@ public static class LayoutRenderer
         };
 
         var outline = new SKPath();
+        if (counters is not null) counters.PathsConstructed++;
         strokeForFill.GetFillPath(centerline, outline);
 
         // L2: cache with the shape path — Simplify is an SkPathOps call, not free.
         var simplified = new SKPath();
+        if (counters is not null) counters.PathsConstructed++;
         if (outline.Simplify(simplified))
         {
             outline.Dispose();

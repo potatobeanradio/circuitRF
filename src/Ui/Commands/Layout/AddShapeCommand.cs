@@ -11,6 +11,13 @@ namespace CircuitRF.Ui.Commands.Layout;
 /// be a rendering-order bug that only surfaces much later. The index is captured once, on the first
 /// <see cref="Execute"/>, and every subsequent Undo/Redo re-inserts at that exact position — this is
 /// what makes "draw A, B, C; undo C; undo B; redo B" put B back at index 1, not index 2.
+///
+/// <b>L2b:</b> that same restore-at-original-index rule is exactly what makes this a safe trailing
+/// append/remove for the spatial index's incremental fast path (<see cref="LayoutChangeInfo.Appended"/>/
+/// <see cref="LayoutChangeInfo.RemovedTrailing"/>): under a linear (LIFO) undo/redo stack, <see
+/// cref="Undo"/> can only ever run once everything pushed after this command has already been undone —
+/// so the shape being removed is always, provably, the CURRENT last element of <c>Shapes</c>, regardless
+/// of what other command types were interleaved. No other shape's index ever shifts.
 /// </summary>
 internal sealed class AddShapeCommand : IUiCommand
 {
@@ -30,12 +37,14 @@ internal sealed class AddShapeCommand : IUiCommand
     {
         if (_index < 0) _index = _view.Shapes.Count;
         _view.Shapes.Insert(_index, _shape);
-        _view.NotifyChanged();
+        // L2b: always a trailing append under LIFO undo/redo — see the type doc comment. Safe for the
+        // incremental spatial-index fast path.
+        _view.NotifyChanged(LayoutChangeInfo.Appended(_index, 1));
     }
 
     public void Undo()
     {
         _view.Shapes.Remove(_shape);
-        _view.NotifyChanged();
+        _view.NotifyChanged(LayoutChangeInfo.RemovedTrailing(_index, 1));
     }
 }

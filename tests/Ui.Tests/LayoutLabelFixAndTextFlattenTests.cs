@@ -20,6 +20,7 @@ namespace CircuitRF.Ui.Tests;
 // (glyph extraction, quad-to-cubic elevation, LayoutFlattener, Clipper2 nesting) still runs end to end
 // headlessly, substituting SKTypeface.Default (guaranteed loadable, no asset system involved).
 
+[Collection(CircuitRF.Ui.Tests.LayoutTextOutlineTypefaceCollection.Name)]
 public class LayoutLabelFixAndTextFlattenTests : IDisposable
 {
     private sealed class FakeMessageSink : IMessageSink

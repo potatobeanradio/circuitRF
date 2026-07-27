@@ -1,5 +1,702 @@
 # UI (Avalonia) — local conventions
 
+Phase L2c — LOD, the merge tier, and path caching (brief-L2c-lod-merge-and-caching.md, 2026-07-27) —
+COMPLETE, the last L2 brief. **Close the full-extent frame cost** — the one thing L2b's culling
+structurally could not touch, because nothing is off-screen to cull when everything is visible.
+**Result: substantially closed, not fully closed** — said plainly below, with the measured shortfall
+and a concrete recommendation, per the brief's own explicit request.
+
+**§0's own framing turned out to be exactly right, confirmed by measurement, not assumed:** the merge
+tier is a 2-20% win (L2a), draw-call count is not the dominant cost, and LOD is the lever that can
+actually move the full-extent number. Built and measured LOD ALONE first, before writing one line of
+the merge tier or the path cache (gate 2's explicit ordering) — see the LOD-only table below.
+
+## R-L2c-1 — aggregate sub-pixel shapes, never drop them
+
+A shape whose on-screen bbox falls under `LodPixelThreshold` (default 2 device px, `LayoutRenderer.
+DefaultLodPixelThreshold`) contributes a MINIMAL RECT — its own bbox, clamped up to at least 1 device
+pixel per side, centered on its own bbox center — to one batched-per-layer fill path, instead of
+building its real geometry. **Dropping was the correctness regression this phase existed to avoid**: a
+dense copper pour made of thousands of sub-pixel shapes must still read as a filled region at full
+extent, not empty space — a speed-up that silently deletes geometry is not a speed-up, it is a bug that
+happens to run fast. `DenseClusterOfSubPixelShapes_RendersAsFilledRegion_NotEmpty` (3,000 scattered
+10-DBU rects) is the direct regression gate; `SubPixelShape_NeverDropped_EvenAlone` pins the
+degenerate single-shape case.
+
+**Consequence, stated in the code so it is never later "fixed" back into per-shape compositing:**
+sub-pixel shapes stop darkening on same-layer overlap once aggregated — imperceptible at that zoom
+(the same argument §2.3 R8b already makes for the merge tier), and correct by construction: they share
+the exact same one-fill-per-layer path R8b's own aggregate uses.
+
+## R-L2c-2 — one mechanism, two triggers (LOD and the merge tier are the same code path)
+
+`LayoutRenderer.DrawLayer` builds exactly ONE `aggregate` `SKPath` per layer per frame. Two independent
+per-shape/per-layer conditions feed it:
+- **Sub-pixel** (R-L2c-1, above) — a PER-SHAPE decision, checked first, applies at ANY zoom regardless
+  of layer density. A dense small-feature layer with only 50 shapes total still benefits the moment
+  those shapes individually go sub-pixel, well below any shape-count threshold.
+- **Layer shape count** (R8b) — a PER-LAYER decision: `candidateCount > MergeShapeCountThreshold`
+  (default 2,000, `LayoutRenderer.DefaultMergeShapeCountThreshold`) or `ForceMergeTier` (the mechanism
+  for R8b's "a preference forces merge permanently" — the render-option exists; wiring an actual
+  Settings toggle to it is a small, explicitly deferred follow-up, not required to close the perf gap
+  this phase targets). Shapes that merge this way still get their REAL geometry built (just added to
+  the shared aggregate instead of drawn/composited alone) — merging is now a UX decision (R8a's
+  overlap-darkening feedback), not a performance one; L2a already found merged fills cheaper than
+  per-shape darkening at every density tested (500 to 100,000 shapes/layer, 1.02-1.21×, no crossover to
+  discover). 2,000 is set where a genuinely dense layer's per-shape darkening feedback has already
+  become visual noise rather than information, not at a performance cliff — there isn't one.
+
+**Gate 6's proof is structural, not a pixel comparison** (a pixel comparison between a sub-pixel-sized
+aggregate and a normal-sized one is thrown off by the FIXED-device-pixel stroke dominating the tiny
+one — found this the hard way writing the test, fixed by comparing what actually matters):
+`SubPixelTrigger_And_CountTrigger_BothCollapseDrawCallsToOLayers_SameStructuralSignature` shows BOTH
+triggers collapse `DrawCalls` to exactly 2 (one aggregate fill, one batched stroke) for a single layer,
+while the same shapes rendered individually (merge forced off) issue one draw call per shape — proving
+one shared mechanism, not two implementations that happened to converge.
+
+## R-L2c-3 — the path cache is keyed to SHAPE-LOCAL space, not path space (the trap)
+
+`LayoutPathCache` (`src/Ui/Renderers/LayoutPathCache.cs` — Skia, lives in Renderers, never in the
+framework-free `Layout/` folder) caches each shape's fill path relative to **its own DBU bbox
+minimum**, reusing `LayoutRenderer.PathSpace` (now `internal`, was `private`) with the shape's own bbox
+min as the origin instead of the per-frame viewport-anchored one L1a's R-L1a-1 uses. **The trap this
+avoids, spelled out because it is exactly the kind of mistake that looks correct until you pan:** path
+space's origin is quantized and re-picked near the viewport centre on almost every pan
+(`ComputeOrigin`) — a path cached directly in path space would be wrong (or about to be invalidated)
+after nearly every frame, doing net harm. A shape's own bbox min never moves unless the shape's
+geometry itself changes, so the cached path survives ANY number of pans/zooms untouched; at draw time,
+`canvas.Save(); canvas.Translate(ps.X(refX), ps.Y(refY)); canvas.DrawPath(localPath, fillPaint);
+canvas.Restore();` reproduces the exact current-frame position — the same affine-in-DBU algebra that
+makes path space itself work (`ps.X(dbu) = (dbu-origin)×dbuToUm`) guarantees `ps.X(dbu) == local.X(dbu)
++ ps.X(refX)` for ANY reference point, so the translate is exact, not approximate.
+
+`CachedShape_PixelIdentical_AfterPanThatChangesPathSpaceOrigin` is the direct regression gate — it
+explicitly ASSERTS (not assumes) that the pan it performs actually changes `ComputeOrigin`'s quantized
+result, so the test cannot pass vacuously by accidentally panning too little.
+
+**The cache serves ONLY the individual (per-shape darkening) tier — deliberately not the aggregate
+tier**, per the brief's own explicit instruction ("per-shape matrices are incompatible with batching
+into one path"): a sub-pixel or merge-triggered shape's geometry is built fresh into the shared
+aggregate every frame regardless of whether a cache is configured; only shapes that reach the
+individual tier (comfortably-sized, layer not merging) are cache candidates.
+
+**Bounded, LRU (R-L2c-4).** `LayoutPathCache(capacity)` evicts the least-recently-drawn entry when over
+capacity, disposing its native `SKPath` explicitly (never relying on the finalizer for Skia's
+unmanaged buffers). Invalidation rides on L2b's `LayoutChangeInfo` — no second notification path:
+`Full` clears everything, `RemovedTrailing`/`Updated` evict exactly the affected indices, `Appended`
+needs no action (new indices have nothing cached yet). `LayoutCanvas` owns one cache per bound
+document (fresh instance whenever `ViewModel` changes — cache entries are keyed by shape INDEX, which
+is only meaningful within the ONE `LayoutView` it came from), invalidated from the SAME `Model.Changed`
+subscription that already drives repaint. One-shot export renders (`LayoutClipboard`'s transient
+views) and every existing test pass `PathCache = null` (the default) and get exactly L2b's behavior —
+paths built fresh every call, zero risk to the ~2,300 pre-existing tests.
+
+## The numbers
+
+Same headless `SKSurface` harness, `SyntheticLayoutGenerator`, full-extent view (the ONLY scenario L2b's
+culling could not help, by construction — everything is visible, so there is nothing to cull).
+
+### LOD alone (gate 2's key decision point — merge tier and path cache both explicitly disabled)
+
+| | 50,000 shapes | 500,000 shapes |
+|---|---|---|
+| Manhattan  | 62.0ms | 621.5ms |
+| CurveHeavy | 71.9ms | 789.6ms |
+| Mixed      | 69.9ms | 694.9ms |
+
+Every profile: `PathsConstructed = 0` (no full geometry built anywhere — every candidate aggregated),
+`DrawCalls` collapsed to ~400 (Manhattan/CurveHeavy: 200 layers × 2) or a few thousand (Mixed: labels
+still draw individually, excluded from LOD/merge on purpose — text isn't compositing geometry).
+
+### Final — all three items engaged (merge tier + path cache; cache is empty here, see below for why)
+
+| | 50,000 shapes | 500,000 shapes |
+|---|---|---|
+| Manhattan  | 57.8ms | 656.3ms |
+| CurveHeavy | 75.8ms | 757.3ms |
+| Mixed      | 63.6ms | 700.9ms |
+
+**The merge tier and path cache add nothing at full extent, measured directly, not assumed** — at full
+extent every candidate is ALREADY sub-pixel (a 2-20µm shape against a 100mm×100mm design, viewed all at
+once, is always far under 2 device px), so LOD aggregates everything before either mechanism gets a
+turn: the "Final" cache's own `Count` is 0 in every full-extent run. This is expected, not a bug — §0
+already predicted the merge tier and cache would not close THIS particular gap; they were built anyway
+because they matter for other scenarios (below), and gate 2's own measurement is what proves it.
+
+### Before (L2b) → after (L2c final), full-extent darkening path
+
+| | 50k, L2b → L2c | 500k, L2b → L2c |
+|---|---|---|
+| Manhattan  | 75.9ms → 57.8ms (1.3×) | 737ms → 656ms (1.1×) |
+| CurveHeavy | 237.6ms → 75.8ms (**3.1×**) | 2,554ms → 757ms (**3.4×**) |
+| Mixed      | 99.3ms → 63.6ms (1.6×) | 1,103ms → 701ms (1.6×) |
+
+**LOD did exactly what §0 predicted: it eliminated the curve-tessellation-specific cost.** CurveHeavy
+went from the WORST profile (3× Manhattan, per L2a's own finding) to statistically indistinguishable
+from Manhattan's remaining cost (757ms vs 656ms at 500k) — because once a shape is sub-pixel, its
+ORIGINAL complexity (a `PathShape`'s 3-`SKPath` `BuildPathOutline` cost, an arc's tessellation) never
+gets paid at all; only its bbox is ever computed. That is a real, structural win, not a measurement
+artifact.
+
+**It does not close the gap to §5.1's targets.** 16.6ms (50k) / 50ms (500k):
+
+| | 50k over budget | 500k over budget |
+|---|---|---|
+| Manhattan  | 3.5× | 13.1× |
+| CurveHeavy | 4.6× | 15.1× |
+| Mixed      | 3.8× | 14.0× |
+
+**The residual cost is now profile-INDEPENDENT — direct evidence of what it actually is.** Manhattan
+(which never had a curve-tessellation cost to eliminate) is still 13× over budget at 500k, essentially
+matching CurveHeavy's 15× after LOD closed CurveHeavy's own gap. With `PathsConstructed = 0` across the
+board, the remaining ~620-790ms at 500k cannot be geometry construction — it is the cost of iterating
+500,000 shapes to compute a bbox and add a minimal rect each, and (the larger piece, by elimination)
+**rasterizing an aggregate path containing up to 500,000 individual rects, once, however batched the
+draw call is.** Neither the merge tier nor the path cache can touch this: both are per-shape/per-frame
+CPU-side optimizations, and this cost is GPU/rasterizer-side, paid once per frame regardless of how the
+geometry was assembled.
+
+### Path cache — a real, separate win, at a realistic (zoomed-in, not full-extent) scale
+
+Full extent is not the scenario the cache targets — repeated frames at a shape-heavy but comfortably
+zoomed-in view are (§3's own framing: "repeated frames, not the first one"). Zoomed into one of
+`SyntheticLayoutGenerator`'s dense clusters (CurveHeavy, 500,000 total shapes, ~8,918 in view, each
+individually above the LOD threshold): **40.5ms median** per frame after the cache warms, `hit=26,754
+miss=8,918` across 3 measured frames — i.e. every candidate after the first frame is a cache hit,
+exactly the "cold first frame, fast repeats" signature §3 promised. This is well within an interactive
+feel (though still 2.4× over the strict 16.6ms budget for THIS specific dense-cluster view — a smaller,
+more typical view would clear it).
+
+**Memory, reported honestly, including the measurement's own limitation:** process working-set delta
+for those ~8,918 cached entries was ≈94MB (≈11KB/entry). This is a WORKING-SET measurement
+(`Process.WorkingSet64` before/after), not a clean per-`SKPath` allocation count — `GC.
+GetAllocatedBytesForCurrentThread` (used elsewhere in this project's benchmarks) only captures MANAGED
+bytes, and an `SKPath`'s real cost is native Skia point-buffer memory, which working-set delta captures
+but also mixes in with JIT, one-time Skia/font initialization, and GC-heap noise from the same
+measurement window. Treat 11KB/entry as an order-of-magnitude signal, not a precise number. At the
+default capacity (50,000 entries), this bounds the cache to roughly the same order of magnitude as
+"the whole L2a benchmark harness's own steady-state memory," which is the right ballpark for a
+per-document cache; `LayoutCanvas` can override the capacity per document if a specific workflow needs
+a different bound. Gate 9's bound itself held throughout (`cache.Count <= capacity`, always, by
+construction — `EvictIfOverCapacity` runs after every insert).
+
+## Is Phase L2 complete against §5.1? Stated plainly, not implied.
+
+**No — full-extent at 50k and 500k is still over budget, by 3.5-4.6× and 13-15× respectively, even
+after all three L2 phases.** That is the one target L2 does not meet. Everything else L2 set out to fix
+is fixed:
+
+- **1k (typical PCB cell): met**, trivially, throughout L1/L2.
+- **Hit-test and marquee at any scale: solved (L2b)** — 1,000-7,000× faster hit-test, a realistic local
+  marquee selection down from seconds to ~100-150ms per 100 moves at 50k-500k.
+- **Pan/zoom at a realistic editing zoom (not full-extent): substantially improved (L2b culling + L2c
+  LOD/cache together)** — the dense-cluster path-cache measurement above (40.5ms for ~8,918 visible
+  shapes, cache warm) is the closest proxy this harness has to "actually panning around editing a dense
+  cell," and it is close to, though not fully inside, budget.
+- **Full-extent at 50k/500k ("dense MMIC cell" and "pathological full chip"): NOT met.** LOD delivered
+  a real, measured 1.1-3.4× win and — critically — DOES degrade gracefully exactly as §5.3 item 3
+  requires (density preserved, never an empty/frozen frame), but the residual per-frame rasterization
+  cost of up to 500,000 shapes is not something any CPU-side per-shape mechanism (caching, batching,
+  merging) can close further, because it is no longer CPU-side per-shape cost.
+
+**What it would take: a tiled raster cache (L2d), not more per-shape optimization.** §5.3 already named
+this as the deferred option "until measured" — it is now measured. The residual cost is "rasterize up
+to 500,000 shapes' worth of pixels, once, every single frame, even when panning across an UNCHANGED
+picture." A tiled cache (re-rasterize only the tiles a pan/edit actually dirties, reuse cached tile
+bitmaps for everything else) is the direct answer to exactly that shape of problem, and is the
+recommended next step if closing the full-extent number is still a priority — with the 13-15× shortfall
+at 500k as the evidence behind that recommendation, not a guess.
+
+## Scope discipline held
+
+No changes to `src/Core`, `src/Engine`, `RfCore`, the schematic or symbol editors. No instance path
+caching (instances do not exist until L3). `.clay` load time/file size untouched (L2a's own scope,
+still explicitly out of L2b/L2c's rendering concern). No tiled raster cache started — named as the
+recommended L2d, not built speculatively, per the brief's own "do not start it here."
+
+Test files: `LayoutLodMergeTests.cs` (gates 3-6 — density preservation incl. the lone-shape degenerate
+case, pixel-identical-when-not-engaged incl. R8a darkening staying intact, counter collapse for both
+the all-sub-pixel and the few-normal-shapes cases, the structural one-mechanism proof),
+`LayoutPathCacheTests.cs` (gates 7-8 — the pan-changes-origin regression gate with an explicit
+non-vacuous-pan assertion, a multi-pan cache-stays-warm test, and one test per `LayoutChangeInfo` kind
+incl. a full render-level round trip proving a geometry edit's cached result matches a fresh build),
+`LayoutPerf/LayoutLodMergeCacheBenchmarkTests.cs` (gates 2, 9, 10 — LOD-only and final full-extent
+timing at 50k/500k for all three profiles, the dense-cluster cache memory/timing measurement). 29 new
+tests; 2340 Ui.Tests total (was 2320), all green, confirmed stable across 3 consecutive runs; full
+solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip, matching the L2b
+baseline exactly). Every one of the ~2,340 tests — including every L1/L2a/L2b pixel-oracle test written
+before LOD/merge/caching existed — passed against the new code on the FIRST run, with zero test edits;
+LOD is on by DEFAULT (unlike the path cache, which is opt-in via a non-null `PathCache`) precisely
+because R-L2c-1 makes it a correctness-preserving optimization, and this is the evidence that holds.
+
+**Next: L3 (hierarchy)** — instances, sub-cell references, the array (rows×cols) case, and whatever
+that phase's own brief scopes for instance path caching (deferred here explicitly because instances
+don't exist yet). If closing L2's one remaining gap (full-extent at scale) becomes a priority before
+L3, that is the tiled-raster-cache brief (L2d) described above, with the measured shortfall already in
+hand. Report back either way before the next brief lands.
+
+Phase L2b — spatial index, culling, and the marquee/hit-test fix (brief-L2b-spatial-index.md,
+2026-07-27) — COMPLETE: **make work proportional to what is visible.** One R-tree over every
+`LayoutView.Shapes`, STR bulk-load on build, incremental insert/remove for the hot interactive paths,
+and all three L2a-identified consumers (marquee, hit-test, render) now query it instead of scanning
+linearly. Per-shape path caching, LOD, and the R8b merge tier remain L2c.
+
+**R-L2b-1 — one tree, not one per layer, and why: L2a's own scenario is 200 layers.** A per-layer index
+means ~200 tree descents per query (~2,200 node visits minimum even for an EMPTY viewport) and
+multiplies incremental-maintenance work by 200 on every edit. `LayoutSpatialIndex`
+(`src/Ui/Layout/LayoutSpatialIndex.cs`) holds one tree of `(bbox, shapeIndex)` entries across every
+shape regardless of layer; every consumer filters the returned candidates by layer visibility/
+selectability AFTERWARD — trivial on an already-small result set, and hidden layers now cost a
+predicate call per candidate rather than a scan.
+
+**Two independent correctness mechanisms, deliberately layered — this is the load-bearing design
+decision of the whole phase.** `LayoutSpatialIndex.Apply(shapes, info)` is the proactive, incremental
+maintenance hook (see below) — a PERFORMANCE optimization, not a correctness requirement.
+`LayoutSpatialIndex.EnsureFresh(shapes)`, called at the start of EVERY query, is the actual guarantee:
+a cheap O(1) check (`shapes.Count != _syncedCount`) that does a full STR rebuild whenever the index is
+stale OR has never been built. **This is what let ~2,300 pre-existing Layout tests pass unchanged, on
+the first run, with zero test edits** — the overwhelming majority build a `LayoutView` via direct
+`Shapes.Add(...)` and never call `NotifyChanged` at all (confirmed by search before writing a line of
+index code); the first query against such a view just does one lazy full rebuild and is correct from
+then on for that instance. `Apply` could be deleted entirely and every query would still be correct —
+only slower, paying a full rebuild on every single edit instead of an O(log n) incremental update.
+**Documented limitation, not a theoretical one:** the count-based check does not catch a shape mutated
+in place at a stable index without going through `NotifyChanged` — but every mutation path in this
+codebase already calls it (that is how the canvas repaints at all), and a dedicated search across every
+Renderer/HitTest/Marquee/Selection/Viewport test file before this phase confirmed no test does this
+either.
+
+**`LayoutChangeInfo`** (`src/Ui/Layout/LayoutChangeInfo.cs`) is the minimal payload R-L2b-2 asks for —
+`Full` (rebuild), `Appended`/`RemovedTrailing` (a contiguous run at the TAIL — safe because nothing
+after it exists to shift), `Updated` (in-place swap at stable indices — safe because `Shapes.Count`
+never changes). `LayoutView.NotifyChanged(LayoutChangeInfo? info = null)` defaults `null` to `Full` —
+**"one hook, not update calls sprinkled through a dozen commands" is literally true**: only 4 of the 7
+command files needed ANY change (`AddShapeCommand` → `Appended`/`RemovedTrailing`, always safe because
+under a LIFO undo/redo stack a command's own insert/remove can only ever run when nothing pushed after
+it still exists — proven, not assumed, in that file's own doc comment; `MoveShapesCommand` → `Updated`,
+refactored to store indices instead of shape references since geometry mutation never shifts anything;
+`ReplaceShapeCommand` → `Updated`, a straight 1-index swap; `ReplaceShapesCommand` → `Appended`/
+`RemovedTrailing` ONLY when its removed set is empty, i.e. paste/duplicate — any actual removal shifts
+other shapes' indices in a way this command does not track precisely, so it falls back to the `Full`
+default). `DeleteShapesCommand`, `SetShapeFieldCommand<T>`, `RetargetTechnologyCommand` needed **zero**
+changes — they already call `NotifyChanged()` with no payload, which is `Full`, which is always correct
+for them (deletion shifts arbitrary indices; a property-panel field edit is interactive-scale and
+infrequent; retarget only rewrites `LayerKey`, which the index doesn't even key on). **Rebuild-on-
+degradation (R-L2b-2):** `Apply` tracks churn since the last full rebuild and triggers one when churn
+exceeds `max(2000, currentCount/4)` — repeated incremental insertion (a cheap "sort-the-wider-axis-and-
+bisect" split, not Guttman's quadratic PickSeeds — correctness over optimality, since this policy is
+the quality backstop) degrades node quality over time; this restores it periodically rather than
+letting it degrade indefinitely. Confirmed by a dedicated churn test, not assumed.
+
+**Drags do not churn the index — verified, not assumed (R-L2b-2's explicit instruction).** Geometry
+during a live move/scale/handle-drag preview lives entirely in `Overlay.DragOverrides` (translated
+clones); the real shape objects, and therefore the index, are untouched until commit. A dedicated test
+drives a 100-move drag and asserts `LayoutSpatialIndex.FullRebuildCount`/`IncrementalApplyCount`
+(internal, test-only counters) are UNCHANGED across all 100 moves, then exactly one incremental
+`Apply` on release.
+
+**A real correctness gap this uncovered, fixed before it could ship as a bug:** during a live drag, the
+index still reflects each dragged shape's PRE-drag bbox for the WHOLE gesture (that's the point of the
+paragraph above) — so culling `LayoutRenderer.Draw`'s candidate set from the index ALONE would wrongly
+cull a shape dragged from off-screen INTO view, since the index has no idea it moved. Fixed by
+force-including every `Overlay.DragOverrides` key in the render candidate set regardless of what the
+index query returns — drag selections are always small (bounded by what the user selected), so this is
+cheap, and a dragged shape whose LIVE position is actually off-screen is still correctly invisible (the
+canvas clip rect discards it, exactly as it always would have). A dedicated regression test proves this
+concretely: a shape starting off-screen, given a `DragOverrides` entry moving it on-screen, still
+renders. Found by reasoning through the design before writing the render-culling code, not by a test
+failure — but pinned by one anyway.
+
+**Consumer 1 (marquee, highest priority per L2a's ranking) — `ComputeMarqueeSelection`.** Queries
+`Model.SpatialIndex.QueryIntersecting(Model.Shapes, marqueeBb)`, then applies the EXISTING predicate
+(enclose = full containment, crossing = intersection, both against the real `LayoutGeometry.BboxOf`)
+completely unchanged on the candidates — R-L2b-3: "the index changes which shapes are considered, never
+the decision." One intersect query correctly serves both marquee modes: containment implies
+intersection, so an intersect query is always a safe superset.
+
+**Consumer 2 (hit-test) — `LayoutHitTest.HitStack`.** Queries the point expanded by `tolDbu` (computed
+per-call from the live viewport by the caller, exactly as before — never cached, never index-derived),
+then runs the byte-for-byte identical per-shape test and ZOrder/area/index ordering on the candidates.
+
+**Consumer 3 (render culling) — `LayoutRenderer.Draw`.** Queries the viewport's visible-world rect,
+expanded by a device-pixel margin (`RenderCullMarginDevicePixels = 8`, converted to world units at the
+CURRENT zoom via `vp.Zoom`) — the batched per-layer hairline stroke extends a pixel or two beyond the
+exact fill bbox the tree stores, and antialiasing softens a little further; without this margin, a
+shape sitting just outside the viewport but whose STROKE would still paint into it could be wrongly
+culled, breaking gate 4's pixel-identical requirement. Candidates are bucketed by layer and drawn in
+`ZOrder` exactly as before — the rendering CONTRACT (§2.3: layer order, per-shape fills, batched opaque
+strokes, overlap darkening) is completely unchanged, only which shapes reach that pipeline. Bitmaps are
+ALSO culled through the same one query (not a second one) — `DrawBitmapShapes` now iterates candidates
+instead of every shape; R-bmp-2's "always paint first, regardless of ZOrder" rule is unaffected, since
+that governs paint ORDER among whatever bitmaps are actually candidates.
+
+**`ConservativeBboxOf`** (`LayoutSpatialIndex`, internal) is the ONE bbox notion stored in the tree —
+identical to `LayoutGeometry.BboxOf` for every shape kind except `LabelShape`, where it is a generous,
+rotation- and font-metrics-agnostic `(charCount+1)×height` square pad around the anchor point. This
+matters because `LayoutGeometry.BboxOf`'s own label case is a ZERO-SIZE POINT (correct and unchanged
+for the marquee predicate, which re-applies it verbatim on candidates), while `LayoutHitTest`'s
+approximate footprint and the renderer's real-font-metrics footprint are two DIFFERENT, narrower
+notions — the index only needs to be a safe UPPER bound of whichever one a consumer actually uses, and
+over-inclusion is free (filtered downstream by each consumer's own exact test); a query rect padding
+choice can never fix an UNDER-sized stored bbox, so the margin has to live in the stored value here,
+not the query.
+
+**Unknown-layer detection is now scoped to what is actually in view, a deliberate and stated trade-off.**
+`LayoutRenderResult.UnknownLayers` used to scan every shape regardless of viewport; it now only sees
+candidates from the culled query, so a layer that is entirely off-screen in a given frame will not
+trigger its "unknown layer" warning until a frame actually brings it into view. This does not affect
+gate 4 (pixels), and is arguably the more useful behavior (warn about what's rendering, not what
+theoretically exists somewhere in a 500k-shape file) — flagged explicitly rather than left as a silent
+side effect.
+
+## The before/after table (R-L2a-7 convention, R-L2b gate 9)
+
+Same headless `SKSurface` harness, same synthetic layouts (seeded identically), median/p95 over N
+samples. "D" = darkening (per-shape) path — the one L2b's culling actually affects; "M" = the L2c
+merge-tier stand-in, which is UNCHANGED by this phase (it never queries the index — a fixed L2a-era
+number, included only for continuity with that table, not evidence of L2b's work).
+
+### 50,000 shapes / 200 layers — before (L2a) → after (L2b)
+
+| | full-extent D | pan D (median) | zoom D (median) | hit-test dense | marquee (100 moves, median / **min**) |
+|---|---|---|---|---|---|
+| Manhattan  | 75.9ms → 78.1ms (noise) | 49.2ms → **27.6ms** | 42.3ms → **8.5ms** | 10.5ms → **0.010ms** (≈1,050×) | 1,721ms → 1,772ms / 868ms → **103ms** |
+| CurveHeavy | 237.6ms → 243.8ms (noise) | 198.2ms → **95.1ms** | 200.2ms → **26.3ms** | 31.8ms → **0.009ms** (≈3,530×) | 3,631ms → 3,674ms / 2,203ms → **148ms** |
+| Mixed      | 99.3ms → 102.3ms (noise) | 76.1ms → **40.2ms** | 69.2ms → **12.3ms** | 24.0ms → **0.010ms** (≈2,400×) | 2,319ms → 2,315ms / 1,468ms → **129ms** |
+
+### 500,000 shapes / 200 layers — before (L2a) → after (L2b)
+
+| | full-extent D | pan D (median) | zoom D (median) | hit-test dense | marquee (100 moves, median / **min**) |
+|---|---|---|---|---|---|
+| Manhattan  | 737ms → 770ms (noise) | 195ms → **0.10ms** | 465ms → **87ms** | 107ms → **0.026ms** (≈4,120×) | 23,444ms → 23,540ms / 15,838ms → **8,041ms** |
+| CurveHeavy | 2,554ms → 2,602ms (noise) | 1,201ms → **0.10ms** | 2,053ms → **236ms** | 327ms → **0.044ms** (≈7,430×) | 43,335ms → 44,065ms / 30,063ms → **8,441ms** |
+| Mixed      | 1,103ms → 1,148ms (noise) | 249ms → **0.11ms** | 754ms → **122ms** | 262ms → **0.038ms** (≈6,900×) | 34,233ms → 34,201ms / 24,342ms → **8,257ms** |
+
+Full-extent stays within measurement noise at every scale — gate 3, "culling must not cost anything
+when nothing is off screen," holds. **Hit-test is the cleanest win** — a single point query, always
+small regardless of design size, now 1,000-7,000× faster and effectively O(log n) as §0 predicted.
+**Pan's median at 500k dropping to ~0.1ms is culling doing exactly its job** — most panned-to positions
+in a 100mm design have almost nothing in view; the sweep's own p95/max stay high because one sweep step
+IS the full-extent view, which correctly still costs what it always cost.
+
+**Marquee is the one number that needs an honest caveat, not a spun one.** The benchmark's drag path
+(inherited unchanged from L2a, for a fair before/after comparison) sweeps from one corner of the design
+to the other — meaning the marquee rect ITSELF grows to cover nearly the whole design by the end of the
+drag. A query against a rect that large legitimately returns nearly every shape, indexed or not — there
+is no algorithmic trick that makes "how many shapes are inside this now-huge rectangle" cheaper than
+examining that many shapes. The **min** column (the fastest, small-marquee-early-in-the-drag moves) DID
+drop substantially — the per-move win is real and large for a realistic "select a nearby cluster"
+gesture — but the median/max, dominated by the drag's own final large-rect moves, look barely changed.
+This is not a shortcoming of the index; it is what "select nearly everything via one giant marquee"
+correctly costs regardless of implementation, and the benchmark's own methodology (a full-diagonal
+sweep) exercises exactly that worst case on every run. Real usage — selecting a local cluster — sees the
+**min** column's win, not the median column's.
+
+**R8b crossover experiment was NOT re-run** — it measures the darkening-vs-merged FILL cost at a fixed
+(full-extent, single-layer) viewport, which culling does not touch; L2a's numbers for it stand unchanged.
+
+**STR bulk-load, 500,000 shapes (Mixed profile):** median 470.8ms, p95 505.7ms (`LayoutSpatialIndex.
+Apply` with `LayoutChangeInfo.Full`, i.e. from-scratch, cold). **A zoomed-in-1%-of-extent query at 500k**
+returned as few as 11 candidates out of 500,000 (0.002%) in the specific region this harness's
+histogram-based dense-cluster finder landed on — the load-bearing, structurally-guaranteed fact is
+O(visible) not O(total) at every scale tested (gate 2's counter assertion, not a specific ratio), not
+this one number, which depends entirely on where in a 100mm×100mm mostly-empty design you happen to
+zoom.
+
+## Which of §5.1's targets are now met
+
+**1k: still yes, trivially** — unaffected either way (already far under budget).
+
+**50k ("dense MMIC cell," target 60fps/16.6ms): still no for full-extent and worst-case zoom, but the
+INTERACTIVE costs that actually gate usability are now solved.** Full-extent render is unchanged
+(75-244ms, 5-15× over budget — L2c's job). But hit-test (10-32ms → ~0.01ms) and the common-case marquee
+(min 868-2,203ms → 103-148ms, i.e. per-move cost well under a frame budget for a typical local
+selection) are the two costs that were actually UNUSABLE before this phase — those are fixed now.
+
+**500k ("pathological/full chip," target ≥20fps/50ms): still no for full-extent — expected, and said
+plainly, not implied otherwise.** Full-extent is 628ms-2,602ms, 13-52× over the 50ms floor, with no LOD
+built yet (L2c). But per L2a's own §0 warning ("culling helps only when things are off screen... will
+do almost nothing for the 500k full-extent frame — that number is LOD's job"), that gap was EXPECTED
+and is not this phase's to close. What L2b was actually responsible for — pan/zoom/hit-test/marquee at
+scale — moved from "unusable" (a single click costing 100-330ms; a marquee move costing up to 433ms) to
+either fully solved (hit-test) or substantially improved for the realistic case (marquee, pan).
+
+## Test files
+
+`LayoutSpatialIndex.cs`/`LayoutChangeInfo.cs` (production, `src/Ui/Layout/`) — the ONLY production
+changes beyond the three consumer call sites and 4 command files listed above.
+`LayoutSpatialIndexTests.cs` (19 tests — STR-build-vs-linear-scan correctness over a clustered fixture,
+the lazy self-healing staleness check incl. a "never calls NotifyChanged" fixture matching this
+project's own dominant test pattern, incremental insert-with-split, remove, the degradation-rebuild
+trigger, `ConservativeBboxOf`'s safety margin per shape kind), `LayoutSpatialIndexFreshnessTests.cs`
+(gate 7 — 11 tests, one per mutation kind driven through the REAL `LayoutEditorViewModel` public API —
+add/delete/replace/move/nudge/scale/paste/flatten/boolean-union/technology-retarget, each checked at
+three checkpoints: after execute, after undo, after redo — plus DBU resolution change exercised
+directly against the model, since no VM seam calls `LayoutScaling.TryChangeResolution` yet),
+`LayoutSpatialIndexDragTests.cs` (gate 8 — the 100-move-drag-touches-the-index-zero-times-then-once
+instrumentation test, and the off-screen-to-on-screen live-drag render regression test),
+`LayoutPerf/LayoutSpatialIndexPerfTests.cs` (gates 2/3/10 — zoomed-viewport counter assertions at 50k
+and 500k via L2a's own `SyntheticLayoutGenerator`, full-extent-unchanged, STR bulk-load timing at 500k).
+36 new tests; 2320 Ui.Tests total (was 2284), all green, confirmed stable across 3 consecutive runs;
+full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip, matching the
+L2a baseline exactly). **Every one of the ~2,300 pre-existing Layout tests (rendering, hit-test,
+selection, marquee) passed against the new indexed code path on the FIRST run with only one expected
+update** (`Counters_HandBuiltTenShapeLayout_ExaminedAndDrawnMatchExpected`'s own L2a-era comment
+explicitly predicted its 10/10 expected counters would become 7/7 once culling landed — updated to
+match) — the strongest available evidence for gate 4's "pixel-identical output" requirement, since
+those tests' expected pixels were written against the pre-index linear-scan renderer and never changed.
+
+**Next: L2c** — per-shape path caching (the `// L2: cache with the shape path` comment already sitting
+on `BuildPathOutline` since an earlier phase), LOD (sub-2px screen-bbox culling — the direct fix for
+the 500k full-extent gap this phase deliberately left open), and the R8b merge tier at a threshold
+L2a's own crossover data suggests can reasonably be lower than the design doc's ~20k starting guess.
+Report back before that brief lands.
+
+Phase L2a — the performance harness and baseline (brief-L2a-performance-harness.md, 2026-07-27) —
+COMPLETE: **measurement only, no optimization** — a deterministic clustered synthetic-layout
+generator, per-frame work counters, and the real baseline numbers L2b (R-tree/culling/accelerated
+hit-test/marquee) and L2c (path caching/LOD/the R8b merge tier) are judged against.
+
+**Production change is exactly the brief's guardrail and nothing more.** `LayoutRenderResult` gained
+5 counter fields (`ShapesExamined`/`ShapesDrawn`/`PathsConstructed`/`DrawCalls`/`LayersVisited`, all
+default 0 — the two pre-existing single-arg call sites needed no change) and a new internal
+`LayoutFrameCounters` (plain `int` fields, no dictionaries/logging/string formatting) is threaded by
+reference through `DrawLayer`/`DrawBitmapShapes`/`BuildShapePath`/`BuildPathOutline` to populate them.
+Nothing else in `LayoutRenderer.cs` changed — no culling, no caching, no merge tier; a counter is
+literally an `x++` at each call site. `BuildShapePath`/`BuildPathOutline`'s new `counters` parameter
+defaults to `null` (guarded `if (counters is not null)`) so the two existing external callers
+(`LayoutPathOutlineSeamTests.cs`, `BuildOutlinePathForSelection`'s default case, the L1b ghost) needed
+zero changes.
+
+**The generator (`tests/Ui.Tests/LayoutPerf/SyntheticLayoutGenerator.cs`) is test-only, per the brief —
+it is not reachable from any production code.** `Generate(shapeCount, layerCount, seed, profile)` is a
+pure function of its arguments: shape kind is decided by index modulo (never by RNG outcome, so the
+kind schedule can never drift even if a future edit changes how much randomness one shape kind
+consumes), position is drawn from a single seeded `Random` in a fixed order. **R-L2a-2 (clustered, not
+uniform)** is 6 small dense clusters (55% of shapes), 4 larger mid-density regions (30%), and a sparse
+background spanning the WHOLE 100mm×100mm extent (15%) — most of a generated layout is empty space by
+construction, the opposite of what a uniform scatter would produce and exactly what an R-tree (L2b)
+benefits from. Three profiles: **Manhattan** (Rect + a hand-built rectilinear "L" `PolygonShape`, no
+diagonal or curved edge anywhere), **CurveHeavy** (Circle / RoundedRect / a closed `CurveShape` built
+from 4 quarter-arcs, reusing the exact `LayoutRendererTests.ClosedCurve_OfFourQuarterArcs_
+FillsLikeACircle` bulge constant / a 2-vertex OPEN `PathShape` with one Arc edge — CurveHeavy explicitly
+covers both "arc-bearing curves AND paths," per the brief's own §1 wording), **Mixed** (all of the
+above plus a `PolygonShape` with a genuinely contained, non-intersecting hole — passes
+`LayoutClipper.EnsureValidHoles`'s cheap already-valid check with no Clipper2 re-derivation, so
+determinism survives a save/load round trip — a handful of `BitmapShape`s whose `ImagePathRef`
+deliberately never resolves (exercises `BitmapCache.DrawBrokenPlaceholder`, a lighter cost than a real
+decode — noted, not silently assumed representative), and labels at 5% of the non-reserved population).
+`GenerateTechnology(layerCount)` is the paired `Technology` — `layerCount` `LayerDef`s with distinct
+HSV-wheel colors, no external dependency.
+
+**The "merged path" comparison is a test-only stand-in, not a build of L2c's real merge tier** —
+`tests/Ui.Tests/LayoutPerf/MergedPathBenchmarkRenderer.cs` collects every layer's shapes into ONE fill
+path + one stroke path (2 draw calls per layer, exactly what §5.3's real merge tier will eventually
+produce) instead of `LayoutRenderer`'s per-shape composited fills. It reuses `LayoutRenderer`'s own
+internal `PathSpace`/`ComputeOrigin`/`BuildPathOutline` (all already `internal`, no new exposure) for
+exact-geometry cases and duplicates the short Rect/Polygon/RoundedRect/Circle/Curve/Via switch rather
+than widening `BuildShapePath` past `private` — the brief's guardrail permits counters and "whatever
+minimal plumbing populates them," not a second production accessibility change for a benchmark-only
+comparison.
+
+**A real, pre-existing race, found by running the new suite three times in a row, not by inspection.**
+`LayoutTextOutline.TestOverrideTypeface` (the seam that lets a headless test render a `LabelShape`
+without touching unloadable `SkiaFonts.PlexRegular`) is ONE static field; xUnit runs test CLASSES in
+parallel by default, and `LayoutLabelFixAndTextFlattenTests`/`LayoutLabelOwnerFollowUpFixesTests`
+already set/cleared it independently in their own constructor/`Dispose` — a latent race that predates
+this phase. Adding two more classes doing the same thing (both new benchmark files render Mixed-profile
+labels) made the collision frequent enough to actually fail a run. Fixed with a shared xUnit collection,
+**not** a blanket `DisableTestParallelization`: new `LayoutTextOutlineTypefaceCollection`
+(`tests/Ui.Tests/LayoutTextOutlineTypefaceCollection.cs`) is a bare `[CollectionDefinition]` marker;
+all four classes that touch the static field now carry `[Collection(...Name)]`, which serializes only
+those four relative to each other — the rest of the ~2300-test suite still parallelizes normally.
+Three consecutive full non-Nightly runs after the fix: 2284/2284, 2284/2284, 2284/2284.
+
+## The baseline table (R-L2a-7)
+
+All numbers: `AMD`-class CI-equivalent dev machine, headless `SKSurface`, warm-up discarded, **median /
+p95** over N samples (never the mean — R-L2a-4). 200 layers throughout, per §5.1. Reproduce with
+`dotnet test --filter FullyQualifiedName~LayoutPerf --logger "console;verbosity=detailed"`
+(`--filter "Category!=Nightly"` to skip the 500k rows — they take ~6 minutes combined).
+
+### 1,000 shapes / 200 layers
+
+| Profile | Full-extent D / M (median, p95) | Pan D / M | Zoom D / M | Hit-test dense / sparse | Marquee (100 moves) | Load parse | `.clay` size |
+|---|---|---|---|---|---|---|---|
+| Manhattan  | 1.62/1.62 · 1.56/1.61 ms | 1.46/1.68 · 1.45/1.63 ms | 0.99/1.86 · 0.84/4.06 ms | 0.215/0.224 · 0.200/0.207 ms | 16.3/20.2 ms | 0.74/0.74 ms | 267,614 B (267.6 B/shape) |
+| CurveHeavy | 5.03/5.08 · 4.63/4.79 ms | 4.76/5.15 · 4.50/4.90 ms | 3.59/4.92 · 3.41/4.66 ms | 0.628/0.655 · 0.626/0.828 ms | 43.1/49.8 ms | 1.51/2.03 ms | 437,871 B (437.9 B/shape) |
+| Mixed      | 2.29/2.31 · 1.95/1.96 ms | 2.11/2.40 · 1.82/2.11 ms | 1.24/2.23 · 1.24/7.25 ms | 0.468/0.473 · 0.467/0.474 ms | 28.2/32.3 ms | 0.99/1.01 ms | 340,952 B (341.0 B/shape) |
+
+### 50,000 shapes / 200 layers
+
+| Profile | Full-extent D / M | Pan D / M | Zoom D / M | Hit-test dense / sparse | Marquee (100 moves) | Load parse | `.clay` size |
+|---|---|---|---|---|---|---|---|
+| Manhattan  | 75.9/80.9 · 60.3/60.9 ms | 49.2/66.1 · 45.4/57.8 ms | 42.3/72.9 · 42.2/62.2 ms | 10.5/10.8 · 9.7/10.0 ms | **1,720/1,721 ms** | 90.5 ms | 13,373,154 B (267.5 B/shape) |
+| CurveHeavy | 237.6/237.7 · 209.0/210.2 ms | 198.2/238.8 · 183.0/217.5 ms | 200.2/250.8 · 189.3/231.9 ms | 31.8/32.7 · 31.4/31.9 ms | **3,631/3,631 ms** | 98.1 ms | 21,885,561 B (437.7 B/shape) |
+| Mixed      | 99.3/100.8 · 78.9/79.9 ms | 76.1/101.0 · 61.0/79.1 ms | 69.2/104.4 · 56.6/87.4 ms | 24.0/24.4 · 23.4/23.8 ms | **2,319/2,319 ms** | 65.6 ms | 17,025,118 B (340.5 B/shape) |
+
+### 500,000 shapes / 200 layers (Nightly trait — ran once for this table)
+
+| Profile | Full-extent D / M | Pan D / M | Zoom D / M | Hit-test dense / sparse | Marquee (100 moves) | Load parse | `.clay` size |
+|---|---|---|---|---|---|---|---|
+| Manhattan  | 737/737 · 648/648 ms | 195/747 · 162/649 ms | 465/772 · 453/676 ms | 107/109 · 102/103 ms | **23,444/23,444 ms** | 448 ms | 133,730,154 B (267.5 B/shape) |
+| CurveHeavy | 2,554/2,554 · 2,230/2,230 ms | 1,201/2,525 · 1,105/2,231 ms | 2,053/2,574 · 1,897/2,336 ms | 327/330 · 322/325 ms | **43,335/43,335 ms** | 873 ms | 218,853,638 B (437.7 B/shape) |
+| Mixed      | 1,103/1,103 · 863/863 ms | 249/1,104 · 144/853 ms | 754/1,126 · 571/888 ms | 262/265 · 255/257 ms | **34,233/34,233 ms** | 811 ms | 189,734,523 B (379.5 B/shape) |
+
+(D = darkening/per-shape path, M = merged-path stand-in; "median/p95" pairs, both in ms unless noted.)
+
+### R8b crossover experiment — single layer, Manhattan rects, full-extent frame, darkening vs. merged
+
+| Shapes on the one layer | Darkening median | Merged median | Ratio (D/M) |
+|---|---|---|---|
+| 500     | 0.78 ms   | 0.64 ms   | 1.21× |
+| 2,000   | 3.27 ms   | 2.92 ms   | 1.12× |
+| 5,000   | 8.32 ms   | 7.60 ms   | 1.09× |
+| 10,000  | 16.9 ms   | 15.7 ms   | 1.08× |
+| 20,000  | 30.6 ms   | 28.5 ms   | 1.08× |
+| 50,000  | 78.8 ms   | 74.9 ms   | 1.05× |
+| 100,000 | 166.1 ms  | 163.1 ms  | 1.02× |
+
+### Counters (full-extent, darkening path) — direct evidence for "where the time goes"
+
+| | 1k Manhattan | 1k CurveHeavy | 1k Mixed | 50k Manhattan | 50k CurveHeavy | 50k Mixed |
+|---|---|---|---|---|---|---|
+| ShapesExamined | 1,000 | 1,000 | 1,000 | 50,000 | 50,000 | 50,000 |
+| ShapesDrawn    | 1,000 | 1,000 | 1,000 | 50,000 | 50,000 | 50,000 |
+| PathsConstructed | 1,000 | 1,500 | 949 | 50,000 | 75,000 | 47,500 |
+| DrawCalls      | 1,200 | 1,200 | 1,190 | 50,200 | 50,200 | 50,198 |
+| LayersVisited  | 200 | 200 | 200 | 200 | 200 | 200 |
+
+`ShapesExamined == ShapesDrawn == total shape count`, EVERY time, at EVERY scale — confirms directly
+what the design doc predicted and this phase built no fix for: **there is no viewport culling of any
+kind today.** `DrawCalls ≈ ShapesDrawn + LayersVisited` (one fill per shape, one batched stroke per
+non-empty layer) — the "constant per-layer draw-call count" §5.3 promises only exists once L2c's merge
+tier actually ships. `PathsConstructed` is where CurveHeavy's extra cost shows up structurally, not just
+in wall-clock: 1.5 paths built per CurveHeavy shape (75,000 / 50,000) vs. 1.0 for Manhattan, because
+`BuildPathOutline` allocates 3 `SKPath`s (centerline, stroke-to-fill outline, `Simplify` destination) per
+`PathShape`, and exactly 1/4 of CurveHeavy's population is a `PathShape` — `0.25×3 + 0.75×1 = 1.5`,
+matching the measured ratio exactly.
+
+## Where the time actually goes at 500k
+
+**Not where the design doc predicted first** (path construction / per-shape draw calls) — those ARE
+real (full-extent frame time is 5-15× over the §5.1 pan/zoom budget already at 50k, 13-50× over at
+500k, and CurveHeavy costs ~3× Manhattan per shape from tessellation + the 3-paths-per-`PathShape` cost
+above) — but the single most catastrophic number in this whole table is **the marquee preview**, and it
+is not close:
+
+- At 500k, one marquee drag of 100 pointer moves costs **23.4 – 43.3 seconds** — 234-433 **milliseconds
+  per pointer move**, worse than rendering an entire full-extent frame (647ms-2,554ms) roughly every
+  4-11 moves. This is `LayoutEditorViewModel.ComputeMarqueeSelection` doing an O(shape count) bbox scan
+  on every qualifying `OnPointerMoved`, exactly as the brief predicted — "it will not show up in a
+  frame-time measurement at all" is confirmed literally: nothing above touches this cost, it is a
+  completely separate O(N) linear scan with no relationship to the render pipeline.
+- Even at 50k, marquee costs 1.7-3.6 **seconds** for 100 moves (17-36ms/move) — already past the 16.6ms
+  frame budget on every single move, i.e. **the marquee preview is unusably laggy well before the
+  design doc's "dense MMIC cell (~50k)" scenario is even reached.**
+- Second worst: **hit-test**, 100-330ms for a SINGLE click at 500k (a linear scan, same root cause as
+  marquee — no spatial index) — bad for one click, catastrophic for anything that calls it repeatedly.
+- Third: full-extent/pan/zoom **render** cost itself — real, but an order of magnitude less painful
+  than marquee/hit-test at every scale measured, and (per §5.1) the only one L2b's culling directly
+  targets before L2c's caching/merge tier is even needed.
+- Fourth: **load/parse time and `.clay` size** — 267-438 bytes/shape depending on profile, ~450ms-873ms
+  parse at 500k. Not a rendering problem, but the 500k CurveHeavy file is ~219 MB uncompressed; §4's
+  deferred gzip question now has real numbers behind it (worth a look whenever `.clay` I/O gets its own
+  attention — out of scope for L2b/L2c, which are rendering/hit-test phases).
+
+**Ranked by measured cost (not the design doc's prediction), highest first:**
+1. **Marquee preview recompute** — by a wide margin the worst offender at every scale ≥ 50k; the single
+   highest-priority target for L2b's "accelerated marquee."
+2. **Hit-test** (a single query) — same root cause (no spatial index), same L2b fix (the R-tree), much
+   less catastrophic per-call than marquee but still 100-330ms at 500k.
+3. **Full-extent/pan/zoom render cost** — real and linear in total shape count (no culling exists), the
+   direct target of L2b's viewport culling (bring `ShapesExamined`/`ShapesDrawn` down to O(visible)) and
+   L2c's per-shape path caching + LOD (bring the per-shape constant down).
+4. **`PathShape`/curve tessellation cost** (CurveHeavy ≈ 3× Manhattan per shape, confirmed structurally
+   via `PathsConstructed`) — L2c's per-shape path cache is the direct fix (§5.3 item 2's `// L2: cache
+   with the shape path` comment on `BuildPathOutline`, already left there in an earlier phase).
+5. **R8b's merge tier** — a real but genuinely MODEST win (see below), not a cliff.
+6. **`.clay` load/parse + file size at very large scale** — real, quantified, explicitly out of L2b/L2c's
+   scope.
+
+## Are §5.1's 1k/50k targets already met?
+
+**1k: yes, easily** — every full-extent/pan/zoom frame is 0.8-5.1ms, far under the 16.6ms (60fps)
+budget even at CurveHeavy's worst p95. Nothing to optimize at this scale.
+
+**50k ("dense MMIC cell," target 60fps / 16.6ms): no** — full-extent/pan/zoom frames run
+42-251ms, **5-15× over budget** depending on profile. This is squarely L2b/L2c's job to close.
+
+**500k ("pathological/full chip," target ≥20fps / 50ms, degrade via LOD): no, and not expected to be** —
+full-extent frames run 647ms-2,554ms, 13-51× over the 50ms floor, with no LOD or culling built yet
+(L2a's own guardrail forbids building either). The marquee number above is the one that actually matters
+most at this scale, though — a correct-but-slow render is tolerable if LOD keeps the picture legible;
+an unresponsive marquee drag is not.
+
+## The R8b crossover — the honest answer is "no crossover was found in the tested range"
+
+The single-layer sweep above (500 to 100,000 shapes on one layer) shows merged **always** cheaper than
+darkening, by a MARGIN THAT SHRINKS as density grows (1.21× at 500 shapes/layer down to 1.02× at
+100,000) — the opposite of a "cliff crossover" shape. There is no shape count in the tested range where
+darkening becomes cheaper than merging. Two implications for L2c, stated plainly rather than papered
+over with an invented number:
+- **Merging a layer's fills is never a net loss in raw draw cost**, at any density tested — the design
+  doc's "start at ~20k, tune against the benchmark" framing implicitly assumes a break-even point to
+  find; this data says the real lever is elsewhere (draw-CALL-count reduction, which matters more when
+  many layers each carry a modest shape count — exactly the 200-layer scenario above, where merged wins
+  15-25% even at only 1k-50k TOTAL shapes) rather than a per-layer fill-cost cliff.
+- L2c can reasonably set the merge threshold **lower** than 20k with no measured downside in this data —
+  the real cost of merging early is the UX one §2.3 R8a already named directly (same-layer overlap stops
+  reading as darker), not a performance one. That trade-off is the design doc's own deliberate decision
+  and out of scope to revisit here; this note only says the PERFORMANCE case for a low threshold is
+  stronger than "start at ~20k" implies.
+
+## Optimization opportunities for L2b/L2c — ordered by measured cost, not by the design doc's guesses
+
+1. **Marquee preview** (`LayoutEditorViewModel.ComputeMarqueeSelection`) — O(N) bbox scan on every
+   pointer move, unthrottled cost measured directly above; the L1i pixel-movement-skip guard already
+   reduces recompute FREQUENCY but not per-recompute COST, and per-recompute cost is what dominates at
+   scale. Needs the R-tree (viewport/marquee-rect query) L2b already plans.
+2. **Hit-test** (`LayoutHitTest.HitStack`) — same fix, same root cause.
+3. **Viewport culling** — `LayoutRenderer.Draw` examines and draws every shape every frame regardless of
+   visibility (confirmed structurally by the counters, not assumed); L2b's R-tree brings
+   `ShapesExamined`/`ShapesDrawn` down to O(visible), which is where most of the render-cost gap to
+   §5.1's targets should close.
+4. **Per-shape path caching + `PathShape`'s 3-paths-per-shape cost** — L2c; `BuildPathOutline`'s own
+   `// L2: cache with the shape path` comment (already in the code from an earlier phase) is exactly
+   this, now with real numbers (1.5× paths for CurveHeavy) behind it.
+5. **LOD (screen-bbox-under-2px culling)** — §5.3 item 3, not directly measured by this harness (no
+   sub-pixel-shape population was generated), but implied by the 500k full-extent numbers: at deep
+   zoom-out, the overwhelming majority of 500k shapes' on-screen footprint is sub-pixel.
+6. **R8b merge tier** — real, modest (2-21%), no crossover cliff found; lower priority than the above
+   four, and the threshold decision has more room than the design doc assumed (see above).
+7. **`.clay` gzip** (§4, explicitly out of scope for L2b/L2c) — 500k CurveHeavy is ~219MB uncompressed;
+   worth a future look at save/load time and disk footprint, not a rendering concern.
+
+Test files: `SyntheticLayoutGenerator.cs`/`MergedPathBenchmarkRenderer.cs`/`BenchmarkHarness.cs` (the
+harness itself, all test-only, `tests/Ui.Tests/LayoutPerf/`), `LayoutPerfHarnessGateTests.cs` (gates
+2-6: determinism incl. a same-seed/different-seed pairing and a serialize-reload round trip, the
+1%-of-extent clustering histogram, generate+render at 1k/50k for all 3 profiles with no exception incl.
+the Mixed hole/bitmap/label populations, 3 hand-built counters-correctness fixtures, a structural
+plain-`int`-fields proof for `LayoutFrameCounters` standing in for gate 6's "cost nothing" per R-L2a-3's
+no-conditional-compilation constraint), `LayoutPerformanceBaselineTests.cs` (the real deliverable — full
+baseline table above, `[Trait("Category","Nightly")]` on every 500k-scale case per gate 7, loose
+3×-headroom wall-clock catastrophe assertions per gate 9, the R8b crossover experiment).
+`LayoutTextOutlineTypefaceCollection.cs` (new, `tests/Ui.Tests/`) fixes the pre-existing
+`TestOverrideTypeface` parallel-test race described above — applied to both this phase's new classes AND
+the two pre-existing label test classes that already had the same latent bug. 46 new tests (28 gate +
+18 baseline/crossover theories); 2284 Ui.Tests total (was 2256), all green, run 3× consecutively to
+confirm the race fix holds; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1
+pre-existing skip, matching the layout-label-owner-follow-up baseline exactly). **Not interactively
+verified** (no visual driver in this environment, matching every prior Layout Editor phase) — the
+numbers above come directly from the headless `SKSurface` harness, which is the whole point of this
+phase; there is nothing to verify interactively that the numbers don't already show more precisely.
+
+**Next: L2b** — the R-tree spatial index (§5.2 R11, per-layer), viewport culling, and accelerated
+hit-test/marquee — in that priority order, per the ranked list above. Report back before L2c
+(per-shape path caching, LOD, the R8b merge tier at a threshold this phase's data suggests can be lower
+than ~20k) is briefed.
+
 Layout labels — owner follow-up round, 5 reports (2026-07-27) — COMPLETE: after the label-fix brief
 below shipped, five more owner reports landed in one pass.
 

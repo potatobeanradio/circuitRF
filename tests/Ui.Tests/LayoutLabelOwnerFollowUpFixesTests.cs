@@ -16,6 +16,7 @@ namespace CircuitRF.Ui.Tests;
 //    its own tests in LayoutLabelFixAndTextFlattenTests.cs (CommitLabel_* tests) since it's a direct
 //    continuation of that brief's gates.
 
+[Collection(CircuitRF.Ui.Tests.LayoutTextOutlineTypefaceCollection.Name)]
 public class LayoutLabelOwnerFollowUpFixesTests : IDisposable
 {
     private static readonly LayerKey Layer1 = new(1, 0);

@@ -42,6 +42,16 @@ internal sealed class ReplaceShapesCommand : IUiCommand
     /// (never stored as mutable state) on every Execute/Undo/Redo cycle.</summary>
     private int InsertAt => _removed.Count > 0 ? _removed[0].Index : _view.Shapes.Count;
 
+    /// <summary>L2b: when nothing is removed (paste/duplicate — <see cref="LayoutEditorViewModel.
+    /// InsertPastedShapes"/>), <see cref="InsertAt"/> is <c>Shapes.Count</c> and every added shape
+    /// lands at the tail — a safe trailing append for the spatial index's incremental fast path. Any
+    /// removal at all (booleans, offset, repair, flatten, scale) shifts other shapes' indices in a way
+    /// this command does not track precisely, so those fall back to <see cref="LayoutChangeInfo.Full"/>
+    /// (the default <see cref="LayoutView.NotifyChanged"/> already applies) — correct, just a full
+    /// rebuild instead of an incremental update; these are all discrete, infrequent user actions, not a
+    /// per-frame hot path, so the rebuild cost is not felt.</summary>
+    private bool IsPureAppend => _removed.Count == 0;
+
     public void Execute()
     {
         int insertAt = InsertAt;
@@ -54,7 +64,7 @@ internal sealed class ReplaceShapesCommand : IUiCommand
         for (int i = 0; i < _added.Count; i++)
             _view.Shapes.Insert(insertAt + i, _added[i]);
 
-        _view.NotifyChanged();
+        _view.NotifyChanged(IsPureAppend ? LayoutChangeInfo.Appended(insertAt, _added.Count) : null);
     }
 
     public void Undo()
@@ -68,6 +78,6 @@ internal sealed class ReplaceShapesCommand : IUiCommand
         foreach (var (index, before) in _removed)
             _view.Shapes.Insert(index, before);
 
-        _view.NotifyChanged();
+        _view.NotifyChanged(IsPureAppend ? LayoutChangeInfo.RemovedTrailing(insertAt, _added.Count) : null);
     }
 }

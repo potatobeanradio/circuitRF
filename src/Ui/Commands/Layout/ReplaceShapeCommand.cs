@@ -35,12 +35,14 @@ internal sealed class ReplaceShapeCommand : IUiCommand
     public void Execute()
     {
         _view.Shapes[_index] = _after;
-        _view.NotifyChanged();
+        // L2b: a straight swap at a fixed index — Shapes.Count and every OTHER index are untouched,
+        // so this is always a safe Updated for the spatial index's incremental fast path.
+        _view.NotifyChanged(LayoutChangeInfo.Updated([_index]));
     }
 
     public void Undo()
     {
         _view.Shapes[_index] = _before;
-        _view.NotifyChanged();
+        _view.NotifyChanged(LayoutChangeInfo.Updated([_index]));
     }
 }
