@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    Applies circuitrf.runsettings to every `dotnet test` invocation in this repo automatically
+    (docs/sonnet-briefs/brief-test-default-fast.md), no filter flag to remember, no way to get it
+    wrong. A command-line settings file (not a filter argument) overrides this file's
+    RunSettingsFilePath cleanly, so opting into the excluded Benchmark tests stays a one-liner: see
+    circuitrf.benchmark.runsettings.
+  -->
+  <PropertyGroup>
+    <RunSettingsFilePath>$(MSBuildThisFileDirectory)circuitrf.runsettings</RunSettingsFilePath>
+  </PropertyGroup>
+</Project>

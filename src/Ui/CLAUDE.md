@@ -1,5 +1,278 @@
 # UI (Avalonia) — local conventions
 
+Phase L4a — interchange scaffolding and GDSII read/write (brief-L4a-gdsii-interchange.md, 2026-07-28)
+— COMPLETE: **first of L4's three briefs.** A shared, format-agnostic interchange layer (§8 R15) plus a
+from-spec GDSII reader/writer (no library dependency, no GPL sources) — new `.ctech` interchange
+mappings, GDSII import creating real cell folders through the normal `CellFolder` machinery, and export
+walking a design's hierarchy with a pre-flight fidelity dialog. `src/Ui/Layout/Interchange/` (new,
+framework-free, no Avalonia/Skia) holds all of it: `GdsiiReal8.cs`, `GdsiiRecordIo.cs`,
+`GdsiiTransformCodec.cs`, `InterchangeStructure.cs`, `GdsiiLayerReconciliation.cs`,
+`GdsiiStructureNaming.cs`, `GdsiiCoordinateValidation.cs`, `GdsiiReader.cs`, `GdsiiWriter.cs`,
+`GdsiiImport.cs`, `GdsiiExport.cs`.
+
+## §2.1 item 1 — excess-64 base-16 reals, tested first, against hand-derived bit patterns
+
+`GdsiiReal8.ToDouble`/`WriteTo` implement GDSII's 8-byte real (sign + 7-bit excess-64 exponent + 56-bit
+base-16 mantissa fraction) — **not** IEEE 754, the single most common GDSII bug per the brief's own
+warning. `GdsiiReal8Tests.cs` was written and made to pass **before any other Interchange file existed**
+(per the brief's explicit gate ordering): the known-pattern table (0, ±1, ±2, 0.25, 0.5) is hand-derived
+directly from the spec's own definition (`mantissaFraction × 16^(exponent-64)`), not from running
+`GdsiiReal8` itself and copying its output — a self-consistent round-trip test alone could not have
+caught a bug present identically in both directions (e.g. a mantissa-bit-order swap), which is exactly
+the failure mode this brief warns about.
+
+## §2.1 item 2 — the int32 coordinate ceiling, and how overflow is reported
+
+GDSII coordinates are 4-byte signed integers (±2,147,483,647); this codebase stores `long`.
+`GdsiiCoordinateValidation.CheckOverflow` walks every shape's own defining fields (extents, vertices,
+Cubic control points, instance X/Y/array extents) — **not** the flattened output — because flattening a
+curved primitive never produces a point outside its own defining extent (a circle's points lie exactly
+on its radius; a cubic's subdivision points lie within its control polygon's convex hull), so validating
+the raw shape is sufficient and avoids flattening twice. `GdsiiWriter.Write` calls this **before writing
+a single byte** and throws `GdsiiExportException` (carrying every offender, named by shape type + layer
++ approximate position, since shapes have no user-facing "name" field) rather than truncating —
+`GdsiiExport.Write` also checks `ExportPlan.CanWrite` up front so a blocked export never even opens the
+destination file (an earlier version called `File.Create` before validating and left a 0-byte file on a
+blocked export — caught by `Write_WhenPlanCannotWrite_Throws_NoFileWritten`, fixed by checking
+`CanWrite` before touching the filesystem at all).
+
+## §2.1 item 4 — STRANS reflect-before-rotate: two different mirror axes, algebraically reconciled
+
+GDSII's STRANS bit 15 reflects about the **X-axis** (negates Y) before rotation. This codebase's own
+`LayoutInstanceTransform.MirrorX` negates **X**, not Y — a genuinely different axis, by this codebase's
+own pre-existing convention (`MirrorMagScale`'s doc comment: "MirrorX negates local X before rotation").
+Since negate-Y ≡ Rot(180°) ∘ negate-X, `GdsiiTransformCodec` converts a GDSII `(reflect, angle)` pair to
+our own `(MirrorX, Rot)` as `MirrorX = reflect`, `Rot = angle + 180° (mod 360°)` when `reflect`, else
+`Rot = angle` unchanged — derived algebraically against `LayoutInstanceTransform.TransformPoint`'s own
+rotation table **before** writing any reader/writer code (worked example: GDSII reflect=true/angle=90°
+⇒ our MirrorX=true/Rot=270°, verified by hand against the R270 formula `(my, -mx)`), not discovered by
+trial and error. `GdsiiTransformCodecTests` pins both the algebraic derivation and all 8 round-trips
+exactly (zero snap delta); `LayoutGdsiiTransformTests` proves it end-to-end — a real hierarchical design
+exported to actual GDSII bytes, imported into a **separate** fresh directory, and rendered
+**pixel-identical** to the original for all 8 rotation×mirror combinations (gate 5). Arbitrary
+(non-90°-multiple) `ANGLE` on a third-party file is snapped to the nearest quadrant and reported with
+the discarded delta — our own writer only ever emits exact multiples of 90°, so this never fires on our
+own round-trip.
+
+## §2.1 item 5 — AREF's three points are literal, already-transformed absolute coordinates
+
+`COLROW` plus three `XY` points (origin, column-reference, row-reference) — **not** a pitch pair. This
+codebase's own array model applies pitch in the parent's **unrotated** frame (a pre-existing, deliberate
+L3a simplification — see `LayoutInstanceTransform`'s own doc comment — distinct from real GDSII AREF's
+rotated row/column vectors). This does **not** create an inconsistency: the three XY points are literal
+final world coordinates, so a reader never re-derives rotation from them — it only divides by
+Cols/Rows to recover the grid vectors. `GdsiiWriter` writes `colRef = origin + (Cols×PitchX, 0)`,
+`rowRef = origin + (0, Rows×PitchY)` directly (our own unrotated-pitch convention, written literally);
+`GdsiiReader` recovers `PitchX/PitchY` by dividing the reference-point deltas by Cols/Rows, and reports
+(never crashes on) a genuinely rotated third-party AREF whose column/row vectors aren't axis-aligned —
+approximated by its dominant axis, since this codebase's own array model cannot represent a skewed grid
+exactly regardless. `FiveByFiveArray_RoundTrips_AsArefWithCorrectPitchAndCounts` and
+`Hierarchy_Survives_InstancesAndArraysNotFlattenedGeometry` are the direct gates.
+
+## §8 — structure-name mangling, and where the mapping is reported
+
+`GdsiiStructureNaming.MangleForExport`/`NameCellsForImport` share one collision-resolution algorithm
+(truncate-then-suffix, `_2`/`_3`/…) behind two different legality predicates — GDSII's own charset
+(letters/digits/`_`/`?`/`$`) for export, this codebase's `NameValidator` charset for import — so a
+`My Amp!` cell exports as structure `My_Amp_`, and a structure named `CELL?1` imports as cell `CELL_1`.
+**The mapping is reported in both directions**: `GdsiiExport.ExportPlan.StructureNameByCellName` (shown
+in the export fidelity dialog before writing) and `GdsiiImport.ImportResult.Messages` (one line per
+non-identity mapping, e.g. `GDSII structure "BAD?NAME" → cell "BAD_NAME"`) — so a user can always trace
+a fab's structure name back to their own cell, or vice versa.
+
+## Neutral model: what's genuinely format-agnostic vs. provisional until L4b/L4c
+
+**Format-agnostic, reusable as-is by DXF/Gerber:** `InterchangeStructure` (just the existing
+`LayoutShape`/`LayoutInstance`/`LayerKey` types plus a name — no parallel object model was invented);
+the `.ctech` `InterchangeMapping` record's shape (GDSII layer/datatype alias + DXF layer name + Gerber
+suffix/X2 function all live on one record, `LayerDef.Interchange`); `GdsiiStructureNaming`'s
+truncate-then-suffix collision algorithm (only the legality predicate is GDSII-specific — a DXF/Gerber
+mangler needs only a new predicate, not a new algorithm); the export dialog's overall shape (counts +
+mapping, confirm-before-write, block-on-overflow).
+
+**Provisional / GDSII-specific, genuinely untested by anything else yet:** `GdsiiReal8`/`GdsiiRecordIo`
+(GDSII's own binary record format — DXF is ASCII, Gerber is ASCII); `GdsiiTransformCodec` (STRANS's
+specific reflect-axis convention is GDSII's own — DXF's `INSERT` and Gerber have their own transform
+encodings, not yet built or verified against this pattern); the keyhole logic in `GdsiiWriter` (DXF and
+Gerber both express holes natively per §3.1a — L4b/L4c should never call this); `LayoutLayerMapping`
+itself is L1g's own pre-existing, already-format-agnostic code (untouched by this brief, per R-L4a-2 —
+not newly "made" generic here, just reused).
+
+## Reconciliation reuse (R-L4a-2) — GDSII's namelessness adapted onto L1g's own matching, unmodified
+
+GDSII carries only numeric `(layer, datatype)` — no layer names. `GdsiiLayerReconciliation.
+BuildSourceLayers` builds the synthetic "source layers" `LayoutLayerMapping.Propose` expects: for each
+distinct incoming key, the synthetic name is whichever destination-technology layer declares that GDSII
+identity (`LayerDef.Interchange.GdsiiLayer`/`GdsiiDatatype`, falling back to the layer's own native
+`Key`) — or empty if none does. Feeding this into `Propose` **unmodified** reproduces exactly the right
+`LayerMatchKind` (`SameKeySameName` when the destination already owns that GDSII identity by its native
+key, `ExactName` when only a declared alias — at a *different* internal key — matches by name,
+`NoMatch` otherwise) — zero changes to L1g's own code, confirmed directly by
+`GdsiiLayerReconciliationTests`. `LayerMappingDialog` (L1g's own dialog) is shown only when
+`RequiresConfirmation` is true, exactly the existing retarget/paste gating.
+
+## `.ctech` interchange mappings (R-L4a-1) — additive, and where L0a's deferral is finally closed
+
+`LayerDef.Interchange` (nullable `InterchangeMapping` record: `GdsiiLayer`/`GdsiiDatatype` overrides,
+`DxfLayerName`, `GerberSuffix`, `GerberFileFunction`) — additive, no `.ctech` `FormatVersion` bump
+(`HandStrippedCtech_MissingInterchangeField_StillLoads` pins this). Editable now in the L0d tech editor
+via a new "Interchange" tab (same `SharedSizeGroup` grid convention as Layers/Stackup/DRC) — only the
+GDSII fields are functionally exercised by this brief; DXF/Gerber fields are inert scaffolding for
+L4b/L4c, as the brief itself anticipates.
+
+## Import (§2.4) — real cells, cycle safety reused rather than duplicated
+
+`GdsiiImport.Import` creates every structure's `CellFolder` up front (all names known before any
+instance is wired, via `CellFolder.CreateCellFolder` — the exact machinery Group-into-Cell already
+established, same `.ccell`/`PrimaryLayout` write sequence), then wires every `LayoutInstance.CellRef` to
+its sibling cell folder **exactly as declared — including a self- or mutually-referencing structure. No
+import-time cycle pre-check was added.** The existing `CellHierarchy.ResolveForWalk` visiting-set +
+`MaxDepth` backstop (already exercised by every other hierarchy consumer — render, hit-test, bbox) is
+what prevents a crash/overflow once the imported design is opened, per the brief's own explicit "route
+through the same check, not a second one" instruction — `Import_MutualCycle_DoesNotThrow_
+AndResolvedCellRefsFormACycle` proves this by actually walking the resulting cyclic instance through
+`CellHierarchy.ResolveForWalk`, not just asserting import itself doesn't throw.
+
+**Unit mismatch (§2.2):** finer-than-destination source resolution warns with the affected-coordinate
+count and is silent when the source is coarser (a strictly lossless refinement direction); "offer to
+refine" is implemented as creating the new layouts directly at the source's own resolution (always
+exact by construction) rather than rounding down to the destination default — `preferSourceResolution`
+on `GdsiiImport.Import`.
+
+## Export (§2.3, R-L4a-3) — the fidelity dialog IS the real write, run as a dry run
+
+`GdsiiExport.Analyze` walks the design's hierarchy from a root cell folder (BFS over `CellFolder.
+ResolvePrimary` + `LayoutInstance.CellRef`, deduped by absolute cell directory) and calls
+`GdsiiWriter.Write` into `Stream.Null` — **the exact same write path the real export uses** — so the
+pre-flight curve/hole/bitmap counts shown in `GdsiiExportFidelityDialog` can never disagree with what
+actually gets written (mirrors L3c's own "the SAME outcome-preview path the commit itself uses"
+precedent). A coordinate overflow blocks the Export button outright rather than merely warning.
+
+## Streaming (§2.5)
+
+`GdsiiRecordReader`/`GdsiiRecordWriter` read/write exactly one record at a time over a `Stream` — never
+materialize a whole file's bytes. Export builds its `InterchangeStructure` list from the ALREADY-loaded
+`LayoutShape`/`LayoutInstance` objects the design's own `.clay` files hold in memory (the same way
+editing that design already does) — the streaming discipline is specifically about never buffering the
+serialized GDSII bytes wholesale, which both `GdsiiRecordReader`/`Writer` honor throughout.
+
+## Scope guardrails held
+
+No DXF (L4b), no Gerber/Excellon (L4c) — the neutral model (`InterchangeStructure`, the naming/mangling
+algorithm, the mapping-dialog reuse pattern) is deliberately not GDSII-specific in shape, but nothing
+DXF/Gerber-specific was built. No changes to the geometry model, the flattener, the keyhole logic
+(new here, but lives entirely in `GdsiiWriter` — not a shared primitive DXF/Gerber are required to
+reuse), or `LayoutLayerMapping` beyond wiring (confirmed zero diff to that file). No GDSII library
+dependency — written entirely from the public spec. `src/Core`, `src/Engine`, `RfCore` untouched.
+
+## Tests, gate by gate
+
+`GdsiiReal8Tests.cs` (29, gate 2 — written and passing first). `GdsiiRecordIoTests.cs` (10 — streaming
+record I/O round trip for every payload shape). `GdsiiStructureNamingTests.cs` (7) / `GdsiiLayerReconciliationTests.cs`
+(5) / `GdsiiTransformCodecTests.cs` (13, incl. the hand-derived worked example) — the three pure-logic
+scaffolding files. `LayoutGdsiiRoundTripTests.cs` (17 — gates 3/4/6/7: every primitive incl. an
+arc-bearing `Curve` and a polygon with TWO holes, all 4 `PathEndStyle`s, a port label, a plain instance,
+a 5×5 array, hierarchy preservation, explicit boundary closure, keyhole area-within-tolerance with the
+count reported). `LayoutGdsiiTransformTests.cs` (8, gate 5 — real export→import→render pixel-identity
+for all 8 rotation×mirror combinations). `GdsiiImportTests.cs` (6, gates 9–11 — unit mismatch both
+directions + the refine offer, real `CellFolder`-backed cell creation with a resolvable `CellRef`, the
+mutual-cycle safety proof). `LayoutGdsiiExportTests.cs` (5, gate 8 — overflow reported by name with
+nothing written, fidelity-plan counts matching the actual write, hierarchy collection). Plus 2 new
+`TechPersistenceTests.cs` cases for the additive `.ctech` field, plus 6 more added across the three
+gate-12 findings below (the STRANS data-type bug, the unresolved-reference test-fixture bug, and the
+PATH record-order bug). **106 new tests; 2950 Ui.Tests total (was 2844), all green** (`dotnet test
+tests/Ui.Tests --filter "Category!=Benchmark"`, ~32 s — the routine gate; `Category!=Nightly` also
+re-confirmed green, ~5 min); Firewall 4/4; full solution green (Core 388/388, Engine 461/462 — 1
+pre-existing skip, matching the L3c baseline exactly).
+
+## Gate 12 caught a real bug this codebase's own reader could never have found
+
+**STRANS is a `BITARRAY` record (declared data type 1) per the GDSII spec — `GdsiiWriter` originally
+wrote it via `WriteInt16Array`, which stamps data type 2 (Int2).** Both encode the exact same 2 bytes on
+the wire (a 16-bit value, big-endian), so this codebase's own `GdsiiReader` — which decodes purely by
+record TYPE and never checks the declared data type — round-tripped it perfectly, and every gate 3-11
+test above passed cleanly with the bug present. **KLayout 0.30.9, correctly strict about the
+record-type↔data-type pairing the spec fixes for every record, rejected the file outright**: "XY record
+expected (position=120, record number=8, cell=TOP)" on the very first exported sample. Manually
+decoding the file byte-by-byte (not guessing) confirmed byte offset 120 was exactly the START of the
+`MAG` record immediately following a malformed `STRANS` record — KLayout's SREF parser desynced the
+instant it saw the wrong data-type byte on `STRANS` and never recovered. Fixed by adding
+`GdsiiRecordWriter.WriteBitArray` (identical byte-packing to `WriteInt16Array`, correct declared type)
+and using it at both `STRANS` call sites (`WriteInstance` for SREF/AREF, `WriteText` for labels).
+**This is the exact scenario gate 12 exists for** — "the only gate that catches 'correct by our own
+reader's standards'" — and it is why that gate is not optional busywork: every one of this brief's other
+11 automated gates was green with this bug shipped. Two regression tests now pin the on-wire data type
+directly (`GdsiiRecordIoTests.WriteThenRead_BitArray_RoundTrips_WithBitArrayDataType_NotInt2`,
+`LayoutGdsiiRoundTripTests.PlainInstance_WritesStransAsBitArray_NotInt2`). A corrected sample was
+regenerated and its `STRANS` records' on-wire data type verified directly (byte `1a 01`, not the
+original `1a 02`) before re-sending to the owner for a second KLayout pass — which is what surfaced the
+second finding, below.
+
+## Gate 12, round 2: a hand-typed test fixture made "gate 5" pass for the wrong reason
+
+**After the STRANS fix, KLayout opened the file cleanly but rendered every instance as unresolved-
+reference placeholder text** ("(../Leaf)", "(../Via)") instead of real geometry. Root cause: both the
+KLayout sample generator AND `LayoutGdsiiTransformTests.cs` hand-typed `CellRef = "../Leaf"` for an
+instance in a `TOP` cell whose sibling `Leaf`/`Via` cells live at the SAME directory depth (`Leaf`,
+`Via`, and `TOP` are all direct children of one root folder) — but a `CellRef` is resolved relative to
+the REFERENCING cell's own `layout/` subfolder, not its cell folder, so reaching a true sibling needs
+**two** `../` (`../../Leaf`), not one. `"../Leaf"` resolved (silently, inside our own model too) to
+`TOP/Leaf` — a directory that never existed — making the instance genuinely unresolvable in BOTH the
+"original" and the "round-tripped" renders `LayoutGdsiiTransformTests` compares. **Two identically-
+broken placeholders are pixel-identical to each other**, so the gate-5 test passed on every one of the 8
+rotation/mirror combinations without ever exercising a single resolved, transformed shape — a
+vacuous pass masquerading as a real one. Exactly the kind of gap gate 12 exists to catch, and this time
+it took a *human* opening the file in a real viewer to surface it, since nothing in this codebase's own
+(consistently broken, consistently self-consistent) render path could have.
+
+**Fixed in three places:** (1) `LayoutGdsiiTransformTests.cs` now computes `CellRef` via
+`Path.GetRelativePath` (never hand-typed) and — the fix that actually matters — asserts
+`CellLayoutResolver.Resolve(...).State == CellLayoutState.Resolved` on BOTH the original and the
+round-tripped instance before comparing pixels, so a future regression back to a broken reference fails
+loudly instead of silently passing again. (2) `GdsiiExport`'s hierarchy walk now reports every instance
+whose `CellRef` fails to resolve within the design as `ExportPlan.UnresolvedInstanceReferences` — surfaced
+in the fidelity dialog as a named warning (`GdsiiExportFidelityDialog`) before writing, rather than
+silently exporting a dangling `SNAME` a GDSII viewer can only present as an unexplained placeholder;
+`Analyze_UnresolvedInstanceCellRef_Reported_NotSilent` pins this — a dangling reference still exports
+(it's the source design's own pre-existing state, not something export should refuse), but never
+silently. (3) The KLayout sample was regenerated with computed `CellRef`s, and its correctness was
+verified directly (not assumed) before re-sending: every `SNAME` on the wire matches one of exactly 3
+`STRNAME`s (`TOP`, `Leaf`, `Via`) with none left dangling. **105 new tests; 2949 Ui.Tests total.**
+
+## Gate 12, round 3: PATH's own record order was also wrong (PATHTYPE/WIDTH swapped)
+
+**Third KLayout pass, third real bug — same root cause class as round 1 (a wrong record ORDER, not a
+wrong record CONTENT), this time in `PATH`.** The spec's canonical PATH element sequence is `LAYER,
+DATATYPE, PATHTYPE, WIDTH, [BGNEXTN, ENDEXTN], XY, ENDEL` — `GdsiiWriter.WritePath` wrote `WIDTH` before
+`PATHTYPE`, the two swapped. Every record was still individually well-formed (correct length, correct
+type/datatype byte), so this codebase's own `GdsiiReader` — which dispatches purely by record TYPE and
+never enforces a canonical FIELD ORDER — parsed it without complaint, and every automated gate passed
+again. KLayout enforces the canonical order strictly and desynced its PATH-element parser, surfacing as
+"XY record expected" at the exact byte offset where the (correctly-framed, but out-of-position) `XY`
+record began. **Verified against three independent primary sources before committing to the fix**
+(not from memory alone, after two prior ordering-adjacent mistakes) — the same search pass also
+re-confirmed `SREF`/`AREF` (`SNAME, [STRANS, [MAG], [ANGLE]], [COLROW], XY`) and `TEXT` (`LAYER,
+TEXTTYPE, [PRESENTATION], [PATHTYPE, WIDTH, STRANS, MAG, ANGLE], XY, STRING`) are both already correct
+in this codebase's writer, so no further ordering bug is currently suspected in any element.
+`LayoutGdsiiRoundTripTests.Path_WritesRecordsInCanonicalOrder_PathTypeBeforeWidth` pins the exact
+on-wire sequence directly (not merely that the shape round-trips through our own reader). **106 new
+tests; 2950 Ui.Tests total.** The regenerated sample was verified two ways before a third re-send:
+every record parses to exactly the file's own byte length with no drift, and every `PATH` element's
+`PATHTYPE` index precedes its `WIDTH` index in the actual written bytes.
+
+**Not interactively verified for the same reason every prior Layout Editor phase wasn't** — the
+toolbar's "Export GDSII…" button, the fidelity dialog's layout, and the File menu's "Import GDSII
+Library…" item cannot be exercised headlessly; correctness rests on the gate tests above, which drive
+the exact same public methods (`GdsiiExport.Analyze/Write`, `GdsiiImport.Import`) the view/menu
+code-behind calls. Please confirm on your end: Export GDSII on a saved cell shows the fidelity dialog
+with correct counts before writing; a coordinate-overflowing design shows the offender list and disables
+Export; an unresolvable instance reference shows its own warning in that same dialog; Import GDSII
+Library… (workspace open) prompts for a `.gds` file and the resulting cells appear in the project tree;
+and the re-sent (third-corrected) sample now renders real geometry with no errors in KLayout.
+
+**Next: L4b (DXF — write first-class, read a documented subset) and L4c (Gerber RS-274X/X2 + Excellon,
+export only).** Report back before either is briefed.
+
 Phase L3c — flatten and group-into-cell (brief-L3c-flatten-and-group.md, 2026-07-28) — COMPLETE: **Phase
 L3 (hierarchy — instances, arrays, push-in/pop-out navigation, flatten, group-into-cell) is now
 complete.** A layout instance can now be flattened back into geometry (one level, one level for a

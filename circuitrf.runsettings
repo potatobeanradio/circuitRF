@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Repo-wide default test filter (docs/sonnet-briefs/brief-test-default-fast.md). The exclusion is a
+  property of the repository, not of the command someone types: plain `dotnet test`, `dotnet test
+  tests/Ui.Tests`, an IDE test run, and CI all inherit this via Directory.Build.props's
+  RunSettingsFilePath, with nothing to remember and nothing to get wrong.
+
+  Category=Benchmark marks anything that should never run in a routine test pass, the 500k-shape
+  TIMED sweeps this project's own history shows are the reason "dotnet test" got slow. Opt in with
+  circuitrf.benchmark.runsettings (see that file), not a command-line filter argument: this SDK's
+  VSTest version ANDs a command-line filter against this file's filter rather than overriding it, so
+  filtering for Category=Benchmark alone would resolve to an impossible AND and match nothing.
+  Verified directly, not assumed.
+-->
+<RunSettings>
+  <RunConfiguration>
+    <TestCaseFilter>Category!=Benchmark</TestCaseFilter>
+  </RunConfiguration>
+</RunSettings>

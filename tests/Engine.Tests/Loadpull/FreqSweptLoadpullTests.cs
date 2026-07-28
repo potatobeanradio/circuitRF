@@ -16,7 +16,11 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 // Layer A+B of FreqSweptLoadpull_Brief: a Loadpull wrapped in a parametric sweep over the tone
 // variable (RFfreq) runs per frequency and stacks with a "freq" (Hz) axis that LoadpullSurface
 // recognizes — so the result is a genuine multi-frequency loadpull.
-[Trait("Category", "Slow")]
+//
+// No longer class-tagged "Slow" (docs/sonnet-briefs/brief-test-default-fast.md): tag by measured
+// per-test cost, not by subject matter. Two of the four tests in this class genuinely exceed the
+// ~5s threshold (multi-frequency pursuit searches) and carry their own [Trait("Category","Benchmark")];
+// the other two run in a couple of seconds and stay untagged.
 public sealed class FreqSweptLoadpullTests(ITestOutputHelper o)
 {
     private static string Hero3Dir()
@@ -97,6 +101,7 @@ analysis LP1 type=loadpull Tone=""RFfreq"" ToneUnit=GHz MaxHarm=5 LoadTuner=Load
     // Layers A/E: a freq-swept Loadpull-Pursuit runs the full MXP/MXE search per frequency and stacks the
     // optima into per-frequency trends on a clean "freq" (Hz) axis. The follow-on loadpull cubes stack too
     // (when per-freq grids match), and the follow-on metadata stays cleanly __-prefixed (no LP___ mangling).
+    [Trait("Category", "Benchmark")] // ~11.6s — a full MXP/MXE pursuit search per swept frequency
     [Fact]
     public void FreqSweptPursuit_StacksOptimaTrends_OnFreqAxis()
     {
@@ -147,6 +152,7 @@ analysis LP1 type=loadpull Tone=""RFfreq"" ToneUnit=GHz MaxHarm=5 LoadTuner=Load
     // A NESTED sweep (outer RFfreq × inner dummy var) over a pursuit must accumulate one .gam block per
     // outer point — the OutputGrid is truncated ONCE across the whole run, not re-truncated per outer point
     // (which would leave only the last outer point's blocks). Two outer freqs → two blocks.
+    [Trait("Category", "Benchmark")] // ~9.5s — a nested sweep of two full pursuit searches
     [Fact]
     public void NestedSweptPursuit_GamAccumulatesAllOuterPoints()
     {

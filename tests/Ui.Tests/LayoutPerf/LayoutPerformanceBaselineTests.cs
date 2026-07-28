@@ -5,11 +5,13 @@
 // note (src/Ui/CLAUDE.md) was produced — run with `dotnet test --filter FullyQualifiedName~LayoutPerf
 // --logger "console;verbosity=detailed"` to reproduce it.
 //
-// 1k/50k run on every commit. 500k's TIMED sweep (this file) is [Trait("Category","Benchmark")]
-// (brief-benchmark-gate-split.md — opt-in only, supersedes the old Nightly tag here) — it still ran
-// once during this phase's own development to produce the 500k row of the baseline table; exclude it
-// from the routine gate with `--filter "Category!=Benchmark"`. 500k's COUNTER coverage (the part that
-// actually catches an algorithmic regression) stays in the gate — see
+// Only 1k (Baseline_1k) runs in the routine default pass now. 50k (Baseline_50k) and 500k
+// (Baseline_500k) are both [Trait("Category","Benchmark")] — opt-in only
+// (docs/sonnet-briefs/brief-test-default-fast.md: tag by measured per-test cost against a ~5s
+// threshold, not by subject matter; 50k's CurveHeavy/Mixed cases measure 6-11s). Both still ran during
+// this phase's own development to produce the baseline table; the routine default is Category!=Benchmark
+// (repo-wide via circuitrf.runsettings — no flag to remember). 500k's COUNTER coverage (the part that
+// actually catches an algorithmic regression) stays in the routine gate — see
 // LayoutSpatialIndexPerfTests.Gated500k_CullingCountersStayCorrect.
 
 using System;
@@ -45,16 +47,27 @@ public class LayoutPerformanceBaselineTests : System.IDisposable
         _         => new SweepConfig(1, 2, 3),
     };
 
-    // ── 1k / 50k — every commit ──────────────────────────────────────────────────
+    // ── 1k — every commit (all well under the ~5s per-test threshold) ────────────
 
     [Theory]
     [InlineData(GeneratorProfile.Manhattan, 1_000)]
-    [InlineData(GeneratorProfile.Manhattan, 50_000)]
     [InlineData(GeneratorProfile.CurveHeavy, 1_000)]
-    [InlineData(GeneratorProfile.CurveHeavy, 50_000)]
     [InlineData(GeneratorProfile.Mixed, 1_000)]
+    public void Baseline_1k(GeneratorProfile profile, int shapeCount) => RunAndReport(profile, shapeCount);
+
+    // ── 50k — Benchmark (docs/sonnet-briefs/brief-test-default-fast.md: tag by measured cost, not
+    // subject matter). Split out of the combined 1k/50k Theory this replaces: CurveHeavy/Mixed at 50k
+    // measure ~6-11s and Manhattan ~4.9s — the whole 50k tier is over (or right at) the ~5s threshold,
+    // so it moves together rather than fragmenting into a third, per-profile tier for one borderline
+    // case. Still runs the identical measurement `RunAndReport` performs — nothing here is weakened,
+    // only excluded from the routine pass. Run explicitly with the Benchmark opt-in path.
+
+    [Trait("Category", "Benchmark")]
+    [Theory]
+    [InlineData(GeneratorProfile.Manhattan, 50_000)]
+    [InlineData(GeneratorProfile.CurveHeavy, 50_000)]
     [InlineData(GeneratorProfile.Mixed, 50_000)]
-    public void Baseline(GeneratorProfile profile, int shapeCount) => RunAndReport(profile, shapeCount);
+    public void Baseline_50k(GeneratorProfile profile, int shapeCount) => RunAndReport(profile, shapeCount);
 
     // ── 500k — opt-in timed sweep only (brief-benchmark-gate-split.md R-perf-1/R-perf-3) ──────────
     // This is the MEASUREMENT exercise (median/p95 across pan/zoom/full-extent/hit-test/marquee/load,

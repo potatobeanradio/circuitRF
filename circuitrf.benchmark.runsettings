@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Benchmark opt-in path (docs/sonnet-briefs/brief-test-default-fast.md, section 1). A command-line
+  `dotnet test` filter argument MERGES with (ANDs against) the project's own circuitrf.runsettings
+  filter in this SDK's VSTest version rather than overriding it, so filtering for Category=Benchmark
+  alone would resolve to the impossible AND of Category!=Benchmark and Category=Benchmark and match
+  nothing. Verified directly, not assumed. Passing a settings file on the command line DOES override
+  the project-level RunSettingsFilePath cleanly, so this file is the one-liner opt-in path instead:
+
+    dotnet test, with settings set to circuitrf.benchmark.runsettings
+
+  Runs the 500k-shape TIMED sweeps this project already treats as opt-in-only, unchanged in what they
+  measure.
+-->
+<RunSettings>
+  <RunConfiguration>
+    <TestCaseFilter>Category=Benchmark</TestCaseFilter>
+  </RunConfiguration>
+</RunSettings>

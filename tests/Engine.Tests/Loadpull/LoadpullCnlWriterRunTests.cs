@@ -15,8 +15,10 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 /// netlist.cnl → CnlReader before the engine runs it. This confirms the writer emits a loadpull
 /// directive the reader+engine consume identically — a GUI-authored loadpull reproduces the
 /// hand-authored Hero 3 numbers (the engine math is unchanged; this validates the plumbing).
+///
+/// No longer tagged "Slow" (docs/sonnet-briefs/brief-test-default-fast.md): this test runs in ~2s,
+/// well under the ~5s per-test threshold.
 /// </summary>
-[Trait("Category", "Slow")]
 public class LoadpullCnlWriterRunTests
 {
     private static string Hero3Dir()

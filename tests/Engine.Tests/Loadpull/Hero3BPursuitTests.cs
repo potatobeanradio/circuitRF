@@ -34,8 +34,11 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 /// LABEL: SELF-GENERATED REGRESSION — NOT INDEPENDENTLY VALIDATED.
 ///
 /// Phase 5-5: updated to use DataSet result API (values unchanged, re-housed only).
+///
+/// No longer class-tagged "Slow" (docs/sonnet-briefs/brief-test-default-fast.md): every test here
+/// runs under the ~5s per-test threshold (worst case ~4.8s), so nothing in this class needs excluding
+/// from the default run.
 /// </summary>
-[Trait("Category", "Slow")]
 public class Hero3BPursuitTests(ITestOutputHelper output)
 {
     private static string Hero3BDir()

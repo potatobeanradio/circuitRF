@@ -29,8 +29,11 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 /// The owner will verify before freezing.
 ///
 /// Phase 5-5: updated to use DataSet result API (values unchanged, re-housed only).
+///
+/// No longer class-tagged "Slow" (docs/sonnet-briefs/brief-test-default-fast.md): every test here
+/// runs well under the ~5s per-test threshold, so nothing in this class needs excluding from the
+/// default run — tag by measured cost, not by subject matter.
 /// </summary>
-[Trait("Category", "Slow")]
 public class Hero3LoadpullTests(ITestOutputHelper output)
 {
     private static string Hero3Dir()

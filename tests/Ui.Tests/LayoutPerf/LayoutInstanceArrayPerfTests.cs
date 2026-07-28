@@ -1,7 +1,9 @@
 // Phase L3a gate 5 (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md): "record frame time for a
 // 50x50 array of a 20-shape cell and compare against 50,000 flat shapes. The whole point is that they
-// should not be comparable." Nightly-tagged (real timing, not a CI-gated assertion — matches every
-// other wall-clock number in this project's L2 benchmark suite).
+// should not be comparable." Benchmark-tagged (real timing, not a CI-gated assertion — matches every
+// other wall-clock number in this project's L2 benchmark suite). Was "Nightly" — that category is
+// retired (docs/sonnet-briefs/brief-test-default-fast.md R-tst-B): Category=Benchmark is now the one
+// tag for "should never run in a routine pass," excluded by default via circuitrf.runsettings.
 
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
@@ -33,7 +35,7 @@ public sealed class LayoutInstanceArrayPerfTests : IDisposable
             Directory.Delete(_workspaceDir, recursive: true);
     }
 
-    [Trait("Category", "Nightly")]
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void Array50x50Of20ShapeCell_FrameTime_NotComparableTo50kFlatShapes()
     {

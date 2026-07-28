@@ -42,6 +42,11 @@ public partial class TechEditorView : UserControl
                     case "FillOpacity": lr.CommitFillOpacity(); break;
                     case "ZOrder":      lr.CommitZOrder();      break;
                     case "Purpose":     lr.CommitPurpose();     break;
+                    case "GdsiiLayer":         lr.CommitGdsiiLayer();         break;
+                    case "GdsiiDatatype":      lr.CommitGdsiiDatatype();      break;
+                    case "DxfLayerName":       lr.CommitDxfLayerName();       break;
+                    case "GerberSuffix":       lr.CommitGerberSuffix();       break;
+                    case "GerberFileFunction": lr.CommitGerberFileFunction(); break;
                 }
                 break;
 

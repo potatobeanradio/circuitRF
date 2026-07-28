@@ -11,6 +11,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.Interchange;
 using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.Layout;
@@ -502,6 +503,62 @@ public partial class LayoutEditorView : UserControl
 
         vm.BeginInstancePlacement(cellRef);
         LayoutCanvasCtrl.InvalidateVisual();
+    }
+
+    // ── Export GDSII (docs/sonnet-briefs/brief-L4a-gdsii-interchange.md, R-L4a-3) ──────────────────
+    // UI firewall: StorageProvider file picking stays here in code-behind; GdsiiExport does the
+    // actual hierarchy walk + write. The fidelity dialog states what will change BEFORE any bytes
+    // are written, and blocks the write outright if the plan carries a coordinate overflow.
+
+    private async void OnExportGdsii(object? sender, RoutedEventArgs e) => await OnExportGdsiiAsync();
+
+    private async Task OnExportGdsiiAsync()
+    {
+        if (Vm is not { } vm) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        if (vm.CurrentCellDir is not { Length: > 0 } cellDir)
+        {
+            vm.ReportError("Export GDSII: save this layout to a cell before exporting.");
+            return;
+        }
+
+        GdsiiExport.ExportPlan plan;
+        try
+        {
+            plan = GdsiiExport.Analyze(cellDir, vm.Technology, vm.Model.DbuPerMicron);
+        }
+        catch (Exception ex)
+        {
+            vm.ReportError($"Export GDSII: {ex.Message}");
+            return;
+        }
+
+        var confirmed = await new GdsiiExportFidelityDialog(plan).ShowDialog<bool>(owner);
+        if (!confirmed || !plan.CanWrite) return;
+
+        var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title             = "Export GDSII",
+            DefaultExtension  = "gds",
+            SuggestedFileName = cellName,
+            FileTypeChoices   = [new FilePickerFileType("GDSII Stream") { Patterns = ["*.gds"] }],
+        });
+        if (file is null) return;
+
+        try
+        {
+            GdsiiExport.Write(file.Path.LocalPath, plan);
+            vm.ReportMessage(
+                $"Exported GDSII to {file.Path.LocalPath} · {plan.CurvedShapesFlattened} curve(s) flattened, " +
+                $"{plan.HolesKeyholed} hole(s) keyholed, {plan.BitmapsSkipped} bitmap(s) skipped.");
+        }
+        catch (Exception ex)
+        {
+            vm.ReportError($"Export GDSII: {ex.Message}");
+        }
     }
 
     private async void OnChangeTechnologyClick(object? sender, RoutedEventArgs e) => await OnChangeTechnologyAsync();

@@ -163,6 +163,16 @@
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                        <!-- GDSII export (docs/sonnet-briefs/brief-L4a-gdsii-interchange.md) — a
+                             whole-hierarchy operation, so it sits with Insert Bitmap/Instance rather
+                             than under any single drawing tool. -->
+                        <Button Click="OnExportGdsii" ToolTip.Tip="Export GDSII…" Padding="6,3">
+                            <mi:MaterialIcon Kind="ExportVariant" Width="16" Height="16"/>
+                        </Button>
+
+                        <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                         <TextBlock Text="Layer:" VerticalAlignment="Center" FontSize="11" Margin="4,0,0,0"/>
                         <ComboBox ItemsSource="{Binding ActiveViewModel.AvailableLayers}"
                                   SelectedItem="{Binding ActiveViewModel.CurrentLayerItem, Mode=TwoWay}"

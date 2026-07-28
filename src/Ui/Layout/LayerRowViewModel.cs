@@ -32,6 +32,15 @@ public sealed partial class LayerRowViewModel : ObservableObject
     [ObservableProperty] private bool   _selectable;
     [ObservableProperty] private string _stagedPurpose = "";
 
+    // Interchange mappings (docs/design/layout-view.md §2.4 R7a) — blank means "unset" (null field on
+    // the InterchangeMapping record). Only the GDSII fields are functionally exercised by L4a; DXF/Gerber
+    // are inert scaffolding for L4b/L4c.
+    [ObservableProperty] private string _stagedGdsiiLayer = "";
+    [ObservableProperty] private string _stagedGdsiiDatatype = "";
+    [ObservableProperty] private string _stagedDxfLayerName = "";
+    [ObservableProperty] private string _stagedGerberSuffix = "";
+    [ObservableProperty] private string _stagedGerberFileFunction = "";
+
     public IRelayCommand RemoveCommand    { get; }
     public IRelayCommand DuplicateCommand { get; }
     public IRelayCommand MoveUpCommand    { get; }
@@ -69,6 +78,11 @@ public sealed partial class LayerRowViewModel : ObservableObject
         Visible            = Layer.Visible;
         Selectable         = Layer.Selectable;
         StagedPurpose      = Layer.Purpose ?? "";
+        StagedGdsiiLayer         = Layer.Interchange?.GdsiiLayer?.ToString() ?? "";
+        StagedGdsiiDatatype      = Layer.Interchange?.GdsiiDatatype?.ToString() ?? "";
+        StagedDxfLayerName       = Layer.Interchange?.DxfLayerName ?? "";
+        StagedGerberSuffix       = Layer.Interchange?.GerberSuffix ?? "";
+        StagedGerberFileFunction = Layer.Interchange?.GerberFileFunction ?? "";
         _isRefreshing = false;
     }
 
@@ -143,6 +157,70 @@ public sealed partial class LayerRowViewModel : ObservableObject
         var before = _owner.SnapshotJson();
         Layer.Purpose = purpose.Length == 0 ? null : purpose;
         _owner.CommitEdit(before, $"Set purpose of {Layer.Name}");
+    }
+
+    /// <summary>Current interchange record, or all-null defaults if none is set yet — the base every
+    /// interchange-field commit method updates one field of (records are immutable).</summary>
+    private InterchangeMapping CurrentInterchange =>
+        Layer.Interchange ?? new InterchangeMapping(null, null, null, null, null);
+
+    /// <summary>Sets <see cref="LayerDef.Interchange"/> to null when every field of <paramref
+    /// name="m"/> is unset, so a technology that never touches interchange mappings round-trips
+    /// with a literal null rather than an all-blank record.</summary>
+    private static InterchangeMapping? Normalize(InterchangeMapping m) =>
+        m is { GdsiiLayer: null, GdsiiDatatype: null, DxfLayerName: null, GerberSuffix: null, GerberFileFunction: null }
+            ? null : m;
+
+    public void CommitGdsiiLayer()
+    {
+        var text = StagedGdsiiLayer.Trim();
+        int? v = text.Length == 0 ? null : int.TryParse(text, out var n) && n >= 0 ? n : (int?)null;
+        if (text.Length > 0 && v is null) { RefreshFromModel(); return; }
+        if (v == CurrentInterchange.GdsiiLayer) { StagedGdsiiLayer = v?.ToString() ?? ""; return; }
+        var before = _owner.SnapshotJson();
+        Layer.Interchange = Normalize(CurrentInterchange with { GdsiiLayer = v });
+        _owner.CommitEdit(before, $"Set GDSII layer alias of {Layer.Name}");
+    }
+
+    public void CommitGdsiiDatatype()
+    {
+        var text = StagedGdsiiDatatype.Trim();
+        int? v = text.Length == 0 ? null : int.TryParse(text, out var n) && n >= 0 ? n : (int?)null;
+        if (text.Length > 0 && v is null) { RefreshFromModel(); return; }
+        if (v == CurrentInterchange.GdsiiDatatype) { StagedGdsiiDatatype = v?.ToString() ?? ""; return; }
+        var before = _owner.SnapshotJson();
+        Layer.Interchange = Normalize(CurrentInterchange with { GdsiiDatatype = v });
+        _owner.CommitEdit(before, $"Set GDSII datatype alias of {Layer.Name}");
+    }
+
+    public void CommitDxfLayerName()
+    {
+        var text = StagedDxfLayerName.Trim();
+        string? v = text.Length == 0 ? null : text;
+        if (v == CurrentInterchange.DxfLayerName) return;
+        var before = _owner.SnapshotJson();
+        Layer.Interchange = Normalize(CurrentInterchange with { DxfLayerName = v });
+        _owner.CommitEdit(before, $"Set DXF layer name of {Layer.Name}");
+    }
+
+    public void CommitGerberSuffix()
+    {
+        var text = StagedGerberSuffix.Trim();
+        string? v = text.Length == 0 ? null : text;
+        if (v == CurrentInterchange.GerberSuffix) return;
+        var before = _owner.SnapshotJson();
+        Layer.Interchange = Normalize(CurrentInterchange with { GerberSuffix = v });
+        _owner.CommitEdit(before, $"Set Gerber suffix of {Layer.Name}");
+    }
+
+    public void CommitGerberFileFunction()
+    {
+        var text = StagedGerberFileFunction.Trim();
+        string? v = text.Length == 0 ? null : text;
+        if (v == CurrentInterchange.GerberFileFunction) return;
+        var before = _owner.SnapshotJson();
+        Layer.Interchange = Normalize(CurrentInterchange with { GerberFileFunction = v });
+        _owner.CommitEdit(before, $"Set Gerber X2 file function of {Layer.Name}");
     }
 
     private async Task PickColorAsync(Window? owner)

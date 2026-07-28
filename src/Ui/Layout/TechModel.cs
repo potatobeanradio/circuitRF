@@ -6,6 +6,23 @@ using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.Layout;
 
+/// <summary>
+/// Per-layer interchange aliasing (docs/design/layout-view.md §2.4 R7a, §8 R15) — GDSII
+/// <c>(layer, datatype)</c> ↔ DXF layer name ↔ Gerber file suffix and X2 file function. Additive and
+/// nullable so every existing <c>.ctech</c> loads unchanged (L0a deliberately deferred this field;
+/// L4a is "that moment"). A null <see cref="GdsiiLayer"/>/<see cref="GdsiiDatatype"/> means "use
+/// <see cref="LayerDef.Key"/> directly" — GDSII identity already equals our own layer key by
+/// construction (§2.1 R7), so this alias only matters when a technology wants its GDSII-facing number
+/// to differ from its internal key. Only the GDSII fields are functionally exercised by L4a; DXF/Gerber
+/// fields are inert scaffolding for L4b/L4c.
+/// </summary>
+public sealed record InterchangeMapping(
+    int? GdsiiLayer,
+    int? GdsiiDatatype,
+    string? DxfLayerName,
+    string? GerberSuffix,
+    string? GerberFileFunction);
+
 public sealed class LayerDef
 {
     public LayerKey Key { get; set; }
@@ -23,6 +40,10 @@ public sealed class LayerDef
     public bool Selectable { get; set; } = true;
 
     public string? Purpose { get; set; }
+
+    /// <summary>Null = no interchange overrides declared (GDSII import/export falls back to
+    /// <see cref="Key"/> directly). Additive, no <c>.ctech</c> <c>FormatVersion</c> bump.</summary>
+    public InterchangeMapping? Interchange { get; set; }
 }
 
 public enum StackupKind { Dielectric, Conductor, Via }

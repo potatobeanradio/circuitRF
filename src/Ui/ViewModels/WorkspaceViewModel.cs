@@ -11,6 +11,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Controls;
@@ -207,6 +208,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
+        ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
 
         if (_factory.ProjectTreeTool is { } tree)
         {
@@ -1705,6 +1707,83 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (result.Count == 0) return;
 
         OpenOrActivateLayout(result[0].Path.LocalPath);
+    }
+
+    // ── Import GDSII Library (docs/sonnet-briefs/brief-L4a-gdsii-interchange.md §8) ──────────────
+    // GdsiiImport does the actual read/reconcile/CellFolder-creation work; this method is only file
+    // picking (UI firewall), workspace/technology context, and the layer-mapping dialog bridge.
+
+    [RelayCommand(CanExecute = nameof(CanImportGdsiiLibrary))]
+    private Task ImportGdsiiLibrary(Window? owner) => ImportGdsiiLibraryAsync(owner);
+    private bool CanImportGdsiiLibrary() => CurrentWorkspacePath is not null;
+
+    private async Task ImportGdsiiLibraryAsync(Window? owner)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Import GDSII Library",
+            AllowMultiple  = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("GDSII Stream") { Patterns = ["*.gds", "*.gdsii", "*.sf"] },
+                new FilePickerFileType("All Files")    { Patterns = ["*.*"] },
+            ],
+        });
+        if (files.Count == 0) return;
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var techRes = ResolveTechFor(null, null); // the workspace's own default technology
+
+        CircuitRF.Ui.Layout.Interchange.GdsiiImport.ImportResult result;
+        try
+        {
+            result = await Task.Run(() =>
+            {
+                using var stream = File.OpenRead(files[0].Path.LocalPath);
+                return CircuitRF.Ui.Layout.Interchange.GdsiiImport.Import(
+                    stream, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
+                    preferSourceResolution: false,
+                    resolveLayerMapping: rows =>
+                    {
+                        var settled = Dispatcher.UIThread
+                            .InvokeAsync(() => ResolveGdsiiLayerMappingAsync(window, techRes.Tech, rows))
+                            .GetAwaiter().GetResult();
+                        return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
+                    });
+            });
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Import GDSII: {ex.Message}");
+            return;
+        }
+
+        if (result.Cancelled)
+        {
+            Messages.Info("Import GDSII cancelled — nothing was created.");
+            return;
+        }
+
+        foreach (var msg in result.Messages) Messages.Info(msg);
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Success($"Imported {result.CreatedCellDirs.Count} cell(s) from GDSII.");
+    }
+
+    /// <summary>Shows the shared L1g layer-mapping dialog (never a second reconciliation UI) for the
+    /// GDSII import path. Returns null (abort the whole import) when <paramref name="destTech"/> is
+    /// itself null and rows would otherwise have nowhere sensible to map to — but rows are still
+    /// accepted as-is (Keep-as-unknown) since there is truly no destination to reconcile against.</summary>
+    private async Task<IReadOnlyList<LayerMappingRow>?> ResolveGdsiiLayerMappingAsync(
+        Window owner, Technology? destTech, IReadOnlyList<LayerMappingRow> rows)
+    {
+        if (destTech is null) return rows;
+        var dialog = new LayerMappingDialog("Import GDSII — Layer Mapping", "GDSII", destTech, rows);
+        var result = await dialog.ShowDialog<LayerMappingDialogResult?>(owner);
+        return result?.Rows;
     }
 
     private void OpenOrActivateLayout(string absolutePath)

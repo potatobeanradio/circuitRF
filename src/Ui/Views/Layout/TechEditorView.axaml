@@ -363,6 +363,72 @@
                 </DockPanel>
             </TabItem>
 
+            <!-- Interchange mappings (docs/design/layout-view.md §2.4 R7a) ───── -->
+            <TabItem Header="Interchange">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Margin="6,6,6,0" FontSize="10" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"
+                               Text="GDSII layer/datatype alias, DXF layer name, and Gerber suffix/X2 file function per layer. Blank GDSII fields use the layer's own Layer/Datatype above. Only the GDSII fields are used by import/export today; DXF and Gerber fields are scaffolding for later phases."/>
+
+                    <Grid RowDefinitions="Auto,*" Grid.IsSharedSizeScope="True" Margin="0,4,0,0">
+                        <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"    SharedSizeGroup="IName"    MinWidth="110"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGLayer"   MinWidth="70"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGDatatype" MinWidth="70"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="IDxf"      MinWidth="110"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberSuffix" MinWidth="90"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberFn" MinWidth="110"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Classes="colhdr" Text="Name"/>
+                            <TextBlock Grid.Column="1" Classes="colhdr" Text="GDSII Layer"    HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Classes="colhdr" Text="GDSII Datatype" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="3" Classes="colhdr" Text="DXF Layer Name" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="4" Classes="colhdr" Text="Gerber Suffix"  HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Column="5" Classes="colhdr" Text="Gerber X2 Function" HorizontalAlignment="Center"/>
+                        </Grid>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding ViewModel.Layers}" Margin="4,0,4,4">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="lay:LayerRowViewModel">
+                                        <Border BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1" Padding="0,3">
+                                            <Grid ColumnSpacing="4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"    SharedSizeGroup="IName"    MinWidth="110"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGLayer"   MinWidth="70"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGDatatype" MinWidth="70"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IDxf"      MinWidth="110"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberSuffix" MinWidth="90"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberFn" MinWidth="110"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <TextBlock Grid.Column="0" Text="{Binding StagedName}" VerticalAlignment="Center" FontSize="11"/>
+                                                <TextBox Grid.Column="1" Classes="cell" Width="70" Tag="GdsiiLayer"
+                                                         Text="{Binding StagedGdsiiLayer}" PlaceholderText="{Binding StagedLayerNumber}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBox Grid.Column="2" Classes="cell" Width="70" Tag="GdsiiDatatype"
+                                                         Text="{Binding StagedGdsiiDatatype}" PlaceholderText="{Binding StagedDatatype}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBox Grid.Column="3" Classes="cell" Width="110" Tag="DxfLayerName"
+                                                         Text="{Binding StagedDxfLayerName}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBox Grid.Column="4" Classes="cell" Width="90" Tag="GerberSuffix"
+                                                         Text="{Binding StagedGerberSuffix}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <TextBox Grid.Column="5" Classes="cell" Width="110" Tag="GerberFileFunction"
+                                                         Text="{Binding StagedGerberFileFunction}"
+                                                         LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </DockPanel>
+            </TabItem>
+
         </TabControl>
 
     </DockPanel>

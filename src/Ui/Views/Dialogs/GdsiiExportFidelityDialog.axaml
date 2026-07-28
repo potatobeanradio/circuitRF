@@ -1,0 +1,68 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.GdsiiExportFidelityDialog"
+        Title="Export GDSII"
+        Width="420"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto" Margin="20,16,20,16">
+
+        <StackPanel Grid.Row="0" Spacing="8">
+            <TextBlock Text="This export will change the design as follows:" FontSize="12" FontWeight="SemiBold"/>
+
+            <TextBlock x:Name="CurveLine" FontSize="11" TextWrapping="Wrap"/>
+            <TextBlock x:Name="HoleLine" FontSize="11" TextWrapping="Wrap"/>
+            <TextBlock x:Name="BitmapLine" FontSize="11" TextWrapping="Wrap"/>
+            <TextBlock x:Name="NoChangesLine" Text="No curves, holes, or bitmaps — geometry exports unchanged."
+                       FontSize="11" Opacity="0.7" IsVisible="False"/>
+
+            <TextBlock x:Name="UnresolvedHeader"
+                       Text="Warning — the following instances reference a cell that could not be resolved and will export as a dangling reference (shown as an unresolved placeholder by GDSII viewers):"
+                       FontSize="11" FontWeight="SemiBold"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       TextWrapping="Wrap"
+                       IsVisible="False"/>
+            <ScrollViewer x:Name="UnresolvedScroll" MaxHeight="100" IsVisible="False">
+                <ItemsControl x:Name="UnresolvedList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource CrfWarningBrush}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock x:Name="OverflowHeader"
+                       Text="Export blocked — the following coordinates exceed GDSII's 32-bit integer range:"
+                       FontSize="11" FontWeight="SemiBold"
+                       Foreground="{DynamicResource CrfWarningBrush}"
+                       TextWrapping="Wrap"
+                       IsVisible="False"/>
+            <ScrollViewer x:Name="OverflowScroll" MaxHeight="140" IsVisible="False">
+                <ItemsControl x:Name="OverflowList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource CrfWarningBrush}"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button x:Name="ExportButton" Content="Export" Width="80" IsDefault="True" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnExportClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

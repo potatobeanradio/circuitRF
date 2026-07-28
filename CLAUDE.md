@@ -18,65 +18,76 @@ hero circuits, and non-goals. This file is standing project memory — keep it c
 - Test:    `dotnet test`
 - Run CLI: `dotnet run --project src/Cli -- <args>`
 
-### Fast test loop — and what "gate item 1" means now (brief-benchmark-gate-split.md, 2026-07-27)
+### `dotnet test` is fast by default (brief-test-default-fast.md, 2026-07-28)
 
-**The routine gate for every brief's item 1 is `dotnet test --filter "Category!=Benchmark"` — not the
-full unfiltered suite.** This is a deliberate, explicit policy change, not a quiet filter: the full
-suite (3382 tests) took ~5 minutes almost entirely because of the 500,000-shape `LayoutPerf` TIMED
-sweeps, which cost real time on every commit for a diagnostic almost nobody needed routinely
-(R-L2a-3: counters are the gate, wall-clock is the diagnostic). `Category!=Benchmark` runs everything
-else — **3382 tests in ~32 s** — and is what "build+test green" means from here on, in every brief,
-unless that brief's own text says otherwise (a brief can still ask for the full unfiltered suite
-explicitly when it means to).
+**Plain `dotnet test`, with no flags, is the routine gate — it is fast by construction, not by
+convention.** Repo-root `circuitrf.runsettings` (`TestCaseFilter: Category!=Benchmark`) is wired in via
+`Directory.Build.props`'s `RunSettingsFilePath`, so every invocation — `dotnet test` at the root,
+`dotnet test tests/Ui.Tests`, an IDE test run, CI — inherits the exclusion automatically. There is
+nothing to type and nothing to forget. This supersedes the prior two-tag, filter-must-be-typed schemes
+from brief-benchmark-gate-split.md and brief-test-suite-fast-loop.md: `Category=Nightly` is retired
+and `Category=Slow` is gone as a category (its former members are either untagged, having been
+measured under the threshold, or folded into `Benchmark`).
 
-- **`Category=Benchmark`** — opt-in TIMED measurement sweeps only (median/p95 across profiles ×
-  render paths × pan/zoom/full-extent, warmed up): `LayoutPerformanceBaselineTests.Baseline_500k` +
-  `R8bCrossoverExperiment`, `LayoutLodMergeCacheBenchmarkTests.{LodOnly,Final}_FullExtent_500k` +
+- **Repo root, no flags: 3786 tests in ~24 s.** Per-project (`dotnet test tests/Ui.Tests`) is
+  likewise fast on its own (~11-12 s). This is what "build+test green" means in every brief from here
+  on, unless that brief's own text says otherwise.
+- **`Category=Benchmark`** is now the *only* opt-in tag, applied mechanically wherever a test's
+  measured wall-clock exceeds ~5 s — not by hand-picked judgement. Currently 19 tests repo-wide (16 in
+  `Ui.Tests`, 3 in `Engine.Tests`): the 500,000-shape `LayoutPerf` TIMED sweeps
+  (`LayoutPerformanceBaselineTests.Baseline_500k`/`Baseline_50k` + `R8bCrossoverExperiment`,
+  `LayoutLodMergeCacheBenchmarkTests.{LodOnly,Final}_FullExtent_500k` +
   `PathCache_500k_MemoryStaysUnderCap_TimeAndMemoryReported`,
-  `LayoutSpatialIndexPerfTests.BulkLoad_500k_BuildTimeRecorded`. Run explicitly:
-  `dotnet test --filter "Category=Benchmark"` (~5.5 min). **Required** when touching rendering, the
-  spatial index, the path/instance caches, or LOD, and at any performance-phase boundary — named
-  explicitly so this is a rule, not a judgement call.
-- **500k's COUNTER coverage stays in the routine gate**, at negligible cost (~5 s total) — this is the
+  `LayoutSpatialIndexPerfTests.BulkLoad_500k_BuildTimeRecorded`,
+  `LayoutInstanceArrayPerfTests`'s 500k case) plus the handful of `Engine.Tests` loadpull/pursuit
+  methods whose individual runtime crosses the threshold (most loadpull/pursuit tests do not and stay
+  untagged and routine).
+- **Opt in with `dotnet test --settings circuitrf.benchmark.runsettings`, not `--filter`.** This
+  SDK's VSTest version ANDs a command-line `--filter` with the project's own `TestCaseFilter` rather
+  than overriding it, so `--filter "Category=Benchmark"` resolves to the impossible AND of
+  `Category!=Benchmark` and `Category=Benchmark` and silently matches nothing — verified directly, not
+  assumed. Passing `--settings` on the command line does override the project-level
+  `RunSettingsFilePath` cleanly, so `circuitrf.benchmark.runsettings` (`TestCaseFilter:
+  Category=Benchmark`) is the actual one-liner opt-in path. Run it (~5 min) when touching rendering,
+  the spatial index, the path/instance caches, or LOD, and at any performance-phase boundary.
+- **500k's COUNTER coverage stays in the default gate**, at negligible cost (~5 s total) — this is the
   part that actually catches an algorithmic regression (an accidental O(n)/O(n²) scan that bypasses
   the spatial index): `LayoutSpatialIndexPerfTests.Gated500k_CullingCountersStayCorrect` (one shared
   500k layout PER PROFILE, reused across a full-extent AND a zoomed-in assertion — no timing, no
   warm-up sweep). Verified to actually catch a regression, not just assumed: temporarily disabling the
   spatial-index culling query in `LayoutRenderer.Draw` turns this test red immediately.
-- **`Category=Nightly`** keeps its own, now-narrower meaning — only
-  `LayoutInstanceArrayPerfTests`'s 500k case remains tagged Nightly (cheap, ~1 s); `Benchmark`
-  supersedes it for every other 500k `LayoutPerf` timed case (consolidated to one tag there, per the
-  brief's own instruction, rather than leaving two overlapping tags on the same tests).
-- **`Category=Slow`** (brief-test-suite-fast-loop) — engine-simulation classes in `Engine.Tests` that
-  actually run the solver: `Hero3LoadpullTests`, `FreqSweptLoadpullTests`, `LoadpullCnlWriterRunTests`,
-  `Hero3BPursuitTests`, `PursuitSearchDiagnosticTests` (all `Loadpull/`), and `Hero1BTests` (`Linear/` —
-  a ~10k-component import+elaborate+solve gate, same profile as the loadpull tests even though it's
-  outside that folder).
+- **Tagging a new slow test:** measure it (a TRX run reports per-test duration); if it is at or above
+  ~5 s, add `[Trait("Category", "Benchmark")]`. Below that, leave it untagged — it belongs in the
+  default gate. A `[Theory]`'s `InlineData` cases can't be tagged individually, so a mixed-cost Theory
+  (e.g. `LayoutPerformanceBaselineTests`'s former combined `Baseline`) should be split into separate
+  `[Theory]` methods by cost tier so only the slow tier carries the tag.
 
 **Deferred, on purpose, and it must stay visible rather than quietly becoming permanent:** §5.1's 500k
-**timing** target is now unmet AND unmeasured on routine runs. L2c's own measured shortfall (13-15×
-over the 50 ms floor at full extent) is the reason — closing it needs the tiled raster cache (L2d), not
-more per-shape optimization (see L2c's own completion note above). **Re-enabling routine 500k timing
-coverage is part of L2d's own gate**, when that phase lands; until then, `Category=Benchmark` is how
-anyone actively working on performance checks it.
+**timing** target is unmet and lives only in `Category=Benchmark` now. L2c's own measured shortfall
+(13-15× over the 50 ms floor at full extent) is the reason — closing it needs the tiled raster cache
+(L2d), not more per-shape optimization (see L2c's own completion note above). **Re-enabling routine
+500k timing coverage is part of L2d's own gate**, when that phase lands; until then,
+`Category=Benchmark` via `--settings circuitrf.benchmark.runsettings` is how anyone actively working on
+performance checks it.
 
 **Layout/UI work** — the only projects layout work can plausibly touch or break (every layout brief since
 L0a carries the guardrail "don't touch `src/Core`, `src/Engine`, `RfCore`"):
 ```
-dotnet test tests/Ui.Tests --filter "Category!=Benchmark" --no-build
+dotnet test tests/Ui.Tests --no-build
 dotnet test tests/Firewall.Tests --no-build
 ```
 Run as two commands — this SDK's `dotnet test` rejects more than one explicit project path in a single
 invocation (`MSB1008: Only one project can be specified`).
 
-**Whole-repo fast loop** (non-layout work, or a broader check before a layout PR):
-```
-dotnet test --filter "Category!=Slow&Category!=Benchmark" --no-build
-```
+**The full unfiltered suite still exists** (bypass the default filter with an empty override
+`--settings` file, or `--filter "Category=Benchmark|Category!=Benchmark"`) — reach for it only at
+genuine phase boundaries, or whenever the complete picture (including the 500k timing sweep) is
+actually wanted. It is not what routine `dotnet test` runs, and does not need to be.
 
-**The full unfiltered suite (`dotnet test`, no filter) still exists and still runs everything** — reach
-for it at genuine phase boundaries, or whenever the complete picture (including the deferred 500k
-timing sweep) is actually wanted. It is simply no longer what "gate item 1" means by default.
+Moving `Benchmark` tests to a separate runner outside `dotnet test` discovery entirely (so they
+wouldn't even need an opt-in filter) was considered and not done — restructuring the ~19 tagged methods
+across 3 files into a standalone project/entry point is more than the brief's "stop and report if not
+cheap" threshold, and the `--settings` opt-in already satisfies the brief's gates without it.
 
 Add `--no-build` after the first build of a session.
 

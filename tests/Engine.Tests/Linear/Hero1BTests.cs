@@ -12,8 +12,10 @@ namespace CircuitRF.Engine.Tests.Linear;
 /// Hero 1B gate: import VendorA netlist (~10k component network), run S-parameters.
 /// Acceptance: performance &lt; 10 s + internal consistency (passivity, reciprocity).
 /// NOT a 1e-6 match.
+///
+/// No longer tagged "Slow" (docs/sonnet-briefs/brief-test-default-fast.md): runs in ~3.4s, under the
+/// ~5s per-test threshold.
 /// </summary>
-[Trait("Category", "Slow")]
 public class Hero1BTests
 {
     private static string Hero1BDir()

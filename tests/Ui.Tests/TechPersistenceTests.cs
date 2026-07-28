@@ -149,4 +149,47 @@ public class TechPersistenceTests
         var ex = Record.Exception(() => TechValidation.Validate(new Technology()));
         Assert.Null(ex);
     }
+
+    // ── R-L4a-1: interchange mappings — additive, nullable, no FormatVersion bump ──────────────
+
+    [Fact]
+    public void InterchangeMapping_RoundTrips_ByteIdentical()
+    {
+        var tech = new Technology
+        {
+            Name = "T",
+            Layers =
+            [
+                new LayerDef
+                {
+                    Key = new LayerKey(1, 0),
+                    Name = "Metal1",
+                    Interchange = new InterchangeMapping(11, 2, "METAL1", "GTL", "Copper,L1,Top"),
+                },
+            ],
+        };
+        var json1 = TechPersistence.Serialize(tech);
+        var restored = TechPersistence.Deserialize(json1);
+        var json2 = TechPersistence.Serialize(restored);
+
+        Assert.Equal(json1, json2);
+        Assert.Equal(11, restored.Layers[0].Interchange!.GdsiiLayer);
+        Assert.Equal(2, restored.Layers[0].Interchange!.GdsiiDatatype);
+        Assert.Equal("METAL1", restored.Layers[0].Interchange!.DxfLayerName);
+        Assert.Equal("GTL", restored.Layers[0].Interchange!.GerberSuffix);
+        Assert.Equal("Copper,L1,Top", restored.Layers[0].Interchange!.GerberFileFunction);
+    }
+
+    [Fact]
+    public void HandStrippedCtech_MissingInterchangeField_StillLoads()
+    {
+        // A pre-L4a .ctech never had "Interchange" on a LayerDef at all — confirms the field is
+        // purely additive and does not require a FormatVersion bump.
+        var tech = StarterTechnologies.Pcb2Layer();
+        var json = TechPersistence.Serialize(tech);
+        Assert.DoesNotContain("\"Interchange\"", json); // no layer has one set — omitted by WhenWritingNull
+
+        var restored = TechPersistence.Deserialize(json);
+        Assert.All(restored.Layers, l => Assert.Null(l.Interchange));
+    }
 }

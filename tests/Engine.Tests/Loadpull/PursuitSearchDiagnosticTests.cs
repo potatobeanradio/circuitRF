@@ -21,8 +21,11 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 /// Run individually:
 ///   dotnet test --filter "DisplayName~Diagnostic1" -v minimal
 ///   dotnet test --filter "DisplayName~Diagnostic2" -v minimal
+///
+/// No longer class-tagged "Slow" (docs/sonnet-briefs/brief-test-default-fast.md): tag by measured
+/// per-test cost. Diagnostic1 (a brute-force criterion surface) runs ~5.5s and carries its own
+/// [Trait("Category","Benchmark")]; Diagnostic2 runs under 1s and stays untagged.
 /// </summary>
-[Trait("Category", "Slow")]
 public class PursuitSearchDiagnosticTests
 {
     // ── Setup ─────────────────────────────────────────────────────────────────
@@ -86,6 +89,7 @@ public class PursuitSearchDiagnosticTests
     // DIAGNOSTIC 1 — Brute-force criterion surface
     // ─────────────────────────────────────────────────────────────────────────
 
+    [Trait("Category", "Benchmark")] // ~5.5s — a brute-force criterion surface scan
     [Fact]
     public void Diagnostic1_TruthSurface()
     {
