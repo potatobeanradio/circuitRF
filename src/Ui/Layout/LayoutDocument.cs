@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using Dock.Model.Mvvm.Controls;
 using CircuitRF.Ui.Commands;
 
@@ -10,24 +13,183 @@ namespace CircuitRF.Ui.Layout;
 /// A scratch document has <see cref="FilePath"/> == null: it is in-memory only,
 /// starts clean, and is invisible to the project tree until saved.
 /// A materialized document has a real on-disk .clay path (set at save time).
-/// Clones <c>SymbolEditorDocument</c>'s shape — including undo as of L1b
-/// (<see cref="UndoRedo"/> delegates to <see cref="LayoutEditorViewModel.UndoRedo"/>, so the
-/// window-level Undo/Redo routing (<c>WorkspaceViewModel.SetActiveUndoTarget</c>) picks this
-/// document up automatically via <see cref="IUndoableDocument"/> — no new routing code needed).
+///
+/// A document holds a navigation stack of frames (Phase L3b, brief-L3b-hierarchy-navigation.md §1) —
+/// the view renders the active (top) frame's session VM. Push In / Pop Out change which frame is
+/// active without opening a new tab. Mirrors <c>CircuitRF.Ui.Schematic.SchematicDocument</c> exactly,
+/// retargeted from <c>SchematicViewModel</c> to <see cref="LayoutEditorViewModel"/>.
 /// </summary>
 public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDocument
 {
-    public UndoRedoStack UndoRedo => ViewModel.UndoRedo;
-
     // ── Activation focus — view grabs keyboard focus on tab-switch ────────────
     private bool _activationFocusPending;
     public event Action? ActivationFocusRequested;
     public void RequestActivationFocus() { _activationFocusPending = true; ActivationFocusRequested?.Invoke(); }
     public bool ConsumeActivationFocus() { var p = _activationFocusPending; _activationFocusPending = false; return p; }
 
+    // ── Navigation frame ──────────────────────────────────────────────────────
+
+    /// <summary><see cref="Viewport"/> is the last viewport CAPTURED for this frame (by the view,
+    /// right before navigating away from it) — null until that has happened at least once, in which
+    /// case the view falls back to fitting the sub-cell's own extent (mirrors a freshly-opened
+    /// document's own initial-fit behaviour). Deliberately per-frame, not per-VM: unlike selection
+    /// (which lives on the VM itself and is therefore already free), pan/zoom is owned by the CANVAS
+    /// CONTROL, which is shared across every frame of one open tab — this is the one piece of state
+    /// L3b's own nav-frame model has to carry explicitly that the schematic's mirror-target does not
+    /// (see the L3b completion note in src/Ui/CLAUDE.md for why: the schematic's push-in/pop-out does
+    /// not restore viewport at all today).</summary>
+    private readonly record struct NavFrame(LayoutEditorViewModel Session, string Label, LayoutViewport? Viewport = null);
+
+    private readonly List<NavFrame> _frames;
+
+    /// <summary>The current navigation depth: 0 = at the base cell, N = N levels pushed in.</summary>
+    public int NavDepth => _frames.Count - 1;
+
+    /// <summary>True when there is at least one level to pop back to.</summary>
+    public bool CanPopOut => NavDepth > 0;
+
+    /// <summary>
+    /// The session VM the canvas should render and bind to.
+    /// Equals <see cref="ViewModel"/> when at the base level; advances into sub-cells on Push In.
+    /// </summary>
+    public LayoutEditorViewModel ActiveViewModel => _frames[^1].Session;
+
+    /// <summary>Read-only view of the frame stack; index 0 = base. Used by the breadcrumb bar.</summary>
+    public IReadOnlyList<(LayoutEditorViewModel Session, string Label)> NavFrames
+        => _frames.Select(f => (f.Session, f.Label)).ToList();
+
+    /// <summary>
+    /// Ordered breadcrumb items for the layout editor's breadcrumb bar. Rebuilt on every
+    /// <see cref="PushIn"/>, <see cref="PopOut"/>, or <see cref="PopTo"/>. The last item has
+    /// <see cref="LayoutBreadcrumbItem.IsCurrent"/> = true; all others are clickable.
+    /// </summary>
+    public IReadOnlyList<LayoutBreadcrumbItem> Breadcrumbs
+    {
+        get
+        {
+            var items = new List<LayoutBreadcrumbItem>(_frames.Count);
+            for (int i = 0; i < _frames.Count; i++)
+                items.Add(new LayoutBreadcrumbItem(i, _frames[i].Label, i == _frames.Count - 1));
+            return items;
+        }
+    }
+
+    /// <summary>Raised whenever the active frame changes (push, pop, popTo).</summary>
+    public event EventHandler? ActiveViewModelChanged;
+
+    // ── Active-VM subscriptions ────────────────────────────────────────────────
+
+    private LayoutEditorViewModel? _activeSubscribedVm;
+
+    private void OnActiveVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(LayoutEditorViewModel.IsDirty))
+            IsDirty = ActiveViewModel.IsDirty;
+    }
+
+    private void RebindActiveVm(LayoutEditorViewModel newVm)
+    {
+        if (_activeSubscribedVm is not null)
+            _activeSubscribedVm.PropertyChanged -= OnActiveVmPropertyChanged;
+
+        _activeSubscribedVm = newVm;
+        newVm.PropertyChanged += OnActiveVmPropertyChanged;
+
+        // Recompute dirty and title from the new active session.
+        _isDirty = newVm.IsDirty;
+        UpdateTitle();
+    }
+
+    // ── Navigation ops ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Pushes a sub-cell session onto the navigation stack; the tab now renders it.
+    /// <paramref name="label"/> is the instance designator shown in the breadcrumb.
+    /// </summary>
+    public void PushIn(LayoutEditorViewModel session, string label)
+    {
+        _frames.Add(new NavFrame(session, label));
+        RebindActiveVm(session);
+        RaiseRetargetEvents();
+    }
+
+    /// <summary>
+    /// Pops the top frame and returns the popped session (for retirement).
+    /// Returns null when already at the base level.
+    /// </summary>
+    public LayoutEditorViewModel? PopOut()
+    {
+        if (!CanPopOut) return null;
+        var popped = _frames[^1].Session;
+        _frames.RemoveAt(_frames.Count - 1);
+        RebindActiveVm(ActiveViewModel);
+        RaiseRetargetEvents();
+        return popped;
+    }
+
+    /// <summary>
+    /// Pops down to <paramref name="frameIndex"/> (clamped; 0 = base) and returns the popped
+    /// sessions in pop order (outermost first). Used by the breadcrumb bar.
+    /// </summary>
+    public IReadOnlyList<LayoutEditorViewModel> PopTo(int frameIndex)
+    {
+        frameIndex = Math.Clamp(frameIndex, 0, _frames.Count - 1);
+        var popped = new List<LayoutEditorViewModel>();
+        while (_frames.Count - 1 > frameIndex)
+        {
+            popped.Add(_frames[^1].Session);
+            _frames.RemoveAt(_frames.Count - 1);
+        }
+        if (popped.Count > 0)
+        {
+            RebindActiveVm(ActiveViewModel);
+            RaiseRetargetEvents();
+        }
+        return popped;
+    }
+
+    // ── Per-frame viewport (see NavFrame's own doc comment for why this exists) ─
+
+    /// <summary>Captures <paramref name="viewport"/> onto the CURRENTLY active frame — called by the
+    /// view immediately before any navigation (push/pop/popTo), so the frame being LEFT remembers
+    /// exactly where the user was looking. A frame with no captured viewport yet (e.g. a sub-cell
+    /// just pushed into for the first time) reports null from <see cref="ActiveFrameSavedViewport"/>;
+    /// the view treats that as "fit the new content," matching a freshly-opened document's own
+    /// initial-fit convention.</summary>
+    public void CaptureActiveViewport(LayoutViewport viewport)
+        => _frames[^1] = _frames[^1] with { Viewport = viewport };
+
+    /// <summary>The active frame's own last-captured viewport, or null if none was ever captured for
+    /// it (see <see cref="CaptureActiveViewport"/>).</summary>
+    public LayoutViewport? ActiveFrameSavedViewport => _frames[^1].Viewport;
+
+    private void RaiseRetargetEvents()
+    {
+        OnPropertyChanged(nameof(ActiveViewModel));
+        OnPropertyChanged(nameof(NavDepth));
+        OnPropertyChanged(nameof(CanPopOut));
+        OnPropertyChanged(nameof(NavFrames));
+        OnPropertyChanged(nameof(Breadcrumbs));
+        ActiveViewModelChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ── Base title + dirty ───────────────────────────────────────────────────
+
     private string _baseTitle;
 
+    /// <summary>The base session VM (what the document was opened on); never changes.</summary>
     public LayoutEditorViewModel ViewModel { get; }
+
+    /// <summary>
+    /// The undo stack the workspace's global Undo/Redo routes through. Must follow the ACTIVE frame,
+    /// not the base — otherwise Undo/Redo would operate on the top-level cell while the user is
+    /// pushed into a sub-cell. Changes on every Push In / Pop Out / Pop To.
+    /// </summary>
+    public UndoRedoStack UndoRedo => ActiveViewModel.UndoRedo;
+
+    /// <summary>Workspace-level hierarchy service for Push In / Pop Out / Open Cell in New Tab.
+    /// Injected at creation; null in tests.</summary>
+    public ILayoutHierarchyHost? Hierarchy { get; init; }
 
     // ── Scratch / dirty identity ─────────────────────────────────────────────
 
@@ -40,8 +202,8 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     private bool _isDirty;
 
     /// <summary>
-    /// True when the document has unsaved content.
-    /// The VM is the source of truth for dirty state; the document reflects it.
+    /// True when the ACTIVE session has unsaved content — the active frame's dirty state, not
+    /// necessarily the base's. Recomputed on every retarget.
     /// </summary>
     public bool IsDirty
     {
@@ -50,33 +212,43 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
         {
             if (_isDirty == value) return;
             _isDirty = value;
-            Title = _isDirty ? $"• {_baseTitle}" : _baseTitle;
+            UpdateTitle();
         }
+    }
+
+    private void UpdateTitle()
+    {
+        string activeLabel = NavDepth == 0 ? _baseTitle : _frames[^1].Label;
+        Title = _isDirty ? $"• {activeLabel}" : activeLabel;
     }
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
     /// <param name="title">Display name / base title for the tab.</param>
-    /// <param name="viewModel">The layout editor view model.</param>
+    /// <param name="viewModel">The layout editor view model (base session).</param>
     /// <param name="filePath">Absolute path of the .clay file on disk, or null for a scratch document.</param>
     public LayoutDocument(string title, LayoutEditorViewModel viewModel, string? filePath = null)
     {
         _baseTitle = title;
         Id         = title;
-        Title      = title;
         FilePath   = filePath;
         ViewModel  = viewModel;
-        _isDirty   = false;
 
-        // VM is the source of truth for IsDirty; document reflects it so the tab
-        // bullet and VM dirty state stay in lock-step without double-tracking.
-        ViewModel.PropertyChanged += (_, e) =>
+        // Initialize the frame stack with the base frame.
+        _frames = new List<NavFrame> { new(viewModel, title) };
+
+        _isDirty = false;
+        Title    = _baseTitle;
+
+        // FilePath/title sync must always follow the BASE frame's own CurrentLayoutPath — Save/Save
+        // As always act on the base .clay, never a pushed-in sub-cell's.
+        viewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(LayoutEditorViewModel.IsDirty))
-                IsDirty = ViewModel.IsDirty;
-            else if (e.PropertyName is nameof(LayoutEditorViewModel.CurrentLayoutPath))
+            if (e.PropertyName is nameof(LayoutEditorViewModel.CurrentLayoutPath))
                 SyncTitleToPath();
         };
+
+        RebindActiveVm(viewModel);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -86,21 +258,21 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
         if (ViewModel.CurrentLayoutPath is not { } path) return;
         FilePath   = path;
         _baseTitle = Path.GetFileName(path);
-        Title      = _isDirty ? $"• {_baseTitle}" : _baseTitle;
+        UpdateTitle();
     }
 
     // ── Materialization ───────────────────────────────────────────────────────
 
     /// <summary>
     /// Transitions this scratch document to materialized: sets its on-disk path and clears the
-    /// dirty flag (on both the document and the VM). Must only be called once per document
+    /// dirty flag (on both the document and the base VM). Must only be called once per document
     /// (scratch → materialized is one-way).
     /// </summary>
     internal void Materialize(string filePath)
     {
         FilePath                    = filePath;
         ViewModel.CurrentLayoutPath = filePath;
-        ViewModel.MarkSaved();   // clean baseline (undo stack + pref edits) -> IsDirty clears via the subscription above
+        ViewModel.MarkSaved();   // clean baseline -> IsDirty clears via the subscription above
     }
 
     /// <summary>
@@ -116,4 +288,16 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
         ViewModel.MarkSaved();
         Title                       = _baseTitle; // explicit refresh even if IsDirty didn't change
     }
+}
+
+/// <summary>
+/// Single item in the hierarchy breadcrumb bar shown by <see cref="LayoutDocument.Breadcrumbs"/>.
+/// A layout-local mirror of the schematic's own <c>BreadcrumbItem</c> — same shape, deliberately its
+/// own type rather than a shared reference: "Layout borrows patterns from Schematic, not types"
+/// (<c>LayoutModel.cs</c>'s own header, an established convention in this codebase).
+/// </summary>
+public sealed record LayoutBreadcrumbItem(int FrameIndex, string Text, bool IsCurrent)
+{
+    /// <summary>True for all crumbs except the first (base) one; drives separator glyph visibility.</summary>
+    public bool IsNotFirst => FrameIndex > 0;
 }

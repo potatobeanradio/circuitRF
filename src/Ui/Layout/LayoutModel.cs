@@ -279,7 +279,17 @@ public sealed class LayoutView
     public void NotifyChanged(LayoutChangeInfo? info = null)
     {
         info ??= LayoutChangeInfo.Full;
-        SpatialIndex.Apply(Shapes, info);
+        if (info.Kind == LayoutChangeKind.InstancesChanged)
+        {
+            // L3a (R-L3a-4): an instances-only change never touches the shape side of the tree —
+            // Apply() would do needless (if harmless) shape bookkeeping otherwise.
+            SpatialIndex.MarkInstancesDirty();
+        }
+        else
+        {
+            SpatialIndex.Apply(Shapes, info);
+            if (info.Kind == LayoutChangeKind.Full) SpatialIndex.MarkInstancesDirty();
+        }
         Changed?.Invoke(this, info);
     }
 }

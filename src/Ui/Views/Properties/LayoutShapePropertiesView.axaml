@@ -44,8 +44,9 @@
 
                     <TextBlock Text="{Binding SelectionSummaryText}" FontWeight="SemiBold" FontSize="13" Margin="0,2,0,4"/>
 
-                    <!-- ── Layer (common) ───────────────────────────────────────────────── -->
-                    <Grid ColumnDefinitions="56,*">
+                    <!-- ── Layer (common — hidden for an instance, which has no Layer of its own; it
+                         paints on whatever layers its sub-cell uses) ────────────────────────── -->
+                    <Grid IsVisible="{Binding ShowLayer}" ColumnDefinitions="56,*">
                         <TextBlock Grid.Column="0" Text="Layer" VerticalAlignment="Center" FontSize="11"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                         <ComboBox Grid.Column="1"
@@ -248,6 +249,97 @@
                             <CheckBox Grid.Column="1" IsThreeState="True" IsChecked="{Binding BitmapLockedValue, Mode=TwoWay}"
                                       ToolTip.Tip="Locked bitmaps stay selectable but cannot be moved or scaled."/>
                         </Grid>
+                    </StackPanel>
+
+                    <!-- ── Instance (L3a §6) ────────────────────────────────────────────────── -->
+                    <StackPanel IsVisible="{Binding IsInstanceContext}" Spacing="4">
+
+                        <TextBlock IsVisible="{Binding !IsSingleInstanceSelected}"
+                                   Text="Multiple instances selected — editing is single-instance only."
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   FontSize="11" TextWrapping="Wrap"/>
+
+                        <StackPanel IsVisible="{Binding IsSingleInstanceSelected}" Spacing="4">
+                            <Grid ColumnDefinitions="56,*,Auto">
+                                <TextBlock Grid.Column="0" Text="Cell" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBox Grid.Column="1" Text="{Binding InstanceCellRefText}" Tag="InstanceCellRef"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                          FontSize="11" Padding="4,2" Margin="0,0,4,0"/>
+                                <Button Grid.Column="2" Content="Re-target…" Click="OnInstanceRetargetClick" FontSize="11" Padding="6,2"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                                <TextBlock Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBox Grid.Column="1" Text="{Binding InstanceXText}" Tag="InstanceX"
+                                          Classes.error="{Binding HasInstanceXError}" ToolTip.Tip="{Binding InstanceXError}"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                          FontSize="11" Padding="4,2"/>
+                                <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBox Grid.Column="3" Text="{Binding InstanceYText}" Tag="InstanceY"
+                                          Classes.error="{Binding HasInstanceYError}" ToolTip.Tip="{Binding InstanceYError}"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                          FontSize="11" Padding="4,2"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                                <TextBlock Grid.Column="0" Text="Rotation" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <ComboBox Grid.Column="1"
+                                          ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.RotationOptions}"
+                                          SelectedItem="{Binding InstanceRotationValue, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          FontSize="11" Padding="4,2"/>
+                                <TextBlock Grid.Column="2" Text="Mirror X" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <CheckBox Grid.Column="3" IsChecked="{Binding InstanceMirrorXValue, Mode=TwoWay}"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="56,*">
+                                <TextBlock Grid.Column="0" Text="Mag" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBox Grid.Column="1" Text="{Binding InstanceMagText}" Tag="InstanceMag"
+                                          Classes.error="{Binding HasInstanceMagError}" ToolTip.Tip="{Binding InstanceMagError}"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                          FontSize="11" Padding="4,2"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                                <TextBlock Grid.Column="0" Text="Rows" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBox Grid.Column="1" Text="{Binding InstanceRowsText}" Tag="InstanceRows"
+                                          Classes.error="{Binding HasInstanceRowsError}" ToolTip.Tip="{Binding InstanceRowsError}"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                          FontSize="11" Padding="4,2"/>
+                                <TextBlock Grid.Column="2" Text="Cols" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBox Grid.Column="3" Text="{Binding InstanceColsText}" Tag="InstanceCols"
+                                          Classes.error="{Binding HasInstanceColsError}" ToolTip.Tip="{Binding InstanceColsError}"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                          FontSize="11" Padding="4,2"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                                <TextBlock Grid.Column="0" Text="Pitch X" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBox Grid.Column="1" Text="{Binding InstancePitchXText}" Tag="InstancePitchX"
+                                          Classes.error="{Binding HasInstancePitchXError}" ToolTip.Tip="{Binding InstancePitchXError}"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                          FontSize="11" Padding="4,2"/>
+                                <TextBlock Grid.Column="2" Text="Pitch Y" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                <TextBox Grid.Column="3" Text="{Binding InstancePitchYText}" Tag="InstancePitchY"
+                                          Classes.error="{Binding HasInstancePitchYError}" ToolTip.Tip="{Binding InstancePitchYError}"
+                                          GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                          FontSize="11" Padding="4,2"/>
+                            </Grid>
+
+                            <TextBlock IsVisible="{Binding HasInstanceArrayCount}" Text="{Binding InstanceArrayCountText}"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       FontSize="10" Opacity="0.75" Margin="0,2,0,0"/>
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- ── Flatten tolerance (Curve / Path / Circle / RoundedRect) — blank = inherit ── -->

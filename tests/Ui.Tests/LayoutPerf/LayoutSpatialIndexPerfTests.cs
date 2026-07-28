@@ -2,6 +2,11 @@
 // scale (counter assertion, not wall-clock), full-extent stays unchanged, and a clustered-distribution
 // query returns O(visible) candidates rather than a large fraction of the tree. Reuses L2a's
 // SyntheticLayoutGenerator so these numbers are directly comparable to the L2a baseline table.
+//
+// 500k coverage (brief-benchmark-gate-split.md): `Gated500k_CullingCountersStayCorrect` is the ONE
+// gated, counter-only 500k test (routine, no tag) — a single shared generated layout, no timing sweep.
+// `BulkLoad_500k_BuildTimeRecorded` is a genuine wall-clock measurement and is
+// [Trait("Category","Benchmark")], opt-in only.
 
 using System.Linq;
 using CircuitRF.Ui.Layout;
@@ -79,13 +84,57 @@ public class LayoutSpatialIndexPerfTests : System.IDisposable
     public void ZoomedViewport_50k_ShapesExaminedFarBelowTotal(GeneratorProfile profile, int shapeCount) =>
         AssertZoomedCullingIsEffective(profile, shapeCount);
 
-    [Trait("Category", "Nightly")]
+    // ── 500k — GATED, counter-only (brief-benchmark-gate-split.md R-perf-1) ──────────────────────
+    // R-perf-1: "generate ONE shared 500k layout and reuse it across the assertions rather than
+    // regenerating per case; generation is itself a large part of the cost." Kept as a 3-profile
+    // Theory (same shape/count as the [Trait("Category","Nightly")] Theory this replaces — gate 4's
+    // "total test count unchanged" holds exactly) — but each case now generates its 500k layout ONCE
+    // and reuses it for BOTH the zoomed-in culling invariant (gate 2/3 from L2b) AND a full-extent
+    // invariant that didn't exist at 500k before (culling must not drop anything when nothing is
+    // off-screen), instead of one generation per assertion. No timing, no warm-up sweep — just the
+    // counters that actually catch an algorithmic regression (an accidental O(n) or O(n^2) scan that
+    // bypasses the spatial index). Measured: ~1s per case, ~3s total — stays in the routine gate; NOT
+    // tagged Benchmark or Nightly.
     [Theory]
-    [InlineData(GeneratorProfile.Manhattan, 500_000)]
-    [InlineData(GeneratorProfile.CurveHeavy, 500_000)]
-    [InlineData(GeneratorProfile.Mixed, 500_000)]
-    public void ZoomedViewport_500k_ShapesExaminedFarBelowTotal(GeneratorProfile profile, int shapeCount) =>
-        AssertZoomedCullingIsEffective(profile, shapeCount);
+    [InlineData(GeneratorProfile.Manhattan)]
+    [InlineData(GeneratorProfile.CurveHeavy)]
+    [InlineData(GeneratorProfile.Mixed)]
+    public void Gated500k_CullingCountersStayCorrect(GeneratorProfile profile)
+    {
+        const int shapeCount = 500_000;
+        var view = SyntheticLayoutGenerator.Generate(shapeCount, 200, seed: 555, profile);
+        var tech = SyntheticLayoutGenerator.GenerateTechnology(200);
+        var bbox = view.Shapes.Aggregate(Bbox.Empty, (acc, s) => acc.Union(LayoutGeometry.BboxOf(s)));
+
+        // Full extent: nothing is off-screen, so culling must examine/draw everything — unchanged
+        // from the pre-index linear scan (gate 3's own "full-extent stays unchanged" requirement).
+        using (var surface = SKSurface.Create(new SKImageInfo(800, 600)))
+        {
+            var vp = LayoutViewport.ZoomToFit(bbox, 800, 600);
+            var opts = new LayoutRenderOptions { Theme = LayoutRenderTheme.Light, ShowGrid = false };
+            var result = LayoutRenderer.Draw(surface.Canvas, view, tech, vp, opts);
+            _out.WriteLine($"500k {profile} full-extent: examined={result.ShapesExamined:N0} drawn={result.ShapesDrawn:N0}");
+            Assert.Equal(shapeCount, result.ShapesExamined);
+            Assert.Equal(shapeCount, result.ShapesDrawn);
+        }
+
+        // Zoomed into a dense 1% cluster: culling must cut examined shapes to a tiny fraction of
+        // total (gate 2) — the direct catch for a regression that silently defeats the spatial index.
+        using (var surface = SKSurface.Create(new SKImageInfo(800, 600)))
+        {
+            var (denseX, denseY) = FindDensePoint(view);
+            double zoomedSpan = 2 * ExtentHalf * 0.01;
+            double zoom = 800.0 / zoomedSpan;
+            var vp = new LayoutViewport(denseX - zoomedSpan / 2, denseY - zoomedSpan / 2, zoom, 800, 600);
+            var opts = new LayoutRenderOptions { Theme = LayoutRenderTheme.Light, ShowGrid = false };
+            var result = LayoutRenderer.Draw(surface.Canvas, view, tech, vp, opts);
+            _out.WriteLine($"500k {profile} zoomed-1%: examined={result.ShapesExamined:N0} " +
+                            $"({100.0 * result.ShapesExamined / shapeCount:F3}% of total), drawn={result.ShapesDrawn:N0}");
+            Assert.True(result.ShapesExamined < shapeCount / 10,
+                $"zoomed-in ShapesExamined={result.ShapesExamined} should be far below total={shapeCount}");
+            Assert.Equal(result.ShapesExamined, result.ShapesDrawn);
+        }
+    }
 
     // ── Gate 3: full extent is unchanged — ShapesDrawn is still ~total ───────────
 
@@ -109,7 +158,7 @@ public class LayoutSpatialIndexPerfTests : System.IDisposable
 
     // ── Gate 10: STR bulk-load build time at 500k, recorded (not asserted tightly — R-L2a-3 stands) ──
 
-    [Trait("Category", "Nightly")]
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void BulkLoad_500k_BuildTimeRecorded()
     {

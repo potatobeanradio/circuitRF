@@ -16,6 +16,7 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 /// directive the reader+engine consume identically — a GUI-authored loadpull reproduces the
 /// hand-authored Hero 3 numbers (the engine math is unchanged; this validates the plumbing).
 /// </summary>
+[Trait("Category", "Slow")]
 public class LoadpullCnlWriterRunTests
 {
     private static string Hero3Dir()

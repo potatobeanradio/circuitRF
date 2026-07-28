@@ -43,7 +43,7 @@ internal sealed class ReplaceShapesCommand : IUiCommand
     private int InsertAt => _removed.Count > 0 ? _removed[0].Index : _view.Shapes.Count;
 
     /// <summary>L2b: when nothing is removed (paste/duplicate — <see cref="LayoutEditorViewModel.
-    /// InsertPastedShapes"/>), <see cref="InsertAt"/> is <c>Shapes.Count</c> and every added shape
+    /// InsertPastedMixed"/>), <see cref="InsertAt"/> is <c>Shapes.Count</c> and every added shape
     /// lands at the tail — a safe trailing append for the spatial index's incremental fast path. Any
     /// removal at all (booleans, offset, repair, flatten, scale) shifts other shapes' indices in a way
     /// this command does not track precisely, so those fall back to <see cref="LayoutChangeInfo.Full"/>

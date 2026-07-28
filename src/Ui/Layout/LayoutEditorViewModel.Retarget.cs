@@ -29,6 +29,17 @@ public sealed partial class LayoutEditorViewModel
     /// </summary>
     public Func<TechResolution>? ResolveWorkspaceDefaultTech { get; internal set; }
 
+    /// <summary>
+    /// Resolves an ARBITRARY cell's technology given its own <c>TechRef</c> (may be null, meaning "use
+    /// the workspace default" — the same convention every layout's own top-level resolution already
+    /// follows) and the directory containing its <c>.clay</c>. Set once by <c>WorkspaceViewModel</c>,
+    /// same seam as <see cref="WorkspaceTechDir"/>/<see cref="ResolveWorkspaceDefaultTech"/> — needed
+    /// by brief-L3c-flatten-and-group.md's R-L3c-3 (cross-technology Flatten Hierarchy), the first
+    /// place this codebase resolves a SUB-cell's own technology rather than always inheriting the
+    /// embedding document's (L3a's own stated simplification, named as a future gap at the time).
+    /// </summary>
+    public Func<string?, string, TechResolution>? ResolveTechAt { get; internal set; }
+
     /// <summary>Snapshot of everything a retarget can change, for the command's Undo/Redo. Deliberately
     /// NOT the <see cref="LayoutView"/>'s <c>DbuPerMicron</c> — retargeting never touches it (§4 of the
     /// brief: resolution is a property of the layout, not of the technology).</summary>

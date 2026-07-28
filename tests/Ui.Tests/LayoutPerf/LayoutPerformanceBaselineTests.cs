@@ -5,10 +5,12 @@
 // note (src/Ui/CLAUDE.md) was produced — run with `dotnet test --filter FullyQualifiedName~LayoutPerf
 // --logger "console;verbosity=detailed"` to reproduce it.
 //
-// 1k/50k run on every commit. 500k is [Trait("Category","Nightly")] (gate 7: "gate 1k and 50k
-// per-commit and mark 500k for a nightly or on-demand run — but still record it in the baseline") — it
-// still ran once during this phase's own development to produce the 500k row of the baseline table;
-// exclude it from a fast local loop with `--filter "Category!=Nightly"`.
+// 1k/50k run on every commit. 500k's TIMED sweep (this file) is [Trait("Category","Benchmark")]
+// (brief-benchmark-gate-split.md — opt-in only, supersedes the old Nightly tag here) — it still ran
+// once during this phase's own development to produce the 500k row of the baseline table; exclude it
+// from the routine gate with `--filter "Category!=Benchmark"`. 500k's COUNTER coverage (the part that
+// actually catches an algorithmic regression) stays in the gate — see
+// LayoutSpatialIndexPerfTests.Gated500k_CullingCountersStayCorrect.
 
 using System;
 using System.Collections.Generic;
@@ -54,9 +56,17 @@ public class LayoutPerformanceBaselineTests : System.IDisposable
     [InlineData(GeneratorProfile.Mixed, 50_000)]
     public void Baseline(GeneratorProfile profile, int shapeCount) => RunAndReport(profile, shapeCount);
 
-    // ── 500k — nightly / on-demand (gate 7) ──────────────────────────────────────
+    // ── 500k — opt-in timed sweep only (brief-benchmark-gate-split.md R-perf-1/R-perf-3) ──────────
+    // This is the MEASUREMENT exercise (median/p95 across pan/zoom/full-extent/hit-test/marquee/load,
+    // warmed-up, per profile) — real value for someone actively tuning performance, but not a
+    // per-commit signal: R-L2a-3 already established counters are the gate, wall-clock is the
+    // diagnostic, and this test paid for the diagnostic on every routine run. `Category=Benchmark`
+    // supersedes the old `Category=Nightly` tag here (consolidated to one tag per R-perf-3, not left
+    // overlapping) — the 500k COUNTER coverage that actually catches an algorithmic regression stays
+    // in the gate, see `LayoutSpatialIndexPerfTests.Gated500k_CullingCountersStayCorrect`.
+    // Run explicitly: dotnet test --filter "Category=Benchmark"
 
-    [Trait("Category", "Nightly")]
+    [Trait("Category", "Benchmark")]
     [Theory]
     [InlineData(GeneratorProfile.Manhattan, 500_000)]
     [InlineData(GeneratorProfile.CurveHeavy, 500_000)]
@@ -71,7 +81,7 @@ public class LayoutPerformanceBaselineTests : System.IDisposable
     // exactly the quantity R8b's threshold is defined over (§2.3 R8b: "above a VISIBLE-SHAPE
     // THRESHOLD... start at ~20k, tune against the benchmark").
 
-    [Trait("Category", "Nightly")]
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void R8bCrossoverExperiment()
     {

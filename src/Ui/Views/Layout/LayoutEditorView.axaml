@@ -26,6 +26,40 @@
                 <Setter.Value><SolidColorBrush Color="{DynamicResource SystemAccentColorLight1}"/></Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Selection-dependent buttons: dim icon when disabled — mirrors SchematicView's
+             Button.SelectionBtn exactly (Push Into Cell / Pop Out). -->
+        <Style Selector="Button.SelectionBtn:disabled /template/ ContentPresenter">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
+
+        <!-- ── Breadcrumb bar styles (L3b) — mirrors SchematicView's BreadcrumbBtn exactly ──── -->
+        <Style Selector="Button.LayoutBreadcrumbBtn">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}"/>
+        </Style>
+        <Style Selector="Button.LayoutBreadcrumbBtn /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.LayoutBreadcrumbBtn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.LayoutBreadcrumbBtn.LayoutBreadcrumbCurrent">
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseHighColor}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Button.LayoutBreadcrumbBtn.LayoutBreadcrumbCurrent /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.LayoutBreadcrumbBtn.LayoutBreadcrumbCurrent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="Button.LayoutBreadcrumbBtn:disabled /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
     </UserControl.Styles>
 
     <DockPanel>
@@ -59,51 +93,79 @@
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
-                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Select}"
-                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Select"
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Select}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Select"
                                 ToolTip.Tip="Select (L1c)" Padding="6,3">
                             <mi:MaterialIcon Kind="CursorDefault" Width="16" Height="16"/>
                         </Button>
-                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Rect}"
-                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Rect"
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Rect}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Rect"
                                 ToolTip.Tip="Rectangle" Padding="6,3">
                             <mi:MaterialIcon Kind="RectangleOutline" Width="16" Height="16"/>
                         </Button>
-                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=RoundedRect}"
-                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="RoundedRect"
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=RoundedRect}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="RoundedRect"
                                 ToolTip.Tip="Rounded Rectangle" Padding="6,3">
                             <mi:MaterialIcon Kind="SquareRoundedOutline" Width="16" Height="16"/>
                         </Button>
-                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Circle}"
-                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Circle"
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Circle}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Circle"
                                 ToolTip.Tip="Circle (center-radius)" Padding="6,3">
                             <mi:MaterialIcon Kind="VectorCircle" Width="16" Height="16"/>
                         </Button>
-                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Polygon}"
-                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Polygon"
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Polygon}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Polygon"
                                 ToolTip.Tip="Polygon  (double-click/Enter to close, Backspace removes last vertex)" Padding="6,3">
                             <mi:MaterialIcon Kind="VectorPolygon" Width="16" Height="16"/>
                         </Button>
-                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"
-                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Path"
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Path"
                                 ToolTip.Tip="Path (trace)" Padding="6,3">
                             <mi:MaterialIcon Kind="VectorLine" Width="16" Height="16"/>
                         </Button>
-                        <Button Classes.ToolActive="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Label}"
-                                Command="{Binding ViewModel.SetActiveToolCommand}" CommandParameter="Label"
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Label}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Label"
                                 ToolTip.Tip="Label" Padding="6,3">
                             <mi:MaterialIcon Kind="LabelOutline" Width="16" Height="16"/>
                         </Button>
                         <Button Click="OnInsertBitmap" ToolTip.Tip="Insert Bitmap…" Padding="6,3">
                             <mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/>
                         </Button>
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Instance}"
+                                Click="OnInstanceTool" ToolTip.Tip="Instance… (place a cell reference, L3a)" Padding="6,3">
+                            <mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/>
+                        </Button>
+
+                        <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                        <!-- Hierarchy navigation (L3b) — mirrors SchematicView's Push Into Cell / Pop
+                             Out toolbar buttons exactly: same icons, same Classes, always visible,
+                             enabled state managed in code-behind (UpdateHierarchyButtonStates). -->
+                        <Button x:Name="PushInBtn"
+                                Classes="SelectionBtn"
+                                Click="OnToolbarPushIn"
+                                ToolTip.Tip="Push Into Cell  (Ctrl+])"
+                                IsEnabled="False"
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="ArrowDown" Width="16" Height="16"/>
+                        </Button>
+
+                        <Button x:Name="PopOutBtn"
+                                Classes="SelectionBtn"
+                                Click="OnToolbarPopOut"
+                                ToolTip.Tip="Pop Out  (Ctrl+[)"
+                                IsEnabled="False"
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="ArrowUp" Width="16" Height="16"/>
+                        </Button>
 
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
                         <TextBlock Text="Layer:" VerticalAlignment="Center" FontSize="11" Margin="4,0,0,0"/>
-                        <ComboBox ItemsSource="{Binding ViewModel.AvailableLayers}"
-                                  SelectedItem="{Binding ViewModel.CurrentLayerItem, Mode=TwoWay}"
+                        <ComboBox ItemsSource="{Binding ActiveViewModel.AvailableLayers}"
+                                  SelectedItem="{Binding ActiveViewModel.CurrentLayerItem, Mode=TwoWay}"
                                   FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"
                                   MinWidth="120">
                             <ComboBox.ItemTemplate>
@@ -126,44 +188,99 @@
 
                         <!-- RoundedRect corner radius -->
                         <TextBlock Text="Radius:" VerticalAlignment="Center" FontSize="11"
-                                   IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=RoundedRect}"/>
-                        <TextBox Text="{Binding ViewModel.CornerRadiusText}" Width="70" FontSize="11" Padding="4,2"
-                                 IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=RoundedRect}"
+                                   IsVisible="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=RoundedRect}"/>
+                        <TextBox Text="{Binding ActiveViewModel.CornerRadiusText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=RoundedRect}"
                                  LostFocus="OnCornerRadiusCommit" KeyDown="OnCornerRadiusKeyDown"/>
 
                         <!-- Path width + end style -->
                         <TextBlock Text="Width:" VerticalAlignment="Center" FontSize="11"
-                                   IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"/>
-                        <TextBox Text="{Binding ViewModel.PathWidthText}" Width="70" FontSize="11" Padding="4,2"
-                                 IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"
+                                   IsVisible="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"/>
+                        <TextBox Text="{Binding ActiveViewModel.PathWidthText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"
                                  LostFocus="OnPathWidthCommit" KeyDown="OnPathWidthKeyDown"/>
                         <ComboBox ItemsSource="{x:Static lay:LayoutEditorViewModel.AllPathEndStyles}"
-                                  SelectedItem="{Binding ViewModel.CurrentPathEndStyle, Mode=TwoWay}"
+                                  SelectedItem="{Binding ActiveViewModel.CurrentPathEndStyle, Mode=TwoWay}"
                                   FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"
-                                  IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"/>
+                                  IsVisible="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Path}"/>
 
                         <!-- Label height -->
                         <TextBlock Text="Height:" VerticalAlignment="Center" FontSize="11"
-                                   IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Label}"/>
-                        <TextBox Text="{Binding ViewModel.LabelHeightText}" Width="70" FontSize="11" Padding="4,2"
-                                 IsVisible="{Binding ViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Label}"
+                                   IsVisible="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Label}"/>
+                        <TextBox Text="{Binding ActiveViewModel.LabelHeightText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Label}"
                                  LostFocus="OnLabelHeightCommit" KeyDown="OnLabelHeightKeyDown"/>
 
                         <!-- Live Rect W/H — typed commit while a Rect drag is live (gate 9) -->
                         <TextBlock Text="W:" VerticalAlignment="Center" FontSize="11"
-                                   IsVisible="{Binding ViewModel.IsDrawingRect}"/>
-                        <TextBox x:Name="DrawWidthBox" Text="{Binding ViewModel.DrawWidthText}" Width="70" FontSize="11" Padding="4,2"
-                                 IsVisible="{Binding ViewModel.IsDrawingRect}"
+                                   IsVisible="{Binding ActiveViewModel.IsDrawingRect}"/>
+                        <TextBox x:Name="DrawWidthBox" Text="{Binding ActiveViewModel.DrawWidthText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ActiveViewModel.IsDrawingRect}"
                                  LostFocus="OnDrawWidthCommit" KeyDown="OnDrawWidthKeyDown"/>
                         <TextBlock Text="H:" VerticalAlignment="Center" FontSize="11"
-                                   IsVisible="{Binding ViewModel.IsDrawingRect}"/>
-                        <TextBox x:Name="DrawHeightBox" Text="{Binding ViewModel.DrawHeightText}" Width="70" FontSize="11" Padding="4,2"
-                                 IsVisible="{Binding ViewModel.IsDrawingRect}"
+                                   IsVisible="{Binding ActiveViewModel.IsDrawingRect}"/>
+                        <TextBox x:Name="DrawHeightBox" Text="{Binding ActiveViewModel.DrawHeightText}" Width="70" FontSize="11" Padding="4,2"
+                                 IsVisible="{Binding ActiveViewModel.IsDrawingRect}"
                                  LostFocus="OnDrawHeightCommit" KeyDown="OnDrawHeightKeyDown"/>
 
-                        <TextBlock Text="{Binding ViewModel.DrawReadoutText}" VerticalAlignment="Center" FontSize="11"
+                        <TextBlock Text="{Binding ActiveViewModel.DrawReadoutText}" VerticalAlignment="Center" FontSize="11"
                                    FontWeight="SemiBold" Margin="8,0,0,0"/>
             </WrapPanel>
+        </Border>
+
+        <!-- ── Breadcrumb bar (L3b) — visible only when pushed in (CanPopOut) ────────────────── -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding CanPopOut}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="4,1">
+            <StackPanel Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+
+                <!-- Pop to Top button -->
+                <Button x:Name="PopToTopBtn"
+                        Click="OnPopToTop"
+                        ToolTip.Tip="Pop to Top"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="4,2"
+                        VerticalAlignment="Center">
+                    <mi:MaterialIcon Kind="Home" Width="13" Height="13"/>
+                </Button>
+
+                <!-- Divider between Pop to Top and crumb list -->
+                <Border Width="1" VerticalAlignment="Stretch" Margin="2,2"
+                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                <!-- Crumb list -->
+                <ItemsControl x:Name="BreadcrumbItems"
+                              ItemsSource="{Binding Breadcrumbs}"
+                              VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="lay:LayoutBreadcrumbItem">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <!-- Separator glyph before non-first crumbs -->
+                                <TextBlock Text=" ▸ "
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SystemBaseMediumColor}"
+                                           IsVisible="{Binding IsNotFirst}"/>
+                                <!-- Crumb button: flat/link style, bold+inert when current -->
+                                <Button Classes="LayoutBreadcrumbBtn"
+                                        Classes.LayoutBreadcrumbCurrent="{Binding IsCurrent}"
+                                        IsEnabled="{Binding !IsCurrent}"
+                                        Content="{Binding Text}"
+                                        Tag="{Binding FrameIndex}"
+                                        Click="OnBreadcrumbClick"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
         </Border>
 
         <!-- ── Metadata bar ─────────────────────────────────────────────────── -->
@@ -185,14 +302,14 @@
                     </Style>
                 </StackPanel.Styles>
 
-                <TextBlock Classes="label" Text="{Binding ViewModel.ResolutionText}"/>
+                <TextBlock Classes="label" Text="{Binding ActiveViewModel.ResolutionText}"/>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Technology:"/>
                     <Button Padding="2,0" MinHeight="0" Background="Transparent" BorderThickness="0"
                             Click="OnChangeTechnologyClick" ToolTip.Tip="Change Technology…">
                         <StackPanel Orientation="Horizontal" Spacing="2">
-                            <TextBlock Classes="value" Text="{Binding ViewModel.TechSummaryText}"/>
+                            <TextBlock Classes="value" Text="{Binding ActiveViewModel.TechSummaryText}"/>
                             <TextBlock Classes="value" Text="▾"/>
                         </StackPanel>
                     </Button>
@@ -201,35 +318,35 @@
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Unit:"/>
                     <ComboBox ItemsSource="{x:Static lay:LayoutEditorViewModel.AllUnits}"
-                              SelectedItem="{Binding ViewModel.DisplayUnit, Mode=TwoWay}"
+                              SelectedItem="{Binding ActiveViewModel.DisplayUnit, Mode=TwoWay}"
                               FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Snap:"/>
-                    <TextBlock Classes="value" Text="{Binding ViewModel.SnapText}"/>
+                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.SnapText}"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Shapes:"/>
-                    <TextBlock Classes="value" Text="{Binding ViewModel.ShapeCountText}"/>
+                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.ShapeCountText}"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Instances:"/>
-                    <TextBlock Classes="value" Text="{Binding ViewModel.InstanceCountText}"/>
+                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.InstanceCountText}"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Extent:"/>
-                    <TextBlock Classes="value" Text="{Binding ViewModel.ExtentText}"/>
+                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.ExtentText}"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="X:"/>
-                    <TextBlock Classes="value" Text="{Binding ViewModel.CursorXText}"/>
+                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.CursorXText}"/>
                     <TextBlock Classes="label" Text="Y:"/>
-                    <TextBlock Classes="value" Text="{Binding ViewModel.CursorYText}"/>
+                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.CursorYText}"/>
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -253,7 +370,7 @@
             <ctrl:LayoutRulerControl x:Name="VRuler" DockPanel.Dock="Left" Width="22" Orientation="Vertical" ClipToBounds="True"/>
 
             <Panel>
-                <ctrl:LayoutCanvas x:Name="LayoutCanvasCtrl" ViewModel="{Binding ViewModel}" ClipToBounds="True">
+                <ctrl:LayoutCanvas x:Name="LayoutCanvasCtrl" ViewModel="{Binding ActiveViewModel}" ClipToBounds="True">
                     <!-- L1-fix (brief-L1-fix-context-menu-stacking.md): ONE ContextMenu instance,
                          declared here and opened by Avalonia itself — mirrors SymbolEditorView.axaml's
                          bitmap context menu. LayoutCanvas never constructs a ContextMenu of its own. -->
@@ -264,7 +381,7 @@
 
                 <!-- L0b's centered placeholder — kept for an empty layout instead of a bare canvas. -->
                 <Border Background="{DynamicResource SystemRegionColor}"
-                        IsVisible="{Binding ViewModel.IsEmpty}"
+                        IsVisible="{Binding ActiveViewModel.IsEmpty}"
                         IsHitTestVisible="False">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
                         <mi:MaterialIcon Kind="VectorSquareEdit" Width="40" Height="40"

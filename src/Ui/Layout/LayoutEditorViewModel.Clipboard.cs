@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using CircuitRF.Ui.Commands;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.Layout;
@@ -17,8 +18,8 @@ namespace CircuitRF.Ui.Layout;
 /// </summary>
 public sealed partial class LayoutEditorViewModel
 {
-    public bool CanCopySelection => ValidSelectedIndices.Count > 0;
-    public bool CanDuplicateSelection => ValidSelectedIndices.Count > 0;
+    public bool CanCopySelection => ValidSelectedIndices.Count > 0 || SelectedInstanceIndices.Count > 0;
+    public bool CanDuplicateSelection => ValidSelectedIndices.Count > 0 || SelectedInstanceIndices.Count > 0;
 
     public IRelayCommand DuplicateCommand { get; private set; } = null!;
 
@@ -36,29 +37,39 @@ public sealed partial class LayoutEditorViewModel
     public LayoutFragment.Payload? BuildCopyPayload()
     {
         var indices = ValidSelectedIndices;
-        if (indices.Count == 0) return null;
+        var (instances, cellDirs) = BuildCopyInstancesPayload();
+        if (indices.Count == 0 && instances.Count == 0) return null;
         var shapes = indices.Select(i => Model.Shapes[i]).ToList();
-        return LayoutFragment.Build(shapes, Technology, Model.DbuPerMicron);
+        return LayoutFragment.Build(shapes, instances, cellDirs, Technology, Model.DbuPerMicron);
     }
 
     /// <summary>Cut = Copy (the caller writes to the system clipboard BEFORE calling this) then
-    /// Delete, as ONE undo entry — <see cref="DeleteSelection"/> already is exactly that one
-    /// command.</summary>
+    /// Delete, as ONE undo entry — <see cref="DeleteSelection"/> already deletes BOTH shapes and
+    /// instances together as one command (brief-L3a-followups.md §2/R-fix-2 — no longer the L3a-era
+    /// "mutual exclusivity means only one kind is ever non-empty" special case).</summary>
     public void CutSelectionAfterCopy() => DeleteSelection();
 
     // ── Duplicate — internal copy, deliberately bypasses the system clipboard ────────────────────
 
-    /// <summary>Clones the selection and places it offset by one snap step (§4 of the brief) as ONE
-    /// undo entry, then selects the new shapes. Never touches the system clipboard — clobbering the
-    /// user's clipboard as a side effect of Duplicate is a small betrayal people notice.</summary>
+    /// <summary>Clones the WHOLE current selection (shapes AND instances together — R-fix-2) and
+    /// places it offset by one snap step (§4 of the brief) as ONE undo entry, then selects the new
+    /// shapes/instances. Never touches the system clipboard — clobbering the user's clipboard as a
+    /// side effect of Duplicate is a small betrayal people notice. Instance CellRefs never need
+    /// rebasing here — the duplicate lands in the SAME document, so the original relative path is
+    /// already correct.</summary>
     public void Duplicate()
     {
-        var indices = ValidSelectedIndices;
-        if (indices.Count == 0) return;
-        var shapes = indices.Select(i => Model.Shapes[i]).ToList();
         long step = OneSnapStepDbu;
-        var placed = LayoutFragment.Translate(shapes, step, step);
-        InsertPastedShapes(placed, "Duplicate");
+
+        var indices = ValidSelectedIndices;
+        var shapes = indices.Count > 0
+            ? LayoutFragment.Translate(indices.Select(i => Model.Shapes[i]).ToList(), step, step)
+            : [];
+
+        var srcInstances = SelectedInstanceIndices.Select(i => Model.Instances[i]).ToList();
+        var instances = srcInstances.Count > 0 ? LayoutFragment.Translate(srcInstances, step, step) : [];
+
+        InsertPastedMixed(shapes, instances, "Duplicate");
     }
 
     // ── Paste preparation — rescale + layer reconciliation (called by the view before placing) ───
@@ -124,8 +135,17 @@ public sealed partial class LayoutEditorViewModel
     public event Action<string, Technology>? RequestAddLayerToTechnology;
 
     // ── Paste-ghost placement (Ctrl/Cmd+V) ───────────────────────────────────────────────────────
+    // brief-L3a-followups.md §2/R-fix-2: a paste can now carry BOTH shapes and instances (a mixed
+    // copy — BuildCopyPayload has always built a fragment with both, gate 11 already covered the
+    // instance half at the VM level) and lands as ONE undo entry, together. The instances travel
+    // alongside the shape ghost (translated by the SAME final delta at commit) rather than getting
+    // their own visual ghost — a stated, narrow scope simplification: an instance ghost would need
+    // its own placeholder-box rendering plumbed into the SAME overlay pass, and nothing in this
+    // brief's gates requires a live instance preview during a paste drag, only that the final
+    // placement lands correctly as one undo entry (gate 6).
 
     private IReadOnlyList<LayoutShape>? _pastePlacementShapes;
+    private IReadOnlyList<LayoutInstance> _pastePlacementInstances = [];
     private long _pastePlacementAnchorX;
     private long _pastePlacementAnchorY;
     private long _pasteCursorX;
@@ -137,15 +157,20 @@ public sealed partial class LayoutEditorViewModel
 
     /// <summary>
     /// Begins the Ctrl/Cmd+V "ghost follows the cursor" placement (§3 of the brief) with already
-    /// rescaled + reconciled shapes and their (destination-DBU) anchor. The ghost renders at the
-    /// anchor position (zero offset) until the first pointer move arrives, then tracks the snapped
-    /// cursor exactly — a click (<see cref="OnPointerPressed"/>) places it there as one undo entry;
-    /// Escape (<see cref="OnKeyDown"/>) cancels with no command pushed.
+    /// rescaled + reconciled shapes (and, per brief-L3a-followups.md §2, any rebased instances from
+    /// the same mixed copy — see <see cref="RebaseFragmentInstances"/>) and their shared
+    /// (destination-DBU) anchor. The ghost renders at the anchor position (zero offset) until the
+    /// first pointer move arrives, then tracks the snapped cursor exactly — a click (<see
+    /// cref="OnPointerPressed"/>) places both kinds there TOGETHER as one undo entry; Escape (<see
+    /// cref="OnKeyDown"/>) cancels with no command pushed. <paramref name="instances"/> defaults to
+    /// none so every pre-existing (shape-only) call site is unaffected.
     /// </summary>
-    public void BeginPastePlacement(IReadOnlyList<LayoutShape> shapes, long anchorX, long anchorY)
+    public void BeginPastePlacement(IReadOnlyList<LayoutShape> shapes, long anchorX, long anchorY,
+        IReadOnlyList<LayoutInstance>? instances = null)
     {
-        if (shapes.Count == 0) return;
+        if (shapes.Count == 0 && (instances is null || instances.Count == 0)) return;
         _pastePlacementShapes = shapes;
+        _pastePlacementInstances = instances ?? [];
         _pastePlacementAnchorX = anchorX;
         _pastePlacementAnchorY = anchorY;
         _pasteCursorX = anchorX;
@@ -164,32 +189,89 @@ public sealed partial class LayoutEditorViewModel
     private void CancelPastePlacement()
     {
         _pastePlacementShapes = null;
+        _pastePlacementInstances = [];
         RebuildOverlay();
     }
 
     private void CommitPastePlacement()
     {
-        if (_pastePlacementShapes is not { Count: > 0 } shapes) return;
+        if (_pastePlacementShapes is not { } shapes) return;
+        if (shapes.Count == 0 && _pastePlacementInstances.Count == 0) { _pastePlacementShapes = null; return; }
         long dx = _pasteCursorX - _pastePlacementAnchorX;
         long dy = _pasteCursorY - _pastePlacementAnchorY;
-        var placed = LayoutFragment.Translate(shapes, dx, dy);
+        var placedShapes = LayoutFragment.Translate(shapes, dx, dy);
+        var placedInstances = LayoutFragment.Translate(_pastePlacementInstances, dx, dy);
         _pastePlacementShapes = null;
-        InsertPastedShapes(placed, "Paste");
+        _pastePlacementInstances = [];
+        InsertPastedMixed(placedShapes, placedInstances, "Paste");
     }
 
-    /// <summary>Paste in Place (§3 of the brief) — original coordinates, no ghost, immediate; one
-    /// undo entry.</summary>
-    public void PasteInPlace(IReadOnlyList<LayoutShape> shapes) => InsertPastedShapes(shapes, "Paste in Place");
+    /// <summary>Paste in Place (§3 of the brief; extended to a mixed copy by brief-L3a-followups.md
+    /// §2) — original coordinates, no ghost, immediate; one undo entry covering both kinds.
+    /// <paramref name="instances"/> defaults to none so every pre-existing (shape-only) call site is
+    /// unaffected.</summary>
+    public void PasteInPlace(IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance>? instances = null) =>
+        InsertPastedMixed(shapes, instances ?? [], "Paste in Place");
 
-    /// <summary>Shared commit for Paste / Paste in Place / Duplicate: appended (topmost within their
-    /// layers, §3) via an empty-removed-set <c>ReplaceShapesCommand</c> — one undo entry, and the
-    /// newly placed shapes become the selection (§3: "the next action operates on what was just
-    /// placed").</summary>
-    private void InsertPastedShapes(IReadOnlyList<LayoutShape> shapes, string description)
+    // ── L3a instance paste (gate 11) — immediate placement, no ghost (see this file's own header
+    // note on why shape paste and instance paste use different placement mechanisms) ───────────────
+
+    /// <summary>Rebases a payload's instances' <c>CellRef</c>s to resolve correctly in THIS document
+    /// (see <see cref="LayoutFragment.RebaseInstances"/>) — call before either paste variant below.
+    /// <b>Known, narrow gap, named rather than silently accepted:</b> unlike shapes (<see
+    /// cref="RescaleFragment"/>/<see cref="LayoutFragment.Rescale"/>), an instance's X/Y/Rows/Cols/
+    /// PitchX/PitchY are NOT rescaled across a DBU-per-micron mismatch between the source and this
+    /// document — <c>LayoutFragment.Rescale</c> only ever walked <c>Payload.Shapes</c>. A same-
+    /// resolution paste (by far the common case — matching a single technology's own convention) is
+    /// unaffected; a cross-resolution paste of an instance would land at the wrong physical scale.
+    /// Not attempted here — out of brief-L3a-followups.md's stated scope (§1-4 never mention DBU
+    /// rescaling), a future brief's job.</summary>
+    public IReadOnlyList<LayoutInstance> RebaseFragmentInstances(LayoutFragment.Payload payload) =>
+        LayoutFragment.RebaseInstances(payload.Instances, payload.InstanceCellDirs, InstanceBaseDir);
+
+    /// <summary>Paste in Place for an instance-only selection — original (rebased-CellRef) position,
+    /// immediate, one undo entry. Kept as a direct, single-kind entry point (gate 11's own tests call
+    /// it this way); a MIXED copy goes through <see cref="PasteInPlace"/>'s <c>instances</c> parameter
+    /// instead so both kinds land as one undo entry together.</summary>
+    public void PasteInstancesInPlace(IReadOnlyList<LayoutInstance> instances) => InsertPastedMixed([], instances, "Paste in Place");
+
+    /// <summary>Ordinary Paste for an instance-only selection — offset by one snap step so a
+    /// same-document paste is visibly distinct from the original rather than landing exactly on top
+    /// of it (mirrors Duplicate's own offset). Kept as a direct, single-kind entry point for the same
+    /// reason as <see cref="PasteInstancesInPlace"/> above.</summary>
+    public void PasteInstances(IReadOnlyList<LayoutInstance> instances)
     {
-        if (shapes.Count == 0) return;
-        int insertAt = Model.Shapes.Count;
-        Execute(new Commands.Layout.ReplaceShapesCommand(Model, [], shapes, description));
-        SetSelection(Enumerable.Range(insertAt, shapes.Count));
+        long step = OneSnapStepDbu;
+        InsertPastedMixed([], LayoutFragment.Translate(instances, step, step), "Paste");
+    }
+
+    /// <summary>Shared commit for Paste / Paste in Place / Duplicate — brief-L3a-followups.md
+    /// §2/R-fix-2 generalizes this from shapes-only to BOTH kinds together: shapes are appended
+    /// (topmost within their layers, §3) via an empty-removed-set <c>ReplaceShapesCommand</c>,
+    /// instances via one <c>AddInstanceCommand</c> each, folded into the SAME <c>CompositeCommand</c>
+    /// chain when both kinds are non-empty — ONE undo entry regardless of how many of each kind, and
+    /// the newly placed shapes AND instances together become the selection (§3: "the next action
+    /// operates on what was just placed"; mirrors <c>ReplaceMixedSelection</c>'s "both kinds at once"
+    /// rule elsewhere in this VM).</summary>
+    private void InsertPastedMixed(IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance> instances, string description)
+    {
+        if (shapes.Count == 0 && instances.Count == 0) return;
+
+        int shapeInsertAt = Model.Shapes.Count;
+        int instanceInsertAt = Model.Instances.Count;
+
+        IUiCommand? combined = null;
+        if (shapes.Count > 0)
+            combined = new Commands.Layout.ReplaceShapesCommand(Model, [], shapes, description);
+        foreach (var inst in instances)
+        {
+            IUiCommand instCmd = new Commands.Layout.AddInstanceCommand(Model, inst);
+            combined = combined is null ? instCmd : new CompositeCommand(combined, instCmd);
+        }
+        Execute(combined!);
+
+        ReplaceMixedSelection(
+            Enumerable.Range(shapeInsertAt, shapes.Count),
+            Enumerable.Range(instanceInsertAt, instances.Count));
     }
 }

@@ -18,6 +18,68 @@ hero circuits, and non-goals. This file is standing project memory — keep it c
 - Test:    `dotnet test`
 - Run CLI: `dotnet run --project src/Cli -- <args>`
 
+### Fast test loop — and what "gate item 1" means now (brief-benchmark-gate-split.md, 2026-07-27)
+
+**The routine gate for every brief's item 1 is `dotnet test --filter "Category!=Benchmark"` — not the
+full unfiltered suite.** This is a deliberate, explicit policy change, not a quiet filter: the full
+suite (3382 tests) took ~5 minutes almost entirely because of the 500,000-shape `LayoutPerf` TIMED
+sweeps, which cost real time on every commit for a diagnostic almost nobody needed routinely
+(R-L2a-3: counters are the gate, wall-clock is the diagnostic). `Category!=Benchmark` runs everything
+else — **3382 tests in ~32 s** — and is what "build+test green" means from here on, in every brief,
+unless that brief's own text says otherwise (a brief can still ask for the full unfiltered suite
+explicitly when it means to).
+
+- **`Category=Benchmark`** — opt-in TIMED measurement sweeps only (median/p95 across profiles ×
+  render paths × pan/zoom/full-extent, warmed up): `LayoutPerformanceBaselineTests.Baseline_500k` +
+  `R8bCrossoverExperiment`, `LayoutLodMergeCacheBenchmarkTests.{LodOnly,Final}_FullExtent_500k` +
+  `PathCache_500k_MemoryStaysUnderCap_TimeAndMemoryReported`,
+  `LayoutSpatialIndexPerfTests.BulkLoad_500k_BuildTimeRecorded`. Run explicitly:
+  `dotnet test --filter "Category=Benchmark"` (~5.5 min). **Required** when touching rendering, the
+  spatial index, the path/instance caches, or LOD, and at any performance-phase boundary — named
+  explicitly so this is a rule, not a judgement call.
+- **500k's COUNTER coverage stays in the routine gate**, at negligible cost (~5 s total) — this is the
+  part that actually catches an algorithmic regression (an accidental O(n)/O(n²) scan that bypasses
+  the spatial index): `LayoutSpatialIndexPerfTests.Gated500k_CullingCountersStayCorrect` (one shared
+  500k layout PER PROFILE, reused across a full-extent AND a zoomed-in assertion — no timing, no
+  warm-up sweep). Verified to actually catch a regression, not just assumed: temporarily disabling the
+  spatial-index culling query in `LayoutRenderer.Draw` turns this test red immediately.
+- **`Category=Nightly`** keeps its own, now-narrower meaning — only
+  `LayoutInstanceArrayPerfTests`'s 500k case remains tagged Nightly (cheap, ~1 s); `Benchmark`
+  supersedes it for every other 500k `LayoutPerf` timed case (consolidated to one tag there, per the
+  brief's own instruction, rather than leaving two overlapping tags on the same tests).
+- **`Category=Slow`** (brief-test-suite-fast-loop) — engine-simulation classes in `Engine.Tests` that
+  actually run the solver: `Hero3LoadpullTests`, `FreqSweptLoadpullTests`, `LoadpullCnlWriterRunTests`,
+  `Hero3BPursuitTests`, `PursuitSearchDiagnosticTests` (all `Loadpull/`), and `Hero1BTests` (`Linear/` —
+  a ~10k-component import+elaborate+solve gate, same profile as the loadpull tests even though it's
+  outside that folder).
+
+**Deferred, on purpose, and it must stay visible rather than quietly becoming permanent:** §5.1's 500k
+**timing** target is now unmet AND unmeasured on routine runs. L2c's own measured shortfall (13-15×
+over the 50 ms floor at full extent) is the reason — closing it needs the tiled raster cache (L2d), not
+more per-shape optimization (see L2c's own completion note above). **Re-enabling routine 500k timing
+coverage is part of L2d's own gate**, when that phase lands; until then, `Category=Benchmark` is how
+anyone actively working on performance checks it.
+
+**Layout/UI work** — the only projects layout work can plausibly touch or break (every layout brief since
+L0a carries the guardrail "don't touch `src/Core`, `src/Engine`, `RfCore`"):
+```
+dotnet test tests/Ui.Tests --filter "Category!=Benchmark" --no-build
+dotnet test tests/Firewall.Tests --no-build
+```
+Run as two commands — this SDK's `dotnet test` rejects more than one explicit project path in a single
+invocation (`MSB1008: Only one project can be specified`).
+
+**Whole-repo fast loop** (non-layout work, or a broader check before a layout PR):
+```
+dotnet test --filter "Category!=Slow&Category!=Benchmark" --no-build
+```
+
+**The full unfiltered suite (`dotnet test`, no filter) still exists and still runs everything** — reach
+for it at genuine phase boundaries, or whenever the complete picture (including the deferred 500k
+timing sweep) is actually wanted. It is simply no longer what "gate item 1" means by default.
+
+Add `--no-build` after the first build of a session.
+
 ## Architecture — three layers, kept separate
 1. **Design layer** (`src/Core`): Cells (Symbol/Schematic/Layout views), instances, nets,
    parameters, libraries — editable, serialized, human-readable. Layout view is a v1 placeholder.

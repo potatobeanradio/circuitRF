@@ -30,6 +30,13 @@ public enum LayoutChangeKind
     /// insert/remove happened anywhere). <c>MoveShapesCommand</c>, <c>ReplaceShapeCommand</c>'s 1-index
     /// swap.</summary>
     Updated,
+
+    /// <summary>L3a (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md R-L3a-4) — ONLY
+    /// <see cref="LayoutView.Instances"/> changed; <see cref="LayoutView.Shapes"/> is untouched. Every
+    /// instance-mutating command (add/move/delete/array-edit/retarget) uses this instead of the
+    /// shape-focused kinds above, so <see cref="LayoutSpatialIndex.Apply"/> can skip shape work
+    /// entirely and just mark the (cheap, rare) instance side of the tree dirty.</summary>
+    InstancesChanged,
 }
 
 /// <summary>
@@ -70,4 +77,6 @@ public sealed class LayoutChangeInfo : EventArgs
 
     public static LayoutChangeInfo Updated(IReadOnlyList<int> indices) =>
         indices.Count == 0 ? Full : new LayoutChangeInfo(LayoutChangeKind.Updated, 0, 0, indices);
+
+    public static readonly LayoutChangeInfo InstancesOnly = new(LayoutChangeKind.InstancesChanged, 0, 0, null);
 }

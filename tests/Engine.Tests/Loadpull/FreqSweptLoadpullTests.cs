@@ -16,6 +16,7 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 // Layer A+B of FreqSweptLoadpull_Brief: a Loadpull wrapped in a parametric sweep over the tone
 // variable (RFfreq) runs per frequency and stacks with a "freq" (Hz) axis that LoadpullSurface
 // recognizes — so the result is a genuine multi-frequency loadpull.
+[Trait("Category", "Slow")]
 public sealed class FreqSweptLoadpullTests(ITestOutputHelper o)
 {
     private static string Hero3Dir()

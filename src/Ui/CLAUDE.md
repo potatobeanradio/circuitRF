@@ -1,5 +1,1015 @@
 # UI (Avalonia) — local conventions
 
+Phase L3c — flatten and group-into-cell (brief-L3c-flatten-and-group.md, 2026-07-28) — COMPLETE: **Phase
+L3 (hierarchy — instances, arrays, push-in/pop-out navigation, flatten, group-into-cell) is now
+complete.** A layout instance can now be flattened back into geometry (one level, one level for a
+whole selection's own recursion, or all levels at once) and a selection can be grouped forward into a
+brand-new cell — the two operations that convert between hierarchy and flat geometry, closing the loop
+L3a opened.
+
+## §1 — naming: "Flatten Hierarchy" is never adjacent to "Flatten to Polygon…"
+
+Both are labeled distinctly everywhere (menu items, Messages text, this file) and the layout context
+menu keeps them in separate `Separator`-delimited groups (`LayoutCanvas.AddInstanceHierarchyMenuItems`
+is its own method, called after — never merged into — `AddBooleanAndFlattenMenuItems`) — §1's own
+warning that the bare word "Flatten" collides across two completely unrelated operations (a curve
+becoming a polygon vs. an instance becoming geometry) is honored structurally, not just by wording.
+
+## §2/R-L3c-1 — an array is a level; Explode Array is the same command as Flatten Hierarchy
+
+`LayoutFlatten.FlattenOneLevel` (already built earlier in this phase) already treated an arrayed
+instance (`Rows>1||Cols>1`) as yielding N plain instances rather than geometry — the array-is-a-level
+rule was already load-bearing before this session's work continued past it. **Explode Array is
+literally the same VM entry point** (`LayoutEditorViewModel.CommitFlattenOneLevel`) behind a second,
+array-only-enabled menu item (`ExplodeArrayAvailability`) — R-L3c-1's own instruction ("must route
+through the same command… so the two cannot diverge") is satisfied by construction: there is no second
+code path to diverge from.
+
+**R-L3c-1a — the outcome is baked directly into the menu item's own label**, not only a hover tooltip:
+`FlattenOneLevelOutcomeText`/`FlattenAllLevelsOutcomeText` (`LayoutEditorViewModel.Flatten.cs`) compute
+"→ 20 shape(s)" or "→ 2,500 instance(s)" from the SAME `FlattenOneLevel`/`CountResultingShapes` path the
+commit itself uses (never a second count), so the preview can't drift from the real result. A separate
+`FlattenConfirmThreshold = 500` (comfortably under L2c's own 2,000-shape merge-tier threshold and under
+R-L3a-3's own 2,500-instance array-explode example) gates a confirm dialog for a large flatten in EITHER
+unit; Flatten All Levels always confirms (its own pre-computed count is the whole point of showing it
+before a whole hierarchy collapses).
+
+## §2.1/R-L3c-2 — the shared walk is now affine, and Flatten is its fourth consumer
+
+`LayoutCoordinateWalk`'s generalization from axis-independent scale to a full `(x,y) → (x,y)` affine
+transform (`LayoutCoordinateTransform.Point`, plus the pre-existing `.Uniform`/`.AxisIndependent`
+factories for the three EARLIER callers) was done as groundwork earlier in this same phase, specifically
+so Flatten Hierarchy could reuse it rather than write a fourth parallel traversal — R-L1h-6's own history
+already shows what a fourth hand-maintained copy costs (both `LayoutScaling` and `LayoutFragment`
+independently omitted `CircleShape`/`RoundedRectShape.FlattenTolDbu` identically, simply because those
+fields didn't exist yet when each was written). `LayoutFlatten.FlattenOneLevel` builds ONE
+`LayoutCoordinateTransform` per instance (mirror/rotate/scale/translate, expressed as `TransformPoint`)
+and walks every shape through the SAME `LayoutCoordinateWalk.Transform` that DBU-resolution-change,
+paste-rescale, and Scale already use — hole rings, cubic control points, path width, via pad/drill,
+label height, and `FlattenTolDbu` all transform correctly for free, with no new field-list to keep in
+sync. **Arc bulge is deliberately never part of this walk** (dimensionless, would silently change
+curvature if scaled) — `LayoutFlatten.FlipBulgeSigns` is a small separate pass, applied only under a
+mirror (a rotation-only transform leaves bulge unchanged; a mirror reverses which side of the chord it
+bulges toward), verified directly by `FlattenOneLevel_ArcBulge_UnchangedUnderRotation_SignFlippedUnderMirror`.
+
+**A genuine, non-obvious rendering-precision finding, root-caused rather than worked around**: an early
+pixel-identity Theory test (gate 2, 8 rotation/mirror combos × Mag 1/2) failed for 4 of 10 cases at a
+realistic NON-ZERO instance offset, while passing for all 10 at the origin. Isolated via a throwaway
+probe test that removed `LayoutFlatten` from the call path entirely (comparing a `TransformPoint`-
+transformed flat shape directly against instance-rendering the SAME transform) — the SAME mismatch
+reproduced with zero flatten code involved, proving this is a **pre-existing renderer characteristic**,
+not a flatten bug: `LayoutRenderer.Instances.cs`'s per-placement `SKMatrix` composes the identical
+logical transform in float32 path-space, while a flattened shape's DBU coordinates are computed via
+exact integer arithmetic and converted to path-space once, in double precision — two legitimately
+different, independently-rounded arithmetic orders for the same logical position, invisible at the
+origin (where every intermediate value is already an exact integer) and only surfacing as a hairline of
+antialiasing drift at a non-zero offset. `FlattenOneLevel_PlainInstance_RendersPixelIdenticalToTheInstanceItReplaced`
+stays byte-exact at the origin (matching the SAME methodology L3a's own
+`InstanceRender_MatchesDirectlyDrawnEquivalentGeometry_ForEveryRotationMirrorCombo` gate already
+established); a new sibling Theory,
+`FlattenOneLevel_PlainInstance_AtNonZeroOffset_RendersVisuallyEquivalentToTheInstanceItReplaced`, proves
+the realistic non-origin case using a tolerant byte-diff comparison (`AssertPixelsVisuallyEqual`, capped
+at 3,000 of 640,000 bytes — enough slack for antialiasing drift, far too tight to pass a real geometry
+defect) rather than either loosening the origin gate or silently accepting the mismatch.
+
+## §2.2/R-L3c-3 — cross-technology flatten reuses L1g's LayoutLayerMapping, verbatim
+
+A sub-cell resolves relative to the parent's directory and may carry a completely different `.ctech`.
+**Both starter technologies share the identical `(1,0)`–`(8,0)` key range with UNRELATED meanings**
+(PCB's `(7,0)` is Drill; MMIC GaAs's `(7,0)` is Substrate) — this is exactly the trap L1g's own history
+already found and solved for cross-technology PASTE, and it applies to flatten with zero modification:
+a naive flatten of a PCB sub-cell into an MMIC parent would silently land Drill geometry on Substrate,
+with nothing "missing" to warn about. `LayoutEditorViewModel.CheckFlattenCrossTechMapping` calls the
+SAME `LayoutLayerMapping.Propose`/`RequiresConfirmation` paste and retarget already call (never a
+second reconciliation), and `ApplyFlattenReconciliation` commits through the SAME
+`ApplyFragmentReconciliation` (Add-to-technology choices install via the identical live-tech seam).
+Confirmation fires only when a row is genuinely uncertain (`SameKeyDifferentName`/`NoMatch`) — a
+same-technology flatten (by far the common case) stays silent, per R-L1g-2's own rule.
+
+**New seam needed, since this is the FIRST place this codebase resolves a sub-cell's OWN technology**
+rather than inheriting the embedding document's (L3a's own stated simplification, named as a future gap
+at the time): `LayoutEditorViewModel.ResolveTechAt` (`Func<string?, string, TechResolution>?`), wired by
+`WorkspaceViewModel.WireRetargetSeam` alongside `WorkspaceTechDir`/`ResolveWorkspaceDefaultTech` —
+`ResolveTechFor(techRef, Path.Combine(clayDir, "x.clay"))` under the hood (the filename is a throwaway;
+only the directory matters). **Scoped to the flattened instance's DIRECT sub-cell only** — a deeper
+hierarchy (Flatten All Levels) that ALSO mixes technologies at a NESTED level is a stated, narrower
+simplification, not silently ignored, mirroring L3a's own scope decision for the same reason: a fully
+general per-level reconciliation (tracking which technology each resulting shape's LAYER came from,
+across an arbitrary depth) is real added machinery the brief's own gate 6 never asks for.
+
+**Nets carry across as-is, unrenamed.** Hierarchical net naming to avoid parent/child collisions
+crossing a flatten boundary is an LVS concern (§9A.3) and is explicitly out of scope here — **named as a
+real, standing collision risk, not silently accepted**: flattening two sibling instances of the same
+sub-cell (or two different sub-cells that happen to use the same net name for unrelated nets) can merge
+what were electrically distinct nets under one shared name with no warning today. Closing this needs
+net-scoping machinery this phase does not build; a future LVS-adjacent brief's job.
+
+## §3/R-L3c-4 — Flatten All Levels: pre-count before mutating, hard ceiling, broken instances survive
+
+`LayoutFlatten.FlattenAllLevels`/`CountResultingShapes` (new) recurse through EVERY level (honoring
+`CellHierarchy.MaxDepth`), reusing `FlattenOneLevel` at every step for the actual geometry build — never
+a second traversal. **The count is computed WITHOUT ever materializing more than one array cell's
+worth of shapes**: an array's per-cell count is derived exactly once and multiplied by `Rows×Cols`
+(overflow-checked via `checked`/`OverflowException`, since a `Rows×Cols` product at the extremes of `int`
+can exceed `long` range), so pre-counting a hierarchy whose TRUE result would be in the millions stays
+cheap. `FlattenAllLevelsHardCeiling = 500_000` (the same order of magnitude as the "pathological/full
+chip" scale this codebase's own L2a/L2b/L2c benchmarks already treat as the outer edge of what the
+editor is expected to open at all) — exceeding it refuses OUTRIGHT, model completely unmutated, with the
+ceiling named directly in the Messages error (`CommitFlattenAllLevels_OverHardCeiling_RefusesOutright_
+NamesTheCeiling_ModelUnchanged` pins this). A broken/unresolvable instance ANYWHERE in the tree — INCLUDING
+the top-level instance itself, per §3's own literal wording — survives as one of `AllLevelsResult.
+SurvivingInstances` rather than being dropped; a cycle-guard visiting-set (scoped to the current recursion
+BRANCH, not global — so two sibling instances referencing the same cell are never mistaken for a cycle)
+mirrors `CellHierarchy.ResolveForWalk`'s own established pattern, and is proven to actually stop a
+genuinely cyclic hand-authored `.clay` pair rather than hang
+(`FlattenAllLevels_MutualCycle_DoesNotHang_LeavesTheCyclicEdgeAsASurvivingInstance`).
+
+**A real bug caught by writing the count-vs-actual-result gate test, not just exercised by it**: the
+first `CountRecursive` implementation resolved a sub-cell's OWN nested instances against the TOP-level
+caller's `baseDir` instead of the sub-cell's own `CellHierarchy.LayoutBaseDirOf` — the exact
+one-directory-level-too-shallow mistake R-L3a-2's own history already names once (`FlattenAllRecursive`,
+the geometry-building sibling, is immune because it walks `FlattenOneLevel`'s ALREADY-REBASED instance
+list, not the raw one `CountRecursive` reads directly). `FlattenAllLevels_ThreeDeepHierarchy_
+FullyFlattens_CountMatchesActualResult` and `..._ArraysAtTwoLevels_Multiplies_...` both failed against
+the original implementation and pin the fix.
+
+## §4/R-L3c-5/R-L3c-6 — Group into Cell: the inverse operation
+
+`LayoutGroup.BuildContents` (framework-free) computes the new cell's contents from a mixed shape+instance
+selection: the selection's own combined bounding-box MINIMUM (via `LayoutGeometry.BboxOf` for shapes,
+`CellHierarchy.InstanceBbox` for instances — the array-expanded extent, so a selected array anchors
+correctly too) becomes the new cell's local origin, and every shape/instance is translated by
+`(-OriginX, -OriginY)` through the SAME `LayoutCoordinateWalk`/`LayoutGeometry.TranslateBy` machinery
+flatten uses. Placing a fresh instance at `(OriginX, OriginY)` (R0, no mirror, Mag 1) in the parent then
+reproduces the exact original geometry BY CONSTRUCTION, not by a later corrective check — proven directly
+by a pixel-identity gate over a selection mixing a plain rect, a polygon WITH A HOLE, and a resolvable
+instance (`CommitGroupIntoCell_MixedSelection_RendersPixelIdentical_BeforeAndAfter`). **A selected
+INSTANCE moves into the new cell as an instance, unchanged apart from the translate — grouping does not
+flatten it**, per §4's own explicit rule.
+
+**Cell creation is real**: `CellFolder.CreateCellFolder` + `LayoutPersistence.SaveToFile` + a `.ccell`
+with `PrimaryLayout` set — not a bare `.clay`. **Inherits `TechRef` and `DbuPerMicron` verbatim** from
+the parent (same technology means §2.2's reconciliation never fires for a freshly grouped cell; identical
+resolution means no rescale — both are the reason to inherit rather than default, per §4's own wording).
+R-L3a-2's cycle check (`CheckNotCyclic`) runs even though a brand-new, reference-free cell cannot
+actually close a cycle — "run the check anyway rather than special-casing," and the just-created (still
+empty) cell folder is removed again on the vanishingly unlikely refusal path, so a REFUSED group never
+leaves a half-created folder behind.
+
+**A real bug caught by writing gate 11's round-trip test, not just exercised by it**: the first
+`CommitGroupIntoCell` implementation moved a selected instance's `CellRef` into the new cell's own
+`layout/` directory WITHOUT rebasing it — the exact cross-directory-reference mistake paste's own
+`LayoutFragment.RebaseInstances` already exists specifically to avoid. Fixed by rebasing every moved
+instance's `CellRef` (via the SAME `LayoutFlatten.RebaseCellRef` helper flatten's own nested-instance
+rebasing already uses) from the parent's `InstanceBaseDir` to the new cell's own layout directory before
+writing it. `GroupThenFlattenOneLevel_RoundTrips_ByteIdenticalToOriginal` (gate 11 — group a mixed
+shape+instance selection, then flatten the resulting instance one level, and assert
+`LayoutPersistence.Serialize` equality against the original) is the direct regression gate; it failed
+against the original implementation (the round-tripped instance's `CellRef` pointed at a non-existent
+path one directory too deep) before this fix.
+
+**R-L3c-6 — undo removes the instance and restores the shapes, but does NOT delete the cell folder,
+and this is enforced by CONSTRUCTION, not by a special-cased guard.** The cell folder is created ONCE,
+outside the undoable `CompositeCommand` entirely (delete-shapes/-instances + add-one-instance is the
+ONLY part on the undo stack); Undo therefore has no code path that could ever touch the filesystem, and
+Redo re-executes the SAME `CompositeCommand` against the SAME already-existing `LayoutInstance` object
+(same `CellRef`, pointing at the SAME folder) — reusing the existing cell rather than minting a second
+one falls out for free, with no "was this a redo?" branch anywhere
+(`CommitGroupIntoCell_UndoThenRedo_ReusesTheSameCell_NeverCreatesASecondOne` pins this directly, and
+`..._Undo_RestoresShapesAtOriginalIndices_InstanceGone_CellFolderRemains_MessagesNote` pins the
+folder-survives half). **Why NOT deleting is deliberate, stated in both the confirmation dialog AND the
+post-commit Messages note, per §4's own instruction**: the user may already have opened or edited the new
+cell, another layout may have instantiated it in the meantime, and file deletion is not something an undo
+stack should ever be doing — an orphaned cell folder is a harmless, visible, manually removable artifact;
+a deleted one the user had started working in is not.
+
+## Scope guardrails held
+
+No net renaming or hierarchical net naming (LVS, §9A.3 — named as a standing gap above, not silently
+skipped). No changes to instance rendering, the instance cache, or L3b's invalidation — flatten and group
+both go through the normal `LayoutView.Shapes`/`Instances` mutation path and let the existing machinery
+react, unmodified. No changes to `Flatten to Polygon…` beyond the naming/menu-grouping separation §1
+already covers. No auto-grouping heuristics — both operations are user-invoked only, via the context
+menu. `src/Core`, `src/Engine`, `RfCore` untouched.
+
+## New/changed files
+
+`src/Ui/Layout/LayoutFlatten.cs` (extended — `AllLevelsResult`, `CountResultingShapes`,
+`FlattenAllLevels`, `FlattenAllLevelsHardCeiling`), `LayoutGroup.cs` (new — `BuildContents`),
+`LayoutEditorViewModel.Flatten.cs` (new — availability/outcome-preview/cross-tech-check/commit),
+`LayoutEditorViewModel.Group.cs` (new — availability/commit, the one place this VM writes cell-folder
+files directly, mirroring `SaveLayoutCommand`'s own precedent for VM-owned file I/O),
+`LayoutEditorViewModel.Retarget.cs` (`ResolveTechAt` seam). `src/Ui/ViewModels/WorkspaceViewModel.cs`
+(`WireRetargetSeam` wires `ResolveTechAt`). `src/Ui/Controls/LayoutCanvas.cs`
+(`AddInstanceHierarchyMenuItems`, `ShowFlattenHierarchyAsync`/`ShowFlattenAllLevelsAsync`/
+`ShowGroupIntoCellAsync`, `ResolveFlattenLayerMappingAsync`/`ConfirmFlattenAsync` — reusing
+`LayerMappingDialog`/`SaveChangesDialog`/`InputNameDialog`, no new dialog types).
+
+Test files (this phase's own additions; earlier work in this same session already built and tested
+`LayoutCoordinateWalk`'s affine generalization and `LayoutInstanceTransform.ComposeInstances`):
+`LayoutFlattenTests.cs` (28 — gates 2/3/4/5 incl. the byte-exact-at-origin + tolerant-at-offset pixel
+pair described above, array explode + `PathsConstructed` cache-reuse proof, the shared-walk field
+transform, arc-bulge sign-flip), `LayoutFlattenAllLevelsTests.cs` (new, 11 — gate 7's three-deep
+hierarchy + count-matches-actual, arrays-at-two-levels multiply, unresolvable-nested/top-level-instance
+survives+reported, a genuine mutual-cycle doesn't hang, the hard-ceiling sentinel + refusal-names-the-
+ceiling, gate 6's cross-tech-requires-confirmation/same-tech-raises-none/commit-applies-the-resolved-
+remap), `LayoutGroupIntoCellTests.cs` (new, 5 — gate 8's mixed-selection pixel identity, gate 9's real
+cell + tech/resolution inheritance, gate 10's undo-restores/cell-survives/Messages-note and
+redo-reuses-the-cell, gate 11's round-trip). 2844 Ui.Tests total, all green (confirmed via both the
+documented-gate run and the full unfiltered run below); full solution green (Firewall 4/4, Core
+388/388, Engine 461/462 — 1 pre-existing skip, matching the L3b baseline exactly). Documented gate
+green (`dotnet test tests/Ui.Tests --filter "Category!=Nightly" --no-build`, ~5 min — includes the
+Benchmark sweeps this brief's OWN test-loop instruction names explicitly, not the newer
+`Category!=Benchmark` default; `dotnet test tests/Firewall.Tests --no-build`). **One flaky result in the
+full unfiltered run, confirmed NOT a regression**: `LayoutInstanceArrayPerfTests.Array50x50Of20ShapeCell_
+FrameTime_NotComparableTo50kFlatShapes` (a wall-clock timing comparison, Nightly-tagged) measured the
+array as slower than the flat baseline once, while running concurrently with the rest of the ~3,700-test
+solution; re-run in isolation immediately after, it passed cleanly (26–27ms array vs. 115ms+ flat,
+matching every other measurement in this note) — CPU contention from the surrounding full run, not
+anything L3c changed.
+
+**Re-ran R-L3a-3's own instance/array benchmark, per this brief's closing instruction, so L2d can be
+scoped against hierarchy-shaped shape counts:** a 50×50 array of a 20-shape sub-cell (2,500 placements)
+renders a full frame in **26.3ms median** (n=5) versus **115.3ms median** (n=3) for 50,000 unique flat
+shapes covering the comparable area — **4.4× cheaper**, consistent with (and slightly better than) L3a's
+own originally-measured 3.9× floor. No regression in the instance-caching win from anything L3c added.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout Editor
+phase) — the context-menu item labels/grouping, the cross-tech `LayerMappingDialog`/confirm-dialog
+sequencing, and the "Group into Cell" name-prompt-then-confirm flow cannot be exercised headlessly for the
+same reason every prior phase's dialog/menu code couldn't be; correctness rests on the VM-level gate
+tests above, which drive the exact same public methods (`CommitFlattenOneLevel`, `CommitFlattenAllLevels`,
+`CheckFlattenCrossTechMapping`, `CommitGroupIntoCell`) the menu handlers call. Please confirm on your end:
+"Flatten Hierarchy" and "Explode Array" show the outcome count in their own label and are never adjacent
+to "Flatten to Polygon…"; flattening an instance from the other starter technology shows the layer-mapping
+dialog before anything changes; "Group into Cell…" prompts for a name, warns that undo won't delete the
+folder, and the resulting instance renders exactly where the selection was.
+
+**Phase L3 (hierarchy — L3a instances/arrays/caching, L3b push-in/pop-out navigation and hierarchy save,
+L3c flatten and group-into-cell) is now COMPLETE.** Next phase not yet briefed — report back before it
+lands.
+
+Phase L3b — hierarchy navigation, edit-in-place, cache/index invalidation, and CellUsageScanner's .clay
+gap (brief-L3b-hierarchy-navigation.md, 2026-07-27) — COMPLETE: push in / pop out / breadcrumb
+navigation for the layout editor, mirroring the schematic's own nav-frame model; the parent-refresh
+invalidation L3a's own gap list named; save/dirty semantics that follow the active nav frame; and
+`CellUsageScanner` widened to see `.clay` instance references (Remove/Rename Cell).
+
+## §1 — nav-frame model: reused wholesale, retargeted; two things schematic does NOT already solve
+
+**Reused directly (architecture, not literal types — "Layout borrows patterns from Schematic, not
+types" per `LayoutModel.cs`'s own header):** the frame-stack shape itself
+(`LayoutDocument`'s private `NavFrame(Session, Label)` list, `PushIn`/`PopOut`/`PopTo`,
+`ActiveViewModel`/`NavDepth`/`CanPopOut`/`NavFrames`/`Breadcrumbs`, `ActiveViewModelChanged`),
+`IHierarchyHost`'s shape (new `ILayoutHierarchyHost`, same five members retargeted from
+`EditableComponent`/`SchematicEditModel` to `LayoutInstance`/`LayoutEditorViewModel`), the session
+registry (`SchematicSessionRegistry` → new `LayoutSessionRegistry`, identical get-or-create-from-disk
+funnel so "open as tab" and "push in" share ONE session per path — this is what makes an in-session
+edit visible from every simultaneous view of a cell), and the breadcrumb bar's own AXAML shape
+(`LayoutBreadcrumbItem` — a layout-local record, not a shared type, same convention).
+
+**NOT reused, because research found schematic doesn't actually have it — two real gaps in the mirror
+target, found by reading the code rather than assumed:**
+- **Viewport is canvas-owned, not VM-owned, in BOTH editors** — `SchematicCanvas` never saves/restores
+  `_panX/_panY/_zoom` across a push/pop; it just carries over whatever the canvas fields already were.
+  Schematic's push-in/pop-out does **not** restore the parent's viewport today. Since brief §1
+  explicitly gates this for layout regardless ("the detail most likely to be skipped"), `LayoutDocument`
+  gained its own per-frame `Viewport: LayoutViewport?` (captured by the VIEW, not the VM — see below)
+  — the ONE piece of state this nav-frame model carries that the schematic mirror-target does not.
+  Selection needed no equivalent: it already lives on `LayoutEditorViewModel` itself, so distinct
+  per-frame VM instances make it free, exactly like schematic.
+- **`ConfirmCloseDockable`'s single-tab-close-dirty-check gap is a pre-existing schematic
+  characteristic, deliberately MIRRORED not fixed**: closing a tab checks `doc.IsDirty`, which follows
+  the ACTIVE frame only — pop back to a clean base, then close the tab, and a dirty popped sub-cell
+  gets no prompt. Data is not lost (the orphaned dirty session survives in the registry and surfaces at
+  Save-All/quit time — see §3), but the single-tab-close prompt itself does not catch it, in EITHER
+  editor. Named explicitly per the brief's own instruction to decide rather than silently inherit.
+
+**Viewport capture is view-layer, not VM-layer, and only fully wired through view-driven navigation.**
+`LayoutCanvas.CurrentViewport`/`SetViewport` are new; `LayoutEditorView.axaml.cs`'s `DoPushInto`/
+`DoPopOut`/`DoPopToLevel` (used by double-click, the toolbar Pop Out button, the breadcrumb bar, and
+this file's own Ctrl+]/Ctrl+[ tunnel handling — mirrors `SchematicView`'s identical keyboard-shortcut
+placement) capture-then-navigate-then-apply, deterministically (no reliance on Avalonia binding-order
+races). The App-menu "Push Into Cell"/"Pop Out"/"Open Cell in New Tab" commands (widened on
+`WorkspaceViewModel` to dispatch by which document type — schematic or layout — is active, since the
+menu items say "Push Into Cell," not "Schematic: Push Into Cell") deliberately do NOT capture viewport
+— they can't reach the canvas from the VM layer — and fall back to the pre-existing
+`_needsInitialFit`-on-VM-switch auto-fit, a graceful (if less precise) degradation, not a bug.
+
+**Double-click IS layout's push-in trigger — unlike schematic, where double-click opens the parameter
+editor and push-in is menu/keyboard-only.** This is what brief §1 explicitly asks for, not an
+inconsistency: `LayoutCanvas` gained a real `DoubleTapped` handler (`InstanceDoubleTapped` event, hit-
+testing via the existing `LayoutHitTest.HitInstanceStack`), separate from the `OnPointerPressed`
+`clickCount` plumbing multi-point drawing already uses.
+
+**Push into an array enters the sub-cell once, for free** — R-L3a-5 already made a `LayoutInstance`
+(including an arrayed one) a single object with one `CellRef`; push-in operates on that object
+directly, so there was never a "which array cell" question to answer.
+
+## §2/R-L3b-1 — two invalidation paths, covering BOTH the L3a render cache and the L2b index
+
+**`CellLayoutResolver` gained a `TechnologyCache`-shaped live-override seam** (`SetLive`/`ClearLive`/
+`HasLiveOverride`/`LiveViewChanged`, keyed by the resolved `.clay` ABSOLUTE FILE path — the same
+identity `LayoutSessionRegistry` uses, not the cell folder `Resolve`'s plain cache keys on). `Resolve`
+checks `_live` before the mtime cache. `Generation` (R-L3a-4's existing opaque freshness token, already
+threaded through `LayoutSpatialIndex` as `resolutionVersion` by every query site) bumps on every
+`SetLive`/`ClearLive` call — including a REPEATED `SetLive` with the SAME reference, which matters (see
+below).
+
+**In-session-edit path**: `WorkspaceViewModel.GetOrCreateLayoutSession`'s registered sessions push
+`CellLayoutResolver.SetLive(path, session.Model)` on every dirty-state change (via
+`LayoutSessionRegistry`'s registration hook) — fires "on the edit, not on save," per R-L3b-1. **On-
+disk-change path**: every layout-save call site (`SaveMaterializedLayoutDoc`, `SaveScratchLayoutToCell`,
+`SaveScratchLayoutAsFile`, the orphaned-session save loops) now calls `NotifyLayoutSessionSaved`, which
+calls `CellLayoutResolver.Invalidate(cellDir)` — mirroring `TechnologyCache.Invalidate` exactly: a save
+clears BOTH the plain cache and the live override for that cell (the just-saved content IS the new
+baseline; a still-open session's next edit re-installs a fresh override automatically, no special-case
+"re-set after save" code needed anywhere).
+
+**The L2b spatial index half is genuinely free, confirmed by a real test, not assumed** — every
+`LayoutSpatialIndex.QueryIntersecting` call already receives `CellLayoutResolver.Generation` as
+`resolutionVersion` (R-L3a-4's own design), so bumping it on `SetLive` is the ENTIRE fix: a growing
+sub-cell's instance bbox in a PARENT's spatial index updates on the next query with zero new index code.
+`LayoutHierarchyLiveRefreshTests.GrowingSubCellExtent_...` proves this directly — a query point that
+misses the instance's original extent hits after only a `SetLive` call, no explicit re-add.
+
+**The render cache half is NOT free — this is the part with no schematic analogue, exactly as the brief
+predicted, and it is where the ONLY real bug-shaped gap in this phase lived.** `LayoutRenderer.
+Instances.cs`'s `_cellCompileCache` (`ConditionalWeakTable<LayoutView, CompiledCellGeometry>`) is keyed
+by REFERENCE. A push-in session's `LayoutView` is mutated IN PLACE across edits (commands mutate
+`Shapes`/`Instances` lists on the same object, never swap in a new one) — so a SECOND `SetLive` call
+with the identical reference does NOT naturally evict the stale compiled paths the way a fresh
+disk-load would (a genuinely new object the cache had never seen). New `LayoutRenderer.
+InvalidateCompiledGeometry(view)` (internal, `_cellCompileCache.Remove(view)`) closes this;
+`WorkspaceViewModel.OnCellLayoutLiveViewChanged` (subscribed once to the static `LiveViewChanged` event)
+calls it, then broadcasts `LayoutChangeInfo.InstancesOnly` to every open layout frame's own model to
+force a repaint. **Proven with a positive AND a negative test** — `LayoutHierarchyLiveRefreshTests.
+EditingSubCell_ThroughSetLivePlusCacheEviction_ChangesParentRenderingWithNoReload` (the headline gate-5
+test: grow a sub-cell's rect in place, no reload, parent repaints correctly) and its deliberate
+companion `WithoutCacheEviction_..._RendersStale_ProvingEvictionIsNecessary` (SetLive alone, no
+eviction call, asserts the OLD geometry still renders) — the second test exists specifically so a future
+change that accidentally removes the eviction call fails LOUDLY instead of silently reintroducing the
+exact bug this phase closes.
+
+## §3 — save while pushed in writes the sub-cell; dirty propagation never silently loses work
+
+**Mirrors the schematic's `HierarchySaveTests` shape exactly, including its own bytes-unconditionally-
+rewritten base behaviour.** `SaveMaterializedLayoutDoc` writes the base via the VM's existing
+`SaveLayoutCommand` (unconditionally, same as schematic), then walks `doc.NavFrames` and writes every
+OTHER dirty frame directly to its own registered path, `MarkSaved()`s it, and calls
+`NotifyLayoutSessionSaved`. "The parent is unmodified on disk" holds in the sense that matters — its
+CONTENT is byte-identical when it wasn't itself edited — not in the sense that no write syscall
+occurred, exactly matching what the schematic's own tests assert.
+
+**Dirty propagation**: `LayoutSessionRegistry` (a direct mirror of `SchematicSessionRegistry`) never
+retires a dirty session, tracked via `HasOrphanedDirtySession`/`GetOrphanedDirtyPaths` — wired into
+`HasAnyDirtyWork()`, `PromptSaveBeforeClose` (own orphaned-layout-session branch, own message
+inclusion), the `SaveAllDocuments` AllDocs-scope loop, and `IsCellDirty` (now also checks
+`_layoutRegistry.AllDirtyPaths`, so a dirty PUSHED-IN sub-cell correctly dirties ITS OWN cell node in
+the tree, not just whatever cell the top-level tab happens to be showing). **The single-tab-close gap
+named in §1 is the one place this guarantee is NOT enforced** — by design, mirroring schematic, not by
+oversight.
+
+## §4 — CellUsageScanner: NOT "just add .clay to the extension list" — two hardcoded points, confirmed
+by reading, worth remembering for L4's importers
+
+**Checked before writing anything, per the brief's own instruction — the answer was no, and here's
+exactly why**, since this is the useful fact for L4: the CellRef-matching logic itself (last-path-
+segment comparison) WAS already generic. Two SEPARATE things were `.csch`-specific, not one:
+1. **File discovery** — hardcoded to `CellFolder.SubFolderPath(cellDir, ViewType.Schematic)` +
+   `"*.csch"`.
+2. **The JSON array key was hardcoded to `"Components"`** — a `.clay`'s instances live under
+   `"Instances"` (`LayoutModel.cs`'s `LayoutView.Instances`, confirmed no `[JsonPropertyName]`
+   override — serializes under the literal property name). A widened extension list alone would have
+   found `.clay` files and then silently matched nothing in every one of them, since `node["Components"]`
+   is null on every `.clay`.
+
+**Fix**: `CellUsageScanner`'s new `ScanKind(ViewType, FilePattern, ArrayPropertyName)` list —
+`(Schematic, "*.csch", "Components")`, `(Layout, "*.clay", "Instances")` — is the ONE place a future
+view kind's own `CellRef`-bearing array gets registered; both `CountReferencingCells` and
+`RewriteCellReferences` iterate it instead of a single hardcoded `.csch` path. `LayoutInstance.CellRef`
+does serialize under the literal string `"CellRef"` (confirmed — same PascalCase/no-naming-policy
+convention as `.csch`), so the VALUE-matching logic really was reusable verbatim once the surrounding
+scan widened — the value-matching half of the brief's guess was right, the file-discovery half wasn't
+the whole story.
+
+**Remove Cell / Rename Cell now see `.clay` for free, mostly** — `RemoveCellAsync`'s and
+`RenameCellAsync`'s force-close loops were ALREADY generic (`IsPathOrUnder`, not `.csch`-gated) except
+for one narrow `RetireSessionIfUnreferenced` branch each, which now also retires `.clay` sessions via
+the new `RetireLayoutSessionIfUnreferenced`. **Named gap, explicitly out of this brief's literal ask**
+(reference tracking, not primary-file renaming, per the research that found it): `RenameCellAsync`'s
+optional "rename primaries" pass only iterates `ViewType.Schematic, ViewType.Symbol` — a cell's primary
+`.clay` is never renamed alongside a cell rename, even after this fix. `.clay` REFERENCES to a renamed
+cell are correctly rewritten either way; only the referenced cell's OWN primary filename staying
+unrenamed is the gap.
+
+## Scope guardrails held
+
+No flatten, no group-into-cell (L3c). No changes to instance rendering, arrays, or the instance cache
+MECHANISM beyond its invalidation (`_cellCompileCache`'s own compile logic, `LayoutInstanceTransform`,
+array expansion — all untouched; only a new eviction entry point was added). No net propagation, no
+LVS, no schematic-to-layout (L5). No new navigation model — the per-frame viewport field is additive
+DATA on the existing frame-stack shape, not a parallel mechanism. `src/Core`, `src/Engine`, `RfCore`
+untouched.
+
+**34 new tests** (`LayoutDocumentHierarchyTests.cs` 13 — push/pop/popTo/breadcrumbs/dirty-and-undo-
+follow-active-frame/3-level viewport capture-restore; `CellLayoutResolverLiveTests.cs` 6 —
+SetLive/ClearLive/HasLiveOverride/Generation-bumps-every-call/Invalidate clears both; 5 new cases in
+`CellUsageScannerTests.cs` — `.clay` counted, mixed schematic+layout references, rewrite touches both
+kinds; `LayoutHierarchyLiveRefreshTests.cs` 3 — the gate-5 headline test, its negative-control
+companion, and the spatial-index bbox-growth gate; `LayoutHierarchySaveTests.cs` 7 — gate 7's save-
+while-pushed-in incl. parent-content-unchanged, gate 8's orphaned-dirty-session survival, clean-frame-
+not-rewritten, and the get-or-create-shares-one-session property). **2542 Ui.Tests total (was 2508),
+all green**; full solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip,
+matching the L3a-followups baseline exactly).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout
+Editor phase) — the breadcrumb bar's rendering, the Pop Out toolbar button, and double-click-to-push-in
+cannot be exercised headlessly for the same reason every prior phase's dialog/menu/canvas-gesture code
+couldn't be; correctness rests on the VM/Document-level gate tests above, which drive the exact same
+public methods (`LayoutDocument.PushIn/PopOut/PopTo`, `CellLayoutResolver.SetLive/Invalidate`,
+`LayoutRenderer.InvalidateCompiledGeometry`) the view's code-behind calls. Please confirm on your end:
+double-clicking a resolved instance pushes into its sub-cell and shows the breadcrumb; popping out (Pop
+Out button, breadcrumb click, Ctrl+[) restores the parent's prior pan/zoom rather than re-fitting;
+editing a pushed-in sub-cell's geometry visibly updates a PARENT tab open on the same workspace, live;
+and Remove/Rename Cell correctly warn about / rewrite `.clay` instance references the same way they
+already do for `.csch`.
+
+**Next: L3c (flatten one level / all levels, group-into-cell).** Report back before that brief lands.
+
+L3a follow-ups — picker filtering, mixed selection, panel gating, cell drag-drop
+(brief-L3a-followups.md, 2026-07-27) — COMPLETE: four owner items after L3a, two of which (§1 and §4)
+share the same "visible, explanatory error over invisible absence" principle, and one (§3) turned out
+to be a display bug against a model that was already correct.
+
+## §1/R-fix-1 — the Instance picker excludes ONLY the parent cell; every deeper cycle is listed and
+explained at refusal, not hidden
+
+L3a's picker only ever listed cells whose Layout view resolved to a primary — silently omitting both
+the trivial self-reference case AND any cell that would form a deeper cycle (`A` instantiates `B`;
+editing `B` never showed `A` at all). The fix inverts the philosophy: **exclude the parent cell only**
+(the one case obvious enough that a user never wonders why it's missing) — every other cell, including
+one that would close a deeper cycle, is listed, selectable, and attempted; R-L3a-2's existing edit-time
+guard is what actually refuses it, naming the full path (`B → A → B`). A missing row can never teach a
+user *why* a cell "vanished"; a refusal message can. A cell with no layout view is listed too, now
+**disabled with the reason shown inline** (grey secondary text next to its name, `RowOpacity` dimmed)
+rather than omitted — same principle, applied to a different kind of "can't actually place this."
+
+**The filtering/exclusion logic moved out of the `Window` subclass into a new framework-free file,
+`InstanceCellChoices.cs`** (`src/Ui/Layout/`) — `InstanceCellChoice` (record: `DisplayName`,
+`AbsoluteCellDir`, `DisabledReason`, computed `IsEnabled`/`RowOpacity`) + `static Collect(workspaceRootDir,
+parentCellDir)`. This is the same "pull the logic that needs a real test into a class a `Window`
+subclass can't hide it in" move `ScaleFieldLinker`/`TraceLabeler` already established in this codebase —
+`InstanceCellPickerDialog.axaml.cs` is now a thin wrapper that calls `Collect` and turns the result into
+`ListBox` state (initial selection prefers the first ENABLED row; `OkButton` disables + a reason
+`TextBlock` shows when the selected row is disabled). `LayoutEditorViewModel.CurrentCellDir` (was
+private) is now **public** so both picker call sites (the Instance tool's own picker in
+`LayoutEditorView.axaml.cs`, and the Properties Inspector's Re-target… button in
+`LayoutShapePropertiesView.axaml.cs`) can pass the parent cell to exclude.
+
+**The guard itself is untouched — §1 adds a filter, it does not replace R-L3a-2.** A cycle reached by
+any path that bypasses the picker (Browse…, or a future scripted path) is still refused with the
+message naming the cycle, exactly as before.
+
+Test file: `InstanceCellChoicesTests.cs` (7 tests — parent excluded/everything else listed, null
+parent excludes nothing (scratch document), a two-cell A↔B pair still lists A while editing B, a
+three-cell A→B→C chain still lists A while editing C, no-layout-view listed-but-disabled, has-layout
+listed-and-enabled, empty/missing workspace root never throws).
+
+## §2/R-fix-2/R-fix-3 — a selection may now contain BOTH shapes and instances
+
+L3a's stated scope decision — shape and instance selection are mutually exclusive, each clearing the
+other — was **correct for some operations and wrong for others**, and a marquee dragged over a region
+containing both had no way to represent the outcome under that rule. The fix draws the line explicitly,
+per operation, superseding L3a's blanket exclusivity:
+
+| Operation | Instances participate? |
+|---|---|
+| Marquee, click, Shift/Ctrl modifiers | **Yes** |
+| Move, nudge, delete, cut / copy / paste, duplicate | **Yes, in a mixed selection, as ONE undo entry** |
+| Vertex / edge / bulge / control-point handles (L1d) | No — an instance has no vertices |
+| Boolean ops, offset, flatten, repair (L1e) | No — an instance is not geometry |
+| Scale-mode bbox handles (L1h) | No in this pass — L3a named numeric `Mag` only, and that stands |
+
+**Selection plumbing (`LayoutEditorViewModel.cs`/`.Instances.cs`).** `SetSelection`/
+`SetInstanceSelection` both gained a `clearOtherKind` parameter (default `true`, matching every
+pre-existing call site, which was always a replace): a plain click, `SelectAll`/`DeselectAll`, or a
+marquee with no modifier REPLACES the whole selection (both kinds cleared, matching the old behavior
+exactly for the common case); Shift/Ctrl add-or-toggle passes `clearOtherKind: false`, so extending a
+shape selection with a Shift-clicked instance keeps the shapes selected, and vice versa. The
+"plain click on an already-multi-selected member preserves the whole selection, so a drag from inside
+it moves the group" rule (both `ApplyClickSelection` and `ApplyInstanceClickSelection`) now counts
+BOTH kinds together (`_selectedIndices.Count + _selectedInstanceIndices.Count > 1`), so a shape that is
+part of a 2-member mixed selection survives a plain click on it too. A new `ReplaceMixedSelection`
+(shapes, instances) is the one place BOTH lists are set atomically together without either "clearing
+the other kind" as a side effect — used by marquee-commit and by mixed paste/duplicate.
+
+**Marquee (R-fix-3) — one combined spatial-index query, not two.** `ComputeMarqueeSelection` now
+queries `Model.SpatialIndex`'s combined 5-arg overload (R-L3a-4's own discriminated-entry tree) instead
+of the shape-only 2-arg one, splitting candidates by `SpatialEntryKind`. The Shift(add)/Ctrl(toggle)/
+plain(replace) combination logic was factored out into `CombineMarqueePreview(preview, baseSelection,
+hits)` and is now run TWICE — once per kind, against `_marqueeBaseSelection`/
+`_marqueeBaseInstanceSelection` and into `_marqueePreview`/`_marqueeInstancePreview` — so an
+instance-under-a-Ctrl-drag un-highlights live exactly like a shape already did, with no second
+implementation. **"Arrays are one object":** the instance candidate's bbox is
+`CellHierarchy.InstanceBbox` (the whole array-expanded extent, R-L3a-4's own stored value) — a marquee
+touching any single placement of a 50×50 array selects the one `LayoutInstance` (there is only ever one
+selectable index per array, by construction) via crossing mode; enclose mode correctly requires the
+WHOLE array's extent to fit inside the marquee rect, not just one cell. `RebuildOverlay`'s "one
+highlight path" rule (L1i) is unchanged in shape — it now computes an `effectiveInstanceHighlight`
+alongside the existing `effectiveHighlight`, both switching to their respective marquee preview lists
+while a marquee drag is active.
+
+**Move/nudge/delete unified — one `CompositeCommand` when both kinds are present.** `BeginMoveDrag`
+now begins whenever EITHER list is non-empty (the separate `SelectDragKind.MoveInstance` drag kind is
+gone — `RebuildOverlay`'s drag-preview construction was already two independent `if` blocks keyed off
+the SAME kind, so nothing there needed to change beyond the condition). `CommitMoveDrag`/
+`NudgeSelection`/`DeleteSelection` each build `Commands.Layout.MoveShapesCommand`/`MoveInstancesCommand`
+(or `DeleteShapesCommand`/`DeleteInstancesCommand`) and fold them into one `CompositeCommand` when both
+kinds have something to move/delete — a single `Execute` call, a single undo entry, matching gate 6
+exactly. `TryHandleSelectPressOnHandles`'s L1d vertex/edge/bulge dispatch, `FindVertexForContextMenu`/
+`FindEdgeForContextMenu` (the right-click "Delete Vertex"/edge-conversion entry points), and
+`LayoutEditorViewModel.Scale.cs`'s `ShowScaleHandles` all gained a `_selectedInstanceIndices.Count == 0`
+guard — an instance mixed into the selection suppresses shape-only handles entirely, per the table
+above, rather than letting a stray single-shape-plus-instances selection still show L1d handles.
+
+**Cut/Copy/Paste/Duplicate (`LayoutEditorViewModel.Clipboard.cs`) — generalized from two independent
+single-kind paths into one.** `BuildCopyPayload` already built a combined fragment (shapes + instances)
+even before this fix (nobody had exercised the mixed case through it) — the real gap was downstream:
+`CutSelectionAfterCopy` used to branch on which list was non-empty (an L3a-era artifact of the mutual-
+exclusivity assumption) and is now just `DeleteSelection()`. `Duplicate()` now clones and offsets BOTH
+kinds and inserts them together. The shared commit (`InsertPastedShapes` → renamed `InsertPastedMixed`)
+now takes `(shapes, instances, description)` and folds a `ReplaceShapesCommand` + N `AddInstanceCommand`s
+into one `CompositeCommand`, then calls `ReplaceMixedSelection` on the new indices of BOTH kinds — used
+by Paste, Paste in Place, and Duplicate alike. `BeginPastePlacement`/`PasteInPlace` gained an optional
+trailing `instances` parameter (every pre-existing shape-only positional call site is unaffected); the
+paste-ghost ITSELF still only visually follows the shapes (a stated, narrow scope simplification — an
+instance ghost would need its own placeholder rendering plumbed into the same overlay pass, and nothing
+in this brief's gates requires a live instance preview during a paste drag), but the instances travel
+alongside it and commit together, translated by the identical final delta, as the same one undo entry.
+
+**The View's real `IClipboard` wiring for instances did not exist before this fix, discovered while
+implementing it.** `LayoutClipboard.CopyAsync` used to rebuild a SHAPES-ONLY fragment internally from a
+`shapes` parameter, discarding the VM's own (already-combined) `BuildCopyPayload()` result entirely —
+an instance-only Ctrl+C wrote NOTHING to the system clipboard. `CopyAsync` now takes the pre-built
+`LayoutFragment.Payload` directly (dropping the redundant `shapes`/`dbuPerMicron` parameters) and
+serializes it as-is; the rich PDF/SVG/PNG preview still renders `payload.Shapes` only (an instance's
+geometry needs the full `LayoutRenderer.Instances.cs` compiled-cell machinery this export path has no
+access to — a stated, narrow limitation: an instance-only copy carries no rich graphic, same as any
+other best-effort render failure, while the JSON text — what circuitRF's own paste actually reads — is
+always present). `LayoutEditorView.axaml.cs`'s `OnClipboardPaste` now also calls
+`vm.RebaseFragmentInstances(payload)` and threads the result into both `PasteInPlace`/
+`BeginPastePlacement`, which it never did before. **Named, deliberately out of this brief's scope:** an
+instance's own coordinates are NOT rescaled across a DBU-per-micron mismatch the way shapes already are
+(`LayoutFragment.Rescale` only ever walked `Payload.Shapes`) — a same-resolution paste (the common case)
+is unaffected; a cross-resolution paste of an instance would land at the wrong physical scale. A future
+brief's job, documented at `RebaseFragmentInstances`'s own doc comment.
+
+**Availability + reasons (`LayoutEditorViewModel.Booleans.cs`/`.Scale.cs`).** A new
+`ShapeOnlyBlockReason(opLabel)` returns `"{opLabel} apply to shapes only; N instance(s) selected."`
+whenever `_selectedInstanceIndices.Count > 0`; `BooleanOpAvailability`/`OffsetAvailability`/
+`FlattenAvailability`/`RepairAvailability`/`ScaleAvailability` all check it FIRST, before their own
+shape-specific logic — R13a's "disabled with a stated reason, never a silent no-op or a silent partial
+apply," now covering the mixed-selection case the same way it already covered "nothing selected."
+`CutCopyDeleteDuplicateAvailability` went the other way — it now counts BOTH kinds
+(`ValidSelectedIndices.Count + SelectedInstanceIndices.Count >= 1`), since those operations DO accept a
+mixed selection per the table above.
+
+Test files: `LayoutMixedSelectionTests.cs` (21 tests — gate 4's lone-instance/array-as-one-unit-from-a-
+non-origin-cell/mixed-region marquee selection, gate 5's live preview + Ctrl-un-highlight + preview-
+equals-committed parity for instances, Shift-click-keeps-both and plain-click-preserves-the-whole-mixed-
+group, gate 6's move/nudge/delete/duplicate/cut/paste each as one undo entry covering both kinds, and
+the disabled-with-reason coverage for booleans/offset/flatten/scale/handles/vertex-context-menu when an
+instance is mixed in). No regressions in any of the 2,469 pre-existing tests — the `clearOtherKind:
+true` default reproduces L3a's exact prior behavior for every single-kind call site untouched by this
+brief.
+
+## §3/R-fix-4 — instances never had Layer or Net; the Properties panel was simply ungated
+
+`LayoutInstance` carries `CellRef`/`X`/`Y`/`Rot`/`MirrorX`/`Mag`/`Rows`/`Cols`/`PitchX`/`PitchY`/
+`SchematicId` — no `Layer`, no `Net`, and never did. `LayoutShapePropertiesViewModel.ShowNet` was `=>
+!ShowBitmap` (true for an instance selection) and the Layer row had no gate at all — a straightforward
+display bug against a model that was already correct, not a model gap to close. `ShowNet` is now `=>
+!ShowBitmap && !IsInstanceContext`; a new `ShowLayer => !IsInstanceContext` gates the Layer row's
+`Grid.IsVisible` the same way. **Why, recorded so "should an instance have a layer?" isn't re-litigated
+from scratch next time:** an instance paints on whatever layers its SUB-CELL uses (hiding layer M1
+already hides M1 geometry INSIDE an instance, via the sub-cell's own resolved technology) — a Layer
+combo on the instance itself would control nothing. GDSII's `SREF` carries no layer either. Nets attach
+to conductor geometry and pins, not to a placement; the sub-cell's own port labels are what will carry
+nets once L5 lands. Nothing is lost by hiding either row for an instance.
+
+## §4/R-fix-5/R-fix-6 — drag a cell from the project tree onto a layout
+
+`LayoutCanvas` had an image-file drop target already (`OnImageFileDragOver`/`OnImageFileDrop`) but no
+cell-drag target at all. `CellDragPayload` (already shared with the schematic editor's own cell drop,
+`src/Ui/Schematic/CellDragPayload.cs`) needed no changes — a NEW handler pair,
+`OnCellDragOver`/`OnCellDrop`/`OnCellDragLeave`, registered alongside the image-file pair (never one
+handler that branches, mirroring `SchematicCanvas`'s own convention), parses the SAME payload format.
+
+**One placement path, not two (R-fix-6).** A new `LayoutEditorViewModel.Instances.cs` method,
+`TryPlaceNewInstance(cellRef, x, y)`, is now the SOLE place a brand-new `LayoutInstance` gets
+constructed and committed (`new LayoutInstance { CellRef, X, Y, Mag = 1.0 }`, the R-L3a-2 cycle check,
+`AddInstanceCommand`, select-the-result) — both `CommitInstancePlacement` (the Instance tool) and the
+new `CommitDragInstancePlacement` (drag-and-drop) call it, so the two entry points can never drift.
+Gate 9 (below) asserts this directly: the SAME cell dropped at the SAME point via either path produces
+field-identical `LayoutInstance`s.
+
+**The drag ghost is a SEPARATE state machine from the Instance tool's own, deliberately.** A system
+drag can start while any other tool (or none) is active; changing `ActiveTool` mid-drag to arm the
+Instance tool would visibly clobber whatever the user was doing for no reason. `UpdateDragInstanceGhost`/
+`CancelDragInstancePlacement`/`CommitDragInstancePlacement` (all new) maintain their own
+`_dragInstancePlacementPending` field, never touching `ActiveTool` or `IsInstancePlacementActive`;
+`RebuildOverlay`'s `PendingInstancePlacement` slot serves EITHER ghost (`_instancePlacementPending ??
+_dragInstancePlacementPending` — the two are never simultaneously active in normal use).
+
+**R-fix-5's rendering widening applies to BOTH ghosts, not just drag-drop.** `DrawPendingInstancePlacement`
+(`LayoutRenderer.Instances.cs`) used to always draw a plain dashed box regardless of resolution. It now
+resolves the pending `CellRef` the same way a committed instance does: when it RESOLVES, it compiles
+and draws the sub-cell's REAL geometry (reusing `CompileCell` — the identical per-layer aggregate paths
+a committed instance referencing the same cell already compiles, so this costs nothing extra in the
+common case of dragging a cell also placed elsewhere) at reduced opacity with a dashed accent outline;
+when it does NOT resolve, it falls back to the SAME labelled placeholder a committed unresolved instance
+gets (`DrawBrokenInstancePlaceholder`) — "matching R-L3a-1," per the brief, rather than a generic empty
+box. The Instance tool's own ghost automatically gained this improvement too, since both paths share
+the one method — there is no more "box-only" ghost anywhere in the layout editor.
+
+**R-fix-1's principle, mirrored exactly for drag-and-drop.** `DragOver` shows a "no" cursor ONLY for the
+literal parent cell (`WouldDragCellBeSelfReference`, comparing normalized absolute paths — reuses
+`InstanceCellChoices.NormalizeDir`, the same normalization the picker's own self-exclusion uses).
+EVERY other cycle-forming cell — including a genuine two-cell `A ↔ B` case where the dragged cell
+already instances the document being edited — is accepted by `DragOver` and refused ONLY at drop time,
+via the identical `CheckNotCyclic` call `TryPlaceNewInstance` already runs, naming the full path in the
+Messages error. A silent "no" cursor for a case the user can't reason about would read as "drag-and-drop
+is broken"; the named refusal teaches them why.
+
+Test files: `LayoutInstanceDragDropTests.cs` (9 tests — `WouldDragCellBeSelfReference` true only for
+the literal parent, false for a deeper-cycle-forming cell AND an unrelated one; a normal drop adds one
+instance, selects it, one undo entry; a genuine two-cell deeper cycle is refused with the path named and
+adds nothing; **gate 9** — drop and the Instance tool produce field-identical `LayoutInstance`s for the
+same cell/point; the drag ghost never arms the Instance tool or touches `ActiveTool`; ghost
+cancel/commit both clear the pending-placement overlay), plus 2 new pixel-oracle tests in
+`LayoutInstanceRendererTests.cs` (a resolved pending placement paints real geometry with real gaps — an
+asymmetric "L" shape's notch stays unpainted, unlike the old uniform box; an unresolved one falls back
+to the placeholder's uniform fill). **Schematic drag-drop is completely unaffected** — `CellDragPayload`
+and `SchematicCanvas`'s own handlers were read for reference but not modified; its existing tests were
+not touched and were confirmed still green in the same full-suite run as everything else below.
+
+## Scope guardrails held
+
+No scale-by-drag-handle for instances (L3a's numeric-`Mag`-only scope stands). No push-in/pop-out,
+edit-in-place, or `CellUsageScanner` work (L3b). No flatten or group-into-cell (L3c). No changes to
+`LayoutInstance`'s fields, to `.clay`, or to the L2b/R-L3a-4 spatial-index STRUCTURE (the marquee change
+is a new consumer of the existing combined query, not a structural change to the index itself). R-L3a-2
+itself is unchanged — every fix here adds a filter or widens a UI surface around it, never weakens it.
+`src/Core`, `src/Engine`, `RfCore`, and the schematic/symbol editors are untouched.
+
+**39 new tests** (7 `InstanceCellChoicesTests.cs` + 2 new pixel-oracle tests in
+`LayoutInstanceRendererTests.cs` + 9 `LayoutInstanceDragDropTests.cs` + 21 `LayoutMixedSelectionTests.cs`);
+**2508 Ui.Tests total (was 2469), all green, confirmed stable across two consecutive full runs**; full
+solution green (Firewall 4/4, Core 388/388, Engine 461/462 — 1 pre-existing skip, matching the L3a
+baseline exactly).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout
+Editor phase) — the picker's disabled-row rendering, the live drag-ghost (both ghosts' real-geometry-
+vs-placeholder rendering), and the ListBox/ContextMenu chrome cannot be exercised headlessly for the
+same reason every prior phase's dialog/menu/DnD code couldn't be; correctness rests on the VM-level and
+pixel-oracle gate tests above, which drive the exact same public methods
+(`WouldDragCellBeSelfReference`, `CommitDragInstancePlacement`, `ComputeMarqueeSelection`, `LayoutRenderer.
+Draw`) the view/canvas code-behind calls. Please confirm on your end: dragging a cell from the project
+tree onto a layout shows a real (not box-only) geometry ghost when the cell resolves; dragging the
+document's own parent cell shows a "no" cursor; a marquee over a mix of shapes and instances (including
+an array) selects both live, with the array as a single unit; and the Properties Inspector shows no
+Layer/Net row for an instance selection.
+
+Phase L3a — instances, resolution, arrays, and instance caching (brief-L3a-instances-and-arrays.md,
+2026-07-27) — COMPLETE, the first of L3's three briefs. `LayoutInstance` (shipped in L0a, never used)
+is now live: placed, resolved, rendered, hit-tested, selected, moved, deleted, arrayed, retargeted, and
+copy/pasted. **L3b (push-in/pop-out, edit-in-place, hierarchy save, `CellUsageScanner`) and L3c (flatten,
+group-into-cell) are explicitly not started** — see the scope guardrails and the gap list at the end of
+this entry before briefing either.
+
+## R-L3a-3 — the headline requirement, and the measured numbers behind it
+
+"A sub-cell's geometry is built once and drawn once per placement under a matrix." A resolved sub-cell
+compiles into ONE aggregate fill path and ONE aggregate stroke path **per layer**, in **cell-local path
+space** (real microns, Y-down, origin at the sub-cell's own (0,0) — never the per-frame viewport-anchored
+origin regular shapes use), cached by `LayoutView` REFERENCE via a `ConditionalWeakTable`
+(`LayoutRenderer.Instances.cs`). Every placement — including every one of a 50×50 array's 2,500 cells —
+then costs one `canvas.Concat(matrix); canvas.DrawPath(...)` pair per layer; the compiled paths are
+identical `SKPath` objects reused across every placement, and (since the cache is keyed by the SAME
+`LayoutView` reference `CellLayoutResolver`'s own mtime cache returns) across every FRAME too, not just
+within one.
+
+**Measured (gate 4, `LayoutInstanceRendererTests.ArrayInstance_PathsConstructed_IsProportionalToSubCellShapes_NotToPlacementCount`):**
+a 50×50 array (2,500 placements) of a 20-shape sub-cell reports `PathsConstructed = 20` on the first
+frame (one compile) and `PathsConstructed = 0` on every subsequent frame (full reuse) — never
+`20 × 2,500 = 50,000`. `InstancesDrawn = 2,500` both times (drawing scales with placements, exactly as
+intended; only PATH CONSTRUCTION — the CPU-side tessellation cost — is what gets amortized to O(1)).
+
+**Measured (gate 5, `LayoutPerf/LayoutInstanceArrayPerfTests.cs`, Nightly):** the same 50×50-of-20-shape
+array renders a full frame in **26.2ms median** (n=5) versus **101.6ms median** (n=3) for 50,000 unique
+flat shapes covering a comparable area — **3.9× cheaper**, and that ratio is a floor, not a ceiling: the
+sub-cell shape count in this measurement (20) is deliberately small and realistic for a via cell; a
+denser sub-cell would widen the gap further since compile cost is paid once regardless of array size.
+
+## L2c's shape-local caching decision pays off a second time
+
+R-L2c-3 cached per-shape paths in **shape-local** space specifically so a pan (which moves the per-frame
+path-space origin) never invalidates them. That SAME property — coordinates independent of any
+particular frame's viewport — is exactly what makes a compiled CELL reusable across every placement of
+every instance referencing it: the compiled paths live in the sub-cell's own local space, so the ONLY
+thing that varies per placement or per frame is the `SKMatrix` concatenated before drawing. Had L2c
+cached in path space instead, none of L3a's reuse would have been possible without a second cache
+redesign — this is the second time that phase's decision has paid for itself unmodified (the first was
+L2c's own compose-with-arbitrary-consumers framing; this is an actual NEW consumer benefiting for free).
+
+## R-L3a-2 — cycles rejected at edit time, detected at load time, bounded at render time
+
+Three enforcement points, because edit-time rejection alone is provably insufficient — a `.clay` can
+arrive from outside the editor (hand-edited, scripted, a future L4 import) with a cycle the editor never
+had a chance to refuse:
+
+1. **Edit time** (`LayoutEditorViewModel.Instances.cs :: CheckNotCyclic` → `CellHierarchy.
+   WouldCreateCycle`) — before `BeginInstancePlacement`/`CommitInstancePlacement` or
+   `RetargetSelectedInstance` commits, a DFS from the CANDIDATE cell asks "can the candidate already
+   (transitively) reach the document currently being edited?" — adding edge current→candidate closes a
+   cycle iff yes. Refused with a Messages error naming the offending `CellRef`. **Only meaningful for a
+   document with a stable cell folder** — a scratch (not-yet-saved) document has nothing to reach yet, so
+   the check is a documented no-op there, exactly like cross-cell symbol resolution already is for
+   scratch schematics.
+2. **Load/every-resolve time** (`CellHierarchy.ResolveForWalk`'s `visiting`-set check) — every recursive
+   walk (bbox computation, render compilation, hit-test) tracks the chain of resolved cell directories
+   from its own root to the current point; re-entering one already on that chain is `Cyclic`, not a stack
+   overflow. This editor has no separate offline "validate on load" pass distinct from resolving/
+   rendering — the SAME guard that protects rendering protects bbox and hit-test too, which is what makes
+   this "detected at load time" in a codebase where every open document effectively re-resolves on every
+   frame.
+3. **Render time** (`CellHierarchy.MaxDepth = 32`) — a hard depth cap independent of whether a chain is a
+   genuine cycle or just very deep; the backstop that guarantees termination regardless of which OTHER
+   caller forgot to check. A too-deep chain renders/measures as a `DepthExceeded` placeholder, not a
+   crash.
+
+**Verified, not just asserted:** `CellHierarchyTests`/`LayoutInstanceRendererTests` cover a direct
+self-reference, a transitive A→B→A cycle, a 40-cell chain (deeper than the 32-deep cap) rendering and
+computing a bbox without throwing, and a genuine mutual-cycle `.clay` pair loading and rendering with the
+cyclic instance marked broken. **A real bug was caught by these tests, not just exercised by them**: the
+first implementation passed each resolved cell's `ResolvedCellDir` (the CELL FOLDER — matching
+`CellLayoutResolver`'s and `CellSymbolResolver`'s own convention) directly as the next level's BASE DIR
+for resolving ITS OWN nested `CellRef`s — but a cell's nested references resolve against its `layout/`
+SUB-folder, one level deeper (the exact same "directory containing the .clay" convention `InstanceBaseDir`
+documents at the top level). `CellHierarchy.LayoutBaseDirOf` is now the one place that conversion happens,
+used by every recursive call site in `CellHierarchy.cs`, `LayoutRenderer.Instances.cs`, and
+`LayoutHitTest.cs` — before this fix, any nested instance (an instance inside an instanced cell) would
+silently fail to resolve one directory level too shallow. `CellHierarchyTests.InstanceBbox_NestedInstance_
+RecursesOneLevel` is the direct regression gate.
+
+## R-L3a-4 — one tree, discriminated entries, two very different freshness strategies
+
+`LayoutSpatialIndex` now holds `LayoutSpatialEntry { Kind: Shape|Instance, Index }` in the SAME R-tree
+(not a second tree) — every consumer (render culling, hit-test, marquee) already filters candidates
+afterward, so adding a discriminator was a smaller change than a second index would have been, and it
+preserves L2b's single-correctness-mechanism design. The two kinds deliberately do NOT share a freshness
+strategy, because their scale characteristics are opposite:
+- **Shapes** (up to 10⁵–10⁶): completely UNCHANGED from L2b — `Apply`'s incremental per-edit patching,
+  `EnsureFresh`'s O(1) count check, full rebuild only when that count is unexpected.
+- **Instances** (typically a handful to a few hundred, even when arrays reach millions of shapes — that
+  compression is R-L3a-3's whole point): whenever freshness is even SUSPECT (count changed, an explicit
+  `MarkInstancesDirty()`, or a caller-supplied `resolutionVersion` token ticked), every Instance-kind
+  entry is dropped and reinserted fresh via the same incremental insert machinery shapes use for edits —
+  O(instances log n), and critically, this NEVER touches a single shape entry or the shape side's own
+  freshness bookkeeping. `resolutionVersion` is an opaque `long` the index itself does not interpret —
+  every caller passes `CellLayoutResolver.Generation` (bumped on `Invalidate`/`InvalidateAll`) directly,
+  so a resolution change anywhere invalidates every open document's instance entries on their next query
+  with no polling and no `FileSystemWatcher` (still ruled out, per L0c).
+- Instance-affecting commands route through a NEW `LayoutChangeKind.InstancesChanged` /
+  `LayoutChangeInfo.InstancesOnly` (mirrors, but is structurally separate from, the shape-focused
+  `Appended`/`RemovedTrailing`/`Updated` kinds) so `LayoutView.NotifyChanged` can skip shape work
+  entirely for a pure instance edit.
+
+Gate 9 (`LayoutSpatialIndexInstanceTests.cs`) is a pure data-structure test — add/move/delete/array-change/
+undo-redo/**a resolution change with the instance list untouched** all produce the same result from a
+linear scan and an index query, verified against a synthetic `instanceBboxOf` delegate independent of the
+filesystem, specifically to isolate "does the INDEX's own freshness bookkeeping work" from "does
+resolution work" (that's `CellLayoutResolverTests`/`CellHierarchyTests`, separately).
+
+## Selection is a deliberate, stated scope simplification — not full unification
+
+**R-L3a-5 is satisfied, but not by threading a discriminated union through the existing ~1,900-line
+shape-selection machinery.** Instances get their OWN selection list (`_selectedInstanceIndices`), their
+own hit-test entry point (`LayoutHitTest.HitInstanceStack`), and their own commands
+(`AddInstanceCommand`/`MoveInstancesCommand`/`DeleteInstancesCommand`/`ReplaceInstanceCommand`) — reusing
+the SAME architectural patterns (`IUiCommand`, restore-at-original-index, drag-override live preview,
+`LayoutChangeInfo`-driven index invalidation) shape editing already established, per R-L3a-5's own
+wording ("through the existing commands"). Shape and instance selection are **mutually exclusive**:
+selecting either clears the other (`SetSelection`/`SetInstanceSelection` each clear the other's list).
+L1d's vertex/edge/bulge handles, L1h's scale-mode bbox handles, and L1e's booleans remain shape-only —
+an instance has none of those concepts. A click first hit-tests shapes (unchanged priority chain,
+including L1d handles and overlap cycling); only when nothing shape-side is hit does it fall through to
+`HitInstanceStack`. **Deferred, explicitly, to L3b or later:** scale-by-drag-handle for a selected
+instance (only the numeric `Mag` field in the properties surface exists); a unified selection model once
+push-in/pop-out gives a real reason to mix shape and instance selection in one gesture.
+
+## Hit-test — descend only far enough to prove real geometry (R-L3a-5)
+
+`LayoutHitTest.HitInstanceStack`/`CellGeometryHitTest` inverse-transform the click point into the
+sub-cell's own local frame (`LayoutInstanceTransform.InverseTransformPoint`, tolerance divided by the
+accumulated `|Mag|`) and run the SAME per-shape `HitTestShape` a top-level click uses — recursively, one
+array cell at a time, depth-capped identically to rendering/bbox. A broken/unresolved instance is the one
+exception: with no real geometry to test, its WHOLE placeholder box (array-expanded) is the click target,
+matching R-L3a-1's "stays fully selectable and movable." Topmost-first ordering is simply descending list
+index (instances have no `ZOrder`/layer of their own — "topmost" is "drawn last").
+
+## Placement, properties, and the Instance tool (§6)
+
+`Tool.Instance` reuses L1f's exact "ghost follows cursor, click commits, Escape cancels, stays armed for
+the next placement" gesture vocabulary (`BeginInstancePlacement`/`CommitInstancePlacement`/
+`CancelInstancePlacement`) — a NEW `LayoutOverlay.PendingInstancePlacement` renders a dashed placeholder
+BOX at the placement's overall (array-expanded) extent, deliberately NOT the resolved sub-cell's real
+geometry: compiling/resolving on every pointer move for a not-yet-committed placement is exactly the kind
+of per-frame work the compiled-geometry cache exists to avoid outside of a real, committed instance.
+**A real bug was caught here too**: the first implementation set `_instancePlacementCellRef` BEFORE
+setting `ActiveTool = Tool.Instance` — but `ActiveTool`'s setter fires `OnActiveToolChanged → CancelDrawOp
+→ CancelInstancePlacement`, which immediately wiped the just-set field. Fixed by setting the tool FIRST
+(when there is nothing of the instance tool's own to cancel yet), THEN arming the placement —
+`LayoutInstanceEditingTests.BeginAndCommitInstancePlacement_...` is the regression gate, and it failed
+against the original ordering before this fix, confirming it was a real bug and not a defensive fix.
+
+The Instance tool's cell picker (`InstanceCellPickerDialog`, a new toolbar button next to Insert Bitmap)
+recursively scans the workspace root for cell folders (a `.ccell` file) whose Layout view resolves to a
+primary — mirroring `ChangeTechnologyDialog`'s "always-scanned list + Browse…" shape — and returns the
+chosen cell's `CellRef` ALREADY rebased relative to the current document's own directory, so the caller
+needs no further path math.
+
+**Properties editing — owner follow-up, wired into `LayoutShapePropertiesView.axaml` the same day.** The
+original L3a pass left this deliberately deferred (documented below, kept for history); the owner then
+asked directly ("are instance array properties supposed to show up in the Properties Inspector?") and it
+was closed out. `LayoutShapePropertiesViewModel` gained a SEPARATE top-level context
+(`IsInstanceContext`/`IsSingleInstanceSelected`) rather than threading a branch through the existing
+966-line shape-selection logic — `RefreshFromVm` checks `_vm.SelectedInstanceIndices.Count > 0` FIRST and
+returns via a dedicated `RefreshInstanceContext()` when so, leaving every shape-section predicate/field
+untouched. The panel shows CellRef (+ a "Re-target…" button in the view's code-behind, opening the SAME
+`InstanceCellPickerDialog` the Instance tool's placement uses, via a new `EditorVm` accessor on the
+properties VM) — Rotation/MirrorX (immediate-commit combo/checkbox, mirroring Label's own pattern) —
+Magnification (staged text) — Rows/Cols/PitchX/PitchY (staged text, each committing the FULL 4-tuple via
+`CommitSelectedInstanceArray` with the other three read from the current instance) — a live "R × C = N
+placements" readout — and NEW X/Y position fields, mirroring `RectXText`/`CommitRectXText` exactly (staged
+text, `LayoutUnits` parsing, per-field error state) but committing through a NEW
+`LayoutEditorViewModel.CommitSelectedInstancePosition(long? newX, long? newY)` (straight translate, either
+axis independently settable — no prior staged-text X/Y commit existed for instances; only drag/nudge moved
+them). A multi-instance selection shows a summary line only ("N instances selected") — no editable fields —
+matching the VM-level `SingleSelectedInstance`/`ReplaceSelectedInstance`'s own single-selection-only scope;
+extending to a folded multi-instance commit is a named, narrow follow-up, not attempted here. 18 new tests
+(`LayoutInstanceEditingTests.cs` gained 2 for `CommitSelectedInstancePosition`; new
+`LayoutInstancePropertiesPanelTests.cs`, 16, covers context-switching, every field's population/commit/
+error path, `CommitField`/`RevertField` dispatch, the multi-instance summary-only fallback, and mutual
+exclusivity with the shape context). 2469 Ui.Tests total; full solution green (Firewall 4/4, Core 388/388,
+Engine 461/462 — 1 pre-existing skip, Ui.Tests 2469/2469). **Not interactively verified** (no visual
+driver in this environment) — the Re-target… button's dialog and the new field layout cannot be exercised
+headlessly for the same reason every prior phase's dialog/AXAML code couldn't be; correctness rests on the
+VM-level tests above, which drive the exact same public methods (`CommitField`, `RetargetSelectedInstance`,
+`CommitSelectedInstancePosition`, …) the view's code-behind calls.
+
+**Original L3a note (superseded by the above, kept for history):** properties editing existed at the VM
+level, fully tested, but was NOT wired into `LayoutShapePropertiesView.axaml` in that first pass.
+`SetSelectedInstanceRotation`/`SetSelectedInstanceMirrorX`/`CommitSelectedInstanceMagText`/
+`CommitSelectedInstanceArray`/`RetargetSelectedInstance` (all in `LayoutEditorViewModel.Instances.cs`,
+single-selection only, one `ReplaceInstanceCommand` per commit) were complete and covered by
+`LayoutInstanceEditingTests.cs`, but integrating them into the AXAML properties panel needed either a
+second panel context or non-trivial rework of `LayoutShapePropertiesViewModel` — named as a deferred
+follow-up rather than rushed into that file at the time.
+
+## Missing/broken sub-cell — placeholder, warn-once, never silent (R-L3a-1)
+
+A top-level broken instance renders a labelled (`SkiaFonts`/`LayoutTextOutline.ResolveTypeface` — the
+SAME headless-testable typeface seam `DrawLabelText` already uses, not `SkiaFonts.PlexRegular` directly)
+dashed placeholder box, array-expanded (every array cell of a broken reference is independently a
+placeholder, since there is no real geometry to have compressed via the array). `LayoutRenderResult`
+gained `MissingInstanceCellRefs` (mirrors the L0c-era `UnknownLayers` contract exactly: the renderer
+reports EVERY frame's distinct missing `CellRef`s; `LayoutCanvas.FrameMissingInstanceCellRefs` →
+`LayoutEditorViewModel.ReportMissingInstanceCellRefs` is the one place that dedupes per document and posts
+to Messages — "once per distinct CellRef per load, never once per placement," verified directly by
+`ReportMissingInstanceCellRefs_WarnsOnlyOncePerDistinctCellRef`). **A nested (non-top-level) broken
+instance is a smaller, documented simplification**: it contributes a placeholder RECT into the parent's
+compiled aggregate (no text label — embedding real text into a cached, matrix-reusable path aggregate
+isn't practical) and, if it carries its own array, only ONE representative mark rather than one per array
+cell (a nested+broken+arrayed combination is rare enough that this is an acceptable trade against the
+alternative of per-array-cell placeholder bookkeeping at arbitrary compile depth).
+
+## LOD applies per TOP-LEVEL instance, not per array cell (§4/gate 8)
+
+An instance's LOD decision compares its OVERALL (array-expanded) screen extent against
+`LodPixelThreshold` and, below it, draws ONE minimal mark for the WHOLE instance — deliberately not a
+per-array-cell decision, since that would require knowing the eventual screen scale at COMPILE time,
+which is cached and reused across arbitrary future zoom levels. This satisfies gate 8 exactly as worded
+("a placement below the LOD threshold draws as one bounding-box mark") for the natural test case (a
+single, non-arrayed small instance); a huge array that is overall large but individually sub-pixel PER
+CELL does not get the finer-grained collapse a future phase could add. Named as a follow-up, not a gap
+this phase silently has. Off-screen culling is unaffected by this — it is entirely the spatial index
+query's job (an instance whose overall bbox never intersects the viewport rect never becomes a candidate
+at all), verified by `OffScreenInstance_IsCulled_NeverExamined`.
+
+## Stated scope simplifications, all deliberate and documented at the point they matter
+
+- **A sub-cell's geometry renders using the PARENT view's `Technology`, never its own.** Full recursive
+  per-cell technology resolution (needing the workspace root, the default tech ref, and a resolution
+  chain threaded down through the renderer) is more machinery than this phase's core deliverable
+  (arrays/caching/hit-test) demands; layer colors for instanced geometry come from whatever technology
+  the EMBEDDING document resolved. A named follow-up for cross-technology hierarchy, not attempted here.
+- **`Label` and `Bitmap` shapes inside an instanced sub-cell are not represented in compiled geometry** —
+  text isn't baked into a reusable path aggregate, and a bitmap is not geometry (R-bmp-3) even at the top
+  level. A cell containing only labels/bitmaps compiles to an empty (but still cached, still harmless)
+  result.
+- **Array pitch is applied in the PARENT's unrotated frame**, not the instance's own (post-rotation)
+  frame GDSII AREF uses — `LayoutInstanceTransform`'s own doc comment states this is a deliberate
+  simplification for a more predictable "rows/cols/pitch X/Y" properties-panel semantics than rotated
+  row/column vectors would be.
+- **Hairline stroke width under magnification is computed from the TOP-LEVEL instance's own `Mag`
+  only** — a NESTED instance's own magnification correctly scales its GEOMETRY (baked into the compiled
+  aggregate via its own placement matrix at compile time) but does not get its own separately-compensated
+  stroke width, since the whole compiled aggregate (parent shapes + every flattened-in nested instance)
+  shares ONE stroke paint per top-level placement. Gate 3 (a single, non-nested 2×/3× instance) is
+  covered exactly; nested differential magnification is a named, narrow gap.
+- **The compiled-geometry `ConditionalWeakTable` relies on `SKPath`'s own finalizer for native-memory
+  reclamation on eviction**, not an explicit `Dispose()` the way `LayoutPathCache`'s per-shape LRU does —
+  a `ConditionalWeakTable` cannot call `Dispose` when a key is collected. Acceptable given `SKObject`'s
+  finalizer safety net and the low churn rate of resolved cells (unlike per-shape paths, which churn
+  every edit).
+- **The `CellUsageScanner` gap, explicitly carried forward per the brief's own instruction**: `.clay`
+  instance references are NOT counted on Remove Cell or rewritten on Rename Cell — `CellUsageScanner`
+  today only understands `.csch` `CellRef`s. Removing or renaming a cell that layout instances reference
+  will silently leave those instances pointing at a now-wrong path (rendering/hit-testing them as broken,
+  not crashing — but silently, with no warning at remove/rename time). **L3b must close this** before
+  Remove/Rename Cell can be called correct for a workspace using layout hierarchy.
+
+## Scope guardrails held
+
+No push-in/pop-out, no edit-in-place, no hierarchy-save behaviour (L3b). No flatten, no group-into-cell
+(L3c). No net propagation, no LVS, no schematic-to-layout (L5). No tiled raster cache (L2d, still
+deferred). No `.clay` format change — `LayoutInstance` already persisted from L0a; every field this phase
+reads/writes already round-trips. `src/Core`, `src/Engine`, `RfCore`, the schematic and symbol editors are
+untouched. Forward comments for L4 export are on `docs/design/layout-view.md` §8 already (GDSII SREF/AREF
+native; DXF INSERT/BLOCK; Gerber flattens) — not duplicated here since nothing in this phase touches
+export code.
+
+## New/changed files
+
+`src/Ui/Layout/CellLayoutResolver.cs` (new — mirrors `CellSymbolResolver` exactly: three-state resolution,
+`(path, mtime)` cache, explicit invalidation, `Generation` epoch counter), `CellHierarchy.cs` (new —
+recursive bbox/cycle/depth walking, `LayoutBaseDirOf`, `WouldCreateCycle`), `LayoutInstanceTransform.cs`
+(new — the ONE canonical mirror+rotate+scale+translate definition, plus `PathSpaceLinearCoefficients` for
+the renderer's matrix, algebraically derived and cross-checked against the DBU-space definition by
+`LayoutInstanceTransformTests`). `LayoutSpatialIndex.cs` (discriminated entries, `SpatialEntryKind`,
+`LayoutSpatialEntry`, `RefreshInstances`). `LayoutChangeInfo.cs` (`InstancesChanged`/`InstancesOnly`).
+`LayoutModel.cs` (`NotifyChanged` routes instance-only changes to `MarkInstancesDirty` instead of
+`Apply`). `LayoutGeometry.cs` (`Clone(LayoutInstance)`/`TranslateBy(LayoutInstance, …)` — the one shared
+instance-clone helper). `LayoutHitTest.cs` (`HitInstanceStack`/`InstanceHitTest`/`CellGeometryHitTest`/
+`ArrayCellsContain`). `LayoutFragment.cs` (instances carried in `Payload`, `RebaseInstances`, instance
+`Translate` overload). `LayoutEditorViewModel.Instances.cs` (new partial-class file — selection, move,
+delete, placement, properties, clipboard, cycle-check plumbing) + surgical edits to the main VM file
+(`SelectDragKind.MoveInstance`, `Tool.Instance`, Delete/nudge extension, `RebuildOverlay` instance overlay
+fields, `Model.Changed` cleanup). `LayoutOverlay.cs` (`SelectedInstanceIndices`/`InstanceDragOverrides`/
+`PendingInstancePlacement`). `src/Ui/Commands/Layout/{Add,Move,Delete,Replace}InstanceCommand.cs` (new,
+mirror the shape commands exactly). `src/Ui/Renderers/LayoutRenderer.Instances.cs` (new partial-class
+file — `CompileCell`, `DrawInstances`, broken/LOD/selection/ghost drawing) + `LayoutRenderer.cs` made
+`partial`, `LayoutRenderOptions.BaseDir`, `LayoutRenderResult.InstancesExamined/InstancesDrawn/
+MissingInstanceCellRefs`. `src/Ui/Controls/LayoutCanvas.cs` (`FrameMissingInstanceCellRefs`, `BaseDir`
+threaded into render options). `src/Ui/Views/Dialogs/InstanceCellPickerDialog.axaml(.cs)` (new).
+`src/Ui/Views/Layout/LayoutEditorView.axaml(.cs)` (Instance toolbar button + missing-cellref wiring).
+
+Test files (95 new tests; 2435 Ui.Tests total, was 2340; full solution green — Firewall 4/4, Core 388/388,
+Engine 461/462 — 1 pre-existing skip, matching the L2c baseline exactly): `CellLayoutResolverTests.cs` (9),
+`CellHierarchyTests.cs` (12 — bbox incl. array/rotation/magnification/nested recursion, the 40-deep depth
+cap, edit-time cycle rejection incl. the direct-self and transitive A→B→A cases), `LayoutInstanceTransformTests.cs`
+(26 — all 8 rotation/mirror combos, inverse round-trip, and the critical DBU-space-vs-path-space
+cross-check that gate 2's pixel identity actually rests on), `LayoutSpatialIndexInstanceTests.cs` (8 —
+gate 9, synthetic bboxOf independent of the filesystem), `LayoutInstanceHitTestTests.cs` (6 — gate 10,
+incl. array-cell-specific hits and a rotated footprint), `LayoutInstanceRendererTests.cs` (17 — gates 2,
+3, 4, 6, 7, 8: 8-combo pixel identity, magnification extent + hairline width, the array PathsConstructed
+headline assertion incl. cross-frame reuse, missing-placeholder + warn-once, mutual-cycle and 40-deep-chain
+render-without-throwing, off-screen culling, sub-pixel LOD collapse), `LayoutInstanceEditingTests.cs` (12 —
+placement incl. the ActiveTool-ordering bug this suite caught, selection mutual exclusivity, drag-move,
+delete, nudge, array/rotation/mirror/mag property commits, retarget, edit-time cycle rejection with the
+Messages error), `LayoutInstanceClipboardTests.cs` (5 — gate 11: same-document paste, cross-directory paste
+with CellRef rebasing, an already-broken-at-copy-time instance staying reported-broken rather than
+throwing or vanishing, duplicate, cut), `LayoutPerf/LayoutInstanceArrayPerfTests.cs` (1, Nightly — gate
+5's real numbers, above). **Two genuine bugs were caught by this suite before it ever ran green** (the
+`LayoutBaseDirOf` nested-resolution bug and the `BeginInstancePlacement` field-ordering bug, both
+described above) — the tests are the reason neither shipped.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout Editor
+phase) — the Instance toolbar button, the cell-picker dialog, and the placement ghost's on-screen
+appearance cannot be exercised headlessly for the same reason every prior phase's dialog/menu/render code
+couldn't be; correctness rests on the VM-level and pixel-oracle gate tests above, which drive the exact
+same public methods (`BeginInstancePlacement`, `OnPointerPressed`/`Moved`/`Released`, `LayoutRenderer.
+Draw`) the UI calls. Please confirm on your end: the Instance toolbar button opens a picker listing real
+cells; placing one shows a dashed ghost that follows the cursor and lands correctly on click; an array's
+rows/cols/pitch (once wired into a properties surface — currently VM-only, see above) visibly replicates;
+and a `.clay` referencing a since-removed/renamed cell shows the dashed "Not Found" placeholder rather
+than silently vanishing.
+
+**Next: L3b (push-in/pop-out navigation, edit-in-place, hierarchy save, and the `CellUsageScanner`
+extension this phase's gap list names).** Report back before that brief lands.
+
 Phase L2c — LOD, the merge tier, and path caching (brief-L2c-lod-merge-and-caching.md, 2026-07-27) —
 COMPLETE, the last L2 brief. **Close the full-extent frame cost** — the one thing L2b's culling
 structurally could not touch, because nothing is off-screen to cull when everything is visible.

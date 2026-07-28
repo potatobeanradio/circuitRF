@@ -50,4 +50,22 @@ public sealed record class LayoutOverlay
     /// no index into <c>LayoutView.Shapes</c> yet — nothing is in the model until the placement
     /// commits.</summary>
     public IReadOnlyList<LayoutShape>? PastePreview { get; init; }
+
+    // ── L3a additions (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md) ────────────────────────
+
+    /// <summary>Currently selected INSTANCE indices — rendered with an accent outline, same visual
+    /// treatment as <see cref="SelectedIndices"/> but a separate list (L3a keeps shape and instance
+    /// selection mutually exclusive — see <c>LayoutEditorViewModel.Instances.cs</c>'s header).</summary>
+    public IReadOnlyList<int> SelectedInstanceIndices { get; init; } = [];
+
+    /// <summary>Live instance move-drag preview — instance index -&gt; a translated clone, mirroring
+    /// <see cref="DragOverrides"/> exactly for instances.</summary>
+    public IReadOnlyDictionary<int, LayoutInstance> InstanceDragOverrides { get; init; } =
+        new Dictionary<int, LayoutInstance>();
+
+    /// <summary>The Instance-place tool's live ghost (docs/sonnet-briefs/brief-L3a-instances-and-
+    /// arrays.md §6 — "a live ghost following the cursor, snapped, click to place, Escape to cancel,"
+    /// reusing L1f's paste-placement gesture vocabulary). A deliberately simplified placeholder-box
+    /// ghost (not the resolved sub-cell's real geometry) — see the renderer's own doc comment for why.</summary>
+    public (LayoutInstance Instance, Bbox Bbox)? PendingInstancePlacement { get; init; }
 }

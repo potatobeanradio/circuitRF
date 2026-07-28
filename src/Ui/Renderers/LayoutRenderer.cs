@@ -59,6 +59,14 @@ public readonly struct LayoutRenderOptions
     /// own it itself.</summary>
     public LayoutPathCache? PathCache { get; init; }
 
+    /// <summary>L3a (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md) — the absolute directory a
+    /// relative <see cref="LayoutInstance.CellRef"/> resolves against: the directory of the currently
+    /// open <c>.clay</c>. Null for a not-yet-saved (scratch) document — instances simply cannot resolve
+    /// relative paths in that state and render as their "not found" placeholder, exactly as a scratch
+    /// schematic cannot resolve a cell-ref symbol either (both are the same "no stable base yet"
+    /// limitation, not a bug).</summary>
+    public string? BaseDir { get; init; }
+
     public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true };
 }
 
@@ -93,6 +101,12 @@ public readonly struct LayoutRenderOptions
 /// they are O(viewport), not O(shapes), and already have their own separate accounting (grid pitch).</item>
 /// <item><see cref="LayersVisited"/> — resolved layers whose <see cref="LayerDef.Visible"/> was true
 /// and which therefore actually entered <see cref="DrawLayer"/> this frame.</item>
+/// <item><see cref="InstancesExamined"/> / <see cref="InstancesDrawn"/> (L3a) — instance PLACEMENTS
+/// considered / actually drawn this frame. "Considered" is the spatial-index candidate count for
+/// <see cref="LayoutView.Instances"/> (off-screen instances never appear here, per R-L3a's culling
+/// requirement); "drawn" counts every ARRAY CELL actually painted (in full OR as a single LOD mark —
+/// see <see cref="LayoutRenderer"/>'s instance-drawing file), so a 50x50 array contributes 2,500 to
+/// <see cref="InstancesDrawn"/> from ONE spatial-index candidate.</item>
 /// </list>
 /// </summary>
 public readonly record struct LayoutRenderResult(
@@ -101,7 +115,15 @@ public readonly record struct LayoutRenderResult(
     int ShapesDrawn = 0,
     int PathsConstructed = 0,
     int DrawCalls = 0,
-    int LayersVisited = 0);
+    int LayersVisited = 0,
+    int InstancesExamined = 0,
+    int InstancesDrawn = 0,
+    /// <summary>L3a R-L3a-1 — distinct <see cref="LayoutInstance.CellRef"/> strings that failed to
+    /// resolve (NotFound/PrimaryMissing/Cyclic/DepthExceeded) among this frame's candidates. Mirrors
+    /// <see cref="UnknownLayers"/>'s contract exactly: the caller (canvas/view-model) dedupes against
+    /// what has already been warned about for this open document and posts to Messages "once per
+    /// distinct CellRef per load" — this is a pure render call and never posts anything itself.</summary>
+    IReadOnlyList<string>? MissingInstanceCellRefs = null);
 
 /// <summary>Plain-field, no-dictionary per-frame work counters (L2a) — threaded through the private
 /// draw helpers below by reference. A class (not a struct) so passing it around never copies; fields
@@ -114,6 +136,8 @@ internal sealed class LayoutFrameCounters
     public int PathsConstructed;
     public int DrawCalls;
     public int LayersVisited;
+    public int InstancesExamined;
+    public int InstancesDrawn;
 }
 
 /// <summary>
@@ -159,9 +183,11 @@ internal sealed class LayoutFrameCounters
 /// flattener is written in this phase — Skia tessellates adaptively at the current transform, which
 /// already is §3.2 R9c's "rendering flattens adaptively at screen resolution."
 ///
-/// <b><c>LayoutView.Instances</c> is skipped</b> — hierarchy rendering is L3.
+/// <b><c>LayoutView.Instances</c></b> is rendered by the L3a partial-class extension in
+/// <c>LayoutRenderer.Instances.cs</c> — see that file for the compiled-cell-geometry caching that
+/// makes an array cost one path build and N matrix draws (R-L3a-3).
 /// </summary>
-public static class LayoutRenderer
+public static partial class LayoutRenderer
 {
     private const double MinGridPixelSpacing = 8.0;
 
@@ -225,6 +251,7 @@ public static class LayoutRenderer
                 return new LayoutRenderResult([]);
 
             var counters = new LayoutFrameCounters();
+            var missingCellRefs = new HashSet<string>();
             var dragOverrides = opts.Overlay?.DragOverrides ?? EmptyDragOverrides;
 
             // ── L2b render culling — query the index once for the whole frame ───
@@ -325,12 +352,26 @@ public static class LayoutRenderer
                     DrawLayer(canvas, def, shapes, ps, dragOverrides, scaleUm, opts, counters);
                 }
 
+                // L3a — instances (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md). Culled the
+                // same way shapes are: the combined spatial-index query already excludes off-screen
+                // placements (R-L3a §4 "culling and LOD apply to instances too").
+                Bbox InstanceBboxFor(LayoutInstance inst) => CellHierarchy.InstanceBbox(inst, opts.BaseDir ?? "");
+                var instanceCandidates = view.SpatialIndex.QueryIntersecting(
+                    view.Shapes, view.Instances, InstanceBboxFor, CellLayoutResolver.Generation, viewportRect);
+                counters.InstancesExamined = instanceCandidates.Count(e => e.Kind == SpatialEntryKind.Instance);
+                var instanceDragOverrides = opts.Overlay?.InstanceDragOverrides ?? EmptyInstanceDragOverrides;
+                if (counters.InstancesExamined > 0)
+                    DrawInstances(canvas, view, tech, instanceCandidates, instanceDragOverrides, opts, ps, scaleUm, counters, missingCellRefs);
+
                 if (opts.Overlay?.InProgressPrimitive is { } ghost)
                     DrawGhostShape(canvas, ghost, layerMap, ps, scaleUm);
 
                 if (opts.Overlay?.PastePreview is { Count: > 0 } pastePreview)
                     foreach (var previewShape in pastePreview)
                         DrawGhostShape(canvas, previewShape, layerMap, ps, scaleUm);
+
+                if (opts.Overlay?.PendingInstancePlacement is { } pendingInstance)
+                    DrawPendingInstancePlacement(canvas, pendingInstance, tech, opts.BaseDir ?? "", theme, ps, scaleUm, counters);
 
                 if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
                 {
@@ -343,6 +384,9 @@ public static class LayoutRenderer
                     else if (selected.Count == 1)
                         DrawHandles(canvas, view, selected[0], dragOverrides, theme, ps, scaleUm);
                 }
+
+                if (opts.Overlay?.SelectedInstanceIndices is { Count: > 0 } selectedInstances)
+                    DrawInstanceSelectionOutlines(canvas, view, selectedInstances, instanceDragOverrides, opts, theme, ps, scaleUm);
 
                 if (opts.Overlay?.Marquee is { } marquee)
                     DrawMarquee(canvas, marquee, theme, ps);
@@ -358,7 +402,10 @@ public static class LayoutRenderer
                 ShapesDrawn: counters.ShapesDrawn,
                 PathsConstructed: counters.PathsConstructed,
                 DrawCalls: counters.DrawCalls,
-                LayersVisited: counters.LayersVisited);
+                LayersVisited: counters.LayersVisited,
+                InstancesExamined: counters.InstancesExamined,
+                InstancesDrawn: counters.InstancesDrawn,
+                MissingInstanceCellRefs: missingCellRefs.Count == 0 ? [] : missingCellRefs.ToArray());
         }
         finally
         {
@@ -546,6 +593,9 @@ public static class LayoutRenderer
     // ── Per-layer draw: per-shape fills, one batched hairline stroke ────────────
 
     private static readonly IReadOnlyDictionary<int, LayoutShape> EmptyDragOverrides = new Dictionary<int, LayoutShape>();
+
+    /// <summary>L3a — the instance-move-drag analogue of <see cref="EmptyDragOverrides"/>.</summary>
+    internal static readonly IReadOnlyDictionary<int, LayoutInstance> EmptyInstanceDragOverrides = new Dictionary<int, LayoutInstance>();
 
     /// <summary>Device-pixel target for the per-shape outline stroke — doubled from the plain
     /// Skia hairline (which is exactly 1 device pixel) per owner feedback, 2026-07-26.</summary>

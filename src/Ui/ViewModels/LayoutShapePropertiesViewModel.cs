@@ -52,6 +52,12 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     private List<LayoutShape> _selected = [];
     private bool _isRefreshing;
 
+    /// <summary>The bound editor VM, exposed so the view's code-behind can open the instance
+    /// cell-picker dialog (Re-target…) — it needs <see cref="LayoutEditorViewModel.WorkspaceRootDir"/>/
+    /// <see cref="LayoutEditorViewModel.InstanceBaseDir"/> to build it, exactly like the Instance
+    /// tool's own placement picker in <c>LayoutEditorView.axaml.cs</c> already does.</summary>
+    public LayoutEditorViewModel? EditorVm => _vm;
+
     /// <summary>The field key (see the Commit*/Error property names below, or a vertex row's
     /// <c>FieldKeyX</c>/<c>FieldKeyY</c>) currently under the caret, or null. Set by the view's
     /// GotFocus/LostFocus handlers — R-L1j-3.</summary>
@@ -64,7 +70,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     // ── Empty state ────────────────────────────────────────────────────────────
 
     [ObservableProperty] private bool _isEmptyState = true;
-    [ObservableProperty] private string _emptyMessage = "Select a shape to inspect.";
+    [ObservableProperty] private string _emptyMessage = "Select a shape or instance to inspect.";
     public bool IsNotEmptyState => !IsEmptyState;
     partial void OnIsEmptyStateChanged(bool oldValue, bool newValue) => OnPropertyChanged(nameof(IsNotEmptyState));
 
@@ -108,6 +114,14 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "BitmapWidth":   CommitBitmapWidthText(text); break;
             case "BitmapHeight":  CommitBitmapHeightText(text); break;
             case "BitmapOpacity": CommitBitmapOpacityText(text); break;
+            case "InstanceCellRef": CommitInstanceCellRefText(text); break;
+            case "InstanceX":       CommitInstanceXText(text); break;
+            case "InstanceY":       CommitInstanceYText(text); break;
+            case "InstanceMag":     CommitInstanceMagText(text); break;
+            case "InstanceRows":    CommitInstanceRowsText(text); break;
+            case "InstanceCols":    CommitInstanceColsText(text); break;
+            case "InstancePitchX":  CommitInstancePitchXText(text); break;
+            case "InstancePitchY":  CommitInstancePitchYText(text); break;
         }
     }
 
@@ -137,6 +151,13 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "BitmapWidth":   BitmapWidthError = null; break;
             case "BitmapHeight":  BitmapHeightError = null; break;
             case "BitmapOpacity": BitmapOpacityError = null; break;
+            case "InstanceX":       InstanceXError = null; break;
+            case "InstanceY":       InstanceYError = null; break;
+            case "InstanceMag":     InstanceMagError = null; break;
+            case "InstanceRows":    InstanceRowsError = null; break;
+            case "InstanceCols":    InstanceColsError = null; break;
+            case "InstancePitchX":  InstancePitchXError = null; break;
+            case "InstancePitchY":  InstancePitchYError = null; break;
         }
     }
 
@@ -157,9 +178,19 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     [ObservableProperty] private LayerPickerItem? _selectedLayerItem;
     [ObservableProperty] private string _netText = "";
 
-    /// <summary>False for an all-bitmap selection — a bitmap is not electrical, so Net is meaningless
-    /// for it (docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md, properties panel §).</summary>
-    public bool ShowNet => !ShowBitmap;
+    /// <summary>False for an all-bitmap selection (a bitmap is not electrical) AND false for an
+    /// instance selection — brief-L3a-followups.md §3: <see cref="LayoutInstance"/> carries no
+    /// <c>Net</c> field at all (never did — this was a display bug, not a model gap). Nets attach to
+    /// conductor geometry and pins, not to a placement; the sub-cell's own port labels are what will
+    /// carry nets once L5 lands. Nothing is lost by hiding this row for an instance.</summary>
+    public bool ShowNet => !ShowBitmap && !IsInstanceContext;
+
+    /// <summary>False for an instance selection — brief-L3a-followups.md §3: an instance paints on
+    /// whatever layers its SUB-CELL uses (it has no <c>Layer</c> field of its own, and never did),
+    /// exactly like GDSII's <c>SREF</c> carries no layer either. Hiding layer M1 already hides M1
+    /// geometry INSIDE an instance via the sub-cell's own resolved technology — showing a Layer combo
+    /// on the instance itself would imply a control that does nothing.</summary>
+    public bool ShowLayer => !IsInstanceContext;
 
     partial void OnSelectedLayerItemChanged(LayerPickerItem? value)
     {
@@ -558,6 +589,204 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     private static string FormatOpacityPercent(double opacity) =>
         System.Math.Round(opacity * 100.0, 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+    // ── Instance (L3a §6, wired up per the owner follow-up — brief-L3a-instances-and-arrays.md's own
+    // completion note named this a deferred gap). A SEPARATE top-level context, not a branch inside the
+    // shape sections above: an instance has none of the shape concepts (Layer/Net/vertex list/flatten
+    // tolerance) and gets its own selection list in the VM (LayoutEditorViewModel.SelectedInstanceIndices,
+    // mutually exclusive with shape selection — see LayoutEditorViewModel.Instances.cs's own header).
+    // Single-instance editing only, matching every existing VM-level instance-property method
+    // (SetSelectedInstanceRotation, CommitSelectedInstanceArray, …) — a multi-instance selection shows a
+    // summary only, mirroring the mixed-shape-type fallback elsewhere in this panel.
+
+    [ObservableProperty] private bool _isInstanceContext;
+    partial void OnIsInstanceContextChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowNet));
+        OnPropertyChanged(nameof(ShowLayer));
+    }
+
+    [ObservableProperty] private bool _isSingleInstanceSelected;
+
+    [ObservableProperty] private string _instanceCellRefText = "";
+
+    [ObservableProperty] private string _instanceXText = "";
+    [ObservableProperty] private string? _instanceXError;
+    public bool HasInstanceXError => InstanceXError is not null;
+
+    [ObservableProperty] private string _instanceYText = "";
+    [ObservableProperty] private string? _instanceYError;
+    public bool HasInstanceYError => InstanceYError is not null;
+
+    [ObservableProperty] private LayoutRotation? _instanceRotationValue;
+    [ObservableProperty] private bool? _instanceMirrorXValue;
+
+    [ObservableProperty] private string _instanceMagText = "";
+    [ObservableProperty] private string? _instanceMagError;
+    public bool HasInstanceMagError => InstanceMagError is not null;
+
+    [ObservableProperty] private string _instanceRowsText = "";
+    [ObservableProperty] private string? _instanceRowsError;
+    public bool HasInstanceRowsError => InstanceRowsError is not null;
+
+    [ObservableProperty] private string _instanceColsText = "";
+    [ObservableProperty] private string? _instanceColsError;
+    public bool HasInstanceColsError => InstanceColsError is not null;
+
+    [ObservableProperty] private string _instancePitchXText = "";
+    [ObservableProperty] private string? _instancePitchXError;
+    public bool HasInstancePitchXError => InstancePitchXError is not null;
+
+    [ObservableProperty] private string _instancePitchYText = "";
+    [ObservableProperty] private string? _instancePitchYError;
+    public bool HasInstancePitchYError => InstancePitchYError is not null;
+
+    /// <summary>Live "rows × cols = N placements" readout — blank for a plain (non-arrayed) instance,
+    /// so the row is unobtrusive for the overwhelmingly common single-placement case.</summary>
+    [ObservableProperty] private string _instanceArrayCountText = "";
+    public bool HasInstanceArrayCount => InstanceArrayCountText.Length > 0;
+    partial void OnInstanceArrayCountTextChanged(string value) => OnPropertyChanged(nameof(HasInstanceArrayCount));
+
+    private LayoutInstance? SingleSelectedInstance => _vm?.SingleSelectedInstance;
+
+    /// <summary>Free-text CellRef edit (LostFocus/Enter) — the companion "Re-target…" button in the
+    /// view's code-behind opens the same cell-picker dialog the Instance tool uses and calls
+    /// <see cref="LayoutEditorViewModel.RetargetSelectedInstance"/> directly, then this method's own
+    /// <see cref="RefreshFromVm"/> call picks up the result. A refused retarget (cycle detected —
+    /// reported via Messages by the VM) simply leaves the text showing the unchanged original CellRef.</summary>
+    public void CommitInstanceCellRefText(string text)
+    {
+        if (_vm is null) return;
+        string trimmed = (text ?? "").Trim();
+        if (trimmed.Length == 0) { RefreshFromVm(); return; }
+        _vm.RetargetSelectedInstance(trimmed);
+        RefreshFromVm();
+    }
+
+    public void CommitInstanceXText(string text)
+    {
+        if (_vm is null) return;
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var x))
+        { InstanceXError = "Invalid value"; return; }
+        InstanceXError = null;
+        _vm.CommitSelectedInstancePosition(x, null);
+        RefreshFromVm();
+    }
+
+    public void CommitInstanceYText(string text)
+    {
+        if (_vm is null) return;
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var y))
+        { InstanceYError = "Invalid value"; return; }
+        InstanceYError = null;
+        _vm.CommitSelectedInstancePosition(null, y);
+        RefreshFromVm();
+    }
+
+    partial void OnInstanceRotationValueChanged(LayoutRotation? oldValue, LayoutRotation? newValue)
+    {
+        if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
+        _vm.SetSelectedInstanceRotation(newValue.Value);
+        RefreshFromVm();
+    }
+
+    partial void OnInstanceMirrorXValueChanged(bool? oldValue, bool? newValue)
+    {
+        if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
+        _vm.SetSelectedInstanceMirrorX(newValue.Value);
+        RefreshFromVm();
+    }
+
+    public void CommitInstanceMagText(string text)
+    {
+        if (_vm is null) return;
+        if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var mag) || mag <= 0)
+        { InstanceMagError = "Magnification must be a positive number"; return; }
+        InstanceMagError = null;
+        _vm.CommitSelectedInstanceMagText(text);
+        RefreshFromVm();
+    }
+
+    public void CommitInstanceRowsText(string text)
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst) return;
+        if (!int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var rows) || rows < 1)
+        { InstanceRowsError = "Rows must be a positive integer"; return; }
+        InstanceRowsError = null;
+        _vm.CommitSelectedInstanceArray(rows, inst.Cols, inst.PitchX, inst.PitchY);
+        RefreshFromVm();
+    }
+
+    public void CommitInstanceColsText(string text)
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst) return;
+        if (!int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var cols) || cols < 1)
+        { InstanceColsError = "Columns must be a positive integer"; return; }
+        InstanceColsError = null;
+        _vm.CommitSelectedInstanceArray(inst.Rows, cols, inst.PitchX, inst.PitchY);
+        RefreshFromVm();
+    }
+
+    public void CommitInstancePitchXText(string text)
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst) return;
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var px))
+        { InstancePitchXError = "Invalid value"; return; }
+        InstancePitchXError = null;
+        _vm.CommitSelectedInstanceArray(inst.Rows, inst.Cols, px, inst.PitchY);
+        RefreshFromVm();
+    }
+
+    public void CommitInstancePitchYText(string text)
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst) return;
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var py))
+        { InstancePitchYError = "Invalid value"; return; }
+        InstancePitchYError = null;
+        _vm.CommitSelectedInstanceArray(inst.Rows, inst.Cols, inst.PitchX, py);
+        RefreshFromVm();
+    }
+
+    private void RefreshInstanceContext()
+    {
+        _selected = [];
+        _isRefreshing = true;
+        IsEmptyState = false;
+        IsInstanceContext = true;
+        IsEditingEnabled = !DragBlocksEdits();
+
+        var indices = _vm!.SelectedInstanceIndices;
+        IsSingleInstanceSelected = indices.Count == 1;
+        if (IsSingleInstanceSelected)
+        {
+            var inst = _vm.EffectiveInstanceAt(indices[0]);
+            SelectionSummaryText = "Instance";
+            SetTextIfNotFocused("InstanceCellRef", inst.CellRef ?? "", () => InstanceCellRefText, v => InstanceCellRefText = v);
+            SetTextIfNotFocused("InstanceX", LayoutUnits.Format(inst.X, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceXText, v => InstanceXText = v);
+            SetTextIfNotFocused("InstanceY", LayoutUnits.Format(inst.Y, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceYText, v => InstanceYText = v);
+            InstanceRotationValue = inst.Rot;
+            InstanceMirrorXValue = inst.MirrorX;
+            SetTextIfNotFocused("InstanceMag", inst.Mag.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture), () => InstanceMagText, v => InstanceMagText = v);
+            SetTextIfNotFocused("InstanceRows", inst.Rows.ToString(System.Globalization.CultureInfo.InvariantCulture), () => InstanceRowsText, v => InstanceRowsText = v);
+            SetTextIfNotFocused("InstanceCols", inst.Cols.ToString(System.Globalization.CultureInfo.InvariantCulture), () => InstanceColsText, v => InstanceColsText = v);
+            SetTextIfNotFocused("InstancePitchX", LayoutUnits.Format(inst.PitchX, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstancePitchXText, v => InstancePitchXText = v);
+            SetTextIfNotFocused("InstancePitchY", LayoutUnits.Format(inst.PitchY, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstancePitchYText, v => InstancePitchYText = v);
+
+            int rows = System.Math.Max(1, inst.Rows), cols = System.Math.Max(1, inst.Cols);
+            long count = (long)rows * cols;
+            InstanceArrayCountText = count > 1 ? $"{rows} × {cols} = {count:N0} placements" : "";
+        }
+        else
+        {
+            SelectionSummaryText = $"{indices.Count} instances selected";
+            InstanceCellRefText = ""; InstanceXText = ""; InstanceYText = "";
+            InstanceRotationValue = null; InstanceMirrorXValue = null;
+            InstanceMagText = ""; InstanceRowsText = ""; InstanceColsText = "";
+            InstancePitchXText = ""; InstancePitchYText = ""; InstanceArrayCountText = "";
+        }
+
+        _isRefreshing = false;
+    }
+
     // ── Flatten tolerance (Curve / Path / Circle / RoundedRect — blank = inherit) ──────────────
     // §1.3.0 of brief-L1h-scale-and-context-menu.md: R9b says EVERY curved primitive carries a
     // flatten tolerance; L0a's table only gave it to the two edge-list types. Circle/RoundedRect
@@ -787,12 +1016,15 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     {
         if (_vm is null) { SetEmpty("No active layout."); return; }
 
+        if (_vm.SelectedInstanceIndices.Count > 0) { RefreshInstanceContext(); return; }
+
         _selected = _vm.EffectiveSelectedShapes().ToList(); // R-L1j-1: drag-override-aware
 
-        if (_selected.Count == 0) { SetEmpty("Select a shape to inspect."); return; }
+        if (_selected.Count == 0) { SetEmpty("Select a shape or instance to inspect."); return; }
 
         _isRefreshing = true;
         IsEmptyState = false;
+        IsInstanceContext = false;
         IsEditingEnabled = !DragBlocksEdits(); // R-L1j-2
 
         SelectionSummaryText = _selected.Count == 1
@@ -902,6 +1134,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         EmptyMessage = message;
         SelectionSummaryText = "";
         IsEditingEnabled = true;
+        IsInstanceContext = false;
         ShowRoundedRect = ShowCircle = ShowPath = ShowLabel = ShowFlattenTol = ShowRectSize = ShowVertexList = ShowBitmap = false;
         FlattenTolPlaceholder = "";
         BitmapIsBroken = false;

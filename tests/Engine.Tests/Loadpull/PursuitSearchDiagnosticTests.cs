@@ -22,6 +22,7 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 ///   dotnet test --filter "DisplayName~Diagnostic1" -v minimal
 ///   dotnet test --filter "DisplayName~Diagnostic2" -v minimal
 /// </summary>
+[Trait("Category", "Slow")]
 public class PursuitSearchDiagnosticTests
 {
     // ── Setup ─────────────────────────────────────────────────────────────────

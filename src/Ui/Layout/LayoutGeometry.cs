@@ -233,6 +233,25 @@ public static class LayoutGeometry
         _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, null),
     };
 
+    /// <summary>L3a — deep-clones a <see cref="LayoutInstance"/> (a plain-field record with no nested
+    /// mutable collections, so this is a straight field copy, unlike the shape overload above). The
+    /// ONE clone helper every instance-copying consumer uses (move-drag preview, clipboard fragment,
+    /// properties-panel edits) so a future new field can't be added to one copy and forgotten in
+    /// another.</summary>
+    public static LayoutInstance Clone(LayoutInstance inst) => new()
+    {
+        CellRef = inst.CellRef, X = inst.X, Y = inst.Y, Rot = inst.Rot, MirrorX = inst.MirrorX, Mag = inst.Mag,
+        Rows = inst.Rows, Cols = inst.Cols, PitchX = inst.PitchX, PitchY = inst.PitchY, SchematicId = inst.SchematicId,
+    };
+
+    /// <summary>Translates an instance's origin by (dx, dy) — the instance analogue of the shape
+    /// <see cref="TranslateBy"/> above (an instance has only one coordinate pair, so this is direct).</summary>
+    public static void TranslateBy(LayoutInstance inst, long dx, long dy)
+    {
+        inst.X += dx;
+        inst.Y += dy;
+    }
+
     private static List<LayoutEdge>? CloneEdges(List<LayoutEdge>? edges) =>
         edges?.Select(e => new LayoutEdge { Kind = e.Kind, Bulge = e.Bulge, C1X = e.C1X, C1Y = e.C1Y, C2X = e.C2X, C2Y = e.C2Y }).ToList();
 

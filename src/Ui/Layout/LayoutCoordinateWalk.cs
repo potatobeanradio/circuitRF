@@ -12,25 +12,37 @@ using System.Collections.Generic;
 namespace CircuitRF.Ui.Layout;
 
 /// <summary>
-/// A coordinate transform, split into X / Y / Magnitude because a uniform transform (DBU resolution
-/// change, paste rescale, or a uniform Scale) is the degenerate case where all three coincide, while
-/// a non-uniform Scale needs X and Y to differ. <see cref="Magnitude"/> is for scalar lengths with no
-/// single axis of their own (a circle's radius, a rounded-rect's corner radius, a path's width, a
-/// via's pad/drill, a label's height, a flatten tolerance) — under a NON-uniform transform there is no
-/// exact answer for what these become (a corner radius scaled 2×1 would need to become elliptical,
-/// which the model cannot represent outside the Circle→Curve promotion R-L1h-7 already carves out for
-/// arcs specifically), so callers scaling non-uniformly should supply the isotropic-equivalent factor
-/// (e.g. <c>sqrt(fx*fy)</c>) rather than leave these fields untouched.
+/// A coordinate transform: <see cref="Point"/> maps a whole (x,y) pair together (so it CAN express a
+/// 90°-rotation, which mixes X and Y — brief-L3c-flatten-and-group.md R-L3c-2 generalized this from
+/// axis-independent scale-only to full affine specifically so Flatten Hierarchy could become the
+/// FOURTH consumer of this one walk instead of writing a parallel traversal that risks forgetting hole
+/// rings, exactly as R-L1h-6's own history already did once). <see cref="Magnitude"/> is for scalar
+/// lengths with no single axis of their own (a circle's radius, a rounded-rect's corner radius, a
+/// path's width, a via's pad/drill, a label's height, a flatten tolerance) — under a NON-uniform
+/// transform there is no exact answer for what these become (a corner radius scaled 2×1 would need to
+/// become elliptical, which the model cannot represent outside the Circle→Curve promotion R-L1h-7
+/// already carves out for arcs specifically), so callers scaling non-uniformly should supply the
+/// isotropic-equivalent factor (e.g. <c>sqrt(fx*fy)</c>) rather than leave these fields untouched.
+/// <b>Arc bulge is never part of this transform</b> (see <see cref="LayoutCoordinateWalk.Transform"/>'s
+/// own doc comment) — a ROTATION-only transform leaves bulge unchanged, but a MIRROR flips its sign;
+/// that is Flatten's own concern (<c>LayoutFlatten.FlipBulgeSigns</c>), applied as a small separate
+/// pass, never folded into this walk (the other three callers here — DBU resolution change, paste
+/// rescale, Scale — must NEVER touch bulge, mirror or not).
 /// </summary>
 public readonly record struct LayoutCoordinateTransform(
-    Func<long, long> X,
-    Func<long, long> Y,
+    Func<long, long, (long X, long Y)> Point,
     Func<long, long> Magnitude)
 {
     /// <summary>A single scalar ratio applied identically to every axis and every magnitude — what
     /// DBU resolution change and paste rescale always use (both are inherently uniform; there is no
     /// such thing as a non-uniform DBU resolution or a non-uniform cross-workspace rescale).</summary>
-    public static LayoutCoordinateTransform Uniform(Func<long, long> f) => new(f, f, f);
+    public static LayoutCoordinateTransform Uniform(Func<long, long> f) => new((x, y) => (f(x), f(y)), f);
+
+    /// <summary>Two independent per-axis scalar functions plus a magnitude function — what Scale (L1h)
+    /// uses for a possibly-non-uniform factor. Cannot express rotation (X and Y never mix); use this
+    /// only when the transform is genuinely axis-aligned.</summary>
+    public static LayoutCoordinateTransform AxisIndependent(Func<long, long> fx, Func<long, long> fy, Func<long, long> fMagnitude) =>
+        new((x, y) => (fx(x), fy(y)), fMagnitude);
 }
 
 public static class LayoutCoordinateWalk
@@ -48,19 +60,22 @@ public static class LayoutCoordinateWalk
         switch (shape)
         {
             case RectShape r:
-                r.X1 = t.X(r.X1); r.Y1 = t.Y(r.Y1); r.X2 = t.X(r.X2); r.Y2 = t.Y(r.Y2);
+                (r.X1, r.Y1) = t.Point(r.X1, r.Y1);
+                (r.X2, r.Y2) = t.Point(r.X2, r.Y2);
                 break;
             case PolygonShape p:
                 TransformArray(p.Xy, t);
                 TransformHoles(p.Holes, t);
                 break;
             case RoundedRectShape rr:
-                rr.X1 = t.X(rr.X1); rr.Y1 = t.Y(rr.Y1); rr.X2 = t.X(rr.X2); rr.Y2 = t.Y(rr.Y2);
+                (rr.X1, rr.Y1) = t.Point(rr.X1, rr.Y1);
+                (rr.X2, rr.Y2) = t.Point(rr.X2, rr.Y2);
                 rr.CornerRadius = t.Magnitude(rr.CornerRadius);
                 if (rr.FlattenTolDbu is { } rrTol) rr.FlattenTolDbu = t.Magnitude(rrTol);
                 break;
             case CircleShape c:
-                c.Cx = t.X(c.Cx); c.Cy = t.Y(c.Cy); c.R = t.Magnitude(c.R);
+                (c.Cx, c.Cy) = t.Point(c.Cx, c.Cy);
+                c.R = t.Magnitude(c.R);
                 if (c.FlattenTolDbu is { } cTol) c.FlattenTolDbu = t.Magnitude(cTol);
                 break;
             case CurveShape curve:
@@ -76,11 +91,11 @@ public static class LayoutCoordinateWalk
                 if (path.FlattenTolDbu is { } pathTol) path.FlattenTolDbu = t.Magnitude(pathTol);
                 break;
             case ViaShape via:
-                via.X = t.X(via.X); via.Y = t.Y(via.Y);
+                (via.X, via.Y) = t.Point(via.X, via.Y);
                 via.PadSize = t.Magnitude(via.PadSize); via.DrillSize = t.Magnitude(via.DrillSize);
                 break;
             case LabelShape label:
-                label.X = t.X(label.X); label.Y = t.Y(label.Y);
+                (label.X, label.Y) = t.Point(label.X, label.Y);
                 label.Height = t.Magnitude(label.Height);
                 break;
             case BitmapShape bmp:
@@ -88,10 +103,11 @@ public static class LayoutCoordinateWalk
                 // W/H are derived from the transformed OPPOSITE corner, mirroring how Rect/RoundedRect
                 // implicitly handle non-uniform scale via their own X2/Y2 — a min-corner+size shape has
                 // no second corner field to transform directly, so this reconstructs the same effect.
-                long x2 = t.X(bmp.X + bmp.W);
-                long y2 = t.Y(bmp.Y + bmp.H);
-                bmp.X = t.X(bmp.X);
-                bmp.Y = t.Y(bmp.Y);
+                // (A rotating transform — flatten — would invalidate a min-corner+size shape's own
+                // axis-aligned assumption; flatten never routes a BitmapShape through this branch with
+                // a non-axis-aligned rotation today, since bitmaps aren't resolved through instances.)
+                var (x2, y2) = t.Point(bmp.X + bmp.W, bmp.Y + bmp.H);
+                (bmp.X, bmp.Y) = t.Point(bmp.X, bmp.Y);
                 bmp.W = x2 - bmp.X;
                 bmp.H = y2 - bmp.Y;
                 break;
@@ -102,10 +118,7 @@ public static class LayoutCoordinateWalk
     private static void TransformArray(long[] xy, LayoutCoordinateTransform t)
     {
         for (int i = 0; i + 1 < xy.Length; i += 2)
-        {
-            xy[i]     = t.X(xy[i]);
-            xy[i + 1] = t.Y(xy[i + 1]);
-        }
+            (xy[i], xy[i + 1]) = t.Point(xy[i], xy[i + 1]);
     }
 
     /// <summary>Cubic control points are coordinates and easy to miss (they are NOT in the Xy vertex
@@ -116,8 +129,8 @@ public static class LayoutCoordinateWalk
         foreach (var e in edges)
         {
             if (e.Kind != EdgeKind.Cubic) continue;
-            e.C1X = t.X(e.C1X); e.C1Y = t.Y(e.C1Y);
-            e.C2X = t.X(e.C2X); e.C2Y = t.Y(e.C2Y);
+            (e.C1X, e.C1Y) = t.Point(e.C1X, e.C1Y);
+            (e.C2X, e.C2Y) = t.Point(e.C2X, e.C2Y);
         }
     }
 

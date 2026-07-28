@@ -42,6 +42,20 @@ public sealed partial class LayoutEditorViewModel
     private const string SelectAtLeastOneReason = "Select at least one shape";
     private const string NotGeometryReason = "Bitmaps are not geometry — select a shape";
 
+    /// <summary>brief-L3a-followups.md §2/R-fix-2's table: "Boolean ops, offset, flatten, repair —
+    /// No, an instance is not geometry." Unlike a bitmap (§3, above — silently skipped in a mixed
+    /// selection because the OTHER operands are still meaningful shape geometry), an instance mixed
+    /// into the selection disables the whole command outright, with a reason NAMING the instance
+    /// count, rather than silently operating on the shape subset — R-fix-2's own example wording:
+    /// "Boolean operations apply to shapes only; 2 instances selected." A shape-only selection is
+    /// completely unaffected (this returns null).</summary>
+    private string? ShapeOnlyBlockReason(string opLabel) => _selectedInstanceIndices.Count switch
+    {
+        0 => null,
+        1 => $"{opLabel} apply to shapes only; 1 instance selected.",
+        var n => $"{opLabel} apply to shapes only; {n} instances selected.",
+    };
+
     /// <summary>Union/Intersect/Difference/XOR all require this (docs/sonnet-briefs/brief-L1h-scale-and-context-menu.md
     /// §1.5) — even though only Union's RESULT is grouped per layer (R-L1h-1), all four boolean ops
     /// need a same-layer pair to operate on; two shapes on different layers have nothing meaningful to
@@ -50,23 +64,34 @@ public sealed partial class LayoutEditorViewModel
     private bool SelectionHasSameLayerPair =>
         GeometricSelectedIndices.Select(i => Model.Shapes[i].Layer).GroupBy(k => k).Any(g => g.Count() >= 2);
 
-    public LayoutCommandAvailability BooleanOpAvailability => SelectionHasSameLayerPair
-        ? LayoutCommandAvailability.Enabled
-        : LayoutCommandAvailability.Disabled("Select 2 or more shapes on the same layer");
+    public LayoutCommandAvailability BooleanOpAvailability => ShapeOnlyBlockReason("Boolean operations") is { } r
+        ? LayoutCommandAvailability.Disabled(r)
+        : SelectionHasSameLayerPair
+            ? LayoutCommandAvailability.Enabled
+            : LayoutCommandAvailability.Disabled("Select 2 or more shapes on the same layer");
 
-    public LayoutCommandAvailability OffsetAvailability => GeometricSelectedIndices.Count >= 1
-        ? LayoutCommandAvailability.Enabled
-        : LayoutCommandAvailability.Disabled(ValidSelectedIndices.Count >= 1 ? NotGeometryReason : SelectAtLeastOneReason);
+    public LayoutCommandAvailability OffsetAvailability => ShapeOnlyBlockReason("Offset") is { } r
+        ? LayoutCommandAvailability.Disabled(r)
+        : GeometricSelectedIndices.Count >= 1
+            ? LayoutCommandAvailability.Enabled
+            : LayoutCommandAvailability.Disabled(ValidSelectedIndices.Count >= 1 ? NotGeometryReason : SelectAtLeastOneReason);
 
-    public LayoutCommandAvailability FlattenAvailability => ValidSelectedIndices.Any(HasCurvedGeometryAt)
-        ? LayoutCommandAvailability.Enabled
-        : LayoutCommandAvailability.Disabled("No curved shapes in selection");
+    public LayoutCommandAvailability FlattenAvailability => ShapeOnlyBlockReason("Flatten to Polygon") is { } r
+        ? LayoutCommandAvailability.Disabled(r)
+        : ValidSelectedIndices.Any(HasCurvedGeometryAt)
+            ? LayoutCommandAvailability.Enabled
+            : LayoutCommandAvailability.Disabled("No curved shapes in selection");
 
-    public LayoutCommandAvailability RepairAvailability => _selectedIndices.Count == 1 && IsSelfIntersecting(_selectedIndices[0])
-        ? LayoutCommandAvailability.Enabled
-        : LayoutCommandAvailability.Disabled("No self-intersecting shapes in selection");
+    public LayoutCommandAvailability RepairAvailability => ShapeOnlyBlockReason("Repair Self-Intersection") is { } r
+        ? LayoutCommandAvailability.Disabled(r)
+        : _selectedIndices.Count == 1 && IsSelfIntersecting(_selectedIndices[0])
+            ? LayoutCommandAvailability.Enabled
+            : LayoutCommandAvailability.Disabled("No self-intersecting shapes in selection");
 
-    public LayoutCommandAvailability CutCopyDeleteDuplicateAvailability => ValidSelectedIndices.Count >= 1
+    /// <summary>brief-L3a-followups.md §2/R-fix-2's table: "Move, nudge, delete, cut/copy/paste,
+    /// duplicate — Yes, in a mixed selection." Unlike the shape-only ops above, this one counts BOTH
+    /// kinds.</summary>
+    public LayoutCommandAvailability CutCopyDeleteDuplicateAvailability => ValidSelectedIndices.Count + SelectedInstanceIndices.Count >= 1
         ? LayoutCommandAvailability.Enabled
         : LayoutCommandAvailability.Disabled(SelectAtLeastOneReason);
 

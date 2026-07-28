@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using CircuitRF.Ui.ViewModels;
+using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.Properties;
 
@@ -62,6 +63,23 @@ public partial class LayoutShapePropertiesView : UserControl
         });
         if (files.Count > 0)
             Vm.CommitBitmapPathText(files[0].Path.LocalPath);
+    }
+
+    // ── Instance: Re-target… (UI firewall — the cell-picker dialog lives in code-behind, never the
+    // VM; mirrors LayoutEditorView.axaml.cs's own OnInstanceTool exactly, minus the placement-arming
+    // step at the end — this button retargets the ALREADY-PLACED selected instance in place) ─────────
+
+    private async void OnInstanceRetargetClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm?.EditorVm is not { } editorVm) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        var dialog = new InstanceCellPickerDialog(editorVm.WorkspaceRootDir, editorVm.InstanceBaseDir, editorVm.CurrentCellDir);
+        var cellRef = await dialog.ShowDialog<string?>(owner);
+        if (string.IsNullOrEmpty(cellRef)) return;
+
+        editorVm.RetargetSelectedInstance(cellRef);
     }
 
     // ── Vertex-list rows (Tag = "X" or "Y"; DataContext = the row itself) ───────────────────────

@@ -39,6 +39,16 @@ public static class LayoutFragment
 
         public List<LayerDef> Layers { get; set; } = [];
         public List<LayoutShape> Shapes { get; set; } = [];
+
+        /// <summary>L3a (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md, gate 11) — instances ARE
+        /// now carried. <see cref="InstanceCellDirs"/> is parallel to <see cref="Instances"/>: the
+        /// SOURCE document's resolved absolute cell directory for that instance's <c>CellRef</c> at
+        /// copy time (or null when it could not be resolved there — a broken reference, or a scratch
+        /// source document with no stable base directory). This is what lets <see cref="RebaseInstances"/>
+        /// compute a NEW relative <c>CellRef</c> correct for the DESTINATION document, rather than
+        /// reusing a relative string that only meant something in the source's own directory.</summary>
+        public List<LayoutInstance> Instances { get; set; } = [];
+        public List<string?> InstanceCellDirs { get; set; } = [];
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -58,10 +68,18 @@ public static class LayoutFragment
     /// actually uses (never the whole technology) so the fragment stays small and self-contained.
     /// Shapes are deep-cloned — later mutation of the source selection never affects the fragment.
     /// </summary>
-    public static Payload Build(IReadOnlyList<LayoutShape> shapes, Technology? tech, int dbuPerMicron)
+    public static Payload Build(IReadOnlyList<LayoutShape> shapes, Technology? tech, int dbuPerMicron) =>
+        Build(shapes, [], [], tech, dbuPerMicron);
+
+    /// <summary>L3a overload — also carries instances. <paramref name="instanceCellDirs"/> is parallel
+    /// to <paramref name="instances"/> (see <see cref="Payload.InstanceCellDirs"/>'s doc comment).</summary>
+    public static Payload Build(
+        IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance> instances, IReadOnlyList<string?> instanceCellDirs,
+        Technology? tech, int dbuPerMicron)
     {
         var bbox = Bbox.Empty;
         foreach (var s in shapes) bbox = bbox.Union(LayoutGeometry.BboxOf(s));
+        foreach (var i in instances) bbox = bbox.Union(new Bbox(i.X, i.Y, i.X, i.Y));
 
         var seen = new HashSet<LayerKey>();
         var layers = new List<LayerDef>();
@@ -74,13 +92,15 @@ public static class LayoutFragment
 
         return new Payload
         {
-            Marker       = Marker,
-            DbuPerMicron = dbuPerMicron,
-            AnchorX      = bbox.IsEmpty ? 0 : bbox.MinX,
-            AnchorY      = bbox.IsEmpty ? 0 : bbox.MinY,
-            TechName     = tech?.Name,
-            Layers       = layers,
-            Shapes       = shapes.Select(LayoutGeometry.Clone).ToList(),
+            Marker           = Marker,
+            DbuPerMicron     = dbuPerMicron,
+            AnchorX          = bbox.IsEmpty ? 0 : bbox.MinX,
+            AnchorY          = bbox.IsEmpty ? 0 : bbox.MinY,
+            TechName         = tech?.Name,
+            Layers           = layers,
+            Shapes           = shapes.Select(LayoutGeometry.Clone).ToList(),
+            Instances        = instances.Select(LayoutGeometry.Clone).ToList(),
+            InstanceCellDirs = instanceCellDirs.ToList(),
         };
     }
 
@@ -246,6 +266,60 @@ public static class LayoutFragment
         {
             var clone = LayoutGeometry.Clone(s);
             if (dx != 0 || dy != 0) LayoutGeometry.TranslateBy(clone, dx, dy);
+            result.Add(clone);
+        }
+        return result;
+    }
+
+    /// <summary>Instance analogue of <see cref="Translate(IReadOnlyList{LayoutShape}, long, long)"/>.</summary>
+    public static IReadOnlyList<LayoutInstance> Translate(IReadOnlyList<LayoutInstance> instances, long dx, long dy)
+    {
+        var result = new List<LayoutInstance>(instances.Count);
+        foreach (var i in instances)
+        {
+            var clone = LayoutGeometry.Clone(i);
+            if (dx != 0 || dy != 0) LayoutGeometry.TranslateBy(clone, dx, dy);
+            result.Add(clone);
+        }
+        return result;
+    }
+
+    // ── Instance CellRef rebasing (gate 11 — cross-layout paste) ────────────────────────────────
+
+    /// <summary>
+    /// Recomputes each instance's <see cref="LayoutInstance.CellRef"/> as a path relative to
+    /// <paramref name="destBaseDir"/> (the destination document's own <see
+    /// cref="LayoutEditorViewModel.InstanceBaseDir"/>), using the SOURCE-resolved absolute cell
+    /// directory captured in <paramref name="cellDirs"/> at copy time. An instance whose source
+    /// directory is unknown (a broken reference at copy time, or a scratch source document), or
+    /// whose relative path cannot be computed (e.g. a different drive on Windows), keeps its ORIGINAL
+    /// <c>CellRef</c> string unchanged — a best-effort fallback that may or may not still resolve in
+    /// the destination; either way, R-L3a-1's placeholder rendering reports it plainly rather than
+    /// this method silently producing a wrong path. Same-directory copy/paste (the common case) always
+    /// rebases exactly, since the relative path from a directory to itself and back is well-defined.
+    /// </summary>
+    public static IReadOnlyList<LayoutInstance> RebaseInstances(
+        IReadOnlyList<LayoutInstance> instances, IReadOnlyList<string?> cellDirs, string destBaseDir)
+    {
+        var result = new List<LayoutInstance>(instances.Count);
+        for (int i = 0; i < instances.Count; i++)
+        {
+            var clone = LayoutGeometry.Clone(instances[i]);
+            string? sourceCellDir = i < cellDirs.Count ? cellDirs[i] : null;
+
+            if (sourceCellDir is { Length: > 0 } && destBaseDir is { Length: > 0 })
+            {
+                try
+                {
+                    string rel = Path.GetRelativePath(Path.GetFullPath(destBaseDir), Path.GetFullPath(sourceCellDir));
+                    clone.CellRef = rel;
+                }
+                catch
+                {
+                    // Keep the original CellRef — see the doc comment's fallback note.
+                }
+            }
+
             result.Add(clone);
         }
         return result;

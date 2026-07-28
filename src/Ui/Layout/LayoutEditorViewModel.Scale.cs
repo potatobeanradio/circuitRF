@@ -20,9 +20,15 @@ public sealed partial class LayoutEditorViewModel
 {
     // ── Enablement ─────────────────────────────────────────────────────────────
 
-    public LayoutCommandAvailability ScaleAvailability => ValidSelectedIndices.Count >= 1
-        ? LayoutCommandAvailability.Enabled
-        : LayoutCommandAvailability.Disabled(SelectAtLeastOneReason);
+    /// <summary>brief-L3a-followups.md §2/R-fix-2's table: "Scale-mode bbox handles — No in this pass;
+    /// L3a named numeric Mag only, and that stands." An instance mixed into the selection disables
+    /// Scale outright (like the shape-only geometry ops in Booleans.cs) rather than silently scaling
+    /// only the shape subset.</summary>
+    public LayoutCommandAvailability ScaleAvailability => ShapeOnlyBlockReason("Scale") is { } r
+        ? LayoutCommandAvailability.Disabled(r)
+        : ValidSelectedIndices.Count >= 1
+            ? LayoutCommandAvailability.Enabled
+            : LayoutCommandAvailability.Disabled(SelectAtLeastOneReason);
 
     public bool CanScaleSelection => ScaleAvailability.CanExecute;
 
@@ -41,10 +47,13 @@ public sealed partial class LayoutEditorViewModel
     /// replacing L1d's handles), OR for a single selected <see cref="BitmapShape"/> ALWAYS — a bitmap
     /// has no vertex list (<c>LayoutHandles.Build</c> already returns none for it), so there is no L1d
     /// mode for Scale mode to "temporarily replace"; bbox scale handles are simply its only handles,
-    /// no toggle needed.</summary>
-    public bool ShowScaleHandles => _selectedIndices.Count >= 2
-        || (_selectedIndices.Count == 1 && ScaleModeActive)
-        || (_selectedIndices.Count == 1 && IsSoleSelectionBitmap());
+    /// no toggle needed. brief-L3a-followups.md §2/R-fix-2: an instance mixed into the selection
+    /// suppresses these handles entirely — "an instance has none of those concepts," same rule L1d's
+    /// vertex/edge handles already follow (<c>HandleSelectPress</c>'s own gate).</summary>
+    public bool ShowScaleHandles => _selectedInstanceIndices.Count == 0 &&
+        (_selectedIndices.Count >= 2
+         || (_selectedIndices.Count == 1 && ScaleModeActive)
+         || (_selectedIndices.Count == 1 && IsSoleSelectionBitmap()));
 
     private bool IsSoleSelectionBitmap()
     {
@@ -112,7 +121,7 @@ public sealed partial class LayoutEditorViewModel
         bool uniform = Math.Abs(factorX - factorY) < 1e-9;
         double magnitudeFactor = uniform ? factorX : Math.Sqrt(Math.Abs(factorX) * Math.Abs(factorY));
 
-        var transform = new LayoutCoordinateTransform(
+        var transform = LayoutCoordinateTransform.AxisIndependent(
             x => anchorX + (long)Math.Round((x - anchorX) * factorX, MidpointRounding.AwayFromZero),
             y => anchorY + (long)Math.Round((y - anchorY) * factorY, MidpointRounding.AwayFromZero),
             m => (long)Math.Round(m * magnitudeFactor, MidpointRounding.AwayFromZero));

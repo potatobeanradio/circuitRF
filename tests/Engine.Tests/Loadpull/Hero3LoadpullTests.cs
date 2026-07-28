@@ -30,6 +30,7 @@ namespace CircuitRF.Engine.Tests.Loadpull;
 ///
 /// Phase 5-5: updated to use DataSet result API (values unchanged, re-housed only).
 /// </summary>
+[Trait("Category", "Slow")]
 public class Hero3LoadpullTests(ITestOutputHelper output)
 {
     private static string Hero3Dir()

@@ -58,6 +58,111 @@ public static class LayoutHitTest
         return candidates.Select(c => c.Index).ToArray();
     }
 
+    // ── Instances (L3a, docs/sonnet-briefs/brief-L3a-instances-and-arrays.md R-L3a-5) ──────────────
+    // "Clicking an instance selects the instance, not its contents" — hit-testing descends into the
+    // sub-cell only far enough to decide whether the point is on ACTUAL GEOMETRY, never treating the
+    // whole bbox as one giant click target (which would make every array select on any click inside
+    // its overall extent). A broken/unresolved instance is the one exception: with no real geometry to
+    // test, its WHOLE placeholder box (array-expanded) is the target, matching R-L3a-1's "stays fully
+    // selectable and movable."
+
+    /// <summary>Instance indices under (x,y) within <paramref name="tolDbu"/>, topmost first (list
+    /// order — instances have no <c>ZOrder</c>/layer of their own, so "topmost" is simply "drawn
+    /// last," i.e. descending index).</summary>
+    public static IReadOnlyList<int> HitInstanceStack(LayoutView view, Technology? tech, string baseDir, long x, long y, long tolDbu)
+    {
+        tolDbu = Math.Max(tolDbu, 0);
+        var queryRect = new Bbox(x - tolDbu, y - tolDbu, x + tolDbu, y + tolDbu);
+        Bbox InstanceBboxFor(LayoutInstance i) => CellHierarchy.InstanceBbox(i, baseDir);
+
+        var hits = new List<int>();
+        foreach (var entry in view.SpatialIndex.QueryIntersecting(view.Shapes, view.Instances, InstanceBboxFor, CellLayoutResolver.Generation, queryRect))
+        {
+            if (entry.Kind != SpatialEntryKind.Instance) continue;
+            int idx = entry.Index;
+            if (idx < 0 || idx >= view.Instances.Count) continue;
+            if (InstanceHitTest(view.Instances[idx], tech, baseDir, x, y, tolDbu)) hits.Add(idx);
+        }
+        hits.Sort(static (a, b) => b.CompareTo(a)); // descending index = topmost (last drawn) first
+        return hits;
+    }
+
+    private static bool InstanceHitTest(LayoutInstance inst, Technology? tech, string baseDir, long px, long py, long tolDbu)
+    {
+        var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var step = CellHierarchy.ResolveForWalk(inst, baseDir, visiting, 0);
+        if (step.State != InstanceResolutionState.Resolved)
+            return ArrayCellsContain(inst, CellHierarchy.PlaceholderBbox(inst), px, py, tolDbu);
+
+        visiting.Add(step.ResolvedCellDir!);
+        int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);
+        bool found = false;
+        for (int r = 0; r < rows && !found; r++)
+        for (int c = 0; c < cols && !found; c++)
+        {
+            var (lx, ly) = LayoutInstanceTransform.InverseTransformPoint(px, py, inst, r, c);
+            long localTol = (long)Math.Round(tolDbu / Math.Max(Math.Abs(inst.Mag), 1e-9));
+            found = CellGeometryHitTest(step.SubView!, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!),
+                (long)Math.Round(lx), (long)Math.Round(ly), localTol, visiting, 1);
+        }
+        visiting.Remove(step.ResolvedCellDir!);
+        return found;
+    }
+
+    /// <summary>Whether (px,py) (grown by <paramref name="tolDbu"/>) falls inside ANY array cell of
+    /// <paramref name="baseBbox"/> — used only for the broken/unresolved placeholder case, where the
+    /// whole box (not real geometry within it) is the click target.</summary>
+    private static bool ArrayCellsContain(LayoutInstance inst, Bbox baseBbox, long px, long py, long tolDbu)
+    {
+        var grown = new Bbox(baseBbox.MinX - tolDbu, baseBbox.MinY - tolDbu, baseBbox.MaxX + tolDbu, baseBbox.MaxY + tolDbu);
+        long w = grown.MaxX - grown.MinX, h = grown.MaxY - grown.MinY;
+        int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);
+        for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++)
+        {
+            var (ox, oy) = LayoutInstanceTransform.ArrayCellOrigin(inst, r, c);
+            long dx = ox - inst.X, dy = oy - inst.Y;
+            var cell = new Bbox(grown.MinX + dx, grown.MinY + dy, grown.MinX + dx + w, grown.MinY + dy + h);
+            if (cell.Contains(px, py)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Recursive, depth-capped test of whether (x,y) (already in THIS view's own local frame,
+    /// tolerance already scaled for the accumulated magnification) lands on real geometry — this view's
+    /// own shapes, or (recursively) any of its own nested instances. Deliberately reuses
+    /// <see cref="HitTestShape"/> unchanged — the SAME per-shape test a top-level click uses, so a
+    /// shape's hit footprint can never silently differ between "directly on the canvas" and "reached
+    /// through an instance."</summary>
+    private static bool CellGeometryHitTest(LayoutView view, Technology? tech, string baseDir, long x, long y, long tolDbu, HashSet<string> visiting, int depth)
+    {
+        foreach (var shape in view.Shapes)
+            if (HitTestShape(shape, x, y, tolDbu, tech)) return true;
+
+        if (depth >= CellHierarchy.MaxDepth) return false;
+
+        foreach (var nested in view.Instances)
+        {
+            var step = CellHierarchy.ResolveForWalk(nested, baseDir, visiting, depth);
+            if (step.State != InstanceResolutionState.Resolved) continue; // a nested broken ref contributes no real geometry to hit
+
+            visiting.Add(step.ResolvedCellDir!);
+            int rows = Math.Max(1, nested.Rows), cols = Math.Max(1, nested.Cols);
+            bool found = false;
+            for (int r = 0; r < rows && !found; r++)
+            for (int c = 0; c < cols && !found; c++)
+            {
+                var (lx, ly) = LayoutInstanceTransform.InverseTransformPoint(x, y, nested, r, c);
+                long localTol = (long)Math.Round(tolDbu / Math.Max(Math.Abs(nested.Mag), 1e-9));
+                found = CellGeometryHitTest(step.SubView!, tech, CellHierarchy.LayoutBaseDirOf(step.ResolvedCellDir!),
+                    (long)Math.Round(lx), (long)Math.Round(ly), localTol, visiting, depth + 1);
+            }
+            visiting.Remove(step.ResolvedCellDir!);
+            if (found) return true;
+        }
+        return false;
+    }
+
     // ── Per-shape tests ────────────────────────────────────────────────────────
 
     private static bool HitTestShape(LayoutShape shape, long x, long y, long tolDbu, Technology? tech)

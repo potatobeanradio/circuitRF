@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -26,6 +27,8 @@ public partial class LayoutEditorView : UserControl
         LayoutCanvasCtrl.LayoutUpdated       += (_, _) => SyncRulers();
         LayoutCanvasCtrl.CursorWorldChanged  += OnCanvasCursorWorldChanged;
         LayoutCanvasCtrl.FrameUnknownLayers  += OnFrameUnknownLayers;
+        LayoutCanvasCtrl.FrameMissingInstanceCellRefs += OnFrameMissingInstanceCellRefs;
+        LayoutCanvasCtrl.InstanceDoubleTapped          += OnInstanceDoubleTapped;
 
         LayoutCanvasCtrl.ClipboardCopyRequested        += async (_, _) => await OnClipboardCopy();
         LayoutCanvasCtrl.ClipboardCutRequested         += async (_, _) => await OnClipboardCut();
@@ -53,26 +56,155 @@ public partial class LayoutEditorView : UserControl
 
     private void OnViewKeyDownTunnel(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape) return;
         if (!LayoutCanvasCtrl.IsKeyboardFocusWithin) return; // a toolbar text field owns its own Escape
-        var vm = (DataContext as LayoutDocument)?.ViewModel;
-        if (vm is null) return;
+        if (DataContext is not LayoutDocument doc) return;
 
-        vm.OnKeyDown(e.Key, e.KeyModifiers);
+        bool ctrl = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
+        if (ctrl)
+        {
+            // Push Into Cell: Ctrl/⌘+] — mirrors SchematicView's identical keyboard path exactly.
+            if (e.Key == Key.OemCloseBrackets)
+            {
+                var inst = doc.ActiveViewModel.SingleSelectedInstance;
+                if (inst is not null) DoPushInto(doc, inst);
+                e.Handled = true;
+                return;
+            }
+            // Pop Out: Ctrl/⌘+[
+            if (e.Key == Key.OemOpenBrackets)
+            {
+                DoPopOut(doc);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (e.Key != Key.Escape) return;
+        doc.ActiveViewModel.OnKeyDown(e.Key, e.KeyModifiers);
         e.Handled = true;
+    }
+
+    // ── Hierarchy navigation (L3b, docs/sonnet-briefs/brief-L3b-hierarchy-navigation.md) ──────────
+    // Capture-before-navigate-then-apply, centralized here so every entry point (double-click,
+    // toolbar Pop Out, breadcrumb click, and this file's own Ctrl+]/Ctrl+[ handling above) restores
+    // the SAME per-frame viewport the same way — see LayoutDocument's NavFrame doc comment for why
+    // this capture step exists at all (pan/zoom is canvas-owned, not VM-owned, unlike selection).
+
+    private void DoPushInto(LayoutDocument doc, LayoutInstance instance)
+    {
+        if (doc.Hierarchy is not { } host) return;
+        if (!host.CanPushInto(instance, doc.ActiveViewModel, out var reason))
+        {
+            if (reason is not null) doc.ActiveViewModel.ReportError($"Can't push into cell: {reason}");
+            return;
+        }
+        doc.CaptureActiveViewport(LayoutCanvasCtrl.CurrentViewport);
+        host.PushIntoCell(doc, instance);
+        ApplyFrameViewport(doc);
+    }
+
+    private void DoPopOut(LayoutDocument doc)
+    {
+        if (!doc.CanPopOut) return;
+        doc.CaptureActiveViewport(LayoutCanvasCtrl.CurrentViewport);
+        doc.Hierarchy?.PopOutOf(doc);
+        ApplyFrameViewport(doc);
+    }
+
+    private void DoPopToLevel(LayoutDocument doc, int frameIndex)
+    {
+        if (frameIndex == doc.NavDepth) return;
+        doc.CaptureActiveViewport(LayoutCanvasCtrl.CurrentViewport);
+        doc.Hierarchy?.PopToLevel(doc, frameIndex);
+        ApplyFrameViewport(doc);
+    }
+
+    private void ApplyFrameViewport(LayoutDocument doc)
+    {
+        if (doc.ActiveFrameSavedViewport is { } vp) LayoutCanvasCtrl.SetViewport(vp);
+        else LayoutCanvasCtrl.ZoomToFit();
+        LayoutCanvasCtrl.InvalidateVisual();
+    }
+
+    private void OnInstanceDoubleTapped(object? sender, LayoutInstance instance)
+    {
+        if (DataContext is not LayoutDocument doc) return;
+        DoPushInto(doc, instance);
+    }
+
+    // Mirrors SchematicView's OnToolbarPushIn/OnToolbarPopOut exactly: the toolbar buttons only fire
+    // when a single selected instance is push-in-able / a pop is possible — the actual gating is
+    // maintained live in UpdateHierarchyButtonStates (below), same shape as SchematicView's
+    // UpdateDisableButtonStates.
+    private void OnToolbarPushIn(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LayoutDocument doc) return;
+        var inst = doc.ActiveViewModel.SingleSelectedInstance;
+        if (inst is not null) DoPushInto(doc, inst);
+    }
+
+    private void OnToolbarPopOut(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is LayoutDocument doc) DoPopOut(doc);
+    }
+
+    /// <summary>Mirrors SchematicView's UpdateDisableButtonStates for PushInBtn/PopOutBtn exactly:
+    /// Push Into Cell enabled only when exactly one selected instance resolves to a pushable cell;
+    /// Pop Out enabled whenever the active document's nav stack has depth &gt; 0.</summary>
+    private void UpdateHierarchyButtonStates()
+    {
+        if (DataContext is not LayoutDocument doc)
+        {
+            PushInBtn.IsEnabled = false;
+            PopOutBtn.IsEnabled = false;
+            return;
+        }
+        var vm = doc.ActiveViewModel;
+        var inst = vm.SingleSelectedInstance;
+        PushInBtn.IsEnabled = doc.Hierarchy?.CanPushInto(inst, vm, out _) ?? false;
+        PopOutBtn.IsEnabled = doc.CanPopOut;
+    }
+
+    private void OnPopToTop(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is LayoutDocument doc) DoPopToLevel(doc, 0);
+    }
+
+    private void OnBreadcrumbClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is LayoutDocument doc && sender is Button btn && btn.Tag is int frameIndex)
+            DoPopToLevel(doc, frameIndex);
     }
 
     // ── Activation focus — tab switch grabs keyboard focus (mirrors SchematicView/SymbolEditorView) ──
 
     private void OnDataContextChangedForFocus(object? sender, System.EventArgs e)
     {
-        if (_subscribedDoc is not null) _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
+        if (_subscribedDoc is not null)
+        {
+            _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
+            _subscribedDoc.ActiveViewModelChanged    -= OnActiveViewModelChangedForNav;
+        }
         _subscribedDoc = DataContext as LayoutDocument;
         if (_subscribedDoc is not null)
         {
             _subscribedDoc.ActivationFocusRequested += OnActivationFocusRequested;
+            _subscribedDoc.ActiveViewModelChanged    += OnActiveViewModelChangedForNav;
             if (_subscribedDoc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
+        UpdateHierarchyButtonStates();
+    }
+
+    // L3b: DisplayUnit/DbuPerMicron and the hierarchy button enable-state are both read off whichever
+    // frame is ACTIVE — a push-in into a sub-cell with a different resolution/unit must relabel the
+    // rulers too, and Pop Out's enabled-ness depends on nav depth. Both subscriptions, unlike toolbar
+    // bindings, are code-behind (not AXAML), so they have to be explicitly re-pointed at the new
+    // active VM on every navigation — AXAML's own {Binding ActiveViewModel.X} paths rebind for free
+    // through Avalonia's binding engine; this does not.
+    private void OnActiveViewModelChangedForNav(object? sender, System.EventArgs e)
+    {
+        if (DataContext is LayoutDocument doc) RebindRulerUnitsSubscription(doc);
+        UpdateHierarchyButtonStates();
     }
 
     private void OnActivationFocusRequested()
@@ -97,17 +229,39 @@ public partial class LayoutEditorView : UserControl
     private void SyncRulerUnits()
     {
         if (DataContext is not LayoutDocument doc) return;
-        HRuler.SetUnits(doc.ViewModel.Model.DbuPerMicron, doc.ViewModel.DisplayUnit);
-        VRuler.SetUnits(doc.ViewModel.Model.DbuPerMicron, doc.ViewModel.DisplayUnit);
+        RebindRulerUnitsSubscription(doc);
+    }
 
-        doc.ViewModel.PropertyChanged += (_, e) =>
+    private LayoutEditorViewModel? _subscribedVmForRulers;
+
+    private void RebindRulerUnitsSubscription(LayoutDocument doc)
+    {
+        if (_subscribedVmForRulers is not null)
+            _subscribedVmForRulers.PropertyChanged -= OnActiveVmPropertyChangedForRulers;
+
+        var vm = doc.ActiveViewModel;
+        _subscribedVmForRulers = vm;
+        vm.PropertyChanged += OnActiveVmPropertyChangedForRulers;
+
+        HRuler.SetUnits(vm.Model.DbuPerMicron, vm.DisplayUnit);
+        VRuler.SetUnits(vm.Model.DbuPerMicron, vm.DisplayUnit);
+    }
+
+    private void OnActiveVmPropertyChangedForRulers(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not LayoutEditorViewModel vm) return;
+        if (e.PropertyName is nameof(LayoutEditorViewModel.DisplayUnit))
         {
-            if (e.PropertyName is nameof(LayoutEditorViewModel.DisplayUnit))
-            {
-                HRuler.SetUnits(doc.ViewModel.Model.DbuPerMicron, doc.ViewModel.DisplayUnit);
-                VRuler.SetUnits(doc.ViewModel.Model.DbuPerMicron, doc.ViewModel.DisplayUnit);
-            }
-        };
+            HRuler.SetUnits(vm.Model.DbuPerMicron, vm.DisplayUnit);
+            VRuler.SetUnits(vm.Model.DbuPerMicron, vm.DisplayUnit);
+        }
+        // Selection changes (shape or instance) drive PushInBtn's enabled state — mirrors
+        // SchematicView's own Selection.Changed -> UpdateDisableButtonStates hook, just via
+        // PropertyChanged since LayoutEditorViewModel's selection has no separate Changed event.
+        else if (e.PropertyName is nameof(LayoutEditorViewModel.SelectionStatusText))
+        {
+            UpdateHierarchyButtonStates();
+        }
     }
 
     private void OnCanvasCursorWorldChanged(object? sender, (double X, double Y)? world)
@@ -115,14 +269,21 @@ public partial class LayoutEditorView : UserControl
         HRuler.SetCursorWorld(world?.X);
         VRuler.SetCursorWorld(world?.Y);
         if (DataContext is LayoutDocument doc)
-            doc.ViewModel.SetCursorWorld(world?.X, world?.Y);
+            doc.ActiveViewModel.SetCursorWorld(world?.X, world?.Y);
     }
 
     private void OnFrameUnknownLayers(IReadOnlyList<LayerKey> keys)
     {
         if (keys.Count == 0) return;
         if (DataContext is LayoutDocument doc)
-            doc.ViewModel.ReportUnknownLayers(keys);
+            doc.ActiveViewModel.ReportUnknownLayers(keys);
+    }
+
+    private void OnFrameMissingInstanceCellRefs(IReadOnlyList<string> cellRefs)
+    {
+        if (cellRefs.Count == 0) return;
+        if (DataContext is LayoutDocument doc)
+            doc.ActiveViewModel.ReportMissingInstanceCellRefs(cellRefs);
     }
 
     private void OnZoomToFit(object? sender, RoutedEventArgs e) => LayoutCanvasCtrl.ZoomToFit();
@@ -167,7 +328,7 @@ public partial class LayoutEditorView : UserControl
 
     // ── Toolbar field commit (§1 R6 typed entry — LostFocus commits; Enter commits + refocuses canvas) ──
 
-    private LayoutEditorViewModel? Vm => (DataContext as LayoutDocument)?.ViewModel;
+    private LayoutEditorViewModel? Vm => (DataContext as LayoutDocument)?.ActiveViewModel;
 
     private void OnCornerRadiusCommit(object? sender, RoutedEventArgs e)
     {
@@ -230,15 +391,17 @@ public partial class LayoutEditorView : UserControl
     private async Task OnClipboardCopy()
     {
         if (Vm is not { } vm) return;
+        // brief-L3a-followups.md §2/R-fix-2: BuildCopyPayload already carries BOTH selected shapes AND
+        // selected instances (a mixed selection is now normal) — pass the whole payload straight
+        // through rather than re-deriving a shapes-only fragment a second way.
         var payload = vm.BuildCopyPayload();
         if (payload is null) return;
 
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null) return;
 
-        var shapes = vm.SelectedIndices.Select(i => vm.Model.Shapes[i]).ToList();
         IntPtr ownerHwnd = TopLevel.GetTopLevel(this)?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
-        await LayoutClipboard.CopyAsync(clipboard, shapes, vm.Technology, vm.Model.DbuPerMicron, ownerHwnd);
+        await LayoutClipboard.CopyAsync(clipboard, payload, vm.Technology, ownerHwnd);
     }
 
     private async Task OnClipboardCut()
@@ -276,10 +439,15 @@ public partial class LayoutEditorView : UserControl
         var choices = LayoutLayerMapping.BuildChoices(mapping);
         var reconciled = vm.ApplyFragmentReconciliation(rescale.Shapes, payload.Layers, choices);
 
+        // brief-L3a-followups.md §2/R-fix-2: a mixed copy's instances travel alongside the shapes as
+        // one placement — rebased (CellRef relative to THIS document) the same way the L3a-era
+        // instance-only paste path already did, just no longer gated on "no shapes in the payload."
+        var rebasedInstances = vm.RebaseFragmentInstances(payload);
+
         if (inPlace)
-            vm.PasteInPlace(reconciled);
+            vm.PasteInPlace(reconciled, rebasedInstances);
         else
-            vm.BeginPastePlacement(reconciled, rescale.AnchorX, rescale.AnchorY);
+            vm.BeginPastePlacement(reconciled, rescale.AnchorX, rescale.AnchorY, rebasedInstances);
 
         ReportLayerMappingSummary("Pasted", vm.Technology?.Name, reconciled.Count, mapping);
 
@@ -319,6 +487,22 @@ public partial class LayoutEditorView : UserControl
     }
 
     // ── Change Technology (L1g Gap 1) — metadata-bar affordance ─────────────────────────────────
+
+    // ── L3a — Instance-place tool (docs/sonnet-briefs/brief-L3a-instances-and-arrays.md §6) ────────
+
+    private async void OnInstanceTool(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        var dialog = new InstanceCellPickerDialog(vm.WorkspaceRootDir, vm.InstanceBaseDir, vm.CurrentCellDir);
+        var cellRef = await dialog.ShowDialog<string?>(owner);
+        if (string.IsNullOrEmpty(cellRef)) return;
+
+        vm.BeginInstancePlacement(cellRef);
+        LayoutCanvasCtrl.InvalidateVisual();
+    }
 
     private async void OnChangeTechnologyClick(object? sender, RoutedEventArgs e) => await OnChangeTechnologyAsync();
 

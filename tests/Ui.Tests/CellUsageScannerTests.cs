@@ -1,4 +1,5 @@
 using System.IO;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Tests;
@@ -41,6 +42,17 @@ public class CellUsageScannerTests : IDisposable
             CellRef      = cellRefRelative,
         });
         SchematicPersistence.SaveToFile(cschPath, model);
+    }
+
+    private static void SaveLayoutWithCellRef(string cellDir, string cellRefRelative)
+    {
+        var layDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        Directory.CreateDirectory(layDir);
+        var clayPath = Path.Combine(layDir, Path.GetFileName(cellDir) + ".clay");
+
+        var view = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Um, SnapDbu = 1000 };
+        view.Instances.Add(new LayoutInstance { CellRef = cellRefRelative, X = 0, Y = 0, Mag = 1.0 });
+        LayoutPersistence.SaveToFile(clayPath, view);
     }
 
     // ── tests ─────────────────────────────────────────────────────────────────
@@ -165,5 +177,83 @@ public class CellUsageScannerTests : IDisposable
 
         Assert.Empty(failed);
         Assert.Empty(updated);
+    }
+
+    // ── .clay instance references (Phase L3b — the gap L3a left open) ─────────────────────────────
+
+    [Fact]
+    public void CountReferencingCells_CountsALayoutInstanceReference()
+    {
+        var cellA = CreateCell("cellA");
+        var cellB = CreateCell("cellB");
+        SaveLayoutWithCellRef(cellB, "../../cellA");
+
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        Assert.Equal(1, result);
+    }
+
+    [Fact]
+    public void CountReferencingCells_MixedSchematicAndLayoutReferencesToSameCell_CountsAsTwoDistinctCells()
+    {
+        var cellA = CreateCell("cellA");
+        var cellB = CreateCell("cellB");
+        var cellC = CreateCell("cellC");
+        SaveSchematicWithCellRef(cellB, "../../cellA");
+        SaveLayoutWithCellRef(cellC, "../../cellA");
+
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        Assert.Equal(2, result);
+    }
+
+    [Fact]
+    public void CountReferencingCells_OneCellReferencingViaBothSchematicAndLayout_CountsAsOne()
+    {
+        var cellA = CreateCell("cellA");
+        var cellB = CreateCell("cellB");
+        SaveSchematicWithCellRef(cellB, "../../cellA");
+        SaveLayoutWithCellRef(cellB, "../../cellA");
+
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA);
+        Assert.Equal(1, result);
+    }
+
+    [Fact]
+    public void RewriteCellReferences_RewritesALayoutInstanceCellRef()
+    {
+        var oldCell = CreateCell("oldCell");
+        var cellA   = CreateCell("cellA");
+        SaveLayoutWithCellRef(cellA, "../../oldCell");
+
+        var updated = CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out var failed);
+
+        Assert.Empty(failed);
+        Assert.Single(updated);
+
+        var layDir  = CellFolder.SubFolderPath(cellA, ViewType.Layout);
+        var clayPath = Path.Combine(layDir, "cellA.clay");
+        var reloaded = LayoutPersistence.LoadFromFile(clayPath);
+        Assert.Equal("../../newCell", reloaded.Instances[0].CellRef);
+    }
+
+    [Fact]
+    public void RewriteCellReferences_TouchesBothSchematicAndLayoutWhenBothReferenceTheOldName()
+    {
+        CreateCell("oldCell");
+        var cellA = CreateCell("cellA");
+        SaveSchematicWithCellRef(cellA, "../../oldCell");
+        SaveLayoutWithCellRef(cellA, "../../oldCell");
+
+        var updated = CellUsageScanner.RewriteCellReferences(_ws, "oldCell", "newCell", out var failed);
+
+        Assert.Empty(failed);
+        Assert.Equal(2, updated.Count);   // one .csch + one .clay
+
+        var schDir = CellFolder.SubFolderPath(cellA, ViewType.Schematic);
+        var (schModel, _, _) = SchematicPersistence.LoadFromFile(Path.Combine(schDir, "cellA.csch"));
+        Assert.Equal("../../newCell", schModel.Components[0].CellRef);
+
+        var layDir = CellFolder.SubFolderPath(cellA, ViewType.Layout);
+        var layModel = LayoutPersistence.LoadFromFile(Path.Combine(layDir, "cellA.clay"));
+        Assert.Equal("../../newCell", layModel.Instances[0].CellRef);
     }
 }

@@ -13,6 +13,7 @@ namespace CircuitRF.Engine.Tests.Linear;
 /// Acceptance: performance &lt; 10 s + internal consistency (passivity, reciprocity).
 /// NOT a 1e-6 match.
 /// </summary>
+[Trait("Category", "Slow")]
 public class Hero1BTests
 {
     private static string Hero1BDir()

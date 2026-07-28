@@ -5,13 +5,29 @@ namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
 /// Scans a workspace to count (and rewrite) how many cells reference a given cell folder.
+///
+/// Covers both view kinds a cell can carry a <c>CellRef</c> in: <c>.csch</c> schematics (component
+/// instances, under <c>node["Components"]</c>) and <c>.clay</c> layouts (layout instances, under
+/// <c>node["Instances"]</c> — brief-L3b-hierarchy-navigation.md §4, the gap L3a left open). The
+/// per-value matching logic (last-path-segment comparison against a stored <c>CellRef</c>) IS
+/// generic — it was the surrounding file discovery and the hardcoded JSON array key that were
+/// <c>.csch</c>-specific, not the matching itself. <see cref="ScannedKinds"/> is the one list that
+/// needs a new entry for any future view kind that grows its own <c>CellRef</c>-bearing array.
 /// </summary>
 public static class CellUsageScanner
 {
+    private readonly record struct ScanKind(ViewType ViewType, string FilePattern, string ArrayPropertyName);
+
+    private static readonly ScanKind[] ScannedKinds =
+    [
+        new(ViewType.Schematic, "*.csch", "Components"),
+        new(ViewType.Layout,    "*.clay", "Instances"),
+    ];
+
     /// <summary>
     /// Counts DISTINCT cells in the workspace (excluding the target itself) that contain at
-    /// least one schematic component whose CellRef resolves to <paramref name="targetCellDir"/>.
-    /// Best-effort: unreadable schematics are skipped.
+    /// least one component/instance (schematic or layout) whose CellRef resolves to
+    /// <paramref name="targetCellDir"/>. Best-effort: unreadable files are skipped.
     /// </summary>
     public static int CountReferencingCells(string workspaceRootDir, string targetCellDir)
     {
@@ -35,35 +51,50 @@ public static class CellUsageScanner
         return count;
     }
 
-    // True when any .csch in this cell folder's schematic subfolder references targetCellDir.
+    // True when any view file (of any ScannedKind) in this cell folder references targetCellDir.
     private static bool CellReferencesTarget(string cellDir, string targetCellDir)
     {
-        var schematicSubDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
-        if (!Directory.Exists(schematicSubDir)) return false;
-
-        foreach (var cschPath in Directory.EnumerateFiles(schematicSubDir, "*.csch"))
+        foreach (var kind in ScannedKinds)
         {
-            try
+            var subDir = CellFolder.SubFolderPath(cellDir, kind.ViewType);
+            if (!Directory.Exists(subDir)) continue;
+
+            foreach (var filePath in Directory.EnumerateFiles(subDir, kind.FilePattern))
             {
-                var schematicDir = Path.GetDirectoryName(cschPath)!;
-                var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
-
-                foreach (var comp in model.Components)
+                try
                 {
-                    if (comp.CellRef is null) continue;
-
-                    var resolved = Path.GetFullPath(
-                            Path.Combine(schematicDir, comp.CellRef))
-                        .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-                    if (string.Equals(resolved, targetCellDir, StringComparison.OrdinalIgnoreCase))
+                    if (FileReferencesTarget(filePath, kind.ArrayPropertyName, targetCellDir))
                         return true;
                 }
+                catch
+                {
+                    // Unreadable/malformed file — skip.
+                }
             }
-            catch
-            {
-                // Unreadable schematic — skip.
-            }
+        }
+
+        return false;
+    }
+
+    private static bool FileReferencesTarget(string filePath, string arrayPropertyName, string targetCellDir)
+    {
+        var fileDir = Path.GetDirectoryName(filePath)!;
+        var json = File.ReadAllText(filePath);
+        var node = JsonNode.Parse(json);
+        var array = node?[arrayPropertyName]?.AsArray();
+        if (array is null) return false;
+
+        foreach (var item in array)
+        {
+            if (item is null) continue;
+            var cellRef = item["CellRef"]?.GetValue<string?>();
+            if (cellRef is null) continue;
+
+            var resolved = Path.GetFullPath(Path.Combine(fileDir, cellRef))
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            if (string.Equals(resolved, targetCellDir, StringComparison.OrdinalIgnoreCase))
+                return true;
         }
 
         return false;
@@ -82,16 +113,16 @@ public static class CellUsageScanner
     }
 
     /// <summary>
-    /// Finds every .csch in the workspace that contains a CellRef whose resolved cell name
-    /// equals <paramref name="oldCellName"/>, rewrites it to <paramref name="newCellName"/>,
-    /// and returns the list of updated .csch paths (for logging).
-    /// Best-effort: unreadable or unwritable schematics are skipped and their paths are added
+    /// Finds every schematic/layout view file in the workspace that contains a CellRef whose
+    /// resolved cell name equals <paramref name="oldCellName"/>, rewrites it to
+    /// <paramref name="newCellName"/>, and returns the list of updated paths (for logging).
+    /// Best-effort: unreadable or unwritable files are skipped and their paths are added
     /// to <paramref name="failed"/>.
     /// </summary>
     /// <remarks>
-    /// A CellRef is stored as a relative path like "../../OldName" inside a .csch JSON file.
-    /// The last path segment (folder name) equals the cell name. We match on the EXACT folder
-    /// name so we never do substring replacement.
+    /// A CellRef is stored as a relative path like "../../OldName" inside the file's JSON. The last
+    /// path segment (folder name) equals the cell name. We match on the EXACT folder name so we
+    /// never do substring replacement.
     /// </remarks>
     public static IReadOnlyList<string> RewriteCellReferences(
         string            workspaceRootDir,
@@ -104,19 +135,22 @@ public static class CellUsageScanner
 
         foreach (var cellDir in EnumerateCellFolders(workspaceRootDir))
         {
-            var schematicSubDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
-            if (!Directory.Exists(schematicSubDir)) continue;
-
-            foreach (var cschPath in Directory.EnumerateFiles(schematicSubDir, "*.csch"))
+            foreach (var kind in ScannedKinds)
             {
-                try
+                var subDir = CellFolder.SubFolderPath(cellDir, kind.ViewType);
+                if (!Directory.Exists(subDir)) continue;
+
+                foreach (var filePath in Directory.EnumerateFiles(subDir, kind.FilePattern))
                 {
-                    if (RewriteSchematicCellRefs(cschPath, oldCellName, newCellName))
-                        rewritten.Add(cschPath);
-                }
-                catch (Exception ex)
-                {
-                    failed.Add($"{cschPath}: {ex.Message}");
+                    try
+                    {
+                        if (RewriteFileCellRefs(filePath, kind.ArrayPropertyName, oldCellName, newCellName))
+                            rewritten.Add(filePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        failed.Add($"{filePath}: {ex.Message}");
+                    }
                 }
             }
         }
@@ -124,22 +158,23 @@ public static class CellUsageScanner
         return rewritten;
     }
 
-    // Returns true if the file was modified.  Matches CellRef path segments — last segment is the cell name.
-    // .csch uses PascalCase JSON property names (no naming policy), so we use "Components" and "CellRef".
-    private static bool RewriteSchematicCellRefs(string cschPath, string oldCellName, string newCellName)
+    // Returns true if the file was modified. Matches CellRef path segments — last segment is the
+    // cell name. Both .csch and .clay use PascalCase JSON property names (no naming policy), so
+    // "CellRef" is the literal key in both.
+    private static bool RewriteFileCellRefs(string filePath, string arrayPropertyName, string oldCellName, string newCellName)
     {
-        var json = File.ReadAllText(cschPath);
+        var json = File.ReadAllText(filePath);
         var node = JsonNode.Parse(json);
         if (node is null) return false;
 
-        bool changed   = false;
-        var components = node["Components"]?.AsArray();
-        if (components is null) return false;
+        bool changed = false;
+        var array = node[arrayPropertyName]?.AsArray();
+        if (array is null) return false;
 
-        foreach (var comp in components)
+        foreach (var item in array)
         {
-            if (comp is null) continue;
-            var cellRefNode = comp["CellRef"];
+            if (item is null) continue;
+            var cellRefNode = item["CellRef"];
             if (cellRefNode is null) continue;
 
             var cellRef = cellRefNode.GetValue<string?>();
@@ -153,14 +188,14 @@ public static class CellUsageScanner
             // Replace the last path segment with newCellName.
             var dir        = Path.GetDirectoryName(cellRef) ?? "";
             var newCellRef = string.IsNullOrEmpty(dir) ? newCellName : dir + "/" + newCellName;
-            comp["CellRef"] = JsonValue.Create(newCellRef);
+            item["CellRef"] = JsonValue.Create(newCellRef);
             changed = true;
         }
 
         if (!changed) return false;
 
         var opts = new JsonSerializerOptions { WriteIndented = true };
-        File.WriteAllText(cschPath, node.ToJsonString(opts));
+        File.WriteAllText(filePath, node.ToJsonString(opts));
         return true;
     }
 }

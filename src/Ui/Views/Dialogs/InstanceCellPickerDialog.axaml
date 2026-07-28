@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.InstanceCellPickerDialog"
+        Title="Place Instance"
+        Width="380"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" Text="Choose a cell to place as an instance."
+                   FontSize="12" Opacity="0.7" Margin="0,0,0,10" TextWrapping="Wrap"/>
+
+        <ListBox x:Name="ChoiceList" Grid.Row="1" MaxHeight="260" FontSize="12">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:CompileBindings="False">
+                    <StackPanel Orientation="Horizontal" Spacing="6" Opacity="{Binding RowOpacity}">
+                        <TextBlock Text="{Binding DisplayName}"/>
+                        <TextBlock Text="{Binding DisabledReason}" FontStyle="Italic" FontSize="11" Opacity="0.75"
+                                   IsVisible="{Binding !IsEnabled}"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <TextBlock x:Name="EmptyText" Grid.Row="1" FontSize="12" Opacity="0.6"
+                   Text="No cells were found in this workspace." IsVisible="False"/>
+
+        <TextBlock x:Name="DisabledReasonText" Grid.Row="2" FontSize="11" Margin="0,4,0,0"
+                   Foreground="{DynamicResource CrfWarningBrush}" IsVisible="False" TextWrapping="Wrap"/>
+
+        <Button x:Name="BrowseButton" Grid.Row="3" Content="Browse…" FontSize="12" Padding="8,3"
+                HorizontalAlignment="Left" Margin="0,8,0,0"
+                ToolTip.Tip="Choose a cell folder outside the automatically-scanned list"/>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button x:Name="CancelButton" Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center"/>
+            <Button x:Name="OkButton" Content="Place" Width="80" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

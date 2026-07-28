@@ -119,7 +119,7 @@ public class LayoutBitmapTests : IDisposable
     public void BitmapShape_CoordinateWalk_NonUniformScale_ScalesXYAndWH_Independently()
     {
         var bmp = new BitmapShape { Layer = LayerA, X = 0, Y = 0, W = 1000, H = 1000 };
-        var t = new LayoutCoordinateTransform(x => x * 2, y => y * 3, m => m);
+        var t = LayoutCoordinateTransform.AxisIndependent(x => x * 2, y => y * 3, m => m);
         LayoutCoordinateWalk.Transform(bmp, t);
         Assert.Equal(0, bmp.X); Assert.Equal(0, bmp.Y);
         Assert.Equal(2000, bmp.W); Assert.Equal(3000, bmp.H);

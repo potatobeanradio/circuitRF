@@ -25,22 +25,28 @@ namespace CircuitRF.Ui.Clipboard;
 public static class LayoutClipboard
 {
     /// <summary>
-    /// Copies the given shapes to the system clipboard as a self-describing fragment (built via
-    /// <see cref="LayoutFragment.Build"/>). Places JSON text + PDF + SVG + PNG on the clipboard
-    /// simultaneously so receiving apps can pick the richest representation they understand. Color
-    /// variant and background transparency are read from <see cref="ClipboardRenderPolicy"/>, exactly
-    /// like every other copy path in this app.
+    /// Copies an already-built fragment (<see cref="LayoutFragment.Build"/>, via
+    /// <c>LayoutEditorViewModel.BuildCopyPayload</c> — carries shapes AND instances together since
+    /// brief-L3a-followups.md §2/R-fix-2 made a mixed selection normal) to the system clipboard.
+    /// Places JSON text + PDF + SVG + PNG simultaneously so receiving apps can pick the richest
+    /// representation they understand. Color variant and background transparency are read from
+    /// <see cref="ClipboardRenderPolicy"/>, exactly like every other copy path in this app.
+    ///
+    /// <b>The rich (PDF/SVG/PNG) preview renders <paramref name="payload"/>'s SHAPES only</b> — an
+    /// instance's geometry lives in a resolved sub-cell this file has no compiled-rendering access to
+    /// (that machinery is <c>LayoutRenderer.Instances.cs</c>'s, wired for the live canvas, not this
+    /// export path), so an instance-only copy simply carries no rich graphic (an empty selection
+    /// bbox), same as any other best-effort render failure — the JSON text is always present and is
+    /// what circuitRF's own paste path actually reads. A named, narrow scope limitation, not a defect.
     /// </summary>
     public static async Task CopyAsync(
         IClipboard clipboard,
-        IReadOnlyList<LayoutShape> shapes,
+        LayoutFragment.Payload payload,
         Technology? tech,
-        int dbuPerMicron,
         IntPtr ownerHwnd = default)
     {
-        if (shapes.Count == 0) return;
+        if (payload.Shapes.Count == 0 && payload.Instances.Count == 0) return;
 
-        var payload = LayoutFragment.Build(shapes, tech, dbuPerMicron);
         string json = LayoutFragment.Serialize(payload);
 
         var (variant, transparent) = ClipboardRenderPolicy.Resolve();
@@ -52,9 +58,9 @@ public static class LayoutClipboard
         Bitmap?                         bmp = null;
         try
         {
-            pdf = TryRenderToPdf(shapes, tech, renderTheme, transparent);
-            svg = TryRenderToSvg(shapes, tech, renderTheme, transparent);
-            bmp = TryRenderToAvaloniaImage(shapes, tech, renderTheme, transparent);
+            pdf = TryRenderToPdf(payload.Shapes, tech, renderTheme, transparent);
+            svg = TryRenderToSvg(payload.Shapes, tech, renderTheme, transparent);
+            bmp = TryRenderToAvaloniaImage(payload.Shapes, tech, renderTheme, transparent);
         }
         catch { /* best-effort */ }
 

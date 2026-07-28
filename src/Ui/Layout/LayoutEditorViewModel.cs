@@ -266,7 +266,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // can change the shape's vertex count/order at the very index that's still selected.
             _cycleCache = null;
             _pickedVertexIndex = null;
-            if (_selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0)
+            bool shapesChanged = _selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0;
+            bool instancesChanged = _selectedInstanceIndices.RemoveAll(i => i < 0 || i >= Model.Instances.Count) > 0;
+            if (shapesChanged || instancesChanged)
             {
                 SelectionStatusText = ComputeGenericSelectionStatus();
                 RebuildOverlay();
@@ -352,7 +354,10 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <summary><c>Select</c> is a registered tool that does nothing in L1b — hit-testing,
     /// selection, and editing are L1c. <c>Curve</c> is deliberately absent: see the promotion-rule
     /// note at the top of <c>LayoutModel.cs</c>.</summary>
-    public enum Tool { Select, Rect, RoundedRect, Circle, Polygon, Path, Label }
+    /// <summary><c>Instance</c> (L3a, docs/sonnet-briefs/brief-L3a-instances-and-arrays.md §6) places a
+    /// cell reference — pick via <see cref="BeginInstancePlacement"/> (from a cell-picker dialog the
+    /// view owns), then click-to-place with a live ghost, mirroring L1f's paste-placement gesture.</summary>
+    public enum Tool { Select, Rect, RoundedRect, Circle, Polygon, Path, Label, Instance }
 
     [ObservableProperty] private Tool _activeTool = Tool.Select;
 
@@ -379,7 +384,14 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     public IRelayCommand SelectAllCommand { get; private set; } = null!;
     public IRelayCommand DeselectAllCommand { get; private set; } = null!;
 
-    private void SetSelection(IEnumerable<int> indices)
+    /// <summary>brief-L3a-followups.md §2/R-fix-2: shapes and instances may now be selected together.
+    /// <paramref name="clearOtherKind"/> distinguishes the two kinds of caller — a REPLACE (plain
+    /// click, SelectAll/DeselectAll, marquee with no modifier: "this is the whole new selection," so
+    /// the other kind must be cleared alongside it) from an ADD/TOGGLE (Shift/Ctrl-click, or the
+    /// marquee's own Shift/Ctrl combination: "extend what's already selected," so the other kind's
+    /// selection must survive untouched). Default true matches every pre-existing call site, which was
+    /// always a replace.</summary>
+    private void SetSelection(IEnumerable<int> indices, bool clearOtherKind = true)
     {
         var distinct = new List<int>();
         foreach (var i in indices)
@@ -389,7 +401,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _selectedIndices.Clear();
         _selectedIndices.AddRange(distinct);
         _pickedVertexIndex = null;
-        SelectionStatusText = ComputeGenericSelectionStatus();
+
+        // Guarded on Count>0 so a replace against an already-empty instance selection is a no-op (no
+        // spurious overlay rebuild) — the overwhelmingly common case.
+        if (clearOtherKind && _selectedInstanceIndices.Count > 0) _selectedInstanceIndices.Clear();
+
+        SelectionStatusText = ComputeSelectionStatus();
         RebuildOverlay();
     }
 
@@ -404,6 +421,24 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return $"{ShapeTypeName(shape)} · {LayerDisplayName(shape.Layer)}";
         }
         return $"{_selectedIndices.Count} selected";
+    }
+
+    /// <summary>The one status-text computation for EITHER kind alone (unchanged single-kind detail,
+    /// via <see cref="ComputeGenericSelectionStatus"/>/<see cref="ComputeInstanceSelectionStatus"/>)
+    /// OR both together (brief-L3a-followups.md §2 — a mixed selection has no single "type · layer"
+    /// detail to show, so it reports the count of each kind instead).</summary>
+    private string ComputeSelectionStatus()
+    {
+        bool hasShapes = _selectedIndices.Count > 0;
+        bool hasInstances = _selectedInstanceIndices.Count > 0;
+        if (hasShapes && hasInstances)
+        {
+            string shapeWord = _selectedIndices.Count == 1 ? "shape" : "shapes";
+            string instWord = _selectedInstanceIndices.Count == 1 ? "instance" : "instances";
+            return $"{_selectedIndices.Count} {shapeWord} + {_selectedInstanceIndices.Count} {instWord}";
+        }
+        if (hasInstances) return ComputeInstanceSelectionStatus();
+        return ComputeGenericSelectionStatus();
     }
 
     private static string ShapeTypeName(LayoutShape shape) => shape switch
@@ -439,6 +474,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     // ── Select-tool gesture state ─────────────────────────────────────────────
 
+    // MoveInstance is gone (brief-L3a-followups.md §2/R-fix-2) — Move now covers whichever of
+    // shapes/instances are selected, together, since a mixed selection can contain both.
     private enum SelectDragKind { None, Move, Marquee }
     private SelectDragKind _selectDragKind = SelectDragKind.None;
 
@@ -446,14 +483,19 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private long _marqueeCurX, _marqueeCurY;       // live marquee far corner
     private bool _marqueeAdd, _marqueeToggle;      // Shift / Ctrl captured at press
     private List<int> _marqueeBaseSelection = [];
+    private List<int> _marqueeBaseInstanceSelection = [];
 
-    // ── Live marquee preview (L1i, docs/sonnet-briefs/brief-L1i-live-marquee-selection.md) ────────
-    // R-L1i-2: _marqueePreview is a SEPARATE list from _selectedIndices — it is what the highlight
-    // renders while a marquee drag is active, and it is NEVER written into the real selection until
-    // commit (HandleSelectRelease -> CommitMarquee -> SetSelection). Both are reused scratch buffers
-    // (cleared and refilled in place, never reallocated per pointer move) per the brief's perf note.
+    // ── Live marquee preview (L1i, docs/sonnet-briefs/brief-L1i-live-marquee-selection.md; extended
+    // to instances by brief-L3a-followups.md §2/R-fix-3) ────────────────────────────────────────────
+    // R-L1i-2: _marqueePreview/_marqueeInstancePreview are SEPARATE lists from _selectedIndices/
+    // _selectedInstanceIndices — they are what the highlight renders while a marquee drag is active,
+    // and are NEVER written into the real selection until commit (HandleSelectRelease -> CommitMarquee
+    // -> ReplaceMixedSelection). All four are reused scratch buffers (cleared and refilled in place,
+    // never reallocated per pointer move) per the brief's perf note.
     private readonly List<int> _marqueeHitsScratch = [];
     private readonly List<int> _marqueePreview = [];
+    private readonly List<int> _marqueeInstanceHitsScratch = [];
+    private readonly List<int> _marqueeInstancePreview = [];
     private (long X, long Y)? _marqueeLastComputedCorner; // null = "not computed yet this drag"
 
     /// <summary>How many times <see cref="ComputeMarqueeSelection"/> actually ran (as opposed to being
@@ -505,7 +547,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // selection/cycling logic when exactly one shape is selected — "a press on a handle must not
         // disturb the selection or the overlap-cycling cache" (§2). Only a single-shape selection
         // shows handles at all (§2: "multi-selection shows no handles — it is a move/delete selection").
-        if (_selectedIndices.Count == 1 && !ScaleModeActive && TryHandleSelectPressOnHandles(_selectedIndices[0], px, py, ctrl, alt, tolDbu))
+        // brief-L3a-followups.md §2: an instance mixed into the selection also suppresses handles —
+        // "Vertex/edge/bulge/control-point handles: No — an instance has no vertices" — a click near a
+        // would-be handle position on the one selected shape must fall through to ordinary
+        // selection/move when instances are ALSO selected, not silently reach shape-only geometry
+        // editing.
+        if (_selectedIndices.Count == 1 && _selectedInstanceIndices.Count == 0 && !ScaleModeActive
+            && TryHandleSelectPressOnHandles(_selectedIndices[0], px, py, ctrl, alt, tolDbu))
             return;
         _pickedVertexIndex = null;
 
@@ -531,7 +579,20 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (stack.Count == 0)
         {
             _cycleCache = null;
-            if (!shift && !ctrl) SetSelection([]);
+
+            // L3a (R-L3a-5): no shape under the click — try an instance before falling back to a
+            // marquee. Instances get their own (simpler, no cycling) click-select: a fresh press
+            // always re-hit-tests, since instances are typically few enough that "which one is on
+            // top" rarely needs the shape overlap-cycling machinery.
+            var instStack = LayoutHitTest.HitInstanceStack(Model, Technology, InstanceBaseDir, px, py, tolDbu);
+            if (instStack.Count > 0)
+            {
+                ApplyInstanceClickSelection(instStack[0], shift, ctrl);
+                if (!shift && !ctrl) BeginMoveDrag(px, py);
+                return;
+            }
+
+            if (!shift && !ctrl) SetSelection([]); // clearOtherKind:true (default) clears instances too
             BeginMarquee(px, py, shift, ctrl);
             return;
         }
@@ -830,7 +891,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// no edges, or nothing is within tolerance.</summary>
     public (int ShapeIndex, int EdgeIndex, EdgeKind CurrentKind)? FindEdgeForContextMenu(double wx, double wy, long tolDbu)
     {
-        if (_selectedIndices.Count != 1) return null;
+        if (_selectedIndices.Count != 1 || _selectedInstanceIndices.Count != 0) return null;
         int shapeIndex = _selectedIndices[0];
         if (shapeIndex < 0 || shapeIndex >= Model.Shapes.Count) return null;
         var shape = Model.Shapes[shapeIndex];
@@ -864,7 +925,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// right-click to delete" is always the same one a left-click-drag would grab.</summary>
     public (int ShapeIndex, int VertexIndex)? FindVertexForContextMenu(double wx, double wy, long tolDbu)
     {
-        if (_selectedIndices.Count != 1) return null;
+        if (_selectedIndices.Count != 1 || _selectedInstanceIndices.Count != 0) return null;
         int shapeIndex = _selectedIndices[0];
         if (shapeIndex < 0 || shapeIndex >= Model.Shapes.Count) return null;
         var shape = Model.Shapes[shapeIndex];
@@ -882,23 +943,27 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             SetSelection(_selectedIndices.Contains(hitIndex)
                 ? _selectedIndices.Where(i => i != hitIndex)
-                : _selectedIndices.Append(hitIndex));
+                : _selectedIndices.Append(hitIndex), clearOtherKind: false);
         }
         else if (shift)
         {
             SetSelection(_selectedIndices.Contains(hitIndex)
                 ? _selectedIndices
-                : _selectedIndices.Append(hitIndex));
+                : _selectedIndices.Append(hitIndex), clearOtherKind: false);
         }
         else
         {
             // A plain click on a shape that is already part of a MULTI-selection preserves the
             // whole selection — this is what makes "drag from inside any selected shape translates
             // the whole selection" true rather than collapsing the group to just the clicked member
-            // before the drag even starts. A click on anything else (an unselected shape, or the
-            // sole member of a single-shape selection — which still needs to replace-with-itself so
-            // cycling continues to work) replaces the selection with just the hit.
-            if (!(_selectedIndices.Count > 1 && _selectedIndices.Contains(hitIndex)))
+            // before the drag even starts. brief-L3a-followups.md §2: "multi" now counts BOTH kinds
+            // together — a shape that is part of a MIXED shape+instance selection also survives a
+            // plain click on it, so a drag started there moves the whole mixed group. A click on
+            // anything else (an unselected shape, or the sole member of a single-shape selection —
+            // which still needs to replace-with-itself so cycling continues to work) replaces the
+            // WHOLE selection (both kinds) with just the hit.
+            bool totalMulti = _selectedIndices.Count + _selectedInstanceIndices.Count > 1;
+            if (!(totalMulti && _selectedIndices.Contains(hitIndex)))
                 SetSelection([hitIndex]);
         }
     }
@@ -922,7 +987,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     private void BeginMoveDrag(long px, long py)
     {
-        if (_selectedIndices.Count == 0) return;
+        if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0) return;
         _selectDragKind = SelectDragKind.Move;
         _moveAnchorX = px; _moveAnchorY = py;
         _moveLiveDx = 0; _moveLiveDy = 0;
@@ -937,6 +1002,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _marqueeAdd = shift;
         _marqueeToggle = ctrl;
         _marqueeBaseSelection = _selectedIndices.ToList();
+        _marqueeBaseInstanceSelection = _selectedInstanceIndices.ToList();
         _marqueeLastComputedCorner = null;
         ComputeMarqueeSelection(px, py);
         _marqueeLastComputedCorner = (px, py);
@@ -944,14 +1010,21 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         RebuildOverlay();
     }
 
-    /// <summary>R-L1i-1: the ONE hit computation shared by the live preview (called every qualifying
-    /// pointer move) and the commit (called once at release, via <see cref="CommitMarquee"/>) — if the
-    /// preview computed hits differently from the commit, the highlight would lie about the outcome.
-    /// Folds in the Shift (add) / Ctrl (toggle) semantics against <see cref="_marqueeBaseSelection"/>,
-    /// so the result IS the prospective final selection (R-L1i-3) — a Ctrl-drag crossing an
-    /// already-selected shape visibly un-highlights it with no separate code path. Mutates and returns
-    /// the reused <see cref="_marqueePreview"/> scratch buffer (never <c>_selectedIndices</c> — that is
-    /// R-L1i-2, enforced structurally: nothing in this method touches that field).</summary>
+    /// <summary>R-L1i-1, extended to instances by brief-L3a-followups.md §2/R-fix-3: the ONE hit
+    /// computation shared by the live preview (called every qualifying pointer move) and the commit
+    /// (called once at release, via <see cref="CommitMarquee"/>) — if the preview computed hits
+    /// differently from the commit, the highlight would lie about the outcome. Shapes and instances
+    /// are candidates from the SAME combined L2b/R-L3a-4 tree query (one query, not two — R-fix-3);
+    /// each kind's own Shift(add)/Ctrl(toggle)/plain(replace) combination against its own base
+    /// selection is identical to L1i's original rule, just run once per kind (<see
+    /// cref="CombineMarqueePreview"/>) so a Ctrl-drag un-highlights an already-selected INSTANCE
+    /// exactly like it already un-highlights an already-selected shape. "Arrays are one object": an
+    /// instance candidate's bbox is <see cref="CellHierarchy.InstanceBbox"/> — the WHOLE array-expanded
+    /// extent, never a per-placement one — so a marquee touching ANY cell of a 50×50 array selects the
+    /// array as a unit. Mutates <see cref="_marqueePreview"/>/<see cref="_marqueeInstancePreview"/>
+    /// (never <c>_selectedIndices</c>/<c>_selectedInstanceIndices</c> — R-L1i-2). Returns the shape
+    /// preview list for callers that only need that half (kept for source-compat with L1i's own
+    /// shape-only call sites); read <see cref="_marqueeInstancePreview"/> directly for the other.</summary>
     private List<int> ComputeMarqueeSelection(long curX, long curY)
     {
         MarqueeRecomputeCount++;
@@ -962,73 +1035,105 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         var marqueeBb = new Bbox(minX, minY, maxX, maxY);
 
         _marqueeHitsScratch.Clear();
-        // L2b: the R-tree query is an INTERSECT test against a possibly-larger-than-exact conservative
-        // bbox (LayoutSpatialIndex.ConservativeBboxOf) — a safe superset for BOTH enclose and crossing
-        // mode, since containment implies intersection. The candidates below still get the EXACT SAME
-        // predicate (LayoutGeometry.BboxOf, unchanged) applied afterward, so the index only changes
-        // which shapes are CONSIDERED, never the decision (R-L2b-3) — a candidate whose conservative
-        // bbox intersects but whose real BboxOf does not simply fails the check below, exactly as it
-        // would have failed the pre-index linear scan.
-        foreach (var i in Model.SpatialIndex.QueryIntersecting(Model.Shapes, marqueeBb))
+        _marqueeInstanceHitsScratch.Clear();
+
+        // L2b/R-L3a-4: the R-tree query is an INTERSECT test against a possibly-larger-than-exact
+        // conservative bbox — a safe superset for BOTH enclose and crossing mode, since containment
+        // implies intersection. The candidates below still get the EXACT SAME predicate applied
+        // afterward (LayoutGeometry.BboxOf for a shape, CellHierarchy.InstanceBbox for an instance), so
+        // the index only changes which candidates are CONSIDERED, never the decision (R-L2b-3) — a
+        // candidate whose conservative bbox intersects but whose real bbox does not simply fails the
+        // check below, exactly as it would have failed a linear scan.
+        Bbox InstanceBboxFor(LayoutInstance inst) => CellHierarchy.InstanceBbox(inst, InstanceBaseDir);
+        foreach (var entry in Model.SpatialIndex.QueryIntersecting(
+            Model.Shapes, Model.Instances, InstanceBboxFor, CellLayoutResolver.Generation, marqueeBb))
         {
-            var shape = Model.Shapes[i];
-            var def = ResolveLayerDef(shape.Layer);
-            if (!def.Visible || !def.Selectable) continue; // gate 8: hidden/non-selectable never previewed
-
-            var bb = LayoutGeometry.BboxOf(shape);
-            if (bb.IsEmpty) continue;
-
-            bool matches = leftToRight
-                ? bb.MinX >= marqueeBb.MinX && bb.MaxX <= marqueeBb.MaxX && bb.MinY >= marqueeBb.MinY && bb.MaxY <= marqueeBb.MaxY
-                : bb.Intersects(marqueeBb);
-            if (matches) _marqueeHitsScratch.Add(i);
-        }
-
-        _marqueePreview.Clear();
-        if (_marqueeToggle)
-        {
-            _marqueePreview.AddRange(_marqueeBaseSelection);
-            foreach (var h in _marqueeHitsScratch)
+            if (entry.Kind == SpatialEntryKind.Shape)
             {
-                int existing = _marqueePreview.IndexOf(h);
-                if (existing >= 0) _marqueePreview.RemoveAt(existing);
-                else _marqueePreview.Add(h);
+                var shape = Model.Shapes[entry.Index];
+                var def = ResolveLayerDef(shape.Layer);
+                if (!def.Visible || !def.Selectable) continue; // gate 8: hidden/non-selectable never previewed
+
+                var bb = LayoutGeometry.BboxOf(shape);
+                if (bb.IsEmpty) continue;
+
+                bool matches = leftToRight
+                    ? bb.MinX >= marqueeBb.MinX && bb.MaxX <= marqueeBb.MaxX && bb.MinY >= marqueeBb.MinY && bb.MaxY <= marqueeBb.MaxY
+                    : bb.Intersects(marqueeBb);
+                if (matches) _marqueeHitsScratch.Add(entry.Index);
+            }
+            else
+            {
+                if (entry.Index < 0 || entry.Index >= Model.Instances.Count) continue;
+                var bb = InstanceBboxFor(Model.Instances[entry.Index]);
+                if (bb.IsEmpty) continue;
+
+                bool matches = leftToRight
+                    ? bb.MinX >= marqueeBb.MinX && bb.MaxX <= marqueeBb.MaxX && bb.MinY >= marqueeBb.MinY && bb.MaxY <= marqueeBb.MaxY
+                    : bb.Intersects(marqueeBb);
+                if (matches) _marqueeInstanceHitsScratch.Add(entry.Index);
             }
         }
-        else if (_marqueeAdd)
-        {
-            _marqueePreview.AddRange(_marqueeBaseSelection);
-            foreach (var h in _marqueeHitsScratch)
-                if (!_marqueePreview.Contains(h)) _marqueePreview.Add(h);
-        }
-        else
-        {
-            _marqueePreview.AddRange(_marqueeHitsScratch);
-        }
+
+        CombineMarqueePreview(_marqueePreview, _marqueeBaseSelection, _marqueeHitsScratch);
+        CombineMarqueePreview(_marqueeInstancePreview, _marqueeBaseInstanceSelection, _marqueeInstanceHitsScratch);
 
         return _marqueePreview;
     }
 
+    /// <summary>The Shift(add)/Ctrl(toggle)/plain(replace) combination against a base selection —
+    /// factored out of the old single-kind <see cref="ComputeMarqueeSelection"/> body so it runs
+    /// IDENTICALLY for shapes and instances (R-fix-3: "the … Shift/Ctrl combination against the base
+    /// selection are unchanged"). Writes into <paramref name="preview"/> in place.</summary>
+    private void CombineMarqueePreview(List<int> preview, List<int> baseSelection, List<int> hits)
+    {
+        preview.Clear();
+        if (_marqueeToggle)
+        {
+            preview.AddRange(baseSelection);
+            foreach (var h in hits)
+            {
+                int existing = preview.IndexOf(h);
+                if (existing >= 0) preview.RemoveAt(existing);
+                else preview.Add(h);
+            }
+        }
+        else if (_marqueeAdd)
+        {
+            preview.AddRange(baseSelection);
+            foreach (var h in hits)
+                if (!preview.Contains(h)) preview.Add(h);
+        }
+        else
+        {
+            preview.AddRange(hits);
+        }
+    }
+
     private void UpdateMarqueeSelectionStatus()
     {
-        SelectionStatusText = _marqueePreview.Count switch
+        int shapeCount = _marqueePreview.Count, instCount = _marqueeInstancePreview.Count;
+        SelectionStatusText = (shapeCount, instCount) switch
         {
-            0 => "",
-            1 => "1 shape",
-            var n => $"{n} shapes",
+            (0, 0) => "",
+            ( > 0, 0) => shapeCount == 1 ? "1 shape" : $"{shapeCount} shapes",
+            (0, > 0) => instCount == 1 ? "1 instance" : $"{instCount} instances",
+            _ => $"{shapeCount} shape{(shapeCount == 1 ? "" : "s")} + {instCount} instance{(instCount == 1 ? "" : "s")}",
         };
     }
 
     /// <summary>Escape (or any other abandonment of an in-progress marquee, e.g. the pointer button
-    /// being released off-canvas) must clear the preview and restore the status readout WITHOUT
-    /// touching <c>_selectedIndices</c> — that field was never written during the drag (R-L1i-2), so
-    /// simply recomputing the generic status from it is correct.</summary>
+    /// being released off-canvas) must clear both previews and restore the status readout WITHOUT
+    /// touching <c>_selectedIndices</c>/<c>_selectedInstanceIndices</c> — neither field was ever
+    /// written during the drag (R-L1i-2), so simply recomputing the combined status from them is
+    /// correct.</summary>
     private void CancelMarqueeIfActive()
     {
         if (_selectDragKind != SelectDragKind.Marquee) return;
         _marqueePreview.Clear();
+        _marqueeInstancePreview.Clear();
         _marqueeLastComputedCorner = null;
-        SelectionStatusText = ComputeGenericSelectionStatus();
+        SelectionStatusText = ComputeSelectionStatus();
     }
 
     private void HandleSelectMove(double wx, double wy, bool leftDown, KeyModifiers mods, long tolDbu, long pixelDbu = 0)
@@ -1140,35 +1245,81 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         RebuildOverlay();
     }
 
+    /// <summary>brief-L3a-followups.md §2/R-fix-2: moves whichever of shapes/instances are currently
+    /// selected, TOGETHER, as one undo entry — a <see cref="CompositeCommand"/> of
+    /// <see cref="Commands.Layout.MoveShapesCommand"/> and <see cref="Commands.Layout.MoveInstancesCommand"/>
+    /// when both kinds are present, or just the one command when only one kind is. This replaced two
+    /// separate methods (one per kind) that could never move a mixed selection as a single gesture.</summary>
     private void CommitMoveDrag()
     {
-        if (_moveHasMoved && (_moveLiveDx != 0 || _moveLiveDy != 0) && _selectedIndices.Count > 0)
+        if (_moveHasMoved && (_moveLiveDx != 0 || _moveLiveDy != 0))
         {
-            var indices = MovableSelectedIndices(_selectedIndices);
-            if (indices.Count > 0)
-                Execute(new Commands.Layout.MoveShapesCommand(Model, indices, _moveLiveDx, _moveLiveDy));
+            IUiCommand? combined = null;
+            var shapeIndices = MovableSelectedIndices(_selectedIndices);
+            if (shapeIndices.Count > 0)
+                combined = new Commands.Layout.MoveShapesCommand(Model, shapeIndices, _moveLiveDx, _moveLiveDy);
+            if (_selectedInstanceIndices.Count > 0)
+            {
+                IUiCommand instCmd = new Commands.Layout.MoveInstancesCommand(Model, _selectedInstanceIndices, _moveLiveDx, _moveLiveDy);
+                combined = combined is null ? instCmd : new CompositeCommand(combined, instCmd);
+            }
+            if (combined is not null) Execute(combined);
         }
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
     }
 
-    /// <summary>R-L1i-1: commit is just "settle on whatever the shared compute says," via the exact
-    /// same function the live preview calls — so the preview can never lie about the outcome (gate 3).
-    /// <see cref="ComputeMarqueeSelection"/> returns the reused <c>_marqueePreview</c> buffer; passing
-    /// it straight to <see cref="SetSelection"/> is safe because that method copies into
-    /// <c>_selectedIndices</c> before this method goes on to clear it below.</summary>
+    /// <summary>R-L1i-1, extended by R-fix-3: commit is just "settle on whatever the shared compute
+    /// says," via the exact same function the live preview calls — so the preview can never lie about
+    /// the outcome (gate 3), now for both kinds. <see cref="ReplaceMixedSelection"/> sets shapes and
+    /// instances together, atomically, so a mixed marquee result lands as ONE selection change (one
+    /// overlay rebuild), not two independent ones that could each fire their own stale intermediate
+    /// state.</summary>
     private void CommitMarquee(long releaseX, long releaseY)
     {
-        SetSelection(ComputeMarqueeSelection(releaseX, releaseY));
+        ComputeMarqueeSelection(releaseX, releaseY);
+        ReplaceMixedSelection(_marqueePreview, _marqueeInstancePreview);
         _cycleCache = null;
         _marqueePreview.Clear();
+        _marqueeInstancePreview.Clear();
         _marqueeLastComputedCorner = null;
     }
 
+    /// <summary>Sets BOTH selections at once — the one place besides a plain click that commits a
+    /// genuinely MIXED result (brief-L3a-followups.md §2/R-fix-2). Neither list "clears the other
+    /// kind" here; this method IS both kinds' new state, together, in one overlay rebuild — unlike
+    /// <see cref="SetSelection"/>/<see cref="SetInstanceSelection"/>, which each only ever own one
+    /// kind and treat the other as either "clear it" or "leave it alone."</summary>
+    private void ReplaceMixedSelection(IEnumerable<int> shapeIndices, IEnumerable<int> instanceIndices)
+    {
+        var shapes = new List<int>();
+        foreach (var i in shapeIndices) if (i >= 0 && i < Model.Shapes.Count && !shapes.Contains(i)) shapes.Add(i);
+        var insts = new List<int>();
+        foreach (var i in instanceIndices) if (i >= 0 && i < Model.Instances.Count && !insts.Contains(i)) insts.Add(i);
+
+        _selectedIndices.Clear(); _selectedIndices.AddRange(shapes);
+        _selectedInstanceIndices.Clear(); _selectedInstanceIndices.AddRange(insts);
+        _pickedVertexIndex = null;
+
+        SelectionStatusText = ComputeSelectionStatus();
+        RebuildOverlay();
+    }
+
+    /// <summary>brief-L3a-followups.md §2/R-fix-2: removes whichever of shapes/instances are currently
+    /// selected, TOGETHER, as one undo entry.</summary>
     private void DeleteSelection()
     {
-        var indices = _selectedIndices.ToList();
-        if (indices.Count == 0) return;
-        Execute(new Commands.Layout.DeleteShapesCommand(Model, indices));
+        var shapeIndices = _selectedIndices.ToList();
+        var instIndices = _selectedInstanceIndices.ToList();
+        if (shapeIndices.Count == 0 && instIndices.Count == 0) return;
+
+        IUiCommand? combined = null;
+        if (shapeIndices.Count > 0) combined = new Commands.Layout.DeleteShapesCommand(Model, shapeIndices);
+        if (instIndices.Count > 0)
+        {
+            IUiCommand instCmd = new Commands.Layout.DeleteInstancesCommand(Model, instIndices);
+            combined = combined is null ? instCmd : new CompositeCommand(combined, instCmd);
+        }
+        Execute(combined!);
         SetSelection([]);
         _cycleCache = null;
     }
@@ -1187,9 +1338,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         Execute(new Commands.Layout.ReplaceShapeCommand(Model, shapeIndex, shape, after));
     }
 
+    /// <summary>brief-L3a-followups.md §2/R-fix-2: nudges whichever of shapes/instances are currently
+    /// selected, TOGETHER, as one undo entry per keypress (unchanged — one keypress is still one undo
+    /// entry, exactly as before; only "which kinds move together" changed).</summary>
     private void NudgeSelection(Key key, KeyModifiers mods)
     {
-        if (_selectedIndices.Count == 0) return;
+        if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0) return;
         long step = OneSnapStepDbu;
         if ((mods & KeyModifiers.Shift) != 0) step *= 10;
 
@@ -1197,10 +1351,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         long dy = key switch { Key.Up => step, Key.Down => -step, _ => 0 };
         if (dx == 0 && dy == 0) return;
 
-        var indices = MovableSelectedIndices(_selectedIndices);
-        if (indices.Count == 0) return;
-
-        Execute(new Commands.Layout.MoveShapesCommand(Model, indices, dx, dy));
+        IUiCommand? combined = null;
+        var shapeIndices = MovableSelectedIndices(_selectedIndices);
+        if (shapeIndices.Count > 0) combined = new Commands.Layout.MoveShapesCommand(Model, shapeIndices, dx, dy);
+        if (_selectedInstanceIndices.Count > 0)
+        {
+            IUiCommand instCmd = new Commands.Layout.MoveInstancesCommand(Model, _selectedInstanceIndices, dx, dy);
+            combined = combined is null ? instCmd : new CompositeCommand(combined, instCmd);
+        }
+        if (combined is not null) Execute(combined);
     }
 
     // ── Current layer (session state — deliberately NOT persisted in .clay; §2 of the brief) ────
@@ -1395,6 +1554,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0)); return; }
 
+        if (ActiveTool == Tool.Instance) { CommitInstancePlacement(); return; }
+
         bool suspend = (mods & KeyModifiers.Alt) != 0;
 
         if (IsTwoPointDragTool(ActiveTool))
@@ -1451,6 +1612,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
 
         if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0)); return; }
+
+        if (ActiveTool == Tool.Instance)
+        {
+            bool instanceSuspend = (mods & KeyModifiers.Alt) != 0;
+            UpdateInstancePlacementCursor(wx, wy, instanceSuspend);
+            return;
+        }
 
         bool suspend = (mods & KeyModifiers.Alt) != 0;
 
@@ -1540,12 +1708,19 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             if (ctrlOrMeta && key == Key.A) { SelectAllCommand.Execute(null); return; }
             if (key == Key.Delete || key == Key.Back)
             {
-                // §3 "Delete on a selected vertex" takes priority over whole-shape delete when a
-                // vertex handle was the last thing clicked (no drag) on the single selection.
-                if (_selectedIndices.Count == 1 && _pickedVertexIndex is { } vIdx) { DeleteVertex(_selectedIndices[0], vIdx); return; }
-                if (_selectedIndices.Count > 0) { DeleteSelection(); return; }
+                // §3 "Delete on a selected vertex" takes priority over whole-selection delete when a
+                // vertex handle was the last thing clicked (no drag) on the single selection — only
+                // ever set with no instance mixed in (TryHandleSelectPressOnHandles's own gate).
+                if (_selectedIndices.Count == 1 && _selectedInstanceIndices.Count == 0 && _pickedVertexIndex is { } vIdx)
+                { DeleteVertex(_selectedIndices[0], vIdx); return; }
+                // brief-L3a-followups.md §2/R-fix-2: DeleteSelection now removes shapes AND instances
+                // together as one undo entry — no more separate per-kind dispatch here.
+                DeleteSelection(); return;
             }
-            if (key is Key.Left or Key.Right or Key.Up or Key.Down) { NudgeSelection(key, mods); return; }
+            if (key is Key.Left or Key.Right or Key.Up or Key.Down)
+            {
+                NudgeSelection(key, mods); return;
+            }
         }
 
         if (key == Key.Back && _drawPoints.Count > 0)
@@ -1578,6 +1753,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
         ResetHandleDragState();
         ResetScaleDragState();
+        CancelInstancePlacement();
         OnPropertyChanged(nameof(IsDrawingRect));
         RebuildOverlay();
     }
@@ -1783,6 +1959,24 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             ? new LayoutMarquee(_selectPressWX, _selectPressWY, _marqueeCurX, _marqueeCurY)
             : null;
 
+        // brief-L3a-followups.md §2/R-fix-2: Move now covers BOTH kinds together (no more separate
+        // MoveInstance drag kind) — this block and the shape one just below it are independent `if`s,
+        // both gated on the SAME _selectDragKind == Move, each naturally a no-op when its own selected-
+        // index list is empty.
+        IReadOnlyDictionary<int, LayoutInstance> instanceDragOverrides = EmptyInstanceDragOverrides;
+        if (_selectDragKind == SelectDragKind.Move && (_moveLiveDx != 0 || _moveLiveDy != 0))
+        {
+            var dict = new Dictionary<int, LayoutInstance>();
+            foreach (var idx in _selectedInstanceIndices)
+            {
+                if (idx < 0 || idx >= Model.Instances.Count) continue;
+                var clone = LayoutGeometry.Clone(Model.Instances[idx]);
+                LayoutGeometry.TranslateBy(clone, _moveLiveDx, _moveLiveDy);
+                dict[idx] = clone;
+            }
+            instanceDragOverrides = dict;
+        }
+
         IReadOnlyDictionary<int, LayoutShape> dragOverrides = EmptyDragOverrides;
         if (_selectDragKind == SelectDragKind.Move && (_moveLiveDx != 0 || _moveLiveDy != 0))
         {
@@ -1823,18 +2017,30 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         // L1i: one highlight path, not a committed one and a preview one — the marquee preview IS the
         // prospective outcome (R-L1i-3), so it renders with the exact same accent as a settled
-        // selection while a marquee drag is active, and _selectedIndices otherwise.
+        // selection while a marquee drag is active, and _selectedIndices otherwise. R-fix-3 extends
+        // this identically to instances — an instance entering the marquee highlights live the same
+        // way a shape does, and un-highlights under Ctrl the same way too, since both previews are
+        // built by the exact same CombineMarqueePreview call.
         IReadOnlyList<int> effectiveHighlight = _selectDragKind == SelectDragKind.Marquee
             ? _marqueePreview
             : _selectedIndices;
+        IReadOnlyList<int> effectiveInstanceHighlight = _selectDragKind == SelectDragKind.Marquee
+            ? _marqueeInstancePreview
+            : _selectedInstanceIndices;
 
         Overlay = new LayoutOverlay
         {
             InProgressPrimitive = inProgress,
             SelectedIndices = effectiveHighlight.ToArray(),
+            SelectedInstanceIndices = effectiveInstanceHighlight.ToArray(),
             Marquee = marquee,
             DragOverrides = dragOverrides,
+            InstanceDragOverrides = instanceDragOverrides,
             PastePreview = pastePreview,
+            // brief-L3a-followups.md §4: the Instance tool's own ghost and the drag-and-drop ghost are
+            // two independent state machines (see LayoutEditorViewModel.Instances.cs's own header) that
+            // are never simultaneously active in normal use — one overlay slot serves both.
+            PendingInstancePlacement = _instancePlacementPending ?? _dragInstancePlacementPending,
             ShowScaleHandles = ShowScaleHandles,
         };
     }

@@ -22,6 +22,7 @@ using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Messages;
+using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels.Dock;
@@ -36,7 +37,7 @@ namespace CircuitRF.Ui.ViewModels;
 /// directly — it always builds/edits the design layer, then asks the engine to elaborate
 /// and run (6e). For 6b this is the frame: layout + commands wired but stubbed.
 /// </summary>
-public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarchyHost, ICellResolver
+public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarchyHost, ILayoutHierarchyHost, ICellResolver
 {
     // ---- Dock layout ---------------------------------------------------------
 
@@ -65,6 +66,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // One SchematicViewModel per abs-normalized .csch path — the single source of truth.
     // Every tab and pushed-in frame (hier2+) for a path shares the same VM+EditModel+UndoRedo.
     private readonly SchematicSessionRegistry _registry = new();
+
+    // L3b — the layout-side mirror of _registry: one LayoutEditorViewModel per abs-normalized .clay
+    // path, shared by every tab and pushed-in frame for that path.
+    private readonly LayoutSessionRegistry _layoutRegistry = new();
 
     // Scratch documents have no path so they cannot go in _openDocsByPath.
     // Tracked here for enumeration by save/rebuild operations (steps 2+).
@@ -264,6 +269,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             CheckForRecovery, Avalonia.Threading.DispatcherPriority.Background);
 
         ResetTechCache();
+
+        // L3b — CellLayoutResolver is a static, process-lifetime class (unlike the per-workspace
+        // _techCache), so this subscribes exactly once, ever; never re-subscribed per workspace reset.
+        CellLayoutResolver.LiveViewChanged += OnCellLayoutLiveViewChanged;
 
         Messages.Info("circuitRF ready.");
     }
@@ -474,6 +483,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchLayouts.Clear();
             _scratchDataDisplays.Clear();
             _registry.Clear();
+            _layoutRegistry.Clear();
             ResetTechCache();
             CurrentWorkspacePath = cwsPath;
 
@@ -767,6 +777,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchLayouts.Clear();
         _scratchDataDisplays.Clear();
         _registry.Clear();
+        _layoutRegistry.Clear();
         ResetTechCache();
         CurrentWorkspacePath = cwsPath;
 
@@ -995,6 +1006,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchLayouts.Clear();
         _scratchDataDisplays.Clear();
         _registry.Clear();
+        _layoutRegistry.Clear();
         ResetTechCache();
 
         CurrentWorkspacePath = null;   // fires OnCurrentWorkspacePathChanged → tree.ClearWorkspace()
@@ -1643,7 +1655,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.SaveError += OnLayoutSaveError;
         vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
         WireRetargetSeam(vm);
-        var doc = new LayoutDocument(title, vm);  // filePath = null → scratch
+        var doc = new LayoutDocument(title, vm) { Hierarchy = this };  // filePath = null → scratch
         _scratchLayouts.Add(doc);
         _factory.OpenDocument(doc);
         HookLayoutCellDirty(doc);
@@ -1701,13 +1713,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         try
         {
-            var model = LayoutPersistence.LoadFromFile(absolutePath);
-            var vm    = new LayoutEditorViewModel(model, absolutePath, messageSink: Messages);
-            vm.ApplyTechResolution(ResolveTechFor(model.TechRef, absolutePath));
-            vm.SaveError += OnLayoutSaveError;
-            vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
-            WireRetargetSeam(vm);
-            var doc = new LayoutDocument(Path.GetFileName(absolutePath), vm, absolutePath);
+            // L3b: funnel through the session registry so a cell simultaneously open as its own tab
+            // and pushed into elsewhere shares one session — GetOrCreateLayoutSession does the
+            // load-and-wire that used to happen inline here.
+            var vm  = GetOrCreateLayoutSession(absolutePath);
+            var doc = new LayoutDocument(Path.GetFileName(absolutePath), vm, absolutePath) { Hierarchy = this };
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
             HookLayoutCellDirty(doc);
@@ -1735,6 +1745,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.WorkspaceTechDir = CurrentWorkspacePath is null
             ? null : Path.Combine(Path.GetDirectoryName(CurrentWorkspacePath)!, "tech");
         vm.ResolveWorkspaceDefaultTech = () => ResolveTechFor(techRef: null, clayPath: null);
+        vm.ResolveTechAt = (techRef, clayDir) => ResolveTechFor(techRef, Path.Combine(clayDir, "x.clay"));
     }
 
     // ---- Technology (.ctech) editor (L0d) --------------------------------------
@@ -2559,6 +2570,191 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                          string.Equals(Path.GetFullPath(fp), normalizedKey,
                                        StringComparison.OrdinalIgnoreCase));
 
+    // ---- Layout session registry helpers (L3b) — mirrors the schematic block above exactly ------
+
+    /// <summary>Builds a fully-wired <see cref="LayoutEditorViewModel"/> from an already-loaded
+    /// model. Identical wiring for every creation site (open, push-in) — mirrors
+    /// <see cref="BuildSessionVm"/> and folds in the tech-resolution/live-tech/retarget wiring
+    /// <see cref="OpenOrActivateLayout"/> used to do inline before L3b.</summary>
+    private LayoutEditorViewModel BuildLayoutSessionVm(LayoutView model, string absClayPath)
+    {
+        var vm = new LayoutEditorViewModel(model, absClayPath, messageSink: Messages);
+        vm.ApplyTechResolution(ResolveTechFor(model.TechRef, absClayPath));
+        vm.SaveError += OnLayoutSaveError;
+        vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
+        WireRetargetSeam(vm);
+        return vm;
+    }
+
+    /// <summary>Registers a VM in the layout session registry and subscribes to its dirty state so
+    /// the cell-tree indicator stays in sync.</summary>
+    private LayoutEditorViewModel RegisterLayoutSession(string absNormalizedPath, LayoutEditorViewModel vm)
+    {
+        _layoutRegistry.Register(absNormalizedPath, vm, UpdateCellDirtyForLayoutSession);
+        return vm;
+    }
+
+    /// <summary>
+    /// Returns the shared <see cref="LayoutEditorViewModel"/> for <paramref name="absClayPath"/>,
+    /// creating and registering it from disk if not already present — the SAME funnel both "open as
+    /// tab" and "push in" go through, so a cell simultaneously open as its own tab and pushed into
+    /// elsewhere shares one session (R-L3b-1's in-session-edit path depends on this).
+    /// </summary>
+    internal LayoutEditorViewModel GetOrCreateLayoutSession(string absClayPath)
+    {
+        var key = Path.GetFullPath(absClayPath);
+        if (_layoutRegistry.TryGet(key, out var existing))
+            return existing!;
+        var model = LayoutPersistence.LoadFromFile(key);
+        return RegisterLayoutSession(key, BuildLayoutSessionVm(model, key));
+    }
+
+    /// <summary>
+    /// Removes a layout session from the registry when it is clean AND has no referencing
+    /// <see cref="LayoutDocument"/> — and, on actual retirement, clears its live-resolution override
+    /// too (R-L3b-1: a session gone means <see cref="CellLayoutResolver"/> falls back to the on-disk
+    /// value for anything still resolving it). Dirty sessions are never retired.
+    /// </summary>
+    internal void RetireLayoutSessionIfUnreferenced(string absClayPath)
+    {
+        var key = Path.GetFullPath(absClayPath);
+        _layoutRegistry.RetireIfUnreferenced(key, IsLayoutSessionReferenced);
+        if (!_layoutRegistry.TryGet(key, out _))
+            CellLayoutResolver.ClearLive(key);
+    }
+
+    private bool IsLayoutSessionReferenced(string normalizedKey)
+        => _openDocsByPath.Values
+               .OfType<LayoutDocument>()
+               .Any(d => d.FilePath is { } fp &&
+                         string.Equals(Path.GetFullPath(fp), normalizedKey,
+                                       StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// R-L3b-1's live-refresh seam: a push-in session's edit (or a save from any surface) fires this,
+    /// which (1) evicts the renderer's compiled geometry for whatever LayoutView is now live at that
+    /// path (mutated in place across edits — same reference, so the ConditionalWeakTable cache would
+    /// otherwise never self-heal) and (2) nudges every OPEN layout frame's own model to repaint —
+    /// cheap and always safe to over-broadcast, since a repaint that finds nothing changed costs
+    /// nothing structural (InstancesOnly routes to MarkInstancesDirty, not a full shape rebuild).
+    /// </summary>
+    private void OnCellLayoutLiveViewChanged(string clayPath)
+    {
+        if (_layoutRegistry.TryGet(clayPath, out var liveVm) && liveVm is not null)
+            LayoutRenderer.InvalidateCompiledGeometry(liveVm.Model);
+
+        foreach (var doc in _openDocsByPath.Values.OfType<LayoutDocument>().Concat(_scratchLayouts))
+            foreach (var (session, _) in doc.NavFrames)
+                session.Model.NotifyChanged(LayoutChangeInfo.InstancesOnly);
+    }
+
+    /// <summary>
+    /// Called after a layout session's .clay is written: clears its dirty flag, refreshes the
+    /// cell-tree dirty indicator, and busts <see cref="CellLayoutResolver"/>'s resolution (R-L3b-1's
+    /// on-disk-change path) so every OTHER reference to this cell — a parent showing it, or another
+    /// tab open on the same file — re-resolves against the just-saved content.
+    /// </summary>
+    private void NotifyLayoutSessionSaved(string absClayPath)
+    {
+        var key = Path.GetFullPath(absClayPath);
+        _layoutRegistry.MarkSaved(key);
+        UpdateCellDirtyForLayoutSession(key);
+
+        if (Path.GetDirectoryName(key) is { } layoutDir &&
+            Path.GetDirectoryName(layoutDir) is { } cellDir)
+            CellLayoutResolver.Invalidate(cellDir);
+    }
+
+    /// <summary>
+    /// True when there are dirty layout sessions with no open tab (orphaned by a "Don't Save" tab
+    /// close or by a pop-out). Used to extend <see cref="HasAnyDirtyWork"/> — mirrors
+    /// <see cref="HasOrphanedDirtySession"/> exactly.
+    /// </summary>
+    private bool HasOrphanedDirtyLayoutSession()
+        => _layoutRegistry.HasOrphanedDirtySession(IsLayoutSessionReferenced);
+
+    /// <summary>Updates the owning cell's dirty indicator when a layout session changes dirty
+    /// state.</summary>
+    private void UpdateCellDirtyForLayoutSession(string absNormalizedClayPath)
+    {
+        if (CellDirOfView(absNormalizedClayPath) is { } cellDir)
+            RefreshCellDirty(cellDir);
+    }
+
+    // ── ILayoutHierarchyHost implementation (L3b) — mirrors IHierarchyHost above exactly ─────────
+
+    /// <inheritdoc/>
+    public bool CanPushInto(LayoutInstance? instance, LayoutEditorViewModel? parentVm, out string? reason)
+        => LayoutHierarchyResolver.CanPushInto(instance, parentVm, out reason);
+
+    /// <inheritdoc/>
+    public void PushIntoCell(LayoutDocument doc, LayoutInstance instance)
+    {
+        var path = LayoutHierarchyResolver.ResolvePrimaryPath(instance, doc.ActiveViewModel);
+        if (path is null) return;
+        var session = GetOrCreateLayoutSession(path);
+        var label   = string.IsNullOrEmpty(instance.CellRef)
+            ? "(cell)" : Path.GetFileName(instance.CellRef.TrimEnd('/', '\\'));
+        doc.PushIn(session, label);
+    }
+
+    /// <inheritdoc/>
+    public void PopOutOf(LayoutDocument doc)
+    {
+        var popped = doc.PopOut();
+        if (popped is null) return;
+        if (_layoutRegistry.TryGetPath(popped, out var poppedPath) && poppedPath is not null)
+            RetireLayoutSessionIfUnreferenced(poppedPath);
+    }
+
+    /// <inheritdoc/>
+    public void PopToLevel(LayoutDocument doc, int frameIndex)
+    {
+        var popped = doc.PopTo(frameIndex);
+        foreach (var vm in popped)
+        {
+            if (_layoutRegistry.TryGetPath(vm, out var path) && path is not null)
+                RetireLayoutSessionIfUnreferenced(path);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void OpenCellInNewTab(LayoutDocument fromDoc, LayoutInstance instance)
+    {
+        var path = LayoutHierarchyResolver.ResolvePrimaryPath(instance, fromDoc.ActiveViewModel);
+        if (path is null) return;
+        OpenOrActivateLayout(path);
+    }
+
+    /// <inheritdoc/>
+    public async Task SaveLayoutDocumentAsync(LayoutDocument doc)
+    {
+        var window = ResolveOwner(null);
+        if (window is null) return;
+
+        if (!doc.IsDirty)
+        {
+            Messages.Info("Nothing to save.");
+            return;
+        }
+
+        await SaveSingleLayoutDocument(doc, window);
+
+        if (CurrentWorkspacePath is not null)
+            WriteWorkspaceFile(CurrentWorkspacePath, silent: true);
+    }
+
+    /// <summary>The currently active <see cref="LayoutDocument"/>, or null.</summary>
+    public LayoutDocument? ActiveLayoutDocument
+        => _factory.DocumentDock?.ActiveDockable as LayoutDocument;
+
+    private static LayoutInstance? GetSingleSelectedCellInstance(LayoutEditorViewModel? vm)
+    {
+        if (vm is null) return null;
+        var inst = vm.SingleSelectedInstance;
+        return inst?.CellRef is not null ? inst : null;
+    }
+
     // ---- Hierarchy navigation (hier3) ------------------------------------------
 
     // Subscription tracking for CanExecuteChanged.
@@ -2636,37 +2832,63 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ── RelayCommands for app-menu / keyboard (CanExecute managed here) ───────
 
+    // These three commands are shared by BOTH editors (the menu items say "Push Into Cell"/"Pop
+    // Out"/"Open Cell in New Tab", not "Schematic: …") — dispatch on whichever document type is
+    // ACTIVE. L3b's own keyboard path (Ctrl+]/Ctrl+[) is handled directly by each editor's view
+    // instead (see LayoutEditorView's OnViewKeyDownTunnel), which is also where viewport
+    // capture/restore happens for layout — these menu-driven commands intentionally skip that (see
+    // ILayoutHierarchyHost.PushIntoCell's own doc comment): the canvas's own initial-fit-on-VM-switch
+    // still frames the new content, just without restoring the exact prior pan/zoom.
+
     [RelayCommand(CanExecute = nameof(CanHierarchyPushIn))]
     private void HierarchyPushIn()
     {
-        var doc  = ActiveSchematicDocument;
-        var comp = GetSingleSelectedCellComp(doc?.ActiveViewModel);
-        if (doc is null || comp is null) return;
-        PushIntoCell(doc, comp);
+        if (ActiveSchematicDocument is { } schDoc)
+        {
+            var comp = GetSingleSelectedCellComp(schDoc.ActiveViewModel);
+            if (comp is not null) PushIntoCell(schDoc, comp);
+            return;
+        }
+        if (ActiveLayoutDocument is { } layDoc)
+        {
+            var inst = GetSingleSelectedCellInstance(layDoc.ActiveViewModel);
+            if (inst is not null) PushIntoCell(layDoc, inst);
+        }
     }
     private bool CanHierarchyPushIn()
     {
-        var doc = ActiveSchematicDocument;
-        return CanPushInto(GetSingleSelectedCellComp(doc?.ActiveViewModel),
-                           doc?.ActiveViewModel.EditModel, out _);
+        if (ActiveSchematicDocument is { } schDoc)
+            return CanPushInto(GetSingleSelectedCellComp(schDoc.ActiveViewModel),
+                               schDoc.ActiveViewModel.EditModel, out _);
+        if (ActiveLayoutDocument is { } layDoc)
+            return CanPushInto(GetSingleSelectedCellInstance(layDoc.ActiveViewModel),
+                               layDoc.ActiveViewModel, out _);
+        return false;
     }
 
     [RelayCommand(CanExecute = nameof(CanHierarchyPopOut))]
     private void HierarchyPopOut()
     {
-        var doc = ActiveSchematicDocument;
-        if (doc is null) return;
-        PopOutOf(doc);
+        if (ActiveSchematicDocument is { } schDoc) { PopOutOf(schDoc); return; }
+        if (ActiveLayoutDocument is { } layDoc) PopOutOf(layDoc);
     }
-    private bool CanHierarchyPopOut() => ActiveSchematicDocument?.CanPopOut ?? false;
+    private bool CanHierarchyPopOut()
+        => (ActiveSchematicDocument?.CanPopOut ?? false) || (ActiveLayoutDocument?.CanPopOut ?? false);
 
     [RelayCommand(CanExecute = nameof(CanHierarchyPushIn))]
     private void HierarchyOpenInNewTab()
     {
-        var doc  = ActiveSchematicDocument;
-        var comp = GetSingleSelectedCellComp(doc?.ActiveViewModel);
-        if (doc is null || comp is null) return;
-        OpenCellInNewTab(doc, comp);
+        if (ActiveSchematicDocument is { } schDoc)
+        {
+            var comp = GetSingleSelectedCellComp(schDoc.ActiveViewModel);
+            if (comp is not null) OpenCellInNewTab(schDoc, comp);
+            return;
+        }
+        if (ActiveLayoutDocument is { } layDoc)
+        {
+            var inst = GetSingleSelectedCellInstance(layDoc.ActiveViewModel);
+            if (inst is not null) OpenCellInNewTab(layDoc, inst);
+        }
     }
 
     private static EditableComponent? GetSingleSelectedCellComp(SchematicViewModel? vm)
@@ -2779,6 +3001,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private bool IsCellDirty(string cellDir) =>
         _registry.AllDirtyPaths.Any(p => IsViewInCell(p, cellDir))
+        || _layoutRegistry.AllDirtyPaths.Any(p => IsViewInCell(p, cellDir))
         || _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d =>
                d.IsDirty && d.ViewModel.CurrentSymbolPath is { } sp && IsViewInCell(sp, cellDir))
         || _openDocsByPath.Values.OfType<LayoutDocument>().Any(d =>
@@ -3287,6 +3510,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _factory.ForceCloseDockable(dockable);
             if (key.EndsWith(".csch", StringComparison.OrdinalIgnoreCase))
                 RetireSessionIfUnreferenced(key);
+            else if (key.EndsWith(".clay", StringComparison.OrdinalIgnoreCase))
+                RetireLayoutSessionIfUnreferenced(key);
         }
 
         if (!SystemTrash.TryMoveToTrash(cellPath, out var err))
@@ -3635,13 +3860,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             _factory.ProjectTreeTool?.Refresh();
 
-            // Open in a Layout Editor tab (materialized — has a real file path).
-            var vm = new LayoutEditorViewModel(model, filePath, messageSink: Messages);
-            vm.ApplyTechResolution(resolution);
-            vm.SaveError += OnLayoutSaveError;
-            vm.RequestAddLayerToTechnology += OnLayoutRequestAddLayerToTechnology;
-            WireRetargetSeam(vm);
-            var doc = new LayoutDocument(name + ext, vm, filePath);
+            // Open in a Layout Editor tab (materialized — has a real file path). Register into the
+            // L3b session registry immediately so this cell is push-in-able from elsewhere right away.
+            var vm = RegisterLayoutSession(filePath, BuildLayoutSessionVm(model, filePath));
+            var doc = new LayoutDocument(name + ext, vm, filePath) { Hierarchy = this };
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;
             HookLayoutCellDirty(doc);
@@ -3770,6 +3992,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 _factory.ForceCloseDockable(dockable);
                 if (key.EndsWith(".csch", StringComparison.OrdinalIgnoreCase))
                     RetireSessionIfUnreferenced(key);
+                else if (key.EndsWith(".clay", StringComparison.OrdinalIgnoreCase))
+                    RetireLayoutSessionIfUnreferenced(key);
             }
         }
 
@@ -3971,7 +4195,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         else if (activeDockable is LayoutDocument layDocForProps)
         {
             RouteDataDisplayProperties(null);
-            _factory.PropertiesTool?.SetActiveLayout(layDocForProps.ViewModel);
+            _factory.PropertiesTool?.SetActiveLayout(layDocForProps.ActiveViewModel);
         }
         else
         {
@@ -4441,6 +4665,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             foreach (var layDoc in dirtyMaterializedLayouts)
                 await SaveMaterializedLayoutDoc(layDoc, window);
 
+            // Dirty layout sessions with no open tab (orphaned by a prior "Don't Save" close or a pop-out).
+            foreach (var sessionPath in _layoutRegistry.GetOrphanedDirtyPaths(IsLayoutSessionReferenced))
+            {
+                if (!_layoutRegistry.TryGet(sessionPath, out var sessionVm)) continue;
+                try
+                {
+                    LayoutPersistence.SaveToFile(sessionPath, sessionVm!.Model);
+                    NotifyLayoutSessionSaved(sessionPath);
+                    Messages.Success("Saved", sessionPath);
+                }
+                catch (Exception ex)
+                {
+                    Messages.Error($"Failed to save layout session '{sessionPath}': {ex.Message}");
+                }
+            }
+
             // Dirty technology docs — always materialized, direct write via VM.
             foreach (var techDoc in dirtyTechDocs)
                 techDoc.ViewModel.SaveCommand.Execute(null);
@@ -4527,7 +4767,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         || _openDocsByPath.Values.OfType<TechDocument>().Any(d => d.IsDirty)
         || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges())
         || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges())
-        || HasOrphanedDirtySession();
+        || HasOrphanedDirtySession()
+        || HasOrphanedDirtyLayoutSession();
 
     /// <summary>
     /// Shows Save / Don't Save / Cancel for dirty work before a close/quit/open action.
@@ -4559,28 +4800,31 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             .OfType<TechDocument>()
             .Where(d => d.IsDirty)
             .ToList();
-        var dirtyOrphanedSessions = _registry.GetOrphanedDirtyPaths(IsSessionReferenced);
+        var dirtyOrphanedSessions       = _registry.GetOrphanedDirtyPaths(IsSessionReferenced);
+        var dirtyOrphanedLayoutSessions = _layoutRegistry.GetOrphanedDirtyPaths(IsLayoutSessionReferenced);
 
         int total = dirtyScratch.Count + dirtyMat.Count
                   + dirtyScratchSymbols.Count + dirtyMatSymbols.Count
                   + dirtyScratchDisplays.Count + dirtyMatDisplays.Count
                   + dirtyScratchLayouts.Count + dirtyMatLayouts.Count
                   + dirtyTechDocs.Count
-                  + dirtyOrphanedSessions.Count;
+                  + dirtyOrphanedSessions.Count
+                  + dirtyOrphanedLayoutSessions.Count;
         if (total == 0) return true;
 
         // Build a concise message naming the single doc or giving the count.
         string? firstId =
-              dirtyScratch.Count          > 0 ? dirtyScratch[0].Id
-            : dirtyScratchSymbols.Count   > 0 ? dirtyScratchSymbols[0].Id
-            : dirtyScratchLayouts.Count   > 0 ? dirtyScratchLayouts[0].Id
-            : dirtyMat.Count              > 0 ? dirtyMat[0].Id
-            : dirtyMatSymbols.Count       > 0 ? dirtyMatSymbols[0].Id
-            : dirtyMatLayouts.Count       > 0 ? dirtyMatLayouts[0].Id
-            : dirtyTechDocs.Count         > 0 ? dirtyTechDocs[0].Id
-            : dirtyMatDisplays.Count      > 0 ? dirtyMatDisplays[0].Id
-            : dirtyScratchDisplays.Count  > 0 ? dirtyScratchDisplays[0].Id
-            : dirtyOrphanedSessions.Count > 0 ? Path.GetFileNameWithoutExtension(dirtyOrphanedSessions[0])
+              dirtyScratch.Count               > 0 ? dirtyScratch[0].Id
+            : dirtyScratchSymbols.Count        > 0 ? dirtyScratchSymbols[0].Id
+            : dirtyScratchLayouts.Count        > 0 ? dirtyScratchLayouts[0].Id
+            : dirtyMat.Count                   > 0 ? dirtyMat[0].Id
+            : dirtyMatSymbols.Count            > 0 ? dirtyMatSymbols[0].Id
+            : dirtyMatLayouts.Count            > 0 ? dirtyMatLayouts[0].Id
+            : dirtyTechDocs.Count              > 0 ? dirtyTechDocs[0].Id
+            : dirtyMatDisplays.Count           > 0 ? dirtyMatDisplays[0].Id
+            : dirtyScratchDisplays.Count       > 0 ? dirtyScratchDisplays[0].Id
+            : dirtyOrphanedSessions.Count       > 0 ? Path.GetFileNameWithoutExtension(dirtyOrphanedSessions[0])
+            : dirtyOrphanedLayoutSessions.Count > 0 ? Path.GetFileNameWithoutExtension(dirtyOrphanedLayoutSessions[0])
             : null;
         string msg = (total == 1 && firstId is not null)
             ? $"Save '{firstId}' before {context}?"
@@ -4657,6 +4901,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // Materialized dirty layouts → write directly via VM.
                 foreach (var layDoc in dirtyMatLayouts)
                     await SaveMaterializedLayoutDoc(layDoc, owner);
+                // Orphaned dirty layout sessions (no open tab) → write directly.
+                foreach (var sessionPath in dirtyOrphanedLayoutSessions)
+                {
+                    if (!_layoutRegistry.TryGet(sessionPath, out var sessionVm)) continue;
+                    try
+                    {
+                        LayoutPersistence.SaveToFile(sessionPath, sessionVm!.Model);
+                        NotifyLayoutSessionSaved(sessionPath);
+                        Messages.Success("Saved", sessionPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Messages.Error($"Failed to save layout session '{sessionPath}': {ex.Message}");
+                    }
+                }
                 // Dirty technology docs — always materialized, direct write via VM.
                 foreach (var techDoc in dirtyTechDocs)
                     techDoc.ViewModel.SaveCommand.Execute(null);
@@ -5166,13 +5425,42 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             await SaveMaterializedLayoutDoc(doc, window);
     }
 
-    /// <summary>Saves an already-materialized layout via its VM command and logs one "Saved" message.</summary>
+    /// <summary>
+    /// Saves an already-materialized layout via its VM command and logs one "Saved" message, then —
+    /// mirroring the schematic's own <c>HierarchySaveTests</c> behaviour exactly (brief-L3b-hierarchy-
+    /// navigation.md §3) — persists every OTHER dirty pushed-in sub-cell session in this doc's nav
+    /// stack to its own <c>.clay</c>. Saving while pushed in therefore writes the sub-cell's file; the
+    /// base is written too (unconditionally, via the VM's own save command, same as always), but if
+    /// the base itself wasn't dirty its content is unchanged, so "the parent is unmodified on disk"
+    /// holds in every practical sense (identical bytes rewritten).
+    /// </summary>
     private async Task SaveMaterializedLayoutDoc(LayoutDocument doc, Window owner)
     {
         var path = doc.ViewModel.CurrentLayoutPath;
         await doc.ViewModel.SaveLayoutCommand.ExecuteAsync(owner);
-        if (path is not null && !doc.IsDirty)   // dirty cleared ⇒ save succeeded
+        if (path is not null && !doc.ViewModel.IsDirty)   // base's own dirty cleared ⇒ base save succeeded
+        {
+            NotifyLayoutSessionSaved(path);
             Messages.Success("Saved", path);
+        }
+
+        foreach (var (session, _) in doc.NavFrames)
+        {
+            if (ReferenceEquals(session, doc.ViewModel)) continue;   // base handled above
+            if (!session.IsDirty) continue;                          // clean frame — skip
+            if (!_layoutRegistry.TryGetPath(session, out var subPath) || subPath is null) continue;
+            try
+            {
+                LayoutPersistence.SaveToFile(subPath, session.Model);
+                session.MarkSaved();
+                NotifyLayoutSessionSaved(subPath);
+                Messages.Success("Saved", subPath);
+            }
+            catch (Exception ex)
+            {
+                Messages.Error($"Failed to save '{subPath}': {ex.Message}");
+            }
+        }
     }
 
     /// <summary>
@@ -5248,6 +5536,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _scratchLayouts.Remove(doc);
             doc.Materialize(filePath);
             _openDocsByPath[filePath] = doc;
+            RegisterLayoutSession(filePath, doc.ViewModel);   // now push-in-able from elsewhere
 
             _factory.ProjectTreeTool?.Refresh();
             Messages.Success("Saved", filePath);
@@ -5275,6 +5564,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchLayouts.Remove(doc);
         doc.Materialize(pathAfter);
         _openDocsByPath[pathAfter] = doc;
+        RegisterLayoutSession(pathAfter, doc.ViewModel);   // now push-in-able from elsewhere
 
         Messages.Success("Saved", pathAfter);
     }

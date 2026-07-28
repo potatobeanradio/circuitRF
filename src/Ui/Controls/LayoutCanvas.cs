@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
@@ -14,6 +15,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Renderers;
+using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.Views.Dialogs;
 using SkiaSharp;
@@ -124,7 +126,21 @@ public sealed class LayoutCanvas : Control
     public (double X, double Y) WorldToScreen(double wx, double wy) => (CurrentViewport.WorldToScreenX(wx), CurrentViewport.WorldToScreenY(wy));
     public (double X, double Y) ScreenToWorld(double sx, double sy) => (CurrentViewport.ScreenToWorldX(sx), CurrentViewport.ScreenToWorldY(sy));
 
-    private LayoutViewport CurrentViewport => new(_panX, _panY, _zoom, Bounds.Width, Bounds.Height);
+    /// <summary>The canvas's current pan/zoom, snapshotted as a value — L3b's per-nav-frame viewport
+    /// capture reads this (docs/sonnet-briefs/brief-L3b-hierarchy-navigation.md §1) since pan/zoom is
+    /// canvas-owned, not VM-owned (see <see cref="LayoutDocument"/>'s <c>NavFrame</c> doc comment).</summary>
+    public LayoutViewport CurrentViewport => new(_panX, _panY, _zoom, Bounds.Width, Bounds.Height);
+
+    /// <summary>Directly applies a previously-captured viewport (L3b pop-out/push-in restore) —
+    /// suppresses the initial-fit-on-bind that would otherwise immediately override it on the next
+    /// layout pass (<see cref="OnLayoutUpdated"/>'s <c>_needsInitialFit</c> check).</summary>
+    public void SetViewport(LayoutViewport vp)
+    {
+        _panX = vp.PanX; _panY = vp.PanY; _zoom = vp.Zoom;
+        _needsInitialFit = false;
+        RaiseViewportChanged();
+        InvalidateVisual();
+    }
 
     /// <summary>Fired whenever pan/zoom changes — the view uses this to refresh rulers and the metadata bar.</summary>
     public event EventHandler? ViewportChanged;
@@ -140,6 +156,17 @@ public sealed class LayoutCanvas : Control
     /// itself never posts.
     /// </summary>
     public event Action<IReadOnlyList<LayerKey>>? FrameUnknownLayers;
+
+    /// <summary>L3a — mirrors <see cref="FrameUnknownLayers"/> for missing/broken instance cell
+    /// references (R-L3a-1: "report once per distinct CellRef per load — not once per placement").</summary>
+    public event Action<IReadOnlyList<string>>? FrameMissingInstanceCellRefs;
+
+    /// <summary>L3b — a resolved instance was double-clicked with the Select tool active
+    /// (docs/sonnet-briefs/brief-L3b-hierarchy-navigation.md §1: "Push in: double-click a selected
+    /// instance"). Mirrors <c>SchematicCanvas.ComponentDoubleTapped</c>'s shape: the canvas only
+    /// hit-tests and reports WHICH instance; the view decides whether it's push-in-able and performs
+    /// the navigation.</summary>
+    public event EventHandler<LayoutInstance>? InstanceDoubleTapped;
 
     // ── Clipboard (L1f) — handled async by code-behind, mirroring SchematicCanvas ───────────────
 
@@ -170,6 +197,7 @@ public sealed class LayoutCanvas : Control
         PointerReleased     += OnPointerReleased;
         PointerExited       += OnPointerExited;
         PointerWheelChanged += OnPointerWheel;
+        DoubleTapped        += OnDoubleTapped;
         KeyDown             += OnKeyDown;
         KeyUp               += OnKeyUp;
         TextInput           += OnTextInput;
@@ -182,6 +210,15 @@ public sealed class LayoutCanvas : Control
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnImageFileDragOver);
         AddHandler(DragDrop.DropEvent,     OnImageFileDrop);
+
+        // Cell drop target — drag a cell from the project tree onto the layout to place an instance
+        // (brief-L3a-followups.md §4/R-fix-5/R-fix-6). A SEPARATE handler pair, coexisting with the
+        // image-file one above — mirrors SchematicCanvas's own "separate handler pairs per payload
+        // kind, not one handler that branches" convention, so a cell drag and an image-file drag can
+        // never be confused with each other.
+        AddHandler(DragDrop.DragOverEvent,  OnCellDragOver);
+        AddHandler(DragDrop.DropEvent,      OnCellDrop);
+        AddHandler(DragDrop.DragLeaveEvent, OnCellDragLeave);
     }
 
     // Fits exactly once per bound ViewModel, as soon as Bounds becomes valid — for a layout that
@@ -198,6 +235,25 @@ public sealed class LayoutCanvas : Control
             ZoomToFitInternal();
             RaiseViewportChanged();
         }
+    }
+
+    // ── Double-tap → push into cell (L3b) ───────────────────────────────────────
+
+    private void OnDoubleTapped(object? _, TappedEventArgs e)
+    {
+        if (_viewModel is null || _viewModel.ActiveTool != LayoutEditorViewModel.Tool.Select) return;
+
+        var pos   = e.GetPosition(this);
+        double wx = CurrentViewport.ScreenToWorldX(pos.X);
+        double wy = CurrentViewport.ScreenToWorldY(pos.Y);
+        long tolDbu = HitTolDbu();
+
+        var hits = LayoutHitTest.HitInstanceStack(
+            _viewModel.Model, _viewModel.Technology, _viewModel.InstanceBaseDir,
+            (long)Math.Round(wx), (long)Math.Round(wy), tolDbu);
+        if (hits.Count == 0) return;
+
+        InstanceDoubleTapped?.Invoke(this, _viewModel.Model.Instances[hits[0]]);
     }
 
     // ── Visual tree ───────────────────────────────────────────────────────────
@@ -228,11 +284,20 @@ public sealed class LayoutCanvas : Control
         var variant = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
         var theme = LayoutRenderTheme.FromTheme(_activeTheme, variant);
         var vp = CurrentViewport;
-        var opts = new LayoutRenderOptions { Theme = theme, ShowGrid = true, Overlay = _viewModel?.Overlay, PathCache = _pathCache };
+        var opts = new LayoutRenderOptions
+        {
+            Theme = theme, ShowGrid = true, Overlay = _viewModel?.Overlay, PathCache = _pathCache,
+            BaseDir = _viewModel?.InstanceBaseDir,
+        };
 
         context.Custom(new LayoutDrawOperation(
             new Rect(Bounds.Size), _viewModel?.Model, _viewModel?.Technology, vp, opts,
-            r => Dispatcher.UIThread.Post(() => FrameUnknownLayers?.Invoke(r.UnknownLayers))));
+            r => Dispatcher.UIThread.Post(() =>
+            {
+                FrameUnknownLayers?.Invoke(r.UnknownLayers);
+                if (r.MissingInstanceCellRefs is { Count: > 0 } missing)
+                    FrameMissingInstanceCellRefs?.Invoke(missing);
+            })));
     }
 
     // ── Zoom commands ─────────────────────────────────────────────────────────
@@ -381,6 +446,82 @@ public sealed class LayoutCanvas : Control
         return null;
     }
 
+    // ── Cell DnD drop target (brief-L3a-followups.md §4) — mirrors SchematicCanvas.OnCellDragOver/
+    // OnCellDrop, with two substitutions per R-fix-5: resolves through CellLayoutResolver (via the VM's
+    // own instance-ghost methods) instead of CellSymbolResolver, and snaps through the layout's own
+    // SnapDbu instead of the schematic grid. ──────────────────────────────────────────────────────
+
+    private static CellDragPayload? TryParseCellDragPayload(DragEventArgs e)
+    {
+        foreach (var item in e.DataTransfer.Items)
+            if (item.TryGetRaw(DataFormat.Text) is string text && CellDragPayload.TryParse(text, out var payload))
+                return payload;
+        return null;
+    }
+
+    private (long X, long Y) SnappedDropPoint(DragEventArgs e, LayoutEditorViewModel vm)
+    {
+        var pos = e.GetPosition(this);
+        var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
+        return LayoutSnapping.SnapPoint(wx, wy, vm.Model.SnapDbu, suspend: false);
+    }
+
+    private void OnCellDragOver(object? sender, DragEventArgs e)
+    {
+        if (_viewModel is not { } vm) { e.DragEffects = DragDropEffects.None; return; }
+
+        var payload = TryParseCellDragPayload(e);
+        if (payload is null) { e.DragEffects = DragDropEffects.None; return; }
+
+        // R-fix-1/R-fix-6: "exclude/refuse the parent cell only" — the ONE case obvious enough that a
+        // "no" cursor here needs no further explanation. Every other cycle (a deeper A->B->A) is
+        // deliberately accepted here and refused (with the path named) on drop instead.
+        if (vm.WouldDragCellBeSelfReference(payload.CellAbsPath))
+        {
+            e.DragEffects = DragDropEffects.None;
+            vm.CancelDragInstancePlacement();
+            return;
+        }
+
+        e.DragEffects = DragDropEffects.Copy;
+        e.Handled     = true;
+
+        string cellRef = RelativeCellRefForDrag(payload.CellAbsPath, vm);
+        var (sx, sy) = SnappedDropPoint(e, vm);
+        vm.UpdateDragInstanceGhost(cellRef, sx, sy);
+        InvalidateVisual();
+    }
+
+    private void OnCellDrop(object? sender, DragEventArgs e)
+    {
+        // Clear the ghost before processing so it disappears regardless of outcome (mirrors
+        // SchematicCanvas.OnCellDrop).
+        _viewModel?.CancelDragInstancePlacement();
+
+        if (_viewModel is not { } vm) return;
+        var payload = TryParseCellDragPayload(e);
+        if (payload is null) return;
+        if (vm.WouldDragCellBeSelfReference(payload.CellAbsPath)) return; // DragOver already refused the cursor for this case
+
+        string cellRef = RelativeCellRefForDrag(payload.CellAbsPath, vm);
+        var (sx, sy) = SnappedDropPoint(e, vm);
+        vm.CommitDragInstancePlacement(cellRef, sx, sy); // R-fix-6: refuses+reports a deeper cycle internally
+        e.Handled = true;
+        InvalidateVisual();
+    }
+
+    private void OnCellDragLeave(object? sender, DragEventArgs e)
+    {
+        _viewModel?.CancelDragInstancePlacement();
+        InvalidateVisual();
+    }
+
+    private static string RelativeCellRefForDrag(string cellAbsDir, LayoutEditorViewModel vm)
+    {
+        try { return Path.GetRelativePath(vm.InstanceBaseDir, cellAbsDir); }
+        catch { return cellAbsDir; }
+    }
+
     /// <summary>R-bmp-5 — the Insert Bitmap toolbar button's entry point; centres the placed rect on
     /// the CURRENT viewport centre. Called from the hosting view's code-behind after the file picker
     /// returns a path (UI firewall — the picker itself never lives here).</summary>
@@ -473,7 +614,155 @@ public sealed class LayoutCanvas : Control
         }
 
         AddBooleanAndFlattenMenuItems(items);
+        AddInstanceHierarchyMenuItems(items);
         return items;
+    }
+
+    /// <summary>
+    /// Phase L3c — Flatten Hierarchy / Flatten All Levels / Explode Array / Group into Cell
+    /// (docs/sonnet-briefs/brief-L3c-flatten-and-group.md). Selection-scoped, same "always present,
+    /// disabled-with-a-reason" rule as <see cref="AddBooleanAndFlattenMenuItems"/> above — and
+    /// deliberately its OWN group, separated by a <c>Separator</c>, never adjacent to "Flatten to
+    /// Polygon…" in the same group (§1's own naming warning: the two "Flatten" operations must never
+    /// read as the same command). R-L3c-1a's outcome preview ("→ 20 shape(s)", "→ 2,500 instance(s)")
+    /// is baked directly into each item's header — more visible than a hover-only tooltip, and the
+    /// brief only asks that the outcome be "reported," not where.
+    /// </summary>
+    private void AddInstanceHierarchyMenuItems(List<object> items)
+    {
+        if (_viewModel is null) return;
+
+        MenuItem AddAvailItem(string header, LayoutCommandAvailability avail)
+        {
+            var mi = new MenuItem { Header = header, IsEnabled = avail.CanExecute };
+            if (!avail.CanExecute && avail.DisabledReason is { } reason)
+                ToolTip.SetTip(mi, reason);
+            items.Add(mi);
+            return mi;
+        }
+
+        void Sep() { if (items.Count > 0) items.Add(new Separator()); }
+
+        Sep();
+        string flattenHeader = "Flatten Hierarchy" + (_viewModel.FlattenOneLevelOutcomeText is { } t1 ? $" ({t1})" : "");
+        AddAvailItem(flattenHeader, _viewModel.FlattenHierarchyAvailability).Click += async (_, _) => await ShowFlattenHierarchyAsync();
+
+        string allLevelsHeader = "Flatten All Levels" + (_viewModel.FlattenAllLevelsOutcomeText is { } t2 ? $" ({t2})" : "");
+        AddAvailItem(allLevelsHeader, _viewModel.FlattenAllLevelsAvailability).Click += async (_, _) => await ShowFlattenAllLevelsAsync();
+
+        // R-L3c-1's own instruction: a separate "Explode Array" entry, enabled only for arrays, routes
+        // through the SAME command as Flatten Hierarchy (LayoutFlatten.FlattenOneLevel already detects
+        // the array case on its own) so the two can never diverge.
+        AddAvailItem("Explode Array", _viewModel.ExplodeArrayAvailability).Click += async (_, _) => await ShowFlattenHierarchyAsync();
+
+        Sep();
+        string groupHeader = "Group into Cell…" + (_viewModel.GroupIntoCellOutcomeText is { } t3 ? $" ({t3})" : "");
+        AddAvailItem(groupHeader, _viewModel.GroupIntoCellAvailability).Click += async (_, _) => await ShowGroupIntoCellAsync();
+    }
+
+    /// <summary>Shared cross-technology confirmation step (R-L3c-3) for both Flatten Hierarchy and
+    /// Flatten All Levels — mirrors <c>LayoutEditorView.axaml.cs</c>'s own <c>ResolveLayerMappingAsync</c>
+    /// (the technology-retarget flow), duplicated in this small a shape rather than reached across
+    /// files, since this dialog is triggered from a context-menu item the canvas itself owns. The
+    /// ACTUAL reconciliation logic is never duplicated — only this ~10-line "show the shared dialog"
+    /// wrapper is. Returns <c>null</c> both when nothing needs confirming (caller proceeds with no
+    /// remap) and when the user cancels (caller must then abandon the whole operation) — the two are
+    /// disambiguated by the caller re-checking <c>CheckFlattenCrossTechMapping()</c> was non-null.</summary>
+    private async Task<IReadOnlyList<LayerMappingRow>?> ResolveFlattenLayerMappingAsync(IReadOnlyList<LayerMappingRow> mapping)
+    {
+        if (_viewModel is null) return null;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return null;
+
+        var destTech = _viewModel.Technology;
+        if (destTech is null) return null;
+        var sourceTechName = _viewModel.FlattenSelectedSubCellTechnology()?.Name;
+
+        var dialog = new LayerMappingDialog("Flatten Hierarchy", sourceTechName, destTech, mapping);
+        var result = await dialog.ShowDialog<LayerMappingDialogResult?>(owner);
+        return result?.Rows;
+    }
+
+    private async Task ShowFlattenHierarchyAsync()
+    {
+        if (_viewModel is null) return;
+
+        var mapping = _viewModel.CheckFlattenCrossTechMapping();
+        if (mapping is not null)
+        {
+            var resolved = await ResolveFlattenLayerMappingAsync(mapping);
+            if (resolved is null) return;   // cancel abandons the whole operation, matches retarget's own rule
+            mapping = resolved;
+        }
+
+        if (_viewModel.FlattenOneLevelNeedsConfirmation && !await ConfirmFlattenAsync(_viewModel.FlattenOneLevelOutcomeText))
+            return;
+
+        _viewModel.CommitFlattenOneLevel(mapping);
+        InvalidateVisual();
+    }
+
+    private async Task ShowFlattenAllLevelsAsync()
+    {
+        if (_viewModel is null) return;
+
+        var mapping = _viewModel.CheckFlattenCrossTechMapping();
+        if (mapping is not null)
+        {
+            var resolved = await ResolveFlattenLayerMappingAsync(mapping);
+            if (resolved is null) return;
+            mapping = resolved;
+        }
+
+        // Flatten All Levels always confirms (R-L3c-4 — the pre-computed count, or the hard-ceiling
+        // refusal, must be seen before a whole hierarchy collapses into geometry).
+        if (!await ConfirmFlattenAsync(_viewModel.FlattenAllLevelsOutcomeText, alwaysConfirm: true))
+            return;
+
+        _viewModel.CommitFlattenAllLevels(mapping);
+        InvalidateVisual();
+    }
+
+    private async Task<bool> ConfirmFlattenAsync(string? outcomeText, bool alwaysConfirm = false)
+    {
+        if (_viewModel is null) return false;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return !alwaysConfirm && !_viewModel.FlattenOneLevelNeedsConfirmation;
+
+        var dialog = new SaveChangesDialog(
+            $"This will replace the selected instance {outcomeText ?? ""}. This is not perfectly reversible except by Undo.",
+            saveLabel: "Flatten", dontSaveLabel: null, cancelLabel: "Cancel", title: "Flatten Hierarchy");
+        var result = await dialog.ShowDialog<SaveChangesResult>(owner);
+        return result == SaveChangesResult.Save;
+    }
+
+    private async Task ShowGroupIntoCellAsync()
+    {
+        if (_viewModel is null) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        string? parentDir = _viewModel.WorkspaceRootDir;
+        if (parentDir is null)
+        {
+            _viewModel.ReportError("Group into Cell needs an open workspace to create the new cell in.");
+            return;
+        }
+
+        var nameDialog = new InputNameDialog("Group into Cell", "New cell name:");
+        string? name = await nameDialog.ShowDialog<string?>(owner);
+        if (name is null) return;
+
+        // R-L3c-6: undo removes the instance and restores the shapes/instances, but does NOT delete
+        // the cell folder just created — say so up front, not only after the fact.
+        var confirm = new SaveChangesDialog(
+            $"Create cell '{name}' from the current selection {_viewModel.GroupIntoCellOutcomeText ?? ""}. " +
+            "Undoing this afterward will restore the selection but will not delete the cell folder.",
+            saveLabel: "Create", dontSaveLabel: null, cancelLabel: "Cancel", title: "Group into Cell");
+        if (await confirm.ShowDialog<SaveChangesResult>(owner) != SaveChangesResult.Save) return;
+
+        _viewModel.CommitGroupIntoCell(parentDir, name);
+        InvalidateVisual();
     }
 
     /// <summary>

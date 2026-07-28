@@ -3,6 +3,11 @@
 // anything else... re-run the harness after LOD alone"), then the FINAL numbers with all three items
 // engaged, plus the path cache's memory footprint. Reuses L2a's SyntheticLayoutGenerator/BenchmarkHarness
 // so every number here is directly comparable to the L2a/L2b baseline tables.
+//
+// The 500k cases in this file are all TIMED sweeps — [Trait("Category","Benchmark")], opt-in only
+// (brief-benchmark-gate-split.md, superseding the old Nightly tag here). Run explicitly:
+// dotnet test --filter "Category=Benchmark". The 50k cases (LodOnly_FullExtent_50k/Final_FullExtent_50k)
+// stay in the routine gate and still exercise every LOD/merge/cache code path at scale.
 
 using System;
 using System.Linq;
@@ -61,7 +66,7 @@ public class LayoutLodMergeCacheBenchmarkTests : IDisposable
     [InlineData(GeneratorProfile.Mixed, 50_000)]
     public void LodOnly_FullExtent_50k(GeneratorProfile profile, int shapeCount) => RunLodOnly(profile, shapeCount);
 
-    [Trait("Category", "Nightly")]
+    [Trait("Category", "Benchmark")]
     [Theory]
     [InlineData(GeneratorProfile.Manhattan, 500_000)]
     [InlineData(GeneratorProfile.CurveHeavy, 500_000)]
@@ -96,7 +101,7 @@ public class LayoutLodMergeCacheBenchmarkTests : IDisposable
     [InlineData(GeneratorProfile.Mixed, 50_000)]
     public void Final_FullExtent_50k(GeneratorProfile profile, int shapeCount) => RunFinal(profile, shapeCount);
 
-    [Trait("Category", "Nightly")]
+    [Trait("Category", "Benchmark")]
     [Theory]
     [InlineData(GeneratorProfile.Manhattan, 500_000)]
     [InlineData(GeneratorProfile.CurveHeavy, 500_000)]
@@ -131,7 +136,7 @@ public class LayoutLodMergeCacheBenchmarkTests : IDisposable
         return (-ExtentHalf + bestIx * cell + cell / 2, -ExtentHalf + bestIy * cell + cell / 2);
     }
 
-    [Trait("Category", "Nightly")]
+    [Trait("Category", "Benchmark")]
     [Fact]
     public void PathCache_500k_MemoryStaysUnderCap_TimeAndMemoryReported()
     {
