@@ -209,6 +209,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
+        ImportDxfLibraryCommand.NotifyCanExecuteChanged();
 
         if (_factory.ProjectTreeTool is { } tree)
         {
@@ -1784,6 +1785,82 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var dialog = new LayerMappingDialog("Import GDSII — Layer Mapping", "GDSII", destTech, rows);
         var result = await dialog.ShowDialog<LayerMappingDialogResult?>(owner);
         return result?.Rows;
+    }
+
+    // ── Import DXF Library (docs/sonnet-briefs/brief-L4b-dxf-interchange.md §2) ───────────────────
+    // DxfImport does the actual read/reconcile/CellFolder-creation work; this method is only file
+    // picking (UI firewall), workspace/technology context, the units prompt, and the layer-mapping
+    // dialog bridge — mirrors ImportGdsiiLibraryAsync exactly, with one extra prompt (R-L4b-4).
+
+    [RelayCommand(CanExecute = nameof(CanImportDxfLibrary))]
+    private Task ImportDxfLibrary(Window? owner) => ImportDxfLibraryAsync(owner);
+    private bool CanImportDxfLibrary() => CurrentWorkspacePath is not null;
+
+    private async Task ImportDxfLibraryAsync(Window? owner)
+    {
+        if (CurrentWorkspacePath is null) return;
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Import DXF Library",
+            AllowMultiple  = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("DXF Drawing")  { Patterns = ["*.dxf"] },
+                new FilePickerFileType("All Files")    { Patterns = ["*.*"] },
+            ],
+        });
+        if (files.Count == 0) return;
+
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var techRes = ResolveTechFor(null, null); // the workspace's own default technology
+
+        CircuitRF.Ui.Layout.Interchange.DxfImport.ImportResult result;
+        try
+        {
+            result = await Task.Run(() =>
+            {
+                using var stream = File.OpenRead(files[0].Path.LocalPath);
+                return CircuitRF.Ui.Layout.Interchange.DxfImport.Import(
+                    stream, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
+                    resolveUnits: rawInsUnits => Dispatcher.UIThread
+                        .InvokeAsync(() => ResolveDxfUnitsAsync(window))
+                        .GetAwaiter().GetResult(),
+                    resolveLayerMapping: rows =>
+                    {
+                        var settled = Dispatcher.UIThread
+                            .InvokeAsync(() => ResolveGdsiiLayerMappingAsync(window, techRes.Tech, rows))
+                            .GetAwaiter().GetResult();
+                        return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
+                    });
+            });
+        }
+        catch (Exception ex)
+        {
+            Messages.Error($"Import DXF: {ex.Message}");
+            return;
+        }
+
+        if (result.Cancelled)
+        {
+            foreach (var msg in result.Messages) Messages.Info(msg);
+            Messages.Info("Import DXF cancelled — nothing was created.");
+            return;
+        }
+
+        foreach (var msg in result.Messages) Messages.Info(msg);
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Success($"Imported {result.CreatedCellDirs.Count} cell(s) from DXF.");
+    }
+
+    /// <summary>R-L4b-4's own prompt — shown only when the file's $INSUNITS cannot be trusted as-is.
+    /// Returns the chosen $INSUNITS value, or null to abort the whole import.</summary>
+    private async Task<int?> ResolveDxfUnitsAsync(Window owner)
+    {
+        var dialog = new CircuitRF.Ui.Views.Dialogs.DxfUnitsPromptDialog();
+        return await dialog.ShowDialog<int?>(owner);
     }
 
     private void OpenOrActivateLayout(string absolutePath)

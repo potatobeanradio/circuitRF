@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.DxfUnitsPromptDialog"
+        Title="Import DXF — Units"
+        Width="380"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock Grid.Row="0" x:Name="MessageText" FontSize="12" TextWrapping="Wrap"
+                   Text="This file does not declare its drawing units ($INSUNITS). Choose the units it was authored in — getting this wrong scales the whole design, so please confirm rather than guess."/>
+
+        <StackPanel Grid.Row="1" Spacing="4" Margin="0,12,0,0">
+            <RadioButton x:Name="MmRadio" GroupName="Units" Content="Millimeters" FontSize="11" IsChecked="True"/>
+            <RadioButton x:Name="InchRadio" GroupName="Units" Content="Inches" FontSize="11"/>
+            <RadioButton x:Name="MicronRadio" GroupName="Units" Content="Microns" FontSize="11"/>
+            <RadioButton x:Name="CmRadio" GroupName="Units" Content="Centimeters" FontSize="11"/>
+            <RadioButton x:Name="MRadio" GroupName="Units" Content="Meters" FontSize="11"/>
+            <RadioButton x:Name="FootRadio" GroupName="Units" Content="Feet" FontSize="11"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center" Click="OnCancelClick"/>
+            <Button Content="Import" Width="80" IsDefault="True" FontSize="12"
+                    HorizontalContentAlignment="Center" Click="OnImportClick"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

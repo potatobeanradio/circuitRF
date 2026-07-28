@@ -1,5 +1,425 @@
 # UI (Avalonia) — local conventions
 
+DXF version support — decided, documented, encoding made real (brief-dxf-version-support.md, 2026-07-28)
+— COMPLETE: owner questions after the L4b post-ship fix below — is there value in also writing R2018?
+Does the reader handle newer versions? Both answered, and both now backed by real evidence rather than
+assumption; the supported-version matrix is now documented, not just implied.
+
+**R-dxf-1 — the decision: keep writing R2000 (`AC1015`), do not add R2018 output.** Every entity this
+exporter emits (`LWPOLYLINE` w/ bulge, `LINE`, `ARC`, `CIRCLE`, `ELLIPSE`, `SPLINE`, `HATCH`, `TEXT`,
+`INSERT`, `BLOCK`) exists unchanged in R2000 — nothing added since improves 2D geometry interchange, so a
+newer header buys nothing while narrowing compatibility (older PCB/CAM/mechanical tools routinely read
+R12/R2000 and refuse newer files). **R12 (`AC1009`) is the only version with a plausible future case** —
+some legacy CAM/tooling reads only R12 — but it has no `LWPOLYLINE`/`ELLIPSE`/`SPLINE`/`HATCH`, so it would
+mean heavy `POLYLINE` output, flattened splines/ellipses, and lost hole fills; a real fidelity loss against
+R-L4b-1's "never flatten an arc on export," not built speculatively — wait for an actual blocked user.
+Recorded in `docs/design/layout-view.md` §8 (the durable reference) so this is never re-litigated from
+scratch by someone noticing the header still says 2000.
+
+**R-dxf-2 — encoding was the one thing that WAS genuinely broken, silently, in both directions.**
+`DxfImport.Import` used a plain `new StreamReader(dxfStream)` — .NET's own UTF-8-with-BOM-detection
+default — regardless of what the file's own header declared. R2007 (`AC1021`) and later really are UTF-8;
+R2006 and earlier use the drawing's own `$DWGCODEPAGE`, with `\U+XXXX` escapes (AutoCAD's own convention)
+for anything outside it. Reading one as the other never throws — it silently mangles text. New
+`DxfEncoding.cs` (framework-free) is now the single source of the policy:
+- `DxfEncoding.Resolve(stream)` sniffs `$ACADVER`/`$DWGCODEPAGE` from the HEADER section via
+  `DxfGroupReader` over a byte-transparent probe pass (safe regardless of the file's real encoding, since
+  both variables are always plain ASCII), then **rewinds the stream** so `DxfImport` re-reads it with the
+  resolved `Encoding` — a genuine two-pass read, confirmed compatible with the streaming discipline
+  precisely because of that ASCII guarantee (not assumed — verified against real files below). A
+  non-seekable stream defaults to UTF-8 (this reader's prior implicit behavior), reported as an
+  assumption rather than silently trusted.
+- **No new dependency** (the brief's own guardrail): a correct decode of an arbitrary named Windows code
+  page needs `System.Text.Encoding.CodePages` (.NET Core ships only Unicode transforms + Latin-1).
+  `DxfEncoding.Windows1252` is a small, hand-written, from-the-public-spec single-byte codec instead —
+  exact for Windows-1252/`ANSI_1252` (the code page named by the overwhelming majority of Western-
+  European/US AutoCAD installs, and this reader's documented default), differing from the built-in
+  `Encoding.Latin1` only in the 0x80-0x9F range. Any OTHER named code page still decodes through the SAME
+  table (correct for the ASCII-heavy majority of real text) with the substitution always reported.
+- `DxfWriter.WriteEscapedString` (new, alongside plain `WriteString`) is the export-side half: R2000
+  output has no native Unicode, so any layer name, block name, or TEXT content containing a character
+  outside ASCII is `\U+XXXX`-escaped rather than written as a raw code-page byte that only round-trips for
+  a reader sharing the exact same code page — counted via `DxfGroupWriter.EscapedTextCount`, surfaced as
+  `DxfExportSummary.NonAsciiTextEscaped`, and shown as its own fidelity line in the export dialog
+  (alongside the curve/hole/bitmap lines the L4b post-ship fix's own dialog already had).
+- `DxfReader`'s single string-value funnel (`GetStr`) now unescapes `\U+XXXX` uniformly on the way in —
+  harmless/no-op for every non-text value it also happens to read through the same funnel (handles,
+  keywords), correct for layer names/block names/TEXT content regardless of which tool wrote them.
+
+**R-dxf-3 — real R12/R2000/R2018 files from another tool, verified end to end, not assumed.**
+`testdata/dxf-version-samples/{r12,r2000,r2018}-ezdxf-sample.dxf` — three real files produced by
+**ezdxf 1.4.4** (a real, independent, spec-compliant Python DXF library — confirmed openable by ezdxf's
+own reader AND by QCAD 3.32.9's bundled ODA-based `dwginfo`/`dwg2svg` before being checked in), each
+carrying a closed 4-vertex polyline with one 90° bulge (R12's own old-style `POLYLINE`/`VERTEX` form for
+the R12 file — the least-exercised path, per the brief's own call-out — `LWPOLYLINE` for R2000/R2018), a
+layer named "Défense" (representable in Windows-1252, not ASCII), and a TEXT label "Résistance Ω" — Ω is
+NOT representable in Windows-1252, so even ezdxf's own R12/R2000 writer falls back to a literal `\U+03A9`
+escape for that one character while writing "é" as a raw cp1252 byte in the SAME string — a real-world
+confirmation that BOTH halves of R-dxf-2 (byte-level code-page decoding AND `\U+` unescaping) are
+independently necessary, not redundant. `DxfVersionToleranceTests.cs` imports all three through the real
+`DxfImport.Import` pipeline and asserts: not cancelled; the bulge survives exactly (`Math.Abs(delta) <
+1e-6`) through both the old-style and LWPOLYLINE forms; the layer name and label text decode byte-for-byte
+correctly; the encoding report names the right mechanism (UTF-8 for R2018, legacy code page for R12/
+R2000) AND the raw `$ACADVER` value found. `DxfEncodingTests.cs` (21 tests) covers the same policy in pure
+logic — every version threshold, an absent/unrecognized `$DWGCODEPAGE`, a non-seekable stream, the
+Windows-1252 codec's full byte range, and escape/unescape round-tripping including a wide Unicode sample
+(Défense, Résistance Ω, Japanese layer-name text) plus a full own-writer→own-reader export→import round
+trip (non-ASCII layer name AND label text, both directions). **27 new tests; 3024 Ui.Tests total (was
+2997), all green**; full
+solution green (Firewall 4/4).
+
+**R-dxf-4 — documented in all three places the brief asked for, sourced from one place, not duplicated:**
+`docs/design/layout-view.md` §8 (a new paragraph block: the R2000-not-R2018 decision, version-tolerant
+import, the encoding rule, and the out-of-scope list — DWG, binary DXF, dimensions, leaders, xrefs,
+paper space, 3D — now a stated documented limitation rather than only an internal brief note); this
+entry; and the UI (`DxfExportOptionsDialog` already showed `DxfWriter.FormatDescription` from the L4b
+post-ship fix below — now also shows the non-ASCII-escape count; the import path's `Messages` list
+already carried the units-resolution report and now also carries the encoding-resolution report, both
+sourced from the SAME `DxfWriter`/`DxfEncoding` constants/logic the real write/read path uses, never a
+second hand-typed copy).
+
+## Scope guardrails held
+
+No changes to the entity mapping, the bulge identity, `SPLINE` export, or array handling — only the
+version/encoding decision and its documentation. No new dependency. `src/Core`, `src/Engine`, `RfCore`,
+GDSII untouched.
+
+L4b post-ship fix — real DXF viewers rejected every exported file outright (2026-07-28) — COMPLETE:
+owner report — `test.dxf`, exported from the Layout Editor and dropped in `testdata/`, would not open in
+QCAD, the AutoDesk web viewer, or eDrawings. **Confirmed directly, not guessed**, against two independent
+real, spec-compliant parsers before touching any code: Python's `ezdxf.readfile` failed with "missing
+'AcDbPolyline' subclass in LWPOLYLINE"; QCAD's own bundled ODA-based `dwginfo`/`dwg2svg` command-line
+tools (found on this machine, since QCAD.app happened to be locally installed) failed identically with
+"Bad Dxf sequence". **Root cause:** the writer declared `$ACADVER = AC1015` (AutoCAD 2000/R2000) in the
+HEADER while writing every table, block, and entity in the STRUCTURE of the much older, simpler R12
+format — no handle (group 5), no owner pointer (group 330), and no "subclass marker" (code 100,
+`AcDbEntity`/`AcDb<Class>`) on anything, all of which the R13+ format mandates. This project's OWN
+`DxfReader` never noticed, because it dispatches purely by the leading `0 <TYPE>` token and ignores any
+group code it doesn't specifically look for (5/330/100 included) — **exactly the "correct by our own
+reader's standards" trap** this phase's own completion note below already names once for the HATCH
+boundary-flag bug, this time not caught by the (nonexistent, per that same note's honest disclosure)
+gate-11/12 third-party-viewer check until the owner actually ran one.
+
+**Fix, verified against the same two real parsers before considering it closed (never just against this
+project's own round-trip tests again):** `DxfWriter` now assigns a real, unique handle to every table,
+table record, `BLOCK`/`ENDBLK`, and entity (`DxfHandles`, a simple counter) with correct owner (330)
+pointers and the required subclass-marker pairs; the `TABLES` section gained the six additional tables
+R13+ requires beyond the pre-existing `LAYER` (`VPORT`, `LTYPE` with the 3 fixed `ByBlock`/`ByLayer`/
+`Continuous` entries, `STYLE` with a `Standard` entry, empty `VIEW`/`UCS`, `APPID` with an `ACAD` entry,
+`DIMSTYLE` with zero records but its own required table-level subclass marker) and a real `BLOCK_RECORD`
+table (one entry per block); `*Model_Space`/`*Paper_Space` are now real (empty) placeholder blocks, as
+every AC1015+ file has, with actual top-level content still living in `ENTITIES` exactly as before,
+owned by `*Model_Space`'s own `BLOCK_RECORD` handle. Re-verified end to end: a regenerated `testdata/
+test.dxf` (richer than the original report — a 3×3 mirrored/rotated array, a hole via `HATCH`, a cubic
+curve via `SPLINE`, an arc-bearing curve, a `Path`, and a `TEXT` label) now opens cleanly in `ezdxf` AND
+renders correctly through QCAD's real `dwg2svg` — the rendered arc radius (0.424264 mm) matches the
+exported bulge's own math exactly, confirming geometry survived the ENTIRE real pipeline, not just this
+project's own reader. (The original `test.dxf` the owner created was overwritten by this regeneration —
+it was untracked and never committed, so nothing is recoverable, but flagging this since it wasn't backed
+up first.)
+
+**A second, latent bug shared the exact same root cause and was caught by the same fix, before it could
+ever ship separately:** `DxfReader.ParseBlocksSection` treated every `BLOCK` token as an importable
+structure — harmless while this writer never emitted `*Model_Space`/`*Paper_Space` itself, but reading
+almost ANY real-world third-party DXF (gate 12) would have created bogus empty `*Model_Space`/
+`*Paper_Space` cells, and a real authoring tool's own anonymous `*U#`/`*D#`/`*X#` blocks (hatch/dimension/
+xref internals) would have fared the same. Fixed: any block name starting with `*` — the universal DXF
+convention for an anonymous/system block — is now skipped entirely on import, never surfaced as a cell.
+Regression tests (`DxfR2000ConformanceTests.cs`, 2 new): one asserts the on-wire text actually carries
+the handle/owner/subclass-marker groups (not just that the file "looks done"); the other hand-crafts a
+BLOCKS section with `*Model_Space`/`*Paper_Space`/`*U0` plus one real block, independent of this
+project's own writer, and asserts only the real block (+ the synthetic model-space cell) is ever
+created. **2996 Ui.Tests total (was 2994), all green** (one pre-existing, unrelated flaky timing test —
+`CellLayoutResolverTests.Invalidate_ForcesReloadOfThatCellOnly`, a file-mtime-resolution race under full-
+suite CPU contention, confirmed by running it in isolation — is not a regression from this fix); full
+solution green (Firewall 4/4). **The gate-11/12 caveat in the completion note below is now real, not
+theoretical — an actual owner-run third-party check found a real, shipped bug the automated suite could
+never have caught on its own, which is the entire reason that gate exists.**
+
+**Follow-up, same day — the export dialog now states its own format version.** The owner asked how a
+user would ever know which DXF version this exporter writes, given the whole bug above stemmed from a
+version mismatch invisible to anyone reading the dialog. `DxfWriter.AcadVersionCode`("AC1015")/
+`FormatDescription`("AutoCAD 2000/R2000 (AC1015)") are now public constants — the ONE place the version
+string exists, so `$ACADVER`'s actual on-wire value and anything a UI surface states about it can never
+drift apart again the way the bug above proved they silently can. `DxfExportOptionsDialog` shows a small,
+low-opacity "Writes DXF: AutoCAD 2000/R2000 (AC1015)" line beside its Cancel/Export buttons — a
+deliberately subtle clue (not a banner), since it's informational, not something requiring a decision.
+`DxfR2000ConformanceTests.FormatDescription_NamesTheSameAcadVersionCodeActuallyWritten` pins that the
+description text actually names the version code found in the real on-wire `$ACADVER` bytes, not a second
+hand-typed copy. 2997 Ui.Tests total, all green.
+
+Phase L4b — DXF import and export (brief-L4b-dxf-interchange.md, 2026-07-28) — COMPLETE: **second of
+L4's three briefs.** DXF import is first-class (not a documented-subset afterthought), curves export to
+their native DXF equivalents rather than flattening, and arrays stay native — all reusing L4a's shared
+interchange layer (`InterchangeStructure`, `.ctech` `LayerDef.Interchange`, `LayoutLayerMapping`)
+unmodified, per the brief's own "reuse, do not fork" instruction. New files, all in
+`src/Ui/Layout/Interchange/` (framework-free except `DxfWriter`'s one `LayoutClipper`/Clipper2Lib call
+for the path-as-outline export option, which the design doc's own §6.1 already treats as a shared,
+non-UI dependency): `DxfRecordIo.cs`, `DxfUnits.cs`, `DxfTransformCodec.cs`, `DxfNaming.cs`,
+`DxfLayerReconciliation.cs`, `DxfExtents.cs`, `DxfViewCalc.cs`, `DxfWriter.cs`, `DxfReader.cs`,
+`DxfExport.cs`, `DxfImport.cs`. New dialogs in `src/Ui/Views/Dialogs/`: `DxfExportOptionsDialog.axaml(.cs)`,
+`DxfUnitsPromptDialog.axaml(.cs)`. Wired in: a "Export DXF…" toolbar button next to "Export GDSII…" in
+`LayoutEditorView`, and an "Import DXF Library…" File-menu item (both in-window and macOS NativeMenu)
+alongside "Import GDSII Library…" in `WorkspaceViewModel`.
+
+## §1.1 — the bulge identity is the single most valuable fact in this brief, and it is literal
+
+`LayoutEdge.Bulge` (arc edges) and DXF's `LWPOLYLINE` bulge (group 42) are the exact same quantity,
+`tan(sweep/4)` — an arc edge exports by **copying the number**, never a conversion, and re-imports
+bit-identical (pinned directly:
+`DxfBulgeAndCurveRoundTripTests.NinetyDegreeArcEdge_ExportsBulgeAsTan22Point5_ImportsBitIdentical`
+asserts the literal on-wire text AND the round-tripped `LayoutEdge.Bulge` value). `RoundedRect`'s four
+corners use the same `tan(22.5°) ≈ 0.41421356237309515` constant §4's `.clay` example and L1h's own
+non-uniform-scale arc-promotion code already use.
+
+## Ring representation — a design decision the brief left to the implementer, made explicit and tested
+
+DXF has no single entity that can express an arbitrary mix of Line/Arc/Cubic edges in one closed,
+holeless ring — LWPOLYLINE carries bulge (Line/Arc, exactly) but not cubic vertices; a standalone
+SPLINE is one B-spline curve, not a circular arc. `DxfWriter` resolves this with four cases, in order:
+1. **No holes, no Cubic edge** → `LWPOLYLINE`, bulge per vertex (0 for Line, `tan(sweep/4)` for Arc) —
+   exact for any Line/Arc mix (§1.1).
+2. **No holes, has a Cubic edge, no Arc edge** → **one closed multi-segment SPLINE** — a "Bezier
+   chain": degree 3, non-rational, a clamped knot vector with every interior knot repeated exactly 3
+   times (`[0,0,0,0,1,1,1,2,2,2,...,k,k,k,k]` for k segments). Every Line edge is first elevated to a
+   **degenerate Cubic** (control points at exact 1/3, 2/3 along the chord) so the whole ring becomes one
+   uniform chain — exact for both kinds, extending §1.2's "a cubic Bézier IS a degree-3 non-rational
+   B-spline with knots `[0,0,0,0,1,1,1,1]`" from one segment to a chain of them sharing endpoints.
+   Pinned by `DxfBulgeAndCurveRoundTripTests.CubicBearingCurve_RoundTrips_AsCurveShape_Exact` — a
+   4-cubic-edge closed Curve survives export→import with every control point exact.
+3. **No holes, has BOTH an Arc and a Cubic edge in the same ring** — the one combination genuinely not
+   representable by either single-entity form. Falls back to `LWPOLYLINE` with the Cubic segment(s)
+   flattened to line chords (arcs stay exact bulges) — an approximation, always counted and reported
+   (`MixedArcCubicApproximated`), never silent. Rare in practice; pinned by
+   `DxfExportOptionsCoverageTests.MixedArcAndCubicInSameRing_FlattensOnlyTheCubic_ArcBulgeStaysExact_ReportsApproximation`
+   (added after an independent review pass found this path, though implemented, had zero test coverage).
+4. **Holes present (§3.1a)** → `HATCH`, one boundary loop per ring (outer first, then each hole —
+   holes are always flat/Clipper2-derived, so a hole loop is always the lighter "polyline" boundary
+   type). The **outer** loop uses HATCH's "edge" boundary type (per-edge Line(1)/Arc(2)/Spline(4)
+   sub-edges) whenever it contains ANY curved edge — this is the ONE DXF mechanism that mixes edge
+   kinds exactly in a single loop, so case 3's "can't represent both" limitation does not apply once
+   holes are already forcing HATCH. `DxfHoleHatchTests` covers a plain 2-hole polygon and an
+   arc-bearing-outer-ring-with-a-hole, both round-tripping intact (§3.1a R10b: every hole vertex lies
+   inside the outer ring).
+
+**A real bug, found and fixed by direct spec verification, not by a third-party viewer (none was
+available here — see the closing note).** An earlier draft of both `DxfWriter.WriteHatchLoop` and
+`DxfReader.ParseHatch` tested/wrote boundary-path type flag (group 92) bit values **2 (External) and 4
+(Polyline)**. Checked directly against Autodesk's own DXF reference (cross-checked against ezdxf's
+independent documentation) before shipping, these are **transposed** — the correct values are **1 =
+External, 2 = Polyline** (4 = Derived, 8 = Textbox, 16 = Outermost; none of these three are used here).
+Because both the writer and the reader tested the SAME wrong bit, every round-trip test in this suite
+passed anyway — **exactly the "correct by our own reader's standards" trap L4a's gate 12 exists to
+catch**, except this time caught by deliberately checking the specification rather than by a real
+viewer rejecting the file, since gate 11 could not be run in this environment (see below). A real
+third-party HATCH reader — which correctly tests bit 2 for "Polyline" — would have read every
+hole-free polyline-type boundary loop as an edge-type boundary instead and desynced its own parser at
+the first vertex, the same class of failure as L4a's KLayout-caught STRANS/PATH-order bugs. Fixed in
+both files together, with the correct values and this reasoning left directly in
+`DxfWriter.WriteHatchLoop`'s own doc comment so it is never re-transposed. Every OTHER group code this
+brief uses (`SPLINE`'s 70/71/72/73/74/40/41/10/20, `VPORT`'s 12/22/40/41, `$INSUNITS`'s numeric table,
+`INSERT`'s 41/42/50/70/71/44/45, HATCH's own header fields) was independently checked against the
+public specification for the same reason, specifically because this one mistake showed how easily a
+plausible, self-consistent-with-our-own-reader value can still be wrong.
+
+## R-L4b-2 — mirror is `xscale = -1`, and it is a DIRECT mapping, not GDSII's reflect-then-rotate-180
+
+`DxfTransformCodec` is the DXF analogue of L4a's `GdsiiTransformCodec`, but the resolution is the
+OPPOSITE shape. GDSII's `STRANS` reflects about the **X-axis** (negates Y) before rotating — a
+different axis than this codebase's own `LayoutInstanceTransform.MirrorMagScale` convention (negate
+local X before rotating), forcing the "reflect, then add 180°" correction. DXF's `INSERT` transform
+order (scale, THEN rotate, THEN translate, per the public spec) means a **negative xscale** negates
+local X before rotation too — **exactly** our own convention. The mapping is therefore direct: `xscale
+= mirrorX ? -mag : mag`, `yscale = mag`, `rotationDeg = DegreesOf(rot)` — **no +180 adjustment**. Stated
+as the trap explicitly (a naive port of the GDSII fix would over-correct); pinned by
+`DxfTransformCodecTests.ToDxf_MirrorX_NegatesOnlyXScale_DirectMapping_NoRotationAdjustment` and a full
+8-combination round-trip through a REAL DXF export→import→render pixel-identity gate
+(`DxfArrayAndMirrorTests.DxfRoundTrip_AllEightRotationMirrorCombos_RendersPixelIdenticalToOriginal`,
+mirroring L4a's own `LayoutGdsiiTransformTests` gate exactly, including its non-hand-typed-`CellRef`
+discipline that gate 12 round 2 of L4a had to learn the hard way).
+
+## Arrays are native (§1.3) — `INSERT`'s own `COLROW`/pitch groups, one entity, not N placements
+
+A `LayoutInstance` with `Rows`/`Cols`/`PitchX`/`PitchY` maps to one `INSERT` with group 70 (column
+count), 71 (row count), 44/45 (column/row spacing) — `DxfArrayAndMirrorTests.
+FiveByFiveArray_ExportsAsOneInsert_ReimportsAsOneInstance_RowsColsFive` confirms a 5×5 array round-trips
+as exactly one `INSERT`/one `LayoutInstance`, never 25 placements.
+
+## Hierarchy — every structure is a BLOCK; the root is ALSO instanced once in ENTITIES (§2A)
+
+Unlike GDSII (where any structure can be the "top" and nothing in the file marks it), DXF viewers
+expect real geometry directly in model space. `DxfWriter.Write` writes every `InterchangeStructure` as
+a named `BLOCK` (mangled via `DxfNaming`, the same truncate-then-suffix collision algorithm
+`GdsiiStructureNaming` established, behind a DXF-specific legality predicate — spaces and most
+punctuation are legal DXF block/layer names, only `< > / \ " : ; ? * | , = \`` are excluded, a
+materially more permissive charset than GDSII's), THEN writes exactly one `INSERT` of the root block at
+identity transform in `ENTITIES` — this single INSERT is what makes "the file must open with the
+design on screen" true regardless of viewer. **A direct, structural consequence, not a bug**: importing
+one of our OWN exported files always produces one MORE cell than the original hierarchy had — a
+synthetic model-space cell (`DxfReader.ModelSpaceName = "$MODEL"`) whose only content is that one
+INSERT of the (real) root. `DxfHierarchyTests.NestedBlocks_ImportAsNestedCellsAndInstances` asserts this
+directly (3 created cells for a 2-cell original) rather than hiding it. Nested BLOCKs give hierarchy
+exactly like GDSII's nested structures; `DxfHierarchyTests.MutualCycle_DoesNotThrow_ResolvedCellRefsFormACycle`
+proves a crafted `A ↔ B` cyclic DXF imports without throwing, resting on the SAME `CellHierarchy.
+ResolveForWalk` visiting-set + `MaxDepth` guard every other hierarchy consumer already relies on — no
+second cycle detector, matching L4a's own explicit choice.
+
+## Units (R-L4b-4) — `$INSUNITS` is resolved or PROMPTED, never guessed
+
+DXF carries no self-describing unit record the way GDSII's `UNITS` always does — `$INSUNITS` can be
+absent, 0, or a value this brief doesn't recognize. `DxfReader` never guesses: it parses coordinates at
+a FIXED internal provisional scale (`ProvisionalDbuPerDrawingUnit`, "as if 1 drawing unit were 1mm at
+1000 DBU/µm," chosen only to preserve sub-drawing-unit precision during parsing) and reports the raw
+`InsUnits` value read (0 if absent). `DxfImport.Import` is the one place the real decision happens:
+`DxfUnits.NanometersPerDrawingUnit(insunits)` returning null (0/unsupported) triggers
+`resolveUnits` — a caller-supplied prompt callback (`DxfUnitsPromptDialog` in the real UI path,
+defaulting its radio selection to millimeters per the brief's own stated default) — returning null
+aborts the WHOLE import, nothing created. No callback (non-interactive/test contexts) defaults to mm
+and reports that assumption explicitly in `Messages`, never silently. A resolved (or chosen) unit then
+computes the exact `long`/`decimal` DBU-per-drawing-unit ratio (`DxfUnits.DbuPerDrawingUnit`), and
+`DxfImport`'s own rescale pass (mirrors `GdsiiImport.RescaleAll` exactly, reusing
+`LayoutCoordinateWalk.Transform(shape, LayoutCoordinateTransform.Uniform(...))` rather than a
+hand-maintained per-shape-kind switch) corrects every coordinate from the reader's provisional scale to
+the real one. A source resolution finer than the destination's own DBU warns with the affected-
+coordinate count, exactly as L4a's own unit-mismatch handling does. `DxfUnitsTests` covers mm/µm direct
+resolution, the absent-prompts/no-callback-defaults-and-reports/prompt-returns-null-aborts triad, and
+the finer-resolution warning.
+
+## Layer reconciliation — DXF's named layers feed L1g's `LayoutLayerMapping.Propose` UNMODIFIED
+
+DXF layers are named strings with no numeric key at all — the opposite problem from GDSII's numeric
+`(layer, datatype)` with no names. `DxfLayerReconciliation.BuildSourceLayers` mints a synthetic
+`LayerKey` per distinct incoming DXF layer name: when a destination `LayerDef.Interchange.DxfLayerName`
+alias matches, the synthetic key AND synthetic name become that destination layer's own — so `Propose`
+sees `SameKeySameName` for a genuinely-aliased layer, exactly mirroring `GdsiiLayerReconciliation`'s
+"the synthetic name is whichever destination layer declares that identity" trick, just with the
+key/name roles swapped (GDSII fakes the NAME to match a real KEY coincidence; DXF fakes the KEY since
+there is no real key to coincide with). Otherwise a fresh, never-colliding synthetic key is minted and
+the synthetic name is the raw DXF name itself, so a destination layer whose OWN `.Name` literally equals
+that DXF name still matches via `ExactName` with zero technology authoring required — precisely the
+"DXF layers are named strings, the ideal input for name-first matching" the brief calls for. Reads
+`LayoutLayerMapping.Propose`/`RequiresConfirmation`/`BuildChoices`/`SummarizeMapping` with **zero
+changes** to that file, confirmed by construction (no edits made to it in this phase).
+
+## §2A — the exported file opens with the design on screen; both layers, because they fail independently
+
+`$EXTMIN`/`$EXTMAX` (mirrored into `$LIMMIN`/`$LIMMAX`) are computed by `DxfExtents.
+ComputeStructureBbox` — a recursive walk of the in-memory (not yet on-disk) structure dictionary built
+during export, applying `LayoutInstanceTransform.TransformPoint` + array expansion at every nested
+instance, EXCLUDING `BitmapShape` at every level (R-L4b-5 — `DxfExtentsAndViewTests.
+ExtentsMatchWrittenGeometry_FarFromOrigin_BitmapNeverWidensThem` places a bitmap 550mm away from the
+real geometry and confirms it never touches the written extent). The stored `*ACTIVE` `VPORT` (§2A.2,
+group 12/22 view centre, 40 view height, 41 aspect) is the bonus layer honoured only by viewers that
+read it; `DxfViewCalc.Compute` computes both from the same bbox so they can never disagree. **Two
+modes** (§2A.3): fit-to-extents (default, `height = max(bboxH, bboxW/aspect) × 1.2` margin, erring
+toward showing too much per R-L4b-6) and match-current-view (centre/height taken from the live
+`LayoutViewport`, converted to drawing units) — the export dialog remembers the session's last choice
+(process-static fields on `LayoutEditorView`, never persisted). **Degenerate guards** (§2A.4): an empty
+bbox gets a small sane default span around the origin; a zero-width or zero-height design (a single
+point, or a single horizontal/vertical line) is clamped to a minimum non-zero span per axis BEFORE any
+derived view/extent math runs, so neither ever produces a zero or negative height —
+`DxfExtentsAndViewTests` covers all three degenerate cases plus both view modes at several aspect
+ratios including a design far wider than it is tall.
+
+## SPLINE import (gate 9) — exact for our own degree-3 Bezier-chain form; approximated + reported otherwise
+
+`DxfReader.ParseSpline` detects a Bezier-chain-clamped knot vector generically (every interior knot
+value repeated exactly `degree` times, first/last repeated `degree+1` times — a structural check, not a
+literal-value check, so it recognizes the form regardless of what numeric knot values a third-party
+writer happens to use) for a **non-rational degree-3** spline and reconstructs EXACT Cubic edges,
+closed or open depending on whether the first and last control points coincide. Any other spline
+(higher degree, rational/weighted, or a non-Bezier-form knot vector) falls through to an explicit
+approximation — the control polygon connected by straight chords — with the entity's own handle and the
+specific reason reported via `Diagnostics`, never silently. `DxfSplineFallbackAndUnsupportedTests.
+Degree5NonBezierSpline_ImportsFlattened_ReportsHandleAndReason` hand-crafts raw DXF group codes (not
+reachable through our own writer, which only ever emits the exact form) to exercise this path directly.
+`ELLIPSE` is always approximated (4 cubic edges, standard kappa construction, ~0.02% of radius) and
+always reported, per the brief's own explicit instruction to report it "anyway."
+
+## Unsupported entities (gate 10) — reported by type with counts, nothing silently dropped
+
+`DxfReader.UnsupportedEntityCounts` accumulates every entity type outside the documented supported set
+(`LWPOLYLINE`, `POLYLINE`/`VERTEX`/`SEQEND`, `LINE`, `ARC`, `CIRCLE`, `ELLIPSE`, `SPLINE`, `SOLID`,
+`HATCH`, `TEXT`/`MTEXT`, `INSERT`, `BLOCK`/`ENDBLK`) — `DxfImport.Import` reports each type with its
+count, largest first, as a `Messages.Info` line. A file consisting ENTIRELY of unsupported content
+(e.g. only `DIMENSION` entities) still imports as a real, empty cell with a clear report — never an
+error, never a crash. **Binary DXF is detected and refused clearly** (the official 22-byte "AutoCAD
+Binary DXF" sentinel, peeked without consuming when the stream is seekable) rather than silently
+misparsed as garbage ASCII text — `DxfSplineFallbackAndUnsupportedTests.BinaryDxf_IsRefusedClearly_
+NotMisparsed` confirms a `Cancelled` result naming the reason, nothing created. DWG and every other
+out-of-scope item (dimensions, leaders, xrefs, paper-space, 3D entities) simply fall into the same
+generic "unsupported, reported" path with no special-casing needed.
+
+## Path (centerline + width) — LWPOLYLINE with constant width; cubic forces a full flatten, reported
+
+`PathShape` exports as `LWPOLYLINE` (open, group 43 constant width) preserving Line/Arc edges exactly
+(bulge, per §1.1). **The end-cap style (Flush/Round/Square/Extended) does not survive** — DXF's
+polyline width is a rendering width, not a stroked outline, exactly as §1.2's own caveat states; this is
+a stated, accepted limitation, not a bug. `DxfExportOptions.PathAsOutlinePolygon` is the offered
+alternative (§1.2's "offer an option to export paths as their outline polygon"): when enabled, the path
+exports via its Clipper2-derived outline (`LayoutClipper.ToClipperPaths`, the SAME conversion booleans/
+offsets/DRC will eventually use — §6.1's single conversion point) as one or more plain `LWPOLYLINE`
+rings — an exact geometric outline that then carries the end-cap shape baked in, at the cost of no
+longer being an editable centerline. A `PathShape` containing a Cubic edge (rare) is fully flattened to
+a fine polyline (bulges lost) rather than partially preserved, counted via `PathsFlattenedForCubic` and
+reported. Both `PathAsOutlinePolygon` and `FlattenSplinesToPolyline` (§1.2's SPLINE fallback option) were
+implemented and wired through the export dialog but shipped with **zero** test coverage — an independent
+review pass after this phase's initial completion caught this; `DxfExportOptionsCoverageTests.cs` closes
+both gaps (`PathAsOutlinePolygon_Option_ExportsClosedOutlineInsteadOfWidthPolyline_ImportsAsPolygon` and
+`FlattenSplinesToPolyline_Option_ExportsLwpolylineNotSpline_ReportsFlag_ImportsAsPolygonNotCurve`), the
+same pass that also closed the mixed-arc-and-cubic coverage gap noted above.
+
+## Scope guardrails held
+
+No Gerber/Excellon (L4c). No DRC, no mesh/EM. No changes to the geometry model, the flattener,
+`LayoutLayerMapping`, or L4a's own GDSII files — confirmed by construction (only new files were added
+to `src/Ui/Layout/Interchange/`, plus the wiring additions listed above). No DXF library dependency —
+written entirely from the public group-code specification. `src/Core`, `src/Engine`, `RfCore`
+untouched. **Did L4a's neutral model need widening for DXF?** No — `InterchangeStructure` (shapes +
+instances + name) carried DXF's own BLOCK/model-space content with zero changes; the only genuinely
+DXF-specific new concepts (the ring-representation decision tree, the `HATCH` boundary encoding, the
+Bezier-chain SPLINE form, `$INSUNITS` resolution) are all format-specific WRITER/READER concerns, not
+gaps in the shared model. This is a good sign for L4c (Gerber): the neutral model's shape held up
+across a format (GDSII) that is POORER than our own model (needs keyholing/flattening) and one (DXF)
+that is RICHER in the places that matter (native curves, native holes, native arrays) without needing
+to change at all.
+
+## Tests
+
+56 new tests across 10 files, all green (`DxfRecordIoTests.cs` 3, `DxfTransformCodecTests.cs` 11,
+`DxfBulgeAndCurveRoundTripTests.cs` 7 — gate 2's bulge-identity pin and gate 3's five primitive-type
+round trips incl. the exact cubic case, `DxfHoleHatchTests.cs` 2 — gate 6, `DxfArrayAndMirrorTests.cs`
+9 — gate 4's array-as-one-INSERT and gate 5's full 8-combination pixel-identity round trip,
+`DxfHierarchyTests.cs` 2 — gate 7, `DxfUnitsTests.cs` 6 — gate 8's full prompt/default/abort/warn
+matrix, `DxfSplineFallbackAndUnsupportedTests.cs` 4 — gates 9/10 incl. binary-DXF refusal,
+`DxfExtentsAndViewTests.cs` 8 — gates 13/14/15, `DxfExportPlanTests.cs` 4, `DxfExportOptionsCoverageTests.cs`
+3 — added post-completion by an independent review pass to close the mixed-arc-cubic and
+PathAsOutlinePolygon/FlattenSplinesToPolyline coverage gaps noted above). **2994 Ui.Tests total (was
+2935), all green** (measured directly via a full, unfiltered run — not carried over from an earlier
+count); full solution green (Firewall 4/4; Core/Engine untouched by this brief, not re-run since no
+file under either directory changed).
+
+**Not interactively verified, for two compounding reasons this time, not just the usual one:** every
+prior Layout Editor phase's dialog/menu/toolbar code has been unverifiable in this headless environment
+(no visual driver), and this phase ADDITIONALLY has no third-party DXF viewer available here at all —
+unlike L4a, whose owner had KLayout available and used it to catch three real, otherwise-invisible bugs
+(the STRANS data-type mismatch, the hand-typed-`CellRef` test bug, the PATH record-order bug), gate 11
+("open in an independent CAD viewer") and gate 12 ("import a DXF from a different tool") could not be
+run at all. Correctness rests on the round-trip test suite above, which is necessarily a test of "our
+own reader agrees with our own writer" — precisely the class of gap L4a's own gate 12 demonstrated
+three times that automated self-consistency alone cannot catch. **Please confirm on your end, with a
+real DXF viewer/CAD tool:** a design with arcs, a spline (cubic-bearing shape), an array, and a hole
+opens with curves rendering as curves (not chords), the array showing as a true block array (not 25
+independent inserts), and the hole actually cut out of the fill; that the file is visible on open
+without a manual Zoom Extents; and that "Export DXF…"/"Import DXF Library…" behave correctly from the
+toolbar/File menu. The HATCH boundary-type flag bug above (group 92, 2/4 transposed for 1/2) was found
+and fixed by checking the public specification directly rather than left as an open guess — but a real
+viewer opening a HATCH with holes AND a curved boundary correctly is still the strongest possible
+confirmation that fix actually landed right, since this environment could self-consistently agree with
+its own (previously wrong) reader either way.
+
+**Next: L4c (Gerber RS-274X/X2 + Excellon, export only).** Report back before it is briefed.
+
 Phase L4a — interchange scaffolding and GDSII read/write (brief-L4a-gdsii-interchange.md, 2026-07-28)
 — COMPLETE: **first of L4's three briefs.** A shared, format-agnostic interchange layer (§8 R15) plus a
 from-spec GDSII reader/writer (no library dependency, no GPL sources) — new `.ctech` interchange

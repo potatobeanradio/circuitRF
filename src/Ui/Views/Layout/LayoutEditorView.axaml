@@ -170,6 +170,12 @@
                             <mi:MaterialIcon Kind="ExportVariant" Width="16" Height="16"/>
                         </Button>
 
+                        <!-- DXF export (docs/sonnet-briefs/brief-L4b-dxf-interchange.md) — same
+                             whole-hierarchy shape as Export GDSII, sits alongside it. -->
+                        <Button Click="OnExportDxf" ToolTip.Tip="Export DXF…" Padding="6,3">
+                            <mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/>
+                        </Button>
+
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 

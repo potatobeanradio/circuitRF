@@ -1,0 +1,139 @@
+// DXF export orchestrator (docs/sonnet-briefs/brief-L4b-dxf-interchange.md). Mirrors GdsiiExport's own
+// shape exactly (§2.3-equivalent): walks a design's cell hierarchy from a root cell folder into
+// InterchangeStructures, then runs the SAME DxfWriter.Write path (a dry run into TextWriter.Null) to
+// produce the pre-flight fidelity plan the export dialog shows BEFORE any bytes are written.
+//
+// Unlike GDSII, DXF coordinates are plain doubles with no 32-bit integer ceiling — there is no
+// coordinate-overflow block here; ExportPlan.CanWrite exists anyway, always true, purely so the UI
+// dialog shape stays identical across both formats (never a special-cased "DXF has no CanWrite" path).
+
+using CircuitRF.Ui.Schematic;
+
+namespace CircuitRF.Ui.Layout.Interchange;
+
+public static class DxfExport
+{
+    /// <summary>What the export dialog shows before writing: curve/hole/bitmap counts, the
+    /// block-name mapping, and any instance whose <c>CellRef</c> does not resolve within this design
+    /// (it still exports — as a dangling reference to a BLOCK name absent from the file — but never
+    /// silently).</summary>
+    public sealed record ExportPlan(
+        IReadOnlyList<string> UnresolvedInstanceReferences,
+        IReadOnlyDictionary<string, string> BlockNameByCellName,
+        IReadOnlyList<InterchangeStructure> Structures,
+        string RootStructureName,
+        Technology? Tech,
+        int DbuPerMicron)
+    {
+        public bool CanWrite => true;
+    }
+
+    /// <summary>Walks <paramref name="rootCellDir"/>'s hierarchy — no bytes written yet. Identical
+    /// hierarchy-collection shape to <c>GdsiiExport.Analyze</c> (same BFS over <c>CellFolder.
+    /// ResolvePrimary</c> + <c>LayoutInstance.CellRef</c>), duplicated here rather than shared because
+    /// the brief's own guardrail forbids widening GDSII's file beyond wiring, and the two walks now
+    /// produce format-specific <see cref="InterchangeStructure"/> naming (DXF block names, not GDSII
+    /// structure names).</summary>
+    public static ExportPlan Analyze(string rootCellDir, Technology? tech, int dbuPerMicron)
+    {
+        var (structures, nameByCellName, unresolvedRefs, rootName) = CollectHierarchy(rootCellDir);
+        return new ExportPlan(unresolvedRefs, nameByCellName, structures, rootName, tech, dbuPerMicron);
+    }
+
+    /// <summary>Runs the SAME <see cref="DxfWriter.Write"/> path into <see cref="TextWriter.Null"/> to
+    /// compute the summary the fidelity dialog shows — never a second, hand-maintained preview.</summary>
+    public static DxfExportSummary Preview(ExportPlan plan, DxfExportOptions options) =>
+        DxfWriter.Write(TextWriter.Null, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron, options);
+
+    public static DxfExportSummary Write(string filePath, ExportPlan plan, DxfExportOptions options)
+    {
+        using var stream = new StreamWriter(filePath, append: false);
+        return DxfWriter.Write(stream, plan.Structures, plan.RootStructureName, plan.Tech, plan.DbuPerMicron, options);
+    }
+
+    private static (List<InterchangeStructure> Structures, IReadOnlyDictionary<string, string> NameByCellName,
+        IReadOnlyList<string> UnresolvedRefs, string RootName) CollectHierarchy(string rootCellDir)
+    {
+        var rootAbs = Path.GetFullPath(rootCellDir);
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootAbs };
+        var order = new List<string> { rootAbs };
+        var viewByDir = new Dictionary<string, LayoutView>(StringComparer.OrdinalIgnoreCase);
+        var queue = new Queue<string>();
+        queue.Enqueue(rootAbs);
+
+        while (queue.Count > 0)
+        {
+            var cellDir = queue.Dequeue();
+            var view = LoadPrimaryLayout(cellDir);
+            viewByDir[cellDir] = view;
+
+            var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+            foreach (var inst in view.Instances)
+            {
+                string targetDir;
+                try { targetDir = Path.GetFullPath(Path.Combine(layoutDir, inst.CellRef)); }
+                catch { continue; }
+                if (!Directory.Exists(targetDir)) continue;
+                if (visited.Add(targetDir))
+                {
+                    order.Add(targetDir);
+                    queue.Enqueue(targetDir);
+                }
+            }
+        }
+
+        var cellNames = order.Select(d => Path.GetFileName(d)).ToList();
+        var blockNameByCellName = DxfNaming.MangleForExport(cellNames);
+
+        var dirToBlockName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var dir in order)
+            dirToBlockName[dir] = blockNameByCellName[Path.GetFileName(dir)];
+
+        var unresolvedRefs = new List<string>();
+        var structures = new List<InterchangeStructure>(order.Count);
+        foreach (var dir in order)
+        {
+            var view = viewByDir[dir];
+            var cellName = Path.GetFileName(dir);
+            var layoutDir = CellFolder.SubFolderPath(dir, ViewType.Layout);
+            var instances = view.Instances.Select(inst =>
+            {
+                string targetDir;
+                try { targetDir = Path.GetFullPath(Path.Combine(layoutDir, inst.CellRef)); }
+                catch { targetDir = ""; }
+                if (!dirToBlockName.TryGetValue(targetDir, out var targetBlockName))
+                {
+                    targetBlockName = inst.CellRef;
+                    unresolvedRefs.Add($"{cellName}: instance referencing \"{inst.CellRef}\" does not resolve.");
+                }
+                return new LayoutInstance
+                {
+                    CellRef = targetBlockName,
+                    X = inst.X, Y = inst.Y, Rot = inst.Rot, MirrorX = inst.MirrorX, Mag = inst.Mag,
+                    Rows = inst.Rows, Cols = inst.Cols, PitchX = inst.PitchX, PitchY = inst.PitchY,
+                };
+            }).ToList();
+
+            structures.Add(new InterchangeStructure(dirToBlockName[dir], [.. view.Shapes], instances));
+        }
+
+        return (structures, blockNameByCellName, unresolvedRefs, dirToBlockName[rootAbs]);
+    }
+
+    private static LayoutView LoadPrimaryLayout(string cellDir)
+    {
+        var res = CellFolder.ResolvePrimary(cellDir, ViewType.Layout);
+        if (res.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || res.ResolvedName is null)
+            return new LayoutView();
+
+        var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        try
+        {
+            return LayoutPersistence.LoadFromFile(Path.Combine(layoutDir, res.ResolvedName));
+        }
+        catch
+        {
+            return new LayoutView();
+        }
+    }
+}

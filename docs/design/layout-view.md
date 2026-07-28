@@ -735,6 +735,37 @@ Format-specific code touches only bytes and records, never editor state.
 | **DXF** | Write first-class; read a documented subset | LWPOLYLINE / POLYLINE / LINE / ARC / CIRCLE / SOLID / INSERT+BLOCK / TEXT. **Curves survive**: `Circle`→`CIRCLE`, `RoundedRect` and arc-bearing outlines→`LWPOLYLINE` with bulge factors, Béziers→`SPLINE` (or flattened, per an export option). Layers are *named*, so the name↔(layer,datatype) map is required. | Import is the hard direction: dozens of producers, SPLINE, HATCH, unit ambiguity when `$INSUNITS` is unset. Define the accepted subset explicitly and report everything skipped to Messages, per-entity. Bulge factors are the one DXF feature worth importing carefully — dropping them silently turns arcs into chords. |
 | **Gerber RS-274X / X2** + **Excellon** | **Export only for v1** | One file per copper/mask/silk layer. Polygons → G36/G37 region fills; constant-width `Path` → circular-aperture D01 strokes; **arcs → G02/G03 circular interpolation** and `Circle` → a circular aperture flash, so curves stay curves; Béziers flatten; `Via` → Excellon drill hits + pad flashes. X2 attributes (`.FileFunction`) so the fab identifies layers automatically. | Gerber *import* is genuinely hard — aperture macros, arc interpolation modes, LPD/LPC polarity, and the "assemble a board from a folder of files" problem. Recommend deferring import entirely rather than shipping a half-version; a partial Gerber importer that silently loses a clearance region is worse than none. |
 
+**DXF version support** (docs/sonnet-briefs/brief-dxf-version-support.md, §1/R-dxf-1) — **export writes
+R2000 (`AC1015`) only, a deliberate decision, not a placeholder pending a newer target.** Every entity this
+exporter emits (`LWPOLYLINE` with bulge, `LINE`, `ARC`, `CIRCLE`, `ELLIPSE`, `SPLINE`, `HATCH`, `TEXT`,
+`INSERT`, `BLOCK`) exists unchanged in R2000 — nothing added between R2000 and R2018 (`AC1032`) improves 2D
+geometry interchange, so a newer header buys nothing while *narrowing* compatibility (older PCB/CAM/
+mechanical tools routinely read R12 and R2000 and refuse newer files). R2000 is close to the most
+universally readable DXF version in existence. **R12 (`AC1009`) is the only version with a plausible future
+case** — some legacy CAM/tooling reads only R12 — but R12 has no `LWPOLYLINE`, `ELLIPSE`, `SPLINE`, or
+`HATCH`, so it would mean heavy `POLYLINE` output, flattened splines/ellipses, and lost hole fills; not
+built speculatively, only if a user is actually blocked on it.
+
+**Import is version-tolerant across the whole DXF family by construction, not by an explicit version
+gate** — the reader dispatches purely on the group codes it understands and reports what it does not,
+which works unchanged from R12 through R2018+ (verified directly against real files from an independent
+tool, R12/R2000/R2018, per L4b's own gate-12 principle — see `src/Ui/CLAUDE.md`). **No file is ever
+refused for its version.**
+
+**Encoding is genuinely version-dependent, and the ONE thing that is not just "read what's understood."**
+R2007 (`AC1021`) and later are UTF-8; R2006 and earlier use the drawing's own code page, named in
+`$DWGCODEPAGE`, with `\U+XXXX` escapes (AutoCAD's own convention) for any character outside it. Import
+sniffs `$ACADVER`/`$DWGCODEPAGE` from the HEADER section first (both are always plain ASCII, so this is
+safe regardless of the rest of the file's real encoding), decodes accordingly, and reports which it used
+and any fallback applied. Export (R2000, so the code-page path) emits ASCII where possible and `\U+XXXX`
+escapes otherwise, reporting when any escaping occurred — never a raw non-ASCII byte that only round-trips
+for a reader sharing the exact same code page.
+
+**Out of scope, stated as a documented limitation, not an internal implementation note:** DWG (a different,
+proprietary format), binary DXF (ASCII only — detected and refused clearly), dimensions, leaders, xrefs,
+paper-space layouts, and 3D entities. None of these block a 2D interchange round-trip; all are reported
+by type with a count on import rather than silently dropped.
+
 **Curve and hole fidelity across the three.** DXF is the only format that carries every curve type; Gerber
 carries arcs and circles but not Béziers; GDSII carries none. DXF and Gerber both express holes; GDSII
 keyholes them. **No format carries bitmaps** — reference images are skipped by all three (§3.1b R10e) with a

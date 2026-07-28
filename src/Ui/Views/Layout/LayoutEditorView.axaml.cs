@@ -561,6 +561,81 @@ public partial class LayoutEditorView : UserControl
         }
     }
 
+    // ── Export DXF (docs/sonnet-briefs/brief-L4b-dxf-interchange.md) ──────────────────────────────
+    // Mirrors OnExportGdsiiAsync's shape exactly — StorageProvider file picking stays here in
+    // code-behind; DxfExport does the actual hierarchy walk + write. The options dialog IS the real
+    // write (a dry run), so its preview can never disagree with what's actually produced.
+
+    private static bool _lastFlattenSplines;
+    private static bool _lastPathAsOutline;
+    private static DxfViewMode _lastViewMode = DxfViewMode.FitToExtents;
+
+    private async void OnExportDxf(object? sender, RoutedEventArgs e) => await OnExportDxfAsync();
+
+    private async Task OnExportDxfAsync()
+    {
+        if (Vm is not { } vm) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        if (vm.CurrentCellDir is not { Length: > 0 } cellDir)
+        {
+            vm.ReportError("Export DXF: save this layout to a cell before exporting.");
+            return;
+        }
+
+        DxfExport.ExportPlan plan;
+        try
+        {
+            plan = DxfExport.Analyze(cellDir, vm.Technology, vm.Model.DbuPerMicron);
+        }
+        catch (Exception ex)
+        {
+            vm.ReportError($"Export DXF: {ex.Message}");
+            return;
+        }
+
+        double canvasAspect = LayoutCanvasCtrl.Bounds.Height > 0
+            ? LayoutCanvasCtrl.Bounds.Width / LayoutCanvasCtrl.Bounds.Height
+            : 1.0;
+        var previewOptions = new DxfExportOptions(
+            _lastFlattenSplines, _lastPathAsOutline, _lastViewMode, LayoutCanvasCtrl.CurrentViewport, canvasAspect);
+        var preview = DxfExport.Preview(plan, previewOptions);
+
+        var dialog = new DxfExportOptionsDialog(plan, preview, _lastFlattenSplines, _lastPathAsOutline, _lastViewMode);
+        var confirmed = await dialog.ShowDialog<bool>(owner);
+        if (!confirmed) return;
+
+        _lastFlattenSplines = dialog.FlattenSplines;
+        _lastPathAsOutline = dialog.PathAsOutlinePolygon;
+        _lastViewMode = dialog.ViewMode;
+
+        var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title             = "Export DXF",
+            DefaultExtension  = "dxf",
+            SuggestedFileName = cellName,
+            FileTypeChoices   = [new FilePickerFileType("DXF Drawing") { Patterns = ["*.dxf"] }],
+        });
+        if (file is null) return;
+
+        try
+        {
+            var options = new DxfExportOptions(
+                dialog.FlattenSplines, dialog.PathAsOutlinePolygon, dialog.ViewMode,
+                LayoutCanvasCtrl.CurrentViewport, canvasAspect);
+            var summary = DxfExport.Write(file.Path.LocalPath, plan, options);
+            vm.ReportMessage(
+                $"Exported DXF to {file.Path.LocalPath} · {summary.CurvedShapesWritten} curved shape(s), " +
+                $"{summary.HolesAsHatch} hole(s) as HATCH, {summary.BitmapsSkipped} bitmap(s) skipped.");
+        }
+        catch (Exception ex)
+        {
+            vm.ReportError($"Export DXF: {ex.Message}");
+        }
+    }
+
     private async void OnChangeTechnologyClick(object? sender, RoutedEventArgs e) => await OnChangeTechnologyAsync();
 
     private async Task OnChangeTechnologyAsync()
