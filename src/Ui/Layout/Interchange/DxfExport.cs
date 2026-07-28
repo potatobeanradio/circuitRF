@@ -34,9 +34,13 @@ public static class DxfExport
     /// the brief's own guardrail forbids widening GDSII's file beyond wiring, and the two walks now
     /// produce format-specific <see cref="InterchangeStructure"/> naming (DXF block names, not GDSII
     /// structure names).</summary>
-    public static ExportPlan Analyze(string rootCellDir, Technology? tech, int dbuPerMicron)
+    /// <summary><paramref name="rootView"/> (brief-layout-testing-fixes.md item 5/R-fix-4): when the
+    /// root cell is open in the editor, pass its live, possibly-unsaved <c>LayoutView</c> here so the
+    /// export reflects what is on screen rather than the last save — mirrors <c>GdsiiExport.Analyze</c>'s
+    /// own parameter exactly. Null (the project-tree/no-open-document path) reads from disk as before.</summary>
+    public static ExportPlan Analyze(string rootCellDir, Technology? tech, int dbuPerMicron, LayoutView? rootView = null)
     {
-        var (structures, nameByCellName, unresolvedRefs, rootName) = CollectHierarchy(rootCellDir);
+        var (structures, nameByCellName, unresolvedRefs, rootName) = CollectHierarchy(rootCellDir, rootView);
         return new ExportPlan(unresolvedRefs, nameByCellName, structures, rootName, tech, dbuPerMicron);
     }
 
@@ -52,7 +56,7 @@ public static class DxfExport
     }
 
     private static (List<InterchangeStructure> Structures, IReadOnlyDictionary<string, string> NameByCellName,
-        IReadOnlyList<string> UnresolvedRefs, string RootName) CollectHierarchy(string rootCellDir)
+        IReadOnlyList<string> UnresolvedRefs, string RootName) CollectHierarchy(string rootCellDir, LayoutView? rootView)
     {
         var rootAbs = Path.GetFullPath(rootCellDir);
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootAbs };
@@ -64,7 +68,10 @@ public static class DxfExport
         while (queue.Count > 0)
         {
             var cellDir = queue.Dequeue();
-            var view = LoadPrimaryLayout(cellDir);
+            // item 5/R-fix-4: mirrors GdsiiExport.CollectHierarchy's own root-view substitution exactly.
+            var view = string.Equals(cellDir, rootAbs, StringComparison.OrdinalIgnoreCase) && rootView is not null
+                ? rootView
+                : LoadPrimaryLayout(cellDir);
             viewByDir[cellDir] = view;
 
             var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);

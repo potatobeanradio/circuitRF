@@ -15,7 +15,11 @@ public sealed record GdsiiExportSummary(
     int CurvedShapesFlattened,
     int HolesKeyholed,
     int BitmapsSkipped,
-    IReadOnlyList<string> Diagnostics);
+    IReadOnlyList<string> Diagnostics,
+    /// <summary>brief-layout-testing-fixes.md item 6/R-fix-5: the number of TEXT records written —
+    /// text a user did not knowingly place (an invisible, sub-pixel label authored by accident) is
+    /// exactly what an export report should surface, never leave silent.</summary>
+    int LabelRecordsWritten = 0);
 
 public static class GdsiiWriter
 {
@@ -25,7 +29,7 @@ public static class GdsiiWriter
         var offenders = GdsiiCoordinateValidation.CheckOverflow(structures);
         if (offenders.Count > 0) throw new GdsiiExportException(offenders);
 
-        int curveCount = 0, holeCount = 0, bitmapCount = 0;
+        int curveCount = 0, holeCount = 0, bitmapCount = 0, labelCount = 0;
         var diagnostics = new List<string>();
 
         var w = new GdsiiRecordWriter(stream);
@@ -42,7 +46,7 @@ public static class GdsiiWriter
             w.WriteAscii(GdsiiRecordType.StrName, s.Name);
 
             foreach (var shape in s.Shapes)
-                WriteShape(w, shape, tech, ref curveCount, ref holeCount, ref bitmapCount);
+                WriteShape(w, shape, tech, ref curveCount, ref holeCount, ref bitmapCount, ref labelCount);
 
             foreach (var inst in s.Instances)
                 WriteInstance(w, inst);
@@ -52,14 +56,14 @@ public static class GdsiiWriter
 
         w.WriteNoData(GdsiiRecordType.EndLib);
 
-        return new GdsiiExportSummary(curveCount, holeCount, bitmapCount, diagnostics);
+        return new GdsiiExportSummary(curveCount, holeCount, bitmapCount, diagnostics, labelCount);
     }
 
     // ── Shapes ─────────────────────────────────────────────────────────────────
 
     private static void WriteShape(
         GdsiiRecordWriter w, LayoutShape shape, Technology? tech,
-        ref int curveCount, ref int holeCount, ref int bitmapCount)
+        ref int curveCount, ref int holeCount, ref int bitmapCount, ref int labelCount)
     {
         switch (shape)
         {
@@ -67,6 +71,7 @@ public static class GdsiiWriter
                 bitmapCount++; // §3.1b R10e — never exported; the count IS the report
                 return;
             case LabelShape label:
+                labelCount++; // item 6/R-fix-5 — see GdsiiExportSummary.LabelRecordsWritten's doc comment
                 WriteText(w, label);
                 return;
             case PathShape path:

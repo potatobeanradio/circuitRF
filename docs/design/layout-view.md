@@ -732,19 +732,47 @@ Format-specific code touches only bytes and records, never editor state.
 | Format | Direction | Maps to | Principal risks |
 |---|---|---|---|
 | **GDSII** | Read + write | Near-identity. BOUNDARY→Polygon, PATH→Path, SREF/AREF→Instance/Array, TEXT→Label, UNITS→DBU. **All curved primitives auto-flatten on write** (§3.2 R9e) and **holes are keyholed on write** (§3.1a), both with a Messages note stating what was converted and how much. | Vendor dialects; 200-char structure-name limit; PATH end types 0/1/2/4 (type 4 has explicit extensions); no arcs, no colors, no layer names, **no holes**. Write from the public spec — never ingest GPL sources. ~1200–1800 lines total. |
-| **DXF** | Write first-class; read a documented subset | LWPOLYLINE / POLYLINE / LINE / ARC / CIRCLE / SOLID / INSERT+BLOCK / TEXT. **Curves survive**: `Circle`→`CIRCLE`, `RoundedRect` and arc-bearing outlines→`LWPOLYLINE` with bulge factors, Béziers→`SPLINE` (or flattened, per an export option). Layers are *named*, so the name↔(layer,datatype) map is required. | Import is the hard direction: dozens of producers, SPLINE, HATCH, unit ambiguity when `$INSUNITS` is unset. Define the accepted subset explicitly and report everything skipped to Messages, per-entity. Bulge factors are the one DXF feature worth importing carefully — dropping them silently turns arcs into chords. |
+| **DXF** | Write first-class; read a documented subset | LWPOLYLINE / POLYLINE / LINE / ARC / CIRCLE / SOLID / INSERT+BLOCK / TEXT. **Curves survive**: `Circle`→`CIRCLE`, `RoundedRect` and arc-bearing outlines→`LWPOLYLINE` with bulge factors, Béziers→`SPLINE` (or flattened, per an export option). **Layer colours round-trip exactly** (docs/sonnet-briefs/brief-dxf-layer-colors.md), the one fidelity claim this table doesn't make for GDSII or Gerber. Layers are *named*, so the name↔(layer,datatype) map is required. | Import is the hard direction: dozens of producers, SPLINE, HATCH, unit ambiguity when `$INSUNITS` is unset. Define the accepted subset explicitly and report everything skipped to Messages, per-entity. Bulge factors are the one DXF feature worth importing carefully — dropping them silently turns arcs into chords. |
 | **Gerber RS-274X / X2** + **Excellon** | **Export only for v1** | One file per copper/mask/silk layer. Polygons → G36/G37 region fills; constant-width `Path` → circular-aperture D01 strokes; **arcs → G02/G03 circular interpolation** and `Circle` → a circular aperture flash, so curves stay curves; Béziers flatten; `Via` → Excellon drill hits + pad flashes. X2 attributes (`.FileFunction`) so the fab identifies layers automatically. | Gerber *import* is genuinely hard — aperture macros, arc interpolation modes, LPD/LPC polarity, and the "assemble a board from a folder of files" problem. Recommend deferring import entirely rather than shipping a half-version; a partial Gerber importer that silently loses a clearance region is worse than none. |
 
-**DXF version support** (docs/sonnet-briefs/brief-dxf-version-support.md, §1/R-dxf-1) — **export writes
-R2000 (`AC1015`) only, a deliberate decision, not a placeholder pending a newer target.** Every entity this
-exporter emits (`LWPOLYLINE` with bulge, `LINE`, `ARC`, `CIRCLE`, `ELLIPSE`, `SPLINE`, `HATCH`, `TEXT`,
-`INSERT`, `BLOCK`) exists unchanged in R2000 — nothing added between R2000 and R2018 (`AC1032`) improves 2D
-geometry interchange, so a newer header buys nothing while *narrowing* compatibility (older PCB/CAM/
-mechanical tools routinely read R12 and R2000 and refuse newer files). R2000 is close to the most
-universally readable DXF version in existence. **R12 (`AC1009`) is the only version with a plausible future
-case** — some legacy CAM/tooling reads only R12 — but R12 has no `LWPOLYLINE`, `ELLIPSE`, `SPLINE`, or
-`HATCH`, so it would mean heavy `POLYLINE` output, flattened splines/ellipses, and lost hole fills; not
-built speculatively, only if a user is actually blocked on it.
+**DXF version support** (docs/sonnet-briefs/brief-dxf-version-support.md §1, revised by
+docs/sonnet-briefs/brief-dxf-layer-colors.md §1.3/R-col-1) — **export supports three versions, chosen per
+export, defaulting to R2018 (`AC1032`):**
+
+| Version | Colour | Notes |
+|---|---|---|
+| **AC1015** (R2000) | Indexed only (group 62, nearest ACI match) | Widest compatibility; colour is approximate |
+| **AC1018** (R2004) | Group 62 **and** group 420 (exact 24-bit RGB) | Full colour, near-universal reader support |
+| **AC1032** (R2018) | Group 62 **and** group 420 — **identical colour capability to AC1018** | **Default** |
+
+Every entity this exporter emits (`LWPOLYLINE` with bulge, `LINE`, `ARC`, `CIRCLE`, `ELLIPSE`, `SPLINE`,
+`HATCH`, `TEXT`, `INSERT`, `BLOCK`) exists unchanged across all three — geometry fidelity is identical
+regardless of which is chosen, exactly as the superseded version-support brief found. **The ONE thing that
+changed between R2000 and the two newer versions is colour**: AC1018 added group 420 (true 24-bit RGB per
+layer) and AC1032 carries the exact same capability, nothing more — so **defaulting to AC1032 is a product
+decision (the newest header a modern reader is likeliest to expect), not a colour decision**, and dropping
+the default to AC1018 later would be a one-line change with zero colour regression. **Layer colours
+round-trip exactly** through group 420 on both AC1018 and AC1032 — a fidelity claim no other format in this
+table can make. **R12 (`AC1009`) is still not built** — some legacy CAM/tooling reads only R12, but it has
+no `LWPOLYLINE`, `ELLIPSE`, `SPLINE`, or `HATCH`, so it would mean heavy `POLYLINE` output, flattened
+splines/ellipses, and lost hole fills; not built speculatively, only if a user is actually blocked on it —
+unaffected by anything colour-related.
+
+**Layer colour is written as `ByLayer`, never per-entity** — every entity omits both 62 and 420 entirely,
+so a viewer's own layer-colour override always works; only the LAYER table record itself carries colour.
+A 256-entry AutoCAD Color Index (ACI) palette (fixed, standard data — never approximated by a formula) is
+the one place both directions of the 62↔RGB conversion happen.
+
+**Import reads the file's own `LAYER` table** (name, indexed colour, true colour when present, frozen/off
+flags) — previously unread entirely, so an imported layer could only ever get a generated colour. A layer
+absent from the destination technology now opens the shared layer-mapping dialog with **"Add to
+technology" pre-selected and pre-filled with the DXF's own name and colour** — a deliberate divergence from
+this same dialog's default for cross-technology paste (which stays "Keep as unknown," the safe default
+when nothing about the source is a deliberate authoring choice): a DXF's layer names and colours ARE the
+author's deliberate intent, so the common case becomes one click. **Colour index 7 means "black or white,
+depending on background," never a literal colour** — a layer reporting ACI 7 (including one absent from
+the table entirely, or a file this exporter itself wrote before this capability existed) falls back to the
+same generated palette an undefined layer already uses, never a naive black.
 
 **Import is version-tolerant across the whole DXF family by construction, not by an explicit version
 gate** — the reader dispatches purely on the group codes it understands and reports what it does not,
@@ -766,20 +794,28 @@ proprietary format), binary DXF (ASCII only — detected and refused clearly), d
 paper-space layouts, and 3D entities. None of these block a 2D interchange round-trip; all are reported
 by type with a count on import rather than silently dropped.
 
-**Curve and hole fidelity across the three.** DXF is the only format that carries every curve type; Gerber
-carries arcs and circles but not Béziers; GDSII carries none. DXF and Gerber both express holes; GDSII
-keyholes them. **No format carries bitmaps** — reference images are skipped by all three (§3.1b R10e) with a
-count reported, since they are aids to drawing rather than things to manufacture. That ordering is worth
-surfacing in the export dialog as a one-line note per format, so a user exporting a spiral inductor or a
-via-pierced pour to GDSII learns *before* the fact what will change, and by how much. Nothing here is a
-defect — it is what the formats are — but silently different output from the same design is how trust is
-lost.
+**Curve, hole, and colour fidelity across the three.** DXF is the only format that carries every curve
+type; Gerber carries arcs and circles but not Béziers; GDSII carries none. DXF and Gerber both express
+holes; GDSII keyholes them. **Layer colour is DXF-only, and only on two of its three write versions** —
+GDSII has no colour concept at all (structures are purely numeric `(layer, datatype)`), Gerber's per-file
+X2 attributes identify a layer's *function*, not a display colour, and DXF's own AC1015 (R2000) write
+option is colour-*approximate* (nearest ACI index) rather than exact. **No format carries bitmaps** —
+reference images are skipped by all three (§3.1b R10e) with a count reported, since they are aids to
+drawing rather than things to manufacture. That ordering is worth surfacing in the export dialog as a
+one-line note per format (curves/holes for all three; colour fidelity specifically for DXF's version
+choice), so a user exporting a spiral inductor or a via-pierced pour learns *before* the fact what will
+change, and by how much. Nothing here is a defect — it is what the formats are — but silently different
+output from the same design is how trust is lost.
 
 Cross-cutting import rules:
 - Source units map into DBU; if the source resolution is **finer** than the target DBU, warn and name
   the count of coordinates that will round.
 - Imported layers not in the tech file are auto-created with generated names and a distinct palette,
-  and reported.
+  and reported. **For DXF specifically** (docs/sonnet-briefs/brief-dxf-layer-colors.md R-col-4), the
+  shared layer-mapping dialog's default for an unmatched row is "Add to technology," pre-filled with the
+  DXF's own name and colour — not "Keep as unknown," which remains the default for cross-technology
+  *paste* (where nothing about the source is a deliberate authoring choice to preserve). A user can still
+  override any row before accepting.
 - Import always creates cells through the normal cell-folder machinery — an imported GDSII library
   becomes real circuitRF cells, not an opaque blob.
 

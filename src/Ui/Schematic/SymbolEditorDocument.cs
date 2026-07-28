@@ -103,4 +103,20 @@ public sealed class SymbolEditorDocument : Document, IUndoableDocument, IActivat
         ViewModel.UndoRedo.MarkSaved();   // clean baseline → ViewModel.IsModified/IsDirty false
         // IsDirty on the document updates via the PropertyChanged subscription above.
     }
+
+    /// <summary>
+    /// Transitions this ALREADY-materialized document's on-disk path to a new location — the
+    /// "Save Symbol As…" case on an existing symbol, as opposed to <see cref="Materialize"/>'s
+    /// one-way scratch-to-materialized transition. May be called repeatedly. Mirrors
+    /// <c>LayoutDocument.OnSavedAs</c>'s exact shape.
+    /// </summary>
+    internal void OnSavedAs(string filePath, string cellName)
+    {
+        FilePath                    = filePath;
+        ViewModel.CurrentSymbolPath = filePath;   // fires SyncTitleToPath via the ctor subscription
+        _baseTitle                  = cellName;   // overrides SyncTitleToPath's file-name guess
+        Id                          = cellName;
+        ViewModel.UndoRedo.MarkSaved();           // clean baseline → ViewModel.IsModified/IsDirty false
+        Title                       = _isDirty ? $"• {_baseTitle}" : _baseTitle; // explicit refresh
+    }
 }

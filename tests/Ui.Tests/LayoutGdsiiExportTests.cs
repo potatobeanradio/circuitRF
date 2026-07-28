@@ -108,6 +108,87 @@ public class LayoutGdsiiExportTests : IDisposable
     }
 
     [Fact]
+    public void HasNothingToReport_PlainGeometry_IsTrue()
+    {
+        var cellDir = CreateCell("TOP", v => v.Shapes.Add(
+            new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 }));
+
+        var plan = GdsiiExport.Analyze(cellDir, null, 1000);
+
+        Assert.True(plan.HasNothingToReport);
+    }
+
+    [Fact]
+    public void HasNothingToReport_CurvedShape_IsFalse()
+    {
+        var cellDir = CreateCell("TOP", v =>
+            v.Shapes.Add(new CircleShape { Layer = new LayerKey(1, 0), Cx = 0, Cy = 0, R = 50_000 }));
+
+        var plan = GdsiiExport.Analyze(cellDir, null, 1000);
+
+        Assert.False(plan.HasNothingToReport);
+    }
+
+    [Fact]
+    public void HasNothingToReport_UnresolvedInstanceReference_IsFalse()
+    {
+        var cellDir = CreateCell("TOP", v => v.Instances.Add(
+            new LayoutInstance { CellRef = "../DoesNotExist", X = 0, Y = 0, Mag = 1.0 }));
+
+        var plan = GdsiiExport.Analyze(cellDir, null, 1000);
+
+        Assert.False(plan.HasNothingToReport);
+    }
+
+    [Fact]
+    public void HasNothingToReport_CoordinateOverflow_IsFalse()
+    {
+        // A blocking overflow always still needs the dialog, since it must stop the write and explain why.
+        var cellDir = CreateCell("TOP", v => v.Shapes.Add(
+            new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = (long)int.MaxValue + 1000, Y2 = 100 }));
+
+        var plan = GdsiiExport.Analyze(cellDir, null, 1000);
+
+        Assert.False(plan.CanWrite);
+        Assert.False(plan.HasNothingToReport);
+    }
+
+    [Fact]
+    public void Analyze_RootViewSupplied_UsesLiveInMemoryShapes_NotTheLastSavedFile()
+    {
+        // brief-layout-testing-fixes.md item 5/R-fix-4: an unsaved edit in the open editor must export
+        // exactly what's on screen. The on-disk .clay has ONE rect; the caller's live LayoutView (the
+        // editor's own in-memory Model, unsaved) has a DIFFERENT rect on a different layer — Analyze
+        // must reflect the live one, never re-read the disk copy for the root cell.
+        var cellDir = CreateCell("TOP", v => v.Shapes.Add(
+            new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 }));
+
+        var liveUnsavedView = new LayoutView { DbuPerMicron = 1000 };
+        liveUnsavedView.Shapes.Add(new RectShape { Layer = new LayerKey(9, 0), X1 = 0, Y1 = 0, X2 = 99, Y2 = 99 });
+
+        var plan = GdsiiExport.Analyze(cellDir, null, 1000, liveUnsavedView);
+
+        var rootStructure = Assert.Single(plan.Structures, s => s.Name == plan.StructureNameByCellName["TOP"]);
+        var shape = Assert.Single(rootStructure.Shapes);
+        var rect = Assert.IsType<RectShape>(shape);
+        Assert.Equal(new LayerKey(9, 0), rect.Layer);
+        Assert.Equal(99, rect.X2);
+    }
+
+    [Fact]
+    public void Analyze_NoRootViewSupplied_ReadsFromDisk_UnchangedBehavior()
+    {
+        var cellDir = CreateCell("TOP", v => v.Shapes.Add(
+            new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 }));
+
+        var plan = GdsiiExport.Analyze(cellDir, null, 1000);
+
+        var rootStructure = Assert.Single(plan.Structures, s => s.Name == plan.StructureNameByCellName["TOP"]);
+        var shape = Assert.Single(rootStructure.Shapes);
+        Assert.Equal(new LayerKey(1, 0), Assert.IsType<RectShape>(shape).Layer);
+    }
+
+    [Fact]
     public void Analyze_UnresolvedInstanceCellRef_Reported_NotSilent()
     {
         // Regression for the exact mistake a hand-typed relative path fell into (see

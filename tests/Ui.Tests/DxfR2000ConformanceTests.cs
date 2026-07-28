@@ -28,18 +28,22 @@ public class DxfR2000ConformanceTests : IDisposable
     /// <summary>The export dialog's version clue (owner follow-up, 2026-07-28) reads
     /// <see cref="DxfWriter.FormatDescription"/> rather than a second hand-typed string — this pins that
     /// the description actually names the SAME version code the writer emits on the wire, so the two
-    /// can never silently drift apart.</summary>
-    [Fact]
-    public void FormatDescription_NamesTheSameAcadVersionCodeActuallyWritten()
+    /// can never silently drift apart. brief-dxf-layer-colors.md turned the two constants into a
+    /// per-version table (R-col-1) — this now checks all three, not just the one hardcoded version.</summary>
+    [Theory]
+    [InlineData(DxfAcadVersion.R2000)]
+    [InlineData(DxfAcadVersion.R2004)]
+    [InlineData(DxfAcadVersion.R2018)]
+    public void FormatDescription_NamesTheSameAcadVersionCodeActuallyWritten(DxfAcadVersion version)
     {
-        Assert.Contains(DxfWriter.AcadVersionCode, DxfWriter.FormatDescription);
+        Assert.Contains(DxfWriter.AcadVersionCode(version), DxfWriter.FormatDescription(version));
 
         var top = new InterchangeStructure("TOP", [], []);
         using var sw = new StringWriter();
-        DxfWriter.Write(sw, [top], "TOP", null, 1000, new DxfExportOptions());
+        DxfWriter.Write(sw, [top], "TOP", null, 1000, new DxfExportOptions(AcadVersion: version));
         string text = sw.ToString();
 
-        Assert.Contains("$ACADVER\n1\n" + DxfWriter.AcadVersionCode, text);
+        Assert.Contains("$ACADVER\n1\n" + DxfWriter.AcadVersionCode(version), text);
     }
 
     [Fact]

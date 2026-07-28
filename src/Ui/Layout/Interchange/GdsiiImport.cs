@@ -14,7 +14,14 @@ public static class GdsiiImport
         IReadOnlyList<string> CreatedCellDirs,
         IReadOnlyDictionary<string, string> CellNameByStructureName,
         IReadOnlyList<LayerDef> LayersToAdd,
-        IReadOnlyList<string> Messages);
+        IReadOnlyList<string> Messages,
+        /// <summary>brief-layout-testing-fixes.md item 7/R-fix-6: absolute cell-folder paths (a
+        /// subset of <see cref="CreatedCellDirs"/>) for every structure NEVER referenced as another
+        /// structure's instance <c>CellRef</c> within this same file — the GDSII notion of "top"
+        /// (what a fab or a viewer like KLayout opens by default). Ordinarily exactly one; empty only
+        /// for a pathological all-structures-mutually-referenced library, where there is genuinely no
+        /// well-defined top and the caller should say so rather than guessing.</summary>
+        IReadOnlyList<string> TopLevelCellDirs);
 
     /// <summary>
     /// Imports every structure in <paramref name="gdsiiStream"/> as a real cell folder under
@@ -71,7 +78,7 @@ public static class GdsiiImport
         {
             choices = resolveLayerMapping(rows);
             if (choices is null)
-                return new ImportResult(true, [], new Dictionary<string, string>(), [], messages);
+                return new ImportResult(true, [], new Dictionary<string, string>(), [], messages, []);
         }
         choices ??= LayoutLayerMapping.BuildChoices(rows);
         messages.Add(LayoutLayerMapping.SummarizeMapping(rows, destTech));
@@ -141,7 +148,17 @@ public static class GdsiiImport
             CellPersistence.SaveToFile(ccellPath, ccell);
         }
 
-        return new ImportResult(false, createdDirs, cellNameByStructure, layersToAdd, messages);
+        // item 7/R-fix-6 — the GDSII notion of "top": a structure never named as any OTHER structure's
+        // instance CellRef in this same file (referenced-by-name, before mangling to a cell name — the
+        // exact vocabulary inst.CellRef already uses above).
+        var referencedStructureNames = new HashSet<string>(
+            scaled.SelectMany(s => s.Instances).Select(i => i.CellRef), StringComparer.Ordinal);
+        var topLevelCellDirs = scaled
+            .Where(s => !referencedStructureNames.Contains(s.Name))
+            .Select(s => cellDirByStructure[s.Name])
+            .ToList();
+
+        return new ImportResult(false, createdDirs, cellNameByStructure, layersToAdd, messages, topLevelCellDirs);
     }
 
     private static int CountRoundedCoordinates(IReadOnlyList<InterchangeStructure> structures, double ratio)

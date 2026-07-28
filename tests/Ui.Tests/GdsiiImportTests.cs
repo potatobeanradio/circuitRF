@@ -74,6 +74,86 @@ public class GdsiiImportTests : IDisposable
         Assert.Contains(result.Messages, m => m.Contains("BAD?NAME") && m.Contains(cellName));
     }
 
+    // ── item 7/R-fix-6: top-level cell identification ───────────────────────────────────────────
+
+    [Fact]
+    public void Import_ChildReferencedByTop_TopIsTheOnlyTopLevelCell()
+    {
+        var child = new InterchangeStructure(
+            "CHILD", [new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 100, Y2 = 100 }], []);
+        var top = new InterchangeStructure(
+            "TOP", [], [new LayoutInstance { CellRef = "CHILD", X = 0, Y = 0, Mag = 1.0 }]);
+
+        using var stream = BuildGdsii([child, top], new GdsiiUnits(1e-6, 1e-9));
+        var result = GdsiiImport.Import(stream, _dir, null, 1000, false);
+
+        var topLevel = Assert.Single(result.TopLevelCellDirs);
+        Assert.Equal("TOP", Path.GetFileName(topLevel));
+    }
+
+    [Fact]
+    public void Import_NoHierarchy_EveryStructureIsItsOwnTopLevelCell()
+    {
+        var a = new InterchangeStructure("A", [new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 1, Y2 = 1 }], []);
+        var b = new InterchangeStructure("B", [new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 1, Y2 = 1 }], []);
+
+        using var stream = BuildGdsii([a, b], new GdsiiUnits(1e-6, 1e-9));
+        var result = GdsiiImport.Import(stream, _dir, null, 1000, false);
+
+        Assert.Equal(2, result.TopLevelCellDirs.Count);
+    }
+
+    [Fact]
+    public void Import_MutualCycle_NoDistinctTopLevelCell_EmptyNotThrows()
+    {
+        var a = new InterchangeStructure("A", [], [new LayoutInstance { CellRef = "B", X = 0, Y = 0, Mag = 1.0 }]);
+        var b = new InterchangeStructure("B", [], [new LayoutInstance { CellRef = "A", X = 0, Y = 0, Mag = 1.0 }]);
+        using var stream = BuildGdsii([a, b], new GdsiiUnits(1e-6, 1e-9));
+
+        var result = GdsiiImport.Import(stream, _dir, null, 1000, false);
+
+        Assert.Empty(result.TopLevelCellDirs);
+    }
+
+    // ── item 7/R-fix-6: the completion-message helpers, tested directly (WorkspaceViewModel itself
+    // cannot be constructed headlessly — see src/Ui/CLAUDE.md) ─────────────────────────────────────
+
+    [Fact]
+    public void FormatTruncatedNameList_ThreeOrFewer_ListsAllVerbatim()
+    {
+        Assert.Equal("\"TOP\", \"VIA_ARRAY\"",
+            CircuitRF.Ui.ViewModels.WorkspaceViewModel.FormatTruncatedNameList(["TOP", "VIA_ARRAY"]));
+    }
+
+    [Fact]
+    public void FormatTruncatedNameList_MoreThanThree_TruncatesWithCount()
+    {
+        var names = new List<string?> { "TOP", "VIA_ARRAY", "PAD", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9" };
+        var text = CircuitRF.Ui.ViewModels.WorkspaceViewModel.FormatTruncatedNameList(names);
+        Assert.Equal("\"TOP\", \"VIA_ARRAY\", \"PAD\", … (9 more)", text);
+    }
+
+    [Fact]
+    public void DescribeTopLevelCells_Single_NamesIt()
+    {
+        var text = CircuitRF.Ui.ViewModels.WorkspaceViewModel.DescribeTopLevelCells(["/ws/TOP"]);
+        Assert.Equal("Top-level cell: \"TOP\".", text);
+    }
+
+    [Fact]
+    public void DescribeTopLevelCells_None_ExplainsAmbiguity_NeverGuesses()
+    {
+        var text = CircuitRF.Ui.ViewModels.WorkspaceViewModel.DescribeTopLevelCells([]);
+        Assert.Equal("No distinct top-level cell — every structure is referenced by another.", text);
+    }
+
+    [Fact]
+    public void DescribeTopLevelCells_Multiple_ListsAll()
+    {
+        var text = CircuitRF.Ui.ViewModels.WorkspaceViewModel.DescribeTopLevelCells(["/ws/A", "/ws/B"]);
+        Assert.Equal("Top-level cells: \"A\", \"B\".", text);
+    }
+
     // ── Gate 9: unit mismatch ──────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -45,6 +45,25 @@ public class DxfExportPlanTests : IDisposable
     }
 
     [Fact]
+    public void Analyze_RootViewSupplied_UsesLiveInMemoryShapes_NotTheLastSavedFile()
+    {
+        // brief-layout-testing-fixes.md item 5/R-fix-4: mirrors LayoutGdsiiExportTests' own gate exactly.
+        var cellDir = CreateCell("TOP", v => v.Shapes.Add(
+            new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 }));
+
+        var liveUnsavedView = new LayoutView { DbuPerMicron = 1000 };
+        liveUnsavedView.Shapes.Add(new RectShape { Layer = new LayerKey(9, 0), X1 = 0, Y1 = 0, X2 = 99, Y2 = 99 });
+
+        var plan = DxfExport.Analyze(cellDir, null, 1000, liveUnsavedView);
+
+        var rootStructure = Assert.Single(plan.Structures, s => s.Name == plan.BlockNameByCellName["TOP"]);
+        var shape = Assert.Single(rootStructure.Shapes);
+        var rect = Assert.IsType<RectShape>(shape);
+        Assert.Equal(new LayerKey(9, 0), rect.Layer);
+        Assert.Equal(99, rect.X2);
+    }
+
+    [Fact]
     public void Analyze_UnresolvedInstanceCellRef_Reported_NotSilent()
     {
         var topDir = CreateCell("TOP", v => v.Instances.Add(new LayoutInstance { CellRef = "../DoesNotExist", X = 0, Y = 0, Mag = 1.0 }));

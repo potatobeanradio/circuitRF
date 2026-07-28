@@ -37,10 +37,10 @@ public sealed partial class LayoutEditorViewModel
     public LayoutFragment.Payload? BuildCopyPayload()
     {
         var indices = ValidSelectedIndices;
-        var (instances, cellDirs) = BuildCopyInstancesPayload();
+        var (instances, cellDirs, workspaceRelativeDirs) = BuildCopyInstancesPayload();
         if (indices.Count == 0 && instances.Count == 0) return null;
         var shapes = indices.Select(i => Model.Shapes[i]).ToList();
-        return LayoutFragment.Build(shapes, instances, cellDirs, Technology, Model.DbuPerMicron);
+        return LayoutFragment.Build(shapes, instances, cellDirs, workspaceRelativeDirs, Technology, Model.DbuPerMicron);
     }
 
     /// <summary>Cut = Copy (the caller writes to the system clipboard BEFORE calling this) then
@@ -218,6 +218,11 @@ public sealed partial class LayoutEditorViewModel
 
     /// <summary>Rebases a payload's instances' <c>CellRef</c>s to resolve correctly in THIS document
     /// (see <see cref="LayoutFragment.RebaseInstances"/>) — call before either paste variant below.
+    /// brief-layout-testing-fixes.md item 2/R-fix-2: passes THIS document's own <see
+    /// cref="WorkspaceRootDir"/> alongside <see cref="InstanceBaseDir"/> so a paste into a brand-new,
+    /// never-saved document (no stable base directory yet) can still resolve — via the payload's
+    /// workspace-relative or absolute cell-dir fallbacks — instead of silently keeping the source's own
+    /// relative <c>CellRef</c> string, which resolves against nothing meaningful there.
     /// <b>Known, narrow gap, named rather than silently accepted:</b> unlike shapes (<see
     /// cref="RescaleFragment"/>/<see cref="LayoutFragment.Rescale"/>), an instance's X/Y/Rows/Cols/
     /// PitchX/PitchY are NOT rescaled across a DBU-per-micron mismatch between the source and this
@@ -227,7 +232,9 @@ public sealed partial class LayoutEditorViewModel
     /// Not attempted here — out of brief-L3a-followups.md's stated scope (§1-4 never mention DBU
     /// rescaling), a future brief's job.</summary>
     public IReadOnlyList<LayoutInstance> RebaseFragmentInstances(LayoutFragment.Payload payload) =>
-        LayoutFragment.RebaseInstances(payload.Instances, payload.InstanceCellDirs, InstanceBaseDir);
+        LayoutFragment.RebaseInstances(
+            payload.Instances, payload.InstanceCellDirs, payload.InstanceWorkspaceRelativeDirs,
+            InstanceBaseDir, WorkspaceRootDir);
 
     /// <summary>Paste in Place for an instance-only selection — original (rebased-CellRef) position,
     /// immediate, one undo entry. Kept as a direct, single-kind entry point (gate 11's own tests call

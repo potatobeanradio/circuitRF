@@ -61,6 +61,8 @@
 // ParseBlocksSection` now skips any block whose name starts with `*`, the universal DXF convention for
 // an anonymous/system block.
 
+using CircuitRF.Ui.Theming;
+
 namespace CircuitRF.Ui.Layout.Interchange;
 
 /// <summary>What actually happened during a write — mirrors <c>GdsiiExportSummary</c>'s shape so the
@@ -73,18 +75,36 @@ public sealed record DxfExportSummary(
     int PathsFlattenedForCubic,
     bool SplineFlattenedToPolyline,
     int NonAsciiTextEscaped,
-    IReadOnlyList<string> Diagnostics);
+    IReadOnlyList<string> Diagnostics,
+    /// <summary>brief-layout-testing-fixes.md item 6/R-fix-5: the number of TEXT records written —
+    /// text a user did not knowingly place (an invisible, sub-pixel label authored by accident) is
+    /// exactly what an export report should surface, never leave silent.</summary>
+    int LabelRecordsWritten = 0);
 
 public enum DxfViewMode { FitToExtents, MatchCurrentView }
 
-/// <summary>Export-time choices (§1.2's flatten-to-polyline fallback, §2A's two view modes).</summary>
+/// <summary>brief-dxf-layer-colors.md §1.2/R-col-1 — the three write versions this exporter supports,
+/// distinguished ONLY by <c>$ACADVER</c> and whether group 420 (24-bit true color) accompanies group 62
+/// on every LAYER record. AC1015 (R2000) has no 420 at all — 62 (nearest-ACI) is the only option, so
+/// colour is necessarily approximate. AC1018 (R2004) added 420 and AC1032 (R2018) carries the identical
+/// capability — there is no further colour tier between them, so choosing AC1032 as the default (below)
+/// is a product decision (newest header a modern reader is likeliest to expect), not a colour one; if a
+/// compatibility complaint about AC1032 ever arrives, dropping the default to AC1018 changes nothing
+/// about colour fidelity. R12 (AC1009) is deliberately never added here — see
+/// docs/sonnet-briefs/brief-dxf-version-support.md's own reasoning against it (no LWPOLYLINE/ELLIPSE/
+/// SPLINE/HATCH), unaffected by anything this brief changes.</summary>
+public enum DxfAcadVersion { R2000, R2004, R2018 }
+
+/// <summary>Export-time choices (§1.2's flatten-to-polyline fallback, §2A's two view modes,
+/// R-col-1's version/colour-fidelity choice).</summary>
 public sealed record DxfExportOptions(
     bool FlattenSplinesToPolyline = false,
     bool PathAsOutlinePolygon = false,
     DxfViewMode ViewMode = DxfViewMode.FitToExtents,
     LayoutViewport? MatchViewport = null,
     double CanvasAspect = 1.0,
-    int InsUnits = DxfUnits.DefaultPromptUnits);
+    int InsUnits = DxfUnits.DefaultPromptUnits,
+    DxfAcadVersion AcadVersion = DxfAcadVersion.R2018);
 
 /// <summary>Assigns every handle (group 5) this writer needs — every table, table record, BLOCK/ENDBLK,
 /// and entity in an AC1015+ file must carry one, and every one in the file must be unique. Starts past
@@ -99,14 +119,37 @@ public static class DxfWriter
 {
     private const string SplinePatternName = "SOLID";
 
-    /// <summary>The `$ACADVER` value this writer emits — AutoCAD 2000/R2000, the file version whose
-    /// mandatory handle/owner/subclass-marker structure <c>DxfHandles</c> and every entity writer below
-    /// implement. Exposed publicly (not just the raw "AC1015" code) so any UI surface stating what this
-    /// exporter produces — the export dialog, an about box, a support request — reads from this ONE
-    /// value rather than a second hand-typed copy that could silently drift from what's actually
-    /// written.</summary>
-    public const string AcadVersionCode = "AC1015";
-    public const string FormatDescription = "AutoCAD 2000/R2000 (AC1015)";
+    /// <summary>The `$ACADVER` value this writer emits for <paramref name="version"/> — every version
+    /// shares the SAME mandatory handle/owner/subclass-marker structure <c>DxfHandles</c> and every
+    /// entity writer below implement (that requirement is an AC1015+ one, unaffected by which of the
+    /// three post-R2000 versions is chosen). Exposed publicly (not a per-version constant) so any UI
+    /// surface stating what this exporter produces — the export dialog, an about box, a support
+    /// request — reads from this ONE table rather than a second hand-typed copy that could silently
+    /// drift from what's actually written (brief-dxf-layer-colors.md R-col-1).</summary>
+    public static string AcadVersionCode(DxfAcadVersion version) => version switch
+    {
+        DxfAcadVersion.R2000 => "AC1015",
+        DxfAcadVersion.R2004 => "AC1018",
+        DxfAcadVersion.R2018 => "AC1032",
+        _ => "AC1032",
+    };
+
+    /// <summary>Human-readable description shown in the export dialog — states the colour-fidelity
+    /// trade-off directly (R2000's is approximate; the other two are exact) so the dialog never needs a
+    /// SEPARATE "colours are approximate" line for R2000 (gate 5).</summary>
+    public static string FormatDescription(DxfAcadVersion version) => version switch
+    {
+        DxfAcadVersion.R2000 => $"AutoCAD 2000/R2000 ({AcadVersionCode(version)}) — indexed colour only, colours are approximate",
+        DxfAcadVersion.R2004 => $"AutoCAD 2004/R2004 ({AcadVersionCode(version)}) — exact 24-bit colour",
+        DxfAcadVersion.R2018 => $"AutoCAD 2018/R2018 ({AcadVersionCode(version)}) — exact 24-bit colour (default)",
+        _ => AcadVersionCode(version),
+    };
+
+    /// <summary>R-col-1: only AC1015 (R2000) is limited to indexed colour (group 62 alone) — AC1018 and
+    /// AC1032 both support group 420 (24-bit true colour) and this writer always emits it alongside 62
+    /// on those two, never on R2000 (guardrail: "do not write group 420 into an AC1015 file").</summary>
+    public static bool SupportsTrueColor(DxfAcadVersion version) => version != DxfAcadVersion.R2000;
+
     private const string ModelSpaceBlockName = "*Model_Space";
     private const string PaperSpaceBlockName = "*Paper_Space";
 
@@ -136,7 +179,7 @@ public static class DxfWriter
 
         WriteHeader(w, bbox, dbuToDrawingUnit, options);
 
-        var blockRecordHandles = WriteTablesSection(w, handles, layerNames, blockNames.Values, bbox, dbuToDrawingUnit, options);
+        var blockRecordHandles = WriteTablesSection(w, handles, layerNames, tech, blockNames.Values, bbox, dbuToDrawingUnit, options);
 
         // ── BLOCKS ────────────────────────────────────────────────────────────
         WriteSectionStart(w, "BLOCKS");
@@ -172,7 +215,8 @@ public static class DxfWriter
         return new DxfExportSummary(
             counts.CurveFlattened, counts.HolesAsHatch, counts.BitmapsSkipped,
             counts.MixedArcCubicApproximated, counts.PathsFlattenedForCubic,
-            counts.SplineFlattenedToPolyline, w.EscapedTextCount, diagnostics);
+            counts.SplineFlattenedToPolyline, w.EscapedTextCount, diagnostics,
+            counts.LabelsWritten);
     }
 
     private sealed class Counts
@@ -183,6 +227,7 @@ public static class DxfWriter
         public int MixedArcCubicApproximated;
         public int PathsFlattenedForCubic;
         public bool SplineFlattenedToPolyline;
+        public int LabelsWritten;
     }
 
     // ── HEADER ───────────────────────────────────────────────────────────────
@@ -191,7 +236,7 @@ public static class DxfWriter
     {
         WriteSectionStart(w, "HEADER");
 
-        WriteHeaderVar(w, "$ACADVER", 1, AcadVersionCode);
+        WriteHeaderVar(w, "$ACADVER", 1, AcadVersionCode(options.AcadVersion));
         WriteHeaderVarInt(w, "$INSUNITS", 70, options.InsUnits);
 
         var (view, guard) = DxfViewCalc.Compute(bbox, options, dbuToDrawingUnit);
@@ -236,14 +281,14 @@ public static class DxfWriter
     // ever needs a second one.
 
     private static IReadOnlyDictionary<string, string> WriteTablesSection(
-        DxfGroupWriter w, DxfHandles handles, IReadOnlyDictionary<LayerKey, string> layerNames,
+        DxfGroupWriter w, DxfHandles handles, IReadOnlyDictionary<LayerKey, string> layerNames, Technology? tech,
         IEnumerable<string> blockNames, Bbox bbox, double dbuToDrawingUnit, DxfExportOptions options)
     {
         WriteSectionStart(w, "TABLES");
 
         WriteVportTable(w, handles, bbox, dbuToDrawingUnit, options);
         WriteLtypeTable(w, handles);
-        WriteLayerTable(w, handles, layerNames);
+        WriteLayerTable(w, handles, layerNames, tech, options);
         WriteStyleTable(w, handles);
         WriteEmptyTable(w, handles, "VIEW");
         WriteEmptyTable(w, handles, "UCS");
@@ -316,11 +361,30 @@ public static class DxfWriter
         WriteTableFooter(w);
     }
 
-    private static void WriteLayerTable(DxfGroupWriter w, DxfHandles handles, IReadOnlyDictionary<LayerKey, string> layerNames)
+    /// <summary>brief-dxf-layer-colors.md §1 — every LAYER record now writes its own colour: group 62
+    /// (nearest ACI index, always — AC1015's only option) and, when <paramref name="options"/>'s chosen
+    /// version supports it (R-col-1/<see cref="SupportsTrueColor"/>), ALSO group 420 (exact 24-bit RGB)
+    /// so a reader that understands true colour never needs the approximation. Every ENTITY omits both
+    /// groups entirely (confirmed by inspection of every <c>Write*</c> shape method below — none writes
+    /// 62/420), which is what makes them <c>ByLayer</c> and lets this table's colour actually take
+    /// effect; writing an explicit per-entity colour here would make the layer table decorative, per
+    /// the brief's own diagnosis.</summary>
+    private static void WriteLayerTable(
+        DxfGroupWriter w, DxfHandles handles, IReadOnlyDictionary<LayerKey, string> layerNames,
+        Technology? tech, DxfExportOptions options)
     {
         var names = new List<string> { "0" };
         names.AddRange(layerNames.Values.Distinct(StringComparer.OrdinalIgnoreCase).Where(n => n != "0"));
 
+        // Multiple LayerKeys can sanitize to the same DXF name (a rare collision) — the layer table has
+        // only one record per name, so the FIRST key to claim a name supplies its colour; this mirrors
+        // the pre-existing name-dedup behavior above, which already picked "whichever key got there
+        // first" for the name itself.
+        var firstKeyForName = new Dictionary<string, LayerKey>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, name) in layerNames)
+            firstKeyForName.TryAdd(name, key);
+
+        bool trueColor = SupportsTrueColor(options.AcadVersion);
         string tableHandle = WriteTableHeader(w, handles, "LAYER", names.Count);
         foreach (var name in names)
         {
@@ -331,11 +395,34 @@ public static class DxfWriter
             w.WriteString(100, "AcDbLayerTableRecord");
             w.WriteEscapedString(2, name);
             w.WriteInt(70, 0);
-            w.WriteInt(62, 7);
+
+            Rgba color = ResolveLayerColorForWrite(name, firstKeyForName, tech);
+            w.WriteInt(62, DxfAciPalette.NearestIndex(color));
+            if (trueColor) w.WriteInt(420, PackTrueColor(color));
+
             w.WriteString(6, "CONTINUOUS");
         }
         WriteTableFooter(w);
     }
+
+    /// <summary>Layer "0" is DXF's own universal default layer, not backed by any <see cref="LayerKey"/>
+    /// — every real DXF file's own layer 0 is conventionally white, so that's what this writer emits for
+    /// it. Every other name resolves through whichever <see cref="LayerKey"/> first claimed it: the
+    /// technology's own colour when defined, else the SAME <see cref="FallbackPalette"/> gap-fill the
+    /// renderer already uses for an undefined layer — so an exported file's colours match what the user
+    /// actually sees on screen in circuitRF, technology-defined or not.</summary>
+    private static Rgba ResolveLayerColorForWrite(string name, IReadOnlyDictionary<string, LayerKey> firstKeyForName, Technology? tech)
+    {
+        if (name == "0" || !firstKeyForName.TryGetValue(name, out var key))
+            return new Rgba(255, 255, 255);
+
+        var def = tech?.Layers.FirstOrDefault(l => l.Key == key);
+        return def is not null ? def.Color : FallbackPalette.For(key).Color;
+    }
+
+    /// <summary>Group 420's own encoding: a plain 24-bit `0x00RRGGBB` integer — NOT a BGR order, and no
+    /// alpha channel (DXF true colour is opaque only).</summary>
+    private static int PackTrueColor(Rgba c) => (c.R << 16) | (c.G << 8) | c.B;
 
     private static void WriteStyleTable(DxfGroupWriter w, DxfHandles handles)
     {
@@ -514,6 +601,9 @@ public static class DxfWriter
                 return;
 
             case LabelShape label:
+                counts.LabelsWritten++; // item 6/R-fix-5: text a user did not knowingly place is
+                                        // exactly what an export report should surface — count every
+                                        // TEXT record, not just curve/hole/bitmap conversions.
                 WriteText(w, label, LayerOf(label), dbuToDrawingUnit, handles, ownerHandle);
                 return;
 

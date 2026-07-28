@@ -5,6 +5,16 @@ versions? And in either case, **the supported versions must be documented.**
 
 The short answers are in §1; the work is §§2–4.
 
+> **Superseded in part by `brief-dxf-layer-colors.md` (2026-07-28).** §1's conclusion — "nothing added
+> between AC1015 and AC1032 improves 2D interchange" — was about **geometry entities**, where it still
+> holds exactly as written: no entity mapping changed, R12 is still not built, and R2018-for-geometry's-
+> sake is still the wrong call. It **overlooked colour, which is not geometry**: AC1018 (R2004) added
+> true 24-bit layer colour (group 420) and AC1032 (R2018) carries the identical colour capability — a
+> real gap in this brief's own answer. The exporter now supports THREE versions (AC1015/AC1018/AC1032),
+> user-selectable, defaulting to AC1032 — see `brief-dxf-layer-colors.md` §1.3/R-col-1 for the full
+> reasoning and `src/Ui/CLAUDE.md`'s own completion note for what shipped. Do not re-read this file's §1
+> as "circuitRF writes only R2000" — it no longer does.
+
 ---
 
 ## 1. The version decision — keep writing R2000, and record why

@@ -80,14 +80,28 @@ public static class DxfImport
         var rescaled = RescaleAll(reader.Structures, ratio);
 
         // R-L4a-2-style reuse — DXF's named layers feed the SAME LayoutLayerMapping.Propose unmodified.
+        // R-col-3: the file's own parsed LAYER table (reader.LayerTable) rides along so BuildSourceLayers
+        // can populate each source LayerDef's real colour/visibility instead of defaulting to black.
         var allNames = rescaled.SelectMany(s => s.Shapes.Select(sh => sh.LayerName)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var (sourceLayers, keyByName) = DxfLayerReconciliation.BuildSourceLayers(allNames, destTech);
+        var (sourceLayers, keyByName) = DxfLayerReconciliation.BuildSourceLayers(allNames, reader.LayerTable, destTech);
         foreach (var s in rescaled)
             foreach (var sh in s.Shapes)
                 sh.Shape.Layer = keyByName[sh.LayerName];
 
         var allShapes = rescaled.SelectMany(s => s.Shapes.Select(sh => sh.Shape)).ToList();
         var rows = LayoutLayerMapping.Propose(allShapes, sourceLayers, destTech);
+
+        // R-col-4: for a DXF import specifically — never for L1g's own cross-technology PASTE, whose
+        // safe default correctly stays Keep-as-unknown — an unmatched (NoMatch) row's default action is
+        // "Add to technology" instead. A DXF's own layer names and colours are the author's deliberate
+        // intent, not incidental metadata circuitRF invented, so the common case (accept every proposed
+        // row) becomes one click instead of requiring the user to notice and flip each unmatched row by
+        // hand. This only changes which Choice a row STARTS with — LayoutLayerMapping.Propose itself,
+        // the dialog, and ApplyReconciliation are all completely unmodified; a user can still override
+        // any row (including choosing Keep as unknown) before accepting.
+        rows = rows.Select(r => r.Match == LayerMatchKind.NoMatch
+            ? r with { Choice = new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.AddToTechnology) }
+            : r).ToList();
 
         IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>? choices = null;
         if (rows.Count > 0 && LayoutLayerMapping.RequiresConfirmation(rows) && resolveLayerMapping is not null)

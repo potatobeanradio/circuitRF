@@ -135,6 +135,27 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // Windows that already have undo/redo KeyBindings injected (Dock float support).
     private readonly HashSet<Window> _wiredHostWindows = [];
 
+    // ---- Per-window active document (brief-file-menu-restructure.md R-menu-4) ----------------
+
+    // "The active document" for every File-menu enablement predicate and every Save/Save-As/Export
+    // command means THAT WINDOW's own document: the main shell's DocumentDock.ActiveDockable while
+    // the shell has focus, or a torn-off window's own hosted document while IT has focus. Established
+    // once here so both menu surfaces (and every command) read the SAME resolution rather than each
+    // resolving _factory.DocumentDock?.ActiveDockable directly — which would silently keep targeting
+    // whatever the shell happens to show even while a torn-off window is the one in front. Scoped
+    // deliberately to File-menu commands only; tree/Properties/Analyses routing is untouched.
+    private IDockable? _focusedWindowDocument;
+
+    // Windows already wired for focus tracking (parallel to, but independent of, _wiredHostWindows).
+    private readonly HashSet<Window> _focusTrackedWindows = [];
+
+    // The document each focus-tracked CrfHostWindow was last found to host, so Closed can tell
+    // whether the closing window was the one that owns the current override.
+    private readonly Dictionary<Window, IDockable?> _focusTrackedWindowDocs = new();
+
+    private IDockable? ResolveActiveDocumentForCommands()
+        => _focusedWindowDocument ?? _factory.DocumentDock?.ActiveDockable;
+
     public string UndoDescription => _activeUndoTarget?.UndoRedo.UndoDescription ?? "Undo";
     public string RedoDescription => _activeUndoTarget?.UndoRedo.RedoDescription ?? "Redo";
 
@@ -208,6 +229,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         NewCellInWorkspaceCommand.NotifyCanExecuteChanged();
         ExportDataCommand.NotifyCanExecuteChanged();
         CloseWorkspaceCommand.NotifyCanExecuteChanged();
+        CloseWorkspaceOrWindowCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
 
@@ -990,6 +1012,36 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private bool CanCloseWorkspace() => CurrentWorkspacePath is not null;
 
     /// <summary>
+    /// File → "Close Workspace" / "Close Window" (brief-file-menu-restructure.md R-menu-3/§4A.1/
+    /// R-menu-4). While the shell has focus this is the whole-workspace teardown above
+    /// (<see cref="CloseWorkspace"/>, unchanged). While a torn-off document window has focus
+    /// (<see cref="_focusedWindowDocument"/> is non-null) this instead closes ONLY that window's own
+    /// document, through the SAME <c>CircuitRfDockFactory.CloseDockable</c>/<see cref="ConfirmCloseDockable"/>
+    /// path a docked tab's own close already uses — never a second prompt path. One command, one menu
+    /// item, read by both the main shell's menu and a tear-off window's own menu; never the tree's own
+    /// context-menu "Close Workspace" item, which always means the whole workspace and is intentionally
+    /// left bound to <see cref="CloseWorkspaceCommand"/> directly.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCloseWorkspaceOrWindow))]
+    private async Task CloseWorkspaceOrWindow()
+    {
+        if (_focusedWindowDocument is { } doc)
+        {
+            _factory.CloseDockable(doc);
+            return;
+        }
+        await CloseWorkspace();
+    }
+
+    private bool CanCloseWorkspaceOrWindow() => _focusedWindowDocument is not null || CanCloseWorkspace();
+
+    /// <summary>The File menu's trailing item label — "Close Window" while a torn-off document window
+    /// has focus, "Close Workspace" otherwise. Refreshed alongside every other R-menu-4 enablement
+    /// signal in <see cref="RaiseFileMenuEnablementChanged"/>.</summary>
+    public string CloseWorkspaceOrWindowHeader
+        => _focusedWindowDocument is not null ? "Close Window" : "Close Workspace";
+
+    /// <summary>
     /// Reverts to the no-workspace state (blank Dock layout, no open documents).
     /// Called by CloseWorkspace; extractable here so startup's blank-shell launch path
     /// can share the same reset logic.
@@ -1000,6 +1052,35 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _lastActiveSchematicDoc = null;
 
         // Force-close all open dockable documents before clearing the registry.
+        //
+        // brief-file-menu-restructure.md §4A.4/R-menu-6 finding (investigate-only, NOT fixed here per
+        // the brief's own explicit instruction): this loop closes every MATERIALIZED document
+        // (_openDocsByPath, keyed by on-disk path) — including a torn-off one. Traced into
+        // Dock.Model.FactoryBase's own CloseDockable → RemoveDockable → CollapseDock chain: when the
+        // dockable being removed is the last one in a floating root, CollapseDock detects
+        // `dock is IRootDock { Window: not null }` and calls RemoveWindow(...), which calls
+        // window.Exit() — closing the physical torn-off window. So a MATERIALIZED torn-off document's
+        // window does NOT survive a workspace close/switch.
+        //
+        // A SCRATCH document's window (no on-disk path — _scratchDocs/_scratchSymbols/_scratchLayouts/
+        // _scratchDataDisplays below) is a DIFFERENT story: this loop never iterates those four lists
+        // at all, and the .Clear() calls on them just below are OUR OWN bookkeeping — they never call
+        // _factory.ForceCloseDockable on any of those documents. A DOCKED scratch tab disappears for
+        // free (the whole DocumentDock tree it lived in is discarded a few lines down when `Layout` is
+        // reassigned to a fresh one), but a TORN-OFF scratch document is a wholly separate physical
+        // window/IRootDock, untouched by that reassignment — it stays open and interactive, now
+        // orphaned from every workspace-scoped registry (tech cache, session registries, the tree) and
+        // from HasAnyDirtyWork()'s own dirty-scan (which reads these same four lists — already-cleared
+        // by the time anything downstream would check them again). Its own technology-resolution seam
+        // (WireRetargetSeam) was wired against the OLD workspace: WorkspaceTechDir is a snapshotted
+        // string that is never updated, while ResolveWorkspaceDefaultTech/ResolveTechAt are closures
+        // that call back into THIS view model's ResolveTechFor, which reads CurrentWorkspacePath LIVE
+        // (now null) — so if that orphaned document's technology is ever re-resolved after the fact, it
+        // would silently resolve to "no technology" (fallback palette) rather than the workspace it was
+        // actually opened against. In practice it is unlikely to be re-resolved automatically (every
+        // live-refresh path iterates the very lists that were just cleared), so the practical risk is a
+        // confusing leftover window belonging to no tracked workspace, not an immediate visible change.
+        // Per R-menu-6: reported here precisely, left unchanged in either direction.
         foreach (var dockable in _openDocsByPath.Values.ToList())
             _factory.ForceCloseDockable(dockable);
 
@@ -1593,7 +1674,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <summary>
     /// Creates an in-memory scratch symbol tab immediately, with no workspace or
     /// cell required. Save/materialize happen on first ⌘S.
+    /// brief-file-menu-restructure.md §1.1: this is the SOLE creation path for "New Symbol" — the
+    /// menu command below just exposes it; on-launch (ExecuteLaunchActionAsync) calls the same method.
     /// </summary>
+    [RelayCommand]
     private void NewScratchSymbol()
     {
         var title    = NextScratchSymbolTitle();
@@ -1687,6 +1771,33 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
     }
 
+    /// <summary>Opens a .csch file and loads it into a docked Schematic tab — mirrors
+    /// <see cref="OpenLayoutFile"/> exactly. brief-file-menu-restructure.md §1.2: File → Open →
+    /// "Open Schematic…" didn't exist as a menu command before this brief (schematics were previously
+    /// reachable only via the project tree or New Schematic); reuses the existing
+    /// <see cref="OpenOrActivateSchematic"/> path, no new opening logic.</summary>
+    [RelayCommand]
+    private async Task OpenSchematicFile(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var result = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title          = "Open Schematic",
+            AllowMultiple  = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("circuitRF Schematic") { Patterns = ["*.csch"] },
+                new FilePickerFileType("All Files")           { Patterns = ["*.*"] },
+            ],
+        });
+
+        if (result.Count == 0) return;
+
+        OpenOrActivateSchematic(result[0].Path.LocalPath);
+    }
+
     /// <summary>Opens a .clay file and loads it into a docked Layout Editor tab.</summary>
     [RelayCommand]
     private async Task OpenLayoutFile(Window? owner)
@@ -1771,7 +1882,56 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         foreach (var msg in result.Messages) Messages.Info(msg);
         _factory.ProjectTreeTool?.Refresh();
-        Messages.Success($"Imported {result.CreatedCellDirs.Count} cell(s) from GDSII.");
+
+        // item 7/R-fix-6: cells WERE always created correctly under the workspace, and the tree WAS
+        // always refreshed (both confirmed by direct code reading + the existing gate-10 test) — the
+        // actual gap was legibility: a bare "Imported N cell(s)" message, with nothing opened, reads as
+        // "nothing appears" even though the import fully succeeded. Name what happened and where, and
+        // open the top-level cell automatically when it's unambiguous.
+        var workspaceName = Path.GetFileName(Path.GetDirectoryName(CurrentWorkspacePath));
+        var sourceFileName = Path.GetFileName(files[0].Path.LocalPath);
+        var cellNames = result.CreatedCellDirs.Select(Path.GetFileName).ToList();
+        Messages.Success(
+            $"Imported {cellNames.Count} cell(s) from \"{sourceFileName}\" into \"{workspaceName}\": " +
+            $"{FormatTruncatedNameList(cellNames)}. {DescribeTopLevelCells(result.TopLevelCellDirs)}");
+
+        if (result.TopLevelCellDirs.Count == 1)
+            OpenPrimaryLayoutIfResolvable(result.TopLevelCellDirs[0]);
+    }
+
+    /// <summary>"a, b, c, … (N more)" — first 3 verbatim, the rest counted rather than listed, per
+    /// R-fix-6's own example. Shared by any import-completion message that needs to name what was
+    /// created without flooding the log for a large library. Internal (not private) so it is directly
+    /// unit-testable — <see cref="WorkspaceViewModel"/> itself cannot be constructed headlessly.</summary>
+    internal static string FormatTruncatedNameList(IReadOnlyList<string?> names)
+    {
+        const int shown = 3;
+        var quoted = names.Take(shown).Select(n => $"\"{n}\"");
+        var text = string.Join(", ", quoted);
+        return names.Count > shown ? $"{text}, … ({names.Count - shown} more)" : text;
+    }
+
+    /// <summary>Names which cell(s) will actually open with the design visible on screen — the thing
+    /// the user actually wants after an import, per R-fix-6. Ordinarily exactly one; a pathological
+    /// all-mutually-referenced library (no structure is ever "outermost") says so explicitly rather
+    /// than guessing one to open.</summary>
+    internal static string DescribeTopLevelCells(IReadOnlyList<string> topLevelCellDirs) => topLevelCellDirs.Count switch
+    {
+        0 => "No distinct top-level cell — every structure is referenced by another.",
+        1 => $"Top-level cell: \"{Path.GetFileName(topLevelCellDirs[0])}\".",
+        _ => $"Top-level cells: {string.Join(", ", topLevelCellDirs.Select(d => $"\"{Path.GetFileName(d)}\""))}.",
+    };
+
+    /// <summary>Opens <paramref name="cellDir"/>'s primary layout, if it resolves — silently does
+    /// nothing otherwise (an import always has a resolvable primary for every cell it just wrote, so
+    /// this is a defensive no-op path, not a case expected to fire).</summary>
+    private void OpenPrimaryLayoutIfResolvable(string cellDir)
+    {
+        var primary = CellFolder.ResolvePrimary(cellDir, ViewType.Layout);
+        if (primary.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || primary.ResolvedName is null)
+            return;
+        var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        OpenOrActivateLayout(Path.Combine(layoutDir, primary.ResolvedName));
     }
 
     /// <summary>Shows the shared L1g layer-mapping dialog (never a second reconciliation UI) for the
@@ -2082,6 +2242,44 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     private bool CanExportData() => GetResultsRoot() is not null;
+
+    // ---- Layout export commands (item 8: File → Export → GDSII/DXF/Gerber) ------------------------
+    // GDSII/DXF export logic lives entirely in the active LayoutEditorView's own code-behind (file
+    // picking, the fidelity/options dialogs — see LayoutEditorView.axaml.cs's own header comment on
+    // OnExportGdsiiAsync/OnExportDxfAsync). These commands only decide whether a layout document is
+    // active and, if so, ask it to run ITS OWN export via LayoutDocument.RequestExportGdsii/
+    // RequestExportDxf — never a second export code path (item 5/R-fix-4's own "route every entry
+    // point through the same accessor").
+
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void ExportGdsii() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportGdsii();
+
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void ExportDxf() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportDxf();
+
+    /// <summary>R-menu-4: reads the PER-WINDOW active document (<see cref="ResolveActiveDocumentForCommands"/>),
+    /// not the shell's own <c>DocumentDock.ActiveDockable</c> directly — so this stays correct while a
+    /// torn-off layout window has focus.</summary>
+    private bool IsLayoutDocumentActive() => ResolveActiveDocumentForCommands() is LayoutDocument;
+
+    /// <summary>Gates "Save Schematic As…" — disabled (greyed out) unless a schematic document is the
+    /// active document, mirroring <see cref="IsLayoutDocumentActive"/> exactly (incl. its R-menu-4
+    /// per-window resolution).</summary>
+    private bool IsSchematicDocumentActive() => ResolveActiveDocumentForCommands() is SchematicDocument;
+
+    /// <summary>Gates "Save Symbol As…" — disabled (greyed out) unless a symbol document is the
+    /// active document, mirroring <see cref="IsLayoutDocumentActive"/> exactly (incl. its R-menu-4
+    /// per-window resolution).</summary>
+    private bool IsSymbolDocumentActive() => ResolveActiveDocumentForCommands() is SymbolEditorDocument;
+
+    /// <summary>Gerber export (L4c) has not been built yet — the brief's own guardrail flags this
+    /// explicitly rather than asking for it to be implemented here. The File menu still lists Gerber
+    /// per item 8's literal menu spec, permanently disabled with a stated reason (R13a) rather than
+    /// omitted, so the menu structure matches the brief and nobody wonders why one format is
+    /// missing.</summary>
+    [RelayCommand(CanExecute = nameof(CanExportGerber))]
+    private void ExportGerber() { }
+    private bool CanExportGerber() => false;
 
     [RelayCommand]
     private void NewDataDisplay()
@@ -3202,7 +3400,28 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (e.PropertyName is nameof(LayoutEditorViewModel.IsDirty))
                 RefreshCellDirtyForLayout(doc);
         };
+        doc.CanvasInteracted += () => OnLayoutCanvasInteracted(doc);
     }
+
+    /// <summary>brief-layout-testing-fixes.md item 3/R-fix-3 — the user just clicked/focused back into
+    /// this layout document's own canvas. Makes it the Dock-active document (the brief's own literal
+    /// framing) AND unconditionally re-asserts the Properties/undo/save-scope routing directly — the
+    /// latter is not merely redundant: a click on an ALREADY-active tab's canvas does not change
+    /// <c>DocumentDock.ActiveDockable</c> at all (it was already this document), so
+    /// <see cref="OnDocumentDockPropertyChanged"/> would never re-fire on that path alone, and the
+    /// Properties panel would stay showing whatever the project tree (a DIFFERENT dock region) last
+    /// forced it to (e.g. <see cref="PropertiesTool.SetActiveCell"/>(null) unconditionally clears the
+    /// layout context too) even though this document was never actually deactivated.</summary>
+    private void OnLayoutCanvasInteracted(LayoutDocument doc)
+    {
+        _factory.SetActiveDockable(doc);
+        ActivateLayoutDocumentForProperties(doc);
+        SetActiveUndoTarget(doc);
+        ActiveSaveScope = SaveScope.SingleDoc;
+    }
+
+    private void ActivateLayoutDocumentForProperties(LayoutDocument doc) =>
+        _factory.PropertiesTool?.SetActiveLayout(doc.ActiveViewModel);
 
     // Cell dir for a view file at .../cell/<viewfolder>/file.ext → .../cell (two levels up); else null.
     private static string? CellDirOfView(string viewFilePath)
@@ -4351,7 +4570,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         else if (activeDockable is LayoutDocument layDocForProps)
         {
             RouteDataDisplayProperties(null);
-            _factory.PropertiesTool?.SetActiveLayout(layDocForProps.ActiveViewModel);
+            ActivateLayoutDocumentForProperties(layDocForProps);
         }
         else
         {
@@ -4390,11 +4609,185 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Generate Netlist is enabled only when a schematic document is active.
         GenerateNetlistCommand.NotifyCanExecuteChanged();
 
+        // Export GDSII/DXF (item 8) are enabled only when a layout document is active.
+        ExportGdsiiCommand.NotifyCanExecuteChanged();
+        ExportDxfCommand.NotifyCanExecuteChanged();
+
+        // Save Schematic As… / Save Layout As… are each enabled only when their own document type
+        // is the active dockable.
+        SaveLooseSchematicCommand.NotifyCanExecuteChanged();
+        SaveLooseLayoutCommand.NotifyCanExecuteChanged();
+        SaveLooseSymbolCommand.NotifyCanExecuteChanged();
+        SaveAllDocumentsCommand.NotifyCanExecuteChanged();
+
         // A dockable may have just been floated into a Dock-generated HostWindow.
         // Defer one frame (Background) so the HostWindow is fully shown before we scan.
         Avalonia.Threading.Dispatcher.UIThread.Post(
             TryWireHostWindowsUndo,
             Avalonia.Threading.DispatcherPriority.Background);
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            TryWireWindowFocusTracking,
+            Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    // ---- Per-window active document — focus tracking (R-menu-4) ------------
+
+    /// <summary>
+    /// Scans all application windows and wires <c>Activated</c> tracking for R-menu-4: the main
+    /// shell clears <see cref="_focusedWindowDocument"/> (deferring back to
+    /// <c>DocumentDock.ActiveDockable</c>); a torn-off document window (a <c>CrfHostWindow</c>) sets
+    /// it to its own hosted document while it has focus. A tool-only float (Properties, Analyses,
+    /// Project Tree, Palette, Messages) is left alone — it has no document of its own to contribute,
+    /// so its activation must not change which document File-menu commands target.
+    /// </summary>
+    private void TryWireWindowFocusTracking()
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime
+                is not IClassicDesktopStyleApplicationLifetime desktop) return;
+
+        var shellWindow = desktop.Windows.OfType<Views.WorkspaceWindow>().FirstOrDefault();
+
+        foreach (var window in desktop.Windows)
+        {
+            if (window is Views.SymbolEditorWindow) continue; // built-in-symbol preview, not a real document window
+            if (_focusTrackedWindows.Contains(window)) continue;
+            _focusTrackedWindows.Add(window);
+
+            if (window is Views.WorkspaceWindow)
+            {
+                window.Activated += (_, _) =>
+                {
+                    _focusedWindowDocument = null;
+                    RaiseFileMenuEnablementChanged();
+                };
+                // The shell is typically already the active window at app-startup wiring time; this
+                // mirrors the immediate IsActive check below so the shell case is handled uniformly
+                // too, even though in practice a torn-off window is what actually races the scan.
+                if (window.IsActive)
+                {
+                    _focusedWindowDocument = null;
+                    RaiseFileMenuEnablementChanged();
+                }
+                continue;
+            }
+
+            // A Dock-created CrfHostWindow (tool or document tear-off) — resolved fresh on every
+            // activation since a floated window's own hosted document cannot change once created,
+            // but re-resolving is cheap and avoids relying on that assumption.
+            void ApplyFocusedDocument()
+            {
+                var doc = FindAnyDocumentInWindow(window);
+                _focusTrackedWindowDocs[window] = doc;
+                if (doc is not null)
+                {
+                    _focusedWindowDocument = doc;
+                    RaiseFileMenuEnablementChanged();
+                    if (shellWindow is not null)
+                        AttachSharedNativeMenuIfMacOS(shellWindow, window);
+                }
+            }
+            window.Activated += (_, _) => ApplyFocusedDocument();
+            window.Closed += (_, _) =>
+            {
+                _focusTrackedWindows.Remove(window);
+                if (_focusTrackedWindowDocs.Remove(window, out var closedDoc) &&
+                    closedDoc is not null && ReferenceEquals(_focusedWindowDocument, closedDoc))
+                {
+                    _focusedWindowDocument = null;
+                    RaiseFileMenuEnablementChanged();
+                }
+            };
+
+            // Bug fix: a torn-off window is typically created AND already key/active before this
+            // scan (itself deferred one frame) ever runs — its own real Activated event fires and is
+            // missed entirely, so _focusedWindowDocument stayed stale ("Close Workspace" instead of
+            // "Close Window") until some LATER, unrelated Activated event happened to fire. Checking
+            // IsActive immediately upon wiring closes that gap without waiting for a future event.
+            if (window.IsActive)
+                ApplyFocusedDocument();
+        }
+    }
+
+    /// <summary>
+    /// macOS bug fix: <c>NativeMenu.Menu</c> is a PER-WINDOW attached property, not an application-
+    /// global one — a torn-off document window has none of its own attached, so while it is key the OS
+    /// shows only its bare default app menu ("circuitRF") instead of the File/Edit/View/Simulate/Help
+    /// bar, exactly the reported symptom. Fix: attach the SAME <see cref="Avalonia.Controls.NativeMenu"/>
+    /// instance already declared in <c>WorkspaceWindow.axaml</c> to the torn-off window too, rather than
+    /// building a second, hand-rolled copy. This is safe because <c>NativeMenu</c>/<c>NativeMenuItem</c>
+    /// derive from <c>AvaloniaObject</c>, not <c>StyledElement</c> (confirmed by reading Avalonia's own
+    /// source) — they carry no DataContext and are not part of any window's visual/logical tree, so
+    /// their compiled <c>{Binding ...}</c> expressions resolve against the ORIGINAL file's root object
+    /// (<paramref name="shellWindow"/>, whose own DataContext is the <see cref="WorkspaceViewModel"/>)
+    /// regardless of which window the menu is later attached to. <c>NativeMenu.SetMenu</c> is a plain
+    /// attached-property setter with no reparenting/exclusivity guard — each window that has it set
+    /// gets its own independent platform exporter (per Avalonia's own <c>NativeMenu.GetInfo</c>), so
+    /// attaching the same instance to a second window does not detach it from the first.
+    /// </summary>
+    private static void AttachSharedNativeMenuIfMacOS(Window shellWindow, Window tornOffWindow)
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+
+        var menu = Avalonia.Controls.NativeMenu.GetMenu(shellWindow);
+        if (menu is not null)
+            Avalonia.Controls.NativeMenu.SetMenu(tornOffWindow, menu);
+    }
+
+    /// <summary>Finds the first non-<see cref="ITool"/> dockable reachable from a window's
+    /// DataContext — mirrors <see cref="FindUndoDocInWindow"/>'s tree-walk shape exactly, generalized
+    /// from "the floated document that supports undo" to "the floated document, of any kind."</summary>
+    internal static IDockable? FindAnyDocumentInWindow(Window window)
+    {
+        if (window.DataContext is IDock dock) return FindAnyDocumentInDock(dock);
+        if (window.DataContext is IDockable direct and not ITool and not IDock) return direct;
+        return null;
+    }
+
+    internal static IDockable? FindAnyDocumentInDock(IDock dock)
+    {
+        if (dock.ActiveDockable is IDock nestedActive)
+        {
+            var result = FindAnyDocumentInDock(nestedActive);
+            if (result is not null) return result;
+        }
+        else if (dock.ActiveDockable is IDockable active and not ITool)
+        {
+            return active;
+        }
+
+        if (dock.VisibleDockables is null) return null;
+        foreach (var dockable in dock.VisibleDockables)
+        {
+            if (dockable is IDock childDock)
+            {
+                var result = FindAnyDocumentInDock(childDock);
+                if (result is not null) return result;
+            }
+            else if (dockable is not ITool and not null)
+            {
+                return dockable;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Refreshes every File-menu enablement predicate + <see cref="ActiveSaveScope"/> after
+    /// <see cref="_focusedWindowDocument"/> changes — the one place this fan-out happens, mirroring
+    /// <see cref="OnDocumentDockPropertyChanged"/>'s own equivalent fan-out for the shell's own
+    /// ActiveDockable changes.</summary>
+    private void RaiseFileMenuEnablementChanged()
+    {
+        var doc = ResolveActiveDocumentForCommands();
+        ActiveSaveScope = doc is IUndoableDocument ? SaveScope.SingleDoc : SaveScope.AllDocs;
+
+        ExportGdsiiCommand.NotifyCanExecuteChanged();
+        ExportDxfCommand.NotifyCanExecuteChanged();
+        SaveLooseSchematicCommand.NotifyCanExecuteChanged();
+        SaveLooseLayoutCommand.NotifyCanExecuteChanged();
+        SaveLooseSymbolCommand.NotifyCanExecuteChanged();
+        SaveAllDocumentsCommand.NotifyCanExecuteChanged();
+        CloseWorkspaceOrWindowCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CloseWorkspaceOrWindowHeader));
     }
 
     // ---- Dock float — per-window undo wiring --------------------------------
@@ -4649,11 +5042,33 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // ---- Save All documents (⌘S / Ctrl+S) ----------------------------------
 
     /// <summary>
+    /// Gates the "Save"/"Save All" menu item per §3/R13a: enabled only when there is something for
+    /// <see cref="SaveAllDocuments"/> to actually act on — the R-menu-4 per-window active document's
+    /// own dirty flag when one of the five saveable document types is active, or "any dirty work
+    /// anywhere" (<see cref="HasAnyDirtyWork"/>) for the AllDocs/no-document-active case. The menu
+    /// item's own tooltip states the reason ("Nothing to save.") per R13a, mirroring the existing
+    /// static-reason convention already used by the GDSII/DXF export items. <c>RelayCommand.CanExecute</c>
+    /// is evaluated fresh at invocation time regardless of when <c>NotifyCanExecuteChanged</c> was last
+    /// called, so Ctrl+S can never be wrongly blocked by a stale visual state — only the menu item's
+    /// enabled/disabled APPEARANCE can lag until the next refresh point (tab switch, window focus
+    /// change, or a completed save), which is the deliberate, narrower scope of this gate.
+    /// </summary>
+    private bool CanSaveAllDocuments() => ResolveActiveDocumentForCommands() switch
+    {
+        DataDisplayDocument dd   => dd.ViewModel.Window.HasUnsavedChanges(),
+        SchematicDocument sd     => sd.IsDirty,
+        SymbolEditorDocument syd => syd.IsDirty,
+        LayoutDocument ld        => ld.IsDirty,
+        TechDocument td          => td.IsDirty,
+        _                        => HasAnyDirtyWork(),
+    };
+
+    /// <summary>
     /// Routes ⌘S/Ctrl+S.  When a document tab is active (SingleDoc scope) saves only that
     /// document.  When a tool panel is active (AllDocs scope) saves all dirty documents and
     /// updates the .cws.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSaveAllDocuments))]
     private async Task SaveAllDocuments(Window? owner)
     {
         var window = ResolveOwner(owner);
@@ -4662,8 +5077,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try
         {
             // Active Data Display — save (or save-as) the focused .cdd, consistent with
-            // how Ctrl+S saves an active schematic or symbol.
-            if (_factory.DocumentDock?.ActiveDockable is DataDisplayDocument activeDisplay)
+            // how Ctrl+S saves an active schematic or symbol. R-menu-4: resolved per-window, so a
+            // torn-off data display window's own Save works even while the shell shows something else.
+            if (ResolveActiveDocumentForCommands() is DataDisplayDocument activeDisplay)
             {
                 if (!activeDisplay.ViewModel.Window.HasUnsavedChanges())
                 {
@@ -4676,7 +5092,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             // SingleDoc scope: save only the active document.
             if (ActiveSaveScope == SaveScope.SingleDoc &&
-                _factory.DocumentDock?.ActiveDockable is SchematicDocument singleDoc)
+                ResolveActiveDocumentForCommands() is SchematicDocument singleDoc)
             {
                 if (!singleDoc.IsDirty)
                 {
@@ -4689,7 +5105,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             // SingleDoc scope for an active symbol editor — scratch → offer dialog; materialized → PerformSave.
             if (ActiveSaveScope == SaveScope.SingleDoc &&
-                _factory.DocumentDock?.ActiveDockable is SymbolEditorDocument singleSymDoc)
+                ResolveActiveDocumentForCommands() is SymbolEditorDocument singleSymDoc)
             {
                 if (!singleSymDoc.IsDirty)
                 {
@@ -4702,7 +5118,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             // SingleDoc scope for an active layout editor — scratch → offer dialog; materialized → PerformSave.
             if (ActiveSaveScope == SaveScope.SingleDoc &&
-                _factory.DocumentDock?.ActiveDockable is LayoutDocument singleLayDoc)
+                ResolveActiveDocumentForCommands() is LayoutDocument singleLayDoc)
             {
                 if (!singleLayDoc.IsDirty)
                 {
@@ -4715,7 +5131,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             // SingleDoc scope for an active technology editor — always materialized, direct write.
             if (ActiveSaveScope == SaveScope.SingleDoc &&
-                _factory.DocumentDock?.ActiveDockable is TechDocument singleTechDoc)
+                ResolveActiveDocumentForCommands() is TechDocument singleTechDoc)
             {
                 if (!singleTechDoc.IsDirty)
                 {
@@ -4849,6 +5265,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // the user only asked to save one file, so the .cws message would be noise.
             if (CurrentWorkspacePath is not null)
                 WriteWorkspaceFile(CurrentWorkspacePath, silent: ActiveSaveScope != SaveScope.AllDocs);
+
+            // Refresh Save's own visual enabled/disabled state immediately after a save completes,
+            // per §3's "disabled with a reason" rule — see CanSaveAllDocuments's own doc comment for
+            // why staleness here is cosmetic only, never a functional Ctrl+S block.
+            SaveAllDocumentsCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -5238,16 +5659,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     ///   Tier 2: workspace open → file picker → write .csch + register as Known File in .cws.
     ///   Tier 3: no workspace  → offer once to create workspace (plan dialog); on decline,
     ///                           write a plain .csch (no workspace, no Known-File registration).
+    /// Disabled (greyed out) unless a schematic document is the active dockable.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsSchematicDocumentActive))]
     private async Task SaveLooseSchematic(Window? owner)
     {
         var window = ResolveOwner(owner);
         if (window is null) return;
 
-        // Prefer the active dockable if it's a scratch doc; else first dirty scratch doc.
-        // Also handle already-materialized docs (Save As to a new path).
-        var doc = _factory.DocumentDock?.ActiveDockable as SchematicDocument;
+        // Prefer the active document (R-menu-4: per-window, not the shell's own ActiveDockable) if
+        // it's a scratch doc; else first dirty scratch doc. Also handle already-materialized docs
+        // (Save As to a new path).
+        var doc = ResolveActiveDocumentForCommands() as SchematicDocument;
         if (doc is null || !doc.IsScratch)
         {
             var scratch = _scratchDocs.FirstOrDefault(d => d.IsDirty);
@@ -5402,6 +5825,50 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Error($"Save failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// "Save Layout As…" — saves the active layout document to a new, user-picked .clay path,
+    /// mirroring <see cref="SaveLooseSchematic"/>'s own name/placement/intent (a loose file, no cell
+    /// structure created) but reusing LAYOUT's own existing save primitives rather than
+    /// <see cref="SavePlanBuilder"/>'s cell-creation wizard, which is schematic-specific and has no
+    /// layout analogue. Scratch → <see cref="SaveScratchLayoutAsFile"/> (already exists, already used
+    /// by the generic save/close flow); already-materialized → the VM's own <c>SaveLayoutAsCommand</c>
+    /// (always re-prompts for a path) followed by <see cref="LayoutDocument.OnSavedAs"/>, mirroring
+    /// <see cref="SaveLoosePlainFile"/>'s materialized branch exactly. Disabled (greyed out) unless a
+    /// layout document is the active dockable.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private async Task SaveLooseLayout(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        if (ResolveActiveDocumentForCommands() is not LayoutDocument doc)
+        {
+            Messages.Info("No layout to save.");
+            return;
+        }
+
+        if (doc.IsScratch)
+        {
+            await SaveScratchLayoutAsFile(doc, window);
+            return;
+        }
+
+        var pathBefore = doc.ViewModel.CurrentLayoutPath;
+        await doc.ViewModel.SaveLayoutAsCommand.ExecuteAsync(window);
+        var pathAfter = doc.ViewModel.CurrentLayoutPath;
+        if (pathAfter is null || pathAfter == pathBefore) return; // user cancelled the picker
+
+        if (pathBefore is not null && pathBefore != pathAfter)
+            _openDocsByPath.Remove(pathBefore);
+        _openDocsByPath[pathAfter] = doc;
+        doc.OnSavedAs(pathAfter, Path.GetFileNameWithoutExtension(pathAfter));
+        RegisterLayoutSession(pathAfter, doc.ViewModel);
+
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Success("Saved", pathAfter);
     }
 
     // ---- Save scratch symbol (Layer 4) ---------------------------------------
@@ -5563,6 +6030,47 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         doc.Materialize(pathAfter);
         _openDocsByPath[pathAfter] = doc;
 
+        Messages.Success("Saved", pathAfter);
+    }
+
+    /// <summary>
+    /// "Save Symbol As…" — saves the active symbol document to a new, user-picked .csym path,
+    /// mirroring <see cref="SaveLooseLayout"/>'s own shape exactly: scratch →
+    /// <see cref="SaveScratchSymbolAsFile"/> (already exists, already used by the generic save/close
+    /// flow); already-materialized → the VM's own <c>SaveSymbolAsCommand</c> (always re-prompts for a
+    /// path) followed by <see cref="SymbolEditorDocument.OnSavedAs"/>. Disabled (greyed out) unless a
+    /// symbol document is the active dockable.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsSymbolDocumentActive))]
+    private async Task SaveLooseSymbol(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        if (ResolveActiveDocumentForCommands() is not SymbolEditorDocument doc)
+        {
+            Messages.Info("No symbol to save.");
+            return;
+        }
+
+        if (doc.IsScratch)
+        {
+            await SaveScratchSymbolAsFile(doc, window);
+            return;
+        }
+
+        var pathBefore = doc.ViewModel.CurrentSymbolPath;
+        await doc.ViewModel.SaveSymbolAsCommand.ExecuteAsync(window);
+        var pathAfter = doc.ViewModel.CurrentSymbolPath;
+        if (pathAfter is null || pathAfter == pathBefore) return; // user cancelled the picker
+
+        if (pathBefore is not null && pathBefore != pathAfter)
+            _openDocsByPath.Remove(pathBefore);
+        _openDocsByPath[pathAfter] = doc;
+        doc.OnSavedAs(pathAfter, Path.GetFileNameWithoutExtension(pathAfter));
+
+        OnSymbolSaved(pathAfter);
+        _factory.ProjectTreeTool?.Refresh();
         Messages.Success("Saved", pathAfter);
     }
 

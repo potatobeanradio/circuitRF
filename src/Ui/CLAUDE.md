@@ -1,5 +1,641 @@
 # UI (Avalonia) — local conventions
 
+File-menu restructure + View-menu cleanup (brief-file-menu-restructure.md, 2026-07-28) — COMPLETE:
+**supersedes item 8 of `brief-layout-testing-fixes.md`** — that item's smaller Import/Export
+reorganisation is unchanged in *content*; this brief rearranges it into the fuller structure below.
+Menu structure and enablement only, per the brief's own guardrail — the only new command behaviours
+are `New Symbol` and `Open Schematic…`, both wired to reuse existing paths, not new ones.
+
+## Final File menu structure (both surfaces — in-window `Menu` and macOS `NativeMenu` — kept
+structurally identical by hand, the same convention already used between them)
+
+```
+File
+├── New ▸ (New Cell…, New Schematic, New Symbol, New Layout, New Data Display, New Technology…)
+├── New Workspace…
+├── ──────────────
+├── Open Workspace…
+├── Open Recent ▸
+├── Open ▸ (Open Schematic…, Open Symbol…, Open Layout…, Open Data Display…)
+├── ──────────────
+├── Save                       (SaveMenuHeader: "Save"/"Save All")
+├── Save Schematic As…
+├── Save Symbol As…            ← NEW: SaveLooseSymbolCommand + SymbolEditorDocument.OnSavedAs (below)
+├── Save Layout As…
+├── Save Workspace As…
+├── ──────────────
+├── Import ▸ (Data…, GDSII…, DXF…) — content unchanged from item 8
+├── Export ▸ (Data, GDSII, DXF, Gerber) — content unchanged from item 8
+├── ──────────────
+├── Close Workspace / Close Window  (CloseWorkspaceOrWindowHeader/Command — §R-menu-4 below)
+├── ──────────────
+├── Settings…                  (Windows/Linux in-window Menu only; already omitted from macOS
+│                                NativeMenu, which puts it in the app menu)
+├── ──────────────
+└── Quit circuitRF              (Windows/Linux only)
+```
+
+`Add Library…` is **gone** — confirmed dead (`CanAddLibrary => false` hardcoded permanently, not in the
+brief's own target structure at all); the command itself is left in `WorkspaceViewModel` unreferenced
+by any menu, matching how `OpenSymbolEditorDockedCommand`/`OpenSymbolEditorWindowCommand` (View menu,
+below) are also left in place but unreferenced. `New Cell` and `New Workspace` both gained the ellipsis
+they were missing before this brief (`New _Cell…`, `New _Workspace…`) — both prompt for a name/location
+before they can act, which R-menu-1 requires and the prior menu had gotten wrong.
+
+## §1's separator ambiguity — resolved as TWO groups, not one
+
+The owner's "below that separator" note could have meant one shared group covering both Save and
+Import/Export. **Resolved as two separate groups** (a separator between the Save-As block and
+Import/Export), per the brief's own stated default — pinned directly by
+`FileMenuRestructureTests.SaveGroup_AndImportExportGroup_AreTwoSeparateGroups_NotMerged` so a future
+edit can't silently re-merge them without a test failing.
+
+## R-menu-1 — the ellipsis rule, and its three named exceptions
+
+**A menu item ends in `…` if invoking it needs further input from the user before it can act — "I need
+more from you," not "something might pop up."** Three items are the exceptions worth remembering,
+because a future contributor will otherwise "fix" them the wrong way:
+- **`Save`** (`SaveMenuHeader` → "Save"/"Save All") — acts directly; it may show a save-target dialog
+  for a *scratch* document with no path yet, but that's incidental state, not a required parameter.
+- **`Close Workspace`** — acts directly; the unsaved-changes prompt is a consequence of dirty state, not
+  an input the command itself needs.
+- **`Close Window`** (the torn-off-window equivalent, R-menu-3) — same reasoning as `Close Workspace`,
+  exactly.
+Submenu parents (`New`, `Open`, `Import`, `Export`, `Open Recent`) never take one, regardless of what's
+inside them. The full audit (every File + View item, not just the moved ones) is pinned by
+`FileMenuRestructureTests`'s `EllipsisCases` theory plus two dedicated tests for the two dynamic-header
+exceptions above (`SaveMenuHeader`/`CloseWorkspaceOrWindowHeader` are C# bindings, not literal XAML text,
+so their ellipsis-freedom is checked against the source directly rather than the parsed tree).
+
+## R-menu-4 — "the active document" is per-window, and where that resolution now lives
+
+**The headline requirement.** Reusing the shell's own `DocumentDock.ActiveDockable` for every §3
+enablement predicate would make every document-scoped File-menu item wrong the instant a torn-off
+window has focus — `Save Layout As…` greyed out in a torn-off layout window, or worse, silently acting
+on whatever the shell happens to be showing. Established **once**, in `WorkspaceViewModel.cs`:
+
+- **`_focusedWindowDocument: IDockable?`** — non-null only while a torn-off DOCUMENT window has focus;
+  null defers to the shell's own active dockable.
+- **`ResolveActiveDocumentForCommands()`** — `_focusedWindowDocument ?? _factory.DocumentDock?.ActiveDockable`.
+  This is the **one** place "the active document" is resolved for File-menu purposes; every §3 predicate
+  (`IsLayoutDocumentActive`, `IsSchematicDocumentActive`, `IsSymbolDocumentActive`, `CanSaveAllDocuments`)
+  and every command body that used to read `_factory.DocumentDock?.ActiveDockable` directly
+  (`ExportGdsii`/`ExportDxf`, the `SaveAllDocuments` SingleDoc-scope dispatch, `SaveLooseSchematic`/
+  `SaveLooseLayout`/`SaveLooseSymbol`'s own doc resolution) now reads through it instead. Tree/Properties/
+  Analyses routing is **untouched** — this is scoped to File-menu commands only, per the brief.
+- **`TryWireWindowFocusTracking()`** — scans `desktop.Windows` (same lazy, Dispatcher-deferred,
+  `HashSet<Window>`-tracked-once pattern `TryWireHostWindowsUndo` already established for per-window
+  undo routing, run from the same call site) and wires `Window.Activated`: the main `WorkspaceWindow`
+  clears `_focusedWindowDocument` back to null on activation; any other window (a Dock-created
+  `CrfHostWindow` — tool or document tear-off) resolves its own hosted document via
+  **`FindAnyDocumentInWindow`/`FindAnyDocumentInDock`** (new, `internal static` for direct testability —
+  mirrors `FindUndoDocInWindow`/`FindUndoDocInDock`'s own tree-walk shape exactly, generalized from "the
+  floated document that supports undo" to "the floated document, of any kind": first non-`ITool`
+  dockable, preferring `ActiveDockable` then recursing into `VisibleDockables`). A tool-only float
+  (Properties, Analyses, Project Tree, Palette, Messages) has no document of its own, so its activation
+  leaves `_focusedWindowDocument` untouched — exactly the "don't let a tool float clobber the shell's
+  state" case §4A.3 calls out.
+- **`RaiseFileMenuEnablementChanged()`** — the one fan-out point, called on every focus-tracking update
+  (and from the existing `OnDocumentDockPropertyChanged` shell-side fan-out): recomputes `ActiveSaveScope`
+  from the resolved document's type (mirrors the shell's own `is IUndoableDocument` rule) and calls
+  `NotifyCanExecuteChanged()` on every affected command plus `OnPropertyChanged` for the two dynamic
+  headers. `RelayCommand.CanExecute` is evaluated **fresh at invocation time** regardless of when this
+  was last called, so a stale visual (greyed) state can never actually block Ctrl+S or any other
+  shortcut — only the menu item's on-screen enabled/disabled appearance can lag until the next refresh
+  point, which is the deliberate, narrower scope of this mechanism.
+- Gate 12's own core mechanism (`FindAnyDocumentInDock`) is pinned directly against real
+  `Dock.Model.Mvvm.Controls` types (`RootDock`/`DocumentDock`/`Tool` — plain C#, no Avalonia platform
+  needed, exactly like `SchematicDocument`/`SymbolEditorDocument` already are) in
+  `FileMenuRestructureTests.cs`: active-dockable-is-a-document, active-dockable-is-a-tool-falls-through-
+  to-a-document, only-tools-present-returns-null, and recursion through a nested `IDock`.
+
+## §4A — torn-off window File menus
+
+**Windows/Linux — a real in-window Menu, added.** Rather than deriving Dock.Avalonia's own
+`HostWindow` `ControlTemplate` (decompiled and traced during this brief's own investigation — its
+default template hosts the floated content via a `DeferredContentPresenter` bound through
+`ContentControl.Content`/`ContentTemplate`, with drag/dock-target-overlay machinery this brief did not
+want to risk destabilizing for an untestable, unverifiable change), the File menu is instead added
+**inside each of the four document views themselves** (`SchematicView`, `LayoutEditorView`,
+`SymbolEditorView`, `DataDisplayView`), as a new shared control:
+**`src/Ui/Views/Shared/TornOffFileMenuView.axaml(.cs)`** — a `UserControl` embedded as
+`DockPanel.Dock="Top"`, `IsVisible="False"` by default. On every `AttachedToVisualTree` (fires again
+whenever a document is floated/re-docked, since that moves it into a fresh visual tree), it resolves
+`TopLevel.GetTopLevel(this)`: not a `CrfHostWindow` (docked in the shell, or the unrelated built-in-
+symbol-preview `SymbolEditorWindow`) → stays hidden; a `CrfHostWindow` → resolves the app's
+`WorkspaceViewModel` via the same `desktop.Windows` scan `ResolveOwner`/`TryWireHostWindowsUndo` already
+use, sets it as this control's own `DataContext`, and shows itself. Its own Menu content is a **third**
+independent copy of the File menu's structure (same items/order/tooltips/accelerators as the other two
+surfaces) — this codebase already keeps the in-window `Menu` and the macOS `NativeMenu` in sync by hand
+rather than via a shared XAML fragment, so a third hand-mirrored copy is the established pattern, not a
+new one. Because R-menu-4's resolution is per-window by construction, every command/enablement inside
+this control automatically targets *that* window's own document with zero extra wiring.
+
+**macOS — nothing added; the NativeMenu already tracks the key window "for free."** The NativeMenu is
+app-global regardless of which window is frontmost, and every one of its bindings already reads through
+the SAME `WorkspaceViewModel` instance R-menu-4's focus tracking updates — so `Close Workspace`/
+`Close Window` and every §3 enablement state update automatically as focus moves between the shell and a
+torn-off window, with no macOS-specific code required beyond `TryWireWindowFocusTracking` itself.
+
+**R-menu-3 — `Close Workspace` ↔ `Close Window`, one command, both surfaces.** New
+`CloseWorkspaceOrWindowCommand`/`CloseWorkspaceOrWindowHeader`: while `_focusedWindowDocument` is
+non-null, it calls `_factory.CloseDockable(doc)` directly — the SAME `CircuitRfDockFactory.CloseDockable`
+→ `ConfirmCloseDockable` path a docked tab's own close already uses, so dirty handling never gets a
+second prompt path; otherwise it delegates to the existing `CloseWorkspace()` unchanged. The project
+tree's own "Close Workspace" context-menu item is deliberately left bound to the original
+`CloseWorkspaceCommand` — a tool panel's context menu always means the whole workspace, never "close my
+window."
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase in this
+file) — the tear-off Menu's actual on-screen appearance, the macOS key-window tracking's live behavior,
+and `Close Window`'s real close-a-single-floated-document gesture all cannot be exercised headlessly.
+Correctness rests on: the XML-structural tests over the real `.axaml` source (gates 2/4/5/6a/7/8/9),
+`FindAnyDocumentInDock`'s direct gate tests against real Dock model types (gate 12's own core mechanism),
+and direct code reading of `CircuitRfDockFactory.CloseDockable`'s existing, already-tested confirm path
+(gate 11). Please confirm on your end: tearing off a layout or symbol document shows a File menu with
+the §1 structure and a trailing "Close Window" item (Windows/Linux); on macOS, moving focus between the
+shell and a torn-off window updates the app menu bar's Close item label and every §3 enablement state;
+and `Close Window` closes only that one document, prompting for unsaved changes exactly like closing the
+same document as a docked tab.
+
+## §4A.4/R-menu-6 — workspace teardown with a tear-off open: investigated, NOT changed, per the brief's
+explicit instruction
+
+Traced `ResetToBlankShell` (workspace close/switch) and the `RemoveCellAsync`/`RenameCellAsync`/
+`RemoveNodeToTrashAsync` force-close loops directly against Dock.Model's own decompiled
+`FactoryBase.CloseDockable → RemoveDockable → CollapseDock` chain (not guessed) — **the answer differs
+by document kind, which is the actual finding:**
+
+- **A torn-off MATERIALIZED document** (has an on-disk path, tracked in `_openDocsByPath`) — **does NOT
+  survive.** All four teardown paths iterate `_openDocsByPath`/path-matched documents and call
+  `_factory.ForceCloseDockable`/`CloseDockable` on each, float-state-agnostic (a document's presence in
+  that dictionary doesn't depend on whether it's currently docked or floated). Traced into
+  `CollapseDock`: when the dockable being removed is the last one in a floating root, it detects
+  `dock is IRootDock { Window: not null }` and calls `RemoveWindow(...)`, which calls `window.Exit()` —
+  closing the physical OS window. Confirmed, not assumed.
+- **A torn-off SCRATCH document** (no on-disk path — tracked only in `_scratchDocs`/`_scratchSymbols`/
+  `_scratchLayouts`/`_scratchDataDisplays`) — **DOES survive, today, as an accidental consequence of
+  the teardown's own shape, not a deliberate design.** `ResetToBlankShell`'s force-close loop only
+  iterates `_openDocsByPath.Values`; the four scratch lists are merely `.Clear()`-ed immediately after —
+  our own bookkeeping is dropped, but `_factory.ForceCloseDockable` is never called on any of their
+  entries. A **docked** scratch tab disappears for free (the whole `DocumentDock` tree it lived in is
+  discarded a few lines later when `Layout` is reassigned to a fresh one) — but a **torn-off** scratch
+  document is a wholly separate physical window/`IRootDock`, entirely untouched by that reassignment, so
+  it stays open and interactive, orphaned from every workspace-scoped registry (tech cache, session
+  registries, the tree) and from `HasAnyDirtyWork()`'s own dirty-scan (which reads the very lists that
+  were just cleared).
+- **What would break, left as-is:** an orphaned scratch `LayoutDocument`'s technology-resolution seam
+  (`WireRetargetSeam`) was wired against the OLD workspace — `WorkspaceTechDir` is a snapshotted string
+  that is never updated, while `ResolveWorkspaceDefaultTech`/`ResolveTechAt` are closures calling back
+  into `WorkspaceViewModel.ResolveTechFor`, which reads `CurrentWorkspacePath` **live** (now `null`) — so
+  if that orphaned document's technology were ever re-resolved after the fact, it would silently resolve
+  to "no technology" (the fallback palette) rather than the workspace it was actually opened against. In
+  practice this is unlikely to fire automatically (every live-refresh path iterates the exact lists that
+  were just cleared, so it can no longer find this document to re-resolve it) — the practical risk is a
+  confusing leftover window belonging to no tracked workspace, not an immediate visible technology
+  change. Unsaved edits are not silently lost either way: `HasAnyDirtyWork()`/`PromptSaveBeforeClose` are
+  still called, correctly including this scratch document, **before** `ResetToBlankShell` runs — the
+  oddity is that the window stays open afterward regardless of the user's Save/Don't-Save choice.
+- **Per R-menu-6: reported here precisely; nothing about this behavior was changed in either direction.**
+  A code comment at `ResetToBlankShell`'s own force-close loop in `WorkspaceViewModel.cs` records the
+  same finding at the point where it lives, for the next person who touches that method.
+
+## Files touched
+
+`src/Ui/ViewModels/WorkspaceViewModel.cs` (R-menu-4 resolution + focus tracking, `NewScratchSymbolCommand`
++ `OpenSchematicFileCommand` + `SaveLooseSymbolCommand` new commands, `CloseWorkspaceOrWindowCommand`,
+`CanSaveAllDocuments`, the R-menu-6 investigation comment); `src/Ui/Schematic/SymbolEditorDocument.cs`
+(new `OnSavedAs`, mirroring `LayoutDocument.OnSavedAs`'s exact shape); `src/Ui/Views/WorkspaceWindow.axaml`
+(both menu surfaces restructured; View menu's two `Open Symbol Editor…` items removed); new
+`src/Ui/Views/Shared/TornOffFileMenuView.axaml(.cs)`; `SchematicView.axaml`/`LayoutEditorView.axaml`/
+`SymbolEditorView.axaml`/`DataDisplayView.axaml` (each embeds the new shared control).
+
+**46 new tests in `FileMenuRestructureTests.cs`** (XML-structural parsing of the real `.axaml` source for
+gates 2/4/5/6a/7/8/9, `FindAnyDocumentInDock`'s direct gate tests, `SymbolEditorDocument.OnSavedAs`
+round-trip + repeatability); 3149 Ui.Tests total, all green; full solution green (Firewall 4/4, Core
+388/388, Engine 457/459 — 1 pre-existing skip + 1 confirmed-not-a-regression Console/TextWriter
+parallelism flake in `Hero3BPursuitTests` that passes cleanly in isolation, matching this file's own
+prior notes on exactly this class of full-suite-contention flake).
+
+## Post-ship fixes, same day — three owner reports after trying the tear-off menus
+
+**(1) On macOS, `TornOffFileMenuView`'s in-window Menu showed up INSIDE a torn-off document window
+too** — a real bug, not a cosmetic one: the visibility check only tested "am I in a `CrfHostWindow`,"
+with no platform gate, so it showed everywhere the main shell's own `IsVisible="{OnPlatform True,
+macOS=False}"` in-window Menu is deliberately hidden. Fixed by adding the identical platform check
+at the top of `TornOffFileMenuView.RefreshForCurrentWindow()`: `OperatingSystem.IsMacOS()` → hide
+unconditionally, before even checking whether the window is a `CrfHostWindow`.
+
+**(1b) Follow-up report: with (1) fixed, a torn-off window on macOS showed only the bare "circuitRF"
+app menu — no File/Edit/View/Simulate/Help at all.** The completion note above assumed the macOS
+`NativeMenu` is application-global and would "just work" for any key window; **that assumption was
+wrong, confirmed by reading Avalonia's own `NativeMenu` source directly.**
+`NativeMenu.Menu` is a per-`AvaloniaObject` **attached property** (`NativeMenu.SetMenu(o, menu)` is a
+plain `o.SetValue(MenuProperty, menu)`, nothing global about it) — `WorkspaceWindow.axaml`'s
+`<NativeMenu.Menu>` attaches the menu to THAT window specifically. A `CrfHostWindow` has never had one
+attached, so while it is key, macOS has nothing to show except its own bare default app menu. **Fix:**
+`WorkspaceViewModel.AttachSharedNativeMenuIfMacOS(shellWindow, tornOffWindow)` (called from
+`TryWireWindowFocusTracking`'s own `ApplyFocusedDocument`, so it fires the moment a torn-off document
+window is first found to host a document) attaches the **exact same** `NativeMenu` instance already
+declared on `WorkspaceWindow` to the torn-off window too, rather than building a second, hand-rolled
+copy. This is safe, not just convenient, for a load-bearing reason: `NativeMenu`/`NativeMenuItem`
+derive from `AvaloniaObject`, **not** `StyledElement` — confirmed directly in Avalonia's own source —
+so they carry no `DataContext` and are not part of any window's visual/logical tree at all. Their
+compiled `{Binding ...}` expressions therefore resolve against the ORIGINAL file's root object
+(`WorkspaceWindow`, whose own `DataContext` is the `WorkspaceViewModel`) regardless of which window the
+menu object is later attached to — reattaching the same instance to a second window does not change
+what its bindings read. `NativeMenu.SetMenu` has no reparenting/exclusivity guard either (each window
+that has it set gets its own independent platform exporter, per `NativeMenu`'s own `GetInfo`), so the
+shell keeps its own menu unaffected by also attaching it to the torn-off window.
+
+**Side effect of (1b), fixed in the same pass:** `WorkspaceWindow.axaml.cs`'s `EnsureSaveNativeItem()`
+located the "Save"/"Save All" `NativeMenuItem` by matching its literal `Header` text against
+`"Save All"` — the ORIGINAL hardcoded string before this brief. This brief's own restructure changed
+that literal XAML text to `"Save"` (see the final structure above), which silently broke the lookup
+(it would never find the item again, so `UpdateNativeSaveHeader()` would never re-label it "Save All"
+when appropriate) — caught and fixed while working in this exact area, not separately reported.
+`EnsureSaveNativeItem` now matches by `Command` identity (`ReferenceEquals(ni.Command,
+_vm.SaveAllDocumentsCommand)`) instead of header text, immune to future wording changes.
+
+**(2) A freshly torn-off window's macOS menu bar said "Close Workspace" instead of "Close Window" until
+a few clicks (or minutes) later.** Root cause: `TryWireWindowFocusTracking`'s scan is itself deferred one
+frame (`Dispatcher.UIThread.Post(..., Background)`), but the new `CrfHostWindow` is typically created
+AND already key/active by the time that deferred scan actually runs — its own real, one-time
+`Activated` event fires and is missed entirely (we weren't subscribed yet), so `_focusedWindowDocument`
+stayed stale until some LATER, unrelated `Activated` event happened to fire and finally got caught by
+the (by-then-installed) handler — exactly the "a few clicks later it fixes itself" symptom. Fixed: when
+`TryWireWindowFocusTracking` wires a NEW window, it now also checks `window.IsActive` immediately and,
+if true, applies the resolved document right then rather than waiting for a future `Activated` event —
+closing the gap between "window created and already focused" and "we started listening." Applied to both
+branches (the shell clears the override; a `CrfHostWindow` sets it via the same `ApplyFocusedDocument`
+local function the `Activated` handler itself now calls, so there is only one resolution path, checked
+both at wire-time and on every subsequent activation) — and this is also the SAME hook `AttachSharedNativeMenuIfMacOS`
+(1b) rides on, so the native menu attachment happens at the same "just discovered this window hosts a
+document" moment as the enablement fix.
+
+**Not interactively re-verified** (no visual driver in this environment) — all three fixes rest on
+direct code reading (including a direct read of Avalonia's own `NativeMenu`/`AvaloniaObject` source for
+(1b), not assumption); `dotnet test` stays green (3149 Ui.Tests, no count change — all three fixes are
+behavioral, not new surface area). Please confirm on your end: tearing off a document on macOS shows
+**no** in-window File menu inside the torn-off window itself, but the app's own native menu bar at the
+top of the screen DOES show File/Edit/View/Simulate/Help (not just "circuitRF") while that window is
+key, with "Close Window" (not "Close Workspace") reading correctly immediately, not after a delay; and
+that the main shell's own "Save"/"Save All" toggle still updates correctly when switching between a
+document tab and a tool panel there.
+
+DXF layer colours, both directions (brief-dxf-layer-colors.md, 2026-07-28) — COMPLETE: two owner
+questions after L4b — colours don't appear in QCAD on export, and what happens on import when a DXF
+layer isn't in the `.ctech`. **Neither was a QCAD bug.** Export wrote a hardcoded `62 7` (AutoCAD Color
+Index 7 = black/white depending on background) on EVERY layer, always, confirmed directly by re-running
+this exact regression through QCAD's own bundled `dwg2svg` (ODA-based, the same real independent tool
+L4b's gate 12 already established as the non-QCAD-GUI check): red/green/green/blue layers now render as
+`#ff0000`/`#00ff00`/`#0000ff` where they previously rendered flat. Import never parsed the `LAYER` table
+at all, so an unmatched layer could only ever get a generated colour — there was nothing to read.
+
+## R-col-1 — three write versions, chosen per export; AC1032 default is a product decision, not a colour one
+
+`DxfWriter.AcadVersionCode`/`FormatDescription` (was two constants) are now per-version lookups over a
+new `DxfAcadVersion { R2000, R2004, R2018 }` on `DxfExportOptions.AcadVersion` (default `R2018`):
+
+| Version | Colour | Notes |
+|---|---|---|
+| AC1015 (R2000) | Index only (62) | Widest compatibility; approximate |
+| AC1018 (R2004) | 62 **and** 420 (exact RGB) | Full colour, near-universal reader support |
+| AC1032 (R2018) | 62 **and** 420 — **identical to AC1018** | **Default** |
+
+**This directly revises `brief-dxf-version-support.md`'s own conclusion** ("nothing added between AC1015
+and AC1032 improves 2D interchange") — that reasoning was about geometry entities, where it still holds
+exactly (no entity mapping changed here, R12 is still not built); it overlooked colour, which is not
+geometry. AC1018 is where true 24-bit colour (group 420) actually arrived; AC1032 carries the exact same
+capability and nothing more — so **defaulting to AC1032 is a product choice (the newest header a modern
+reader is likeliest to expect), never a colour one.** If a compatibility complaint about AC1032 ever
+surfaces, dropping the default to AC1018 is a one-line change (`DxfExportOptions`'s own default) with
+**zero** colour regression — recorded here explicitly so nobody re-derives this question from scratch.
+The export dialog (`DxfExportOptionsDialog`) gained three radio buttons (session-scoped only, a
+`LayoutEditorView` static field mirroring `_lastFlattenSplines`/`_lastViewMode` exactly — never persisted,
+never per-document, per R-col-1a) and its existing format-version line now reads
+`DxfWriter.FormatDescription(version)`, whose R2000 text states directly that colour is approximate —
+satisfying gate 5 with the SAME line the format-version clue already showed, no second UI element.
+
+**Every entity still omits colour entirely (`ByLayer`)** — confirmed directly, not just by the original
+diagnosis: the only two group-62/420 occurrences anywhere in an exported file are the LAYER table
+records themselves (one test asserts the exact count). Writing a per-entity colour would make the layer
+table decorative, which is exactly the failure this brief traces the original bug to.
+
+## R-col-2 — the ACI palette lives in one file, used both directions
+
+`src/Ui/Layout/Interchange/DxfAciPalette.cs` — the 256-entry AutoCAD Color Index as a literal table
+(never a formula; the brief's own instruction, since entries 1-9 and 250-255 aren't on any regular
+grid), `ToRgb(index)` (index→RGB, clamped) and `NearestIndex(rgba)` (RGB→nearest index, 1-255, never
+returns 0/ByBlock, deterministic squared-distance with lowest-index tie-break). Used by **both**
+directions: `DxfWriter` calls `NearestIndex` for the always-present group 62; `DxfLayerReconciliation`
+calls `ToRgb` when a LAYER record has no group 420. **Provenance caveat, stated in the file's own header
+and worth repeating here**: the table was reproduced from training-time familiarity with the standard,
+widely-published AutoCAD Color Index (the same table appears across numerous independent open-source
+DXF/CAD codebases and Autodesk's own DXF reference appendix) rather than re-derived from an authoritative
+live source in this session. Indices 0-7 (ByBlock + the seven pure primaries) are certain — confirmed
+directly against QCAD's own `dwg2svg` rendering red/green/blue exactly. Indices 8-9, the 250-255 grayscale
+ramp, and the large 10-249 range (24 hue-columns × 10 shades, the documented ACI structure) are a
+best-effort reconstruction, not independently re-verified byte-for-byte — anyone relying on this table
+for exact professional colour-matching against a specific downstream tool should spot-check it against
+the authoritative Autodesk/ODA DXF reference first. This does not affect AC1018/AC1032 output (which
+carries the EXACT colour via group 420 regardless of the ACI table's own precision) — it only bounds how
+close AC1015's approximation, or an ACI-only import with no group 420, actually lands.
+
+## R-col-3 — the LAYER table is now parsed, carried alongside geometry into reconciliation
+
+`DxfReader` gained `ParseTablesSection`/`ParseLayerTableEntry` (new `DxfLayerTableEntry(Name, AciIndex,
+TrueColor, Frozen, Off)`, exposed as `DxfReader.LayerTable`) — the TABLES section dispatch (previously
+the one section type this reader always skipped entirely) now walks token-by-token until it finds the
+`TABLE` header naming `LAYER`, parses every `LAYER` record until `ENDTAB`, and skips every OTHER table
+(VPORT/LTYPE/STYLE/...) one token at a time without needing to know their own internal shape. Group 62's
+**sign** is DXF's own "layer off" flag (not a separate bit); group 420, when present, is an exact 24-bit
+`0x00RRGGBB` integer (mirrors `DxfWriter`'s own `PackTrueColor`/`UnpackTrueColor` pair exactly — one
+encoding, two directions). `DxfLayerReconciliation.BuildSourceLayers` now takes the parsed layer table
+alongside the shape-derived layer names it already took, and populates each source `LayerDef`'s real
+`Color`/`Visible` (frozen-or-off → `Visible = false`) instead of leaving `Color` at its type default
+(black) — which is what every "Add to technology" choice used to silently install before this brief.
+
+## R-col-4 — DXF import's own default diverges from L1g's paste default, and must stay that way
+
+For a `NoMatch` row specifically, `DxfImport.Import` overrides `LayoutLayerMapping.Propose`'s own default
+`Choice` from `KeepUnknown` to `AddToTechnology` **after** calling `Propose`, entirely inside
+`DxfImport.cs` — `LayoutLayerMapping.Propose` itself, `LayerMappingDialog`, and `ApplyReconciliation` are
+all completely unmodified, so cross-technology **paste** (and technology retargeting) keep their own
+existing safe default untouched; this is confirmed by a dedicated test calling `Propose` directly and
+asserting `KeepUnknown` survives. The dialog's own row-selection logic already reads its initial state
+from `row.Choice.Action` (`LayerMappingRowViewModel`'s constructor), so overriding the row BEFORE the
+dialog opens is sufficient to pre-select "Add to technology" with no dialog-side change at all — "pre-
+filled with the DXF layer's name and colour" is satisfied at the DATA level (the `LayerDef` that action
+installs already carries them, via R-col-3 above), not by adding a new swatch to the shared dialog.
+**Why this diverges, recorded so the two are never "unified" later**: L1g chose Keep-as-unknown because a
+cross-technology paste's incoming layer is incidental — nothing about it was authored with THIS
+destination in mind. A DXF's layer names and colours ARE the author's deliberate intent; pre-selecting
+Add-to-technology makes the common case (accept every proposed row) one click instead of requiring the
+user to notice and flip each unmatched row by hand, and a user can still override any row (including back
+to Keep-as-unknown) before accepting.
+
+## R-col-5 — ACI 7 is never taken literally, on import
+
+`DxfLayerReconciliation.ResolveColor`: an exact group-420 true colour always wins when present; otherwise
+the group-62 ACI index decodes through `DxfAciPalette.ToRgb` — **except index 7 specifically** (the
+AutoCAD "black or white depending on background" sentinel, also what an ENTIRELY missing-from-the-table
+layer name defaults to), which instead falls back to the exact same `FallbackPalette` gap-fill the
+renderer already uses for an undefined layer, keyed by the layer's own key so it's at least deterministic
+and distinguishable from every other unresolved layer in the same import. The regression fixture for this
+is literally what this application's OWN writer emitted before §1 was fixed (every LAYER record hardcoded
+to `62 7`) — importing one now produces a real, distinguishable generated colour, never black.
+
+## Verification — a real independent reader, both before and after
+
+Confirmed with QCAD 3.32.9's bundled `dwg2svg` (ODA-based; `dwg2svg -o out.svg in.dxf`, then inspect the
+SVG's own `stroke:` values — the same real-parser technique L4b's gate 12 and the version-support brief
+both already used), not just this project's own reader: a red/green/blue three-layer fixture renders as
+`#ff0000`/`#00ff00`/`#0000ff` in all three versions (all three ACI indices for these particular primaries
+happen to be exact already); a deliberately off-ACI colour `(37,142,201)` = `#258ec9` renders as
+`#007ca5` (the nearest-ACI approximation) under AC1015, and exactly `#258ec9` under BOTH AC1018 and
+AC1032 — the concrete, third-party-confirmed evidence behind "AC1018 and AC1032 are colour-identical" and
+"AC1015 is approximate." This is the same tool the owner used to originally notice the bug, now showing
+it fixed.
+
+## Scope guardrails held
+
+No changes to entity mappings, the bulge identity, `SPLINE` export, or array handling. No group 420 on
+an AC1015 file (checked directly: zero "420" occurrences in R2000 output). No R12 (`AC1009`) output —
+unaffected by anything here. `LayoutLayerMapping`, `LayerMappingDialog`, and `ApplyReconciliation` are
+byte-for-byte unmodified; only the CALLER (`DxfImport`) supplies a different starting `Choice`. GDSII,
+`src/Core`, `src/Engine`, `RfCore` untouched.
+
+**18 new tests in `DxfLayerColorTests.cs`** (colour writing + no-per-entity-colour, all three versions'
+`$ACADVER`/420-presence + byte-identical R2004-vs-R2018 content, ezdxf-real-reader-opens-cleanly per
+version, R2000-never-420 + dialog-says-approximate + AC1032-is-default, exact round-trip via 420 on a
+non-ACI colour, LAYER-table parsing incl. the off/frozen/true-colour cases, the R-col-4 pre-fill +
+override + paste-stays-unaffected triad, and the colour-7/missing-from-table fallback pair) plus the
+forked `DxfAciPaletteTests.cs` (22 tests). **3103 Ui.Tests total, all green**; full solution green
+(Firewall 4/4, Core 388/388, Engine 458/459 — 1 pre-existing skip, matching every prior baseline in this
+file). Also fixed in passing: `DxfExportOptionsDialog`'s `FormatVersionLine.Text` referenced
+`DxfWriter.FormatDescription` as a bare method-group value (compiles via method-group→delegate→`object`
+conversion, then calls `ToString()` on the DELEGATE at runtime instead of the description string) — a
+real, silent bug this brief's own signature change surfaced; fixed by actually invoking it.
+
+**Not interactively verified**: gate 9's own "open in QCAD and record what it shows" was done via QCAD's
+bundled `dwg2svg` CLI rather than the GUI (no interactive session available in this environment) — the
+SVG output IS QCAD's own real rendering pipeline (same ODA-based DWG/DXF engine the GUI uses), so this is
+the same real-tool confirmation gate 9 asks for, just driven headlessly. Please confirm in the QCAD GUI
+directly: a layer-coloured export opens with visibly distinct colours (not the prior flat black/white),
+the three-version radio buttons appear in the export dialog with the format-version line updating live,
+and importing a DXF with an unmatched layer shows the mapping dialog with "Add to technology" already
+selected and the correct colour swatch once installed into the technology.
+
+Layout + interchange testing fixes — ten owner-reported items (brief-layout-testing-fixes.md,
+2026-07-28) — COMPLETE: a testing pass over the Layout Editor and the L4a/L4b GDSII/DXF interchange
+work, fixed as ten mostly-independent items sharing one gate (`dotnet test`).
+
+## R-fix-1 — winding cancellation was never instance-specific; the batched path is the one thing to fix
+
+`LayoutRenderer.BuildShapePath` batches every shape's outline into one `SKPath` under Skia's default
+Winding fill rule — holes are wound opposite their outer ring on purpose (existing convention, unchanged),
+but nothing normalized an OUTER ring's own direction, so two overlapping outer contours with opposite
+winding cancelled (read as XOR) whenever they shared a batch. This is why it showed on an instance (which
+draws the R-L3a-3 compiled, batched aggregate) and not the cell's own view (which draws per-shape,
+independently composited — R8a's darkening): same geometry, different fill accounting, not an
+instance-specific bug. Fixed once, in the shared builder: `NormalizeOuterWinding(path, shape)` computes
+`LayoutGeometry.SignedArea` on the shape's own outer ring (`PolygonShape.Xy`/`CurveShape.Xy`; Rect/
+RoundedRect/Circle/Via have fixed, already-consistent Skia winding and are left alone) and reverses via
+`SKPath.AddPathReverse` when the sign says so — the exact target sign (`SignedArea < 0` means "don't
+reverse") was determined empirically against a decisive Rect-vs-Polygon pixel test rather than assumed
+from Skia's `SKPathDirection` docs, after an initial `>= 0` guess passed one test and failed another.
+**This feeds BOTH consumers of the batched path** — `DrawLayer`'s ordinary per-layer aggregate (which is
+also L2c's LOD/merge tier) and `LayoutRenderer.Instances.cs`'s `CompileCell` instance-compiled aggregate
+— from the one call site, so the fix closes the bug for low-zoom/high-shape-count rendering and for
+instances simultaneously; a second, separate reproduction at low zoom was written specifically to prove
+this (not just asserted from reading the code). 5 new tests in `LayoutWindingNormalizationTests.cs` —
+all failed pre-fix (except the direct-draw control) and pass post-fix; full 3029-test suite green with
+zero regressions.
+
+## R-fix-2 — a pasted instance's CellRef is base-independent, with a workspace-relative fallback
+
+`LayoutInstance.CellRef` is relative to the CONTAINING `.clay`'s own directory — a pasted fragment
+carrying that string verbatim resolves it against the WRONG base in the destination, exactly like L1f's
+`RebaseInstances` already exists to prevent for the common case. The gap was specifically a **scratch
+(not-yet-saved) destination document**, whose `InstanceBaseDir` is empty — traced by ruling out two other
+hypotheses first (a JSON round-trip bug, and mixed-selection index misalignment) via disposable probe
+tests before finding the real cause. Fix: `LayoutFragment.Payload` gained `InstanceWorkspaceRelativeDirs`
+(parallel to `Instances`/`InstanceCellDirs`), computed by `LayoutEditorViewModel.BuildCopyInstancesPayload`
+via `Path.GetRelativePath(WorkspaceRootDir, resolvedCellDir)` whenever a workspace root is known.
+`RebaseInstances` gained a 4-tier fallback, tried in order: destination-`.clay`-relative (the existing,
+common case) → destination WORKSPACE ROOT + the carried workspace-relative path (a scratch/new-checkout
+destination that still shares the same workspace) → the source's own absolute cell directory (a different
+workspace entirely, best-effort) → keep the original string unchanged (nothing resolves — the instance
+still pastes and renders as R-L3a-1's placeholder, per the brief's own instruction, rather than being
+dropped). 2 new tests in `LayoutInstanceClipboardTests.cs` (7 total in that file), including one that
+physically copies a mirrored workspace directory tree to prove the workspace-relative tier is genuinely
+exercised, not just the absolute fallback.
+
+## R-fix-3 — canvas interaction re-asserts Dock activation; no existing canvas already solved this
+
+Clicking the project tree calls `PropertiesTool.SetActiveCell(null)`, which unconditionally clears
+`IsLayoutActive` even when the layout document was never deactivated (a different dock region's action
+clobbering unrelated context) — clicking back into the SAME already-active layout tab's own canvas never
+changes `DocumentDock.ActiveDockable` (it was already this document), so `WorkspaceViewModel.
+OnDocumentDockPropertyChanged` never re-fires to restore it. Checked first, per the brief's own
+instruction, whether the schematic/symbol canvases already had a "click re-activates" mechanism to
+converge onto — **neither did**; this needed a genuinely new seam, not a copy of an existing one. New
+`LayoutDocument.CanvasInteracted` event + `NotifyCanvasInteracted()`, raised from `LayoutCanvasCtrl.
+GotFocus` (a canvas click always re-focuses it, since a tree click moved focus away) in
+`LayoutEditorView.axaml.cs`; `WorkspaceViewModel.OnLayoutCanvasInteracted(doc)` re-asserts
+`SetActiveDockable`, Properties routing (via the CURRENTLY ACTIVE nav frame's VM, not the base session —
+matters when pushed into a sub-cell), undo target, and save scope, all in one place. 3 tests in
+`LayoutCanvasActivationTests.cs` (composing the real types the same way `WorkspaceViewModel` wires them,
+since it cannot be constructed headlessly).
+
+## Item 4 — no dialog when nothing would change
+
+`GdsiiExport.ExportPlan.HasNothingToReport` (new computed property: zero curves/holes/bitmaps/unresolved
+references AND `CanWrite`) — `LayoutEditorView.axaml.cs`'s `OnExportGdsiiAsync` skips straight to the save
+picker when true, matching R-L4a-3's own stated purpose (state what WILL change) rather than training
+users to dismiss a dialog that says nothing did. 4 new tests in `LayoutGdsiiExportTests.cs`.
+
+## R-fix-4 — exports read the live in-memory design, never a re-read from disk, when a document is open
+
+**Entry points audited**, per the brief's explicit instruction: exactly ONE existed for each of GDSII and
+DXF (the Layout Editor's own toolbar Export GDSII…/Export DXF… buttons, `LayoutEditorView.axaml.cs`) —
+confirmed by grep across `src/Ui`, not assumed; no project-tree or other export entry point exists yet.
+**Gerber has no writer in this codebase at all** (L4c, export-only, not yet briefed) — out of scope for
+this fix by construction, noted rather than silently ignored.
+
+Both entry points called `GdsiiExport.Analyze`/`DxfExport.Analyze(cellDir, tech, dbuPerMicron)`, whose
+`CollectHierarchy` walk re-read the ROOT cell's own primary `.clay` from disk unconditionally — so drawing
+a shape and exporting without saving produced a file silently missing that shape. Fix: both `Analyze`
+methods gained an optional `LayoutView? rootView` parameter; `CollectHierarchy` substitutes it for the
+root cell dir only (every OTHER reachable cell in the hierarchy still resolves from disk — only the root
+is necessarily the currently-open, possibly-dirty document; a referenced sub-cell being independently open
+and dirty elsewhere is a separate, broader concern this fix does not attempt). Both call sites in
+`LayoutEditorView.axaml.cs` now pass `vm.Model` — the editor's own live, in-place-mutated `LayoutView` —
+as `rootView`. 3 new tests (2 in `LayoutGdsiiExportTests.cs`, 1 in `DxfExportPlanTests.cs`) construct an
+on-disk `.clay` with one shape and a DIFFERENT in-memory `LayoutView` with another, and assert the
+exported structure reflects the live one.
+
+## Item 6 — diagnosed before any code changed, per the brief's explicit instruction
+
+The literal reported text does not appear in any committed `.clay`/testdata file (grepped the whole
+repo) — expected, since the owner's own scratch test designs are never committed (the same practice
+already noted for the prior DXF brief's `test.dxf`). With the literal file unavailable, the second
+diagnostic step was decisive: **both `GdsiiWriter.WriteText` and `DxfWriter.WriteText` are reached SOLELY
+from `case LabelShape label:` in their respective per-shape dispatch switches**, and neither writer (nor
+anything upstream of them) references `Environment.UserName`/`MachineName`/any hardcoded author or
+metadata string anywhere — confirmed by direct code reading of both files end to end, not assumed. There
+is no code path that could have written that text except a real `LabelShape.Text` value in the source
+design. **Conclusion, by elimination: the design genuinely contained an invisible label** — the exact
+failure mode the label-height brief already fixed once (a sub-pixel `Height` at PCB scale renders nothing
+visible, including its caret), just not yet closed for every path that can produce a label (an old file
+predating that fix, a hand-edited `.clay`, or a GDSII/DXF import — none of which route through
+`LayoutEditorViewModel.CommitLabel`, the one place the existing fix applies the visibility floor).
+
+**R-fix-5**: `GdsiiExportSummary`/`DxfExportSummary`/`GdsiiExport.ExportPlan` all gained
+`LabelRecordsWritten` (the count of TEXT records actually written, from the SAME dry-run/real-write path
+every other count already comes from — never a second count); both export completion messages in
+`LayoutEditorView.axaml.cs` now report it alongside the existing curve/hole/bitmap counts.
+
+**"Also worth fixing regardless"**: `LayoutRenderer.DrawLayer`'s committed-`LabelShape` branch now applies
+the SAME `EffectiveVisibleLabelHeightDbu` floor the in-progress ghost already used (R-lbl-2) — for DISPLAY
+ONLY, via a translated clone exactly like the ghost's own branch; the model's real `Height` is never
+mutated by rendering. This is what actually closes the gap `CommitLabel`'s earlier fix left open: a label
+that arrives any way OTHER than typing it fresh through the Label tool (import, hand-edit, an old file)
+now also renders visibly rather than silently disappearing. 6 new tests in
+`LayoutLabelExportAndVisibilityTests.cs` (label-count gates for both formats, a pixel-oracle proving a
+5-DBU-tall committed label still paints visibly with its model `Height` left untouched, and a
+no-regression check that an already-visible label's height is NOT altered).
+
+## Item 7 — cells were always created correctly; the actual gap was legibility, not creation or refresh
+
+Checked both other hypotheses directly before assuming the third: `GdsiiImport.Import` already creates
+every cell as a REAL folder under the caller's `parentDir` (confirmed both by reading `CollectHierarchy`'s
+Pass 1/Pass 2 and by the pre-existing gate-10 test, which already asserts real `.ccell`/`.clay` creation
+with a resolvable `CellRef`), and `ImportGdsiiLibraryAsync` already calls `_factory.ProjectTreeTool?.
+Refresh()` unconditionally after every successful import. Neither was actually broken. The real gap: the
+completion message was a bare `"Imported N cell(s) from GDSII."` with nothing opened — from the user's
+side, after picking a file, a terse message flashes by and NOTHING visibly changes on screen, which reads
+exactly like "reports success but nothing appears" even though the import fully succeeded.
+
+**R-fix-6**: `GdsiiImport.ImportResult` gained `TopLevelCellDirs` — every structure never named as
+another structure's instance `CellRef` within the same file (the GDSII notion of "top," computed from the
+raw structure/instance data already collected, before cell-name mangling). `ImportGdsiiLibraryAsync` now
+reports `Imported N cell(s) from "file.gds" into "workspace": "TOP", "VIA_ARRAY", "PAD", … (9 more).
+Top-level cell: "TOP".` (truncated to 3 names + a count, matching the brief's own example) and
+auto-opens the top-level cell's primary layout when there is exactly one unambiguous candidate — a
+pathological all-mutually-referencing library (no structure is ever "outermost") reports that explicitly
+rather than guessing one to open. 8 new tests in `GdsiiImportTests.cs` (top-level computation for the
+single/multi/none cases, and the two message-formatting helpers tested directly since `WorkspaceViewModel`
+cannot be constructed headlessly).
+
+## Item 8 — File → Import/Export submenus; GDSII/DXF export reachable from the menu for the first time
+
+File → Import (submenu: Data…, GDSII…, DXF…) and File → Export (submenu: Data, GDSII, DXF, Gerber), in
+both the in-window `Menu` and the macOS `NativeMenu`; New Layout/New Technology… repositioned directly
+after New Cell (grouping every "New X" creation command together); a separator added above Open
+Workspace…. Menu structure only — every underlying command is unchanged.
+
+**GDSII/DXF Export had no File-menu entry point at all before this** (they were toolbar-only, on
+`LayoutEditorView` itself) — reaching them from a `WorkspaceViewModel`-bound menu item needed a seam from
+the VM layer down into the specific active view's own export logic (file picking, the fidelity/options
+dialogs), which `WorkspaceViewModel` cannot call directly. Mirrors R-fix-3's `CanvasInteracted` shape
+exactly: new `LayoutDocument.ExportGdsiiRequested`/`ExportDxfRequested` events + `RequestExportGdsii`/
+`RequestExportDxf()`, subscribed by `LayoutEditorView` (same place `CanvasInteracted`/activation-focus
+already subscribe) to call its OWN existing `OnExportGdsiiAsync`/`OnExportDxfAsync` — never a second
+export code path (R-fix-4's own "route every entry point through the same accessor," now with two entry
+points instead of one). `WorkspaceViewModel.ExportGdsiiCommand`/`ExportDxfCommand` are enabled only when
+the active dockable is a `LayoutDocument`, re-notified from the same `OnDocumentDockPropertyChanged` hook
+`GenerateNetlistCommand` already uses for the schematic-only analogue; the Export submenu's GDSII/DXF
+items carry a `ToolTip.Tip="Requires an active layout document."` reason per R13a's disabled-with-a-reason
+rule. **Gerber's menu item is permanently disabled** (`CanExecute` hardcoded false) — Gerber export does
+not exist in this codebase (L4c, export-only, not yet briefed); the brief's own literal menu spec lists
+it anyway, so it appears with a stated reason ("Gerber export is not yet implemented.") rather than being
+silently omitted, which would read as an oversight rather than a scope boundary. 3 new tests in
+`LayoutCanvasActivationTests.cs` cover the new `LayoutDocument` events directly.
+
+## Item 9 — Acknowledgments dialog
+
+Added Clipper2 (Boost Software License) to `AcknowledgmentsWindow.axaml`, matching `README.md`'s own
+Acknowledgments section, which already named it. Cross-checked every OTHER library README names against
+the dialog — Avalonia, SkiaSharp, CSparse.NET, NumFlat, CommunityToolkit.Mvvm were all already present;
+no further drift found. (Dock.Avalonia/Material.Icons.Avalonia/PureHDF and the font licenses appear only
+in the dialog, not the terse README paragraph — that is the dialog being more complete than a marketing
+summary, not drift in the direction the brief asked to check.) 3 new tests in
+`AcknowledgmentsWindowTests.cs` — a source-scan (the dialog is a real `Window` subclass and cannot be
+constructed headlessly) pinning both the new Clipper2 entry and every other README-named library, plus a
+same-shape check on README.md itself so a future edit to either side that drops Clipper2 fails loudly.
+
+## Scope guardrails held
+
+No refactoring of the render pipeline beyond R-fix-1's winding normalization. No changes to entity
+mappings, the bulge identity, `SPLINE` export, or array handling. Item 6's diagnosis was performed before
+any code changed, per the brief's own instruction. `src/Core`, `src/Engine`, `RfCore` untouched.
+
+**39 new tests across nine files** (5 `LayoutWindingNormalizationTests.cs`, 2 `LayoutInstanceClipboardTests.cs`
+additions, 3 `LayoutCanvasActivationTests.cs` (item 3) + 3 more (item 8) = 6 total, 4 `LayoutGdsiiExportTests.cs`
+(item 4) + 2 more (item 5) = 6 total, 1 `DxfExportPlanTests.cs` (item 5), 6 `LayoutLabelExportAndVisibilityTests.cs`,
+8 `GdsiiImportTests.cs`, 3 `AcknowledgmentsWindowTests.cs`); **3061 Ui.Tests total, all green**; full
+solution green (Firewall 4/4, Core 388/388, Engine 458/459 — 1 pre-existing skip, matching every prior
+baseline in this file exactly).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase in this
+file) — the File-menu restructuring (both surfaces), the Export submenu's disabled-with-reason tooltip,
+the GDSII-import auto-open, and the Acknowledgments dialog's rendered text all cannot be exercised
+headlessly for the same reason every prior phase's dialog/menu code couldn't be; correctness rests on the
+gate tests above, which drive the exact same public methods (`GdsiiExport.Analyze`, `GdsiiImport.Import`,
+`LayoutDocument.RequestExportGdsii/RequestExportDxf`, `WorkspaceViewModel.FormatTruncatedNameList/
+DescribeTopLevelCells`) the view/menu code-behind calls. Please confirm on your end: two overlapping
+same-layer polygons with opposite vertex order render identically whether drawn directly or as an
+instance; pasting an instance into a brand-new unsaved document (or a different workspace checkout)
+resolves correctly or shows the named placeholder; clicking the project tree then clicking layout
+geometry shows the Properties Inspector immediately, no tab switching; a design with no curves/holes/
+bitmaps exports to GDSII with no dialog; drawing a shape and exporting without saving shows it in both
+GDSII and DXF; the export summary reports a label count; importing a multi-structure GDSII library names
+what was imported and opens the top-level cell; File → Import/Export show the new submenus in both the
+in-window menu and the macOS menu bar, with GDSII/DXF/Gerber Export greyed out with a reason when no
+layout document is active; and the Acknowledgments dialog now lists Clipper2.
+
 DXF version support — decided, documented, encoding made real (brief-dxf-version-support.md, 2026-07-28)
 — COMPLETE: owner questions after the L4b post-ship fix below — is there value in also writing R2018?
 Does the reader handle newer versions? Both answered, and both now backed by real evidence rather than

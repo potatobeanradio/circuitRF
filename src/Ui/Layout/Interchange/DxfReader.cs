@@ -12,12 +12,25 @@
 // own Body starts with "2 HEADER") — no special HEADER sub-parser is needed, just a scan for the
 // "9 $INSUNITS" marker followed by its value group.
 
+using CircuitRF.Ui.Theming;
+
 namespace CircuitRF.Ui.Layout.Interchange;
 
 /// <summary>One imported shape, still carrying its raw DXF layer NAME — DxfImport resolves this to a
 /// real <see cref="LayerKey"/> via <see cref="DxfLayerReconciliation"/> before any reconciliation runs,
 /// mirroring the format-specific/orchestration split GdsiiReader/GdsiiImport already established.</summary>
 public sealed record DxfImportedShape(LayoutShape Shape, string LayerName);
+
+/// <summary>brief-dxf-layer-colors.md R-col-3 — one row of the file's own <c>LAYER</c> table, parsed
+/// (never guessed) so import can carry the author's real colour/visibility intent instead of always
+/// generating one. <paramref name="AciIndex"/> is the group-62 value with its sign stripped (a negative
+/// 62 means the layer is OFF — DXF's own convention, not a separate flag) and defaults to 7 when the
+/// group is absent from a record (AutoCAD's own default). <paramref name="TrueColor"/> is non-null only
+/// when the record carries group 420 (exact 24-bit colour) — R-col-2/R-col-5's resolution order is
+/// "420 wins when present; otherwise decode 62 through the ACI palette; ACI 7 specifically is never
+/// taken literally" and lives in <see cref="DxfLayerReconciliation"/>, not here (this record is pure
+/// data, no policy).</summary>
+public sealed record DxfLayerTableEntry(string Name, int AciIndex, Rgba? TrueColor, bool Frozen, bool Off);
 
 /// <summary>One BLOCK, or the synthetic model-space "structure" (<see cref="DxfReader.ModelSpaceName"/>)
 /// — the DXF analogue of a GDSII structure/circuitRF cell, before <see cref="DxfImport"/> mangles names
@@ -59,6 +72,12 @@ public sealed class DxfReader
 
     public IReadOnlyList<DxfStructure> Structures { get; private set; } = [];
 
+    /// <summary>R-col-3: every record in the file's own <c>LAYER</c> table (TABLES section) — empty for
+    /// a file with no LAYER table at all (rare, but a hand-crafted or non-conformant file could omit
+    /// it), which <see cref="DxfLayerReconciliation"/> treats exactly like "layer missing from the
+    /// table" per-name (R-col-5's fallback applies uniformly either way).</summary>
+    public IReadOnlyList<DxfLayerTableEntry> LayerTable { get; private set; } = [];
+
     private readonly List<string> _diagnostics = [];
     private readonly Dictionary<string, int> _unsupportedCounts = new(StringComparer.OrdinalIgnoreCase);
 
@@ -98,6 +117,10 @@ public sealed class DxfReader
                 {
                     i = ParseEntityRun(tokens, i, "ENDSEC", modelSpace);
                     if (i < tokens.Count && tokens[i].Type == "ENDSEC") i++;
+                }
+                else if (sectionName == "TABLES")
+                {
+                    i = ParseTablesSection(tokens, i);
                 }
                 else
                 {
@@ -172,6 +195,70 @@ public sealed class DxfReader
         while (i < tokens.Count && tokens[i].Type != terminator && tokens[i].Type != "ENDSEC" && tokens[i].Type != "EOF") i++;
         return i;
     }
+
+    // ── TABLES / LAYER (brief-dxf-layer-colors.md R-col-3) ───────────────────────
+    //
+    // Every table (VPORT, LTYPE, LAYER, STYLE, ...) in a real DXF is a "TABLE" token (body's own group 2
+    // names which one) followed by zero or more table-RECORD tokens (VPORT/LTYPE/LAYER/...) and closed by
+    // ENDTAB — the same code-0-boundary tokenizing this whole reader already relies on, so no dedicated
+    // per-table structure is needed here: only the ONE table this brief cares about (LAYER) is actually
+    // parsed; every other table/record/ENDTAB is skipped one token at a time, which is safe precisely
+    // because skipping never needs to know that table's own internal shape.
+
+    private int ParseTablesSection(List<(string Type, List<DxfGroup> Body)> tokens, int i)
+    {
+        var layers = new List<DxfLayerTableEntry>();
+        while (i < tokens.Count && tokens[i].Type != "ENDSEC" && tokens[i].Type != "EOF")
+        {
+            if (tokens[i].Type == "TABLE" &&
+                string.Equals(GetStr(tokens[i].Body, 2, ""), "LAYER", StringComparison.OrdinalIgnoreCase))
+            {
+                i++; // consume the TABLE header token itself
+                while (i < tokens.Count && tokens[i].Type == "LAYER")
+                {
+                    layers.Add(ParseLayerTableEntry(tokens[i].Body));
+                    i++;
+                }
+                if (i < tokens.Count && tokens[i].Type == "ENDTAB") i++;
+            }
+            else
+            {
+                i++; // any other table header/record/ENDTAB — not this brief's concern
+            }
+        }
+        if (i < tokens.Count && tokens[i].Type == "ENDSEC") i++;
+
+        LayerTable = layers;
+        return i;
+    }
+
+    private static DxfLayerTableEntry ParseLayerTableEntry(List<DxfGroup> body)
+    {
+        string name = GetStr(body, 2, "");
+
+        // Group 62's SIGN is DXF's own "layer off" flag — not a separate bit anywhere else in the
+        // record. Absent entirely defaults to 7 (AutoCAD's own default for a layer with no explicit
+        // colour), matching WriteLayerTable's own "layer 0" convention on the export side.
+        int rawColor = GetInt(body, 62, 7);
+        bool off = rawColor < 0;
+        int aciIndex = Math.Abs(rawColor);
+
+        Rgba? trueColor = TryGet(body, 420, out var tc) ? UnpackTrueColor(tc.AsInt()) : null;
+
+        // Standard flags (group 70), bit 1 = frozen — the only one of the three documented bits
+        // (frozen / frozen-by-default-in-new-viewports / locked) this reader carries forward, since a
+        // freshly-created LayerDef has no notion of "locked" separate from Visible/Selectable that would
+        // map any more precisely than Visible already does.
+        int flags = GetInt(body, 70, 0);
+        bool frozen = (flags & 1) != 0;
+
+        return new DxfLayerTableEntry(name, aciIndex, trueColor, frozen, off);
+    }
+
+    /// <summary>Group 420's own encoding: a plain 24-bit `0x00RRGGBB` integer — mirrors
+    /// <c>DxfWriter.PackTrueColor</c>'s inverse exactly.</summary>
+    private static Rgba UnpackTrueColor(int packed) =>
+        new((byte)((packed >> 16) & 0xFF), (byte)((packed >> 8) & 0xFF), (byte)(packed & 0xFF));
 
     // ── Entity run (shared by BLOCKS/ENTITIES) ───────────────────────────────
 

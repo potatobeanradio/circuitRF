@@ -4,6 +4,7 @@
              xmlns:ctrl="using:CircuitRF.Ui.Controls"
              xmlns:converters="using:CircuitRF.Ui.Converters"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:shared="using:CircuitRF.Ui.Views.Shared"
              x:Class="CircuitRF.Ui.Views.Layout.LayoutEditorView"
              x:DataType="lay:LayoutDocument"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -63,6 +64,9 @@
     </UserControl.Styles>
 
     <DockPanel>
+
+        <!-- brief-file-menu-restructure.md §4A: File menu, visible only when torn off. -->
+        <shared:TornOffFileMenuView DockPanel.Dock="Top"/>
 
         <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
         <Border x:Name="ToolbarBorder" DockPanel.Dock="Top"
@@ -134,6 +138,17 @@
                         <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Instance}"
                                 Click="OnInstanceTool" ToolTip.Tip="Instance… (place a cell reference, L3a)" Padding="6,3">
                             <mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/>
+                        </Button>
+
+                        <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                                Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+                        <!-- Save .clay — mirrors SchematicView's own Save button exactly (same
+                             placement relative to the hierarchy-navigation group, same icon). -->
+                        <Button Click="OnSaveClay"
+                                ToolTip.Tip="Save layout  (Ctrl+S)"
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/>
                         </Button>
 
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"

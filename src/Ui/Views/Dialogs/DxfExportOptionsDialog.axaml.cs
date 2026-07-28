@@ -17,12 +17,14 @@ public partial class DxfExportOptionsDialog : Window
     public bool FlattenSplines { get; private set; }
     public bool PathAsOutlinePolygon { get; private set; }
     public DxfViewMode ViewMode { get; private set; } = DxfViewMode.FitToExtents;
+    public DxfAcadVersion AcadVersion { get; private set; } = DxfAcadVersion.R2018;
 
     public DxfExportOptionsDialog() => InitializeComponent();
 
     public DxfExportOptionsDialog(
         DxfExport.ExportPlan plan, DxfExportSummary preview,
-        bool defaultFlattenSplines, bool defaultPathAsOutline, DxfViewMode defaultViewMode) : this()
+        bool defaultFlattenSplines, bool defaultPathAsOutline, DxfViewMode defaultViewMode,
+        DxfAcadVersion defaultAcadVersion = DxfAcadVersion.R2018) : this()
     {
         CurveLine.Text = $"• {preview.CurvedShapesWritten} curved shape(s) export natively (arc bulge / SPLINE) — never flattened.";
         CurveLine.IsVisible = preview.CurvedShapesWritten > 0;
@@ -57,13 +59,33 @@ public partial class DxfExportOptionsDialog : Window
             UnresolvedList.ItemsSource = plan.UnresolvedInstanceReferences;
         }
 
-        FormatVersionLine.Text = $"Writes DXF: {DxfWriter.FormatDescription}";
-
         FlattenSplinesCheck.IsChecked = defaultFlattenSplines;
         PathOutlineCheck.IsChecked = defaultPathAsOutline;
-        if (defaultViewMode == DxfViewMode.MatchCurrentView) MatchCurrentViewRadio.IsChecked = true;
-        else FitToExtentsRadio.IsChecked = true;
+        ViewModeCombo.SelectedIndex = defaultViewMode == DxfViewMode.MatchCurrentView ? 1 : 0;
+
+        // R-col-1a: the version choice is remembered for the session by the caller (a static field on
+        // LayoutEditorView, mirroring _lastFlattenSplines/_lastViewMode exactly) — this dialog only
+        // reflects whatever it's handed and reports back whatever the user picked.
+        AcadVersionCombo.SelectedIndex = defaultAcadVersion switch
+        {
+            DxfAcadVersion.R2000 => 0,
+            DxfAcadVersion.R2004 => 1,
+            _ => 2,
+        };
+        UpdateFormatVersionLine();
     }
+
+    private void OnAcadVersionChanged(object? sender, SelectionChangedEventArgs e) => UpdateFormatVersionLine();
+
+    private void UpdateFormatVersionLine() =>
+        FormatVersionLine.Text = $"Writes DXF: {DxfWriter.FormatDescription(SelectedAcadVersion())}";
+
+    private DxfAcadVersion SelectedAcadVersion() => AcadVersionCombo.SelectedIndex switch
+    {
+        0 => DxfAcadVersion.R2000,
+        1 => DxfAcadVersion.R2004,
+        _ => DxfAcadVersion.R2018,
+    };
 
     private void OnCancelClick(object? sender, RoutedEventArgs e) => Close(false);
 
@@ -71,7 +93,8 @@ public partial class DxfExportOptionsDialog : Window
     {
         FlattenSplines = FlattenSplinesCheck.IsChecked == true;
         PathAsOutlinePolygon = PathOutlineCheck.IsChecked == true;
-        ViewMode = MatchCurrentViewRadio.IsChecked == true ? DxfViewMode.MatchCurrentView : DxfViewMode.FitToExtents;
+        ViewMode = ViewModeCombo.SelectedIndex == 1 ? DxfViewMode.MatchCurrentView : DxfViewMode.FitToExtents;
+        AcadVersion = SelectedAcadVersion();
         Close(true);
     }
 }

@@ -388,19 +388,35 @@ public sealed partial class LayoutEditorViewModel
     /// <see cref="LayoutFragment.Payload"/> build — called by <c>BuildCopyPayload</c> (Clipboard.cs)
     /// alongside the shape data. brief-L3a-followups.md §2/R-fix-2: a selection carrying both shapes
     /// and instances is now normal, not an edge case — this and the shape half both simply contribute
-    /// whatever is non-empty to the SAME fragment.</summary>
-    internal (List<LayoutInstance> Instances, List<string?> CellDirs) BuildCopyInstancesPayload()
+    /// whatever is non-empty to the SAME fragment.
+    ///
+    /// brief-layout-testing-fixes.md item 2/R-fix-2: also captures each resolved cell dir's path
+    /// relative to THIS (source) document's own workspace root, when one resolves — the base-
+    /// independent form <see cref="LayoutFragment.RebaseInstances"/> falls back to when the destination
+    /// document has no stable base directory of its own to rebase against (a brand-new, unsaved
+    /// document).</summary>
+    internal (List<LayoutInstance> Instances, List<string?> CellDirs, List<string?> WorkspaceRelativeDirs) BuildCopyInstancesPayload()
     {
         var instances = new List<LayoutInstance>();
         var cellDirs = new List<string?>();
+        var workspaceRelativeDirs = new List<string?>();
         foreach (var i in _selectedInstanceIndices)
         {
             if (i < 0 || i >= Model.Instances.Count) continue;
             var inst = Model.Instances[i];
             instances.Add(LayoutGeometry.Clone(inst));
             var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
-            cellDirs.Add(res.State == CellLayoutState.Resolved ? res.ResolvedCellDir : null);
+            string? resolvedCellDir = res.State == CellLayoutState.Resolved ? res.ResolvedCellDir : null;
+            cellDirs.Add(resolvedCellDir);
+
+            string? workspaceRelative = null;
+            if (resolvedCellDir is { Length: > 0 } && WorkspaceRootDir is { Length: > 0 } root)
+            {
+                try { workspaceRelative = Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(resolvedCellDir)); }
+                catch { /* leave null — the absolute-path fallback still covers this instance */ }
+            }
+            workspaceRelativeDirs.Add(workspaceRelative);
         }
-        return (instances, cellDirs);
+        return (instances, cellDirs, workspaceRelativeDirs);
     }
 }

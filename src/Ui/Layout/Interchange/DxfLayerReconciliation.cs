@@ -4,6 +4,8 @@
 // same unmodified LayoutLayerMapping.Propose. DXF is the opposite case: it has NAMES but no numeric
 // key, so a synthetic LayerKey must be invented per distinct incoming name.
 
+using CircuitRF.Ui.Theming;
+
 namespace CircuitRF.Ui.Layout.Interchange;
 
 public static class DxfLayerReconciliation
@@ -20,12 +22,26 @@ public static class DxfLayerReconciliation
     /// destination layer whose own <c>Name</c> literally equals the DXF name still matches by
     /// <see cref="LayerMatchKind.ExactName"/> with zero technology authoring required.
     /// </summary>
+    /// <summary><paramref name="layerTable"/> (brief-dxf-layer-colors.md R-col-3/R-col-4) is the file's
+    /// own parsed <c>LAYER</c> table — carried alongside the name-based reconciliation this method
+    /// already did, so the resulting <see cref="LayerDef"/> (installed verbatim by "Add to technology")
+    /// carries the DXF's OWN colour rather than defaulting to black (<see cref="Rgba"/>'s zero value,
+    /// what the pre-brief version of this method silently left every added layer at). Colour resolution
+    /// (R-col-5): an exact group-420 true colour wins when present; otherwise the group-62 ACI index
+    /// decodes through <see cref="DxfAciPalette"/> — EXCEPT ACI 7 (or a name entirely absent from the
+    /// table), which is never taken literally as white/black and instead falls back to the SAME
+    /// <see cref="FallbackPalette"/> gap-fill the renderer already uses for an undefined layer, keyed by
+    /// this layer's own (possibly synthetic) <see cref="LayerKey"/> so the colour is at least
+    /// deterministic and distinguishable from every other unresolved layer in the same import.</summary>
     public static (IReadOnlyList<LayerDef> SourceLayers, IReadOnlyDictionary<string, LayerKey> KeyByDxfName) BuildSourceLayers(
-        IReadOnlyList<string> dxfLayerNames, Technology? destTech)
+        IReadOnlyList<string> dxfLayerNames, IReadOnlyList<DxfLayerTableEntry> layerTable, Technology? destTech)
     {
         var distinct = dxfLayerNames.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var sourceLayers = new List<LayerDef>(distinct.Count);
         var keyByName = new Dictionary<string, LayerKey>(StringComparer.OrdinalIgnoreCase);
+        var tableByName = new Dictionary<string, DxfLayerTableEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in layerTable)
+            tableByName.TryAdd(entry.Name, entry); // first record wins on a duplicate name (non-conformant, but never crash)
 
         var usedKeys = new HashSet<LayerKey>(destTech?.Layers.Select(l => l.Key) ?? []);
         int nextSyntheticLayer = -1;
@@ -52,9 +68,25 @@ public static class DxfLayerReconciliation
             }
 
             keyByName[dxfName] = key;
-            sourceLayers.Add(new LayerDef { Key = key, Name = name });
+            tableByName.TryGetValue(dxfName, out var tableEntry);
+            sourceLayers.Add(new LayerDef
+            {
+                Key = key,
+                Name = name,
+                Color = ResolveColor(tableEntry, key),
+                Visible = !(tableEntry?.Off ?? false) && !(tableEntry?.Frozen ?? false),
+            });
         }
 
         return (sourceLayers, keyByName);
+    }
+
+    private static Rgba ResolveColor(DxfLayerTableEntry? entry, LayerKey key)
+    {
+        if (entry?.TrueColor is { } trueColor) return trueColor;
+        int aci = entry?.AciIndex ?? 7;
+        // R-col-5: ACI 7 means "black or white, depending on background" — never take it literally,
+        // including when the table is absent or this name is missing from it (both default to 7 above).
+        return aci == 7 ? FallbackPalette.For(key).Color : DxfAciPalette.ToRgb(aci);
     }
 }

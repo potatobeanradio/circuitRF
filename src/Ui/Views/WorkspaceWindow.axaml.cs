@@ -138,6 +138,7 @@ public partial class WorkspaceWindow : Window
     private void EnsureSaveNativeItem()
     {
         if (_saveNativeItem is not null) return;
+        if (_vm is null) return;
 
         var rootMenu = NativeMenu.GetMenu(this);
         if (rootMenu is null) return;
@@ -148,7 +149,10 @@ public partial class WorkspaceWindow : Window
             if (fileItem.Menu is null) break;
             foreach (var sub in fileItem.Menu.Items)
             {
-                if (sub is NativeMenuItem ni && ni.Header == "Save All")
+                // brief-file-menu-restructure.md: matched by Command identity, not Header text — the
+                // item's literal XAML header is now "Save" (was "Save All"), which used to be this
+                // lookup's own search key and would otherwise never match again.
+                if (sub is NativeMenuItem ni && ReferenceEquals(ni.Command, _vm.SaveAllDocumentsCommand))
                 {
                     _saveNativeItem = ni;
                     return;

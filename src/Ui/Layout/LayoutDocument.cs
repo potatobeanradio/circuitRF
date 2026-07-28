@@ -27,6 +27,29 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     public void RequestActivationFocus() { _activationFocusPending = true; ActivationFocusRequested?.Invoke(); }
     public bool ConsumeActivationFocus() { var p = _activationFocusPending; _activationFocusPending = false; return p; }
 
+    // ── Canvas interaction — the OTHER direction (brief-layout-testing-fixes.md item 3/R-fix-3) ──────
+    // Clicking the project tree (or any other tool dock) can change what the Properties panel shows
+    // WITHOUT this document ever leaving the DocumentDock's own ActiveDockable slot (the tree lives in a
+    // different dock region entirely) — so WorkspaceViewModel's OnDocumentDockPropertyChanged, which
+    // only fires on an actual ActiveDockable change, never re-fires just because the user clicks back
+    // onto this document's own canvas. Raised by the view on GotFocus (a click into the canvas always
+    // re-focuses it, since the tree click moved focus away) so WorkspaceViewModel can re-assert
+    // Properties/undo/save-scope routing for THIS document explicitly, regardless of whether Dock's own
+    // ActiveDockable tracking considers anything to have "changed."
+    public event Action? CanvasInteracted;
+    public void NotifyCanvasInteracted() => CanvasInteracted?.Invoke();
+
+    // ── Export requests from the File menu (brief-layout-testing-fixes.md item 8) ────────────────
+    // GDSII/DXF export logic lives entirely in LayoutEditorView's own code-behind (file picking, the
+    // fidelity/options dialogs) — a File-menu item is bound to WorkspaceViewModel, which has no view
+    // reference to call that logic on directly. Mirrors CanvasInteracted's own shape exactly: the VM
+    // layer only RAISES the request; the view (already subscribed for CanvasInteracted/activation
+    // focus) is what actually runs the export.
+    public event Action? ExportGdsiiRequested;
+    public event Action? ExportDxfRequested;
+    public void RequestExportGdsii() => ExportGdsiiRequested?.Invoke();
+    public void RequestExportDxf() => ExportDxfRequested?.Invoke();
+
     // ── Navigation frame ──────────────────────────────────────────────────────
 
     /// <summary><see cref="Viewport"/> is the last viewport CAPTURED for this frame (by the view,

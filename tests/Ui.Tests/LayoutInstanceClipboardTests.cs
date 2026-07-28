@@ -112,6 +112,89 @@ public sealed class LayoutInstanceClipboardTests : IDisposable
         Assert.Equal(0, destVm.Model.Instances[0].X); // Paste in Place — original coordinates
     }
 
+    // ── brief-layout-testing-fixes.md item 2/R-fix-2 — a NEVER-SAVED destination has no base dir ────
+
+    /// <summary>The reported bug, reproduced directly: pasting into a brand-new, never-saved document
+    /// (no <c>CurrentLayoutPath</c> at all, so <c>InstanceBaseDir == ""</c>) previously kept the
+    /// SOURCE's own relative <c>CellRef</c> string unchanged (nothing to rebase against), which then
+    /// resolved against nothing meaningful and reported broken — even though the referenced cell is
+    /// right there on disk. <c>RebaseInstances</c> now falls back to an ABSOLUTE <c>CellRef</c> in this
+    /// case, which resolves correctly regardless of the (empty) base directory.</summary>
+    [Fact]
+    public void CopyInstance_PasteIntoBrandNewUnsavedDocument_ResolvesViaAbsoluteFallback()
+    {
+        var leafDir = CreateCell("Leaf");
+        var sourceVm = MakeVmAt("Source");
+        sourceVm.Model.Instances.Add(new LayoutInstance { CellRef = "../../Leaf", X = 0, Y = 0, Mag = 1.0 });
+        sourceVm.OnPointerPressed(50, 50, Avalonia.Input.KeyModifiers.None, hitTolDbu: 10);
+        var payload = sourceVm.BuildCopyPayload()!;
+
+        var destVm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 });
+        Assert.Equal("", destVm.InstanceBaseDir); // never saved — no stable base dir to rebase against
+
+        var rebased = destVm.RebaseFragmentInstances(payload);
+        Assert.True(Path.IsPathRooted(rebased[0].CellRef)); // absolute fallback, not the stale relative string
+
+        var resolution = CellLayoutResolver.Resolve(rebased[0].CellRef, destVm.InstanceBaseDir);
+        Assert.Equal(CellLayoutState.Resolved, resolution.State);
+        Assert.Equal(leafDir, resolution.ResolvedCellDir);
+
+        destVm.PasteInstancesInPlace(rebased);
+        Assert.Single(destVm.Model.Instances);
+    }
+
+    /// <summary>The workspace-relative fallback specifically (not just the absolute one): the
+    /// destination is a never-saved document whose OWN workspace happens to be a different physical
+    /// checkout of the SAME relative layout (a realistic "shared workspace on two machines" scenario) —
+    /// resolving via the workspace-relative form must land in the MIRRORED workspace's own Leaf, not the
+    /// original one, proving the workspace-relative path is genuinely being used and not merely
+    /// coincidentally satisfied by the absolute fallback (which would point at the wrong copy here).</summary>
+    [Fact]
+    public void CopyInstance_PasteIntoUnsavedDocument_DifferentWorkspaceCheckout_ResolvesViaWorkspaceRelativeFallback()
+    {
+        var leafDir = CreateCell("Leaf");
+        var sourceVm = MakeVmAt("Source");
+        sourceVm.WorkspaceTechDir = Path.Combine(_workspaceDir, "tech");
+        sourceVm.Model.Instances.Add(new LayoutInstance { CellRef = "../../Leaf", X = 0, Y = 0, Mag = 1.0 });
+        sourceVm.OnPointerPressed(50, 50, Avalonia.Input.KeyModifiers.None, hitTolDbu: 10);
+        var payload = sourceVm.BuildCopyPayload()!;
+        Assert.Equal("Leaf", payload.InstanceWorkspaceRelativeDirs[0]);
+
+        // A SEPARATE physical copy of the same workspace layout, at a different absolute path.
+        var mirroredWorkspaceDir = Path.Combine(Path.GetTempPath(), "crfInstClipMirror_" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            CopyDirectory(_workspaceDir, mirroredWorkspaceDir);
+            var mirroredLeafDir = Path.Combine(mirroredWorkspaceDir, "Leaf");
+
+            var destVm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 })
+            {
+                WorkspaceTechDir = Path.Combine(mirroredWorkspaceDir, "tech"),
+            };
+            Assert.Equal("", destVm.InstanceBaseDir); // never saved
+
+            var rebased = destVm.RebaseFragmentInstances(payload);
+            var resolution = CellLayoutResolver.Resolve(rebased[0].CellRef, destVm.InstanceBaseDir);
+            Assert.Equal(CellLayoutState.Resolved, resolution.State);
+            Assert.Equal(Path.GetFullPath(mirroredLeafDir), Path.GetFullPath(resolution.ResolvedCellDir!));
+            Assert.NotEqual(Path.GetFullPath(leafDir), Path.GetFullPath(resolution.ResolvedCellDir!));
+        }
+        finally
+        {
+            CellLayoutResolver.InvalidateAll();
+            if (Directory.Exists(mirroredWorkspaceDir)) Directory.Delete(mirroredWorkspaceDir, recursive: true);
+        }
+    }
+
+    private static void CopyDirectory(string sourceDir, string destDir)
+    {
+        Directory.CreateDirectory(destDir);
+        foreach (var file in Directory.GetFiles(sourceDir))
+            File.Copy(file, Path.Combine(destDir, Path.GetFileName(file)));
+        foreach (var dir in Directory.GetDirectories(sourceDir))
+            CopyDirectory(dir, Path.Combine(destDir, Path.GetFileName(dir)));
+    }
+
     [Fact]
     public void CopyAlreadyBrokenInstance_PasteElsewhere_StaysReportedBroken_NeverThrows()
     {

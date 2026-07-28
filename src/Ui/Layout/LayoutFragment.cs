@@ -46,9 +46,30 @@ public static class LayoutFragment
         /// copy time (or null when it could not be resolved there — a broken reference, or a scratch
         /// source document with no stable base directory). This is what lets <see cref="RebaseInstances"/>
         /// compute a NEW relative <c>CellRef</c> correct for the DESTINATION document, rather than
-        /// reusing a relative string that only meant something in the source's own directory.</summary>
+        /// reusing a relative string that only meant something in the source's own directory.
+        ///
+        /// brief-layout-testing-fixes.md item 2/R-fix-2: a relative-to-destination rebase is only
+        /// possible when the DESTINATION document has a stable base directory (a saved <c>.clay</c>) —
+        /// pasting into a brand-new, never-saved document (<c>InstanceBaseDir == ""</c>) previously fell
+        /// back to keeping the SOURCE's own relative <c>CellRef</c> string unchanged, which resolves
+        /// against nothing meaningful and reports broken even though the referenced cell is right there
+        /// on disk. The fragment now ALSO carries each instance's cell identity in two base-INDEPENDENT
+        /// forms so a paste can still resolve without a destination base directory: <see
+        /// cref="InstanceWorkspaceRelativeDirs"/> (portable across a shared workspace) and
+        /// <see cref="InstanceCellDirs"/> itself, used directly as an ABSOLUTE <c>CellRef</c> — legal
+        /// because <c>Path.Combine(baseDir, cellRef)</c> already ignores <paramref name="baseDir"/>
+        /// entirely when <c>cellRef</c> is rooted, so an absolute <c>CellRef</c> resolves correctly
+        /// regardless of the destination's base directory, including an empty one.</summary>
         public List<LayoutInstance> Instances { get; set; } = [];
         public List<string?> InstanceCellDirs { get; set; } = [];
+
+        /// <summary>Parallel to <see cref="Instances"/> — the source cell directory's path relative to
+        /// the SOURCE document's OWN workspace root at copy time, or null when no workspace root was
+        /// resolvable there (a loose/no-workspace source) or the instance's cell dir itself is null.
+        /// Preferred over the plain absolute fallback when the DESTINATION also resolves to a workspace
+        /// root, since it stays correct even if the two documents' workspace happens to live at a
+        /// different absolute location (e.g. a shared workspace checked out at two different paths).</summary>
+        public List<string?> InstanceWorkspaceRelativeDirs { get; set; } = [];
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -69,13 +90,23 @@ public static class LayoutFragment
     /// Shapes are deep-cloned — later mutation of the source selection never affects the fragment.
     /// </summary>
     public static Payload Build(IReadOnlyList<LayoutShape> shapes, Technology? tech, int dbuPerMicron) =>
-        Build(shapes, [], [], tech, dbuPerMicron);
+        Build(shapes, [], [], [], tech, dbuPerMicron);
 
     /// <summary>L3a overload — also carries instances. <paramref name="instanceCellDirs"/> is parallel
-    /// to <paramref name="instances"/> (see <see cref="Payload.InstanceCellDirs"/>'s doc comment).</summary>
+    /// to <paramref name="instances"/> (see <see cref="Payload.InstanceCellDirs"/>'s doc comment).
+    /// <paramref name="instanceWorkspaceRelativeDirs"/> defaults to empty (older callers, or a caller
+    /// with no workspace root to compute it against) — <see cref="RebaseInstances"/> tolerates that,
+    /// falling straight through to the absolute-path fallback.</summary>
     public static Payload Build(
         IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance> instances, IReadOnlyList<string?> instanceCellDirs,
-        Technology? tech, int dbuPerMicron)
+        Technology? tech, int dbuPerMicron) =>
+        Build(shapes, instances, instanceCellDirs, [], tech, dbuPerMicron);
+
+    /// <summary>brief-layout-testing-fixes.md item 2/R-fix-2 overload — also carries each instance's
+    /// workspace-relative cell dir (see <see cref="Payload.InstanceWorkspaceRelativeDirs"/>).</summary>
+    public static Payload Build(
+        IReadOnlyList<LayoutShape> shapes, IReadOnlyList<LayoutInstance> instances, IReadOnlyList<string?> instanceCellDirs,
+        IReadOnlyList<string?> instanceWorkspaceRelativeDirs, Technology? tech, int dbuPerMicron)
     {
         var bbox = Bbox.Empty;
         foreach (var s in shapes) bbox = bbox.Union(LayoutGeometry.BboxOf(s));
@@ -101,6 +132,7 @@ public static class LayoutFragment
             Shapes           = shapes.Select(LayoutGeometry.Clone).ToList(),
             Instances        = instances.Select(LayoutGeometry.Clone).ToList(),
             InstanceCellDirs = instanceCellDirs.ToList(),
+            InstanceWorkspaceRelativeDirs = instanceWorkspaceRelativeDirs.ToList(),
         };
     }
 
@@ -299,26 +331,78 @@ public static class LayoutFragment
     /// rebases exactly, since the relative path from a directory to itself and back is well-defined.
     /// </summary>
     public static IReadOnlyList<LayoutInstance> RebaseInstances(
-        IReadOnlyList<LayoutInstance> instances, IReadOnlyList<string?> cellDirs, string destBaseDir)
+        IReadOnlyList<LayoutInstance> instances, IReadOnlyList<string?> cellDirs, string destBaseDir) =>
+        RebaseInstances(instances, cellDirs, [], destBaseDir, null);
+
+    /// <summary>
+    /// brief-layout-testing-fixes.md item 2/R-fix-2 — a relative-to-destination rebase (below) is only
+    /// possible when the destination document HAS a stable base directory. Pasting into a brand-new,
+    /// never-saved document (<paramref name="destBaseDir"/> is <c>""</c>) previously fell all the way
+    /// through to keeping the source's own relative <c>CellRef</c> string, which resolves against
+    /// nothing meaningful there and reports broken even though the referenced cell is right there on
+    /// disk — reproduced directly and fixed here, not assumed. Resolution order per instance:
+    /// <list type="number">
+    /// <item>Relative to <paramref name="destBaseDir"/>, from the SOURCE's own resolved absolute cell
+    /// dir (<paramref name="cellDirs"/>) — the precise, existing behavior, unchanged, preferred whenever
+    /// the destination has a real base directory to compute against.</item>
+    /// <item>Otherwise, if the destination ALSO resolves to a workspace root
+    /// (<paramref name="destWorkspaceRootDir"/>) and this instance's source cell dir was captured as
+    /// workspace-relative (<paramref name="workspaceRelativeDirs"/>), combine the two into an ABSOLUTE
+    /// <c>CellRef</c> — correct even across two workspace checkouts at different absolute locations,
+    /// and immediately resolvable with no destination base directory at all (an absolute <c>CellRef</c>
+    /// resolves regardless of <c>baseDir</c>, since <c>Path.Combine(baseDir, cellRef)</c> already
+    /// ignores <c>baseDir</c> when <c>cellRef</c> is rooted).</item>
+    /// <item>Otherwise, if the source's own absolute cell dir is known, use IT directly as an absolute
+    /// <c>CellRef</c> — works immediately even with no workspace and no destination base directory.</item>
+    /// <item>Otherwise (already broken at copy time) keep the original <c>CellRef</c> string unchanged —
+    /// R-L3a-1's placeholder rendering reports it plainly rather than this method silently producing a
+    /// wrong path.</item>
+    /// </list>
+    /// Same-directory copy/paste (the common case) still rebases exactly via step 1, since the relative
+    /// path from a directory to itself and back is well-defined.
+    /// </summary>
+    public static IReadOnlyList<LayoutInstance> RebaseInstances(
+        IReadOnlyList<LayoutInstance> instances, IReadOnlyList<string?> cellDirs,
+        IReadOnlyList<string?> workspaceRelativeDirs, string destBaseDir, string? destWorkspaceRootDir)
     {
         var result = new List<LayoutInstance>(instances.Count);
         for (int i = 0; i < instances.Count; i++)
         {
             var clone = LayoutGeometry.Clone(instances[i]);
             string? sourceCellDir = i < cellDirs.Count ? cellDirs[i] : null;
+            string? workspaceRelativeDir = i < workspaceRelativeDirs.Count ? workspaceRelativeDirs[i] : null;
 
             if (sourceCellDir is { Length: > 0 } && destBaseDir is { Length: > 0 })
             {
                 try
                 {
-                    string rel = Path.GetRelativePath(Path.GetFullPath(destBaseDir), Path.GetFullPath(sourceCellDir));
-                    clone.CellRef = rel;
+                    clone.CellRef = Path.GetRelativePath(Path.GetFullPath(destBaseDir), Path.GetFullPath(sourceCellDir));
+                    result.Add(clone);
+                    continue;
                 }
                 catch
                 {
-                    // Keep the original CellRef — see the doc comment's fallback note.
+                    // Fall through to the base-independent forms below.
                 }
             }
+
+            if (workspaceRelativeDir is { Length: > 0 } && destWorkspaceRootDir is { Length: > 0 })
+            {
+                try
+                {
+                    clone.CellRef = Path.GetFullPath(Path.Combine(destWorkspaceRootDir, workspaceRelativeDir));
+                    result.Add(clone);
+                    continue;
+                }
+                catch
+                {
+                    // Fall through to the plain absolute fallback below.
+                }
+            }
+
+            if (sourceCellDir is { Length: > 0 })
+                clone.CellRef = sourceCellDir; // absolute — resolves regardless of the dest base dir
+            // else: keep the original CellRef unchanged — see the doc comment's final fallback note.
 
             result.Add(clone);
         }

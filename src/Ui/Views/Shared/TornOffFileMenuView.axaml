@@ -1,0 +1,166 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Shared.TornOffFileMenuView"
+             x:DataType="vm:WorkspaceViewModel"
+             IsVisible="False">
+
+    <!--
+    brief-file-menu-restructure.md §4A: the File menu, added to torn-off DOCUMENT windows (Windows/
+    Linux only — macOS's NativeMenuItem menu bar is app-global and already covers this via key-window
+    tracking, see WorkspaceViewModel.RaiseFileMenuEnablementChanged/TryWireWindowFocusTracking).
+
+    This is a THIRD independent copy of the File menu's structure, mirroring WorkspaceWindow.axaml's
+    own in-window Menu content exactly (same items, order, tooltips, accelerators) — the same
+    "kept structurally identical by hand, not by a shared XAML fragment" convention this codebase
+    already uses between the in-window Menu and the macOS NativeMenu. Embedded as
+    DockPanel.Dock="Top" in each of the four document views (SchematicView, LayoutEditorView,
+    SymbolEditorView, DataDisplayView); IsVisible + DataContext are set in the code-behind, once per
+    attach, to "hidden" while docked in the main shell and "visible, bound to the resolved
+    WorkspaceViewModel" while hosted in a torn-off CrfHostWindow (R-menu-4's own per-window resolution
+    then makes every command/enablement here target THIS window's own document automatically — no
+    separate resolution logic needed here).
+    -->
+    <Menu>
+        <MenuItem Header="_File" Padding="8,4">
+            <MenuItem Header="_New">
+                <MenuItem.Icon><mi:MaterialIcon Kind="PlusBox" Width="16" Height="16"/></MenuItem.Icon>
+                <MenuItem Header="New _Cell…"
+                          Command="{Binding NewCellInWorkspaceCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderPlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New _Schematic"
+                          Command="{Binding NewScratchSchematicCommand}"
+                          InputGesture="Ctrl+Shift+N">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New S_ymbol"
+                          Command="{Binding NewScratchSymbolCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PencilBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New _Layout"
+                          Command="{Binding NewLayoutCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="LayersPlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New _Data Display"
+                          Command="{Binding NewDataDisplayCommand}"
+                          InputGesture="Ctrl+Shift+D">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="New _Technology…"
+                          Command="{Binding NewTechnologyCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="New _Workspace…"
+                      Command="{Binding NewWorkspaceCommand}"
+                      CommandParameter="{Binding $parent[Window]}"
+                      InputGesture="Ctrl+N">
+                <MenuItem.Icon><mi:MaterialIcon Kind="FolderPlus" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="Open _Workspace…"
+                      Command="{Binding OpenWorkspaceCommand}"
+                      CommandParameter="{Binding $parent[Window]}"
+                      InputGesture="Ctrl+O">
+                <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Open _Recent"
+                      ItemsSource="{Binding RecentMenuItems}"
+                      IsEnabled="{Binding HasRecentWorkspaces}"
+                      ToolTip.Tip="No recent workspaces.">
+                <MenuItem.Icon><mi:MaterialIcon Kind="History" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="_Open">
+                <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                <MenuItem Header="Open Sc_hematic…"
+                          Command="{Binding OpenSchematicFileCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open S_ymbol…"
+                          Command="{Binding OpenSymbolFileCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open _Layout…"
+                          Command="{Binding OpenLayoutFileCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Open Data _Display…"
+                          Command="{Binding OpenDataDisplayFileCommand}"
+                          CommandParameter="{Binding $parent[Window]}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="{Binding SaveMenuHeader}"
+                      Command="{Binding SaveAllDocumentsCommand}"
+                      CommandParameter="{Binding $parent[Window]}"
+                      InputGesture="Ctrl+S"
+                      ToolTip.Tip="Nothing to save.">
+                <MenuItem.Icon><mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Save Schematic _As…"
+                      Command="{Binding SaveLooseSchematicCommand}"
+                      CommandParameter="{Binding $parent[Window]}"
+                      ToolTip.Tip="Requires an active schematic document.">
+                <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Save S_ymbol As…"
+                      Command="{Binding SaveLooseSymbolCommand}"
+                      CommandParameter="{Binding $parent[Window]}"
+                      ToolTip.Tip="Requires an active symbol document.">
+                <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Save _Layout As…"
+                      Command="{Binding SaveLooseLayoutCommand}"
+                      CommandParameter="{Binding $parent[Window]}"
+                      ToolTip.Tip="Requires an active layout document.">
+                <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="Save Workspace _As…"
+                      Command="{Binding SaveWorkspaceAsCommand}"
+                      CommandParameter="{Binding $parent[Window]}"
+                      InputGesture="Ctrl+Shift+S">
+                <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveEdit" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="_Import">
+                <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseImportOutline" Width="16" Height="16"/></MenuItem.Icon>
+                <MenuItem Header="_Data…"
+                          Command="{Binding ImportDataCommand}"
+                          CommandParameter="{Binding $parent[Window]}"/>
+                <MenuItem Header="_GDSII…"
+                          Command="{Binding ImportGdsiiLibraryCommand}"
+                          CommandParameter="{Binding $parent[Window]}"/>
+                <MenuItem Header="_DXF…"
+                          Command="{Binding ImportDxfLibraryCommand}"
+                          CommandParameter="{Binding $parent[Window]}"/>
+            </MenuItem>
+            <MenuItem Header="_Export">
+                <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/></MenuItem.Icon>
+                <MenuItem Header="_Data"
+                          Command="{Binding ExportDataCommand}"
+                          ToolTip.Tip="No data to export."/>
+                <MenuItem Header="_GDSII"
+                          Command="{Binding ExportGdsiiCommand}"
+                          ToolTip.Tip="Requires an active layout document."/>
+                <MenuItem Header="D_XF"
+                          Command="{Binding ExportDxfCommand}"
+                          ToolTip.Tip="Requires an active layout document."/>
+                <MenuItem Header="_Gerber"
+                          Command="{Binding ExportGerberCommand}"
+                          ToolTip.Tip="Gerber export is not yet implemented."/>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="{Binding CloseWorkspaceOrWindowHeader}"
+                      Command="{Binding CloseWorkspaceOrWindowCommand}">
+                <MenuItem.Icon><mi:MaterialIcon Kind="FolderRemoveOutline" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
+        </MenuItem>
+    </Menu>
+</UserControl>

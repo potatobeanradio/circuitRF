@@ -53,6 +53,11 @@
                 </TextBlock>
 
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">Clipper2</Run>
+                    <Run> — Integer-coordinate polygon clipping and offsetting, used by the layout editor. Boost Software License.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
                     <Run FontWeight="SemiBold">PureHDF</Run>
                     <Run> — HDF5 library for .NET. MIT License.</Run>
                 </TextBlock>

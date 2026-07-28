@@ -37,6 +37,12 @@ public partial class LayoutEditorView : UserControl
         LayoutCanvasCtrl.ClipboardPasteInPlaceRequested += async (_, _) => await OnClipboardPaste(inPlace: true);
         LayoutCanvasCtrl.DuplicateRequested             += (_, _) => { Vm?.Duplicate(); LayoutCanvasCtrl.InvalidateVisual(); };
 
+        // brief-layout-testing-fixes.md item 3/R-fix-3: a click into the canvas always re-focuses it
+        // (GotFocus fires whenever focus WASN'T already here — e.g. after a project-tree click moved
+        // it away), which is exactly the signal that this document's Properties/undo/save-scope
+        // routing needs re-asserting, since Dock's own ActiveDockable never actually changed.
+        LayoutCanvasCtrl.GotFocus += (_, _) => _subscribedDoc?.NotifyCanvasInteracted();
+
         DataContextChanged += (_, _) => SyncRulerUnits();
         DataContextChanged += OnDataContextChangedForFocus;
 
@@ -185,12 +191,16 @@ public partial class LayoutEditorView : UserControl
         {
             _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
             _subscribedDoc.ActiveViewModelChanged    -= OnActiveViewModelChangedForNav;
+            _subscribedDoc.ExportGdsiiRequested       -= OnExportGdsiiRequestedFromMenu;
+            _subscribedDoc.ExportDxfRequested         -= OnExportDxfRequestedFromMenu;
         }
         _subscribedDoc = DataContext as LayoutDocument;
         if (_subscribedDoc is not null)
         {
             _subscribedDoc.ActivationFocusRequested += OnActivationFocusRequested;
             _subscribedDoc.ActiveViewModelChanged    += OnActiveViewModelChangedForNav;
+            _subscribedDoc.ExportGdsiiRequested       += OnExportGdsiiRequestedFromMenu;
+            _subscribedDoc.ExportDxfRequested         += OnExportDxfRequestedFromMenu;
             if (_subscribedDoc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
         UpdateHierarchyButtonStates();
@@ -216,6 +226,12 @@ public partial class LayoutEditorView : UserControl
 
     private void FocusCanvasDeferred() =>
         Dispatcher.UIThread.Post(() => LayoutCanvasCtrl.Focus(), DispatcherPriority.Background);
+
+    // brief-layout-testing-fixes.md item 8: File → Export → GDSII/DXF fire these via
+    // LayoutDocument.RequestExportGdsii/RequestExportDxf — the SAME toolbar code path, never a second
+    // export entry point (item 5/R-fix-4's own "route every entry point through the same accessor").
+    private void OnExportGdsiiRequestedFromMenu() => _ = OnExportGdsiiAsync();
+    private void OnExportDxfRequestedFromMenu() => _ = OnExportDxfAsync();
 
     private void SyncRulers()
     {
@@ -527,7 +543,9 @@ public partial class LayoutEditorView : UserControl
         GdsiiExport.ExportPlan plan;
         try
         {
-            plan = GdsiiExport.Analyze(cellDir, vm.Technology, vm.Model.DbuPerMicron);
+            // item 5/R-fix-4: the root cell's view is ALWAYS the live in-memory Model, never a re-read
+            // of the last-saved .clay — an unsaved edit must export exactly what is on screen.
+            plan = GdsiiExport.Analyze(cellDir, vm.Technology, vm.Model.DbuPerMicron, vm.Model);
         }
         catch (Exception ex)
         {
@@ -535,8 +553,15 @@ public partial class LayoutEditorView : UserControl
             return;
         }
 
-        var confirmed = await new GdsiiExportFidelityDialog(plan).ShowDialog<bool>(owner);
-        if (!confirmed || !plan.CanWrite) return;
+        // brief-layout-testing-fixes.md item 4: R-L4a-3's dialog exists to state what WILL CHANGE
+        // before writing — when nothing will (ExportPlan.HasNothingToReport), showing a dialog that
+        // says "nothing will change" only trains users to dismiss dialogs unread, which defeats the
+        // ones that actually matter. Skip straight to the save picker in that case.
+        if (!plan.HasNothingToReport)
+        {
+            var confirmed = await new GdsiiExportFidelityDialog(plan).ShowDialog<bool>(owner);
+            if (!confirmed || !plan.CanWrite) return;
+        }
 
         var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -553,7 +578,8 @@ public partial class LayoutEditorView : UserControl
             GdsiiExport.Write(file.Path.LocalPath, plan);
             vm.ReportMessage(
                 $"Exported GDSII to {file.Path.LocalPath} · {plan.CurvedShapesFlattened} curve(s) flattened, " +
-                $"{plan.HolesKeyholed} hole(s) keyholed, {plan.BitmapsSkipped} bitmap(s) skipped.");
+                $"{plan.HolesKeyholed} hole(s) keyholed, {plan.BitmapsSkipped} bitmap(s) skipped, " +
+                $"{plan.LabelRecordsWritten} label(s) written.");
         }
         catch (Exception ex)
         {
@@ -569,6 +595,9 @@ public partial class LayoutEditorView : UserControl
     private static bool _lastFlattenSplines;
     private static bool _lastPathAsOutline;
     private static DxfViewMode _lastViewMode = DxfViewMode.FitToExtents;
+    // brief-dxf-layer-colors.md R-col-1a: session-scoped only (a process-static field, exactly like the
+    // three above) — never persisted to disk, never per-document. Defaults to AC1032 (R2018) per R-col-1.
+    private static DxfAcadVersion _lastAcadVersion = DxfAcadVersion.R2018;
 
     private async void OnExportDxf(object? sender, RoutedEventArgs e) => await OnExportDxfAsync();
 
@@ -587,7 +616,8 @@ public partial class LayoutEditorView : UserControl
         DxfExport.ExportPlan plan;
         try
         {
-            plan = DxfExport.Analyze(cellDir, vm.Technology, vm.Model.DbuPerMicron);
+            // item 5/R-fix-4: mirrors OnExportGdsiiAsync's own live-view substitution exactly.
+            plan = DxfExport.Analyze(cellDir, vm.Technology, vm.Model.DbuPerMicron, vm.Model);
         }
         catch (Exception ex)
         {
@@ -599,16 +629,19 @@ public partial class LayoutEditorView : UserControl
             ? LayoutCanvasCtrl.Bounds.Width / LayoutCanvasCtrl.Bounds.Height
             : 1.0;
         var previewOptions = new DxfExportOptions(
-            _lastFlattenSplines, _lastPathAsOutline, _lastViewMode, LayoutCanvasCtrl.CurrentViewport, canvasAspect);
+            _lastFlattenSplines, _lastPathAsOutline, _lastViewMode, LayoutCanvasCtrl.CurrentViewport, canvasAspect,
+            AcadVersion: _lastAcadVersion);
         var preview = DxfExport.Preview(plan, previewOptions);
 
-        var dialog = new DxfExportOptionsDialog(plan, preview, _lastFlattenSplines, _lastPathAsOutline, _lastViewMode);
+        var dialog = new DxfExportOptionsDialog(
+            plan, preview, _lastFlattenSplines, _lastPathAsOutline, _lastViewMode, _lastAcadVersion);
         var confirmed = await dialog.ShowDialog<bool>(owner);
         if (!confirmed) return;
 
         _lastFlattenSplines = dialog.FlattenSplines;
         _lastPathAsOutline = dialog.PathAsOutlinePolygon;
         _lastViewMode = dialog.ViewMode;
+        _lastAcadVersion = dialog.AcadVersion;
 
         var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -624,16 +657,25 @@ public partial class LayoutEditorView : UserControl
         {
             var options = new DxfExportOptions(
                 dialog.FlattenSplines, dialog.PathAsOutlinePolygon, dialog.ViewMode,
-                LayoutCanvasCtrl.CurrentViewport, canvasAspect);
+                LayoutCanvasCtrl.CurrentViewport, canvasAspect, AcadVersion: dialog.AcadVersion);
             var summary = DxfExport.Write(file.Path.LocalPath, plan, options);
             vm.ReportMessage(
                 $"Exported DXF to {file.Path.LocalPath} · {summary.CurvedShapesWritten} curved shape(s), " +
-                $"{summary.HolesAsHatch} hole(s) as HATCH, {summary.BitmapsSkipped} bitmap(s) skipped.");
+                $"{summary.HolesAsHatch} hole(s) as HATCH, {summary.BitmapsSkipped} bitmap(s) skipped, " +
+                $"{summary.LabelRecordsWritten} label(s) written.");
         }
         catch (Exception ex)
         {
             vm.ReportError($"Export DXF: {ex.Message}");
         }
+    }
+
+    // ── Save toolbar button — mirrors SchematicView.axaml.cs's OnSaveCsch exactly ────────────────
+    private async void OnSaveClay(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LayoutDocument doc) return;
+        if (doc.Hierarchy is { } host)
+            await host.SaveLayoutDocumentAsync(doc);
     }
 
     private async void OnChangeTechnologyClick(object? sender, RoutedEventArgs e) => await OnChangeTechnologyAsync();

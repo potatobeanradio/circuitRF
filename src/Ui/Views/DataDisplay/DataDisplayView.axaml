@@ -5,6 +5,7 @@
              xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
              xmlns:mi="using:Material.Icons.Avalonia"
              xmlns:ctl="using:CircuitRF.Ui.DataDisplay.Controls"
+             xmlns:shared="using:CircuitRF.Ui.Views.Shared"
              x:Class="CircuitRF.Ui.Views.DataDisplay.DataDisplayView"
              x:DataType="dd:DataDisplayDocument">
 
@@ -45,6 +46,9 @@
     </UserControl.KeyBindings>
 
     <DockPanel>
+
+        <!-- brief-file-menu-restructure.md §4A: File menu, visible only when torn off. -->
+        <shared:TornOffFileMenuView DockPanel.Dock="Top"/>
 
         <!-- ── In-document toolbar ─────────────────────────────────────────── -->
         <Border DockPanel.Dock="Top"

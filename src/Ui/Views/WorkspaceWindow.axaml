@@ -25,33 +25,64 @@
             <NativeMenuItem Header="File">
                 <NativeMenuItem.Menu>
                     <NativeMenu>
-                        <NativeMenuItem Header="New Workspace"   Command="{Binding NewWorkspaceCommand}"      CommandParameter="{Binding $parent[Window]}" Gesture="Meta+N"/>
-                        <NativeMenuItem Header="New Schematic"    Command="{Binding NewScratchSchematicCommand}"                                            Gesture="Meta+Shift+N"/>
-                        <NativeMenuItem Header="New Data Display" Command="{Binding NewDataDisplayCommand}"                                               Gesture="Meta+Shift+D"/>
-                        <NativeMenuItem Header="New Cell"        Command="{Binding NewCellInWorkspaceCommand}"/>
+                        <NativeMenuItem Header="New">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="New Cell…"        Command="{Binding NewCellInWorkspaceCommand}"/>
+                                    <NativeMenuItem Header="New Schematic"    Command="{Binding NewScratchSchematicCommand}"  Gesture="Meta+Shift+N"/>
+                                    <NativeMenuItem Header="New Symbol"       Command="{Binding NewScratchSymbolCommand}"/>
+                                    <NativeMenuItem Header="New Layout"       Command="{Binding NewLayoutCommand}"/>
+                                    <NativeMenuItem Header="New Data Display" Command="{Binding NewDataDisplayCommand}"       Gesture="Meta+Shift+D"/>
+                                    <NativeMenuItem Header="New Technology…"  Command="{Binding NewTechnologyCommand}"        CommandParameter="{Binding $parent[Window]}"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                        <NativeMenuItem Header="New Workspace…"  Command="{Binding NewWorkspaceCommand}"      CommandParameter="{Binding $parent[Window]}" Gesture="Meta+N"/>
+                        <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Open Workspace…" Command="{Binding OpenWorkspaceCommand}"      CommandParameter="{Binding $parent[Window]}" Gesture="Meta+O"/>
                         <NativeMenuItem Header="Open Recent">
                             <NativeMenuItem.Menu>
                                 <NativeMenu/>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
-                        <NativeMenuItem Header="Add Library…"    Command="{Binding AddLibraryCommand}"         CommandParameter="{Binding $parent[Window]}"/>
-                        <NativeMenuItem Header="Import Data…"   Command="{Binding ImportDataCommand}"         CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Open">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Open Schematic…"    Command="{Binding OpenSchematicFileCommand}"    CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Open Symbol…"       Command="{Binding OpenSymbolFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Open Layout…"       Command="{Binding OpenLayoutFileCommand}"       CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="Open Data Display…" Command="{Binding OpenDataDisplayFileCommand}"  CommandParameter="{Binding $parent[Window]}"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
                         <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Close Workspace" Command="{Binding CloseWorkspaceCommand}"/>
-                        <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="New Layout"      Command="{Binding NewLayoutCommand}"/>
-                        <NativeMenuItem Header="New Technology…" Command="{Binding NewTechnologyCommand}"      CommandParameter="{Binding $parent[Window]}"/>
-                        <NativeMenuItem Header="Open Symbol…"    Command="{Binding OpenSymbolFileCommand}"        CommandParameter="{Binding $parent[Window]}"/>
-                        <NativeMenuItem Header="Open Layout…"    Command="{Binding OpenLayoutFileCommand}"        CommandParameter="{Binding $parent[Window]}"/>
-                        <NativeMenuItem Header="Open Data Display…" Command="{Binding OpenDataDisplayFileCommand}" CommandParameter="{Binding $parent[Window]}"/>
-                        <NativeMenuItem Header="Import GDSII Library…" Command="{Binding ImportGdsiiLibraryCommand}" CommandParameter="{Binding $parent[Window]}"/>
-                        <NativeMenuItem Header="Import DXF Library…" Command="{Binding ImportDxfLibraryCommand}" CommandParameter="{Binding $parent[Window]}"/>
-                        <NativeMenuItem Header="Export…"        Command="{Binding ExportDataCommand}"/>
-                        <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Save All"              Command="{Binding SaveAllDocumentsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+S"/>
+                        <NativeMenuItem Header="Save"                 Command="{Binding SaveAllDocumentsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+S"/>
                         <NativeMenuItem Header="Save Schematic As…"  Command="{Binding SaveLooseSchematicCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Save Symbol As…"     Command="{Binding SaveLooseSymbolCommand}"    CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Save Layout As…"     Command="{Binding SaveLooseLayoutCommand}"     CommandParameter="{Binding $parent[Window]}"/>
                         <NativeMenuItem Header="Save Workspace As…"  Command="{Binding SaveWorkspaceAsCommand}"   CommandParameter="{Binding $parent[Window]}" Gesture="Meta+Shift+S"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Import">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Data…" Command="{Binding ImportDataCommand}"         CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="GDSII…" Command="{Binding ImportGdsiiLibraryCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="DXF…"   Command="{Binding ImportDxfLibraryCommand}"   CommandParameter="{Binding $parent[Window]}"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                        <NativeMenuItem Header="Export">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Data"   Command="{Binding ExportDataCommand}"/>
+                                    <NativeMenuItem Header="GDSII"  Command="{Binding ExportGdsiiCommand}"/>
+                                    <NativeMenuItem Header="DXF"    Command="{Binding ExportDxfCommand}"/>
+                                    <NativeMenuItem Header="Gerber" Command="{Binding ExportGerberCommand}"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="{Binding CloseWorkspaceOrWindowHeader}" Command="{Binding CloseWorkspaceOrWindowCommand}"/>
                         <!-- Settings is in the app menu on macOS; omit here to avoid duplication -->
                     </NativeMenu>
                 </NativeMenuItem.Menu>
@@ -78,9 +109,6 @@
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Zoom to Fit"      Command="{Binding ZoomToFitCommand}"   Gesture="Meta+D0"/>
                         <NativeMenuItem Header="New Tab"          Command="{Binding NewTabCommand}"      Gesture="Meta+T"/>
-                        <NativeMenuItemSeparator/>
-                        <NativeMenuItem Header="Open Symbol Editor (docked)" Command="{Binding OpenSymbolEditorDockedCommand}"/>
-                        <NativeMenuItem Header="Open Symbol Editor (window)" Command="{Binding OpenSymbolEditorWindowCommand}"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Push Into Cell"       Command="{Binding HierarchyPushInCommand}"       Gesture="Meta+OemCloseBrackets"/>
                         <NativeMenuItem Header="Pop Out"              Command="{Binding HierarchyPopOutCommand}"       Gesture="Meta+OemOpenBrackets"/>
@@ -148,64 +176,43 @@
         <Menu DockPanel.Dock="Top" IsVisible="{OnPlatform True, macOS=False}">
 
             <MenuItem Header="_File" Padding="8,4">
-                <MenuItem Header="New _Workspace"
+                <MenuItem Header="_New">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="PlusBox" Width="16" Height="16"/></MenuItem.Icon>
+                    <MenuItem Header="New _Cell…"
+                              Command="{Binding NewCellInWorkspaceCommand}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FolderPlus" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="New _Schematic"
+                              Command="{Binding NewScratchSchematicCommand}"
+                              InputGesture="Ctrl+Shift+N">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="New S_ymbol"
+                              Command="{Binding NewScratchSymbolCommand}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="PencilBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="New _Layout"
+                              Command="{Binding NewLayoutCommand}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="LayersPlus" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="New _Data Display"
+                              Command="{Binding NewDataDisplayCommand}"
+                              InputGesture="Ctrl+Shift+D">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="New _Technology…"
+                              Command="{Binding NewTechnologyCommand}"
+                              CommandParameter="{Binding $parent[Window]}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                </MenuItem>
+                <MenuItem Header="New _Workspace…"
                           Command="{Binding NewWorkspaceCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+N">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="PlusBox" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="New _Schematic"
-                          Command="{Binding NewScratchSchematicCommand}"
-                          InputGesture="Ctrl+Shift+N">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="New _Data Display"
-                          Command="{Binding NewDataDisplayCommand}"
-                          InputGesture="Ctrl+Shift+D">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="New _Layout"
-                          Command="{Binding NewLayoutCommand}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="LayersPlus" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="New _Technology…"
-                          Command="{Binding NewTechnologyCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Open S_ymbol…"
-                          Command="{Binding OpenSymbolFileCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Open _Layout…"
-                          Command="{Binding OpenLayoutFileCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Open Data _Display…"
-                          Command="{Binding OpenDataDisplayFileCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Import _GDSII Library…"
-                          Command="{Binding ImportGdsiiLibraryCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Import _DXF Library…"
-                          Command="{Binding ImportDxfLibraryCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="_Export…"
-                          Command="{Binding ExportDataCommand}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="New _Cell"
-                          Command="{Binding NewCellInWorkspaceCommand}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FolderPlus" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                <Separator/>
                 <MenuItem Header="Open _Workspace…"
                           Command="{Binding OpenWorkspaceCommand}"
                           CommandParameter="{Binding $parent[Window]}"
@@ -214,34 +221,57 @@
                 </MenuItem>
                 <MenuItem Header="Open _Recent"
                           ItemsSource="{Binding RecentMenuItems}"
-                          IsEnabled="{Binding HasRecentWorkspaces}">
+                          IsEnabled="{Binding HasRecentWorkspaces}"
+                          ToolTip.Tip="No recent workspaces.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="History" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="Add _Library…"
-                          Command="{Binding AddLibraryCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="BookOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Import _Data…"
-                          Command="{Binding ImportDataCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseImportOutline" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <Separator/>
-                <MenuItem Header="Close Workspace"
-                          Command="{Binding CloseWorkspaceCommand}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderRemoveOutline" Width="16" Height="16"/></MenuItem.Icon>
+                <MenuItem Header="_Open">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    <MenuItem Header="Open Sc_hematic…"
+                              Command="{Binding OpenSchematicFileCommand}"
+                              CommandParameter="{Binding $parent[Window]}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Open S_ymbol…"
+                              Command="{Binding OpenSymbolFileCommand}"
+                              CommandParameter="{Binding $parent[Window]}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Open _Layout…"
+                              Command="{Binding OpenLayoutFileCommand}"
+                              CommandParameter="{Binding $parent[Window]}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Open Data _Display…"
+                              Command="{Binding OpenDataDisplayFileCommand}"
+                              CommandParameter="{Binding $parent[Window]}">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="{Binding SaveMenuHeader}"
                           Command="{Binding SaveAllDocumentsCommand}"
                           CommandParameter="{Binding $parent[Window]}"
-                          InputGesture="Ctrl+S">
+                          InputGesture="Ctrl+S"
+                          ToolTip.Tip="Nothing to save.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Save Schematic _As…"
                           Command="{Binding SaveLooseSchematicCommand}"
-                          CommandParameter="{Binding $parent[Window]}">
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="Requires an active schematic document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Save S_ymbol As…"
+                          Command="{Binding SaveLooseSymbolCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="Requires an active symbol document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Save _Layout As…"
+                          Command="{Binding SaveLooseLayoutCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="Requires an active layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Save Workspace _As…"
@@ -249,6 +279,39 @@
                           CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+Shift+S">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentSaveEdit" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="_Import">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseImportOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    <MenuItem Header="_Data…"
+                              Command="{Binding ImportDataCommand}"
+                              CommandParameter="{Binding $parent[Window]}"/>
+                    <MenuItem Header="_GDSII…"
+                              Command="{Binding ImportGdsiiLibraryCommand}"
+                              CommandParameter="{Binding $parent[Window]}"/>
+                    <MenuItem Header="_DXF…"
+                              Command="{Binding ImportDxfLibraryCommand}"
+                              CommandParameter="{Binding $parent[Window]}"/>
+                </MenuItem>
+                <MenuItem Header="_Export">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    <MenuItem Header="_Data"
+                              Command="{Binding ExportDataCommand}"
+                              ToolTip.Tip="No data to export."/>
+                    <MenuItem Header="_GDSII"
+                              Command="{Binding ExportGdsiiCommand}"
+                              ToolTip.Tip="Requires an active layout document."/>
+                    <MenuItem Header="D_XF"
+                              Command="{Binding ExportDxfCommand}"
+                              ToolTip.Tip="Requires an active layout document."/>
+                    <MenuItem Header="_Gerber"
+                              Command="{Binding ExportGerberCommand}"
+                              ToolTip.Tip="Gerber export is not yet implemented."/>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="{Binding CloseWorkspaceOrWindowHeader}"
+                          Command="{Binding CloseWorkspaceOrWindowCommand}">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FolderRemoveOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="_Settings…"
@@ -314,15 +377,6 @@
                           Command="{Binding NewTabCommand}"
                           InputGesture="Ctrl+T">
                     <MenuItem.Icon><mi:MaterialIcon Kind="TabPlus" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <Separator/>
-                <MenuItem Header="Open Symbol Editor (_docked)"
-                          Command="{Binding OpenSymbolEditorDockedCommand}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="PencilBox" Width="16" Height="16"/></MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="Open Symbol Editor (_window)"
-                          Command="{Binding OpenSymbolEditorWindowCommand}">
-                    <MenuItem.Icon><mi:MaterialIcon Kind="PencilBoxOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Push _Into Cell"

@@ -4,6 +4,7 @@
              xmlns:vm="using:CircuitRF.Ui.ViewModels"
              xmlns:ctrl="using:CircuitRF.Ui.Controls"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:shared="using:CircuitRF.Ui.Views.Shared"
              x:Class="CircuitRF.Ui.Views.Content.SchematicView"
              x:DataType="schemDoc:SchematicDocument"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -125,6 +126,9 @@
     </UserControl.Styles>
 
     <DockPanel>
+
+        <!-- brief-file-menu-restructure.md §4A: File menu, visible only when torn off. -->
+        <shared:TornOffFileMenuView DockPanel.Dock="Top"/>
 
         <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
         <Border DockPanel.Dock="Top"

@@ -682,7 +682,20 @@ public static partial class LayoutRenderer
                 if (string.IsNullOrEmpty(label.Text)) continue;
                 counters.ShapesDrawn++;
                 counters.DrawCalls++;
-                DrawLabelText(canvas, label, ps, color);
+
+                // item 6, "also worth fixing regardless": a committed label authored (or imported)
+                // with a sub-pixel Height is a trap — invisible on screen yet real model data, exactly
+                // the failure mode this brief's diagnosis traced. R-lbl-2's ghost already applies this
+                // floor for an in-progress label; this applies the SAME EffectiveVisibleLabelHeightDbu
+                // arithmetic to a COMMITTED one, for DISPLAY ONLY — the model's own Height is never
+                // touched, only the drawn clone, mirroring DrawGhostShape's Label branch exactly.
+                long effectiveHeight = EffectiveVisibleLabelHeightDbu(label.Height, devicePxPerDbu);
+                LabelShape effective = effectiveHeight == label.Height ? label : new LabelShape
+                {
+                    Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
+                    Height = effectiveHeight, Rotation = label.Rotation, IsPort = label.IsPort, Style = label.Style,
+                };
+                DrawLabelText(canvas, effective, ps, color);
                 continue;
             }
 
@@ -1046,7 +1059,52 @@ public static partial class LayoutRenderer
                 path.Dispose();
                 return null;
         }
-        return path;
+
+        return NormalizeOuterWinding(path, shape);
+    }
+
+    /// <summary>R-fix-1 (docs/sonnet-briefs/brief-layout-testing-fixes.md, item 1) — every OUTER ring this
+    /// builder produces is normalized to the SAME absolute winding direction before it can ever reach a
+    /// BATCHED path (the instance-compiled aggregate in <c>LayoutRenderer.Instances.cs</c>'s
+    /// <c>CompileCell</c>, and the L2c LOD/merge-tier aggregate in <c>DrawLayer</c> — both call THIS
+    /// method, so normalizing here fixes both by construction, per the brief's own diagnosis). Without
+    /// this, a shape's vertex order is whatever the user drew, a boolean produced, or an importer
+    /// emitted — two overlapping outer contours with OPPOSITE winding cancel to nothing under Skia's
+    /// default Winding fill rule once merged into one <c>SKPath</c>.
+    ///
+    /// A single shape drawn on its own (the individual, non-aggregated tier) never showed this bug —
+    /// one simple contour fills identically whether CW or CCW — which is why normalizing here is a
+    /// pure no-op for that tier and only matters once paths from DIFFERENT shapes are combined.
+    ///
+    /// <c>Polygon</c>/<c>Curve</c> are the only shape kinds whose outer-ring winding is DATA-driven (a
+    /// user/boolean/import vertex order); <c>Rect</c>/<c>RoundedRect</c>/<c>Circle</c>/<c>Via</c> are
+    /// built via Skia's own primitives, whose winding is a FIXED Skia-internal convention independent of
+    /// any data here — empirically confirmed (a real pixel-oracle test against a Rect/Polygon overlap,
+    /// not assumed) to already agree with a Polygon/Curve ring normalized to
+    /// "<c>SignedArea(xy) &lt; 0</c> in DBU space" (reverse whenever it is NOT), so only Polygon/Curve
+    /// need an explicit check.
+    ///
+    /// Reversing the WHOLE path (via Skia's own <c>AddPathReverse</c>, not a hand-rolled vertex/bulge
+    /// reversal) rather than re-deriving the outer ring's vertex order is deliberate: it is correct for
+    /// curved edges (arc bulge, cubic control points) and holes with ZERO extra logic, and preserves
+    /// whatever relative outer-vs-hole relationship <see cref="AddHoleRings"/> already established —
+    /// reversing every contour in a path together leaves their RELATIVE winding relationship unchanged,
+    /// only the absolute direction flips.</summary>
+    private static SKPath NormalizeOuterWinding(SKPath path, LayoutShape shape)
+    {
+        long[]? outerXy = shape switch
+        {
+            PolygonShape p => p.Xy,
+            CurveShape c => c.Xy,
+            _ => null, // Rect/RoundedRect/Circle/Via: fixed Skia winding, already consistent (see above)
+        };
+        if (outerXy is null) return path;
+        if (LayoutGeometry.SignedArea(outerXy) < 0) return path;
+
+        var reversed = new SKPath();
+        reversed.AddPathReverse(path);
+        path.Dispose();
+        return reversed;
     }
 
     private static SKRect NormalizedRect(float x1, float y1, float x2, float y2) =>
