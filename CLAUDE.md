@@ -8,10 +8,14 @@ hero circuits, and non-goals. This file is standing project memory — keep it c
 - .NET 10 (LTS), C# 14
 - Avalonia 12 (UI), SkiaSharp (canvas rendering), CommunityToolkit.MVVM (MVVM)
 - CSparse.NET (sparse complex LU for large MNA), NumFlat (dense linear algebra)
-- Consumes an `RfCore` library shared with splotRF (Touchstone I/O, network params, the
-  `DataSet`/`DataCube` result types, interpolation, renormalization, plotting). **RfCore is an
-  external sibling project**, cloned side-by-side and referenced via `ProjectReference`
-  (`../RfCore/RfCore.csproj`) — it is *not* under `src/`.
+- Consumes `RfCore` (Touchstone I/O, network params, the `DataSet`/`DataCube` result types,
+  interpolation, renormalization, plotting). **`RfCore` was merged into this repository via
+  `git subtree` on 2026-07-29** (brief-housekeeping-tearoff-palette-repo.md §6 — splotRF, the
+  other consumer of the standalone RfCore repo, is being retired; two repos confused new
+  contributors) — it now lives at `RfCore/` in this repo's own root (history preserved, not
+  squashed) and is referenced via `ProjectReference` (`../../RfCore/src/RfCore.csproj` from a
+  `src/*`/`tests/*` project). It is *not* under `src/` — same architectural boundary as before,
+  just no longer a separate clone.
 
 ## Build / test / run
 - Build:   `dotnet build`
@@ -100,8 +104,9 @@ Add `--no-build` after the first build of a session.
    model. No UI, no domain types.
 
 Source map: `src/Core` (layers 1–2 + the expression engine), `src/Engine` (layer 3 + analyses),
-`src/Ui` (Avalonia), `src/Cli` (headless driver + test harness). `RfCore` is a **sibling project
-outside this tree**, referenced via `ProjectReference`.
+`src/Ui` (Avalonia), `src/Cli` (headless driver + test harness). `RfCore` lives at this repo's
+own `RfCore/` root (merged via `git subtree`, §6 above) — still referenced via `ProjectReference`,
+still architecturally outside `src/*`, just no longer a separate clone.
 
 **UI firewall:** `RfCore`, `src/Core`, `src/Engine`, `src/Cli` must reference **no UI framework**
 (no Avalonia) — all UI-framework code lives in `src/Ui`, so circuitRF can be re-skinned by replacing

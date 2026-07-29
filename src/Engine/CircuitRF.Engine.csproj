@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Core/CircuitRF.Core.csproj" />
-    <ProjectReference Include="../../../RfCore/src/RfCore.csproj" />
+    <ProjectReference Include="../../RfCore/src/RfCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

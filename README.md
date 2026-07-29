@@ -88,7 +88,7 @@ product) independent of any GUI framework. Full detail:
 [`docs/design/ui-architecture.md`](docs/design/ui-architecture.md).
 
 ```
-  RfCore (sibling repo)   shared result/network library: Touchstone I/O, S/Z/Y math,
+  RfCore                  shared result/network library: Touchstone I/O, S/Z/Y math,
         ▲                  the DataSet/DataCube result model, loadpull readers/writers
         │
   src/Core      Design + Elaboration: cells, instances, nets, parameters, the expression
@@ -201,9 +201,10 @@ circuitRF/
 └─ CLAUDE.md           standing project memory (architecture, invariants) — root + nested per subsystem
 ```
 
-`RfCore` is an **external sibling repository**, cloned *next to* circuitRF and referenced via
-`ProjectReference` (`../RfCore/RfCore.csproj`) — it is shared with [splotRF](https://github.com/potatobeanradio/splotRF)
-and is **not** under `src/`. See [Getting started](#getting-started).
+`RfCore` lives at this repo's own `RfCore/` root — merged in via `git subtree` (history preserved),
+formerly a separate clone shared with splotRF. Still referenced via `ProjectReference`
+(`../../RfCore/src/RfCore.csproj` from a `src/*`/`tests/*` project) and still **not** under `src/`,
+same architectural boundary as before. See [Getting started](#getting-started).
 
 ---
 
@@ -229,19 +230,18 @@ Verify the SDK is installed:
 dotnet --version      # should print 10.x.x
 ```
 
-### 2. Clone circuitRF *and* RfCore side by side
-
-circuitRF references `RfCore` as a sibling folder, so clone **both into the same parent directory**:
+### 2. Clone circuitRF
 
 ```bash
 # pick a working folder, e.g. ~/code
 cd ~/code
 
 git clone https://github.com/potatobeanradio/circuitRF.git
-git clone https://github.com/potatobeanradio/RfCore.git
-
-# you should now have:  ~/code/circuitRF   and   ~/code/RfCore   (siblings)
 ```
+
+That's it — one repository. (`RfCore`, the shared Touchstone/network-parameter/`DataSet` library,
+used to be a separate clone; it now lives inside circuitRF at `RfCore/`, merged in with its own
+commit history preserved via `git subtree`.)
 
 ### 3. Build and test
 
