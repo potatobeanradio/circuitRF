@@ -1,0 +1,85 @@
+! splotRF Created Thu May 14 09:41:01 2026
+# GHz S ma R 50
+1	0.990659	176.368	0.102939	148.547	0.00191384	81.8838	0.998581	172.034
+
+1.1	0.991781	175.552	0.221875	157.015	0.002188	77.9625	0.996571	170.403
+
+1.2	0.992291	174.013	0.328596	156.125	0.00248541	76.4039	0.994625	169.405
+
+1.3	0.992307	172.424	0.43287	153.673	0.00277542	74.7348	0.991135	168.402
+
+1.4	0.992423	170.814	0.541011	150.638	0.00320007	73.0396	0.986475	167.182
+
+1.5	0.992466	169.281	0.659145	147.063	0.0036058	72.1236	0.98124	165.556
+
+1.6	0.993819	167.958	0.784343	143.046	0.00394652	70.6102	0.973913	163.477
+
+1.7	0.994648	166.827	0.924656	138.436	0.00436658	67.6332	0.964912	160.927
+
+1.8	0.995666	165.891	1.07891	133.336	0.00484085	65.5304	0.952456	158.199
+
+1.9	0.99642	165.047	1.26798	127.502	0.00536969	61.7952	0.934424	155.348
+
+2	0.996271	164.2	1.50721	120.824	0.00588181	57.7329	0.908134	152.435
+
+2.1	0.995189	163.16	1.8411	112.783	0.0066819	52.8425	0.867393	149.225
+
+2.2	0.991245	161.731	2.31159	102.461	0.00774015	45.0943	0.800396	145.632
+
+2.3	0.983886	159.746	2.96837	88.8627	0.0092148	35.1967	0.691761	141.964
+
+2.4	0.959262	157.114	3.72533	70.8244	0.0109211	15.3693	0.523441	142.692
+
+2.5	0.933691	154.314	4.53694	49.9048	0.0117446	4.30012	0.382915	156.476
+
+2.6	0.886223	152.247	4.98882	25.9863	0.0119545	-18.4681	0.4159	-173.809
+
+2.7	0.845097	151.592	4.99284	3.81252	0.0110195	-36.966	0.589181	-166.241
+
+2.8	0.817899	152.423	4.65512	-16.4246	0.00914407	-57.4618	0.748412	-170.325
+
+2.9	0.803682	154.188	4.20331	-34.7353	0.00784608	-76.7934	0.85707	-176.205
+
+3	0.799933	156.126	3.75983	-51.9867	0.00619053	-97.1985	0.922016	178.264
+
+3.1	0.801887	158.612	3.29963	-68.9318	0.00517159	-121.788	0.956351	173.896
+
+3.2	0.812628	161.009	2.88228	-85.2722	0.00436132	-147.341	0.964613	170.846
+
+3.3	0.829376	162.623	2.51801	-100.915	0.004122	-177.08	0.956145	168.875
+
+3.4	0.849854	163.315	2.18331	-115.327	0.00415422	158.205	0.942906	167.557
+
+3.5	0.871703	162.758	1.88625	-127.94	0.00442796	137.652	0.931072	166.275
+
+3.6	0.893758	161.072	1.62536	-138.994	0.00488296	118.905	0.923069	164.732
+
+3.7	0.914837	158.917	1.37793	-148.348	0.00528452	103.538	0.922948	162.848
+
+3.8	0.933597	156.889	1.13866	-156.538	0.00490603	93.5567	0.926041	160.879
+
+3.9	0.950869	155.593	0.916477	-163.303	0.00450929	86.4591	0.934742	159.419
+
+4	0.965946	154.989	0.735647	-168.706	0.00405836	86.3994	0.942148	158.262
+
+4.1	0.972973	154.783	0.605925	-172.728	0.00483867	84.4427	0.942396	157.884
+
+4.2	0.976342	154.8	0.528323	-177.264	0.00493084	80.1468	0.941764	158.129
+
+4.3	0.977815	154.467	0.477438	178.031	0.0055834	72.3498	0.939487	158.268
+
+4.4	0.974237	153.846	0.446674	173.359	0.00574704	62.3958	0.938433	158.033
+
+4.5	0.972088	152.056	0.437837	168.404	0.00600939	62.3677	0.932292	156.643
+
+4.6	0.967747	149.5	0.430548	163.232	0.00642175	60.5808	0.926951	154.609
+
+4.7	0.966895	146.402	0.415861	158.147	0.00662588	58.4942	0.925597	151.925
+
+4.8	0.973486	143.911	0.389536	154.084	0.00696263	55.1039	0.931796	149.386
+
+4.9	0.977476	142.691	0.349097	150.398	0.00607586	51.136	0.939971	147.702
+
+5	0.983345	142.749	0.312192	146.951	0.00585657	59.434	0.950537	147.328
+
+! splotRF display properties:{"viewAsText":false,"plots":[{"autoscaleEnforeceUnityMinimum":true,"customTitle":"","customXLabelOn":false,"tableViewAscendingSortOrder":true,"plotType":"text","customYLabelOn":false,"formatString":"f","traces":[{"maximumFractionDigits":8,"derived":"none","formatString":"f","markers":[],"useSecondaryAxis":false,"matrixType":"Z","columnWidth":203.453125,"row":0,"matrixFormat":"db","Z0":[50,0],"externalDataReference":null,"properties":{"markerType":"circle","markerSize":1.5,"markerColor":null,"lineWidth":1,"enabled":false,"fillColor":null,"markerColorIndex":12,"lineOpacity":1,"lineColor":null,"lineEnabled":true,"markerEnabled":false,"lineColorIndex":12,"fillOpacity":0,"markerOpacity":2,"lineType":"solid"},"col":0,"yAxis":"complex"},{"maximumFractionDigits":8,"derived":"none","formatString":"f","markers":[],"useSecondaryAxis":false,"matrixType":"Z","columnWidth":232.5546875,"row":0,"matrixFormat":"ri","Z0":[50,0],"externalDataReference":null,"properties":{"markerType":"circle","markerSize":1.5,"markerColor":null,"lineWidth":1,"enabled":false,"fillColor":null,"markerColorIndex":1,"lineOpacity":1,"lineColor":null,"lineEnabled":true,"markerEnabled":false,"lineColorIndex":1,"fillOpacity":0,"markerOpacity":2,"lineType":"solid"},"col":0,"yAxis":"complex"},{"maximumFractionDigits":8,"derived":"none","formatString":"f","markers":[],"useSecondaryAxis":false,"matrixType":"Z","columnWidth":188.28125,"row":0,"matrixFormat":"db","Z0":[50,0],"externalDataReference":null,"properties":{"markerType":"circle","markerSize":1.5,"markerColor":null,"lineWidth":1,"enabled":false,"fillColor":null,"markerColorIndex":9,"lineOpacity":1,"lineColor":null,"lineEnabled":true,"markerEnabled":false,"lineColorIndex":9,"fillOpacity":0,"markerOpacity":2,"lineType":"solid"},"col":1,"yAxis":"complex"},{"maximumFractionDigits":8,"derived":"none","formatString":"f","markers":[],"useSecondaryAxis":false,"matrixType":"Z","columnWidth":197.6953125,"row":0,"matrixFormat":"ri","Z0":[50,0],"externalDataReference":null,"properties":{"markerType":"circle","markerSize":1.5,"markerColor":null,"lineWidth":1,"enabled":false,"fillColor":null,"markerColorIndex":6,"lineOpacity":1,"lineColor":null,"lineEnabled":true,"markerEnabled":false,"lineColorIndex":6,"fillOpacity":0,"markerOpacity":2,"lineType":"solid"},"col":1,"yAxis":"complex"},{"maximumFractionDigits":6,"derived":"none","formatString":"f","markers":[],"useSecondaryAxis":false,"matrixType":"Z","columnWidth":168.6484375,"row":1,"matrixFormat":"db","Z0":[50,0],"externalDataReference":null,"properties":{"markerType":"circle","markerSize":1.5,"markerColor":null,"lineWidth":1,"enabled":false,"fillColor":null,"markerColorIndex":11,"lineOpacity":1,"lineColor":null,"lineEnabled":true,"markerEnabled":false,"lineColorIndex":11,"fillOpacity":0,"markerOpacity":2,"lineType":"solid"},"col":0,"yAxis":"complex"},{"maximumFractionDigits":6,"derived":"none","formatString":"f","markers":[],"useSecondaryAxis":false,"matrixType":"Z","columnWidth":171.87109375,"row":1,"matrixFormat":"ri","Z0":[50,0],"externalDataReference":null,"properties":{"markerType":"circle","markerSize":1.5,"markerColor":null,"lineWidth":1,"enabled":false,"fillColor":null,"markerColorIndex":2,"lineOpacity":1,"lineColor":null,"lineEnabled":true,"markerEnabled":false,"lineColorIndex":2,"fillOpacity":0,"markerOpacity":2,"lineType":"solid"},"col":0,"yAxis":"complex"}],"autoscaleX":true,"customXLabel":"","autoscaleRightY":true,"customYLabel":"","columnWidth":115,"customTitleOn":false,"customY2LabelOn":false,"freqUnits":"GHz","tableViewScrollIndex":0,"axesPlotTypes":["smith","text"],"axesValues":[{"lockedPanning":false,"windowSecondary":[[-1,-1],[2,2]],"window":[[-1,-1],[2,2]],"viewport":[[0.005050505050505083,0.005050505050505083],[0.99,0.99]]},{"lockedPanning":false,"windowSecondary":[[-1,-1],[2,2]],"window":[[-1,-1],[2,2]],"viewport":[[0,0],[1,1]]}],"autoscaleY":true,"customY2Label":"","autoscaleMag":true,"maximumFractionDigits":3,"showtitle":true}],"showPlotTitle":true}
