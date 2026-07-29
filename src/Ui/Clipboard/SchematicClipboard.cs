@@ -253,7 +253,7 @@ public static class SchematicClipboard
             using var doc    = SKDocument.CreatePdf(stream, metadata);
             var canvas = doc.BeginPage(pxW, pxH);
             SchematicRenderer.Draw(canvas, ((int)pxW, (int)pxH), rm, idx, panX, panY, zoom,
-                theme, showFps: false,
+                theme,
                 useTransparentBackground: useTransparentBackground,
                 excludeGrid: excludeGrid);
             doc.EndPage();
@@ -290,7 +290,7 @@ public static class SchematicClipboard
             using var stream = new SKDynamicMemoryWStream();
             using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, pxW, pxH), stream))
                 SchematicRenderer.Draw(canvas, (pxW, pxH), rm, idx, panX, panY, zoom,
-                    theme, showFps: false,
+                    theme,
                     useTransparentBackground: useTransparentBackground,
                     excludeGrid: excludeGrid);
             return (Encoding.UTF8.GetString(stream.DetachAsData().ToArray()), (float)pxW, (float)pxH);
@@ -330,7 +330,7 @@ public static class SchematicClipboard
             using var skBmp  = new SKBitmap(pxW, pxH, SKColorType.Rgba8888, SKAlphaType.Premul);
             using var canvas = new SKCanvas(skBmp);
             SchematicRenderer.Draw(canvas, (pxW, pxH), rm, idx, panX, panY, zoom,
-                theme, showFps: false,
+                theme,
                 useTransparentBackground: useTransparentBackground,
                 excludeGrid: excludeGrid);
 

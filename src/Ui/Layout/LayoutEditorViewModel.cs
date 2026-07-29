@@ -55,8 +55,18 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     public IRelayCommand RedoCommand { get; }
 
     /// <summary>Executes a mutation and pushes it onto this document's own undo stack. One user
-    /// gesture is one call to Execute — however many vertices/points it took to build the shape.</summary>
-    public void Execute(IUiCommand cmd) => _undoRedo.Execute(cmd);
+    /// gesture is one call to Execute — however many vertices/points it took to build the shape.
+    /// R-pc-13: refused (reported, never a silent no-op — R13a) while <see cref="IsPCellReadOnly"/>;
+    /// <see cref="DetachFromPCell"/> is the escape hatch.</summary>
+    public void Execute(IUiCommand cmd)
+    {
+        if (IsPCellReadOnly)
+        {
+            _messageSink?.Warning(PCellReadOnlyReason);
+            return;
+        }
+        _undoRedo.Execute(cmd);
+    }
 
     [ObservableProperty] private bool _isDirty;
 

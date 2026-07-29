@@ -291,7 +291,7 @@ public class TechEditorDocumentTests
         tech.Stackup.Layers.Add(new StackupLayer
         {
             Kind = StackupKind.Conductor, Name = "Top", ThicknessDbu = 1000, SigmaSm = 1e7,
-            DrawingLayers = [tech.Layers[0].Key],
+            DrawingLayers = [tech.Layers[0].Key], IsGroundReference = true,
         });
         var vm = new TechEditorViewModel(TempPath(), tech);
         Assert.False(vm.HasValidationIssues);
@@ -422,5 +422,132 @@ public class TechEditorDocumentTests
 
         Assert.Single(afterSecond.DrawingLayers);
         Assert.Equal(tech.Layers[1].Key, afterSecond.DrawingLayers[0]);
+    }
+
+    // ── brief-technology-editor-units-and-layers.md gate 2: ground-reference checkbox ──────────
+
+    [Fact]
+    public void ConductorRow_TogglingIsGroundReference_CommitsUndoably()
+    {
+        var tech = FreshTech();
+        tech.Stackup.Layers.Add(new StackupLayer { Kind = StackupKind.Conductor, Name = "Plane", ThicknessDbu = 1000, SigmaSm = 1e7 });
+        var vm = new TechEditorViewModel(TempPath(), tech);
+        var row = vm.StackupLayers[0];
+
+        Assert.False(row.IsGroundReference);
+        row.IsGroundReference = true;
+
+        Assert.True(vm.Working.Stackup.Layers[0].IsGroundReference);
+        Assert.True(vm.UndoRedo.CanUndo);
+
+        vm.UndoRedo.Undo();
+        Assert.False(vm.Working.Stackup.Layers[0].IsGroundReference);
+
+        vm.UndoRedo.Redo();
+        Assert.True(vm.Working.Stackup.Layers[0].IsGroundReference);
+    }
+
+    [Theory]
+    [InlineData(StackupKind.Via)]
+    [InlineData(StackupKind.Dielectric)]
+    public void NonConductorRow_IsConductorFalse_GroundCheckboxHasNothingToBindTo(StackupKind kind)
+    {
+        // R-tec-1: the checkbox itself is gated in the view by IsConductor (absent, not disabled,
+        // on a dielectric/via row) — this pins the VM-side predicate the view's IsVisible binds to.
+        var tech = FreshTech();
+        tech.Stackup.Layers.Add(new StackupLayer { Kind = kind, Name = "Row", ThicknessDbu = 1000, Epsr = 4, SigmaSm = 1e7 });
+        var vm = new TechEditorViewModel(TempPath(), tech);
+        Assert.False(vm.StackupLayers[0].IsConductor);
+    }
+
+    [Fact]
+    public void Validate_NoConductorMarkedGround_Reported_TwoMarked_NotReported()
+    {
+        var oneConductorNoGround = new Technology
+        {
+            Stackup = new Stackup { Layers = [new StackupLayer { Kind = StackupKind.Conductor, Name = "M", SigmaSm = 1, ThicknessDbu = 1 }] },
+        };
+        Assert.Contains(TechValidation.Validate(oneConductorNoGround), s => s.Contains("ground", System.StringComparison.OrdinalIgnoreCase));
+
+        var twoConductorsBothGround = new Technology
+        {
+            Stackup = new Stackup
+            {
+                Layers =
+                [
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Top", SigmaSm = 1, ThicknessDbu = 1, IsGroundReference = true },
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Bottom", SigmaSm = 1, ThicknessDbu = 1, IsGroundReference = true },
+                ],
+            },
+        };
+        Assert.DoesNotContain(TechValidation.Validate(twoConductorsBothGround), s => s.Contains("ground", System.StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ── brief-technology-editor-units-and-layers.md gate 4: DefaultDisplayUnit is a seed ───────
+
+    [Fact]
+    public void DefaultDisplayUnit_Toggle_CommitsUndoably_RoundTripsThroughSaveReload()
+    {
+        var tech = FreshTech();
+        tech.DefaultDisplayUnit = LayoutUnit.Um;
+        var path = TempPath();
+        var vm = new TechEditorViewModel(path, tech);
+
+        Assert.Equal(LayoutUnit.Um, vm.DefaultDisplayUnit);
+        vm.DefaultDisplayUnit = LayoutUnit.Mil;
+
+        Assert.Equal(LayoutUnit.Mil, vm.Working.DefaultDisplayUnit);
+        Assert.True(vm.UndoRedo.CanUndo);
+
+        vm.UndoRedo.Undo();
+        Assert.Equal(LayoutUnit.Um, vm.Working.DefaultDisplayUnit);
+        Assert.Equal(LayoutUnit.Um, vm.DefaultDisplayUnit);
+
+        vm.UndoRedo.Redo();
+        Assert.Equal(LayoutUnit.Mil, vm.Working.DefaultDisplayUnit);
+
+        vm.SaveCommand.Execute(null);
+        var reloaded = TechPersistence.LoadFromFile(path);
+        Assert.Equal(LayoutUnit.Mil, reloaded.DefaultDisplayUnit);
+        System.IO.File.Delete(path);
+    }
+
+    [Fact]
+    public void DefaultDisplayUnit_SameValue_IsANoOp_PushesNoUndoEntry()
+    {
+        var tech = FreshTech();
+        tech.DefaultDisplayUnit = LayoutUnit.Um;
+        var vm = new TechEditorViewModel(TempPath(), tech);
+
+        vm.DefaultDisplayUnit = LayoutUnit.Um; // unchanged
+        Assert.False(vm.UndoRedo.CanUndo);
+    }
+
+    [Fact]
+    public void DefaultDisplayUnit_IsASeed_NewlyCreatedLayoutPicksItUp_ButNeverRePropagatesToAnAlreadyConstructedOne()
+    {
+        // Mirrors WorkspaceViewModel.NewLayout's own construction exactly (WorkspaceViewModel
+        // itself cannot be instantiated headlessly — see src/Ui/CLAUDE.md's own testing note —
+        // so this simulates the seam directly against the real LayoutView/LayoutEditorViewModel
+        // types it actually constructs).
+        var tech = new Technology { DefaultDisplayUnit = LayoutUnit.Um, DefaultSnapDbu = 1000 };
+
+        var firstModel = new LayoutView { DisplayUnit = tech.DefaultDisplayUnit, SnapDbu = tech.DefaultSnapDbu };
+        var firstVm = new LayoutEditorViewModel(firstModel);
+        Assert.Equal(LayoutUnit.Um, firstVm.DisplayUnit);
+
+        // R-tec-4: editing the technology's DefaultDisplayUnit afterward must NEVER re-seed an
+        // already-constructed layout — there is no live subscription between them at all.
+        tech.DefaultDisplayUnit = LayoutUnit.Mil;
+        Assert.Equal(LayoutUnit.Um, firstVm.DisplayUnit);
+
+        // A layout created AFTER the change picks up the new default, exactly like the first one
+        // picked up the original value — proving the seed genuinely applies at creation time.
+        var secondModel = new LayoutView { DisplayUnit = tech.DefaultDisplayUnit, SnapDbu = tech.DefaultSnapDbu };
+        var secondVm = new LayoutEditorViewModel(secondModel);
+        Assert.Equal(LayoutUnit.Mil, secondVm.DisplayUnit);
+
+        // ...and still leaves the first, already-open layout completely untouched.
+        Assert.Equal(LayoutUnit.Um, firstVm.DisplayUnit);
     }
 }

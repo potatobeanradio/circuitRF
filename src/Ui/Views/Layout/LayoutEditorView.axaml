@@ -11,6 +11,7 @@
 
     <UserControl.Resources>
         <converters:EnumEqualsToBoolConverter x:Key="EnumEqualsBool"/>
+        <converters:ToLowerStringConverter x:Key="ToLower"/>
     </UserControl.Resources>
 
     <UserControl.Styles>
@@ -389,7 +390,13 @@
                     <TextBlock Classes="label" Text="Unit:"/>
                     <ComboBox ItemsSource="{x:Static lay:LayoutEditorViewModel.AllUnits}"
                               SelectedItem="{Binding ActiveViewModel.DisplayUnit, Mode=TwoWay}"
-                              FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"/>
+                              FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={StaticResource ToLower}}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">

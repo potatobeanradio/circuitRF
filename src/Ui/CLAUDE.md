@@ -1,5 +1,1101 @@
 # UI (Avalonia) — local conventions
 
+SignalLayer/GroundReference combo: selection "sometimes doesn't register" (2026-07-29) — COMPLETE:
+owner report, same day as the one-combobox fix immediately below — "when selecting a new choice in
+the combobox, the combobox sometimes does not register my new choice. I have to set my choice
+multiple times before the combobox finally shows my selection." **Root-caused, not guessed.**
+
+**Cause:** `ParameterRowViewModel.RecomputeLayerChoiceOptions()` (the very method that fixed the
+prior "blank combo" bug by ensuring `LayerChoiceOptions` always contains the current value)
+unconditionally reassigned `LayerChoiceOptions` to a brand-new `List<string>` instance and raised
+its `PropertyChanged` on **every** call — including from `RefreshFromModel()`, which
+`ParameterEditorViewModel.OnModelChanged` runs on **every row** after **any** parameter edit on the
+component (not just this one). Selecting a value in this very combo triggers exactly that chain,
+**reentrantly, synchronously, before the combo's own `SelectedItem` two-way binding has finished
+processing the pick**: `SelectedLayerChoice.set → CommitExpression → Execute → EditModel.Changed →
+OnModelChanged → RefreshFromModel → row.RefreshFromModel → RecomputeLayerChoiceOptions`. Swapping a
+ComboBox's `ItemsSource` to a new (content-identical) list object in the middle of it applying the
+user's own just-made selection is what made the pick intermittently fail to render — the model was
+actually committing correctly on the first try every time; only the on-screen selection lagged,
+catching up only after a later, unrelated redraw. This is exactly why the sibling enum combo
+(MBend's Miter) never showed the symptom: its `EnumOptions` list is a static, never-reassigned
+instance, so it never hit this class of bug at all.
+
+**Fix:** `RecomputeLayerChoiceOptions()` now only replaces the `LayerChoiceOptions` list instance
+(and only raises its `PropertyChanged`) when the resulting CONTENT genuinely differs from what's
+already there (`!display.SequenceEqual(LayerChoiceOptions)`) — the common case (an edit to some
+OTHER parameter, or a re-selection resolving to the same technology) does no allocation-driven UI
+churn at all now. The one case that legitimately still reassigns is moving away from a ghosted
+custom value (R-tec-9) back onto a real conductor, which correctly needs to drop the now-stale ghost
+entry — that's a genuine content change, not needless churn.
+
+**Tests** (3 new, `LayerChoicePickerTests.cs`, 21 total) — `SelectingAConductor_
+NeverReassignsLayerChoiceOptions_WhenContentIsUnchanged` and
+`SelectingBackAndForthBetweenTwoKnownConductors_NeverChurnsLayerChoiceOptions` both assert the
+`LayerChoiceOptions` list instance itself never changes (and its `PropertyChanged` never fires)
+across repeated ordinary selections; `MovingAwayFromAGhostedCustomValue_ReassignsOptionsExactlyOnce_
+ToDropTheGhost` pins the one case that legitimately still reassigns. **Verified these actually catch
+the regression, not just exercise it**: reverting the `SequenceEqual` guard (temporarily, to confirm)
+made both of the first two tests fail immediately — `SelectingAConductor_...` reported the property
+raised once instead of zero times, `SelectingBackAndForth...` reported a different list instance
+(same content) — then pass again with the fix restored. Full solution green: Firewall 4/4, Core
+512/512, Ui 3461/3461 (was 3458), Engine 458/459 (1 pre-existing skip, unchanged).
+
+**Not interactively verified** (no visual driver in this environment) — please confirm selecting a
+new SignalLayer/GroundReference value in the Parameter Editor now shows the new selection
+immediately, every time, with no need to re-select.
+
+SignalLayer/GroundReference: ONE combobox, no adjacent text field (2026-07-29) — COMPLETE: owner
+report — "it's a little strage. (It's also a little buggy right now.)" The text-field-plus-picker
+interim mechanism (from `brief-technology-editor-units-and-layers.md`, same day) is gone; a
+layer-choice row now shows ONLY the picker `ComboBox`, exactly like an enum-style row (MBend's
+Miter) shows only its combo — never a text box beside it. Per the owner's own explicit direction:
+a value the picker doesn't offer (a custom or since-renamed layer name) is set via the schematic
+canvas's own inline label text-edit instead, the same escape hatch every other parameter already has.
+
+**The "buggy" half, root-caused rather than assumed:** Avalonia's `ComboBox` renders a BLANK
+selection whenever its `SelectedItem` binding doesn't literally match an entry in `ItemsSource` —
+and the old design's `LayerChoiceOptions` list held ONLY resolved-technology conductor names, never
+the value currently staged. Any value that arrived some other way (a schematic loaded from before a
+technology existed, a renamed/removed layer, the text field itself before this fix) made the combo
+appear to "lose" the value and show nothing selected — reading as broken, which is exactly what was
+reported. Fixed at the root: `ParameterRowViewModel.LayerChoiceOptions` now ALWAYS includes the
+currently-staged value as a trailing "ghost" entry when it isn't already a known conductor
+(`RecomputeLayerChoiceOptions`), so the combo's `SelectedItem` can always find a literal match and
+is never blank — separately tracked via a private `_knownLayerChoiceOptions` (the real conductor
+list, no ghost) so `LayerChoiceMissingWarning`'s informational tooltip still fires correctly for a
+value that isn't genuinely resolvable, distinguishing "shown because it's the current value" from
+"shown because it's a real, resolvable conductor."
+
+**View change**: `ParameterEditorView.axaml`'s Expression `TextBox` (column 1) gained
+`!IsLayerChoiceParam` to its existing `IsVisible` predicate (now `ShowExpressionTextBox`, a new
+computed property mirroring `ShowUnitCombo`'s own reasoning) and the layer-choice `ComboBox` moved
+from column 2 (where it sat ALONGSIDE the text box) into column 1 in its place — mutually exclusive
+with the text box and the enum combo, matching the row's existing three-way column-1 dispatch
+pattern exactly. Column 2 (the ordinary Unit combo) stays hidden for a layer-choice row, unchanged.
+The informational tooltip moved from the (now-gone) text box onto the combo itself.
+
+**Tests**: `LayerChoicePickerTests.cs` gained 5 (18 total, was 15; one prior test renamed/re-scoped
+rather than deleted since it still exercises real property-notification wiring, even though the UI
+gesture it originally described no longer exists) — `ShowExpressionTextBox_...` pins the new
+one-combo-only layout directly; `ExternalEdit_SimulatingTheCanvasInlineLabelEdit_...` reproduces the
+REAL production path end to end (commits via `EditParameterCommand` — the same command an inline
+canvas label edit uses — and confirms `ParameterEditorViewModel`'s existing `EditModel.Changed →
+OnModelChanged → RefreshFromModel` wiring picks it up with no manual refresh call, ghosting the
+custom value into the picker and warning correctly); `LayerChoiceOptions_NeverOmitsTheCurrentlyStagedValue_...`
+is the direct regression guard for the blank-combo bug itself. Full solution green: Firewall 4/4,
+Core 512/512, Ui 3458/3458 (was 3455), Engine 458/459 (1 pre-existing skip, unchanged).
+
+**Not interactively verified** (no visual driver in this environment) — please confirm a placed
+MLIN/MBend/MTee/MCross/MTaper/MKlopf's Parameter Editor row for SignalLayer/GroundReference now shows
+a single dropdown with no text box beside it, and that a value set by double-clicking the on-schematic
+label (once "Show on schematic" is checked) still shows up correctly in that same dropdown afterward
+rather than leaving it blank.
+
+DisplayUnit ComboBoxes render lower-case (2026-07-29) — COMPLETE: owner request — everywhere a
+DisplayUnit combo appears (the Technology Editor's "Default display unit for new layouts" combo and
+the Layout Editor's per-layout "Unit:" combo), the entries should read lower-case (`nm`/`mm`/`mil`/…)
+rather than the raw `LayoutUnit` enum `ToString()` (`Nm`/`Mm`/`Mil`/…). **Display only** — neither
+combo's `SelectedItem` binding changed; `TechEditorViewModel.DefaultDisplayUnit`/
+`LayoutEditorViewModel.DisplayUnit` still bind directly to the `LayoutUnit` enum value, so the
+persisted `.ctech`/`.clay` value is completely untouched.
+
+**`Converters.ToLowerStringConverter`** (new, `src/Ui/Converters/`) — a one-way `IValueConverter`
+(`ConvertBack` throws, mirroring the existing `EnumUpperConverter` precedent in
+`src/Ui/DataDisplay/Converters/`) applied ONLY to each combo's `ItemTemplate` (`<TextBlock Text="{Binding
+Converter={StaticResource ToLower}}"/>`) — never to the `SelectedItem` binding itself, which is what
+keeps the underlying enum value untouched. Wired in both `TechEditorView.axaml` (the
+`DisplayUnitOptions`/`DefaultDisplayUnit` combo) and `LayoutEditorView.axaml` (the `AllUnits`/
+`DisplayUnit` combo) — the only two places a `LayoutUnit`-typed combo exists anywhere in `src/Ui`
+(confirmed by a project-wide search before writing any code). Since Avalonia's `ComboBox` uses the same
+`ItemTemplate` for both the dropdown list and the closed selection box, this lower-cases both without
+any second binding.
+
+**Tests**: `DisplayUnitLowercaseDisplayTests.cs` (10 tests) — the converter's own lower-casing over
+every `LayoutUnit` value, null passthrough, `ConvertBack` throwing (view-only, never write-back), a
+direct proof the persisted `Technology.DefaultDisplayUnit` enum value is unaffected, and two source-scan
+tests (mirroring this codebase's established `ReadRepoFile` pattern — an AXAML-only display change
+can't be pixel-verified headlessly) confirming both `.axaml` files actually wire the converter onto
+their own combo. Ui.Tests 3455/3455 (was 3445); full solution green (Firewall 4/4, Core 512/512,
+Engine 458/459 — 1 pre-existing skip, unchanged).
+
+**Not interactively verified** (no visual driver in this environment) — please confirm both combos now
+show lower-case unit names (e.g. "mil" not "Mil") in both their closed state and their dropdown list.
+
+Technology Editor: ground-reference checkbox, default display unit, and per-instance
+signal/ground layer overrides for all six microstrip components
+(brief-technology-editor-units-and-layers.md, 2026-07-29) — COMPLETE, with one explicit owner
+decision honored verbatim: **the Ground picker/combobox lists ONLY conductors with
+`IsGroundReference` set — never all conductors.**
+
+## §1 — `StackupLayer.IsGroundReference` existed in the model but had no UI at all
+
+The field was added in an earlier session (`L5a post-ship fixes`'s 2-conductor fallback work) and
+read by `SubstrateResolver.FindNearestGroundBeneath`, but nothing in the Technology Editor ever let
+a user SET it — a stackup with 3+ conductors and nothing marked stayed permanently ambiguous with
+no way to fix it short of hand-editing `.ctech` JSON. Fixed: a "Ground reference" `CheckBox`
+(`StackupLayerRowViewModel.IsGroundReference`, immediate-commit like `LayerRowViewModel`'s own
+Visible/Selectable checkboxes) now sits on every CONDUCTOR row only — a Dielectric/Via row shows
+nothing there at all (`IsVisible="{Binding IsConductor}"`), never a disabled control with no
+meaning. `TechValidation.Validate` gained a matching rule: zero conductors marked ground is
+reported ("microstrip components cannot resolve a ground plane"); two or more marked is legal and
+unambiguous (nearest-ground-beneath-the-signal-layer is still well-defined) and is NOT reported —
+confirmed by a dedicated 0/1/2-marked test triad. Two pre-existing test fixtures (one in
+`TechPersistenceTests.cs`, one in `TechEditorDocumentTests.cs`) had conductors with nothing marked
+and asserted a clean `Validate()` result; both were minimal-fixed by marking one conductor ground,
+unrelated to what either test actually exercises.
+
+## §2 — `Technology.DefaultDisplayUnit` is a SEED for new layouts, never a live layout setting
+
+Also pre-existing-but-unreachable. Added to the Technology Editor's header bar, explicitly labelled
+"Default display unit for new layouts:" (never "Display unit" — the brief's own R-tec-4 warning
+against a label that reads as a per-layout live setting) with a tooltip restating L0c's own
+no-re-seed invariant directly: *"Seeds a newly-created layout's own display-unit choice. Never
+changes any open or already-saved layout — each layout keeps its own unit once created."*
+`TechEditorViewModel.DefaultDisplayUnit` commits immediately (same pattern as
+`StackupTop`/`StackupBottom`), same-value is a no-op (no undo entry), and — proven, not just
+asserted — a test constructs a real `LayoutView`/`LayoutEditorViewModel` directly (mirroring
+`WorkspaceViewModel.NewLayout()`'s own construction path, since `WorkspaceViewModel` cannot be
+built headlessly) and confirms changing `DefaultDisplayUnit` afterward never touches that
+already-constructed layout's own `DisplayUnit` — only a NEW `LayoutView` built after the change
+picks up the new value.
+
+## §3 — R-tec-5's audit: MKlopf's Z1/Z2 ⇄ W1/W2 entry was already correctly self-describing
+
+**No bug was found.** Read `ParameterEditorViewModel.ReadMklopfSiValue`/`MklopfParam`/
+`ToggleMklopfImpedanceEntry` end to end: `EditableParameter.Expression` and `.Unit` are always
+written together atomically, and every reader converts using the parameter's OWN stored `Unit`
+field — never an ambient "current display unit." This had already been fixed in an earlier
+same-session brief (`MKlopf entry-mode switch: converted values now respect the workspace's own
+length unit`, below in this file) — a prior instance of exactly the class of bug R-tec-5 asked to
+audit for, already closed before this brief started. Per the brief's own instruction ("if one was
+found, it is fixed and covered by a test; if none was found, say so"), a permanent regression test
+was still added — `AlreadyStoredW1W2_IsUnaffectedByALaterDefaultDisplayUnitChange`
+(`MklopfEntryModeSwitchUnitsTests.cs`) — proving the invariant holds under exactly the new
+`DefaultDisplayUnit` seed this brief adds, not just asserting it from reading the code.
+
+## §4 — SignalLayer/GroundReference: two new per-instance override parameters, on all six microstrip components
+
+**R-tec-6/7**: `MLIN`, `MBend`, `MTee`, `MCross`, `MTaper`, `MKlopf` each gained `SignalLayer` and
+`GroundReference` parameters (`ComponentTypeRegistry.SignalGroundLayerParams`, spread into every one
+of the six `DefaultParameters` case blocks) — stored as the target conductor's own `StackupLayer.Name`
+**string**, matching the naming precedent `StackupLayer.SpanFromLayer`/`SpanToLayer` already set for
+via-span identity (a conductor has no other stable identity than its name). Both default to `""`
+and `ShowOnSchematic = false` — a schematic annotating every MLIN with these would be pure noise, per
+the brief's own explicit guardrail.
+
+**R-tec-8**: empty means "follow the technology" — the zero-configuration default. `NetExtractor`'s
+microstrip branch normalizes an empty/whitespace-only stored value to `null` before it ever reaches
+`SubstrateResolver` (`NonEmptyOrNull`), so R-tec-8's convention and `SubstrateResolver`'s own
+pre-existing null-means-default convention are the SAME rule, never two.
+
+**R-tec-9**: a named override that no longer resolves (a rename, a technology swap) reports and
+falls back to the inferred default — never fails the component outright, which was
+`SubstrateResolver.FindSignalConductor`'s own OLD behavior for the signal case (the ground case had
+no override-resolution path to fail in the first place; both now share one fallback shape). Proven at
+three levels: `SubstrateResolverTests.cs` (pure resolution), `MicrostripSubstrateInjectionTests.cs`
+(a real temp workspace, `BuildOverrides` directly), and `NetExtractorMicrostripLayerOverrideTests.cs`
+(new — the full path: a real `EditableComponent`'s `SignalLayer` parameter, through
+`NetExtractor.Extract`, to the emitted `Instance.Overrides`, cross-checked byte-for-byte against
+`SubstrateResolver.ResolveElectrical` called directly with the same override — the component still
+gets a full, correct set of H/T/Er/Sigma/TanD overrides on a bad name, and the conflict is reported
+in `result.Conflicts`, never silently).
+
+**Architectural decision, confirmed necessary by reading actual stackup data, not assumed**:
+SignalLayer/GroundReference never reach Core or `.cnl` text. `MicrostripSubstrateInjection.
+BuildOverrides` is called entirely within `NetExtractor.Extract`, before any `.cnl` serialization —
+so these two parameters are filtered OUT of the generic parameter-to-override conversion
+(`NetExtractor`'s `.Where(p => p.Name is not "CvData" and not "ShowBias" and not "SignalLayer" and
+not "GroundReference")`, extending the exact same list H/T/Er/Sigma/TanD's own "never declared cell
+parameters" rule already uses) and consumed directly from `comp.Parameters` instead. This avoids a
+CnlWriter/CnlReader quoting + Elaborator string-param-dispatch addition that would otherwise be
+needed: real stackup conductor names contain spaces and parentheses (`"Top Copper (1 oz)"`,
+`"Backside Metal"`, confirmed via grep of `StarterTechnologies.cs`), which a bare `.cnl` value token
+cannot carry without new quoting machinery.
+
+**R-tec-10 — does a dynamically-sourced choice-parameter mechanism already exist? No.** The only
+precedent is `ComponentTypeRegistry.EnumParamOptions`/`ParameterRowViewModel.SelectedEnumIndex`
+(MBend's Miter: None/Fifty/Optimal) — confirmed by reading it directly to be a STATIC, compile-time-
+fixed option list, not one resolved from the schematic's own ancestor workspace technology at edit
+time. Per the brief's own instruction ("if it doesn't exist, say so before building a parallel
+mechanism"), the answer is said here rather than silently assumed, and the interim mechanism the
+brief authorizes — "a validated text field plus a picker" — was built as a genuinely NEW, small
+addition rather than a fork of the enum-combo code:
+- `ComponentTypeRegistry.LayerChoiceKind { Signal, Ground }` + `LayerChoiceKindFor(SymbolKind, string)`
+  identify which of the two roles (if any) a parameter name is, reusing
+  `MicrostripSubstrateInjection.IsMicrostripKind` rather than a third duplicate kind-list.
+- `ParameterRowViewModel.IsLayerChoiceParam`/`LayerChoiceOptions`/`SelectedLayerChoice`/
+  `ShowUnitCombo`/`LayerChoiceMissingWarning` — `LayerChoiceOptions` is resolved from the schematic's
+  OWN ancestor workspace technology (`MicrostripSubstrateInjection.ResolveWorkspaceTechnology(
+  EditModel.SchematicDirectory)`) at row construction AND on every `RefreshFromModel()` (so a stackup
+  edit made while the Parameter Editor is open is picked up, not frozen at the moment the row was
+  built) — **"(Default)" is always the first entry** (R-tec-8, mirroring L0c's `TechRef = null`-is-
+  automatic convention exactly), followed by every conductor for SignalLayer, or **per the user's own
+  explicit instruction, ONLY conductors with `IsGroundReference` set** for GroundReference (listing
+  every conductor there "invites a selection the model will then have to reject," per the brief's own
+  §3.2 R-tec-10 wording — the user resolved this open question directly rather than leaving it to be
+  guessed).
+- The picker is a `ComboBox` bound to `SelectedLayerChoice`, laid out ALONGSIDE (not replacing) the
+  ordinary Expression `TextBox` — selecting an item stages AND commits immediately (same
+  commit-on-select convention the Miter enum combo already established); the text field beside it
+  stays independently typeable, which is the "text field" half of the interim mechanism. The ordinary
+  Unit combo is hidden for a layer-choice row (`ShowUnitCombo`) — `UnitDimension.None`'s single "None"
+  entry would be clutter, exactly the same reasoning the enum combo already applies.
+- `LayerChoiceMissingWarning` is informational only — the actual FALLBACK behavior (R-tec-9) already
+  lives correctly at the `SubstrateResolver` layer regardless of whether the Parameter Editor ever
+  shows anything; the tooltip just tells the user their typed/picked name doesn't currently resolve.
+- `CommitExpression`'s pre-existing "empty expression is always a no-op" guard was narrowed
+  (`if (expr.Length == 0 && !IsLayerChoiceParam) return;`) — for every OTHER parameter, clearing a
+  field is still a no-op (reverts to the prior value on next refresh, unchanged behavior); for a
+  layer-choice parameter, empty is itself a meaningful, committable value ("(Default)"/follow-the-
+  technology, R-tec-8) and must be allowed through.
+
+**Gates 2/6/7/9/11 (VM-level)**: `LayerChoicePickerTests.cs` (15 tests) — row identification + Unit-
+combo suppression; no-workspace degrades to just "(Default)"; the defaults-unset regression guard
+(gate 7, unchanged behavior when nothing is overridden); SignalLayer vs. MMIC vs. PCB list different
+conductors (gate 11, resolved-technology-driven, not static); **Ground lists ONLY the ground-marked
+conductor even when the stackup has other conductors, while SignalLayer lists all of them** (the
+user's own explicit instruction, directly tested); picking a conductor commits undoably, picking the
+SAME choice is a no-op; **picking "(Default)" after an override clears the expression and returns to
+automatic** (gate 9's first half); **a stackup edit written to disk while the editor is open is
+picked up on the row's next `RefreshFromModel()`** (gate 9's second half — a conductor newly marked
+ground appears in the Ground picker's own option list without rebuilding the row); an unknown/stale
+name surfaces the informational warning naming it, a known name shows none, and typing directly into
+the text field updates the picker and warning live.
+
+**Full solution green, whole brief (§1 through §4)**: Firewall 4/4, Core 512/512, Ui 3445/3445 (was
+3413 before this brief — 32 new across the whole brief: 6 in `TechEditorDocumentTests.cs` §1/§2, 1 in
+`MklopfEntryModeSwitchUnitsTests.cs` §3, 3 replacing 1 in `SubstrateResolverTests.cs` (R-tec-9's
+mandated behavior change, §4), 2 in `MicrostripSubstrateInjectionTests.cs` §4, 5 new
+`NetExtractorMicrostripLayerOverrideTests.cs` §4, 15 new `LayerChoicePickerTests.cs` §4), Engine
+458/459 (1 pre-existing skip, unchanged).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's
+note) — please confirm on your end: a conductor row in the Stackup tab shows a "Ground reference"
+checkbox (absent on Dielectric/Via rows); the Technology Editor's header shows "Default display unit
+for new layouts:" and changing it never affects an already-open layout; placing an MLIN/MBend/MTee/
+MCross/MTaper/MKlopf shows SignalLayer/GroundReference rows in the Parameter Editor with a
+`(Default)`-first picker beside the text field (Ground's picker listing only ground-marked
+conductors, Signal's listing every conductor); picking a conductor there visibly changes the
+component's resolved substrate (observable via the S-parameter result changing) and picking
+`(Default)` again returns it to automatic; and a stale/renamed layer name shows the informational
+tooltip on the text field while the component still simulates using the fallback substrate.
+
+MKlopf performance + Messages routing (brief-mklopf-performance-and-messages.md, 2026-07-29) —
+COMPLETE: owner report — an S-parameter sweep with MKlopf is very slow (his case resolved
+**N = 4096** sections), the model recomputes on every analysis, and its warnings go to the
+terminal instead of the Messages window. **All Core/Engine — no UI-layer change at all**; recorded
+here per this codebase's own standing convention of keeping one running changelog.
+
+## §1 — `Stamp` was recomputing the entire frequency-independent width profile per frequency point
+
+Confirmed exactly as suspected: `MicrostripKlopfModel.Stamp` recomputed the curvature scan, the two
+endpoint widths (`SynthesizeWidth`, a numerical root-find), and **every section's own width via
+another `SynthesizeWidth` root-find** on **every single frequency point** — none of it depends on
+frequency at all. For the owner's case (N=4096 over a 201-point sweep) that is **4096 × 201 ≈
+823,000 section-width root-finds alone**, each itself 60 bisection iterations of forward
+Hammerstad-Jensen evaluation, repeated to recompute a width profile that never changes.
+
+**Fix:** everything geometry/substrate-dependent (total arc length, minimum radius of curvature —
+including the 200-sample scan that finds it, R-mk-2 below — the two endpoint widths, and εeff,max)
+is now computed **exactly once** per distinct parameter set, in a new process-wide cache
+(`MicrostripKlopfModel`'s private `_geometryCache`/`_sectionTableCache`, `ConcurrentDictionary<Key,
+Lazy<…>>`, mirroring the PCell contract's own "evaluate once per unique parameter set" and
+`TechnologyCache`'s per-key sharing). `Stamp` itself now does only what genuinely varies with
+frequency: Kirschning-Jansen dispersion, the two loss terms, and the ABCD cascade. **Root-find count
+measured directly, not assumed**: `MicrostripKlopfModel.GeometryBuildCount`/`SectionTableBuildCount`
+(new, test/diagnostic-only public counters) confirm exactly **1** geometry build and **1**
+section-table build across the owner's own 201-point sweep — down from 823,000+ width root-finds to
+a small, bounded number (a handful of `SynthesizeWidth` calls for the endpoints plus the one-time
+non-uniform-placement table build below), regardless of sweep length.
+
+## R-mk-2 — the curvature-scan guard bug, and why it only showed up in the healthy case
+
+The old guard (`_warnedCurvature`) was set **only when the warning actually fired** — so on the
+common, non-degenerate geometry (no warning), the 200-sample curvature scan plus an `ArcLength`
+call and a `WidthAtArcFraction` root-find reran on **every** frequency point, forever. This is
+exactly the class of bug that hides in the "good" case: a test written only against a
+warning-firing fixture would never have caught it. Fixed by folding the whole scan into the
+one-time geometry build above (no per-instance guard flag needed at all — it structurally can't
+rerun once it lives inside the cached, lazily-built `MklopfGeometryData`). Gate:
+`Gate4_CurvatureScan_RunsOnce_ForGeometryThatNeverWarns` uses the brief's own non-warning worked
+example (Z1=48/Z2=52/L=76.2mm/Offset=25.4mm) and asserts `GeometryBuildCount == 1` after 25 stamps
+at different frequencies.
+
+## §2 — non-uniform Δ(ln Z) sectioning + real convergence, replacing the ΔW proxy
+
+**R-mk-4/R-mk-5**: section boundaries are now placed at **equal Δ(ln Z)**, not equal arc-length or
+equal ΔW — `MicrostripCascadeSectioning.NonUniformBoundaries(impedanceAtFraction, n)` (new, shared,
+generic over any profile exposing Z(t)) inverts the profile's own `ImpedanceAt` via bisection per
+boundary. A small reflection scales with Δ(ln Z)/2 (R-mk-5), so bounding it bounds each section's own
+contribution to the discretization error directly — the old ΔW criterion was a poor proxy wherever
+dZ/dW is small, which is exactly why a Klopfenstein profile (flat over most of its length, steep
+near the middle) forced uniform sampling to the density its steepest point alone needed.
+
+**R-mk-6**: N itself is now resolved by **actually converging the cascade's own Z-parameters**
+(doubling N until doubling again changes nothing beyond 1e-4 relative — `ResolveNonUniformSectionCount`),
+not by a fixed geometric tolerance. This runs at a **fixed internal reference frequency (1 GHz)**,
+not "whichever frequency happens to trigger the cache first" — a real, non-obvious wrinkle found
+while implementing this: `SParameterEngine.CollectPortsAndBranchLabels`'s own preliminary
+branch-labeling pass stamps every component once at **ω = 1 rad/s (≈ 0.16 Hz)** purely to capture
+branch indices, and since that pass is often the very first `Stamp` call for a fresh netlist, letting
+its bogus near-DC frequency seed the one-time convergence test would have silently under-resolved N
+for a design actually swept at, say, 1–10 GHz. The genuinely frequency-dependent electrical criterion
+(`MicrostripCascadeSectioning.ElectricalSectionCount`, λ/20 rule) is still evaluated fresh at the
+REAL stamping frequency on every call and combined via `Math.Max` — so a real high sweep frequency
+still raises N correctly, just analytically rather than through the one-time empirical check.
+
+**Owner's case, measured directly** (Z1=50Ω, Z2=7Ω, Γmax=0.05, L=20mm, Offset=5mm, FR-4 1.6mm):
+**N: 4096 → 64** (64× fewer sections) — `Gate6_OwnerCase_...` asserts the resolved N is strictly
+below the forced-old N=4096 AND that the two stamps' z11 agree within 1e-3 relative (they do:
+comparing the OLD uniform-N=4096 cascade against the NEW resolved-N=64 non-uniform cascade at
+10 GHz). Wall-clock for the full 201-point 1–10 GHz sweep (measured with a throwaway benchmark,
+not committed as a test, per the standing "timing is the diagnostic, not the gate" rule): **522 ms
+(old, forced N=4096) → 20 ms (new, resolved N=64)**, ≈26× faster — the residual cost is the
+still-real per-frequency Kirschning-Jansen/loss/cascade work over 64 sections × 201 points, not
+sectioning overhead.
+
+**`_sectionCountOverride` (kept, per the brief's own explicit "do not remove") deliberately still
+uses the ORIGINAL uniform-arc-fraction placement**, not the new non-uniform one — an overridden N
+gets the simple, predictable behavior the escape hatch always had, and this is what makes R-mk-1's
+own "hoisting changes nothing" claim directly testable: `Gate2_OverriddenN_MatchesIndependentlyComputedReference…`
+stamps with an override and compares against a from-scratch reference implementation of the
+ORIGINAL algorithm (written independently in the test file, not calling any of the model's own
+production code) — bit-identical to 12 decimal digits.
+
+**Is `MicrostripCascadeSectioning` shared with MTaper? Yes, structurally, but MTaper's own numbers
+are untouched in this pass.** The new `NonUniformBoundaries` method was added to the SAME shared
+class MTaper already calls (`ElectricalSectionCount`/`GeometricSectionCount`/`Resolve`, all left
+byte-for-byte unchanged), and is deliberately written generically (over any `Func<double,double>
+impedanceAtFraction`, not Klopfenstein-specific) — MTaper's own width-linear profile could call it
+by supplying `t => HammerstadJensen.Compute(WidthAtFraction(t), …).Z0` with zero new shared-class
+code needed. It is **not applied to MTaper in this pass**: MTaper's existing ΔW criterion is already
+well-matched to its OWN profile (uniform Δt already gives uniform ΔW for a linear width ramp,
+which is why its own doc comment states "needs exactly N=50 sections" as a settled fact) — switching
+it to a log-Z criterion would genuinely change its section count and hence its numbers, which is
+outside this brief's "do not touch MTaper beyond a shared sectioning helper" guardrail. Both
+`MicrostripTaperModel`'s and `MicrostripCascadeSectioning`'s own doc comments say so directly, so a
+future contributor doesn't have to re-derive this scope decision from scratch.
+
+## §3 — Messages routing (R-mk-7/8/9/10)
+
+**R-mk-8's answer, confirmed by reading the code rather than assumed: the reporter itself was
+writing directly to the console — there was no path into Messages at all, for either call site.**
+`MicrostripValidityReporter.CheckRange` (used by EVERY microstrip model — MLIN, MBend, MTee, MCross,
+MTaper, MKlopf) wrote straight to `Console.Error.WriteLine` with no connection whatsoever to
+`ElaboratedNetlist.Warnings` (the mechanism `SchematicRunService`/`WorkspaceViewModel.RunAnalysis`
+already drains into the Messages pane — see this file's own "Engine diagnostics channel" note in
+`src/Engine/CLAUDE.md`). `MicrostripKlopfModel`'s own two direct warnings had the identical bug.
+Fixing the reporter therefore repairs every microstrip validity-range warning across all six models
+that hold one, not merely MKlopf's two.
+
+**The fix:**
+- **`MicrostripValidityReporter`** (`src/Core/Devices/Microstrip/MicrostripValidity.cs`) no longer
+  touches the console at all. `CheckRange` and a new general-purpose `ReportOnce(key, message)`
+  (for free-form text that isn't a range check — the curvature/section-count messages) both queue
+  into a private pending list, drained via a new `Drain()` method. The existing per-key
+  "once per distinct violation, for this reporter's lifetime" dedup is unchanged.
+- **`IReportsWarnings`** (new, `src/Core/Devices/IReportsWarnings.cs`) — `DrainWarnings()`. Every
+  microstrip model holding a `MicrostripValidityReporter` (`MicrostripLineModel`, `MicrostripBendModel`,
+  `MicrostripTeeModel`, `MicrostripCrossModel`, `MicrostripTaperModel`, `MicrostripKlopfModel`) now
+  implements it as a one-line `=> _reporter.Drain()` — mechanical, no change to any of their own
+  electrical models or their own separate, pre-existing direct console messages (MBend's
+  "no matching published… coefficients" notice, MTee/MCross's own asymmetry notices — all
+  deliberately untouched, out of this brief's stated scope).
+- **`ElaboratedNetlist.DrainModelWarnings(ComponentModel)`** (new) — the ONE place a model's queued
+  messages actually reach `AddWarningOnce`. Called right after **every** `ec.Model.Stamp(...)` call
+  site in the engine (8 total, across `NonlinearDcEngine`, `SParameterEngine` — both its real
+  per-frequency loop and its preliminary branch-labeling pass, which is where the FIRST Stamp call
+  for a fresh netlist usually happens — and `HbLinearExtractor`), so a component has no reference of
+  its own to the netlist its warnings need to reach, but the engine (which stamps everything and
+  already holds the netlist) always does.
+- **R-mk-9 (the doubled "MKLOPF:MKLOPF:" prefix)** — gone by construction, not by string surgery:
+  the two messages no longer hand-type a `"MKLOPF:"` literal at all; `MicrostripValidityReporter`'s
+  own `{_instancePath}: {message}` formatting is the only prefix now, matching how every OTHER
+  reporter-routed message already worked.
+- **R-mk-10 (the section-count line is informational)** — only queued when N exceeds
+  `MicrostripKlopfModel.SectionCountReportThreshold` (200); a routine N (tens of sections) produces
+  no entry at all, never sits in Messages as noise next to a genuine problem.
+
+**Tests**: `MklopfPerformanceAndMessagesTests.cs` (11 new tests, `src/Core`) — one test per gate in
+the brief's own §5 list (2/3/4/5/6/7×2/9×2/10/11), plus the two pre-existing
+`MicrostripKlopfModelTests.cs`/`HammerstadJensenTests.cs` Console.Error-capturing tests rewritten to
+read `IReportsWarnings.DrainWarnings()`/`MicrostripValidityReporter.Drain()` directly (the Console
+capture itself is now testing nothing, since nothing reaches Console.Error anymore). Full solution
+green: Firewall 4/4, Core 512/512 (was 501), Ui 3413/3413 (unchanged — no UI files touched), Engine
+458/459 (1 pre-existing skip, unchanged).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's
+note) — please confirm on your end: a real S-parameter sweep through an MKlopf on the owner's own
+design runs noticeably faster than before, and that the curvature warning / section-count
+informational line (on a design where N genuinely exceeds 200) now appear in the Messages window
+rather than the terminal, with the component named once (not "MKLOPF:MKLOPF:").
+
+MKlopf entry-mode switch: converted values now respect the workspace's own length unit, not a
+hardcoded "mm" (2026-07-29) — COMPLETE: owner report — "When switching from Z1/Z2 to W1/W2 for the
+MKLOPF, the workspace technology units are not respected. Same with L/F3db."
+
+**Root cause:** `ParameterEditorViewModel.ToggleMklopfImpedanceEntry()`/`ToggleMklopfLengthEntry()`
+(built in the prior MKlopf-entry-mode-switch brief, same session) always wrote the newly-converted
+W1/W2/L parameters with a hardcoded `"mm"` unit, never consulting the schematic's own resolved
+workspace technology — the exact same class of bug the L5a post-ship fix already found and fixed for
+a freshly-*placed* MKlopf/Mtaper's own defaults (`MicrostripSubstrateInjection.
+ApplyTechnologyLengthUnit`), just not yet applied to this DIFFERENT code path (an existing instance's
+entry-mode toggle writes a brand-new expression from scratch, not a placement-time rewrite of an
+existing "mm" default). A PCB workspace's newly-computed width therefore always displayed as (say)
+"114.2mm" instead of "4496.85mil" — the NUMBER was correct math, but its declared unit lied about
+what it actually was, and every downstream reader (the parameter's own `Unit` field, the schematic
+label, any later re-read) would misinterpret it.
+
+**Fix — reuse the exact mapping the placement-time rewrite already established, don't re-derive it:**
+- **`MicrostripSubstrateInjection.LengthUnitFor(Technology?)`** (new, public) — a thin wrapper
+  exposing the existing private `SchematicLengthUnit(LayoutUnit)`/`DefaultParameterUnit` mapping
+  (PCB→"mil", MMIC→"µm", else/no-technology→"mm") so a caller building a brand-new expression can pick
+  the right unit UP FRONT, rather than write "mm" and hope a later rewrite pass catches it (there is no
+  such pass for this code path — the toggle commits directly via `SetParametersCommand`, not through
+  placement).
+- **`ParameterEditorViewModel.ResolveMklopfSubstrate()`** — return type widened from a 3-tuple
+  `(H, T, Er)` to a 4-tuple `(H, T, Er, LengthUnit)`; `LengthUnit` is resolved via
+  `MicrostripSubstrateInjection.LengthUnitFor(tech)` using the SAME `ResolveWorkspaceTechnology` call
+  the substrate resolution already made (no second ancestor-`.cws` walk).
+- **`FormatLengthMm(double meters)` replaced by `FormatLengthInUnit(double meters, string unit)`** —
+  divides by `Units.Scale(UnitNormalizer.ToEngineUnit(unit)) ?? 1e-3` to convert an SI-metres value
+  into the target display unit's numeric string — the SAME meters-per-unit table `ReadMklopfSiValue`
+  already uses in the opposite direction (reading a parameter's displayed value back to SI), so the
+  round trip is guaranteed consistent by construction, not by two independently-hand-written tables.
+- Both `ToggleMklopfImpedanceEntry()` and `ToggleMklopfLengthEntry()` now pass the resolved
+  `lengthUnit` as the new W1/W2 (or L) parameter's `Unit`, instead of the literal string `"mm"`.
+- **F3db intentionally keeps its hardcoded `"GHz"`** — frequency has no workspace-technology display
+  convention of its own (`Technology.DefaultDisplayUnit` governs LENGTH only), so there is nothing to
+  look up; GHz is a fixed, reasonable RF default regardless of whether the workspace is a PCB or an
+  MMIC die. Stated directly in the code, not left as an unexplained asymmetry next to the length fix.
+
+**Tests**: `MklopfEntryModeSwitchUnitsTests.cs` (8 new tests, `src/Ui`) — constructs a REAL temp
+workspace (`.cws` + `.ctech` on disk, mirroring `MicrostripSubstrateInjectionTests`'s own
+`WriteWorkspaceWithTech` pattern) using `StarterTechnologies.Pcb2Layer()` (expects `"mil"`) and
+`StarterTechnologies.MmicGaAs()` (expects `"µm"`), so the ancestor-`.cws`-walk resolution is genuinely
+exercised end-to-end rather than assumed: Z1/Z2→W1/W2 lands in mil on a PCB workspace and µm on an
+MMIC workspace (with a numeric cross-check against the no-workspace "mm" case proving the VALUE is
+physically equivalent, not just relabeled), W1/W2→Z1/Z2 round-trips correctly regardless of which unit
+the widths were stored in, L→F3db→L round-trips back to the workspace's own unit (not "mm"), and F3db
+itself stays "GHz" on every workspace. The 10 pre-existing `MklopfEntryModeSwitchTests.cs` tests (all
+no-workspace scenarios, where the fallback is still "mm") continue to pass unchanged — confirming no
+regression in the case this fix does not change. Full solution green: Firewall 4/4, Core 501/501,
+Ui 3413/3413, Engine 458/459 (1 pre-existing skip).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's
+note) — please confirm on your end: switching an MKlopf from Z1/Z2 to W1/W2 on a real PCB workspace
+schematic shows the new width in mil (not mm), the same switch on an MMIC workspace shows µm, and
+switching L to F3db and back on either workspace round-trips L in that workspace's own unit while
+F3db itself always reads in GHz.
+
+MBend's Miter label: reverted to the raw index, on the owner's own explicit call — the schematic
+label keeps showing "Miter=0"/"Miter=2" (2026-07-29, supersedes the same-day entry below that had
+briefly made it show the named option instead) — COMPLETE.
+
+**What happened, in order:** a same-day fix substituted the named option ("Optimal") into the
+on-schematic label via a new `ComponentTypeRegistry.FormatParamValueForLabel` helper, applied in
+both label-building sites (`EditableSchematic.ToRenderComponent` and the perf-benchmark-only
+`SchematicModelBuilder.BuildComponent`). The owner then asked for it back: **the label's own inline
+text-edit box only ever accepts/shows the raw numeric value** (there is no combo on the schematic
+canvas itself — typing directly into the label still means typing "0"/"1"/"2"), so translating the
+RENDERED label to a name while the editable text underneath it stays numeric would have made the two
+inconsistent with each other. Both label-building loops were reverted to their original
+`$"{Name} = {Expression} {Unit}"` form (no `FormatParamValueForLabel` call); that now-unused helper
+method was deleted outright (dead code, not kept "just in case") along with its dedicated test file.
+`ComponentTypeRegistry.EnumParamOptions`'s own doc comment now states this "why not" directly, so a
+future reader doesn't reintroduce the same reasonable-seeming but rejected idea from scratch.
+
+**What replaced it — a read-only readout in the Parameter Editor, not in the label:**
+`ParameterRowViewModel.EnumIndexReadout` (new) is a small, subtle (55% opacity), non-interactive text
+showing the raw number the combo's current selection actually stores ("0"/"1"/"2") — empty for every
+non-enum parameter. Placed in `ParameterEditorView.axaml`'s row template at Grid.Column="2" (the same
+cell the Unit ComboBox occupies, hidden via `IsVisible="{Binding !IsEnumParam}"` — the readout and the
+Unit combo are mutually exclusive by construction, matching this same row's existing TextBox/enum-
+ComboBox pairing in column 1). This is what now explains, in place, why the schematic renders "Miter
+= 2": the reader can see right next to the "Optimal" combo selection that it commits the number 2.
+`OnSelectedEnumIndexChanged` raises `EnumIndexReadout`'s own `PropertyChanged` UNCONDITIONALLY (before
+the `_isRefreshing` early-return that gates the actual model commit) so the readout stays correct
+through undo/redo and Refresh, not only on a live user selection.
+
+**Tests**: `MBendMiterComboTests.cs` gained the readout coverage (matches the selected index for all
+three modes, empty for a non-enum row, updates live on selection change, updates on undo) plus a
+direct regression pinning that `EditableComponent.ToRenderComponent()`'s label still contains the raw
+`"Miter = {index}"` text for all three stored values — the earlier (now-deleted)
+`EnumParamLabelDisplayTests.cs` asserted the opposite and was removed rather than left contradicting
+the current behavior. Full solution green: Firewall 4/4, Core 501/501, Ui 3405/3405, Engine 458/459
+(1 pre-existing skip).
+
+**Not interactively verified** (no visual driver in this environment) — please confirm a placed
+MBend's on-schematic label reads "Miter = 0"/"Miter = 2" (the raw number, as before), and that the
+Parameter Editor's Miter row shows a small grey number next to the combo matching the selected mode.
+
+MBend's Miter parameter — a real ComboBox instead of a raw 0/1/2 number (2026-07-29) — COMPLETE:
+owner report — "MBend seems to have no way to change the miter mode. (At least it's not obvious.)
+Is there a way to use a combobox to select None, Fifty or Optimal? Make Optimal the default."
+Confirmed: `ComponentTypeRegistry.DefaultParameters(MBend)`'s `"Miter"` parameter was rendered
+through the generic Parameter Editor row like any other numeric field — a plain Expression text box
+expecting a literal `0`/`1`/`2`, with no hint anywhere that the value is really a closed set of
+named modes (`MicrostripBendMiter.{None,Fifty,Optimal}`).
+
+**Fix — a small, reusable "enum parameter" mechanism, not a one-off special case for MBend alone:**
+- **`ComponentTypeRegistry.EnumParamOptions(SymbolKind, paramName) → IReadOnlyList<string>?`** (new)
+  — returns the named option labels for a parameter that's really an enum (`(MBend, "Miter") →
+  ["None","Fifty","Optimal"]`, in the exact order `MicrostripBendMiter`'s own numeric values use, so
+  option index == committed expression value); returns `null` (unchanged behavior) for every other
+  parameter on every other component. Adding a future enum-shaped parameter anywhere else is a
+  one-line addition to this switch, not a new mechanism.
+- **`ParameterRowViewModel`** gained `EnumOptions`/`IsEnumParam` (populated from the registry call
+  above) and `SelectedEnumIndex` (an `[ObservableProperty] int`, parsed from/committed to the
+  parameter's own `Expression` string — `ParseEnumIndex` falls back to index 0 on anything
+  unparsable or out of range, never throws). Selecting a combo item commits IMMEDIATELY through the
+  existing `EditParameterCommand` (the same undoable command every other parameter edit already
+  uses) — mirrors the SnP panel's own PinConfig/Pitch combos, which already establish "combo
+  selections commit on `SelectionChanged`, not staged via LostFocus" as the house convention for
+  combo-shaped fields. `RefreshFromModel()` re-syncs `SelectedEnumIndex` too, so Undo/Redo (and any
+  other external model change) keeps the combo showing the correct mode.
+- **View** (`ParameterEditorView.axaml`): the generic row template's column 1 now holds BOTH the
+  existing Expression `TextBox` (`IsVisible="{Binding !IsEnumParam}"`) and a new `ComboBox`
+  (`ItemsSource="{Binding EnumOptions}"`, `SelectedIndex="{Binding SelectedEnumIndex}"`,
+  `IsVisible="{Binding IsEnumParam}"`) occupying the same cell — mutually exclusive, so an enum
+  parameter shows only the combo and an ordinary parameter shows only the text box. The Unit combo in
+  column 2 is likewise hidden for an enum parameter (`UnitDimension.None`'s own single `"None"`
+  option would just be clutter next to a mode selector that has no unit at all).
+- **Default changed to Optimal**: `ComponentTypeRegistry.DefaultParameters(MBend)`'s `"Miter"` default
+  is now `"2"` (was `"0"`/None) — a freshly-placed MBend now uses the real Douville-James optimum
+  chamfer out of the box, matching what the owner asked for.
+
+**Tests**: `MBendMiterComboTests.cs` (12 tests) — the new default value, `EnumParamOptions`'s
+options/order and its `null` fallback for non-enum parameters, the row correctly reporting
+`IsEnumParam`/`EnumOptions`/`SelectedEnumIndex` (including for a freshly-placed default and for every
+OTHER MBend parameter, which must NOT be enum params), selecting a combo option committing the right
+expression value, a same-value selection being a genuine no-op (no undo entry pushed), undo/redo
+correctness, and the never-throws fallback for an out-of-range or unparsable stored expression. Full
+solution green: Firewall 4/4, Core 501/501, Ui 3396/3396, Engine 458/459 (1 pre-existing skip).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's
+note) — please confirm on your end: a placed MBend's Parameter Editor row for "Miter" shows a
+None/Fifty/Optimal dropdown (not a number box), a freshly-placed MBend defaults to Optimal, and
+selecting a different option visibly changes the bend's electrical model (and, if wired all the way
+through to the PCell, its miter-cut artwork) without needing to type anything.
+
+MKlopf glyph closure + the missing Z1/Z2⇄W1/W2 and L⇄F3db entry-mode switch
+(2026-07-29) — COMPLETE: two owner reports after trying the taper-family brief. The first was a
+straightforward rendering bug; the second exposed that a documented, factory-level-correct feature
+(R-klp-3/R-klp-3a's alternate parameter-entry routes) had **no UI path to actually reach it** — a real
+gap, not a "how do I" question with an existing answer.
+
+## Bug 1 — MKlopf's glyph body outline was open on the right side
+
+`BuiltInSymbols.BuildMklopf()`'s body is drawn as a top quad-curve, a bottom quad-curve, and a left
+closing line — the right side (where the two curves meet, at x=+90) had no connecting segment at
+all, so the outline never closed there (visible as a gap/open right edge). Fixed with one added
+`L(90,-20, 90,20)`. `MicrostripSymbolGlyphTests.cs` gained a general "the body outline is one
+continuous closed loop" check (walks every primitive after the two lead-in stubs, asserts each
+segment's end matches the next segment's start, wrapping around back to the first) — this is a
+structural regression guard that would catch a missing edge on EITHER side, not only the one
+actually found, plus a direct pin on the specific right-side closing segment.
+
+## Bug 2 — Z1/Z2⇄W1/W2 and L⇄F3db had no UI mechanism at all
+
+**Root cause: `ComponentTypeRegistry.DefaultParameters(Mklopf)`'s own doc comment claimed the
+alternative route is "added by the user via 'add parameter'" — that mechanism (`AllowsAddParameter`/
+`ComponentTypeRegistry.UserParamTemplate`) exists only for INDEXED, repeating parameter groups
+(P1Tone's `Z[k]`, ToneSource's `Freq[n]`/`V[n]`/`Phase[n]`, SDD's equations, VAR) and returns `null`
+for MKlopf — there was no "+"/"−" button, no custom panel, and no other affordance anywhere that
+could add `W1`/`W2` or `F3db` to a placed instance's parameter list. The factory's own
+`ContainsKey("Z1")||ContainsKey("Z2")` / `ContainsKey("L")` resolution (`ComponentModelFactory.
+CreateMicrostripKlopfModel`) was already correct — it had simply never had a caller that could
+produce the alternate keys.
+
+**A second, previously-unreported bug found while fixing the first:**
+`MicrostripSubstrateInjection.MicrostripKinds` — the allow-list gating BOTH R-pc-8's workspace
+substrate injection (H/T/Er/Sigma/TanD) AND the placement-time default-length-unit rewrite — never
+included `SymbolKind.Mtaper`/`SymbolKind.Mklopf`, only the original four (Mlin/MBend/MTee/MCross).
+Both new components have always simulated against `ComponentModelFactory`'s hardcoded fallback
+substrate (1.6mm FR-4-like) regardless of the actual open workspace's technology, and always kept mm
+defaults on a PCB (mil) or MMIC (µm) workspace. Fixed by adding both kinds to the set — the injection
+and unit-rewrite code paths themselves needed no change at all, since both were already fully
+generic over whatever `IsMicrostripKind` returns true for.
+
+**The fix — a real, working "switch entry mode" affordance:**
+- **`MicrostripKlopfEntryConversion`** (new, `src/Core/Devices/Microstrip/`) extracts the Z1/Z2⇄W1/W2
+  (`HammerstadJensen.Compute`/`SynthesizeWidth`) and L⇄F3db (`KlopfensteinTaper.LengthFromF3db`/
+  the eeff-at-center approach) conversion math OUT of `ComponentModelFactory.
+  CreateMicrostripKlopfModel` into shared public static methods — the factory now calls these too,
+  so there is exactly one implementation, not two that could quietly drift apart. `ComponentModelFactory`'s
+  five `DefaultSubstrateH/T/Epsr/Sigma/TanD` constants were changed from `private` to `public` for
+  the same "share, don't re-derive" reason — a UI-side conversion needs to know the SAME fallback
+  substrate the factory uses when no override is present.
+- **`ParameterEditorViewModel`** gained `IsMklopfTarget`/`MklopfUsesWidthEntry`/`MklopfUsesF3dbEntry`
+  (computed from whichever parameter names are actually present — mutually exclusive by
+  construction) and two commands, `ToggleMklopfImpedanceEntryCommand`/`ToggleMklopfLengthEntryCommand`.
+  Each toggle resolves the schematic's own workspace substrate (`MicrostripSubstrateInjection.
+  ResolveWorkspaceTechnology` + `BuildOverrides` — the SAME resolution `NetExtractor` uses at run
+  time, falling back to `ComponentModelFactory`'s own public constants when nothing resolves),
+  reads the CURRENTLY active route's value(s) (parsed as a bare number + its own displayed unit via
+  `UnitNormalizer.ToEngineUnit` + `Units.Scale` — the same glyph-to-ASCII boundary conversion
+  `NetExtractor` already uses), converts via `MicrostripKlopfEntryConversion`, and replaces the old
+  parameter pair/single with the new one via the pre-existing `SetParametersCommand` (the same
+  undoable whole-list-replace command the indexed add/remove-group buttons already use) — **the
+  switch converts the current design to its equivalent in the other route; it never silently resets
+  it to a fresh default.** A best-effort limitation, stated rather than silently assumed: if the
+  active value's expression isn't a plain number (it references a variable), the conversion falls
+  back to a fixed default rather than resolving the variable — switching entry mode on a
+  variable-driven field is not guaranteed to preserve the design exactly.
+- **View**: two small buttons in `ParameterEditorView.axaml`'s Row 1 (alongside the Type label/
+  Instance name checkboxes), visible only when `IsMklopfTarget`, labelled with the route they switch
+  TO ("Use W1/W2" / "Use Z1/Z2", "Use F3db" / "Use L") so the button never reads as a static,
+  unexplained mode indicator.
+- **A latent, previously-unexercised bug in `OnModelChanged`'s own staleness check, found and fixed
+  while building this feature**: the check that decides whether to fully rebuild the Rows collection
+  after a model change was COUNT-only (`Rows.Count != expectedCount`) — correct for every existing
+  caller of `SetParametersCommand` (the indexed add/remove-group buttons always change the count),
+  but wrong in general, since `SetParametersCommand.Apply` always clones EVERY parameter into a
+  fresh `EditableParameter` instance, even ones whose name/value didn't change — a same-count
+  parameter swap (exactly what both new toggles do: 2-for-2 or 1-for-1) would pass the count check
+  and fall through to `RefreshFromModel()`, which only refreshes EXISTING rows' staged values while
+  leaving each row's own `_param` reference pointed at an object no longer in the model at all. Fixed
+  by comparing the full ordered NAME list, not just the count (`VisibleParamNames`) — a general
+  robustness fix that protects any future same-count parameter replacement, not only this one.
+
+**Tests**: `MklopfEntryModeSwitchTests.cs` (10 tests, `src/Ui` — both toggles, round-trips, undo, the
+length-toggle correctly reading Z1/Z2 from whichever impedance route is currently active, and a
+cross-check that the factory accepts the produced parameter set), `MicrostripKlopfEntryConversionTests.cs`
+(6 tests, `src/Core` — the conversion math directly, plus a cross-check against the factory's own
+resolution), `MicrostripSubstrateInjectionKindsTests.cs` (2 tests — all six microstrip kinds now
+recognized), plus 2 new tests in `MicrostripSymbolGlyphTests.cs` for the glyph fix. Full solution
+green: Firewall 4/4, Core 501/501, Ui 3384/3384, Engine 458/459 (1 pre-existing skip).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's
+note) — please confirm on your end: MKlopf's glyph now shows a fully closed outline with no gap on
+either side; placing an MKlopf and clicking "Use W1/W2" (then "Use Z1/Z2" again) shows sensible,
+round-tripping values rather than resetting to defaults; the same for "Use F3db"/"Use L"; and that an
+MKlopf/MTaper dropped into a real PCB or MMIC workspace now picks up that workspace's own substrate
+(observable via the analysis results changing if you swap technologies, or via a future "show
+resolved substrate" surface if one exists).
+
+Cell-first creation, filename defaults, S-parameter card units, FPS removal
+(brief-cell-first-and-ui-fixes.md, 2026-07-29) — COMPLETE: five owner items.
+
+## §1 — New Cell creates and opens its primary schematic (R-cc-1)
+
+`WorkspaceViewModel.NewSchematicAsync` (the tree's own "New Schematic" handler, after its dialog
+prompt) was split into a thin dialog wrapper plus a new shared private method,
+`CreateAndOpenSchematicFileAsync(cellDir, cellName, fileNameWithoutExt)` — the write-.csch-and-open
+logic (`SchematicPersistence.SaveToFile`, `BuildSessionVm`, `RegisterSession`, `_factory.OpenDocument`,
+`_openDocsByPath`) unchanged, just no longer duplicated. Both `NewCellAsync` (cell-node context menu)
+and `NewCellInWorkspaceAsync` (File menu / tree-header button) now call this SAME method immediately
+after `CellFolder.CreateCellFolder` succeeds, passing the new cell's own name as both the cell name
+and the file name — so a cell named "Amp" gets `Amp/schematic/Amp.csch`, written and opened exactly
+the way "New Schematic" itself would write and open it, because it IS that same code path. **Failure
+is partial, not fatal**: the cell-folder creation and the schematic creation are two separate
+try/catch blocks — if `CellFolder.CreateCellFolder` itself throws, the method returns before ever
+attempting the schematic step (nothing to roll back); if the schematic step subsequently fails
+(reported by `CreateAndOpenSchematicFileAsync` itself via `Messages.Error`, never thrown back to the
+caller), the cell folder and its `.ccell` are already on disk and stay there — there is no rollback
+path anywhere in this flow. The freshly-written `Amp.csch` becomes the cell's own resolved
+**primary** automatically via `CellFolder.ResolvePrimary`'s existing `SoleFile` branch (the one file
+present in a fresh `schematic/` folder) — no explicit `.ccell` `PrimarySchematic` write was needed or
+added. `WorkspaceViewModel` cannot be constructed headlessly (its ctor touches the Dispatcher/Avalonia
+app host); `NewCellCreatesSchematicTests.cs` gates the underlying primitives directly instead
+(`CellFolder.CreateCellFolder` + `SchematicPersistence.SaveToFile` + `CellFolder.ResolvePrimary`
+composing to `SoleFile`, and the cell surviving a forced schematic-step failure).
+
+## §2 — Cmd+Shift+N moves to New Cell, supersedes the menu-restructure brief for this ONE binding (R-cc-2)
+
+**This explicitly supersedes `brief-file-menu-restructure.md`'s own general "preserve every existing
+accelerator" rule, but only for `Ctrl+Shift+N`/`Meta+Shift+N` — every other accelerator that brief
+already moved/preserved is untouched.** The binding moved to `NewCellInWorkspaceCommand` in all THREE
+hand-mirrored File-menu surfaces this codebase maintains (`WorkspaceWindow.axaml`'s in-window `Menu`
+and macOS `NativeMenu`, plus `TornOffFileMenuView.axaml`'s own third copy for torn-off document
+windows — see that file's own doc comment on why three copies exist) and in `Window.KeyBindings`.
+**New Schematic deliberately keeps no replacement accelerator** — inventing one would undo the whole
+point of steering users toward cells. `CellFirstAcceleratorTests.cs` pins this on all three surfaces
+directly against the real `.axaml`/source text (the standing "can't construct a real `Window`
+headlessly" constraint every prior menu-structure phase in this codebase has worked around the same
+way); the pre-existing `FileMenuRestructureTests.Accelerators_PreservedOnMovedItems` test still passes
+unchanged (it only asserts the literal gesture STRINGS are present somewhere in the file, not which
+element owns them) but its inline comment was corrected to say so.
+
+## §3 — tree filename suggestion: bare cell name, then bare numerals, NEVER mixed with underscore (R-cc-3)
+
+New `ViewFileNameSuggestion.Suggest(cellDir, cellName, viewType)` (`src/Ui/Schematic/`, framework-free)
+scans **every** existing file of the given view type in the cell (via `Directory.GetFiles` on
+`CellFolder.SubFolderPath`, not `CellFolder.ResolvePrimary` — a non-primary duplicate must still count,
+per the brief's own explicit warning) and returns the cell's bare name if free, else the lowest
+`{cellName}{n}` (n=2,3,4,…) not already taken. **Convention, stated once and applied uniformly with no
+digit-boundary special case**: a cell already ending in digits (e.g. `Amp2`) suggests `Amp2` first,
+then `Amp22`, then `Amp23` — never `Amp2_2` (a second, underscore convention, which the brief's own
+"do not mix `Amp2` and `Amp_2`" instruction rules out) and never `Amp3` (which would rename the base
+itself rather than suffix it). Wired into `NewSymbolAsync`/`NewSchematicAsync`/`NewLayoutAsync` as the
+`InputNameDialog` constructor's new optional `initialText` parameter — the dialog's existing
+`Opened`-time `NameBox.SelectAll()` already pre-selects whatever text is present, so passing the
+suggestion in is the entire fix (no new selection code needed). Once §1 ships, a freshly-created cell
+already owns `<Cell>.csch`, so the tree's own "New Schematic" on that cell always suggests the
+suffixed form — the common case, not an edge case, exactly as the brief's own note anticipated;
+covered by `ScansEveryFileOfTheViewType_NotJustThePrimary` in `ViewFileNameSuggestionTests.cs`.
+
+## §4 — the S-parameter/HB card frequency bug: TWO disagreeing formatters, now one (R-cc-4/4a/4b/4c/4d)
+
+**Root cause, confirmed exactly as the brief described it**: `AnalysisRowViewModel.FormatFreq`
+(deleted) parsed the raw coefficient STRING as if it were already a hertz value — `StartExpr="1"` with
+a `GHz` dropdown parsed as `1.0`, below the 1e3 threshold, printed `"1 Hz"`. It never read the field's
+own unit at all. `FormatHbSummary` called the identical broken formatter for the HB tone, an even
+worse case since it didn't even attempt to pass `hb.ToneUnit` in.
+
+**Fix**: `FormatFreq` is gone. `AnalysisPreviewHelper` (the SAME helper the Add/Edit Analysis dialog's
+own inline "= value" hints already use) gained a new `ComputeFreqSummary(coeff, fieldUnit, model)`
+method, and both `ComputeFreqSummary` and the pre-existing `ComputeFreqPreview` now share ONE private
+resolver, `TryResolveFreqHz` — the exact `DesignScope.BuildResolved` + `Eval(expr, scope, unit:
+fieldUnit)` call, var-unit-wins included, that `ComputeFreqPreview` already had inline. **The two
+methods intentionally do NOT share a display format** (`ComputeFreqPreview`'s raw honest-value hint
+— `"= 1E+09"` — is pinned byte-for-byte by pre-existing tests in `FreqExprUnitTests.cs` and must not
+change; `ComputeFreqSummary` formats the SAME resolved hertz value with an SI suffix — `"1 GHz"` —
+for card display) — **"the card and the editor show the same text for the same analysis" (gate 6)
+means the same RESOLVED VALUE, never disagreeing, not identical display styling**; the two surfaces
+serve different purposes (a raw-honest inline hint vs. a compact nice-unit summary) and always have.
+`ComputeFreqSummary` also deliberately does NOT inherit `ComputeFreqPreview`'s "suppress an obvious
+bare-Hz literal" rule — a card summarizing a plain `1000000`/`Hz` field must still read `"1 MHz"`, not
+go blank, since a card has no adjacent typed value to compare against the way the editor's inline hint
+does. `FormatSpSummary`/`FormatHbSummary` now pass each field's OWN unit (`StartUnit`/`StopUnit`,
+`ToneUnit`) instead of assuming Hz. An unresolved name surfaces as `"unknown: <name>"` on the card,
+exactly like the editor's own hint already did — previously `FormatFreq` had no unresolved-name
+handling at all (it just printed the raw expression text, same as any other unparseable string).
+
+**R-cc-4c honored exactly**: `FormatSweepSummary`/`TryResolveCoefficient` (the parametric-sweep row's
+own unit-stripped resolution, which applies its own scaling downstream) were not touched in any way —
+confirmed by a dedicated regression test asserting the sweep card's summary text is unchanged.
+
+Gate tests: `AnalysisFreqCardSummaryTests.cs` (12 tests — SI-suffix formatting for GHz/MHz/kHz, the
+bare-Hz-literal case the preview suppresses but the card must not, var-unit-wins, the mixed-unit
+compound, unresolved-name, end-to-end through `AnalysisRowViewModel.Summary` for both SP and HB
+including the multi-segment-count suffix and the `ToneExpr=="0"` sentinel, and the untouched
+parametric-sweep summary).
+
+## §5 — FPS readouts removed from the schematic editor; both of the brief's own checks answered (R-cc-6)
+
+Removed, plumbing included, not just the drawing: `SchematicRenderer.DrawFpsOverlay` and its
+`Draw(...)` parameters (`previousFrameTicks`, `showFps`) and public `LastFrameTicks` field; the
+`Stopwatch`/`Volatile.Write` timing code inside `Draw` itself (both the early-return-on-null-model
+branch and the end-of-frame branch); `SchematicCanvas`'s `ShowFps` `DirectProperty`/backing field and
+its `SchematicDrawOperation`'s now-unused `_prevTicks`/`_showFps` fields/constructor params;
+`SchematicView.axaml.cs`'s `_fpsTimer` `DispatcherTimer` + `UpdateFpsDisplay()` method; and
+`SchematicView.axaml`'s `FpsText` `TextBlock` + its preceding separator + the canvas element's
+`ShowFps="True"` attribute. The three `SchematicClipboard.cs` export call sites (PDF/SVG/bitmap
+rendering) that passed `showFps: false` simply dropped that now-nonexistent argument.
+
+**§5's own two required checks, both actually verified rather than assumed:**
+- **Did the stopwatch/`previousFrameTicks` serve anything besides the overlay? No.** Read the entire
+  `Draw()` method end to end: `sw.ElapsedTicks` was written to `LastFrameTicks` and passed to
+  `DrawFpsOverlay` and to NOTHING else; `LastFrameTicks` itself was read in exactly two places
+  (`SchematicCanvas`'s render pass, to pass `prevTicks` into the next frame's draw op, and
+  `SchematicView.axaml.cs`'s toolbar timer) — both purely for the FPS readout. Confirmed by grep
+  across the whole `src/Ui` tree after removal: zero remaining references anywhere.
+- **Is `SchematicRenderer` shared with the symbol editor? No — and the symbol editor never had an FPS
+  readout to begin with.** The symbol editor has its own, entirely separate renderer class,
+  `SymbolEditorRenderer` (`src/Ui/Renderers/SymbolEditorRenderer.cs`) — confirmed by grep, which found
+  zero occurrences of `ShowFps`/`FpsText`/any FPS-related text anywhere in `SymbolEditorRenderer.cs`,
+  `SymbolEditorCanvas.cs`, or `SymbolEditorView.axaml(.cs)`. Per the brief's own "report and ask rather
+  than silently touch" instruction: there was nothing shared to touch, and the symbol editor's own
+  chrome is completely unaffected by this removal.
+
+`FpsRemovalTests.cs` (5 tests) greps all four touched source files for `ShowFps`/`showFps`/`FpsText`/
+`LastFrameTicks`/`DrawFpsOverlay`/`previousFrameTicks` and asserts none remain, plus a dedicated check
+that `SchematicClipboard.cs` no longer passes a `showFps` argument anywhere.
+
+## Scope guardrails held
+
+No view-creation added for symbol or layout in §1 (schematic only, per the brief's own explicit
+restriction). No replacement accelerator for New Schematic. `FormatFreq` was deleted, not patched in
+place. FPS was removed from the schematic path only — the layout editor and every other canvas are
+untouched (confirmed no shared code was touched, per §5's own check above). `src/Core`, `src/Engine`,
+`RfCore` untouched.
+
+**39 new tests** (3 `NewCellCreatesSchematicTests.cs`, 4 `CellFirstAcceleratorTests.cs`,
+7 `ViewFileNameSuggestionTests.cs`, 12 `AnalysisFreqCardSummaryTests.cs`, 5 `FpsRemovalTests.cs`, plus
+one corrected pre-existing test's inline comment); 3363 Ui.Tests total, all green; full solution green
+(Firewall 4/4, Core 495/495, Engine 458/459 — 1 pre-existing skip).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's own
+note) — please confirm on your end: creating a New Cell lands you directly on a blank, ready-to-draw
+schematic tab with the cell folder + schematic both visible in the tree; `Cmd+Shift+N`/`Ctrl+Shift+N`
+now opens New Cell (not New Schematic) from both the in-window menu and the macOS menu bar; the tree's
+New Schematic/Symbol/Layout name prompts pre-fill and pre-select a sensible suggested name; a 1–10 GHz
+S-parameter sweep and an HB tone both show correctly in GHz (or whatever unit was chosen) on the
+Analyses card, matching what the Add/Edit Analysis dialog itself shows for the same field; and the
+schematic canvas/toolbar no longer show any FPS readout.
+
+Symbol glyph fixes + MTaper/MKlopf taper family (brief-mtaper-mklopf.md, 2026-07-28) — COMPLETE:
+two owner reports (overlapping glyph lines on MBend/MTee/MCross, unwanted center dot, MTee port 3
+pointing the wrong way) plus the full physics/component brief that follows them.
+
+## Symbol glyph fixes
+
+`BuiltInSymbols.cs`'s `BuildMBend`/`BuildMTee`/`BuildMCross` were rebuilt from overlapping
+`RoundedRectPrimitive` bodies into single unfilled `Poly(false, …)` outline polygons (an L-shape,
+T-shape, and cross-shape respectively) — the previous glyphs stacked separate rounded rects per arm,
+which is what produced the visibly intersecting/overlapping line artifacts. The filled center-dot
+`Circ(..., filled: true)` was removed from both MTee and MCross (it read as a connectivity marker, not
+part of the body, and the owner found it visually cluttering). `EditableSchematic.cs`'s MTee port
+definitions changed port 3 from `(0f, -200f)` (up) to `(0f, 200f)` (down), matching the T-junction's
+conventional stub-down orientation. `MicrostripSymbolGlyphTests.cs` was rewritten for the new
+polygon-based bodies; all 3320 pre-existing Ui.Tests passed unchanged alongside the new assertions.
+
+## The physics/component brief — MTee/MCross real models, MBend rebuild, MTaper, MKlopf+Offset
+
+The earlier L5a phase had reported (and left as an honest, documented gap) that no accessible source
+for the Garg-Bahl bend/T/cross reactance values or the Hammerstad-Bekkadal T-junction formula could be
+found — MTee/MCross stamped as ideal, lossless junctions, and MBend used a geometry-only length
+correction. This brief closes that gap for MTee/MCross (a user-supplied scan of Gupta, Garg & Chadha
+1981 §4.5.3–4.5.5 was located and correctly transcribed — see `docs/design/microstrip-models.md` §4.1
+for the full citation trail and the two genuinely asymmetric-topology/factor-of-2 discrepancies caught
+and resolved during transcription) and rebuilds MBend on Kirschning-Jansen-Koster's published L-C-L
+two-port model with three miter modes. It also adds two entirely new components, **MTaper** (linear
+taper, a cascade of uniform MLIN sections) and **MKlopf** (Klopfenstein taper, with an optional novel
+Offset/off-axis variant) — see `docs/design/microstrip-models.md` §10 for the full physics writeup,
+reference list, and the TEM-limitation/oracle-inconsistency findings; this note records only the
+UI/PCell-layer completion facts the design doc doesn't already cover.
+
+**Physics files** (`src/Core/Devices/Microstrip/`, `src/Core/Devices/`): `MicrostripTeeModel.cs` and
+`MicrostripCrossModel.cs` — full rewrites, real Gupta/Garg/Chadha closed-form stamps (branch-current
+technique via `AddBlockAdmittance`, no change to the pin/port contract). `MicrostripBendLC.cs` (new) +
+`MicrostripBendModel.cs` (rewrite) — the L-C-L two-port, `MicrostripBendMiter { None, Fifty, Optimal }`
+replacing the old `bool mitered`; `ComponentModelFactory`'s `"Miter"` param reads with a `"Mitered"`
+legacy fallback (0→None, 1→Optimal) so a hand-authored pre-brief parameter set still loads.
+`MicrostripCascadeSectioning.cs` + `MicrostripAbcd.cs` (new, shared by MTaper and MKlopf) — the
+profile-agnostic N-section-count resolver (R-tap-1's dual λ/20-vs-ΔW≤2% criterion) and a standard ABCD
+chain-matrix helper for cascading uniform sections. `MicrostripTaperModel.cs` (new) — MTaper's stamp.
+`KlopfensteinTaper.cs`, `MicrostripOffsetCenterline.cs`, `MicrostripKlopfModel.cs` (new) — the
+Klopfenstein core physics, the Offset quintic centerline geometry, and MKlopf's own stamp;
+`HammerstadJensen.SynthesizeWidth` (new) — bisection-based inverse synthesis (target Z₀ → width),
+reusing the SAME forward `Compute()` inside its own bisection loop per R-klp-5's "same model family"
+requirement. `ComponentModelFactory.cs` gained "MTAPER"/"MKLOPF" dispatch (MKlopf's factory method
+resolves Z1/Z2-vs-W1/W2 and L-vs-F3db entry routes deterministically — see the design doc's own §9
+follow-up note on the not-yet-interactive UI linking for this).
+
+**UI/schematic wiring:** `SchematicModel.cs` — `SymbolKind.Mtaper`/`SymbolKind.Mklopf` added.
+`ComponentTypeRegistry.cs` — registry entries (`"MTAPER"`/`"MTP"`, `"MKLOPF"`/`"MKF"`), `EngineReference`
+cases, `DefaultParameters` for both (MTaper: W1/W2/L; MKlopf: Z1/Z2/GammaMax/L/Offset/SmoothSteps, with
+Z1/Z2 correctly declared `UnitDimension.Resistance` rather than `None`), `TryParseCode` cases.
+`EditableSchematic.cs` — both components get the standard 2-pin `[("1",-200,0),("2",200,0)]` port
+layout. `BuiltInSymbols.cs` — `BuildMtaper()` (trapezoid outline glyph, shipped) and `BuildMklopf()`
+(new this pass — a bowed/S-curved outline distinguishing it visually from MTaper's straight trapezoid,
+via two `QuadCurvePrimitive`s on the top/bottom edges; symbolic only, not the instance's real profile).
+
+**PCell artwork** (`src/Ui/Layout/PCells/`): `MTaperPCell.cs` (shipped earlier this session — an exact
+4-vertex trapezoid, no tessellation parameter needed since a linear width profile has no curve to
+approximate). `MKlopfPCell.cs` (new, this pass) — resolves substrate via
+`SubstrateResolver.ResolveElectrical` (falling back to a fixed 1.6mm/4.4εr default when no technology
+resolves, per the standing "geometry is still generatable" rule `MBendPCell`'s own miter-cut fallback
+already established); tessellates the profile at a fixed, geometry-only vertex count (96 points,
+independent of the electrical section count, per R-tap-2) via `KlopfensteinTaper.ImpedanceAt` +
+`HammerstadJensen.SynthesizeWidth` at each sample; builds the outline as two edge point sequences offset
+perpendicular to the local tangent (R-klp-8) — using `MicrostripOffsetCenterline`'s own
+position/tangent/arc-length functions when `Offset ≠ 0`, collapsing to a straight axis when `Offset = 0`.
+**R-klp-4a's `SmoothSteps` option** is implemented as a cubic-Hermite blend of the drawn width, within an
+arc-length span of 3× the local endpoint width from each end, toward a ZERO-SLOPE approach to the exact
+W1/W2 endpoint value — this is this implementation's own stated interpretation of the brief's more
+open-ended "blend from the connecting line's own value" instruction (a PCell has no visibility into what
+is actually wired to it, so matching a hypothetical straight lead-in of the same width, tangent-
+continuously, is the most defensible concrete reading available); recorded here since the brief itself
+left the exact blend shape as an implementation decision rather than a fully specified formula.
+`PCellRegistry.cs` gained the `"MKLOPF"` entry.
+
+**R-klp-10's curvature check is wired into the PCell, not just the geometry helper**: `MKlopfPCell`
+computes the arc-length position of maximum curvature (a 200-sample scan, mirroring
+`MicrostripOffsetCenterline.MinRadiusOfCurvature`'s own sampling) and, when the resulting minimum radius
+of curvature is under 3× the local trace width there, emits a one-time warning naming it "R-klp-10" —
+the same "report, never silently proceed" convention used throughout this codebase's microstrip work.
+
+**Tests:** `MicrostripJunctionModelTests.cs` (MTee/MCross, 9 tests, including a dedicated test proving
+the cross-junction's confirmed-asymmetric arm2-vs-arm4 topology), `MicrostripBendLCTests.cs` (14 tests,
+the L-C-L model + all three miter modes), `MicrostripTaperModelTests.cs` (15 tests, including the
+degenerate-W1-equals-W2-matches-plain-MLIN cross-check), `KlopfensteinTaperTests.cs` (14 tests, the
+factor-of-2 resolution and the oracle-inconsistency-in-length/f3dB-duality finding, both pinned as
+regression tests rather than silently "fixed"), `MicrostripOffsetCenterlineTests.cs` (12 tests,
+including the brief's own worked numerical example), `MicrostripKlopfModelTests.cs` (15 tests),
+`MKlopfPCellTests.cs` (8 new tests, this pass — outline/pin generation, offset pin-Y, purity,
+SmoothSteps on/off producing different outlines, no-technology fallback, registry wiring). Full solution
+green: Firewall 4/4, Core 495/495, Ui 3332/3332, Engine 458/459 (1 pre-existing skip).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's
+note) — please confirm on your end: MBend/MTee/MCross glyphs now read as single continuous outlines with
+no overlapping lines and no center dot; MTee's port 3 points down; MTaper and MKlopf appear in the
+Library Palette, place with sensible default parameters, and MKlopf's artwork shows a smoothly tapering
+outline (straight when Offset=0, curving off-axis when Offset≠0) with no visible kink at either pin when
+SmoothSteps is enabled.
+
+L5a post-ship fixes — five owner reports after trying the new microstrip components
+(2026-07-28) — COMPLETE:
+
+1. **Double-unit bug** — `ComponentTypeRegistry.DefaultParameters` had embedded the unit suffix in
+   BOTH `Expression` ("2.9mm") AND the separate `Unit` field ("mm") for every MLIN/MBend/MTee/
+   MCross Length parameter — every other entry in that file (`new("R", "1", "Ω", ...)`) keeps
+   `Expression` a bare number. Fixed: `Expression` is now bare ("2.9"), `Unit` alone carries "mm".
+2. **Hardcoded mm default, regardless of workspace** — a freshly-placed microstrip component now
+   gets its W/L/W1-W4 defaults rewritten to the PLACING WORKSPACE's own `Technology.
+   DefaultDisplayUnit` (mil for PCB, µm for MMIC) right after placement, same physical magnitude
+   (2.9mm → ~114.17mil, not a bare "2.9mil"). New `MicrostripSubstrateInjection.
+   ApplyTechnologyLengthUnit` (`src/Ui/Schematic/MicrostripSubstrateInjection.cs`), called from
+   `SchematicViewModel.CommitPlacement` right after `ComponentTypeRegistry.DefaultParameters`
+   materializes the parameter list — mirrors the shape of the existing Term/P1Tone/PnTone
+   post-placement blocks already there. A no-op when no workspace technology resolves (the mm
+   baseline stands) or the technology's own default already is mm.
+3. **Symbol thickness, no fill** — all four glyphs (`BuiltInSymbols.cs`) now carry an unfilled
+   `RoundedRectPrimitive` body (`RRect` never sets `Filled`, defaults false — the exact convention
+   `BuildTline` already used), replacing MLIN's original filled `Poly` trace body. MTee/MCross's
+   small filled junction dot (`Circ(..., filled: true)`) is kept — a connectivity marker, not "the
+   body," and not what the report was about.
+4. **MBend redrawn as a real 90° bend, pin 2 pointing down** — `SymbolPortDefs.For(MBend)`'s pin 2
+   moved from `(200, 0)` to `(0, 200)` (down, matching Term's own +Y-is-down convention) so wiring
+   to it is a natural vertical run; `BuildMBend` now draws two perpendicular unfilled `RRect`
+   bodies (a horizontal arm + a vertical arm, overlapping slightly at the corner for a clean
+   joint) instead of the old horizontal-only staircase `PLine`.
+5. **"Extraction: ML1: technology has no ground-designated conductor beneath..." on a real PCB
+   workspace** — root cause: the owner's `.ctech` file on disk predates this session's own
+   `StackupLayer.IsGroundReference` field (added earlier this session), so it has NO conductor
+   marked at all — `SubstrateResolver.FindNearestGroundBeneath` had no fallback for that case.
+   Fixed with a backward-compatible fallback, scoped narrowly: when NOTHING in the whole stack is
+   marked AND the stack has EXACTLY two conductors AND `Stackup.Bottom == Ground`, the bottom-most
+   conductor is unambiguous by construction and used automatically — no `.ctech` edit needed on
+   the owner's end, nothing to change in the Component Parameters editor (layer selection is
+   deliberately not a declared parameter, per R-pc-9 — this was always meant to be automatic). A
+   3+-conductor stack with nothing marked (the MMIC starter's own shape) deliberately still
+   refuses, since guessing there would silently pick the wrong layer.
+
+14 new tests: `MicrostripDefaultParameterTests.cs` (8), `MicrostripSymbolGlyphTests.cs` (4), plus 2
+new cases in `SubstrateResolverTests.cs` (the 2-conductor fallback + the 3-conductor
+stays-ambiguous control). Full solution green (Firewall 4/4, Core 420/420, Ui 3317/3317, Engine
+458/459 — 1 pre-existing skip). **Not interactively verified** (no visual driver in this
+environment, matching every prior phase's note) — please confirm on your end: placing MLIN/MBend/
+MTee/MCross in a PCB workspace shows W/L defaults in mil (not mm) with no doubled unit text;
+MBend's glyph shows an actual right-angle bend with pin 2 below; all four glyphs read as
+outline-only (no filled body); and re-running the S-parameter simulation that originally hit the
+ground-reference error now succeeds with no changes to your existing workspace file.
+
+Phase L5a — PCell contract and the microstrip component library
+(brief-L5a-pcell-contract-and-microstrip.md, 2026-07-28) — COMPLETE, with one documented,
+unavoidable gap (below). The PCell contract (`docs/design/pcell-contract.md`, now "Shipped") and
+four built-in microstrip components (MLIN, MBend, MTee, MCross) — the first phase that needed real
+published RF physics rather than this codebase's own derivations.
+
+## Where things live, and the one big architecture decision
+
+**MLIN/MBend/MTee/MCross are SymbolKind-registered, exactly like TLIN/R/L/C — NOT on-disk cell
+folders.** `ComponentTypeRegistry.ComponentCategory.Microstrip` had sat reserved and unused since
+an earlier phase, clearly anticipating this; confirmed with the owner before implementing (this
+session's plan-mode question) rather than assumed. `pcell-contract.md`'s R1 ("a PCell is a real
+cell — it has a folder, a `.ccell`") describes the contract's general shape for a future
+user-authored/PDK cell; the built-ins satisfy it in spirit (same parameter/symbol/electrical-model
+machinery any component gets) via a small closed `PCellRegistry` (`src/Ui/Layout/PCells/`) rather
+than literal files. **Full schematic→layout placement (a project-tree node, `CellFolder.
+ResolvePrimary` answering "generated" for a real placed instance) is L5's own scope**, per the
+brief's own guardrail ("No changes to §9's schematic→layout; that is L5") — this phase proves the
+contract through direct API/harness tests, not full UI placement.
+
+**The physics module lives in `src/Core/Devices/Microstrip/`** (pure C#, no UI/Engine dependency)
+— `HammerstadJensen.cs` (static Z0/eeff), `KirschningJansen.cs` (dispersion), `MicrostripLoss.cs`
+(Wheeler conductor loss + Hammerstad-Bekkadal roughness + dielectric loss), `MicrostripDiscontinuities.cs`
+(Douville-James miter — confirmed; Garg-Bahl/Hammerstad-Bekkadal — NOT confirmed, see below),
+`MicrostripValidity.cs` (the R-pc-16 report-once-per-violation mechanism). Placed in Core (not
+Engine) specifically so the future MoM oracle (`src/Engine/Mom/`, which already depends on Core)
+can reuse it without a second implementation (R-pc-12/R7 — renumbered R16 in
+`microstrip-models.md`, a genuine duplicate-numbering slip found and fixed during this phase).
+
+**TLIN was extended, not duplicated, for R-pc-11's "MLIN stamps as the existing TLIN."**
+`TLineModel` gained an optional `A` (dB) loss parameter (additive; absent ⇒ byte-identical
+lossless behavior — every pre-existing `"TLIN:"` .cnl instance is unaffected) and its Y-parameter
+stamp math was extracted into `TLineModel.StampUniformLine` (now `public`, for direct testing and
+for `MicrostripLineModel`/`MicrostripBendModel` to call). `MicrostripLineModel` computes genuinely
+dispersive Z0(f)/eeff(f)/α(f) inside its own `Stamp` (per-frequency, exactly like `TLineModel`
+already is) and calls the SAME `StampUniformLine` — "one implementation," literally, not merely in
+spirit. Verified: gate 11 ("a lossless MLIN's s-parameters match an ideal TLIN of the same computed
+Z0 and electrical length") passes by comparing raw MNA admittance entries directly
+(`MicrostripLineModelTests.LosslessMlin_MatchesIdealTlinOfSameComputedZ0AndElectricalLength`).
+
+**Substrate resolution** (`SubstrateResolver`/`SubstrateResolver.ResolveElectrical`, `src/Ui/Layout/PCells/`)
+picks Signal Layer + Ground Reference from a technology's stackup — R-pc-9's "topmost conductor,
+nearest ground-DESIGNATED conductor beneath" needed a new `StackupLayer.IsGroundReference` field
+(additive, no `.ctech` FormatVersion bump; set on PCB's Bottom Copper and MMIC's Backside Metal in
+`StarterTechnologies.cs`) since nothing marked which conductor was ground before this phase.
+R-pc-10's stripline warning and the "no technology → geometry still generates, stamp refuses
+naming what's missing" (§2) rule are both implemented and tested. **The schematic-side injection
+seam** is `MicrostripSubstrateInjection` (`src/Ui/Schematic/`) — resolves the SCHEMATIC's own
+workspace (reusing the existing `WorkspaceRootFinder` ancestor-`.cws` walk from the foreign-
+documents work, R-fgn-3) and injects H/T/Er/Sigma/TanD as plain-number `ParameterAssignment`
+overrides in `NetExtractor.EmitInstance`, resolved once per schematic frame (so a sub-cell in a
+different workspace correctly gets its OWN substrate). H/T/Er/Sigma/TanD are deliberately NEVER
+declared cell parameters (R-pc-2's "one list" stays W/L/Angle/etc. only).
+
+**Read-only + regeneration (R-pc-13):** `LayoutEditorViewModel.PCells.cs` — a new
+`LayoutView.PCellOrigin` marker (generator id + parameter snapshot) gates `Execute` (refused with a
+Messages reason, nothing silently applied) and is cleared by `DetachFromPCell()` — the escape
+hatch. **This is deliberately NOT L3c's `LayoutFlatten`**: a PCell-generated view's shapes already
+sit directly in `Shapes` with no wrapping instance (no on-disk cell folder, see above), so there is
+nothing to flatten — clearing the marker is the complete, correct equivalent for this phase's
+architecture. `RegeneratePCell(newParameters)` re-invokes the original generator and replaces
+`Shapes` in place via the ordinary `LayoutView.NotifyChanged` path — not L3b's cross-document
+`CellLayoutResolver.SetLive`/`InvalidateCompiledGeometry` seam, since there is no cross-document
+instance reference yet for that seam to serve. Once L5 wires PCells into real file-backed cells
+with placed instances, that seam is exactly where cross-document live regeneration would hook in.
+
+## The physics gap — read before trusting §4 of microstrip-models.md
+
+Three dedicated research passes (WebSearch/WebFetch, never the GPL third-party docs per R12) confirmed
+and hand-verified the **MLIN line model** (Hammerstad-Jensen static Z0/eeff — verified by hand
+against Steer's *Fundamentals of Microwave and RF Design* worked example, εeff=2.967 reproduced
+exactly; Kirschning-Jansen dispersion — fetched verbatim from scikit-rf's real source after an
+initial secondary-source misreading was caught and corrected; Wheeler+Hammerstad-Bekkadal loss;
+dielectric loss) and the **Douville-James miter fraction** (confirmed identical across 4
+independent non-GPL sources, including the sign of the exponent). **The Garg & Bahl 1978
+bend/T/cross fitted equivalent-circuit VALUES and the Hammerstad & Bekkadal T-junction
+reference-plane formula could not be obtained from any accessible non-GPL source** — both papers,
+and the 1996 Gupta/Garg/Bahl/Bhartia textbook that reproduces them, are paywalled/inaccessible
+here. Per R1/R-pc-15's own explicit instruction not to fabricate or transcribe from memory, **this
+is reported rather than guessed**: `MicrostripBendModel`/`MicrostripTeeModel`/`MicrostripCrossModel`
+each say so in their own doc comments and emit a one-time runtime warning naming the gap.
+**Gates 11a/11b (discontinuity model accuracy against source-paper curves) are not met.** MBend
+uses the confirmed miter geometry as a principled (not fabricated) length correction so mitered vs.
+unmitered at least produce different S-parameters (R-pc-18, gate 11c — met); MTee/MCross stamp as
+ideal (lossless) junctions, reported loudly as exactly the "earns nothing" case the design doc
+itself warns against, not silently. R11 (MCross opposing-arm-mean approximation, reported with the
+divergence) IS fully implemented — it's independent of the missing reactance data.
+
+**If a real source for Garg-Bahl/Hammerstad-Bekkadal ever becomes available**, the seam to fill is
+each model's own `Stamp()` — the port count, reference-plane pin positions (R-pc-3), and stub
+geometry are all already correct; only the actual reactance values are missing.
+
+## MStep — reserved, not built (R-pc-14)
+
+A comment marking the hook (elaborator-driven, single switch on the analysis, junctions classified
+by arm count) lives in `src/Core/Elaboration/Elaborator.cs` near node/branch handling, per the
+brief's own instruction. No code beyond the comment — deliberately.
+
+## Tests
+
+62 new tests: `tests/Core.Tests/Devices/Microstrip/` (32 — `HammerstadJensenTests.cs`,
+`TLineModelLossTests.cs`, `MicrostripLineModelTests.cs`, `MicrostripDiscontinuityTests.cs`) +
+`tests/Ui.Tests/Layout/PCells/` (30 — `PCellContractTests.cs`, `SubstrateResolverTests.cs`,
+`PCellGeometryCacheTests.cs`, `PCellReadOnlyAndRegenerationTests.cs`) + 4 in
+`MicrostripSubstrateInjectionTests.cs` (real temp-workspace `.cws`/`.ctech` round trip, proving the
+ancestor-walk resolution end to end, not just `SubstrateResolver`'s own pure logic) — one
+pre-existing test (`LibraryCatalogTests.ByCategory_Microstrip_IsEmpty`) updated to
+`..._ContainsAllFourBuiltIns`, since the category is no longer empty by design. Full solution
+green: Firewall 4/4, Core 420/420 (was 388), Ui 3297/3297 (was 3263), Engine 458/459 (1
+pre-existing skip, unchanged) — `dotnet test` at repo root, the routine gate.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's
+note) — the new symbol glyphs (`BuildMlin`/`BuildMBend`/`BuildMTee`/`BuildMCross` in
+`BuiltInSymbols.cs`) and their placement/parameter-editor behavior were not exercised in a running
+app; correctness rests on the ComponentTypeRegistry/SymbolPortDefs unit-level wiring and the build
+succeeding with the new `SymbolKind` cases handled everywhere existing switches already cover
+every kind. Please confirm on your end: MLIN/MBend/MTee/MCross appear in the Library Palette under
+"Microstrip," place with the correct default parameters (2.9mm/10mm for MLIN, matching the 50Ω-on-
+FR4 hero), and that dropping an MLIN into a real PCB workspace's schematic and running an
+S-parameter analysis produces a sensible, non-error result using the workspace's own FR-4 stackup
+with zero manual substrate configuration.
+
 The Via primitive — toolbar tool, stackup completion, simulation-ready parameters
 (brief-via-primitive-and-stackup.md, 2026-07-28) — COMPLETE: **§4 amends the just-landed L4c** (Gerber
 export), rather than folding into it — L4c had already landed in this same working session when this

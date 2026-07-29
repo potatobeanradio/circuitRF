@@ -59,6 +59,17 @@ public static class TechValidation
                 problems.Add($"DRC rule \"{rule.Name}\" references unknown layer ({rule.Layer.Layer},{rule.Layer.Datatype}).");
         }
 
+        // R-tec-2 (brief-technology-editor-units-and-layers.md): a microstrip component cannot
+        // resolve a ground plane at all without at least one conductor marked IsGroundReference —
+        // report it here, close to the cause, rather than letting every microstrip component fail
+        // its own substrate resolution independently and further from the root cause. Multiple
+        // ground planes are legal and unambiguous ("nearest ground-designated conductor beneath" is
+        // well-defined even with two) — only the zero case is flagged.
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        if (conductors.Count > 0 && !conductors.Any(l => l.IsGroundReference))
+            problems.Add("Stackup has no conductor marked as a ground reference (Stackup tab) — " +
+                         "microstrip components cannot resolve a ground plane.");
+
         return problems;
     }
 }

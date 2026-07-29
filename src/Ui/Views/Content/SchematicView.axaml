@@ -346,18 +346,6 @@
                     <mi:MaterialIcon Kind="ArrowUp" Width="16" Height="16"/>
                 </Button>
 
-                <!-- Separator -->
-                <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
-                        Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
-
-                <!-- FPS readout -->
-                <TextBlock x:Name="FpsText"
-                           VerticalAlignment="Center"
-                           FontSize="11"
-                           FontFamily="Monospace"
-                           Foreground="{DynamicResource SystemBaseMediumColor}"
-                           Opacity="0.8"/>
-
             </StackPanel>
         </Border>
 
@@ -421,7 +409,6 @@
         <Grid>
             <ctrl:SchematicCanvas x:Name="SchematicCanvasCtrl"
                                   Model="{Binding Model}"
-                                  ShowFps="True"
                                   ClipToBounds="True">
 
                 <!-- Right-click context menu for components/wires -->

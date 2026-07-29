@@ -2688,6 +2688,12 @@ public sealed partial class SchematicViewModel : ObservableObject
             comp.Parameters.Add(new EditableParameter
                 { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
 
+        // Microstrip built-ins default their Length parameters (W/L/W1-W4) to mm in the registry —
+        // a fixed baseline, not this workspace's own convention (mil on a PCB board, µm on an
+        // MMIC die). Rewrite to the placing workspace's technology, same physical magnitude.
+        if (MicrostripSubstrateInjection.IsMicrostripKind(kind))
+            MicrostripSubstrateInjection.ApplyTechnologyLengthUnit(comp.Parameters, EditModel.SchematicDirectory);
+
         // Auto-assign next-free Num for Term (Num placeholder "1" from DefaultParameters is
         // overwritten here with the actual next-free integer among existing Terms).
         if (kind == SymbolKind.Term)

@@ -50,11 +50,25 @@ public sealed partial class TechEditorViewModel : ObservableObject
     public static IReadOnlyList<BoundaryCondition> BoundaryConditions { get; } = Enum.GetValues<BoundaryCondition>();
     public static IReadOnlyList<DrcRuleKind>        DrcRuleKinds       { get; } = Enum.GetValues<DrcRuleKind>();
     public static IReadOnlyList<DrcSeverity>         DrcSeverities     { get; } = Enum.GetValues<DrcSeverity>();
+    public static IReadOnlyList<LayoutUnit>          DisplayUnitOptions { get; } = Enum.GetValues<LayoutUnit>();
 
     private bool _suppressBoundaryCommit;
+    private bool _suppressDisplayUnitCommit;
 
     [ObservableProperty] private BoundaryCondition _stackupTop;
     [ObservableProperty] private BoundaryCondition _stackupBottom;
+
+    /// <summary>brief-technology-editor-units-and-layers.md R-tec-3/4: the seed for a NEWLY
+    /// CREATED layout's own <c>DisplayUnit</c> (<c>WorkspaceViewModel.NewLayoutAsync</c>/
+    /// <c>NewLayoutCommand</c> read <see cref="Technology.DefaultDisplayUnit"/> once, at creation
+    /// time, exactly like <see cref="Technology.DefaultSnapDbu"/> already does). Editing this value
+    /// here NEVER touches any already-open or already-saved layout — L0c's own invariant ("never
+    /// re-seed an open layout's DisplayUnit/SnapDbu") stands unchanged; each <c>.clay</c> stores its
+    /// own unit, and this technology value is consulted only at the one moment a layout is first
+    /// created. Retargeting an EXISTING layout to this technology is a separate, already-built,
+    /// explicit opt-in (<c>LayoutEditorViewModel.Retarget.cs</c>'s <c>adoptUnits</c> flag,
+    /// default off) — this property does not change that.</summary>
+    [ObservableProperty] private LayoutUnit _defaultDisplayUnit;
 
     partial void OnStackupTopChanged(BoundaryCondition value)
     {
@@ -70,6 +84,14 @@ public sealed partial class TechEditorViewModel : ObservableObject
         var before = SnapshotJson();
         Working.Stackup.Bottom = value;
         CommitEdit(before, "Change bottom boundary condition");
+    }
+
+    partial void OnDefaultDisplayUnitChanged(LayoutUnit value)
+    {
+        if (_suppressDisplayUnitCommit || value == Working.DefaultDisplayUnit) return;
+        var before = SnapshotJson();
+        Working.DefaultDisplayUnit = value;
+        CommitEdit(before, "Change default display unit for new layouts");
     }
 
     /// <summary>
@@ -161,6 +183,10 @@ public sealed partial class TechEditorViewModel : ObservableObject
 
     private void RebuildAll()
     {
+        _suppressDisplayUnitCommit = true;
+        DefaultDisplayUnit = Working.DefaultDisplayUnit;
+        _suppressDisplayUnitCommit = false;
+
         RebuildLayers();
         RebuildStackup();
         RebuildDrcRules();

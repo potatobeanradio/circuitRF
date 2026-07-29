@@ -49,6 +49,19 @@
             <CheckBox IsChecked="{Binding ShowInstanceName}"
                       Content="Instance name"
                       FontSize="11"/>
+            <!-- MKlopf entry-mode switch: Z1/Z2 <-> W1/W2, L <-> F3db (converts, never resets) -->
+            <Button Content="{Binding MklopfImpedanceToggleLabel}"
+                    IsVisible="{Binding IsMklopfTarget}"
+                    FontSize="10"
+                    Padding="6,2"
+                    ToolTip.Tip="Switch between impedance (Z1/Z2) and width (W1/W2) entry — converts the current design to the equivalent values, it does not reset it"
+                    Command="{Binding ToggleMklopfImpedanceEntryCommand}"/>
+            <Button Content="{Binding MklopfLengthToggleLabel}"
+                    IsVisible="{Binding IsMklopfTarget}"
+                    FontSize="10"
+                    Padding="6,2"
+                    ToolTip.Tip="Switch between length (L) and 3dB-cutoff-frequency (F3db) entry — converts the current design to the equivalent value, it does not reset it"
+                    Command="{Binding ToggleMklopfLengthEntryCommand}"/>
         </StackPanel>
 
         <!-- ── Row 2: Scrollable parameter list ───────────────────────────── -->
@@ -86,20 +99,59 @@
                                          KeyDown="OnParamNameKeyDown"/>
                                 <TextBox Grid.Column="1"
                                          Text="{Binding StagedExpression}"
+                                         IsVisible="{Binding ShowExpressionTextBox}"
                                          FontSize="11"
                                          Padding="4,3"
                                          VerticalAlignment="Center"
                                          LostFocus="OnParamExprLostFocus"
                                          KeyDown="OnParamExprKeyDown"/>
+                                <!-- Enum-style parameter (e.g. MBend's Miter): a named-mode ComboBox
+                                     instead of a raw 0/1/2 number box — commits immediately, no
+                                     LostFocus/KeyDown staging needed. -->
+                                <ComboBox Grid.Column="1"
+                                          ItemsSource="{Binding EnumOptions}"
+                                          SelectedIndex="{Binding SelectedEnumIndex}"
+                                          IsVisible="{Binding IsEnumParam}"
+                                          FontSize="11"
+                                          Padding="4,3"
+                                          HorizontalAlignment="Stretch"
+                                          VerticalAlignment="Center"/>
+                                <!-- Layer-choice parameter (SignalLayer/GroundReference, R-tec-6/10):
+                                     ONE combobox, nothing else — no adjacent text field. A value the
+                                     picker doesn't offer (a custom/renamed layer) is set via the
+                                     schematic canvas's own inline label text-edit instead. -->
+                                <ComboBox Grid.Column="1"
+                                          ItemsSource="{Binding LayerChoiceOptions}"
+                                          SelectedItem="{Binding SelectedLayerChoice}"
+                                          IsVisible="{Binding IsLayerChoiceParam}"
+                                          FontSize="11"
+                                          Padding="4,3"
+                                          HorizontalAlignment="Stretch"
+                                          VerticalAlignment="Center"
+                                          ToolTip.Tip="{Binding LayerChoiceMissingWarning}"/>
                                 <ComboBox Grid.Column="2"
                                           ItemsSource="{Binding UnitOptions}"
                                           SelectedItem="{Binding StagedUnit}"
+                                          IsVisible="{Binding ShowUnitCombo}"
                                           FontSize="11"
                                           Padding="4,3"
                                           MinWidth="60"
                                           Margin="3,0,0,0"
                                           VerticalAlignment="Center"
                                           SelectionChanged="OnUnitSelectionChanged"/>
+                                <!-- Subtle, read-only readout of the enum combo's underlying numeric
+                                     value — makes clear that the schematic label/inline text-edit
+                                     ("Miter = 2") is the SAME raw number the combo commits, not a
+                                     separately-tracked value. -->
+                                <SelectableTextBlock Grid.Column="2"
+                                                     Text="{Binding EnumIndexReadout}"
+                                                     IsVisible="{Binding IsEnumParam}"
+                                                     Foreground="{DynamicResource SystemBaseMediumColor}"
+                                                     FontSize="11"
+                                                     Opacity="0.55"
+                                                     VerticalAlignment="Center"
+                                                     Margin="8,0,0,0"
+                                                     ToolTip.Tip="The numeric value this mode stores — the schematic label and inline text edit both show this raw number"/>
                                 <SelectableTextBlock Grid.Column="3"
                                                      Text="{Binding ValuePreview}"
                                                      IsVisible="{Binding HasValuePreview}"

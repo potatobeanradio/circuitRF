@@ -27,12 +27,12 @@
             <MenuItem Header="_New">
                 <MenuItem.Icon><mi:MaterialIcon Kind="PlusBox" Width="16" Height="16"/></MenuItem.Icon>
                 <MenuItem Header="New _Cell…"
-                          Command="{Binding NewCellInWorkspaceCommand}">
+                          Command="{Binding NewCellInWorkspaceCommand}"
+                          InputGesture="Ctrl+Shift+N">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FolderPlus" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="New _Schematic"
-                          Command="{Binding NewScratchSchematicCommand}"
-                          InputGesture="Ctrl+Shift+N">
+                          Command="{Binding NewScratchSchematicCommand}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="New S_ymbol"

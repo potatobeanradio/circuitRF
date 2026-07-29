@@ -46,6 +46,28 @@ public enum SymbolKind
     /// for two-tone HB authoring: per-tone Freq[i]/Pavl[i]/Phase[i] fields, shared Z/Z[k]. Reuses
     /// P1Tone's symbol and 2-pin geometry. Not an S-param port (no Num).</summary>
     PnTone,
+
+    /// <summary>Microstrip line (engine "MLIN"), brief-L5a-pcell-contract-and-microstrip.md.
+    /// 2-port, W/L parameters. SymbolKind-registered like <see cref="Tline"/>, not an on-disk cell
+    /// folder (see src/Ui/CLAUDE.md's L5a completion note for why).</summary>
+    Mlin,
+
+    /// <summary>Microstrip bend (engine "MBEND"). 2-port, W/Angle/Mitered parameters.</summary>
+    MBend,
+
+    /// <summary>Microstrip T-junction (engine "MTEE"). 3-port, W1/W2/W3 parameters.</summary>
+    MTee,
+
+    /// <summary>Microstrip cross-junction (engine "MCROSS"). 4-port, W1-W4 parameters.</summary>
+    MCross,
+
+    /// <summary>Linearly tapered microstrip line (engine "MTAPER"), brief-mtaper-mklopf.md §1.
+    /// 2-port, W1/W2/L parameters.</summary>
+    Mtaper,
+
+    /// <summary>Klopfenstein-taper microstrip line (engine "MKLOPF"), brief-mtaper-mklopf.md §2-3.
+    /// 2-port, Z1/Z2 (or W1/W2), GammaMax, L (or F3db), Offset, SmoothSteps parameters.</summary>
+    Mklopf,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

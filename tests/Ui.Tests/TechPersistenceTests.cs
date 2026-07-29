@@ -296,7 +296,7 @@ public class TechPersistenceTests
                 Layers =
                 [
                     new StackupLayer { Kind = StackupKind.Conductor, Name = "A", ThicknessDbu = 1, SigmaSm = 1 },
-                    new StackupLayer { Kind = StackupKind.Conductor, Name = "B", ThicknessDbu = 1, SigmaSm = 1 },
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "B", ThicknessDbu = 1, SigmaSm = 1, IsGroundReference = true },
                     new StackupLayer { Kind = StackupKind.Via, Name = "V", Fill = ViaFillKind.Solid, SpanFromLayer = "A", SpanToLayer = "B" },
                 ],
             },

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
@@ -6,6 +7,7 @@ using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands.Schematic;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.ViewModels;
@@ -38,11 +40,167 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     public string NameWatermark { get; }
     public string[] UnitOptions { get; }
 
+    /// <summary>Non-null when this parameter is really a closed set of named modes (e.g. MBend's
+    /// "Miter") — the view shows a ComboBox of these labels instead of the plain Expression text
+    /// box. See <see cref="ComponentTypeRegistry.EnumParamOptions"/>.</summary>
+    public IReadOnlyList<string>? EnumOptions { get; }
+    public bool IsEnumParam => EnumOptions is not null;
+
+    /// <summary>
+    /// Subtle, read-only readout of the numeric value the selected combo option actually commits
+    /// (owner's own request, 2026-07-29): the on-schematic label and the inline text-edit box both
+    /// only ever see/accept this raw number (there is no combo on the canvas), so this readout is
+    /// what tells the user the combo's items are really just named 0/1/2 flags — and implicitly
+    /// explains why the schematic shows "Miter = 2" rather than "Miter = Optimal". Empty string for
+    /// every non-enum parameter (the view hides the readout in that case).
+    /// </summary>
+    public string EnumIndexReadout => IsEnumParam ? SelectedEnumIndex.ToString(CultureInfo.InvariantCulture) : "";
+
+    /// <summary>brief-technology-editor-units-and-layers.md R-tec-6/10: non-null when this parameter is
+    /// SignalLayer or GroundReference on a microstrip component. This is the interim mechanism R-tec-10
+    /// calls for — no dynamic, technology-sourced choice-parameter mechanism existed before this work;
+    /// <see cref="EnumOptions"/> above is the closest precedent, but it is a STATIC, compile-time-fixed
+    /// list (MBend's Miter), not one resolved from the schematic's own workspace technology at edit
+    /// time. Null for every other parameter.</summary>
+    public ComponentTypeRegistry.LayerChoiceKind? LayerChoiceKind { get; }
+    public bool IsLayerChoiceParam => LayerChoiceKind is not null;
+
+    /// <summary>Gates the plain Expression text box (column 1) — hidden for a layer-choice parameter,
+    /// which shows ONLY the picker <see cref="ComboBox"/> below (owner's explicit follow-up: the
+    /// earlier text-field-PLUS-picker design read as "strange" and had a real bug — see
+    /// <see cref="LayerChoiceOptions"/>'s own doc comment). A user who needs a value the picker
+    /// doesn't offer (a custom or since-renamed layer name) sets it via the schematic canvas's own
+    /// inline label text-edit instead — the same escape hatch every other parameter already has.</summary>
+    public bool ShowExpressionTextBox => !IsEnumParam && !IsLayerChoiceParam;
+
+    /// <summary>Gates the ordinary Unit combo (column 2) — hidden for a layer-choice parameter (its
+    /// <see cref="UnitDimension"/> is always None, a single "None" entry would be clutter, exactly
+    /// the same reasoning MBend's Miter enum combo already applies) in favor of the layer picker.</summary>
+    public bool ShowUnitCombo => !IsEnumParam && !IsLayerChoiceParam;
+
+    private const string DefaultLayerChoiceLabel = "(Default)";
+
+    /// <summary>The technology-resolved conductor names ONLY — never includes a "ghost" entry for the
+    /// currently-staged value. Used solely to decide <see cref="LayerChoiceMissingWarning"/>; the
+    /// user-facing option list is <see cref="LayerChoiceOptions"/>, which layers a ghost entry on top
+    /// of this when needed.</summary>
+    private IReadOnlyList<string> _knownLayerChoiceOptions = [];
+
+    /// <summary>The picker's own option list — "(Default)" first (R-tec-8's empty-means-follow-the-
+    /// technology, mirroring L0c's TechRef=null convention), then every conductor layer name for
+    /// SignalLayer, or per the owner's explicit instruction ONLY conductors with
+    /// <see cref="StackupLayer.IsGroundReference"/> set for GroundReference. Resolved from the
+    /// schematic's own ancestor workspace technology
+    /// (<see cref="MicrostripSubstrateInjection.ResolveWorkspaceTechnology"/>) on construction AND on
+    /// every <see cref="RefreshFromModel"/>, so a stackup edit made while the editor is open is
+    /// picked up. <b>Also always includes the CURRENTLY staged value, even when it isn't a real
+    /// conductor</b> — a value that arrived some other way (an inline canvas text edit, an older
+    /// schematic, a since-renamed/removed layer) must still be the combo's visibly SELECTED item;
+    /// without this, Avalonia's ComboBox renders a blank/unselected box whenever `SelectedItem`
+    /// doesn't literally match an `ItemsSource` entry — this was the actual bug behind the owner's
+    /// "it's a little buggy right now" report, not merely the two-control layout being confusing.</summary>
+    public IReadOnlyList<string> LayerChoiceOptions { get; private set; } = [];
+
+    /// <summary>Recomputes both <see cref="_knownLayerChoiceOptions"/> and the ghost-inclusive
+    /// <see cref="LayerChoiceOptions"/> from the CURRENT <see cref="StagedExpression"/>.
+    /// <b>Only replaces the bound <see cref="LayerChoiceOptions"/> list instance (and raises its
+    /// PropertyChanged) when the resulting CONTENT actually differs from what's already there</b> —
+    /// this is the fix for the owner's "sometimes doesn't register my new choice, I have to set it
+    /// multiple times" report. <c>RefreshFromModel</c> runs on EVERY row after ANY parameter edit on
+    /// the component (not just this one), so without this guard, selecting a value in THIS combo
+    /// would itself trigger — via <c>Execute → EditModel.Changed → OnModelChanged →
+    /// RefreshFromModel</c> — a synchronous, reentrant call back into this SAME method, unconditionally
+    /// swapping <see cref="LayerChoiceOptions"/> to a freshly-allocated (content-identical) list
+    /// while Avalonia's ComboBox was still in the middle of processing the very selection that
+    /// caused it. Swapping `ItemsSource` mid-selection is what made the combo intermittently fail to
+    /// keep the new selection visible until a later, unrelated redraw caught it up. Content is
+    /// genuinely unchanged the overwhelming majority of the time this runs (most edits are to some
+    /// OTHER parameter, or to this one but resolving to the same technology), so this guard also
+    /// means the common case does no allocation-driven UI churn at all.</summary>
+    private void RecomputeLayerChoiceOptions()
+    {
+        var known = new List<string> { DefaultLayerChoiceLabel };
+        var tech = LayerChoiceKind is not null
+            ? MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm.EditModel.SchematicDirectory)
+            : null;
+        if (tech is not null)
+        {
+            IEnumerable<StackupLayer> conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor);
+            if (LayerChoiceKind == ComponentTypeRegistry.LayerChoiceKind.Ground)
+                conductors = conductors.Where(l => l.IsGroundReference);
+            known.AddRange(conductors.Select(l => l.Name));
+        }
+        _knownLayerChoiceOptions = known;
+
+        var display = new List<string>(known);
+        string current = StagedExpression.Trim();
+        if (current.Length > 0 && !display.Contains(current))
+            display.Add(current);
+
+        if (!display.SequenceEqual(LayerChoiceOptions))
+        {
+            LayerChoiceOptions = display;
+            OnPropertyChanged(nameof(LayerChoiceOptions));
+        }
+    }
+
+    /// <summary>Picker binding: maps the staged expression (empty ⇒ "(Default)") to/from a list entry.
+    /// Selecting an entry stages AND commits immediately (mirrors the enum combo's own commit-on-select
+    /// convention, <see cref="OnSelectedEnumIndexChanged"/>) — this is now the ONLY way to edit a
+    /// layer-choice parameter from this dialog.</summary>
+    public string SelectedLayerChoice
+    {
+        get => string.IsNullOrWhiteSpace(StagedExpression) ? DefaultLayerChoiceLabel : StagedExpression;
+        set
+        {
+            if (_isRefreshing) return;
+            string newExpr = value == DefaultLayerChoiceLabel ? "" : value;
+            if (newExpr == StagedExpression) return;
+            StagedExpression = newExpr;
+            CommitExpression();
+        }
+    }
+
+    /// <summary>Informational only (R-tec-9) — the actual FALLBACK behavior already happens correctly
+    /// at the <c>SubstrateResolver</c> layer regardless of whether this is ever shown; this just tells
+    /// the user their currently-selected value doesn't (or no longer, after a rename/technology swap)
+    /// match a conductor in the resolved technology, so the component will silently use the default
+    /// instead. Checked against <see cref="_knownLayerChoiceOptions"/> — NOT <see cref="LayerChoiceOptions"/>,
+    /// which always contains the current value by construction and would never warn. Empty when the
+    /// field is blank, on "(Default)", or matches a genuinely known conductor.</summary>
+    public string LayerChoiceMissingWarning
+    {
+        get
+        {
+            if (!IsLayerChoiceParam) return "";
+            string expr = StagedExpression.Trim();
+            if (expr.Length == 0) return "";
+            if (_knownLayerChoiceOptions.Contains(expr)) return "";
+            return $"\"{expr}\" is not a conductor in the resolved technology — falling back to the default.";
+        }
+    }
+    public bool HasLayerChoiceMissingWarning => LayerChoiceMissingWarning.Length > 0;
+
     [ObservableProperty] private string _stagedName       = "";
     [ObservableProperty] private string _stagedExpression = "";
     [ObservableProperty] private string _stagedUnit       = "";
     [ObservableProperty] private bool   _showOnSchematic;
     [ObservableProperty] private string _nameError = "";
+    [ObservableProperty] private int    _selectedEnumIndex;
+
+    partial void OnSelectedEnumIndexChanged(int oldValue, int newValue)
+    {
+        // The readout must update regardless of _isRefreshing (it should track the model even
+        // during a Refresh/undo, not only on a live user-driven selection).
+        OnPropertyChanged(nameof(EnumIndexReadout));
+
+        // Combo selections commit immediately (mirroring SnP's PinConfig/Pitch combos), not staged
+        // via LostFocus like the text fields.
+        if (_isRefreshing || EnumOptions is null) return;
+        string newExpr = newValue.ToString(CultureInfo.InvariantCulture);
+        if (newExpr == _param.Expression) return;
+        _schematicVm.Execute(new EditParameterCommand(_schematicVm.EditModel, _param, newExpr, _param.Unit));
+    }
 
     public bool HasNameError => NameError.Length > 0;
     partial void OnNameErrorChanged(string? oldValue, string newValue)
@@ -69,6 +227,16 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         // Live preview as the user types the expression (cheap; no model mutation).
         // Not gated by _isRefreshing — the preview should also update on refresh/undo.
         RecomputePreview();
+
+        // Keep the picker's own SelectedItem/warning in sync — StagedExpression only ever changes
+        // for a layer-choice row via SelectedLayerChoice's own setter (the picker is now the sole
+        // editing path) or RefreshFromModel (which recomputes LayerChoiceOptions itself, separately).
+        if (IsLayerChoiceParam)
+        {
+            OnPropertyChanged(nameof(SelectedLayerChoice));
+            OnPropertyChanged(nameof(LayerChoiceMissingWarning));
+            OnPropertyChanged(nameof(HasLayerChoiceMissingWarning));
+        }
     }
 
     public ParameterRowViewModel(
@@ -84,15 +252,30 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         UnitOptions  = ComponentTypeRegistry.UnitOptions(param.Dimension);
         NameEditable = ComponentTypeRegistry.UserParamTemplate(ownerSymbol) is not null;
         NameWatermark = (ownerSymbol is SymbolKind.Sdd or SymbolKind.FetSdd) ? "I[p,w] · Q[p] · H[w]" : "";
+        EnumOptions  = ComponentTypeRegistry.EnumParamOptions(ownerSymbol, param.Name);
+        LayerChoiceKind = ComponentTypeRegistry.LayerChoiceKindFor(ownerSymbol, param.Name);
 
         _isRefreshing = true;
         _stagedName       = param.Name;
         _stagedExpression = param.Expression;
         _stagedUnit       = param.Unit;
         _showOnSchematic  = param.ShowOnSchematic;
+        _selectedEnumIndex = ParseEnumIndex(param.Expression);
+        if (IsLayerChoiceParam) RecomputeLayerChoiceOptions();
         _isRefreshing = false;
 
         RecomputePreview();
+    }
+
+    /// <summary>Parses an expression as an enum-option index; falls back to 0 (the first option)
+    /// when the expression isn't a plain non-negative integer in range — never throws.</summary>
+    private int ParseEnumIndex(string expression)
+    {
+        if (EnumOptions is null) return 0;
+        if (int.TryParse(expression.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int idx)
+            && idx >= 0 && idx < EnumOptions.Count)
+            return idx;
+        return 0;
     }
 
     /// <summary>Commit the staged name to the model (no-op if unchanged or invalid).</summary>
@@ -191,11 +374,15 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         return false;
     }
 
-    /// <summary>Commit the staged expression to the model (no-op if unchanged).</summary>
+    /// <summary>Commit the staged expression to the model (no-op if unchanged). An empty expression
+    /// is a no-op for every ordinary parameter (clearing a field reverts to the prior value on the
+    /// next refresh) — EXCEPT a layer-choice parameter (R-tec-8), where empty is itself a meaningful,
+    /// committable value ("follow the technology" / "(Default)").</summary>
     public void CommitExpression()
     {
         string expr = StagedExpression.Trim();
-        if (expr.Length == 0 || expr == _param.Expression) return;
+        if (expr == _param.Expression) return;
+        if (expr.Length == 0 && !IsLayerChoiceParam) return;
         _schematicVm.Execute(new EditParameterCommand(_schematicVm.EditModel, _param, expr, _param.Unit));
     }
 
@@ -215,6 +402,21 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         StagedUnit       = _param.Unit;
         ShowOnSchematic  = _param.ShowOnSchematic;
         NameError        = "";
+        SelectedEnumIndex = ParseEnumIndex(_param.Expression);
+        if (IsLayerChoiceParam)
+        {
+            // Re-resolve on every refresh (not just at construction) so a stackup edit made while
+            // the editor is open — a conductor newly marked IsGroundReference, a renamed layer — is
+            // picked up in the picker's own option list (gate 9's "a later stackup edit is picked
+            // up again"), not only in what SubstrateResolver itself later resolves at run time.
+            // RecomputeLayerChoiceOptions() raises LayerChoiceOptions' own PropertyChanged itself,
+            // and ONLY when the content genuinely changed — see its doc comment for why an
+            // unconditional raise here would reintroduce the "selection doesn't stick" bug.
+            RecomputeLayerChoiceOptions();
+            OnPropertyChanged(nameof(SelectedLayerChoice));
+            OnPropertyChanged(nameof(LayerChoiceMissingWarning));
+            OnPropertyChanged(nameof(HasLayerChoiceMissingWarning));
+        }
         _isRefreshing = false;
         RecomputePreview();   // also recompute in case the expression text was unchanged but a
                               // referenced value elsewhere in the schematic changed

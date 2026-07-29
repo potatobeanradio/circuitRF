@@ -47,6 +47,12 @@ public static class BuiltInSymbols
     private static readonly Symbol _tuner         = BuildTuner();
     private static readonly Symbol _sourceTuner   = BuildSourceTuner();
     private static readonly Symbol _loadTuner     = BuildLoadTuner();
+    private static readonly Symbol _mlin          = BuildMlin();
+    private static readonly Symbol _mbend         = BuildMBend();
+    private static readonly Symbol _mtee          = BuildMTee();
+    private static readonly Symbol _mcross        = BuildMCross();
+    private static readonly Symbol _mtaper        = BuildMtaper();
+    private static readonly Symbol _mklopf        = BuildMklopf();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
@@ -96,6 +102,12 @@ public static class BuiltInSymbols
             case SymbolKind.NonlinearC: return _nonlinearC;
             case SymbolKind.Mutual:     return _mutual;
             case SymbolKind.Tline:      return _tline;
+            case SymbolKind.Mlin:       return _mlin;
+            case SymbolKind.MBend:      return _mbend;
+            case SymbolKind.MTee:       return _mtee;
+            case SymbolKind.MCross:     return _mcross;
+            case SymbolKind.Mtaper:     return _mtaper;
+            case SymbolKind.Mklopf:     return _mklopf;
             case SymbolKind.Vdc:        return _vdcSrc;
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.Ground:     return _ground;
@@ -506,6 +518,70 @@ public static class BuiltInSymbols
         RRect( 0,  0,  180,  90,  18),      // body (rounded rect, x∈[−90,90], y∈[−45,45])
         L( -60,   0,   60,   0),            // centre conductor line through the body
     ], SymbolKind.Tline);
+
+    // ── Microstrip built-ins (brief-L5a-pcell-contract-and-microstrip.md) ──────────
+    // Every body element below is an UNFILLED RoundedRectPrimitive (RRect never sets Filled, which
+    // defaults false) — the same "give it thickness, no fill" convention BuildTline already uses,
+    // applied consistently across all four so they read as one family rather than TLIN-plus-three-
+    // odd-ones-out.
+
+    private static Symbol BuildMlin() => Sym([
+        L(-200,   0,  -90,   0),
+        L(  90,   0,  200,   0),
+        RRect(0, 0, 180, 60, 12),   // trace body with thickness, unfilled
+    ], SymbolKind.Mlin);
+
+    // A real right-angle bend — pin 1 left (input arm, R-pc-3's own origin/+X convention), pin 2
+    // DOWN so wiring to it is a natural vertical run. The body is ONE unfilled outline polygon (the
+    // union of the horizontal and vertical arms, mitered at the corner) rather than two overlapping
+    // RoundedRects — two independently-stroked rects sharing a corner region drew crossing/
+    // overlapping lines there; a single traced outline reads as one continuous bent trace.
+    private static Symbol BuildMBend() => Sym([
+        L(-200,   0, -180,   0),
+        Poly(false, -180,-25,  25,-25,  25,180,  -25,180,  -25,25,  -180,25),   // L-shaped body outline
+        L(   0, 180,    0, 200),
+    ], SymbolKind.MBend);
+
+    // Through line (pins 1/2, left/right) + branch (pin 3, DOWN — +Y is down in this codebase) —
+    // R-pc-3's own "pin 1 origin, through +X to pin 2, branch +Y to pin 3" convention. The body is
+    // ONE unfilled outline polygon (the union of the through-line and branch arms) — no overlapping
+    // RoundedRects, no filled junction dot; the T-shaped outline itself is unambiguous.
+    private static Symbol BuildMTee() => Sym([
+        L(-200,    0, -180,    0),
+        L( 180,    0,  200,    0),
+        L(   0,  180,    0,  200),
+        Poly(false, -180,-25,  180,-25,  180,25,  25,25,  25,180,  -25,180,  -25,25,  -180,25),   // T-shaped body outline
+    ], SymbolKind.MTee);
+
+    // Four arms (right/up/left/down), traced as ONE unfilled cross-shaped outline polygon — no
+    // overlapping RoundedRects, no filled junction dot; the plus-sign outline is unambiguous.
+    private static Symbol BuildMCross() => Sym([
+        L( 180,    0,  200,    0),
+        L(-200,    0, -180,    0),
+        L(   0, -200,    0, -180),
+        L(   0,  180,    0,  200),
+        Poly(false, -25,-180,  25,-180,  25,-25,  180,-25,  180,25,  25,25,  25,180,  -25,180,  -25,25,  -180,25,  -180,-25,  -25,-25),   // cross-shaped body outline
+    ], SymbolKind.MCross);
+
+    // MTaper — a trapezoid body (thicker at pin 1/W1, tapering to pin 2/W2), unfilled outline —
+    // the glyph's own visual taper is symbolic (not to the instance's actual W1/W2 ratio).
+    private static Symbol BuildMtaper() => Sym([
+        L(-200,   0,  -90,   0),
+        L(  90,   0,  200,   0),
+        Poly(false, -90,-40,  90,-20,  90,20,  -90,40),   // trapezoid body outline, wide->narrow
+    ], SymbolKind.Mtaper);
+
+    // MKlopf — the Klopfenstein taper's own body outline is bowed (S-shaped), not a straight
+    // trapezoid, distinguishing it from MTaper's linear glyph — symbolic only, not the instance's
+    // actual profile (which the real physics computes per brief-mtaper-mklopf.md §2).
+    private static Symbol BuildMklopf() => Sym([
+        L(-200,   0,  -90,   0),
+        L(  90,   0,  200,   0),
+        QC(-90,-40,   0,-25,   90,-20),
+        L(90,-20,  90,20),
+        QC( 90, 20,   0, 15,  -90, 40),
+        L(-90,40,  -90,-40),
+    ], SymbolKind.Mklopf);
 
     // ── Tuner — compact almost-square termination, single left pin ────────────
     // 220 × 200 box (edges ±110 / ±100) — nearly square. Advanced users want a small footprint,

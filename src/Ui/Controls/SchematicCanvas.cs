@@ -140,19 +140,6 @@ public sealed class SchematicCanvas : Control
         InvalidateVisual();
     }
 
-    // ── DirectProperty: ShowFps ──────────────────────────────────────────────
-
-    public static readonly DirectProperty<SchematicCanvas, bool> ShowFpsProperty =
-        AvaloniaProperty.RegisterDirect<SchematicCanvas, bool>(
-            nameof(ShowFps), o => o.ShowFps, (o, v) => o.ShowFps = v);
-
-    private bool _showFps = true;
-    public bool ShowFps
-    {
-        get => _showFps;
-        set { SetAndRaise(ShowFpsProperty, ref _showFps, value); InvalidateVisual(); }
-    }
-
     // ── Viewport state ───────────────────────────────────────────────────────
 
     private double _panX;
@@ -301,10 +288,9 @@ public sealed class SchematicCanvas : Control
             theme = theme.WithAccent(accent);
         }
 
-        long prevTicks = Volatile.Read(ref SchematicRenderer.LastFrameTicks);
         context.Custom(new SchematicDrawOperation(
             new Rect(Bounds.Size), _model, _index,
-            _panX, _panY, _zoom, theme, prevTicks, _showFps, _overlay));
+            _panX, _panY, _zoom, theme, _overlay));
     }
 
     // ── Navigation ───────────────────────────────────────────────────────────
@@ -894,18 +880,16 @@ public sealed class SchematicCanvas : Control
         private readonly SchematicSpatialIndex?  _index;
         private readonly double                  _panX, _panY, _zoom;
         private readonly SchematicRenderTheme    _theme;
-        private readonly long                    _prevTicks;
-        private readonly bool                    _showFps;
         private readonly SchematicOverlay?       _overlay;
 
         public SchematicDrawOperation(
             Rect bounds, SchematicModel? model, SchematicSpatialIndex? index,
             double panX, double panY, double zoom,
-            SchematicRenderTheme theme, long prevTicks, bool showFps, SchematicOverlay? overlay)
+            SchematicRenderTheme theme, SchematicOverlay? overlay)
         {
             _bounds    = bounds; _model = model; _index = index;
             _panX = panX; _panY = panY; _zoom = zoom;
-            _theme = theme; _prevTicks = prevTicks; _showFps = showFps; _overlay = overlay;
+            _theme = theme; _overlay = overlay;
         }
 
         public bool Equals(ICustomDrawOperation? other) => false;
@@ -920,7 +904,7 @@ public sealed class SchematicCanvas : Control
             SchematicRenderer.Draw(
                 lease.SkCanvas, (_bounds.Width, _bounds.Height),
                 _model, _index, _panX, _panY, _zoom, _theme,
-                _prevTicks, _showFps, _overlay);
+                _overlay);
         }
 
         public void Dispose() { }

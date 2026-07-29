@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using CircuitRF.Ui.Schematic;
 using SkiaSharp;
 
@@ -51,22 +50,14 @@ public static class SchematicRenderer
         SchematicSpatialIndex? index,
         double panX, double panY, double zoom,
         SchematicRenderTheme theme,
-        long previousFrameTicks = 0,
-        bool showFps = true,
         SchematicOverlay? overlay = null,
         bool useTransparentBackground = false,
         bool excludeGrid = false)
     {
-        var sw = Stopwatch.StartNew();
-
         canvas.Clear(useTransparentBackground ? SKColors.Transparent : theme.Background);
 
         if (model is null)
-        {
-            DrawFpsOverlay(canvas, canvasSize, previousFrameTicks, theme, showFps);
-            Volatile.Write(ref LastFrameTicks, sw.ElapsedTicks);
             return;
-        }
 
         if (!excludeGrid)
             DrawGrid(canvas, canvasSize, model.GridSize, panX, panY, zoom, theme);
@@ -326,10 +317,6 @@ public static class SchematicRenderer
         // ── 6d overlay ────────────────────────────────────────────────────────
         if (overlay is not null)
             DrawOverlay(canvas, canvasSize, model, overlay, panX, panY, zoom, theme, isLod);
-
-        sw.Stop();
-        Volatile.Write(ref LastFrameTicks, sw.ElapsedTicks);
-        DrawFpsOverlay(canvas, canvasSize, sw.ElapsedTicks, theme, showFps);
     }
 
     // ── DrawSymbol — generic primitive-list renderer ──────────────────────────
@@ -1201,30 +1188,6 @@ public static class SchematicRenderer
         }
     }
 
-    // ── FPS overlay ───────────────────────────────────────────────────────────
-
-    private static void DrawFpsOverlay(
-        SKCanvas canvas, (double W, double H) size,
-        long frameTicks, SchematicRenderTheme theme, bool show)
-    {
-        if (!show || frameTicks <= 0) return;
-
-        double ms  = frameTicks * 1000.0 / Stopwatch.Frequency;
-        double fps = ms > 0 ? 1000.0 / ms : 0;
-        string text = $"{ms:F1} ms  ({fps:F0} fps)";
-
-        using var bgPaint   = new SKPaint { Color = new SKColor(0, 0, 0, 120), IsAntialias = false };
-        using var textPaint = new SKPaint { Color = new SKColor(220, 220, 60),  IsAntialias = true };
-        using var font      = new SKFont(SkiaFonts.PlexRegular, 11f);
-
-        float textW = font.MeasureText(text);
-        float x     = (float)size.W - textW - 14f;
-        float y     = 16f;
-
-        canvas.DrawRect(SKRect.Create(x - 4f, y - 12f, textW + 10f, 16f), bgPaint);
-        canvas.DrawText(text, x, y, SKTextAlign.Left, font, textPaint);
-    }
-
     // ── Canvas-object rendering ───────────────────────────────────────────────
 
     private static void DrawBitmaps(
@@ -1308,6 +1271,4 @@ public static class SchematicRenderer
         double minX, double minY, double maxX, double maxY,
         double vpMinX, double vpMinY, double vpMaxX, double vpMaxY)
         => maxX >= vpMinX && minX <= vpMaxX && maxY >= vpMinY && minY <= vpMaxY;
-
-    public static long LastFrameTicks;
 }

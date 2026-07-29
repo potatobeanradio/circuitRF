@@ -225,6 +225,28 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Terminals,
             SearchTerms: ["LoadTuner", "load tuner", "tuner", "loadpull", "termination"],
             IsCommon: true),
+        // Microstrip built-ins (brief-L5a-pcell-contract-and-microstrip.md) — SymbolKind-registered
+        // exactly like Tline, not on-disk cell folders (see src/Ui/CLAUDE.md's L5a note).
+        [SymbolKind.Mlin]          = new("MLIN",  "ML",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MLIN", "microstrip", "microstrip line", "line", "hammerstad"],
+            IsCommon: true),
+        [SymbolKind.MBend]         = new("MBEND", "MB",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MBEND", "microstrip bend", "bend", "corner", "miter"]),
+        [SymbolKind.MTee]         = new("MTEE",  "MT",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MTEE", "microstrip tee", "T-junction", "tee", "stub", "power divider"]),
+        [SymbolKind.MCross]       = new("MCROSS", "MX",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MCROSS", "microstrip cross", "cross junction", "cross"]),
+        // brief-mtaper-mklopf.md
+        [SymbolKind.Mtaper]       = new("MTAPER", "MTP",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MTAPER", "microstrip taper", "taper", "linear taper", "width step"]),
+        [SymbolKind.Mklopf]       = new("MKLOPF", "MKF",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MKLOPF", "klopfenstein", "klopfenstein taper", "taper", "impedance transformer"]),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -284,6 +306,12 @@ public static class ComponentTypeRegistry
         SymbolKind.Tuner         => "Tuner",
         SymbolKind.SourceTuner   => "Tuner",
         SymbolKind.LoadTuner     => "Tuner",
+        SymbolKind.Mlin          => "MLIN",
+        SymbolKind.MBend         => "MBEND",
+        SymbolKind.MTee          => "MTEE",
+        SymbolKind.MCross        => "MCROSS",
+        SymbolKind.Mtaper        => "MTAPER",
+        SymbolKind.Mklopf        => "MKLOPF",
         _                        => Get(kind).DisplayName,
     };
 
@@ -440,6 +468,76 @@ public static class ComponentTypeRegistry
                         new("Vbias",    "0",     "V", false, UnitDimension.Voltage),
                         new("ShowBias", "false", "",  false, UnitDimension.None)];
 
+            // MLIN: microstrip line — W (width), L (length). Both SI length, defaulted in mm here
+            // — a fixed, technology-independent baseline; MicrostripSubstrateInjection.
+            // ApplyTechnologyLengthUnit rewrites these to the placing workspace's own
+            // DefaultDisplayUnit (mil for PCB, um for MMIC) right after placement, same physical
+            // magnitude. 2.9mm/10mm is the ~50 Ω-on-1.6mm-FR4 hero (docs/design/microstrip-models.md's
+            // own worked reference). The unit belongs ONLY in the Unit field — DefaultParam's
+            // Expression is always a bare number in that unit (matching every other entry in this
+            // file, e.g. Resistor's `new("R", "1", "Ω", ...)`); embedding it in BOTH was a real
+            // bug (a component showed "2.9mm mm").
+            // Substrate (H/T/Er/Sigma/TanD) is NOT a declared parameter (R-pc-2's "one list" —
+            // it is resolved automatically from the workspace technology at extraction time, per
+            // R-pc-8, and injected as elaborator overrides; only an explicit per-instance layer
+            // override, not exposed here, changes which layer it resolves from).
+            case SymbolKind.Mlin:
+                return [new("W", "2.9", "mm", true, UnitDimension.Length),
+                        new("L", "10",  "mm", true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
+
+            // MBend: microstrip bend — W, Angle (deg, CCW from the input arm), Miter
+            // (0=None/square corner, 1=Fifty/50% chamfer, 2=Optimal/Douville-James — brief-
+            // mtaper-mklopf.md §1A). Default Optimal (owner follow-up, 2026-07-29 — the real
+            // Douville-James optimum, not a bare square corner, is the sensible out-of-the-box
+            // choice for a freshly-placed bend). Rendered as a None/Fifty/Optimal ComboBox in the
+            // Parameter Editor (EnumParamOptions below), not a raw 0/1/2 number box.
+            case SymbolKind.MBend:
+                return [new("W",     "2.9", "mm",  true, UnitDimension.Length),
+                        new("Angle", "90",  "deg", true, UnitDimension.Angle),
+                        new("Miter", "2",   "",    true, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+
+            // MTee: microstrip T-junction — W1/W2 (through arms, may differ), W3 (branch).
+            case SymbolKind.MTee:
+                return [new("W1", "2.9", "mm", true, UnitDimension.Length),
+                        new("W2", "2.9", "mm", true, UnitDimension.Length),
+                        new("W3", "2.9", "mm", true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
+
+            // MCross: microstrip cross-junction — W1-W4, one per arm.
+            case SymbolKind.MCross:
+                return [new("W1", "2.9", "mm", true, UnitDimension.Length),
+                        new("W2", "2.9", "mm", true, UnitDimension.Length),
+                        new("W3", "2.9", "mm", true, UnitDimension.Length),
+                        new("W4", "2.9", "mm", true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
+
+            // MTaper: linear taper — W1 (pin 1 end), W2 (pin 2 end), L (length). N (section count
+            // override) is deliberately NOT a default/shown parameter — 0 (auto, brief §1.1's own
+            // rule) is the right default for every placement; an advanced user overrides it via the
+            // Component Parameters editor's "add parameter" path, not a pre-populated row.
+            case SymbolKind.Mtaper:
+                return [new("W1", "2.9", "mm", true, UnitDimension.Length),
+                        new("W2", "1.0", "mm", true, UnitDimension.Length),
+                        new("L",  "10",  "mm", true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
+
+            // MKlopf: Klopfenstein taper — Z1/Z2 entry route (R-klp-3a's default; W1/W2 is the
+            // alternative route, added by the user via "add parameter" when they want geometry-
+            // first entry — NOT both shown at once, to avoid an ambiguous default). GammaMax and L
+            // are the other headline parameters (F3db is the alternative to L, same "add it if you
+            // want it" convention). Offset defaults to 0 (a straight Klopfenstein taper); SmoothSteps
+            // defaults to 1 (true) per R-klp-4a. N is an advanced override, not shown by default.
+            case SymbolKind.Mklopf:
+                return [new("Z1", "50", "Ω", true, UnitDimension.Resistance),
+                        new("Z2", "100", "Ω", true, UnitDimension.Resistance),
+                        new("GammaMax", "0.05", "", true, UnitDimension.None),
+                        new("L", "20", "mm", true, UnitDimension.Length),
+                        new("Offset", "0", "mm", true, UnitDimension.Length),
+                        new("SmoothSteps", "1", "", true, UnitDimension.None),
+                        .. SignalGroundLayerParams];
+
             // Ground/FetSdd/Generic need no default parameters.
             default: return [];
         }
@@ -496,6 +594,18 @@ public static class ComponentTypeRegistry
             case "SRCTUNER": kind = SymbolKind.SourceTuner; return true;
             case "LOADTUNER":
             case "LDTUNER":  kind = SymbolKind.LoadTuner;    return true;
+            case "MLIN":
+            case "ML":       kind = SymbolKind.Mlin;         return true;
+            case "MBEND":
+            case "MB":       kind = SymbolKind.MBend;        return true;
+            case "MTEE":
+            case "MT":       kind = SymbolKind.MTee;         return true;
+            case "MCROSS":
+            case "MX":       kind = SymbolKind.MCross;       return true;
+            case "MTAPER":
+            case "MTP":      kind = SymbolKind.Mtaper;       return true;
+            case "MKLOPF":
+            case "MKF":      kind = SymbolKind.Mklopf;       return true;
             case "FET":
             case "SDD":
             case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default
@@ -626,4 +736,78 @@ public static class ComponentTypeRegistry
 
         _ => null,
     };
+
+    /// <summary>MBend's own "Miter" mode names — a plain 0/1/2 number box gives no hint that the
+    /// value is really a closed set of named modes at all (owner-reported: "no way to change the
+    /// miter mode... at least it's not obvious"). Order matches <c>MicrostripBendMiter</c>'s own
+    /// enum values exactly (index == numeric value).</summary>
+    public static readonly IReadOnlyList<string> MBendMiterOptions = ["None", "Fifty", "Optimal"];
+
+    /// <summary>
+    /// Named option labels for a parameter whose numeric value is really a closed set of modes —
+    /// the Parameter Editor (<see cref="ParameterRowViewModel"/>) renders a ComboBox of these labels
+    /// (committing the selected INDEX as the parameter's expression) instead of a raw number box
+    /// when this returns non-null. Null (the default for every other parameter) means "not an enum
+    /// parameter — render the ordinary Expression text box."
+    /// </summary>
+    /// <summary>
+    /// Named option labels for a parameter whose numeric value is really a closed set of modes —
+    /// the Parameter Editor (<see cref="ParameterRowViewModel"/>) renders a ComboBox of these labels
+    /// (committing the selected INDEX as the parameter's expression) instead of a raw number box
+    /// when this returns non-null. Null (the default for every other parameter) means "not an enum
+    /// parameter — render the ordinary Expression text box."
+    ///
+    /// <b>Deliberately NOT applied to the on-schematic label</b> (owner's explicit preference,
+    /// 2026-07-29): the label's inline text-edit box only ever accepts the raw numeric value (there
+    /// is no combo there), so the label keeps showing that same raw value ("Miter = 2") rather than
+    /// a translated name it couldn't be typed back in as — the Parameter Editor's own subtle,
+    /// read-only index readout next to the combo (<see cref="ParameterRowViewModel.EnumIndexReadout"/>)
+    /// is what explains the connection between the two instead.
+    /// </summary>
+    public static IReadOnlyList<string>? EnumParamOptions(SymbolKind kind, string paramName) => (kind, paramName) switch
+    {
+        (SymbolKind.MBend, "Miter") => MBendMiterOptions,
+        _ => null,
+    };
+
+    // ── Signal/Ground layer override parameters (brief-technology-editor-units-and-layers.md R-tec-6) ──
+
+    /// <summary>
+    /// R-tec-6/7/8: every microstrip component's per-instance layer-selection override — the PCell
+    /// contract's own R11 ("Signal Layer + Ground Reference, defaulting from the stackup and
+    /// per-instance overridable") already had its DEFAULT half implemented
+    /// (<see cref="CircuitRF.Ui.Layout.PCells.SubstrateResolver"/>) and its OVERRIDE plumbing already
+    /// present (<see cref="CircuitRF.Ui.Layout.PCells.PCellLayerSelection"/>,
+    /// <see cref="CircuitRF.Ui.Schematic.MicrostripSubstrateInjection.BuildOverrides"/>'s own optional
+    /// override parameters) — nothing populated them from a real component parameter until this.
+    ///
+    /// R-tec-7: stored as the stackup layer's own NAME (a string), matching
+    /// <see cref="CircuitRF.Ui.Layout.StackupLayer.SpanFromLayer"/>/<c>SpanToLayer</c>'s own
+    /// established convention — names, not indices/keys, survive a technology change meaningfully
+    /// (the L1g lesson). R-tec-8: empty means "follow the technology" (the zero-configuration
+    /// default this whole substrate design exists for) — never shown on schematic by default
+    /// (<c>ShowOnSchematic: false</c>), since annotating every instance with its resolved layer names
+    /// would be noise, and on a two-layer board it is the default anyway.
+    /// </summary>
+    public static readonly IReadOnlyList<DefaultParam> SignalGroundLayerParams =
+    [
+        new("SignalLayer", "", "", false, UnitDimension.None),
+        new("GroundReference", "", "", false, UnitDimension.None),
+    ];
+
+    /// <summary>Which of the two layer-choice roles (if any) a given (owner, paramName) pair is —
+    /// null for every other parameter. Reused by <see cref="MicrostripSubstrateInjection.IsMicrostripKind"/>'s
+    /// own kind set rather than a second, duplicate list.</summary>
+    public enum LayerChoiceKind { Signal, Ground }
+
+    public static LayerChoiceKind? LayerChoiceKindFor(SymbolKind kind, string paramName)
+    {
+        if (!MicrostripSubstrateInjection.IsMicrostripKind(kind)) return null;
+        return paramName switch
+        {
+            "SignalLayer"     => LayerChoiceKind.Signal,
+            "GroundReference" => LayerChoiceKind.Ground,
+            _ => null,
+        };
+    }
 }

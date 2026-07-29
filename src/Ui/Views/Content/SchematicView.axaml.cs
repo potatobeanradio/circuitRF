@@ -1,8 +1,6 @@
 using System;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -24,8 +22,6 @@ namespace CircuitRF.Ui.Views.Content;
 
 public partial class SchematicView : UserControl
 {
-    private DispatcherTimer? _fpsTimer;
-
     // Ascender ratio measured from the Skia font the renderer uses.
     // Computed once at construction — update SkiaFonts.PlexRegular to switch fonts.
     private readonly double _fontAscenderRatio;
@@ -40,10 +36,6 @@ public partial class SchematicView : UserControl
     {
         InitializeComponent();
         _fontAscenderRatio = MeasureAscenderRatio();
-
-        _fpsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(333) };
-        _fpsTimer.Tick += (_, _) => UpdateFpsDisplay();
-        _fpsTimer.Start();
 
         DataContextChanged += OnDataContextChanged;
 
@@ -1022,14 +1014,4 @@ public partial class SchematicView : UserControl
         }
     }
 
-    // ── FPS display ───────────────────────────────────────────────────────────
-
-    private void UpdateFpsDisplay()
-    {
-        long ticks = Volatile.Read(ref SchematicRenderer.LastFrameTicks);
-        if (ticks <= 0) { FpsText.Text = ""; return; }
-        double ms  = ticks * 1000.0 / Stopwatch.Frequency;
-        double fps = ms > 0 ? 1000.0 / ms : 0;
-        FpsText.Text = $"{ms:F1} ms · {fps:F0} fps";
-    }
 }

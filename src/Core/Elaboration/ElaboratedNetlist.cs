@@ -1,3 +1,4 @@
+using CircuitRF.Core.Devices;
 using CircuitRF.Core.Expressions;
 
 namespace CircuitRF.Core.Elaboration;
@@ -73,5 +74,19 @@ public sealed class ElaboratedNetlist
     {
         if (_seenWarningKeys.Add(key))
             AddWarning(message);
+    }
+
+    /// <summary>
+    /// R-mk-7/R-mk-8 (brief-mklopf-performance-and-messages.md): after stamping a component, drains
+    /// and records any warnings it accumulated during <c>Stamp</c> (e.g. a microstrip validity-range
+    /// violation) — the ONLY route from deep inside a per-frequency <c>Stamp()</c> call, which has no
+    /// netlist reference of its own, into <see cref="Warnings"/> and therefore into the Messages UI.
+    /// A no-op for any model that does not implement <see cref="IReportsWarnings"/>.
+    /// </summary>
+    public void DrainModelWarnings(ComponentModel model)
+    {
+        if (model is IReportsWarnings rw)
+            foreach (var (key, message) in rw.DrainWarnings())
+                AddWarningOnce(key, message);
     }
 }

@@ -363,10 +363,14 @@ public static class SParameterEngine
             }
 
             ec.Model.Stamp(mna, ec, omega);
+            netlist.DrainModelWarnings(ec.Model);
         }
         foreach (var ec in netlist.Components)
             if (ec.Model is MutualInductanceModel)
+            {
                 ec.Model.Stamp(mna, ec, omega);
+                netlist.DrainModelWarnings(ec.Model);
+            }
     }
 
     /// <summary>Builds a device's bias PortVoltages from the DC node-voltage solution, using the same
@@ -542,13 +546,17 @@ public static class SParameterEngine
                 p1.StampAsSParamPort(tempMna, ec);
             else
                 ec.Model.Stamp(tempMna, ec, 1.0);
+            netlist.DrainModelWarnings(ec.Model);
             for (int b = before; b < tempMna.BranchCount; b++)
                 branchLabels[tempMna.NodeCount + b] = $"{ec.ComponentType}:{ec.InstancePath}";
         }
 
         foreach (var ec in netlist.Components)
             if (ec.Model is MutualInductanceModel)
+            {
                 ec.Model.Stamp(tempMna, ec, 1.0);
+                netlist.DrainModelWarnings(ec.Model);
+            }
 
         var ports = new List<PortEntry>();
         foreach (var ec in netlist.Components)

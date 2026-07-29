@@ -2,11 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RfCore;
+using CircuitRF.Core.Devices;
+using CircuitRF.Core.Devices.Microstrip;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
@@ -43,6 +47,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     private bool _canRemoveTopGroup;
     public  bool  CanRemoveTopGroup => _canRemoveTopGroup;
 
+    // ── MKlopf entry-mode switch (Z1/Z2 <-> W1/W2, L <-> F3db) ────────────────
+
+    public IRelayCommand ToggleMklopfImpedanceEntryCommand { get; }
+    public IRelayCommand ToggleMklopfLengthEntryCommand    { get; }
+
     public ParameterEditorViewModel()
     {
         UndoCommand = new RelayCommand(
@@ -58,6 +67,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         ShowSnpFileCommand    = new AsyncRelayCommand(RevealSnpFileAsync,
             () => !string.IsNullOrWhiteSpace(SnpFilePath));
         OpenCvEditorCommand   = new AsyncRelayCommand(OpenCvEditorAsync);
+
+        ToggleMklopfImpedanceEntryCommand = new RelayCommand(ToggleMklopfImpedanceEntry, () => IsMklopfTarget);
+        ToggleMklopfLengthEntryCommand    = new RelayCommand(ToggleMklopfLengthEntry,    () => IsMklopfTarget);
     }
 
     // Subscribe/unsubscribe PropertyChanged on the target schematic's stack so
@@ -248,6 +260,28 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     public bool AllowsAddParameter
         => ComponentTypeRegistry.UserParamTemplate(_target?.Symbol ?? SymbolKind.Ground) is not null;
 
+    // ── MKlopf entry-mode switch (brief-cell-first-and-ui-fixes.md follow-up: R-klp-3a/R-klp-3's
+    // Z1/Z2<->W1/W2 and L<->F3db alternate entry routes had no UI to actually reach them — the
+    // factory's own ContainsKey resolution was already correct; only the "how does the user get
+    // there" affordance was missing.) ─────────────────────────────────────────────────────────────
+
+    /// <summary>True only for a placed MKlopf instance — gates the toggle buttons in the view.</summary>
+    public bool IsMklopfTarget => _target?.Symbol == SymbolKind.Mklopf;
+
+    /// <summary>True when W1/W2 is the currently-authoritative impedance-entry route (Z1/Z2
+    /// otherwise) — the two are mutually exclusive by construction (the toggle always removes one
+    /// pair and adds the other), so checking for either name's presence is sufficient.</summary>
+    public bool MklopfUsesWidthEntry => _target?.Parameters.Any(p => p.Name == "W1") == true;
+
+    /// <summary>True when F3db is the currently-authoritative length-entry route (L otherwise).</summary>
+    public bool MklopfUsesF3dbEntry => _target?.Parameters.Any(p => p.Name == "F3db") == true;
+
+    /// <summary>Button label names the route it switches TO, not the one currently showing — a
+    /// static "Entry mode" label with no indication of the destination would leave the user
+    /// guessing what clicking it does.</summary>
+    public string MklopfImpedanceToggleLabel => MklopfUsesWidthEntry ? "Use Z1/Z2" : "Use W1/W2";
+    public string MklopfLengthToggleLabel     => MklopfUsesF3dbEntry  ? "Use L"     : "Use F3db";
+
     // ── Parameter rows ─────────────────────────────────────────────────────────
 
     public ObservableCollection<ParameterRowViewModel> Rows { get; } = [];
@@ -310,6 +344,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             IsEmptyState = true;
             Rows.Clear();
             OnPropertyChanged(nameof(AllowsAddParameter));
+            NotifyMklopfState();
             UpdateCanRemoveTopGroup();
             return;
         }
@@ -340,8 +375,20 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSnp));
         OnPropertyChanged(nameof(ShowCvEditorButton));
         OnPropertyChanged(nameof(AllowsAddParameter));
+        NotifyMklopfState();
         UpdateCanRemoveTopGroup();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
+    }
+
+    private void NotifyMklopfState()
+    {
+        OnPropertyChanged(nameof(IsMklopfTarget));
+        OnPropertyChanged(nameof(MklopfUsesWidthEntry));
+        OnPropertyChanged(nameof(MklopfUsesF3dbEntry));
+        OnPropertyChanged(nameof(MklopfImpedanceToggleLabel));
+        OnPropertyChanged(nameof(MklopfLengthToggleLabel));
+        ToggleMklopfImpedanceEntryCommand.NotifyCanExecuteChanged();
+        ToggleMklopfLengthEntryCommand.NotifyCanExecuteChanged();
     }
 
     // ── Commit helpers called by the view ─────────────────────────────────────
@@ -441,6 +488,178 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         RemoveTopGroupCommand.NotifyCanExecuteChanged();
     }
 
+    // ── MKlopf entry-mode switch implementation ───────────────────────────────
+
+    /// <summary>Z1/Z2 ⇄ W1/W2 — converts the CURRENT design (whichever route is active) to the
+    /// other route's equivalent values on the resolved substrate, so switching never silently
+    /// changes what the taper actually simulates as.</summary>
+    private void ToggleMklopfImpedanceEntry()
+    {
+        if (_target is null || _schematicVm is null || !IsMklopfTarget) return;
+
+        var (h, t, er, lengthUnit) = ResolveMklopfSubstrate();
+        var reporter = new MicrostripValidityReporter($"{_target.InstanceName} (entry-mode switch)");
+        var newParams = _target.Parameters.Select(p => p.Clone()).ToList();
+
+        if (MklopfUsesWidthEntry)
+        {
+            double w1 = ReadMklopfSiValue(newParams, "W1", 1e-3);
+            double w2 = ReadMklopfSiValue(newParams, "W2", 1e-3);
+            var (z1, z2) = MicrostripKlopfEntryConversion.WidthToImpedance(w1, w2, h, t, er, reporter);
+            ReplacePair(newParams, "W1", "W2",
+                MklopfParam("Z1", FormatOhm(z1), "Ω", UnitDimension.Resistance),
+                MklopfParam("Z2", FormatOhm(z2), "Ω", UnitDimension.Resistance));
+        }
+        else
+        {
+            double z1 = ReadMklopfSiValue(newParams, "Z1", 50.0);
+            double z2 = ReadMklopfSiValue(newParams, "Z2", 50.0);
+            var (w1, w2) = MicrostripKlopfEntryConversion.ImpedanceToWidth(z1, z2, h, t, er, reporter);
+            ReplacePair(newParams, "Z1", "Z2",
+                MklopfParam("W1", FormatLengthInUnit(w1, lengthUnit), lengthUnit, UnitDimension.Length),
+                MklopfParam("W2", FormatLengthInUnit(w2, lengthUnit), lengthUnit, UnitDimension.Length));
+        }
+
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
+    }
+
+    /// <summary>L ⇄ F3db — same "convert the current design, don't reset it" rule as
+    /// <see cref="ToggleMklopfImpedanceEntry"/>, using whichever impedance route is currently active
+    /// (via <see cref="ResolveMklopfZ1Z2"/>) to compute the length↔cutoff duality.</summary>
+    private void ToggleMklopfLengthEntry()
+    {
+        if (_target is null || _schematicVm is null || !IsMklopfTarget) return;
+
+        var (h, t, er, lengthUnit) = ResolveMklopfSubstrate();
+        var reporter = new MicrostripValidityReporter($"{_target.InstanceName} (entry-mode switch)");
+        var newParams = _target.Parameters.Select(p => p.Clone()).ToList();
+        var (z1, z2) = ResolveMklopfZ1Z2(newParams, h, t, er, reporter);
+        double gammaMax = ReadMklopfSiValue(newParams, "GammaMax", 0.05);
+
+        if (MklopfUsesF3dbEntry)
+        {
+            double f3db = ReadMklopfSiValue(newParams, "F3db", 1e9);
+            double l = MicrostripKlopfEntryConversion.F3dbToLength(z1, z2, gammaMax, f3db, h, t, er, reporter);
+            ReplaceSingle(newParams, "F3db", MklopfParam("L", FormatLengthInUnit(l, lengthUnit), lengthUnit, UnitDimension.Length));
+        }
+        else
+        {
+            double l = ReadMklopfSiValue(newParams, "L", 0.02);
+            double f3db = MicrostripKlopfEntryConversion.LengthToF3db(z1, z2, gammaMax, l, h, t, er, reporter);
+            // F3db has no workspace-technology unit convention of its own (DefaultDisplayUnit only
+            // governs LENGTH) — GHz is a fixed, reasonable RF default regardless of PCB vs. MMIC.
+            ReplaceSingle(newParams, "L", MklopfParam("F3db", FormatFrequencyGHz(f3db), "GHz", UnitDimension.Frequency));
+        }
+
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
+    }
+
+    /// <summary>Resolves Z1/Z2 from whichever route is CURRENTLY active in <paramref name="parms"/> —
+    /// used by the length toggle, which needs Z1/Z2 regardless of which impedance-entry route is
+    /// active (it never changes that route itself).</summary>
+    private static (double Z1, double Z2) ResolveMklopfZ1Z2(
+        List<EditableParameter> parms, double h, double t, double er, MicrostripValidityReporter reporter)
+    {
+        if (parms.Any(p => p.Name == "W1"))
+        {
+            double w1 = ReadMklopfSiValue(parms, "W1", 1e-3);
+            double w2 = ReadMklopfSiValue(parms, "W2", 1e-3);
+            return MicrostripKlopfEntryConversion.WidthToImpedance(w1, w2, h, t, er, reporter);
+        }
+        return (ReadMklopfSiValue(parms, "Z1", 50.0), ReadMklopfSiValue(parms, "Z2", 50.0));
+    }
+
+    /// <summary>
+    /// The substrate this instance will actually simulate against: the schematic's own workspace
+    /// technology (the SAME resolution <c>NetExtractor</c> uses at run time), or — when no
+    /// technology resolves — the SAME hardcoded fallback <see cref="ComponentModelFactory"/> uses.
+    /// One set of default numbers, read from one place (<see cref="ComponentModelFactory"/>'s own
+    /// public constants), not re-guessed here. Also resolves the workspace's own LENGTH display
+    /// unit (mil on a PCB board, µm on an MMIC die, mm otherwise — <see cref="MicrostripSubstrateInjection.
+    /// LengthUnitFor"/>, the SAME mapping a freshly-placed component's own W/L defaults already use)
+    /// so a converted W1/W2/L value is written in the workspace's own convention rather than always
+    /// "mm" (owner-reported: the entry-mode switch ignored the workspace's own unit convention).
+    /// </summary>
+    private (double H, double T, double Er, string LengthUnit) ResolveMklopfSubstrate()
+    {
+        var tech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm?.EditModel.SchematicDirectory);
+        var overrides = MicrostripSubstrateInjection.BuildOverrides(tech, out _);
+
+        double h = ComponentModelFactory.DefaultSubstrateHMeters;
+        double t = ComponentModelFactory.DefaultSubstrateTMeters;
+        double er = ComponentModelFactory.DefaultSubstrateEpsR;
+        foreach (var o in overrides)
+        {
+            if (!double.TryParse(o.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) continue;
+            switch (o.Name)
+            {
+                case "H":  h = v;  break;
+                case "T":  t = v;  break;
+                case "Er": er = v; break;
+            }
+        }
+        string lengthUnit = MicrostripSubstrateInjection.LengthUnitFor(tech);
+        return (h, t, er, lengthUnit);
+    }
+
+    /// <summary>Reads a named parameter's value in SI base units (metres/ohms/hertz/dimensionless),
+    /// applying its own displayed unit (via <see cref="UnitNormalizer"/> so a "Ω"/"µm"-style glyph
+    /// resolves the same way <c>NetExtractor</c> resolves it at extraction time). Falls back to
+    /// <paramref name="fallbackSi"/> — never throws — when the parameter is absent or its expression
+    /// isn't a plain number (e.g. it references a variable); switching entry mode on a
+    /// variable-driven field is therefore a best-effort conversion, not an exact one, which is
+    /// stated here rather than silently assumed away.</summary>
+    private static double ReadMklopfSiValue(List<EditableParameter> parms, string name, double fallbackSi)
+    {
+        var p = parms.FirstOrDefault(x => x.Name == name);
+        if (p is null) return fallbackSi;
+        if (!double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double raw))
+            return fallbackSi;
+        double scale = Units.Scale(UnitNormalizer.ToEngineUnit(p.Unit)) ?? 1.0;
+        return raw * scale;
+    }
+
+    private static EditableParameter MklopfParam(string name, string expression, string unit, UnitDimension dim)
+        => new() { Name = name, Expression = expression, Unit = unit, ShowOnSchematic = true, Dimension = dim };
+
+    /// <summary>Removes the pair named <paramref name="oldA"/>/<paramref name="oldB"/> (adjacent by
+    /// construction — every MKlopf entry route is always added/removed as a pair) and inserts the
+    /// two replacements at the same position, preserving row order.</summary>
+    private static void ReplacePair(List<EditableParameter> parms, string oldA, string oldB,
+        EditableParameter newA, EditableParameter newB)
+    {
+        int idxA = parms.FindIndex(p => p.Name == oldA);
+        int idxB = parms.FindIndex(p => p.Name == oldB);
+        int insertAt = idxA >= 0 ? idxA : idxB;
+        parms.RemoveAll(p => p.Name == oldA || p.Name == oldB);
+        insertAt = Math.Clamp(insertAt < 0 ? parms.Count : insertAt, 0, parms.Count);
+        parms.Insert(insertAt, newA);
+        parms.Insert(insertAt + 1, newB);
+    }
+
+    private static void ReplaceSingle(List<EditableParameter> parms, string oldName, EditableParameter newParam)
+    {
+        int idx = parms.FindIndex(p => p.Name == oldName);
+        parms.RemoveAll(p => p.Name == oldName);
+        insertClamped(parms, idx, newParam);
+
+        static void insertClamped(List<EditableParameter> list, int idx, EditableParameter p)
+            => list.Insert(Math.Clamp(idx < 0 ? list.Count : idx, 0, list.Count), p);
+    }
+
+    private static string FormatOhm(double z) => Math.Round(z, 4).ToString("0.####", CultureInfo.InvariantCulture);
+
+    /// <summary>Formats a length in SI metres as a number in the given display unit (the SAME
+    /// <see cref="Units.Scale"/>/<see cref="UnitNormalizer"/> resolution <see cref="ReadMklopfSiValue"/>
+    /// uses in reverse — one shared meters-per-unit table, not a second hand-rolled conversion).</summary>
+    private static string FormatLengthInUnit(double meters, string unit)
+    {
+        double scale = Units.Scale(UnitNormalizer.ToEngineUnit(unit)) ?? 1e-3; // metres per unit; "mm" itself if unrecognized
+        return Math.Round(meters / scale, 4).ToString("0.####", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatFrequencyGHz(double hz)=> Math.Round(hz / 1e9, 6).ToString("0.######", CultureInfo.InvariantCulture);
+
     // ── Model / selection change handlers ─────────────────────────────────────
 
     private void OnSelectionChanged(object? sender, System.EventArgs e) => UpdateFromSelection();
@@ -462,9 +681,16 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             return;
         }
 
-        // If parameter count changed (add/remove group), rebuild rows entirely
-        int expectedCount = VisibleParamCount(_target);
-        if (Rows.Count != expectedCount)
+        // Rebuild rows entirely whenever the visible parameter NAME SET changed — not just the
+        // count. A same-count swap (the MKlopf entry-mode toggle replaces Z1/Z2 with W1/W2, or L
+        // with F3db — 2-for-2 or 1-for-1) would otherwise pass a count-only check and fall through
+        // to RefreshFromModel, which only refreshes EXISTING rows' STAGED values — every existing
+        // row's own EditableParameter reference is already stale at that point regardless
+        // (SetParametersCommand always clones fresh objects into comp.Parameters, even for
+        // untouched params), so a same-count rename would silently leave a row's label AND value
+        // bound to an object no longer in the model at all.
+        var visibleNames = VisibleParamNames(_target);
+        if (Rows.Count != visibleNames.Count || !Rows.Select(r => r.Name).SequenceEqual(visibleNames))
         {
             SetTarget(_target);
             return;
@@ -673,11 +899,14 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             parameters.Add(new EditableParameter { Name = name, Expression = expression, Unit = "", ShowOnSchematic = false });
     }
 
-    private static int VisibleParamCount(EditableComponent comp)
+    private static List<string> VisibleParamNames(EditableComponent comp)
     {
         // SnP uses a custom panel; generic rows are always empty.
-        if (comp.Symbol == SymbolKind.Snp) return 0;
-        return comp.Parameters.Count(p => p.Name is not "NumPorts" and not "NumFreqs" and not "CvData" && !string.IsNullOrEmpty(p.Name));
+        if (comp.Symbol == SymbolKind.Snp) return [];
+        return comp.Parameters
+            .Where(p => p.Name is not "NumPorts" and not "NumFreqs" and not "CvData" && !string.IsNullOrEmpty(p.Name))
+            .Select(p => p.Name)
+            .ToList();
     }
 
     private static bool ParamNameOrderEquals(IEnumerable<EditableParameter> a, IReadOnlyList<EditableParameter> b)

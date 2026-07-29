@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text.RegularExpressions;
+using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
 using RfCore;
 
@@ -27,7 +28,11 @@ public static class ComponentModelFactory
 
     // Types that require resolved parameters at construction time.
     private static readonly HashSet<string> _parameterizedTypes =
-        new(StringComparer.OrdinalIgnoreCase) { "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "PnTone", "NonlinearC", "TLIN" };
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "PnTone",
+            "NonlinearC", "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF",
+        };
 
     /// <summary>
     /// Returns a new ComponentModel, using resolved parameters when needed.
@@ -57,6 +62,18 @@ public static class ComponentModelFactory
             return CreateNonlinearCModel(parameters);
         if (typeName.Equals("TLIN", StringComparison.OrdinalIgnoreCase))
             return CreateTLineModel(parameters);
+        if (typeName.Equals("MLIN", StringComparison.OrdinalIgnoreCase))
+            return CreateMicrostripLineModel(parameters);
+        if (typeName.Equals("MBEND", StringComparison.OrdinalIgnoreCase))
+            return CreateMicrostripBendModel(parameters);
+        if (typeName.Equals("MTEE", StringComparison.OrdinalIgnoreCase))
+            return CreateMicrostripTeeModel(parameters);
+        if (typeName.Equals("MCROSS", StringComparison.OrdinalIgnoreCase))
+            return CreateMicrostripCrossModel(parameters);
+        if (typeName.Equals("MTAPER", StringComparison.OrdinalIgnoreCase))
+            return CreateMicrostripTaperModel(parameters);
+        if (typeName.Equals("MKLOPF", StringComparison.OrdinalIgnoreCase))
+            return CreateMicrostripKlopfModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -444,8 +461,161 @@ public static class ComponentModelFactory
         double z0     = GetReal(parameters, "Z", 50.0);
         double eRad   = GetReal(parameters, "E", Math.PI / 2.0);
         double fRefHz = GetReal(parameters, "F", 1e9);
+        // A = total attenuation at F, in dB. Optional, additive (TLineModel.cs doc comment);
+        // absent ⇒ 0 ⇒ byte-identical lossless behavior for every pre-existing "TLIN:" instance.
+        double aDb    = GetReal(parameters, "A", 0.0);
 
-        return new TLineModel(z0, eRad, fRefHz, name);
+        return new TLineModel(z0, eRad, fRefHz, name, aDb);
+    }
+
+    // ── MLIN / MBend / MTee / MCross (brief-L5a-pcell-contract-and-microstrip.md) ────────────────
+    // W/L/H/T are SI metres (the elaborator applies the "m/mm/um/mil" unit scale, matching TLIN's
+    // own length-unit handling). H/T/Er/Sigma/TanD default to the PCB starter technology's own FR-4
+    // substrate (StarterTechnologies.Pcb2Layer) so a bare ".cnl" instance with no explicit substrate
+    // override still constructs something physically sensible; a real schematic instance gets its
+    // true substrate injected as explicit overrides by the resolver in src/Ui/Schematic/ before this
+    // factory ever runs (Core never resolves a workspace technology itself).
+    // Public so a UI-layer "what substrate am I actually simulating against" computation (the
+    // MKlopf entry-mode switch in ParameterEditorViewModel, which converts Z1/Z2<->W1/W2 and
+    // L<->F3db) can mirror the SAME fallback this factory uses when no H/T/Er override is present —
+    // one set of default numbers, not two.
+    public const double DefaultSubstrateHMeters = 1.6e-3;
+    public const double DefaultSubstrateTMeters = 35e-6;
+    public const double DefaultSubstrateEpsR = 4.4;
+    public const double DefaultSubstrateSigmaSPerM = 5.8e7;
+    public const double DefaultSubstrateTanD = 0.02;
+
+    private static string MicrostripInstanceName(IReadOnlyDictionary<string, Value> parameters, string fallback)
+        => parameters.TryGetValue("Name", out var nm) && nm.Kind == ValueKind.String ? nm.AsString() : fallback;
+
+    private static MicrostripLineModel CreateMicrostripLineModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double w = GetReal(parameters, "W", 0.0);
+        double l = GetReal(parameters, "L", 0.0);
+        double h = GetReal(parameters, "H", DefaultSubstrateHMeters);
+        double t = GetReal(parameters, "T", DefaultSubstrateTMeters);
+        double er = GetReal(parameters, "Er", DefaultSubstrateEpsR);
+        double sigma = GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM);
+        double tanD = GetReal(parameters, "TanD", DefaultSubstrateTanD);
+        double roughness = GetReal(parameters, "Roughness", 0.0);
+        string name = MicrostripInstanceName(parameters, "MLIN");
+
+        return new MicrostripLineModel(w, l, h, t, er, sigma, tanD, name, roughness);
+    }
+
+    private static MicrostripBendModel CreateMicrostripBendModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double w = GetReal(parameters, "W", 0.0);
+        double angleDeg = GetReal(parameters, "Angle", 90.0);
+        // "Miter" is the 3-way mode (0=None, 1=Fifty, 2=Optimal — MicrostripBendMiter's own
+        // declaration order); the older boolean "Mitered" (0/1) is still accepted for backward
+        // compatibility with any hand-authored .cnl predating this brief, mapped None/Optimal (the
+        // shipped default before this brief always meant "the real Douville-James chamfer").
+        MicrostripBendMiter miter;
+        if (parameters.ContainsKey("Miter"))
+            miter = (MicrostripBendMiter)(int)Math.Round(GetReal(parameters, "Miter", 0.0));
+        else
+            miter = GetReal(parameters, "Mitered", 0.0) != 0.0 ? MicrostripBendMiter.Optimal : MicrostripBendMiter.None;
+        double h = GetReal(parameters, "H", DefaultSubstrateHMeters);
+        double t = GetReal(parameters, "T", DefaultSubstrateTMeters);
+        double er = GetReal(parameters, "Er", DefaultSubstrateEpsR);
+        double sigma = GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM);
+        double tanD = GetReal(parameters, "TanD", DefaultSubstrateTanD);
+        string name = MicrostripInstanceName(parameters, "MBEND");
+
+        return new MicrostripBendModel(w, angleDeg, miter, h, t, er, sigma, tanD, name);
+    }
+
+    private static MicrostripTeeModel CreateMicrostripTeeModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double w1 = GetReal(parameters, "W1", 0.0);
+        double w2 = GetReal(parameters, "W2", 0.0);
+        double w3 = GetReal(parameters, "W3", 0.0);
+        double h = GetReal(parameters, "H", DefaultSubstrateHMeters);
+        double t = GetReal(parameters, "T", DefaultSubstrateTMeters);
+        double er = GetReal(parameters, "Er", DefaultSubstrateEpsR);
+        double sigma = GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM);
+        double tanD = GetReal(parameters, "TanD", DefaultSubstrateTanD);
+        string name = MicrostripInstanceName(parameters, "MTEE");
+
+        return new MicrostripTeeModel(w1, w2, w3, h, t, er, sigma, tanD, name);
+    }
+
+    private static MicrostripCrossModel CreateMicrostripCrossModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double w1 = GetReal(parameters, "W1", 0.0);
+        double w2 = GetReal(parameters, "W2", 0.0);
+        double w3 = GetReal(parameters, "W3", 0.0);
+        double w4 = GetReal(parameters, "W4", 0.0);
+        double h = GetReal(parameters, "H", DefaultSubstrateHMeters);
+        double t = GetReal(parameters, "T", DefaultSubstrateTMeters);
+        double er = GetReal(parameters, "Er", DefaultSubstrateEpsR);
+        double sigma = GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM);
+        double tanD = GetReal(parameters, "TanD", DefaultSubstrateTanD);
+        string name = MicrostripInstanceName(parameters, "MCROSS");
+
+        return new MicrostripCrossModel(w1, w2, w3, w4, h, t, er, sigma, tanD, name);
+    }
+
+    private static MicrostripTaperModel CreateMicrostripTaperModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double w1 = GetReal(parameters, "W1", 0.0);
+        double w2 = GetReal(parameters, "W2", 0.0);
+        double l = GetReal(parameters, "L", 0.0);
+        double h = GetReal(parameters, "H", DefaultSubstrateHMeters);
+        double t = GetReal(parameters, "T", DefaultSubstrateTMeters);
+        double er = GetReal(parameters, "Er", DefaultSubstrateEpsR);
+        double sigma = GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM);
+        double tanD = GetReal(parameters, "TanD", DefaultSubstrateTanD);
+        int nOverride = (int)Math.Round(GetReal(parameters, "N", 0.0));
+        string name = MicrostripInstanceName(parameters, "MTAPER");
+
+        return new MicrostripTaperModel(w1, w2, l, h, t, er, sigma, tanD, name, nOverride);
+    }
+
+    private static MicrostripKlopfModel CreateMicrostripKlopfModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double h = GetReal(parameters, "H", DefaultSubstrateHMeters);
+        double t = GetReal(parameters, "T", DefaultSubstrateTMeters);
+        double er = GetReal(parameters, "Er", DefaultSubstrateEpsR);
+        double sigma = GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM);
+        double tanD = GetReal(parameters, "TanD", DefaultSubstrateTanD);
+        var quiet = new MicrostripValidityReporter("(MKLOPF entry-route resolution, not reported)");
+
+        // R-klp-3a: Z1/Z2 entry is authoritative whenever present (fixes the impedances; width
+        // follows the technology); otherwise W1/W2 (fixes the geometry; impedance follows it).
+        // The interactive "last-edited pair wins, never re-derived from the other's displayed
+        // value" linking (mirroring the Scale dialog's ScaleFieldLinker) is a UI-layer concern —
+        // this factory resolves deterministically from whichever pair is actually present, which
+        // is what makes a technology retarget correctly change the W-entry route's design while
+        // leaving the Z-entry route's design fixed (gate 4c).
+        double z1, z2;
+        if (parameters.ContainsKey("Z1") || parameters.ContainsKey("Z2"))
+        {
+            z1 = GetReal(parameters, "Z1", 50.0);
+            z2 = GetReal(parameters, "Z2", 50.0);
+        }
+        else
+        {
+            double w1 = GetReal(parameters, "W1", 0.0);
+            double w2 = GetReal(parameters, "W2", 0.0);
+            (z1, z2) = MicrostripKlopfEntryConversion.WidthToImpedance(w1, w2, h, t, er, quiet);
+        }
+
+        double gammaMax = GetReal(parameters, "GammaMax", 0.05);
+        double offset = GetReal(parameters, "Offset", 0.0);
+        int nOverride = (int)Math.Round(GetReal(parameters, "N", 0.0));
+        string name = MicrostripInstanceName(parameters, "MKLOPF");
+
+        // R-klp-3: L entry is authoritative whenever present; otherwise derive it from F3db via the
+        // SAME eeff-at-center conversion the UI's own entry-mode switch uses (MicrostripKlopfEntryConversion) —
+        // one implementation, not two.
+        double l = parameters.ContainsKey("L")
+            ? GetReal(parameters, "L", 0.0)
+            : MicrostripKlopfEntryConversion.F3dbToLength(
+                z1, z2, gammaMax, GetReal(parameters, "F3db", 1e9), h, t, er, quiet);
+
+        return new MicrostripKlopfModel(z1, z2, l, gammaMax, offset, h, t, er, sigma, tanD, name, nOverride);
     }
 
     private static Complex ToComplex(Value v)

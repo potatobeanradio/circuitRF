@@ -1,6 +1,30 @@
 # circuitRF — PCell Contract Design
 
-**Status:** Draft (rev 1) for review · **Date:** 2026-07-29 · **Phase:** L5a
+**Status:** Shipped (contract version 1) · **Date:** 2026-07-29, implemented 2026-07-28 · **Phase:** L5a
+
+**Implementation note (L5a completion):** the contract described below is implemented as designed.
+One resolution the implementation made, recorded here since it affects how every future reader
+should picture the contract: **the four built-in components (MLIN, MBend, MTee, MCross) are
+SymbolKind-registered exactly like TLIN/R/L/C — not literal on-disk cell folders.** R1's "it is a
+real cell — it has a folder, a `.ccell`" describes the contract's *general shape* (what a future
+user-authored or PDK-shipped PCell must look like); for the phase's own built-ins, that shape is
+satisfied in spirit (they participate in the same parameter/symbol/electrical-model machinery any
+component does) without literal `.ccell` files, via a small built-in `PCellRegistry`
+(`src/Ui/Layout/PCells/`) keyed by the same type name the electrical `ComponentModel` uses. Full
+`CellFolder.ResolvePrimary` integration (a project-tree node, a real placed `LayoutInstance`
+resolving to "generated") is L5's own scope per this brief's guardrail — this phase proves the
+contract through direct API/harness-level tests (`PCellContractTests.cs`,
+`PCellReadOnlyAndRegenerationTests.cs`) rather than full schematic→layout placement. §9's own "the
+host is undecided" note stands unchanged by this — built-ins being C# was already the plan; only
+*where they live on disk* was resolved.
+
+**Parameter validation (§9 open item, now settled for this phase):** a PCell may report an
+out-of-range parameter via a `MicrostripValidityReporter`-shaped mechanism (report once per
+distinct violation, to stderr, naming the parameter and its published bound — R-pc-16). This is
+NOT a hard refusal (the formula still evaluates; R4 of microstrip-models.md is explicit that
+silent extrapolation is the thing to avoid, not evaluation past the bound). Whether a PCell can
+declare a hard *rejection* range (values it refuses outright) remains open beyond what this phase
+needed.
 
 Specifies the **PCell contract** — the interface between circuitRF and a cell whose layout artwork is
 **generated from parameters** rather than stored as a file. This is the interface a future **user-authored

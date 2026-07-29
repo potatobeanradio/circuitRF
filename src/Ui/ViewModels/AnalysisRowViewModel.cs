@@ -43,7 +43,7 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         ParametricSweepAnalysis  => "SW",
         _                        => "?",
     };
-    public string Summary   => ComputeSummary(Analysis);
+    public string Summary   => ComputeSummary(Analysis, _schematicVm.EditModel);
 
     // ── Construction ──────────────────────────────────────────────────────────
 
@@ -55,11 +55,11 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
 
     // ── Summary formatting ────────────────────────────────────────────────────
 
-    private static string ComputeSummary(Core.Design.Analysis a) => a switch
+    private static string ComputeSummary(Core.Design.Analysis a, SchematicEditModel model) => a switch
     {
         DcAnalysis                 => "Operating point",
-        SParameterAnalysis sp      => FormatSpSummary(sp),
-        HarmonicBalanceAnalysis hb => FormatHbSummary(hb),
+        SParameterAnalysis sp      => FormatSpSummary(sp, model),
+        HarmonicBalanceAnalysis hb => FormatHbSummary(hb, model),
         LoadpullPursuitAnalysis lpp => FormatLppSummary(lpp),
         LoadpullAnalysis lp        => FormatLpSummary(lp),
         ParametricSweepAnalysis ps => FormatSweepSummary(ps),
@@ -82,17 +82,19 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         return $"Loadpull · {tuners} · {lp.CompressionExpr} dB, grid {grid}";
     }
 
-    private static string FormatSpSummary(SParameterAnalysis sp)
+    private static string FormatSpSummary(SParameterAnalysis sp, SchematicEditModel model)
     {
         int n = sp.Sweeps.Count;
         var first = sp.Sweeps[0];
-        string range = $"{FormatFreq(first.StartExpr)}–{FormatFreq(first.StopExpr)}";
+        string start = AnalysisPreviewHelper.ComputeFreqSummary(first.StartExpr, first.StartUnit, model);
+        string stop  = AnalysisPreviewHelper.ComputeFreqSummary(first.StopExpr,  first.StopUnit,  model);
+        string range = $"{start}–{stop}";
         return n == 1 ? range : $"{range}, {n} segments";
     }
 
-    private static string FormatHbSummary(HarmonicBalanceAnalysis hb)
+    private static string FormatHbSummary(HarmonicBalanceAnalysis hb, SchematicEditModel model)
     {
-        string tone = hb.ToneExpr == "0" ? "?" : FormatFreq(hb.ToneExpr);
+        string tone = hb.ToneExpr == "0" ? "?" : AnalysisPreviewHelper.ComputeFreqSummary(hb.ToneExpr, hb.ToneUnit, model);
         return $"f₀={tone}, {hb.MaxHarmonicExpr} harmonics";
     }
 
@@ -107,19 +109,4 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
     private static string FmtNum(double v) =>
         v.ToString(System.Math.Abs(v) >= 1e6 || (System.Math.Abs(v) > 0 && System.Math.Abs(v) < 0.01)
             ? "G4" : "G6", CultureInfo.InvariantCulture);
-
-    // Best-effort plain-text frequency formatter: if the expression is a literal double,
-    // render it with SI suffix (GHz/MHz/kHz/Hz); otherwise show the raw expression string.
-    private static string FormatFreq(string expr)
-    {
-        if (double.TryParse(expr, NumberStyles.Float | NumberStyles.AllowLeadingSign,
-                CultureInfo.InvariantCulture, out double hz))
-        {
-            if      (hz >= 1e9)  return $"{hz / 1e9:G3} GHz";
-            else if (hz >= 1e6)  return $"{hz / 1e6:G3} MHz";
-            else if (hz >= 1e3)  return $"{hz / 1e3:G3} kHz";
-            else                 return $"{hz:G3} Hz";
-        }
-        return expr;
-    }
 }

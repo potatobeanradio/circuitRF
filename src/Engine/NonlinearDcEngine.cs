@@ -122,6 +122,7 @@ public sealed class NonlinearDcEngine
             if (ec.Model is PortModel or TermModel) continue;
             try { ec.Model.Stamp(mna, ec, omega: 0.0); }
             catch (NotImplementedException) { }
+            nl.DrainModelWarnings(ec.Model);
         }
 
         _systemSize = mna.Size;  // nodeCount + branchCount

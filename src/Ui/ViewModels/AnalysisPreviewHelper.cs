@@ -71,14 +71,69 @@ internal static class AnalysisPreviewHelper
         // Bare-number + other unit: show preview (confirms the multiplier applied).
         if (IsBareNumber(expr) && fieldUnit == "Hz") return "";
 
+        if (!TryResolveFreqHz(coeff, fieldUnit, model, out double hz, out string? unresolved))
+            return unresolved is not null ? $"unknown: {unresolved}" : "";
+
+        return Prefixed(FormatRealHonest(hz));
+    }
+
+    /// <summary>
+    /// Frequency summary for a display card (brief-cell-first-and-ui-fixes.md R-cc-4) — an
+    /// analysis-list row summarizing a coefficient + unit dropdown field (an S-parameter sweep
+    /// endpoint, an HB tone) as an SI-suffixed frequency (<c>1 GHz</c>, <c>10 MHz</c>, …). Routes
+    /// through the SAME <see cref="TryResolveFreqHz"/> resolution <see cref="ComputeFreqPreview"/>
+    /// uses — var-unit-wins included — so the card and the Add/Edit Analysis dialog can never
+    /// disagree about what a field actually resolves to, which is the defect this method replaces
+    /// (a second, independent formatter — <c>AnalysisRowViewModel.FormatFreq</c> — that re-parsed
+    /// the raw coefficient string as if it were already in hertz, ignoring the unit dropdown
+    /// entirely). Unlike <see cref="ComputeFreqPreview"/>, this NEVER suppresses a bare-Hz literal —
+    /// a card summarizing a plain <c>1000000</c>/<c>Hz</c> field must still read <c>1 MHz</c>, not
+    /// blank — and it falls back to the raw expression text (not a resolved value) when the
+    /// expression can't be evaluated at all for a reason other than an unresolved name.
+    /// </summary>
+    public static string ComputeFreqSummary(string coeff, string fieldUnit, SchematicEditModel model)
+    {
+        string expr = coeff.Trim();
+        if (expr.Length == 0) return "";
+
+        if (!TryResolveFreqHz(coeff, fieldUnit, model, out double hz, out string? unresolved))
+            return unresolved is not null ? $"unknown: {unresolved}" : expr;
+
+        return FormatHzSi(hz);
+    }
+
+    /// <summary>SI-suffixed hertz formatting (GHz/MHz/kHz/Hz) for <see cref="ComputeFreqSummary"/>.</summary>
+    private static string FormatHzSi(double hz)
+    {
+        double a = Math.Abs(hz);
+        if      (a >= 1e9) return $"{hz / 1e9:G3} GHz";
+        else if (a >= 1e6) return $"{hz / 1e6:G3} MHz";
+        else if (a >= 1e3) return $"{hz / 1e3:G3} kHz";
+        else               return $"{hz:G3} Hz";
+    }
+
+    /// <summary>
+    /// The one place a frequency coefficient + site unit is resolved to a raw hertz value — shared
+    /// by <see cref="ComputeFreqPreview"/> (the editor's raw-honest-value hint) and
+    /// <see cref="ComputeFreqSummary"/> (a display card's SI-suffixed text), so the two can never
+    /// independently disagree about what a field resolves to.
+    /// </summary>
+    private static bool TryResolveFreqHz(string coeff, string fieldUnit, SchematicEditModel model,
+        out double hz, out string? unresolvedName)
+    {
+        hz = 0;
+        unresolvedName = null;
+        string expr = coeff.Trim();
+        if (expr.Length == 0) return false;
+
         try
         {
             var scope = DesignScope.BuildResolved(model);
-            double hz = new Evaluator().Eval(expr, scope, unit: fieldUnit).AsReal();
-            return Prefixed(FormatRealHonest(hz));
+            hz = new Evaluator().Eval(expr, scope, unit: fieldUnit).AsReal();
+            return true;
         }
-        catch (UnresolvedNameException ex) { return $"unknown: {ex.Name}"; }
-        catch { return ""; }
+        catch (UnresolvedNameException ex) { unresolvedName = ex.Name; return false; }
+        catch { return false; }
     }
 
     /// <summary>

@@ -76,6 +76,15 @@ public sealed class StackupLayer
     /// <summary>Which drawing layers map onto this stackup layer.</summary>
     public List<LayerKey> DrawingLayers { get; set; } = [];
 
+    /// <summary>docs/sonnet-briefs/brief-L5a-pcell-contract-and-microstrip.md R-pc-9: marks a
+    /// <see cref="StackupKind.Conductor"/> entry as a ground-reference plane, so a microstrip
+    /// component's default substrate resolution ("topmost conductor, nearest ground-DESIGNATED
+    /// conductor beneath") has something other than stack position to key on — an intervening,
+    /// unmarked signal conductor (e.g. an MMIC's second metal level) must never be mistaken for
+    /// ground. Additive, default false, no <c>.ctech</c> <c>FormatVersion</c> bump. Meaningless
+    /// (ignored) on a non-Conductor entry.</summary>
+    public bool IsGroundReference { get; set; }
+
     // ── Via (Kind == StackupKind.Via only) — additive, nullable, no .ctech FormatVersion bump ──────
 
     /// <summary>R-via-2. Null for any non-Via entry.</summary>

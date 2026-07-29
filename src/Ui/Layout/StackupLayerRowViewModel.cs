@@ -55,6 +55,12 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     [ObservableProperty] private string _stagedMur  = "";
     [ObservableProperty] private string _stagedSigmaSm = "";
 
+    /// <summary>brief-technology-editor-units-and-layers.md R-tec-1: settable ONLY on conductor rows
+    /// (meaningless on dielectric/via — <see cref="StackupLayer.IsGroundReference"/>'s own doc
+    /// comment). Commits immediately on toggle, mirroring <c>LayerRowViewModel</c>'s own
+    /// Visible/Selectable checkboxes rather than the staged-text convention used for numeric fields.</summary>
+    [ObservableProperty] private bool _isGroundReference;
+
     public ObservableCollection<DrawingLayerCheckItem> DrawingLayerOptions { get; } = [];
 
     public IRelayCommand RemoveCommand   { get; }
@@ -83,6 +89,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         StagedTanD           = Layer.TanD.ToString("0.######");
         StagedMur            = Layer.Mur.ToString("0.####");
         StagedSigmaSm        = Layer.SigmaSm.ToString("0.###e+0");
+        IsGroundReference    = Layer.IsGroundReference;
 
         DrawingLayerOptions.Clear();
         foreach (var l in _owner.Working.Layers)
@@ -151,6 +158,14 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         var before = _owner.SnapshotJson();
         Layer.SigmaSm = v;
         _owner.CommitEdit(before, $"Set σ of {Layer.Name}");
+    }
+
+    partial void OnIsGroundReferenceChanged(bool value)
+    {
+        if (_isRefreshing || value == Layer.IsGroundReference) return;
+        var before = _owner.SnapshotJson();
+        Layer.IsGroundReference = value;
+        _owner.CommitEdit(before, $"Toggle ground reference for {Layer.Name}");
     }
 
     // Called by DrawingLayerCheckItem on toggle.

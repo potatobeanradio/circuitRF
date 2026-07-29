@@ -346,7 +346,9 @@ public class FileMenuRestructureTests
     {
         var src = ReadRepoFile(Path.Combine("src", "Ui", "Views", "WorkspaceWindow.axaml"));
         Assert.Contains("InputGesture=\"Ctrl+N\"", src);           // New Workspace…
-        Assert.Contains("InputGesture=\"Ctrl+Shift+N\"", src);     // New Schematic (now in New ▸)
+        // Ctrl+Shift+N moved from New Schematic to New Cell (brief-cell-first-and-ui-fixes.md R-cc-2,
+        // which explicitly supersedes this brief's own accelerator-preservation rule for this one binding).
+        Assert.Contains("InputGesture=\"Ctrl+Shift+N\"", src);     // New Cell… (now in New ▸)
         Assert.Contains("InputGesture=\"Ctrl+Shift+D\"", src);     // New Data Display (now in New ▸)
         Assert.Contains("InputGesture=\"Ctrl+O\"", src);           // Open Workspace…
         Assert.Contains("InputGesture=\"Ctrl+S\"", src);           // Save

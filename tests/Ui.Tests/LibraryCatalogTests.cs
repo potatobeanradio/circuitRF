@@ -218,10 +218,19 @@ public class LibraryCatalogTests
     }
 
     [Fact]
-    public void ByCategory_Microstrip_IsEmpty()
+    public void ByCategory_Microstrip_ContainsAllSixBuiltIns()
     {
-        // Microstrip has no built-ins yet.
-        Assert.Empty(LibraryCatalog.ByCategory(ComponentCategory.Microstrip));
+        // brief-L5a-pcell-contract-and-microstrip.md: MLIN/MBend/MTee/MCross are SymbolKind-
+        // registered under the Microstrip category (previously reserved, unpopulated).
+        // brief-mtaper-mklopf.md adds MTaper/MKlopf to the same family.
+        var kinds = LibraryCatalog.ByCategory(ComponentCategory.Microstrip).Select(i => i.Kind).ToList();
+        Assert.Contains(SymbolKind.Mlin, kinds);
+        Assert.Contains(SymbolKind.MBend, kinds);
+        Assert.Contains(SymbolKind.MTee, kinds);
+        Assert.Contains(SymbolKind.MCross, kinds);
+        Assert.Contains(SymbolKind.Mtaper, kinds);
+        Assert.Contains(SymbolKind.Mklopf, kinds);
+        Assert.Equal(6, kinds.Count);
     }
 
     [Fact]

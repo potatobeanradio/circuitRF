@@ -151,6 +151,15 @@ public sealed class Elaborator
         Scope globalScope,
         ElaboratedNetlist netlist)
     {
+        // MStep reservation (brief-L5a-pcell-contract-and-microstrip.md R-pc-14 / microstrip-
+        // models.md §4A): the microstrip width-step discontinuity is deliberately NOT modeled.
+        // Unlike MBend/MTee/MCross, it carries no information the schematic doesn't already have
+        // (fully determined by the two adjacent line widths), so it must be SYNTHESIZED from net
+        // connectivity rather than placed as its own component — a per-component flag would
+        // double-count, since a junction has two sides and any tie-break between them is
+        // arbitrary. If ever built, this is the hook: a single switch on the analysis (not a
+        // per-component flag), classifying junctions by arm count as this per-instance walk
+        // already visits every net binding — 2 = step, 3 = tee, 4 = cross. Revisit after L8.
         foreach (var inst in instances)
         {
             var childPath = instancePathPrefix.Length == 0

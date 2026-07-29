@@ -1,5 +1,6 @@
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Ui.Layout;
 
 namespace CircuitRF.Ui.Schematic;
 
@@ -80,6 +81,12 @@ public static class NetExtractor
         // Pre-resolve cell-ref symbol geometry for this model (mirrors BuildRenderModel.ResolveAllCellRefs).
         // Null when SchematicDirectory is not set; GetEffectivePortDefs falls back to SymbolPortDefs in that case.
         var cellRefResolutions = BuildCellRefResolutions(model);
+
+        // R-pc-8: resolved once per model (not per instance) — every microstrip instance in THIS
+        // schematic frame shares its own document's workspace technology. A sub-cell schematic
+        // resolves its OWN SchematicDirectory (this method runs once per recursion level), so a
+        // sub-cell living in a different workspace still gets its own substrate, matching §5A.2.
+        var microstripTech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(model.SchematicDirectory);
 
         // Detached-port synthetic keys — each detached port gets a unique key that can never
         // be produced by QK() for any finite schematic coordinate, so it will never union with
@@ -206,7 +213,8 @@ public static class NetExtractor
                 continue;
             }
 
-            var inst = EmitInstance(comp, model, cellRefResolutions, uf, QK, netNames, detachedKeys);
+            var inst = EmitInstance(comp, model, cellRefResolutions, uf, QK, netNames, detachedKeys,
+                microstripTech, conflicts);
             if (inst is not null) instances.Add(inst);
         }
 
@@ -724,7 +732,9 @@ public static class NetExtractor
         UnionFind uf,
         Func<double, double, (long, long)> QK,
         Dictionary<(long, long), string> netNames,
-        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys)
+        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys,
+        Technology? microstripTech = null,
+        List<string>? warningsOut = null)
     {
         var reference = ComponentTypeRegistry.EngineReference(comp.Symbol, comp.PortCount);
         // ToneSource with indexed V[1]/Freq[1] format (NumFreqs present) → use V_nTone factory.
@@ -783,7 +793,13 @@ public static class NetExtractor
             // ShowBias is the Tuner family's display-only bias-branch toggle (loadpull.md §1.1) — it
             // drives the glyph only and must NEVER reach the engine, so it is dropped here too. The
             // extracted Instance is therefore identical whether ShowBias is true or false.
-            .Where(p => p.Name is not "CvData" and not "ShowBias")
+            // SignalLayer/GroundReference (brief-technology-editor-units-and-layers.md R-tec-6) are
+            // resolution INPUTS consumed entirely below, within this same method — mirroring how
+            // H/T/Er/Sigma/TanD are resolution OUTPUTS emitted only from here (R-pc-8's "never
+            // declared cell parameters" convention, applied symmetrically): they never reach the
+            // engine as raw overrides, so no .cnl quoting/Elaborator string-param handling is needed
+            // for them at all.
+            .Where(p => p.Name is not "CvData" and not "ShowBias" and not "SignalLayer" and not "GroundReference")
             .Select(p =>
             {
                 var unit = UnitNormalizer.ToEngineUnit(p.Unit);
@@ -803,6 +819,25 @@ public static class NetExtractor
             string pinNet = NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys);
             var tunerNets = new List<string> { pinNet, "0" };   // [Nodes0 = DUT-facing, Nodes1 = ground]
             return new Instance(comp.InstanceName, reference, tunerNets, overrides2);
+        }
+
+        // R-pc-8: microstrip components get their substrate injected as extra parameter overrides,
+        // resolved from the schematic's own workspace technology — the "one parameter list" the
+        // user sees (W/L/Angle/...) is untouched; H/T/Er/Sigma/TanD are never declared cell
+        // parameters (see MicrostripSubstrateInjection's own doc comment).
+        if (MicrostripSubstrateInjection.IsMicrostripKind(comp.Symbol))
+        {
+            // R-tec-6/8: an empty SignalLayer/GroundReference means "follow the technology" — pass
+            // null (never an empty string) so SubstrateResolver's own null-means-default convention
+            // applies unchanged; only a genuinely non-empty override reaches it.
+            string? signalOverride = NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "SignalLayer")?.Expression);
+            string? groundOverride = NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "GroundReference")?.Expression);
+
+            var substrateOverrides = MicrostripSubstrateInjection.BuildOverrides(
+                microstripTech, out var warning, signalOverride, groundOverride);
+            overrides2.AddRange(substrateOverrides);
+            if (warning is not null)
+                warningsOut?.Add($"{comp.InstanceName}: {warning}");
         }
 
         // All built-in primitives: emit terminals in PortIndex order.
@@ -857,6 +892,11 @@ public static class NetExtractor
             result[i] = (portDefs[i].LocalX, portDefs[i].LocalY, i);
         return result;
     }
+
+    /// <summary>R-tec-8: an empty/whitespace-only stored value means "follow the technology" —
+    /// normalizes it to null so <c>SubstrateResolver</c>'s own null-means-default convention applies
+    /// unchanged, rather than treating an empty string as a (trivially failing) named override.</summary>
+    private static string? NonEmptyOrNull(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     // ── Pin helpers ──────────────────────────────────────────────────────────
 

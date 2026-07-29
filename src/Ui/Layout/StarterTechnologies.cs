@@ -82,6 +82,10 @@ public static class StarterTechnologies
                         Kind = StackupKind.Conductor, Name = "Bottom Copper (1 oz)",
                         ThicknessDbu = Um(35), SigmaSm = 5.8e7,
                         DrawingLayers = [bottomCopper],
+                        // R-pc-9: the natural ground-reference plane for a PCB microstrip's default
+                        // (zero-configuration) substrate resolution — Top Copper is the topmost
+                        // conductor, Bottom Copper is the nearest ground-designated conductor beneath.
+                        IsGroundReference = true,
                     },
                     // R-via-4 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md): a plated through-hole
                     // spanning both copper layers across the FR-4, bound to the Drill drawing layer — so
@@ -178,6 +182,14 @@ public static class StarterTechnologies
                     {
                         Kind = StackupKind.Conductor, Name = "Backside Metal",
                         ThicknessDbu = Um(3), SigmaSm = 4.1e7,
+                        // R-pc-9: the ground-reference plane. NOTE this stack's topmost conductor is
+                        // Metal2 (an airbridge/crossover level, §3.1), not Metal1 — a genuinely
+                        // three-conductor stack, which the design doc calls out as the case the
+                        // per-instance Signal/Ground override exists for (unambiguous only on a
+                        // two-conductor board or MMIC). A zero-config MLIN on this starter therefore
+                        // defaults to Metal2↔Backside Metal; an MLIN meant for Metal1 (the
+                        // conventional MMIC RF routing layer) needs the explicit override.
+                        IsGroundReference = true,
                     },
                     // R-via-4: two via entries, because the stackup now carries two metal levels.
                     new StackupLayer

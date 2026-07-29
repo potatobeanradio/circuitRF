@@ -4182,7 +4182,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         catch (Exception ex)
         {
             Messages.Error($"Failed to create cell: {ex.Message}");
+            return; // the cell was never created — nothing further to do.
         }
+
+        // R-cc-1: the cell already exists at this point regardless of what happens next — a failure
+        // here is reported by CreateAndOpenSchematicFileAsync itself and never rolls the cell back.
+        await CreateAndOpenSchematicFileAsync(newCellDir, name, name);
     }
 
     // ── New Cell in workspace root (File menu + tree-header button) ──────────────
@@ -4226,7 +4231,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         catch (Exception ex)
         {
             Messages.Error($"Failed to create cell: {ex.Message}");
+            return; // the cell was never created — nothing further to do.
         }
+
+        // R-cc-1: same as NewCellAsync — the cell already exists regardless of what follows.
+        await CreateAndOpenSchematicFileAsync(newCellDir, name, name);
     }
 
     /// <inheritdoc/>
@@ -4244,7 +4253,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var mainWindow = ResolveOwner(null);
         if (mainWindow is null) return;
 
-        var dialog = new InputNameDialog("New Symbol", "Symbol file name (without extension):");
+        var suggested = ViewFileNameSuggestion.Suggest(cellDir, cellNode.Name, ViewType.Symbol);
+        var dialog = new InputNameDialog("New Symbol", "Symbol file name (without extension):", suggested);
         var name   = await dialog.ShowDialog<string?>(mainWindow);
         if (name is null) return;
 
@@ -4295,19 +4305,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <inheritdoc/>
     public async Task NewSchematicAsync(ProjectTreeNodeViewModel cellNode)
     {
-        var cellDir      = cellNode.AbsolutePath;
-        var schematicDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
-
-        if (!Directory.Exists(schematicDir))
-        {
-            Messages.Error($"Schematic sub-folder not found in '{cellNode.Name}'.");
-            return;
-        }
-
+        var cellDir    = cellNode.AbsolutePath;
         var mainWindow = ResolveOwner(null);
         if (mainWindow is null) return;
 
-        var dialog = new InputNameDialog("New Schematic", "Schematic file name (without extension):");
+        var suggested = ViewFileNameSuggestion.Suggest(cellDir, cellNode.Name, ViewType.Schematic);
+        var dialog = new InputNameDialog("New Schematic", "Schematic file name (without extension):", suggested);
         var name   = await dialog.ShowDialog<string?>(mainWindow);
         if (name is null) return;
 
@@ -4318,19 +4321,41 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return;
         }
 
+        await CreateAndOpenSchematicFileAsync(cellDir, cellNode.Name, name);
+    }
+
+    /// <summary>
+    /// The single schematic-creation path (brief-cell-first-and-ui-fixes.md R-cc-1): writes an empty
+    /// <c>.csch</c> for <paramref name="fileNameWithoutExt"/> under the given cell's schematic
+    /// sub-folder and opens it in a new tab, materialized (a real file path, not a scratch document).
+    /// Used by both the tree's "New Schematic" (after its own name prompt) and New Cell's automatic
+    /// primary schematic (R-cc-1) — one path, never two, so they cannot silently diverge. Reports its
+    /// own failures via <see cref="Messages"/> and returns <c>false</c> rather than throwing, so a
+    /// caller that already created something else (e.g. the cell folder itself) is never forced to
+    /// roll that back just because this step failed.
+    /// </summary>
+    private async Task<bool> CreateAndOpenSchematicFileAsync(string cellDir, string cellName, string fileNameWithoutExt)
+    {
+        var schematicDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
+        if (!Directory.Exists(schematicDir))
+        {
+            Messages.Error($"Schematic sub-folder not found in '{cellName}'.");
+            return false;
+        }
+
         var ext      = CellFolder.ViewExtension(ViewType.Schematic);
-        var filePath = Path.Combine(schematicDir, name + ext);
+        var filePath = Path.Combine(schematicDir, fileNameWithoutExt + ext);
         if (File.Exists(filePath))
         {
-            Messages.Error($"A file named '{name}{ext}' already exists.");
-            return;
+            Messages.Error($"A file named '{fileNameWithoutExt}{ext}' already exists.");
+            return false;
         }
 
         try
         {
             // Write an empty .csch, then open it for authoring.
             var emptyModel = new SchematicEditModel();
-            SchematicPersistence.SaveToFile(filePath, emptyModel, cellName: cellNode.Name);
+            SchematicPersistence.SaveToFile(filePath, emptyModel, cellName: cellName);
 
             _factory.ProjectTreeTool?.Refresh();
 
@@ -4338,15 +4363,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Use BuildSessionVm so wiring matches GetOrCreateSession exactly.
             var vm  = BuildSessionVm(emptyModel);
             RegisterSession(filePath, vm);
-            var doc = new SchematicDocument(name + ext, vm, filePath) { Messages = Messages, Hierarchy = this };
+            var doc = new SchematicDocument(fileNameWithoutExt + ext, vm, filePath) { Messages = Messages, Hierarchy = this };
             _factory.OpenDocument(doc);
             _openDocsByPath[filePath] = doc;
 
             Messages.Success("Created", filePath);
+            return true;
         }
         catch (Exception ex)
         {
             Messages.Error($"Failed to create schematic: {ex.Message}");
+            return false;
         }
     }
 
@@ -4365,7 +4392,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var mainWindow = ResolveOwner(null);
         if (mainWindow is null) return;
 
-        var dialog = new InputNameDialog("New Layout", "Layout file name (without extension):");
+        var suggested = ViewFileNameSuggestion.Suggest(cellDir, cellNode.Name, ViewType.Layout);
+        var dialog = new InputNameDialog("New Layout", "Layout file name (without extension):", suggested);
         var name   = await dialog.ShowDialog<string?>(mainWindow);
         if (name is null) return;
 

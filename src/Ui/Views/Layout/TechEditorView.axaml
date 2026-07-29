@@ -1,10 +1,15 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:conv="using:CircuitRF.Ui.Converters"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Layout.TechEditorView"
              x:DataType="lay:TechDocument"
              Background="{DynamicResource SystemChromeLowColor}">
+
+    <UserControl.Resources>
+        <conv:ToLowerStringConverter x:Key="ToLower"/>
+    </UserControl.Resources>
 
     <UserControl.Styles>
         <Style Selector="TextBlock.colhdr">
@@ -30,16 +35,29 @@
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="8,6">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                     <mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"
                                      Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
                     <TextBlock Text="{Binding ViewModel.Working.Name}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
                     <TextBlock Text="· Technology" Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="12" VerticalAlignment="Center"/>
                 </StackPanel>
-                <Button Grid.Column="1" Content="Undo" Command="{Binding ViewModel.UndoCommand}" FontSize="11" Padding="8,3" Margin="4,0,0,0"/>
-                <Button Grid.Column="2" Content="Redo" Command="{Binding ViewModel.RedoCommand}" FontSize="11" Padding="8,3" Margin="4,0,0,0"/>
-                <Button Grid.Column="3" Content="Save" Command="{Binding ViewModel.SaveCommand}" FontSize="11" Padding="8,3" Margin="4,0,0,0"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="12,0">
+                    <TextBlock Text="Default display unit for new layouts:" FontSize="11" VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"
+                               ToolTip.Tip="Seeds a newly-created layout's own display-unit choice. Never changes any open or already-saved layout — each layout keeps its own unit once created."/>
+                    <ComboBox Classes="cell" ItemsSource="{Binding ViewModel.DisplayUnitOptions}"
+                              SelectedItem="{Binding ViewModel.DefaultDisplayUnit}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={StaticResource ToLower}}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+                <Button Grid.Column="2" Content="Undo" Command="{Binding ViewModel.UndoCommand}" FontSize="11" Padding="8,3" Margin="4,0,0,0"/>
+                <Button Grid.Column="3" Content="Redo" Command="{Binding ViewModel.RedoCommand}" FontSize="11" Padding="8,3" Margin="4,0,0,0"/>
+                <Button Grid.Column="4" Content="Save" Command="{Binding ViewModel.SaveCommand}" FontSize="11" Padding="8,3" Margin="4,0,0,0"/>
             </Grid>
         </Border>
 
@@ -243,6 +261,9 @@
                                                 <TextBox Classes="cell" Width="60" Tag="Sigma"
                                                          Text="{Binding StagedSigmaSm}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
+                                                <CheckBox Content="Ground reference" FontSize="11" Margin="8,0,0,0"
+                                                          IsChecked="{Binding IsGroundReference}"
+                                                          ToolTip.Tip="Marks this conductor as a ground-reference plane for microstrip substrate resolution."/>
                                             </StackPanel>
 
                                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsDielectric}">

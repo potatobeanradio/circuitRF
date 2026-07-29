@@ -71,6 +71,22 @@ public static class SymbolPortDefs
             // TLIN: horizontal 2-port — port 1 left, port 2 right. Both ground-referenced
             // (the reference net is implicit; only these two signal nets are netlisted).
             case SymbolKind.Tline:   return [("1", -200f, 0f), ("2", 200f, 0f)];
+            // MLIN: horizontal 2-port, matching TLIN's own left/right convention.
+            case SymbolKind.Mlin:    return [("1", -200f, 0f), ("2", 200f, 0f)];
+            // MBend: pin 1 left (input arm, R-pc-3's origin/+X convention), pin 2 DOWN — a real
+            // 90° bend, so wiring to pin 2 is a natural vertical run rather than doubling back
+            // horizontally.
+            case SymbolKind.MBend:   return [("1", -200f, 0f), ("2", 0f, 200f)];
+            // MTee: through line left/right (pins 1/2), branch on the bottom (pin 3) — R-pc-3's own
+            // "pin 1 origin, through +X to pin 2, branch +Y to pin 3" convention, mapped onto the
+            // schematic canvas with the branch drawn downward (+Y is down in this codebase).
+            case SymbolKind.MTee:    return [("1", -200f, 0f), ("2", 200f, 0f), ("3", 0f, 200f)];
+            // MCross: four arms, left/right/top/bottom.
+            case SymbolKind.MCross:  return [("1", 200f, 0f), ("2", 0f, -200f), ("3", -200f, 0f), ("4", 0f, 200f)];
+            // MTaper/MKlopf: horizontal 2-port, matching MLIN's own left/right convention (pin 1
+            // is the W1/Z1 end, per R-pc-3/R-klp's own "pin 1 origin, +X" convention).
+            case SymbolKind.Mtaper:  return [("1", -200f, 0f), ("2", 200f, 0f)];
+            case SymbolKind.Mklopf:  return [("1", -200f, 0f), ("2", 200f, 0f)];
             // Tuner: 1-port termination, single DUT-facing pin on the LEFT. The reference net is
             // hard-coded to ground "0" at extraction (NOT a pin) — exposing it as a pin is DEFERRED
             // (loadpull.md §1; can add a 2nd pin later if users need a non-ground reference).

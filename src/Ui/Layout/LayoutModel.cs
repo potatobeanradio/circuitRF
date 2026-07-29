@@ -263,6 +263,20 @@ public sealed class LayoutInstance
     public string? SchematicId { get; set; }
 }
 
+/// <summary>
+/// docs/design/pcell-contract.md R1/R9: marks a <see cref="LayoutView"/> as PCell-generated
+/// rather than hand-drawn — the editor uses this to disable editing tools with a reason
+/// (flatten is the escape hatch) and to know what to re-invoke on a parameter/technology change
+/// (L3b's existing invalidation seam, not a new mechanism). <see cref="GeneratorId"/> is a key
+/// into <c>CircuitRF.Ui.Layout.PCells.PCellRegistry</c>; <see cref="Parameters"/> is the resolved
+/// parameter snapshot (SI values) the generated geometry was last built from.
+/// L5a's four built-ins are SymbolKind-registered (like TLIN/R/L/C), not on-disk cell folders, so
+/// this marker — not a <c>.ccell</c> field — is what makes a <see cref="LayoutView"/> "generated"
+/// for the read-only/regeneration gates in this phase; L5's own schematic→layout work is what
+/// will attach this to a real placed instance's cell.
+/// </summary>
+public sealed record PCellOrigin(string GeneratorId, IReadOnlyDictionary<string, double> Parameters);
+
 // ── Container ───────────────────────────────────────────────────────────────
 
 public sealed class LayoutView
@@ -274,6 +288,10 @@ public sealed class LayoutView
 
     /// <summary>Relative path to a .ctech.</summary>
     public string? TechRef { get; set; }
+
+    /// <summary>Non-null when this view's <see cref="Shapes"/> were produced by a PCell generator
+    /// rather than drawn by hand. See <see cref="PCellOrigin"/>.</summary>
+    public PCellOrigin? PCellOrigin { get; set; }
 
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];

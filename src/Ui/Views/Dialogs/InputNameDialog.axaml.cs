@@ -13,10 +13,14 @@ public partial class InputNameDialog : Window
 {
     public InputNameDialog() => InitializeComponent();
 
-    public InputNameDialog(string title, string prompt) : this()
+    public InputNameDialog(string title, string prompt, string initialText = "") : this()
     {
         Title            = title;
         PromptLabel.Text = prompt;
+        NameBox.Text     = initialText;
+        // Pre-selects whatever initialText supplied (brief-cell-first-and-ui-fixes.md R-cc-3: a
+        // suggested name is pre-selected so typing replaces it outright) — a no-op when initialText
+        // is empty, since SelectAll on empty text selects nothing.
         Opened += (_, _) => { NameBox.Focus(); NameBox.SelectAll(); };
     }
 
