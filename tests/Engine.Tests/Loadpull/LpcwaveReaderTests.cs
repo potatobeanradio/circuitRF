@@ -30,7 +30,7 @@ public class LpcwaveReaderTests
 
     // ── Basic single-freq loadpull file ───────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_Basic_GridPinCounts()
     {
         var path = Path.Combine(LpwaveDir(), "4x150_new_wavecal_24012020.lpcwave");
@@ -43,7 +43,7 @@ public class LpcwaveReaderTests
         Assert.Equal(16, pout.Axis(1).Length); // 16 drive-up rows per grid point
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_Basic_GammaLoadShape()
     {
         var path = Path.Combine(LpwaveDir(), "4x150_new_wavecal_24012020.lpcwave");
@@ -56,7 +56,7 @@ public class LpcwaveReaderTests
         Assert.Equal(DataKind.Complex, gl.DataKind);
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_Basic_FirstGammaIsNearZero()
     {
         // Grid point 001: Gamma=0.000, Phase=-88.9° → Γ ≈ 0 (50 Ω match)
@@ -67,7 +67,7 @@ public class LpcwaveReaderTests
         Near(0.0, gl[0].Magnitude, 1e-6, "|Γ₀|");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_Basic_PinAxisFromPsource()
     {
         // Psource[dBm] appears before PinWaves[dBm] → pinStep axis from Psource
@@ -79,7 +79,7 @@ public class LpcwaveReaderTests
         Near(-7.45, pin[0], 0.05, "pinStep[0] dBm");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_Basic_PoutUnitsAreWatts()
     {
         // Grid point 0 pin step 0: PoutWaves = 3.05 dBm
@@ -93,7 +93,7 @@ public class LpcwaveReaderTests
         Near(poutW, pout[0], 5e-5, "Pout[0,0] W");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_Basic_PAEIsLinear()
     {
         // PAEffWaves[%] at grid point 0, pin step 0: 0.82 % → 0.0082
@@ -104,7 +104,7 @@ public class LpcwaveReaderTests
         Near(0.82, pae[0], 1e-2, "PAE[0,0] %");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_Basic_CanonicalCubesPresent()
     {
         var path = Path.Combine(LpwaveDir(), "4x150_new_wavecal_24012020.lpcwave");
@@ -116,7 +116,7 @@ public class LpcwaveReaderTests
             Assert.True(ds.Contains(name), $"Missing cube: {name}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_Basic_ZLoadIsReasonable()
     {
         // Grid point 001: Γ=0 → Z=50 Ω
@@ -130,7 +130,7 @@ public class LpcwaveReaderTests
 
     // ── OPT-pattern file (no Psource, I1[uA]) ───────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_OPT_GridPinCounts()
     {
         var path = Path.Combine(LpwaveDir(), "compression-LP-OPT-pattern.lpcwave");
@@ -141,7 +141,7 @@ public class LpcwaveReaderTests
         Assert.Equal(34, pout.Axis(1).Length); // 34 drive steps
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_OPT_FirstGamma()
     {
         // Grid point 001: Γ = 0.250 ∠ 99.3°
@@ -153,7 +153,7 @@ public class LpcwaveReaderTests
         Near(99.3,  gl[0].Phase * 180.0 / Math.PI, 2.0,   "∠Γ₀ (deg)");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_OPT_PinAxisFromPinWaves()
     {
         // No Psource col → pinStep from PinWaves[dBm]; first step = -10.96
@@ -164,7 +164,7 @@ public class LpcwaveReaderTests
         Near(-10.96, pin[0], 0.05, "pinStep[0] dBm");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_OPT_BiasISrcUsesUA()
     {
         // I1[uA] → BiasISrc in Amps (µA → A)
@@ -177,7 +177,7 @@ public class LpcwaveReaderTests
         Near(-1.716e-6, bias[0], 1e-8, "BiasISrc[0,0]");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_OPT_PAEIsLinear()
     {
         // Grid 0, step 0: PAEffWaves[%] = 0.08 % → 8e-4
@@ -190,7 +190,7 @@ public class LpcwaveReaderTests
 
     // ── Harmonic-nesting files — parse-without-error + grid count ────────────
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_F0_2F0_GridCount()
     {
         var path = Path.Combine(LpwaveDir(), "4x150_new_wavecal_f0_2f0_24012020.lpcwave");
@@ -200,7 +200,7 @@ public class LpcwaveReaderTests
         Assert.Equal(247, gl.Axis(0).Length); // nested F0×2F0 grid
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_F0_2F0_Variant2_ParsesOk()
     {
         var path = Path.Combine(LpwaveDir(), "4x150_new_wavecal_f0_2f0_24012020 2.lpcwave");
@@ -209,7 +209,7 @@ public class LpcwaveReaderTests
         Assert.True(ds["GammaLoad"].Axis(0).Length > 0, "No grid points");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_F0_2F0_3F0_GridCount()
     {
         var path = Path.Combine(LpwaveDir(), "4x150_new_wavecal_f0_2f0_3f0_24012020.lpcwave");
@@ -221,7 +221,7 @@ public class LpcwaveReaderTests
 
     // ── Sourcepull detection (via synthesized TextReader) ────────────────────
 
-    [Fact]
+    [Fact] // uses an in-memory StringReader, not the lpwave_test_data fixture — no skip needed
     public void LpcwaveReader_SourcepullFile_ParsesOk()
     {
         // A file with "! Load Impedance" is sourcepull (load fixed, source swept).
@@ -251,7 +251,7 @@ public class LpcwaveReaderTests
         Near(90.0,  gl[1].Phase * 180.0 / Math.PI, 1.0,   "∠Γ₁");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveReader_AllFiles_ParseWithoutException()
     {
         foreach (var file in Directory.EnumerateFiles(LpwaveDir(), "*.lpcwave"))

@@ -48,7 +48,7 @@ public sealed class ContourLoadpullGroupPickerTests
         return path;
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task TwoLoadpullGroups_PickerShows_DefaultsToFirst_SwitchUpdatesTrace()
     {
         var spl = SplFile();
@@ -86,7 +86,7 @@ public sealed class ContourLoadpullGroupPickerTests
 
     // Re-run staleness: the run.npy is overwritten at the same path with renamed analyses; an existing
     // contour trace's Analysis picker must reflect the NEW analyses, not the previous run's.
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task ReRun_SamePath_RefreshesAnalysisPicker()
     {
         var spl = SplFile();
@@ -116,7 +116,7 @@ public sealed class ContourLoadpullGroupPickerTests
         finally { File.Delete(path); }
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task SingleLoadpullGroup_PickerHidden()
     {
         var spl = SplFile();

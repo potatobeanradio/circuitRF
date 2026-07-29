@@ -39,7 +39,7 @@ public class LoadpullContourGroupParityTests
         return grouped;
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void GroupedSurface_MatchesFlatSurface()
     {
         var path = SplFile();

@@ -79,40 +79,39 @@ public class NetExtractorLayer3Tests
         Assert.Equal("0", r1.NetBindings[1]);
     }
 
-    // ── Test 2: FetSdd emits gate[0], drain[1], source[2] ────────────────────
+    // ── Test 2: generic Sdd (3-port) terminal order is [1+,1-,2+,2-,3+,3-] ────
+    // The library FET (FetSdd, gate/drain/source at fixed positions) was hard-removed —
+    // brief-housekeeping-tearoff-palette-repo.md §7A: "anything relying on it can be replaced by
+    // an equivalent SDD." This is that equivalent: the SAME terminal-order contract, now proven
+    // against the generic N-port Sdd device every removed FetSdd instance becomes.
 
     [Fact]
-    public void FetSdd_TerminalOrder_GateDrainSource()
+    public void Sdd_3Port_TerminalOrder_MatchesPinIndexContract()
     {
         var model = new SchematicEditModel();
 
-        // FET1 at (0,0) R0: gate=(-200,0), drain=(200,-100), source=(200,100).
-        model.Components.Add(new EditableComponent
-            { InstanceName = "FET1", Symbol = SymbolKind.FetSdd, X = 0, Y = 0 });
+        // Sdd N=3 at (0,0) R0: pin1+ (-200,-300), pin1- (-200,-100),
+        // pin2+ (-200,100), pin2- (-200,300), pin3+ (200,-100), pin3- (200,100).
+        var sdd = new EditableComponent { InstanceName = "X1", Symbol = SymbolKind.Sdd, X = 0, Y = 0 };
+        sdd.Parameters.Add(new EditableParameter { Name = "NumPorts", Expression = "3" });
+        model.Components.Add(sdd);
 
-        // One resistor with port0 at each FET terminal — distinct P-cells.
-        // R_g at (-200,200): port0=(-200,0) = gate.
-        model.Components.Add(Resistor("R_g", -200, 200));
-        // R_d at (200,100): port0=(200,-100) = drain.
-        model.Components.Add(Resistor("R_d", 200, 100));
-        // R_s at (200,300): port0=(200,100) = source.
-        model.Components.Add(Resistor("R_s", 200, 300));
+        // Resistor's own port0 = component center + local(0,-200) (default 2-terminal port defs).
+        model.Components.Add(Resistor("R_1p", -200, -100)); // port0 at (-200,-300) = pin1+
+        model.Components.Add(Resistor("R_3p", 200, 100));   // port0 at (200,-100)  = pin3+
 
         var result = NetExtractor.Extract(model);
 
-        var fet = Inst(result, "FET1");
-        Assert.Equal("SDD", fet.Reference);
-        Assert.Equal(3, fet.NetBindings.Count);
+        var x1 = Inst(result, "X1");
+        Assert.Equal("SDD", x1.Reference);
+        Assert.Equal(6, x1.NetBindings.Count);
 
-        // Terminal 0 = gate = same net as R_g.port0.
-        Assert.Equal(Inst(result, "R_g").NetBindings[0], fet.NetBindings[0]);
-        // Terminal 1 = drain = same net as R_d.port0.
-        Assert.Equal(Inst(result, "R_d").NetBindings[0], fet.NetBindings[1]);
-        // Terminal 2 = source = same net as R_s.port0.
-        Assert.Equal(Inst(result, "R_s").NetBindings[0], fet.NetBindings[2]);
-
-        // Drain and source are different nets — no transposition.
-        Assert.NotEqual(fet.NetBindings[1], fet.NetBindings[2]);
+        // Terminal 0 = pin1+ = same net as R_1p.port0.
+        Assert.Equal(Inst(result, "R_1p").NetBindings[0], x1.NetBindings[0]);
+        // Terminal 4 = pin3+ = same net as R_3p.port0.
+        Assert.Equal(Inst(result, "R_3p").NetBindings[0], x1.NetBindings[4]);
+        // Distinct terminals never share a net just from index proximity.
+        Assert.NotEqual(x1.NetBindings[0], x1.NetBindings[4]);
     }
 
     // ── Test 3: ZPort "1-" grounded → NetBindings[1]="0", RefNetBinding null ───

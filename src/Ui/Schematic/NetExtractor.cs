@@ -186,7 +186,7 @@ public static class NetExtractor
         var termNums = new Dictionary<int, string>(); // Num → first InstanceName
         foreach (var comp in model.Components)
         {
-            if (comp.Symbol != SymbolKind.Term) continue;
+            if (comp.Symbol is not (SymbolKind.Term or SymbolKind.TermG)) continue;
             var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
             if (numParam != null && int.TryParse(numParam.Expression, out int num))
             {
@@ -819,6 +819,19 @@ public static class NetExtractor
             string pinNet = NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys);
             var tunerNets = new List<string> { pinNet, "0" };   // [Nodes0 = DUT-facing, Nodes1 = ground]
             return new Instance(comp.InstanceName, reference, tunerNets, overrides2);
+        }
+
+        // TermG: 1 symbol pin (Term's own port-1 identity) but the engine "Port" model needs 2
+        // declared nets — R-hk-6: reuses Term's model, node 2 permanently tied to ground ("0"),
+        // never a second, parallel port model. Electrically identical to Term with port 2 wired
+        // to GND.
+        if (comp.Symbol is SymbolKind.TermG)
+        {
+            var def = GetEffectivePortDefs(model, comp, cellRefResolutions)[0];
+            var (px, py) = model.PortWorldOf(comp, def);
+            string pinNet = NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys);
+            var termgNets = new List<string> { pinNet, "0" };
+            return new Instance(comp.InstanceName, reference, termgNets, overrides2);
         }
 
         // R-pc-8: microstrip components get their substrate injected as extra parameter overrides,

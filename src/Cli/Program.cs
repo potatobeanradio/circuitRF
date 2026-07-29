@@ -69,6 +69,7 @@ static int RunSparam(string[] args)
     {
         var (lib, tb) = CnlReader.ReadFile(input);
         var nl = new Elaborator(lib).Elaborate(tb);
+        PrintWarnings(nl);
 
         // Prefer typed SParameterAnalysis from the netlist unless --freq was explicitly given.
         double[] freqs;
@@ -120,6 +121,7 @@ static int RunDc(string[] args)
     {
         var (lib, tb) = CnlReader.ReadFile(input);
         var nl = new Elaborator(lib).Elaborate(tb);
+        PrintWarnings(nl);
         Console.Error.WriteLine($"DC analysis: {nl.Components.Count} components (linear)");
         // Phase 3 will add the nonlinear solve; for now, just reports the netlist
         Console.WriteLine("(DC solve not yet implemented — Phase 3)");
@@ -141,6 +143,7 @@ static int RunElab(string[] args)
     {
         var (lib, tb) = CnlReader.ReadFile(args[0]);
         var nl = new Elaborator(lib).Elaborate(tb);
+        PrintWarnings(nl);
         Console.WriteLine($"{nl.Components.Count} component(s), {nl.Nodes.Count} node(s)");
         foreach (var c in nl.Components)
         {
@@ -154,6 +157,18 @@ static int RunElab(string[] args)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// The CLI is headless, so the console IS its warnings channel — unlike the GUI, which drains
+/// <see cref="ElaboratedNetlist.Warnings"/> into the Messages pane instead
+/// (brief-housekeeping-tearoff-palette-repo.md R-hk-9/R-hk-10: <c>ElaboratedNetlist.AddWarning</c>
+/// itself no longer writes to Console.Error, since that was leaking into every GUI run too).
+/// </summary>
+static void PrintWarnings(ElaboratedNetlist nl)
+{
+    foreach (var message in nl.Warnings)
+        Console.Error.WriteLine($"[circuitRF] {message}");
+}
 
 static double ParseHz(string s)
 {

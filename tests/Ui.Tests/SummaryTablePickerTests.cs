@@ -60,7 +60,7 @@ public sealed class SummaryTablePickerTests
 
     // ── Summary analysis picker ────────────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task Summary_TwoAnalyses_PickerShows_SwitchUpdatesPlot()
     {
         var spl = SplFile();
@@ -90,7 +90,7 @@ public sealed class SummaryTablePickerTests
     }
 
     // Re-run staleness: same path, renamed analyses → the summary's Analysis picker must reflect the new run.
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task ReRun_SamePath_RefreshesSummaryAnalysisPicker()
     {
         var spl = SplFile();
@@ -121,7 +121,7 @@ public sealed class SummaryTablePickerTests
 
     // The live ComboBox nulls its SelectedItem while the bound ItemsSource is Cleared during a rebuild.
     // That must NOT re-enter the rebuild and double-add the analyses (the "two sims repeated" bug).
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task Summary_AnalysisPicker_NoDuplicate_WhenComboNullsSelectionDuringClear()
     {
         var spl = SplFile();
@@ -155,7 +155,7 @@ public sealed class SummaryTablePickerTests
         finally { File.Delete(npy); }
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task Summary_SingleAnalysis_PickerHidden()
     {
         var spl = SplFile();

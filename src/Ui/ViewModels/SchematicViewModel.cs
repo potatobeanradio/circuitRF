@@ -2694,9 +2694,10 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (MicrostripSubstrateInjection.IsMicrostripKind(kind))
             MicrostripSubstrateInjection.ApplyTechnologyLengthUnit(comp.Parameters, EditModel.SchematicDirectory);
 
-        // Auto-assign next-free Num for Term (Num placeholder "1" from DefaultParameters is
-        // overwritten here with the actual next-free integer among existing Terms).
-        if (kind == SymbolKind.Term)
+        // Auto-assign next-free Num for Term/TermG (Num placeholder "1" from DefaultParameters is
+        // overwritten here with the actual next-free integer among existing Terms). TermG is the
+        // same s-param port as Term (R-hk-6) so it shares the identical pool.
+        if (kind is SymbolKind.Term or SymbolKind.TermG)
         {
             var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
             if (numParam != null)
@@ -2879,7 +2880,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     private static int NextFreeTermNum(SchematicEditModel model)
     {
         var used = model.Components
-            .Where(c => c.Symbol == SymbolKind.Term || c.Symbol == SymbolKind.P1Tone)
+            .Where(c => c.Symbol is SymbolKind.Term or SymbolKind.TermG or SymbolKind.P1Tone)
             .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Num"))
             .Where(p => p != null && int.TryParse(p!.Expression, out _))
             .Select(p => int.Parse(p!.Expression))

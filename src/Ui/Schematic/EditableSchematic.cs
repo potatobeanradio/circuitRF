@@ -60,14 +60,13 @@ public static class SymbolPortDefs
             // Term: two terminals — "+" (signal, index 0) and "−" (reference, index 1).
             // Pin order is the contract: NetBindings[0]=+ net, NetBindings[1]=− net.
             case SymbolKind.Term:    return [("+", 0f, -200f), ("−", 0f, +200f)];
+            // TermG: Term's port-1 identity only — port 2 is permanently grounded (not a pin).
+            case SymbolKind.TermG:   return [("+", 0f, -200f)];
             // Pin: one connection terminal at the lead tip (horizontal, tip on the right).
             case SymbolKind.Pin:     return [("1", 100f, 0f)];
             // IProbe: two terminals at the bottom, 100 apart, both at y=100.
             // Current flows pin1 (left, np) → pin2 (right, nm).
             case SymbolKind.IProbe:  return [("np", 0f, 100f), ("nm", 100f, 100f)];
-            case SymbolKind.FetSdd:  return [("gate",   -200f,   0f),
-                                             ("drain",   200f, -100f),
-                                             ("source",  200f,  100f)];
             // TLIN: horizontal 2-port — port 1 left, port 2 right. Both ground-referenced
             // (the reference net is implicit; only these two signal nets are netlisted).
             case SymbolKind.Tline:   return [("1", -200f, 0f), ("2", 200f, 0f)];
@@ -281,6 +280,14 @@ public sealed class EditableComponent
     public string         Id           { get; } = Guid.NewGuid().ToString("N")[..12];
     public string         InstanceName { get; set; } = "";
     public SymbolKind     Symbol       { get; set; }
+    /// <summary>
+    /// The original, unrecognized "Symbol" string from a `.csch` file when <see cref="Symbol"/>
+    /// is <see cref="SymbolKind.Unknown"/> (R-hk-19a) — e.g. "FET" after the library FET's hard
+    /// removal (§7A). Null for every ordinary component. Never set by the user; only populated by
+    /// <c>SchematicPersistence</c> on load, and read back by the caller to report the unknown
+    /// component BY NAME rather than silently dropping it.
+    /// </summary>
+    public string?        UnknownSymbolRawName { get; set; }
     /// <summary>
     /// Relative path from the containing schematic's directory to the referenced cell folder.
     /// Null for built-in components (the built-in SymbolKind path is used instead).

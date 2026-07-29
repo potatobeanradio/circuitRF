@@ -30,7 +30,7 @@ public class SplReaderTests
 
     // ── Canonical axis names ──────────────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_1p8GHz_GridPinCounts()
     {
         var path = Path.Combine(SplDataDir(), "Ideal_GaN_FET_1p6_mm_1p8_GHz.spl");
@@ -43,7 +43,7 @@ public class SplReaderTests
         Assert.Equal(70,  pout.Axis(1).Length);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_1p8GHz_GammaLoadShape()
     {
         var path = Path.Combine(SplDataDir(), "Ideal_GaN_FET_1p6_mm_1p8_GHz.spl");
@@ -56,7 +56,7 @@ public class SplReaderTests
         Assert.Equal(DataKind.Complex, gl.DataKind);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_1p8GHz_FirstGammaIsZero()
     {
         // Grid point 0 in the file has gamma_ld1 = 0+0j (50 Ω match)
@@ -68,7 +68,7 @@ public class SplReaderTests
         Near(0.0, g0.Magnitude, 1e-6, "|Γ₀|");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_1p8GHz_PoutUnitsAreWatts()
     {
         // At grid point 0, pin step 0: Pin_avail = -20 dBm → Pout_dBm ≈ -7.57
@@ -83,7 +83,7 @@ public class SplReaderTests
         Near(poutW, pout[0], 1e-7, "Pout[0,0] W");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_1p8GHz_DEIsLinear()
     {
         // Eff_%% ≈ 0.004638 → linear = 0.004638/100 = 4.638e-5
@@ -94,7 +94,7 @@ public class SplReaderTests
         Near(0.004638, de[0], 1e-6, "Efficiency[0,0] %");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_1p8GHz_PavlDbmAxisValues()
     {
         // pinStep axis values = Pin_avail_dBm; first step ≈ -20 dBm
@@ -105,7 +105,7 @@ public class SplReaderTests
         Near(-20.0, pinAxis[0], 0.1, "pinStep[0] dBm");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_1p8GHz_CanonicalCubesPresent()
     {
         var path = Path.Combine(SplDataDir(), "Ideal_GaN_FET_1p6_mm_1p8_GHz.spl");
@@ -116,7 +116,7 @@ public class SplReaderTests
             Assert.True(ds.Contains(name), $"Missing cube: {name}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_1p8GHz_GtIsPositive()
     {
         // Transducer gain should be positive (PA gain ~12-15 dB)
@@ -129,7 +129,7 @@ public class SplReaderTests
 
     // ── 3-frequency file ──────────────────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_3Freq_FreqAxisPresent()
     {
         var path = Path.Combine(SplDataDir(), "GaN_FET_1p6_mm_3_Freq.spl");
@@ -142,7 +142,7 @@ public class SplReaderTests
         Assert.Equal("pinStep",   pout.Axis(2).Name);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_HarmonicaRf_3Freq_GridPinCounts()
     {
         var path = Path.Combine(SplDataDir(), "GaN_FET_1p6_mm_3_Freq.spl");
@@ -156,7 +156,7 @@ public class SplReaderTests
 
     // ── lpcwave-derived .spl dialect ─────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_LpcwaveDerived_GridPinCounts()
     {
         var path = Path.Combine(SplDataDir(), "ConvertedFile.spl");
@@ -170,7 +170,7 @@ public class SplReaderTests
         Assert.Equal(13, pout.Axis(1).Length);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_LpcwaveDerived_FirstGamma()
     {
         // First grid point: gamma_ld1 = 0+0.5j → |Γ| = 0.5, phase = 90°
@@ -182,7 +182,7 @@ public class SplReaderTests
         Near(90.0, gl[0].Phase * 180.0 / Math.PI, 2.0, "∠Γ₀ (deg)");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_LpcwaveDerived_PoutUnitsAreWatts()
     {
         // PoutWaves[dBm] ≈ 16.72 dBm at first point/step → W
@@ -196,7 +196,7 @@ public class SplReaderTests
         Near(poutW, pout[0], 0.002, "Pout[0,0] W");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_LpcwaveDerived_CanonicalCubesPresent()
     {
         var path = Path.Combine(SplDataDir(), "ConvertedFile.spl");
@@ -208,7 +208,7 @@ public class SplReaderTests
 
     // ── TestOut.spl ───────────────────────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SplReader_TestOut_ParsesWithoutThrowing()
     {
         var path = Path.Combine(SplDataDir(), "TestOut.spl");

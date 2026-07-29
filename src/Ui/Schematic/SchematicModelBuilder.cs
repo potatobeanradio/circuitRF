@@ -101,7 +101,7 @@ public static class SchematicModelBuilder
     /// <summary>
     /// Builds a simplified version of the Hero 2 GaN PA schematic for visual testing.
     /// Signal path (left → right, all at y=0):
-    ///   ToneSource(R90) → ZPort → Cap(R90) → FetSdd → Inductor(R90) → ZPort → Port(R270)
+    ///   ToneSource(R90) → ZPort → Cap(R90) → Sdd → Inductor(R90) → ZPort → Port(R270)
     /// Gate bias (vertical, x=gateNodeX): Inductor(R0) → Vdc(R0) → Ground
     /// Drain bias (vertical, x=drainNodeX): Vdc(R0) → Ground
     /// Drive source return: Ground below Vdrive left pin.
@@ -131,9 +131,11 @@ public static class SchematicModelBuilder
         components.Add(MakeComponent("Cblock_g", SymbolKind.Capacitor, 2 * pitch, signalY,
             SymbolRotation.R90, [("C", "1", "µF")]));
 
-        // FET — SDD model (3-port: gate left, drain right-top, source right-bottom; horizontal box)
-        components.Add(MakeComponent("FET1", SymbolKind.FetSdd, 3 * pitch, signalY,
-            SymbolRotation.R0));
+        // FET1 — a plain 3-port SDD standing in for the FET (the library FET was hard-removed,
+        // brief-housekeeping-tearoff-palette-repo.md §7A; "anything relying on it can be replaced
+        // by an equivalent SDD"). Same visual shape (horizontal box) as the removed FetSdd glyph.
+        components.Add(MakeComponent("FET1", SymbolKind.Sdd, 3 * pitch, signalY,
+            SymbolRotation.R0, portCount: 3));
 
         // Lchoke_d: vertical Inductor at R90 → connects horizontally; drain junction at left pin
         components.Add(MakeComponent("Lchoke_d", SymbolKind.Inductor, 4 * pitch, signalY,
@@ -352,7 +354,7 @@ public static class SchematicModelBuilder
         }
 
         // Box symbols stay horizontal regardless of rotation.
-        if (kind is SymbolKind.FetSdd or SymbolKind.Generic)
+        if (kind is SymbolKind.Generic)
             return (cx - 210, cy - 110, cx + 210, cy + 110);
 
         // Vertical 2-terminal symbols: local x ≈ ±65, local y ≈ ±210.
@@ -377,12 +379,6 @@ public static class SchematicModelBuilder
                                   new SchematicPortDef("−", 0, +200, p1)],
             // Pin: one connection terminal at the lead tip — carries the interface port number.
             SymbolKind.Pin    => [new SchematicPortDef("1", 100, 0, p0)],
-            // FetSdd: horizontal box, pins unchanged
-            SymbolKind.FetSdd => [
-                new SchematicPortDef("gate",   -200, 0,    p0),
-                new SchematicPortDef("drain",   200, -100, p1),
-                new SchematicPortDef("source",  200,  100, PortConnectionState.Unconnected),
-            ],
             // Variadic box symbols — both use 2N ± pair generator
             SymbolKind.ZPort => GenerateSddVariadicPorts(portCount > 0 ? portCount : 2),
             SymbolKind.Sdd   => GenerateSddVariadicPorts(portCount > 0 ? portCount : 2),
@@ -430,7 +426,6 @@ public static class SchematicModelBuilder
         SymbolKind.ToneSource    => "V1T",
         SymbolKind.Ground        => "GND",
         SymbolKind.Term          => "Term",
-        SymbolKind.FetSdd        => "X",
         SymbolKind.ZPort         => "Z",
         _                        => "X",
     };

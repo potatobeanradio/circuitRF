@@ -217,7 +217,7 @@ public sealed class ContourTraceCardTests
     }
 
     // ── T11 ───────────────────────────────────────────────────────────────────
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task AddContourTraceCommand_WhenLibraryHasLoadpullEntry_AddsContourTrace()
     {
         var path = FindSplFile();
@@ -734,7 +734,7 @@ public sealed class ContourTraceCardTests
     }
 
     // T37 — §6: AddContourTrace sets LevelMode = Count on the new ContourData
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task AddContourTrace_SetsLevelModeCount()
     {
         var path = FindSplFile();
@@ -756,7 +756,7 @@ public sealed class ContourTraceCardTests
     // ── T38–T39: 7.4h-5 Slice 5e gate tests ──────────────────────────────────
 
     // T38 — §9: AvailableMetrics priority — Pout before PAE before Gp (via real SPL)
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task RebuildMetricList_SplFile_PriorityOrderRespected()
     {
         var path = FindSplFile();
@@ -782,7 +782,7 @@ public sealed class ContourTraceCardTests
     }
 
     // T39 — §10: Non-varying fields absent; name-filtered fields absent
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task RebuildMetricList_SplFile_NameFilteredAndNonVaryingExcluded()
     {
         var path = FindSplFile();
@@ -924,7 +924,7 @@ public sealed class ContourTraceCardTests
     }
 
     // T48 — §4: Second contour inherits first's ColorMap
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task AddContourTrace_SecondTrace_InheritsColorMap()
     {
         var path = FindSplFile();

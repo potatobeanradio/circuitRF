@@ -3069,7 +3069,27 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (_registry.TryGet(key, out var existing))
             return existing!;
         var (editModel, _, _) = SchematicPersistence.LoadFromFile(key);
+        ReportUnknownComponents(editModel, key);
         return RegisterSession(key, BuildSessionVm(editModel));
+    }
+
+    /// <summary>
+    /// R-hk-19a: report every component whose type this build doesn't recognize (e.g. a `.csch`
+    /// naming the hard-removed library FET, §7A) by NAME — instance name + the original unrecognized
+    /// type string — rather than silently rendering it as an unexplained placeholder. Called once,
+    /// right after a fresh load (never on a re-open of an already-registered session, which would
+    /// just repeat the same warning).
+    /// </summary>
+    private void ReportUnknownComponents(SchematicEditModel model, string path)
+    {
+        foreach (var c in model.Components)
+        {
+            if (c.Symbol != SymbolKind.Unknown) continue;
+            Messages.Warning(
+                $"'{c.InstanceName}' has unknown component type \"{c.UnknownSymbolRawName}\" " +
+                $"— it is not recognized by this version of circuitRF and is shown as a placeholder.",
+                path);
+        }
     }
 
     /// <summary>

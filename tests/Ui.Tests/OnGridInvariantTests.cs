@@ -83,7 +83,7 @@ public class OnGridInvariantTests
         PlaceAt(vm, SymbolKind.ToneSource,     600,  600);
         PlaceAt(vm, SymbolKind.Ground,        1200,  600);
         PlaceAt(vm, SymbolKind.Term,             0, 1200);
-        PlaceAt(vm, SymbolKind.FetSdd,         600, 1200);
+        PlaceAt(vm, SymbolKind.TermG,          600, 1200);
         PlaceAt(vm, SymbolKind.ZPort,         1200, 1200);
         PlaceAt(vm, SymbolKind.Sdd,              0, 1800);
         PlaceAt(vm, SymbolKind.Generic,        600, 1800);

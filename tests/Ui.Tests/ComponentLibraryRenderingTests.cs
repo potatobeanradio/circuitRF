@@ -56,66 +56,10 @@ public class ComponentLibraryRenderingTests
         Assert.Contains(0, foundComps);
     }
 
-    // ── Part 3: FET symbol has exactly 5 line primitives, no polygon arrowheads ──
-
-    [Fact]
-    public void FetSdd_Has5LinePrimitives_NoPolygons()
-    {
-        var sym = BuiltInSymbols.Primitives(SymbolKind.FetSdd);
-        var lines    = sym.Primitives.OfType<LinePrimitive>().ToList();
-        var polygons = sym.Primitives.OfType<PolygonPrimitive>().ToList();
-
-        Assert.Equal(5, lines.Count);
-        Assert.Empty(polygons);
-    }
-
-    [Fact]
-    public void FetSdd_DrainAndSourceLeads_AreHorizontal()
-    {
-        var sym   = BuiltInSymbols.Primitives(SymbolKind.FetSdd);
-        var lines  = sym.Primitives.OfType<LinePrimitive>().ToList();
-
-        // Drain: Y1 == Y2 == -100, one end at X=200
-        var drain = lines.FirstOrDefault(l =>
-            System.Math.Abs(l.Y1 - (-100)) < 0.1 && System.Math.Abs(l.Y2 - (-100)) < 0.1);
-        Assert.NotNull(drain);
-        Assert.True(
-            System.Math.Abs(drain.X1 - 200) < 0.1 || System.Math.Abs(drain.X2 - 200) < 0.1,
-            "Drain lead must reach (200,−100)");
-
-        // Source: Y1 == Y2 == +100, one end at X=200
-        var source = lines.FirstOrDefault(l =>
-            System.Math.Abs(l.Y1 - 100) < 0.1 && System.Math.Abs(l.Y2 - 100) < 0.1);
-        Assert.NotNull(source);
-        Assert.True(
-            System.Math.Abs(source.X1 - 200) < 0.1 || System.Math.Abs(source.X2 - 200) < 0.1,
-            "Source lead must reach (200,+100)");
-    }
-
-    [Fact]
-    public void FetSdd_PortDefs_GateDrainSource()
-    {
-        var ports = SymbolPortDefs.For(SymbolKind.FetSdd);
-        Assert.Equal(3, ports.Length);
-
-        // Gate at (-200, 0)
-        var gate = ports[0];
-        Assert.Equal("gate", gate.Name, ignoreCase: true);
-        Assert.Equal(-200f, gate.LocalX, 0.1f);
-        Assert.Equal(0f,    gate.LocalY, 0.1f);
-
-        // Drain at (200, -100)
-        var drain = ports[1];
-        Assert.Equal("drain", drain.Name, ignoreCase: true);
-        Assert.Equal(200f,  drain.LocalX, 0.1f);
-        Assert.Equal(-100f, drain.LocalY, 0.1f);
-
-        // Source at (200, +100)
-        var source = ports[2];
-        Assert.Equal("source", source.Name, ignoreCase: true);
-        Assert.Equal(200f, source.LocalX, 0.1f);
-        Assert.Equal(100f, source.LocalY, 0.1f);
-    }
+    // ── Part 3: the library FET (FetSdd) was hard-removed, brief-housekeeping-tearoff-palette-
+    // repo.md §7A — its dedicated glyph/port-def tests are removed along with the component
+    // itself (there is nothing analogous to assert; see UnknownComponentTypeTests.cs for the
+    // graceful-load coverage of a `.csch` that still names the removed "FET" type).
 
     // ── Part 4: P1Tone has Term-sized box, circle, and sine ─────────────────
 

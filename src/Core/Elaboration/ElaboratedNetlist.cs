@@ -53,7 +53,11 @@ public sealed class ElaboratedNetlist
 
     /// <summary>
     /// Elaboration and engine run-time warnings (buried Terms, duplicate Num, regularization, HB
-    /// convergence issues, etc.). Also written to Console.Error for headless runs.
+    /// convergence issues, etc.). Routed into the UI Messages pane by
+    /// <c>SchematicRunService</c>/<c>WorkspaceViewModel.RunAnalysis</c> — never written to
+    /// Console.Error (brief-housekeeping-tearoff-palette-repo.md R-hk-9/R-hk-10: this was the
+    /// single shared choke point still echoing every warning to the terminal after the prior
+    /// per-model console-writing bugs were fixed).
     /// </summary>
     public IReadOnlyList<string> Warnings => _warnings;
     private readonly List<string> _warnings = [];
@@ -62,7 +66,6 @@ public sealed class ElaboratedNetlist
     public void AddWarning(string message)
     {
         _warnings.Add(message);
-        Console.Error.WriteLine($"[circuitRF] {message}");
     }
 
     /// <summary>

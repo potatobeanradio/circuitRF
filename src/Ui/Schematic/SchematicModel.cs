@@ -17,7 +17,6 @@ public enum SymbolKind
     Term,
     Pin,
     IProbe,
-    FetSdd,
     Sdd,
     ZPort,
     Generic,
@@ -68,6 +67,25 @@ public enum SymbolKind
     /// <summary>Klopfenstein-taper microstrip line (engine "MKLOPF"), brief-mtaper-mklopf.md §2-3.
     /// 2-port, Z1/Z2 (or W1/W2), GammaMax, L (or F3db), Offset, SmoothSteps parameters.</summary>
     Mklopf,
+
+    /// <summary>Term with port 2 permanently grounded, presenting as a 1-port
+    /// (brief-housekeeping-tearoff-palette-repo.md §4). A packaging convenience, not a parallel
+    /// model: reuses <see cref="Term"/>'s own engine reference ("Port") and glyph exactly, with
+    /// <see cref="Ground"/>'s existing glyph placed at Term's own port-2 location — never redrawn,
+    /// never resized. The remaining port keeps Term's port-1 identity ("+", (0,-200)), so a
+    /// schematic that swaps Term+GND for TermG is electrically identical.</summary>
+    TermG,
+
+    /// <summary>Sentinel for a component type this build of circuitRF does not recognize
+    /// (brief-housekeeping-tearoff-palette-repo.md R-hk-19a) — e.g. a `.csch` saved by a newer
+    /// version, or one referencing a since-removed type such as the hard-removed library FET
+    /// (§7A). Never placed by the user; only produced by <c>SchematicPersistence</c> on load.
+    /// The original, unrecognized type string is preserved on
+    /// <see cref="EditableComponent.UnknownSymbolRawName"/> so it can be reported by name rather
+    /// than silently dropped. Renders as a generic placeholder glyph (the existing "unknown kind"
+    /// fallback every switch over <see cref="SymbolKind"/> already has); the rest of the schematic
+    /// still loads and simulates normally around it.</summary>
+    Unknown,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

@@ -255,6 +255,12 @@ dotnet test       # runs the regression suite (engine math, file round-trips, UI
 A green `dotnet test` means your environment is good. (On Windows use the same commands in PowerShell or
 the terminal; on macOS/Linux use any shell.)
 
+**Loadpull/contour test fixtures are not included.** A handful of tests under `Engine.Tests` and
+`Ui.Tests` read real lab-measured GaN FET `.spl`/`.lpcwave` files from `testdata/spl_test_data/` and
+`testdata/lpwave_test_data/`. That data is proprietary and is not committed to the repo (see
+`.gitignore`). On a fresh clone those tests report as **Skipped**, with a reason naming the missing
+path — they never fail. Contact the repo owner if you need the files for full coverage.
+
 ---
 
 ## Running circuitRF

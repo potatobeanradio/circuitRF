@@ -36,7 +36,6 @@ public static class BuiltInSymbols
     private static readonly Symbol _term         = BuildTerm();
     private static readonly Symbol _pin          = BuildPin();
     private static readonly Symbol _iprobe       = BuildIProbe();
-    private static readonly Symbol _fetSdd       = BuildFetSdd();
     private static readonly Symbol _var          = BuildVar();
     private static readonly Symbol _meas         = BuildMeas();
     private static readonly Symbol _generic      = BuildGeneric();
@@ -53,6 +52,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _mcross        = BuildMCross();
     private static readonly Symbol _mtaper        = BuildMtaper();
     private static readonly Symbol _mklopf        = BuildMklopf();
+    private static readonly Symbol _termG         = BuildTermG();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
@@ -114,7 +114,6 @@ public static class BuiltInSymbols
             case SymbolKind.Term:       return _term;
             case SymbolKind.Pin:        return _pin;
             case SymbolKind.IProbe:     return _iprobe;
-            case SymbolKind.FetSdd:     return _fetSdd;
             case SymbolKind.Var:        return _var;
             case SymbolKind.Meas:       return _meas;
             case SymbolKind.P1Tone:     return _p1Tone;
@@ -122,6 +121,7 @@ public static class BuiltInSymbols
             case SymbolKind.Tuner:       return _tuner;
             case SymbolKind.SourceTuner: return _sourceTuner;
             case SymbolKind.LoadTuner:   return _loadTuner;
+            case SymbolKind.TermG:       return _termG;
             default:                    return _generic;
         }
     }
@@ -327,6 +327,29 @@ public static class BuiltInSymbols
         Txt("−", -70, +165, fontSize: PolarityFontSize),                                           // − polarity marker near bottom lead
     ], SymbolKind.Term);
 
+    // ── TermG — Term with port 2 permanently grounded (brief-housekeeping-tearoff-palette-repo.md
+    // §4) ────────────────────────────────────────────────────────────────────────────────────
+    // R-hk-7/R-hk-8: reuses Term's OWN primitives verbatim (no redraw, no resize) plus Ground's
+    // OWN primitives verbatim, translated to sit exactly at Term's port-2 location (0,+200) — the
+    // same point a separately-wired GND would occupy. The combined bounding box is therefore
+    // identical to Term + GND placed separately (§8 gate 7): Term's leads/box/text are untouched,
+    // and Ground's stem+bars simply continue from y=+200 to y=+270 exactly as they would if Ground
+    // itself were placed with its own pin (local origin) at that world point.
+
+    private static Symbol BuildTermG() => Sym(
+        [.. _term.Primitives, .. TranslateLines(_ground.Primitives, 0, 200)],
+        SymbolKind.TermG);
+
+    /// <summary>Translates a primitive list by (dx,dy) — only <see cref="LinePrimitive"/> is needed
+    /// here since <see cref="BuildGround"/> draws Ground entirely out of lines.</summary>
+    private static IEnumerable<SymbolPrimitive> TranslateLines(IReadOnlyList<SymbolPrimitive> prims, double dx, double dy)
+        => prims.Select(p => p switch
+        {
+            LinePrimitive l => new LinePrimitive(l.ColorRole, l.StrokeTier, l.X1 + dx, l.Y1 + dy, l.X2 + dx, l.Y2 + dy),
+            _ => throw new NotSupportedException(
+                $"TranslateLines only supports {nameof(LinePrimitive)} (Ground glyph is line-only); got {p.GetType().Name}."),
+        });
+
     // ── Pin — interface terminal: horizontal hexagon + stem, tip on the right ──
     // Port at (100,0) — on grid (multiple of 100). Total x-span −100..100 = 200.
     // Stem length 50: from hex right vertex (50,0) to port tip (100,0).
@@ -367,18 +390,6 @@ public static class BuiltInSymbols
         L(  -15,   70,   15,  70),         // third
     ], SymbolKind.Ground);
 
-    // ── FET/SDD — clean FET: gate bar, channel bar, straight horizontal leads ──
-    // No box, no arrows. Drain/source leads are perfectly straight horizontal
-    // lines from the channel bar to the on-grid pin tips at (200,∓100).
-    // Channel spans y∈[−100,100] so each lead leaves it horizontally.
-
-    private static Symbol BuildFetSdd() => Sym([
-        L(-200,    0,  -60,    0),   // gate lead (tip at -200,0)
-        L( -60, -100,  -60,  100),   // gate vertical bar
-        L( -40, -100,  -40,  100),   // channel vertical bar (parallel to gate)
-        L( -40, -100,  200, -100),   // drain: PERFECTLY STRAIGHT horizontal lead to pin tip (200,-100)
-        L( -40,  100,  200,  100),   // source: PERFECTLY STRAIGHT horizontal lead to pin tip (200,100)
-    ], SymbolKind.FetSdd);
 
     // ── SDD / ZPort — N-aware rounded-rect body ───────────────────────────────
     // Body edges at ±90; port lead stubs drawn dynamically by the renderer.

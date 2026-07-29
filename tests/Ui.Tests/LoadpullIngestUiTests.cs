@@ -24,7 +24,7 @@ public sealed class LoadpullIngestUiTests
         throw new DirectoryNotFoundException($"testdata/{subDir} not found");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task Library_LoadFileAsync_Spl_AddsEntry_WithKindSpl()
     {
         var path = Path.Combine(TestDataDir("spl_test_data"),
@@ -39,7 +39,7 @@ public sealed class LoadpullIngestUiTests
         Assert.NotNull(lib.Entries[0].Data);
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public async Task Library_LoadFileAsync_Lpcwave_AddsEntry_WithKindLpcwave()
     {
         var path = Path.Combine(TestDataDir("lpwave_test_data"),
@@ -54,7 +54,7 @@ public sealed class LoadpullIngestUiTests
         Assert.NotNull(lib.Entries[0].Data);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task Library_LoadFileAsync_Spl_DataSet_HasCanonicalCubes()
     {
         var path = Path.Combine(TestDataDir("spl_test_data"),
@@ -67,7 +67,7 @@ public sealed class LoadpullIngestUiTests
             Assert.True(ds.Contains(name), $"Missing cube: {name}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public async Task Library_LoadFileAsync_Lpcwave_DataSet_HasCanonicalCubes()
     {
         var path = Path.Combine(TestDataDir("lpwave_test_data"),
@@ -80,7 +80,7 @@ public sealed class LoadpullIngestUiTests
             Assert.True(ds.Contains(name), $"Missing cube: {name}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task Library_LoadFileAsync_Spl_SkipsDuplicates()
     {
         var path = Path.Combine(TestDataDir("spl_test_data"),
@@ -92,7 +92,7 @@ public sealed class LoadpullIngestUiTests
         Assert.Single(lib.Entries);
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public async Task Library_LoadFileAsync_Lpcwave_SkipsDuplicates()
     {
         var path = Path.Combine(TestDataDir("lpwave_test_data"),

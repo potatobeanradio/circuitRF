@@ -251,7 +251,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         _ownerComp   = ownerComp;
         UnitOptions  = ComponentTypeRegistry.UnitOptions(param.Dimension);
         NameEditable = ComponentTypeRegistry.UserParamTemplate(ownerSymbol) is not null;
-        NameWatermark = (ownerSymbol is SymbolKind.Sdd or SymbolKind.FetSdd) ? "I[p,w] · Q[p] · H[w]" : "";
+        NameWatermark = (ownerSymbol is SymbolKind.Sdd) ? "I[p,w] · Q[p] · H[w]" : "";
         EnumOptions  = ComponentTypeRegistry.EnumParamOptions(ownerSymbol, param.Name);
         LayerChoiceKind = ComponentTypeRegistry.LayerChoiceKindFor(ownerSymbol, param.Name);
 
@@ -299,8 +299,8 @@ public sealed partial class ParameterRowViewModel : ObservableObject
             return;
         }
 
-        // SDD-specific grammar validation — only for SDD/FetSdd owners.
-        if (_ownerSymbol is SymbolKind.Sdd or SymbolKind.FetSdd)
+        // SDD-specific grammar validation — only for SDD owners.
+        if (_ownerSymbol is SymbolKind.Sdd)
         {
             if (!TryValidateSddName(name, out string sddError))
             {
@@ -428,7 +428,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// Recomputes the value preview from the current staged expression, evaluated against the
     /// schematic's current state, with the honest "=" / "≈" prefix of expressions.md §9.1. Shows a
     /// preview ONLY when:
-    ///   • the owner is not an SDD/FetSdd device (their equations aren't scalar-evaluable here);
+    ///   • the owner is not an SDD device (its equations aren't scalar-evaluable here);
     ///   • the expression is more than a bare number/blank (no "= 2.5" noise on a literal);
     ///   • evaluation succeeds and yields a single Real (or Complex) value.
     /// Any parse/resolve/cycle/type error, or a non-scalar result (e.g. a Cube/sweep), yields an
@@ -441,8 +441,8 @@ public sealed partial class ParameterRowViewModel : ObservableObject
 
     private string ComputePreview(string expression)
     {
-        // Gate 1: SDD/FetSdd → never evaluate (device-equation params, not scalar).
-        if (_ownerSymbol is SymbolKind.Sdd or SymbolKind.FetSdd) return "";
+        // Gate 1: SDD → never evaluate (device-equation params, not scalar).
+        if (_ownerSymbol is SymbolKind.Sdd) return "";
 
         // Gate 2: blank or bare-number → no preview (a literal needs no "≈").
         string expr = expression.Trim();

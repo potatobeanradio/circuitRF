@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace CircuitRF.Ui.Schematic;
@@ -44,6 +45,12 @@ public sealed class CschComponent
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public SymbolKind Symbol   { get; set; }
+
+    /// <summary>The original "Symbol" string when it didn't match any known <see cref="SymbolKind"/>
+    /// (R-hk-19a) — set by <see cref="Deserialize"/>'s per-component tolerant parse, never written
+    /// by the ordinary path. Null for every recognized component.</summary>
+    public string? UnknownSymbolRawName { get; set; }
+
     public double X            { get; set; }
     public double Y            { get; set; }
 
@@ -210,7 +217,19 @@ public static class SchematicPersistence
     public static (SchematicEditModel model, CschViewState view, string cellName) Deserialize(
         string json, string? cschDirectory = null)
     {
-        var file = JsonSerializer.Deserialize<CschFile>(json, _jsonOpts)
+        // The "Symbol" field is parsed per-component, tolerant of a value naming a type this
+        // build doesn't recognize (R-hk-19a — e.g. a since-removed type, or a file from a newer
+        // version). A single unrecognized component must never abort the WHOLE file: the
+        // Components array is pulled out and parsed element-by-element BEFORE the one-shot typed
+        // deserialize of everything else, so a bad "Symbol" string can never propagate up through
+        // List<CschComponent>'s own converter and fail the entire CschFile.
+        var root = JsonNode.Parse(json) as JsonObject
+            ?? throw new InvalidDataException("Failed to deserialize .csch file.");
+
+        var componentsNode = root["Components"] as JsonArray;
+        root.Remove("Components");
+
+        var file = JsonSerializer.Deserialize<CschFile>(root.ToJsonString(), _jsonOpts)
             ?? throw new InvalidDataException("Failed to deserialize .csch file.");
 
         if (file.FormatVersion != CurrentFormatVersion)
@@ -218,7 +237,73 @@ public static class SchematicPersistence
                 $".csch format_version {file.FormatVersion} does not match " +
                 $"expected {CurrentFormatVersion}. Regenerate the file.");
 
+        if (componentsNode is not null)
+            foreach (var elem in componentsNode)
+                file.Components.Add(ParseComponentTolerant(elem));
+
         return (FromFileModel(file, cschDirectory), file.View, file.CellName);
+    }
+
+    /// <summary>
+    /// Parses one Components[] array element. Falls back to <see cref="SymbolKind.Unknown"/> +
+    /// <see cref="CschComponent.UnknownSymbolRawName"/> (never throws, never drops the component)
+    /// when "Symbol" doesn't match any current <see cref="SymbolKind"/> member — every OTHER field
+    /// on that same element (InstanceName/X/Y/Rotation/etc.) still parses normally when present, so
+    /// the component still renders at its original position, just as a generic placeholder.
+    /// </summary>
+    private static CschComponent ParseComponentTolerant(JsonNode? elem)
+    {
+        if (elem is not JsonObject obj)
+            return new CschComponent { InstanceName = "?", Symbol = SymbolKind.Unknown, UnknownSymbolRawName = "(malformed)" };
+
+        try
+        {
+            return JsonSerializer.Deserialize<CschComponent>(obj.ToJsonString(), _jsonOpts)
+                ?? new CschComponent { InstanceName = "?", Symbol = SymbolKind.Unknown, UnknownSymbolRawName = "(null)" };
+        }
+        catch (JsonException)
+        {
+            string rawSymbol = TryGetString(obj, "Symbol") ?? "(missing)";
+            string instanceName = TryGetString(obj, "InstanceName") ?? "?";
+            try
+            {
+                // Retry with just "Symbol" patched to a known value — recovers every OTHER field
+                // (X/Y/Rotation/Parameters/...) exactly, on the assumption the Symbol string was
+                // the only thing that didn't match. Falls through to the minimal fallback below if
+                // something else on this element was also malformed.
+                var patched = obj.DeepClone().AsObject();
+                patched["Symbol"] = nameof(SymbolKind.Unknown);
+                var cc = JsonSerializer.Deserialize<CschComponent>(patched.ToJsonString(), _jsonOpts);
+                if (cc is not null)
+                {
+                    cc.Symbol = SymbolKind.Unknown;
+                    cc.UnknownSymbolRawName = rawSymbol;
+                    return cc;
+                }
+            }
+            catch (JsonException) { /* fall through to the minimal, always-safe placeholder */ }
+
+            return new CschComponent
+            {
+                InstanceName = instanceName,
+                Symbol = SymbolKind.Unknown,
+                UnknownSymbolRawName = rawSymbol,
+                X = TryGetDouble(obj, "X"),
+                Y = TryGetDouble(obj, "Y"),
+            };
+        }
+    }
+
+    private static double TryGetDouble(JsonObject obj, string prop)
+    {
+        try { return obj[prop]?.GetValue<double>() ?? 0; }
+        catch (Exception) { return 0; }
+    }
+
+    private static string? TryGetString(JsonObject obj, string prop)
+    {
+        try { return obj[prop]?.GetValue<string>(); }
+        catch (Exception) { return null; }
     }
 
     public static (SchematicEditModel model, CschViewState view, string cellName) LoadFromFile(
@@ -252,6 +337,7 @@ public static class SchematicPersistence
                 Symbol = c.Symbol, X = c.X, Y = c.Y,
                 Rotation = c.Rotation, MirrorX = c.MirrorX,
                 Disable = c.Disable,
+                UnknownSymbolRawName = c.UnknownSymbolRawName,
             };
             foreach (var p in c.Parameters)
                 cc.Parameters.Add(new CschParameter
@@ -324,6 +410,7 @@ public static class SchematicPersistence
                 Symbol = cc.Symbol, X = cc.X, Y = cc.Y,
                 Rotation = cc.Rotation, MirrorX = cc.MirrorX,
                 Disable = cc.Disable,
+                UnknownSymbolRawName = cc.UnknownSymbolRawName,
             };
             foreach (var cp in cc.Parameters)
                 c.Parameters.Add(new EditableParameter

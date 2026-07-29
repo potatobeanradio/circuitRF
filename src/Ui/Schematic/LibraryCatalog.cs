@@ -58,7 +58,12 @@ public static class LibraryCatalog
     /// </summary>
     public static IReadOnlyList<PaletteItem> RecentlyUsed(IReadOnlyList<SymbolKind> mru)
     {
-        var byKind = AllItems.ToDictionary(i => i.Kind);
+        // A dynamic type (SNP/ZPort/SDD) now has several AllItems entries sharing one Kind — the
+        // explicit port-count entry points (§2). The MRU list only ever records the Kind that was
+        // placed, so the plain (PortCount == 0) tile is the representative shown in Recently Used.
+        var byKind = AllItems
+            .GroupBy(i => i.Kind)
+            .ToDictionary(g => g.Key, g => g.FirstOrDefault(i => i.PortCount == 0) ?? g.First());
         return mru.Where(byKind.ContainsKey).Select(k => byKind[k]).ToList();
     }
 
@@ -82,6 +87,9 @@ public static class LibraryCatalog
     private static IReadOnlyList<PaletteItem> BuildAllItems()
         => Array.AsReadOnly(
             Enum.GetValues<SymbolKind>()
+                // SymbolKind.Unknown is a load-time-only sentinel (R-hk-19a) — never a real,
+                // user-placeable component, so it must never appear in the palette.
+                .Where(kind => kind != SymbolKind.Unknown)
                 .Select(kind =>
                 {
                     var info = ComponentTypeRegistry.Get(kind);
@@ -94,9 +102,51 @@ public static class LibraryCatalog
                         info.IsCommon,
                         info.ExtraCategories);
                 })
+                .Concat(BuildPortCountEntryPoints())
                 .OrderBy(i => CategorySortKey(i.Category))
                 .ThenBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase)
                 .ToArray());
+
+    /// <summary>
+    /// Explicit S1P/S2P/S3P/S4P, Z1P/Z2P/Z3P, SDD1/SDD2/SDD3 palette entries
+    /// (brief-housekeeping-tearoff-palette-repo.md §2; S4P added on the owner's explicit follow-up
+    /// request). Each is the SAME dynamic type (<see cref="SymbolKind.Snp"/>/<see cref="SymbolKind.ZPort"/>/
+    /// <see cref="SymbolKind.Sdd"/>) as the plain generic tile — an entry point that presets
+    /// <see cref="PaletteItem.PortCount"/> and nothing else, never a parallel component. The
+    /// on-schematic label already tracks the PLACED instance's actual port count via
+    /// <see cref="ComponentTypeRegistry.DisplayName(SymbolKind,int)"/> regardless of how it was
+    /// placed, so these entries add discoverability only. IsCommon is inherited from the dynamic
+    /// type's own registry entry (not hardcoded) so every AllItems row stays consistent with
+    /// <see cref="ComponentTypeRegistry.Get"/> for its Kind.
+    /// </summary>
+    private static IEnumerable<PaletteItem> BuildPortCountEntryPoints()
+    {
+        var sndInfo = ComponentTypeRegistry.Get(SymbolKind.Snp);
+        var zInfo   = ComponentTypeRegistry.Get(SymbolKind.ZPort);
+        var sddInfo = ComponentTypeRegistry.Get(SymbolKind.Sdd);
+
+        for (int n = 1; n <= 4; n++)
+        {
+            yield return new PaletteItem(
+                SymbolKind.Snp, n, ComponentTypeRegistry.DisplayName(SymbolKind.Snp, n),
+                sndInfo.Category, sndInfo.SearchTerms ?? [], sndInfo.IsCommon, sndInfo.ExtraCategories);
+        }
+
+        for (int n = 1; n <= 3; n++)
+        {
+            // R-hk-4: Z1P alone gets a Terminals filter keyword — only Z1P, not Z2P/Z3P.
+            var zExtra = n == 1
+                ? (zInfo.ExtraCategories ?? []).Concat([ComponentCategory.Terminals]).Distinct().ToArray()
+                : zInfo.ExtraCategories;
+            yield return new PaletteItem(
+                SymbolKind.ZPort, n, ComponentTypeRegistry.DisplayName(SymbolKind.ZPort, n),
+                zInfo.Category, zInfo.SearchTerms ?? [], zInfo.IsCommon, zExtra);
+
+            yield return new PaletteItem(
+                SymbolKind.Sdd, n, ComponentTypeRegistry.DisplayName(SymbolKind.Sdd, n),
+                sddInfo.Category, sddInfo.SearchTerms ?? [], sddInfo.IsCommon, sddInfo.ExtraCategories);
+        }
+    }
 
     private static int CategorySortKey(ComponentCategory c) => c switch
     {

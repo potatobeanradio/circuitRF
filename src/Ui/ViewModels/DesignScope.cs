@@ -67,9 +67,9 @@ internal static class DesignScope
         var scope = new Scope("design-preview");
         foreach (var comp in model.Components)
         {
-            // SDD/FetSdd parameters are device-equation slots, not scalar bindings — skip them so
+            // SDD parameters are device-equation slots, not scalar bindings — skip them so
             // they can never shadow a real scalar name or feed a scalar resolve.
-            if (comp.Symbol is SymbolKind.Sdd or SymbolKind.FetSdd) continue;
+            if (comp.Symbol is SymbolKind.Sdd) continue;
 
             foreach (var p in comp.Parameters)
             {

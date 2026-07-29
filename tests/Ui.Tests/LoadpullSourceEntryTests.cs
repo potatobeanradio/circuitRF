@@ -38,7 +38,7 @@ public sealed class LoadpullSourceEntryTests
 
     // ── T1: .spl in KnownLoadpullProvider appears in AvailableDataSources ────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void RefreshAvailableDataSources_SplKnownFile_AppearsWithKindSpl()
     {
         var splPath = SplPath;
@@ -57,7 +57,7 @@ public sealed class LoadpullSourceEntryTests
 
     // ── T2: .lpcwave in KnownLoadpullProvider appears with KindLpcwave ────────
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void RefreshAvailableDataSources_LpcwaveKnownFile_AppearsWithKindLpcwave()
     {
         var lpcPath = LpcwavePath;
@@ -89,7 +89,7 @@ public sealed class LoadpullSourceEntryTests
 
     // ── T4: SelectDataSourceAsync on .spl LogicalId loads the entry ──────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public async Task SelectDataSourceAsync_SplLogicalId_LoadsEntry()
     {
         var splPath = SplPath;
@@ -108,7 +108,7 @@ public sealed class LoadpullSourceEntryTests
 
     // ── T5: SelectDataSourceAsync on .lpcwave LogicalId loads the entry ───────
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public async Task SelectDataSourceAsync_LpcwaveLogicalId_LoadsEntry()
     {
         var lpcPath = LpcwavePath;
@@ -126,7 +126,7 @@ public sealed class LoadpullSourceEntryTests
 
     // ── T6: Touchstone provider still works alongside loadpull provider ────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void RefreshAvailableDataSources_BothProviders_BothAppear()
     {
         var splPath = SplPath;

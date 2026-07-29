@@ -150,6 +150,13 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Terminals,
             SearchTerms: ["Term", "T", "port", "sparam", "termination"],
             IsCommon: true),
+        // TermG: Term with port 2 permanently grounded — a packaging convenience over the SAME
+        // engine component ("Port"), never a parallel model (brief-housekeeping-tearoff-palette-
+        // repo.md §4/R-hk-6).
+        [SymbolKind.TermG]         = new("TermG", "Term",
+            Category: ComponentCategory.Terminals,
+            SearchTerms: ["TermG", "Term", "grounded port", "1-port", "port", "sparam", "termination"],
+            IsCommon: false),
         // Pin: interface terminal — connectivity only, no electrical model.
         // Num/Name labels identify the port; type and instance-name labels suppressed (Num shows instead).
         [SymbolKind.Pin]           = new("Pin",   "Pin",
@@ -162,9 +169,6 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Terminals,
             SearchTerms: ["IProbe", "I", "ammeter", "current", "probe", "meter"],
             IsCommon: true),
-        [SymbolKind.FetSdd]        = new("FET",   "X",
-            Category: ComponentCategory.Other,
-            SearchTerms: ["FET", "SDD", "FetSDD", "transistor", "nonlinear"]),
         [SymbolKind.Sdd]           = new("SDD",   "X",
             Category: ComponentCategory.Other,
             SearchTerms: ["SDD", "Sdd", "nonlinear", "behavioral"]),
@@ -175,6 +179,15 @@ public static class ComponentTypeRegistry
         [SymbolKind.Generic]       = new("X",     "X",
             Category: ComponentCategory.Other,
             SearchTerms: ["X", "Generic", "custom", "subcircuit"]),
+        // Unknown is a load-time-only sentinel (R-hk-19a) — never placed by the user, never shown
+        // in the palette (LibraryCatalog.AllItems filters it out explicitly). A minimal, well-formed
+        // entry still exists here so it participates like any other SymbolKind wherever code assumes
+        // every enum value has registry metadata.
+        [SymbolKind.Unknown]       = new("Unknown", "X",
+            DefaultShowTypeLabel: true, DefaultShowInstanceName: true,
+            Category: ComponentCategory.Other,
+            SearchTerms: ["Unknown", "unrecognized"],
+            IsCommon: false),
         [SymbolKind.Var]           = new("VAR",   "VAR",
             Category: ComponentCategory.Other,
             SearchTerms: ["VAR", "Variable", "var", "vars", "parameter", "sweep"],
@@ -227,26 +240,37 @@ public static class ComponentTypeRegistry
             IsCommon: true),
         // Microstrip built-ins (brief-L5a-pcell-contract-and-microstrip.md) — SymbolKind-registered
         // exactly like Tline, not on-disk cell folders (see src/Ui/CLAUDE.md's L5a note).
+        // ExtraCategories: [TransmissionLine] on every one (brief-housekeeping-tearoff-palette-repo.md
+        // R-hk-5) — a microstrip line IS a transmission line; the enum-typed ExtraCategories set
+        // membership (matched against ComponentCategory.TransmissionLine directly) is what TLIN itself
+        // already carries as its primary Category, so there is no hand-typed keyword string to drift
+        // from TLIN's own spelling.
         [SymbolKind.Mlin]          = new("MLIN",  "ML",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MLIN", "microstrip", "microstrip line", "line", "hammerstad"],
-            IsCommon: true),
+            IsCommon: true,
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         [SymbolKind.MBend]         = new("MBEND", "MB",
             Category: ComponentCategory.Microstrip,
-            SearchTerms: ["MBEND", "microstrip bend", "bend", "corner", "miter"]),
+            SearchTerms: ["MBEND", "microstrip bend", "bend", "corner", "miter"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         [SymbolKind.MTee]         = new("MTEE",  "MT",
             Category: ComponentCategory.Microstrip,
-            SearchTerms: ["MTEE", "microstrip tee", "T-junction", "tee", "stub", "power divider"]),
+            SearchTerms: ["MTEE", "microstrip tee", "T-junction", "tee", "stub", "power divider"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         [SymbolKind.MCross]       = new("MCROSS", "MX",
             Category: ComponentCategory.Microstrip,
-            SearchTerms: ["MCROSS", "microstrip cross", "cross junction", "cross"]),
+            SearchTerms: ["MCROSS", "microstrip cross", "cross junction", "cross"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         // brief-mtaper-mklopf.md
         [SymbolKind.Mtaper]       = new("MTAPER", "MTP",
             Category: ComponentCategory.Microstrip,
-            SearchTerms: ["MTAPER", "microstrip taper", "taper", "linear taper", "width step"]),
+            SearchTerms: ["MTAPER", "microstrip taper", "taper", "linear taper", "width step"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
         [SymbolKind.Mklopf]       = new("MKLOPF", "MKF",
             Category: ComponentCategory.Microstrip,
-            SearchTerms: ["MKLOPF", "klopfenstein", "klopfenstein taper", "taper", "impedance transformer"]),
+            SearchTerms: ["MKLOPF", "klopfenstein", "klopfenstein taper", "taper", "impedance transformer"],
+            ExtraCategories: [ComponentCategory.TransmissionLine]),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -278,7 +302,7 @@ public static class ComponentTypeRegistry
     /// <summary>
     /// Engine type-reference string for a given SymbolKind — what goes in the .cnl Reference field
     /// and into <see cref="Instance.Reference"/>. Differs from <see cref="DisplayName(SymbolKind)"/>
-    /// for FetSdd ("FET" vs "SDD"), ZPort ("Z" vs "Z_Port"), ToneSource ("VTone" vs "V_1Tone").
+    /// for ZPort ("Z" vs "Z_Port"), ToneSource ("VTone" vs "V_1Tone").
     /// </summary>
     public static string EngineReference(SymbolKind kind, int portCount = 0) => kind switch
     {
@@ -288,9 +312,9 @@ public static class ComponentTypeRegistry
         SymbolKind.Vdc           => "Vdc",
         SymbolKind.ToneSource    => "V_1Tone",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
+        SymbolKind.TermG         => "Port",  // SAME engine component as Term — R-hk-6, no parallel model
         SymbolKind.Pin           => "Pin",   // sentinel — IsPrimitive("Pin")==false; elaborator skips it
         SymbolKind.IProbe        => "IProbe",
-        SymbolKind.FetSdd        => "SDD",
         SymbolKind.Sdd           => "SDD",
         SymbolKind.ZPort         => "Z_Port",
         SymbolKind.Ground        => "GND",
@@ -390,6 +414,7 @@ public static class ComponentTypeRegistry
             // DefaultParameters emits Num="1" as a placeholder; CommitPlacement overwrites it
             // with the next-free integer among existing Terms in the schematic.
             case SymbolKind.Term:
+            case SymbolKind.TermG:
                 return [new("Num", "1",  "",  true,  UnitDimension.None),
                         new("Z",   "50", "Ω", true,  UnitDimension.Resistance)];
 
@@ -538,7 +563,7 @@ public static class ComponentTypeRegistry
                         new("SmoothSteps", "1", "", true, UnitDimension.None),
                         .. SignalGroundLayerParams];
 
-            // Ground/FetSdd/Generic need no default parameters.
+            // Ground/Generic need no default parameters.
             default: return [];
         }
     }
@@ -547,13 +572,15 @@ public static class ComponentTypeRegistry
     /// Parses a short type code (case-insensitive) to a SymbolKind and, for variadic-port types,
     /// the parsed port count N.
     ///
-    /// Canonical codes: R, L, C, V, VTone, GND, Term/T, FET/SDD/FetSDD, Z{N}P (any N ≥ 1),
+    /// Canonical codes: R, L, C, V, VTone, GND, Term/T, TermG/TG, SDD, Z{N}P (any N ≥ 1),
     /// SDD{N} (any N ≥ 1), X.
     ///
     /// <list type="bullet">
     ///   <item>Z{N}P (e.g. Z2P, Z5P) → (ZPort, portCount=N)</item>
     ///   <item>SDD{N} (e.g. SDD2, SDD3) → (Sdd, portCount=N)</item>
-    ///   <item>SDD / FET / FetSDD (no number) → (FetSdd, portCount=0) — existing 3-port SDD FET device</item>
+    ///   <item>SDD (no number) → (Sdd, portCount=0) — 2-port default</item>
+    ///   <item>"FET"/"FETSDD" deliberately do NOT parse (R-hk-19: the library FET was hard-removed
+    ///   with no compatibility alias, brief-housekeeping-tearoff-palette-repo.md §7A)</item>
     ///   <item>All other codes → portCount=0 (use type's built-in default from SymbolPortDefs)</item>
     /// </list>
     ///
@@ -576,6 +603,8 @@ public static class ComponentTypeRegistry
             case "GND":    kind = SymbolKind.Ground;        return true;
             case "TERM":
             case "T":      kind = SymbolKind.Term;          return true;
+            case "TERMG":
+            case "TG":     kind = SymbolKind.TermG;         return true;
             case "PIN":    kind = SymbolKind.Pin;           return true;
             case "IPROBE":
             case "IP":     kind = SymbolKind.IProbe;        return true;
@@ -606,9 +635,10 @@ public static class ComponentTypeRegistry
             case "MTP":      kind = SymbolKind.Mtaper;       return true;
             case "MKLOPF":
             case "MKF":      kind = SymbolKind.Mklopf;       return true;
-            case "FET":
-            case "SDD":
-            case "FETSDD": kind = SymbolKind.FetSdd;        return true;  // aliases for the same device; portCount=0 → 3-port default
+            // "FET"/"FETSDD" are deliberately NOT mapped here (R-hk-19: the library FET was hard-
+            // removed with no compatibility alias) — they fall through to Enum.TryParse below,
+            // which fails since "FetSdd" no longer exists, so a typed "FET" correctly does not parse.
+            case "SDD":    kind = SymbolKind.Sdd;            return true;  // bare SDD → portCount=0 (2-port default)
             case "X":      kind = SymbolKind.Generic;       return true;
 
             default:

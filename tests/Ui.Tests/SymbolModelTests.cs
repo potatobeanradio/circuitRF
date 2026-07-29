@@ -556,7 +556,7 @@ public class SymbolPinCommandTests
     [Fact]
     public void FromSymbol_CarriesPortCount()
     {
-        var sym = BuiltInSymbols.Primitives(SymbolKind.FetSdd); // 3-port
+        var sym = BuiltInSymbols.Primitives(SymbolKind.MTee); // 3-port (non-variadic, exactly 3 pins)
         var e   = EditableSymbol.FromSymbol(sym);
         Assert.Equal(3, e.PortCount);
     }

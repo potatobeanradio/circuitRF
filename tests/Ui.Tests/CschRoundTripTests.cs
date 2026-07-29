@@ -22,7 +22,7 @@ public class CschRoundTripTests
         m.Components.Add(new EditableComponent
         {
             InstanceName = "Q1",
-            Symbol       = SymbolKind.FetSdd,
+            Symbol       = SymbolKind.Sdd,
             X            = 600, Y = 200,
             Rotation     = SymbolRotation.R90,
             MirrorX      = true,
@@ -70,7 +70,7 @@ public class CschRoundTripTests
         Assert.True(r1.Parameters[0].ShowOnSchematic);
 
         var q1 = restored.Components.First(c => c.InstanceName == "Q1");
-        Assert.Equal(SymbolKind.FetSdd,   q1.Symbol);
+        Assert.Equal(SymbolKind.Sdd,      q1.Symbol);
         Assert.Equal(SymbolRotation.R90,  q1.Rotation);
         Assert.True(q1.MirrorX);
         Assert.Equal(DisableState.Open,   q1.Disable);

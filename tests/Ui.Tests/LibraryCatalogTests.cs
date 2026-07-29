@@ -27,7 +27,6 @@ public class RegistryPaletteMetadataTests
     [InlineData(SymbolKind.ToneSource,    ComponentCategory.Sources)]
     [InlineData(SymbolKind.Ground,        ComponentCategory.Terminals)]
     [InlineData(SymbolKind.Term,          ComponentCategory.Terminals)]
-    [InlineData(SymbolKind.FetSdd,        ComponentCategory.Other)]
     [InlineData(SymbolKind.Sdd,           ComponentCategory.Other)]
     [InlineData(SymbolKind.ZPort,         ComponentCategory.Other)]
     [InlineData(SymbolKind.Generic,       ComponentCategory.Other)]
@@ -44,7 +43,6 @@ public class RegistryPaletteMetadataTests
     [InlineData(SymbolKind.ToneSource,    true)]
     [InlineData(SymbolKind.Ground,        true)]
     [InlineData(SymbolKind.Term,          true)]
-    [InlineData(SymbolKind.FetSdd,        false)]
     [InlineData(SymbolKind.Sdd,           false)]
     [InlineData(SymbolKind.ZPort,         false)]
     [InlineData(SymbolKind.Generic,       false)]
@@ -91,7 +89,7 @@ public class RegistryPaletteMetadataTests
     {
         Assert.Equal("V_1Tone", ComponentTypeRegistry.EngineReference(SymbolKind.ToneSource));
         Assert.Equal("Z_Port",  ComponentTypeRegistry.EngineReference(SymbolKind.ZPort));
-        Assert.Equal("SDD",     ComponentTypeRegistry.EngineReference(SymbolKind.FetSdd));
+        Assert.Equal("SDD",     ComponentTypeRegistry.EngineReference(SymbolKind.Sdd));
     }
 
     [Fact]
@@ -124,9 +122,18 @@ public class LibraryCatalogTests
     {
         // Demonstrates the contribution point: AllItems is derived from SymbolKind
         // enum + registry — adding an entry makes it appear automatically.
+        // SymbolKind.Unknown is the sole deliberate exception (R-hk-19a): a load-time-only
+        // sentinel, never a real user-placeable component, so it is excluded from the palette.
         var expectedKinds = Enum.GetValues<SymbolKind>().ToHashSet();
+        expectedKinds.Remove(SymbolKind.Unknown);
         var actualKinds   = LibraryCatalog.AllItems.Select(i => i.Kind).ToHashSet();
         Assert.Equal(expectedKinds, actualKinds);
+    }
+
+    [Fact]
+    public void AllItems_NeverContainsUnknown()
+    {
+        Assert.DoesNotContain(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.Unknown);
     }
 
     [Fact]
@@ -256,9 +263,13 @@ public class LibraryCatalogTests
     [Fact]
     public void AllItems_MultiCategoryItem_AppearsOnce()
     {
-        // AllItems lists each SymbolKind once regardless of how many categories it belongs to.
-        var zportCount = LibraryCatalog.AllItems.Count(i => i.Kind == SymbolKind.ZPort);
-        Assert.Equal(1, zportCount);
+        // AllItems lists each (Kind, PortCount) pair once regardless of how many categories it
+        // belongs to. Kind alone is no longer unique in AllItems: brief-housekeeping-tearoff-
+        // palette-repo.md §2 adds explicit port-count entry points (S1P/S2P/S3P/S4P, Z1P/Z2P/Z3P,
+        // SDD1/SDD2/SDD3) that share a Kind with the plain generic tile but differ in PortCount —
+        // the plain ZPort tile (PortCount == 0) itself must still appear exactly once.
+        var plainZPortCount = LibraryCatalog.AllItems.Count(i => i.Kind == SymbolKind.ZPort && i.PortCount == 0);
+        Assert.Equal(1, plainZPortCount);
     }
 
     [Fact]
@@ -308,10 +319,9 @@ public class LibraryCatalogTests
     }
 
     [Fact]
-    public void Common_DoesNotContainFetSddOrGeneric()
+    public void Common_DoesNotContainSddOrGeneric()
     {
         var commonKinds = LibraryCatalog.Common.Select(i => i.Kind).ToHashSet();
-        Assert.DoesNotContain(SymbolKind.FetSdd,  commonKinds);
         Assert.DoesNotContain(SymbolKind.Sdd,     commonKinds);
         Assert.DoesNotContain(SymbolKind.Generic, commonKinds);
     }
