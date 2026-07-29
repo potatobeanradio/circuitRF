@@ -193,6 +193,7 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ActiveViewModelChanged    -= OnActiveViewModelChangedForNav;
             _subscribedDoc.ExportGdsiiRequested       -= OnExportGdsiiRequestedFromMenu;
             _subscribedDoc.ExportDxfRequested         -= OnExportDxfRequestedFromMenu;
+            _subscribedDoc.ExportGerberRequested      -= OnExportGerberRequestedFromMenu;
         }
         _subscribedDoc = DataContext as LayoutDocument;
         if (_subscribedDoc is not null)
@@ -201,6 +202,7 @@ public partial class LayoutEditorView : UserControl
             _subscribedDoc.ActiveViewModelChanged    += OnActiveViewModelChangedForNav;
             _subscribedDoc.ExportGdsiiRequested       += OnExportGdsiiRequestedFromMenu;
             _subscribedDoc.ExportDxfRequested         += OnExportDxfRequestedFromMenu;
+            _subscribedDoc.ExportGerberRequested      += OnExportGerberRequestedFromMenu;
             if (_subscribedDoc.ConsumeActivationFocus()) FocusCanvasDeferred();
         }
         UpdateHierarchyButtonStates();
@@ -232,6 +234,7 @@ public partial class LayoutEditorView : UserControl
     // export entry point (item 5/R-fix-4's own "route every entry point through the same accessor").
     private void OnExportGdsiiRequestedFromMenu() => _ = OnExportGdsiiAsync();
     private void OnExportDxfRequestedFromMenu() => _ = OnExportDxfAsync();
+    private void OnExportGerberRequestedFromMenu() => _ = OnExportGerberAsync();
 
     private void SyncRulers()
     {
@@ -577,9 +580,10 @@ public partial class LayoutEditorView : UserControl
         {
             GdsiiExport.Write(file.Path.LocalPath, plan);
             vm.ReportMessage(
-                $"Exported GDSII to {file.Path.LocalPath} · {plan.CurvedShapesFlattened} curve(s) flattened, " +
+                $"Exported GDSII · {plan.CurvedShapesFlattened} curve(s) flattened, " +
                 $"{plan.HolesKeyholed} hole(s) keyholed, {plan.BitmapsSkipped} bitmap(s) skipped, " +
-                $"{plan.LabelRecordsWritten} label(s) written.");
+                $"{plan.LabelRecordsWritten} label(s) written.",
+                file.Path.LocalPath);
         }
         catch (Exception ex)
         {
@@ -660,13 +664,89 @@ public partial class LayoutEditorView : UserControl
                 LayoutCanvasCtrl.CurrentViewport, canvasAspect, AcadVersion: dialog.AcadVersion);
             var summary = DxfExport.Write(file.Path.LocalPath, plan, options);
             vm.ReportMessage(
-                $"Exported DXF to {file.Path.LocalPath} · {summary.CurvedShapesWritten} curved shape(s), " +
+                $"Exported DXF · {summary.CurvedShapesWritten} curved shape(s), " +
                 $"{summary.HolesAsHatch} hole(s) as HATCH, {summary.BitmapsSkipped} bitmap(s) skipped, " +
-                $"{summary.LabelRecordsWritten} label(s) written.");
+                $"{summary.LabelRecordsWritten} label(s) written.",
+                file.Path.LocalPath);
         }
         catch (Exception ex)
         {
             vm.ReportError($"Export DXF: {ex.Message}");
+        }
+    }
+
+    // ── Export Gerber (docs/sonnet-briefs/brief-L4c-gerber-export.md) — closes Phase L4 ────────────
+    // Mirrors OnExportGdsiiAsync/OnExportDxfAsync's shape, with two differences: Gerber writes MULTIPLE
+    // files (a folder picker replaces the single-file save picker), and the whole design's hierarchy
+    // must flatten first (R-L4c-6) — any cross-technology sub-cell reconciliation resolves through the
+    // SAME LayerMappingDialog paste/retarget/flatten already use, one round trip per distinct pending
+    // sub-cell technology, before the fidelity dialog (which IS the real write, run as a dry run) is
+    // ever shown.
+
+    private async void OnExportGerber(object? sender, RoutedEventArgs e) => await OnExportGerberAsync();
+
+    private async Task OnExportGerberAsync()
+    {
+        if (Vm is not { } vm) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+
+        if (vm.CurrentCellDir is not { Length: > 0 } cellDir)
+        {
+            vm.ReportError("Export Gerber: save this layout to a cell before exporting.");
+            return;
+        }
+
+        var resolvedMappings = new Dictionary<string, IReadOnlyList<LayerMappingRow>>();
+        GerberExport.ExportPlan plan;
+        try
+        {
+            while (true)
+            {
+                plan = GerberExport.Analyze(cellDir, vm.Technology, vm.Model.DbuPerMicron, vm.Model, vm.ResolveTechAt, resolvedMappings);
+                if (!plan.RequiresMappingConfirmation) break;
+
+                var pending = plan.PendingCrossTechMappings.First();
+                var settled = await ResolveLayerMappingAsync("Export Gerber", null, vm.Technology!, pending.Value);
+                if (settled is null) return; // cancelled — abandon the whole export, matches paste/retarget cancel semantics
+                resolvedMappings[pending.Key] = settled;
+            }
+        }
+        catch (Exception ex)
+        {
+            vm.ReportError($"Export Gerber: {ex.Message}");
+            return;
+        }
+
+        if (!plan.HasNothingToReport)
+        {
+            var confirmed = await new GerberExportFidelityDialog(plan).ShowDialog<bool>(owner);
+            if (!confirmed || !plan.CanWrite) return;
+        }
+        else if (!plan.CanWrite)
+        {
+            return;
+        }
+
+        var folder = await owner.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Export Gerber — Choose Output Folder",
+        });
+        if (folder.Count == 0) return;
+
+        var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+        try
+        {
+            var result = GerberExport.Write(folder[0].Path.LocalPath, cellName, plan);
+            vm.ReportMessage(
+                $"Exported Gerber · {result.FilesWritten.Count} file(s) written, " +
+                $"{result.DrillToolsDefined} drill tool(s), {result.DrillHitsWritten} drill hit(s).",
+                folder[0].Path.LocalPath);
+        }
+        catch (Exception ex)
+        {
+            vm.ReportError($"Export Gerber: {ex.Message}");
         }
     }
 
@@ -735,5 +815,24 @@ public partial class LayoutEditorView : UserControl
             : vm.WorkspaceTechDir is { } td ? Path.GetDirectoryName(td)!
             : Path.GetDirectoryName(absoluteTechPath)!;
         return Path.GetRelativePath(baseDir, absoluteTechPath);
+    }
+
+    // ── brief-foreign-documents.md §4 item 2: the edge band's "Open Workspace" affordance ─────────
+    // Mirrors TornOffFileMenuView.RefreshForCurrentWindow's own WorkspaceViewModel resolution — this
+    // view's DataContext is the LayoutDocument, not the WorkspaceViewModel, so the command has to be
+    // reached via the same desktop.Windows scan rather than a XAML binding.
+    private void OnOpenSourceWorkspaceClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LayoutDocument doc) return;
+        if (Avalonia.Application.Current?.ApplicationLifetime
+                is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+            return;
+
+        var vm = desktop.Windows
+            .OfType<WorkspaceWindow>()
+            .Select(w => w.DataContext as ViewModels.WorkspaceViewModel)
+            .FirstOrDefault(v => v is not null);
+
+        vm?.OpenSourceWorkspaceCommand.Execute(doc.SourceWorkspaceCwsPath);
     }
 }

@@ -74,6 +74,15 @@ public static class TechnologyResolver
         return new TechResolution(null, null, TechResolutionSource.None, []);
     }
 
+    /// <summary>
+    /// Loads and validates a technology directly from a known absolute path — the same logic
+    /// <see cref="Resolve"/> itself uses for both its branches, exposed so a caller that already knows
+    /// exactly which file it wants (brief-foreign-documents.md R-fgn-4's session-scoped "pick a
+    /// specific .ctech" override) can reuse it instead of re-deriving a second load path.
+    /// </summary>
+    internal static TechResolution LoadDirect(string path, TechResolutionSource source, TechnologyCache cache)
+        => Load(path, source, cache);
+
     private static TechResolution Load(string path, TechResolutionSource source, TechnologyCache cache)
     {
         Technology? tech;

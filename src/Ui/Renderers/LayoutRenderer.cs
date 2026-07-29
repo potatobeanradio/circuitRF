@@ -549,17 +549,25 @@ public static partial class LayoutRenderer
     }
 
     /// <summary>Draws a not-yet-committed shape above every layer, in its own resolved layer
-    /// color, with a faint fill and a dashed outline so it reads as provisional. Reuses
+    /// color, with a dashed outline so it reads as provisional. Reuses
     /// <see cref="BuildShapePath"/> — no second geometry path for the ghost. Never touches
     /// <c>unknownLayers</c>: an uncommitted shape's layer choice isn't a gap to warn about — if it
     /// is placed, the very next frame's normal per-shape resolution will do that. Shared by the L1b
-    /// in-progress draw ghost (one shape) and the L1f paste-ghost preview (a whole fragment).</summary>
+    /// in-progress draw ghost (one shape) and the L1f paste-ghost preview (a whole fragment).
+    ///
+    /// <b>docs/sonnet-briefs/brief-drag-fill-reopened.md, R-dgf-3:</b> the fill uses the layer's OWN
+    /// <see cref="LayerDef.FillOpacity"/> (the same alpha <c>DrawLayer</c> computes for the committed
+    /// shape), not a fixed low alpha — a prior fixed alpha=60 measured at a consistent ~0.67-0.69× the
+    /// committed shape's contrast against the canvas background regardless of layer color (muted or
+    /// saturated) or theme (light or dark), i.e. the cause was opacity, not color as first suspected;
+    /// the dashed outline (unchanged) is what marks a ghost as provisional, so the fill does not need
+    /// to be faint to carry that meaning.</summary>
     private static void DrawGhostShape(SKCanvas canvas, LayoutShape ghost, Dictionary<LayerKey, LayerDef>? layerMap, PathSpace ps, double scaleUm)
     {
-        Rgba rgba = layerMap is not null && layerMap.TryGetValue(ghost.Layer, out var found)
-            ? found.Color
-            : FallbackPalette.For(ghost.Layer).Color;
-        var color = new SKColor(rgba.R, rgba.G, rgba.B);
+        LayerDef def = layerMap is not null && layerMap.TryGetValue(ghost.Layer, out var found)
+            ? found
+            : FallbackPalette.For(ghost.Layer);
+        var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
 
         if (ghost is LabelShape label)
         {
@@ -579,7 +587,8 @@ public static partial class LayoutRenderer
         using var shapePath = ghost is BitmapShape bmp ? BuildBitmapPlacementRectPath(bmp, ps) : BuildShapePath(ghost, ps);
         if (shapePath is null || shapePath.IsEmpty) return;
 
-        using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(60) };
+        byte fillAlpha = (byte)System.Math.Clamp(System.Math.Round(def.FillOpacity * 255.0), 0, 255);
+        using var fillPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = color.WithAlpha(fillAlpha) };
         using var strokePaint = new SKPaint
         {
             IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 0, Color = color.WithAlpha(220),
@@ -727,7 +736,23 @@ public static partial class LayoutRenderer
             }
 
             // ── Individual per-shape darkening tier — R-L2c-3's path cache applies HERE only ──────
-            if (opts.PathCache is { } cache)
+            //
+            // brief-drag-fill-still-outline-only.md: LayoutPathCache is keyed by shape INDEX only — a
+            // cache hit returns the (LocalPath, RefX, RefY) built the LAST time that index was drawn,
+            // never comparing the `shape` argument against what produced the cached entry. During a
+            // live move-drag, `shape` above is the translated preview clone (`dragOverrides[index]`),
+            // but its geometry is translation-invariant in shape-LOCAL space, so a cache hit silently
+            // reused the PRE-drag RefX/RefY — painting the fill+geometry-stroke at the shape's original,
+            // undragged position while `DrawSelectionOutlines` (never cached, rebuilt fresh every frame
+            // from the same translated shape) correctly tracked the cursor. Net effect: a stationary
+            // filled shape left behind, with only its accent SELECTION outline visibly moving — exactly
+            // "the ghost is still an outline during dragging," and it explains why instances (whose own
+            // cache, `_cellCompileCache` in LayoutRenderer.Instances.cs, caches only translation-
+            // invariant COMPILED GEOMETRY and always recomputes the placement matrix fresh per frame)
+            // never showed this. Fix: bypass the cache for a shape currently being drag-previewed — a
+            // drag selection is always small, so this costs nothing, and it matches this codebase's
+            // existing "drags never touch a cache" rule already applied to the L2b spatial index.
+            if (opts.PathCache is { } cache && !dragOverrides.ContainsKey(index))
             {
                 var (localPath, refX, refY) = cache.GetOrBuild(index, shape, ps.DbuToUm, counters, out _);
                 if (localPath.IsEmpty) continue;
@@ -1052,7 +1077,15 @@ public static partial class LayoutRenderer
                 break;
 
             case ViaShape via:
-                path.AddCircle(ps.X(via.X), ps.Y(via.Y), ps.Len(via.PadSize / 2.0));
+                // docs/sonnet-briefs/brief-via-primitive-and-stackup.md §4.1: render as an ANNULUS, pad
+                // filled in the layer colour with the barrel punched out via an opposite-winding inner
+                // circle (the same "hole" technique AddHoleRings already uses for Polygon/Curve, just
+                // via SKPathDirection instead of a reversed vertex list, since a circle has no vertex
+                // list of its own) — a solid disc would hide exactly the pad/drill relationship that
+                // matters (R-via-1's whole reason PadSize and DrillSize are two independent fields).
+                path.AddCircle(ps.X(via.X), ps.Y(via.Y), ps.Len(via.PadSize / 2.0), SKPathDirection.Clockwise);
+                if (via.DrillSize > 0)
+                    path.AddCircle(ps.X(via.X), ps.Y(via.Y), ps.Len(via.DrillSize / 2.0), SKPathDirection.CounterClockwise);
                 break;
 
             default:

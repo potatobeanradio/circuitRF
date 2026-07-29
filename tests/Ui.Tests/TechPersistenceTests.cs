@@ -45,7 +45,9 @@ public class TechPersistenceTests
         Assert.Equal(LayoutUnit.Mil, tech.DefaultDisplayUnit);
         Assert.Equal(LayoutUnits.ToDbu(1m, LayoutUnit.Mil, LayoutUnits.DefaultDbuPerMicron), tech.DefaultSnapDbu);
         Assert.Equal(8, tech.Layers.Count);
-        Assert.Equal(3, tech.Stackup.Layers.Count);
+        // brief-via-primitive-and-stackup.md R-via-4: gains one Via entry (Plated Through-Hole,
+        // Top Copper -> Bottom Copper) alongside the original Top Copper / FR-4 / Bottom Copper trio.
+        Assert.Equal(4, tech.Stackup.Layers.Count);
         Assert.Equal(BoundaryCondition.Ground, tech.Stackup.Bottom);
         Assert.Equal(4, tech.DrcRules.Count);
     }
@@ -57,7 +59,10 @@ public class TechPersistenceTests
         Assert.Equal(LayoutUnit.Um, tech.DefaultDisplayUnit);
         Assert.Equal(LayoutUnits.ToDbu(5m, LayoutUnit.Nm, LayoutUnits.DefaultDbuPerMicron), tech.DefaultSnapDbu);
         Assert.Equal(8, tech.Layers.Count);
-        Assert.Equal(2, tech.Stackup.Layers.Count);
+        // brief-via-primitive-and-stackup.md §3.1/R-via-4: Metal2 / Air / Metal1 / GaAs / Backside Metal
+        // (5 physical layers, replacing the old single "Plated Gold" conductor that wrongly merged
+        // Metal1+Metal2) plus two Via entries (Backside Via, Metal1-Metal2 Post) = 7.
+        Assert.Equal(7, tech.Stackup.Layers.Count);
         Assert.Equal(BoundaryCondition.Ground, tech.Stackup.Bottom);
         Assert.Equal(4, tech.DrcRules.Count);
     }
@@ -191,5 +196,150 @@ public class TechPersistenceTests
 
         var restored = TechPersistence.Deserialize(json);
         Assert.All(restored.Layers, l => Assert.Null(l.Interchange));
+    }
+
+    // ── R-via-2/R-via-3 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md): fill model, wall
+    // thickness, and span — additive, nullable, no FormatVersion bump ────────────────────────────────
+
+    [Fact]
+    public void ViaStackupFields_RoundTrip_ByteIdentical()
+    {
+        var tech = new Technology
+        {
+            Name = "T",
+            Stackup = new Stackup
+            {
+                Layers =
+                [
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Top", ThicknessDbu = 1, SigmaSm = 1 },
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Bottom", ThicknessDbu = 1, SigmaSm = 1 },
+                    new StackupLayer
+                    {
+                        Kind = StackupKind.Via, Name = "PTH",
+                        Fill = ViaFillKind.Plated, WallThicknessDbu = 25_000,
+                        SpanFromLayer = "Top", SpanToLayer = "Bottom",
+                    },
+                ],
+            },
+        };
+        var json1 = TechPersistence.Serialize(tech);
+        var restored = TechPersistence.Deserialize(json1);
+        var json2 = TechPersistence.Serialize(restored);
+
+        Assert.Equal(json1, json2);
+        var via = restored.Stackup.Layers.Single(l => l.Kind == StackupKind.Via);
+        Assert.Equal(ViaFillKind.Plated, via.Fill);
+        Assert.Equal(25_000, via.WallThicknessDbu);
+        Assert.Equal("Top", via.SpanFromLayer);
+        Assert.Equal("Bottom", via.SpanToLayer);
+    }
+
+    [Fact]
+    public void HandStrippedCtech_MissingViaFields_StillLoads()
+    {
+        // A pre-via-brief .ctech never had Fill/WallThicknessDbu/SpanFromLayer/SpanToLayer on a
+        // StackupLayer at all — confirms these are purely additive, no FormatVersion bump.
+        var tech = new Technology
+        {
+            Stackup = new Stackup { Layers = [new StackupLayer { Kind = StackupKind.Conductor, Name = "M", ThicknessDbu = 1, SigmaSm = 1 }] },
+        };
+        var json = TechPersistence.Serialize(tech);
+        Assert.DoesNotContain("\"Fill\"", json);
+        Assert.DoesNotContain("\"SpanFromLayer\"", json);
+
+        var restored = TechPersistence.Deserialize(json);
+        Assert.Null(restored.Stackup.Layers[0].Fill);
+        Assert.Null(restored.Stackup.Layers[0].SpanFromLayer);
+    }
+
+    [Fact]
+    public void Validate_ViaSpanNamesUnknownConductor_Reported()
+    {
+        var tech = new Technology
+        {
+            Stackup = new Stackup
+            {
+                Layers = [new StackupLayer { Kind = StackupKind.Via, Name = "V", SpanFromLayer = "DoesNotExist", SpanToLayer = "AlsoMissing" }],
+            },
+        };
+        Assert.NotEmpty(TechValidation.Validate(tech));
+    }
+
+    [Fact]
+    public void Validate_ViaPlatedWithNoWallThickness_Reported()
+    {
+        var tech = new Technology
+        {
+            Stackup = new Stackup
+            {
+                Layers =
+                [
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "A", ThicknessDbu = 1, SigmaSm = 1 },
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "B", ThicknessDbu = 1, SigmaSm = 1 },
+                    new StackupLayer { Kind = StackupKind.Via, Name = "V", Fill = ViaFillKind.Plated, SpanFromLayer = "A", SpanToLayer = "B" },
+                ],
+            },
+        };
+        Assert.Contains(TechValidation.Validate(tech), s => s.Contains("Plated", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Validate_ViaEntry_NoIndependentThicknessRequired()
+    {
+        // R-via-2/R-via-3: a Via entry is a vertical connector, not a horizontal layer — it must NOT
+        // trip the same "non-positive thickness" rule Dielectric/Conductor entries get (ThicknessDbu
+        // is left at its zero default here, deliberately).
+        var tech = new Technology
+        {
+            Stackup = new Stackup
+            {
+                Layers =
+                [
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "A", ThicknessDbu = 1, SigmaSm = 1 },
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "B", ThicknessDbu = 1, SigmaSm = 1 },
+                    new StackupLayer { Kind = StackupKind.Via, Name = "V", Fill = ViaFillKind.Solid, SpanFromLayer = "A", SpanToLayer = "B" },
+                ],
+            },
+        };
+        Assert.Empty(TechValidation.Validate(tech));
+    }
+
+    // ── Gate 3: starter stackups — PCB one via entry, MMIC two, over Metal2/Air/Metal1/GaAs/ground ──
+
+    [Fact]
+    public void Pcb2Layer_ExposesOneViaEntry_PlatedSpanningBothCopperLayers()
+    {
+        var tech = StarterTechnologies.Pcb2Layer();
+        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
+        Assert.Equal(ViaFillKind.Plated, via.Fill);
+        Assert.True(via.WallThicknessDbu > 0);
+        Assert.Equal("Top Copper (1 oz)", via.SpanFromLayer);
+        Assert.Equal("Bottom Copper (1 oz)", via.SpanToLayer);
+    }
+
+    [Fact]
+    public void MmicGaAs_ExposesTwoViaEntries_BacksideViaAndMetal1Metal2Post()
+    {
+        var tech = StarterTechnologies.MmicGaAs();
+        var vias = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via).ToList();
+        Assert.Equal(2, vias.Count);
+        Assert.Contains(vias, v => v.SpanFromLayer == "Metal1" && v.SpanToLayer == "Backside Metal" && v.Fill == ViaFillKind.Plated);
+        Assert.Contains(vias, v => v.SpanFromLayer == "Metal1" && v.SpanToLayer == "Metal2");
+    }
+
+    [Fact]
+    public void MmicGaAs_AirLayer_HasEpsrOne()
+    {
+        var tech = StarterTechnologies.MmicGaAs();
+        var air = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Dielectric && l.Name == "Air");
+        Assert.Equal(1.0, air.Epsr);
+    }
+
+    [Fact]
+    public void MmicGaAs_StackOrder_Metal2AirMetal1GaAsBacksideMetal()
+    {
+        var tech = StarterTechnologies.MmicGaAs();
+        var physical = tech.Stackup.Layers.Where(l => l.Kind != StackupKind.Via).Select(l => l.Name).ToList();
+        Assert.Equal(["Metal2", "Air", "Metal1", "GaAs", "Backside Metal"], physical);
     }
 }

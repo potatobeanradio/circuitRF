@@ -19,7 +19,12 @@ public sealed record GdsiiExportSummary(
     /// <summary>brief-layout-testing-fixes.md item 6/R-fix-5: the number of TEXT records written —
     /// text a user did not knowingly place (an invisible, sub-pixel label authored by accident) is
     /// exactly what an export report should surface, never leave silent.</summary>
-    int LabelRecordsWritten = 0);
+    int LabelRecordsWritten = 0,
+    /// <summary>§4.3/R-via-9 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md): a
+    /// <see cref="ViaShape"/> with no <see cref="ViaShape.LandingLayer"/> set exports its barrel
+    /// (<see cref="LayoutShape.Layer"/>) only — the pad is skipped and named in
+    /// <see cref="Diagnostics"/>, never silently dropped.</summary>
+    int ViaPadsSkipped = 0);
 
 public static class GdsiiWriter
 {
@@ -29,7 +34,7 @@ public static class GdsiiWriter
         var offenders = GdsiiCoordinateValidation.CheckOverflow(structures);
         if (offenders.Count > 0) throw new GdsiiExportException(offenders);
 
-        int curveCount = 0, holeCount = 0, bitmapCount = 0, labelCount = 0;
+        int curveCount = 0, holeCount = 0, bitmapCount = 0, labelCount = 0, viaPadsSkipped = 0;
         var diagnostics = new List<string>();
 
         var w = new GdsiiRecordWriter(stream);
@@ -46,7 +51,7 @@ public static class GdsiiWriter
             w.WriteAscii(GdsiiRecordType.StrName, s.Name);
 
             foreach (var shape in s.Shapes)
-                WriteShape(w, shape, tech, ref curveCount, ref holeCount, ref bitmapCount, ref labelCount);
+                WriteShape(w, shape, tech, s.Name, diagnostics, ref curveCount, ref holeCount, ref bitmapCount, ref labelCount, ref viaPadsSkipped);
 
             foreach (var inst in s.Instances)
                 WriteInstance(w, inst);
@@ -56,14 +61,14 @@ public static class GdsiiWriter
 
         w.WriteNoData(GdsiiRecordType.EndLib);
 
-        return new GdsiiExportSummary(curveCount, holeCount, bitmapCount, diagnostics, labelCount);
+        return new GdsiiExportSummary(curveCount, holeCount, bitmapCount, diagnostics, labelCount, viaPadsSkipped);
     }
 
     // ── Shapes ─────────────────────────────────────────────────────────────────
 
     private static void WriteShape(
-        GdsiiRecordWriter w, LayoutShape shape, Technology? tech,
-        ref int curveCount, ref int holeCount, ref int bitmapCount, ref int labelCount)
+        GdsiiRecordWriter w, LayoutShape shape, Technology? tech, string structureName, List<string> diagnostics,
+        ref int curveCount, ref int holeCount, ref int bitmapCount, ref int labelCount, ref int viaPadsSkipped)
     {
         switch (shape)
         {
@@ -78,7 +83,7 @@ public static class GdsiiWriter
                 WritePath(w, path, tech, ref curveCount);
                 return;
             case ViaShape via:
-                WriteViaAsBoundary(w, via);
+                WriteViaAsBoundary(w, via, tech, structureName, diagnostics, ref curveCount, ref holeCount, ref viaPadsSkipped);
                 return;
             default:
                 WriteBoundaryLike(w, shape, tech, ref curveCount, ref holeCount);
@@ -177,16 +182,32 @@ public static class GdsiiWriter
         w.WriteNoData(GdsiiRecordType.EndEl);
     }
 
-    private static void WriteViaAsBoundary(GdsiiRecordWriter w, ViaShape via)
+    /// <summary>§4.3/R-via-9: a <see cref="ViaShape"/> emits one flattened-circle BOUNDARY per mapped
+    /// layer it participates in — the barrel (<see cref="LayoutShape.Layer"/>, ALWAYS present) and the
+    /// pad (<see cref="ViaShape.LandingLayer"/>, only when set). GDSII has no via primitive at all, so
+    /// "mapped" here means simply "has a landing layer to draw on" — GDSII writes a raw
+    /// <c>(layer, datatype)</c> key directly with no name lookup, unlike DXF, so there is no separate
+    /// "layer known to this technology" failure mode to check. Reuses <see cref="WriteBoundaryLike"/>
+    /// (via a synthetic <see cref="CircleShape"/>) rather than a hand-rolled square, so the pad/barrel
+    /// go through the SAME flatten-and-count path every other curved primitive does — never a second
+    /// circle-to-polygon implementation.</summary>
+    private static void WriteViaAsBoundary(
+        GdsiiRecordWriter w, ViaShape via, Technology? tech, string structureName, List<string> diagnostics,
+        ref int curveCount, ref int holeCount, ref int viaPadsSkipped)
     {
-        long half = Math.Max(via.PadSize, 2) / 2;
-        long x1 = via.X - half, x2 = via.X + half, y1 = via.Y - half, y2 = via.Y + half;
-        w.WriteNoData(GdsiiRecordType.Boundary);
-        w.WriteInt16Array(GdsiiRecordType.Layer, [(short)via.Layer.Layer]);
-        w.WriteInt16Array(GdsiiRecordType.Datatype, [(short)via.Layer.Datatype]);
-        w.WriteInt32Array(GdsiiRecordType.Xy,
-            [(int)x1, (int)y1, (int)x2, (int)y1, (int)x2, (int)y2, (int)x1, (int)y2, (int)x1, (int)y1]);
-        w.WriteNoData(GdsiiRecordType.EndEl);
+        var barrel = new CircleShape { Layer = via.Layer, Net = via.Net, Cx = via.X, Cy = via.Y, R = Math.Max(via.DrillSize, 2) / 2 };
+        WriteBoundaryLike(w, barrel, tech, ref curveCount, ref holeCount);
+
+        if (via.LandingLayer is { } landing)
+        {
+            var pad = new CircleShape { Layer = landing, Net = via.Net, Cx = via.X, Cy = via.Y, R = Math.Max(via.PadSize, 2) / 2 };
+            WriteBoundaryLike(w, pad, tech, ref curveCount, ref holeCount);
+        }
+        else
+        {
+            viaPadsSkipped++;
+            diagnostics.Add($"{structureName}: via at ({via.X},{via.Y}) has no landing layer set — pad not exported.");
+        }
     }
 
     // ── Instances ──────────────────────────────────────────────────────────────

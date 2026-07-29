@@ -242,6 +242,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         _factory.AnalysesTool?.SetWorkspaceDir(dir);
+
+        // brief-foreign-documents.md §4: IsForeign/SourceWorkspaceName are computed live from
+        // CurrentWorkspaceRootDirProvider, which has no PropertyChanged of its own — refresh every
+        // open (docked or floated) layout's marking explicitly whenever the open workspace changes.
+        foreach (var doc in _scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>()))
+            doc.RefreshForeignMarking();
     }
 
     // ---- Constructor ---------------------------------------------------------
@@ -324,30 +330,124 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// brief-foreign-documents.md R-fgn-4: a session-scoped override for a materialized layout with no
+    /// ancestor workspace at all (a genuinely parent-less loose file) — keyed by absolute .clay path.
+    /// <see cref="ResolveTechFor"/> checks this FIRST, before doing any resolution walk, so the prompt
+    /// (below) is asked once per document per session and never overwritten by a later re-resolve.
+    /// Never written to disk (R-fgn-4's own guardrail) and never consulted for a scratch document
+    /// (there is no path to key by).
+    /// </summary>
+    private readonly record struct OrphanTechChoice(string? Path, Technology? StarterTech);
+    private readonly Dictionary<string, OrphanTechChoice> _sessionTechOverrides = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Documents currently showing (or about to show) the R-fgn-4 prompt — guards against a
+    /// rapid-fire re-resolve (e.g. <see cref="RefreshAllOpenLayoutTech"/>) popping the same dialog
+    /// more than once concurrently for the same path.</summary>
+    private readonly HashSet<string> _pendingOrphanTechPrompts = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Resolves the effective Technology for a layout and posts every diagnostic to Messages at
     /// Warning level (TechnologyResolver itself never posts — see its header). <paramref name="techRef"/>
     /// is the layout's own LayoutView.TechRef; <paramref name="clayPath"/> is the absolute .clay path,
     /// or null for a not-yet-saved scratch layout (workspace-default resolution still applies).
+    ///
+    /// brief-foreign-documents.md R-fgn-3: resolves against the DOCUMENT'S OWN parent workspace — the
+    /// nearest ancestor <c>.cws</c> walking up from <paramref name="clayPath"/>'s own directory — never
+    /// against whichever workspace happens to be currently open. This is what keeps a foreign layout's
+    /// layers from being silently reinterpreted by a different technology sharing the same numeric
+    /// keys (the exact L1g collision arriving through a new door). Re-run on every call, never cached
+    /// as "this document's workspace" — a Save-As that moves the file elsewhere is picked up for free.
+    /// A scratch document (<paramref name="clayPath"/> is null) has no path of its own yet, so it falls
+    /// back to the CURRENTLY open workspace, matching the pre-existing behavior for a brand-new layout.
     /// </summary>
     private TechResolution ResolveTechFor(string? techRef, string? clayPath)
     {
-        string? workspaceDir = CurrentWorkspacePath is null
-            ? null : Path.GetDirectoryName(CurrentWorkspacePath);
+        string? normalizedClayPath = clayPath is null ? null : Path.GetFullPath(clayPath);
+
+        // R-fgn-4: a session choice for a genuinely parent-less loose file always wins, and is never
+        // re-derived from the (still-absent) ancestor workspace.
+        if (normalizedClayPath is not null &&
+            _sessionTechOverrides.TryGetValue(normalizedClayPath, out var choice))
+        {
+            if (choice.Path is not null)
+            {
+                var loaded = TechnologyResolver.LoadDirect(choice.Path, TechResolutionSource.WorkspaceDefault, _techCache);
+                foreach (var d in loaded.Diagnostics) Messages.Warning(d);
+                return loaded;
+            }
+            return new TechResolution(choice.StarterTech, null, TechResolutionSource.None, []);
+        }
+
+        string? ownCwsPath = normalizedClayPath is not null
+            ? WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(normalizedClayPath))
+            : CurrentWorkspacePath;
+
+        string? workspaceDir = ownCwsPath is null ? null : Path.GetDirectoryName(ownCwsPath);
 
         string? defaultTechRef = null;
-        if (CurrentWorkspacePath is not null)
+        if (ownCwsPath is not null)
         {
-            try { defaultTechRef = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath).DefaultTechRef; }
+            try { defaultTechRef = WorkspacePersistence.LoadFromFile(ownCwsPath).DefaultTechRef; }
             catch { /* corrupt .cws — treated as "no default", matches TryLoadCws elsewhere */ }
         }
 
-        string? clayDir = clayPath is null ? null : Path.GetDirectoryName(clayPath);
+        string? clayDir = normalizedClayPath is null ? null : Path.GetDirectoryName(normalizedClayPath);
         var resolution = TechnologyResolver.Resolve(techRef, clayDir, workspaceDir, defaultTechRef, _techCache);
 
         foreach (var diagnostic in resolution.Diagnostics)
             Messages.Warning(diagnostic);
 
+        // R-fgn-4: a materialized document with NO ancestor workspace at all (never a scratch one —
+        // those legitimately fall back to the current workspace above) and no explicit TechRef of its
+        // own is the "loose file, nothing to resolve against" case — prompt once per session rather
+        // than silently falling back to FallbackPalette (§2.1's own explicit rule).
+        if (normalizedClayPath is not null && ownCwsPath is null && techRef is null &&
+            resolution.Source == TechResolutionSource.None)
+        {
+            TryPromptForOrphanTechnology(normalizedClayPath);
+        }
+
         return resolution;
+    }
+
+    /// <summary>Fire-and-forget: shows the R-fgn-4 prompt at most once per document per session
+    /// (guarded by <see cref="_sessionTechOverrides"/>/<see cref="_pendingOrphanTechPrompts"/>), and
+    /// applies the chosen technology to every open <see cref="LayoutDocument"/>/scratch layout whose
+    /// <see cref="LayoutEditorViewModel.CurrentLayoutPath"/> matches once answered.</summary>
+    private void TryPromptForOrphanTechnology(string normalizedClayPath)
+    {
+        if (_sessionTechOverrides.ContainsKey(normalizedClayPath)) return;
+        if (!_pendingOrphanTechPrompts.Add(normalizedClayPath)) return;
+
+        _ = RunOrphanTechnologyPromptAsync(normalizedClayPath);
+    }
+
+    private async Task RunOrphanTechnologyPromptAsync(string normalizedClayPath)
+    {
+        try
+        {
+            var window = ResolveOwner(null);
+            if (window is null) return;
+
+            var choice = await Views.Dialogs.OrphanTechnologyDialog.ShowAsync(
+                window, CurrentWorkspacePath, Path.GetFileName(normalizedClayPath));
+            if (choice is null) return; // dismissed — ask again next time, per §2.1's own no-silent-fallback rule
+
+            _sessionTechOverrides[normalizedClayPath] = choice.Value.Path is not null
+                ? new OrphanTechChoice(choice.Value.Path, null)
+                : new OrphanTechChoice(null, choice.Value.StarterTech);
+
+            foreach (var doc in _scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>()))
+            {
+                if (doc.FilePath is null) continue;
+                if (!string.Equals(Path.GetFullPath(doc.FilePath), normalizedClayPath, StringComparison.OrdinalIgnoreCase)) continue;
+                doc.ViewModel.ApplyTechResolution(ResolveTechFor(doc.ViewModel.Model.TechRef, doc.FilePath));
+            }
+        }
+        finally
+        {
+            _pendingOrphanTechPrompts.Remove(normalizedClayPath);
+        }
     }
 
     /// <summary>
@@ -460,7 +560,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var window = ResolveOwner(owner);
         if (window is null) return;
 
-        if (HasAnyDirtyWork() && !await PromptSaveBeforeClose(window, "creating a new workspace"))
+        if (HasAnyDirtyWork(includeFloated: false) && !await PromptSaveBeforeClose(window, "creating a new workspace", includeFloated: false))
             return;
 
         var result = await new NewWorkspaceDialog(_lastWorkspaceParentDir).ShowDialog<NewWorkspaceResult?>(window);
@@ -545,7 +645,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var window = ResolveOwner(owner);
         if (window is null) return;
 
-        if (HasAnyDirtyWork() && !await PromptSaveBeforeClose(window, "opening a workspace"))
+        if (HasAnyDirtyWork(includeFloated: false) && !await PromptSaveBeforeClose(window, "opening a workspace", includeFloated: false))
             return;
 
         IStorageFolder? startLocation = null;
@@ -631,15 +731,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 };
             }
 
-            // Persist documents currently open in the main DocumentDock.
-            // Scratch docs (no path) and the welcome stub are never persisted.
-            var dockables = _factory.DocumentDock?.VisibleDockables;
-            if (dockables is not null)
+            // Persist every open MATERIALIZED, workspace-bound document — DOCKED or torn off alike.
+            // brief-foreign-documents.md R-fgn-1: tearing a document off is presentation only, so it
+            // keeps full privileges, ".cws session membership" included — the previous version of this
+            // method scanned only `_factory.DocumentDock?.VisibleDockables`, which silently excludes
+            // anything floated; a torn-off workspace-bound document was dropped from .cws and never
+            // reopened next time, exactly the kind of "tear-off changed something other than
+            // presentation" bug R-fgn-1 asks to find and fix. `_openDocsByPath` already tracks every
+            // materialized document regardless of dock state (confirmed by ResetToBlankShell's own
+            // re-population of survivors), so it is the correct source here — scratch docs (no path)
+            // and the welcome stub were never reachable through either collection and still aren't.
             {
                 var wsDir    = Path.GetDirectoryName(path)!;
                 var docsList = new List<CwsOpenDocument>();
                 int order    = 0;
-                foreach (var dockable in dockables)
+                foreach (var dockable in _openDocsByPath.Values)
                 {
                     string? docPath = null;
                     string? kind    = null;
@@ -677,7 +783,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         kind    = "tech";
                     }
 
-                    if (docPath is null || kind is null) continue;
+                    // R-fgn-6: a foreign document is never recorded in the current workspace's .cws —
+                    // even one that's currently DOCKED (opened via File ▸ Open from outside the
+                    // workspace, never torn off). Determined purely from its own path, same as every
+                    // other foreign check in this file.
+                    if (docPath is null || kind is null || WorkspaceRootFinder.IsOutside(docPath, wsDir)) continue;
 
                     string stored;
                     try   { stored = Path.GetRelativePath(wsDir, docPath); }
@@ -686,43 +796,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 }
                 ws.OpenDocuments = docsList.Count > 0 ? docsList : null;
 
-                // Persist active document path so the same tab is focused on restore.
+                // Persist active document path so the same tab is focused on restore. R-fgn-6: skip
+                // entirely when the active dockable is foreign (docked but outside the workspace) — it
+                // has no place in this workspace's own restore state.
                 var active = _factory.DocumentDock?.ActiveDockable;
+                string? activeAbsPath = active switch
+                {
+                    SchematicDocument asd                  => asd.FilePath,
+                    SymbolEditorDocument asyed              => asyed.ViewModel.CurrentSymbolPath,
+                    CellParameterEditorDocument acpd        => Path.GetDirectoryName(acpd.ViewModel.EditModel.CcellPath),
+                    DataDisplayDocument add                 => add.FilePath,
+                    LayoutDocument alad                     => alad.FilePath,
+                    TechDocument atech                      => atech.FilePath,
+                    _                                       => null,
+                };
+
                 string? activePath = null;
-                if (active is SchematicDocument asd && asd.FilePath is not null)
+                if (activeAbsPath is not null && !WorkspaceRootFinder.IsOutside(activeAbsPath, wsDir))
                 {
-                    try   { activePath = Path.GetRelativePath(wsDir, asd.FilePath); }
-                    catch { activePath = asd.FilePath; }
-                }
-                else if (active is SymbolEditorDocument asyed &&
-                         asyed.ViewModel.CurrentSymbolPath is not null)
-                {
-                    try   { activePath = Path.GetRelativePath(wsDir, asyed.ViewModel.CurrentSymbolPath); }
-                    catch { activePath = asyed.ViewModel.CurrentSymbolPath; }
-                }
-                else if (active is CellParameterEditorDocument acpd)
-                {
-                    var cellPath = Path.GetDirectoryName(acpd.ViewModel.EditModel.CcellPath);
-                    if (cellPath is not null)
-                    {
-                        try   { activePath = Path.GetRelativePath(wsDir, cellPath); }
-                        catch { activePath = cellPath; }
-                    }
-                }
-                else if (active is DataDisplayDocument add && add.FilePath is not null)
-                {
-                    try   { activePath = Path.GetRelativePath(wsDir, add.FilePath); }
-                    catch { activePath = add.FilePath; }
-                }
-                else if (active is LayoutDocument alad && alad.FilePath is not null)
-                {
-                    try   { activePath = Path.GetRelativePath(wsDir, alad.FilePath); }
-                    catch { activePath = alad.FilePath; }
-                }
-                else if (active is TechDocument atech)
-                {
-                    try   { activePath = Path.GetRelativePath(wsDir, atech.FilePath); }
-                    catch { activePath = atech.FilePath; }
+                    try   { activePath = Path.GetRelativePath(wsDir, activeAbsPath); }
+                    catch { activePath = activeAbsPath; }
                 }
                 ws.ActiveDocumentPath = activePath;
             }
@@ -975,10 +1068,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         if (cwsPath is null) return;
 
-        if (HasAnyDirtyWork())
+        if (HasAnyDirtyWork(includeFloated: false))
         {
             var window = ResolveOwner(null);
-            if (window is not null && !await PromptSaveBeforeClose(window, "opening a workspace"))
+            if (window is not null && !await PromptSaveBeforeClose(window, "opening a workspace", includeFloated: false))
                 return;
         }
 
@@ -996,6 +1089,33 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SwitchToWorkspace(cwsPath);
     }
 
+    /// <summary>
+    /// brief-foreign-documents.md §4 item 2: the edge band's "open it" affordance on a foreign
+    /// document — switches to that document's OWN source workspace. Mirrors
+    /// <see cref="OpenRecentWorkspace"/>'s shape exactly (switch-scoped dirty check, so a surviving
+    /// torn-off document is never prompted for here either).
+    /// </summary>
+    [RelayCommand]
+    private async Task OpenSourceWorkspace(string? cwsPath)
+    {
+        if (cwsPath is null) return;
+
+        if (HasAnyDirtyWork(includeFloated: false))
+        {
+            var window = ResolveOwner(null);
+            if (window is not null && !await PromptSaveBeforeClose(window, "opening a workspace", includeFloated: false))
+                return;
+        }
+
+        if (!File.Exists(cwsPath))
+        {
+            Messages.Error($"Workspace '{Path.GetFileName(Path.GetDirectoryName(cwsPath))}' was not found.");
+            return;
+        }
+
+        SwitchToWorkspace(cwsPath);
+    }
+
     /// <summary>Close the current workspace and return to the no-workspace shell (Item 2).</summary>
     [RelayCommand(CanExecute = nameof(CanCloseWorkspace))]
     private async Task CloseWorkspace()
@@ -1004,7 +1124,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var window = ResolveOwner(null);
         if (window is null) return;
 
-        if (HasAnyDirtyWork() && !await PromptSaveBeforeClose(window, "closing the workspace"))
+        if (HasAnyDirtyWork(includeFloated: false) && !await PromptSaveBeforeClose(window, "closing the workspace", includeFloated: false))
             return;
 
         ResetToBlankShell();
@@ -1046,51 +1166,91 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Called by CloseWorkspace; extractable here so startup's blank-shell launch path
     /// can share the same reset logic.
     /// </summary>
+    /// <summary>
+    /// True when <paramref name="dockable"/> is currently a child of the main shell's own
+    /// <see cref="Layout"/> tree — false for a torn-off (floated) document, whose own
+    /// <see cref="Dock.Model.Core.IRootDock"/> is a separate object with its own <c>Window</c>.
+    /// brief-foreign-documents.md R-fgn-2: this is the ONE place "docked vs. floated" is decided, so
+    /// every workspace-switch/teardown path reads the same answer.
+    /// </summary>
+    private bool IsDockableDocked(IDockable dockable) => ReferenceEquals(_factory.FindRoot(dockable), Layout);
+
+    /// <summary>
+    /// Reverts to the no-workspace state (blank Dock layout) for whatever was DOCKED in the main shell.
+    /// Called by CloseWorkspace; extractable here so startup's blank-shell launch path can share the
+    /// same reset logic.
+    ///
+    /// brief-foreign-documents.md R-fgn-2: "a workspace switch replaces the contents of the WINDOW it
+    /// happens in; other windows are not affected." A docked document closes exactly as it always has;
+    /// a TORN-OFF document survives, unaffected, becoming foreign to whichever workspace opens next (or
+    /// to no workspace at all) — R-fgn-1's "tear-off is presentation only" cuts both ways: it does not
+    /// grant a document special status, but neither does a switch performed in the main window have any
+    /// business reaching into a separate one. This supersedes the R-menu-6 finding recorded in
+    /// brief-file-menu-restructure.md (that finding was investigate-only for THAT brief; changing the
+    /// behavior is squarely this brief's own job).
+    /// </summary>
     private void ResetToBlankShell()
     {
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
 
-        // Force-close all open dockable documents before clearing the registry.
-        //
-        // brief-file-menu-restructure.md §4A.4/R-menu-6 finding (investigate-only, NOT fixed here per
-        // the brief's own explicit instruction): this loop closes every MATERIALIZED document
-        // (_openDocsByPath, keyed by on-disk path) — including a torn-off one. Traced into
-        // Dock.Model.FactoryBase's own CloseDockable → RemoveDockable → CollapseDock chain: when the
-        // dockable being removed is the last one in a floating root, CollapseDock detects
-        // `dock is IRootDock { Window: not null }` and calls RemoveWindow(...), which calls
-        // window.Exit() — closing the physical torn-off window. So a MATERIALIZED torn-off document's
-        // window does NOT survive a workspace close/switch.
-        //
-        // A SCRATCH document's window (no on-disk path — _scratchDocs/_scratchSymbols/_scratchLayouts/
-        // _scratchDataDisplays below) is a DIFFERENT story: this loop never iterates those four lists
-        // at all, and the .Clear() calls on them just below are OUR OWN bookkeeping — they never call
-        // _factory.ForceCloseDockable on any of those documents. A DOCKED scratch tab disappears for
-        // free (the whole DocumentDock tree it lived in is discarded a few lines down when `Layout` is
-        // reassigned to a fresh one), but a TORN-OFF scratch document is a wholly separate physical
-        // window/IRootDock, untouched by that reassignment — it stays open and interactive, now
-        // orphaned from every workspace-scoped registry (tech cache, session registries, the tree) and
-        // from HasAnyDirtyWork()'s own dirty-scan (which reads these same four lists — already-cleared
-        // by the time anything downstream would check them again). Its own technology-resolution seam
-        // (WireRetargetSeam) was wired against the OLD workspace: WorkspaceTechDir is a snapshotted
-        // string that is never updated, while ResolveWorkspaceDefaultTech/ResolveTechAt are closures
-        // that call back into THIS view model's ResolveTechFor, which reads CurrentWorkspacePath LIVE
-        // (now null) — so if that orphaned document's technology is ever re-resolved after the fact, it
-        // would silently resolve to "no technology" (fallback palette) rather than the workspace it was
-        // actually opened against. In practice it is unlikely to be re-resolved automatically (every
-        // live-refresh path iterates the very lists that were just cleared), so the practical risk is a
-        // confusing leftover window belonging to no tracked workspace, not an immediate visible change.
-        // Per R-menu-6: reported here precisely, left unchanged in either direction.
+        // Split every tracked MATERIALIZED document by docked-vs-floated; only the docked ones close.
+        var stillOpen = new List<IDockable>();
         foreach (var dockable in _openDocsByPath.Values.ToList())
-            _factory.ForceCloseDockable(dockable);
+        {
+            if (IsDockableDocked(dockable))
+            {
+                _factory.ForceCloseDockable(dockable);
+                // Mirrors RemoveCellAsync/RenameCellAsync's own established pattern: retire the shared
+                // session (if any) for a schematic/layout ONLY when it is no longer referenced by any
+                // open document — never a blanket registry Clear(), which would also tear down a
+                // surviving floated document's own push-in/undo session.
+                if (dockable is SchematicDocument closedSd && closedSd.FilePath is { } schPath)
+                    RetireSessionIfUnreferenced(schPath);
+                else if (dockable is LayoutDocument closedLd && closedLd.FilePath is { } layPath)
+                    RetireLayoutSessionIfUnreferenced(layPath);
+            }
+            else
+            {
+                stillOpen.Add(dockable); // torn off — survives, now foreign to whatever opens next
+            }
+        }
+
+        // Same split for scratch (no on-disk path) documents — a DOCKED scratch tab disappears for
+        // free once `Layout` is reassigned below (the whole DocumentDock tree it lived in is
+        // discarded), but a TORN-OFF scratch document is a separate physical window untouched by that
+        // reassignment and must be explicitly preserved in our own tracking, or later code (Save All,
+        // the quit prompt, HasAnyDirtyWork) would treat it as closed when its window is still open.
+        var stillOpenScratchDocs         = _scratchDocs.Where(d         => !IsDockableDocked(d)).ToList();
+        var stillOpenScratchSymbols      = _scratchSymbols.Where(d      => !IsDockableDocked(d)).ToList();
+        var stillOpenScratchLayouts      = _scratchLayouts.Where(d      => !IsDockableDocked(d)).ToList();
+        var stillOpenScratchDataDisplays = _scratchDataDisplays.Where(d => !IsDockableDocked(d)).ToList();
 
         _openDocsByPath.Clear();
-        _scratchDocs.Clear();
-        _scratchSymbols.Clear();
-        _scratchLayouts.Clear();
-        _scratchDataDisplays.Clear();
-        _registry.Clear();
-        _layoutRegistry.Clear();
+        foreach (var dockable in stillOpen)
+        {
+            var path = dockable switch
+            {
+                SchematicDocument sd            => sd.FilePath,
+                SymbolEditorDocument syed        => syed.ViewModel.CurrentSymbolPath,
+                LayoutDocument lad               => lad.FilePath,
+                DataDisplayDocument dd           => dd.FilePath,
+                TechDocument td                  => td.FilePath,
+                CellParameterEditorDocument cpd  => Path.GetDirectoryName(cpd.ViewModel.EditModel.CcellPath),
+                _ => null,
+            };
+            if (path is not null) _openDocsByPath[path] = dockable;
+        }
+
+        _scratchDocs.Clear();         _scratchDocs.AddRange(stillOpenScratchDocs);
+        _scratchSymbols.Clear();      _scratchSymbols.AddRange(stillOpenScratchSymbols);
+        _scratchLayouts.Clear();      _scratchLayouts.AddRange(stillOpenScratchLayouts);
+        _scratchDataDisplays.Clear(); _scratchDataDisplays.AddRange(stillOpenScratchDataDisplays);
+
+        // Session registries: NOT a blanket Clear() any more (see the per-dockable retire calls above)
+        // — a surviving floated schematic/layout's own push-in session must stay registered. Any
+        // session genuinely no longer referenced by anything (closed docked tab, or a popped-out frame
+        // that was never re-opened) was already retired above / by its own existing pop-out path.
         ResetTechCache();
 
         CurrentWorkspacePath = null;   // fires OnCurrentWorkspacePathChanged → tree.ClearWorkspace()
@@ -2058,10 +2218,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // RequestAddLayerToTechnology seam above.
     private void WireRetargetSeam(LayoutEditorViewModel vm)
     {
-        vm.WorkspaceTechDir = CurrentWorkspacePath is null
+        vm.FallbackWorkspaceTechDir = CurrentWorkspacePath is null
             ? null : Path.Combine(Path.GetDirectoryName(CurrentWorkspacePath)!, "tech");
-        vm.ResolveWorkspaceDefaultTech = () => ResolveTechFor(techRef: null, clayPath: null);
+        // brief-foreign-documents.md R-fgn-3: read vm.CurrentLayoutPath LIVE (never captured), so a
+        // Save-As that moves this document into a different workspace is picked up automatically —
+        // ResolveTechFor itself does the ancestor-.cws walk from whatever path it's handed.
+        vm.ResolveWorkspaceDefaultTech = () => ResolveTechFor(techRef: null, clayPath: vm.CurrentLayoutPath);
         vm.ResolveTechAt = (techRef, clayDir) => ResolveTechFor(techRef, Path.Combine(clayDir, "x.clay"));
+        // §4 marking: read CurrentWorkspacePath LIVE too, so switching workspaces updates IsForeign/
+        // SourceWorkspaceName on every already-open document without re-wiring anything.
+        vm.CurrentWorkspaceRootDirProvider = () => CurrentWorkspacePath is null
+            ? null : Path.GetDirectoryName(CurrentWorkspacePath);
     }
 
     // ---- Technology (.ctech) editor (L0d) --------------------------------------
@@ -2272,14 +2439,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// per-window resolution).</summary>
     private bool IsSymbolDocumentActive() => ResolveActiveDocumentForCommands() is SymbolEditorDocument;
 
-    /// <summary>Gerber export (L4c) has not been built yet — the brief's own guardrail flags this
-    /// explicitly rather than asking for it to be implemented here. The File menu still lists Gerber
-    /// per item 8's literal menu spec, permanently disabled with a stated reason (R13a) rather than
-    /// omitted, so the menu structure matches the brief and nobody wonders why one format is
-    /// missing.</summary>
-    [RelayCommand(CanExecute = nameof(CanExportGerber))]
-    private void ExportGerber() { }
-    private bool CanExportGerber() => false;
+    /// <summary>Gerber export (docs/sonnet-briefs/brief-L4c-gerber-export.md) — mirrors ExportGdsii/
+    /// ExportDxf exactly: this command only decides whether a layout document is active and asks it to
+    /// run its OWN export via LayoutDocument.RequestExportGerber (file picking, the fidelity dialog, and
+    /// the actual GerberExport.Analyze/Write calls all live in LayoutEditorView's own code-behind).</summary>
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void ExportGerber() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportGerber();
 
     [RelayCommand]
     private void NewDataDisplay()
@@ -5333,49 +5498,67 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ---- Close / quit prompt helpers -----------------------------------------
 
-    /// <summary>True when any open document has unsaved content.</summary>
-    public bool HasAnyDirtyWork()
-        => _scratchDocs.Any(d => d.IsDirty)
-        || _openDocsByPath.Values.OfType<SchematicDocument>().Any(d => d.IsDirty)
-        || _scratchSymbols.Any(d => d.IsDirty)
-        || _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d => d.IsDirty)
-        || _scratchLayouts.Any(d => d.IsDirty)
-        || _openDocsByPath.Values.OfType<LayoutDocument>().Any(d => d.IsDirty)
-        || _openDocsByPath.Values.OfType<TechDocument>().Any(d => d.IsDirty)
-        || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges())
-        || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges())
-        || HasOrphanedDirtySession()
-        || HasOrphanedDirtyLayoutSession();
+    /// <summary>
+    /// True when any open document has unsaved content. brief-foreign-documents.md R-fgn-2/R-fgn-5:
+    /// <paramref name="includeFloated"/> is false for a WORKSPACE SWITCH/CLOSE check — a torn-off
+    /// document survives the switch untouched, so its dirty state has nothing to warn about there
+    /// ("a dirty torn-off document does not prompt on switch; it stays open and dirty"); it stays true
+    /// (the default) for the QUIT prompt and every other caller, since quitting the app really would
+    /// discard a dirty foreign document's unsaved work if nobody was asked. An orphaned dirty session
+    /// (no open document references it at all — nothing survives to keep it alive) always counts,
+    /// regardless of <paramref name="includeFloated"/>.
+    /// </summary>
+    public bool HasAnyDirtyWork(bool includeFloated = true)
+    {
+        bool Keep(IDockable d) => includeFloated || IsDockableDocked(d);
+
+        return _scratchDocs.Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<SchematicDocument>().Any(d => d.IsDirty && Keep(d))
+            || _scratchSymbols.Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<SymbolEditorDocument>().Any(d => d.IsDirty && Keep(d))
+            || _scratchLayouts.Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<LayoutDocument>().Any(d => d.IsDirty && Keep(d))
+            || _openDocsByPath.Values.OfType<TechDocument>().Any(d => d.IsDirty && Keep(d))
+            || _scratchDataDisplays.Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
+            || _openDocsByPath.Values.OfType<DataDisplayDocument>().Any(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d))
+            || HasOrphanedDirtySession()
+            || HasOrphanedDirtyLayoutSession();
+    }
 
     /// <summary>
     /// Shows Save / Don't Save / Cancel for dirty work before a close/quit/open action.
     /// Returns true when it's safe to proceed (saved or discarded), false when cancelled.
+    /// <paramref name="includeFloated"/> mirrors <see cref="HasAnyDirtyWork"/> exactly — pass false
+    /// from a workspace switch/close caller so a surviving torn-off document is neither counted nor
+    /// swept into "Save All" here (R-fgn-2); leave it true (the default) for quit.
     /// </summary>
-    public async Task<bool> PromptSaveBeforeClose(Window owner, string context = "closing")
+    public async Task<bool> PromptSaveBeforeClose(Window owner, string context = "closing", bool includeFloated = true)
     {
-        var dirtyScratch = _scratchDocs.Where(d => d.IsDirty).ToList();
+        bool Keep(IDockable d) => includeFloated || IsDockableDocked(d);
+
+        var dirtyScratch = _scratchDocs.Where(d => d.IsDirty && Keep(d)).ToList();
         var dirtyMat     = _openDocsByPath.Values
             .OfType<SchematicDocument>()
-            .Where(d => d.IsDirty && !d.IsScratch)
+            .Where(d => d.IsDirty && !d.IsScratch && Keep(d))
             .ToList();
-        var dirtyScratchSymbols = _scratchSymbols.Where(d => d.IsDirty).ToList();
+        var dirtyScratchSymbols = _scratchSymbols.Where(d => d.IsDirty && Keep(d)).ToList();
         var dirtyMatSymbols     = _openDocsByPath.Values
             .OfType<SymbolEditorDocument>()
-            .Where(d => d.IsDirty && !d.IsScratch)
+            .Where(d => d.IsDirty && !d.IsScratch && Keep(d))
             .ToList();
         var dirtyScratchDisplays = _scratchDataDisplays
-            .Where(d => d.ViewModel.Window.HasUnsavedChanges()).ToList();
+            .Where(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d)).ToList();
         var dirtyMatDisplays = _openDocsByPath.Values
             .OfType<DataDisplayDocument>()
-            .Where(d => d.ViewModel.Window.HasUnsavedChanges()).ToList();
-        var dirtyScratchLayouts = _scratchLayouts.Where(d => d.IsDirty).ToList();
+            .Where(d => d.ViewModel.Window.HasUnsavedChanges() && Keep(d)).ToList();
+        var dirtyScratchLayouts = _scratchLayouts.Where(d => d.IsDirty && Keep(d)).ToList();
         var dirtyMatLayouts     = _openDocsByPath.Values
             .OfType<LayoutDocument>()
-            .Where(d => d.IsDirty && !d.IsScratch)
+            .Where(d => d.IsDirty && !d.IsScratch && Keep(d))
             .ToList();
         var dirtyTechDocs = _openDocsByPath.Values
             .OfType<TechDocument>()
-            .Where(d => d.IsDirty)
+            .Where(d => d.IsDirty && Keep(d))
             .ToList();
         var dirtyOrphanedSessions       = _registry.GetOrphanedDirtyPaths(IsSessionReferenced);
         var dirtyOrphanedLayoutSessions = _layoutRegistry.GetOrphanedDirtyPaths(IsLayoutSessionReferenced);
@@ -5867,6 +6050,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         doc.OnSavedAs(pathAfter, Path.GetFileNameWithoutExtension(pathAfter));
         RegisterLayoutSession(pathAfter, doc.ViewModel);
 
+        // brief-foreign-documents.md §3 "Save As adopts": re-resolve technology against the NEW path
+        // immediately — ResolveTechFor's ancestor-.cws walk now finds whatever workspace pathAfter
+        // actually lives in (the current one, for the common "bring this into my project" gesture), but
+        // Technology/ResolvedTechPath are snapshotted by ApplyTechResolution and won't refresh on their
+        // own just because CurrentLayoutPath changed.
+        doc.ViewModel.ApplyTechResolution(ResolveTechFor(doc.ViewModel.Model.TechRef, pathAfter));
+        doc.RefreshForeignMarking(); // §4: IsForeign/SourceWorkspaceName may have changed with the path
+
         _factory.ProjectTreeTool?.Refresh();
         Messages.Success("Saved", pathAfter);
     }
@@ -6201,6 +6392,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             doc.Materialize(filePath);
             _openDocsByPath[filePath] = doc;
             RegisterLayoutSession(filePath, doc.ViewModel);   // now push-in-able from elsewhere
+            doc.RefreshForeignMarking(); // §4: now workspace-bound (saved into the current workspace)
 
             _factory.ProjectTreeTool?.Refresh();
             Messages.Success("Saved", filePath);
@@ -6229,6 +6421,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         doc.Materialize(pathAfter);
         _openDocsByPath[pathAfter] = doc;
         RegisterLayoutSession(pathAfter, doc.ViewModel);   // now push-in-able from elsewhere
+
+        // brief-foreign-documents.md R-fgn-3/§2.1: a scratch layout resolved technology from whichever
+        // workspace was CURRENTLY open (FallbackWorkspaceTechDir); once materialized to a real path,
+        // re-resolve against THAT path's own ancestor workspace — it may differ (saved outside any
+        // workspace, or into a different one via Save As on a foreign document elsewhere) and the R-fgn-4
+        // prompt (if genuinely parent-less) is only ever reached through a live ResolveTechFor call.
+        doc.ViewModel.ApplyTechResolution(ResolveTechFor(doc.ViewModel.Model.TechRef, pathAfter));
+        doc.RefreshForeignMarking(); // §4: IsForeign/SourceWorkspaceName may have changed with the path
 
         Messages.Success("Saved", pathAfter);
     }

@@ -149,6 +149,24 @@ public sealed class PathShape : LayoutShape
     public long? FlattenTolDbu { get; set; }
 }
 
+/// <summary>docs/sonnet-briefs/brief-via-primitive-and-stackup.md §1: a via is TWO things at one
+/// coordinate — a copper pad (<see cref="PadSize"/>) and a drilled, plated barrel
+/// (<see cref="DrillSize"/>, the EM/thermal parameter and the Excellon tool selector, R-via-1). No
+/// per-via <c>Plated</c> flag: fill (Plated vs. Solid) is a PROCESS parameter carried on the matching
+/// <see cref="StackupKind.Via"/> stackup entry (<see cref="StackupLayer.Fill"/>), not here — a fab
+/// plates or fills a whole board to one specification, so a via never needs to override it.
+///
+/// <b>§4.3/R-via-9 — which field is which layer, pinned explicitly:</b> <see cref="LayoutShape.Layer"/>
+/// (inherited) is the via/drill layer — the BARREL; <see cref="LandingLayer"/> is the pad's own copper
+/// layer — the PAD. Getting this backwards produces a GDSII/DXF export that looks plausible and puts
+/// copper where the hole should be (§4.3's own explicit warning) — read this doc comment before ever
+/// touching either field in an interchange writer.
+///
+/// <b>R-via-7 forward hook (§5): changing PadSize/DrillSize must invalidate L6's mesh, never the
+/// technology.</b> Barrel diameter is the swept design parameter (R-via-1) — a user tries 0.3 mm
+/// against 0.5 mm and re-simulates — so this is a plain shape-field edit like any other; L6's mesh
+/// cache is what must key its invalidation off THIS edit, not the other way around. Nothing here
+/// builds L6; this is only the seam it must hook.</summary>
 public sealed class ViaShape : LayoutShape
 {
     public long X { get; set; }
@@ -230,7 +248,12 @@ public sealed class LayoutInstance
     public bool MirrorX { get; set; }
     public double Mag { get; set; } = 1.0;
 
-    /// <summary>1×1 = a plain instance.</summary>
+    /// <summary>1×1 = a plain instance. R-via-8 forward hook (docs/sonnet-briefs/
+    /// brief-via-primitive-and-stackup.md §5): via fences and thermal via arrays are exactly this —
+    /// a regular grid whose Rows/Cols/PitchX/PitchY IS the design variable — which strengthens, but
+    /// does not itself build, the case for L3c's own deferred "Create Array from selection" (an
+    /// array instance built FROM an existing selection's pitch, the inverse of Explode Array). Still
+    /// unbuilt; note it here again rather than silently losing the thread a second time.</summary>
     public int Rows { get; set; } = 1;
     public int Cols { get; set; } = 1;
     public long PitchX { get; set; }

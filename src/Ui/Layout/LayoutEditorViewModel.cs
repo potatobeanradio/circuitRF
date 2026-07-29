@@ -112,6 +112,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(TechNameText));
         OnPropertyChanged(nameof(LayerCountText));
         OnPropertyChanged(nameof(TechSummaryText));
+        OnPropertyChanged(nameof(ViaToolAvailability));
+        OnPropertyChanged(nameof(ViaToolTipText));
         RebuildAvailableLayers();
     }
 
@@ -302,8 +304,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <summary>Posts a Messages summary (docs/sonnet-briefs/brief-L1g-technology-retarget.md §5 —
     /// "report what happened"). Used after a technology retarget and after a cross-tech paste, both
     /// of which are bulk changes to the user's geometry that deserve a readable record once the
-    /// dialog is gone.</summary>
-    public void ReportMessage(string text) => _messageSink?.Success(text);
+    /// dialog is gone. <paramref name="filePath"/> (optional) renders as a clickable "reveal in file
+    /// manager" link (<see cref="MessageEntry.FilePath"/>) — e.g. the file/folder an export just wrote to.</summary>
+    public void ReportMessage(string text, string? filePath = null) => _messageSink?.Success(text, filePath);
 
     /// <summary>Posts a Messages error — used when a user-chosen <c>.ctech</c> (Change Technology's
     /// "each .ctech in tech/" or "Browse…" options) fails to load.</summary>
@@ -357,7 +360,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <summary><c>Instance</c> (L3a, docs/sonnet-briefs/brief-L3a-instances-and-arrays.md §6) places a
     /// cell reference — pick via <see cref="BeginInstancePlacement"/> (from a cell-picker dialog the
     /// view owns), then click-to-place with a live ghost, mirroring L1f's paste-placement gesture.</summary>
-    public enum Tool { Select, Rect, RoundedRect, Circle, Polygon, Path, Label, Instance }
+    /// <summary><c>Via</c> (docs/sonnet-briefs/brief-via-primitive-and-stackup.md §4.1) is the simplest
+    /// tool in this list: a single click commits a <see cref="ViaShape"/> immediately at the snapped
+    /// point, technology-default pad/drill, no drag and no ghost-then-click two-step — see
+    /// <see cref="ViaToolAvailability"/> for why it is not always enabled.</summary>
+    public enum Tool { Select, Rect, RoundedRect, Circle, Polygon, Path, Label, Instance, Via }
 
     [ObservableProperty] private Tool _activeTool = Tool.Select;
 
@@ -367,6 +374,46 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     private static bool IsTwoPointDragTool(Tool t) => t is Tool.Rect or Tool.RoundedRect or Tool.Circle;
     private static bool IsMultiPointTool(Tool t)   => t is Tool.Polygon or Tool.Path;
+
+    // ── Via tool (docs/sonnet-briefs/brief-via-primitive-and-stackup.md §4.1) ───────────────────────
+
+    /// <summary>R13a: "tool prominence follows the technology — needed where the stackup has a via
+    /// layer with a drill function; on a technology without one it is redundant, since a via there is
+    /// ordinary geometry (§1)." A via layer is any <see cref="StackupKind.Via"/> stackup entry, exactly
+    /// how R-via-4 completed both starter stackups — no separate "has a drill function" flag exists or
+    /// is needed, since <c>StackupKind.Via</c> IS that function.</summary>
+    public LayoutCommandAvailability ViaToolAvailability =>
+        Technology is { } tech && tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Via)
+            ? LayoutCommandAvailability.Enabled
+            : LayoutCommandAvailability.Disabled(
+                "Via: this technology's stackup has no via layer — draw geometry on a via/drill layer directly instead.");
+
+    /// <summary>The toolbar tooltip text — the base description when enabled, the R13a reason when
+    /// not (bound directly rather than left to code-behind, since a toolbar button has no natural
+    /// "open a menu" moment to compute it in, unlike the context-menu items <c>LayoutCanvas</c> already
+    /// surfaces <see cref="LayoutCommandAvailability.DisabledReason"/> for).</summary>
+    public string ViaToolTipText => ViaToolAvailability.CanExecute
+        ? "Via (place at snapped point)"
+        : ViaToolAvailability.DisabledReason!;
+
+    /// <summary>§4.1: "single click places a ViaShape at the snapped point... pad and drill default
+    /// from the technology." One <see cref="AddShapeCommand"/>, exactly like every other L1b drawing
+    /// tool's commit (<see cref="FinishTwoPointDraw"/>/<see cref="FinishMultiPointDraw"/>) — no drag,
+    /// no ghost-then-click two-step, since there is nothing to size or shape: PadSize/DrillSize are
+    /// fixed technology defaults, only editable afterward via the Properties Inspector (L1j).</summary>
+    private void CommitViaPlacement(double wx, double wy, KeyModifiers mods)
+    {
+        if (!ViaToolAvailability.CanExecute) return;
+        bool suspend = (mods & KeyModifiers.Alt) != 0;
+        var (sx, sy) = LayoutSnapping.SnapPoint(wx, wy, Model.SnapDbu, suspend);
+
+        long pad   = Technology is { DefaultViaPadDbu: > 0 }   t1 ? t1.DefaultViaPadDbu   : 500_000; // 0.5 mm
+        long drill = Technology is { DefaultViaDrillDbu: > 0 } t2 ? t2.DefaultViaDrillDbu : 300_000; // 0.3 mm
+
+        var via = new ViaShape { Layer = CurrentLayerKey, X = sx, Y = sy, PadSize = pad, DrillSize = drill };
+        Execute(new AddShapeCommand(Model, via));
+        RebuildOverlay();
+    }
 
     // ── Selection (L1c) ───────────────────────────────────────────────────────
     // docs/design/layout-view.md §6.2 R13 (overlap cycling), §1.5 R5 / R-L1c-3 (snap the delta).
@@ -1555,6 +1602,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance) { CommitInstancePlacement(); return; }
+
+        if (ActiveTool == Tool.Via) { CommitViaPlacement(wx, wy, mods); return; }
 
         bool suspend = (mods & KeyModifiers.Alt) != 0;
 

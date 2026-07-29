@@ -19,6 +19,7 @@
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:dockCtrl="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
+             xmlns:dockCore="clr-namespace:Dock.Model.Core;assembly=Dock.Model"
              x:Class="CircuitRF.Ui.App"
              Name="circuitRF"
              RequestedThemeVariant="Default">
@@ -97,6 +98,13 @@
              Defined at Application scope so popup visual trees can reach it. -->
         <SolidColorBrush x:Key="CrfIconBrush" Color="{DynamicResource SystemBaseMediumColor}"/>
 
+        <!-- brief-foreign-documents.md §4/R-fgn-7: marks a foreign document's chrome (edge band, tab
+             tint) — amber, NEVER red (red means error; a foreign document is a normal, supported
+             state), and never used to tint rendered geometry. Semi-transparent so it reads over either
+             theme without a separate light/dark pair, same convention as CrfTileBorderBrush above. -->
+        <SolidColorBrush x:Key="CrfForeignBandBrush" Color="#33E8A33D"/>
+        <SolidColorBrush x:Key="CrfForeignAccentBrush" Color="#E8A33D"/>
+
 <!-- Converters registered as application-level resources so all views can use them -->
         <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
         <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>
@@ -152,6 +160,24 @@
              bodies are kept realized (cached) rather than lazily built — fine at our tab counts. -->
         <Style Selector="dockCtrl|DocumentControl">
             <Setter Property="Template" Value="{DynamicResource DockDocumentControlCachedContentTemplate}"/>
+
+            <!-- brief-foreign-documents.md §4 item 3: tab header tint. Overrides the theme's own
+                 default HeaderTemplate (a bare TextBlock bound to Title) with the same TextBlock
+                 wrapped in a Border whose Background tints amber for a foreign document — never red
+                 (R-fgn-7), never touching rendered geometry. x:CompileBindings="False" because the
+                 declared DataType is the IDockable interface, but the runtime item may be any
+                 concrete Document type; only LayoutDocument actually declares IsForeign today — every
+                 other document type binds null here and renders untinted, exactly like a
+                 workspace-bound LayoutDocument. -->
+            <Setter Property="HeaderTemplate">
+                <DataTemplate x:CompileBindings="False" DataType="dockCore:IDockable">
+                    <Border Background="{Binding IsForeign, Converter={x:Static conv:ForeignDocumentTintConverter.Instance}}">
+                        <TextBlock Text="{Binding Title}"
+                                   VerticalAlignment="Center"
+                                   Padding="{DynamicResource DockHeaderContentPadding}"/>
+                    </Border>
+                </DataTemplate>
+            </Setter>
         </Style>
 
         <!-- Material Icons -->

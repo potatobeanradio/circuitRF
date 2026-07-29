@@ -1,5 +1,745 @@
 # UI (Avalonia) — local conventions
 
+The Via primitive — toolbar tool, stackup completion, simulation-ready parameters
+(brief-via-primitive-and-stackup.md, 2026-07-28) — COMPLETE: **§4 amends the just-landed L4c** (Gerber
+export), rather than folding into it — L4c had already landed in this same working session when this
+brief was read, so R-via-5/R-via-9/R-via-10 below are changes to existing Gerber/GDSII/DXF code, not new
+scaffolding.
+
+## §1 — why the typed via exists for PCB and not for MMIC
+
+For MMIC, a via *is* geometry: GDSII/the mask shop have no via concept, the process defines what a
+shape on the via layer means, and `Circle` already covers it (§1's own framing, unchanged by this
+brief). For PCB a via is genuinely TWO things at one coordinate — a copper pad and a drilled, plated
+barrel — and that pairing was previously framed as a fabrication convenience only. **The framing
+correction this brief makes**: the pad/drill pairing is load-bearing for THREE consumers, not one —
+fabrication (a pad flash + a drill hit that must move together), **EM** (pad governs current spreading,
+barrel diameter governs via inductance, L9), and **thermal** (barrel cross-section + plating thickness
+govern the dominant vertical heat path in a board, beyond L9). `ViaShape.PadSize`/`DrillSize` were
+already the right two fields (L0a) — this brief is about completing what surrounds them, not the shape.
+
+## R-via-2 — fill model on the STACKUP, not the via, and carried for thermal even though RF can ignore it
+
+`StackupLayer` gains `ViaFillKind? Fill` (`Plated` with `WallThicknessDbu`, or `Solid`) — a PROCESS
+parameter (a fab plates or fills a whole board to one spec), so it lives on the matching
+`StackupKind.Via` entry, never on `ViaShape` itself; nobody configures fill per via to run a simulation.
+Deliberately NOT a bare plating-thickness field — that would silently assume every via is a hollow
+barrel, a PCB-specific assumption. **RF may reasonably ignore this field** (a few-µm gold wall is many
+skin depths thick above a few GHz — Plated and Solid behave identically to an EM solver); **thermal
+cannot** — a hollow plated via has a small fraction of a filled one's conductive cross-section, and
+thermal via arrays are sized on exactly that difference. Say so in the field's own doc comment
+(`TechModel.cs`) so nobody "simplifies" it away as unused once L9 ships without reading it.
+
+Both starter technologies now exercise BOTH enum values: PCB's through-hole and MMIC's backside via are
+`Plated` (thin gold/copper wall); the MMIC Metal1→Metal2 airbridge post is `Solid` (a short, structural
+electroplated pillar through a few-µm air gap, not a hollow barrel through a real dielectric).
+
+## R-via-3 — the span field, unread until L6/L9
+
+`StackupLayer.SpanFromLayer`/`SpanToLayer` (two conductor `StackupLayer.Name` values — the only identity
+a conductor entry has) record which two conductors a via joins. `TechValidation` flags a span naming a
+non-existent conductor, and a `Plated` entry with no `WallThicknessDbu`; a `StackupKind.Via` entry is
+explicitly EXEMPTED from the pre-existing "positive thickness" check (it's a vertical connector, not a
+horizontal layer at one z — it has no independent thickness of its own). Nothing reads the span fields
+yet — added now so L6/L9 don't force a model change mid-solver, per the brief's own explicit reasoning.
+
+## §3.1 — an airbridge needs no new primitive, only a complete stackup
+
+The MMIC starter stackup's old shape — one "Plated Gold" conductor entry whose `DrawingLayers` wrongly
+mapped BOTH `Metal1` and `Metal2` onto the same physical layer — is exactly what stood in the way. It is
+now, top to bottom: **Metal2 (conductor) / Air (dielectric, εr=1) / Metal1 (conductor) / GaAs (dielectric)
+/ Backside Metal (conductor)**, plus two `StackupKind.Via` entries (Backside Via: Metal1→Backside Metal,
+Plated; Metal1-Metal2 Post: Metal1→Metal2, Solid). An airbridge is then drawn exactly as an RF designer
+expects — a shape on Metal2, posts on Via — with zero new data-model concept: the stackup already holds
+ordered dielectric/conductor layers with arbitrary εr, and `StackupKind.Via` already connects two
+conductors. Nothing here simulates an airbridge (that's L9, and one of its harder meshing cases per the
+brief's own §10.3/§10.7 analysis) — the point is only that the starter technology no longer blocks it.
+
+## R-via-5 — a bare Circle on a drill layer still drills, and is reported (never refused, never silent)
+
+`GerberExport`/`ExcellonWriter` now treat any `Circle` on a **drill-function layer** (a layer named in
+some `StackupKind.Via` entry's `DrawingLayers` — the SAME identity `ViaToolAvailability`/`Convert to Via`
+use) as an unpaired drill hit: it still contributes an Excellon hit (`ExcellonWriter.Write`'s new
+optional `unpairedCircles` param, sharing the SAME tool-dedup table as real vias) and is counted in
+`GerberExport.ExportPlan.UnpairedDrillCircles`, surfaced in the fidelity dialog as *"N circle(s) on a
+drill layer will produce unpaired holes — convert to Vias for annular-ring checking?"* — absent when
+zero, per R-L4c-7's own silent-clean-export rule. Refusing to emit would ship a board with no holes;
+emitting silently would bake in the pad/drill drift hazard permanently — reporting is R13a's "act, or
+explain," never quietly doing nothing. `Convert to Via` (R-via-6, a new `LayoutEditorViewModel.Via.cs`
+partial file + a context-menu item alongside Flatten to Polygon) is the recovery path: one circle (using
+its diameter as the barrel) or two concentric circles (second one's diameter becomes the pad) →
+`ReplaceShapesCommand`, one undo entry, restoring the original circle(s) at their original index(es).
+
+## §4.3/R-via-9 — GDSII and DXF: barrel and pad on their OWN layers, pinned explicitly
+
+Neither format has a via record — both are fully compatible with `ViaShape` becoming ordinary geometry,
+but **the pre-existing GDSII/DXF via writers had the pad/barrel split backwards or missing entirely**:
+GDSII wrote one PadSize-sized square on `via.Layer` (the barrel layer!); DXF wrote one PadSize-sized
+CIRCLE, also on `via.Layer`. Both are now fixed to emit TWO flattened-circle/exact-CIRCLE shapes — the
+barrel (`LayoutShape.Layer`, `DrillSize`) and the pad (`ViaShape.LandingLayer`, `PadSize`) — matching the
+semantics now pinned explicitly in `ViaShape`'s own doc comment (`LayoutModel.cs`): **`Layer` = the
+via/drill layer = the barrel; `LandingLayer` = the pad's copper layer = the pad.** Getting this backwards
+produces an export that "looks plausible and puts copper where the hole should be" (§4.3's own warning) —
+this is exactly the class of bug that shipped before this brief and would have kept shipping silently,
+since nothing round-trips a via (GDSII/DXF have no via reader to catch it either way).
+
+GDSII always writes the barrel (via.Layer always exists); the pad is skipped and named in
+`GdsiiExportSummary.Diagnostics`/`ExportPlan.ViaPadsSkipped` only when `LandingLayer` is null — GDSII
+writes a raw `(layer, datatype)` key directly with no name lookup, so there is no separate "unmapped"
+failure mode there. DXF additionally skips (and reports via `DxfExportSummary.ViaPartsSkipped`) a part
+whose layer has no real `LayerDef` in the technology — unlike every OTHER DXF shape kind, which silently
+falls back to layer "0" when its key is unknown; a via part never gets that silent fallback. **A real bug
+found while writing this brief's own tests, not assumed**: `DxfWriter.ResolveLayerNames`'s pre-pass only
+ever collected layer keys from `shape.Layer` — a via's `LandingLayer` (the pad's layer) was never added,
+so ANY via's pad would report "not known to this technology" even when the `.ctech` genuinely mapped it,
+because the LAYER table simply never got an entry for it. Fixed by having `ResolveLayerNames` also walk
+`ViaShape.LandingLayer`; the genuine "not declared in this technology" check now consults `tech.Layers`
+directly rather than layer-table membership (which the fix just made always-present for any referenced
+via pad layer, mapped or not — table presence and technology declaration are different questions).
+
+Both GDSII's `ExportPlan.HasVias` and DXF's now carry R-via-10's fabrication note — *"Vias export as
+geometry only; use Gerber + Excellon for fabrication"* — shown whenever the design contains any via at
+all (regardless of whether any part was skipped), never implying GDSII/DXF are manufacturable PCB
+deliverables when a design has vias in it.
+
+## Annulus rendering, the Via tool, and Convert-to-Via — the L1b/L1j/L1c-style surfaces
+
+`Tool.Via` (single click, no drag, no ghost-then-click two-step — the simplest tool in the enum) commits
+a `ViaShape` immediately via one `AddShapeCommand`, pad/drill defaulting from the new
+`Technology.DefaultViaPadDbu`/`DefaultViaDrillDbu` (additive scalar fields, same pattern as
+`DefaultSnapDbu`/`DefaultLabelHeightDbu`; hardcoded 0.5mm/0.3mm fallback with no technology — R-via-1's
+own worked example, used deliberately). `ViaToolAvailability` — and `Convert to Via`'s own availability —
+both key off "does this technology's stackup have ANY `StackupKind.Via` entry," disabled with a stated
+reason (R13a) otherwise. Pad/drill are editable afterward in the Properties Inspector
+(`LayoutShapePropertiesViewModel`'s new `ShowVia`/`ViaPadSizeText`/`ViaDrillSizeText`, mirroring
+Circle's own `Radius` field exactly) — each edit is its own undo entry, live during a drag per R-L1j-1's
+existing liveness path (no new plumbing needed there). Rendering (`LayoutRenderer.BuildShapePath`)
+switched from a solid PadSize disc to a real annulus: the pad circle plus an OPPOSITE-WINDING inner
+circle at DrillSize (`SKPathDirection.Clockwise`/`CounterClockwise`, the same "hole via opposite winding"
+technique `AddHoleRings` already uses for Polygon/Curve, just via Skia's own circle-direction parameter
+since a circle has no vertex list of its own to reverse) — pad filled, barrel visibly punched out.
+
+## §5 forward hooks — comments only, nothing built
+
+R-via-7 (mesh invalidation must key off a PadSize/DrillSize shape edit, never a technology/stackup
+change) and R-via-9's Layer/LandingLayer pin both live in `ViaShape`'s own doc comment
+(`LayoutModel.cs`). R-via-8 (via fences/thermal arrays strengthen the case for L3c's still-unbuilt
+"Create Array from selection") is noted again at `LayoutInstance.Rows`, since the brief's own text
+observed the first note (in `brief-L3c-flatten-and-group.md`) risked losing the thread. The DRC
+annular-ring rule (`(PadSize − DrillSize) / 2`, expressible only because pad and drill are one object) is
+noted at `DrcRuleKind`'s own declaration in `TechModel.cs` — no rule implementation, per the guardrail.
+
+## Tests
+
+32 new tests (3259 Ui.Tests total, was 3227 — the fast default gate, `dotnet test`): stackup fill/span
+round-trip + `TechValidation` flagging + starter-stackup spot checks (`TechPersistenceTests.cs`, gates
+2-3, including asserting the MMIC Air layer's εr=1 and the full Metal2/Air/Metal1/GaAs/Backside-Metal
+order); Via tool placement/undo/tech-defaults/enablement, annulus pixel rendering (both "drill hole not
+filled" and "scales with zoom" — two independent zoom levels of the SAME via), and Convert-to-Via incl.
+undo and the concentric-pad-circle case (`LayoutViaTests.cs`, gates 4-6, 8); Gerber's unpaired-circle
+report (present/absent), Excellon's shared tool table across Via + unpaired-circle hits, and GDSII/DXF's
+barrel/pad split incl. the unmapped-layer skip+report and the R-via-10 note (`ViaInterchangeExportTests.cs`,
+gates 7, 9, 10, 11). Full solution green: Firewall 4/4, Core 388/388, Engine 458/459 (1 pre-existing
+skip). A pre-existing test-isolation gap was tightened in passing (not this brief's own scope, but
+directly triggered by this session's own new Gerber tests): `GerberExportTests` now carries
+`[Collection(LayoutTextOutlineTypefaceCollection.Name)]`, the existing seam this codebase already
+established for serializing tests that touch `LayoutTextOutline.TestOverrideTypeface`'s shared static
+field — several OTHER pre-existing test classes touching the same field still lack it and remain a latent
+(rare, self-clearing-on-retry) flakiness source outside this brief's scope to sweep comprehensively.
+
+**Not interactively verified** — the same standing limitation every prior Layout Editor phase in this
+file states: this headless environment cannot exercise the toolbar button, the Properties Inspector
+fields, or the context-menu "Convert to Via" item directly. Correctness rests on the VM-level and
+pixel-level (`SKSurface`/`GetPixel`) test suite above, which drives the exact same public methods/render
+path the view code-behind calls. Please confirm on your end: the Via tool places at the snapped point
+with a visible annulus (not a solid disc) that scales correctly across zoom levels; it is disabled with a
+tooltip reason on a technology with no via layer (try MMIC's own stackup before this brief vs. after);
+Properties Inspector Pad/Drill fields update the rendering live during a drag; right-clicking a bare
+Circle on the Drill layer shows "Convert to Via" and produces a correctly paired via; and a Gerber export
+containing an unpaired drill circle shows the new warning line in the fidelity dialog.
+
+Phase L4c — Gerber RS-274X/X2 export + Excellon drill (brief-L4c-gerber-export.md, 2026-07-28) —
+COMPLETE: **third and last of L4's three briefs — Phase L4 (Interchange: GDSII, DXF, Gerber) is now
+complete.** Export only, no Gerber reader at all (§8, R-menu-5 — the Import submenu deliberately has no
+Gerber entry and none was added). New files, all in `src/Ui/Layout/Interchange/` (framework-free except
+one `Clipper2Lib` call in `GerberWriter` for the path-as-region option, the same single exception
+`DxfWriter` already established): `GerberUnits.cs`, `GerberGeometry.cs`, `GerberApertures.cs`,
+`GerberWriter.cs`, `ExcellonWriter.cs`, `GerberJobFile.cs`, `GerberHierarchyFlatten.cs`, `GerberExport.cs`.
+New dialog: `GerberExportFidelityDialog.axaml(.cs)`. Wired in: an "Export Gerber…" toolbar button next to
+"Export GDSII…"/"Export DXF…" in `LayoutEditorView`, and the File-menu "Gerber" entry (in-window and
+macOS NativeMenu, plus the torn-off File menu) — previously a permanently-disabled placeholder pointing
+at an empty `WorkspaceViewModel.ExportGerber()` stub, now gated on an active layout document exactly like
+GDSII/DXF (`IsLayoutDocumentActive`).
+
+## R-L4c-1 — the exact nm↔output-unit mapping, and the format actually declared
+
+`%MOMM*%` (millimetres) + `%FSLAX<II><DD>Y<II><DD>*%` (absolute, leading zeros omitted) is chosen so
+**one output integer unit equals exactly one DBU** — no scaling, no rounding, ever. `GerberUnits.Resolve`
+derives the decimal-digit count directly from the identity `10^-D mm == 1 DBU`, i.e. `D = 3 +
+log10(DbuPerMicron)` (3 because 1 micron is 10^-3 mm) — at the default `DbuPerMicron = 1000` this is
+exactly the brief's own worked example, 4 integer + 6 decimal digits. A `DbuPerMicron` that is NOT an
+exact power of ten cannot be mapped by literal integer copy at all (the derivation only produces an
+integer digit count when it is), so `GerberUnits.Resolve` **throws `GerberUnitsException` and refuses the
+export** rather than silently rounding some coordinates and not others — the brief's own "never silently
+round" rule applied as a refusal, since there is no lossless approximate answer to fall back to. The
+integer-digit count separately widens (never refuses) when a design's own extent would overflow the
+default 4 digits — computed once from the flattened, post-conversion geometry's own max coordinate
+magnitude (`GerberExport.MaxAbsCoordinateDbu`, mirroring `GdsiiCoordinateValidation`'s per-shape field
+walk) — and the export dialog states the chosen format whenever it differs from the plain default.
+`GerberUnitsTests.cs` pins both the default case, the widen-on-finer-resolution case, the narrow-on-
+coarser-resolution case, and the non-power-of-ten refusal.
+
+## R-L4c-3 — G75 once, unconditionally, before ANY geometry
+
+Rather than tracking "has an arc been seen yet in this file," `GerberWriter` emits `G01*`/`G75*` once,
+immediately after the aperture table and before the first region/stroke/flash — this trivially satisfies
+"G75 before any arc, always" (§ own text: "an arc written without G75 is a silent, plausible-looking
+wrong shape, the worst class of interchange defect") without any per-arc bookkeeping to get wrong. Every
+`G01`/`G02`/`G03` mode line is likewise re-emitted before **every single** `D01`, never left modal across
+edges — a few redundant bytes per file in exchange for removing an entire class of "which mode is
+currently active" bug, which matters most exactly here since no third-party Gerber viewer was available
+in this environment to catch one (see the closing note). I/J offsets are computed via the pre-existing,
+already-tested `LayoutArc.FromBulge` (the same oracle DXF's own bulge-to-arc conversion already relies
+on) relative to the edge's own start point, and the sweep's sign picks `G03` (CCW) for positive sweep /
+`G02` (CW) for negative — `LayoutArc`'s own doc comment states positive bulge is an increasing-angle
+(atan2) sweep, which is the same sense as counterclockwise in Gerber's own Y-up coordinate plane.
+`GerberWriterTests.cs` pins G75's position (before the first draw), a CCW arc emitting G03 with the
+correct I/J, and a CW arc emitting G02 — all three by construction, not by trial and error.
+
+## R-L4c-4 — path end styles: stroke when caps are round, geometry outline otherwise
+
+`PathShape.End == Round` (regardless of whether the centerline also carries a Cubic edge, flattened
+first via the same local de Casteljau subdivision `DxfWriter` already established as precedent) exports
+as a `D01` stroke through a circular aperture sized to `Width` — smaller, and it reads as a trace.
+Every other end style (`Flush`/`Square`/`Extended`) exports via the path's **geometry** outline
+(`LayoutClipper.ToClipperPaths`, the R-L1e-1 split — never the display outline `LayoutRenderer.
+BuildPathOutline` uses) as one or more plain dark regions, since DXF's own precedent already established
+that a parametric width polyline cannot carry an end-cap shape and Gerber's `D01` stroke has exactly the
+same limitation. `GerberWriterTests.cs` covers all four end styles: Round strokes with no `G36`/`G37` at
+all; Flush/Square/Extended all emit a region and no `D03`.
+
+## Holes are NATIVE, not a fidelity concern — the opposite of GDSII's keyholing
+
+`%LPD*%` (dark) for the outer boundary, `%LPC*%` (clear) per hole, `%LPD*%` restored afterward — Gerber
+expresses a hole exactly, with no bridging/keyholing needed at all (§3.1a's own native mechanism, unlike
+GDSII's forced self-touching contour). Because this is lossless, hole/arc counts are deliberately **NOT**
+part of R-L4c-7's fidelity dialog — only genuinely lossy or structural conversions (Bézier flattening,
+hierarchy flattening, label-to-geometry, port-label omission, bitmap omission, path-as-region) are
+reported, matching the brief's own explicit item list exactly. `GerberWriterTests.
+PolygonWithTwoHoles_OneDarkRegionTwoClearRegions` pins the exact `%LPD*%`/`%LPC*%`/`G36*`/`G37*` counts.
+
+## R-L4c-6 — hierarchy flattens by reusing L3c's own machinery, not a second flattener
+
+`GerberHierarchyFlatten` is a DRIVING LOOP over `LayoutFlatten.FlattenOneLevel`/`FlattenAllLevels` — the
+exact same primitives L3c's `LayoutEditorViewModel.Flatten.cs` already uses for a single user-selected
+instance — applied to **every** instance of the root design, since Gerber (unlike GDSII/DXF) cannot
+represent an instance or array at all. No new transform math was written; the affine coordinate walk
+(R-L3c-2, including the arc-bulge mirror sign-flip) is entirely L3c's own. Cross-technology reconciliation
+(R-L3c-3) reuses `LayoutLayerMapping.Propose`/`RequiresConfirmation`/`BuildChoices` and `LayoutFragment.
+ApplyReconciliation` exactly as L3c's own VM code does, with the **same stated scope narrowing** L3c
+itself already committed to: checked only against each TOP-LEVEL instance's own DIRECT sub-cell, not
+re-checked at every deeper nesting level (`LayoutEditorViewModel.Flatten.cs`'s `CommitFlattenAllLevels`
+doc comment states this narrowing for the identical reason). This matters here for exactly the same
+"identical `(1,0)`–`(8,0)` key ranges" trap L1g/L3c's own history already names: a sub-cell built against
+the *other* starter technology hitting a flat Gerber file would silently land on the wrong layer with no
+warning if this were skipped. `Analyze`/`Flatten` return any needed mapping as `PendingCrossTechMappings`
+(keyed by the resolved sub-cell's absolute directory) and leave that subtree's shapes OUT of the result
+entirely until resolved — mirroring how a coordinate overflow blocks `GdsiiExport.Write` rather than
+producing a partial/wrong file — so the SAME `LayerMappingDialog` paste/retarget/flatten already use runs
+once per distinct pending sub-cell technology before the fidelity dialog is ever shown.
+`GerberHierarchyFlattenTests.cs` proves a 5×5 array flattens into exactly 25 positioned footprints, an
+unresolved instance is reported and contributes no geometry (never silently exported as anything, since
+Gerber has no way to represent a dangling reference at all — the concept doesn't exist in a flat format),
+a cross-tech sub-cell requires confirmation and contributes nothing until resolved, and a resolved mapping
+lands the shape on the **chosen** target layer, not the same-key coincidence a naive flatten would
+silently produce.
+
+## R-L4c-5 — labels become stroked geometry; port labels are omitted and reported separately
+
+`GerberExport.Analyze` converts every non-port `LabelShape` via the exact same pipeline the label-flatten
+feature already built — `LayoutTextOutline.BuildGlyphContours` (the one place this touches Skia,
+`SkiaFonts`/`SKTypeface`) then `LayoutTextFlatten.FlattenContoursToPolygons` (Clipper2 nesting for holes
+like 'O'/'8') — so on-screen and shipped silkscreen text agree, never "nothing" (Gerber has no text
+primitive at all). Port labels (`IsPort`) are omitted entirely (markers, not artwork) and counted
+separately from converted labels, both surfaced in the fidelity dialog. `GerberExportTests.
+Analyze_ConvertsNonPortLabel_ToPolygonGeometry_OmitsPortLabel` pins both halves in one test.
+
+## X2 attributes and the .gbrjob — R-L4c-2
+
+Every file carries `%TF.FileFunction%` (verbatim from the `.ctech`'s own `LayerDef.Interchange.
+GerberFileFunction` — free text the L0d tech editor's Interchange tab already collects, L4a scaffolding
+finally exercised), `%TF.FilePolarity,Positive*%`, `%TF.GenerationSoftware,circuitRF,<version>*%`,
+`%TF.CreationDate,<ISO8601>*%`, and a per-shape `%TO.N,<net>*%`/`%TD.N*%` net attribute pair that tracks
+changes shape-to-shape (never left stale from a previous shape's net) — all cost nothing and are what let
+a fab identify files and cross-check nets without a README. The `.gbrjob` (`GerberJobFile`, serialized via
+`System.Text.Json` rather than hand-built strings, so path escaping is never a source of a malformed
+file) landed — it lists every written file's path/FileFunction/FilePolarity, the answer to §8's own "which
+files belong together" hard part. `GerberExportTests.Write_FileFunctionMatchesCtechMapping_
+JobFileListsEveryFile` parses the actual written `.gbrjob` as JSON and cross-checks it against the actual
+Gerber file's own `%TF.FileFunction%` line — the SAME write, not a separately-imagined one.
+
+## Excellon (§5) — a single plated file, stated explicitly rather than guessed
+
+`InterchangeMapping` carries no plated/non-plated distinction to split on (only `GdsiiLayer`/
+`GdsiiDatatype`/`DxfLayerName`/`GerberSuffix`/`GerberFileFunction`) — per the brief's own explicit
+fallback, `ExcellonWriter` always emits one plated file, stated in this note rather than silently assumed
+elsewhere. Tool table deduped by drill diameter exactly as apertures are deduped; coordinates use an
+**explicit decimal point** at the same digit resolution the sibling Gerber files use (`GerberFormat.
+FormatDecimalMm` — pure integer-string manipulation, inserting a decimal point, never a `double`
+conversion, so it stays exact) rather than classic Excellon's zero-suppression convention, which is a
+well-known source of parser ambiguity this sidesteps entirely. `GerberExportTests.
+Write_ViaShape_ProducesCopperFlashAndDrillHit` proves a `Via` contributes BOTH a copper-layer pad flash
+AND an Excellon drill hit — "neither alone is a via," per §5's own text.
+
+## Report before writing (R-L4c-7) — the same silent-clean-export rule as GDSII/DXF
+
+`ExportPlan.HasNothingToReport` is true only when Bézier-flattened, hierarchy-flattened, label-converted,
+port-labels-omitted, bitmap-omitted, and paths-as-region counts are ALL zero, there are no unresolved
+instances, and the coordinate format is the plain default — deliberately excluding hole/arc counts (both
+are native, not conversions, see above). `GerberExportTests.PlainRectangle_DefaultResolution_
+HasNothingToReport` / `CurvedShape_HasSomethingToReport_IsFalse_WhenCubicPresent` pin both sides.
+
+## Scope guardrails held
+
+No Gerber import, no reader, no Import-menu entry (R-menu-5). No new geometry model changes, no new
+flattener (`GerberHierarchyFlatten` drives L3c's existing one), no second path-outline mechanism (reuses
+`LayoutClipper.ToClipperPaths`, the R-L1e-1 geometry split). No Gerber/Excellon library dependency —
+written entirely from the public RS-274X/X2 and Excellon specifications. `src/Core`, `src/Engine`,
+`RfCore` untouched.
+
+## Tests
+
+49 new tests across 7 files, all green: `GerberUnitsTests.cs` (9 — R-L4c-1's format resolution incl. the
+non-power-of-ten refusal), `GerberGeometryAndAperturesTests.cs` (6 — RoundedRect's kappa-bulge corners,
+cubic-in-ring flatten, aperture dedup), `GerberWriterTests.cs` (17 test cases from 15 methods, one a 3-case `[Theory]` — gates 2-6/10:
+exact coordinates, G75 placement, CCW/CW arcs with correct I/J, two-hole polarity switching, all four
+path end styles, aperture dedup, Via flash, X2 attributes, net attribute tracking, and the LabelShape/
+BitmapShape defensive-throw guardrail), `ExcellonWriterTests.cs` (5 — gate 9's header/tool-dedup/exact-
+coordinate/tool-selection matrix), `GerberJobFileTests.cs` (1 — valid JSON, every file listed),
+`GerberHierarchyFlattenTests.cs` (5 — gate 7: plain instance translation, 5×5 array, unresolved instance,
+cross-tech confirmation required, cross-tech resolved remap), `GerberExportTests.cs` (6 — end-to-end
+through real cell folders: silent-clean-export both directions, label/port-label conversion, Via
+copper-flash+drill-hit, X2/.gbrjob cross-check, 5×5-array end-to-end). One pre-existing test
+(`FileMenuRestructureTests.ExportSubmenu_ContainsGerber_DisabledWithReason`) was updated, not just left
+red — it asserted the File menu's Gerber entry was permanently disabled with a "not yet implemented"
+tooltip, which this phase makes false; renamed and rewritten to assert the entry now shares GDSII/DXF's
+own active-document gating instead. **49 new tests; 3227 Ui.Tests total (was 3178), all green** (`dotnet
+test`, the routine fast gate); full solution green (Firewall 4/4, Core 388/388, Engine 458/459 — 1
+pre-existing skip, matching every prior baseline in this file).
+
+**Not interactively verified, and no third-party Gerber viewer (an independent viewer) was available in
+this environment** — the same two compounding gaps L4b's own closing note already flagged for DXF, now
+true here as well: this headless environment cannot exercise the toolbar button/File-menu item/dialog at
+all, AND gate 12 ("open the full output set in an independent Gerber viewer... the gate that matters
+most... the only external check available, since Gerber has no reader here to round-trip against") could
+not be run. Correctness rests on the test suite above, which is necessarily "our own writer agrees with
+the public specification as read and reasoned about directly" (the G02/G03 CCW/CW convention, the LPD/LPC
+polarity mechanism, the X2 attribute syntax, the FSLAX/MOMM header) — precisely the class of gap L4a's own
+gate 12 demonstrated three times (STRANS data type, hand-typed CellRef, PATH record order) that automated
+self-consistency alone cannot catch, and L4b's own HATCH boundary-type-flag bug demonstrated a FOURTH time
+even when checked carefully against the spec rather than assumed from memory. **Please confirm on your
+end, with an independent Gerber viewer (record which and its version):** a design with arcs, holes, a
+constant-width round-cap trace, a non-round-cap trace, an array, a Via, and a non-port label opens with
+layers aligned, holes actually open (not filled), arcs rendering as curves (not chords), the trace reading
+as a stroke, drill hits registering exactly on their pads, and the silkscreen label legible as stroked
+outline text — plus that "Export Gerber…"/the File-menu "Gerber" entry behave correctly from the
+toolbar/File menu, and that the `.gbrjob` opens/parses in whatever tool reads it (an independent Gerber viewer
+reads `.gbrjob` natively).
+
+## Phase L4 is now complete
+
+GDSII (L4a, read+write), DXF (L4b, write first-class + documented-subset read), Gerber+Excellon (L4c,
+export-only, this brief) — all three interchange formats §8 names are now implemented, sharing one
+neutral model (`InterchangeStructure`), one layer-mapping dialog (`LayerMappingDialog`/
+`LayoutLayerMapping`), and one naming-collision algorithm (truncate-then-suffix, a new legality predicate
+per format). §8's own table has been updated to reflect this (Gerber's row no longer reads "Export only
+for v1" as a future promise). No further Interchange phase is currently planned; the next phase brief
+should pick from the remaining v1 scope outside Interchange (§9A DRC, §10 meshing, or whatever the owner
+prioritizes next) rather than assuming another L4 sub-phase.
+
+Drag fill — THREE rounds, three genuinely different defects, all now fixed (brief-drag-fill.md +
+brief-drag-fill-reopened.md, 2026-07-28, **REOPENED AND CORRECTED A SECOND TIME** by a third owner
+retest the same day) — COMPLETE. **This entry originally claimed the ghost was "already visibly filled"
+and that its fill "was NOT the explanation and was left untouched" (round 1) — both wrong, corrected in
+round 2 below. Round 2's own fix (raising the ghost's fill opacity) was real and correct but did NOT
+close the report** — a third retest found "not fixed. The ghost is still an outline during dragging of
+the selection of primitives. Instances render properly when dragging though," which named a FOURTH,
+previously-undiagnosed defect (round 3, below) that round 2 could not have touched — it lives in a
+completely different code path (the path cache used when dragging an EXISTING committed shape, never
+reached by the in-progress-draw/paste ghost round 2 fixed). Read all three rounds; do not assume the
+title alone means the report is closed.
+
+**Candidate 1 (R-fix-1 winding normalization) — correct, unchanged, stands exactly as originally
+found.** `LayoutRenderer.DrawLayer` substitutes `Overlay.DragOverrides` for the stored shape
+(`var shape = dragOverrides.TryGetValue(index, out var ov) ? ov : original;`) BEFORE the shape ever
+reaches geometry construction — both the individual tier and the L2c merge-tier aggregate then call the
+SAME `BuildShapePath`, and R-fix-1's `NormalizeOuterWinding` lives inside that one shared builder. A
+dragged shape was therefore never on a separate, unfixed code path for the overlap-cancellation report —
+R-fix-1's fix for "Group into Cell renders XOR'd" and "fill stops during a drag" are the exact same
+defect reaching the user through two different doors, and the one fix already closed both. This finding
+and its tests (`Dragged_SingleShape_IsPixelIdenticalToTheSameShapeCommittedDirectly`,
+`Dragged_OppositeWindingOverlap_IsFilled_NotCancelled`) were never reverted or weakened.
+
+**Candidate 2 (the ghost's own `WithAlpha(60)`) — closed too early, on reasoning about WHEN the code
+changed rather than WHAT the user sees.** The original pass reasoned that the ghost's fixed low alpha
+"predates the L2c performance work entirely and was never implicated by the timing the owner described,"
+and concluded it was "already visibly filled... just fainter... by design." That reasoning addressed
+*when* something last changed, not *whether the owner could actually see it* — and the owner's own
+instance-vs-primitive observation was new evidence the original pass never had access to.
+
+**R-dgf-1 — the gate that let this ship broken: a threshold test where a comparative one was needed.**
+`DrawingGhost_IsVisiblyFilled_NotOutlineOnly` asked "is there any fill at all" — trivially true at 24%
+opacity — and would have passed indefinitely while the ghost stayed visibly too faint next to a
+committed shape. Replaced (not supplemented — a threshold test left beside a comparative one preserves
+the exact thing that gave false confidence) by `DrawingGhost_FillMatchesCommittedFill_WithinStatedFraction`
+and `PasteGhost_FillMatchesCommittedFill_WithinStatedFraction`, which measure the ghost's fill against
+the SAME shape committed on the SAME layer and require it within 90% — the way the eye actually judges
+"can I see this," not "is there any pixel that isn't background."
+
+**R-dgf-2 — measured before changing anything, and the result contradicted the brief's own hypothesis.**
+Rendered the drawing ghost and a committed shape of the same layer to an off-screen bitmap, for a muted
+and a saturated layer colour, on both light and dark canvases. The ghost-to-committed fill-contrast ratio
+was **uniform across every combination — ≈0.67 (light) to ≈0.69 (dark)** — matching the raw alpha ratio
+60/89 (the ghost's fixed alpha=60 against the committed shape's opacity-derived alpha≈89 at the default
+FillOpacity=0.35) almost exactly. The brief's own working theory going in was "the likely explanation is
+colour, not opacity" (a saturated `theme.Selection` accent standing out where a muted layer colour might
+not); the measured data says otherwise plainly — the cause was opacity, uniformly, regardless of colour
+or theme, reported here as measured rather than quietly bent to fit the guess.
+
+**R-dgf-3 — the fix.** `LayoutRenderer.DrawGhostShape` now resolves the full `LayerDef` (not just its
+colour) and computes the fill alpha from `def.FillOpacity` using the IDENTICAL formula `DrawLayer`
+already uses for a committed shape's fill (`byte fillAlpha = (byte)Math.Clamp(Math.Round(def.FillOpacity
+* 255.0), 0, 255)`), replacing the old hardcoded `color.WithAlpha(60)`. The dashed stroke (alpha 220,
+unchanged) is what still marks a ghost as provisional now that the fill itself reads the same as
+committed. `DrawGhostShape` is shared by BOTH the L1b in-progress draw ghost and the L1f paste-fragment
+preview (`LayoutOverlay.PastePreview`), so this one change fixes both by construction — proven
+independently by `PasteGhost_FillMatchesCommittedFill_WithinStatedFraction`, not assumed from the shared
+call site. `DrawLayer`'s own committed-shape fill/opacity semantics and R8a's overlap darkening are
+untouched, per the guardrail; the instance placement ghost (`DrawPendingInstancePlacement`, a separate
+function using `theme.Selection`) was left alone — §3's own measurement showed no asymmetry to justify
+touching the one ghost the owner said already reads correctly.
+
+**Gate tests, corrected — `LayoutWindingNormalizationTests.cs`.** `DrawingGhost_IsVisiblyFilled_
+NotOutlineOnly` is gone (replaced, per R-dgf-1). Three new tests: the two comparative fill gates above,
+plus `DrawingGhost_EdgeShowsDashVariation_NotAUniformSolidStroke` (gate 5 — scans a band of pixels along
+the ghost's edge and asserts real on/off contrast variation, so raising the fill toward the committed
+opacity did not quietly turn "make it visible" into "make it pixel-identical to committed" — the dashed
+outline is still the one thing distinguishing a ghost). All of R-fix-1's own tests (both passes) are
+unchanged and still pass. **11 tests total in that file now** (was 9); **3262 Ui.Tests total (was 3259),
+all green**; full solution green (Firewall 4/4, Core 388/388, Engine 458/459 — 1 pre-existing skip,
+matching every prior baseline in this file).
+
+**Gate 6 (no performance regression) — the fix is a paint-alpha computation, not a new code path.**
+`DrawGhostShape` already resolved the layer colour before this fix; resolving the full `LayerDef` and
+computing one `byte` from an existing `double` field costs nothing measurable per ghost shape, and a
+ghost is drawn once per frame regardless of the underlying layer's shape count (unlike the committed-
+shape darkening path L2a's own crossover data addresses). Not re-benchmarked, because there is no new
+scaling behavior to measure.
+
+## Round 3 — the REAL bug behind "the ghost is still an outline during dragging": `LayoutPathCache` never checks whether the shape it's asked to draw is the one it has cached
+
+**This is a THIRD, distinct defect from rounds 1-2 above — not the same bug reported a third time.**
+Rounds 1-2 were both about ghost/preview rendering (`DrawGhostShape`, reached only for a brand-new
+in-progress draw or a paste-fragment preview). The owner's round-3 report — *"the ghost is still an
+outline during dragging of the selection of primitives. Instances render properly when dragging
+though"* — is about dragging an EXISTING, already-committed shape via the Select tool, which never
+touches `DrawGhostShape` at all; it goes through `DrawLayer`'s `Overlay.DragOverrides` substitution,
+a code path rounds 1-2 never modified and the pre-existing `Dragged_SingleShape_
+IsPixelIdenticalToTheSameShapeCommittedDirectly` test claimed was already correct.
+
+**Root cause, found by tracing the ACTUAL interactive drag pipeline rather than trusting that passing
+test:** `LayoutPathCache.GetOrBuild` (`src/Ui/Renderers/LayoutPathCache.cs`) is keyed by shape INDEX
+only — a cache hit returns whatever `(LocalPath, RefX, RefY)` was built the LAST time that index was
+drawn, without ever comparing the `shape` argument it was just handed against what produced the cached
+entry. `LayoutRenderer.DrawLayer`'s individual (per-shape darkening) tier resolves `shape` correctly as
+the translated drag-preview clone (`dragOverrides.TryGetValue(index, out var ov) ? ov : original`), but
+when `opts.PathCache` is non-null (which `LayoutCanvas` ALWAYS supplies for a real, bound document — see
+its constructor) that translated shape is only ever passed as an ARGUMENT to `GetOrBuild`; on a cache
+hit the argument is silently ignored and the STALE pre-drag `RefX/RefY` is reused. The shape's local
+geometry is translation-invariant so it isn't wrong — only its on-screen PLACEMENT is, so the fill (and
+its batched geometry stroke) stayed painted at the shape's original, undragged position. Meanwhile
+`DrawSelectionOutlines` — the accent outline drawn on top of every selected shape — recomputes its path
+fresh from the (correctly-translated) shape every single frame, with no cache involved, so it tracked
+the cursor perfectly. **The visible result was exactly the report: a stationary filled shape left
+behind, with only its unfilled accent selection outline visibly moving with the drag** — "the ghost is
+still an outline." Instances never showed this because `LayoutRenderer.Instances.cs`'s own compiled-cell
+cache (`_cellCompileCache`) caches ONLY translation-invariant compiled geometry and always recomputes the
+placement MATRIX fresh from the current (possibly drag-overridden) `LayoutInstance` every frame — it has
+no cached position field for a stale value to hide in.
+
+**Why the existing regression test gave false confidence:** `Dragged_SingleShape_
+IsPixelIdenticalToTheSameShapeCommittedDirectly`'s `RenderPixels` test helper never set `LayoutRenderOptions.
+PathCache` — it defaults to null, so `DrawLayer` always took the uncached `else` branch
+(`BuildShapePath(shape, ps, counters)`, built fresh from the actual `shape` every call), which is NOT
+the buggy branch. The test genuinely proved the `DragOverrides` substitution and R-fix-1's winding
+normalization are correct; it was structurally incapable of reaching the `opts.PathCache is {} cache`
+branch `LayoutCanvas` always exercises in the real app, because it omitted one optional parameter. Same
+lesson as R-dgf-1 in a different shape: a test that never drives the ACTUAL composed pipeline can pass
+green forever next to a real, visible bug.
+
+**Fix — `LayoutRenderer.DrawLayer`, one added condition:** `if (opts.PathCache is { } cache &&
+!dragOverrides.ContainsKey(index))` — a shape currently being drag-previewed bypasses the path cache
+entirely and falls through to the uncached branch for that one shape. A drag selection is always small,
+so this costs nothing, and it matches this codebase's own pre-existing "drags never touch a cache/index"
+rule already applied to the L2b spatial index (`SnapshotDragStartPositions`/live overlay never mutate
+`Model.Shapes` or the spatial index mid-drag) — extended here to `LayoutPathCache` for the same reason.
+`LayoutPathCache.GetOrBuild` itself is unchanged; its cache-by-index/never-re-validate contract is fine
+for its actual intended use (committed, non-dragged geometry) as long as no caller ever asks it to cache
+a transient drag-preview clone, which is now guaranteed by the caller-side bypass rather than a change to
+the cache's own API/cost model.
+
+**New regression test, reproducing the real pipeline end to end** —
+`Dragged_SingleShape_WithLivePathCache_FillFollowsTheDragNotTheStalePosition` in
+`LayoutWindingNormalizationTests.cs`: renders a shape once as COMMITTED through a live
+`LayoutPathCache` (seeding the cache at its index, exactly as the real app always has by the time a user
+starts dragging something already on screen), then renders again on the SAME cache instance with a
+`DragOverrides` entry translating the shape elsewhere, and asserts the fill is present at the NEW
+position and absent at the stale original one. **Confirmed to actually catch the bug, not just exercise
+it**: reverting the `DrawLayer` fix and re-running this one test fails it directly (`the fill must
+follow the drag to its new position, not stay behind`), then passes again with the fix restored. **12
+tests total in that file now** (was 11); **3263 Ui.Tests total (was 3262), all green**; full solution
+green (Firewall 4/4, Core 388/388, Engine 458/459 — 1 pre-existing skip, matching every prior baseline in
+this file).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout Editor
+phase) — the pixel-oracle gate tests above (rounds 2 and 3) are the same class of evidence this file
+already relies on for every unverifiable rendering claim, and round 3's test in particular reproduces the
+real `LayoutCanvas`/`LayoutPathCache` pipeline rather than a synthetic one; please confirm on your end
+that: the in-progress drawing ghost and a paste-fragment preview read as visibly filled next to a
+committed shape on the same layer, at the same opacity, with only the dashed outline marking them
+provisional (round 2); AND — the report this round-3 fix actually targets — that dragging an EXISTING
+selected primitive shape (single or multi-selection) now shows the FILL following the cursor in real
+time, not just an outline, matching how a dragged instance already behaved.
+
+Foreign documents — editing files from outside the current workspace (brief-foreign-documents.md,
+2026-07-28) — COMPLETE: a document (today: `LayoutDocument`) whose file lives outside the currently
+open workspace — opened via File▸Open, or orphaned when a workspace switch replaces the docked contents
+of its window while it survives as a torn-off float — now keeps full editing/save/undo/push-in
+privileges, resolves its technology against its OWN ancestor workspace (never the currently-open one),
+and is visibly marked on all three chrome surfaces without ever touching rendered geometry.
+
+## R-fgn-1 — "tearing off is presentation, not semantics" — the one bug this actually surfaces
+
+Foreignness is determined SOLELY by a document's own file path — never by how it was opened or whether
+it is docked or floated. Auditing every tear-off-keyed check found exactly one real violation:
+`WriteWorkspaceFile` scanned `_factory.DocumentDock?.VisibleDockables` (the shell's own docked-document
+tree only), silently excluding any floated workspace-bound document from `.cws`'s `OpenDocuments` on
+save — a genuine privilege loss, not a hypothetical one. Fixed by switching the scan source to
+`_openDocsByPath.Values` (already docked/floated-agnostic, established in a prior brief), filtered by the
+new `WorkspaceRootFinder.IsOutside(docPath, wsDir)` guard so a FOREIGN document is correctly excluded
+from `.cws` (R-fgn-6) while a floated WORKSPACE-BOUND one is correctly included again. Everything else
+audited (tree node, dirty dot, Save-All, Remove/Rename Cell) was already float-agnostic by construction —
+confirmed by reading, not assumed (see R-fgn-6 below for the isolation half).
+
+## R-fgn-2 — workspace switch scope, and the interpretation the brief asked to have confirmed
+
+**Interpretation adopted, flagged here per the brief's own request for owner confirmation if wrong:** "a
+workspace switch replaces the contents of the window it happens in; other windows are not affected" is
+read as *docked* documents in the switching window close (as today), while *torn-off* windows — in any
+window — survive and become foreign. A dirty torn-off document does NOT prompt on switch; it stays open
+and dirty, exactly like brief-file-menu-restructure.md's own R-menu-6 finding already reported this
+codebase's own scratch documents doing *by accident* — this brief makes that behavior deliberate and
+general, not a fix in either direction. **Please confirm this is what was meant** — if "other windows are
+not affected" was intended to mean something narrower, `ResetToBlankShell`'s split below is the one place
+to revisit.
+
+`ResetToBlankShell` was rewritten to split every document list (4 scratch lists + `_openDocsByPath`) into
+docked (closed via `ForceCloseDockable`, with selective per-path `RetireSessionIfUnreferenced`/
+`RetireLayoutSessionIfUnreferenced` calls) vs. floated (survive, re-populated into the cleared tracking
+structures afterward) — `IsDockableDocked(d) => ReferenceEquals(_factory.FindRoot(d), Layout)`, resolved
+via `Dock.Model.FactoryBase.FindRoot` (confirmed public via decompilation). The prior blanket
+`_registry.Clear()`/`_layoutRegistry.Clear()` was removed — recognized during implementation, before any
+test failure, that a blanket clear would sever a surviving floated document's own push-in session, which
+is strictly more destructive than the existing per-path retire convention `RemoveCellAsync`/
+`RenameCellAsync` already establish.
+
+**Scope split, not a blanket flag:** `HasAnyDirtyWork`/`PromptSaveBeforeClose` both gained an
+`includeFloated` bool parameter (default `true`, preserving every pre-existing caller's behavior
+unchanged) threaded via a local `Keep(IDockable d) => includeFloated || IsDockableDocked(d);` predicate
+across every scratch/materialized list. `NewWorkspace`/`OpenWorkspace`/`OpenRecentWorkspace`/
+`CloseWorkspace` call both with `includeFloated: false` (a surviving floated document must be neither
+counted nor swept into "Save All" at switch time); quit and every other pre-existing caller keep the
+default `true` (quitting really would lose a floated document's unsaved work). **R-fgn-5's audit finding,
+stated plainly since the brief asked for it explicitly: `HasAnyDirtyWork`/`PromptSaveBeforeClose`/
+`SaveAllDocuments` were ALREADY document-driven (iterating `_scratchDocs`/`_openDocsByPath`/
+`ResolveActiveDocumentForCommands`), never tree-node-driven, before this brief touched them** — the only
+gap found anywhere in this area was R-fgn-1's `WriteWorkspaceFile` scan source above, not this sweep.
+
+## R-fgn-3 — TechRef=null now means "the document's OWN parent workspace," resolved live, never snapshotted
+
+New `WorkspaceRootFinder` (`src/Ui/Schematic/WorkspaceRootFinder.cs`, framework-free) —
+`FindAncestorCws(startDir)` walks `Path.GetDirectoryName` repeatedly checking for a `.cws` file (the
+git/solution-root pattern, no new state to carry) and `IsOutside(absolutePath, workspaceRootDir)` (used by
+R-fgn-1/R-fgn-6). `WorkspaceViewModel.ResolveTechFor` was rewritten: instead of always resolving a null
+`TechRef` against `CurrentWorkspacePath` (whichever workspace the UI happens to have open), it walks up
+from the `.clay`'s OWN directory to find ITS OWN ancestor `.cws` first, and resolves the workspace default
+technology from THAT workspace's own `.cws`/`tech/` folder — a scratch document (no path yet) is the one
+case that still falls back to the currently-open workspace, since it has no path to walk up from and
+belongs to whichever workspace it will eventually be saved into.
+
+**Why a snapshot was rejected, and what "live" means concretely:** an earlier draft considered caching
+"this document's workspace root" once, at open time, on the VM — rejected because a Save-As can move a
+document into a different workspace, and a live `.ctech` edit (or a `TechnologyCache.Invalidate` from
+"Reload Technology") must be visible to an already-open foreign document without any re-wiring. Every
+relevant `LayoutEditorViewModel` property (`WorkspaceTechDir`, `IsForeign`, `SourceWorkspaceName`,
+`SourceWorkspaceCwsPath`, all in `LayoutEditorViewModel.Retarget.cs`) is a computed getter re-evaluated on
+every access from `CurrentLayoutPath` fresh; `ResolveTechFor` itself re-derives the ancestor workspace on
+every call rather than caching it. This is what makes Save-As "adopt" a document (R-fgn-3/gate 12) and a
+later `.ctech` edit propagate (gate 5) fall out for free from the pre-existing `TechnologyCache`/live-
+refresh machinery, with zero new wiring beyond `WireRetargetSeam` reading `vm.CurrentLayoutPath` live
+instead of a captured string.
+
+`WorkspaceViewModel.WireRetargetSeam` (called at every `new LayoutEditorViewModel(...)` site, base or
+pushed-in sub-cell alike, via the pre-existing `BuildLayoutSessionVm` funnel) sets:
+`vm.CurrentWorkspaceRootDirProvider = () => CurrentWorkspacePath is null ? null :
+Path.GetDirectoryName(CurrentWorkspacePath)` — the SAME closure for every session VM, base or pushed-in.
+Because a pushed-in sub-cell session is its own `LayoutEditorViewModel` with its OWN `CurrentLayoutPath`
+(the sub-cell's `.clay`, which lives under the SAME ancestor workspace as its parent — CellRef always
+resolves relative to the parent's own directory), gate 8 (push-in resolves against the document's own
+workspace) falls out of this design with no additional code — confirmed directly, not assumed, by
+`ForeignDocumentTechResolutionTests.Gate8_PushInto_SubCellSession_StillResolvesAgainstParentsOwnWorkspace_NotTheCurrentlyOpenOne`.
+
+## R-fgn-4 — the no-parent-workspace prompt: session-scoped, three routes, never a silent fallback
+
+When `ResolveTechFor` finds no ancestor `.cws` at all AND no explicit `TechRef` AND nothing else resolved
+(`TechResolutionSource.None`) — a genuinely parent-less loose file — it triggers
+`TryPromptForOrphanTechnology` (guarded by `_pendingOrphanTechPrompts`, a `HashSet<string>`, so a rapid
+re-resolve from e.g. `RefreshAllOpenLayoutTech` never pops the dialog twice concurrently for the same
+path) instead of silently falling back to `FallbackPalette` — §2.1's explicit rule: this is the whole
+technology missing, not one unknown layer. `Views.Dialogs.OrphanTechnologyDialog.ShowAsync` offers three
+routes (browse for a `.ctech`; pick one from the CURRENT workspace's `tech/` folder; a built-in starter
+technology) and the choice is recorded in `_sessionTechOverrides` (`Dictionary<string, OrphanTechChoice>`,
+keyed by normalized absolute `.clay` path) — checked FIRST inside `ResolveTechFor`, before any resolution
+walk, so the prompt fires **once per document per session**, never re-asked and never overwritten by a
+later automatic re-resolve. **Never written to disk** (no `TechRef` is minted into the file — that would
+conflate "point at a technology" with "duplicate one," which is exactly what `Change Technology…` already
+exists to do deliberately) and **never silently falls back** — dismissing the dialog leaves the document
+unresolved and asks again next time it's touched, rather than adopting `FallbackPalette` quietly.
+
+## §3/§4 participation and marking
+
+Every table-row privilege in §3 (editable/saveable/undoable, push-in/hierarchy nav, Save All/quit
+participation) required NO new plumbing beyond R-fgn-1's `WriteWorkspaceFile` fix and R-fgn-2's
+`includeFloated` scoping above — `LayoutDocument`/`LayoutEditorViewModel` never distinguished
+foreign-vs-workspace-bound for editing/undo/save in the first place, only for tree/`.cws` membership,
+which R-fgn-1/R-fgn-6 now handle correctly. **Save-As adopts a document automatically** (gate 12) —
+`IsForeign`/`SourceWorkspaceName` are computed from `CurrentLayoutPath` live, so moving a document's path
+into the current workspace via Save-As flips `IsForeign` to false with no explicit "adopt" step; the
+Save-As call sites (`SaveLooseLayout`, `SaveScratchLayoutAsFile`) additionally call
+`doc.ViewModel.ApplyTechResolution(ResolveTechFor(...))` (technology is snapshotted, unlike the marking
+properties, so it needs an explicit re-apply after a path change) and `doc.RefreshForeignMarking()`.
+
+**Marking, three surfaces, chrome only — R-fgn-7, never rendered geometry (confirmed by construction: no
+rendering code was touched anywhere in this brief):**
+1. **Title bar** — `LayoutDocument.UpdateTitle()`: `mylayout — [AmpProject]` when foreign (workspace name
+   in brackets), preserving the existing dirty bullet `•` (never an asterisk, which reads as "unsaved"
+   elsewhere in this app) — `doc.OnSavedAs` was fixed to route through `UpdateTitle()` instead of a direct
+   `Title =` assignment so the foreign suffix applies after Save-As too (caught during implementation).
+2. **Edge band** — a thin `Border` (`DockPanel.Dock="Top"`, right below `TornOffFileMenuView`, above the
+   toolbar) in `LayoutEditorView.axaml`, `IsVisible="{Binding IsForeign}"`, new `CrfForeignBandBrush`/
+   `CrfForeignAccentBrush` (amber, `#33E8A33D`/`#E8A33D` — **never red**, foreign is a normal supported
+   state, not an error) naming the source workspace ("From workspace: {name}" / "Not part of any
+   workspace" when `SourceWorkspaceName` is null) plus an "Open Workspace" button
+   (`OnOpenSourceWorkspaceClick` in the view's code-behind, resolving `WorkspaceViewModel` via the same
+   `desktop.Windows` scan `TornOffFileMenuView.RefreshForCurrentWindow` already established, since this
+   view's `DataContext` is the `LayoutDocument`, not the VM) wired to the new
+   `WorkspaceViewModel.OpenSourceWorkspaceCommand` (prompts to save current dirty docked work, then calls
+   `SwitchToWorkspace`).
+3. **Tab header tint** — `App.axaml`'s `dockCtrl|DocumentControl` style gained a `HeaderTemplate` override
+   (the theme's own default is a bare `TextBlock` bound to `Title`) wrapping the same `TextBlock` in a
+   `Border` whose `Background` tints via the new `Converters.ForeignDocumentTintConverter`
+   (`{Binding IsForeign}`) — same amber, matching the edge band exactly. The template's declared `DataType`
+   is `Dock.Model.Core.IDockable` (`x:CompileBindings="False"`), so every OTHER document type
+   (`SchematicDocument`, `SymbolEditorDocument`, `DataDisplayDocument`, `TechDocument`, `CellParameterEditorDocument`)
+   simply binds `IsForeign` to nothing and renders untinted — **a stated, narrower scope, not silently
+   incomplete**: full 3-surface marking is implemented for `LayoutDocument` only, matching every one of
+   the brief's own worked gate examples (4/5/6/13), which are all layout-centric. Extending §4 to the
+   other document types (none of which have a "foreign" concept today, since none resolve anything
+   workspace-scoped the way a layout resolves its technology) is a named follow-up, not attempted here.
+
+## R-fgn-6 — isolation, confirmed by reading and by a name-collision test, not assumed
+
+A foreign document is never recorded in the current workspace's `.cws` (R-fgn-1's `IsOutside` guard,
+above). `CellUsageScanner`/`RemoveCellAsync`/`RenameCellAsync` were audited directly (not merely trusted
+because "L3b's `LayoutSessionRegistry` is keyed per path so it should already behave"): `RemoveCellAsync`/
+`RenameCellAsync` both close open tabs via `_openDocsByPath.Where(kvp => IsPathOrUnder(kvp.Key, cellPath))`
+— `_openDocsByPath` is keyed by each document's own ABSOLUTE path, so a foreign document living outside
+the current workspace's directory tree can never match `IsPathOrUnder` against a path INSIDE that tree,
+even on a literal cell-name collision (confirmed directly by
+`ForeignDocumentIsolationTests.CountReferencingCells_NeverCountsACellOutsideTheGivenWorkspaceRoot_EvenOnNameCollision`,
+which builds two entirely separate workspace roots each containing an identically-named `Target`/
+`Referencer` pair and asserts the foreign one is never counted and never rewritten). `CellUsageScanner.
+RewriteCellReferences`/`CountReferencingCells` both scan via `Directory.EnumerateDirectories(workspaceRootDir, …)`
+— structurally incapable of reaching outside the root they are given, confirmed by reading, not assumed.
+
+## R-fgn-8 — a standing constraint for the future cross-workspace-instancing feature
+
+Foreignness is a RUNTIME concept only — no persisted cross-workspace path format was introduced anywhere
+(`.clay`'s `TechRef` stays a same-workspace-relative string or null; `.cws`'s `OpenDocuments`/`KnownFiles`
+only ever name paths inside their own workspace, per R-fgn-1/R-fgn-6 above). This is deliberate, not an
+oversight: cross-workspace instancing ("Add Library…", still dead/unreferenced per
+brief-file-menu-restructure.md's own finding) is a SEPARATE future feature whose central design question
+(a named-library-alias via `.cws`, the standard library-alias pattern, vs. raw paths) must not be answered by
+accident by anything built here. Any future brief touching cross-workspace references should read this
+note first.
+
+## Scope guardrails held
+
+No "Add Library", no cross-workspace instancing, no library aliases (R-fgn-8). No change to
+workspace-bound document behavior, docked or torn off. No change to `TechRef`'s meaning beyond R-fgn-3's
+resolution-order change (still a relative path or null; still never written unless the user explicitly
+retargets). No `.clay`/`.ctech`/`.cws` format changes. No tint/recolour/alteration of rendered geometry
+anywhere (confirmed by construction — no renderer file was touched). `src/Core`, `src/Engine`, `RfCore`
+untouched.
+
+## Tests
+
+25 new tests in `tests/Ui.Tests/ForeignDocumentsTests.cs` (`WorkspaceRootFinderTests` — ancestor-.cws walk
+incl. nested-workspace nearest-wins, `IsOutside`; `ForeignDocumentTechResolutionTests` — gate 4's headline
+PCB-vs-MMIC-(7,0)-collision test via a `SimulateResolveTechFor` helper mirroring
+`WorkspaceViewModel.ResolveTechFor`'s exact resolution order (the "simulate the production seam" pattern
+this codebase already established for `WorkspaceViewModel`-only logic, which cannot be constructed
+headlessly), gate 5's live-not-frozen `.ctech`-edit-after-first-resolve test, gate 6's no-ancestor-
+resolves-to-None assertion, gate 8's push-in-still-resolves-against-the-parent's-own-workspace test, gate
+12's Save-As-adopts test via a live `CurrentLayoutPath` reassignment, plus direct `IsForeign`/
+`SourceWorkspaceName`/`WorkspaceTechDir` coverage for the scratch/workspace-bound/foreign/no-ancestor
+cases; `ForeignDocumentMarkingTests` — title-bar suffix presence/absence, dirty-bullet-and-suffix-
+together-never-an-asterisk, `RefreshForeignMarking` recomputing the title after a simulated workspace
+switch; `ForeignDocumentIsolationTests` — gate 10's name-collision isolation test above;
+`ForeignDocumentTabTintTests` — the tint converter's true/false/null cases incl. the R-fgn-7 never-red
+assertion, plus a source-scan pinning the `App.axaml` `HeaderTemplate` wiring the same way
+`LayoutContextMenuStackingTests.cs` already established for AXAML that cannot be pixel-verified
+headlessly). Fixed two pre-existing tests in `LayoutInstanceClipboardTests.cs` that assigned the (now
+read-only, computed) `WorkspaceTechDir` property directly — switched to setting the still-settable
+`FallbackWorkspaceTechDir` seam instead (the correct mechanism for a scratch VM), and added a real `.cws`
+marker file to that test class's workspace fixture (a materialized VM's `WorkspaceTechDir` now requires a
+genuine ancestor-.cws walk to succeed, exactly like a real open workspace always provides one). **3174
+Ui.Tests total (was 3149), all green**; full solution green (Firewall 4/4, Core 388/388, Engine 458/459 —
+1 pre-existing skip, matching every prior baseline in this file).
+
+**Gate 14 (grep every written `.clay`/`.cws` for a cross-workspace reference) is satisfied by
+construction, not by a runtime grep-after-the-fact test** — R-fgn-8's own guardrail (no persisted
+cross-workspace path format was introduced anywhere) makes this structurally true rather than something
+to verify after the fact; there is no code path in this brief that could write one.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout Editor
+phase) — the edge band's live rendering, the tab-tint's actual pixel appearance, and the orphan-technology
+dialog's three-route UI cannot be exercised headlessly for the same reason every prior phase's dialog/menu
+code couldn't be; correctness rests on the gate tests above, which drive the exact same public methods
+(`ResolveTechFor`'s mirrored logic, `LayoutEditorViewModel.IsForeign`/`SourceWorkspaceName`,
+`LayoutDocument.RefreshForeignMarking`, `CellUsageScanner.CountReferencingCells`/`RewriteCellReferences`)
+the view/menu code-behind and `WorkspaceViewModel` call. Please confirm on your end: opening a `.clay`
+from outside the current workspace shows the amber edge band naming its own workspace (or "Not part of
+any workspace" for a genuinely loose file) with a working "Open Workspace" button, an amber-tinted tab
+header, and a title-bar `[workspace name]` suffix that survives alongside the dirty bullet; switching
+workspaces closes docked tabs but leaves a torn-off foreign layout window open and interactively
+editable; opening a layout from workspace A (TechRef=null) while workspace B is loaded — where A and B
+use different technologies sharing the same layer key range — shows A's own layer names/colours; and a
+layout with no ancestor workspace at all prompts once for a technology (browse / pick from current
+workspace / starter) and never re-prompts for the rest of the session. **R-fgn-2's interpretation above
+also needs your explicit confirmation** — it decides what "other windows are not affected" means in
+concrete terms for this codebase.
+
 File-menu restructure + View-menu cleanup (brief-file-menu-restructure.md, 2026-07-28) — COMPLETE:
 **supersedes item 8 of `brief-layout-testing-fixes.md`** — that item's smaller Import/Export
 reorganisation is unchanged in *content*; this brief rearranges it into the fuller structure below.

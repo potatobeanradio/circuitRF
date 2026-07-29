@@ -68,6 +68,30 @@
         <!-- brief-file-menu-restructure.md §4A: File menu, visible only when torn off. -->
         <shared:TornOffFileMenuView DockPanel.Dock="Top"/>
 
+        <!-- brief-foreign-documents.md §4 item 2: edge band — a foreign document (its own file does
+             not belong to the currently open workspace, R-fgn-1: regardless of docked/torn-off) shows
+             an amber strip naming its source workspace, with an affordance to switch to it. Amber, not
+             red (R-fgn-7: a foreign document is a normal, supported state) — never tints the rendered
+             geometry, only this chrome band. -->
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding IsForeign}"
+                Background="{DynamicResource CrfForeignBandBrush}"
+                BorderBrush="{DynamicResource CrfForeignAccentBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="10,4">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11"
+                           Text="{Binding SourceWorkspaceName, StringFormat='From workspace: {0}'}"
+                           IsVisible="{Binding SourceWorkspaceName, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11"
+                           Text="Not part of any workspace"
+                           IsVisible="{Binding SourceWorkspaceName, Converter={x:Static ObjectConverters.IsNull}}"/>
+                <Button Grid.Column="1" Content="Open Workspace" FontSize="11" Padding="6,2"
+                        IsVisible="{Binding SourceWorkspaceCwsPath, Converter={x:Static ObjectConverters.IsNotNull}}"
+                        Click="OnOpenSourceWorkspaceClick"/>
+            </Grid>
+        </Border>
+
         <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
         <Border x:Name="ToolbarBorder" DockPanel.Dock="Top"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
@@ -132,11 +156,20 @@
                                 ToolTip.Tip="Label" Padding="6,3">
                             <mi:MaterialIcon Kind="LabelOutline" Width="16" Height="16"/>
                         </Button>
+                        <!-- Via tool (docs/sonnet-briefs/brief-via-primitive-and-stackup.md §4.1) —
+                             single click, no drag; disabled with a reason (R13a) on a technology whose
+                             stackup has no via layer, per ViaToolAvailability. -->
+                        <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Via}"
+                                Command="{Binding ActiveViewModel.SetActiveToolCommand}" CommandParameter="Via"
+                                IsEnabled="{Binding ActiveViewModel.ViaToolAvailability.CanExecute}"
+                                ToolTip.Tip="{Binding ActiveViewModel.ViaToolTipText}" Padding="6,3">
+                            <mi:MaterialIcon Kind="RecordCircleOutline" Width="16" Height="16"/>
+                        </Button>
                         <Button Click="OnInsertBitmap" ToolTip.Tip="Insert Bitmap…" Padding="6,3">
                             <mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/>
                         </Button>
                         <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Instance}"
-                                Click="OnInstanceTool" ToolTip.Tip="Instance… (place a cell reference, L3a)" Padding="6,3">
+                                Click="OnInstanceTool" ToolTip.Tip="Instance… (place a cell reference)" Padding="6,3">
                             <mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/>
                         </Button>
 
@@ -189,6 +222,12 @@
                              whole-hierarchy shape as Export GDSII, sits alongside it. -->
                         <Button Click="OnExportDxf" ToolTip.Tip="Export DXF…" Padding="6,3">
                             <mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/>
+                        </Button>
+
+                        <!-- Gerber/Excellon export (docs/sonnet-briefs/brief-L4c-gerber-export.md) —
+                             closes Phase L4; whole-hierarchy export, no import, sits alongside GDSII/DXF. -->
+                        <Button Click="OnExportGerber" ToolTip.Tip="Export Gerber…" Padding="6,3">
+                            <mi:MaterialIcon Kind="FileChartOutline" Width="16" Height="16"/>
                         </Button>
 
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
@@ -401,6 +440,10 @@
             <ctrl:LayoutRulerControl x:Name="VRuler" DockPanel.Dock="Left" Width="22" Orientation="Vertical" ClipToBounds="True"/>
 
             <Panel>
+                <!-- An empty layout renders as a plain canvas with the background grid showing — no
+                     placeholder overlay (owner report: the L0b placeholder used to cover the grid with
+                     an opaque background, making a fresh layout look broken/blank rather than ready to
+                     draw on). -->
                 <ctrl:LayoutCanvas x:Name="LayoutCanvasCtrl" ViewModel="{Binding ActiveViewModel}" ClipToBounds="True">
                     <!-- L1-fix (brief-L1-fix-context-menu-stacking.md): ONE ContextMenu instance,
                          declared here and opened by Avalonia itself — mirrors SymbolEditorView.axaml's
@@ -409,21 +452,6 @@
                         <ContextMenu Opening="OnLayoutContextMenuOpening"/>
                     </ctrl:LayoutCanvas.ContextMenu>
                 </ctrl:LayoutCanvas>
-
-                <!-- L0b's centered placeholder — kept for an empty layout instead of a bare canvas. -->
-                <Border Background="{DynamicResource SystemRegionColor}"
-                        IsVisible="{Binding ActiveViewModel.IsEmpty}"
-                        IsHitTestVisible="False">
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-                        <mi:MaterialIcon Kind="VectorSquareEdit" Width="40" Height="40"
-                                         Foreground="{DynamicResource SystemBaseMediumColor}"
-                                         HorizontalAlignment="Center" Opacity="0.6"/>
-                        <TextBlock Text="Empty layout — pick a tool and start drawing."
-                                   FontSize="13"
-                                   Foreground="{DynamicResource SystemBaseMediumColor}"
-                                   HorizontalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
             </Panel>
 
         </DockPanel>

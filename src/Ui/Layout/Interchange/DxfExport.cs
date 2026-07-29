@@ -26,6 +26,10 @@ public static class DxfExport
         int DbuPerMicron)
     {
         public bool CanWrite => true;
+
+        /// <summary>R-via-10: any via at all means this export is geometry-only, never a manufacturable
+        /// PCB deliverable (DXF carries no drill table) — mirrors <c>GdsiiExport.ExportPlan.HasVias</c>.</summary>
+        public bool HasVias => Structures.Any(s => s.Shapes.Any(sh => sh is ViaShape));
     }
 
     /// <summary>Walks <paramref name="rootCellDir"/>'s hierarchy — no bytes written yet. Identical

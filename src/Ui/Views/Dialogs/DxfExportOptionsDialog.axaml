@@ -11,18 +11,23 @@
     <Grid RowDefinitions="Auto,Auto,Auto,Auto" Margin="20,16,20,16">
 
         <StackPanel Grid.Row="0" Spacing="8">
-            <TextBlock Text="This export will change the design as follows:" FontSize="12" FontWeight="SemiBold"/>
+            <SelectableTextBlock Text="This export will change the design as follows:" FontSize="12" FontWeight="SemiBold"/>
 
-            <TextBlock x:Name="CurveLine" FontSize="11" TextWrapping="Wrap"/>
-            <TextBlock x:Name="HoleLine" FontSize="11" TextWrapping="Wrap"/>
-            <TextBlock x:Name="BitmapLine" FontSize="11" TextWrapping="Wrap"/>
-            <TextBlock x:Name="MixedLine" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
-            <TextBlock x:Name="PathLine" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
-            <TextBlock x:Name="EscapedTextLine" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
-            <TextBlock x:Name="NoChangesLine" Text="No curves, holes, or bitmaps — geometry exports unchanged."
+            <SelectableTextBlock x:Name="CurveLine" FontSize="11" TextWrapping="Wrap"/>
+            <SelectableTextBlock x:Name="HoleLine" FontSize="11" TextWrapping="Wrap"/>
+            <SelectableTextBlock x:Name="BitmapLine" FontSize="11" TextWrapping="Wrap"/>
+            <SelectableTextBlock x:Name="MixedLine" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
+            <SelectableTextBlock x:Name="PathLine" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
+            <SelectableTextBlock x:Name="EscapedTextLine" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
+            <SelectableTextBlock x:Name="ViaPartsSkippedLine" FontSize="11" TextWrapping="Wrap"
+                       Foreground="{DynamicResource CrfWarningBrush}" IsVisible="False"/>
+            <SelectableTextBlock x:Name="ViaFabricationNoteLine"
+                       Text="Vias export as geometry only; use Gerber + Excellon for fabrication."
+                       FontSize="11" Opacity="0.7" IsVisible="False"/>
+            <SelectableTextBlock x:Name="NoChangesLine" Text="No curves, holes, or bitmaps — geometry exports unchanged."
                        FontSize="11" Opacity="0.7" IsVisible="False"/>
 
-            <TextBlock x:Name="UnresolvedHeader"
+            <SelectableTextBlock x:Name="UnresolvedHeader"
                        Text="Warning — the following instances reference a cell that could not be resolved and will export as a dangling reference:"
                        FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource CrfWarningBrush}"
@@ -32,7 +37,7 @@
                 <ItemsControl x:Name="UnresolvedList">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="x:String">
-                            <TextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap"
+                            <SelectableTextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap"
                                        Foreground="{DynamicResource CrfWarningBrush}"/>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -41,17 +46,17 @@
         </StackPanel>
 
         <StackPanel Grid.Row="1" Spacing="8" Margin="0,16,0,0">
-            <TextBlock Text="Options" FontSize="12" FontWeight="SemiBold"/>
+            <SelectableTextBlock Text="Options" FontSize="12" FontWeight="SemiBold"/>
             <CheckBox x:Name="FlattenSplinesCheck" Content="Flatten curves to polylines (for viewers that don't read SPLINE)" FontSize="11"/>
             <CheckBox x:Name="PathOutlineCheck" Content="Export paths as their outline polygon (loses end-cap style, gains exact width)" FontSize="11"/>
 
-            <TextBlock Text="View on open" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,0"/>
+            <SelectableTextBlock Text="View on open" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,0"/>
             <ComboBox x:Name="ViewModeCombo" FontSize="11" HorizontalAlignment="Stretch">
                 <ComboBoxItem Content="Fit to extents"/>
                 <ComboBoxItem Content="Match current view"/>
             </ComboBox>
 
-            <TextBlock Text="File version" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,0"/>
+            <SelectableTextBlock Text="File version" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,0"/>
             <ComboBox x:Name="AcadVersionCombo" FontSize="11" HorizontalAlignment="Stretch"
                       SelectionChanged="OnAcadVersionChanged">
                 <ComboBoxItem Content="AutoCAD 2000/R2000 — widest compatibility, approximate colour"/>
@@ -60,7 +65,7 @@
             </ComboBox>
         </StackPanel>
 
-        <TextBlock x:Name="FormatVersionLine"
+        <SelectableTextBlock x:Name="FormatVersionLine"
                    Grid.Row="2"
                    Margin="0,16,0,0"
                    FontSize="10" Opacity="0.55"

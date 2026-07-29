@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="CircuitRF.Ui.Views.Dialogs.OrphanTechnologyDialog"
+        Title="Choose a Technology"
+        Width="420"
+        SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="20,16,20,16">
+
+        <TextBlock x:Name="MessageText" Grid.Row="0" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+        <RadioButton x:Name="BrowseRadio" Grid.Row="1" GroupName="Route" Content="Browse for a technology file (.ctech)…" FontSize="12"/>
+
+        <RadioButton x:Name="CurrentWorkspaceRadio" Grid.Row="2" GroupName="Route"
+                     Content="Use a technology from the current workspace" FontSize="12" Margin="0,8,0,0"/>
+        <ListBox x:Name="CurrentWorkspaceList" Grid.Row="3" MaxHeight="120" FontSize="12" Margin="20,4,0,0"/>
+
+        <RadioButton x:Name="StarterRadio" Grid.Row="4" GroupName="Route"
+                     Content="Use a built-in starter technology" FontSize="12" Margin="0,8,0,0" IsChecked="True"/>
+        <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="12" Margin="20,4,0,0">
+            <RadioButton x:Name="StarterPcbRadio"   GroupName="Starter" Content="PCB (2-layer)" FontSize="12" IsChecked="True"/>
+            <RadioButton x:Name="StarterMmicRadio"  GroupName="Starter" Content="MMIC (GaAs)"    FontSize="12"/>
+            <RadioButton x:Name="StarterEmptyRadio" GroupName="Starter" Content="Empty"          FontSize="12"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="6" FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,14,0,0"
+                   Text="This choice applies only for this session and this file — it is never written to the file. To make a technology choice permanent, open the layout normally and use Change Technology… instead."/>
+
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button x:Name="CancelButton" Content="Cancel" Width="80" FontSize="12" HorizontalContentAlignment="Center"/>
+            <Button x:Name="OkButton" Content="Use" Width="80" IsDefault="True" FontSize="12" HorizontalContentAlignment="Center"/>
+        </StackPanel>
+
+    </Grid>
+</Window>

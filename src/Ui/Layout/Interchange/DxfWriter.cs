@@ -79,7 +79,12 @@ public sealed record DxfExportSummary(
     /// <summary>brief-layout-testing-fixes.md item 6/R-fix-5: the number of TEXT records written —
     /// text a user did not knowingly place (an invisible, sub-pixel label authored by accident) is
     /// exactly what an export report should surface, never leave silent.</summary>
-    int LabelRecordsWritten = 0);
+    int LabelRecordsWritten = 0,
+    /// <summary>§4.3/R-via-9 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md): a
+    /// <see cref="ViaShape"/> part (barrel or pad) whose layer has no <c>.ctech</c>-known name (or, for
+    /// the pad, no <see cref="ViaShape.LandingLayer"/> set at all) is skipped and named in
+    /// <see cref="Diagnostics"/> — never silently exported on DXF's fallback layer "0".</summary>
+    int ViaPartsSkipped = 0);
 
 public enum DxfViewMode { FitToExtents, MatchCurrentView }
 
@@ -191,7 +196,7 @@ public static class DxfWriter
             string ownerHandle = blockRecordHandles[bname];
             WriteBlockHeader(w, handles, bname, ownerHandle);
             foreach (var shape in s.Shapes)
-                WriteShape(w, shape, tech, layerNames, dbuToDrawingUnit, options, counts, diagnostics, handles, ownerHandle);
+                WriteShape(w, shape, tech, layerNames, dbuToDrawingUnit, options, counts, diagnostics, handles, ownerHandle, s.Name);
             foreach (var inst in s.Instances)
                 WriteInsert(w, inst, blockNames, dbuToDrawingUnit, handles, ownerHandle);
             WriteBlockFooter(w, handles, ownerHandle);
@@ -216,7 +221,7 @@ public static class DxfWriter
             counts.CurveFlattened, counts.HolesAsHatch, counts.BitmapsSkipped,
             counts.MixedArcCubicApproximated, counts.PathsFlattenedForCubic,
             counts.SplineFlattenedToPolyline, w.EscapedTextCount, diagnostics,
-            counts.LabelsWritten);
+            counts.LabelsWritten, counts.ViaPartsSkipped);
     }
 
     private sealed class Counts
@@ -228,6 +233,7 @@ public static class DxfWriter
         public int PathsFlattenedForCubic;
         public bool SplineFlattenedToPolyline;
         public int LabelsWritten;
+        public int ViaPartsSkipped;
     }
 
     // ── HEADER ───────────────────────────────────────────────────────────────
@@ -499,7 +505,15 @@ public static class DxfWriter
         var keys = new HashSet<LayerKey>();
         foreach (var s in structures)
             foreach (var shape in s.Shapes)
-                if (shape is not BitmapShape) keys.Add(shape.Layer);
+            {
+                if (shape is BitmapShape) continue;
+                keys.Add(shape.Layer);
+                // §4.3/R-via-9: a Via's PAD lives on LandingLayer, a layer no OTHER field on the shape
+                // names — without this, a via whose pad layer isn't independently used by some other
+                // shape in the design would never get a LAYER table entry at all, and WriteViaAsCircles
+                // would report it "not known to this technology" even when the .ctech genuinely maps it.
+                if (shape is ViaShape { LandingLayer: { } landing }) keys.Add(landing);
+            }
 
         var result = new Dictionary<LayerKey, string>();
         foreach (var key in keys)
@@ -583,7 +597,7 @@ public static class DxfWriter
     private static void WriteShape(
         DxfGroupWriter w, LayoutShape shape, Technology? tech, IReadOnlyDictionary<LayerKey, string> layerNames,
         double dbuToDrawingUnit, DxfExportOptions options, Counts counts, List<string> diagnostics,
-        DxfHandles handles, string ownerHandle)
+        DxfHandles handles, string ownerHandle, string structureName)
     {
         string LayerOf(LayoutShape s) => layerNames.TryGetValue(s.Layer, out var n) ? n : "0";
 
@@ -608,9 +622,7 @@ public static class DxfWriter
                 return;
 
             case ViaShape via:
-                WriteEntityHeader(w, "CIRCLE", handles, ownerHandle, LayerOf(via), "AcDbCircle");
-                w.WriteCoord(10, via.X, dbuToDrawingUnit); w.WriteCoord(20, via.Y, dbuToDrawingUnit);
-                w.WriteDouble(40, Math.Max(via.PadSize, 2) / 2.0 * dbuToDrawingUnit);
+                WriteViaAsCircles(w, via, tech, layerNames, dbuToDrawingUnit, counts, diagnostics, handles, ownerHandle, structureName);
                 return;
 
             case CircleShape c:
@@ -646,6 +658,48 @@ public static class DxfWriter
 
             default:
                 throw new NotSupportedException($"DXF export does not support shape type {shape.GetType().Name}.");
+        }
+    }
+
+    /// <summary>§4.3/R-via-9: a <see cref="ViaShape"/> emits one exact CIRCLE per mapped layer it
+    /// participates in — the barrel (<see cref="LayoutShape.Layer"/>, at <see cref="ViaShape.DrillSize"/>)
+    /// and the pad (<see cref="ViaShape.LandingLayer"/>, at <see cref="ViaShape.PadSize"/>). "Mapped"
+    /// here means the layer has a real <see cref="LayerDef"/> in <paramref name="tech"/> — checked
+    /// against the technology directly, NOT against <paramref name="layerNames"/> membership alone,
+    /// since <c>ResolveLayerNames</c> always synthesizes SOME entry for a via's LandingLayer (so the
+    /// LAYER table is well-formed whenever a part IS written) even when that key isn't genuinely
+    /// declared. Unlike every OTHER shape kind, which silently falls back to DXF layer "0" when its key
+    /// is unknown (<c>LayerOf</c>'s own default), a via part with an undeclared layer is SKIPPED and
+    /// reported instead: falling back to "0" would put pad/barrel copper on an arbitrary layer, "an
+    /// export that looks plausible and puts copper where the hole should be" (§4.3's own explicit
+    /// warning). The pad is additionally skipped (and reported) when <see cref="ViaShape.LandingLayer"/>
+    /// is null — nothing to draw it on at all.</summary>
+    private static void WriteViaAsCircles(
+        DxfGroupWriter w, ViaShape via, Technology? tech, IReadOnlyDictionary<LayerKey, string> layerNames,
+        double dbuToDrawingUnit, Counts counts, List<string> diagnostics, DxfHandles handles, string ownerHandle,
+        string structureName)
+    {
+        void WriteCircle(LayerKey layer, long diameterDbu)
+        {
+            if (tech?.Layers.Any(l => l.Key == layer) != true || !layerNames.TryGetValue(layer, out var name))
+            {
+                counts.ViaPartsSkipped++;
+                diagnostics.Add($"{structureName}: via at ({via.X},{via.Y}) — layer ({layer.Layer},{layer.Datatype}) is not known to this technology; part skipped.");
+                return;
+            }
+            WriteEntityHeader(w, "CIRCLE", handles, ownerHandle, name, "AcDbCircle");
+            w.WriteCoord(10, via.X, dbuToDrawingUnit); w.WriteCoord(20, via.Y, dbuToDrawingUnit);
+            w.WriteDouble(40, Math.Max(diameterDbu, 2) / 2.0 * dbuToDrawingUnit);
+        }
+
+        WriteCircle(via.Layer, via.DrillSize);
+
+        if (via.LandingLayer is { } landing)
+            WriteCircle(landing, via.PadSize);
+        else
+        {
+            counts.ViaPartsSkipped++;
+            diagnostics.Add($"{structureName}: via at ({via.X},{via.Y}) has no landing layer set — pad not exported.");
         }
     }
 

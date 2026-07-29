@@ -47,8 +47,10 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     // focus) is what actually runs the export.
     public event Action? ExportGdsiiRequested;
     public event Action? ExportDxfRequested;
+    public event Action? ExportGerberRequested;
     public void RequestExportGdsii() => ExportGdsiiRequested?.Invoke();
     public void RequestExportDxf() => ExportDxfRequested?.Invoke();
+    public void RequestExportGerber() => ExportGerberRequested?.Invoke();
 
     // ── Navigation frame ──────────────────────────────────────────────────────
 
@@ -242,7 +244,38 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     private void UpdateTitle()
     {
         string activeLabel = NavDepth == 0 ? _baseTitle : _frames[^1].Label;
-        Title = _isDirty ? $"• {activeLabel}" : activeLabel;
+        string body = _isDirty ? $"• {activeLabel}" : activeLabel;
+        // brief-foreign-documents.md §4: title bar names the source workspace, dirty bullet preserved
+        // (never an asterisk, which already reads as "unsaved" elsewhere in this app).
+        Title = ActiveViewModel.IsForeign && ActiveViewModel.SourceWorkspaceName is { } wsName
+            ? $"{body} — [{wsName}]"
+            : body;
+    }
+
+    /// <summary>brief-foreign-documents.md §4: true when the ACTIVE frame's document does not belong
+    /// to the currently open workspace. Delegates to <see cref="LayoutEditorViewModel.IsForeign"/>.</summary>
+    public bool IsForeign => ActiveViewModel.IsForeign;
+
+    /// <summary>The source workspace's name for marking, or null ("Not part of any workspace"). See
+    /// <see cref="IsForeign"/>.</summary>
+    public string? SourceWorkspaceName => ActiveViewModel.SourceWorkspaceName;
+
+    /// <summary>The source workspace's own <c>.cws</c> path, for the edge band's "open it" affordance.
+    /// Null exactly when <see cref="SourceWorkspaceName"/> is null.</summary>
+    public string? SourceWorkspaceCwsPath => ActiveViewModel.SourceWorkspaceCwsPath;
+
+    /// <summary>
+    /// Re-raises <see cref="IsForeign"/>/<see cref="SourceWorkspaceName"/>/<see cref="SourceWorkspaceCwsPath"/>/
+    /// <see cref="Title"/> change notifications. Call after the CURRENTLY open workspace changes — those
+    /// are computed live from a <see cref="LayoutEditorViewModel.CurrentWorkspaceRootDirProvider"/>
+    /// callback, which has no PropertyChanged mechanism of its own to notify this document automatically.
+    /// </summary>
+    internal void RefreshForeignMarking()
+    {
+        OnPropertyChanged(nameof(IsForeign));
+        OnPropertyChanged(nameof(SourceWorkspaceName));
+        OnPropertyChanged(nameof(SourceWorkspaceCwsPath));
+        UpdateTitle();
     }
 
     // ── Constructor ──────────────────────────────────────────────────────────
@@ -309,7 +342,10 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
         _baseTitle                  = cellName;
         Id                          = cellName;
         ViewModel.MarkSaved();
-        Title                       = _baseTitle; // explicit refresh even if IsDirty didn't change
+        // Through UpdateTitle() (not a direct Title= assignment) so §4's foreign-workspace suffix is
+        // recomputed for the NEW path too — a Save As can change IsForeign either direction ("adopts"
+        // into the current workspace, or moves a workspace-bound document out to a loose file).
+        UpdateTitle();
     }
 }
 

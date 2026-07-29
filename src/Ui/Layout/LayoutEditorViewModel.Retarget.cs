@@ -14,12 +14,87 @@ namespace CircuitRF.Ui.Layout;
 public sealed partial class LayoutEditorViewModel
 {
     /// <summary>
-    /// Absolute path of the workspace's <c>tech/</c> folder, or null when no workspace is open. Set
-    /// once by <c>WorkspaceViewModel</c> at document-open time (mirrors <see cref="RequestAddLayerToTechnology"/>'s
-    /// wiring) so the Change Technology picker can enumerate available <c>.ctech</c> files without
-    /// this VM depending on <c>WorkspaceViewModel</c> directly.
+    /// brief-foreign-documents.md R-fgn-3: fallback for a SCRATCH document (no path of its own yet) —
+    /// tracks whichever workspace is CURRENTLY open, since a scratch layout has no "own" workspace
+    /// until it is saved somewhere. Updated by <c>WorkspaceViewModel</c> whenever the current workspace
+    /// changes (mirrors the old <c>WorkspaceTechDir</c> setter's own wiring). Once
+    /// <see cref="CurrentLayoutPath"/> is set, <see cref="WorkspaceTechDir"/> ignores this entirely.
     /// </summary>
-    public string? WorkspaceTechDir { get; internal set; }
+    internal string? FallbackWorkspaceTechDir { private get; set; }
+
+    /// <summary>Root directory of the document's OWN ancestor workspace (nearest ancestor <c>.cws</c>
+    /// walking up from <see cref="CurrentLayoutPath"/>), or null for a materialized document with none
+    /// at all. Null for a scratch document too (it has no path to walk up from) — callers needing the
+    /// scratch fallback read <see cref="FallbackWorkspaceTechDir"/> directly, since that already means
+    /// "the tech/ folder," not the bare root.</summary>
+    private string? OwnAncestorWorkspaceRootDir
+    {
+        get
+        {
+            if (CurrentLayoutPath is not { } path) return null;
+            var cws = CircuitRF.Ui.Schematic.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(path));
+            return cws is null ? null : Path.GetDirectoryName(cws);
+        }
+    }
+
+    /// <summary>
+    /// Absolute path of the workspace <c>tech/</c> folder this document's OWN technology resolves
+    /// against, or null when there is none. Computed LIVE on every access (never snapshotted) — for a
+    /// materialized document, walks up from <see cref="CurrentLayoutPath"/>'s own directory to the
+    /// nearest ancestor <c>.cws</c> (R-fgn-3: the document's OWN parent workspace, which may not be
+    /// whichever workspace is currently open), so a Save-As to a different workspace is picked up
+    /// automatically with nothing to re-wire; for a scratch document (no path yet) falls back to
+    /// <see cref="FallbackWorkspaceTechDir"/> — whichever workspace is currently open.
+    /// </summary>
+    public string? WorkspaceTechDir
+    {
+        get
+        {
+            if (CurrentLayoutPath is not null)
+                return OwnAncestorWorkspaceRootDir is { } root ? Path.Combine(root, "tech") : null;
+            return FallbackWorkspaceTechDir;
+        }
+    }
+
+    /// <summary>
+    /// brief-foreign-documents.md §4: resolves the CURRENTLY open workspace's root directory (or null
+    /// when none is open) — set once by <c>WorkspaceViewModel</c> at document-open time, same seam as
+    /// <see cref="FallbackWorkspaceTechDir"/>. Read live (not snapshotted), so switching workspaces is
+    /// picked up by <see cref="IsForeign"/>/<see cref="SourceWorkspaceName"/> automatically.
+    /// </summary>
+    internal Func<string?>? CurrentWorkspaceRootDirProvider { get; set; }
+
+    /// <summary>
+    /// brief-foreign-documents.md R-fgn-1/§4: true when this document's file does not belong to the
+    /// CURRENTLY open workspace — determined purely from its own path, never from how it was opened or
+    /// whether it is docked or torn off. A scratch document (no path yet) is never foreign — it belongs
+    /// to whichever workspace is currently open, same as every other scratch-document convention in
+    /// this codebase. A materialized document with NO ancestor workspace at all is foreign to
+    /// whichever workspace (if any) is currently open — <see cref="SourceWorkspaceName"/> is null in
+    /// that case ("Not part of any workspace").
+    /// </summary>
+    public bool IsForeign
+    {
+        get
+        {
+            if (CurrentLayoutPath is null) return false; // scratch — belongs to whatever's open
+            var own = OwnAncestorWorkspaceRootDir;
+            var current = CurrentWorkspaceRootDirProvider?.Invoke();
+            if (own is null) return true; // a loose file — foreign to any/no currently-open workspace
+            return !string.Equals(own, current, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>The source workspace's name (its folder name) for marking (§4), or null when this
+    /// materialized document has no ancestor workspace at all ("Not part of any workspace"). Only
+    /// meaningful when <see cref="IsForeign"/> is true; computed the same live way either way.</summary>
+    public string? SourceWorkspaceName
+        => OwnAncestorWorkspaceRootDir is { } dir ? Path.GetFileName(dir) : null;
+
+    /// <summary>The source workspace's own <c>.cws</c> path — for the edge band's "open it" affordance
+    /// (§4 item 2). Null exactly when <see cref="SourceWorkspaceName"/> is null.</summary>
+    public string? SourceWorkspaceCwsPath
+        => OwnAncestorWorkspaceRootDir is { } dir ? Path.Combine(dir, ".cws") : null;
 
     /// <summary>
     /// Resolves the workspace-default technology (as if <c>TechRef</c> were null) — set once by

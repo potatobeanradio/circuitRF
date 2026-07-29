@@ -100,6 +100,10 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "Net":         CommitNetText(text); break;
             case "CornerRadius": CommitCornerRadiusText(text); break;
             case "Radius":       CommitRadiusText(text); break;
+            case "ViaPadSize":   CommitViaPadSizeText(text); break;
+            case "ViaDrillSize": CommitViaDrillSizeText(text); break;
+            case "ViaX":         CommitViaXText(text); break;
+            case "ViaY":         CommitViaYText(text); break;
             case "PathWidth":    CommitPathWidthText(text); break;
             case "LabelText":    CommitLabelText(text); break;
             case "LabelHeight":  CommitLabelHeightText(text); break;
@@ -139,6 +143,10 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         {
             case "CornerRadius": CornerRadiusError = null; break;
             case "Radius":       RadiusError = null; break;
+            case "ViaPadSize":   ViaPadSizeError = null; break;
+            case "ViaDrillSize": ViaDrillSizeError = null; break;
+            case "ViaX":         ViaXError = null; break;
+            case "ViaY":         ViaYError = null; break;
             case "PathWidth":    PathWidthError = null; break;
             case "LabelHeight":  LabelHeightError = null; break;
             case "LabelX":       LabelXError = null; break;
@@ -400,6 +408,69 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (dbu <= 0) { RadiusError = "Radius must be greater than 0"; return; }
         RadiusError = null;
         ApplyToEach<long>("Radius", s => ((CircleShape)s).R, (s, v) => ((CircleShape)s).R = v, dbu, s => s is CircleShape);
+        RefreshFromVm();
+    }
+
+    // ── Via (docs/sonnet-briefs/brief-via-primitive-and-stackup.md §4.1: "pad and drill are editable
+    // in the Properties Inspector") ──────────────────────────────────────────────────────────────────
+
+    [ObservableProperty] private bool _showVia;
+    [ObservableProperty] private string _viaPadSizeText = "";
+    [ObservableProperty] private string? _viaPadSizeError;
+    public bool HasViaPadSizeError => ViaPadSizeError is not null;
+    [ObservableProperty] private string _viaDrillSizeText = "";
+    [ObservableProperty] private string? _viaDrillSizeError;
+    public bool HasViaDrillSizeError => ViaDrillSizeError is not null;
+
+    // Position: X/Y is the via's own center — both the pad and drill circles are centered there in the
+    // model and the renderer, so this is a plain anchor point (mirrors LabelShape's X/Y exactly: a
+    // straight translate of that one point, no separate resize semantic to disambiguate).
+    [ObservableProperty] private string _viaXText = "";
+    [ObservableProperty] private string? _viaXError;
+    public bool HasViaXError => ViaXError is not null;
+    [ObservableProperty] private string _viaYText = "";
+    [ObservableProperty] private string? _viaYError;
+    public bool HasViaYError => ViaYError is not null;
+
+    public void CommitViaXText(string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var dbu))
+        { ViaXError = "Invalid value"; return; }
+        ViaXError = null;
+        ApplyToEach<long>("X", s => ((ViaShape)s).X, (s, v) => ((ViaShape)s).X = v, dbu, s => s is ViaShape);
+        RefreshFromVm();
+    }
+
+    public void CommitViaYText(string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var dbu))
+        { ViaYError = "Invalid value"; return; }
+        ViaYError = null;
+        ApplyToEach<long>("Y", s => ((ViaShape)s).Y, (s, v) => ((ViaShape)s).Y = v, dbu, s => s is ViaShape);
+        RefreshFromVm();
+    }
+
+    public void CommitViaPadSizeText(string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var dbu))
+        { ViaPadSizeError = "Invalid value"; return; }
+        if (dbu <= 0) { ViaPadSizeError = "Pad must be greater than 0"; return; }
+        ViaPadSizeError = null;
+        ApplyToEach<long>("Pad", s => ((ViaShape)s).PadSize, (s, v) => ((ViaShape)s).PadSize = v, dbu, s => s is ViaShape);
+        RefreshFromVm();
+    }
+
+    public void CommitViaDrillSizeText(string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var dbu))
+        { ViaDrillSizeError = "Invalid value"; return; }
+        if (dbu <= 0) { ViaDrillSizeError = "Drill must be greater than 0"; return; }
+        ViaDrillSizeError = null;
+        ApplyToEach<long>("Drill", s => ((ViaShape)s).DrillSize, (s, v) => ((ViaShape)s).DrillSize = v, dbu, s => s is ViaShape);
         RefreshFromVm();
     }
 
@@ -1059,6 +1130,16 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             SetTextIfNotFocused("Radius", FormatSharedDbu(_selected.Cast<CircleShape>().Select(s => (long?)s.R)),
                 () => RadiusText, v => RadiusText = v);
 
+        ShowVia = _selected.All(s => s is ViaShape);
+        if (ShowVia)
+        {
+            var vias = _selected.Cast<ViaShape>().ToList();
+            SetTextIfNotFocused("ViaPadSize", FormatSharedDbu(vias.Select(v => (long?)v.PadSize)), () => ViaPadSizeText, v => ViaPadSizeText = v);
+            SetTextIfNotFocused("ViaDrillSize", FormatSharedDbu(vias.Select(v => (long?)v.DrillSize)), () => ViaDrillSizeText, v => ViaDrillSizeText = v);
+            SetTextIfNotFocused("ViaX", FormatSharedDbu(vias.Select(v => (long?)v.X)), () => ViaXText, v => ViaXText = v);
+            SetTextIfNotFocused("ViaY", FormatSharedDbu(vias.Select(v => (long?)v.Y)), () => ViaYText, v => ViaYText = v);
+        }
+
         ShowPath = _selected.All(s => s is PathShape);
         if (ShowPath)
         {
@@ -1135,7 +1216,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         SelectionSummaryText = "";
         IsEditingEnabled = true;
         IsInstanceContext = false;
-        ShowRoundedRect = ShowCircle = ShowPath = ShowLabel = ShowFlattenTol = ShowRectSize = ShowVertexList = ShowBitmap = false;
+        ShowRoundedRect = ShowCircle = ShowVia = ShowPath = ShowLabel = ShowFlattenTol = ShowRectSize = ShowVertexList = ShowBitmap = false;
         FlattenTolPlaceholder = "";
         BitmapIsBroken = false;
         BitmapLockedValue = null;

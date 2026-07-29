@@ -18,6 +18,11 @@ public sealed class LayoutInstanceClipboardTests : IDisposable
     {
         _workspaceDir = Path.Combine(Path.GetTempPath(), "crfInstClipTest_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_workspaceDir);
+        // brief-foreign-documents.md R-fgn-3: a MATERIALIZED VM's WorkspaceTechDir now derives from a
+        // real ancestor-.cws walk (never a caller-injected override) — a real marker file is needed
+        // here so MakeVmAt/MakeVmAtNested documents resolve their workspace root to _workspaceDir,
+        // exactly as a real open workspace's own .cws would provide.
+        File.WriteAllText(Path.Combine(_workspaceDir, ".cws"), "{}");
         CellLayoutResolver.InvalidateAll();
     }
 
@@ -154,7 +159,7 @@ public sealed class LayoutInstanceClipboardTests : IDisposable
     {
         var leafDir = CreateCell("Leaf");
         var sourceVm = MakeVmAt("Source");
-        sourceVm.WorkspaceTechDir = Path.Combine(_workspaceDir, "tech");
+        sourceVm.FallbackWorkspaceTechDir = Path.Combine(_workspaceDir, "tech");
         sourceVm.Model.Instances.Add(new LayoutInstance { CellRef = "../../Leaf", X = 0, Y = 0, Mag = 1.0 });
         sourceVm.OnPointerPressed(50, 50, Avalonia.Input.KeyModifiers.None, hitTolDbu: 10);
         var payload = sourceVm.BuildCopyPayload()!;
@@ -169,7 +174,7 @@ public sealed class LayoutInstanceClipboardTests : IDisposable
 
             var destVm = new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000, SnapDbu = 1000 })
             {
-                WorkspaceTechDir = Path.Combine(mirroredWorkspaceDir, "tech"),
+                FallbackWorkspaceTechDir = Path.Combine(mirroredWorkspaceDir, "tech"),
             };
             Assert.Equal("", destVm.InstanceBaseDir); // never saved
 

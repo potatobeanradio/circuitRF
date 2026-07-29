@@ -231,10 +231,13 @@ public class FileMenuRestructureTests
     }
 
     [Fact]
-    public void ExportSubmenu_ContainsGerber_DisabledWithReason()
+    public void ExportSubmenu_ContainsGerber_SameGatingAsGdsiiAndDxf()
     {
+        // Phase L4c (brief-L4c-gerber-export.md) implemented Gerber export — the File menu's Gerber
+        // entry is gated on an active layout document exactly like GDSII/DXF, not permanently disabled.
         var src = ReadRepoFile(Path.Combine("src", "Ui", "Views", "WorkspaceWindow.axaml"));
-        Assert.Contains("Gerber export is not yet implemented.", src);
+        Assert.Contains("ExportGerberCommand", src);
+        Assert.DoesNotContain("Gerber export is not yet implemented.", src);
     }
 
     // ── Gate 5 — ellipsis convention (R-menu-1) ───────────────────────────────────────────────────

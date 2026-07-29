@@ -47,10 +47,18 @@ public partial class DxfExportOptionsDialog : Window
         EscapedTextLine.Text = $"• {preview.NonAsciiTextEscaped} non-ASCII text value(s) (layer/block name or label) will be escaped as \\U+XXXX.";
         EscapedTextLine.IsVisible = preview.NonAsciiTextEscaped > 0;
 
+        // R-via-9: a via part (barrel or pad) with no known/mapped layer is skipped, never dropped
+        // silently onto DXF's fallback layer "0".
+        ViaPartsSkippedLine.Text = $"• {preview.ViaPartsSkipped} via part(s) (barrel/pad) have no mapped layer and will be skipped.";
+        ViaPartsSkippedLine.IsVisible = preview.ViaPartsSkipped > 0;
+
+        // R-via-10: DXF carries no drill table — never a manufacturable PCB deliverable.
+        ViaFabricationNoteLine.IsVisible = plan.HasVias;
+
         NoChangesLine.IsVisible =
             preview.CurvedShapesWritten == 0 && preview.HolesAsHatch == 0 && preview.BitmapsSkipped == 0 &&
             preview.MixedArcCubicApproximated == 0 && preview.PathsFlattenedForCubic == 0 &&
-            preview.NonAsciiTextEscaped == 0;
+            preview.NonAsciiTextEscaped == 0 && preview.ViaPartsSkipped == 0 && !plan.HasVias;
 
         if (plan.UnresolvedInstanceReferences.Count > 0)
         {

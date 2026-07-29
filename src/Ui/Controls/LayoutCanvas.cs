@@ -815,6 +815,12 @@ public sealed class LayoutCanvas : Control
 
         Sep();
         AddAvailItem("Flatten to Polygon…", _viewModel.FlattenAvailability).Click += async (_, _) => await ShowFlattenToPolygonDialogAsync();
+
+        // R-via-6 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md §4.2): recovers a bare Circle
+        // drawn on a drill layer (the intuitive, MMIC-genuine gesture §1 describes) back into a real
+        // paired ViaShape.
+        AddAvailItem("Convert to Via", _viewModel.ConvertToViaAvailability).Click +=
+            (_, _) => { _viewModel.CommitConvertToVia(); InvalidateVisual(); };
     }
 
     private async Task ShowFlattenToPolygonDialogAsync()

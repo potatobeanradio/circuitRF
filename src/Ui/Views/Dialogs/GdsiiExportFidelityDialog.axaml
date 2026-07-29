@@ -11,15 +11,20 @@
     <Grid RowDefinitions="Auto,Auto" Margin="20,16,20,16">
 
         <StackPanel Grid.Row="0" Spacing="8">
-            <TextBlock Text="This export will change the design as follows:" FontSize="12" FontWeight="SemiBold"/>
+            <SelectableTextBlock Text="This export will change the design as follows:" FontSize="12" FontWeight="SemiBold"/>
 
-            <TextBlock x:Name="CurveLine" FontSize="11" TextWrapping="Wrap"/>
-            <TextBlock x:Name="HoleLine" FontSize="11" TextWrapping="Wrap"/>
-            <TextBlock x:Name="BitmapLine" FontSize="11" TextWrapping="Wrap"/>
-            <TextBlock x:Name="NoChangesLine" Text="No curves, holes, or bitmaps — geometry exports unchanged."
+            <SelectableTextBlock x:Name="CurveLine" FontSize="11" TextWrapping="Wrap"/>
+            <SelectableTextBlock x:Name="HoleLine" FontSize="11" TextWrapping="Wrap"/>
+            <SelectableTextBlock x:Name="BitmapLine" FontSize="11" TextWrapping="Wrap"/>
+            <SelectableTextBlock x:Name="ViaPadSkippedLine" FontSize="11" TextWrapping="Wrap"
+                       Foreground="{DynamicResource CrfWarningBrush}"/>
+            <SelectableTextBlock x:Name="ViaFabricationNoteLine"
+                       Text="Vias export as geometry only; use Gerber + Excellon for fabrication."
+                       FontSize="11" Opacity="0.7"/>
+            <SelectableTextBlock x:Name="NoChangesLine" Text="No curves, holes, or bitmaps — geometry exports unchanged."
                        FontSize="11" Opacity="0.7" IsVisible="False"/>
 
-            <TextBlock x:Name="UnresolvedHeader"
+            <SelectableTextBlock x:Name="UnresolvedHeader"
                        Text="Warning — the following instances reference a cell that could not be resolved and will export as a dangling reference (shown as an unresolved placeholder by GDSII viewers):"
                        FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource CrfWarningBrush}"
@@ -29,14 +34,14 @@
                 <ItemsControl x:Name="UnresolvedList">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="x:String">
-                            <TextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap"
+                            <SelectableTextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap"
                                        Foreground="{DynamicResource CrfWarningBrush}"/>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
 
-            <TextBlock x:Name="OverflowHeader"
+            <SelectableTextBlock x:Name="OverflowHeader"
                        Text="Export blocked — the following coordinates exceed GDSII's 32-bit integer range:"
                        FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource CrfWarningBrush}"
@@ -46,7 +51,7 @@
                 <ItemsControl x:Name="OverflowList">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="x:String">
-                            <TextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap"
+                            <SelectableTextBlock Text="{Binding}" FontSize="10" TextWrapping="Wrap"
                                        Foreground="{DynamicResource CrfWarningBrush}"/>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

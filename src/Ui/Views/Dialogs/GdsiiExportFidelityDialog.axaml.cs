@@ -26,8 +26,14 @@ public partial class GdsiiExportFidelityDialog : Window
         BitmapLine.Text = $"• {plan.BitmapsSkipped} bitmap(s) will be skipped (never exported to GDSII).";
         BitmapLine.IsVisible = plan.BitmapsSkipped > 0;
 
-        NoChangesLine.IsVisible =
-            plan.CurvedShapesFlattened == 0 && plan.HolesKeyholed == 0 && plan.BitmapsSkipped == 0;
+        // R-via-9: a via with no landing layer configured exports its barrel only.
+        ViaPadSkippedLine.Text = $"• {plan.ViaPadsSkipped} via(s) have no landing layer set — pad not exported.";
+        ViaPadSkippedLine.IsVisible = plan.ViaPadsSkipped > 0;
+
+        // R-via-10: GDSII carries no drill table — never a manufacturable PCB deliverable.
+        ViaFabricationNoteLine.IsVisible = plan.HasVias;
+
+        NoChangesLine.IsVisible = plan.HasNothingToReport;
 
         if (plan.UnresolvedInstanceReferences.Count > 0)
         {

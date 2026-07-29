@@ -1,10 +1,11 @@
 # circuitRF — Workspace & Project Tree Design
 
-**Status:** Steps 1–7 done · project-tree arc complete · **Date:** 2026-06-09 · **Phase:** 6g (post-symbol-editor)
+**Status:** Steps 1–7 done · project-tree arc complete · §5A added · **Date:** 2026-07-28 · **Phase:** 6g (post-symbol-editor)
 
 Specifies the **workspace model** (filesystem structure), the **Project Tree** (the tree view that reads it),
 the **cell reference model** (how a placed component resolves to a cell's primary symbol — the linkage that
-unblocks the deferred symbol-editor live-update and cell-driven open), and the **cell-parameter editor**.
+unblocks the deferred symbol-editor live-update and cell-driven open), **foreign documents** (§5A — files
+open from outside the current workspace), and the **cell-parameter editor**.
 Refines `project-file-formats.md` (which this updates for `.ccell`, the cell subfolder layout, and the
 filesystem-is-truth membership model). Companions: `symbol-editor.md` (the `.csym` consumer), `ui-design.md`
 §1/§2.2 (hierarchy, palette), `color-themes.md` (System.Warning role), `src/Ui/CLAUDE.md`.
@@ -240,6 +241,123 @@ The `.cws` records **configuration only — never membership** (membership is th
   restores as arranged.
 
 (The old `.cws` "member files list" is **removed** — membership is read from the folder structure.)
+
+---
+
+## 5A. Foreign documents (files open from outside the current workspace)
+
+**Status:** design · implemented per `docs/sonnet-briefs/brief-foreign-documents.md`.
+
+The governing principle at the top of this document — *the filesystem IS the workspace* — already implies
+this section. If membership is decided by **where a file sits on disk**, then a document open in the editor
+either sits under the current workspace root or it does not. It has always been possible to open one that
+does not: `File ▸ Open ▸ Schematic… / Symbol… / Layout…` takes an arbitrary path. So *"every open document
+belongs to the current workspace"* was never true; this section makes the consequences deliberate rather
+than accidental.
+
+**Definition.** A document is **foreign** when its file does not belong to the currently open workspace —
+determined by its path, never by how it was opened or where it is displayed. Everything else is
+**workspace-bound**.
+
+### 5A.1 Two orthogonal axes
+
+Docked-versus-torn-off and bound-versus-foreign are unrelated, and conflating them is the mistake to avoid.
+
+|  | **Docked** | **Torn off** |
+|---|---|---|
+| **Workspace-bound** | the normal case | **also normal — full privileges** |
+| **Foreign** | opened from outside the workspace | a reference document in its own window |
+
+**R30. Tearing a document off is a presentation act, not a semantic one.** A document from the current
+workspace keeps every privilege when torn off — tree node, dirty dot, Save-All, Remove/Rename Cell
+participation, `.cws` session membership. A user who simply wants a larger canvas must not lose anything for
+it. Any behaviour that keys off "is torn off" to decide something other than presentation is a defect.
+
+**R31. A workspace switch replaces the contents of the window it happens in; other windows are unaffected.**
+So docked documents close on a switch, as before, and **torn-off windows survive and become foreign**. This
+is what lets a schematic or layout from another workspace stay open for reference while authoring elsewhere.
+Note it does not contradict R30: the *switch* is window-scoped, rather than the *document* being privileged.
+A dirty torn-off document does not prompt on switch — it stays open and dirty.
+
+### 5A.2 Technology resolution — a foreign document keeps its own
+
+**R32. `TechRef = null` resolves against the document's OWN parent workspace, not the currently open one.**
+
+`layout-view.md` §2.4 defines a null technology reference as "the workspace default." The correct reading is
+*the document's* workspace: a `.clay` under workspace **A** means what **A**'s technology says it means,
+whatever happens to be loaded. Resolving against the open workspace instead would silently reinterpret a
+foreign layout's layers — and because the shipped starter technologies both use layer keys `(1,0)`–`(8,0)`,
+Drill would quietly become Substrate with nothing missing and no warning. That is `layout-view.md` §13's
+cross-technology collision arriving through a new door.
+
+**Mechanism:** walk up from the document's own absolute path to the nearest ancestor `.cws` — the same
+find-the-project-root pattern used by version-control and solution files. Nothing new is stored: the document
+already knows its path, and the answer stays correct when a project folder is moved wholesale.
+
+**Resolve live; never snapshot.** Copying the technology at the moment a document becomes foreign would go
+stale the first time that workspace's `.ctech` is edited.
+
+**R33. A file with no ancestor `.cws` prompts** — browse for a `.ctech`, choose one from the *current*
+workspace, or use a built-in starter technology. The answer is remembered for the session, and **no
+`TechRef` is written into the user's file**; making it permanent is what layout's `Change Technology…`
+command is for. Falling back to generated fallback colours without asking is **not** acceptable here — an
+unknown *layer* inside a known technology can be generated silently, but a missing *technology* cannot, since
+the result would look like the document rendering incorrectly.
+
+### 5A.3 What a foreign document participates in
+
+It is fully **editable and saveable**, to its own path.
+
+| | Foreign document |
+|---|---|
+| Edit, save, undo | **Yes** |
+| Hierarchy navigation (push-in) | **Yes** — cell references are relative to their own file (§4), so they resolve against its own workspace on disk |
+| Save All, quit prompt | **Yes** — R34 |
+| Project-tree node, dirty dot | No — it is not in this workspace |
+| Remove Cell / Rename Cell rewriting (§4.1) | **No**, and those operations must not reach it |
+| `.cws` session membership (§5) | **No** — R35 |
+
+**R34. Save All and the quit prompt sweep open documents, not tree nodes.** A dirty document with no tree
+node that Save All cannot reach, and that stays silent on quit, is a data-loss trap created by a convenience
+feature.
+
+**R35. A foreign document is never recorded in the current workspace's `.cws`** (refines §5). It is not part
+of this workspace's session and must not reappear when the workspace is reopened.
+
+**`Save As` into the current workspace adopts the document** — it becomes workspace-bound and gains a tree
+node. This falls out of the path-based definition rather than needing its own mechanism, and it is the
+natural "bring this into my project" gesture.
+
+### 5A.4 Marking — chrome only
+
+**R36. Mark the window chrome; never tint rendered content.** Layer colours are literal user-authored values
+(`layout-view.md` §2.2) precisely so a layer's colour survives a theme change and matches third-party
+viewers. Tinting the drawing would corrupt the one thing a reference document is open to show.
+
+Three surfaces, all of them:
+
+1. **Title bar** — `mylayout — [AmpProject]`, naming the source workspace. Informative rather than
+   decorative: it answers *which* workspace, which a bare marker cannot. The existing dirty bullet is
+   preserved (`• mylayout — [AmpProject]`); asterisks are not used, as they already read as "unsaved."
+2. **A thin tinted band along the document's edge**, naming the workspace, with an affordance to open it.
+3. **The tab header tinted** to match, so a docked foreign document is identifiable among its neighbours.
+
+Use the palette's *unusual-but-fine* accent rather than an error colour — a foreign document is a normal,
+supported state, and red would mislabel it. When there is no parent workspace, the band says so rather than
+naming one.
+
+### 5A.5 Foreignness is a runtime concept
+
+**R37. No cross-workspace path is ever persisted.** Foreignness exists only for the duration of a session;
+nothing in this section writes a reference to another workspace into `.cws`, `.ccell` or a view file.
+
+This is deliberate groundwork. **Instancing cells from another workspace** — the "Add Library" feature — is a
+separate design whose central question is *a named library alias resolved through `.cws` versus a raw path
+recorded in every file*. Raw paths mean relocating a library breaks every document that referenced it. That
+decision deserves its own treatment, and answering it accidentally here would saddle the feature with a
+convention chosen for an unrelated problem. Note that cell references are currently **relative** to their
+containing file (§4), so cross-workspace instancing is a new mechanism rather than an extension of the
+existing one.
 
 ---
 

@@ -45,6 +45,10 @@ public static class StarterTechnologies
             DefaultSnapDbu = Mil(1),
             DefaultFlattenTolDbu = Um(1),
             DefaultLabelHeightDbu = Mil(40),
+            // A conventional PTH: 12 mil drill, 24 mil pad (a 6 mil annular ring, comfortably above
+            // most fabs' minimum).
+            DefaultViaPadDbu = Mil(24),
+            DefaultViaDrillDbu = Mil(12),
             Layers =
             [
                 new LayerDef { Key = topCopper,       Name = "Top Copper",       Color = new Rgba(0xC8, 0x7A, 0x3E), ZOrder = 8, Purpose = "drawing" },
@@ -79,6 +83,17 @@ public static class StarterTechnologies
                         ThicknessDbu = Um(35), SigmaSm = 5.8e7,
                         DrawingLayers = [bottomCopper],
                     },
+                    // R-via-4 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md): a plated through-hole
+                    // spanning both copper layers across the FR-4, bound to the Drill drawing layer — so
+                    // drawing a Via tool placement here (or converting a bare Circle on Drill, R-via-6)
+                    // needs zero technology editing.
+                    new StackupLayer
+                    {
+                        Kind = StackupKind.Via, Name = "Plated Through-Hole",
+                        DrawingLayers = [drill],
+                        Fill = ViaFillKind.Plated, WallThicknessDbu = Um(25),
+                        SpanFromLayer = "Top Copper (1 oz)", SpanToLayer = "Bottom Copper (1 oz)",
+                    },
                 ],
             },
             DrcRules =
@@ -111,6 +126,9 @@ public static class StarterTechnologies
             DefaultSnapDbu = Nm(5),
             DefaultFlattenTolDbu = Nm(10),
             DefaultLabelHeightDbu = Um(5),
+            // A typical backside via through 100 µm GaAs: 60 µm drill, 80 µm pad.
+            DefaultViaPadDbu = Um(80),
+            DefaultViaDrillDbu = Um(60),
             Layers =
             [
                 new LayerDef { Key = metal1,       Name = "Metal1",        Color = new Rgba(0xE0, 0xB0, 0x40), ZOrder = 8, Purpose = "drawing" },
@@ -122,6 +140,11 @@ public static class StarterTechnologies
                 new LayerDef { Key = substrate,    Name = "Substrate",     Color = new Rgba(0x50, 0x50, 0x50), ZOrder = 1, Purpose = "drawing" },
                 new LayerDef { Key = backsideVia,  Name = "Backside Via",  Color = new Rgba(0x20, 0x20, 0x60), ZOrder = 2, Purpose = "drawing" },
             ],
+            // §3.1 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md): top to bottom, Metal2 / air
+            // (εr=1) / Metal1 / GaAs / backside ground — an airbridge needs no new primitive, only this
+            // complete two-metal-level stack (a horizontal conductor on Metal2, air beneath it, posts to
+            // Metal1) plus the two via entries below. Replaces the earlier single "Plated Gold" conductor
+            // that (incorrectly) mapped BOTH Metal1 and Metal2 onto one stackup entry.
             Stackup = new Stackup
             {
                 Top = BoundaryCondition.Open,
@@ -130,15 +153,49 @@ public static class StarterTechnologies
                 [
                     new StackupLayer
                     {
-                        Kind = StackupKind.Conductor, Name = "Plated Gold",
+                        Kind = StackupKind.Conductor, Name = "Metal2",
                         ThicknessDbu = Um(3), SigmaSm = 4.1e7,
-                        DrawingLayers = [metal1, metal2],
+                        DrawingLayers = [metal2],
+                    },
+                    new StackupLayer
+                    {
+                        Kind = StackupKind.Dielectric, Name = "Air",
+                        ThicknessDbu = Um(3), Epsr = 1.0, TanD = 0,
+                    },
+                    new StackupLayer
+                    {
+                        Kind = StackupKind.Conductor, Name = "Metal1",
+                        ThicknessDbu = Um(3), SigmaSm = 4.1e7,
+                        DrawingLayers = [metal1],
                     },
                     new StackupLayer
                     {
                         Kind = StackupKind.Dielectric, Name = "GaAs",
                         ThicknessDbu = Um(100), Epsr = 12.9, TanD = 0.0006,
                         DrawingLayers = [substrate],
+                    },
+                    new StackupLayer
+                    {
+                        Kind = StackupKind.Conductor, Name = "Backside Metal",
+                        ThicknessDbu = Um(3), SigmaSm = 4.1e7,
+                    },
+                    // R-via-4: two via entries, because the stackup now carries two metal levels.
+                    new StackupLayer
+                    {
+                        Kind = StackupKind.Via, Name = "Backside Via",
+                        DrawingLayers = [backsideVia],
+                        Fill = ViaFillKind.Plated, WallThicknessDbu = Um(3),
+                        SpanFromLayer = "Metal1", SpanToLayer = "Backside Metal",
+                    },
+                    new StackupLayer
+                    {
+                        // §3.1: the posts at each end of an airbridge — a short, structural gold pillar
+                        // through the air gap, electroplated solid rather than a hollow barrel (unlike
+                        // the backside via, which genuinely traverses 100 µm of substrate).
+                        Kind = StackupKind.Via, Name = "Metal1-Metal2 Post",
+                        DrawingLayers = [via],
+                        Fill = ViaFillKind.Solid,
+                        SpanFromLayer = "Metal1", SpanToLayer = "Metal2",
                     },
                 ],
             },

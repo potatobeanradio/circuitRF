@@ -27,19 +27,28 @@ public static class GdsiiExport
         Technology? Tech,
         /// <summary>item 6/R-fix-5: the number of TEXT records the write will produce — see
         /// <see cref="GdsiiExportSummary.LabelRecordsWritten"/>'s own doc comment.</summary>
-        int LabelRecordsWritten = 0)
+        int LabelRecordsWritten = 0,
+        /// <summary>§4.3/R-via-9: vias with no <see cref="ViaShape.LandingLayer"/> set — see
+        /// <see cref="GdsiiExportSummary.ViaPadsSkipped"/>'s own doc comment.</summary>
+        int ViaPadsSkipped = 0)
     {
         public bool CanWrite => CoordinateOverflowOffenders.Count == 0;
+
+        /// <summary>R-via-10: any via at all means this export is geometry-only, never a manufacturable
+        /// PCB deliverable (neither format carries a drill table) — the dialog notes this whenever it
+        /// is true, regardless of whether any pad was skipped.</summary>
+        public bool HasVias => Structures.Any(s => s.Shapes.Any(sh => sh is ViaShape));
 
         /// <summary>brief-layout-testing-fixes.md item 4/R-fix-3: true when the dialog would have
         /// nothing to report (no curves flattened, no holes keyholed, no bitmaps skipped, no
         /// unresolved references) — the caller should skip straight to the save picker rather than
         /// showing a dialog that says nothing changed, which only trains users to dismiss dialogs
         /// unread. A blocking coordinate overflow always still needs the dialog, since it must stop
-        /// the write and explain why.</summary>
+        /// the write and explain why. R-via-10's fabrication note and a skipped via pad both count as
+        /// "something to report" too.</summary>
         public bool HasNothingToReport =>
             CurvedShapesFlattened == 0 && HolesKeyholed == 0 && BitmapsSkipped == 0 &&
-            UnresolvedInstanceReferences.Count == 0 && CanWrite;
+            UnresolvedInstanceReferences.Count == 0 && ViaPadsSkipped == 0 && !HasVias && CanWrite;
     }
 
     /// <summary>Walks <paramref name="rootCellDir"/>'s hierarchy and computes the fidelity plan — no
@@ -61,7 +70,8 @@ public static class GdsiiExport
             var summary = GdsiiWriter.Write(Stream.Null, structures, units, tech);
             return new ExportPlan(
                 summary.CurvedShapesFlattened, summary.HolesKeyholed, summary.BitmapsSkipped,
-                [], unresolvedRefs, nameByCellName, structures, units, tech, summary.LabelRecordsWritten);
+                [], unresolvedRefs, nameByCellName, structures, units, tech, summary.LabelRecordsWritten,
+                summary.ViaPadsSkipped);
         }
         catch (GdsiiExportException ex)
         {

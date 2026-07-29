@@ -306,7 +306,7 @@
                               ToolTip.Tip="Requires an active layout document."/>
                     <MenuItem Header="_Gerber"
                               Command="{Binding ExportGerberCommand}"
-                              ToolTip.Tip="Gerber export is not yet implemented."/>
+                              ToolTip.Tip="Requires an active layout document."/>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="{Binding CloseWorkspaceOrWindowHeader}"

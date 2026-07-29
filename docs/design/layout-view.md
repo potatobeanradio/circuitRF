@@ -268,6 +268,13 @@ drift, and the stackup is by definition shared by every cell fabricated on that 
 that is an MMIC die on a PCB carrier, or two board stackups in one project — while "one default per
 workspace" keeps the common path a non-decision.
 
+**A null `tech_ref` means "the workspace default", and "the workspace" means the *document's* workspace** —
+found by walking up from the `.clay`'s own path to the nearest ancestor `.cws`, not by reading whichever
+workspace happens to be loaded. For a layout inside the open workspace these are the same thing; for one
+opened from elsewhere they are not, and resolving against the wrong one would silently reinterpret its
+layers. See `workspace-and-project-tree.md` §5A.2 (R32) — the collision is real, because both starter
+technologies below use layer keys `(1,0)`–`(8,0)`.
+
 **Both markets, per workspace.** Two starter technologies ship, and the New Workspace dialog picks one:
 
 | | **PCB starter** | **MMIC starter** |
@@ -733,7 +740,7 @@ Format-specific code touches only bytes and records, never editor state.
 |---|---|---|---|
 | **GDSII** | Read + write | Near-identity. BOUNDARY→Polygon, PATH→Path, SREF/AREF→Instance/Array, TEXT→Label, UNITS→DBU. **All curved primitives auto-flatten on write** (§3.2 R9e) and **holes are keyholed on write** (§3.1a), both with a Messages note stating what was converted and how much. | Vendor dialects; 200-char structure-name limit; PATH end types 0/1/2/4 (type 4 has explicit extensions); no arcs, no colors, no layer names, **no holes**. Write from the public spec — never ingest GPL sources. ~1200–1800 lines total. |
 | **DXF** | Write first-class; read a documented subset | LWPOLYLINE / POLYLINE / LINE / ARC / CIRCLE / SOLID / INSERT+BLOCK / TEXT. **Curves survive**: `Circle`→`CIRCLE`, `RoundedRect` and arc-bearing outlines→`LWPOLYLINE` with bulge factors, Béziers→`SPLINE` (or flattened, per an export option). **Layer colours round-trip exactly** (docs/sonnet-briefs/brief-dxf-layer-colors.md), the one fidelity claim this table doesn't make for GDSII or Gerber. Layers are *named*, so the name↔(layer,datatype) map is required. | Import is the hard direction: dozens of producers, SPLINE, HATCH, unit ambiguity when `$INSUNITS` is unset. Define the accepted subset explicitly and report everything skipped to Messages, per-entity. Bulge factors are the one DXF feature worth importing carefully — dropping them silently turns arcs into chords. |
-| **Gerber RS-274X / X2** + **Excellon** | **Export only for v1** | One file per copper/mask/silk layer. Polygons → G36/G37 region fills; constant-width `Path` → circular-aperture D01 strokes; **arcs → G02/G03 circular interpolation** and `Circle` → a circular aperture flash, so curves stay curves; Béziers flatten; `Via` → Excellon drill hits + pad flashes. X2 attributes (`.FileFunction`) so the fab identifies layers automatically. | Gerber *import* is genuinely hard — aperture macros, arc interpolation modes, LPD/LPC polarity, and the "assemble a board from a folder of files" problem. Recommend deferring import entirely rather than shipping a half-version; a partial Gerber importer that silently loses a clearance region is worse than none. |
+| **Gerber RS-274X / X2** + **Excellon** | **Export only — implemented (Phase L4c, brief-L4c-gerber-export.md)** | One file per copper/mask/silk layer. Polygons → G36/G37 region fills; constant-width `Path` → circular-aperture D01 strokes; **arcs → G02/G03 circular interpolation** and `Circle` → a circular aperture flash, so curves stay curves; Béziers flatten; `Via` → Excellon drill hits + pad flashes. X2 attributes (`.FileFunction`) so the fab identifies layers automatically. | Gerber *import* is genuinely hard — aperture macros, arc interpolation modes, LPD/LPC polarity, and the "assemble a board from a folder of files" problem. Recommend deferring import entirely rather than shipping a half-version; a partial Gerber importer that silently loses a clearance region is worse than none. |
 
 **DXF version support** (docs/sonnet-briefs/brief-dxf-version-support.md §1, revised by
 docs/sonnet-briefs/brief-dxf-layer-colors.md §1.3/R-col-1) — **export supports three versions, chosen per
@@ -830,6 +837,11 @@ layout.
 2. For each component instance, resolve `ViewType.Layout` primacy. Components with no layout view
    (VAR, MEAS, Ground, and any un-laid-out cell) are reported to Messages and skipped; optionally place
    a labelled placeholder outline so the omission is visible rather than silent.
+
+   **A parametric cell resolves too — its layout is generated rather than stored.** See
+   `pcell-contract.md`, whose R1 makes a PCell an ordinary cell in every respect except that
+   `ResolvePrimary(…, ViewType.Layout)` answers "generated". The pins that step 4 stamps nets onto are
+   part of that contract's output (its R3), not something this step infers from geometry.
 3. Place instances in a packed, non-overlapping arrangement — rows by bounding box, roughly following
    schematic order. **No auto-routing. Say so loudly.** Auto-routing is a separate multi-month product,
    and pretending otherwise sets a bad expectation.

@@ -133,6 +133,41 @@
                                   FontSize="11" Padding="4,2"/>
                     </Grid>
 
+                    <!-- ── Via (docs/sonnet-briefs/brief-via-primitive-and-stackup.md §4.1) ────── -->
+                    <StackPanel IsVisible="{Binding ShowVia}" Spacing="4">
+                        <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                            <TextBlock Grid.Column="0" Text="Pad" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="1" Text="{Binding ViaPadSizeText}" Tag="ViaPadSize"
+                                      Classes.error="{Binding HasViaPadSizeError}" ToolTip.Tip="{Binding ViaPadSizeError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                            <TextBlock Grid.Column="2" Text="Drill" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       ToolTip.Tip="Barrel diameter — the EM/thermal parameter (R-via-1)."/>
+                            <TextBox Grid.Column="3" Text="{Binding ViaDrillSizeText}" Tag="ViaDrillSize"
+                                      Classes.error="{Binding HasViaDrillSizeError}" ToolTip.Tip="{Binding ViaDrillSizeError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*,56,*" ColumnSpacing="4">
+                            <TextBlock Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       ToolTip.Tip="Via center — moves the whole via (pad and drill together)."/>
+                            <TextBox Grid.Column="1" Text="{Binding ViaXText}" Tag="ViaX"
+                                      Classes.error="{Binding HasViaXError}" ToolTip.Tip="{Binding ViaXError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                            <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       ToolTip.Tip="Via center — moves the whole via (pad and drill together)."/>
+                            <TextBox Grid.Column="3" Text="{Binding ViaYText}" Tag="ViaY"
+                                      Classes.error="{Binding HasViaYError}" ToolTip.Tip="{Binding ViaYError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                    </StackPanel>
+
                     <!-- ── Path ──────────────────────────────────────────────────────────── -->
                     <StackPanel IsVisible="{Binding ShowPath}" Spacing="4">
                         <Grid ColumnDefinitions="56,*">
