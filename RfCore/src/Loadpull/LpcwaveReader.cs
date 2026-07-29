@@ -132,8 +132,6 @@ namespace RfCore.Loadpull
             public double[]? GinMag;       // |Γin| (linear)
             public double[]? GinPhase;     // ∠Γin (degrees)
             public double[]? TransPhase;   // transducer phase (degrees)
-            public double[]? ReflDb;       // input return loss dB (stored alias)
-            public double[]? ReflLin;      // reflection coeff (linear, stored alias)
             public Complex   SourceGamma;  // per-freq source Γ (from first grid/pin)
             public bool      HasSourceGamma;
         }
@@ -368,9 +366,12 @@ namespace RfCore.Loadpull
                 }
             }
 
+            // .lpcwave has no reflection-coefficient/return-loss column (unlike .spl's "Refl_dB"/
+            // "ReflectCoefficient") — confirmed directly against the real test fixtures' own column
+            // headers, not assumed — so IRL_dB derivation is never available from this format.
             LoadpullDerivedFields.Derive(
                 block.Foms, block.NGrid, block.NPin,
-                block.GinMag, block.GinPhase, block.TransPhase, block.ReflDb, block.ReflLin);
+                block.GinMag, block.GinPhase, block.TransPhase, reflDb: null, reflLin: null);
 
             return block;
         }

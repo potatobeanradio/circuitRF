@@ -47,7 +47,7 @@
                 CornerRadius="3"
                 Cursor="Hand"
                 Classes.armed="{Binding #TileRoot.IsArmed}">
-            <ctrl:PaletteGlyphControl Kind="{Binding Item.Kind}" Width="44" Height="44"/>
+            <ctrl:PaletteGlyphControl Kind="{Binding Item.Kind}" PortCount="{Binding Item.PortCount}" Width="44" Height="44"/>
         </Border>
 
         <!-- Type label underneath — DisplayName, truncated if long -->

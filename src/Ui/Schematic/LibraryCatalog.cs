@@ -84,12 +84,22 @@ public static class LibraryCatalog
         ).ToList();
     }
 
+    /// <summary>
+    /// Kinds that exist for internal machinery only and must never be user-selectable in the
+    /// palette (owner report, 2026-07-29 — "X" and "Unknown" showing up in the parts list with no
+    /// obvious purpose). Both stay fully functional under the hood:
+    /// <see cref="SymbolKind.Generic"/> ("X") is the placeholder base kind a placed CELL-REFERENCE
+    /// instance carries (its real glyph comes from the resolved cell, not this kind's own — see
+    /// <c>SchematicViewModel.CommitCellPlacementAsync</c>); <see cref="SymbolKind.Unknown"/> is the
+    /// load-time-only sentinel for an unrecognized `.csch` component type (R-hk-19a). Neither is
+    /// ever something a user picks from the palette to place fresh.
+    /// </summary>
+    private static readonly HashSet<SymbolKind> InternalOnlyKinds = [SymbolKind.Generic, SymbolKind.Unknown];
+
     private static IReadOnlyList<PaletteItem> BuildAllItems()
         => Array.AsReadOnly(
             Enum.GetValues<SymbolKind>()
-                // SymbolKind.Unknown is a load-time-only sentinel (R-hk-19a) — never a real,
-                // user-placeable component, so it must never appear in the palette.
-                .Where(kind => kind != SymbolKind.Unknown)
+                .Where(kind => !InternalOnlyKinds.Contains(kind))
                 .Select(kind =>
                 {
                     var info = ComponentTypeRegistry.Get(kind);

@@ -122,18 +122,23 @@ public class LibraryCatalogTests
     {
         // Demonstrates the contribution point: AllItems is derived from SymbolKind
         // enum + registry — adding an entry makes it appear automatically.
-        // SymbolKind.Unknown is the sole deliberate exception (R-hk-19a): a load-time-only
-        // sentinel, never a real user-placeable component, so it is excluded from the palette.
+        // Generic ("X") and Unknown are the deliberate exceptions (owner report, 2026-07-29 /
+        // R-hk-19a): both are internal-machinery-only kinds (Generic is the placeholder base kind
+        // for a placed cell-reference instance; Unknown is the load-time-only sentinel for an
+        // unrecognized `.csch` component type) — neither is ever something a user picks from the
+        // palette to place fresh, so both are excluded from it.
         var expectedKinds = Enum.GetValues<SymbolKind>().ToHashSet();
         expectedKinds.Remove(SymbolKind.Unknown);
+        expectedKinds.Remove(SymbolKind.Generic);
         var actualKinds   = LibraryCatalog.AllItems.Select(i => i.Kind).ToHashSet();
         Assert.Equal(expectedKinds, actualKinds);
     }
 
     [Fact]
-    public void AllItems_NeverContainsUnknown()
+    public void AllItems_NeverContainsUnknownOrGeneric()
     {
         Assert.DoesNotContain(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.Unknown);
+        Assert.DoesNotContain(LibraryCatalog.AllItems, i => i.Kind == SymbolKind.Generic);
     }
 
     [Fact]
@@ -253,38 +258,47 @@ public class LibraryCatalogTests
     [Fact]
     public void ByCategory_MultiCategory_ItemAppearsInBothCategories()
     {
-        // ZPort has ExtraCategories=[TransmissionLine]: it appears under Other AND TransmissionLine.
-        var other = LibraryCatalog.ByCategory(ComponentCategory.Other).Select(i => i.Kind);
-        var tline = LibraryCatalog.ByCategory(ComponentCategory.TransmissionLine).Select(i => i.Kind);
-        Assert.Contains(SymbolKind.ZPort, other);
-        Assert.Contains(SymbolKind.ZPort, tline);
+        // Mlin has ExtraCategories=[TransmissionLine]: it appears under Microstrip AND
+        // TransmissionLine (ZPort is NOT multi-category — owner report, 2026-07-29: Z/Z1P/Z2P/Z3P
+        // are not transmission lines and must not show under that filter; see the dedicated
+        // ZPort_NeverAppearsUnderTransmissionLine test below).
+        var microstrip = LibraryCatalog.ByCategory(ComponentCategory.Microstrip).Select(i => i.Kind);
+        var tline      = LibraryCatalog.ByCategory(ComponentCategory.TransmissionLine).Select(i => i.Kind);
+        Assert.Contains(SymbolKind.Mlin, microstrip);
+        Assert.Contains(SymbolKind.Mlin, tline);
     }
 
     [Fact]
     public void AllItems_MultiCategoryItem_AppearsOnce()
     {
         // AllItems lists each (Kind, PortCount) pair once regardless of how many categories it
-        // belongs to. Kind alone is no longer unique in AllItems: brief-housekeeping-tearoff-
-        // palette-repo.md §2 adds explicit port-count entry points (S1P/S2P/S3P/S4P, Z1P/Z2P/Z3P,
-        // SDD1/SDD2/SDD3) that share a Kind with the plain generic tile but differ in PortCount —
-        // the plain ZPort tile (PortCount == 0) itself must still appear exactly once.
-        var plainZPortCount = LibraryCatalog.AllItems.Count(i => i.Kind == SymbolKind.ZPort && i.PortCount == 0);
-        Assert.Equal(1, plainZPortCount);
+        // belongs to.
+        var mlinCount = LibraryCatalog.AllItems.Count(i => i.Kind == SymbolKind.Mlin);
+        Assert.Equal(1, mlinCount);
     }
 
     [Fact]
     public void AllItems_MultiCategoryItem_SortsByPrimaryCategory()
     {
-        // ZPort's primary is Other — it sorts with the Other group, not TransmissionLine.
-        var zport = LibraryCatalog.AllItems.First(i => i.Kind == SymbolKind.ZPort);
-        Assert.Equal(ComponentCategory.Other, zport.Category);
+        // Mlin's primary is Microstrip — it sorts with the Microstrip group, not TransmissionLine.
+        var mlin = LibraryCatalog.AllItems.First(i => i.Kind == SymbolKind.Mlin);
+        Assert.Equal(ComponentCategory.Microstrip, mlin.Category);
     }
 
     [Fact]
-    public void ByCategory_TransmissionLine_ContainsZPort()
+    public void ByCategory_TransmissionLine_ContainsMlin()
     {
         var tline = LibraryCatalog.ByCategory(ComponentCategory.TransmissionLine);
-        Assert.Contains(tline, i => i.Kind == SymbolKind.ZPort);
+        Assert.Contains(tline, i => i.Kind == SymbolKind.Mlin);
+    }
+
+    [Fact]
+    public void TransmissionLineFilter_NeverContainsZPort_OrAnyOfItsEntryPoints()
+    {
+        // Owner report, 2026-07-29: Z, Z1P, Z2P, Z3P are impedance-network terminations, not
+        // transmission lines, and must not appear under this filter.
+        var tline = LibraryCatalog.ByCategory(ComponentCategory.TransmissionLine);
+        Assert.DoesNotContain(tline, i => i.Kind == SymbolKind.ZPort);
     }
 
     [Fact]

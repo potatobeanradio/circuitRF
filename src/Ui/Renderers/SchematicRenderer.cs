@@ -1230,7 +1230,10 @@ public static class SchematicRenderer
     private static (float X, float Y) ToPixel(double wx, double wy, double panX, double panY, double zoom)
         => ((float)((wx - panX) * zoom), (float)((wy - panY) * zoom));
 
-    private static (float X, float Y) LocalToPixel(
+    // internal: PaletteGlyphControl reuses this directly so a palette tile's port leads land at
+    // exactly the same pixel positions the real schematic renderer (DrawVariadicPortLeads) would
+    // produce — one conversion, not a second hand-copied one.
+    internal static (float X, float Y) LocalToPixel(
         float lx, float ly,
         double compX, double compY,
         SymbolRotation rot, bool mirrorX,
