@@ -1,5 +1,211 @@
 # UI (Avalonia) — local conventions
 
+Housekeeping: tear-off theming, palette entries, TermG, MKlopf console, repo merge, test fixtures
+(brief-housekeeping-tearoff-palette-repo.md, 2026-07-29) — COMPLETE: seven owner items, two needing
+investigation before code (§1, §5) and one a repository operation with a prerequisite check (§6).
+
+## §1 — tear-off `.cdd` canvas background shade
+
+**The brief's own hypothesis (R-hk-1, a `DynamicResource` visual-tree-scoping failure) does NOT hold
+in this codebase, confirmed by direct investigation rather than assumed:** Application-level
+resources (including the Fluent theme's `SystemChromeLowColor`) resolve identically in every window
+regardless of tear-off; `DisplayWindowViewModel` is a single shared instance reused across dock/float
+(tear-off re-parents the same VM/view, it does not construct a new one); its theme subscription
+(`Application.Current.ActualThemeVariantChanged`) stays live either way. No code anywhere sets
+`RequestedThemeVariant` per-window (confirmed: zero hits repo-wide).
+
+**Actual fix, applied at the one place every tear-off (document OR tool, any editor) goes through:**
+`CrfHostWindow` (`src/Ui/ViewModels/Dock/CrfHostWindow.cs`) — Dock's own `HostWindow` base has no
+explicit `Background`, while `WorkspaceWindow.axaml` sets one explicitly
+(`{DynamicResource SystemChromeLowColor}`). `CrfHostWindow`'s constructor now sets the SAME resource
+at the window level, so a torn-off window can never resolve to a different background than the
+docked shell — regardless of the exact mechanism that produced the shade difference. This is a
+resource-scope fix (R-hk-2: never hard-code a color), and it applies to every tear-off-capable editor
+at once (schematic/symbol/layout/data-display all float through the same `CrfHostWindow`) — one fix,
+not four. **Not pixel-verified** (no visual driver in this environment) — please confirm a torn-off
+`.cdd`/schematic/symbol/layout window now renders the identical background shade the docked shell
+does, in both light and dark themes.
+
+## §2/§4 — palette entries and TermG are packaging over EXISTING models, never a second type
+
+**S1P/S2P/S3P/S4P, Z1P/Z2P/Z3P, SDD1/SDD2/SDD3** (`LibraryCatalog.BuildPortCountEntryPoints`) are
+additional palette ENTRY POINTS for the same three dynamic types (`SymbolKind.Snp`/`ZPort`/`Sdd`) —
+each entry just presets `PaletteItem.PortCount`; `ComponentTypeRegistry.DefaultParameters` seeds the
+identical parameter set (e.g. `NumPorts`) a hand-placed generic tile + manual edit would produce, so a
+placed "S2P" and a placed "SNP" with `N` hand-set to 2 are netlist-identical (proven in
+`PortCountEntryPointsAndMicrostripFilterTests.cs`). S4P was added on the owner's own explicit
+follow-up request, alongside S1P–S3P from the original brief. Z1P alone carries the `Terminals` extra
+filter category (R-hk-4) — Z2P/Z3P do not.
+
+**`TermG`** (`SymbolKind.TermG`) is the same pattern: reuses `Term`'s own engine reference ("Port")
+verbatim — NetExtractor emits `[signalNet, "0"]`, the same two nets Term-wired-to-Ground produces —
+and reuses `Term`'s glyph AND `Ground`'s glyph verbatim (a small `TranslateLines` helper in
+`BuiltInSymbols.cs` shifts Ground's own line primitives by `(0,+200)`, Term's own port-2 local
+position — never redrawn, never rescaled). Combined bounding box is proven identical to Term+GND
+placed separately in `TermGComponentTests.cs`.
+
+## §3 — microstrip `Transmission Line` filter keyword
+
+`MLIN`/`MBEND`/`MTEE`/`MCROSS`/`MTAPER`/`MKLOPF` all gained
+`ExtraCategories: [ComponentCategory.TransmissionLine]` — the identical enum value `TLIN`'s own
+PRIMARY category already is, so there is no hand-typed keyword string to drift from TLIN's own
+spelling at all (a stronger guarantee than "match the string exactly").
+
+## §5 — MKlopf console leak: R-hk-9's candidate #2, confirmed
+
+**The leak was `ElaboratedNetlist.AddWarning` itself** (`src/Core/Elaboration/ElaboratedNetlist.cs`)
+— it unconditionally echoed every warning to `Console.Error.WriteLine($"[circuitRF] {message}")` on
+top of recording it in `Warnings`. This is candidate #2 from the brief's own ordered list ("the
+warning consumer... if the simulation runner also echoes them to stdout, that is the leak — and it
+would affect every warning, not just MKlopf's") — confirmed exactly: `MicrostripKlopfModel.cs` itself
+was already clean (Gate9 of `MklopfPerformanceAndMessagesTests.cs` already asserted this from a prior
+brief), so the leak was downstream of the model, at the one shared channel every warning passes
+through on its way into `ElaboratedNetlist.Warnings`. Fixed by deleting the `Console.Error.WriteLine`
+call — `AddWarning` now only ever appends to `_warnings`.
+
+**Side effect caught and fixed in the same pass:** the headless CLI (`src/Cli/Program.cs`) never read
+`nl.Warnings` at all — the removed `Console.Error.WriteLine` was its ONLY warning-visibility channel,
+so removing it blind would have made `circuitrf sparam`/`dc`/`elab` silently warning-blind. Added a
+shared `PrintWarnings(ElaboratedNetlist)` helper, called after elaboration in all three commands —
+the CLI is headless, so the console genuinely IS its warnings channel, unlike the GUI which drains
+into the Messages pane instead.
+
+New regression coverage: `tests/Engine.Tests/Devices/MklopfConsoleSilenceTests.cs` — an end-to-end
+`CnlReader → Elaborator → SParameterEngine.Run` pipeline with MKLOPF geometry that trips both the
+R-klp-10 curvature warning and the N=300 section-count informational line, asserting both land in
+`ElaboratedNetlist.Warnings` and neither the old leaked format nor the specific warning text appears
+on `Console.Out`/`Console.Error` (a `DoesNotContain` check, not a strict `Equal("")` — xUnit runs test
+classes in parallel by default and Console is process-global mutable state, so a strict emptiness
+assertion is fragile against an unrelated concurrently-running test's own console output — confirmed
+directly: `LoadpullEngine.cs` has its own pre-existing, unconditional `Console.Error.WriteLine`
+progress-reporting calls, entirely out of this brief's scope, that can land in the same capture
+window). A second, deterministic source-scan test pins that `ElaboratedNetlist.cs` itself contains no
+live `Console.` call.
+
+## §6 — RfCore merged into circuitRF, history preserved
+
+**R-hk-11 (submodule or sibling?): confirmed NOT a submodule** — no `.gitmodules` file exists and
+`git submodule status` returns nothing; the `[submodule] active = .` line in `.git/config` was a
+stray, non-functional stub, not an active registration. RfCore was a plain sibling checkout referenced
+only by relative `ProjectReference` path.
+
+**R-hk-12 (preserve history?): owner chose to preserve it.** Merged via
+`git subtree add --prefix=RfCore https://github.com/potatobeanradio/RfCore.git main` — RfCore's own
+24-commit history is a genuine second parent of the merge commit (`git log $(git rev-parse HEAD^2)`
+shows all 24), not squashed or copied; `git log` on the combined repo is correspondingly busier, as
+the owner was told to expect.
+
+Four `ProjectReference` paths updated (`src/Core`, `src/Engine`, `src/Ui`, `tests/Firewall.Tests`):
+`../../../RfCore/src/RfCore.csproj` (sibling-checkout depth) → `../../RfCore/src/RfCore.csproj`
+(in-repo depth). `.gitignore` needed NO change — RfCore's own nested `RfCore/.gitignore` already
+correctly ignores `RfCore/src/bin`/`obj` on its own (confirmed directly with `git check-ignore -v`,
+not assumed — git evaluates a `.gitignore` relative to its own directory). Neither repo had any
+`.gitattributes`/LFS-tracked pattern to carry over (confirmed: neither repo had a `.gitattributes`
+file before the merge, despite `[lfs]` appearing in `circuitRF/.git/config` — that section is
+unused-extension boilerplate, not an active tracked pattern). No CI/workflow files reference the old
+sibling path anywhere in this repo (none exist). README's Getting Started §2 and `CLAUDE.md`'s
+Stack/Architecture sections both updated to describe RfCore's new in-repo location.
+
+**Gate (R-hk-13), verified for real, not assumed:** cloned the committed repo state into a genuinely
+separate directory (`git clone` from the local repo, not just re-running in the working copy) and ran
+`dotnet build` + `dotnet test` there. Both green: Firewall 4/4, Core 512/512, Ui 3473 passed + 24
+skipped, Engine 428 passed + 33 skipped — 0 failures anywhere, confirming both §6's repo-structure fix
+and §7's fixture-skip mechanism (below) together, from a real cold clone.
+
+## §7 — missing `.spl`/`.lpcwave` fixtures: skip-with-reason (owner's explicit choice)
+
+The owner confirmed the fixture data (real lab-measured GaN FET S-parameter/loadpull-waveform files,
+18MB total, already excluded via `.gitignore`) is proprietary and should stay out of git — the right
+fix is tests that skip with a stated, actionable reason rather than fail.
+
+New `FixtureFactAttribute`/`FixtureTheoryAttribute` (one copy each in `tests/Engine.Tests/Support/`
+and `tests/Ui.Tests/Support/` — the two test projects share no code) check fixture existence in the
+attribute's own constructor (which genuinely runs at xUnit's test-discovery time, so this works
+without any new dependency — xUnit 2.9.3 has no v3-style `Assert.Skip`) and set `Skip` to a message
+naming the exact missing relative path plus how to obtain it: `Missing fixture
+'testdata/spl_test_data' — ask the repo owner for these lab-measured .spl files — not committed to
+the repository`. 56 test methods across 8 files (`SplReaderTests.cs`, `LpcwaveReaderTests.cs`,
+`PursuitSearchDiagnosticTests.cs`, and five UI-side loadpull/contour test files) converted; a handful
+of methods in the same files that don't touch these fixtures were deliberately left untouched.
+
+**A pre-existing masking bug found and fixed in passing**: several UI test files
+(`SummaryTablePickerTests.cs`, `LoadpullContourGroupParityTests.cs`,
+`ContourLoadpullGroupPickerTests.cs`, most of `ContourTraceCardTests.cs`) had a silent
+`if (path is null) return;` early-return instead of a hard throw when the fixture was absent — these
+were trivially "passing" on a fresh clone with zero test coverage and no visible signal that anything
+was skipped. Converting them to `[FixtureFact]` makes them correctly report Skipped with a reason
+instead of a silent, coverage-free pass.
+
+README documents the fixture situation directly beside the (single-repository, post-§6) Getting
+Started steps, per the brief's own "a new developer meets both problems in the same five minutes."
+
+**Per R-hk-16, explicitly not done**: no `Category` trait filter — that mechanism stays reserved for
+opt-in slow benchmarks (`circuitrf.runsettings`'s existing `Category!=Benchmark`), where everyone
+already knows the tests exist; a category filter here would have silently hidden this whole test
+population from every new contributor instead of surfacing it.
+
+## §7A — library FET hard-removed, no compatibility alias
+
+**R-hk-17 (grep before removing): the repository was clean.** No committed `.csch` anywhere (demo
+workspace, testdata, or test tree) referenced the `FetSdd` symbol string — confirmed by grepping every
+`.csch` file in the repo before touching anything. `FetSdd` also carried ZERO default parameters
+(`ComponentTypeRegistry.DefaultParameters` fell through to the bare `default: return []` case) and its
+`EngineReference` was ALREADY `"SDD"` — i.e. it was a glyph-only convenience over the exact same
+generic SDD device, never a distinct engine component, so R-hk-18's "bit-identical" concern is moot by
+construction: there was no FET-specific engine behavior to lose or migrate. `SymbolKind.FetSdd`
+removed from the enum; its glyph (`BuiltInSymbols.BuildFetSdd`), registry entry, `EngineReference`/
+`TryParseCode`("FET"/"FETSDD" now deliberately fail to parse — no alias, per R-hk-19)/`DefaultParameters`
+cases, and its own dedicated glyph/port-def tests all removed. The one non-test production usage
+(`SchematicModelBuilder`'s Hero-2-PA perf-benchmark demo circuit) now places a plain 3-port `Sdd`
+instead, matching the brief's own "replace with an equivalent SDD" framing; the one NetExtractor
+terminal-order regression test (`FetSdd_TerminalOrder_GateDrainSource`) was replaced with an equivalent
+test proving the SAME terminal-order contract against generic `Sdd`, since FetSdd's own fixed
+gate/drain/source layout no longer exists to test.
+
+**R-hk-19a, checked directly (not assumed) and found NOT already graceful — fixed as part of this
+removal, per the brief's own instruction:** loading a `.csch` whose `"Symbol"` doesn't match any
+current `SymbolKind` used to abort the ENTIRE file — `JsonSerializer.Deserialize<CschFile>` failed on
+the first unrecognized enum value anywhere in the `Components` array, and while the one existing
+try/catch (`WorkspaceViewModel.OpenOrActivateSchematic`) prevented an app crash, it dropped the WHOLE
+schematic with an opaque, unhelpful `JsonException` message — not "the rest still loads," and not "by
+name." Fixed with a new `SymbolKind.Unknown` sentinel (never placed by the user, explicitly filtered
+out of `LibraryCatalog.AllItems` so it can never appear in the palette) +
+`EditableComponent.UnknownSymbolRawName`/`CschComponent.UnknownSymbolRawName` (the original string,
+preserved verbatim, round-trips across save/reload since `Unknown` is now itself a real, persistable
+enum value). `SchematicPersistence.Deserialize` now pulls the `Components` array out via `JsonNode`
+and parses each element independently — one bad `"Symbol"` string degrades to a labelled placeholder
+at its original position (retrying with just `Symbol` patched to recover every other field exactly;
+falling back to a minimal instance-name/position-only placeholder if something else on that element
+was also malformed) while every OTHER component in the file loads completely normally.
+`WorkspaceViewModel.ReportUnknownComponents` (called once, right after a fresh `GetOrCreateSession`
+load — never on a re-open of an already-registered session) posts one `Messages.Warning` per unknown
+component, naming BOTH the instance name and the original unrecognized type string. Covered end-to-end
+in `tests/Ui.Tests/UnknownComponentTypeTests.cs`, including a hand-crafted malformed-value case (a
+non-numeric `X` coordinate alongside the unrecognized `Symbol`) proving the fallback never throws
+regardless of what else is wrong with that one element.
+
+`Sdd` and `circuitRF_demo/` are both untouched, per the brief's own guardrail (§7A.1 already showed
+the demo's own `MyFET` cell is hand-built from `Sdd` directly and never depended on the removed
+component).
+
+## Gate
+
+Firewall 4/4, Core 512/512, Ui 3497/3497 (working copy) / 3473 passed + 24 skipped (fresh clone, no
+fixtures), Engine 460/461 (1 pre-existing skip, working copy) / 428 passed + 33 skipped (fresh clone) —
+all green, verified twice: once in the working copy with fixtures present, once from a genuine fresh
+`git clone` with fixtures absent. Two pre-existing, unrelated flakes were found and confirmed NOT
+regressions (both pass in isolation, both already documented in this codebase's own prior notes on
+full-suite test-parallelism contention): `CellLayoutResolverTests`'s own known timing race, and a
+`MicrostripKlopfModel` process-wide-cache pollution race in `MklopfPerformanceAndMessagesTests`.
+
+**Not interactively verified** (no visual driver in this environment) — please confirm: a torn-off
+`.cdd`/schematic/symbol/layout window renders the same background shade as when docked, in both
+themes; S1P–S4P/Z1P–Z3P/SDD1–SDD3 appear in the palette and Z1P alone shows under the Terminals
+filter; TermG appears in the palette under Terminals and behaves as a 1-port grounded Term when
+placed; the six microstrip components appear under the Transmission Line filter; an S-parameter run
+through an MKlopf design produces Messages entries with nothing on the terminal; and a hand-edited
+`.csch` naming the old FET type opens with a named warning and the rest of the design intact.
+
 SignalLayer/GroundReference combo: selection "sometimes doesn't register" (2026-07-29) — COMPLETE:
 owner report, same day as the one-combobox fix immediately below — "when selecting a new choice in
 the combobox, the combobox sometimes does not register my new choice. I have to set my choice
