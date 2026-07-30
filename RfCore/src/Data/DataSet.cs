@@ -429,13 +429,46 @@ namespace RfCore.Data
         }
 
         /// <summary>
+        /// Locates a cube by BARE name anywhere it can actually be reached, returning the spec that
+        /// resolves it: <c>"S"</c> for a flat/Touchstone-shaped DataSet, or <c>"SP1.S"</c> for one
+        /// written by a named analysis — or null when no group holds it.
+        ///
+        /// <para><b>Why this exists.</b> <see cref="DataSet.Contains"/> bare-resolves, and bare
+        /// resolution deliberately refuses analysis cubes (see <c>BareResolve</c>: "Analysis cubes are
+        /// reachable only by qualification"). A simulation run writes its S-parameters into a named
+        /// group, so a bare <c>Contains("S")</c> is FALSE for every simulated source — which silently
+        /// made an entire class of consumer (anything that needs an <see cref="SNP"/>, e.g. stability
+        /// and passivity) work for Touchstone files and not for simulation results.</para>
+        ///
+        /// <para>Group order is <see cref="DataSet.Groups"/> order, so the choice is deterministic;
+        /// a DataSet carrying several S-bearing analyses resolves to the first.</para>
+        /// </summary>
+        public static string? FindCubeSpec(DataSet ds, string bareName)
+        {
+            if (ds.Contains(bareName)) return bareName;
+            foreach (var g in ds.Groups)
+                if (ds.CubesIn(g).ContainsKey(bareName))
+                    return $"{g}.{bareName}";
+            return null;
+        }
+
+        /// <summary>
         /// Extract the "S" cube from a DataSet and reconstruct an SNP for Touchstone I/O.
         /// Reads the "Z0" cube for the reference impedance when present; falls back to 50 Ω.
         /// Non-uniform Z0 is flattened to port-1's value (SNP is uniform-only by design).
         /// </summary>
-        public static SNP ToSnp(DataSet ds)
+        public static SNP ToSnp(DataSet ds) => ToSnp(ds, "S");
+
+        /// <summary>
+        /// As <see cref="ToSnp(DataSet)"/>, but for an S cube reached by an explicit spec — which is
+        /// how a simulated source's <c>"SP1.S"</c> is reached (see <see cref="FindCubeSpec"/>).
+        /// The reference impedance is read from the Z0 cube <b>in the same group</b>, never a bare
+        /// lookup: pairing <c>SP1.S</c> with some other analysis's Z0 would be worse than the 50 Ω
+        /// fallback, because it would look right.
+        /// </summary>
+        public static SNP ToSnp(DataSet ds, string sSpec)
         {
-            var cube   = ds["S"];
+            var cube   = ds[sSpec];
             int nFreq  = cube.Axes[0].Length;
             int nPorts = cube.Axes[1].Length;
             var freqs  = cube.Axes[0].Values;
@@ -450,10 +483,13 @@ namespace RfCore.Data
                     mats[fi][i, j] = raw[fi * nPorts * nPorts + i * nPorts + j];
             }
 
+            int dot = sSpec.LastIndexOf('.');
+            string z0Spec = dot < 0 ? "Z0" : sSpec[..dot] + ".Z0";
+
             Complex refZ0;
-            if (ds.Contains("Z0"))
+            if (ds.Contains(z0Spec))
             {
-                var z0Cube = ds["Z0"];
+                var z0Cube = ds[z0Spec];
                 var z0Kind = ClassifyZ0(z0Cube);
                 refZ0 = z0Cube.ComplexValues[0];
                 if (z0Kind == Z0Kind.NonUniform)

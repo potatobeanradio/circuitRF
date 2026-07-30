@@ -2623,6 +2623,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         CwsFile cws;
         try { cws = WorkspacePersistence.LoadFromFile(cwsPath); }
         catch { return Array.Empty<string>(); }
+        // R-stb-10/11: a stored ref may be workspace-relative (with `/` separators) or absolute;
+        // this contract is "absolute paths", so resolve before handing them to the data-source
+        // library. Any .sNp for N >= 2 qualifies — nothing here is specific to .s2p (R-stb-9).
+        string root = System.IO.Path.GetDirectoryName(cwsPath) ?? "";
         return cws.KnownFiles
             .Where(p =>
             {
@@ -2630,6 +2634,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return ext.StartsWith(".s", StringComparison.OrdinalIgnoreCase)
                     && (ext.EndsWith("p", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".snp", StringComparison.OrdinalIgnoreCase));
             })
+            .Select(p => WorkspaceRefs.Resolve(p, root))
             .ToList();
     }
 
@@ -2639,6 +2644,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         CwsFile cws;
         try { cws = WorkspacePersistence.LoadFromFile(cwsPath); }
         catch { return Array.Empty<string>(); }
+        string lpRoot = System.IO.Path.GetDirectoryName(cwsPath) ?? "";
         return cws.KnownFiles
             .Where(p =>
             {
@@ -2646,6 +2652,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 return string.Equals(ext, ".spl", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(ext, ".lpcwave", StringComparison.OrdinalIgnoreCase);
             })
+            .Select(p => WorkspaceRefs.Resolve(p, lpRoot))
             .ToList();
     }
 
@@ -3945,9 +3952,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         try   { cws = WorkspacePersistence.LoadFromFile(CurrentWorkspacePath); }
         catch { cws = new CwsFile(); }
 
-        if (!cws.KnownFiles.Contains(path, StringComparer.OrdinalIgnoreCase))
+        // R-stb-10/11/13: store a workspace-RELATIVE path (with `/` separators) when the target is
+        // inside the workspace, an absolute one only when it is outside. The file itself is NEVER
+        // copied — a Known File is a reference, and a referenced measurement is an INPUT that must
+        // not be swept up when the user clears results/ in Finder.
+        string stored = WorkspaceRefs.ToStoredRef(path, Path.GetDirectoryName(CurrentWorkspacePath));
+
+        if (!cws.KnownFiles.Contains(stored, StringComparer.OrdinalIgnoreCase))
         {
-            cws.KnownFiles.Add(path);
+            cws.KnownFiles.Add(stored);
             WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath, cws);
         }
         _factory.ProjectTreeTool?.Refresh();
@@ -4888,6 +4901,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (_subscribedDisplayWindow is not null && _displayInspectorHandler is not null)
             _subscribedDisplayWindow.PropertyChanged -= _displayInspectorHandler;
         _subscribedDisplayWindow = null;
+
+        // R-stb-12: the Datasets list marks a source that lives OUTSIDE the workspace, so a user
+        // about to share a workspace can see which sources will not travel with it.
+        if (_factory.PropertiesTool?.DatasetsVm is { } dsVm)
+            dsVm.WorkspaceRootProvider = () =>
+                CurrentWorkspacePath is null ? null : System.IO.Path.GetDirectoryName(CurrentWorkspacePath);
 
         if (dd is null)
         {

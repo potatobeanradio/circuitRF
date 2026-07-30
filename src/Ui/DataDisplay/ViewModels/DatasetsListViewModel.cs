@@ -27,6 +27,9 @@ public sealed partial class DatasetsListViewModel : ObservableObject
     public bool HasWindow => _window is not null;
     public bool HasRows   => Rows.Count > 0;
 
+    /// <summary>Workspace root, so rows can mark outside-the-workspace sources external (R-stb-12).</summary>
+    public Func<string?>? WorkspaceRootProvider { get; set; }
+
     private Func<string, System.Threading.Tasks.Task<string?>>? _locateFileRequested;
 
     /// <summary>Set by code-behind so a row's "Locate…"/"Re-point…" button can show a file picker.
@@ -83,7 +86,8 @@ public sealed partial class DatasetsListViewModel : ObservableObject
             {
                 var row = new DatasetRowViewModel(entry, lib, _window!)
                 {
-                    LocateFileRequested = _locateFileRequested
+                    LocateFileRequested = _locateFileRequested,
+                    WorkspaceRootProvider = WorkspaceRootProvider
                 };
                 Rows.Add(row);
             }

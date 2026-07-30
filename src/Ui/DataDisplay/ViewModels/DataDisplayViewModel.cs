@@ -531,8 +531,20 @@ public partial class DataDisplayViewModel : ViewModelBase
     {
         bool square = plotType is PlotType.Smith or PlotType.Polar;
 
-        double w = width  > 0 ? width  : (square ? 420 : 520);
-        double h = height > 0 ? height : (square ? 420 : 360);
+        double w = width > 0 ? width : (square ? 420 : 520);
+
+        // A NEW Rect plot must open at the configured aspect ratio (golden by default) — the same
+        // `height = width / RectAspectRatio` rule PlotContainerView enforces on every resize and on
+        // the settings-change snap. The old fixed 520x360 default was 1.444, so an auto-created
+        // display (and every Add Plot) opened off-ratio until the user happened to resize it.
+        double h;
+        if (height > 0)                    h = height;      // explicit (e.g. restoring a .cdd)
+        else if (plotType == PlotType.Rect)
+        {
+            double ratio = AppSettingsViewModel.Instance.RectAspectRatio;
+            h = ratio > 0 ? w / ratio : 360;
+        }
+        else                               h = square ? 420 : 360;
 
         // Auto-place when the caller did not specify a position. ComputeNewPlotPosition
         // centers the first in-view plot and otherwise grows a square grid (see its docs).
@@ -1357,6 +1369,12 @@ public partial class DataDisplayViewModel : ViewModelBase
                 trace.Derived = traceConfig.Derived;
             }
 
+            // Ordered port selection for network metrics (R-stb-3a) — restored for every trace
+            // kind, since a .cdd may carry a derived trace on either source path.
+            trace.InputPort             = traceConfig.InputPort;
+            trace.OutputPort            = traceConfig.OutputPort;
+            trace.PassivityWholeNetwork = traceConfig.PassivityWholeNetwork;
+
             trace.SourceRef             = sref;
             trace.SourcePath            = resolvedPath;
             trace.MatrixFormat          = traceConfig.MatrixFormat;
@@ -1521,6 +1539,9 @@ public partial class DataDisplayViewModel : ViewModelBase
             Col                   = t.Col,
             MatrixType            = t.MatrixType,
             Derived               = t.Derived,
+            InputPort             = t.InputPort,
+            OutputPort            = t.OutputPort,
+            PassivityWholeNetwork = t.PassivityWholeNetwork,
             YAxis                 = t.YAxis,
             UseSecondaryAxis      = t.UseSecondaryAxis,
             Z0                    = ComplexStringHelper.Format(t.Z0),

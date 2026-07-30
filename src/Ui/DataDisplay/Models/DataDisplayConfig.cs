@@ -176,6 +176,13 @@ public sealed class TraceConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DerivedParameters Derived { get; set; } = DerivedParameters.None;
 
+    // Ordered port selection for network metrics (R-stb-3a). Defaults match Trace's own, so a
+    // pre-existing .cdd written before these existed loads as input=1/output=2 — exactly the
+    // 2-port behaviour it had when saved.
+    public int  InputPort             { get; set; } = 1;
+    public int  OutputPort            { get; set; } = 2;
+    public bool PassivityWholeNetwork { get; set; } = true;
+
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public DependentVarFormat YAxis  { get; set; } = DependentVarFormat.Db;
 

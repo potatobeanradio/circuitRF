@@ -624,7 +624,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             // trace-card labels and Smith/Polar label strips already do — captured as a plain
             // delegate here (not the library reference itself) so PlotDrawOperation stays a snapshot
             // of what THIS frame needs, matching every other captured field on it.
-            Func<Trace, string?>? aliasFor = _library is { } lib ? t => lib.AliasFor(t.SourcePath) : null;
+            Func<Trace, string?>? aliasFor = _library is { } lib ? t => lib.AliasFor(t.EffectiveSourcePath) : null;
 
             context.Custom(new PlotDrawOperation(
                 new Rect(Bounds.Size),

@@ -535,11 +535,14 @@
                                             </ComboBox.ItemContainerTheme>
                                             <ComboBox.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:TraceDataItem">
+                                                    <!-- R-stb-5: a metric that does not fit this plot type stays
+                                                         VISIBLE but disabled, and says why on hover, rather than
+                                                         vanishing or producing an empty trace. -->
                                                     <TextBlock Text="{Binding Label}"
                                                                Classes.brokenSource="{Binding IsBroken}"
                                                                FontSize="{StaticResource FontSize}"
                                                                TextTrimming="CharacterEllipsis"
-                                                               ToolTip.Tip="{Binding Label}"/>
+                                                               ToolTip.Tip="{Binding DisabledReason, TargetNullValue={Binding Label}}"/>
                                                 </DataTemplate>
                                             </ComboBox.ItemTemplate>
                                         </ComboBox>
@@ -579,6 +582,49 @@
                                                              Width="14" Height="14"/>
                                         </Button>
                                     </Grid>
+
+                                    <!-- ── Network-metric card body (stability / passivity) ──────
+                                         R-stb-3: ordered INPUT and OUTPUT port selection, valid for
+                                         any N ≥ 2, shown only above 2 ports (at exactly 2 the choice
+                                         is forced). Two independent selectors, never a pair list —
+                                         pairs grow as N(N−1)/2 and do not scale. -->
+                                    <StackPanel Spacing="4" IsVisible="{Binding IsNetworkMetricTrace}">
+
+                                        <Grid ColumnDefinitions="50,*,Auto,*"
+                                              IsVisible="{Binding ShowPortSelectors}">
+                                            <TextBlock Grid.Column="0" Text="In / Out" Classes="label"
+                                                       ToolTip.Tip="Ordered: swapping input and output swaps µ (load) and µ' (source)."/>
+                                            <ComboBox Grid.Column="1"
+                                                      ItemsSource="{Binding AvailablePorts}"
+                                                      SelectedItem="{Binding SelectedInputPort, Mode=TwoWay}"
+                                                      HorizontalAlignment="Stretch"
+                                                      ToolTip.Tip="Input port"/>
+                                            <TextBlock Grid.Column="2" Text="→" Classes="label"
+                                                       Margin="4,0" VerticalAlignment="Center"/>
+                                            <ComboBox Grid.Column="3"
+                                                      ItemsSource="{Binding AvailablePorts}"
+                                                      SelectedItem="{Binding SelectedOutputPort, Mode=TwoWay}"
+                                                      HorizontalAlignment="Stretch"
+                                                      ToolTip.Tip="Output port"/>
+                                        </Grid>
+
+                                        <!-- Passivity is not 2-port-limited (R-stb-6): whole network
+                                             is the default, an extracted pair is a choice. -->
+                                        <Grid ColumnDefinitions="50,*" IsVisible="{Binding ShowPassivityScope}">
+                                            <TextBlock Grid.Column="0" Text="Scope" Classes="label"/>
+                                            <CheckBox Grid.Column="1"
+                                                      IsChecked="{Binding PassivityWholeNetwork, Mode=TwoWay}"
+                                                      Content="Whole network"
+                                                      FontSize="{StaticResource FontSize}"
+                                                      ToolTip.Tip="Unchecked: passivity of the extracted input/output 2-port only."/>
+                                        </Grid>
+
+                                        <!-- R-stb-4 / R-stb-6: state the termination assumption. -->
+                                        <TextBlock Text="{Binding TerminationNote}"
+                                                   IsVisible="{Binding ShowTerminationNote}"
+                                                   FontSize="9" Opacity="0.6"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
 
                                     <!-- ── Contour trace body (Phase 7.4e) ─────────────────── -->
                                     <StackPanel Spacing="4"

@@ -35,6 +35,39 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     /// <summary>Unified DataSet payload.  Null for broken entries.</summary>
     public DataSet? Data => _data;
 
+    private SNP? _networkView;
+    private bool _networkViewBuilt;
+
+    /// <summary>
+    /// An SNP view of this source for NETWORK-METRIC purposes (stability, passivity, MaxGain) —
+    /// <see cref="Snp"/> when there is one, otherwise built on demand from a grouped run's own
+    /// <c>"SP1.S"</c> cube.
+    ///
+    /// <para><b>Why this is separate from <see cref="Snp"/>, and must stay separate.</b> A simulated
+    /// run's S cube deliberately does NOT become <see cref="Snp"/> (brief-sparam-run-add-trace): it
+    /// is offered through the CUBE path, which can carry axes an SNP structurally cannot — a swept
+    /// S cube is rank 4. Making it an SNP would both break swept sources and offer S(1,1) twice,
+    /// once per path. But the 2-port metric formulae need matrices, and only matrices — so they get
+    /// this narrow view, gated on <see cref="RfCore.Data.NetworkMetrics.IsNetworkShaped"/> so a
+    /// swept cube is correctly refused rather than silently flattened to one arbitrary slice.</para>
+    /// </summary>
+    public SNP? NetworkView
+    {
+        get
+        {
+            if (_snp is not null) return _snp;
+            if (_networkViewBuilt) return _networkView;
+            _networkViewBuilt = true;
+            if (_data is { } ds && NetworkMetrics.IsNetworkShaped(ds)
+                                && NetworkMetrics.FindSCubeSpec(ds) is { } spec)
+            {
+                try { _networkView = DataSetBuilder.ToSnp(ds, spec); }
+                catch { _networkView = null; }
+            }
+            return _networkView;
+        }
+    }
+
     /// <summary>Single path authority — works regardless of Snp null state.</summary>
     public string? FilePath => _filePath;
 
@@ -79,10 +112,13 @@ public partial class DataSourceEntryViewModel : ViewModelBase
 
     private void ClassifyZ0FromData()
     {
-        if (_data?.Contains("Z0") == true)
+        // Group-aware for the same reason the S lookup is: a simulated run's Z0 lives at "SP1.Z0",
+        // and a bare lookup left Z0PerPort EMPTY for every simulation — silently discarding the
+        // per-port/complex reference the stability and passivity maths depend on.
+        if (_data is not null && DataSetBuilder.FindCubeSpec(_data, "Z0") is { } z0Spec)
         {
-            Z0Kind    = DataSetBuilder.ClassifyZ0(_data["Z0"]);
-            Z0PerPort = _data["Z0"].ComplexValues;
+            Z0Kind    = DataSetBuilder.ClassifyZ0(_data[z0Spec]);
+            Z0PerPort = _data[z0Spec].ComplexValues;
         }
         else
         {
@@ -202,6 +238,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     {
         _filePath = newPath;
         _data     = data;
+        _networkView = null; _networkViewBuilt = false;   // rebuilt lazily against the new DataSet
 
         if (data.Contains("S"))
         {

@@ -438,7 +438,14 @@ namespace RfCore
         //  Private helpers — reader
         // ============================================================
 
-        private static int? ParsePortsFromExtension(string path)
+        /// <summary>
+        /// Port count declared by a Touchstone file's own extension (".s4p" -> 4), or null when the
+        /// extension does not declare one. Public because a caller reading through a <see cref="TextReader"/>
+        /// (a storage-API stream, where the filename is not available to the reader) must supply this
+        /// itself — inference from the data alone FAILS for N &gt; 2, whose rows are split across
+        /// several physical lines.
+        /// </summary>
+        public static int? ParsePortsFromExtension(string path)
         {
             var ext = Path.GetExtension(path).ToLowerInvariant();
             if (ext.Length >= 3 && ext[0] == '.' && ext[1] == 's' && ext[^1] == 'p'

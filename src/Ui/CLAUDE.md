@@ -1,5 +1,279 @@
 # UI (Avalonia) — local conventions
 
+Stability, passivity, and Touchstone as a first-class data source
+(brief-stability-passivity-touchstone.md, 2026-07-30) — COMPLETE. Stability (μ, μ′, K, |Δ|, MAG/MSG,
+source/load stability circles) and passivity now work against a **simulated `DataCube`** exactly as they
+already did against a Touchstone `SNP`, for **any N ≥ 2**, with a **user-selected ordered port pair**.
+Touchstone becomes an ordinary data source alongside `.npy` — referenced, never copied.
+
+## The one substantive difference between the two paths, and it is NOT what the brief assumed
+
+**R-stb-2's premise did not hold, and this is the finding that mattered most.** The brief stated the
+existing SNP stability path "already (correctly) renormalizes" a complex reference to uniform-real. It did
+not. `RFNetwork.NormalizedS2Port(SNP snp, bool forceZ0Real = true)` contained a **duplicated `if`** whose
+second branch was dead — every one of the six callers that passed `forceZ0Real: false` (μ, μ′, both circle
+functions, and the two circle wrappers) silently skipped the renorm entirely. Verified directly by reading
+it, not assumed, and confirmed by reverting the fix and watching the new test go red.
+
+**Every stability formula in this codebase is only valid against a UNIFORM REAL reference impedance** —
+Edwards-Sinsky μ/μ′, Rollett K, |Δ|, MAG/MSG, and the stability circles all assume it. Against a complex
+or per-port-varying Z0 they produce numbers that look plausible and are wrong. So the renorm is
+unconditional now: `NormalizedS2Port(SNP snp)` (the `forceZ0Real` parameter is **gone**, not defaulted —
+a bool nobody could correctly answer was the whole problem) always does
+`if (s.Z0.Imaginary != 0.0) s = SToS(s, new Complex(s.Z0.Real, 0.0));`.
+
+**Touchstone never needed it in practice** — a `.sNp` file's `# ... R 50` line is a single real number by
+format, so `Z0.Imaginary == 0` and the renorm is a no-op there. The gap only became reachable once a
+simulated cube — which carries a genuine per-port complex `Z0` cube — could feed the same maths. That is
+why this bug survived: the code path that needed the fix did not exist yet.
+
+## Ports are USER-SELECTED and ORDERED — auto-computation was considered and rejected
+
+An N-port contains N·(N−1) candidate ordered 2-ports. There is no "the" stability of a 4-port amplifier,
+and picking one automatically would be a guess presented as a measurement. **Order matters, not just the
+pair**: μ is *load*-plane stability referenced to the input; μ′ is *source*-plane referenced to the
+output — **swapping input and output swaps μ and μ′**, so `(in=1, out=2)` and `(in=2, out=1)` are two
+different, both-legitimate answers. `Trace.InputPort`/`OutputPort` (1-based, defaults 1 and 2) are the
+user's answer; the trace card's two port combos nudge them apart on collision
+(`TraceRowViewModel.FirstPortOtherThan`) rather than silently accepting `in == out`, which
+`NetworkMetrics.ValidatePortPair` rejects outright.
+
+## Extract the 2×2 FIRST, then renormalize — this order is load-bearing (R-stb-4)
+
+`RfCore/src/Data/NetworkMetrics.cs` (new — the cube-direct adapter) extracts the selected ordered pair out
+of the full N×N matrix **before** renormalizing, never after. R-stb-4's termination assumption is that
+every *other* port is terminated in **its own** Z0 — which is exactly what taking the raw sub-matrix
+means. Renormalizing the whole N-port first would impose a single reference on ports that are not the
+pair, changing what the extracted 2×2 represents.
+
+The uniform-real target is the **real part of the INPUT port's own Z0**, not a hardcoded 50 Ω — a 75 Ω
+part gets 75 Ω, generalizing the SNP path rather than diverging from it.
+
+## One implementation, two callers — the cube path does not fork the maths
+
+`NetworkMetrics.TwoPortMetric` builds a 2-port `SNP` from the extracted, renormalized pair and calls the
+**same** `RFNetwork.StabilityMu` / `StabilityMuPrime` / `MaxGain` / `StabilityK` (which returns the
+`(K, Delta)` pair — there is no separate `RollettK`/`DeltaMag` method) / `StabilityCirclesSource` /
+`StabilityCirclesLoad` the Touchstone path has always used. There is no second
+stability implementation to drift. `Trace.BuildDerivedPath` is likewise one method with a per-N-agnostic
+body — no `if (nPorts == 2)` branch anywhere.
+
+## Passivity is σ_max(S) ≤ 1, and it is NOT 2-port-limited
+
+`RFNetwork.Passivity(Mat<Complex> s)` returns `s.Svd().S[0]` (the largest singular value), which is
+exactly the condition `I − SᴴS ⪰ 0` in the form a user can plot. It is defined for **any square S**,
+including N = 1 — a genuinely useful fact, since a 1-port whose |Γ| > 1 is active. The trace card
+nevertheless excludes N = 1 from the *pair* scope (there is no pair) while still offering whole-network
+passivity there; the metric list gates on `ports >= 2` for the pair-requiring metrics and `ports >= 1`
+for passivity.
+
+Two scopes, both real, exposed via `Trace.PassivityWholeNetwork` (default **true**):
+- **Whole network** (`NetworkMetrics.PassivityFull`) — σ_max of the full N×N. This is the honest answer
+  to "is this device passive."
+- **Extracted pair** (`NetworkMetrics.PassivityPair`) — σ_max of the selected 2×2 under R-stb-4's
+  termination assumption. Useful when reasoning about the pair in isolation; it can differ from the
+  whole-network answer, which is the point of offering both.
+
+**A real wiring bug this caught, not merely exercised:** passivity-on-a-pair initially routed through
+`TwoPortMetric`, which correctly throws for a non-2-port-metric enum value; `BuildDerivedPath` caught the
+`ArgumentException` and returned, silently producing an empty trace. `NetworkMetricsTests.
+Passivity_WholeNetworkVersusExtractedPair_DiffersWhereExpected` is what found it.
+
+## Touchstone is a REFERENCE, never a copy — and where a referenced file is stored (§5.1)
+
+**`src/Ui/Schematic/WorkspaceRefs.cs`** (new) is the one place a referenced-file path is turned into its
+stored form, and it **corrects `brief-data-display-multifile-ui.md`'s R-dd-6**. That rule ("a bare
+filename resolved against `results/` — never a rooted path, and never one containing a directory
+separator") was written before a Known File was understood to be a *reference* that may point outside the
+workspace, and it fails two ways: it cannot express a file elsewhere *inside* the workspace, and it cannot
+express one outside it at all.
+
+- **Inside the workspace → a workspace-RELATIVE path**, so moving or sharing the workspace still resolves.
+- **Outside → the absolute path**, because no encoding can make an outside reference portable. Storing it
+  plainly and *telling the user* (below) is the honest option.
+- **Separators in relative refs are normalized to `/`.** R-dd-6's no-separator rule existed to dodge the
+  macOS-versus-Windows separator problem; now that relative refs may contain directories, normalizing is
+  how that problem stays dodged. This is the part most likely to be skipped, because it only fails when a
+  workspace crosses platforms — i.e. never on the machine that wrote it.
+
+**Two call sites, both required, and the second is easy to miss:** `WorkspaceViewModel.AddKnownFile`
+normalizes on the way *in*, and `GetKnownTouchstoneFiles`/`GetKnownLoadpullFiles` — whose contract is
+"absolute paths" — now `WorkspaceRefs.Resolve` on the way *out*. Fixing only the write side would have
+left the data-source library handed relative strings it cannot open.
+
+**Nothing is ever copied, and nothing lands in `results/`.** A referenced measurement is an **INPUT**;
+`results/` holds generated **OUTPUT** and is a folder users clear in Finder without a second thought.
+Sweeping a lab measurement in there would make "clear my results" destroy data the user cannot regenerate.
+`DataSourceLibraryViewModel.LoadFileAsync` stores the original path and reads in place — the no-copy
+property is structural, not enforced by a check.
+
+**R-stb-12 external marking** — `DatasetRowViewModel.IsExternal`/`StatusText`/`StatusTooltip` add a third
+status alongside Live and Missing: a source outside the workspace reads **"External"** with a tooltip
+saying it will not travel. Without it, the failure surfaces on *someone else's machine* as a missing file
+with no explanation. The workspace root reaches the rows via
+`DatasetsListViewModel.WorkspaceRootProvider`, set once in `WorkspaceViewModel.RouteDataDisplayProperties`
+(the same seam that routes the plot inspector); a null root means no workspace is open and nothing is
+classified external.
+
+## §6 — expression-engine functions: NOT built, deliberately
+
+The brief marks surfacing the same maths as expression-engine functions optional. It was not built. The
+trace card reaches every metric directly, and adding `mu(...)`/`passivity(...)` to the expression grammar
+would need a port-pair convention inside an expression's argument list — a genuinely different design
+question than a card with two combos. Named here as a scope decision, not an oversight.
+
+## Rect default aspect, the source-prefix convention, and concise S(1,2) labels (2026-07-30)
+
+Three owner reports after the stability work landed.
+
+**1 — a new Rect plot opened off-ratio.** `DataDisplayViewModel.AddPlot`'s non-square default was a
+fixed **520 × 360 = 1.444**, while `PlotContainerView` enforces `height = width / RectAspectRatio`
+(golden, ≈1.618) on every resize AND on the settings-change snap. So every Add Plot — the auto-created
+display's included — opened off-ratio until the user happened to drag it. `AddPlot` now derives the
+Rect height from the same `AppSettingsViewModel.Instance.RectAspectRatio` those handlers read, so
+there is one rule rather than a constant that silently disagrees with it. An EXPLICIT height still
+wins, so restoring a `.cdd` is never re-snapped.
+
+**2 — the source-prefix convention skipped one trace.** `TraceLabeler` derived the source component
+from `Trace.SourcePath` alone. A trace with a null `SourcePath` but a perfectly well-known
+`Data.FilePath` contributed **no** source component — so with two sources loaded it alone rendered
+bare while every sibling got its `alias·` prefix, and (the same bug from the other side) a
+single-source plot could show a prefix because null looked like a *second, distinct* source.
+
+Fixed with one definition — **`Trace.EffectiveSourcePath => SourcePath ?? Data?.FilePath`** — used by
+`TraceLabeler` and by **all four** `aliasFor` call sites (`PlotContainerViewModel`, `PlotControl`, and
+both in `PlotExporter`). Fixing the labeler alone would have left the alias lookup still returning null
+for the same traces. Also fixed alongside: `UpdateLabelStrips`'s "multiple sources loaded" test counted
+only `e.Snp is not null`, which is **zero for any number of simulated sources** — the same Snp-blind
+mistake as above; it now counts loaded (non-broken) entries.
+
+**3 — S-parameter legends read `S(i=1,j=2)`.** The port axes now read **positionally — `S(1,2)`**, on
+owner request. A matrix element is universally read positionally in RF, the axis names carry nothing,
+and the network (Touchstone) path has always written it that way — so this also stops the same physical
+quantity being labelled two different ways depending on which path produced it.
+
+Two deliberate carve-outs: a **non-port** pinned axis keeps its name (`node=3` is information, not
+noise), and with only **one** port axis pinned (the other iterated as a family) the name is KEPT,
+because a lone `S(1)` would not say which index it is. The **bracket spec form is unchanged** —
+`BuildPickerExpression` still emits `SP1.S[:, 2, 1]`; only the legend/axis label changed.
+`SparamPortIndexingTests.Legend_S21` pinned the old text and was updated to the new requirement.
+
+**Gate** — `LabelAndAspectFixTests.cs` (11), all five relevant ones confirmed to fail against the
+pre-fix code: the Rect ratio (and that an explicit size is still honoured, and Smith/Polar stay
+square), the prefix applying to a null-SourcePath trace AND still being dropped when every source
+matches, positional `S(1,2)` with 1-based ports, non-port axes keeping their names, the one-port-pinned
+carve-out, and the network label unchanged.
+
+## The metrics were invisible for every SIMULATED source — three bugs, one root cause
+
+Owner report: *"I see the correct controls when a touchstone file, but it's not shown if the data
+source is from a simulation npy file."* Correct, and it defeated R-stb-1 (the metrics must work
+against a simulated cube) for **every** simulation. Three separate bugs, all one root cause:
+**a bare `DataSet.Contains("S")` / `Contains("Z0")`**, which by design refuses analysis cubes
+(`BareResolve`: *"Analysis cubes are reachable only by qualification"*). A run writes **`SP1.S`**, so
+every bare lookup returned false for every simulated source. Verified against a real
+`circuitRF_demo/results/*.npy`, not reasoned about.
+
+1. `DataSourceEntryViewModel.ClassifyZ0FromData` — left `Z0PerPort` **empty** for every simulation,
+   silently discarding the per-port reference the R-stb-2 renorm and the 7.2f per-port compute exist
+   to handle.
+2. `TraceRowViewModel.StampSourceZ0OnTrace` — a **second** copy of the same lookup, same mistake. Now
+   reads the entry's already-classified vector instead: one resolution point, not two chances to get
+   the qualification wrong.
+3. `NetworkMetrics.FindSCube` / `ReadZ0` — **in this brief's own new RfCore code**. The cube-direct
+   adapters, whose entire purpose is to serve a simulated source, could not find a simulated
+   source's cubes. `DataSetBuilder.FindCubeSpec(ds, bare)` (new, public) is now the one group-aware
+   lookup: `"S"` when bare-resolvable, else the first `"{group}.S"`, else null.
+
+## Why the fix is a NETWORK VIEW and not "build an SNP for grouped runs"
+
+The first attempt made a grouped `SP1.S` become `entry.Snp`. It broke four tests from
+`brief-sparam-run-add-trace`, and they were right: **a simulated S cube deliberately has no SNP.** It
+goes through the cube path because that path can carry axes an SNP structurally cannot — a swept S
+cube is **rank 4** (`[Pin, freq, i, j]`). Forcing it into an SNP would break swept sources outright
+and offer `S(1,1)` twice, once per path — which is exactly why `Picker_HidesTouchstoneDefaultS`
+exists. Reverted.
+
+The metric formulae need only **matrices**, so they get a narrow view instead:
+**`DataSourceEntryViewModel.NetworkView`** — `Snp` when there is one, else an SNP built on demand
+from the grouped S cube, gated on `NetworkMetrics.IsNetworkShaped` (rank 3, square port axes) so a
+**swept cube is refused rather than silently flattened to one arbitrary slice**. `entry.Snp` is
+unchanged, so both briefs hold simultaneously.
+
+`Trace.BuildPath` dispatches `if (IsCubeBound) … else if (IsDerived)`, so a derived trace must keep
+`CubeName = null` and take the network path — the picker binds `Trace.Data = NetworkView` and every
+metric formula runs verbatim, with no second implementation and no cube-specific branch.
+
+**Offered exactly once, from one of two producers:** the Touchstone block (gated on `entry.Snp`)
+or the new simulated block (gated on `entry.Snp is null` + a network-shaped view), which files the
+metrics into the analysis group's own section beside its `S` cube.
+
+**Standing rule: never bare-`Contains` a cube name that a simulation writes.** Use
+`DataSetBuilder.FindCubeSpec` — bare resolution refuses analysis cubes by design, so a bare lookup
+is a silent "works for Touchstone, not for simulation" bug every time.
+
+## A real bug the gate tests missed, found by trying to test it by hand
+
+Writing a walkthrough for the owner surfaced something the whole test suite had stepped around: **an
+`.s3p`/`.s4p` picked through the "Load Data Files" dialog (or dragged in) silently failed to load.**
+
+`DataSourceLibraryViewModel` has TWO Touchstone loaders. The path-based one calls
+`TouchstoneIO.ReadFile(path)`, which infers the port count from the extension. The storage-API one
+(the file picker and drag-drop — i.e. what a user actually touches) opens an `IStorageFile` stream and
+called bare `TouchstoneIO.Read(reader)` — **a `TextReader` has no filename**, so the port count had to be
+inferred from the data, and inference **throws** for N > 2 because an `.sNp` row is split across several
+physical lines. The surrounding `catch { return; }` swallowed it: no entry, no message, nothing.
+
+**2-port always worked, which is exactly why this survived** — and every headless test, including this
+brief's own gate 7, used `LoadFileAsync(path)` (the working loader). The gate tested the N > 2 claim
+against the one code path where it was never broken.
+
+Fixed by passing the extension's own answer: `TouchstoneIO.ParsePortsFromExtension` is now **public**
+(a caller reading a stream cannot recover the filename and must supply this itself) and the storage path
+passes it. Guarded two ways, both verified to actually fail against the pre-fix code, not merely to
+exercise it: `RfCore.Tests/TouchstonePortInferenceTests.cs` (10 — a canonical 4-port through a
+`StringReader` throws without the count and parses with it, plus the 2-port control that always worked)
+and a source scan in the Ui gate (`Gate7_StorageFileLoadPath_PassesThePortCountFromTheExtension`) —
+an `IStorageFile` cannot be constructed headlessly, so the call site is pinned the way this codebase
+already pins other Avalonia-only code.
+
+**Standing rule: never call `TouchstoneIO.Read(reader)` without a port count.** Use `ReadFile(path)`
+when you have a path; pass `ParsePortsFromExtension(path)` when you only have a stream.
+
+## Gate
+
+`RfCore/tests/RfCore.Tests/StabilityAndPassivityTests.cs` (16 — the R-stb-2 renorm incl. a
+complex-Z0 fixture that fails against the pre-fix dead branch, `Passivity` on square/non-square/N=1,
+and the six rewritten callers), `RfCore/tests/RfCore.Tests/NetworkMetricsTests.cs` (19 — extract-then-
+renormalize order, any-N with a deliberately non-1/2 pair, ordered-pair μ↔μ′ swap, whole-vs-pair
+passivity, `ValidatePortPair` rejection), `tests/Ui.Tests/StabilityCardTests.cs` (18 — the card's metric
+list gating by port count, port selectors incl. mutual-exclusion nudging, passivity scope, the
+termination note, plot-kind gating), `tests/Ui.Tests/WorkspaceRefsAndTouchstoneSourceTests.cs` (14 —
+gates 7/8/9: a dropped `.s2p`/`.s3p`/`.s4p` is an ordinary aliased source, relative-with-`/` inside
+vs. absolute-and-external outside, survives a workspace move, reports a missing external by name while
+preserving trace configuration, and copies nothing into the workspace or `results/`; plus the
+storage-path port-count scan above) and `RfCore/tests/RfCore.Tests/TouchstonePortInferenceTests.cs` (10).
+`tests/Ui.Tests/SimulatedSourceNetworkMetricsTests.cs` (12 — the group-aware lookup, the network
+view incl. the swept-cube refusal, the picker offering the metrics for a real run-shaped `.npy`,
+selecting one producing an actual curve, and the Touchstone-offers-each-exactly-once guard).
+Firewall 4/4, Core 512/512, Ui 3810/3810, Engine 460/461 (1 pre-existing skip), RfCore 285/285 — all
+green; the four simulated-source tests were confirmed to fail against the pre-fix code.
+
+**`RfCore.Tests` is NOT in `circuitrf.slnx` and is therefore NOT run by a plain `dotnet test`.** Adding it
+was tried and reverted: three `Rbf2DPerfTests` wall-clock timing tests fail under full-suite CPU
+contention (they pass standalone), and retagging another area's tests to accommodate this brief was the
+wrong trade. **When touching anything under `RfCore/`, run
+`dotnet test RfCore/tests/RfCore.Tests/RfCore.Tests.csproj` explicitly** — the routine gate will not catch
+you.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's own
+note) — please confirm on your end: loading a `.s2p` and a simulated `.npy` side by side offers the same
+stability/passivity metrics on both; the port selectors appear for a metric that needs a pair and refuse
+to let input and output collide; swapping input and output visibly swaps μ and μ′; passivity offers both
+whole-network and extracted-pair scopes; a Touchstone stored inside the workspace survives moving the
+whole folder; one stored outside reads "External" in the Dataset Aliases list; and dropping a Touchstone
+leaves `results/` untouched with no copy of the file anywhere in the workspace.
+
 Rect Y-axis label columns overlapped the tick numbers — the anchor measured only the window
 endpoints (2026-07-30) — COMPLETE. Owner report: on a Rect plot, traces on the RIGHT y-axis
 sometimes had their rotated per-trace Y labels rendered on top of the right axis's tick numbers.

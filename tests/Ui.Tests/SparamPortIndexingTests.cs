@@ -7,7 +7,9 @@
 //  Trace-card (generate/parse/label):
 //  1. Generate_S11             — Trace slice (i:Pin0, j:Pin0) → "SP1.S[:, 1, 1]"
 //  2. Generate_S21             — Trace slice (i:Pin1, j:Pin0) → "SP1.S[:, 2, 1]"
-//  3. Legend_S21               — TraceLabeler quantity contains "(i=2,j=1)"
+//  3. Legend_S21               — TraceLabeler quantity contains "(2,1)" (positional; the
+//                                axis NAMES were dropped from the legend on owner request —
+//                                the BRACKET spec form below still reads "S[:, 2, 1]").
 //  4. Parse_S21                — TryParse "SP1.S[:, 2, 1]" → i.Index==1, j.Index==0
 //  5. RoundTrip                — parse → regenerate → identical string
 //  6. PortOutOfRange           — port 3 on 2-port → false with "(1..2)"; port 0 → false
@@ -127,7 +129,9 @@ public sealed class SparamPortIndexingTests
     [Fact]
     public void Legend_S21()
     {
-        // TraceLabeler must emit "(i=2,j=1)" for the S21 trace.
+        // TraceLabeler must emit the positional "(2,1)" for the S21 trace — a matrix element is
+        // read positionally in RF, and this matches how the network (Touchstone) path has always
+        // labelled the same quantity. Port numbers stay 1-based.
         var t = MakeTrace("SP1.S", new[]
         {
             new AxisSlice("freq", AxisRole.KeepAsX,    0),
@@ -137,7 +141,9 @@ public sealed class SparamPortIndexingTests
 
         var labels = TraceLabeler.ComputeMinimalLabels(new[] { t });
         Assert.Single(labels);
-        Assert.Contains("(i=2,j=1)", labels[0]);
+        Assert.Contains("(2,1)", labels[0]);
+        Assert.DoesNotContain("i=", labels[0]);
+        Assert.DoesNotContain("j=", labels[0]);
     }
 
     // ── Test 4: Parse_S21 ────────────────────────────────────────────────────

@@ -495,13 +495,15 @@ public partial class PlotContainerViewModel : ViewModelBase
                 bool hasCustomY2 = plot.CustomY2LabelOn;
 
                 // Show filename prefix when settings force it, or when multiple SNPs are loaded.
+                // Count LOADED sources, not SNP-backed ones: a simulated run has no SNP by design,
+                // so the old test saw "0 sources" for any number of simulation results.
                 bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-                    (Library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
+                    (Library?.Entries.Count(e => !e.IsBroken) ?? 0) > 1);
 
                 // Compute minimal labels over all traces in the plot.
                 bool alwaysSource = AppSettingsViewModel.Instance.AlwaysDisplayDataSourcePrefix;
                 var  allLabels    = TraceLabeler.ComputeMinimalLabels(plot.Traces, alwaysSource,
-                    aliasFor: t => Library?.AliasFor(t.SourcePath));
+                    aliasFor: t => Library?.AliasFor(t.EffectiveSourcePath));
                 var  labelMap     = new Dictionary<Trace, string>();
                 for (int i = 0; i < plot.Traces.Count; i++)
                     labelMap[plot.Traces[i]] = allLabels[i];

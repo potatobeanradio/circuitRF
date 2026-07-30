@@ -53,7 +53,7 @@ namespace CircuitRF.Ui.DataDisplay
                 var alias = aliasFor?.Invoke(t);
                 sources[i] = !string.IsNullOrEmpty(alias)
                     ? alias
-                    : (t.SourcePath != null ? Path.GetFileNameWithoutExtension(t.SourcePath) : null);
+                    : (t.EffectiveSourcePath is { } sp ? Path.GetFileNameWithoutExtension(sp) : null);
                 quantities[i] = t.IsCubeBound
                     ? BuildCubeQuantity(t)
                     : t.ShortDescription;
@@ -90,17 +90,32 @@ namespace CircuitRF.Ui.DataDisplay
             var sb = new StringBuilder(t.CubeName ?? "");
 
             // Append pinned-axis selectors, e.g. "(node=0)".
+            //
+            // The S/Y/Z port axes are the exception: when BOTH are pinned the pair is written
+            // positionally as "S(1,2)" rather than "S(i=1,j=2)". A matrix element is universally
+            // read positionally in RF, the names carry nothing, and the network (Touchstone) path
+            // has always written it that way — so this also stops the same quantity from being
+            // labelled two different ways depending on which path produced it. With only ONE port
+            // axis pinned (the other iterated as a family) the name is KEPT, because a lone "S(1)"
+            // would not say which index it is.
             if (t.Slice is not null)
             {
+                bool bothPortsPinned =
+                    t.Slice.Count(x => x.Role == AxisRole.PinToIndex && x.AxisName is "i" or "j") == 2;
+
                 bool first = true;
                 foreach (var s in t.Slice)
                 {
                     if (s.Role != AxisRole.PinToIndex) continue;
+                    bool isPort = s.AxisName is "i" or "j";
                     sb.Append(first ? '(' : ',');
-                    sb.Append(s.AxisName);
-                    sb.Append('=');
-                    // i/j are S/Y/Z port axes — show 1-based port numbers (i=1 ⇒ port 1).
-                    sb.Append(s.AxisName is "i" or "j" ? s.Index + 1 : s.Index);
+                    if (!(isPort && bothPortsPinned))
+                    {
+                        sb.Append(s.AxisName);
+                        sb.Append('=');
+                    }
+                    // i/j are S/Y/Z port axes — show 1-based port numbers (i=0 ⇒ port 1).
+                    sb.Append(isPort ? s.Index + 1 : s.Index);
                     first = false;
                 }
                 if (!first) sb.Append(')');

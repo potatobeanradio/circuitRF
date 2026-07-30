@@ -18,6 +18,14 @@ public sealed class TraceDataItem
     public bool              IsEnabled { get; }
 
     /// <summary>
+    /// Why this item cannot be picked on the current plot, or null when it can (R-stb-5).
+    /// Scalars-versus-frequency belong on a rectangular plot and Γ-plane loci on Smith/Polar; the
+    /// two do not mix in one plot, so the unavailable ones are offered DISABLED WITH A REASON
+    /// rather than silently producing an empty trace.
+    /// </summary>
+    public string? DisabledReason { get; init; }
+
+    /// <summary>
     /// True when the source file is missing or the row/col is out of range
     /// for the currently loaded file.  The item is still selectable (it
     /// represents the current, unresolvable trace state) but is shown in
@@ -86,27 +94,29 @@ public sealed class TraceDataItem
         bool isTable   = plotType == PlotType.Table;
         string prefix  = omitFilePrefix ? string.Empty : $"{Path.GetFileNameWithoutExtension(entry.DisplayName)}..";
 
-        (Label, IsEnabled) = derived switch
+        // R-stb-5, expressed once from the metric's own kind rather than re-listed per member, so a
+        // metric added to DerivedParameters later cannot be forgotten here.
+        bool enabled = derived.IsCircleLocus() ? (isComplex || isTable)
+                     : derived.IsScalarVsFrequency() ? !isComplex
+                     : false;
+
+        DisabledReason = enabled ? null
+            : derived.IsCircleLocus()
+                ? "Stability circles are loci in the Γ plane — add them to a Smith or Polar plot."
+                : "This is a scalar versus frequency — add it to a rectangular (or table) plot.";
+
+        Label = $"{prefix}" + derived switch
         {
-            // Stability circles: valid on Smith/Polar (rendered as circles) and
-            // Table (rendered as per-frequency Inside/Outside); disabled on Rect.
-            DerivedParameters.SourceStabilityCircle =>
-                ($"{prefix}Source Stability Circles", isComplex || isTable),
-
-            DerivedParameters.LoadStabilityCircle =>
-                ($"{prefix}Load Stability Circles",   isComplex || isTable),
-
-            // Scalar stability / gain: valid on Rect and Table; disabled on Smith/Polar.
-            DerivedParameters.MuPrime =>
-                ($"{prefix}Source Stability µ'", !isComplex),
-
-            DerivedParameters.Mu =>
-                ($"{prefix}Load Stability µ",    !isComplex),
-
-            DerivedParameters.MaxGain =>
-                ($"{prefix}MaxGain",             !isComplex),
-
-            _ => ($"{prefix}?", false)
+            DerivedParameters.SourceStabilityCircle => "Source Stability Circles",
+            DerivedParameters.LoadStabilityCircle   => "Load Stability Circles",
+            DerivedParameters.MuPrime               => "Source Stability µ'",
+            DerivedParameters.Mu                    => "Load Stability µ",
+            DerivedParameters.MaxGain               => "MaxGain",
+            DerivedParameters.K                     => "Rollett K",
+            DerivedParameters.DeltaMag              => "|Δ|",
+            DerivedParameters.Passivity             => "Passivity σmax",
+            _                                       => "?",
         };
+        IsEnabled = enabled;
     }
 }

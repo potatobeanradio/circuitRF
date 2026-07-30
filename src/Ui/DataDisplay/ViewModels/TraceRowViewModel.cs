@@ -1311,9 +1311,13 @@ public partial class TraceRowViewModel : ViewModelBase
         }
         else
         {
+            // NetworkView is Snp for a Touchstone source and the on-demand view of a simulated
+            // run's S cube otherwise — the same instance the bind below assigns, so this stays a
+            // true "nothing changed" test for both source kinds.
+            var boundView = value.Entry.NetworkView;
             alreadyApplied = value.Derived != DerivedParameters.None
-                ? (_trace.Data == value.Entry.Snp && _trace.Derived == value.Derived)
-                : (_trace.Data == value.Entry.Snp && _trace.Row == value.Row
+                ? (ReferenceEquals(_trace.Data, boundView) && _trace.Derived == value.Derived)
+                : (ReferenceEquals(_trace.Data, boundView) && _trace.Row == value.Row
                    && _trace.Col == value.Col && _trace.Derived == DerivedParameters.None);
         }
         OnPropertyChanged(nameof(ShowZ0Badge));
@@ -1384,7 +1388,7 @@ public partial class TraceRowViewModel : ViewModelBase
             _trace.ExpressionError = null;
             _trace.Transform       = CubeTransform.None;
             AxisRoles.Clear();
-            _trace.Data = value.Entry.Snp!;
+            _trace.Data = (value.Entry.NetworkView ?? value.Entry.Snp)!;
 
             // Set per-port Z0 fields from the source entry (Phase 7.2f).
             ApplySourceZ0(value.Entry);
@@ -1437,9 +1441,12 @@ public partial class TraceRowViewModel : ViewModelBase
     /// PlotInspectorViewModel where no TraceRowViewModel exists yet.</summary>
     internal static void StampSourceZ0OnTrace(Trace trace, DataSourceEntryViewModel entry)
     {
-        if (entry.Data is { } ds && ds.Contains("Z0"))
+        // Read the entry's ALREADY-classified vector rather than re-resolving "Z0" here — a second
+        // lookup is a second chance to get the group qualification wrong, and did: a bare
+        // ds.Contains("Z0") is false for a simulated source, whose Z0 lives at "SP1.Z0".
+        if (entry.Z0PerPort is { Count: > 0 } z0PerPort)
         {
-            trace.SourceZ0PerPort   = ds["Z0"].ComplexValues;
+            trace.SourceZ0PerPort   = z0PerPort as System.Numerics.Complex[] ?? z0PerPort.ToArray();
             trace.SourceZ0IsUnusual = entry.HasUnusualZ0;
         }
         else
@@ -1457,6 +1464,147 @@ public partial class TraceRowViewModel : ViewModelBase
         for (int i = 0; i < a.Length; i++)
             if (a[i] != b[i]) return false;
         return true;
+    }
+
+    // ---- Network-metric card (brief-stability-passivity-touchstone.md §3) -----------------
+    //
+    //  Stability's 2-port formulas need to know WHICH 2-port. A 4-port holding two FETs has
+    //  several candidate pairings and only the user knows which is meaningful — which is why an
+    //  automatic "compute stability when the data is 2-port" rule was rejected in favour of an
+    //  explicit, ordered selection (R-stb-3).
+
+    /// <summary>True for a derived network-metric trace (μ, μ′, K, |Δ|, MaxGain, passivity, circles).</summary>
+    public bool IsNetworkMetricTrace => _trace.IsDerived;
+
+    /// <summary>Port count of this trace's source network; 0 when it has none.</summary>
+    private int SourcePortCount => _trace.Data is { IsEmpty: false } d ? d.Ports : 0;
+
+    /// <summary>1-based port numbers for the two selectors.</summary>
+    public ObservableCollection<int> AvailablePorts { get; } = new();
+
+    /// <summary>
+    /// R-stb-3: two INDEPENDENT selectors, never an enumerated pair list — the pair count grows as
+    /// N(N−1)/2 (28 for an 8-port, 190 for a 20-port), which does not scale; two selectors do, for
+    /// any N. Hidden at exactly 2 ports, where input=1/output=2 is the only sensible choice.
+    /// </summary>
+    public bool ShowPortSelectors =>
+        IsNetworkMetricTrace && _trace.Derived.NeedsPortPair() && SourcePortCount > 2;
+
+    public int SelectedInputPort
+    {
+        get => _trace.InputPort;
+        set
+        {
+            if (value == _trace.InputPort || value < 1) return;
+            _trace.InputPort = value;
+            // Ports must differ; nudge the other selector rather than refusing the pick.
+            if (_trace.OutputPort == value)
+            {
+                _trace.OutputPort = FirstPortOtherThan(value);
+                OnPropertyChanged(nameof(SelectedOutputPort));
+            }
+            OnPropertyChanged(nameof(SelectedInputPort));
+            OnPropertyChanged(nameof(TerminationNote));
+            _parent.RebuildAndNotify();
+            _parent.NotifyStructureChanged();
+        }
+    }
+
+    public int SelectedOutputPort
+    {
+        get => _trace.OutputPort;
+        set
+        {
+            if (value == _trace.OutputPort || value < 1) return;
+            _trace.OutputPort = value;
+            if (_trace.InputPort == value)
+            {
+                _trace.InputPort = FirstPortOtherThan(value);
+                OnPropertyChanged(nameof(SelectedInputPort));
+            }
+            OnPropertyChanged(nameof(SelectedOutputPort));
+            OnPropertyChanged(nameof(TerminationNote));
+            _parent.RebuildAndNotify();
+            _parent.NotifyStructureChanged();
+        }
+    }
+
+    private int FirstPortOtherThan(int p)
+    {
+        for (int i = 1; i <= Math.Max(2, SourcePortCount); i++) if (i != p) return i;
+        return p == 1 ? 2 : 1;
+    }
+
+    /// <summary>Passivity only: whole network vs the extracted pair (R-stb-6).</summary>
+    public bool PassivityWholeNetwork
+    {
+        get => _trace.PassivityWholeNetwork;
+        set
+        {
+            if (value == _trace.PassivityWholeNetwork) return;
+            _trace.PassivityWholeNetwork = value;
+            OnPropertyChanged(nameof(PassivityWholeNetwork));
+            OnPropertyChanged(nameof(ShowPassivityScope));
+            OnPropertyChanged(nameof(TerminationNote));
+            _parent.RebuildAndNotify();
+        }
+    }
+
+    /// <summary>The whole-network/pair choice is offered only for passivity, and only above 2 ports.</summary>
+    public bool ShowPassivityScope =>
+        IsNetworkMetricTrace && _trace.Derived == DerivedParameters.Passivity && SourcePortCount > 2;
+
+    /// <summary>
+    /// R-stb-4: extracting a 2-port sub-matrix from an N-port is valid ONLY because the other ports
+    /// are assumed terminated in the reference impedance. That is standard and correct, but someone
+    /// comparing against a bench measurement where port 3 saw something else gets a mismatch with no
+    /// explanation — one line of text is cheap insurance. Also carries R-stb-6's warning that a
+    /// sub-matrix's passivity is not the device's passivity.
+    /// </summary>
+    public string? TerminationNote
+    {
+        get
+        {
+            if (!IsNetworkMetricTrace) return null;
+            int n = SourcePortCount;
+
+            if (_trace.Derived == DerivedParameters.Passivity)
+                return PassivityWholeNetwork || n <= 2
+                    ? null
+                    : $"Passivity of the extracted {_trace.InputPort}–{_trace.OutputPort} 2-port, not of the "
+                    + $"whole {n}-port: a sub-matrix can test passive while the full network is not. "
+                    + "Remaining ports are assumed terminated in the reference impedance.";
+
+            if (n > 2)
+                return $"Computed from the {_trace.InputPort}→{_trace.OutputPort} 2-port of this {n}-port. "
+                     + "The other ports are assumed terminated in the reference impedance — results will "
+                     + "differ from a bench measurement that terminated them otherwise.";
+            return null;
+        }
+    }
+
+    public bool ShowTerminationNote => TerminationNote is not null;
+
+    private void RebuildPortOptions()
+    {
+        int n = SourcePortCount;
+        if (AvailablePorts.Count == n) return;      // no churn when unchanged
+        AvailablePorts.Clear();
+        for (int p = 1; p <= n; p++) AvailablePorts.Add(p);
+    }
+
+    /// <summary>Re-raises every network-metric card property; called from RefreshDescription.</summary>
+    private void RefreshNetworkMetricCard()
+    {
+        RebuildPortOptions();
+        OnPropertyChanged(nameof(IsNetworkMetricTrace));
+        OnPropertyChanged(nameof(ShowPortSelectors));
+        OnPropertyChanged(nameof(ShowPassivityScope));
+        OnPropertyChanged(nameof(PassivityWholeNetwork));
+        OnPropertyChanged(nameof(SelectedInputPort));
+        OnPropertyChanged(nameof(SelectedOutputPort));
+        OnPropertyChanged(nameof(TerminationNote));
+        OnPropertyChanged(nameof(ShowTerminationNote));
     }
 
     // ---- Matrix type -------------------------------------------------------
@@ -2186,14 +2334,25 @@ public partial class TraceRowViewModel : ViewModelBase
                 for (int c = 0; c < ports; c++)
                     _allSignals.Add(new TraceDataItem(entry, MatrixType, r, c, omitFilePrefix: true) { Group = netGroup });
 
-            if (ports == 2)
+            // R-stb-3b/R-stb-9: every N ≥ 2 offers the full 2-port metric set — the ordered port
+            // selectors on the card decide WHICH 2-port, so nothing here is specific to N = 2.
+            // Passivity is offered from N ≥ 1, since it is not a 2-port formula (R-stb-6).
+            if (ports >= 2)
             {
-                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.SourceStabilityCircle, _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
-                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.LoadStabilityCircle,   _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
-                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.MuPrime, _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
-                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.Mu,      _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
-                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.MaxGain, _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
+                foreach (var d in new[]
+                {
+                    DerivedParameters.SourceStabilityCircle,
+                    DerivedParameters.LoadStabilityCircle,
+                    DerivedParameters.MuPrime,
+                    DerivedParameters.Mu,
+                    DerivedParameters.MaxGain,
+                    DerivedParameters.K,
+                    DerivedParameters.DeltaMag,
+                })
+                    _allSignals.Add(new TraceDataItem(entry, d, _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
             }
+            if (ports >= 1)
+                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.Passivity, _parent.PlotType, omitFilePrefix: true) { Group = netGroup });
         }
 
         // ---- Cube-bound signals (Phase 7.3a: one item per cube, axis roles via editor) ------
@@ -2254,6 +2413,48 @@ public partial class TraceRowViewModel : ViewModelBase
                                     { Group = cubeGroup });
                 }
             }
+        }
+
+        // ---- Network metrics for a SIMULATED S-parameter run (R-stb-1) ---------------------
+        //
+        // A grouped run's S cube has no SNP by design (it goes through the cube path above, which
+        // can carry a swept axis an SNP cannot). The 2-port metric formulae need only matrices, so
+        // they are offered here against the entry's narrow NetworkView, in the analysis group's own
+        // section beside its S cube. Gated on `entry.Snp is null` so a Touchstone source keeps
+        // offering these exactly once, from the network block above.
+        foreach (var entry in selectedEntry is null
+            ? System.Linq.Enumerable.Empty<DataSourceEntryViewModel>()
+            : new[] { selectedEntry })
+        {
+            if (entry.Snp is not null) continue;                  // Touchstone — already offered
+            if (entry.Data is not { } mds) continue;
+            if (entry.NetworkView is not { IsEmpty: false } view) continue;
+            if (RfCore.Data.NetworkMetrics.FindSCubeSpec(mds) is not { } sSpec) continue;
+
+            int dotAt = sSpec.IndexOf('.');
+            string sGroup = dotAt < 0 ? DataSet.DefaultGroup : sSpec[..dotAt];
+            string metricGroup = (singleSource ? "" : $"{System.IO.Path.GetFileNameWithoutExtension(entry.DisplayName)}..")
+                               + (sGroup == DataSet.DefaultGroup ? "Signals" : sGroup);
+
+            int mPorts = view.Ports;
+            if (mPorts >= 2)
+            {
+                foreach (var d in new[]
+                {
+                    DerivedParameters.SourceStabilityCircle,
+                    DerivedParameters.LoadStabilityCircle,
+                    DerivedParameters.MuPrime,
+                    DerivedParameters.Mu,
+                    DerivedParameters.MaxGain,
+                    DerivedParameters.K,
+                    DerivedParameters.DeltaMag,
+                })
+                    _allSignals.Add(new TraceDataItem(entry, d, _parent.PlotType, omitFilePrefix: true)
+                                    { Group = metricGroup });
+            }
+            if (mPorts >= 1)
+                _allSignals.Add(new TraceDataItem(entry, DerivedParameters.Passivity, _parent.PlotType, omitFilePrefix: true)
+                                { Group = metricGroup });
         }
 
         // ---- Ensure each analysis group offers both V and I (absent placeholder when cube missing) ----
@@ -2742,6 +2943,7 @@ public partial class TraceRowViewModel : ViewModelBase
         // Keep the Source combo honest about which file this trace actually reads from — a
         // toolbar-driven datasource change re-points a sentinel trace and only refreshes cards.
         SyncSourceSelectionToTrace();
+        RefreshNetworkMetricCard();
     }
 
     // ---- Inline spec editor (#4) -------------------------------------------

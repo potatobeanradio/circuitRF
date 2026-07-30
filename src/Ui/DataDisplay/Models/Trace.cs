@@ -45,9 +45,16 @@ namespace CircuitRF.Ui.DataDisplay
     //  DerivedParameters
     // ============================================================
 
+    /// <summary>
+    /// Network metrics derived from an S-matrix. Appended-to only — the numeric values are
+    /// persisted in `.cdd` (TraceConfig.Derived), so existing members must keep their ordinals.
+    /// </summary>
     public enum DerivedParameters
     {
         None, SourceStabilityCircle, LoadStabilityCircle, MaxGain, Mu, MuPrime,
+        // brief-stability-passivity-touchstone.md — K/|Δ| complete the standard stability set;
+        // Passivity is the one metric here that is NOT 2-port-limited (R-stb-6).
+        K, DeltaMag, Passivity,
     }
 
     public static class DerivedParametersExtensions
@@ -59,7 +66,43 @@ namespace CircuitRF.Ui.DataDisplay
             DerivedParameters.MuPrime               => "Source Stability, µ'",
             DerivedParameters.Mu                    => "Load Stability, µ",
             DerivedParameters.MaxGain               => "Max Gain",
+            DerivedParameters.K                     => "Rollett K",
+            DerivedParameters.DeltaMag              => "|Δ|",
+            DerivedParameters.Passivity             => "Passivity, σmax",
             _                                       => ""
+        };
+
+        /// <summary>
+        /// True for metrics that are scalars versus frequency → rectangular plots. Stability
+        /// circles are loci in the Γ plane → Smith/Polar. The two do not mix in one plot, which is
+        /// what R-stb-5's offer-what-fits gating is built on.
+        /// </summary>
+        public static bool IsScalarVsFrequency(this DerivedParameters d) =>
+            d is DerivedParameters.Mu or DerivedParameters.MuPrime or DerivedParameters.K
+              or DerivedParameters.DeltaMag or DerivedParameters.MaxGain
+              or DerivedParameters.Passivity;
+
+        /// <summary>True for the Γ-plane loci (Smith/Polar only).</summary>
+        public static bool IsCircleLocus(this DerivedParameters d) =>
+            d is DerivedParameters.SourceStabilityCircle or DerivedParameters.LoadStabilityCircle;
+
+        /// <summary>
+        /// True when the metric is a 2-port formula and therefore needs an ordered port pair.
+        /// Passivity is defined for any N and defaults to the whole network (R-stb-6).
+        /// </summary>
+        public static bool NeedsPortPair(this DerivedParameters d) =>
+            d != DerivedParameters.None && d != DerivedParameters.Passivity;
+
+        /// <summary>Maps to the RfCore metric enum; throws for non-scalar/None members.</summary>
+        public static RfCore.Data.NetworkMetric ToNetworkMetric(this DerivedParameters d) => d switch
+        {
+            DerivedParameters.Mu        => RfCore.Data.NetworkMetric.Mu,
+            DerivedParameters.MuPrime   => RfCore.Data.NetworkMetric.MuPrime,
+            DerivedParameters.K         => RfCore.Data.NetworkMetric.K,
+            DerivedParameters.DeltaMag  => RfCore.Data.NetworkMetric.DeltaMag,
+            DerivedParameters.MaxGain   => RfCore.Data.NetworkMetric.MaxGain,
+            DerivedParameters.Passivity => RfCore.Data.NetworkMetric.Passivity,
+            _ => throw new ArgumentOutOfRangeException(nameof(d), $"{d} has no NetworkMetric."),
         };
     }
 
@@ -178,6 +221,27 @@ namespace CircuitRF.Ui.DataDisplay
         }
 
         public bool IsDerived => Derived != DerivedParameters.None;
+
+        // ---- Ordered port selection for network metrics (R-stb-3/3a) ----
+        //
+        //  1-based, and ORDERED — port roles are not symmetric. μ is the LOAD stability factor and
+        //  μ′ the SOURCE stability factor, so swapping input and output swaps which is which;
+        //  (1,2) and (2,1) are different selections, never an unordered pair. Two independent
+        //  selectors rather than an enumerated pair list, because the pair count grows as N(N−1)/2
+        //  (28 for an 8-port, 190 for a 20-port) and would not scale.
+
+        /// <summary>1-based input port for 2-port network metrics. Default 1.</summary>
+        public int InputPort { get; set; } = 1;
+
+        /// <summary>1-based output port for 2-port network metrics. Default 2.</summary>
+        public int OutputPort { get; set; } = 2;
+
+        /// <summary>
+        /// For Passivity only: measure the WHOLE network rather than the extracted (input, output)
+        /// pair. Default true — whole-network passivity is the meaningful default (R-stb-6), and a
+        /// sub-matrix can test passive while the full network is not.
+        /// </summary>
+        public bool PassivityWholeNetwork { get; set; } = true;
 
         public bool IsStabilityCircle =>
             Derived == DerivedParameters.LoadStabilityCircle ||
@@ -411,6 +475,18 @@ namespace CircuitRF.Ui.DataDisplay
 
         /// <summary>Short description with no source-file prefix.</summary>
         public string ShortDescription => DescriptionFor(includePrefix: false);
+
+        /// <summary>
+        /// The file this trace's data came from: <see cref="SourcePath"/> when set, otherwise the
+        /// bound network's own <c>FilePath</c>.
+        ///
+        /// <para>One definition, because the two used to disagree: a trace with a null SourcePath
+        /// but a perfectly well-known <c>Data.FilePath</c> contributed NO source component to
+        /// <see cref="TraceLabeler.ComputeMinimalLabels"/>, so it alone lost its alias prefix while
+        /// every sibling on the plot kept theirs — the label convention silently not applying to
+        /// one trace.</para>
+        /// </summary>
+        public string? EffectiveSourcePath => SourcePath ?? Data?.FilePath;
 
         /// <summary>
         /// DataCube-shorthand label for use as a Table column header, e.g. <c>V[0, 1, :]</c>.
@@ -946,47 +1022,63 @@ namespace CircuitRF.Ui.DataDisplay
             StabilityCircleRadii.Clear();
             StabilityCircleStableInside.Clear();
 
-            if (Data.Ports != 2) return;
+            int nPorts = Data.Ports;
+            // Passivity is defined for any N ≥ 1; every other metric here is a 2-port formula
+            // (R-stb-6). No per-N branching beyond that one distinction — a 3-, 5- or 12-port
+            // travels exactly the same path as a 2-port (R-stb-3b).
+            int minPorts = Derived.NeedsPortPair() ? 2 : 1;
+            if (nPorts < minPorts) return;
 
-            SNP snp;
-            if (SourceZ0IsUnusual && SourceZ0PerPort is { } sourceZ0 && sourceZ0.Length >= 1)
-            {
-                // Renorm stored matrices to uniform-real so NormalizedS2Port inside
-                // stability routines gets an honest starting point.
-                int n = Data.Ports;
-                var z0Real = new Complex(sourceZ0[0].Real, 0);
-                var z0RealArray = RFNetwork.Z0Array(z0Real, n);
-                var renormedMats = Data.Matrices
-                    .Select(m => RFNetwork.SToS(m, sourceZ0, z0RealArray))
-                    .ToArray();
-                snp = new SNP(Data.Frequencies, renormedMats,
-                              MatrixType.S, Data.Format, z0Real);
-            }
-            else
-            {
-                snp = new SNP(Data.Frequencies, Data.Matrices,
-                              MatrixType.S, Data.Format, Data.Z0);
-            }
+            // The TRUE per-port references. SourceZ0PerPort is stamped from the source's own Z0
+            // cube (Phase 7.2f); Data.Z0 is a single value because SNP is uniform-only by design,
+            // and DataSetBuilder.ToSnp flattens a non-uniform cube to port 1 — so for a simulated
+            // S cube this array is the only faithful record of the per-port references.
+            Complex[] z0PerPort =
+                SourceZ0PerPort is { } perPort && perPort.Length >= nPorts
+                    ? perPort.Take(nPorts).ToArray()
+                    : RFNetwork.Z0Array(Data.Z0, nPorts);
 
             if (plotType.IsRect())
             {
-                double[] xData = Data.Frequencies
-                    .Select(f => f * freqUnit.Scale()).ToArray();
-
-                double[] yData = Derived switch
+                // R-stb-1/R-stb-2: renormalize per-port → uniform real, then call the SAME
+                // per-matrix stability functions the SNP path uses. NetworkMetrics performs no
+                // mathematics of its own — it is purely the extract-and-renormalize adapter.
+                double[] yData;
+                try
                 {
-                    DerivedParameters.MuPrime => RFNetwork.StabilityMuPrime(snp),
-                    DerivedParameters.Mu      => RFNetwork.StabilityMu(snp),
-                    DerivedParameters.MaxGain => RFNetwork.MaxGain(snp),
-                    _                         => Array.Empty<double>()
-                };
+                    // Passivity has its own two scopes and is NOT a 2-port metric, so it must not
+                    // be routed through TwoPortMetric (which correctly refuses it).
+                    yData = Derived == DerivedParameters.Passivity
+                        ? (PassivityWholeNetwork
+                            ? RfCore.Data.NetworkMetrics.PassivityFull(Data.Matrices, z0PerPort)
+                            : RfCore.Data.NetworkMetrics.PassivityPair(
+                                  Data.Matrices, z0PerPort, InputPort, OutputPort))
+                        : RfCore.Data.NetworkMetrics.TwoPortMetric(
+                              Data.Matrices, z0PerPort, Derived.ToNetworkMetric(),
+                              InputPort, OutputPort);
+                }
+                catch (ArgumentException) { return; }   // invalid port pair → empty, never a crash
 
+                double[] xData = Data.Frequencies.Select(f => f * freqUnit.Scale()).ToArray();
                 for (int i = 0; i < xData.Length && i < yData.Length; i++)
                     if (double.IsFinite(yData[i]))
                         Points.Add(new Vector2((float)xData[i], (float)yData[i]));
             }
             else
             {
+                // Γ-plane loci. The circle routines take an SNP, so hand them the extracted,
+                // already-uniform-real 2-port rather than the raw N-port.
+                if (nPorts < 2) return;
+                SNP snp;
+                try
+                {
+                    var pair = RfCore.Data.NetworkMetrics.TwoPortUniformReal(
+                        Data.Matrices, z0PerPort, InputPort, OutputPort);
+                    snp = new SNP(Data.Frequencies, pair, MatrixType.S, Data.Format,
+                                  new Complex(z0PerPort[InputPort - 1].Real, 0));
+                }
+                catch (ArgumentException) { return; }
+
                 if (Derived == DerivedParameters.LoadStabilityCircle)
                 {
                     var (CL, rL) = RFNetwork.StabilityCirclesLoad(snp);

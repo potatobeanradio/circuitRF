@@ -597,12 +597,12 @@ namespace RfCore
         // ============================================================
 
         /// <summary>
-        /// Return a 2-port S-parameter SNP normalized to s.Z0,
-        /// converting from Z or Y if necessary.  Never mutates the input.
-        /// If <paramref name="forceZ0Real"/> is true, result is normalized
-        /// to the Real part of port 1.
+        /// Return a 2-port S-parameter SNP normalized to a UNIFORM REAL reference impedance
+        /// (the real part of s.Z0), converting from Z or Y if necessary. Never mutates the input.
+        /// Every 2-port stability entry point goes through here, so the uniform-real precondition
+        /// the per-matrix overloads document is established in exactly one place.
         /// </summary>
-        private static SNP NormalizedS2Port(SNP snp, bool forceZ0Real = true)
+        private static SNP NormalizedS2Port(SNP snp)
         {
             if (snp.Ports != 2)
                 throw new ArgumentException(
@@ -615,11 +615,24 @@ namespace RfCore
                 _            => snp
             };
 
-            if (forceZ0Real)
-                if (forceZ0Real)
-                    s = SToS(s, new Complex(s.Z0.Real, 0));// use port 1 real reference impedance
-                else
-                    s = SToS(s, s.Z0);// use port 1 complex reference impedance
+            // Every stability formula below (μ, μ′, K/|Δ|, MAG/MSG, the stability circles) is only
+            // valid against a UNIFORM REAL reference impedance, so normalise to one here — this is
+            // the single place that guarantee is established for the SNP path.
+            //
+            // This previously took a `bool forceZ0Real` whose body was `if (forceZ0Real) { if
+            // (forceZ0Real) ... else ... }` — the inner `else` was unreachable, so passing `false`
+            // renormalised NOTHING rather than "renormalise to the complex reference". μ, μ′ and both
+            // circle functions all passed `false` while StabilityK and MaxGain used the `true`
+            // default, leaving the shared math internally inconsistent: on a complex-Z0 network the
+            // first group computed against a complex-referenced matrix (physically wrong) and the
+            // second did not. Invisible in practice only because real Touchstone files are
+            // essentially always purely real, where this renorm is an exact identity.
+            //
+            // Skipping the identity case is deliberate, not an optimisation: it keeps results
+            // bit-for-bit identical for those real-Z0 files on BOTH former groups, so this repair
+            // changes numbers only where they were already wrong.
+            if (s.Z0.Imaginary != 0.0)
+                s = SToS(s, new Complex(s.Z0.Real, 0.0));
 
             return s;
         }
@@ -636,7 +649,7 @@ namespace RfCore
         /// </summary>
         public static double[] StabilityMu(SNP snp)
         {
-            var s      = NormalizedS2Port(snp, false);
+            var s      = NormalizedS2Port(snp);
             var result = new double[s.FrequencyCount];
             for (int i = 0; i < s.FrequencyCount; i++)
                 result[i] = StabilityMu(s.Matrices[i]);
@@ -670,7 +683,7 @@ namespace RfCore
         /// </summary>
         public static double[] StabilityMuPrime(SNP snp)
         {
-            var s      = NormalizedS2Port(snp,false);
+            var s      = NormalizedS2Port(snp);
             var result = new double[s.FrequencyCount];
             for (int i = 0; i < s.FrequencyCount; i++)
                 result[i] = StabilityMuPrime(s.Matrices[i]);
@@ -807,7 +820,7 @@ namespace RfCore
         /// <returns>(CL[], rL[]) — center (complex) and radius, one entry per frequency.</returns>
         public static (Complex[] CL, double[] rL) StabilityCirclesLoad(SNP snp)
         {
-            var s  = NormalizedS2Port(snp, false);
+            var s  = NormalizedS2Port(snp);
             int n  = s.FrequencyCount;
             var CL = new Complex[n];
             var rL = new double[n];
@@ -828,6 +841,56 @@ namespace RfCore
             return (CL, rL);
         }
 
+        // ----------------------------------------------------------
+        //  Passivity  —  σ_max(S) ≤ 1   (equivalently  I − Sᴴ S ⪰ 0)
+        // ----------------------------------------------------------
+
+        /// <summary>
+        /// Passivity measure of a scattering matrix: its largest singular value σ_max(S).
+        /// The network is passive at this frequency iff σ_max ≤ 1; the returned value says
+        /// how far from passive it is, not merely whether — 1 is the boundary.
+        ///
+        /// Unlike μ, μ′, K and MAG/MSG this is <b>not</b> a 2-port formula — it is defined for
+        /// any N ≥ 1 (at N = 1 it degenerates to |S₁₁|). Callers may therefore pass a whole
+        /// N-port matrix, not just an extracted 2-port.
+        ///
+        /// <para><b>The matrix must already be normalized to a uniform REAL reference impedance</b>
+        /// (as with the per-matrix stability overloads). The Sᴴ S ⪯ I test presumes power waves
+        /// against a common real reference; under per-port or complex references it is not the
+        /// right test. Renormalize first — see <see cref="SToS(Mat{Complex}, Complex[], Complex[])"/>.</para>
+        /// </summary>
+        public static double Passivity(Mat<Complex> s)
+        {
+            if (s.RowCount != s.ColCount)
+                throw new ArgumentException("Passivity requires a square scattering matrix.");
+            // σ_max is the induced 2-norm; NumFlat returns singular values in descending order.
+            return s.Svd().S[0];
+        }
+
+        /// <summary>
+        /// σ_max(S) over frequency for an N-port SNP — the passivity measure at each point.
+        /// Values ≤ 1 are passive. Converts from Z/Y if needed and normalizes to a uniform real
+        /// reference first, exactly as the stability functions do.
+        /// </summary>
+        public static double[] Passivity(SNP snp)
+        {
+            SNP s = snp.Type switch
+            {
+                MatrixType.Z => ZToS(snp),
+                MatrixType.Y => YToS(snp),
+                _            => snp
+            };
+            // Same uniform-real requirement as the stability path (see NormalizedS2Port), but
+            // without its 2-port restriction — passivity is defined for any N.
+            if (s.Z0.Imaginary != 0.0)
+                s = SToS(s, new Complex(s.Z0.Real, 0.0));
+
+            var result = new double[s.FrequencyCount];
+            for (int i = 0; i < s.FrequencyCount; i++)
+                result[i] = Passivity(s.Matrices[i]);
+            return result;
+        }
+
         /// <summary>
         /// Source stability circles for a 2-port SNP over frequency.
         /// The source circle is the locus of ΓS values on the Smith chart
@@ -836,7 +899,7 @@ namespace RfCore
         /// <returns>(CS[], rS[]) — center (complex) and radius, one entry per frequency.</returns>
         public static (Complex[] CS, double[] rS) StabilityCirclesSource(SNP snp)
         {
-            var s  = NormalizedS2Port(snp, false);
+            var s  = NormalizedS2Port(snp);
             int n  = s.FrequencyCount;
             var CS = new Complex[n];
             var rS = new double[n];
@@ -864,7 +927,7 @@ namespace RfCore
         /// </summary>
         public static bool[] StableRegionInsideLoad(SNP snp)
         {
-            var sNorm = NormalizedS2Port(snp, false);
+            var sNorm = NormalizedS2Port(snp);
             var (CL, rL) = StabilityCirclesLoad(snp);
             int n = sNorm.FrequencyCount;
             var flags = new bool[n];
@@ -882,7 +945,7 @@ namespace RfCore
         /// </summary>
         public static bool[] StableRegionInsideSource(SNP snp)
         {
-            var sNorm = NormalizedS2Port(snp, false);
+            var sNorm = NormalizedS2Port(snp);
             var (CS, rS) = StabilityCirclesSource(snp);
             int n = sNorm.FrequencyCount;
             var flags = new bool[n];

@@ -53,7 +53,8 @@
                                     ToolTip.Tip="{Binding FileName}">
                                 <TextBlock Text="{Binding StatusText}"
                                            FontSize="9"
-                                           Classes.brokenText="{Binding IsBroken}"/>
+                                           ToolTip.Tip="{Binding StatusTooltip}"
+                                           Classes.brokenText="{Binding IsFlagged}"/>
                             </Border>
                             <Button Grid.Column="2"
                                     Classes="seg-btn"

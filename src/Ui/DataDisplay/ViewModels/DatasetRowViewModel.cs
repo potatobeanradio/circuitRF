@@ -37,7 +37,34 @@ public sealed partial class DatasetRowViewModel : ObservableObject
 
     public string FileName => _entry.FileName ?? "(unknown)";
     public bool   IsBroken => _entry.IsBroken;
-    public string StatusText => IsBroken ? "Missing" : "Live";
+
+    /// <summary>
+    /// Supplies the workspace root so a source outside it can be marked external (R-stb-12).
+    /// Null (no workspace open) means nothing is classified as external.
+    /// </summary>
+    public Func<string?>? WorkspaceRootProvider { get; set; }
+
+    /// <summary>
+    /// R-stb-12 — true when this source lives OUTSIDE the workspace and therefore will not travel
+    /// with it. A user about to share a workspace can see which sources will break on someone
+    /// else's machine; without it, the failure surfaces there as a missing file with no explanation.
+    /// </summary>
+    public bool IsExternal =>
+        _entry.FilePath is { } fp &&
+        CircuitRF.Ui.Schematic.WorkspaceRefs.IsExternal(fp, WorkspaceRootProvider?.Invoke());
+
+    public string StatusText => IsBroken ? "Missing" : IsExternal ? "External" : "Live";
+
+    /// <summary>Missing and external are both states worth visually flagging.</summary>
+    public bool IsFlagged => IsBroken || IsExternal;
+
+    public string? StatusTooltip => IsBroken
+        ? "The file was not found on disk. Trace settings are preserved — use Locate… to point at it again."
+        : IsExternal
+            ? "This file lives outside the workspace, so it will NOT travel with it — on another "
+            + "machine it will report as missing until it is re-pointed."
+            : null;
+
     public string LocateButtonText => IsBroken ? "Locate…" : "Re-point…";
 
     [ObservableProperty]
@@ -97,7 +124,10 @@ public sealed partial class DatasetRowViewModel : ObservableObject
         AliasText = _entry.Alias;
         OnPropertyChanged(nameof(FileName));
         OnPropertyChanged(nameof(IsBroken));
+        OnPropertyChanged(nameof(IsExternal));
+        OnPropertyChanged(nameof(IsFlagged));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(StatusTooltip));
         OnPropertyChanged(nameof(LocateButtonText));
     }
 }

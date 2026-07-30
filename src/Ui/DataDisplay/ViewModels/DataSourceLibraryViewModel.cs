@@ -321,10 +321,15 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         {
             // Open via the storage API so macOS security-scoped URLs are handled.
             using var stream = await file.OpenReadAsync();
+            // The port count MUST come from the extension: a TextReader has no filename, and
+            // inference from the data alone throws for N > 2 (an .sNp row is split across several
+            // physical lines). Without this an .s3p/.s4p silently failed to load here — while the
+            // path-based loader above, which does pass it, worked fine.
+            int? portsFromExt = TouchstoneIO.ParsePortsFromExtension(path);
             snp = await Task.Run(() =>
             {
                 using var reader = new StreamReader(stream);
-                return TouchstoneIO.Read(reader);
+                return TouchstoneIO.Read(reader, portsFromExt);
             });
         }
         catch { return; }
@@ -613,6 +618,9 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         try { data = (await Task.Run(() => DataSetImporter.Import(path))).DataSet; }
         catch { return; }
 
+        // A grouped run ("SP1.S") deliberately gets NO SNP — it goes through the cube path, which
+        // can carry axes an SNP structurally cannot (a swept S cube is rank 4). See
+        // brief-sparam-run-add-trace. Only a flat/Touchstone-shaped default-group S becomes an SNP.
         SNP? snp = null;
         if (data.Contains("S"))
         {
