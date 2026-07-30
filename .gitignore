@@ -1,25 +1,15 @@
 .DS_Store
 .claude/
-/src/Cli/obj
-/src/RfCore/bin
-/src/RfCore/obj
-/tests/RfCore.Tests/bin
-/tests/RfCore.Tests/obj
-/src/Core/bin
-/src/Core/obj
-/tests/Core.Tests/bin
-/tests/Core.Tests/obj
-/src/Cli/bin
-/src/Engine/bin
-/src/Engine/obj
-/tests/Engine.Tests/bin
-/tests/Engine.Tests/obj
-/tests/Firewall.Tests/bin
-/tests/Firewall.Tests/obj
-/src/Ui/obj
-/src/Ui/bin
-/tests/Ui.Tests/obj
-/tests/Ui.Tests/bin
+
+# .NET build output. Unanchored and generic ON PURPOSE: these previously existed as 20 explicit
+# per-project lines (/src/Core/bin, /tests/Ui.Tests/obj, ...), which meant every NEW project silently
+# started leaking its bin/obj into `git status` until someone remembered to add two more lines — and a
+# stray `git add -A` would then commit build output. Adding src/RfCore + tests/RfCore.Tests hit exactly
+# that (2026-07-30). Nothing tracked in this repo has ever lived under a bin/ or obj/ directory, so
+# matching them at any depth is safe as well as robust.
+bin/
+obj/
+TestResults/
 /circuitRF_demo
 /testdata/lpwave_test_data
 /testdata/spl_test_data
@@ -30,5 +20,3 @@
 # "/.generated-cells") because a workspace root can live at any depth under this repo (e.g. inside
 # circuitRF_demo/ if it's ever unzipped and used locally), not only at the repo root.
 .generated-cells/
-
-TestResults/
