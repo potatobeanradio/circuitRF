@@ -168,7 +168,8 @@ namespace CircuitRF.Ui.DataDisplay
             HashSet<Marker>?     selectedMarkers  = null,
             SKColor              selectionColor   = default,
             float                zoomLevel        = 1f,
-            VswrReadout?         vswrReadout      = null)
+            VswrReadout?         vswrReadout      = null,
+            Func<Trace, string?>? aliasFor        = null)
         {
             if (plot.PlotType == PlotType.Table)
             {
@@ -267,7 +268,7 @@ namespace CircuitRF.Ui.DataDisplay
             if (detail == PlotDetail.Full)
             {
                 if (plot.PlotType == PlotType.Rect)
-                    AxesRenderer.DrawTitleAndAxisLabels(canvas, canvasSize, plot, tf, theme, showFilePrefix);
+                    AxesRenderer.DrawTitleAndAxisLabels(canvas, canvasSize, plot, tf, theme, aliasFor);
                 else if (plot.PlotType.IsComplex())
                     AxesRenderer.DrawComplexXLabels(canvas, canvasSize, plot, tf, theme);
             }

@@ -222,7 +222,8 @@ namespace CircuitRF.Ui.DataDisplay
                 canvas.Save();
                 canvas.Translate(plotX, plotY);
                 PlotRenderer.Draw(canvas, (plotW, plotH), plot, PlotDetail.Full, theme, showFilePrefix,
-                    zoomLevel: tableZoom);
+                    zoomLevel: tableZoom,
+                    aliasFor: container?.Library is { } exLib ? t => exLib.AliasFor(t.SourcePath) : null);
                 canvas.Restore();
 
                 if (container is not null && markerBoxes.Count > 0)
@@ -484,7 +485,8 @@ namespace CircuitRF.Ui.DataDisplay
                 canvas.Save();
                 canvas.Translate(plotX, plotY);
                 PlotRenderer.Draw(canvas, (plotW, plotH), plot, PlotDetail.Full, theme, showFilePrefix,
-                    zoomLevel: cTableZoom);
+                    zoomLevel: cTableZoom,
+                    aliasFor: c.Library is { } cLib ? t => cLib.AliasFor(t.SourcePath) : null);
                 canvas.Restore();
 
                 // Marker info boxes

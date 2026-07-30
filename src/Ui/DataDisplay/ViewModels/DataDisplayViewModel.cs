@@ -1472,6 +1472,21 @@ public partial class DataDisplayViewModel : ViewModelBase
         return pc;
     }
 
+    /// <summary>
+    /// Computes the persistence key for a data source's alias (R-res-4) — the same relative-to-
+    /// results-root form a trace's own SourceRef uses when the file lives under the results root
+    /// (portable across a moved workspace), else the absolute path. Deliberately does NOT resolve
+    /// the "Selected" sentinel: an alias belongs to one concrete file, never to "whichever source is
+    /// currently selected."
+    /// </summary>
+    internal static string ComputeSourceKey(string absPath, DataSourceLibraryViewModel? library)
+    {
+        var root = library?.ResultsRootProvider?.Invoke();
+        if (root is not null && absPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            return Path.GetRelativePath(root, absPath).Replace('\\', '/');
+        return absPath;
+    }
+
     /// <summary>Derives the logical SourceRef from a trace's absolute SourcePath as a fallback
     /// for traces created before SourceRef was stamped.</summary>
     private static string? DeriveRef(Trace t, DataSourceLibraryViewModel? library)
@@ -1484,7 +1499,7 @@ public partial class DataDisplayViewModel : ViewModelBase
             string.Equals(abs, library.SelectedDataSourceAbs, StringComparison.OrdinalIgnoreCase))
             return DataSourceRef.Selected;
 
-        // Under the results root → "<schematic>/run.npy" relative id.
+        // Under the results root → "<name>.npy" relative id (flat results/, R-res-1).
         var root = library.ResultsRootProvider?.Invoke();
         if (root is not null && abs.StartsWith(root, StringComparison.OrdinalIgnoreCase))
             return Path.GetRelativePath(root, abs).Replace('\\', '/');

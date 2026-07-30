@@ -1,5 +1,604 @@
 # UI (Avalonia) — local conventions
 
+Multi-file Data Display: UI entry points, alias labelling, path portability
+(brief-data-display-multifile-ui.md, 2026-07-30) — COMPLETE. Section 3 of the results-storage
+brief below landed the *model* (a `.cdd` referencing several `.npy` files with aliases); this
+brief adds the UI to actually reach it, without changing the single-file experience at all.
+
+## §1 — the dataset alias is an identity component in §2.7's label scheme (R-dd-1)
+
+This was already true, built in the prior brief (`TraceLabeler.ComputeMinimalLabels`'s `aliasFor`
+resolver) — this pass adds the regression test the brief's own gate demanded rather than trusting
+that it held: `ComputeMinimalLabels_SingleDataset_LabelsByteIdentical_WithAndWithoutAliasResolver`
+computes the SAME two-trace label set with and without an alias resolver and asserts
+`Assert.Equal(withoutResolver, withResolver)` **and** pins both to exact literal strings
+(`"dB(S(1,1))"` / `"dB(S(2,1))"`) — not just "labels exist." **This is why single-dataset labels
+are unchanged by construction, not by a special case**: with one dataset the alias is constant
+across every trace on the plot, and §2.7's existing "drop any identity component that's constant"
+rule removes it regardless of what the constant value happens to be — there is no code path that
+treats "one dataset" differently from "N datasets whose alias happens to agree." A second test
+(`..._TwoDatasets_AliasQualified_RemovingOneReverts`) pins the two-file case (`"baseline·dB(S(1,1))"`
+/ `"tuned·dB(S(1,1))"`) and the revert-on-removal behavior in the same file.
+
+## §2 — Add Trace picker gains a Source selector, ending in "Add from file…" (R-dd-2)
+
+**The real gap, confirmed by reading `TraceRowViewModel.RebuildSignals` directly**: it hardcoded
+`bool singleSource = true;` and only ever read `_parent.Library?.SelectedEntry` — the picker had NO
+way to browse a loaded-but-not-globally-selected dataset at all, regardless of how many were
+loaded. Fixed with a new per-row Source combo (`AvailableSourceEntries`/`SelectedSourceItem`,
+`PickerSourceItem` wrapping either a real `DataSourceEntryViewModel` or the trailing "Add from
+file…" sentinel) that is **completely absent with one dataset** (`SourceSelectorVisible =>
+_parent.LibraryEntries.Count > 1`, checked structurally in `Picker_SourceSelector_
+HiddenWithOne_VisibleWithTwo_EndsInAddFromFile`) and, once a second dataset exists, drives which
+file's group/item cascade the row shows via a new `_pickerSourceEntry` field — `RebuildSignals`'s
+`selectedEntry` is now `multiSource ? _pickerSourceEntry : _parent.Library?.SelectedEntry`, so the
+single-dataset branch is byte-for-byte the pre-existing code path, never merely "usually behaves
+the same."
+
+**A row's default source (`RebuildSourceEntries`), in priority order**: its own prior choice, then
+whichever entry the trace is currently bound to (`ResolveTraceSourceEntry`, by `SourcePath` or SNP
+identity), then the toolbar's globally-selected entry — never defaults to "whatever's first,"
+which would silently reassign an existing trace's browse context on every rebuild.
+
+**"Add from file…" is one gesture, not two (R-dd-2's own explicit requirement).**
+`DataSourceLibraryViewModel.AddSourceFileRequested` (mirrors the pre-existing `FindMissingFileAsync`
+seam exactly) is wired in `DataDisplayView.axaml.cs` to a single-file picker anchored at the same
+results root `DoOpenFileAsync` uses. Choosing it loads the file, re-points the row's own source at
+the new entry, and immediately shows its traces — no separate "now go find it in Load Data Files
+and come back" round trip.
+
+**The subtle part: switching Source must actually COMMIT a trace, not just repopulate the combo.**
+`RebuildSignals`'s own tail (`_suppressDataCallback = true; SelectedGroup = …; SelectedSignal = match
+?? first; _suppressDataCallback = false;`) deliberately suppresses `OnSelectedSignalChanged` — that
+guard exists so an ordinary group/item rebuild never re-commits the model mid-refresh. Switching
+Source runs through that same rebuild, so naively it would only change what the combo SHOWS, never
+what the trace IS bound to (caught directly by a failing test before the fix, not assumed). New
+`TraceRowViewModel.CommitCurrentSelection()` re-invokes `OnSelectedSignalChanged` on the resulting
+default signal with the suppress flag lifted, called after every deliberate source switch (a Source
+combo pick, and — see §2/R-dd-3 below — a drag-drop add) so "switch source" and "pick its first
+trace" happen as the one action the brief calls for, while an ordinary group/item browse elsewhere
+in this same method is completely unaffected.
+
+## §2 — dragging an `.npy` from the Project Tree onto a plot (R-dd-3)
+
+Mirrors the existing palette→schematic/palette→layout drag idiom exactly, per the brief's own
+instruction not to invent a new one. New `NpyFileDragPayload` (`src/Ui/DataDisplay/`) is a prefixed-
+text payload on `DataFormat.Text` (never an in-process format — see the Library Palette DnD note
+elsewhere in this file: an in-process format leaves nothing on NSPasteboard and crashes macOS).
+`ProjectTreeView`'s existing cell-drag press/move machinery was generalized (not duplicated) to
+recognize an `.npy` `NodeKind.OtherFile` node as a second drag-source kind alongside `NodeKind.Cell`.
+`PlotContainerView` is the drop target (`DragDrop.SetAllowDrop` + over/drop handlers), calling the
+new `PlotInspectorViewModel.AddDatasetFromDropAsync(absPath)` — loads the file if not already in the
+library, adds a trace via the existing `AddTraceCommand` (never a second add-trace code path), then
+points that new row's Source selector at the dropped entry, reusing the exact same commit mechanism
+§2/R-dd-2 built. "Compare against that other run" is one motion: drag, and the picker is already
+showing the dropped file's traces.
+
+## §3 — a Datasets list in the docked Properties tool (R-dd-4/R-dd-5)
+
+**Lives beside the plot inspector, in the SAME docked Properties tool — no new top-level panel**,
+per the brief's explicit guardrail. `PropertiesTool.SetActiveDataDisplay` widened to take the whole
+`DisplayWindowViewModel` (not just the single-selected plot's `PlotInspectorViewModel`) — this is
+what makes `IsDataDisplayActive` (and the Datasets section) visible whenever a Data Display document
+is active, independent of whether any plot happens to be selected; the plot inspector portion below
+it simply shows nothing until a plot is picked, exactly as before. New `DatasetsListViewModel`
+(wired via `PropertiesTool.DatasetsVm`) tracks the active window's `DataSourceLibrary.Entries` live
+(`CollectionChanged` rebuilds rows; `LibraryChanged` refreshes existing rows in place rather than
+resetting the list, so an alias edit or re-point never flickers/loses scroll position) and renders
+as a compact card in `PropertiesView.axaml`: **alias · filename · status**, per the brief's own
+literal spec.
+
+**Three reasons this exists, all three built, not just "a list":**
+- **Rename** — `DatasetRowViewModel.CommitAlias()` routes through the existing
+  `DataSourceLibraryViewModel.TrySetAlias` (the one mutator, already enforcing case-insensitive
+  uniqueness) — a duplicate is refused with a stated reason (`RenameError`, shown as a `TextBox`
+  border tint + tooltip), never silently disambiguated, per R-dd-5.
+- **Missing files become actionable** — a broken row's own "Locate…" button (label swaps to
+  "Re-point…" for a live entry) opens a single-file picker anchored at the entry's own directory.
+- **Re-pointing an alias updates every trace using it, in one action** — this is the payoff of the
+  alias indirection the brief calls out explicitly, and it needed real new plumbing, not just a
+  UI affordance over an existing mechanism. New `DisplayWindowViewModel.RepointDatasetAsync(entry,
+  newPath)`: **rewrites every trace's `SourcePath` (and, unless it's the "Selected" sentinel,
+  `SourceRef`) from the OLD path to the NEW one BEFORE the entry's own data reloads.** Order matters
+  and was verified to matter, not assumed: `PlotInspectorViewModel.OnLibraryChanged` (the handler
+  every re-point/reload fires) computes a `libraryPaths` set from CURRENT entry file paths and drops
+  any trace whose `SourcePath` isn't in it — so simply changing `entry.FilePath` first and rewriting
+  traces afterward would have gotten every trace referencing the old path collected as "stale" and
+  REMOVED, the opposite of "updates every trace using it." Rewriting first means the traces already
+  match the entry's new path by the time `LibraryChanged` fires, so they read as already-live rather
+  than orphaned. `RepointDatasetAsync_UpdatesEveryTraceUsingIt_InOneAction` is the direct regression
+  gate (2 traces sharing one source, both moved to the new file by one call).
+
+## §4 — path portability: a stored data source is a bare filename, validated at save (R-dd-6)
+
+**`DisplayWindowViewModel.IsPortableSourceKey(key)`** — true only for a non-rooted key containing
+neither `/` nor `\` — is the ONE gate `SaveAllAsync`'s `SourceAliases`-building loop now checks
+before writing each entry; a `ComputeSourceKey` result that isn't portable (an external Touchstone
+file loaded from outside the workspace's `results/`, the one case that still falls back to a raw
+absolute path) is skipped rather than written. That source's alias simply isn't persisted across a
+reload for that one case — it still loads correctly next session as an unaliased/default-named
+source, it just can't be renamed across a reload the way an in-results-root source can. **Bare
+filenames are maximally portable for two independent reasons, both worth keeping in mind**: no
+absolute-path assumption about where the workspace lives on disk, AND no platform path-separator
+assumption either — the latter is the failure that would otherwise appear ONLY when a macOS-authored
+workspace is opened on Windows, not on the machine that saved it, which is exactly the kind of bug
+that ships unnoticed. `SaveAllAsync_MultipleDatasets_SourceAliasesContainsNoAbsolutePathOrSeparator`
+asserts the saved JSON directly (not just that it reloads in place), per the brief's own gate 9
+wording.
+
+**A genuine pre-existing-test regression, found and fixed correctly, not routed around**: two tests
+in `MultiDatasetAliasTests.cs` (`SaveThenLoad_RoundTripsAliasesForEveryDeclaredSource`,
+`Load_MissingDeclaredSource_ReportsAsBroken_PreservesAlias_OtherSourceStaysLive`) never configured a
+`ResultsRootProvider`, so `ComputeSourceKey` fell back to a raw absolute temp-dir path for every
+entry — which the new portability guard correctly refuses to write, so BOTH tests' aliases stopped
+round-tripping. The fix was to give both tests a `ResultsRootProvider` pointing at their own temp
+dir (mirroring what every real workspace already provides), not to weaken the guard — the guard is
+doing exactly what R-dd-6 asks; the tests' own setup was simply missing the one piece of context
+production code always has.
+
+## §4 — the "stale `SourcePath: run.npy`" field: investigated, NOT stale, NOT touched (R-dd-7)
+
+**Confirmed directly, per this codebase's own standing "investigate before fixing" practice — the
+brief's own premise does not hold.** `"run.npy"` is `DataSourceRef.Selected`, a load-bearing sentinel
+constant meaning "whichever source the toolbar currently has selected" — `DataSourceLibraryViewModel.
+ResolveAbs` checks `sourceRef == DataSourceRef.Selected` explicitly, FIRST, before ever treating the
+string as a literal relative/absolute path (`DataSourceRef_Selected_IsResolvedAsASentinel_
+NotALiteralFilename` proves this directly: no file named `run.npy` exists anywhere in that test, and
+resolution still succeeds via `SelectedDataSourceAbs`). It is very much still read, on every trace
+that uses the sentinel form — removing or blanking it, as the brief's literal wording might suggest
+("if no [longer read], drop it"), would be a **regression**: `LoadPlotContainerConfigAsync`'s
+restoration loop has `if (traceConfig.SourcePath is null) continue;`, so a null `SourcePath` silently
+drops that trace on the next load. **Nothing was changed here** — no removal, no rename of the
+sentinel, no edit to `circuitRF_demo`'s own `.cdd` (which, per the housekeeping brief's own earlier
+finding, isn't git-tracked in this repo regardless).
+
+## §4 — resolve-to-absolute-only-at-load: already correct, confirmed (R-dd-8)
+
+`DataDisplayView.axaml.cs`'s `srcAbs` (`win.DataSourceLibrary.SelectedDataSourceAbs`) is a runtime-
+only value read for the exporter's preselect logic — never written back into any persisted field.
+Confirmed by direct code reading; no change needed or made.
+
+## Post-ship fix — plot-inspector chrome showed uninitialized with no plot selected
+
+Owner report: "the properties inspector is showing the un-initialized + Trace controls when no plot
+is selected. None of those controls should be visible if no plot is selected." Root cause: widening
+`IsDataDisplayActive` to `window is not null` (so the Datasets list stays visible with zero plots
+selected, §3 above) meant the WHOLE Data Display panel — Datasets list AND `PlotInspectorView` —
+became visible together; `PlotInspectorView`'s own DataContext (`PlotInspectorVm`) is null in that
+state, but a null DataContext does not hide a control's static chrome (buttons, "+ Trace", plot-type
+toggles) — it only leaves bound VALUES blank. Those controls rendered with no data behind them,
+reading exactly as "uninitialized."
+
+**Fix**: `PropertiesTool.HasSelectedPlot => PlotInspectorVm is not null` (raised from a
+`OnPlotInspectorVmChanged` partial method) is now a SEPARATE gate from `IsDataDisplayActive` —
+`PropertiesView.axaml` wraps `PlotInspectorView` in its own `Panel IsVisible="{Binding
+HasSelectedPlot}"` (a sibling wrapper, not `IsVisible` on the same element as `DataContext` — those
+two attributes on one element interact in binding-resolution-order-dependent ways and the first
+attempt at this fix broke the XAML compiler for exactly that reason: `IsVisible` on the same element
+whose `DataContext` was just rebound resolved against the NEW DataContext, not the parent). The
+Datasets list is unaffected — it has its own DataContext (`DatasetsVm`) and was never gated on
+`HasSelectedPlot`. `PropertiesTool_NoPlotSelected_HasSelectedPlotIsFalse_DatasetsStillActive` pins
+both halves: `IsDataDisplayActive` stays true (Datasets list visible) while `HasSelectedPlot` is
+false (plot inspector hidden) when `SetActiveDataDisplay(null, window)` is called, and flips true
+once a real plot inspector is passed.
+
+## Post-ship fix — Dataset Aliases relabel; two-source label bug traced to two real gaps
+
+Owner rename: the docked list's header now reads **"Dataset Aliases"** (was "Datasets") — purely a
+`DatasetsListView.axaml` text change, no behavior change.
+
+Owner report: "Two traces from different data sources are both using the shortened name in the
+plot's y-axis label... I don't see [the alias prefix] in my plot." Traced to TWO independent gaps,
+both real, both now fixed:
+
+**Gap 1 — switching a trace's SOURCE via the picker never told the plot to recompute its label
+strips.** `PlotContainerViewModel.UpdateLabelStrips()` (the one place `TraceLabeler.
+ComputeMinimalLabels`'s alias-qualification decision is (re)made) is wired to `PlotInspectorViewModel.
+PlotStructureChanged` — NOT to `PlotNeedsRedraw`, which is what `TraceRowViewModel.
+OnSelectedSignalChanged`'s own `_parent.RebuildAndNotify()` call raises when a picker commit lands.
+Before this brief's Source selector existed, a picker commit could only ever change a trace's
+QUANTITY within the SAME already-selected source — never its actual bound file — so this gap was
+invisible: nothing about the plot's 1-source-vs-2-source label decision could change from a plain
+quantity pick. R-dd-2 made "switch which loaded file a row browses" a real, common action, and that
+action goes through the exact same `OnSelectedSignalChanged` commit path with no additional signal —
+so the alias qualification silently went stale the instant it actually needed to change. Fixed with
+a new `PlotInspectorViewModel.NotifyStructureChanged()` (a public wrapper around the `PlotStructureChanged`
+event, which — being a C# event — cannot be invoked directly from `TraceRowViewModel`, a different
+class), called at the end of `OnSelectedSignalChanged` right after the commit lands. Verified with a
+VM-level test (no Skia needed, since `LabelStripViewModel.AutoLabel` is a plain string): add two
+traces to the default-seeded Smith plot (both bound to source A, alias dropped as expected), switch
+trace 2's Source to B via the row's own selector with no other action taken, and assert both label
+strips immediately read alias-qualified (`"baseline·…"` / `"tuned·…"`).
+
+**Gap 2 — the Rect plot's own per-trace Y-axis label (`AxesRenderer.DrawTitleAndAxisLabels`) was
+NEVER wired to the alias resolver at all, on purpose, from an earlier brief** — recorded plainly in
+this file's own results-storage completion note as a stated, narrower scope: "the Rect Y-axis margin
+label... was NOT threaded with an alias resolver... it keeps the pre-alias file-stem heuristic." This
+is almost certainly the surface the owner was actually looking at (`Trace.Rect`, dB S-parameters is
+the most common view) — the rotated per-trace label drawn beside each Y-tick column, one per trace,
+in that trace's own line color (`DrawTitleAndAxisLabels`'s `LabelFor`/`DrawAt` loop) — and without an
+`aliasFor` resolver, `ComputeMinimalLabels` falls back to the raw file-STEM (not the user's alias),
+which the owner correctly flagged as "the shortened name," not the alias prefix they'd set. Fixed
+by threading a `Func<Trace, string?>? aliasFor` parameter all the way down: `PlotControl`'s
+`PlotDrawOperation` snapshot now captures `_library?.AliasFor` as a plain delegate (never the library
+reference itself, matching every other snapshot field on that draw-op) → `PlotRenderer.Draw` →
+`AxesRenderer.DrawTitleAndAxisLabels`'s own `ComputeMinimalLabels` call. `PlotExporter.cs`'s two
+export/copy render call sites were updated the same way (via `PlotContainerViewModel.Library`) so a
+copied/exported Rect plot's Y-axis labels match what's on screen. **Not pixel-verified** (Skia text
+has no return value to assert against headlessly, matching every other Skia-only claim in this file)
+— correctness rests on the parameter actually reaching `ComputeMinimalLabels` (confirmed by direct
+code reading at every hop) plus the already-exhaustively-tested `ComputeMinimalLabels` itself.
+
+**A third, adjacent correctness bug found and fixed while diagnosing Gap 1, not merely exercised by
+it**: `OnSelectedSignalChanged` unconditionally stamped `_trace.SourceRef = DataSourceRef.Selected`
+for every picker commit, under the stale comment "all picker signals come from SelectedEntry" — true
+before R-dd-2, false after it, since a signal can now come from ANY loaded entry via the row's own
+Source selector. Left as-is, a trace deliberately bound to a specific non-toolbar-selected dataset
+would persist as "whichever source the toolbar has selected" — meaning reloading the `.cdd` would
+silently reassign that trace to a DIFFERENT file whenever the toolbar's own selection differed at
+load time, a correctness bug for the exact multi-source persistence this brief's own R-dd-4 depends
+on. Fixed: the sentinel is stamped ONLY when the picked entry really is
+`_parent.Library?.SelectedEntry`; otherwise a real, portable ref is computed via the same
+`DataDisplayViewModel.ComputeSourceKey` the Datasets list's own save path uses. Test
+`SwitchingTraceSource_ToANonToolbarSelectedEntry_PersistsARealRef_NotTheSentinel` pins this directly
+(toolbar stays on A throughout; a trace switched to B via the row's own selector round-trips to B via
+`ResolveAbs`, never falling back to whatever A happens to be).
+
+## Post-ship fix, round 2 — the REAL reason the Rect Y-axis label never showed the alias
+
+Owner report, after round 1 above shipped: "Still not fixed — labels are still not rendered with
+proper prefix... I've noticed that the wrong data is plotted in the trace. Is it possible that
+because the trace expression stays at something like `dB20(SP1.S[:, 1, 1])` (ie, without the
+prefix) then the label (and possibly the data) is wrong?" The owner's own instinct — "the expression
+never carries the prefix, so something downstream must be wrong" — pointed at exactly the right
+place, one level removed from where round 1 looked.
+
+**Root cause, confirmed by direct reading, not assumed: `Trace.RectYLabel` — the ONE call site
+`AxesRenderer.DrawTitleAndAxisLabels`'s `LabelFor` local function actually routes through — silently
+DISCARDED the caller-supplied minimal label for every cube-bound trace and recomputed its OWN,
+older, alias-unaware label instead.** Round 1 correctly fixed `ComputeMinimalLabels`'s CALLER (wired
+`aliasFor` all the way down to `AxesRenderer`) — but `AxesRenderer.LabelFor` doesn't return that
+computed value directly; it hands it to `trace.RectYLabel(networkFallback, showFilePrefix, mismatch)`
+as one of three inputs, and `RectYLabel`'s own body was:
+```csharp
+if (IsCubeBound)
+{
+    baseLabel = CubeShorthand;                              // ← ignores networkFallback entirely
+    if (showFilePrefix && SourcePath != null)
+        baseLabel = Path.GetFileNameWithoutExtension(SourcePath) + ".." + baseLabel;   // raw file stem, never the alias
+}
+else
+{
+    baseLabel = networkFallback;                             // only network (SNP) traces used the fixed value
+}
+```
+This is a leftover from BEFORE `ComputeMinimalLabels` gained cube-quantity support
+(`TraceLabeler.BuildCubeQuantity`, an earlier phase) — at the time `RectYLabel` was written, the
+minimal-label mechanism had no notion of cube-bound traces at all, so a separate `CubeShorthand`-
+based path was the only option; once `ComputeMinimalLabels` grew that support, this method was never
+revisited, and it kept computing its own second, independently-diverging label using the raw file
+STEM rather than the alias — exactly the "two representations that inevitably drift" trap this
+codebase's own conventions warn about. Since the great majority of Data Display traces from a
+SIMULATED source (not a Touchstone .snp) are cube-bound (any named-analysis-group cube, e.g. a
+simulated `"SP1.S"` S-parameter sweep — the owner's own worked example), this bypassed round 1's
+fix for the overwhelmingly common case: only genuine network/SNP-bound (Touchstone) traces ever saw
+the corrected, alias-aware label.
+
+**Fix:** `RectYLabel` now always uses the supplied `networkFallback` (renamed in spirit, not in code,
+to "the already-correct label" — it was never really network-specific, that was the bug) for BOTH
+trace kinds, layering only the two soft SUFFIXES (`" <invalid: complex on scalar plot type>"` for a
+cube value that can't render on Rect, `" dimension mismatch"`) on top — both suffix conditions are
+genuinely trace-local state `ComputeMinimalLabels` has no way to know about, so those stay. The now-
+provably-dead `showFilePrefix` parameter was removed from `RectYLabel` and from
+`AxesRenderer.DrawTitleAndAxisLabels` (its only remaining use was this one call) — `PlotRenderer.
+Draw`'s OWN `showFilePrefix` parameter is untouched, since it's still genuinely used for the
+`TableRenderer.Draw` branch. Regression test
+`RectYLabel_ForCubeBoundTrace_UsesTheSuppliedAliasQualifiedLabel_NotItsOwnFileStemPrefix` builds a
+cube-bound trace directly and proves `RectYLabel` returns the supplied alias-qualified string
+verbatim rather than recomputing `CubeShorthand` + a raw file-stem prefix — this test fails against
+the pre-fix code (asserted by re-deriving the old logic by hand, not merely by reading it).
+
+**On "the wrong data is plotted" — investigated, and NOT a second, independent bug**: `TrySetCubeData`
+(the function that actually resolves which `DataSet` a cube-bound trace reads from) was already
+correctly resolving the entry by matching `t.SourcePath` — confirmed directly, unchanged by either
+round of this fix. The most likely explanation for "wrong data," given the owner's own framing, is
+that BOTH traces' rendered LABELS looked identical (round 1's exact bug) and were mistaken for
+evidence that both traces were reading the SAME underlying file — a reasonable inference from a
+genuinely broken label, not a separate data-resolution defect. If the plotted VALUES are still wrong
+after this label fix (i.e., re-testing shows the correct alias prefix on each trace but the actual
+curve values are swapped or duplicated), that is a distinct, not-yet-investigated issue and should be
+reported separately with which two traces/files are involved, since nothing in either round of this
+fix touched `TrySetCubeData`, `BuildCubePath`, or any other value-resolution code path.
+
+## Post-ship fix, round 3 — the trace card lied about its Source after a TOOLBAR source change
+
+Owner scenario: two sims → sources A and B; the auto-created display for A is open; the user picks
+B in the **Data Display's own toolbar datasource combo**. The plotted data correctly follows to B —
+but opening the Plot Inspector shows the trace card still claiming A, in two controls.
+
+**Root cause — a sticky field outranking the truth.** `TraceRowViewModel.RebuildSourceEntries`
+resolved which entry the row is "on" as:
+```csharp
+var wanted = _pickerSourceEntry ?? ResolveTraceSourceEntry() ?? _parent.Library?.SelectedEntry;
+```
+`_pickerSourceEntry` (the row's own prior browse choice, introduced by R-dd-2) was checked FIRST and
+is **sticky** — set once at row construction (to A) and never yielding afterward. Meanwhile
+`DataDisplayViewModel.OnSelectedDataSourceChanged` correctly re-points every sentinel-bound trace
+(`SourceRef == DataSourceRef.Selected`, which is exactly what an auto-created display's traces are)
+by rewriting `t.SourcePath` to B — so the DATA moved while the card's idea of its source did not.
+**Both reported controls come from that one field**: the Source combo binds `SelectedSourceItem`
+(set from `wanted`), and `RebuildSignals`'s own `selectedEntry` is `_pickerSourceEntry` in the
+multi-source branch, so the group/item cascade kept enumerating A's signals too. One field, two
+wrong controls.
+
+**Fix — the trace's own binding is authoritative; the row's pick leads only mid-switch.** Priority
+reversed to `ResolveTraceSourceEntry() ?? _pickerSourceEntry ?? SelectedEntry`, with one deliberate
+exception: a new `_sourceSwitchInProgress` flag (set across `OnSelectedSourceItemChanged`'s
+`RebuildSignals` + `CommitCurrentSelection` pair, and across the genuine-add branch of
+`HandleAddSourceFromFileAsync`) keeps `_pickerSourceEntry` leading for that window. **That exception
+is load-bearing, not defensive**: at the instant of a user source switch the trace has NOT yet been
+re-bound to the new file — `CommitCurrentSelection` does that immediately afterward — so deferring
+to the trace there would snap the combo straight back to the old source and make R-dd-2's own
+switch a silent no-op. (Confirmed by construction, and the R-dd-2/R-dd-3 gate tests would have
+caught it.) Note `HandleAddSourceFromFileAsync` sets the flag to `added`, not unconditionally `true`
+— a CANCELLED add must fall through to the trace-first path, or the stale `_pickerSourceEntry` left
+pointing at the sentinel's prior value would win on the way out.
+
+**Belt-and-braces for a second, order-dependent path**: `SyncSourceSelectionToTrace()` (new) re-points
+the combo at the trace's current binding without rebuilding the collection (no churn, no selection
+reset), called from `RefreshDescription()`. This matters because
+`DataDisplayViewModel.OnSelectedDataSourceChanged` reaches trace cards via
+`Inspector.RebuildAndNotify()` → `RefreshDescription()`, which never calls `RebuildSignals` at all —
+so without this the fix would rest on this row's own `SelectedDataSourceChanged` handler happening
+to be invoked AFTER the one that rewrites `SourcePath` (it is today, purely because
+`DataDisplayViewModel` subscribes first at construction — a subscription-order coincidence, not a
+guarantee). It no-ops during a switch and when already in sync.
+
+`ToolbarSourceChange_MovesTheTraceCardSourceCombo_ToTheNewSource` drives the owner's exact gesture
+(change only the TOOLBAR selection, never the card's own combo) and asserts both halves — data on B
+AND card on B. **Verified to actually catch the regression, not merely exercise it**: temporarily
+restoring the old `wanted` ordering and disabling `SyncSourceSelectionToTrace` makes it fail with
+precisely the reported symptom (card `run_v1.npy` while data is `run_v2.npy`), then pass again with
+the fix restored.
+
+## Dataset Aliases — explanatory tooltip
+
+The "Dataset Aliases" header carries a multi-paragraph `ToolTip.Tip` (a `StackPanel` of wrapped
+`TextBlock`s, `MaxWidth=340`) covering what the brief's own §3 says the list is FOR, since the alias
+concept is new to most users: what an alias is (your own short name for one loaded results file,
+defaulting to the file name, saved with the display); why it exists (a plot showing traces from more
+than one file prefixes each label with that file's alias — dropped when only one file is in use);
+what **Live** vs **Missing** mean (found-and-loaded vs deleted/moved, with trace settings preserved
+either way); and what **Re-point…** does (aim the alias at a different file — every trace using it
+switches at once, the "swap a baseline and watch the whole comparison re-plot" workflow — reading
+**Locate…** instead on a missing dataset).
+
+## Guardrails held
+
+No separate label-qualification rule (§1 reuses §2.7's existing drop-if-constant mechanism). No
+source selector shown with one dataset loaded (`SourceSelectorVisible`, gate-tested both ways). No
+new top-level panel for datasets (lives in the existing docked Properties tool). No absolute paths
+or separators stored (`IsPortableSourceKey`, gate-tested). `src/Core`, `src/Engine`, `RfCore`
+untouched.
+
+## Gate
+
+15 new tests in `DataDisplayMultiFileUiTests.cs` (gates 2–10 from the brief's own §6 list, one test
+per numbered gate except where a single test covers two, the post-ship `HasSelectedPlot` fix, the
+two round-2 label/SourceRef fixes, and the round-3 toolbar-source-change fix) + 1 new + 2 modified
+(signature update) in `ContourTraceCardTests.cs` for the round-2 `RectYLabel` fix + 2 pre-existing
+`MultiDatasetAliasTests.cs` tests fixed in place (not weakened) for the R-dd-6 regression above.
+Firewall 4/4, Core 512/512, Ui 3748/3748, Engine 460/461 (1 pre-existing skip) — all green, confirmed
+across five consecutive full runs. One transient single-test failure appeared in one intermediate
+full-solution run and was NOT captured by name before it cleared; it did not reproduce in any of the
+five subsequent runs (three full-solution, two Ui-only), and every test touched by this work passes
+consistently — recorded here as an uncaptured transient rather than attributed to one of this file's
+known parallelism races, since it was not actually identified. Three confirmed-not-regressions were
+separately seen and named across earlier runs in this same session, all already documented elsewhere
+in this file as `CellLayoutResolver`/timing full-suite-parallelism races, each confirmed passing
+cleanly in isolation: `CellLayoutResolverTests.Invalidate_ForcesReloadOfThatCellOnly`,
+`CellLayoutResolverLiveTests.Invalidate_ClearsBothPlainCacheAndLiveOverride_ForThatCell`, and
+`PerfBenchmarkTests.BuildRenderModel_10k_Under50ms` (wall-clock timing under load).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's
+own note) — the Source combo's placement/behavior in the picker, the Datasets card's rename/Locate…/
+Re-point… buttons, and the drag-drop gesture from the Project Tree onto a plot all rest on the VM-
+level gate tests above, which drive the exact same public methods (`TraceRowViewModel.
+CommitCurrentSelection`, `PlotInspectorViewModel.AddDatasetFromDropAsync`, `DisplayWindowViewModel.
+RepointDatasetAsync`) the view/canvas code-behind calls. Please confirm on your end: with one loaded
+dataset, the Add Trace picker shows no Source row; loading a second makes it appear, ending in "Add
+from file…"; dragging an `.npy` from the Project Tree onto a plot adds it and shows its traces
+immediately; the Properties dock's Datasets card lets you rename an alias (refusing a duplicate) and
+re-point a row at a different file, with every trace using that alias updating at once; and a `.cdd`
+saved with multiple datasets opens correctly after moving the whole workspace folder to a new
+location or a different machine.
+
+Results storage flattened + multi-dataset Data Displays + auto-created `.cdd`
+(brief-results-storage-and-data-display.md, 2026-07-29) — COMPLETE.
+
+## §1 — one grouped `run.npy` per run, now flattened to `results/<schematicKey>.npy`
+
+Confirmed exactly as the brief's own §1 framed it: results were **already** one grouped file per
+*run* (not per analysis — that per-analysis scheme is an **earlier plan that never shipped**, and the
+stale class-comment on `RunResultsWriter` claiming otherwise is now fixed) — the divergence from
+`docs/design/results-dataset-layout.md`'s own stated intent was narrower than the brief first framed
+it: the file was already flat-per-run in shape, just living one directory too deep
+(`results/<schematicKey>/run.npy`). `RunResultsWriter.WriteRun` now writes directly to
+`results/<schematicKey>.npy` (or the user-named override, R-res-2 below), with `ResolveFileName`/
+`SanitizeFileNameComponent` as the two small pure helpers that compute the final name.
+
+**R-res-0's scoped delete** — the wildcard `foreach (var stale in Directory.GetFiles(dir, "*.npy"))
+File.Delete(stale);` was safe ONLY because it ran inside a directory that belonged to exactly one
+schematic. Flattening removes that boundary — `results/` now holds every schematic's own file plus any
+user-named baseline as plain siblings, so the identical wildcard would have deleted all of them on every
+run. `WriteRun` now deletes only the one file it is about to overwrite (`if (File.Exists(runNpy))
+File.Delete(runNpy);`), and the regression that matters most —
+`WriteRun_RunningOneSchematic_LeavesOtherFilesUntouched` — asserts three other schematics' files plus a
+baseline are untouched **file-by-file**, not by count, after running one of them.
+
+## §1.2 — the `.source` collision marker is dropped, not rehomed (R-res-0a)
+
+Dropped outright. `SchematicKey` already disambiguates `cell` from `cell.view`, and two cells cannot
+share a folder name — the collision the marker guarded against (two different cells resolving to the
+same results file) is not reachable through normal use once the key itself is the whole file name.
+`OwnerIdentity`/`NormalizeOwnerIdentity`/`SameOwner` are removed entirely (confirmed by grep — zero
+remaining references anywhere in `src/Ui`), along with `WriteRun`'s `ownerIdentity` parameter; the one
+call site (`WorkspaceViewModel.RunAnalysis`) no longer computes or passes one.
+`WriteRun_NeverWritesASourceMarker` pins the negative. Migration (below) removes every orphaned
+`.source` file left over from before this change, rather than leaving them behind.
+
+## §2 — user-specified results filename, schematic-level (R-res-2/3)
+
+`SchematicEditModel.ResultsFileName` (nullable string, persisted in `.csch` — `CschFile.ResultsFileName`,
+omitted when null so an override-free schematic's file stays byte-for-byte unchanged) is the ONE field a
+run consults, since a run writes one grouped file for the whole testbench, never per-analysis. The field
+lives in `AnalysesListView` as a single "Results file:" text box directly below the toolbar (never a
+per-analysis-card field, which would wrongly imply per-analysis files) — staged text, committed on
+LostFocus/Enter via `AnalysesListViewModel.CommitResultsFileName`, undoable
+(`SetResultsFileNameCommand`, mirrors `SetLabelVisibilityCommand`'s shape exactly). A focus guard
+(`ResultsFileNameFocused`) prevents an unrelated model change — adding an analysis, an Undo elsewhere —
+from clobbering text the user is mid-typing, the same pattern Layout's staged fields already established.
+
+Sanitization (`RunResultsWriter.SanitizeFileNameComponent`) strips path separators on **every**
+platform regardless of what `Path.GetInvalidFileNameChars()` reports locally (Unix returns only
+`\0`/`/` — `\` is explicitly stripped too, since a mac-authored `.csch` might later run on Windows) plus
+every other filesystem-invalid character, replacing each with `_`; blank commits `null` (→ the default).
+`.npy` is appended only if absent (`ResolveFileName`), so typing either `baseline` or `baseline.npy`
+lands at the same place. The default overwrites silently on every run (R-res-3) — stated directly in the
+field's own tooltip, since accumulating timestamped files is exactly what the owner is escaping;
+`WriteRun_Rerun_OverwritesWithoutPrompting` pins this.
+
+## §3 — a `.cdd` holds a SET of aliased sources (R-res-4)
+
+`DataSourceEntryViewModel.Alias` (defaults to the file stem; `DataSourceLibraryViewModel.TrySetAlias` is
+the ONE mutator, enforcing case-insensitive uniqueness within the library — a colliding rename is
+refused, leaving both entries' aliases untouched, never silently suffixed). Persisted directly in the
+`.cdd` as `DataDisplayConfig.SourceAliases` (a `path → alias` dictionary, keyed the same
+relative-to-results-root-or-absolute form a trace's own `SourceRef` already uses,
+`DataDisplayViewModel.ComputeSourceKey`) — **stored, never re-derived at load time**, so "baseline" vs
+"tuned" survives a reload exactly as the brief requires. `TraceLabeler.ComputeMinimalLabels` gained an
+optional `aliasFor` resolver; `PlotContainerViewModel.UpdateLabelStrips` supplies
+`Library?.AliasFor(t.SourcePath)`, so the same-metric-from-two-sources case reads `baseline·dB(S(1,1))`
+/ `tuned·dB(S(1,1))` — qualified by alias, not by raw filename — with the existing minimal-label
+dropping rule (constant-across-the-plot components are omitted) unchanged.
+
+**Narrower scope, stated directly, not silently incomplete:** `AxesRenderer.DrawTitleAndAxisLabels`
+(the Rect Y-axis margin label, a secondary annotation surface) was NOT threaded with an alias resolver —
+it has no `DataSourceLibraryViewModel` reference today and threading one through the render call chain
+(`PlotControl` → `PlotRenderer` → `AxesRenderer`) for a margin label is more surface area than this pass
+justifies; it keeps the pre-alias file-stem heuristic. The PRIMARY label surface users actually read
+(trace-card labels, the label-strip controls on Smith/Polar) is fully alias-qualified. **Also not
+built**: a dedicated UI panel for renaming an alias — the Data Source Library panel itself does not
+exist in this codebase today (`DataDisplayView.axaml`'s own comment: "Main content: tabs + inspector
+(library panel removed)" — confirmed by grep, zero views reference `DataSourceEntryViewModel` or any of
+its commands). The alias MODEL (data, mutation, persistence, label computation) is complete and tested
+headlessly; exposing a rename affordance needs that panel revived first, which is a UI-only follow-up,
+not a data-model gap.
+
+## §3 cont'd / §5 — missing datasets are first-class (R-res-5), largely already true
+
+Investigated before building anything new, per this codebase's own "check first" convention: most of
+R-res-5 was **already correct**, not a gap. `LoadPlotContainerConfigAsync`'s trace-restoration loop
+already calls `Library.AddBrokenEntry(resolvedPath)` for any unresolvable `SourcePath` — which always
+produces a non-null (if empty/broken) library entry, so neither the cube-bound nor the network-bound
+"skip if no entry" guards ever fire for a *missing* file, only for a genuinely absent `SourceRef`. Trace
+configuration was therefore already never dropped on a missing dataset. What was missing: the .cdd's
+own DECLARED source list (`SourceAliases`, §3) is now loaded proactively, BEFORE any tab/trace
+restoration — `DisplayWindowViewModel.LoadAllAsync` walks every key, loads it if present or calls
+`AddBrokenEntry` if not, and stamps the alias either way — so a dataset with **zero** current traces
+still shows up (loaded or broken) with its alias intact, not only datasets some trace happens to
+reference. `Load_MissingDeclaredSource_ReportsAsBroken_PreservesAlias_OtherSourceStaysLive` is the
+direct regression: delete one of two declared sources, reload, and the live one is untouched while the
+missing one shows broken with its alias ("tuned") still attached.
+
+## §4 — picker, no `run.npy` special case, auto-created `.cdd` (R-res-7/8/9/10)
+
+**Picker (R-res-7):** the existing multi-select "Load Data Files" dialog (`DataDisplayView.axaml.cs ::
+DoOpenFileAsync`) now anchors its `SuggestedStartLocation` at `ResolveResultsRoot` (via
+`GetResultsRootAction`) for both a saved workspace and a scratch session — it already supported
+`.npy`/multi-select before this brief; anchoring it at the results root is what makes it read as "the
+Data Display's own source picker" the brief describes, rather than a generic file-open dialog that
+happens to allow `.npy`. **The `run.npy` special case at `DataDisplayView.axaml.cs` (export preselect,
+`srcAbs.EndsWith("run.npy")`) is removed** — replaced by a plain "is the selected source under
+resultsRoot" check, since every result file's own name is now meaningful (`<schematicKey>` or a
+baseline), not a fixed literal. `DataSourceLibraryViewModel.RefreshAvailableDataSources`/
+`MostRecentRunRef` and `DataExporterViewModel`'s own enumeration (`EnumerateSources`/`LoadDataSet`) were
+all rewritten from `Directory.EnumerateDirectories` + a `run.npy` subfile check to a flat
+`Directory.EnumerateFiles(root, "*.npy")` walk — confirmed via grep that no remaining code path assumes
+the old per-schematic-subdirectory shape.
+
+**Auto-create (R-res-8/9/10) is new — no prior mechanism opened a Data Display after a run at all**
+(confirmed by search before building anything: `WorkspaceViewModel` had no post-run open/create path).
+`WorkspaceViewModel.AutoOpenOrCreateDataDisplayAsync` runs after every successful `RunAnalysis`: if
+`results/<schematicKey>.cdd` exists, it opens and focuses it via the existing
+`OpenOrActivateDataDisplay` path — **no prompt**, retiring the "ask first" behavior this replaces (a
+deliberate change, per the brief's own explicit instruction). If it doesn't exist, a new
+`DataDisplayDocumentViewModel` is constructed, the just-written `.npy` is loaded and selected, one plot
+is added and pre-populated via the EXISTING `PlotInspectorViewModel.AddTrace()`/`AddTraceCommand` seed
+logic (no second "pick a sensible default trace" implementation) — Rect when the source has any
+non-scalar plottable cube or S-parameter data (`PlotInspectorViewModel.HasPlottableData`, widened from
+`private` to `internal` for this one caller), Table when it does not (a scalar-only DC operating-point
+run, which Rect cannot show at all per this codebase's own scalar-trace convention). The result is saved
+to `results/<schematicKey>.cdd` and opened/focused. **The default plot is achievable in every case this
+pass could construct** — every one of the five hero circuit shapes (S-param, HB, DC, parametric sweep,
+loadpull) produces at least one non-scalar cube or S data — so no "empty display shipped" fallback path
+was exercised in testing; the code still posts a named Messages warning rather than silently leaving an
+empty canvas on the off chance a future analysis type produces nothing plottable at all.
+
+## §5 (migration, R-res-11) and a correction to the brief's own premise
+
+`RunResultsWriter.MigrateOldLayout(resultsRoot, messages)` runs once per workspace open
+(`WorkspaceViewModel.SwitchToWorkspace`, right before the "Opened" message): for every subdirectory of
+`results/` it moves a `run.npy` inside to the flat `<name>.npy` sibling (never overwriting an
+already-flat file of the same name — reported instead, both copies kept), deletes any `.source` marker
+found, and removes the subdirectory once empty. Reports what moved via one Messages.Success naming every
+migrated key. Six gate tests cover the happy path, marker cleanup, three-schematics-plus-a-baseline
+migrating independently, the already-flat no-op case, and the already-exists-so-don't-clobber branch.
+
+**Correction, checked directly rather than assumed:** `circuitRF_demo/` is listed in `.gitignore`
+(`/circuitRF_demo`) and **zero files under it are tracked by git** (`git ls-files circuitRF_demo` returns
+nothing) — the brief's own claim that "`circuitRF_demo/results/FET_curve_tracer/` is in the repository...
+must be migrated as part of this work" does not hold; there is no committed demo workspace for this brief
+to fix. The local `circuitRF_demo/` checkout on this machine DID have eight schematics on the old
+per-subdirectory layout (`FET_curve_tracer`, `HBTest`, `LPBench`, `MutualInductance`,
+`NonLinear Capacitor Test`, `SDD Control Current`, `SParamTest`, `Two Tone HB`) — migrated by hand as a
+live exercise of the migration logic above (files moved, `.source` markers removed, each `.cdd`'s own
+`SelectedDataSource` field rewritten from `"<key>/run.npy"` to `"<key>.npy"`; every individual trace's
+`SourcePath` in those files was already the `"run.npy"` **sentinel**, not a literal path, so no other
+edits were needed) — but since none of it is git-tracked, nothing here is committed as part of this
+change; the app's own `MigrateOldLayout` would have done the identical thing automatically on next open
+regardless.
+
+## §12 — docs updated
+
+`docs/design/data-display.md` §1/§7.0/§5/§6 and `docs/design/results-dataset-layout.md` (Open Question 1,
+the "Touchpoints" collision-check line) all corrected to state the flat `results/<schematicKey>.npy`
+layout as current, with the per-schematic-subdirectory form named explicitly as the fixed
+documented-vs-implemented divergence rather than silently rewritten over.
+
+## Gate
+
+Firewall 4/4, Core 512/512, Ui 3726/3726 (was 3719 pre-brief in this same session — 4 new test files:
+`RunResultsWriterTests.cs` rewritten (30 tests, was 9), `ResultsFileNameFieldTests` (6, appended to
+`AnalysesListViewModelTests.cs`), `MultiDatasetAliasTests.cs` (7), plus `DataExporterViewModelTests.cs`
+and `DataDisplaySingleSourceTests.cs` updated in place for the flat layout), Engine 460/461 (1
+pre-existing skip) — all green, confirmed via two consecutive full runs. One confirmed-not-a-regression
+flake seen on the first full run (`CellLayoutResolverTests.Invalidate_ForcesReloadOfThatCellOnly`,
+already documented elsewhere in this file as a full-suite-parallelism timing race — passes cleanly in
+isolation, not reproduced on the second full run).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's own
+note) — the "Results file" text box's placement/tooltip, the picker's anchored-folder behavior, and the
+auto-created `.cdd`'s actual on-screen plot cannot be exercised headlessly; correctness rests on the gate
+tests above, which drive the exact same public methods (`RunResultsWriter.WriteRun/MigrateOldLayout`,
+`AnalysesListViewModel.CommitResultsFileName`, `DataSourceLibraryViewModel.TrySetAlias`,
+`WorkspaceViewModel.AutoOpenOrCreateDataDisplayAsync`'s constituent library/plot/save calls) the
+view/menu code-behind calls. Please confirm on your end: running an S-parameter analysis with no
+`.cdd` for that schematic auto-opens a new one with a real, non-empty Rect plot; running it again opens
+the SAME `.cdd` with no prompt; naming a "Results file" in the Analyses panel preserves that run under
+its own name on every subsequent re-run while the default file keeps overwriting; and opening the Load
+Data Files picker starts in the workspace's own `results/` folder.
+
 URGENT fix: crash selecting a snap-distance value — re-entrant `ObservableCollection` mutation
 (brief-snap-ladder-crash.md, 2026-07-29) — COMPLETE. Supersedes the previous brief's own R-cmb-1
 mechanism below (kept for history) — that entry's "insert the current value into the ladder" fix was

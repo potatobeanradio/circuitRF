@@ -4,6 +4,14 @@ Status: implemented (stages 1–3 shipped). Supersedes the per-analysis results-
 `data-display.md` §1.3 / §3 (one file per analysis). Alpha: no migration, no back-compat — the `.npy`
 layout and the in-memory `DataSet` change shape and old files are simply regenerated.
 
+**Update (brief-results-storage-and-data-display.md, 2026-07-29):** stages 1–3 above shipped the
+grouped `DataSet`/`.npy` correctly, but `RunResultsWriter` itself shipped writing
+`results/<schematicKey>/run.npy` (a per-schematic SUBDIRECTORY) — the opposite of Open Question 1's own
+stated lean toward the flat filename below. This was a real documented-vs-implemented divergence, not a
+deliberate change of plan. It has now been fixed: a run writes **flat**, `results/<schematicKey>.npy`,
+exactly as this document always intended — see Open Question 1, now resolved, and the migration this
+required (R-res-11) since a per-schematic-subdirectory layout had actually shipped and needed moving.
+
 Read with: `data-display.md` (the display/source model this revises), `data-export.md` +
 `RfCore/src/Export/CLAUDE.md` (the `.npy` format), `src/Core/Data/CLAUDE.md` (the DataSet/DataCube
 contract), `measurements.md` (measurements, which this simplifies), and `family-curves.md` /
@@ -104,7 +112,10 @@ Run pipeline:
   DataSet (group per analysis) instead of a list of separate DataSets; evaluate measurements into its
   `measurements` group; return one result.
 - `src/Ui/Schematic/RunResultsWriter.cs` — write **one** file per run: `results/<schematicKey>.npy`
-  (drops the per-analysis directory); owner-identity collision check moves to a sidecar or `__meta__`.
+  (drops the per-analysis directory, and — per the resolution below — drops the per-schematic
+  subdirectory too). The owner-identity collision check was **dropped**, not moved to a sidecar or
+  `__meta__`: `SchematicKey` already disambiguates `cell` from `cell.view`, so the collision it guarded
+  against (two different cells resolving to the same results file) is not reachable through normal use.
 
 Display / addressing:
 - `src/Ui/DataDisplay/.../DataSourceEntryViewModel` + the source-tree view — present file → analysis →
@@ -135,9 +146,12 @@ Each stage builds + tests green before the next; stage 1 is independently testab
 
 ## Open questions
 
-1. **Results filename.** `results/<schematicKey>.npy` (one file, flat in `results/`) vs keeping a
-   per-schematic directory `results/<schematicKey>/run.npy`. The former is simpler; the latter leaves
-   room for sidecars. Leaning to the flat filename with owner identity in `__meta__`.
+1. **RESOLVED — flat.** `results/<schematicKey>.npy` (one file, flat in `results/`), not a per-schematic
+   directory. The flat form also gives R-res-2 (§ below) its whole basis: a user-named baseline
+   (`results/baseline_v1.npy`) sits as a plain sibling file, not a second thing to find a directory
+   convention for. Owner identity is not carried anywhere (the collision check it would have supported
+   was dropped, see "Touchpoints" above) — nothing needed the sidecar/`__meta__` option this question
+   once considered.
 2. **Flat-source group label.** Does a Touchstone source show as a single unnamed node in the tree, or
    under a synthetic group label (e.g. the file stem)? Affects only presentation, not addressing.
 3. **Bare-name specs across groups.** Confirm bare `Cube` resolving "in the sole group" is the desired

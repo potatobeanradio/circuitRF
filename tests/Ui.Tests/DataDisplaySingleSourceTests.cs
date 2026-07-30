@@ -47,11 +47,10 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
             Directory.Delete(_wsDir, recursive: true);
     }
 
+    // Flat results/<schematic>.npy layout (brief-results-storage-and-data-display.md §1).
     private string WriteRunNpy(string schematic, DataSet? ds = null)
     {
-        var dir = Path.Combine(_resultsDir, schematic);
-        Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "run.npy");
+        var path = Path.Combine(_resultsDir, schematic + ".npy");
         ds ??= MakeSimpleDataSet();
         DataSetExporter.Export(ds, path, ExportFormat.Npy);
         return path;
@@ -81,7 +80,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
     {
         var lib  = MakeLibrary();
         string absPath = WriteRunNpy("ampA");
-        await lib.SelectDataSourceAsync("ampA/run.npy");
+        await lib.SelectDataSourceAsync("ampA.npy");
 
         Assert.Equal(lib.SelectedDataSourceAbs, lib.ResolveAbs(DataSourceRef.Selected));
         Assert.Equal(lib.SelectedDataSourceAbs, lib.ResolveAbs(null));
@@ -89,7 +88,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
     }
 
     // ── 2. Resolve_CrossSchematic ───────────────────────────────────────────
-    // ResolveAbs("ampB/run.npy") == <results>/ampB/run.npy regardless of selection.
+    // ResolveAbs("ampB.npy") == <results>/ampB.npy regardless of selection.
 
     [Fact]
     public async Task Resolve_CrossSchematic()
@@ -97,14 +96,14 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         var lib = MakeLibrary();
         WriteRunNpy("ampA");
         WriteRunNpy("ampB");
-        await lib.SelectDataSourceAsync("ampA/run.npy");
+        await lib.SelectDataSourceAsync("ampA.npy");
 
-        string expected = Path.GetFullPath(Path.Combine(_resultsDir, "ampB", "run.npy"));
-        Assert.Equal(expected, lib.ResolveAbs("ampB/run.npy"));
+        string expected = Path.GetFullPath(Path.Combine(_resultsDir, "ampB.npy"));
+        Assert.Equal(expected, lib.ResolveAbs("ampB.npy"));
     }
 
     // ── 3. Enumerate_NoLoad ─────────────────────────────────────────────────
-    // RefreshAvailableDataSources lists results subdirs with run.npy + known Touchstone;
+    // RefreshAvailableDataSources lists flat results/*.npy files + known Touchstone;
     // Entries stays empty (nothing imported).
 
     [Fact]
@@ -118,8 +117,8 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
 
         // Two sim items visible.
         Assert.Equal(2, lib.AvailableDataSources.Count);
-        Assert.Contains(lib.AvailableDataSources, i => i.LogicalId == "ampA/run.npy");
-        Assert.Contains(lib.AvailableDataSources, i => i.LogicalId == "ampB/run.npy");
+        Assert.Contains(lib.AvailableDataSources, i => i.LogicalId == "ampA.npy");
+        Assert.Contains(lib.AvailableDataSources, i => i.LogicalId == "ampB.npy");
 
         // No file was actually imported.
         Assert.Empty(lib.Entries);
@@ -135,16 +134,16 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         WriteRunNpy("ampA");
         WriteRunNpy("ampB");
 
-        await lib.SelectDataSourceAsync("ampA/run.npy");
+        await lib.SelectDataSourceAsync("ampA.npy");
 
         // Exactly one entry loaded.
         Assert.Single(lib.Entries);
         Assert.NotNull(lib.SelectedEntry);
-        Assert.Equal("ampA/run.npy", lib.SelectedDataSourceRef);
+        Assert.Equal("ampA.npy", lib.SelectedDataSourceRef);
     }
 
     // ── 5. MostRecent ───────────────────────────────────────────────────────
-    // With two run.npy of different LastWriteTime, MostRecentRunRef picks the newer.
+    // With two flat .npy results of different LastWriteTime, MostRecentRunRef picks the newer.
 
     [Fact]
     public async Task MostRecent()
@@ -159,7 +158,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         await Task.CompletedTask;
 
         string? most = lib.MostRecentRunRef();
-        Assert.Equal("newer/run.npy", most);
+        Assert.Equal("newer.npy", most);
     }
 
     // ── 6. Persist_RoundTrip ────────────────────────────────────────────────
@@ -177,7 +176,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         vm.DataSourceLibrary.KnownTouchstoneProvider = () => Array.Empty<string>();
         vm.DataSourceLibrary.RefreshAvailableDataSources();
 
-        await vm.DataSourceLibrary.SelectDataSourceAsync("ampA/run.npy");
+        await vm.DataSourceLibrary.SelectDataSourceAsync("ampA.npy");
 
         // Add a sentinel trace.
         var plot  = vm.ActiveTab!.DataDisplay.Plots[0].PlotVM.Plot;
@@ -189,7 +188,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
 
         // Also a cross-schematic trace.
         var trace2 = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);
-        trace2.SourceRef  = "ampB/run.npy";
+        trace2.SourceRef  = "ampB.npy";
         trace2.SourcePath = ampBPath;
         plot.Traces.Add(trace2);
 
@@ -205,7 +204,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         Assert.Equal(2, root.GetProperty("FormatVersion").GetInt32());
 
         // SelectedDataSource must be persisted.
-        Assert.Equal("ampA/run.npy", root.GetProperty("SelectedDataSource").GetString());
+        Assert.Equal("ampA.npy", root.GetProperty("SelectedDataSource").GetString());
 
         // Load back.
         var vm2 = new DisplayWindowViewModel();
@@ -213,7 +212,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         vm2.DataSourceLibrary.KnownTouchstoneProvider = () => Array.Empty<string>();
         await vm2.LoadAllAsync(cddPath);
 
-        Assert.Equal("ampA/run.npy", vm2.DataSourceLibrary.SelectedDataSourceRef);
+        Assert.Equal("ampA.npy", vm2.DataSourceLibrary.SelectedDataSourceRef);
 
         // v1 file rejected.
         string v1Json = json.Replace("\"FormatVersion\": 2", "\"FormatVersion\": 1");
@@ -241,7 +240,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         string pathB = WriteRunNpy("ampB", dsB);
 
         var lib = MakeLibrary();
-        await lib.SelectDataSourceAsync("ampA/run.npy");
+        await lib.SelectDataSourceAsync("ampA.npy");
 
         // Build a cube-bound trace on "V".
         var snp   = new SNP(new[] { 1e9 }, 2);
@@ -259,7 +258,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         // Switch to ampB.
         int changed = 0;
         lib.SelectedDataSourceChanged += (_, _) => changed++;
-        await lib.SelectDataSourceAsync("ampB/run.npy");
+        await lib.SelectDataSourceAsync("ampB.npy");
 
         // SelectedDataSourceChanged fired.
         Assert.True(changed >= 1);
@@ -270,7 +269,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
     }
 
     // ── 8. CrossSchematicStable ─────────────────────────────────────────────
-    // A trace with SourceRef="ampB/run.npy" keeps rendering from ampB after the
+    // A trace with SourceRef="ampB.npy" keeps rendering from ampB after the
     // selected datasource is switched to ampA.
 
     [Fact]
@@ -280,20 +279,20 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         string pathB = WriteRunNpy("ampB");
 
         var lib = MakeLibrary();
-        await lib.SelectDataSourceAsync("ampA/run.npy");
+        await lib.SelectDataSourceAsync("ampA.npy");
 
         var trace = new Trace(new SNP(new[] { 1e9 }, 2), MatrixType.S, 0, 0, DependentVarFormat.Db);
-        trace.SourceRef  = "ampB/run.npy";
-        trace.SourcePath = lib.ResolveAbs("ampB/run.npy");
+        trace.SourceRef  = "ampB.npy";
+        trace.SourcePath = lib.ResolveAbs("ampB.npy");
 
         string? absBeforeSwitch = trace.SourcePath;
 
         // Switch selected source — cross-schematic trace must not be re-pointed.
-        await lib.SelectDataSourceAsync("ampA/run.npy");
+        await lib.SelectDataSourceAsync("ampA.npy");
 
         // SourcePath unchanged because the vm-layer handler only re-points sentinel traces.
         Assert.Equal(absBeforeSwitch, trace.SourcePath);
-        Assert.Equal("ampB/run.npy",  trace.SourceRef);
+        Assert.Equal("ampB.npy",  trace.SourceRef);
     }
 
     // ── 9. PickerUsesSelected ────────────────────────────────────────────────
@@ -311,7 +310,7 @@ public sealed class DataDisplaySingleSourceTests : IDisposable
         WriteRunNpy("ampB");   // ampB has no "V" / "I"
 
         var lib = MakeLibrary();
-        await lib.SelectDataSourceAsync("ampA/run.npy");
+        await lib.SelectDataSourceAsync("ampA.npy");
 
         var snp   = new SNP(new[] { 1e9 }, 2);
         var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);

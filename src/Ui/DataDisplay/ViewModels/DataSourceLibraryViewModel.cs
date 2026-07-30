@@ -62,7 +62,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// <summary>Returns absolute paths of workspace-tracked loadpull known files (.spl/.lpcwave).</summary>
     public Func<IReadOnlyList<string>>? KnownLoadpullProvider { get; set; }
 
-    /// <summary>Logical id persisted in .cdd (e.g. "ampA/run.npy" or abs Touchstone path).</summary>
+    /// <summary>Logical id persisted in .cdd (e.g. flat "ampA.npy" under results/, or abs Touchstone path).</summary>
     public string? SelectedDataSourceRef { get; private set; }
 
     /// <summary>Resolved absolute path for the selected datasource; null when nothing is selected or file missing.</summary>
@@ -88,7 +88,10 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         return root is null ? null : Path.GetFullPath(Path.Combine(root, sourceRef));
     }
 
-    /// <summary>Enumerate available datasources without loading any file. Safe when there's no workspace.</summary>
+    /// <summary>Enumerate available datasources without loading any file. Safe when there's no workspace.
+    /// R-res-7 — results/ is a FLAT, shared directory (brief-results-storage-and-data-display.md §1):
+    /// every schematic's own results file, plus any user-named baseline, sits directly in it as
+    /// "&lt;name&gt;.npy" — there is no per-schematic subdirectory to descend into.</summary>
     public void RefreshAvailableDataSources()
     {
         AvailableDataSources.Clear();
@@ -96,24 +99,21 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         var root = ResultsRootProvider?.Invoke();
         if (root is not null && Directory.Exists(root))
         {
-            // Sim runs: each subdir containing run.npy, sorted newest-first.
             var simItems = new List<(string logicalId, string abs, long lastWrite)>();
-            foreach (var sub in Directory.EnumerateDirectories(root))
+            foreach (var npy in Directory.EnumerateFiles(root, "*.npy"))
             {
-                string runNpy = Path.Combine(sub, "run.npy");
-                if (!File.Exists(runNpy)) continue;
-                string schematic = Path.GetFileName(sub);
-                string logicalId = $"{schematic}/run.npy";
+                string name      = Path.GetFileNameWithoutExtension(npy);
+                string logicalId = Path.GetFileName(npy);   // "<name>.npy", relative to results root
                 long ticks;
-                try { ticks = new System.IO.FileInfo(runNpy).LastWriteTimeUtc.Ticks; }
+                try { ticks = new System.IO.FileInfo(npy).LastWriteTimeUtc.Ticks; }
                 catch { ticks = 0; }
-                simItems.Add((logicalId, runNpy, ticks));
+                simItems.Add((logicalId, npy, ticks));
             }
             simItems.Sort((a, b) => b.lastWrite.CompareTo(a.lastWrite));
             foreach (var (logicalId, abs, _) in simItems)
             {
-                string schematic = logicalId[..logicalId.IndexOf('/')];
-                AvailableDataSources.Add(new DataSourceItem(schematic, logicalId, abs, SourceKind.Npy));
+                string name = Path.GetFileNameWithoutExtension(logicalId);
+                AvailableDataSources.Add(new DataSourceItem(name, logicalId, abs, SourceKind.Npy));
             }
         }
 
@@ -131,25 +131,24 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Returns the LogicalId of the most-recently-written run.npy, or null.</summary>
+    /// <summary>Returns the LogicalId ("&lt;name&gt;.npy") of the most-recently-written results file
+    /// directly under results/, or null.</summary>
     public string? MostRecentRunRef()
     {
         var root = ResultsRootProvider?.Invoke();
         if (root is null || !Directory.Exists(root)) return null;
 
-        string? bestId = null;
+        string? bestId    = null;
         long    bestTicks = 0;
-        foreach (var sub in Directory.EnumerateDirectories(root))
+        foreach (var npy in Directory.EnumerateFiles(root, "*.npy"))
         {
-            string runNpy = Path.Combine(sub, "run.npy");
-            if (!File.Exists(runNpy)) continue;
             long ticks;
-            try { ticks = new System.IO.FileInfo(runNpy).LastWriteTimeUtc.Ticks; }
+            try { ticks = new System.IO.FileInfo(npy).LastWriteTimeUtc.Ticks; }
             catch { continue; }
             if (ticks > bestTicks)
             {
                 bestTicks = ticks;
-                bestId    = $"{Path.GetFileName(sub)}/run.npy";
+                bestId    = Path.GetFileName(npy);
             }
         }
         return bestId;
@@ -193,6 +192,12 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// or null if the user cancelled.
     /// </summary>
     public Func<string, Task<string?>>? FindMissingFileAsync { get; set; }
+
+    /// <summary>
+    /// Called when the Add Trace picker's source selector chooses "Add from file…" (R-dd-2).
+    /// Should show a single-file picker and return the chosen path, or null if the user cancelled.
+    /// </summary>
+    public Func<Task<string?>>? AddSourceFileRequested { get; set; }
 
     /// <summary>Copies text to the system clipboard (set from code-behind).</summary>
     public Func<string, Task>? CopyToClipboardFunc { get; set; }
@@ -496,6 +501,37 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             if (!File.Exists(fp)) continue;        // never trigger the FindMissingFileAsync prompt during auto-refresh
             await ReloadAsync(entry);              // in-place refresh + LibraryChanged
         }
+    }
+
+    /// <summary>
+    /// The one mutator for <see cref="DataSourceEntryViewModel.Alias"/> (R-res-4) — enforces
+    /// uniqueness within the library (case-insensitive) so trace labels qualified by alias are
+    /// never ambiguous. Blank input falls back to the entry's own file stem. Returns false (leaving
+    /// the alias unchanged) when the candidate collides with a DIFFERENT entry's alias.
+    /// </summary>
+    public bool TrySetAlias(DataSourceEntryViewModel entry, string proposed)
+    {
+        var candidate = string.IsNullOrWhiteSpace(proposed)
+            ? DataSourceEntryViewModel.DefaultAlias(entry.FileName)
+            : proposed.Trim();
+
+        bool collides = Entries.Any(e =>
+            !ReferenceEquals(e, entry) &&
+            string.Equals(e.Alias, candidate, StringComparison.OrdinalIgnoreCase));
+        if (collides) return false;
+
+        entry.Alias = candidate;
+        LibraryChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
+    /// <summary>Looks up the alias of the entry whose FilePath matches <paramref name="absPath"/>,
+    /// or null when there is no such entry (e.g. a trace bound to a not-yet-loaded source).</summary>
+    public string? AliasFor(string? absPath)
+    {
+        if (absPath is null) return null;
+        return Entries.FirstOrDefault(e =>
+            string.Equals(e.FilePath, absPath, StringComparison.OrdinalIgnoreCase))?.Alias;
     }
 
     /// <summary>Remove an entry from the library (does not delete the file).</summary>

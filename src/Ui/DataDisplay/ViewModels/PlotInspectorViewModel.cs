@@ -75,6 +75,18 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public event EventHandler? PlotNeedsRedraw;
     public event EventHandler? PlotStructureChanged;
 
+    /// <summary>
+    /// Raises <see cref="PlotStructureChanged"/> from outside this class — used when a
+    /// TraceRowViewModel commits a genuine change of which SOURCE a trace is bound to (the picker's
+    /// Source selector, R-dd-2, or a drag-dropped dataset, R-dd-3). Switching quantity/matrix-type
+    /// within the SAME source only needs a redraw (<c>RebuildAndNotify</c>'s own <c>PlotNeedsRedraw</c>),
+    /// but switching SOURCE can change whether the plot's traces span 1 or 2+ distinct datasets —
+    /// exactly the input `TraceLabeler.ComputeMinimalLabels`'s alias-qualification decision depends
+    /// on — and that recompute only happens in `PlotContainerViewModel.UpdateLabelStrips`, which is
+    /// wired to this event, not to `PlotNeedsRedraw`.
+    /// </summary>
+    public void NotifyStructureChanged() => PlotStructureChanged?.Invoke(this, EventArgs.Empty);
+
     // ---- Color-picker owner + suppress-flyout-dismiss seam (§3) -----------
 
     /// <summary>Injected by PlotControl when building the inspector flyout. Returns the main
@@ -318,8 +330,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
         (_library?.SelectedEntry is { } e && HasPlottableData(e, _plot.PlotType == PlotType.Table));
 
     /// <summary>True when an entry has anything a trace can be seeded from: a non-empty SNP
-    /// (S-parameter network) OR at least one plottable cube (HB/DC/loadpull cube-only results).</summary>
-    private static bool HasPlottableData(DataSourceEntryViewModel e, bool allowScalars) =>
+    /// (S-parameter network) OR at least one plottable cube (HB/DC/loadpull cube-only results).
+    /// Internal (not private) so WorkspaceViewModel's auto-created-Data-Display flow (R-res-10) can pick
+    /// Rect vs. Table for the default plot without duplicating the plottability rules.</summary>
+    internal static bool HasPlottableData(DataSourceEntryViewModel e, bool allowScalars) =>
         (e.Snp is not null && !e.Snp.IsEmpty) || FirstPlottableCubeName(e, allowScalars) is not null;
 
     /// <summary>Returns the name of the first plottable cube in the entry's DataSet, applying the
@@ -534,6 +548,37 @@ public partial class PlotInspectorViewModel : ViewModelBase
         RefreshAddCommand();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// R-dd-3 — drag-drop entry point: an .npy dropped onto this plot from the project tree loads
+    /// it as a new dataset (if not already loaded) and opens the Add Trace picker for it in one
+    /// gesture. Mirrors the picker's own "Add from file…" flow (R-dd-2) but is triggered by a
+    /// drop rather than a combo selection.
+    /// </summary>
+    public async System.Threading.Tasks.Task AddDatasetFromDropAsync(string absPath)
+    {
+        if (_library is null) return;
+        absPath = System.IO.Path.GetFullPath(absPath);
+
+        var entry = _library.Entries.FirstOrDefault(e =>
+            string.Equals(e.FilePath, absPath, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            await _library.LoadFileAsync(absPath);
+            entry = _library.Entries.FirstOrDefault(e =>
+                string.Equals(e.FilePath, absPath, StringComparison.OrdinalIgnoreCase));
+        }
+        if (entry is null) return;   // unreadable / unrecognized extension
+
+        if (!AddTraceCommand.CanExecute(null)) return;
+        AddTraceCommand.Execute(null);
+
+        var row = Traces.LastOrDefault();
+        if (row is null) return;
+
+        var item = row.AvailableSourceEntries.FirstOrDefault(i => ReferenceEquals(i.Entry, entry));
+        if (item is not null) row.SelectedSourceItem = item;
     }
 
     /// <summary>

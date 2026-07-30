@@ -644,7 +644,7 @@ public sealed class ContourTraceCardTests
         var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);
         trace.ContourData = new ContourData();
 
-        var result = trace.RectYLabel("fallback", showFilePrefix: false, dimensionMismatch: false);
+        var result = trace.RectYLabel("fallback", dimensionMismatch: false);
         Assert.Equal("", result);
     }
 
@@ -655,8 +655,30 @@ public sealed class ContourTraceCardTests
         var snp   = new SNP(new[] { 1e9 }, 1);
         var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db);
 
-        var result = trace.RectYLabel("S11", showFilePrefix: false, dimensionMismatch: false);
+        var result = trace.RectYLabel("S11", dimensionMismatch: false);
         Assert.NotEmpty(result);
+    }
+
+    // Post-ship bug: a cube-bound trace's Rect Y-axis label must use the caller-supplied minimal
+    // label (which already carries the alias) — a prior version recomputed its OWN CubeShorthand +
+    // raw file-stem prefix for cube-bound traces, silently discarding the alias-qualified text the
+    // caller had already computed via TraceLabeler.ComputeMinimalLabels.
+    [Fact]
+    public void RectYLabel_ForCubeBoundTrace_UsesTheSuppliedAliasQualifiedLabel_NotItsOwnFileStemPrefix()
+    {
+        var snp   = new SNP(new[] { 1e9 }, 2);
+        var trace = new Trace(snp, MatrixType.S, 0, 0, DependentVarFormat.Db)
+        {
+            SourcePath = "/results/baseline.npy",
+            CubeName   = "SP1.S",
+        };
+        Assert.True(trace.IsCubeBound);
+
+        const string aliasQualified = "baseline·dB20(SP1.S[:, 1, 1])";
+        var result = trace.RectYLabel(aliasQualified, dimensionMismatch: false);
+
+        Assert.Equal(aliasQualified, result);
+        Assert.DoesNotContain("baseline.npy", result);   // never re-derives its own file-stem prefix
     }
 
     // T33 — §2: UpdateLabelStrips on a Smith plot with only a contour trace → zero label strips

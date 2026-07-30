@@ -52,6 +52,15 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     [ObservableProperty]
     private string _displayName = "";
 
+    /// <summary>
+    /// Short display alias for this source (R-res-4) — defaults to the file stem, user-editable,
+    /// unique within the library (enforced by <see cref="DataSourceLibraryViewModel.TrySetAlias"/>,
+    /// the only mutator). Stored in the .cdd, not re-derived at load time: which alias a source
+    /// carries is a display decision the user made ("baseline" vs "tuned") and must survive reload.
+    /// </summary>
+    [ObservableProperty]
+    private string _alias = "";
+
     /// <summary>True when the underlying file is missing (entry has no usable data).</summary>
     public bool IsBroken => _snp?.IsEmpty ?? false;
 
@@ -99,6 +108,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         _filePath  = snp.FilePath;
         _data      = snp.IsEmpty ? null : DataSetBuilder.FromSnp(snp);
         _displayName = FileName ?? "";
+        _alias       = DefaultAlias(FileName);
 
         InitCommands(library);
         ClassifyZ0FromData();
@@ -114,6 +124,7 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         _data      = data;
         _snp       = snp;
         _displayName = FileName ?? "";
+        _alias       = DefaultAlias(FileName);
 
         InitCommands(library);
         ClassifyZ0FromData();
@@ -234,4 +245,9 @@ public partial class DataSourceEntryViewModel : ViewModelBase
 
     /// <summary>Called by DataSourceLibraryViewModel after an in-place restore.</summary>
     internal void NotifyBrokenStateChanged() => OnPropertyChanged(nameof(IsBroken));
+
+    /// <summary>The alias a source gets before the user (or a loaded .cdd) ever renames it: its own
+    /// file stem, falling back to "source" for a nameless/broken placeholder.</summary>
+    internal static string DefaultAlias(string? fileName) =>
+        string.IsNullOrEmpty(fileName) ? "source" : Path.GetFileNameWithoutExtension(fileName);
 }

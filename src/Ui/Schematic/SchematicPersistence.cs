@@ -36,6 +36,10 @@ public sealed class CschFile
     // Written only when non-empty to keep analysis-free .csch files compact.
     public List<CschAnalysis>?    Analyses     { get; set; }
     public List<CschMeasurement>? Measurements { get; set; }
+
+    /// <summary>User override for the run's results file name (blank/absent = default
+    /// &lt;schematicKey&gt;.npy). See SchematicEditModel.ResultsFileName.</summary>
+    public string? ResultsFileName { get; set; }
 }
 
 public sealed class CschComponent
@@ -389,6 +393,8 @@ public static class SchematicPersistence
         if (m.Measurements.Count > 0)
             file.Measurements = m.Measurements.Select(AnalysisSerialization.ToDto).ToList();
 
+        file.ResultsFileName = string.IsNullOrEmpty(m.ResultsFileName) ? null : m.ResultsFileName;
+
         return file;
     }
 
@@ -470,6 +476,8 @@ public static class SchematicPersistence
         if (file.Measurements is not null)
             foreach (var dto in file.Measurements)
                 m.Measurements.Add(AnalysisSerialization.FromDto(dto));
+
+        m.ResultsFileName = string.IsNullOrEmpty(file.ResultsFileName) ? null : file.ResultsFileName;
 
         return m;
     }

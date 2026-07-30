@@ -428,3 +428,150 @@ public sealed class AnalysisEditorViewModelNameTests
         Assert.Equal("HB1", vm.Name);
     }
 }
+
+// ── Results file override (R-res-2/3) ─────────────────────────────────────────
+
+public sealed class ResultsFileNameFieldTests
+{
+    private static SchematicViewModel MakeVm()
+        => new(new SchematicEditModel(), messageSink: null);
+
+    private static AnalysesListViewModel BindVm(SchematicViewModel schVm)
+    {
+        var vm = new AnalysesListViewModel();
+        vm.SetActiveSchematic(schVm);
+        return vm;
+    }
+
+    [Fact]
+    public void BlankCommit_ClearsOverride_UndoRestoresPrevious()
+    {
+        var schVm = MakeVm();
+        var vm    = BindVm(schVm);
+
+        vm.CommitResultsFileName("baseline");
+        Assert.Equal("baseline.npy", schVm.EditModel.ResultsFileName);
+
+        vm.CommitResultsFileName("");
+        Assert.Null(schVm.EditModel.ResultsFileName);
+        Assert.Equal("", vm.ResultsFileNameText);
+
+        schVm.UndoRedo.Undo();
+        Assert.Equal("baseline.npy", schVm.EditModel.ResultsFileName);
+    }
+
+    [Fact]
+    public void PathSeparators_AreSanitized_NotRejectedSilently()
+    {
+        var schVm = MakeVm();
+        var vm    = BindVm(schVm);
+
+        vm.CommitResultsFileName("../evil/name");
+
+        var stored = Assert.IsType<string>(schVm.EditModel.ResultsFileName);
+        Assert.DoesNotContain('/', stored);
+        Assert.DoesNotContain('\\', stored);
+        Assert.Equal(stored, vm.ResultsFileNameText);
+    }
+
+    [Fact]
+    public void SameValueCommit_IsANoOp_NoUndoEntryPushed()
+    {
+        var schVm = MakeVm();
+        var vm    = BindVm(schVm);
+
+        vm.CommitResultsFileName("baseline");
+        Assert.True(schVm.UndoRedo.CanUndo);
+        schVm.UndoRedo.MarkSaved();   // clear IsModified so a spurious second push would be visible
+
+        vm.CommitResultsFileName("baseline");
+        Assert.False(schVm.UndoRedo.IsModified, "committing the same sanitized value must push nothing");
+
+        // Re-typing WITH the extension already present must also be a no-op — not a second "add .npy" edit.
+        vm.CommitResultsFileName("baseline.npy");
+        Assert.False(schVm.UndoRedo.IsModified);
+    }
+
+    // On commit, a name typed without ".npy" gets it appended — in BOTH the stored value and the
+    // displayed text — so the text box always shows the exact file name a run actually writes.
+    [Fact]
+    public void CommitWithoutExtension_AppendsNpy_ToStoredValueAndDisplayedText()
+    {
+        var schVm = MakeVm();
+        var vm    = BindVm(schVm);
+
+        vm.CommitResultsFileName("baseline");
+
+        Assert.Equal("baseline.npy", schVm.EditModel.ResultsFileName);
+        Assert.Equal("baseline.npy", vm.ResultsFileNameText);
+    }
+
+    [Fact]
+    public void CommitWithExtensionAlready_DoesNotDoubleIt()
+    {
+        var schVm = MakeVm();
+        var vm    = BindVm(schVm);
+
+        vm.CommitResultsFileName("baseline.npy");
+
+        Assert.Equal("baseline.npy", schVm.EditModel.ResultsFileName);
+        Assert.Equal("baseline.npy", vm.ResultsFileNameText);
+    }
+
+    [Fact]
+    public void SwitchingActiveSchematic_ShowsEachSchematicsOwnValue()
+    {
+        var a = MakeVm();
+        var b = MakeVm();
+        b.EditModel.ResultsFileName = "b_baseline.npy";
+        var vm = new AnalysesListViewModel();
+
+        vm.SetActiveSchematic(a);
+        Assert.Equal("", vm.ResultsFileNameText);
+
+        vm.SetActiveSchematic(b);
+        Assert.Equal("b_baseline.npy", vm.ResultsFileNameText);
+    }
+
+    [Fact]
+    public void RoundTrips_ThroughCschPersistence()
+    {
+        var schVm = MakeVm();
+        var vm    = BindVm(schVm);
+        vm.CommitResultsFileName("my_baseline");
+
+        var dir = Path.Combine(Path.GetTempPath(), $"crf_resfile_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var path = Path.Combine(dir, "Amp.csch");
+            SchematicPersistence.SaveToFile(path, schVm.EditModel, "Amp");
+            var (reloaded, _, _) = SchematicPersistence.LoadFromFile(path);
+            Assert.Equal("my_baseline.npy", reloaded.ResultsFileName);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AbsentInOldFile_LoadsAsNull()
+    {
+        // A hand-stripped file with no ResultsFileName key still loads (graceful within-version load).
+        var dir = Path.Combine(Path.GetTempPath(), $"crf_resfile_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var schVm = MakeVm();
+            var path  = Path.Combine(dir, "Amp.csch");
+            SchematicPersistence.SaveToFile(path, schVm.EditModel, "Amp");
+            var (reloaded, _, _) = SchematicPersistence.LoadFromFile(path);
+            Assert.Null(reloaded.ResultsFileName);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+}

@@ -28,9 +28,18 @@ namespace CircuitRF.Ui.DataDisplay
         /// When true the source token is forced on even if it is identical for
         /// every trace (mirrors <c>AppSettings.AlwaysDisplayDataSourcePrefix</c>).
         /// </param>
+        /// <param name="aliasFor">
+        /// Resolves a trace's user-facing source alias (R-res-4 — "baseline"/"tuned" style short
+        /// names), typically <see cref="DataDisplay.ViewModels.DataSourceLibraryViewModel.AliasFor"/>
+        /// applied to the trace's SourcePath. Falls back to the file-name stem (the pre-alias
+        /// behaviour) when null or when it returns null/empty for a given trace — so a trace whose
+        /// source isn't in the library yet (or a caller with no library reference at all) still
+        /// gets a sensible source component.
+        /// </param>
         public static IReadOnlyList<string> ComputeMinimalLabels(
             IReadOnlyList<Trace> traces,
-            bool alwaysShowSource = false)
+            bool alwaysShowSource = false,
+            Func<Trace, string?>? aliasFor = null)
         {
             if (traces.Count == 0) return Array.Empty<string>();
 
@@ -41,9 +50,10 @@ namespace CircuitRF.Ui.DataDisplay
             for (int i = 0; i < traces.Count; i++)
             {
                 var t     = traces[i];
-                sources[i] = t.SourcePath != null
-                    ? Path.GetFileNameWithoutExtension(t.SourcePath)
-                    : null;
+                var alias = aliasFor?.Invoke(t);
+                sources[i] = !string.IsNullOrEmpty(alias)
+                    ? alias
+                    : (t.SourcePath != null ? Path.GetFileNameWithoutExtension(t.SourcePath) : null);
                 quantities[i] = t.IsCubeBound
                     ? BuildCubeQuantity(t)
                     : t.ShortDescription;

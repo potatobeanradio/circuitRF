@@ -445,6 +445,29 @@
                                 <!-- Col 0: all trace content -->
                                 <StackPanel Grid.Column="0" Spacing="4">
 
+                                    <!-- ── Source row (R-dd-2) ────────────────────────────────
+                                         Visible only once a second dataset is loaded — with one
+                                         dataset the picker looks exactly as it did before this
+                                         selector existed (no source column, no extra click). -->
+                                    <Grid ColumnDefinitions="50,*"
+                                          IsVisible="{Binding SourceSelectorVisible}">
+                                        <TextBlock Grid.Column="0" Text="Source"
+                                                   Classes="label"/>
+                                        <ComboBox Grid.Column="1"
+                                                  ItemsSource="{Binding AvailableSourceEntries}"
+                                                  SelectedItem="{Binding SelectedSourceItem, Mode=TwoWay}"
+                                                  HorizontalAlignment="Stretch"
+                                                  ToolTip.Tip="Which loaded dataset to pick a trace from">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding DisplayText}"
+                                                               FontSize="{StaticResource FontSize}"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </Grid>
+
                                     <!-- ── Identity row ──────────────────────────────────────
                                          Cols: * (group) | * (item) | Auto (matrix S-only) | 26 (→R)
                                          Matrix col is Auto so it collapses when hidden. Eye moved to pin row.

@@ -1,7 +1,7 @@
 // ================================================================
 //  DataExporterViewModel.cs  —  State for the Data Exporter dialog
 //
-//  Enumerates results/<schematic>/run.npy sources, drives the
+//  Enumerates flat results/<name>.npy sources (R-res-1), drives the
 //  include/format/Touchstone slicing controls, and exposes the
 //  pure export methods the code-behind calls after file picking.
 // ================================================================
@@ -183,18 +183,20 @@ public partial class DataExporterViewModel : ObservableObject
 
     private void EnumerateSources()
     {
+        // Flat results/<name>.npy layout (brief-results-storage-and-data-display.md §1) — every
+        // result file sits directly in resultsRoot; "schematic" here is really the file's own stem
+        // (either the schematic key or a user-named baseline — the exporter doesn't need to tell
+        // them apart, it just lists every .npy).
         AvailableSchematicNames.Clear();
         if (_resultsRoot is null || !Directory.Exists(_resultsRoot)) return;
 
-        var items = new List<(string schematic, long ticks)>();
-        foreach (var sub in Directory.EnumerateDirectories(_resultsRoot))
+        var items = new List<(string name, long ticks)>();
+        foreach (var npy in Directory.EnumerateFiles(_resultsRoot, "*.npy"))
         {
-            string runNpy = Path.Combine(sub, "run.npy");
-            if (!File.Exists(runNpy)) continue;
             long ticks;
-            try { ticks = new FileInfo(runNpy).LastWriteTimeUtc.Ticks; }
+            try { ticks = new FileInfo(npy).LastWriteTimeUtc.Ticks; }
             catch { ticks = 0; }
-            items.Add((Path.GetFileName(sub), ticks));
+            items.Add((Path.GetFileNameWithoutExtension(npy), ticks));
         }
         items.Sort((a, b) => b.ticks.CompareTo(a.ticks));
         foreach (var (s, _) in items) AvailableSchematicNames.Add(s);
@@ -207,7 +209,7 @@ public partial class DataExporterViewModel : ObservableObject
         _loadedDataSet = null;
         if (schematic is null || _resultsRoot is null) return;
 
-        string path = Path.Combine(_resultsRoot, schematic, "run.npy");
+        string path = Path.Combine(_resultsRoot, schematic + ".npy");
         if (!File.Exists(path)) return;
 
         try

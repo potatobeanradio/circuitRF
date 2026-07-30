@@ -205,7 +205,8 @@ namespace CircuitRF.Ui.DataDisplay
         public int             MaximumFractionDigits { get; set; } = 3;
 
         /// <summary>Logical reference persisted in .cdd. "run.npy" (or null) = selected datasource sentinel;
-        /// "schemName/run.npy" = a specific sim run; rooted path = explicit Touchstone file.</summary>
+        /// "&lt;name&gt;.npy" (flat results/, R-res-1) = a specific sim run or user-named baseline;
+        /// rooted path = explicit Touchstone file.</summary>
         public string? SourceRef  { get; set; }
 
         /// <summary>Resolved absolute path for the source file (runtime only, not persisted directly).</summary>
@@ -433,28 +434,25 @@ namespace CircuitRF.Ui.DataDisplay
         }
 
         /// <summary>
-        /// Y-axis label for this trace on a Rect plot: the cube shorthand (net-name form, e.g.
-        /// mag(V[:, "Vout2", 2])), optionally source-prefixed, with soft suffixes:
-        ///   • " &lt;invalid&gt;" when the value can't render (parse error OR complex-on-Rect),
+        /// Y-axis label for this trace on a Rect plot: always the caller-supplied minimal label
+        /// (<see cref="TraceLabeler.ComputeMinimalLabels"/>, which already handles quantity
+        /// formatting for BOTH network and cube-bound traces via its own CubeShorthand-equivalent
+        /// logic, and — the point of this parameter — the source alias), with soft suffixes:
+        ///   • " &lt;invalid: complex on scalar plot type&gt;" when a cube-bound value can't render
+        ///     on Rect (complex value, scalar plot type),
         ///   • " dimension mismatch" when this trace's cube X-axis differs from the plot's X-axis.
-        /// Network (SNP) traces fall back to the supplied minimal label.
+        /// A prior version of this method recomputed its OWN label for cube-bound traces
+        /// (CubeShorthand + a raw file-STEM prefix, never the user's alias) instead of using the
+        /// supplied one — that divergence is exactly why switching a trace's data source used to
+        /// leave the Rect Y-axis label showing the wrong (un-aliased, or stale) text even after the
+        /// underlying label-strip mechanism was fixed to recompute correctly.
         /// </summary>
-        public string RectYLabel(string networkFallback, bool showFilePrefix, bool dimensionMismatch)
+        public string RectYLabel(string networkFallback, bool dimensionMismatch)
         {
             if (IsContourTrace) return "";
-            string baseLabel;
-            if (IsCubeBound)
-            {
-                baseLabel = CubeShorthand;
-                if (showFilePrefix && SourcePath != null)
-                    baseLabel = System.IO.Path.GetFileNameWithoutExtension(SourcePath) + ".." + baseLabel;
-                if (RectValueInvalid && !baseLabel.Contains("<invalid"))
-                    baseLabel += " <invalid: complex on scalar plot type>";
-            }
-            else
-            {
-                baseLabel = networkFallback;
-            }
+            string baseLabel = networkFallback;
+            if (IsCubeBound && RectValueInvalid && !baseLabel.Contains("<invalid"))
+                baseLabel += " <invalid: complex on scalar plot type>";
             if (dimensionMismatch) baseLabel += " dimension mismatch";
             return baseLabel;
         }

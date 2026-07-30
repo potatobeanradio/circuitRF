@@ -1030,6 +1030,193 @@ public partial class TraceRowViewModel : ViewModelBase
     // Full unfiltered signal set (rebuilt by RebuildSignals); AvailableSignals is the slice for SelectedGroup.
     private readonly List<TraceDataItem> _allSignals = new();
 
+    // ---- Source selector (R-dd-2) — visible only once a second dataset is loaded --------
+    //
+    //  With one dataset, the picker is completely unaffected — RebuildSignals reads
+    //  _parent.Library.SelectedEntry exactly as before (R-dd-1's structural guarantee).
+    //  With 2+ datasets, this row's OWN choice of source (independent of the toolbar's
+    //  globally-selected entry) governs which file's traces the group/item combos show,
+    //  ending in an "Add from file…" sentinel so pulling in a new dataset and picking a
+    //  trace from it is one gesture (R-dd-2).
+
+    private DataSourceEntryViewModel? _pickerSourceEntry;
+    private bool _suppressSourceCallback;
+
+    // True only for the brief window of a DELIBERATE user source switch — between the combo pick
+    // and CommitCurrentSelection re-binding the trace to it. Outside that window the trace's own
+    // binding is authoritative (see RebuildSourceEntries).
+    private bool _sourceSwitchInProgress;
+
+    public ObservableCollection<PickerSourceItem> AvailableSourceEntries { get; } = new();
+
+    [ObservableProperty]
+    private PickerSourceItem? _selectedSourceItem;
+
+    /// <summary>True once a second dataset exists — the one gate that keeps a single-dataset
+    /// display's picker byte-identical to before this selector existed.</summary>
+    public bool SourceSelectorVisible => _parent.LibraryEntries.Count > 1;
+
+    partial void OnSelectedSourceItemChanged(PickerSourceItem? value)
+    {
+        if (_suppressSourceCallback || value is null) return;
+
+        if (value.IsAddFromFile)
+        {
+            _ = HandleAddSourceFromFileAsync();
+            return;
+        }
+
+        if (ReferenceEquals(value.Entry, _pickerSourceEntry)) return;
+        _pickerSourceEntry = value.Entry;
+        _sourceSwitchInProgress = true;
+        try
+        {
+            RebuildSignals();
+            CommitCurrentSelection();
+        }
+        finally { _sourceSwitchInProgress = false; }
+    }
+
+    private async Task HandleAddSourceFromFileAsync()
+    {
+        var lib = _parent.Library;
+        var request = lib?.AddSourceFileRequested;
+        string? path = request is null ? null : await request();
+
+        bool added = false;
+        if (!string.IsNullOrEmpty(path))
+        {
+            await lib!.LoadFileAsync(path);
+            var loaded = _parent.LibraryEntries.FirstOrDefault(e =>
+                string.Equals(e.FilePath, path, StringComparison.OrdinalIgnoreCase));
+            if (loaded is not null) { _pickerSourceEntry = loaded; added = true; }
+        }
+
+        // Re-sync the combo either way: a genuine add already ran RebuildSignals via the
+        // LibraryEntries.CollectionChanged handler (using whatever the default source was at
+        // that moment) — this second call re-points it at the just-added file; a cancel just
+        // reverts the combo off the sentinel (and must NOT claim a switch is in flight, or the
+        // stale _pickerSourceEntry would win over the trace's real binding on the way out).
+        _sourceSwitchInProgress = added;
+        try
+        {
+            RebuildSignals();
+            CommitCurrentSelection();
+        }
+        finally { _sourceSwitchInProgress = false; }
+    }
+
+    /// <summary>
+    /// Applies the row's own current <see cref="SelectedSignal"/> to the trace model directly —
+    /// bypassing RebuildSignals' internal suppress guard (which normally protects a mere group/
+    /// item browse from overwriting the model mid-rebuild). Used whenever switching the picker's
+    /// Source deliberately picks a new file to browse (R-dd-2/R-dd-3): pulling in a new dataset
+    /// and picking a trace from it must be one gesture, not "switch source, then separately also
+    /// click the first item."
+    /// </summary>
+    private void CommitCurrentSelection()
+    {
+        var sig = SelectedSignal;
+        if (sig is null) return;
+        bool saved = _suppressDataCallback;
+        _suppressDataCallback = false;
+        OnSelectedSignalChanged(sig);
+        _suppressDataCallback = saved;
+    }
+
+    /// <summary>
+    /// Rebuilds AvailableSourceEntries and keeps SelectedSourceItem/_pickerSourceEntry pointed at a
+    /// real entry.
+    ///
+    /// **The trace's OWN current binding is the truth this card must reflect** — a sentinel-bound
+    /// trace (SourceRef == DataSourceRef.Selected, which every auto-created display's traces are)
+    /// is silently re-pointed to a different file whenever the toolbar's datasource combo changes
+    /// (DataDisplayViewModel.OnSelectedDataSourceChanged rewrites SourcePath), and the card must
+    /// follow it. A prior version preferred the row's own sticky prior choice (_pickerSourceEntry)
+    /// FIRST, so once it was set at row construction it never yielded: pick source B in the
+    /// toolbar and the plot correctly showed B's data while the trace card kept claiming A — for
+    /// both the Source combo AND the group/item cascade, since RebuildSignals enumerates whichever
+    /// entry this same field names.
+    ///
+    /// The one exception is a deliberate user source switch, where _pickerSourceEntry leads for the
+    /// duration: at that instant the trace has NOT yet been re-bound to the new file (that is
+    /// exactly what CommitCurrentSelection does immediately afterward), so deferring to the trace
+    /// there would snap the combo straight back and make the switch a no-op.
+    /// </summary>
+    private void RebuildSourceEntries()
+    {
+        AvailableSourceEntries.Clear();
+
+        if (_parent.LibraryEntries.Count > 1)
+        {
+            foreach (var e in _parent.LibraryEntries)
+                AvailableSourceEntries.Add(new PickerSourceItem(e));
+            AvailableSourceEntries.Add(PickerSourceItem.AddFromFile);
+        }
+
+        OnPropertyChanged(nameof(SourceSelectorVisible));
+
+        var realItems = AvailableSourceEntries.Where(i => !i.IsAddFromFile).ToList();
+        if (realItems.Count == 0)
+        {
+            _pickerSourceEntry = null;
+            _suppressSourceCallback = true;
+            SelectedSourceItem = null;
+            _suppressSourceCallback = false;
+            return;
+        }
+
+        var wanted = _sourceSwitchInProgress
+            ? (_pickerSourceEntry ?? ResolveTraceSourceEntry())
+            : (ResolveTraceSourceEntry() ?? _pickerSourceEntry ?? _parent.Library?.SelectedEntry);
+        var match  = realItems.FirstOrDefault(i => ReferenceEquals(i.Entry, wanted)) ?? realItems[0];
+
+        _pickerSourceEntry = match.Entry;
+        _suppressSourceCallback = true;
+        SelectedSourceItem = match;
+        _suppressSourceCallback = false;
+    }
+
+    /// <summary>
+    /// Re-points the Source combo at whichever entry the trace is CURRENTLY bound to, without
+    /// rebuilding the collection (no churn, no scroll/selection reset). Called from
+    /// RefreshDescription so the combo tracks a toolbar-driven source change even along paths that
+    /// only refresh trace cards (DataDisplayViewModel.OnSelectedDataSourceChanged →
+    /// Inspector.RebuildAndNotify) and never call RebuildSignals — i.e. so the fix does not depend
+    /// on this row's own SelectedDataSourceChanged handler happening to run after the one that
+    /// rewrites SourcePath.
+    /// </summary>
+    private void SyncSourceSelectionToTrace()
+    {
+        if (_sourceSwitchInProgress) return;
+        if (AvailableSourceEntries.Count == 0) return;
+        if (ResolveTraceSourceEntry() is not { } bound) return;
+        if (ReferenceEquals(bound, _pickerSourceEntry)) return;
+
+        var match = AvailableSourceEntries.FirstOrDefault(i => ReferenceEquals(i.Entry, bound));
+        if (match is null) return;
+
+        _pickerSourceEntry = bound;
+        _suppressSourceCallback = true;
+        SelectedSourceItem = match;
+        _suppressSourceCallback = false;
+    }
+
+    /// <summary>Best-effort: which loaded entry this trace is currently bound to, by source
+    /// path (cube-bound / network) or by SNP identity (legacy network match).</summary>
+    private DataSourceEntryViewModel? ResolveTraceSourceEntry()
+    {
+        if (_trace.SourcePath is not null)
+        {
+            var byPath = _parent.LibraryEntries.FirstOrDefault(e =>
+                string.Equals(e.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase));
+            if (byPath is not null) return byPath;
+        }
+        if (_trace.Data is not null)
+            return _parent.LibraryEntries.FirstOrDefault(e => e.Snp == _trace.Data);
+        return null;
+    }
+
     /// <summary>Group headers for the left picker combo (distinct, in build order).</summary>
     public ObservableCollection<string> AvailableGroups { get; } = new();
 
@@ -1139,8 +1326,18 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(Z0DisabledReason));
         if (alreadyApplied) return;
 
-        // All picker signals come from SelectedEntry, so stamp the sentinel ref.
-        _trace.SourceRef  = DataSourceRef.Selected;
+        // R-dd-2: a picked signal may come from ANY loaded entry now, not only the toolbar's
+        // globally-selected one (the picker's own Source selector lets a row browse a specific
+        // dataset independently). Stamp the "Selected" sentinel ONLY when the picked entry really
+        // IS the toolbar's current selection — a trace deliberately bound to a SPECIFIC dataset
+        // must persist a real ref to that dataset, or reloading the .cdd would silently reassign
+        // it to whatever the toolbar happens to have selected at load time instead.
+        bool pickedTheToolbarSelection = ReferenceEquals(value.Entry, _parent.Library?.SelectedEntry);
+        _trace.SourceRef  = pickedTheToolbarSelection
+            ? DataSourceRef.Selected
+            : (value.Entry.FilePath is { } fp
+                ? DataDisplayViewModel.ComputeSourceKey(fp, _parent.Library)
+                : DataSourceRef.Selected);
         _trace.SourcePath = value.Entry.FilePath;
 
         if (value.IsCubeBound)
@@ -1205,6 +1402,14 @@ public partial class TraceRowViewModel : ViewModelBase
         }
 
         _parent.RebuildAndNotify();
+
+        // Committing a picked signal can change which SOURCE this trace is bound to (R-dd-2's own
+        // Source selector, or simply picking an item from a different file when 2+ datasets are
+        // loaded) — the plot's label strips must recompute (a plot that now spans 2 sources needs
+        // alias-qualified labels; reverting to 1 must drop the qualifier again). RebuildAndNotify's
+        // own PlotNeedsRedraw does not do this (it's the redraw-only path); PlotStructureChanged is
+        // what PlotContainerViewModel.UpdateLabelStrips is wired to.
+        _parent.NotifyStructureChanged();
 
         // Source kind may have flipped (cube ↔ network) — refresh every card-visibility discriminator
         // so the right fields show without reopening the inspector.
@@ -1936,9 +2141,15 @@ public partial class TraceRowViewModel : ViewModelBase
         AvailableSignals.Clear();
 
         bool isComplexPlot = _parent.PlotType is PlotType.Smith or PlotType.Polar;
-        // Picker shows only the selected datasource (single-source brief).
-        var selectedEntry = _parent.Library?.SelectedEntry;
-        bool singleSource = true;  // always single-source now
+
+        // R-dd-2: with one dataset loaded, the picker browses the toolbar's globally-selected
+        // entry exactly as before (structurally guarantees R-dd-1's single-dataset case is
+        // untouched). With 2+ datasets, it browses whichever source THIS row's own selector
+        // points at.
+        bool multiSource = _parent.LibraryEntries.Count > 1;
+        RebuildSourceEntries();
+        var selectedEntry = multiSource ? _pickerSourceEntry : _parent.Library?.SelectedEntry;
+        bool singleSource = !multiSource;
 
         // ---- Network-bound signals (matrix / derived) -----------------------
         foreach (var entry in selectedEntry is null
@@ -2528,6 +2739,9 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(TraceTransformItems));
         SyncTransformItem();
         OnPropertyChanged(nameof(IsTransformComboEnabled));
+        // Keep the Source combo honest about which file this trace actually reads from — a
+        // toolbar-driven datasource change re-points a sentinel trace and only refreshes cards.
+        SyncSourceSelectionToTrace();
     }
 
     // ---- Inline spec editor (#4) -------------------------------------------

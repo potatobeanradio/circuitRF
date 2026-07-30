@@ -18,7 +18,7 @@
         </Style>
     </UserControl.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto">
 
         <!-- Schematic name + Run -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="4,4,4,1">
@@ -100,8 +100,28 @@
             </Button>
         </Grid>
 
+        <!-- Results file override (R-res-2/3) — one file per RUN, so this is a single schematic-level
+             field here, never a per-analysis-card field. -->
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*"
+              IsVisible="{Binding !NoActiveSchematic}"
+              Margin="4,0,4,4">
+            <TextBlock Grid.Column="0" Text="Results file:"
+                       FontSize="10" Opacity="0.6"
+                       VerticalAlignment="Center" Margin="0,0,4,0"/>
+            <TextBox Grid.Column="1" Name="ResultsFileNameBox"
+                     Text="{Binding ResultsFileNameText}"
+                     PlaceholderText="{Binding HeaderLabel, StringFormat='{}{0}.npy'}"
+                     FontSize="11" Padding="4,2"
+                     GotFocus="OnResultsFileNameGotFocus"
+                     LostFocus="OnResultsFileNameLostFocus"
+                     KeyDown="OnResultsFileNameKeyDown"
+                     ToolTip.Tip="Blank overwrites the default results file on every run. Naming a file
+here is how you preserve a baseline instead of the current results — either way, the named file
+overwrites silently on every subsequent run under that same name."/>
+        </Grid>
+
         <!-- List area -->
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="3">
 
             <!-- No active schematic -->
             <TextBlock Text="Open a schematic to set up analyses."
@@ -192,7 +212,7 @@
         </Grid>
 
         <!-- Footer hint (only when rows exist) -->
-        <TextBlock Grid.Row="3"
+        <TextBlock Grid.Row="4"
                    Text="Analyses run in listed order."
                    IsVisible="{Binding !IsEmpty}"
                    Foreground="{DynamicResource SystemBaseMediumLowColor}"

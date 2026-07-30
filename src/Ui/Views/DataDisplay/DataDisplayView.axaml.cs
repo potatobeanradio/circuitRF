@@ -88,6 +88,7 @@ public partial class DataDisplayView : UserControl
         });
 
         win.DataSourceLibrary.FindMissingFileAsync = path => FindMissingSnpFileAsync(path);
+        win.DataSourceLibrary.AddSourceFileRequested = AddOneDataFileAsync;
     }
 
     private async Task DoOpenFileAsync()
@@ -96,10 +97,20 @@ public partial class DataDisplayView : UserControl
         var sp = TopLevel.GetTopLevel(this)?.StorageProvider;
         if (sp is null) return;
 
+        // R-res-7 — the picker resolves through ResolveResultsRoot (via GetResultsRootAction) so it
+        // opens on the same flat results/ folder for both a saved workspace and a scratch session,
+        // where every .npy the current schematic (or any other schematic) has written now lives —
+        // multi-select is already on, since §3 lets one .cdd hold several.
+        IStorageFolder? suggestedStart = null;
+        var resultsRoot = doc.ViewModel.Window.GetResultsRootAction?.Invoke();
+        if (resultsRoot is not null && Directory.Exists(resultsRoot))
+            suggestedStart = await sp.TryGetFolderFromPathAsync(resultsRoot);
+
         var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title          = "Load Data Files",
-            AllowMultiple  = true,
+            Title                  = "Load Data Files",
+            AllowMultiple          = true,
+            SuggestedStartLocation = suggestedStart,
             FileTypeFilter = new[]
             {
                 new FilePickerFileType("Data Files")
@@ -225,12 +236,15 @@ public partial class DataDisplayView : UserControl
 
         string? resultsRoot = win.GetResultsRootAction?.Invoke();
 
+        // R-res-7 — the flat results/<name>.npy layout means preselecting the exporter's own
+        // schematic list is just "the selected source's file stem, when it lives under results/."
+        // No special-cased file name anywhere.
         string? preselect = null;
         var srcAbs = win.DataSourceLibrary.SelectedDataSourceAbs;
-        if (srcAbs is not null && srcAbs.EndsWith("run.npy", StringComparison.OrdinalIgnoreCase))
+        if (srcAbs is not null && resultsRoot is not null &&
+            srcAbs.StartsWith(resultsRoot, StringComparison.OrdinalIgnoreCase))
         {
-            var sub = Path.GetDirectoryName(srcAbs);
-            if (sub is not null) preselect = Path.GetFileName(sub);
+            preselect = Path.GetFileNameWithoutExtension(srcAbs);
         }
 
         var vm     = new DataExporterViewModel(resultsRoot, preselect);
@@ -278,6 +292,41 @@ public partial class DataDisplayView : UserControl
                 },
                 new FilePickerFileType("NumPy Files") { Patterns = new[] { "*.npy" } },
                 new FilePickerFileType("Loadpull Files") { Patterns = new[] { "*.spl", "*.lpcwave" } },
+                new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
+            }
+        });
+
+        return files.Count == 1 ? files[0].Path.LocalPath : null;
+    }
+
+    // R-dd-2 — the Add Trace picker's "Add from file…" source-selector entry. Single-select,
+    // anchored at the same results/ folder DoOpenFileAsync uses, so the one-gesture "add a
+    // dataset and pick a trace from it" flow starts in the same place the toolbar's own
+    // "Load Data Files" picker does.
+    private async Task<string?> AddOneDataFileAsync()
+    {
+        if (DataContext is not DataDisplayDocument doc) return null;
+        var sp = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (sp is null) return null;
+
+        IStorageFolder? suggestedStart = null;
+        var resultsRoot = doc.ViewModel.Window.GetResultsRootAction?.Invoke();
+        if (resultsRoot is not null && Directory.Exists(resultsRoot))
+            suggestedStart = await sp.TryGetFolderFromPathAsync(resultsRoot);
+
+        var files = await sp.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title                  = "Add Dataset",
+            AllowMultiple          = false,
+            SuggestedStartLocation = suggestedStart,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Data Files")
+                {
+                    Patterns = new[] { "*.s1p", "*.s2p", "*.s3p", "*.s4p",
+                                       "*.s5p", "*.s6p", "*.snp", "*.ts", "*.npy",
+                                       "*.spl", "*.lpcwave" }
+                },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }
         });

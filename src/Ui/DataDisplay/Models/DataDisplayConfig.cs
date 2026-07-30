@@ -39,9 +39,18 @@ public sealed class DataDisplayConfig
     public int FormatVersion { get; set; } = 1;
 
     // Logical datasource id selected at the document level (drives the toolbar combo).
-    // "run.npy" or null = sentinel (most-recent run); "<schematic>/run.npy" = specific sim;
-    // abs path = explicit Touchstone file.
+    // "run.npy" or null = sentinel (most-recent run); "<name>.npy" (flat results/, R-res-1) = a
+    // specific run/baseline; abs path = explicit Touchstone file.
     public string? SelectedDataSource { get; set; }
+
+    /// <summary>
+    /// R-res-4 — every data source this display references, keyed the same way a trace's own
+    /// SourcePath/SourceRef is (relative to the results root when the file lives under it, else the
+    /// absolute path), mapped to its user-facing alias. Loaded BEFORE tab/trace restoration so a
+    /// dataset with no current trace still reloads (or shows broken, R-res-5) and carries its alias;
+    /// aliases are stored here rather than re-derived at load time — see DataSourceEntryViewModel.Alias.
+    /// </summary>
+    public Dictionary<string, string> SourceAliases { get; set; } = new();
 
     // v2: multi-tab layout.  Non-empty list takes precedence over legacy fields.
     public List<TabConfig> Tabs { get; set; } = new();

@@ -26,7 +26,10 @@ plot inspector) ported into circuitRF, with the modifications below.
 3. **Per-run `.npy`, overwritten, in a workspace-level `results/`.** A simulation run writes the
    canonical results `.npy` for that schematic and **overwrites it each run** (the "VendorA dataset on
    disk" model), in a workspace-level `results/` directory kept **external to the cell's on-disk folder
-   structure** (results are never written inside the cell folder). **Path = `results/<schematicKey>/run.npy`**
+   structure** (results are never written inside the cell folder). **Path = `results/<schematicKey>.npy`**
+   (flat — see `results-dataset-layout.md`'s own resolved Open Question 1; the per-schematic-
+   subdirectory form `results/<schematicKey>/run.npy` that had shipped here was a documented-vs-
+   implemented divergence, fixed by brief-results-storage-and-data-display.md, R-res-1)
    — **one grouped DataSet for the whole testbench** (a group per analysis + a `measurements` group),
    superseding the original one-file-per-analysis decision. The grouped layout, `Analysis.Cube`
    addressing, and the storage format are specified in **`results-dataset-layout.md`** (naming rule +
@@ -170,11 +173,17 @@ it. Gates are concrete acceptance checks.
 **Goal:** make simulation results reachable on disk in the canonical, addressable form the display will
 consume.
 
-> **SUPERSEDED (grouped-dataset layout).** 7.0 originally wrote **one `.npy` per analysis**
-> (`results/<schematicKey>/<analysisName>.npy`). The shipped model writes **one grouped `run.npy` per
-> run** (`results/<schematicKey>/run.npy`) containing every analysis as a group plus a `measurements`
-> group, addressed `Analysis.Cube`. See **`results-dataset-layout.md`** for the current spec; the
-> `<schematicKey>` derivation, collision handling, and scratch-results rules below are unchanged.
+> **SUPERSEDED (grouped-dataset layout), then FLATTENED (brief-results-storage-and-data-display.md).**
+> 7.0 originally wrote **one `.npy` per analysis** (`results/<schematicKey>/<analysisName>.npy`). That
+> was superseded by one grouped `run.npy` per run — but it shipped as
+> `results/<schematicKey>/run.npy` (a per-schematic SUBDIRECTORY), diverging from this document's own
+> stated intent. The current, corrected model writes **flat**: `results/<schematicKey>.npy` — one file,
+> directly in the shared `results/` directory alongside every other schematic's results and any
+> user-named baseline (R-res-2), containing every analysis as a group plus a `measurements` group,
+> addressed `Analysis.Cube`. The per-schematic-directory `.source` collision marker is **gone, not
+> rehomed** (R-res-0a) — `<schematicKey>` already disambiguates `cell` from `cell.view`. See
+> **`results-dataset-layout.md`** for the current spec; the `<schematicKey>` derivation and
+> scratch-results rules below are unchanged.
 
 **`<schematicKey>` rule (LOCKED):**
 - `<schematicKey>` = the **cell name**, or `<Cell>.<View>` **only when the schematic view stem differs
@@ -190,12 +199,12 @@ consume.
   dir: `<recovery-session>/results/<TabTitle>/run.npy`, discarded on clean exit. On materialization, later
   runs write to the real workspace `results/`.
 **Deliverables:** on a successful run, assemble the run's analyses into one grouped DataSet and
-write/overwrite `results/<schematicKey>/run.npy` via `DataSetExporter`; clear/overwrite the schematic's
-`results/<schematicKey>/` set each run; emit the collision Message when applicable. Confirm the
-`export → import` round-trip holds (flat and grouped) for every analysis type.
-**Gate:** run a schematic with ≥1 analysis → `results/<schematicKey>/run.npy` appears/updates;
-`DataSetImporter` reconstructs an equivalent grouped DataSet; a forced same-name-cell collision produces
-the warn Message and does not clobber the other cell's results.
+write/overwrite `results/<schematicKey>.npy` via `DataSetExporter`, deleting only that one file first
+(never a wildcard clear of the shared `results/` directory, R-res-0). Confirm the `export → import`
+round-trip holds (flat and grouped) for every analysis type.
+**Gate:** run a schematic with ≥1 analysis → `results/<schematicKey>.npy` appears/updates;
+`DataSetImporter` reconstructs an equivalent grouped DataSet; running one schematic never touches any
+other schematic's results file or a user-named baseline sitting in the same directory.
 **Note:** no display UI in 7.0 — this is the data-path spine only.
 
 ### 7.1 — Data Display document shell (the splotRF port)
@@ -499,10 +508,12 @@ so 7.1 persistence is designed to not preclude it.
 
 ## 5. Open questions to resolve (by sub-phase)
 
-- **7.0:** RESOLVED, then **SUPERSEDED** by the grouped-dataset layout (`results-dataset-layout.md`):
-  one grouped **`results/<schematicKey>/run.npy`** per run (group per analysis + `measurements` group,
-  `Analysis.Cube` addressing) instead of one `.npy` per analysis. `<schematicKey>` derivation,
-  detect-and-warn collision (Option A), and scratch → recovery-session results dir are unchanged.
+- **7.0:** RESOLVED, then **SUPERSEDED** by the grouped-dataset layout (`results-dataset-layout.md`),
+  then **FLATTENED** (brief-results-storage-and-data-display.md): one grouped **`results/<schematicKey>.npy`**
+  per run (group per analysis + `measurements` group, `Analysis.Cube` addressing), flat in the shared
+  `results/` directory — not the per-schematic-directory `results/<schematicKey>/run.npy` that had
+  shipped. `<schematicKey>` derivation and scratch → recovery-session results dir are unchanged; the
+  detect-and-warn collision check (Option A) is dropped, not rehomed (R-res-0a).
 - **7.1:** RESOLVED — re-sliced into 7.1a–7.1e (§3). **Port strategy = P1 (faithful-first):** port the
   coupled engine splotRF-styled (7.1c, sliced VM→controls→views), then restyle the inspector + add markers
   (7.1d). Inspector surface = dual (per-plot fly-out + Properties dock, §2.8); per-trace-kind card bodies;
@@ -537,10 +548,16 @@ so 7.1 persistence is designed to not preclude it.
 - Sub-phase 7.4 (contours): **design complete** — see `docs/design/loadpull-contours.md`. Materials in hand;
   RBF surface-model method understood; sub-gates 7.4a–f defined (ingest 7.4f runs first). Ready to brief.
 - **Grouped-dataset layout — COMPLETE (supersedes 7.0's per-analysis file).** Results now write one
-  grouped `results/<schematicKey>/run.npy` per run (group per analysis + a `measurements` group),
-  addressed `Analysis.Cube`; `DataSet` is grouped (default group preserves bare access for Touchstone);
-  the trace picker, `TraceExpression`, and `CubeTraceSpecParser` resolve qualified names. Measurements
-  evaluate once into the `measurements` group (no per-analysis attachment). Spec: `results-dataset-layout.md`.
+  grouped `results/<schematicKey>.npy` per run — flat in the shared `results/` directory
+  (brief-results-storage-and-data-display.md flattened the per-schematic-directory form that had
+  actually shipped) — group per analysis + a `measurements` group, addressed `Analysis.Cube`; `DataSet`
+  is grouped (default group preserves bare access for Touchstone); the trace picker, `TraceExpression`,
+  and `CubeTraceSpecParser` resolve qualified names. Measurements evaluate once into the `measurements`
+  group (no per-analysis attachment). A schematic-level "Results file" override (R-res-2) lets a run be
+  named to preserve it as a baseline instead of the default `<schematicKey>.npy`, which overwrites every
+  run. A `.cdd` now holds several aliased `.npy` sources (R-res-4) instead of one; missing sources report
+  by name and never lose trace configuration (R-res-5); running an analysis auto-creates and opens a
+  non-empty default `.cdd` when none exists (R-res-8/9/10). Spec: `results-dataset-layout.md`.
 
 ### Table with multiple X axes (trace-sweep-conformance, 2026-06-17)
 

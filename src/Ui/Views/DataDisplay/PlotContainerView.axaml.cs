@@ -71,6 +71,43 @@ public partial class PlotContainerView : UserControl
 
         // Double-click on resize grip auto-fits Table container width to its column content.
         _resizeHandle.DoubleTapped += OnResizeHandleDoubleTapped;
+
+        // R-dd-3 — dragging an .npy from the project tree onto this plot adds it as a dataset
+        // and opens the Add Trace picker for it, in one motion.
+        Avalonia.Input.DragDrop.SetAllowDrop(this, true);
+        AddHandler(Avalonia.Input.DragDrop.DragOverEvent, OnDataFileDragOver);
+        AddHandler(Avalonia.Input.DragDrop.DropEvent,     OnDataFileDrop);
+    }
+
+    private static bool TryGetNpyPayload(DragEventArgs e, out CircuitRF.Ui.DataDisplay.NpyFileDragPayload payload)
+    {
+        payload = default!;
+        foreach (var item in e.DataTransfer.Items)
+            if (item.TryGetRaw(Avalonia.Input.DataFormat.Text) is string text
+                && CircuitRF.Ui.DataDisplay.NpyFileDragPayload.TryParse(text, out payload))
+                return true;
+        return false;
+    }
+
+    private void OnDataFileDragOver(object? sender, DragEventArgs e)
+    {
+        if (TryGetNpyPayload(e, out _))
+        {
+            e.DragEffects = DragDropEffects.Copy;
+            e.Handled     = true;
+        }
+        else
+        {
+            e.DragEffects = DragDropEffects.None;
+        }
+    }
+
+    private async void OnDataFileDrop(object? sender, DragEventArgs e)
+    {
+        if (!TryGetNpyPayload(e, out var payload)) return;
+        if (DataContext is not PlotContainerViewModel vm) return;
+        e.Handled = true;
+        await vm.Inspector.AddDatasetFromDropAsync(payload.AbsolutePath);
     }
 
     // ---- PlotControl events -----------------------------------------

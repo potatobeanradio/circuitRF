@@ -641,6 +641,53 @@ public partial class DisplayWindowViewModel : ViewModelBase
     // ---- Multi-tab Save / Load ------------------------------------------
 
     /// <summary>
+    /// R-dd-6 — true only for a bare filename: not rooted (no drive letter, no leading '/'),
+    /// and containing no directory separator of either flavor. This is the ONE portability
+    /// gate for anything written into <see cref="DataDisplayConfig.SourceAliases"/> — a value
+    /// failing this check must never reach the saved file.
+    /// </summary>
+    internal static bool IsPortableSourceKey(string key) =>
+        !string.IsNullOrEmpty(key)
+        && !Path.IsPathRooted(key)
+        && !key.Contains('/')
+        && !key.Contains('\\');
+
+    /// <summary>
+    /// R-dd-4 — re-points an already-loaded dataset (broken or live) at a different file. Every
+    /// trace across every tab/plot that referenced the OLD path is rewritten to the NEW one
+    /// BEFORE the entry's own data reloads — so PlotInspectorViewModel's LibraryChanged handler
+    /// (which drops any trace whose SourcePath no longer matches a live entry) finds those traces
+    /// already pointing at the entry that is about to become live, rather than treating them as
+    /// orphaned. This is what makes "point baseline at run3.npy" update every trace using that
+    /// alias in one action instead of silently dropping them.
+    /// </summary>
+    public async Task RepointDatasetAsync(DataSourceEntryViewModel entry, string newPath)
+    {
+        string? oldPath = entry.FilePath;
+        newPath = Path.GetFullPath(newPath);
+
+        if (!string.IsNullOrEmpty(oldPath) && !string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase))
+        {
+            string newRef = DataDisplayViewModel.ComputeSourceKey(newPath, DataSourceLibrary);
+            foreach (var tab in Tabs)
+            foreach (var container in tab.DataDisplay.Plots)
+            foreach (var row in container.Inspector.Traces)
+            {
+                var t = row.Trace;
+                if (t.SourcePath is null || !string.Equals(t.SourcePath, oldPath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                t.SourcePath = newPath;
+                // The "Selected" sentinel means "whichever source the toolbar has selected" — never
+                // rewrite it to a concrete ref, or the trace would stop tracking the toolbar combo.
+                if (t.SourceRef is not null && t.SourceRef != DataSourceRef.Selected)
+                    t.SourceRef = newRef;
+            }
+        }
+
+        await DataSourceLibrary.RestoreBrokenEntry(entry, newPath);
+    }
+
+    /// <summary>
     /// Serialises all tabs to a .splot file (v2 TabConfig format).
     /// windowLeft/Top are physical pixels; windowWidth/Height are logical DIPs.
     /// </summary>
@@ -668,6 +715,28 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
         foreach (var tab in Tabs)
             config.Tabs.Add(tab.DataDisplay.BuildTabConfig(tab.Name, configDir));
+
+        // R-res-4 — every loaded source's alias, keyed the same way a trace's own SourceRef is.
+        // Written unconditionally (even an unrenamed default-file-stem alias) — the alias is stored,
+        // never re-derived at load time.
+        //
+        // R-dd-6 — validated HERE, at save, not only on load: a stored data source is a bare
+        // filename resolved against results/, never a rooted path and never one containing a
+        // directory separator (the latter is what would otherwise surface only when a macOS-
+        // authored workspace is opened on Windows). ComputeSourceKey already returns the bare,
+        // portable form for anything under the results root; it falls back to the raw absolute
+        // path for a source loaded from OUTSIDE the workspace (an external Touchstone file) —
+        // that fallback must never reach the file as an alias key, so it is skipped rather than
+        // written. The alias itself is simply not persisted for that source; the entry still
+        // loads correctly next session (as an unaliased/default-named source), it just can't be
+        // renamed across a reload the way an in-results-root source can.
+        foreach (var entry in DataSourceLibrary.Entries)
+        {
+            if (entry.FilePath is not { } fp) continue;
+            string key = DataDisplayViewModel.ComputeSourceKey(fp, DataSourceLibrary);
+            if (!IsPortableSourceKey(key)) continue;
+            config.SourceAliases[key] = entry.Alias;
+        }
 
         string json = JsonSerializer.Serialize(config, DataDisplayViewModel.JsonOpts);
         await File.WriteAllTextAsync(path, json);
@@ -762,6 +831,23 @@ public partial class DisplayWindowViewModel : ViewModelBase
         TabUndoRedo.Clear();
         Tabs.Clear();
         ActiveTab = null;
+
+        // R-res-4/R-res-5 — load EVERY declared source and stamp its alias before touching tabs, so
+        // (a) a dataset with no current trace still appears (loaded, or broken-and-reported by name),
+        // and (b) sentinel/relative trace SourceRefs resolve against an already-loaded, correctly-
+        // aliased entry rather than lazy-loading it mid-restore with the default file-stem alias.
+        foreach (var (key, alias) in config.SourceAliases)
+        {
+            var abs = DataSourceLibrary.ResolveAbs(key);
+            if (abs is null) continue;
+
+            if (File.Exists(abs)) await DataSourceLibrary.LoadFileAsync(abs);
+            else                  DataSourceLibrary.AddBrokenEntry(abs);
+
+            var entry = DataSourceLibrary.Entries.FirstOrDefault(e =>
+                string.Equals(e.FilePath, abs, StringComparison.OrdinalIgnoreCase));
+            if (entry is not null) entry.Alias = alias;
+        }
 
         // Select the persisted datasource BEFORE loading tabs so sentinel traces resolve correctly.
         await DataSourceLibrary.SelectDataSourceAsync(config.SelectedDataSource);

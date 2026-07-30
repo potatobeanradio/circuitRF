@@ -978,6 +978,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         PushRecent(cwsPath);
         Messages.Clear();
         Messages.Info("Opened", cwsPath);
+
+        // R-res-11 — migrate any results/<key>/run.npy directories left from the earlier layout to
+        // the flat results/<key>.npy one, reporting what moved. Cheap no-op on an already-flat workspace.
+        RunResultsWriter.MigrateOldLayout(Path.Combine(workspaceDir, "results"), Messages);
     }
 
     /// <summary>
@@ -1632,13 +1636,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 break;
             case RunStatus.Success:
                 Messages.Success(result.StatusMessage);
+                var schematicKey = RunResultsWriter.SchematicKey(activeDoc.FilePath, activeDoc.Id);
                 var written = RunResultsWriter.WriteRun(
                     baseDir,
-                    RunResultsWriter.SchematicKey(activeDoc.FilePath, activeDoc.Id),
-                    RunResultsWriter.OwnerIdentity(activeDoc.FilePath, activeDoc.Id),
+                    schematicKey,
                     result.GroupedResults,
-                    Messages);
+                    Messages,
+                    activeDoc.ViewModel.EditModel.ResultsFileName);
                 await RefreshOpenDataDisplaysAsync(written);
+                if (written.Count > 0)
+                    await AutoOpenOrCreateDataDisplayAsync(baseDir, schematicKey, written[0]);
                 break;
         }
 
@@ -4782,6 +4789,96 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
+    /// R-res-8/9/10 — after a successful run, opens (and focuses) the schematic's own
+    /// <c>results/&lt;schematicKey&gt;.cdd</c> with no prompt when it already exists; otherwise creates
+    /// it, pre-populates a non-empty default plot bound to the just-written results file, saves it, and
+    /// opens it — also unprompted. This is a deliberate behavior change from the original "starts empty"
+    /// Data Display decision: the whole point of the command is that a run "just works."
+    /// </summary>
+    private async Task AutoOpenOrCreateDataDisplayAsync(string baseDir, string schematicKey, string npyPath)
+    {
+        var resultsDir = Path.GetDirectoryName(npyPath) ?? Path.Combine(baseDir, "results");
+        var cddPath    = Path.GetFullPath(Path.Combine(resultsDir, schematicKey + ".cdd"));
+
+        if (File.Exists(cddPath))
+        {
+            OpenOrActivateDataDisplay(cddPath);
+            return;
+        }
+        if (_openDocsByPath.TryGetValue(cddPath, out var existingDoc))
+        {
+            _factory.SetActiveDockable(existingDoc);
+            return;
+        }
+
+        var newVm  = new DataDisplayDocumentViewModel();
+        var newDoc = new DataDisplayDocument(Path.GetFileNameWithoutExtension(cddPath), newVm);
+        _openDocsByPath[cddPath] = newDoc;   // register early so a re-entrant open dedups against it
+        newVm.Window.SetOpenFileAsNewDisplayAction(OpenDataDisplayFromFileAsync);
+        newVm.Window.GetResultsRootAction = GetResultsRoot;
+        WireDataDisplayLibraryEvents(newVm);
+        _factory.OpenDocument(newDoc);
+
+        var lib = newVm.Window.DataSourceLibrary;
+
+        // Populate AvailableDataSources BEFORE selecting, and select by the same relative logical id
+        // ("<name>.npy") those entries carry — never the absolute path. SelectedDataSourceItem's getter
+        // matches AvailableDataSources by LogicalId == SelectedDataSourceRef; selecting by absolute path
+        // (a) never matches an AvailableDataSources entry (all of which use the flat relative id) and
+        // (b) would find nothing anyway in an unrefreshed (still-empty) combo — either alone was enough
+        // to leave the toolbar combo blank even though SelectedEntry/traces resolve and render correctly
+        // via SourcePath, which never went through the combo at all.
+        lib.RefreshAvailableDataSources();
+        await lib.SelectDataSourceAsync(Path.GetFileName(npyPath));
+
+        bool populated = false;
+        if (lib.SelectedEntry is { } entry)
+        {
+            var plotType = CircuitRF.Ui.DataDisplay.ViewModels.PlotInspectorViewModel.HasPlottableData(entry, allowScalars: false)
+                ? PlotType.Rect
+                : PlotType.Table;
+
+            // A brand-new DisplayWindowViewModel's initial tab already seeds one empty Smith plot
+            // (DataDisplayViewModel's own "starts empty; user authors it" constructor default) —
+            // reuse THAT container instead of calling AddPlot, which would add a SECOND one. Only
+            // one plot must ever exist after auto-create.
+            var container = newVm.Window.DataDisplay?.Plots.FirstOrDefault();
+            if (container is not null)
+            {
+                if (container.Inspector.PlotType != plotType)
+                {
+                    container.Inspector.PlotType = plotType;
+                    bool square = plotType is PlotType.Smith or PlotType.Polar;
+                    container.Width  = square ? 420 : 520;
+                    container.Height = square ? 420 : 360;
+                }
+                if (container.Inspector.AddTraceCommand.CanExecute(null))
+                {
+                    container.Inspector.AddTraceCommand.Execute(null);
+                    populated = container.Inspector.Traces.Count > 0;
+                }
+            }
+        }
+        if (!populated)
+            Messages.Warning(
+                $"Auto-created Data Display for '{schematicKey}' has no default plot — no plottable data was found in the run's results.",
+                cddPath);
+
+        try
+        {
+            await newVm.Window.SaveAllAsync(cddPath, 0, 0, 0, 0);
+            newDoc.Materialize(cddPath);
+            // The .cdd now exists on disk as a loose file at the workspace root — refresh the tree
+            // so it appears there immediately, matching every other file-creating command's convention.
+            _factory.ProjectTreeTool?.Refresh();
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Auto-created Data Display could not be saved: {ex.Message}", cddPath);
+        }
+    }
+
+    /// <summary>
     /// Subscribes to the given data display document's <see cref="DisplayWindowViewModel.ActiveInspector"/>
     /// and routes changes to the Properties dock. Unsubscribes from any previously-subscribed window first.
     /// Null clears the data display context.
@@ -4803,17 +4900,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _displayInspectorHandler ??= (_, e) =>
         {
             if (e.PropertyName is nameof(CircuitRF.Ui.DataDisplay.ViewModels.DisplayWindowViewModel.ActiveInspector))
-                _factory.PropertiesTool?.SetActiveDataDisplay(_subscribedDisplayWindow?.ActiveInspector);
+                _factory.PropertiesTool?.SetActiveDataDisplay(_subscribedDisplayWindow?.ActiveInspector, _subscribedDisplayWindow);
         };
         window.PropertyChanged += _displayInspectorHandler;
-        _factory.PropertiesTool?.SetActiveDataDisplay(window.ActiveInspector);
+        _factory.PropertiesTool?.SetActiveDataDisplay(window.ActiveInspector, window);
     }
 
     // Points the Analyses panel (and the Run target) at a schematic document.
+    // schName is the SchematicKey (the same value RunResultsWriter uses to name the results file) —
+    // never the raw file name, which would carry the ".csch" extension into the Analyses panel's
+    // "Results file:" placeholder (e.g. "HBTest.csch.npy" instead of "HBTest.npy").
     private void PointAnalysesAt(SchematicDocument sd)
     {
         _lastActiveSchematicDoc = sd;
-        string? schName = sd.FilePath is { } fp ? System.IO.Path.GetFileName(fp) : sd.Id;
+        string schName = RunResultsWriter.SchematicKey(sd.FilePath, sd.Id);
         _factory.AnalysesTool?.SetActiveSchematic(sd.ViewModel, schName);
     }
 

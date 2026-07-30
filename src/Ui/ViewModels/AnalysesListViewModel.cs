@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Design;
 using CircuitRF.Ui.Commands.Analysis;
+using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Views.Dialogs;
 
@@ -54,6 +55,42 @@ public sealed partial class AnalysesListViewModel : ObservableObject
     /// <summary>True when a schematic is active but has no analyses (HIG empty state).</summary>
     public bool IsEmpty => !NoActiveSchematic && Rows.Count == 0;
 
+    // ── Results file override (R-res-2/3) ─────────────────────────────────────
+    //
+    // One file per RUN (not per analysis), so this is a single schematic-level setting shown once
+    // near the analyses list — never a field on each analysis card, which would wrongly imply a
+    // per-analysis file. Blank means the §1 default (<schematicKey>.npy).
+
+    /// <summary>Staged text for the "Results file" field. Committed via CommitResultsFileName
+    /// (view code-behind LostFocus/Enter), mirroring every other staged text field in this codebase.</summary>
+    [ObservableProperty] private string _resultsFileNameText = "";
+
+    /// <summary>Set by the view while the results-file TextBox has focus, so an unrelated model
+    /// change (e.g. adding an analysis) never clobbers text the user is mid-typing.</summary>
+    public bool ResultsFileNameFocused { get; set; }
+
+    private void RefreshResultsFileNameText()
+        => ResultsFileNameText = _schematicVm?.EditModel.ResultsFileName ?? "";
+
+    /// <summary>Commits the results-file field: sanitizes (strips path separators and any other
+    /// character the filesystem disallows in a plain file name — R-res-2's "reject or sanitize path
+    /// separators"), appends ".npy" when absent so the text box always shows the EXACT file name a run
+    /// writes (never just the stem the user happened to type), then pushes an undoable
+    /// SetResultsFileNameCommand only when the resulting value actually differs from what's stored.
+    /// Blank commits null (→ the default).</summary>
+    public void CommitResultsFileName(string text)
+    {
+        if (_schematicVm is null) return;
+        var sanitized = RunResultsWriter.SanitizeFileNameComponent(text);
+        if (sanitized.Length > 0 && !sanitized.EndsWith(".npy", StringComparison.OrdinalIgnoreCase))
+            sanitized += ".npy";
+        var newValue  = sanitized.Length == 0 ? null : sanitized;
+        var current   = _schematicVm.EditModel.ResultsFileName;
+        if (!string.Equals(newValue, current, StringComparison.Ordinal))
+            _schematicVm.Execute(new SetResultsFileNameCommand(_schematicVm.EditModel, newValue));
+        ResultsFileNameText = sanitized;   // reflect the sanitized+extended form even on a same-value commit
+    }
+
     // ── Run event (panel → WorkspaceViewModel) ────────────────────────────────
 
     /// <summary>Raised when the Run button is pressed; WorkspaceViewModel runs the retained schematic.</summary>
@@ -77,10 +114,18 @@ public sealed partial class AnalysesListViewModel : ObservableObject
         if (vm is not null)
             vm.EditModel.Changed += OnModelChanged;
 
+        RefreshResultsFileNameText();
         RebuildRows();
     }
 
-    private void OnModelChanged(object? sender, EventArgs e) => RebuildRows();
+    private void OnModelChanged(object? sender, EventArgs e)
+    {
+        RebuildRows();
+        // Never clobber text the user is mid-typing (mirrors the Layout editor's staged-field
+        // focus guard) — an unrelated edit (add/remove analysis, undo elsewhere) still refreshes it.
+        if (!ResultsFileNameFocused)
+            RefreshResultsFileNameText();
+    }
 
     private void RebuildRows()
     {

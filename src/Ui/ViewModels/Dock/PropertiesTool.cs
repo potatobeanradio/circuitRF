@@ -65,6 +65,23 @@ public partial class PropertiesTool : Tool
     [ObservableProperty]
     private PlotInspectorViewModel? _plotInspectorVm;
 
+    partial void OnPlotInspectorVmChanged(PlotInspectorViewModel? value) =>
+        OnPropertyChanged(nameof(HasSelectedPlot));
+
+    /// <summary>True only once a single plot is actually selected — gates the plot-inspector
+    /// portion of the "Plot" context separately from <see cref="IsDataDisplayActive"/> (which is
+    /// true for the whole Data Display document, plot selected or not, so the Datasets list stays
+    /// visible). Without this, the plot inspector's own chrome (Add Trace, plot-type buttons, …)
+    /// would render with a null DataContext — visible but uninitialized — whenever a Data Display
+    /// document is active with no plot selected.</summary>
+    public bool HasSelectedPlot => PlotInspectorVm is not null;
+
+    /// <summary>Datasets section (R-dd-4/5) shown beside the plot inspector whenever a Data
+    /// Display document is active — not gated on a single plot being selected, since it is
+    /// document-level state (aliases, missing/live status), not plot-level.</summary>
+    [ObservableProperty]
+    private DatasetsListViewModel _datasetsVm = new();
+
     /// <summary>
     /// Observable header text driven by the active context.
     /// "Cell" / "Component" / "Symbol" / "Plot" / "Layout" / "Properties" (fallback).
@@ -157,14 +174,18 @@ public partial class PropertiesTool : Tool
     }
 
     /// <summary>
-    /// Called by WorkspaceViewModel when the active data display's plot selection changes.
-    /// Null clears the data display context and falls back to the placeholder.
+    /// Called by WorkspaceViewModel when the active data display document or its plot selection
+    /// changes. <paramref name="window"/> (the whole document) is what gates
+    /// <see cref="IsDataDisplayActive"/> — the Datasets section (R-dd-4/5) must show regardless of
+    /// whether a single plot is selected; <paramref name="vm"/> (the single-selected plot's own
+    /// inspector) additionally gates the plot inspector portion. Both null clears the context and
+    /// falls back to the placeholder.
     /// </summary>
-    public void SetActiveDataDisplay(PlotInspectorViewModel? vm)
+    public void SetActiveDataDisplay(PlotInspectorViewModel? vm, DisplayWindowViewModel? window = null)
     {
         IsCellActive          = false;
         IsSymbolEditorActive  = false;
-        IsDataDisplayActive   = vm is not null;
+        IsDataDisplayActive   = window is not null;
         IsFileInfoActive      = false;
         IsLayoutActive        = false;
         CellEditorVm          = null;
@@ -173,7 +194,8 @@ public partial class PropertiesTool : Tool
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
         LayoutInspectorVm.SetContext(null);
-        HeaderText = vm is not null ? "Plot" : "Properties";
+        DatasetsVm.SetWindow(window);
+        HeaderText = window is not null ? "Plot" : "Properties";
     }
 
     /// <summary>

@@ -50,6 +50,28 @@ public partial class AnalysesListView : UserControl
         await vm.EditCommand.ExecuteAsync(window);
     }
 
+    // ── Results file override (R-res-2/3) ─────────────────────────────────────
+
+    private void OnResultsFileNameGotFocus(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is AnalysesListViewModel vm) vm.ResultsFileNameFocused = true;
+    }
+
+    private void OnResultsFileNameLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not TextBox tb || DataContext is not AnalysesListViewModel vm) return;
+        vm.ResultsFileNameFocused = false;
+        vm.CommitResultsFileName(tb.Text ?? "");
+    }
+
+    private void OnResultsFileNameKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        if (sender is not TextBox tb || DataContext is not AnalysesListViewModel vm) return;
+        vm.CommitResultsFileName(tb.Text ?? "");
+        e.Handled = true;
+    }
+
     // ── Keyboard copy / paste ─────────────────────────────────────────────────
 
     private void OnListKeyDown(object? sender, KeyEventArgs e)

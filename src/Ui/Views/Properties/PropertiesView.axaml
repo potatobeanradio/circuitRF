@@ -35,10 +35,19 @@
                 <symInsp:LayoutShapePropertiesView DataContext="{Binding LayoutInspectorVm}"/>
             </Panel>
 
-            <!-- Data Display Plot Inspector (shown when a data display is active with a single plot selected) -->
+            <!-- Data Display: Datasets list (document-level, R-dd-4/5) + Plot Inspector
+                 (shown when a data display document is active; the inspector portion is only
+                 rendered once a single plot is also selected — HasSelectedPlot, not just
+                 IsDataDisplayActive, so its "+ Trace"/plot-type chrome never shows uninitialized
+                 with a null DataContext when nothing is selected). -->
             <Panel IsVisible="{Binding IsDataDisplayActive}">
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <ddv:PlotInspectorView DataContext="{Binding PlotInspectorVm}"/>
+                    <StackPanel Spacing="0">
+                        <symInsp:DatasetsListView DataContext="{Binding DatasetsVm}"/>
+                        <Panel IsVisible="{Binding HasSelectedPlot}">
+                            <ddv:PlotInspectorView DataContext="{Binding PlotInspectorVm}"/>
+                        </Panel>
+                    </StackPanel>
                 </ScrollViewer>
             </Panel>
 

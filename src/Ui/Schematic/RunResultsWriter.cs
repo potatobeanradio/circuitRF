@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using CircuitRF.Ui.Messages;
 using RfCore.Data;
@@ -9,13 +10,15 @@ using RfCore.Export;
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
-/// Writes a run's analysis results as a single grouped .npy to a stable, collision-safe path.
+/// Writes a run's analysis results as a single grouped .npy to a flat, shared results directory.
 /// Framework-free — no Avalonia, no Skia. Testable headless.
 ///
-/// Path convention: &lt;baseDir&gt;/results/&lt;schematicKey&gt;/run.npy — **one** file per run, containing
+/// Path convention: &lt;baseDir&gt;/results/&lt;schematicKey&gt;.npy — **one** file per run, containing
 /// every analysis as a group (plus a <c>measurements</c> group). See docs/design/data-display.md §3,
-/// and §7.0 which explicitly records that a per-analysis <c>&lt;analysisName&gt;.npy</c> scheme was an
-/// earlier plan and is NOT what ships — do not reintroduce it.
+/// and §7.0/results-dataset-layout.md, which record that the earlier per-schematic-SUBDIRECTORY layout
+/// (&lt;schematicKey&gt;/run.npy) was flattened — a run writes directly into the shared results/ folder,
+/// alongside every other schematic's results and any user-named baseline. Do not reintroduce the
+/// subdirectory form.
 /// </summary>
 public static class RunResultsWriter
 {
@@ -52,8 +55,8 @@ public static class RunResultsWriter
     }
 
     /// <summary>
-    /// Resolves the directory that holds per-run results subfolders — the READ-side companion to
-    /// <see cref="WriteRun"/>'s <c>baseDir/results</c>. It MUST mirror where runs are actually written:
+    /// Resolves the directory that holds every schematic's flat results file — the READ-side companion
+    /// to <see cref="WriteRun"/>'s <c>baseDir/results</c>. It MUST mirror where runs are actually written:
     /// the workspace root when a workspace is open, otherwise the scratch recovery-session dir (so a
     /// scratch simulation's results are discoverable in the Data Display without saving anything).
     /// </summary>
@@ -69,85 +72,88 @@ public static class RunResultsWriter
     }
 
     /// <summary>
-    /// Returns the stable owner identity used for collision detection.
-    /// Cell-homed:  absolute path of the cell folder (above schematic/).
-    /// Loose:       absolute path of the .csch file.
-    /// Scratch:     "scratch:" + scratchId.
+    /// Sanitizes a user- or key-derived results file name COMPONENT (never a path): strips path
+    /// separators (on every platform, regardless of what <see cref="Path.GetInvalidFileNameChars"/>
+    /// reports locally) and every other character the local filesystem disallows in a plain file name,
+    /// replacing each with '_'. Leading/trailing whitespace is trimmed. Returns "" for a
+    /// null/blank/all-invalid input — callers treat "" as "no override, use the default".
     /// </summary>
-    public static string OwnerIdentity(string? filePath, string scratchId)
+    public static string SanitizeFileNameComponent(string? raw)
     {
-        if (filePath is null)
-            return $"scratch:{scratchId}";
+        if (string.IsNullOrWhiteSpace(raw)) return "";
 
-        var parentDir = Path.GetDirectoryName(filePath);
-        if (parentDir is not null &&
-            string.Equals(Path.GetFileName(parentDir), "schematic",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            var cellDir = Path.GetDirectoryName(parentDir);
-            if (cellDir is not null)
-                return Path.GetFullPath(cellDir);
-        }
+        var invalid = Path.GetInvalidFileNameChars();
+        var sb = new StringBuilder(raw.Length);
+        foreach (var c in raw)
+            sb.Append(c is '/' or '\\' || Array.IndexOf(invalid, c) >= 0 ? '_' : c);
 
-        return Path.GetFullPath(filePath);
+        return sb.ToString().Trim();
     }
 
     /// <summary>
-    /// Writes one run.npy for the whole run under &lt;baseDir&gt;/results/&lt;schematicKey&gt;/.
-    /// Collision-check: if the directory already has a .source from a different owner,
-    /// posts a warning and returns without writing.  Clears stale .npy files each run.
+    /// Resolves the file name (no directory) a run writes to: the sanitized, ".npy"-suffixed
+    /// <paramref name="fileNameOverride"/> when set, else "&lt;schematicKey&gt;.npy".
+    /// </summary>
+    public static string ResolveFileName(string? fileNameOverride, string schematicKey)
+    {
+        var sanitized = SanitizeFileNameComponent(fileNameOverride);
+        var baseName  = sanitized.Length == 0 ? schematicKey : sanitized;
+        return baseName.EndsWith(".npy", StringComparison.OrdinalIgnoreCase)
+            ? baseName
+            : baseName + ".npy";
+    }
+
+    /// <summary>
+    /// Writes one grouped .npy for the whole run directly under &lt;baseDir&gt;/results/ — a flat,
+    /// shared directory holding every schematic's results plus any user-named baseline.
+    ///
+    /// Deletes ONLY the specific file about to be written, never every .npy in results/: the earlier
+    /// per-schematic-subdirectory layout could safely wildcard-clear its own private directory, but a
+    /// wildcard clear here would wipe every other schematic's results and every user-named baseline
+    /// sitting in the same shared folder — the single most damaging regression a naive flattening could
+    /// introduce.
+    ///
+    /// The prior per-cell ".source" collision marker has been dropped, not rehomed (R-res-0a):
+    /// <see cref="SchematicKey"/> already disambiguates "cell" from "cell.view", and two cells cannot
+    /// share a folder name, so the collision it guarded against (two different cells resolving to the
+    /// same results file) is no longer reachable through normal use — a user who deliberately types the
+    /// same override name for two different schematics is making a well-understood choice (silent
+    /// overwrite is documented behavior for the default file too, R-res-3), not hitting a bug.
+    ///
     /// I/O failures are caught and posted as warnings — never thrown.
-    /// Returns the absolute path of run.npy written; empty list on any early-out.
+    /// Returns the absolute path written; empty list on any early-out.
     /// </summary>
     public static IReadOnlyList<string> WriteRun(
         string        baseDir,
         string        schematicKey,
-        string        ownerIdentity,
         DataSet?      grouped,
-        IMessageSink? messages)
+        IMessageSink? messages,
+        string?       fileNameOverride = null)
     {
         if (grouped is null || grouped.Groups.Count == 0) return [];
 
         try
         {
-            var dir    = Path.Combine(baseDir, "results", schematicKey);
-            var source = Path.Combine(dir, ".source");
-
-            // Record the owner RELATIVE to the workspace root (baseDir) when it lives inside it, so moving
-            // the whole workspace — which relocates baseDir, results/, and the cells together — keeps the
-            // identity stable and never looks like a collision.
-            var ownerNorm = NormalizeOwnerIdentity(ownerIdentity, baseDir);
-
-            // ── Collision check ───────────────────────────────────────────────
-            if (Directory.Exists(dir) && File.Exists(source))
-            {
-                var existing = File.ReadAllText(source, Encoding.UTF8).Trim();
-                if (!SameOwner(existing, ownerNorm))
-                {
-                    messages?.Warning(
-                        $"results/{schematicKey}/ belongs to a different cell — " +
-                        "rename one cell to avoid a results collision",
-                        dir);
-                    return [];
-                }
-            }
-
+            var dir = Path.Combine(baseDir, "results");
             Directory.CreateDirectory(dir);
-            File.WriteAllText(source, ownerNorm, Encoding.UTF8);
 
-            // ── Clear stale outputs ───────────────────────────────────────────
-            foreach (var stale in Directory.GetFiles(dir, "*.npy"))
-                File.Delete(stale);
+            var fileName = ResolveFileName(fileNameOverride, schematicKey);
+            var runNpy   = Path.Combine(dir, fileName);
 
-            // ── Write single grouped file ─────────────────────────────────────
-            var runNpy = Path.Combine(dir, "run.npy");
+            // R-res-0: scoped delete — only the file we are about to overwrite, never a wildcard scan
+            // of the shared results/ directory.
+            if (File.Exists(runNpy))
+                File.Delete(runNpy);
+
             DataSetExporter.Export(grouped, runNpy, ExportFormat.Npy);
 
-            messages?.Success(
-                $"Results written: {schematicKey} ({grouped.Groups.Count} group(s))",
-                dir);
+            var absRunNpy = Path.GetFullPath(runNpy);
 
-            return [Path.GetFullPath(runNpy)];
+            // The posted path is the FILE itself (not its containing directory) so "Reveal in
+            // Finder/File Explorer" on this message selects the actual .npy, not just its folder.
+            messages?.Success($"Results written: {Path.GetFileNameWithoutExtension(fileName)}", absRunNpy);
+
+            return [absRunNpy];
         }
         catch (Exception ex)
         {
@@ -156,45 +162,75 @@ public static class RunResultsWriter
         }
     }
 
+    /// <summary>
+    /// R-res-11 — migrates a workspace's results directory from the earlier per-schematic-
+    /// SUBDIRECTORY layout (<c>results/&lt;schematicKey&gt;/run.npy</c>) to the current flat one
+    /// (<c>results/&lt;schematicKey&gt;.npy</c>), on workspace open. Also removes the now-defunct
+    /// <c>.source</c> collision marker (dropped, not rehomed — R-res-0a) wherever one is found, so no
+    /// orphaned marker survives migration. Every touched subdirectory is removed once empty.
+    ///
+    /// Never overwrites an existing flat file — if <c>results/&lt;key&gt;.npy</c> already exists (e.g.
+    /// the schematic was already re-run once under the new layout), the old subdirectory's copy is
+    /// left in place and reported, rather than silently discarding either one.
+    ///
+    /// Safe to call on every workspace open: a workspace already on the flat layout has no
+    /// subdirectories under results/ and this is a no-op.
+    /// </summary>
+    public static IReadOnlyList<string> MigrateOldLayout(string resultsRoot, IMessageSink? messages)
+    {
+        if (!Directory.Exists(resultsRoot)) return [];
+
+        var migrated = new List<string>();
+
+        foreach (var dir in Directory.GetDirectories(resultsRoot))
+        {
+            var key       = Path.GetFileName(dir);
+            var oldNpy    = Path.Combine(dir, "run.npy");
+            var marker    = Path.Combine(dir, ".source");
+            var newNpy    = Path.Combine(resultsRoot, key + ".npy");
+
+            if (File.Exists(oldNpy))
+            {
+                if (File.Exists(newNpy))
+                {
+                    messages?.Warning(
+                        $"Migration: results/{key}/run.npy left in place — results/{key}.npy already exists",
+                        dir);
+                }
+                else
+                {
+                    try
+                    {
+                        File.Move(oldNpy, newNpy);
+                        migrated.Add(key);
+                    }
+                    catch (Exception ex)
+                    {
+                        messages?.Warning($"Migration: could not move {key}/run.npy: {ex.Message}", dir);
+                    }
+                }
+            }
+
+            if (File.Exists(marker))
+                try { File.Delete(marker); } catch { /* best-effort cleanup */ }
+
+            try
+            {
+                if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())
+                    Directory.Delete(dir);
+            }
+            catch { /* leave it — not worth failing migration over a stubborn empty directory */ }
+        }
+
+        if (migrated.Count > 0)
+            messages?.Success(
+                $"Migrated {migrated.Count} results file(s) to the flat layout: {string.Join(", ", migrated)}",
+                resultsRoot);
+
+        return migrated;
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Normalizes an owner identity for storage/comparison. An owner that lives INSIDE the workspace
-    /// (<paramref name="baseDir"/>) is recorded as a path RELATIVE to baseDir, so a whole-workspace move
-    /// keeps it stable. Owners outside baseDir (e.g. a loose file elsewhere) and the "scratch:" sentinel
-    /// are kept verbatim.
-    /// </summary>
-    internal static string NormalizeOwnerIdentity(string identity, string baseDir)
-    {
-        if (!Path.IsPathRooted(identity)) return identity;   // "scratch:…" or already relative
-        string rel;
-        try { rel = Path.GetRelativePath(Path.GetFullPath(baseDir), Path.GetFullPath(identity)); }
-        catch { return identity; }
-        // Inside the workspace (no "../", not re-rooted) → use the relative form.
-        return !rel.StartsWith("..", StringComparison.Ordinal) && !Path.IsPathRooted(rel)
-            ? rel
-            : identity;
-    }
-
-    /// <summary>
-    /// True when an owner whose normalized identity is <paramref name="normalizedNew"/> may write to a
-    /// results dir currently marked <paramref name="stored"/>.
-    /// </summary>
-    internal static bool SameOwner(string stored, string normalizedNew)
-    {
-        if (string.Equals(stored, normalizedNew, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        // Migration: a results dir written before identities were workspace-relative carries a legacy
-        // ABSOLUTE marker. After a workspace move that marker points at the OLD location and cannot be
-        // compared. If the cell being run lives INSIDE this workspace (normalizedNew is a relative path),
-        // it legitimately owns these results here — adopt them (a moved workspace, not a collision). A
-        // genuinely different owner from OUTSIDE the workspace keeps an absolute identity and still warns.
-        bool storedIsLegacyAbsolute = Path.IsPathRooted(stored);
-        bool newIsInsideWorkspace   = !Path.IsPathRooted(normalizedNew)
-                                      && !normalizedNew.StartsWith("scratch:", StringComparison.Ordinal);
-        return storedIsLegacyAbsolute && newIsInsideWorkspace;
-    }
 
     // Replaces invalid filename characters with '_'. Mirrors RecoveryManager.SafeFileName
     // but without the .csch suffix.

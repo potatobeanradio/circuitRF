@@ -485,7 +485,7 @@ namespace CircuitRF.Ui.DataDisplay
             Plot                 plot,
             TransformSet         tf,
             RenderTheme          theme,
-            bool                 showFilePrefix = true)
+            Func<Trace, string?>? aliasFor = null)
         {
             float lw = LineWidth(canvasSize);
             var (font, paint) = MakeTextObjects(plot.Axes.FontSizeLabel * 1.4, lw, theme);
@@ -572,9 +572,12 @@ namespace CircuitRF.Ui.DataDisplay
                     tickFont.MeasureText(plot.Axes.WindowSecondary.Bottom.ToString($"G{plot.Axes.NumDigitsRightY}")));
                 float rightAnchor = vpRight + lw * 4f + rightTickW + DescriptionStripPad * lw;
 
-                // Compute per-plot minimal labels (same policy as the label-strip controls).
+                // Compute per-plot minimal labels (same policy as the label-strip controls, and now
+                // the same alias resolver too — this Rect Y-axis margin label used to fall back to
+                // the raw file-stem heuristic regardless of any alias the user set, since no
+                // resolver was ever threaded down to this renderer).
                 bool alwaysSource = AppSettingsViewModel.Instance.AlwaysDisplayDataSourcePrefix;
-                var  allLabels    = TraceLabeler.ComputeMinimalLabels(plot.Traces, alwaysSource);
+                var  allLabels    = TraceLabeler.ComputeMinimalLabels(plot.Traces, alwaysSource, aliasFor);
                 var  labelLookup  = new Dictionary<Trace, string>();
                 for (int i = 0; i < plot.Traces.Count; i++)
                     labelLookup[plot.Traces[i]] = allLabels[i];
@@ -591,7 +594,7 @@ namespace CircuitRF.Ui.DataDisplay
                     bool mismatch = t.IsCubeBound
                                     && refCubeXAxis != null
                                     && !string.Equals(t.CubeXAxisName, refCubeXAxis, StringComparison.Ordinal);
-                    return t.RectYLabel(networkFallback, showFilePrefix, mismatch);
+                    return t.RectYLabel(networkFallback, mismatch);
                 }
 
                 string yLabel = plot.YLabel;

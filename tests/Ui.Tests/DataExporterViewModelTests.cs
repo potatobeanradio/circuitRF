@@ -33,11 +33,11 @@ public sealed class DataExporterViewModelTests : IDisposable
 
     private string MakeResultsRoot() => _tmpDir;
 
+    // Flat results/<schematic>.npy layout (brief-results-storage-and-data-display.md §1) — every
+    // result file sits directly in the results root, no per-schematic subdirectory.
     private string MakeRunNpy(string schematic, DataSet? ds = null)
     {
-        string dir = Path.Combine(_tmpDir, schematic);
-        Directory.CreateDirectory(dir);
-        string path = Path.Combine(dir, "run.npy");
+        string path = Path.Combine(_tmpDir, schematic + ".npy");
 
         if (ds is null)
         {
@@ -83,20 +83,22 @@ public sealed class DataExporterViewModelTests : IDisposable
         Assert.False(vm.CanExport);
     }
 
-    // ── Test T2: With results root → enumerates schematic subdirs ────────────
+    // ── Test T2: With results root → enumerates every flat .npy file ─────────
 
     [Fact]
     public void T2_ResultsRoot_EnumeratesSchematicsByRunNpy()
     {
         MakeRunNpy("Amp");
         MakeRunNpy("Filter");
-        // Create a dir without run.npy — should NOT appear
+        // A non-.npy file and an unrelated subdirectory — neither should appear.
+        File.WriteAllText(Path.Combine(_tmpDir, "notes.txt"), "not a result");
         Directory.CreateDirectory(Path.Combine(_tmpDir, "Empty"));
 
         var vm = new DataExporterViewModel(_tmpDir);
         Assert.Contains("Amp",    vm.AvailableSchematicNames);
         Assert.Contains("Filter", vm.AvailableSchematicNames);
         Assert.DoesNotContain("Empty", vm.AvailableSchematicNames);
+        Assert.DoesNotContain("notes", vm.AvailableSchematicNames);
     }
 
     // ── Test T3: Preselect respected ─────────────────────────────────────────

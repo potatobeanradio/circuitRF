@@ -9,8 +9,9 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// Pure-logic tests for RunResultsWriter (Stage 2 — single run.npy).
-/// Uses temp directories and a fake IMessageSink — no Avalonia runtime required.
+/// Pure-logic tests for RunResultsWriter — the flat, shared results/&lt;schematicKey&gt;.npy layout
+/// (brief-results-storage-and-data-display.md §1). Uses temp directories and a fake IMessageSink —
+/// no Avalonia runtime required.
 /// </summary>
 public sealed class RunResultsWriterTests : IDisposable
 {
@@ -64,95 +65,177 @@ public sealed class RunResultsWriterTests : IDisposable
             RunResultsWriter.SchematicKey(null, "Untitled-Schematic-1"));
     }
 
-    // ── WriteRun — happy path ─────────────────────────────────────────────────
+    // ── WriteRun — happy path, flat naming (R-res-1) ──────────────────────────
 
     [Fact]
-    public void WriteRun_HappyPath_RunNpyExists()
+    public void WriteRun_HappyPath_FlatNpyExists()
     {
         var baseDir = MakeTempDir();
         var key     = "MyAmp";
-        var owner   = "scratch:MyAmp";
         var sink    = new FakeSink();
         var grouped = MakeGroupedDataSet();
 
-        RunResultsWriter.WriteRun(baseDir, key, owner, grouped, sink);
+        RunResultsWriter.WriteRun(baseDir, key, grouped, sink);
 
-        var dir = Path.Combine(baseDir, "results", key);
-        Assert.True(File.Exists(Path.Combine(dir, "run.npy")));
-        Assert.Equal(owner, File.ReadAllText(Path.Combine(dir, ".source")).Trim());
+        var dir = Path.Combine(baseDir, "results");
+        var expectedNpy = Path.Combine(dir, "MyAmp.npy");
+        Assert.True(File.Exists(expectedNpy));
+        Assert.False(Directory.Exists(Path.Combine(dir, key)), "no per-schematic subdirectory");
         Assert.Single(sink.Successes);
         Assert.Contains("MyAmp", sink.Successes[0].Text);
-        Assert.Contains("3 group(s)", sink.Successes[0].Text);
+        Assert.DoesNotContain("group(s)", sink.Successes[0].Text);
+        // The posted path is the FILE itself, not its containing directory, so "Reveal in
+        // Finder/File Explorer" selects the actual .npy.
+        Assert.Equal(Path.GetFullPath(expectedNpy), sink.Successes[0].Path);
     }
 
-    // ── WriteRun — stale-file clear ───────────────────────────────────────────
-
     [Fact]
-    public void WriteRun_StaleNpyCleared()
+    public void WriteRun_TwoCellsShareASharedResultsDir_ProduceDistinctFiles()
     {
         var baseDir = MakeTempDir();
-        var key     = "Amp";
-        var owner   = "scratch:Amp";
         var sink    = new FakeSink();
 
-        // Pre-seed a stale .npy in the results dir
-        var dir = Path.Combine(baseDir, "results", key);
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".source"), owner);
-        File.WriteAllText(Path.Combine(dir, "stale_analysis.npy"), "dummy");
+        RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink);
+        RunResultsWriter.WriteRun(baseDir, "Amp.tb2", MakeGroupedDataSet(), sink);
 
-        RunResultsWriter.WriteRun(baseDir, key, owner, MakeGroupedDataSet(), sink);
-
-        Assert.True(File.Exists(Path.Combine(dir, "run.npy")));
-        Assert.False(File.Exists(Path.Combine(dir, "stale_analysis.npy")),
-            "Stale .npy must be deleted on write");
+        var dir = Path.Combine(baseDir, "results");
+        Assert.True(File.Exists(Path.Combine(dir, "Amp.npy")));
+        Assert.True(File.Exists(Path.Combine(dir, "Amp.tb2.npy")));
     }
 
-    // ── WriteRun — collision warning ──────────────────────────────────────────
+    // ── WriteRun — scoped stale-delete (R-res-0), the regression that matters most ────
 
     [Fact]
-    public void WriteRun_DifferentOwner_PostsWarningWritesNothing()
+    public void WriteRun_RunningOneSchematic_LeavesOtherFilesUntouched()
     {
         var baseDir = MakeTempDir();
-        var key     = "Amp";
-        var ownerA  = "/path/to/LibA/Amp";
-        var ownerB  = "/path/to/LibB/Amp";
-        var sink    = new FakeSink();
-
-        // Pre-create .source with ownerA
-        var dir = Path.Combine(baseDir, "results", key);
+        var dir     = Path.Combine(baseDir, "results");
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".source"), ownerA);
 
-        // Attempt to write from ownerB
-        RunResultsWriter.WriteRun(baseDir, key, ownerB, MakeGroupedDataSet(), sink);
+        // Three other schematics' results plus a user-named baseline, all pre-seeded.
+        File.WriteAllText(Path.Combine(dir, "Amp.npy"), "amp-content");
+        File.WriteAllText(Path.Combine(dir, "Mixer.npy"), "mixer-content");
+        File.WriteAllText(Path.Combine(dir, "Filter.tb2.npy"), "filter-content");
+        File.WriteAllText(Path.Combine(dir, "baseline_v1.npy"), "baseline-content");
 
-        Assert.Empty(Directory.GetFiles(dir, "*.npy"));
-        Assert.Single(sink.Warnings);
-        Assert.Contains("different cell", sink.Warnings[0].Text);
-        Assert.Empty(sink.Successes);
+        var sink = new FakeSink();
+        RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink);
+
+        // The just-written file changed (no longer the placeholder content)...
+        Assert.NotEqual("amp-content", File.ReadAllText(Path.Combine(dir, "Amp.npy")));
+        // ...but every OTHER file is untouched, byte-for-byte, asserted file-by-file.
+        Assert.Equal("mixer-content", File.ReadAllText(Path.Combine(dir, "Mixer.npy")));
+        Assert.Equal("filter-content", File.ReadAllText(Path.Combine(dir, "Filter.tb2.npy")));
+        Assert.Equal("baseline-content", File.ReadAllText(Path.Combine(dir, "baseline_v1.npy")));
     }
 
-    // ── WriteRun — same owner proceeds without collision ──────────────────────
+    // ── WriteRun — R-res-0a: no orphaned .source marker is ever written ───────
 
     [Fact]
-    public void WriteRun_SameOwner_ProceedsNormally()
+    public void WriteRun_NeverWritesASourceMarker()
     {
         var baseDir = MakeTempDir();
-        var key     = "Amp";
-        var owner   = "/path/to/workspace/Amp";
         var sink    = new FakeSink();
 
-        // Pre-create .source with the same owner
-        var dir = Path.Combine(baseDir, "results", key);
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".source"), owner);
+        RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink);
 
-        RunResultsWriter.WriteRun(baseDir, key, owner, MakeGroupedDataSet(), sink);
-
-        Assert.True(File.Exists(Path.Combine(dir, "run.npy")));
-        Assert.Single(sink.Successes);
+        var dir = Path.Combine(baseDir, "results");
+        Assert.Empty(Directory.GetFiles(dir, ".source", SearchOption.AllDirectories));
         Assert.Empty(sink.Warnings);
+    }
+
+    // ── WriteRun — user-specified file name override (R-res-2/3) ──────────────
+
+    [Fact]
+    public void WriteRun_FileNameOverride_WritesUnderThatName()
+    {
+        var baseDir = MakeTempDir();
+        var sink    = new FakeSink();
+
+        var written = RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink,
+            fileNameOverride: "baseline");
+
+        var expected = Path.GetFullPath(Path.Combine(baseDir, "results", "baseline.npy"));
+        Assert.Equal(expected, Assert.Single(written));
+        Assert.True(File.Exists(expected));
+        Assert.False(File.Exists(Path.Combine(baseDir, "results", "Amp.npy")));
+    }
+
+    [Fact]
+    public void WriteRun_FileNameOverride_NpyAppendedIfAbsent_NotDuplicated()
+    {
+        var baseDir = MakeTempDir();
+        var sink    = new FakeSink();
+
+        var written1 = RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink, "baseline");
+        var written2 = RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink, "baseline.npy");
+
+        Assert.Equal(written1[0], written2[0]);
+        Assert.EndsWith("baseline.npy", written1[0]);
+        Assert.DoesNotContain(".npy.npy", written1[0]);
+    }
+
+    [Fact]
+    public void WriteRun_BlankOverride_FallsBackToSchematicKey()
+    {
+        var baseDir = MakeTempDir();
+        var sink    = new FakeSink();
+
+        var written = RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink, "   ");
+
+        Assert.EndsWith("Amp.npy", written[0]);
+    }
+
+    [Fact]
+    public void WriteRun_Rerun_OverwritesWithoutPrompting()
+    {
+        var baseDir = MakeTempDir();
+        var sink    = new FakeSink();
+
+        RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink, "baseline");
+        var second = RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink, "baseline");
+
+        Assert.Single(second);   // succeeded again, same path, no error/prompt-shaped result
+    }
+
+    // ── SanitizeFileNameComponent / ResolveFileName (R-res-2) ─────────────────
+
+    [Theory]
+    [InlineData("baseline")]
+    [InlineData("baseline.npy")]
+    public void ResolveFileName_Override_ProducesExactlyOneNpySuffix(string typed)
+    {
+        Assert.Equal("baseline.npy", RunResultsWriter.ResolveFileName(typed, "Amp"));
+    }
+
+    [Fact]
+    public void ResolveFileName_Blank_UsesSchematicKey()
+    {
+        Assert.Equal("Amp.npy", RunResultsWriter.ResolveFileName(null, "Amp"));
+        Assert.Equal("Amp.npy", RunResultsWriter.ResolveFileName("", "Amp"));
+        Assert.Equal("Amp.npy", RunResultsWriter.ResolveFileName("   ", "Amp"));
+    }
+
+    [Theory]
+    [InlineData("../evil", ".._evil")]
+    [InlineData("a/b/c", "a_b_c")]
+    [InlineData(@"a\b", "a_b")]
+    public void SanitizeFileNameComponent_RejectsPathSeparators(string raw, string expected)
+    {
+        Assert.Equal(expected, RunResultsWriter.SanitizeFileNameComponent(raw));
+    }
+
+    [Fact]
+    public void WriteRun_OverrideWithPathSeparator_NeverEscapesResultsDir()
+    {
+        var baseDir = MakeTempDir();
+        var sink    = new FakeSink();
+
+        var written = RunResultsWriter.WriteRun(baseDir, "Amp", MakeGroupedDataSet(), sink,
+            fileNameOverride: "../../escape");
+
+        var resultsDir = Path.GetFullPath(Path.Combine(baseDir, "results"));
+        Assert.StartsWith(resultsDir, written[0]);
     }
 
     // ── ResolveResultsRoot — workspace vs scratch ─────────────────────────────
@@ -179,55 +262,6 @@ public sealed class RunResultsWriterTests : IDisposable
             RunResultsWriter.ResolveResultsRoot(null, scratch));
     }
 
-    // ── WriteRun — moved workspace is not a collision ─────────────────────────
-
-    [Fact]
-    public void WriteRun_WorkspaceMoved_AdoptsResultsWithoutCollision()
-    {
-        // baseDir simulates the workspace at its NEW location; the cell lives inside it.
-        var baseDir  = MakeTempDir();
-        var key      = "FET_curve_tracer";
-        var newOwner = Path.Combine(baseDir, key);   // absolute, as OwnerIdentity returns for a cell
-        var sink     = new FakeSink();
-
-        // .source carries a stale ABSOLUTE path from the OLD location (it moved with the workspace).
-        var dir = Path.Combine(baseDir, "results", key);
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".source"), "/old/location/" + key);
-
-        RunResultsWriter.WriteRun(baseDir, key, newOwner, MakeGroupedDataSet(), sink);
-
-        Assert.True(File.Exists(Path.Combine(dir, "run.npy")),
-            "a moved workspace must still write results");
-        Assert.Empty(sink.Warnings);
-        Assert.Single(sink.Successes);
-        // Marker rewritten to the stable workspace-relative form so future moves are seamless.
-        Assert.Equal(key, File.ReadAllText(Path.Combine(dir, ".source")).Trim());
-    }
-
-    // ── WriteRun — genuine in-workspace collision still warns ──────────────────
-
-    [Fact]
-    public void WriteRun_DifferentInWorkspaceOwners_StillCollide()
-    {
-        var baseDir = MakeTempDir();
-        var key     = "Amp";
-        var sink    = new FakeSink();
-
-        // Already owned (post-migration relative marker) by the cell folder "Amp".
-        var dir = Path.Combine(baseDir, "results", key);
-        Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".source"), "Amp");
-
-        // A different in-workspace owner with the same key: a loose Amp.csch (relative "Amp.csch").
-        var looseOwner = Path.Combine(baseDir, "Amp.csch");
-        RunResultsWriter.WriteRun(baseDir, key, looseOwner, MakeGroupedDataSet(), sink);
-
-        Assert.Empty(Directory.GetFiles(dir, "*.npy"));
-        Assert.Single(sink.Warnings);
-        Assert.Contains("different cell", sink.Warnings[0].Text);
-    }
-
     // ── WriteRun — null grouped skips silently ────────────────────────────────
 
     [Fact]
@@ -236,7 +270,7 @@ public sealed class RunResultsWriterTests : IDisposable
         var baseDir = MakeTempDir();
         var sink    = new FakeSink();
 
-        var written = RunResultsWriter.WriteRun(baseDir, "Amp", "owner", null, sink);
+        var written = RunResultsWriter.WriteRun(baseDir, "Amp", null, sink);
 
         Assert.Empty(written);
         Assert.False(Directory.Exists(Path.Combine(baseDir, "results")));
@@ -253,7 +287,7 @@ public sealed class RunResultsWriterTests : IDisposable
         var sink    = new FakeSink();
         var empty   = new DataSet();   // no AddToGroup calls → Groups.Count == 0
 
-        var written = RunResultsWriter.WriteRun(baseDir, "Amp", "owner", empty, sink);
+        var written = RunResultsWriter.WriteRun(baseDir, "Amp", empty, sink);
 
         Assert.Empty(written);
         Assert.False(Directory.Exists(Path.Combine(baseDir, "results")));
@@ -261,27 +295,124 @@ public sealed class RunResultsWriterTests : IDisposable
         Assert.Empty(sink.Warnings);
     }
 
-    // ── WriteRun — returns single run.npy path ────────────────────────────────
+    // ── WriteRun — returns single flat path ────────────────────────────────
 
     [Fact]
-    public void WriteRun_ReturnsRunNpyPath()
+    public void WriteRun_ReturnsFlatNpyPath()
     {
         var baseDir = MakeTempDir();
         var key     = "TestAmp";
-        var owner   = "scratch:TestAmp";
         var sink    = new FakeSink();
 
-        var written = RunResultsWriter.WriteRun(baseDir, key, owner, MakeGroupedDataSet(), sink);
+        var written = RunResultsWriter.WriteRun(baseDir, key, MakeGroupedDataSet(), sink);
 
         Assert.Single(written);
-        var expected = Path.GetFullPath(Path.Combine(baseDir, "results", key, "run.npy"));
+        var expected = Path.GetFullPath(Path.Combine(baseDir, "results", "TestAmp.npy"));
         Assert.Equal(expected, written[0]);
+    }
 
-        // Collision skip returns empty list.
-        var sink2 = new FakeSink();
-        var collision = RunResultsWriter.WriteRun(baseDir, key, "scratch:OtherAmp",
-            MakeGroupedDataSet(), sink2);
-        Assert.Empty(collision);
+    // ── MigrateOldLayout (R-res-11) ────────────────────────────────────────────
+
+    [Fact]
+    public void MigrateOldLayout_MovesSubdirRunNpy_ToFlatFile_RemovesEmptyDir()
+    {
+        var baseDir = MakeTempDir();
+        var results = Path.Combine(baseDir, "results");
+        var oldDir  = Path.Combine(results, "Amp");
+        Directory.CreateDirectory(oldDir);
+        File.WriteAllText(Path.Combine(oldDir, "run.npy"), "amp-content");
+
+        var sink     = new FakeSink();
+        var migrated = RunResultsWriter.MigrateOldLayout(results, sink);
+
+        Assert.Equal("Amp", Assert.Single(migrated));
+        Assert.Equal("amp-content", File.ReadAllText(Path.Combine(results, "Amp.npy")));
+        Assert.False(Directory.Exists(oldDir), "the now-empty old subdirectory must be removed");
+        Assert.Single(sink.Successes);
+    }
+
+    [Fact]
+    public void MigrateOldLayout_RemovesOrphanedSourceMarker()
+    {
+        var baseDir = MakeTempDir();
+        var results = Path.Combine(baseDir, "results");
+        var oldDir  = Path.Combine(results, "Amp");
+        Directory.CreateDirectory(oldDir);
+        File.WriteAllText(Path.Combine(oldDir, "run.npy"), "amp-content");
+        File.WriteAllText(Path.Combine(oldDir, ".source"), "Amp");
+
+        RunResultsWriter.MigrateOldLayout(results, new FakeSink());
+
+        Assert.Empty(Directory.GetFiles(results, ".source", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void MigrateOldLayout_ThreeSchematicsPlusBaseline_AllMigrateIndependently()
+    {
+        var baseDir = MakeTempDir();
+        var results = Path.Combine(baseDir, "results");
+
+        foreach (var key in new[] { "Amp", "Mixer", "Filter.tb2" })
+        {
+            var dir = Path.Combine(results, key);
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "run.npy"), key + "-content");
+            File.WriteAllText(Path.Combine(dir, ".source"), key);
+        }
+        // A pre-existing flat user-named baseline must survive untouched.
+        Directory.CreateDirectory(results);
+        File.WriteAllText(Path.Combine(results, "baseline_v1.npy"), "baseline-content");
+
+        var migrated = RunResultsWriter.MigrateOldLayout(results, new FakeSink());
+
+        Assert.Equal(3, migrated.Count);
+        Assert.Equal("Amp-content", File.ReadAllText(Path.Combine(results, "Amp.npy")));
+        Assert.Equal("Mixer-content", File.ReadAllText(Path.Combine(results, "Mixer.npy")));
+        Assert.Equal("Filter.tb2-content", File.ReadAllText(Path.Combine(results, "Filter.tb2.npy")));
+        Assert.Equal("baseline-content", File.ReadAllText(Path.Combine(results, "baseline_v1.npy")));
+        Assert.Empty(Directory.GetDirectories(results));
+    }
+
+    [Fact]
+    public void MigrateOldLayout_FlatFileAlreadyExists_LeavesOldCopyInPlace_WarnsInsteadOfOverwriting()
+    {
+        var baseDir = MakeTempDir();
+        var results = Path.Combine(baseDir, "results");
+        var oldDir  = Path.Combine(results, "Amp");
+        Directory.CreateDirectory(oldDir);
+        File.WriteAllText(Path.Combine(oldDir, "run.npy"), "old-content");
+        File.WriteAllText(Path.Combine(results, "Amp.npy"), "already-flat-content");
+
+        var sink     = new FakeSink();
+        var migrated = RunResultsWriter.MigrateOldLayout(results, sink);
+
+        Assert.Empty(migrated);
+        Assert.Equal("already-flat-content", File.ReadAllText(Path.Combine(results, "Amp.npy")));
+        Assert.Equal("old-content", File.ReadAllText(Path.Combine(oldDir, "run.npy")));
+        Assert.Single(sink.Warnings);
+    }
+
+    [Fact]
+    public void MigrateOldLayout_AlreadyFlatWorkspace_IsANoOp()
+    {
+        var baseDir = MakeTempDir();
+        var results = Path.Combine(baseDir, "results");
+        Directory.CreateDirectory(results);
+        File.WriteAllText(Path.Combine(results, "Amp.npy"), "content");
+
+        var sink     = new FakeSink();
+        var migrated = RunResultsWriter.MigrateOldLayout(results, sink);
+
+        Assert.Empty(migrated);
+        Assert.Empty(sink.All);
+    }
+
+    [Fact]
+    public void MigrateOldLayout_NoResultsDirectory_ReturnsEmpty_NeverThrows()
+    {
+        var baseDir = MakeTempDir();
+        var migrated = RunResultsWriter.MigrateOldLayout(Path.Combine(baseDir, "results"), new FakeSink());
+        Assert.Empty(migrated);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

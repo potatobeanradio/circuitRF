@@ -500,7 +500,8 @@ public partial class PlotContainerViewModel : ViewModelBase
 
                 // Compute minimal labels over all traces in the plot.
                 bool alwaysSource = AppSettingsViewModel.Instance.AlwaysDisplayDataSourcePrefix;
-                var  allLabels    = TraceLabeler.ComputeMinimalLabels(plot.Traces, alwaysSource);
+                var  allLabels    = TraceLabeler.ComputeMinimalLabels(plot.Traces, alwaysSource,
+                    aliasFor: t => Library?.AliasFor(t.SourcePath));
                 var  labelMap     = new Dictionary<Trace, string>();
                 for (int i = 0; i < plot.Traces.Count; i++)
                     labelMap[plot.Traces[i]] = allLabels[i];

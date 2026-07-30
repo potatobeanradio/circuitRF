@@ -7,6 +7,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
+using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels.Dock;
 using CircuitRF.Ui.ViewModels.ProjectTree;
@@ -70,8 +71,10 @@ public partial class ProjectTreeView : UserControl
         _lastPressVm   = vm;
         _lastPressTick = tick;
 
-        // Cell DnD source capture (unchanged).
-        if (GetCellNodeFromSource(source) is null) return;
+        // Cell DnD source capture, and (R-dd-3) .npy file DnD source capture — dragging a data
+        // file from the tree onto a Data Display plot adds it as a dataset in one motion, the
+        // same idiom as palette→schematic/palette→layout drag-drop.
+        if (GetCellNodeFromSource(source) is null && GetNpyFileNodeFromSource(source) is null) return;
         _cellPressArgs = e;
         _cellPressPos  = e.GetPosition(this);
     }
@@ -89,14 +92,19 @@ public partial class ProjectTreeView : UserControl
         var delta = pos - _cellPressPos;
         if (Math.Sqrt(delta.X * delta.X + delta.Y * delta.Y) < DragThreshold) return;
 
-        var vm        = GetCellNodeFromSource(_cellPressArgs.Source as Visual);
+        var source    = _cellPressArgs.Source as Visual;
+        var cellVm    = GetCellNodeFromSource(source);
+        var npyVm     = cellVm is null ? GetNpyFileNodeFromSource(source) : null;
         var savedArgs = _cellPressArgs;
         _cellPressArgs = null; // clear before await to prevent re-entry
-        if (vm is null) return;
+        if (cellVm is null && npyVm is null) return;
 
-        var payload      = new CellDragPayload(vm.AbsolutePath);
+        string serialized = cellVm is not null
+            ? new CellDragPayload(cellVm.AbsolutePath).Serialize()
+            : new NpyFileDragPayload(npyVm!.AbsolutePath).Serialize();
+
         var transferItem = new DataTransferItem();
-        transferItem.Set(DataFormat.Text, payload.Serialize());
+        transferItem.Set(DataFormat.Text, serialized);
         var transfer = new DataTransfer();
         transfer.Add(transferItem);
         await DragDrop.DoDragDropAsync(savedArgs, transfer, DragDropEffects.Copy);
@@ -140,6 +148,22 @@ public partial class ProjectTreeView : UserControl
         {
             if (v is TreeViewItem item
                 && item.DataContext is ProjectTreeNodeViewModel { Kind: NodeKind.Cell } vm)
+                return vm;
+            v = v.GetVisualParent();
+        }
+        return null;
+    }
+
+    // Walk the visual tree upward from the event source to find an .npy file TreeViewItem
+    // (R-dd-3) — .npy files classify as NodeKind.OtherFile (no dedicated NodeKind exists for them).
+    private static ProjectTreeNodeViewModel? GetNpyFileNodeFromSource(Visual? source)
+    {
+        var v = source;
+        while (v is not null)
+        {
+            if (v is TreeViewItem item
+                && item.DataContext is ProjectTreeNodeViewModel { Kind: NodeKind.OtherFile } vm
+                && string.Equals(Path.GetExtension(vm.AbsolutePath), ".npy", StringComparison.OrdinalIgnoreCase))
                 return vm;
             v = v.GetVisualParent();
         }

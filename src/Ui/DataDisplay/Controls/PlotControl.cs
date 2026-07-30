@@ -620,6 +620,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     $"VSWR: {rMark.VswrValue:F4}",
                     new SkiaSharp.SKPoint((float)_vswrReadoutPt.X, (float)_vswrReadoutPt.Y));
 
+            // R-dd-1 (post-ship): the Rect Y-axis margin label uses the same alias resolver the
+            // trace-card labels and Smith/Polar label strips already do — captured as a plain
+            // delegate here (not the library reference itself) so PlotDrawOperation stays a snapshot
+            // of what THIS frame needs, matching every other captured field on it.
+            Func<Trace, string?>? aliasFor = _library is { } lib ? t => lib.AliasFor(t.SourcePath) : null;
+
             context.Custom(new PlotDrawOperation(
                 new Rect(Bounds.Size),
                 _plot,
@@ -629,7 +635,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 selectedMarkers,
                 selColor,
                 zoom,
-                readout));
+                readout,
+                aliasFor));
         }
 
         // ============================================================
@@ -647,6 +654,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             private readonly SKColor           _selectionColor;
             private readonly float             _zoomLevel;
             private readonly VswrReadout?      _vswrReadout;
+            private readonly Func<Trace, string?>? _aliasFor;
 
             public PlotDrawOperation(
                 Rect             bounds,
@@ -657,7 +665,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 HashSet<Marker>? selectedMarkers = null,
                 SKColor          selectionColor  = default,
                 float            zoomLevel       = 1f,
-                VswrReadout?     vswrReadout     = null)
+                VswrReadout?     vswrReadout     = null,
+                Func<Trace, string?>? aliasFor   = null)
             {
                 _bounds          = bounds;
                 _plot            = plot;
@@ -668,6 +677,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 _selectionColor  = selectionColor;
                 _zoomLevel       = zoomLevel;
                 _vswrReadout     = vswrReadout;
+                _aliasFor        = aliasFor;
             }
 
             public bool Equals(ICustomDrawOperation? other) => false;
@@ -702,7 +712,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 canvas.ClipRect(canvas.LocalClipBounds);
                 PlotRenderer.Draw(canvas, canvasSize, _plot, _detail, _theme, _showFilePrefix,
                     selectedMarkers: _selectedMarkers, selectionColor: _selectionColor,
-                    zoomLevel: _zoomLevel, vswrReadout: _vswrReadout);
+                    zoomLevel: _zoomLevel, vswrReadout: _vswrReadout, aliasFor: _aliasFor);
                 canvas.Restore();
             }
 

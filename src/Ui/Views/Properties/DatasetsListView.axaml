@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Properties.DatasetsListView"
+             x:DataType="vm:DatasetsListViewModel"
+             IsVisible="{Binding HasRows}">
+
+    <Border Background="{DynamicResource SystemChromeMediumLowColor}"
+            BorderBrush="{DynamicResource CrfTileBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="6"
+            Padding="8,6"
+            Margin="0,0,0,6">
+        <StackPanel Spacing="4">
+            <TextBlock Text="Dataset Aliases" FontWeight="SemiBold" FontSize="11" Opacity="0.75"
+                       ToolTip.Placement="Right">
+                <ToolTip.Tip>
+                    <StackPanel Spacing="6" MaxWidth="340">
+                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold"
+                                   Text="Short names for the data files this display reads from."/>
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="An alias is your own short name for one loaded results file — &quot;baseline&quot; and &quot;tuned&quot; rather than two similar filenames. It defaults to the file name and is saved with the display."/>
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="When a plot shows traces from more than one file, each trace label is prefixed with that file's alias so you can tell them apart. With only one file in use the prefix is dropped, since it would add nothing."/>
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="Live — the file was found and loaded. Missing — the file is no longer on disk (deleted or moved); traces using it keep their settings and re-plot as soon as it is found again."/>
+                        <TextBlock TextWrapping="Wrap"
+                                   Text="Re-point… — aim this alias at a different file. Every trace using it switches to the new file at once, so you can swap a baseline and see the whole comparison re-plot. On a missing dataset the same button reads Locate… and is how you point it back at the moved file."/>
+                    </StackPanel>
+                </ToolTip.Tip>
+            </TextBlock>
+
+            <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:DatasetRowViewModel">
+                        <Grid ColumnDefinitions="*,Auto,Auto"
+                              Margin="0,2"
+                              ToolTip.Tip="{Binding RenameError}">
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding AliasText, Mode=TwoWay}"
+                                     LostFocus="OnAliasLostFocus"
+                                     KeyDown="OnAliasKeyDown"
+                                     FontSize="11"
+                                     Classes.error="{Binding HasRenameError}"
+                                     Padding="4,2"
+                                     Margin="0,0,4,0"/>
+                            <Border Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,4,0"
+                                    Padding="5,1"
+                                    CornerRadius="3"
+                                    Background="{DynamicResource SystemBaseLowColor}"
+                                    ToolTip.Tip="{Binding FileName}">
+                                <TextBlock Text="{Binding StatusText}"
+                                           FontSize="9"
+                                           Classes.brokenText="{Binding IsBroken}"/>
+                            </Border>
+                            <Button Grid.Column="2"
+                                    Classes="seg-btn"
+                                    Command="{Binding LocateCommand}"
+                                    Content="{Binding LocateButtonText}"
+                                    FontSize="10"
+                                    Padding="6,2"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </Border>
+
+    <UserControl.Styles>
+        <Style Selector="TextBox.error">
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.brokenText">
+            <Setter Property="Foreground" Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+    </UserControl.Styles>
+</UserControl>

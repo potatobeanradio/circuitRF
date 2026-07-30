@@ -752,6 +752,15 @@ public sealed class SchematicEditModel
     public List<Analysis>    Analyses     { get; } = new();
     public List<Measurement> Measurements { get; } = new();
 
+    /// <summary>
+    /// User-specified results file name (schematic-level — a run writes ONE grouped file for the
+    /// whole testbench, so this is not per-analysis). Null/blank means the default,
+    /// <c>&lt;schematicKey&gt;.npy</c>. When set, always inside the workspace's <c>results/</c>
+    /// directory — never a path (path separators are sanitized on commit, see
+    /// AnalysesListViewModel.CommitResultsFileName). ".npy" is appended if absent.
+    /// </summary>
+    public string? ResultsFileName { get; set; }
+
     public double GridSize          { get; set; } = 100.0;
     public bool   GridSnap          { get; set; } = true;
     /// <summary>Fine authoring grid divisor k: p = P/k (default k=20 → p=5).
