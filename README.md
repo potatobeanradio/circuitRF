@@ -97,7 +97,7 @@ product) independent of any GUI framework. Full detail:
 [`docs/design/ui-architecture.md`](docs/design/ui-architecture.md).
 
 ```
-  RfCore                  shared result/network library: Touchstone I/O, S/Z/Y math,
+  src/RfCore              shared result/network library: Touchstone I/O, S/Z/Y math,
         ▲                  the DataSet/DataCube result model, loadpull readers/writers
         │
   src/Core      Design + Elaboration: cells, instances, nets, parameters, the expression
@@ -184,6 +184,11 @@ point of the firewall: **the simulator survives the UI.** Detail in
 ```
 circuitRF/
 ├─ src/
+│  ├─ RfCore/          Shared RF result/network library — everything below depends on it (no UI)
+│  │  ├─ (root)          Touchstone I/O, SNP, RFNetwork S/Z/Y math + renormalization, interpolation
+│  │  ├─ Data/           DataSet/DataCube result model, network metrics (stability, passivity)
+│  │  ├─ Export/         .npy native format + .mat/.tsv/Touchstone exporters and importers
+│  │  └─ Loadpull/       loadpull surfaces, contour extraction, RBF interpolation, FOM dialects
 │  ├─ Core/            Design + elaboration layers, and the expression engine (no UI, no numerics)
 │  │  ├─ Design/         cells, instances, TestBench, analyses, measurements
 │  │  ├─ Elaboration/    flatten hierarchy, resolve parameters/sweeps, number nodes
