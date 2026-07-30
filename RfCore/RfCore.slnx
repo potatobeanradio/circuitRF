@@ -1,8 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/RfCore.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/RfCore.Tests/RfCore.Tests.csproj" />
-  </Folder>
-</Solution>

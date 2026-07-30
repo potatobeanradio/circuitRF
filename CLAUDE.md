@@ -8,14 +8,28 @@ hero circuits, and non-goals. This file is standing project memory — keep it c
 - .NET 10 (LTS), C# 14
 - Avalonia 12 (UI), SkiaSharp (canvas rendering), CommunityToolkit.MVVM (MVVM)
 - CSparse.NET (sparse complex LU for large MNA), NumFlat (dense linear algebra)
-- Consumes `RfCore` (Touchstone I/O, network params, the `DataSet`/`DataCube` result types,
-  interpolation, renormalization, plotting). **`RfCore` was merged into this repository via
-  `git subtree` on 2026-07-29** (brief-housekeeping-tearoff-palette-repo.md §6 — splotRF, the
-  other consumer of the standalone RfCore repo, is being retired; two repos confused new
-  contributors) — it now lives at `RfCore/` in this repo's own root (history preserved, not
-  squashed) and is referenced via `ProjectReference` (`../../RfCore/src/RfCore.csproj` from a
-  `src/*`/`tests/*` project). It is *not* under `src/` — same architectural boundary as before,
-  just no longer a separate clone.
+- `RfCore` (Touchstone I/O, network params, the `DataSet`/`DataCube` result types, interpolation,
+  renormalization, plotting) is **a first-class project of this repository, exactly like `Core`,
+  `Engine`, and `Ui`** — `src/RfCore/` with its tests at `tests/RfCore.Tests/`, both listed in
+  `circuitrf.slnx`, referenced via ordinary `ProjectReference`.
+
+  **It is NOT a subtree, and there is nothing left to "un-subtree" (2026-07-30).** It arrived via
+  `git subtree add` on 2026-07-29 purely to preserve history
+  (brief-housekeeping-tearoff-palette-repo.md §6 — splotRF, the other consumer of the standalone
+  RfCore repo, was being retired). **"Being a subtree" is not a persistent state in git**: there is
+  no `.gitmodules`, no config, no live link to anything. RfCore's 24 original commits are a
+  permanent *second parent* of merge `0bd04db`, and `git blame` on any file under `src/RfCore/`
+  still resolves to its original author and date. The only residue is a three-line
+  `git-subtree-dir/-mainline/-split` trailer in that one old commit message, which is inert unless
+  someone runs `git subtree pull` — **so don't.** Treat `src/RfCore/` as ordinary first-party code.
+
+  *Known git wrinkle, not a history loss:* `git log --follow <path>` does not cross the merge (a
+  documented `--follow`-vs-merges limitation). `git blame` does. To read the pre-merge history
+  directly: `git log 0bd04db^2 -- src/Data/DataCube.cs` (the *old* path, on the pre-merge parent).
+
+  **The architectural boundary is unchanged and does not depend on directory placement** — it is
+  enforced by assembly-reference checks in `tests/Firewall.Tests`, which is why moving RfCore under
+  `src/` cost nothing. RfCore still references no UI framework, and nothing in it may.
 
 ## Build / test / run
 - Build:   `dotnet build`
@@ -114,9 +128,10 @@ Add `--no-build` after the first build of a session.
    model. No UI, no domain types.
 
 Source map: `src/Core` (layers 1–2 + the expression engine), `src/Engine` (layer 3 + analyses),
-`src/Ui` (Avalonia), `src/Cli` (headless driver + test harness). `RfCore` lives at this repo's
-own `RfCore/` root (merged via `git subtree`, §6 above) — still referenced via `ProjectReference`,
-still architecturally outside `src/*`, just no longer a separate clone.
+`src/RfCore` (Touchstone I/O, network params, `DataSet`/`DataCube`, `.npy` export), `src/Ui`
+(Avalonia), `src/Cli` (headless driver + test harness). `RfCore` is an ordinary first-party project
+alongside the rest — see §Stack for why it is no longer at the repo root, and why that changed
+nothing architecturally.
 
 **UI firewall:** `RfCore`, `src/Core`, `src/Engine`, `src/Cli` must reference **no UI framework**
 (no Avalonia) — all UI-framework code lives in `src/Ui`, so circuitRF can be re-skinned by replacing

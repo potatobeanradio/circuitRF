@@ -573,7 +573,7 @@ implementation against a known answer.
 ---
 
 *See also: `docs/design/data-export.md` (writer/format design); the end-user
-[Results &amp; .npy export](../user/reference/npy-export.html) chapter; `RfCore/src/Export/`
+[Results &amp; .npy export](../user/reference/npy-export.html) chapter; `src/RfCore/Export/`
 (`DataSetExporter.cs`, `ExportOptions.cs`, `NpyWriter.cs`, `NpyReader.cs`,
-`DataSetImporter.cs`, `ImportedLinearNetwork.cs`); `RfCore/src/Data/` (`DataSet.cs`,
+`DataSetImporter.cs`, `ImportedLinearNetwork.cs`); `src/RfCore/Data/` (`DataSet.cs`,
 `DataCube.cs`); `tests/Engine.Tests/Export/` (round-trip oracle).*

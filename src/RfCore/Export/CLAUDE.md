@@ -1,6 +1,6 @@
 # Export / Import — local conventions (RfCore)
 
-Standing instructions for `RfCore/src/Export`. Read with the root `CLAUDE.md` and the authoritative
+Standing instructions for `src/RfCore/Export`. Read with the root `CLAUDE.md` and the authoritative
 result-model contract at `circuitRF/src/Core/Data/CLAUDE.md`.
 
 This directory holds the `DataSet` **exporter** (`.mat` / `.npy`) and **importer** (`.npy` → `DataSet`).

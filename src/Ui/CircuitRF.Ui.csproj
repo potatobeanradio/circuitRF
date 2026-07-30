@@ -71,7 +71,7 @@
     <!-- Core stack -->
     <ProjectReference Include="../Core/CircuitRF.Core.csproj" />
     <ProjectReference Include="../Engine/CircuitRF.Engine.csproj" />
-    <ProjectReference Include="../../RfCore/src/RfCore.csproj" />
+    <ProjectReference Include="../RfCore/RfCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>

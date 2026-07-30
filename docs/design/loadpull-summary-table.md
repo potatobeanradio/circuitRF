@@ -219,7 +219,7 @@ All additions are presence-tolerant: missing cube → `null`/omit, never throw.
 
 ## 8. Cube-name mapping (resolved from `LoadpullFomDialect.cs`)
 
-The circuitRF loadpull importer (`RfCore/src/Loadpull/LoadpullFomDialect.cs`) maps measured columns to these
+The circuitRF loadpull importer (`src/RfCore/Loadpull/LoadpullFomDialect.cs`) maps measured columns to these
 canonical cubes (plus `GammaLoad`/`ZLoad` built by `BuildLoadpullDataSet`):
 
 | Reference name (Python) | circuitRF canonical cube | Notes |

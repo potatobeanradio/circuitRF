@@ -1,7 +1,7 @@
 # Constant-VSWR locus in the Γ-plane — closed-form circle
 
 **Status:** Implemented (RfCore `LoadpullSurface.VswrCircleGamma`) · **Date:** 2026-06-22
-**Reads with:** `RfCore/src/Loadpull/LoadpullSurface.cs` (the `VswrLocus` / `VswrCircleZ` / `VswrCircleGamma` methods), `RfCore/src/RfHelpers.cs` (`G2Z`, `Z2G`).
+**Reads with:** `src/RfCore/Loadpull/LoadpullSurface.cs` (the `VswrLocus` / `VswrCircleZ` / `VswrCircleGamma` methods), `src/RfCore/RfHelpers.cs` (`G2Z`, `Z2G`).
 **Reference:** K. Kurokawa, "Power Waves and the Scattering Matrix," *IEEE Trans. MTT*, vol. 13, no. 2, pp. 194–202, 1965.
 
 ---

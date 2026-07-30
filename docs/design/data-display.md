@@ -6,7 +6,7 @@ each sub-phase happens when we arrive at it. Sub-phase 7.4 (contours) now has it
 `docs/design/loadpull-contours.md` (reference materials in hand).
 
 Read with: `data-model.md` and `src/Core/Data/CLAUDE.md` (the DataSet/DataCube contract — the splotRF
-seam), `data-export.md` + `RfCore/src/Export/CLAUDE.md` (`.npy` native format, exporter/importer),
+seam), `data-export.md` + `src/RfCore/Export/CLAUDE.md` (`.npy` native format, exporter/importer),
 `npy-data-consumer-guide.md`, `loadpull.md` (loadpull result shape), `ui-architecture.md` (Dock layout +
 tear-off), `ui-design.md` / HIG, and `project-file-formats.md` (where the display-config format is registered).
 

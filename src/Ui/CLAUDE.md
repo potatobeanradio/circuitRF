@@ -78,9 +78,9 @@ the entry immediately below.
 
 RfCore.Tests joins the routine gate — 281 more tests for +4 s (2026-07-30) — COMPLETE. Follow-on to the
 flaky-test work above, and it **supersedes the "`RfCore.Tests` is NOT in `circuitrf.slnx`" note further down
-this file**: `RfCore/tests/RfCore.Tests/RfCore.Tests.csproj` is now listed in `circuitrf.slnx`, so a plain
+this file**: `tests/RfCore.Tests/RfCore.Tests.csproj` is now listed in `circuitrf.slnx`, so a plain
 `dotnet test` covers it. Touching anything under `RfCore/` is caught by the routine gate now; the manual
-`dotnet test RfCore/tests/...` step is gone.
+`dotnet test tests/RfCore.Tests` step is gone.
 
 **The prior blocker was real, and confirmed before anything was changed** — three `Rbf2DPerfTests`
 wall-clock tests failed on **every** full-suite run once the project was added (2-3 per run, never in
@@ -97,7 +97,7 @@ deny a clean time slice across all 20 samples. Four green runs were luck, not ev
 
 **Resolution: `[Trait("Category", "Benchmark")]` on `Rbf2DPerfTests`** — the mechanism this repo already
 built for exactly this (`circuitrf.runsettings`' `Category!=Benchmark`, reachable through
-`Directory.Build.props` because MSBuild walks up from `RfCore/tests/` to the repo root). The four tests are
+`Directory.Build.props` because MSBuild walks up from `tests/RfCore.Tests/` to the repo root). The four tests are
 excluded from the routine gate and opt back in via
 `dotnet test --settings circuitrf.benchmark.runsettings`, alongside the other Benchmark tests. **Both
 directions verified directly, not assumed** (this repo has been bitten once by assuming VSTest filter
@@ -118,7 +118,7 @@ when the proprietary lab data is absent, and that data is git-ignored (`/testdat
 have shown ~56 hard failures that read as a broken build.
 
 `FixtureFactAttribute`/`FixtureTheoryAttribute` are now a **third copy**, under
-`RfCore/tests/RfCore.Tests/Support/` — the test projects share no code, so duplication is this repo's
+`tests/RfCore.Tests/Support/` — the test projects share no code, so duplication is this repo's
 existing convention, not laziness. **Its path resolution deliberately mirrors the file-local helpers
 exactly, including their legacy `circuitRF/`-prefixed second candidate** (a pre-subtree-merge sibling-repo
 path): if the attribute and the helper disagreed, a test would either skip while its data is present, or
@@ -651,7 +651,7 @@ user's answer; the trace card's two port combos nudge them apart on collision
 
 ## Extract the 2×2 FIRST, then renormalize — this order is load-bearing (R-stb-4)
 
-`RfCore/src/Data/NetworkMetrics.cs` (new — the cube-direct adapter) extracts the selected ordered pair out
+`src/RfCore/Data/NetworkMetrics.cs` (new — the cube-direct adapter) extracts the selected ordered pair out
 of the full N×N matrix **before** renormalizing, never after. R-stb-4's termination assumption is that
 every *other* port is terminated in **its own** Z0 — which is exactly what taking the raw sub-matrix
 means. Renormalizing the whole N-port first would impose a single reference on ports that are not the
@@ -892,9 +892,9 @@ when you have a path; pass `ParsePortsFromExtension(path)` when you only have a 
 
 ## Gate
 
-`RfCore/tests/RfCore.Tests/StabilityAndPassivityTests.cs` (16 — the R-stb-2 renorm incl. a
+`tests/RfCore.Tests/StabilityAndPassivityTests.cs` (16 — the R-stb-2 renorm incl. a
 complex-Z0 fixture that fails against the pre-fix dead branch, `Passivity` on square/non-square/N=1,
-and the six rewritten callers), `RfCore/tests/RfCore.Tests/NetworkMetricsTests.cs` (19 — extract-then-
+and the six rewritten callers), `tests/RfCore.Tests/NetworkMetricsTests.cs` (19 — extract-then-
 renormalize order, any-N with a deliberately non-1/2 pair, ordered-pair μ↔μ′ swap, whole-vs-pair
 passivity, `ValidatePortPair` rejection), `tests/Ui.Tests/StabilityCardTests.cs` (18 — the card's metric
 list gating by port count, port selectors incl. mutual-exclusion nudging, passivity scope, the
@@ -902,7 +902,7 @@ termination note, plot-kind gating), `tests/Ui.Tests/WorkspaceRefsAndTouchstoneS
 gates 7/8/9: a dropped `.s2p`/`.s3p`/`.s4p` is an ordinary aliased source, relative-with-`/` inside
 vs. absolute-and-external outside, survives a workspace move, reports a missing external by name while
 preserving trace configuration, and copies nothing into the workspace or `results/`; plus the
-storage-path port-count scan above) and `RfCore/tests/RfCore.Tests/TouchstonePortInferenceTests.cs` (10).
+storage-path port-count scan above) and `tests/RfCore.Tests/TouchstonePortInferenceTests.cs` (10).
 `tests/Ui.Tests/SimulatedSourceNetworkMetricsTests.cs` (12 — the group-aware lookup, the network
 view incl. the swept-cube refusal, the picker offering the metrics for a real run-shaped `.npy`,
 selecting one producing an actual curve, and the Touchstone-offers-each-exactly-once guard).
@@ -913,7 +913,7 @@ contention and passes in isolation — the known RfCore contention flake, not a 
 **SUPERSEDED (2026-07-30) — `RfCore.Tests` IS now in `circuitrf.slnx` and DOES run in the routine gate.**
 The paragraph below is kept for the reasoning it records; the conclusion no longer holds. See "RfCore.Tests
 joins the routine gate" at the top of this file. You no longer need to run
-`dotnet test RfCore/tests/RfCore.Tests/RfCore.Tests.csproj` by hand after touching `RfCore/`.
+`dotnet test tests/RfCore.Tests/RfCore.Tests.csproj` by hand after touching `RfCore/`.
 
 ~~`RfCore.Tests` is NOT in `circuitrf.slnx` and is therefore NOT run by a plain `dotnet test`. Adding it
 was tried and reverted: three `Rbf2DPerfTests` wall-clock timing tests fail under full-suite CPU
@@ -2954,9 +2954,9 @@ shows all 24), not squashed or copied; `git log` on the combined repo is corresp
 the owner was told to expect.
 
 Four `ProjectReference` paths updated (`src/Core`, `src/Engine`, `src/Ui`, `tests/Firewall.Tests`):
-`../../../RfCore/src/RfCore.csproj` (sibling-checkout depth) → `../../RfCore/src/RfCore.csproj`
+`../../../src/RfCore/RfCore.csproj` (sibling-checkout depth) → `../../src/RfCore/RfCore.csproj`
 (in-repo depth). `.gitignore` needed NO change — RfCore's own nested `RfCore/.gitignore` already
-correctly ignores `RfCore/src/bin`/`obj` on its own (confirmed directly with `git check-ignore -v`,
+correctly ignores `src/RfCore/bin`/`obj` on its own (confirmed directly with `git check-ignore -v`,
 not assumed — git evaluates a `.gitignore` relative to its own directory). Neither repo had any
 `.gitattributes`/LFS-tracked pattern to carry over (confirmed: neither repo had a `.gitattributes`
 file before the merge, despite `[lfs]` appearing in `circuitRF/.git/config` — that section is

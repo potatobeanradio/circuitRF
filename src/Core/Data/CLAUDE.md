@@ -211,9 +211,9 @@ Cube–cube `+ − * /` now broadcasts by **axis name**, not by position. The pr
 
 **Primary use case:** a swept-variable cube is rank-1 `[Pin]`; an HB output cube may be rank-2 `[RFfreq, Pin]`. A measurement expression that subtracts them no longer throws "rank mismatch."
 
-**Location:** `DataCube.ElementWise` (and helper methods `ZipIdentical`, `SameShapeByName`, `UnionAxes`, `MapPositions`, `BroadcastDecode`, `BroadcastOperandFlat`) in `RfCore/src/Data/DataCube.cs`.
+**Location:** `DataCube.ElementWise` (and helper methods `ZipIdentical`, `SameShapeByName`, `UnionAxes`, `MapPositions`, `BroadcastDecode`, `BroadcastOperandFlat`) in `src/RfCore/Data/DataCube.cs`.
 
-Gate tests: T1–T6 in `RfCore/tests/RfCore.Tests/DataCubeTests.cs` (broadcast subset-axis, axis-order, scalar, complex×real, incompatible-shared-axis throw, fast-path regression).
+Gate tests: T1–T6 in `tests/RfCore.Tests/DataCubeTests.cs` (broadcast subset-axis, axis-order, scalar, complex×real, incompatible-shared-axis throw, fast-path regression).
 
 ## Change carefully
 The `DataSet`/`DataCube` **in-process API** contract (cube shape, `DataKind`, axis semantics, the

@@ -24,7 +24,7 @@
     <!-- Project references cause the DLLs to be copied to the test output — that's the
          only reason for these references. The test inspects the DLL metadata; it does not
          call into the assemblies. -->
-    <ProjectReference Include="../../RfCore/src/RfCore.csproj" />
+    <ProjectReference Include="../../src/RfCore/RfCore.csproj" />
     <ProjectReference Include="../../src/Core/CircuitRF.Core.csproj" />
     <ProjectReference Include="../../src/Engine/CircuitRF.Engine.csproj" />
     <ProjectReference Include="../../src/Cli/CircuitRF.Cli.csproj" />

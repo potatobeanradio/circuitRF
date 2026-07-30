@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/RfCore.csproj" />
+    <ProjectReference Include="../../src/RfCore/RfCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -33,11 +33,11 @@
          to <repoRoot>/circuitRF/testdata/, which does not exist, so these globs silently copied
          nothing (an MSBuild wildcard matching zero files is not an error). The tests passed
          anyway only because each one walks UP the directory tree looking for testdata/. -->
-    <None Include="../../../testdata/spl_test_data/**"
+    <None Include="../../testdata/spl_test_data/**"
           Link="testdata/spl_test_data/%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="../../../testdata/lpwave_test_data/**"
+    <None Include="../../testdata/lpwave_test_data/**"
           Link="testdata/lpwave_test_data/%(Filename)%(Extension)">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

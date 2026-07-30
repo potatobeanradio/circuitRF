@@ -5,7 +5,7 @@ run's simulation data to `.npy`, `.mat`, tab-delimited text, or Touchstone. It s
 the RfCore writer/format spec in `data-export.md` (the `.mat`/`.npy` programmatic API) and reuses
 `TouchstoneIO` + `RFNetwork` for Touchstone. Read with: `data-export.md` (writer API/format),
 `results-dataset-layout.md` (the grouped `run.npy` shape this consumes), `ui-design.md` +
-`src/Ui/CLAUDE.md` (HIG), and `RfCore/src/Export/CLAUDE.md`.
+`src/Ui/CLAUDE.md` (HIG), and `src/RfCore/Export/CLAUDE.md`.
 
 ## 1. Scope
 
@@ -144,7 +144,7 @@ writes **all** data for any rank and reads naturally for the common `freq`-vs-va
 `.txt` (Excel opens tab-delimited `.txt` directly).
 
 ## 7. MatWriter rewrite (stale → grouped)
-`RfCore/src/Export/MatWriter.cs` currently iterates `ds.Cubes` (**default group only**) → it writes
+`src/RfCore/Export/MatWriter.cs` currently iterates `ds.Cubes` (**default group only**) → it writes
 **nothing** for a grouped `run.npy`. Rewrite to mirror `NpyWriter`'s grouped traversal:
 - Walk `ds.Groups` → `ds.CubesIn(group)`; emit each cube as an HDF5 dataset under a per-group
   subgroup: `/dataset/<group>/<cube>` (default group → `/dataset/<cube>` as today).

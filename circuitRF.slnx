@@ -6,6 +6,9 @@
   <Folder Name="/src/Cli/">
     <Project Path="src/Cli/CircuitRF.Cli.csproj" />
   </Folder>
+  <Folder Name="/src/RfCore/">
+    <Project Path="src/RfCore/RfCore.csproj" />
+  </Folder>
   <Folder Name="/src/Core/">
     <Project Path="src/Core/CircuitRF.Core.csproj" />
   </Folder>
@@ -26,6 +29,6 @@
     <Project Path="tests/Ui.Tests/CircuitRF.Ui.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/RfCore.Tests/">
-    <Project Path="RfCore/tests/RfCore.Tests/RfCore.Tests.csproj" />
+    <Project Path="tests/RfCore.Tests/RfCore.Tests.csproj" />
   </Folder>
 </Solution>

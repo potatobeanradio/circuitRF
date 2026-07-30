@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../RfCore/src/RfCore.csproj" />
+    <ProjectReference Include="../RfCore/RfCore.csproj" />
   </ItemGroup>
 
 </Project>

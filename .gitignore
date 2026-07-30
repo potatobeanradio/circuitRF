@@ -1,6 +1,10 @@
 .DS_Store
 .claude/
 /src/Cli/obj
+/src/RfCore/bin
+/src/RfCore/obj
+/tests/RfCore.Tests/bin
+/tests/RfCore.Tests/obj
 /src/Core/bin
 /src/Core/obj
 /tests/Core.Tests/bin

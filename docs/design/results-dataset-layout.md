@@ -13,7 +13,7 @@ exactly as this document always intended — see Open Question 1, now resolved, 
 required (R-res-11) since a per-schematic-subdirectory layout had actually shipped and needed moving.
 
 Read with: `data-display.md` (the display/source model this revises), `data-export.md` +
-`RfCore/src/Export/CLAUDE.md` (the `.npy` format), `src/Core/Data/CLAUDE.md` (the DataSet/DataCube
+`src/RfCore/Export/CLAUDE.md` (the `.npy` format), `src/Core/Data/CLAUDE.md` (the DataSet/DataCube
 contract), `measurements.md` (measurements, which this simplifies), and `family-curves.md` /
 `parametric-sweep-ux.md` (trace addressing this touches).
 
@@ -99,12 +99,12 @@ in the tree (mirrors VendorA's equations appearing as their own dataset section)
 ## Touchpoints (what changes; all break freely, no migration)
 
 Storage / model:
-- `RfCore/src/Data/DataSet.cs` — grouped structure (group → cubes); group-aware `Contains`/indexer; the
+- `src/RfCore/Data/DataSet.cs` — grouped structure (group → cubes); group-aware `Contains`/indexer; the
   `Analysis.Cube` resolution rule; `S/Y/Z` convenience accessors become group-aware (default group).
-- `RfCore/src/Export/NpyWriter.cs` / `NpyReader.cs` — write/read `group` per cube + `groups` order in
+- `src/RfCore/Export/NpyWriter.cs` / `NpyReader.cs` — write/read `group` per cube + `groups` order in
   `__meta__`; uniquify field names; bump `format_version`.
-- `RfCore/src/Export/DataSetExporter.cs` / `DataSetImporter.cs` — pass grouping through.
-- `RfCore/src/Data/DataSetBuilder` (`FromSnp`/`ToSnp`/`ClassifyZ0`) — bare `S`/`Z0` lookups become
+- `src/RfCore/Export/DataSetExporter.cs` / `DataSetImporter.cs` — pass grouping through.
+- `src/RfCore/Data/DataSetBuilder` (`FromSnp`/`ToSnp`/`ClassifyZ0`) — bare `S`/`Z0` lookups become
   default-group lookups; a Touchstone import is one default group.
 
 Run pipeline:
