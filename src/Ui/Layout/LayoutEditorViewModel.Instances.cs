@@ -55,6 +55,12 @@ public sealed partial class LayoutEditorViewModel
 
     public IReadOnlyList<int> SelectedInstanceIndices => _selectedInstanceIndices;
 
+    /// <summary>Selects instance <paramref name="index"/> alone — for a non-pointer selection path
+    /// that already knows the index (brief-L5-followups-3.md R-L5h-1/2: double-click on a PCell
+    /// instance routes here instead of pushing in, so its parameter editor — the Properties
+    /// Inspector's existing PCell-instance context, brief-L5-followups.md §5 — reflects it).</summary>
+    public void SelectInstance(int index) => SetInstanceSelection([index]);
+
     /// <summary>Mirrors <c>SetSelection</c> for instances — brief-L3a-followups.md §2/R-fix-2:
     /// <paramref name="clearOtherKind"/> is false for Shift/Ctrl add-toggle (keep whatever shapes are
     /// already selected), true for a replace (plain click, marquee-without-modifier). See

@@ -7,15 +7,18 @@
 [![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#getting-started)
 [![UI: Avalonia](https://img.shields.io/badge/UI-Avalonia%2012-7B68EE.svg)](https://avaloniaui.net/)
 
-circuitRF is an EDA tool for developing RF circuits.  It can analyze the frequency response and nonlinear behavior of RF circuits — from a handful of components to hierarchical, multi-port designs with thousands of components — using **DC**, **S-parameter**, and **harmonic-balance** analyses, plus first-class **loadpull / sourcepull**. The analyses and the workflow are built around the RF/microwave problem, the file formats are human-readable, and the headline goal is to make loadpull as easy as a few clicks. circuitRF also supports layout for PCB and MMIC design and includes export capabilities to Gerber, DXF and GSDII formats.
+circuitRF is an EDA tool for developing RF circuits.  It can analyze the frequency response and nonlinear behavior of RF circuits — from a handful of components to hierarchical, multi-port designs with thousands of components — using **DC**, **S-parameter**, and **harmonic-balance** analyses, plus first-class **loadpull / sourcepull**. The analyses and the workflow are built around the RF/microwave problem, the file formats are human-readable, and the headline goal is to make loadpull as easy as a few clicks. circuitRF also includes a **layout editor** for PCB and MMIC design — with substrate-aware microstrip components, schematic↔layout generation, and export to **Gerber**, **DXF** and **GDSII** — and a **2.5D electromagnetic solver** that analyses that layout geometry against its substrate stackup.
 
 circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; academic researchers; and capable hobbyists.** It is written in **C# / .NET 10**, with an **Avalonia 12** GUI rendered through **SkiaSharp**, and it was built largely **AI-assisted** (see
 [AI-assisted development](#ai-assisted-development)).
 
 > **Status:** v1 *alpha*. The engine (S-parameters, nonlinear DC, single/two-tone harmonic balance,
 > parametric sweeps, loadpull) runs the acceptance circuits from both the CLI and the GUI; the Avalonia
-> schematic/symbol editors and the Data Display — including end-to-end loadpull simulation,contour plotting
-> and interactive contour markers — are in place. What's left is packaging and hardening
+> schematic/symbol editors and the Data Display — including end-to-end loadpull simulation, contour plotting
+> and interactive contour markers — are in place. The **layout editor** is landing now: geometry editing,
+> technologies/stackups, hierarchy, GDSII/DXF/Gerber interchange, parametric microstrip components, and
+> schematic↔layout generation all work; the **2.5D method-of-moments EM solver** that consumes those layouts
+> is next. What's left after that is packaging and hardening
 > ([Roadmap & status](#roadmap--status)). Expect rough edges, and please file issues.
 
 ---
@@ -51,6 +54,12 @@ parameters and sweeps, and Run.*
      metric/colormap selection. Optionally a second rectangular plot (power sweep) docked alongside. -->
 *Plot S-parameters, spectra, power sweeps, and loadpull contours; overlay measured Touchstone/`.spl`/
 `.lpcwave` data on simulated results.*
+
+### Layout editor
+![circuitRF layout editor](docs/images/layout-editor.png)
+<!-- IMAGE PLACEHOLDER: docs/images/layout-editor.png — to be supplied by the repo owner. -->
+*Draw and edit physical geometry on a technology-defined layer stack: microstrip components generated from
+their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and Gerber.*
 
 ---
 
@@ -179,6 +188,8 @@ circuitRF/
 │  │  ├─ Design/         cells, instances, TestBench, analyses, measurements
 │  │  ├─ Elaboration/    flatten hierarchy, resolve parameters/sweeps, number nodes
 │  │  ├─ Devices/        ComponentModel base + built-in models (R/L/C, FET, SDD, TLIN, …)
+│  │  │  └─ Microstrip/    substrate-aware microstrip: Hammerstad-Jensen, dispersion, loss,
+│  │  │                    discontinuities, Klopfenstein taper
 │  │  ├─ Expressions/    tokenizer, Pratt parser, evaluator, automatic differentiation
 │  │  ├─ Netlist/        .cnl reader/writer
 │  │  └─ Data/           DataSet/DataCube result model (mirrors RfCore)
@@ -187,7 +198,11 @@ circuitRF/
 │  │  └─ Loadpull/         loadpull + pursuit engines, .gam terminations
 │  ├─ Ui/              Avalonia 12 + SkiaSharp — the only place UI-framework code lives
 │  │  ├─ Schematic/      net extractor, editable model, library palette, placement
-│  │  ├─ Renderers/      pure SkiaSharp renderers (schematic, symbols) — no Avalonia types
+│  │  ├─ Layout/         layout editor: integer-DBU geometry model, technology + stackup, spatial
+│  │  │  │                index, booleans/flatten, hierarchy, schematic↔layout generation
+│  │  │  ├─ PCells/        parametric cells — geometry generated from component parameters
+│  │  │  └─ Interchange/   GDSII, DXF and Gerber/Excellon readers and writers
+│  │  ├─ Renderers/      pure SkiaSharp renderers (schematic, symbols, layout) — no Avalonia types
 │  │  ├─ Controls/       Avalonia custom controls hosting Skia surfaces + input
 │  │  ├─ DataDisplay/    DataCube-native plots (Smith/polar/rect/table), loadpull surface, contours
 │  │  ├─ ViewModels/  Views/  Commands/  Theming/  …   the MVVM shell
@@ -200,11 +215,6 @@ circuitRF/
 ├─ testdata/           golden references + regression fixtures
 └─ CLAUDE.md           standing project memory (architecture, invariants) — root + nested per subsystem
 ```
-
-`RfCore` lives at this repo's own `RfCore/` root — merged in via `git subtree` (history preserved),
-formerly a separate clone shared with splotRF. Still referenced via `ProjectReference`
-(`../../RfCore/src/RfCore.csproj` from a `src/*`/`tests/*` project) and still **not** under `src/`,
-same architectural boundary as before. See [Getting started](#getting-started).
 
 ---
 
@@ -239,9 +249,7 @@ cd ~/code
 git clone https://github.com/potatobeanradio/circuitRF.git
 ```
 
-That's it — one repository. (`RfCore`, the shared Touchstone/network-parameter/`DataSet` library,
-used to be a separate clone; it now lives inside circuitRF at `RfCore/`, merged in with its own
-commit history preserved via `git subtree`.)
+That's it — one repository, everything included.
 
 ### 3. Build and test
 
@@ -315,10 +323,7 @@ var dataset          = SParameterEngine.Run(netlist, freqsHz);   // → a DataSe
 ## Adding a standard library component
 
 This is the **recommended first contribution** — and the most valuable thing an RF expert can do. circuitRF
-ships ~20 built-in parts (R, L, C, Vdc, RF tone source, Ground, Term, Pin, current probe, FET-SDD, SDD,
-Z-port, SnP/Touchstone, nonlinear C, mutual inductance, ideal transmission line, tuners, …). There are many
-useful parts **not** yet in the library — a **diode**, a **BJT**, microstrip elements (**MLIN/MSTEP/MBEND**),
-an **ideal transformer**, **coupled lines**, a **circulator/isolator**, lumped **attenuator pads**, and more.
+ships ~20 built-in parts (R, L, C, Vdc, RF tone source, Ground, Term, Pin, current probe, symbolically defined device (SDD), Z-port, SnP/Touchstone, nonlinear C, mutual inductance, ideal transmission line, tuners, …) plus a substrate-aware **microstrip family** (MLIN, MBEND, MTEE, MCROSS, MTAPER, MKLOPF) that carries layout artwork as well as an electrical model. There are still many useful parts **not** yet in the library — a **diode**, a **BJT**, an **ideal transformer**, **coupled lines**, a **circulator/isolator**, lumped **attenuator pads**, and more.
 
 Adding one is a well-trodden path:
 
@@ -354,12 +359,23 @@ the `DataCube`-native Data Display with Smith/polar/rect/table plots; **end-to-e
 plotting** (engine → RBF surface fit → contour render, for simulated *and* measured data); and
 **interactive markers**, including markers that read and drag on the contour surface.
 
-What's left for the v1 release is **hardening (Phase 8)** — installers for Windows/macOS/Linux (mirroring
-splotRF's recipes), broader docs, and keeping the `testdata/` regression suite green in CI on all three OSes.
+**Also done — the layout half:** a full **layout editor** on an integer-DBU geometry model — drawing tools,
+curves and holes, booleans and offsets, scale, technologies with layer tables and substrate **stackups**,
+hierarchy with instances and arrays, push-in/pop-out navigation, flatten and group-into-cell, a spatial index
+and LOD rendering for large designs, **GDSII / DXF / Gerber+Excellon interchange**, a **parametric cell
+(PCell)** mechanism, the **microstrip component family** with published discontinuity models, and
+**schematic↔layout generation** in both directions.
+
+**In progress — electromagnetic simulation.** A **2.5D method-of-moments** solver that analyses layout
+geometry against its technology stackup and returns S-parameters consumable anywhere a Touchstone block is:
+quasi-static per-unit-length first, then full-wave over a single dielectric, then the general layered stack
+with vias and z-directed current. Closed-form microstrip serves as the validation oracle for the first stage.
+See [`docs/design/layout-view.md`](docs/design/layout-view.md) §10.
+
+What's left for the v1 release after that is **hardening** — installers for Windows/macOS/Linux, broader
+docs, and keeping the `testdata/` regression suite green in CI on all three OSes.
 
 **Deferred to v2:**
-- **Layout editor.** The cell carries the *concept* of a Layout view; it is a placeholder in v1 (no 2D/3D
-  layout, no EM).
 - **Sparse block Jacobian for HB at scale.** v1 uses a dense per-block Jacobian; a sparse solve is the path
   to very large nonlinear problems.
 - **Verilog-A / OSDI backend → ASM-HEMT.** v1 ships built-in models + the SDD; the device interface is

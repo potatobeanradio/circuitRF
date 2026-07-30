@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Properties.PCellParameterListView"
+             x:DataType="vm:LayoutShapePropertiesViewModel">
+
+    <!-- Extracted from LayoutShapePropertiesView.axaml so the SAME PCell-parameter editing surface
+         can be hosted both in the docked Properties panel (embedded, live with whatever instance is
+         currently selected) and in a standalone popup window (LayoutPCellParameterDialog, opened on
+         double-click) — mirroring how the schematic editor's double-click opens ParameterEditorDialog
+         around the SAME ParameterEditorView the embedded inspector already uses. One view, two hosts;
+         never a second parameter-editing implementation.
+
+         Name column widened per owner report (2026-07-29): a fixed 56px clipped longer MKlopf
+         parameter names ("GammaMax", "SmoothSteps", "SignalLayer", "GroundReference", ...).
+         Auto-width + SharedSizeGroup (Grid.IsSharedSizeScope on this control's own root) mirrors
+         ParameterEditorView.axaml's ParamName column exactly — every row's name column sizes to the
+         LONGEST name across all rows, so no name is ever cut off, and every row's value box still
+         lines up underneath the others. -->
+    <Grid RowDefinitions="Auto,Auto,*" MinHeight="60" Grid.IsSharedSizeScope="True">
+        <TextBlock Grid.Row="0" Text="Parameters" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,2"
+                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+        <!-- brief-L5-followups-2.md Item 1 (R-L5g-1): MKlopf entry-mode toggles — Z1/Z2 ⇄ W1/W2,
+             L ⇄ F3db. Disabled with a stated reason (R-L5h-9) when no technology resolves a
+             substrate. -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4" Margin="0,0,0,2"
+                    IsVisible="{Binding IsMklopfTarget}">
+            <Button Content="{Binding MklopfImpedanceToggleLabel}" FontSize="10" Padding="6,2"
+                    Command="{Binding ToggleMklopfImpedanceEntryCommand}"
+                    ToolTip.Tip="{Binding MklopfImpedanceToggleTip}"/>
+            <Button Content="{Binding MklopfLengthToggleLabel}" FontSize="10" Padding="6,2"
+                    Command="{Binding ToggleMklopfLengthEntryCommand}"
+                    ToolTip.Tip="{Binding MklopfLengthToggleTip}"/>
+        </StackPanel>
+        <ListBox Grid.Row="2" ItemsSource="{Binding PCellParamRows}" IsEnabled="{Binding IsEditingEnabled}"
+                 Background="Transparent" BorderThickness="0" Padding="0"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.DataTemplates>
+                <DataTemplate DataType="vm:PCellParamRowViewModel">
+                    <Grid Margin="0,1" ToolTip.Tip="{Binding Error}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition SharedSizeGroup="PCellParamName" Width="Auto" MinWidth="60"/>
+                            <ColumnDefinition Width="*" MinWidth="60"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="11" VerticalAlignment="Center"
+                                   Margin="0,0,6,0"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBox Grid.Column="1" Text="{Binding ValueText}" Tag="{Binding FieldKey}" FontSize="11" Padding="4,2"
+                                  Classes.error="{Binding HasError}"
+                                  GotFocus="OnPCellParamFieldGotFocus" LostFocus="OnPCellParamFieldLostFocus" KeyDown="OnPCellParamFieldKeyDown"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.DataTemplates>
+        </ListBox>
+    </Grid>
+</UserControl>

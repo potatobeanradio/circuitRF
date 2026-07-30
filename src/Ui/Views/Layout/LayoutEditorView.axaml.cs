@@ -12,6 +12,7 @@ using Avalonia.Threading;
 using CircuitRF.Ui.Clipboard;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Interchange;
+using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views.Dialogs;
 
 namespace CircuitRF.Ui.Views.Layout;
@@ -133,9 +134,44 @@ public partial class LayoutEditorView : UserControl
         LayoutCanvasCtrl.InvalidateVisual();
     }
 
+    /// <summary>
+    /// brief-L5-followups-3.md §1 (R-L5h-1/2), corrected per owner follow-up (2026-07-29, 4th report):
+    /// the dispatch decision itself — a PCell instance must never reach <see cref="DoPushInto"/> at all
+    /// (every previous round guarded push-in AFTER it was already called, which is why the user kept
+    /// seeing push-in's own polite refusal message instead of anything opening).
+    /// <see cref="LayoutHierarchyResolver.IsPCellInstance"/> is checked FIRST, here, before push-in is
+    /// ever reached; a PCell instance is selected (so the Properties Inspector shows it too, staying in
+    /// sync) AND a popup <see cref="LayoutPCellParameterDialog"/> is opened — the Layout Editor's
+    /// counterpart to the Schematic Editor's own double-click-opens-<c>ParameterEditorDialog</c>
+    /// behavior (<c>SchematicView.axaml.cs :: OnComponentDoubleTapped</c>), which R-L5h-2's original
+    /// "the SAME editor, not a new dialog" reading had wrongly read as "route to the docked Properties
+    /// panel only" — the owner's own repeated reports make clear a popup was always what was wanted, to
+    /// match the schematic side exactly. The dialog hosts the identical
+    /// <c>PCellParameterListView</c> the docked panel uses (never a second parameter-editing
+    /// implementation) and is shown non-modally (<c>Window.Show</c>, not <c>ShowDialog</c>), matching
+    /// the schematic dialog's own non-modal default. An ordinary (non-PCell) instance falls through to
+    /// push-in exactly as before, including its own correct refusal reason for a genuinely unresolvable
+    /// one.
+    /// </summary>
     private void OnInstanceDoubleTapped(object? sender, LayoutInstance instance)
     {
         if (DataContext is not LayoutDocument doc) return;
+
+        if (LayoutHierarchyResolver.IsPCellInstance(instance, doc.ActiveViewModel))
+        {
+            int index = doc.ActiveViewModel.Model.Instances.IndexOf(instance);
+            if (index >= 0) doc.ActiveViewModel.SelectInstance(index);
+            doc.NotifyCanvasInteracted(); // re-assert Properties/undo/save-scope routing (R-fix-3)
+
+            var owner = TopLevel.GetTopLevel(this) as Window;
+            var dialogVm = new LayoutShapePropertiesViewModel();
+            dialogVm.SetContext(doc.ActiveViewModel);
+            var dialog = new LayoutPCellParameterDialog { DataContext = dialogVm };
+            dialog.Closed += (_, _) => dialogVm.SetContext(null); // unsubscribe from the layout VM
+            dialog.Show(owner!); // owner may be null when no window parent (e.g. embedded in non-Window host)
+            return;
+        }
+
         DoPushInto(doc, instance);
     }
 
@@ -155,20 +191,32 @@ public partial class LayoutEditorView : UserControl
         if (DataContext is LayoutDocument doc) DoPopOut(doc);
     }
 
+    private const string PushInDefaultTip = "Push Into Cell  (Ctrl+])";
+
     /// <summary>Mirrors SchematicView's UpdateDisableButtonStates for PushInBtn/PopOutBtn exactly:
     /// Push Into Cell enabled only when exactly one selected instance resolves to a pushable cell;
-    /// Pop Out enabled whenever the active document's nav stack has depth &gt; 0.</summary>
+    /// Pop Out enabled whenever the active document's nav stack has depth &gt; 0. brief-L5-followups-3.md
+    /// R-L5h-1/R13a: the button's own tooltip carries WHY it's disabled (e.g. a PCell selection's
+    /// "generated; edit its parameters instead" reason) rather than the static default text — the one
+    /// case a disabled push-in button already correctly refuses BEFORE this brief; this only makes the
+    /// stated reason visible on hover instead of only in the Messages pane after a click.</summary>
     private void UpdateHierarchyButtonStates()
     {
         if (DataContext is not LayoutDocument doc)
         {
             PushInBtn.IsEnabled = false;
+            ToolTip.SetTip(PushInBtn, PushInDefaultTip);
             PopOutBtn.IsEnabled = false;
             return;
         }
         var vm = doc.ActiveViewModel;
         var inst = vm.SingleSelectedInstance;
-        PushInBtn.IsEnabled = doc.Hierarchy?.CanPushInto(inst, vm, out _) ?? false;
+        bool canPush;
+        string? reason = null;
+        if (doc.Hierarchy is { } host) canPush = host.CanPushInto(inst, vm, out reason);
+        else canPush = false;
+        PushInBtn.IsEnabled = canPush;
+        ToolTip.SetTip(PushInBtn, canPush ? PushInDefaultTip : reason ?? PushInDefaultTip);
         PopOutBtn.IsEnabled = doc.CanPopOut;
     }
 

@@ -1,3 +1,4 @@
+using System.Linq;
 using CircuitRF.Core.Devices.Microstrip;
 
 namespace CircuitRF.Ui.Layout.PCells;
@@ -57,6 +58,8 @@ public static class MKlopfPCell
         double w2 = HammerstadJensen.SynthesizeWidth(z2, hMeters, tMeters, epsR, reporter);
         double blendLen1 = BlendWidthMultiple * w1;
         double blendLen2 = BlendWidthMultiple * w2;
+
+        CheckCurvature(lMeters, offsetMeters, totalArc, z1, z2, gammaMax, hMeters, tMeters, epsR, reporter);
 
         // Sample centerline position, tangent, and (pre-blend) width at each tessellation point.
         var xs = new double[TessellationPoints + 1];
@@ -125,7 +128,56 @@ public static class MKlopfPCell
             new PCellPin("2", lDbu, pin2YDbu, signalLayer, w2Dbu, 0.0),
         };
 
-        return new PCellResult([outline], pins);
+        var diagnostics = reporter.Drain();
+        return new PCellResult([outline], pins,
+            diagnostics.Count > 0 ? diagnostics.Select(d => d.Message).ToList() : null);
+    }
+
+    /// <summary>
+    /// brief-L5-followups-2.md §2.2/R-L5g-4: R-klp-10's curvature check — CONFIRMED absent from this
+    /// generator before this fix (verified directly: this method did not exist; every prior mention
+    /// of "R-klp-10" in this codebase's own completion notes described intent, not code that was
+    /// actually here). <c>MicrostripOffsetCenterline.MinRadiusOfCurvature</c> already existed and
+    /// worked; nothing called it. Scans the centerline for its own point of maximum curvature (mirrors
+    /// <c>MinRadiusOfCurvature</c>'s own 400-sample scan, since that method reports only the resulting
+    /// radius, not WHERE it occurs — needed here to evaluate the LOCAL trace width at that exact
+    /// point, not an endpoint width), and warns once when the resulting minimum radius of curvature is
+    /// under <see cref="BlendWidthMultiple"/>× the local trace width there — offsetting an outline by
+    /// more than its own local radius of curvature is the specific failure mode that produces a
+    /// self-intersecting edge (§2.2's own closing note).
+    /// </summary>
+    private static void CheckCurvature(
+        double lMeters, double offsetMeters, double totalArc,
+        double z1, double z2, double gammaMax,
+        double hMeters, double tMeters, double epsR, MicrostripValidityReporter reporter)
+    {
+        if (offsetMeters == 0.0) return; // a straight centerline has no curvature at all
+
+        const int samples = 400;
+        double maxKappa = 0.0, argX = 0.0;
+        for (int i = 0; i <= samples; i++)
+        {
+            double x = lMeters * i / samples;
+            double k = MicrostripOffsetCenterline.Curvature(x, lMeters, offsetMeters);
+            if (k > maxKappa) { maxKappa = k; argX = x; }
+        }
+        if (maxKappa <= 0.0) return;
+
+        double rMin = 1.0 / maxKappa;
+        double arcAtMax = MicrostripOffsetCenterline.ArcLength(0.0, argX, lMeters, offsetMeters);
+        double sFrac = totalArc > 0 ? arcAtMax / totalArc : 0.0;
+        double zAtMax = KlopfensteinTaper.ImpedanceAt(sFrac, z1, z2, gammaMax);
+        double wLocal = HammerstadJensen.SynthesizeWidth(zAtMax, hMeters, tMeters, epsR, reporter);
+
+        if (rMin < BlendWidthMultiple * wLocal)
+        {
+            reporter.ReportOnce("R-klp-10",
+                $"R-klp-10: the Offset centerline's minimum radius of curvature ({rMin * 1e3:0.###} mm, near " +
+                $"x={argX * 1e3:0.#} mm) is under {BlendWidthMultiple:0.#}x the local trace width there " +
+                $"({wLocal * 1e3:0.###} mm) — offsetting the outline by more than its own local radius " +
+                "can produce a self-intersecting edge; consider a larger Offset/L ratio, a longer L, or " +
+                "fewer SmoothSteps.");
+        }
     }
 
     /// <summary>R-klp-4a's own zero-slope blend: within <paramref name="blendLenMeters"/> of the

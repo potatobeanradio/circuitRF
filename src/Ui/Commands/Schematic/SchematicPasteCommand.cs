@@ -139,14 +139,13 @@ internal sealed class SchematicPasteCommand : IUiCommand
         return comps;
     }
 
-    // S-param port family: Term and P1Tone share a single Num numbering space.
-    private static readonly HashSet<SymbolKind> PortFamily =
-        [SymbolKind.Term, SymbolKind.P1Tone];
-
     /// <summary>
-    /// For each pasted Term/P1Tone/Port whose Num collides with an existing component,
-    /// reassigns to the lowest unused positive integer. Pasted components in the same
-    /// batch are checked against each other too so they stay unique.
+    /// For each pasted component that <see cref="ComponentTypeRegistry.OwnsUniquePortNum"/> (Term/
+    /// TermG/P1Tone today) whose Num collides with an existing component, reassigns to the lowest
+    /// unused positive integer. Pasted components in the same batch are checked against each other
+    /// too so they stay unique. Routes through the shared registry predicate (docs/sonnet-briefs/
+    /// brief-misc-termg-units-technologies.md §1) rather than a hand-maintained local list — a
+    /// bare <c>SymbolKind.Term</c>-only test here was the exact bug: TermG paste never got renumbered.
     /// </summary>
     private static List<EditableComponent> ResolveNums(
         SchematicEditModel model, List<EditableComponent> comps)
@@ -154,14 +153,14 @@ internal sealed class SchematicPasteCommand : IUiCommand
         var pastedIds = comps.Select(c => c.Id).ToHashSet();
         var usedNums  = new HashSet<int>(
             model.Components
-                .Where(c => PortFamily.Contains(c.Symbol) && !pastedIds.Contains(c.Id))
+                .Where(c => ComponentTypeRegistry.OwnsUniquePortNum(c.Symbol) && !pastedIds.Contains(c.Id))
                 .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Num")?.Expression)
                 .Where(e => e is not null && int.TryParse(e, out _))
                 .Select(e => int.Parse(e!)));
 
         foreach (var comp in comps)
         {
-            if (!PortFamily.Contains(comp.Symbol)) continue;
+            if (!ComponentTypeRegistry.OwnsUniquePortNum(comp.Symbol)) continue;
             var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
             if (numParam is null || !int.TryParse(numParam.Expression, out int num)) continue;
             if (!usedNums.Contains(num)) { usedNums.Add(num); continue; }

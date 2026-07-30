@@ -1,3 +1,4 @@
+using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
 
@@ -146,5 +147,105 @@ public class TermGComponentTests
     public void TermG_AppearsInPalette_UnderTerminals()
     {
         Assert.Contains(LibraryCatalog.ByCategory(ComponentCategory.Terminals), i => i.Kind == SymbolKind.TermG);
+    }
+
+    // ── §1 (brief-misc-termg-units-technologies.md): TermG's Num must be uniqued everywhere Term's
+    // is — paste, placement, and inline type-change. Paste and inline type-change were the two real
+    // gaps (each had its own hand-typed SymbolKind test that included Term/P1Tone but not TermG);
+    // placement already worked. All three now route through the single
+    // ComponentTypeRegistry.OwnsUniquePortNum predicate. Duplicate (Ctrl/Cmd+D) and drag-copy do not
+    // exist as Schematic Editor features at all (checked directly: no such command, binding, or
+    // modifier-drag path exists anywhere in SchematicViewModel/SchematicCanvas/SchematicView) — so
+    // there is no third and fourth entry point to gate here; only the two below plus placement.
+
+    private static EditableComponent MakeTermG(string name, int num, double x = 0, double y = 0)
+    {
+        var c = new EditableComponent { InstanceName = name, Symbol = SymbolKind.TermG, X = x, Y = y };
+        c.Parameters.Add(new EditableParameter { Name = "Num", Expression = num.ToString() });
+        return c;
+    }
+
+    [Fact]
+    public void OwnsUniquePortNum_TermIncludedTermGIncludedP1ToneIncluded_OthersNot()
+    {
+        Assert.True(ComponentTypeRegistry.OwnsUniquePortNum(SymbolKind.Term));
+        Assert.True(ComponentTypeRegistry.OwnsUniquePortNum(SymbolKind.TermG));
+        Assert.True(ComponentTypeRegistry.OwnsUniquePortNum(SymbolKind.P1Tone));
+        Assert.False(ComponentTypeRegistry.OwnsUniquePortNum(SymbolKind.Pin)); // its own separate pool
+        Assert.False(ComponentTypeRegistry.OwnsUniquePortNum(SymbolKind.Resistor));
+    }
+
+    // Paste — the bug as originally reported: pasting a TermG beside an existing TermG produced a
+    // duplicate Num, because the old paste-side "PortFamily" set was [Term, P1Tone] only.
+    [Fact]
+    public void PasteNum_TermG_CollidesWithExistingTermG_GetsNextFreeNum()
+    {
+        var model  = new SchematicEditModel();
+        model.Components.Add(MakeTermG("Term1", 1));
+        var pasted = MakeTermG("Term2", 1);
+        var cmd    = new SchematicPasteCommand(model, [pasted], [], []);
+        cmd.Execute();
+
+        var got = model.Components.Last().Parameters.First(p => p.Name == "Num").Expression;
+        Assert.Equal("2", got);
+    }
+
+    // Mixed Term + TermG selection: both share the pool, so a pasted TermG must dodge an existing
+    // Term's Num (and vice versa), not just its own kind.
+    [Fact]
+    public void PasteNum_MixedTermAndTermGSelection_BothDodgeEachOthersNums()
+    {
+        var model = new SchematicEditModel();
+        model.Components.Add(MakeTermG("Term1", 1)); // existing TermG holds Num=1
+        var pastedTermG = MakeTermG("Term2", 1);     // pasted TermG collides with it
+        var pastedTerm  = new EditableComponent { InstanceName = "Term3", Symbol = SymbolKind.Term, X = 100 };
+        pastedTerm.Parameters.Add(new EditableParameter { Name = "Num", Expression = "1" }); // pasted plain Term ALSO collides
+        var cmd = new SchematicPasteCommand(model, [pastedTermG, pastedTerm], [], []);
+        cmd.Execute();
+
+        int n1 = int.Parse(model.Components[1].Parameters.First(p => p.Name == "Num").Expression);
+        int n2 = int.Parse(model.Components[2].Parameters.First(p => p.Name == "Num").Expression);
+        Assert.NotEqual(1, n1);
+        Assert.NotEqual(1, n2);
+        Assert.NotEqual(n1, n2); // and the two pasted-in-the-same-batch components don't collide either
+    }
+
+    // Placement — was already correct before this brief (CommitPlacement's own kind-check already
+    // included TermG); pinned here as a permanent regression guard alongside the two real fixes above.
+    [Fact]
+    public void CommitPlacement_TermG_CollidesWithExistingTerm_GetsNextFreeNum()
+    {
+        var vm = MakeVm();
+        vm.CommitPlacement(SymbolKind.Term, 0, SymbolRotation.R0, 0, 0);     // Num=1
+        vm.CommitPlacement(SymbolKind.TermG, 0, SymbolRotation.R0, 100, 0); // must dodge it
+
+        var nums = vm.EditModel.Components
+            .Select(c => int.Parse(c.Parameters.First(p => p.Name == "Num").Expression))
+            .ToList();
+        Assert.Equal(2, nums.Distinct().Count());
+    }
+
+    // Inline type-change ("TG" typed over an existing component) — the second real gap: the old
+    // check was "newKind == SymbolKind.Term" only, so converting a component's type to TermG kept
+    // whatever placeholder Num DefaultParameters produced, silently duplicating an existing one.
+    [Fact]
+    public void CommitInlineEdit_TypeChangeToTermG_CollidesWithExistingTerm_GetsNextFreeNum()
+    {
+        var vm = MakeVm();
+        var em = vm.EditModel;
+        vm.CommitPlacement(SymbolKind.Term, 0, SymbolRotation.R0, 0, 0); // Num=1
+
+        var src = new EditableComponent { InstanceName = "R1", Symbol = SymbolKind.Resistor, X = 100, Y = 0 };
+        em.Components.Add(src);
+        em.NotifyChanged();
+
+        var hit = new SchematicHitTest.HitResult(SchematicHitTest.HitKind.ComponentType, src.Id);
+        vm.BeginInlineEditForHit(hit, 0, 0);
+        vm.InlineEditValue = "TG";
+        vm.CommitInlineEdit();
+
+        var newTermG = em.Components.Single(c => c.Symbol == SymbolKind.TermG);
+        var num = newTermG.Parameters.First(p => p.Name == "Num").Expression;
+        Assert.NotEqual("1", num); // must not collide with the pre-existing Term's Num=1
     }
 }

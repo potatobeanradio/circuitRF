@@ -74,12 +74,76 @@ public sealed partial class LayoutEditorViewModel
             foreach (var kv in newParameters) merged[kv.Key] = kv.Value;
 
         var result = generator(merged, Technology, layerSelection ?? PCellLayerSelection.Default);
+        if (result.Diagnostics is { Count: > 0 })
+            foreach (var d in result.Diagnostics) _messageSink?.Warning(d);
 
         Model.Shapes.Clear();
         Model.Shapes.AddRange(result.Shapes);
         Model.PCellOrigin = origin with { Parameters = merged };
         IsDirty = true;
         Model.NotifyChanged();
+        return true;
+    }
+
+    // ── L5 R-L5-2: editing a PLACED PCell instance's parameters is copy-on-write ────────────────────
+    // Distinct from RegeneratePCell above (which mutates THIS document's own top-level PCellOrigin in
+    // place — correct only when Model itself IS the generated layout). An instance elsewhere in a
+    // parent layout points at a cell folder under GeneratedCellStore.ReservedFolderName that may be
+    // shared by other instances (R-L5-1's whole point); mutating that cell's shapes in place would
+    // silently change every sibling too. GeneratedCellStore is content-addressed on the parameter
+    // values themselves, so "edit the parameters" is simply "repoint CellRef at whatever cell those
+    // new values hash to" — the existing cell (and any other instance referencing it) is never
+    // touched, and if the new value set already has a generated cell (e.g. the user dialed back to a
+    // value some OTHER instance already uses), it is reused rather than duplicated, automatically.
+
+    /// <summary>
+    /// Edits <see cref="LayoutView.Instances"/>[<paramref name="instanceIndex"/>]'s PCell parameters —
+    /// no-op (with a reason) when that instance's resolved cell has no <see cref="PCellOrigin"/>, or
+    /// when no workspace is open (generated cells need a stable workspace-root location to live in).
+    /// One <see cref="Commands.Layout.ReplaceInstanceCommand"/>, so it undoes like any other instance
+    /// edit. Unspecified parameter names in <paramref name="newParameters"/> keep the resolved cell's
+    /// current value, mirroring <see cref="RegeneratePCell"/>'s own merge behavior.
+    /// </summary>
+    public bool EditInstancePCellParameters(int instanceIndex, IReadOnlyDictionary<string, double> newParameters)
+    {
+        if ((uint)instanceIndex >= (uint)Model.Instances.Count) return false;
+        var inst = Model.Instances[instanceIndex];
+
+        var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
+        if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin)
+        {
+            _messageSink?.Warning("Edit PCell Parameters: this instance's cell is not PCell-generated.");
+            return false;
+        }
+        if (WorkspaceRootDir is not { Length: > 0 } workspaceRoot)
+        {
+            _messageSink?.Error("Edit PCell Parameters: no workspace is open — generated cells need a workspace to live in.");
+            return false;
+        }
+
+        var merged = new Dictionary<string, double>(origin.Parameters);
+        foreach (var kv in newParameters) merged[kv.Key] = kv.Value;
+
+        string newCellDir = PCells.GeneratedCellStore.GetOrCreate(
+            workspaceRoot, origin.GeneratorId, merged, Technology, ResolvedTechPath, PCells.PCellLayerSelection.Default, out var editDiagnostics);
+        PCells.GeneratedCellStore.RecordSnapshot(
+            Model, newCellDir, origin.GeneratorId, merged, ResolvedTechPath, PCells.PCellLayerSelection.Default);
+        if (editDiagnostics is { Count: > 0 })
+            foreach (var d in editDiagnostics) _messageSink?.Warning(d);
+
+        string newCellRef;
+        try { newCellRef = Path.GetRelativePath(InstanceBaseDir, newCellDir); }
+        catch { newCellRef = newCellDir; }
+
+        if (string.Equals(newCellRef, inst.CellRef, StringComparison.OrdinalIgnoreCase))
+            return true; // resolved to the SAME cell (params round-tripped to their existing value) — nothing to do.
+
+        if (!CheckNotCyclic(newCellRef)) return false;
+
+        var after = LayoutGeometry.Clone(inst);
+        after.CellRef = newCellRef;
+        Execute(new Commands.Layout.ReplaceInstanceCommand(Model, instanceIndex, inst, after));
+        IsDirty = true;
         return true;
     }
 }

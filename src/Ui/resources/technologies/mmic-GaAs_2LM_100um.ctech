@@ -1,0 +1,313 @@
+{
+  "FormatVersion": 1,
+  "Name": "MMIC GaAs (2 Layer Metal, 100um)",
+  "DefaultDisplayUnit": "Um",
+  "DefaultSnapDbu": 5,
+  "DefaultFlattenTolDbu": 10,
+  "DefaultLabelHeightDbu": 5000,
+  "DefaultViaPadDbu": 80000,
+  "DefaultViaDrillDbu": 60000,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Metal1",
+      "Color": {
+        "r": 224,
+        "g": 176,
+        "b": 64,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 8,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "Metal2",
+      "Color": {
+        "r": 192,
+        "g": 128,
+        "b": 32,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 9,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 3,
+        "Datatype": 0
+      },
+      "Name": "Via",
+      "Color": {
+        "r": 144,
+        "g": 144,
+        "b": 144,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 7,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 4,
+        "Datatype": 0
+      },
+      "Name": "Resistor",
+      "Color": {
+        "r": 96,
+        "g": 64,
+        "b": 160,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 6,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Name": "Cap Dielectric",
+      "Color": {
+        "r": 48,
+        "g": 144,
+        "b": 176,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 5,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 6,
+        "Datatype": 0
+      },
+      "Name": "Nitride",
+      "Color": {
+        "r": 64,
+        "g": 112,
+        "b": 64,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 4,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 7,
+        "Datatype": 0
+      },
+      "Name": "Substrate",
+      "Color": {
+        "r": 80,
+        "g": 80,
+        "b": 80,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 8,
+        "Datatype": 0
+      },
+      "Name": "Backside Via",
+      "Color": {
+        "r": 32,
+        "g": 32,
+        "b": 96,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 2,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Ground",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Metal2",
+        "ThicknessDbu": 3000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Air",
+        "ThicknessDbu": 3000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Metal1",
+        "ThicknessDbu": 3000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "GaAs",
+        "ThicknessDbu": 100000,
+        "Epsr": 12.9,
+        "TanD": 0.0006,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [
+          {
+            "Layer": 7,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Backside Metal",
+        "ThicknessDbu": 3000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 41000000,
+        "DrawingLayers": [],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Via",
+        "Name": "Backside Via",
+        "ThicknessDbu": 0,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [
+          {
+            "Layer": 8,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Plated",
+        "WallThicknessDbu": 3000,
+        "SpanFromLayer": "Metal1",
+        "SpanToLayer": "Backside Metal"
+      },
+      {
+        "Kind": "Via",
+        "Name": "Metal1-Metal2 Post",
+        "ThicknessDbu": 0,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [
+          {
+            "Layer": 3,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Solid",
+        "SpanFromLayer": "Metal1",
+        "SpanToLayer": "Metal2"
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Metal1 Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 4000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Metal1 Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 4000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Metal2 Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 4000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Metal2 Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "ValueDbu": 4000,
+      "Severity": "Error"
+    }
+  ]
+}

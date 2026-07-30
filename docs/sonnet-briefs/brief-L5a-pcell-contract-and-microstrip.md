@@ -132,9 +132,12 @@ tees — while a cross is comparatively rare. If scope has to be cut, **MCross i
 not optional.
 
 **MTee's arm convention**, following R4: pin 1 at the origin, the **through line** running along +X to
-pin 2, and the **branch** along +Y to pin 3. `W1` and `W2` are the through arms and may differ — a tee whose
-through line steps width is entirely ordinary. The instance transform handles any other orientation, so the
-generator only ever emits this one.
+pin 2, and the **branch** along -Y to pin 3 — matching the symbol's own downward port 3 (the schematic
+canvas is Y-down; layout is Y-up, so "down" is -Y here, not +Y — see
+docs/sonnet-briefs/brief-L5-followups.md §2/R-L5f-5, which corrected an earlier +Y statement here that
+had crossed conventions without flipping the sign). `W1` and `W2` are the through arms and may differ —
+a tee whose through line steps width is entirely ordinary. The instance transform handles any other
+orientation, so the generator only ever emits this one.
 
 **Junction geometry is a union, not overlapping rectangles.** Three arms meeting produce one connected
 region; emitting three overlapping rects would leave internal edges that a mask shop, a Gerber region and
@@ -257,8 +260,9 @@ Leave that as a comment where the elaborator handles nets. Revisit after L8.
 11. **MLIN stamps as a TLIN (R-pc-11)** — a lossless MLIN's s-parameters match an ideal TLIN of the same
     computed Z₀ and electrical length.
 11a. **MTee (§3)** — three pins at the convention's positions (pin 1 origin, pin 2 along +X, pin 3 along
-    +Y); `W1 ≠ W2` is accepted; the emitted geometry is **one unioned outline with no internal edges**, not
-    three overlapping rectangles. Same union assertion for MCross.
+    -Y, matching the symbol's own downward port 3 — see brief-L5-followups.md §2/R-L5f-5); `W1 ≠ W2` is
+    accepted; the emitted geometry is **one unioned outline with no internal edges**, not three
+    overlapping rectangles. Same union assertion for MCross.
 11b. **Discontinuity models (R-pc-17)** — MBend, MTee and MCross each match their source papers' published
     curves within the stated accuracy, at mid-range **and edge-of-range** points; each model's own validity
     bound is reported separately (`microstrip-models.md` R13); MTee stamps as a 3-port; reference-plane shifts

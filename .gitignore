@@ -20,4 +20,11 @@
 /testdata/lpwave_test_data
 /testdata/spl_test_data
 
+# R-L5g-10 (brief-L5-followups-2.md §4): a workspace's .generated-cells/ folder is a pure, deletable,
+# rebuildable-from-the-layout PCell regeneration cache (GeneratedCellStore/LayoutView.PCellSnapshots) —
+# infrastructure, never content, and must never ship inside a workspace archive. Unanchored (not
+# "/.generated-cells") because a workspace root can live at any depth under this repo (e.g. inside
+# circuitRF_demo/ if it's ever unzipped and used locally), not only at the repo root.
+.generated-cells/
+
 TestResults/

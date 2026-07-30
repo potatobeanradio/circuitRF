@@ -67,7 +67,18 @@ public readonly struct LayoutRenderOptions
     /// limitation, not a bug).</summary>
     public string? BaseDir { get; init; }
 
-    public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true };
+    /// <summary>brief-L5-followups-2.md §6 (R-L5g-13/15): draws each resolved top-level PCell
+    /// instance's pins as a screen-space overlay (constant-pixel-size dot + outward-direction tick,
+    /// <see cref="LayoutRenderTheme.PCellPin"/>) — never layer geometry, never contributes to any
+    /// <see cref="LayoutFrameCounters"/> geometry count, never reachable by any exporter (pins are
+    /// resolved live from the PCell generator, not stored as shapes). Defaults to <c>false</c> so
+    /// every export/one-shot render (which never sets this) draws no pins by construction, exactly
+    /// like <see cref="Overlay"/> being null already suppresses every other interactive-only overlay;
+    /// the interactive canvas opts in via its own view-toggle VM property (default ON there, R-L5g-15
+    /// — the toggle default lives at the VM layer, not here).</summary>
+    public bool ShowPCellPins { get; init; }
+
+    public static LayoutRenderOptions Default(LayoutRenderTheme theme) => new() { Theme = theme, ShowGrid = true, ShowPCellPins = true };
 }
 
 /// <summary>
@@ -372,6 +383,9 @@ public static partial class LayoutRenderer
 
                 if (opts.Overlay?.PendingInstancePlacement is { } pendingInstance)
                     DrawPendingInstancePlacement(canvas, pendingInstance, tech, opts.BaseDir ?? "", theme, ps, scaleUm, counters);
+
+                if (opts.Overlay?.PendingPCellPlacement is { } pendingPCell)
+                    DrawPendingPCellPlacement(canvas, pendingPCell, tech, theme, ps, scaleUm, counters);
 
                 if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
                 {

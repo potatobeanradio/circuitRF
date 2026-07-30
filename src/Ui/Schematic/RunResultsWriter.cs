@@ -9,11 +9,13 @@ using RfCore.Export;
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
-/// Writes per-run analysis results as .npy files to a stable, collision-safe path.
+/// Writes a run's analysis results as a single grouped .npy to a stable, collision-safe path.
 /// Framework-free — no Avalonia, no Skia. Testable headless.
 ///
-/// Path convention: &lt;baseDir&gt;/results/&lt;schematicKey&gt;/&lt;analysisName&gt;.npy
-/// See docs/design/data-display.md §3 / 7.0.
+/// Path convention: &lt;baseDir&gt;/results/&lt;schematicKey&gt;/run.npy — **one** file per run, containing
+/// every analysis as a group (plus a <c>measurements</c> group). See docs/design/data-display.md §3,
+/// and §7.0 which explicitly records that a per-analysis <c>&lt;analysisName&gt;.npy</c> scheme was an
+/// earlier plan and is NOT what ships — do not reintroduce it.
 /// </summary>
 public static class RunResultsWriter
 {

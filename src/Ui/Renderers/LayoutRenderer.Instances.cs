@@ -25,6 +25,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Theming;
 using SkiaSharp;
 
@@ -262,6 +263,94 @@ public static partial class LayoutRenderer
             {
                 foreach (var (_, fp, sp) in layerVisuals) { fp.Dispose(); sp.Dispose(); }
             }
+
+            // brief-L5-followups-2.md §6 (R-L5g-13/14/15): a top-level resolved instance whose cell is
+            // PCell-generated gets its pins drawn as a screen-space overlay, ABOVE its own geometry —
+            // never as layer geometry (never touches `compiled`/`layerVisuals`, never contributes to
+            // any counter, never reachable by any exporter, which walk `LayoutView.Shapes` and never
+            // see this at all). Deliberately top-level only — a PCell nested inside another instance's
+            // compiled aggregate has no per-instance draw call left to hook this onto (the SAME scope
+            // narrowing R-L3a-3's own "nested broken instance" placeholder already uses).
+            if (opts.ShowPCellPins && step.SubView!.PCellOrigin is not null)
+                DrawPCellPinOverlay(canvas, inst, step.SubView!, tech, ps, scaleUm, opts.Theme, rows, cols);
+        }
+    }
+
+    /// <summary>Live-resolved pin cache, keyed by the resolved sub-cell's <see cref="LayoutView"/>
+    /// REFERENCE — mirrors <see cref="_cellCompileCache"/>'s own self-invalidating lifecycle (a file
+    /// or in-session edit produces a NEW reference on the next resolve, which is simply a cache miss
+    /// here; the old entry becomes unreachable and is reclaimed with no explicit eviction call
+    /// needed). A PCell generator is a PURE function of its inputs (pcell-contract.md R5), so calling
+    /// it fresh here — rather than trying to recover direction/width from the persisted <c>IsPort</c>
+    /// <see cref="LabelShape"/>s <see cref="PCells.GeneratedCellStore.GetOrCreate"/> already writes,
+    /// which only carry name/position/layer — is exact and needs no new persisted state at all.</summary>
+    private static readonly ConditionalWeakTable<LayoutView, PinCacheEntry> _pcellPinCache = new();
+
+    private sealed class PinCacheEntry
+    {
+        public required IReadOnlyList<PCellPin> Pins;
+    }
+
+    private static IReadOnlyList<PCellPin> ResolvePins(LayoutView subView, Technology? tech)
+    {
+        if (subView.PCellOrigin is not { } origin) return [];
+        if (_pcellPinCache.TryGetValue(subView, out var cached)) return cached.Pins;
+
+        IReadOnlyList<PCellPin> pins = PCellRegistry.TryGet(origin.GeneratorId, out var generator)
+            ? generator(origin.Parameters, tech, PCellLayerSelection.Default).Pins
+            : [];
+        _pcellPinCache.AddOrUpdate(subView, new PinCacheEntry { Pins = pins });
+        return pins;
+    }
+
+    private const double PinDotRadiusDevicePixels = 3.0;
+    private const double PinTickLengthDevicePixels = 9.0;
+    private const long PinDirectionSampleDbu = 100_000; // 100 um at the default 1 DBU = 1 nm resolution
+
+    /// <summary>Draws <paramref name="subView"/>'s pins (via <see cref="ResolvePins"/>) at every one of
+    /// <paramref name="inst"/>'s array placements — a constant-pixel-size filled dot at the pin
+    /// position plus a short outward-direction tick (R-L5g-13's "a bare dot cannot say which way a
+    /// pin faces"). The tick direction is derived by transforming a SECOND cell-local sample point
+    /// (offset from the pin along its own <see cref="PCellPin.OutwardDirectionDeg"/>) through the
+    /// SAME <see cref="LayoutInstanceTransform.TransformPoint"/> math the geometry itself uses, then
+    /// normalizing the resulting screen-space vector — this is what makes the tick correctly follow
+    /// the instance's own rotation/mirror (and even a reflected array cell) without a second,
+    /// direction-specific transform to keep in sync with the position one.</summary>
+    private static void DrawPCellPinOverlay(SKCanvas canvas, LayoutInstance inst, LayoutView subView, Technology? tech,
+        PathSpace ps, double scaleUm, LayoutRenderTheme theme, int rows, int cols)
+    {
+        var pins = ResolvePins(subView, tech);
+        if (pins.Count == 0) return;
+
+        float dotRadius = DevicePixelsToPathSpace(scaleUm, PinDotRadiusDevicePixels);
+        float tickLen = DevicePixelsToPathSpace(scaleUm, PinTickLengthDevicePixels);
+        using var dotPaint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.PCellPin };
+        using var tickPaint = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, 1.5), Color = theme.PCellPin,
+        };
+
+        for (int r = 0; r < rows; r++)
+        for (int col = 0; col < cols; col++)
+        foreach (var pin in pins)
+        {
+            double dirRad = pin.OutwardDirectionDeg * Math.PI / 180.0;
+            long sampleLx = pin.X + (long)Math.Round(Math.Cos(dirRad) * PinDirectionSampleDbu);
+            long sampleLy = pin.Y + (long)Math.Round(Math.Sin(dirRad) * PinDirectionSampleDbu);
+
+            var (wx, wy) = LayoutInstanceTransform.TransformPoint(pin.X, pin.Y, inst, r, col);
+            var (swx, swy) = LayoutInstanceTransform.TransformPoint(sampleLx, sampleLy, inst, r, col);
+
+            float px = ps.X(wx), py = ps.Y(wy);
+            double ddx = ps.X(swx) - px, ddy = ps.Y(swy) - py;
+            double dlen = Math.Sqrt(ddx * ddx + ddy * ddy);
+            if (dlen < 1e-6) { ddx = 1; ddy = 0; dlen = 1; } // degenerate direction — draw the dot only, pointing +X
+            float tx = px + (float)(ddx / dlen * tickLen);
+            float ty = py + (float)(ddy / dlen * tickLen);
+
+            canvas.DrawLine(px, py, tx, ty, tickPaint);
+            canvas.DrawCircle(px, py, dotRadius, dotPaint);
         }
     }
 
@@ -428,5 +517,34 @@ public static partial class LayoutRenderer
         // real geometry rather than instead of it.
         var rect = NormalizedRect(ps.X(pending.Bbox.MinX), ps.Y(pending.Bbox.MinY), ps.X(pending.Bbox.MaxX), ps.Y(pending.Bbox.MaxY));
         canvas.DrawRect(rect, ghostStroke);
+    }
+
+    /// <summary>L5, R-L5-7: the palette→layout PCell drag's live ghost — draws the generator's real
+    /// output (already resolved into a throwaway <see cref="LayoutView"/> by the VM, R0/no-array,
+    /// translated to the current drag point) at reduced opacity with a dashed accent outline, the same
+    /// visual language as <see cref="DrawPendingInstancePlacement"/>. There is no "unresolved" branch
+    /// here — the VM never arms this ghost for a component that failed to resolve a generator (R-L5-8's
+    /// droppability gate already refused the drag before this method is ever called).</summary>
+    private static void DrawPendingPCellPlacement(SKCanvas canvas, (LayoutView GhostView, long X, long Y) pending,
+        Technology? tech, LayoutRenderTheme theme, PathSpace ps, double scaleUm, LayoutFrameCounters counters)
+    {
+        var compiled = CompileCell(pending.GhostView, tech, "", [], 1, counters);
+
+        using var ghostStroke = new SKPaint
+        {
+            IsAntialias = true, Style = SKPaintStyle.Stroke,
+            StrokeWidth = DevicePixelsToPathSpace(scaleUm, GeometryStrokeDevicePixels),
+            Color = theme.Selection, PathEffect = SKPathEffect.CreateDash([6f, 4f], 0),
+        };
+        using var ghostFill = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = theme.Selection.WithAlpha(60) };
+
+        canvas.Save();
+        canvas.Translate(ps.X(pending.X), ps.Y(pending.Y));
+        foreach (var layer in compiled.Layers)
+        {
+            if (!layer.Fill.IsEmpty) canvas.DrawPath(layer.Fill, ghostFill);
+            if (!layer.Stroke.IsEmpty) canvas.DrawPath(layer.Stroke, ghostStroke);
+        }
+        canvas.Restore();
     }
 }

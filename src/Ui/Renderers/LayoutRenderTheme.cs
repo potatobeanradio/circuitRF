@@ -28,6 +28,11 @@ public sealed class LayoutRenderTheme
     /// mirrors <c>SchematicRenderTheme.Warning</c>, same role (<c>System.Warning</c>).</summary>
     public SKColor Warning { get; init; }
 
+    /// <summary>brief-L5-followups-2.md §6: a PCell pin's screen-space dot + outward-direction tick
+    /// overlay (R-L5g-13) — a color distinct from every layer color, so a pin marker never reads as
+    /// copper.</summary>
+    public SKColor PCellPin { get; init; }
+
     public static LayoutRenderTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         SKColor SK(string role)
@@ -47,6 +52,7 @@ public sealed class LayoutRenderTheme
             CursorIndicator = SK(ColorRole.LayoutCursorIndicator),
             Selection       = SK(ColorRole.LayoutSelection),
             Warning         = SK(ColorRole.SystemWarning),
+            PCellPin        = SK(ColorRole.LayoutPCellPin),
         };
     }
 

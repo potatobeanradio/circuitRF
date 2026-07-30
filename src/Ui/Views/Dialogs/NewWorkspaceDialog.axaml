@@ -46,11 +46,13 @@
                        TextWrapping="Wrap"/>
 
             <TextBlock Text="Technology:" FontSize="12" Margin="0,4,0,0"/>
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <RadioButton x:Name="TechPcbRadio"   GroupName="Tech" Content="PCB (2-layer FR-4)" FontSize="12" IsChecked="True"/>
-                <RadioButton x:Name="TechMmicRadio"  GroupName="Tech" Content="MMIC (GaAs)"         FontSize="12"/>
-                <RadioButton x:Name="TechNoneRadio"  GroupName="Tech" Content="None"                FontSize="12"/>
-            </StackPanel>
+            <ComboBox x:Name="TechCombo" FontSize="12" HorizontalAlignment="Stretch"
+                      SelectionChanged="OnTechSelectionChanged"/>
+            <!-- R-misc-12: None has defined semantics (pcell-contract.md §5's own "supported state,
+                 not an error path") — say so here so it reads as a deliberate choice. -->
+            <TextBlock x:Name="TechNoneHint"
+                       Text="None: layouts in this workspace draw with fallback colors; microstrip components generate artwork but can't simulate until a technology is added later (Technology Editor)."
+                       FontSize="10" Opacity="0.65" TextWrapping="Wrap" IsVisible="False"/>
         </StackPanel>
 
         <StackPanel Grid.Row="1"

@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CircuitRF.Ui.ViewModels"
              xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:props="using:CircuitRF.Ui.Views.Properties"
              x:Class="CircuitRF.Ui.Views.Properties.LayoutShapePropertiesView"
              x:DataType="vm:LayoutShapePropertiesViewModel">
 
@@ -295,7 +296,10 @@
                                    FontSize="11" TextWrapping="Wrap"/>
 
                         <StackPanel IsVisible="{Binding IsSingleInstanceSelected}" Spacing="4">
-                            <Grid ColumnDefinitions="56,*,Auto">
+                            <!-- R-L5f-7: a PCell instance's generated cell is an implementation detail —
+                                 no Cell reference field, no Re-target… button. Both stay for an ordinary
+                                 instance. -->
+                            <Grid ColumnDefinitions="56,*,Auto" IsVisible="{Binding !IsSelectedInstancePCell}">
                                 <TextBlock Grid.Column="0" Text="Cell" VerticalAlignment="Center" FontSize="11"
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                                 <TextBox Grid.Column="1" Text="{Binding InstanceCellRefText}" Tag="InstanceCellRef"
@@ -429,6 +433,14 @@
                     </ListBox.DataTemplates>
                 </ListBox>
             </Grid>
+
+            <!-- ── PCell parameter list (brief-L5-followups.md §5/R-L5f-8) — extracted into
+                 PCellParameterListView.axaml so LayoutPCellParameterDialog (double-click on a PCell
+                 instance) and this embedded panel share the exact same editing surface, never two
+                 implementations. Same bounded+scrollable region as the vertex list above (mutually
+                 exclusive: instance vs. shape context). -->
+            <props:PCellParameterListView Grid.Row="1" IsVisible="{Binding ShowPCellParameterList}"
+                                            Margin="6,2,6,4"/>
 
         </Grid>
 

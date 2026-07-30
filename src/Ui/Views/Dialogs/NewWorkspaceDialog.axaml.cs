@@ -1,22 +1,32 @@
 using System.IO;
+using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
-/// <summary>The starter technology chosen in the New Workspace dialog.</summary>
-public enum NewWorkspaceTechChoice { Pcb, Mmic, None }
+/// <summary>One combobox row in the New Workspace dialog's Technology picker — either a shipped
+/// technology (<see cref="Id"/> = its <see cref="ShippedTechnologyEntry.Id"/>) or the synthetic
+/// "None" entry (<see cref="Id"/> = null, R-misc-12). <see cref="ToString"/> is what the ComboBox
+/// displays — its own authored <c>.ctech</c> <c>Name</c> for a real entry, "None" for the synthetic
+/// one.</summary>
+public sealed record NewWorkspaceTechItem(string? Id, string DisplayName)
+{
+    public override string ToString() => DisplayName;
+}
 
 /// <summary>
 /// Result returned by NewWorkspaceDialog on OK.  ParentDir is the chosen parent folder;
 /// Name is the validated workspace name.  The workspace folder = ParentDir/Name/ and must
 /// not already exist — the dialog gates OK on this and the caller re-checks at create time.
-/// Technology is the starter technology chosen (or None) — see docs/design/layout-view.md §2.4.
+/// TechnologyId is the chosen shipped technology's <see cref="ShippedTechnologyEntry.Id"/>, or null
+/// for "None" (docs/sonnet-briefs/brief-misc-termg-units-technologies.md §4, R-misc-11/12).
 /// </summary>
-public sealed record NewWorkspaceResult(string ParentDir, string Name, NewWorkspaceTechChoice Technology);
+public sealed record NewWorkspaceResult(string ParentDir, string Name, string? TechnologyId);
 
 /// <summary>
 /// Custom "New Workspace" modal.  Returns NewWorkspaceResult via ShowDialog, or null on cancel.
@@ -37,6 +47,17 @@ public partial class NewWorkspaceDialog : Window
     {
         _parentDir = defaultParentDir;
         UpdateSuggestedName();
+
+        // R-misc-11: all four shipped technologies + "None", defaulting to ShippedTechnologies.
+        // DefaultId (the owner's own choice). Loading all four here (once, per dialog open) just to
+        // read their own authored Name for the combobox label is cheap — four small JSON parses.
+        var items = ShippedTechnologies.All
+            .Select(e => new NewWorkspaceTechItem(e.Id, ShippedTechnologies.Load(e).Name))
+            .ToList();
+        items.Add(new NewWorkspaceTechItem(null, "None"));
+        TechCombo.ItemsSource = items;
+        TechCombo.SelectedItem = items.FirstOrDefault(i => i.Id == ShippedTechnologies.DefaultId) ?? items[0];
+
         UpdateView();
         NameBox.Focus();
     }
@@ -68,6 +89,11 @@ public partial class NewWorkspaceDialog : Window
         UpdateView();
     }
 
+    private void OnTechSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        TechNoneHint.IsVisible = (TechCombo.SelectedItem as NewWorkspaceTechItem)?.Id is null;
+    }
+
     private void OnOkClick(object? sender, RoutedEventArgs e) => TryCommit();
 
     private void OnCancelClick(object? sender, RoutedEventArgs e) => Close(null);
@@ -89,11 +115,9 @@ public partial class NewWorkspaceDialog : Window
         if (File.Exists(Path.Combine(_parentDir, ".cws"))) return;
         if (Directory.Exists(Path.Combine(_parentDir, name))) return;
 
-        var tech = TechMmicRadio.IsChecked == true ? NewWorkspaceTechChoice.Mmic
-            : TechNoneRadio.IsChecked == true       ? NewWorkspaceTechChoice.None
-            : NewWorkspaceTechChoice.Pcb;
+        string? techId = (TechCombo.SelectedItem as NewWorkspaceTechItem)?.Id;
 
-        Close(new NewWorkspaceResult(_parentDir, name, tech));
+        Close(new NewWorkspaceResult(_parentDir, name, techId));
     }
 
     // Sets NameBox.Text to the next free Untitled-Workspace-N for _parentDir,

@@ -277,6 +277,33 @@ public sealed class LayoutInstance
 /// </summary>
 public sealed record PCellOrigin(string GeneratorId, IReadOnlyDictionary<string, double> Parameters);
 
+/// <summary>
+/// brief-L5-followups-2.md §4.2/R-L5g-6: a per-generated-cell REGENERATION RECORD — the exact inputs
+/// (a <c>PCellRegistry</c> generator id, resolved parameters, technology identity, layer overrides)
+/// <c>GeneratedCellStore.GetOrCreate</c> needs to rebuild ONE generated cell folder byte-identically.
+/// Keyed on <see cref="LayoutView.PCellSnapshots"/> by the generated cell's own FOLDER NAME — not by
+/// an invented "instance identity" — because that folder name already IS a content hash of exactly
+/// these same fields (<c>GeneratedCellStore.BuildCellName</c>), so the key is inherently stable and is
+/// naturally shared by every instance referencing the same cell (R-L5-1), with nothing to track through
+/// Duplicate/Paste/Undo. This is the record that makes "a generated cell is a pure, deletable,
+/// rebuildable-from-the-layout cache — never authoritative" (§4.2) literally true: on a dangling
+/// <see cref="LayoutInstance.CellRef"/> the last path segment is this dictionary's key, and calling
+/// <c>GeneratedCellStore.GetOrCreate</c> with the recorded fields reproduces the identical folder.
+///
+/// Deliberately a SEPARATE table from <see cref="LayoutView.SchematicPCellSnapshots"/> — that one keys
+/// on <see cref="LayoutInstance.SchematicId"/> for a DIFFERENT purpose (R-L5-9/10/11's overwrite
+/// classification: "what did THIS SPECIFIC SCHEMATIC COMPONENT generate last time," which is
+/// inherently schematic-id-scoped and has no meaning for a palette-dropped or layout-authored
+/// instance) and must keep working exactly as before. <see cref="PCellSnapshots"/> is the generalized
+/// mechanism the brief asks for, covering every PCell instance regardless of origin.
+/// </summary>
+public sealed record PCellSnapshot(
+    string GeneratorId,
+    IReadOnlyDictionary<string, double> Parameters,
+    string? TechIdentity,
+    string? SignalLayerNameOverride,
+    string? GroundLayerNameOverride);
+
 // ── Container ───────────────────────────────────────────────────────────────
 
 public sealed class LayoutView
@@ -292,6 +319,29 @@ public sealed class LayoutView
     /// <summary>Non-null when this view's <see cref="Shapes"/> were produced by a PCell generator
     /// rather than drawn by hand. See <see cref="PCellOrigin"/>.</summary>
     public PCellOrigin? PCellOrigin { get; set; }
+
+    /// <summary>
+    /// L5, R-L5-11: the PCell parameter set last pushed onto a schematic-linked
+    /// <see cref="LayoutInstance"/> by "Update Layout from Schematic", keyed by
+    /// <see cref="LayoutInstance.SchematicId"/>. Deliberately NOT a field on <see cref="LayoutInstance"/>
+    /// itself (the guardrail: an instance is a transform of a cell, nothing more) — this is a per-VIEW
+    /// side table instead, because the value it needs to remember ("what did the schematic generate
+    /// last time") is independent of which generated cell the instance currently references (that
+    /// reference may have moved on since, via a direct layout-side parameter edit — R-L5-9). A re-run
+    /// compares this snapshot against BOTH the current schematic value and the instance's currently-
+    /// referenced cell's own <see cref="PCellOrigin"/>.Parameters to tell "the schematic changed"
+    /// (informational) apart from "the layout was edited" (a warning — user work about to be
+    /// discarded), per R-L5-11's three-row table. Absent entry = never schematic-generated (a
+    /// palette-placed instance, R-L5-6's own exemption) or not yet run.
+    /// </summary>
+    public Dictionary<string, Dictionary<string, double>> SchematicPCellSnapshots { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>brief-L5-followups-2.md §4.2/R-L5g-6: the generalized regeneration record — see
+    /// <see cref="Layout.PCellSnapshot"/>. Keyed by generated-cell FOLDER NAME (never an instance
+    /// identity), populated at every site that calls <c>GeneratedCellStore.GetOrCreate</c> from a
+    /// layout context. Covers every PCell instance this layout references, regardless of whether it
+    /// arrived via schematic generation, a palette drop, or a layout-authored copy-on-write edit.</summary>
+    public Dictionary<string, PCellSnapshot> PCellSnapshots { get; } = new(StringComparer.Ordinal);
 
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];

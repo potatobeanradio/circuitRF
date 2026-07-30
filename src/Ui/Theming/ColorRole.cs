@@ -36,6 +36,11 @@ public static class ColorRole
     /// fill: the layer color is the information the user is reading.</summary>
     public const string LayoutSelection = "Layout.Selection";
 
+    /// <summary>brief-L5-followups-2.md §6 (R-L5g-13): a PCell pin's screen-space dot + outward-
+    /// direction tick — deliberately a color distinct from every layer color, so a pin marker never
+    /// reads as copper (or any other physical layer).</summary>
+    public const string LayoutPCellPin = "Layout.PCellPin";
+
     /// <summary>All defined roles in a consistent order (for iteration, UI lists, etc.).</summary>
     public static readonly IReadOnlyList<string> All =
     [
@@ -47,6 +52,6 @@ public static class ColorRole
         SystemWarning,
         LayoutBackground, LayoutGridMinor, LayoutGridMajor,
         LayoutRulerBackground, LayoutRulerText, LayoutRulerTick, LayoutCursorIndicator,
-        LayoutSelection,
+        LayoutSelection, LayoutPCellPin,
     ];
 }

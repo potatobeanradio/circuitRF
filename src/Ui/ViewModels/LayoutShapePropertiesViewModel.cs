@@ -3,10 +3,14 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Layout;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Renderers;
+using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.ViewModels;
 
@@ -678,6 +682,14 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
     [ObservableProperty] private bool _isSingleInstanceSelected;
 
+    /// <summary>docs/sonnet-briefs/brief-L5-followups.md §4/R-L5f-7: true when the single selected
+    /// instance's resolved cell is PCell-generated — the Cell-reference field and Re-target… button
+    /// hide for it (its generated cell is an implementation detail of the parameter mechanism, not
+    /// something to see or repoint; §5's own parameter list is how it's edited instead). False (both
+    /// fields shown) for an ordinary instance, an unresolved one, or when nothing/multiple are
+    /// selected.</summary>
+    [ObservableProperty] private bool _isSelectedInstancePCell;
+
     [ObservableProperty] private string _instanceCellRefText = "";
 
     [ObservableProperty] private string _instanceXText = "";
@@ -831,6 +843,29 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         {
             var inst = _vm.EffectiveInstanceAt(indices[0]);
             SelectionSummaryText = "Instance";
+            IsSelectedInstancePCell = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir) is
+                { State: CellLayoutState.Resolved, View.PCellOrigin: not null };
+            ShowPCellParameterList = IsSelectedInstancePCell;
+            // A genuinely NEW selection resets the entry-mode toggle back to canonical Z1/Z2/L — the
+            // toggle is session-local display state (see its own doc comment), not something that
+            // should silently carry over from whatever instance was selected before. Keyed on the
+            // SELECTION INDEX, not the resolved CellRef: committing a W1/W2/F3db edit forks the
+            // instance onto a NEW generated cell (R-L5-2's copy-on-write) at the SAME index — that is
+            // an edit to the still-selected instance, not a new selection, and must not silently
+            // revert the toggle the user is actively looking at mid-edit.
+            if (_pcellEntryModeSelectionIndex != indices[0]) { MklopfUsesWidthEntry = false; MklopfUsesF3dbEntry = false; }
+            _pcellEntryModeSelectionIndex = indices[0];
+            IsMklopfTarget = ResolveSelectedInstancePCellComponentName() == SymbolKind.Mklopf;
+            MklopfEntryModeAvailable = IsMklopfTarget && TryResolveMklopfSubstrate(out _, out _, out _);
+            OnPropertyChanged(nameof(MklopfImpedanceToggleLabel));
+            OnPropertyChanged(nameof(MklopfLengthToggleLabel));
+            OnPropertyChanged(nameof(MklopfEntryModeDisabledReason));
+            OnPropertyChanged(nameof(MklopfImpedanceToggleTip));
+            OnPropertyChanged(nameof(MklopfLengthToggleTip));
+            ToggleMklopfImpedanceEntryCommand.NotifyCanExecuteChanged();
+            ToggleMklopfLengthEntryCommand.NotifyCanExecuteChanged();
+            if (ShowPCellParameterList) RebuildOrRefreshPCellParamRows(inst);
+            else { PCellParamRows = null; _pcellParamGeneratedCellDir = null; }
             SetTextIfNotFocused("InstanceCellRef", inst.CellRef ?? "", () => InstanceCellRefText, v => InstanceCellRefText = v);
             SetTextIfNotFocused("InstanceX", LayoutUnits.Format(inst.X, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceXText, v => InstanceXText = v);
             SetTextIfNotFocused("InstanceY", LayoutUnits.Format(inst.Y, _vm.DisplayUnit, _vm.Model.DbuPerMicron), () => InstanceYText, v => InstanceYText = v);
@@ -849,6 +884,14 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         else
         {
             SelectionSummaryText = $"{indices.Count} instances selected";
+            IsSelectedInstancePCell = false;
+            ShowPCellParameterList = false;
+            PCellParamRows = null; _pcellParamGeneratedCellDir = null;
+            IsMklopfTarget = false; MklopfEntryModeAvailable = false;
+            MklopfUsesWidthEntry = false; MklopfUsesF3dbEntry = false;
+            _pcellEntryModeSelectionIndex = null;
+            ToggleMklopfImpedanceEntryCommand.NotifyCanExecuteChanged();
+            ToggleMklopfLengthEntryCommand.NotifyCanExecuteChanged();
             InstanceCellRefText = ""; InstanceXText = ""; InstanceYText = "";
             InstanceRotationValue = null; InstanceMirrorXValue = null;
             InstanceMagText = ""; InstanceRowsText = ""; InstanceColsText = "";
@@ -1053,6 +1096,340 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         row.Error = null;
     }
 
+    // ── PCell parameter list (brief-L5-followups.md §5/R-L5f-8) — shown for exactly one PCell
+    // instance, in the SAME bounded region the vertex list uses (mutually exclusive: a selection is
+    // either shape context or instance context, never both — see the shared Grid.Row="1" in the view).
+
+    [ObservableProperty] private bool _showPCellParameterList;
+
+    // ── MKlopf entry-mode toggle (brief-L5-followups-2.md §1/R-L5g-1) ──────────────────────────────
+    // Unlike the schematic side (ParameterEditorViewModel), the generated cell's own PCellOrigin.
+    // Parameters ALWAYS holds the CANONICAL Z1/Z2/L set (see OrderedParamNames' own doc comment) — a
+    // layout instance has no separate "which route is currently declared" state to persist. So the
+    // toggle here is PURELY a session-local DISPLAY choice, reset on every new selection: it decides
+    // whether the row list shows Z1/Z2/L or W1/W2/F3db, and committing an edit in the alternate route
+    // converts back to canonical Z1/Z2/L before calling EditInstancePCellParameters — there is nothing
+    // to undo for the toggle itself (only an actual value edit is undoable, exactly as for any other
+    // row). "Last-edited field is authoritative and never written back from the other" (the Scale-
+    // dialog rule) falls out for free: the alternate-route value is always FRESHLY RE-DERIVED from
+    // whatever the canonical value currently is, every time a row repopulates — nothing is cached
+    // across edits that could go stale or disagree.
+    [ObservableProperty] private bool _mklopfUsesWidthEntry;
+    [ObservableProperty] private bool _mklopfUsesF3dbEntry;
+
+    /// <summary>True only when the single selected instance resolves to an MKLOPF-generated cell —
+    /// gates the toggle buttons themselves (they have no meaning for any other PCell).</summary>
+    public bool IsMklopfTarget { get; private set; }
+
+    /// <summary>R-L5g-1's own "disable with a reason" requirement: the Z1/Z2⇄W1/W2 and L⇄F3db
+    /// conversions both need a resolved substrate (H/T/Er) — <see cref="TryResolveMklopfSubstrate"/>
+    /// is the ONE place that resolution happens, the SAME <see cref="SubstrateResolver.ResolveElectrical"/>
+    /// call <c>MKlopfPCell.Generate</c> itself uses (against <see cref="PCellLayerSelection.Default"/> —
+    /// a per-instance layer override is a narrow, named simplification: the common case, per this
+    /// codebase's own "empty means follow the technology" convention, is that no override is set).</summary>
+    public bool MklopfEntryModeAvailable { get; private set; }
+
+    public string MklopfImpedanceToggleLabel => MklopfUsesWidthEntry ? "Use Z1/Z2" : "Use W1/W2";
+    public string MklopfLengthToggleLabel     => MklopfUsesF3dbEntry  ? "Use L"     : "Use F3db";
+
+    /// <summary>brief-L5-followups-3.md §4 (R-L5h-9): "a disabled control must say why" — non-null
+    /// only when the toggle genuinely cannot act right now, so a plain click on a technology-less
+    /// document never reads as "pressed it and nothing happened."</summary>
+    public string? MklopfEntryModeDisabledReason =>
+        IsMklopfTarget && !MklopfEntryModeAvailable
+            ? "No technology resolves for this document — can't convert Z1/Z2 ⇄ W1/W2 or L ⇄ F3db." : null;
+
+    public string MklopfImpedanceToggleTip => MklopfEntryModeDisabledReason ?? "Switch between Z1/Z2 and W1/W2 entry";
+    public string MklopfLengthToggleTip     => MklopfEntryModeDisabledReason ?? "Switch between L and F3db entry";
+
+    [RelayCommand(CanExecute = nameof(CanToggleMklopfEntry))]
+    private void ToggleMklopfImpedanceEntry()
+    {
+        MklopfUsesWidthEntry = !MklopfUsesWidthEntry;
+        if (SingleSelectedInstance is { } inst) RebuildOrRefreshPCellParamRows(inst, forceRebuild: true);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanToggleMklopfEntry))]
+    private void ToggleMklopfLengthEntry()
+    {
+        MklopfUsesF3dbEntry = !MklopfUsesF3dbEntry;
+        if (SingleSelectedInstance is { } inst) RebuildOrRefreshPCellParamRows(inst, forceRebuild: true);
+    }
+
+    private bool CanToggleMklopfEntry() => IsMklopfTarget && MklopfEntryModeAvailable;
+
+    /// <summary>See <see cref="MklopfEntryModeAvailable"/>'s own doc comment. Returns false (and
+    /// leaves h/t/er at 0) when no technology resolves — the caller must never show a conversion
+    /// computed from these in that case.</summary>
+    private bool TryResolveMklopfSubstrate(out double h, out double t, out double er)
+    {
+        h = t = er = 0;
+        if (_vm?.Technology is not { } tech) return false;
+        var (substrate, _, _) = SubstrateResolver.ResolveElectrical(tech, PCellLayerSelection.Default);
+        if (substrate is null) return false;
+        h = substrate.HeightMeters; t = substrate.ThicknessMeters; er = substrate.RelativePermittivity;
+        return true;
+    }
+
+    private string? _pcellParamGeneratedCellDir; // which generated cell the current row set was built from
+    private int? _pcellEntryModeSelectionIndex; // which SelectedInstanceIndices[0] the entry-mode toggle belongs to
+    private LazyIndexedList<PCellParamRowViewModel>? _pcellParamRowsBacking;
+
+    /// <summary>Index-addressed, lazily-materializing row sequence — R-L1j-6's pattern (this codebase's
+    /// established fix for "Avalonia virtualizes containers, not items"), reused verbatim rather than
+    /// reinvented for a second list type.</summary>
+    public LazyIndexedList<PCellParamRowViewModel>? PCellParamRows
+    {
+        get => _pcellParamRowsBacking;
+        private set { if (!ReferenceEquals(_pcellParamRowsBacking, value)) { _pcellParamRowsBacking = value; OnPropertyChanged(); } }
+    }
+
+    /// <summary>Ordered parameter names for <paramref name="origin"/> — <c>ComponentTypeRegistry.
+    /// DefaultParameters</c>' own declared order (matching the schematic's own symbol) filtered to the
+    /// names actually present on this generated cell (a content-addressed cell's <c>PCellOrigin.
+    /// Parameters</c> always holds the CANONICAL set — e.g. MKlopf's Z1/Z2/L, never the alternate
+    /// W1/W2/F3db entry routes, which are converted away before the cell is ever created — so no
+    /// "which entry route" filtering is needed for the underlying storage, unlike §1's schematic-side
+    /// resolution). R-L5g-1: when the entry-mode toggle is active for an MKLOPF target, "Z1"/"Z2" are
+    /// swapped for the PSEUDO-names "W1"/"W2" at the SAME list positions (and "L" for "F3db") — these
+    /// never exist in <paramref name="origin"/>.Parameters itself; <see cref="PopulatePCellParamRow"/>/
+    /// <see cref="CommitPCellParamField"/> both special-case them, converting on the way in and out.</summary>
+    private List<string> OrderedParamNames(PCellOrigin origin)
+    {
+        var ordered = new List<string>();
+        if (LayoutToSchematicGenerator.TryGetSymbolKind(origin.GeneratorId, out var kind))
+            foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
+                if (origin.Parameters.ContainsKey(dp.Name) && !ordered.Contains(dp.Name))
+                    ordered.Add(dp.Name);
+        foreach (var name in origin.Parameters.Keys) // defensive: any name the registry didn't name (shouldn't happen)
+            if (!ordered.Contains(name)) ordered.Add(name);
+
+        if (IsMklopfTarget)
+        {
+            if (MklopfUsesWidthEntry)
+            {
+                int i1 = ordered.IndexOf("Z1"); if (i1 >= 0) ordered[i1] = "W1";
+                int i2 = ordered.IndexOf("Z2"); if (i2 >= 0) ordered[i2] = "W2";
+            }
+            if (MklopfUsesF3dbEntry)
+            {
+                int iL = ordered.IndexOf("L"); if (iL >= 0) ordered[iL] = "F3db";
+            }
+        }
+        return ordered;
+    }
+
+    private void RebuildOrRefreshPCellParamRows(LayoutInstance inst, bool forceRebuild = false)
+    {
+        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm!.InstanceBaseDir);
+        if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin)
+        { PCellParamRows = null; _pcellParamGeneratedCellDir = null; return; }
+
+        string cellKey = inst.CellRef; // content-addressed: a different value set is always a different CellRef
+        if (forceRebuild || _pcellParamRowsBacking is null || _pcellParamGeneratedCellDir != cellKey)
+        {
+            _pcellParamGeneratedCellDir = cellKey;
+            var names = OrderedParamNames(origin);
+            PCellParamRows = new LazyIndexedList<PCellParamRowViewModel>(names.Count, i => BuildPCellParamRow(names, i));
+        }
+        else
+        {
+            foreach (var idx in _pcellParamRowsBacking.MaterializedIndices.ToList())
+                _pcellParamRowsBacking[idx].RefreshFromInstance();
+        }
+    }
+
+    /// <summary>The entry-mode pseudo-names' own units — hardcoded, mirroring exactly what the
+    /// schematic side's own toggle hardcodes (<c>ParameterEditorViewModel.MklopfParam</c> calls):
+    /// W1/W2 are lengths ("mm", routed through the layout's own display unit like any other length
+    /// row), F3db is a frequency ("GHz" — no workspace-technology convention of its own, same reason
+    /// the schematic side never varies it either).</summary>
+    private static string? MklopfPseudoParamUnit(string name) => name switch
+    {
+        "W1" or "W2" => "mm",
+        "F3db"        => "GHz",
+        _             => null,
+    };
+
+    private PCellParamRowViewModel BuildPCellParamRow(List<string> names, int index)
+    {
+        string name = names[index];
+        if (MklopfPseudoParamUnit(name) is { } pseudoUnit)
+            return new PCellParamRowViewModel(this, name, pseudoUnit);
+
+        var comp = ResolveSelectedInstancePCellComponentName(); // just for the DefaultParameters unit lookup
+        string unit = "";
+        if (comp is { } kind)
+        {
+            var dps = ComponentTypeRegistry.DefaultParameters(kind, 0);
+            foreach (var dp in dps)
+                if (dp.Name == name) { unit = dp.Unit; break; }
+        }
+        return new PCellParamRowViewModel(this, name, unit);
+    }
+
+    private SymbolKind? ResolveSelectedInstancePCellComponentName()
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst) return null;
+        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        if (res.State == CellLayoutState.Resolved && res.View!.PCellOrigin is { } origin &&
+            LayoutToSchematicGenerator.TryGetSymbolKind(origin.GeneratorId, out var kind))
+            return kind;
+        return null;
+    }
+
+    /// <summary>Re-reads one parameter's current SI value from the selected instance's resolved
+    /// generated cell and formats it — length ("mm") parameters through the LAYOUT's own display unit
+    /// (R-L5f-8: "like every other dimension field"), everything else (Ω, deg, dimensionless) through
+    /// its own natural unit, SI underneath either way (R-pc-6).</summary>
+    internal void PopulatePCellParamRow(PCellParamRowViewModel row)
+    {
+        if (_vm is null || SingleSelectedInstance is not { } inst || _focusedField == row.FieldKey) return;
+        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin) return;
+
+        if (row.Name is "W1" or "W2" or "F3db")
+        {
+            if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))
+            { row.ValueText = ""; row.Error = "No technology resolves — can't convert."; return; }
+            double z1 = origin.Parameters.GetValueOrDefault("Z1", 50.0);
+            double z2 = origin.Parameters.GetValueOrDefault("Z2", 50.0);
+            var reporter = new MicrostripValidityReporter("(layout entry-mode display)");
+            double converted;
+            if (row.Name is "W1" or "W2")
+            {
+                var (w1, w2) = MicrostripKlopfEntryConversion.ImpedanceToWidth(z1, z2, h, t, er, reporter);
+                converted = row.Name == "W1" ? w1 : w2;
+            }
+            else
+            {
+                double gammaMax = origin.Parameters.GetValueOrDefault("GammaMax", 0.05);
+                double l = origin.Parameters.GetValueOrDefault("L", 0.02);
+                converted = MicrostripKlopfEntryConversion.LengthToF3db(z1, z2, gammaMax, l, h, t, er, reporter);
+            }
+            row.Error = null;
+            row.ValueText = FormatPCellParamValue(row.Unit, converted);
+            return;
+        }
+
+        if (!origin.Parameters.TryGetValue(row.Name, out double siValue)) return;
+
+        row.ValueText = FormatPCellParamValue(row.Unit, siValue);
+    }
+
+    private string FormatPCellParamValue(string unit, double siValue)
+    {
+        if (string.Equals(unit, "mm", System.StringComparison.Ordinal))
+        {
+            long dbu = PCellUnits.MetresToDbu(siValue, _vm!.Model.DbuPerMicron);
+            return LayoutUnits.Format(dbu, _vm.DisplayUnit, _vm.Model.DbuPerMicron);
+        }
+        string display = SchematicToLayoutGenerator.Fmt(SchematicToLayoutGenerator.ToDisplayValue(unit, siValue));
+        return string.IsNullOrEmpty(unit) ? display : $"{display} {unit}";
+    }
+
+    private bool TryParsePCellParamValue(string unit, string text, out double siValue)
+    {
+        siValue = 0;
+        string trimmed = text.Trim();
+        if (string.Equals(unit, "mm", System.StringComparison.Ordinal))
+        {
+            if (!LayoutUnits.TryParse(trimmed, _vm!.DisplayUnit, _vm.Model.DbuPerMicron, out var dbu)) return false;
+            decimal mm = LayoutUnits.FromDbu(dbu, LayoutUnit.Mm, _vm.Model.DbuPerMicron);
+            siValue = (double)mm / 1000.0; // mm -> metres
+            return true;
+        }
+
+        // Strip a trailing unit suffix the display itself would have appended (e.g. "50 Ω", "90 deg").
+        if (!string.IsNullOrEmpty(unit) && trimmed.EndsWith(unit, System.StringComparison.Ordinal))
+            trimmed = trimmed[..^unit.Length].TrimEnd();
+        if (!double.TryParse(trimmed, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double raw))
+            return false;
+        // "deg"/Ω/dimensionless pass through unchanged (Units.Scale is 1.0 for Ω and undefined for a
+        // blank unit; "deg" is EXCLUDED deliberately — see ToDisplayValue's own doc comment: degrees
+        // are already the literal storage unit for an Angle-dimensioned PCell parameter). Any OTHER
+        // unit (fixed R-L5g-1: previously this branch never scaled at all, silently wrong for a unit
+        // like "GHz" whose scale isn't 1 — latent until F3db's entry-mode row exposed it, since every
+        // pre-existing PCell param unit here happened to have scale 1) is the exact inverse of
+        // ToDisplayValue's own division — multiply back by the same Units.Scale.
+        if (!string.IsNullOrEmpty(unit) && !string.Equals(unit, "deg", System.StringComparison.Ordinal))
+        {
+            double? scale = CircuitRF.Core.Expressions.Units.Scale(unit);
+            if (scale is > 0) raw *= scale.Value;
+        }
+        siValue = raw;
+        return true;
+    }
+
+    /// <summary>R-L5f-9: copy-on-write — routes through <see cref="LayoutEditorViewModel.
+    /// EditInstancePCellParameters"/>, the SAME repoint-to-whatever-cell-the-new-values-hash-to
+    /// mechanism the Properties Inspector's own instance CellRef re-target uses internally; a sibling
+    /// instance referencing the pre-edit cell is untouched by construction (nothing here mutates the
+    /// generated cell in place).</summary>
+    internal void CommitPCellParamField(PCellParamRowViewModel row, string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        var indices = _vm.SelectedInstanceIndices;
+        if (indices.Count != 1) return;
+
+        if (row.Name is "W1" or "W2" or "F3db")
+        {
+            CommitMklopfPseudoParamField(row, text, indices[0]);
+            return;
+        }
+
+        if (!TryParsePCellParamValue(row.Unit, text, out var siValue))
+        { row.Error = "Invalid value"; return; }
+        row.Error = null;
+
+        _vm.EditInstancePCellParameters(indices[0], new Dictionary<string, double> { [row.Name] = siValue });
+        RefreshFromVm();
+    }
+
+    /// <summary>
+    /// R-L5g-1: commits a W1/W2/F3db entry-mode edit by converting it BACK to the canonical Z1/Z2/L
+    /// keys <c>EditInstancePCellParameters</c> (and the generator itself) actually understand — the
+    /// generated cell's own storage never carries these pseudo-names (see <see cref="OrderedParamNames"/>'s
+    /// own doc comment). "Last-edited field is authoritative" (the Scale-dialog rule): the OTHER width
+    /// in a W1/W2 pair is re-derived from whatever the CURRENT canonical Z1/Z2 resolves to — never a
+    /// stale cached value — so a single-field edit never silently overwrites its sibling with anything
+    /// but that sibling's own current, real value.
+    /// </summary>
+    private void CommitMklopfPseudoParamField(PCellParamRowViewModel row, string text, int instanceIndex)
+    {
+        if (!TryParsePCellParamValue(row.Unit, text, out var newValueSi))
+        { row.Error = "Invalid value"; return; }
+
+        var inst = _vm!.Model.Instances[instanceIndex];
+        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin)
+        { row.Error = "Instance no longer resolves"; return; }
+        if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))
+        { row.Error = "No technology resolves — can't convert."; return; }
+
+        double z1cur = origin.Parameters.GetValueOrDefault("Z1", 50.0);
+        double z2cur = origin.Parameters.GetValueOrDefault("Z2", 50.0);
+        var reporter = new MicrostripValidityReporter("(layout entry-mode edit)");
+
+        if (row.Name is "W1" or "W2")
+        {
+            var (w1cur, w2cur) = MicrostripKlopfEntryConversion.ImpedanceToWidth(z1cur, z2cur, h, t, er, reporter);
+            double w1 = row.Name == "W1" ? newValueSi : w1cur;
+            double w2 = row.Name == "W2" ? newValueSi : w2cur;
+            var (z1, z2) = MicrostripKlopfEntryConversion.WidthToImpedance(w1, w2, h, t, er, reporter);
+            row.Error = null;
+            _vm.EditInstancePCellParameters(instanceIndex, new Dictionary<string, double> { ["Z1"] = z1, ["Z2"] = z2 });
+        }
+        else // "F3db"
+        {
+            double gammaMax = origin.Parameters.GetValueOrDefault("GammaMax", 0.05);
+            double l = MicrostripKlopfEntryConversion.F3dbToLength(z1cur, z2cur, gammaMax, newValueSi, h, t, er, reporter);
+            row.Error = null;
+            _vm.EditInstancePCellParameters(instanceIndex, new Dictionary<string, double> { ["L"] = l });
+        }
+        RefreshFromVm();
+    }
+
     /// <summary>The single valid model index behind <c>_selected[0]</c> — matches
     /// <see cref="LayoutEditorViewModel.EffectiveSelectedShapes"/>'s own filtering exactly, so this is
     /// never off-by-one even if <c>SelectedIndices</c> happens to carry a stale out-of-range entry
@@ -1076,7 +1453,22 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (e.PropertyName is nameof(LayoutEditorViewModel.Overlay))
             RefreshFromVm();
         else if (e.PropertyName is nameof(LayoutEditorViewModel.Technology))
+        {
             OnPropertyChanged(nameof(AvailableLayers));
+            // brief-L5-followups-3.md §4 (R-L5h-8): the root cause of "the MKlopf entry-mode toggles
+            // are always disabled" — Technology resolves CORRECTLY (confirmed directly: the same
+            // SubstrateResolver.ResolveElectrical call the PCell generator itself uses, against the
+            // SAME vm.Technology this panel already reads), but a resolution that lands AFTER an MKlopf
+            // instance is already selected — e.g. the orphan-technology prompt resolving asynchronously
+            // post-open, or any later live .ctech change/retarget — never got picked up: only
+            // AvailableLayers was re-raised here, never a re-evaluation of MklopfEntryModeAvailable (or
+            // any other Technology-dependent field this panel shows). A snapshot taken WHILE
+            // Technology was still null/stale therefore stayed disabled forever, even after Technology
+            // resolved — exactly the "pressed it and nothing happened" symptom. RefreshFromVm() is the
+            // same call SetContext/instance-selection already trigger, so this is not a new code path,
+            // only a missing subscription to an event that already fires.
+            RefreshFromVm();
+        }
     }
 
     private void OnModelChanged(object? sender, System.EventArgs e) => RefreshFromVm();
@@ -1096,6 +1488,9 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         _isRefreshing = true;
         IsEmptyState = false;
         IsInstanceContext = false;
+        ShowPCellParameterList = false;
+        PCellParamRows = null; _pcellParamGeneratedCellDir = null;
+        _pcellEntryModeSelectionIndex = null;
         IsEditingEnabled = !DragBlocksEdits(); // R-L1j-2
 
         SelectionSummaryText = _selected.Count == 1
@@ -1217,6 +1612,9 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         IsEditingEnabled = true;
         IsInstanceContext = false;
         ShowRoundedRect = ShowCircle = ShowVia = ShowPath = ShowLabel = ShowFlattenTol = ShowRectSize = ShowVertexList = ShowBitmap = false;
+        ShowPCellParameterList = false;
+        PCellParamRows = null; _pcellParamGeneratedCellDir = null;
+        _pcellEntryModeSelectionIndex = null;
         FlattenTolPlaceholder = "";
         BitmapIsBroken = false;
         BitmapLockedValue = null;

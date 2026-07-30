@@ -34,9 +34,12 @@ public static class WorkspaceScanner
 
         CwsFile cws = TryLoadCws(workspaceRootDir);
 
-        // Cells and user folders — intermixed, alphabetical
+        // Cells and user folders — intermixed, alphabetical. The reserved generated-cells folder
+        // (R-L5-3) is excluded here and rendered instead as one synthetic group below, exactly as
+        // Libraries/Known Files already are — never as a peer UserFolder full of machine-named cells.
         foreach (string subDir in SubDirsSorted(workspaceRootDir))
         {
+            if (IsReservedTreeDir(subDir)) continue;
             root.AddChild(File.Exists(Path.Combine(subDir, CellFolder.CcellFileName))
                 ? BuildCellNode(subDir, workspaceRootDir)
                 : BuildUserFolderNode(subDir, workspaceRootDir));
@@ -71,8 +74,25 @@ public static class WorkspaceScanner
             root.AddChild(kfGroup);
         }
 
+        // R-L5g-9 (brief-L5-followups-2.md §4): generated cells are NEVER shown in the Project Tree —
+        // not even as one collapsed group. This supersedes R-L5-3's original "one synthetic group node"
+        // decision, which never fully landed as "infrastructure, not content" anyway: a group node still
+        // let a user open/browse individual generated cells as if they were ordinary content. Per §4.2,
+        // a generated cell is now a pure, deletable, rebuildable-from-the-layout regeneration cache
+        // (GeneratedCellStore.RecordSnapshot / LayoutView.PCellSnapshots) — there is nothing in it for a
+        // user to look at that isn't better read from the referencing instance's own Properties Inspector
+        // (R-L5f-8/9's PCell parameter list). IsReservedTreeDir above already excludes the folder from
+        // the regular per-directory scan; this is simply "and don't add it back in any other form."
+
         return root;
     }
+
+    /// <summary>True for the reserved generated-cells folder (R-L5-3), excluded from the ordinary
+    /// per-directory scan and rendered instead as the <see cref="NodeKind.GeneratedCellsGroup"/>
+    /// synthetic group above.</summary>
+    private static bool IsReservedTreeDir(string dir)
+        => string.Equals(Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+            CircuitRF.Ui.Layout.PCells.GeneratedCellStore.ReservedFolderName, StringComparison.OrdinalIgnoreCase);
 
     // ── Cell ──────────────────────────────────────────────────────────────────
 

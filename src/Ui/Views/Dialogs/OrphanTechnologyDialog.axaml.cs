@@ -95,9 +95,14 @@ public partial class OrphanTechnologyDialog : Window
             return new OrphanTechnologyChoice(item.AbsolutePath, null);
         }
 
-        Technology starter = StarterMmicRadio.IsChecked == true ? StarterTechnologies.MmicGaAs()
+        // docs/sonnet-briefs/brief-misc-termg-units-technologies.md §3: PCB/MMIC now come from the
+        // SAME shipped-technology set the New Workspace dialog offers (R-misc-6's own "one
+        // authored representation, not two") — never StarterTechnologies' own, possibly-diverged
+        // in-memory content. "Empty" (a genuinely blank technology, not a curated default) is
+        // orthogonal to that concern and is left as-is.
+        Technology starter = StarterMmicRadio.IsChecked == true ? ShippedTechnologies.Load("mmic-GaAs_2LM_100um")
             : StarterEmptyRadio.IsChecked == true                ? StarterTechnologies.Empty()
-            : StarterTechnologies.Pcb2Layer();
+            : ShippedTechnologies.Load(ShippedTechnologies.DefaultId);
         return new OrphanTechnologyChoice(null, starter);
     }
 

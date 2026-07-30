@@ -1,6 +1,8 @@
 // Rendering overlay passed from LayoutEditorViewModel to LayoutCanvas/LayoutRenderer each frame.
 // No Skia / Avalonia types — keeps the renderer re-skinnable (mirrors SymbolEditorOverlay's role).
 
+using CircuitRF.Ui.Layout.PCells;
+
 namespace CircuitRF.Ui.Layout;
 
 /// <summary>A world-space (DBU) rectangle for the marquee-select gesture. Not normalized — direction
@@ -68,4 +70,12 @@ public sealed record class LayoutOverlay
     /// reusing L1f's paste-placement gesture vocabulary). A deliberately simplified placeholder-box
     /// ghost (not the resolved sub-cell's real geometry) — see the renderer's own doc comment for why.</summary>
     public (LayoutInstance Instance, Bbox Bbox)? PendingInstancePlacement { get; init; }
+
+    /// <summary>L5, R-L5-7: the palette→layout PCell drag's live ghost — the generator's REAL output
+    /// (a throwaway <see cref="LayoutView"/> wrapping <see cref="PCellResult.Shapes"/>, kept as the
+    /// SAME reference across pointer-move ticks within one drag so <c>LayoutRenderer</c>'s
+    /// reference-keyed compiled-cell cache actually hits) at the current (already-snapped) drag point.
+    /// Distinct from <see cref="PendingInstancePlacement"/> — there is no on-disk cell to resolve yet
+    /// (R-L5-7: generated once, cached, never written to disk until the drop actually commits).</summary>
+    public (LayoutView GhostView, long X, long Y)? PendingPCellPlacement { get; init; }
 }

@@ -2694,17 +2694,13 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (MicrostripSubstrateInjection.IsMicrostripKind(kind))
             MicrostripSubstrateInjection.ApplyTechnologyLengthUnit(comp.Parameters, EditModel.SchematicDirectory);
 
-        // Auto-assign next-free Num for Term/TermG (Num placeholder "1" from DefaultParameters is
-        // overwritten here with the actual next-free integer among existing Terms). TermG is the
-        // same s-param port as Term (R-hk-6) so it shares the identical pool.
-        if (kind is SymbolKind.Term or SymbolKind.TermG)
-        {
-            var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
-            if (numParam != null)
-                numParam.Expression = NextFreeTermNum(EditModel).ToString();
-        }
-        // P1Tone shares the same port-number pool as Term so the two never collide as s-param ports.
-        else if (kind == SymbolKind.P1Tone)
+        // Auto-assign next-free Num for Term/TermG/P1Tone (Num placeholder "1" from DefaultParameters
+        // is overwritten here with the actual next-free integer among existing pool members). TermG
+        // is the same s-param port as Term (R-hk-6); P1Tone shares the identical pool so the two
+        // never collide as s-param ports. Routed through the shared registry predicate
+        // (ComponentTypeRegistry.OwnsUniquePortNum) rather than a hand-typed SymbolKind list —
+        // docs/sonnet-briefs/brief-misc-termg-units-technologies.md §1.
+        if (ComponentTypeRegistry.OwnsUniquePortNum(kind))
         {
             var numParam = comp.Parameters.FirstOrDefault(p => p.Name == "Num");
             if (numParam != null)
@@ -2876,11 +2872,13 @@ public sealed partial class SchematicViewModel : ObservableObject
         }
     }
 
-    // Term and P1Tone share the same s-param port-number space so they never collide as ports.
+    // Term/TermG/P1Tone share the same s-param port-number space so they never collide as ports —
+    // see ComponentTypeRegistry.OwnsUniquePortNum's own doc comment for why this is the one place
+    // that predicate is expressed, not a local copy.
     private static int NextFreeTermNum(SchematicEditModel model)
     {
         var used = model.Components
-            .Where(c => c.Symbol is SymbolKind.Term or SymbolKind.TermG or SymbolKind.P1Tone)
+            .Where(c => ComponentTypeRegistry.OwnsUniquePortNum(c.Symbol))
             .Select(c => c.Parameters.FirstOrDefault(p => p.Name == "Num"))
             .Where(p => p != null && int.TryParse(p!.Expression, out _))
             .Select(p => int.Parse(p!.Expression))
@@ -3280,13 +3278,13 @@ public sealed partial class SchematicViewModel : ObservableObject
                     foreach (var dp in ComponentTypeRegistry.DefaultParameters(newKind, portCount))
                         newComp.Parameters.Add(new EditableParameter
                             { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
-                    // Auto-assign the next-free Num so a type-change to Pin/Term/P1Tone never duplicates.
-                    if (newKind == SymbolKind.Term)
-                    {
-                        var np = newComp.Parameters.FirstOrDefault(p => p.Name == "Num");
-                        if (np is not null) np.Expression = NextFreeTermNum(EditModel).ToString();
-                    }
-                    else if (newKind == SymbolKind.P1Tone)
+                    // Auto-assign the next-free Num so a type-change to Pin/Term/TermG/P1Tone never
+                    // duplicates. Routed through ComponentTypeRegistry.OwnsUniquePortNum, not a
+                    // hand-typed SymbolKind test — a bare "newKind == SymbolKind.Term" check here was
+                    // the second of two gaps TermG fell through (docs/sonnet-briefs/
+                    // brief-misc-termg-units-technologies.md §1): typing "TG" over an existing
+                    // component never got a fresh Num.
+                    if (ComponentTypeRegistry.OwnsUniquePortNum(newKind))
                     {
                         var np = newComp.Parameters.FirstOrDefault(p => p.Name == "Num");
                         if (np is not null) np.Expression = NextFreeTermNum(EditModel).ToString();

@@ -1,5 +1,802 @@
 # UI (Avalonia) — local conventions
 
+TermG port numbering, layout→schematic units, and shipping default technologies
+(brief-misc-termg-units-technologies.md, 2026-07-29) — COMPLETE, four items.
+
+## §1 — TermG's Num uniquing: a hardcoded type list, extended in two of three places, missed in the
+## third — now a single shared predicate, never a per-call-site list again
+
+**Confirmed: it WAS a hardcoded `SymbolKind` list, and it HAD already diverged** — three independent
+call sites, three different lists, found by direct investigation rather than assumed:
+`SchematicPasteCommand.ResolveNums`'s own `PortFamily = [Term, P1Tone]` (TermG never added —
+this is the reported bug), `SchematicViewModel.CommitPlacement`/`NextFreeTermNum`
+(`Term or TermG or P1Tone` — already correct), and `CommitInlineEdit`'s inline type-change path
+(`newKind == SymbolKind.Term` only — a SECOND gap, not the one reported, found while fixing the
+first: typing "TG" over an existing component never got a fresh Num either). **Refactored, not
+merely extended** — R-misc-2's own "replace the type test with a property of the component" — into
+one new `ComponentTypeRegistry.OwnsUniquePortNum(SymbolKind)`, now the ONLY place this check is
+expressed; all three call sites (plus `NextFreeTermNum` itself) route through it. `Pin` deliberately
+stays OUT of the set — it has its own separate numbering pool (`NextFreePinNum`), a different
+concern the same shape of bug could someday hit if a future contributor merges the two pools by
+mistake; the doc comment says so directly.
+
+**Duplicate and drag-copy do not exist as Schematic Editor features at all** — checked directly (no
+`Duplicate` command, no Ctrl/Cmd+D binding, no Alt-drag/modifier-drag copy path anywhere in
+`SchematicViewModel`/`SchematicCanvas`/`SchematicView`; "Duplicate (Ctrl+D)" in this file's own
+history belongs to the Layout Editor, an unrelated feature) — so there was no third/fourth entry
+point to gate, only the two above. New tests in `TermGComponentTests.cs`: the registry predicate
+itself, TermG-paste collision, a mixed Term+TermG paste selection (both dodge each other's Nums),
+placement (already-correct, pinned as a permanent regression guard), and the inline type-change gap.
+
+## §2 — layout→schematic microstrip units: the THIRD appearance of the SI-vs-coefficient-and-unit
+## class of bug, but NOT the dramatic "off by 1000×/25400×" the brief's own diagnosis predicted
+
+**Investigated directly before writing any fix, and the result contradicts the brief's own working
+theory** — worth recording exactly, since this is the third time this general class of bug
+(SI-metres-internally vs. coefficient-plus-unit-on-the-schematic-side) has appeared in this
+codebase, and getting the actual mechanism right matters for whoever hits a fourth. A disposable
+probe test (`LayoutToSchematicGenerator.Run` against a real generated PCell instance, built and
+then deleted, matching this codebase's own established debugging convention) showed
+`LayoutToSchematicGenerator.ApplyPCellParamsToComponent` was ALREADY calling the correct shared
+conversion helper (`SchematicToLayoutGenerator.ToDisplayValue`, R-pc-6's own helper) and producing
+the numerically CORRECT magnitude — `0.0029` SI metres came out as `"2.9" mm`, not `"0.0029" mm`
+and not some 1000×-off value. **The actual, narrower gap: it always converted into a hardcoded
+"mm"** (the same fixed baseline `ComponentTypeRegistry.DefaultParameters` seeds every microstrip
+Length default with) **regardless of the workspace's own technology** — never picking mil (PCB) or
+µm (MMIC) the way schematic-side fresh placement already does via `MicrostripSubstrateInjection.
+ApplyTechnologyLengthUnit`. That gap is real and is exactly what R-misc-4 asks to close, even though
+the brief's own "wrong by a factor of 1000 or 25400" framing describes a different (and, for this
+specific code path, not actually present) failure mode. Reported plainly rather than silently
+building a fix for a bug that didn't reproduce as described, matching this codebase's own
+established "investigate carefully, report what's actually true" precedent (the MBend miter
+investigation and the calculator-A-formula discrepancy are the two prior examples of the same
+practice).
+
+**Fix (R-misc-3/4):** `LayoutToSchematicGenerator.Run` gained an optional `Technology?` parameter
+(the layout's own resolved technology, threaded from `WorkspaceViewModel.UpdateSchematicFromLayout`'s
+`layoutVm.Technology`); `ApplyPCellParamsToComponent` now rewrites a Length-dimensioned parameter's
+`.Unit` to `MicrostripSubstrateInjection.LengthUnitFor(technology)` — the SAME helper the MKlopf
+entry-mode toggle and the schematic placement path already use, never a second conversion — BEFORE
+computing its coefficient through that unit, so the two can never disagree. Only the CREATE path
+(a layout-first instance, never yet linked to a schematic component) is affected; an ALREADY-LINKED
+component keeps whatever unit it was authored with, unchanged — matching the brief's own "schematic-
+linked instances are unaffected" observation, which DID hold up under direct investigation (that
+half of the diagnosis was correct). R-misc-5's round trip (`LayoutToSchematicGeneratorTests.cs`):
+place a 40mil/250mil MLIN PCell in a layout, push to schematic (confirms mil, correct magnitude),
+push back to layout — the forward direction reports `NothingChanged` and the resolved `CellRef`
+is byte-identical, proving the geometry round-trips exactly.
+
+## §3 — shipped default technologies: embedded resources parsed by the normal reader; §3.3's
+## prerequisite check PASSED outright, nothing needed adding to the files
+
+**Ship mechanism (R-misc-6/7):** the four owner-authored `.ctech` files moved from
+`example_tech_files/` to `src/Ui/resources/technologies/` and are embedded as plain .NET
+`EmbeddedResource` assets (**not** Avalonia's `AvaloniaResource`/`AssetLoader` — this whole
+namespace is framework-free by design, and `AssetLoader.Open` throws with no live Avalonia
+platform, the exact constraint `SkiaFonts.cs`'s own note already names for embedded fonts;
+`Assembly.GetManifestResourceStream` has no such requirement and works identically in this
+project's headless tests). New `ShippedTechnologies` (`src/Ui/Layout/ShippedTechnologies.cs`) reads
+them through the SAME `TechPersistence.Deserialize` a user's own `.ctech` goes through — never
+hand-transcribed into C# object initializers, which would create a second representation of the
+same authored content that would inevitably drift from it the first time a stackup is tweaked
+(R-misc-6's own stated reasoning, now enforced by construction: there is only one place the
+content lives). `ShippedTechnologiesTests.cs` (13 tests) loads all four, asserts each round-trips
+and passes `TechValidation` with zero problems, and asserts the four Names are distinguishable.
+
+**§3.3's prerequisite check (R-misc-10) — checked directly, PASSED outright, nothing added:** all
+three PCB files already carry a `StackupKind.Via` entry with `Fill: Plated`, a real
+`WallThicknessDbu`, and `SpanFromLayer`/`SpanToLayer` naming its two real conductors; the MMIC file
+already carries the full two-metal stack (`Metal2 / Air (εr=1) / Metal1 / GaAs / Backside Metal`,
+confirmed `Air.Epsr == 1.0` exactly) with BOTH a `Backside Via` (Plated) and a `Metal1-Metal2 Post`
+(Solid) — R-via-2/3/4's own additions were already present in every one of the four owner-authored
+files before this brief touched them. Pinned as permanent regression guards
+(`PcbTechnology_HasViaStackupEntry_WithFillModelAndSpan`,
+`MmicTechnology_HasTwoMetalStack_WithAirDielectricAtEpsr1_AndMetal1Metal2ViaPost`) rather than left
+as a one-time manual check. The only content issue found: two files' `Name` field read
+`"RO40350B"` (an extra "0" — a typo against the material's real name, RO4350B, confirmed by the
+filename itself) — fixed in both.
+
+**Name distinguishability (R-misc-9):** checked all four before assuming a fix was needed — they
+were ALREADY distinguishable (`"PCB 2-Layer RO4350B (20mil, 1oz)"` / `"...(30mil, 1oz)"` /
+`"PCB 2-Layer FR-4 (70mil, 1oz)"` / `"MMIC GaAs (2 Layer Metal, 100um)"`, once the typo above was
+fixed) — the brief's own worry ("if all three PCB files carry the same generic Name") did not
+apply; each substrate+thickness combination was already spelled out.
+
+**Retirement of `StarterTechnologies` — a deliberate, narrower scope than "delete the file,"
+recorded explicitly per this file's own established practice of stating a scope decision rather
+than either blindly complying or silently doing something different:** `StarterTechnologies.
+Pcb2Layer()`/`MmicGaAs()` are used in exactly TWO real production paths
+(`WorkspaceViewModel.NewWorkspace`, `OrphanTechnologyDialog`'s PCB/MMIC starter routes) — both now
+call `ShippedTechnologies` instead, closing the actual "two representations that drift" risk
+R-misc-10 warns about. `StarterTechnologies.Empty()` (a genuinely blank technology with sane unit
+defaults, not a curated default that duplicates any shipped `.ctech`) is left untouched in the
+Orphan dialog — a different, orthogonal concern. **`StarterTechnologies.cs` itself was NOT
+deleted** — it remains referenced by ~28 test files, all using it purely as a convenient, stable,
+in-memory `Technology` fixture for tests of UNRELATED features (PCell generators, substrate
+resolution, layer mapping, DXF/Gerber export, technology caching/resolution, …) that need SOME
+valid `Technology` object and do not assert anything about what ships to a new user. None of those
+28 files test the New-Workspace/Orphan-dialog integration this brief actually changed (confirmed
+directly — `WorkspaceViewModel`/`OrphanTechnologyDialog` cannot be constructed headlessly in this
+suite regardless, the same standing constraint every prior phase has hit). Deleting the file and
+mechanically touching 28 unrelated test files would have been pure, high-risk churn for zero
+functional benefit; keeping it as a test-only fixture does not resurrect the "two production
+sources of truth" risk, since production code no longer reads it anywhere.
+
+## §4 — New Workspace dialog: combobox over the four shipped technologies + None
+
+**R-misc-11:** the PCB/MMIC/None radio-button trio in `NewWorkspaceDialog` is gone; a single
+`ComboBox` (`TechCombo`) is populated from `ShippedTechnologies.All` (each entry's OWN authored
+`Name` as its label) plus one synthetic "None" entry, defaulting selection to whichever entry's Id
+matches `ShippedTechnologies.DefaultId` (`"pcb-2layer_RO4350B_20mil_1oz"`, the owner's explicit
+choice). `NewWorkspaceResult.Technology` (the old `NewWorkspaceTechChoice` enum) is now
+`TechnologyId: string?` — the chosen entry's Id, or null for None.
+
+**R-misc-12:** a one-line hint (`TechNoneHint`, shown only while "None" is selected, via
+`OnTechSelectionChanged`) states None's defined semantics directly in the dialog — no workspace
+default technology; layouts draw with `FallbackPalette` colors; microstrip components generate
+artwork but cannot stamp (no εr/h to resolve — `pcell-contract.md` §5's own already-specified
+no-technology behavior, a supported state, never an error path); addable later via the Technology
+Editor. Wording chosen to read as a deliberate, informed choice rather than something broken.
+
+**R-misc-8:** `WorkspaceViewModel.NewWorkspace` writes the CHOSEN entry's own raw bytes
+(`ShippedTechnologies.LoadRawJson`, the exact authored `.ctech` text — never a re-serialization
+through `TechPersistence.Serialize`, which would be a harmless but pointless round trip) directly
+into the new workspace's own `tech/<id>.ctech`, then sets `.cws`'s `DefaultTechRef` to point at
+that real, independently-editable file — never a runtime reference back to the embedded copy,
+matching "a workspace must stay self-contained" exactly.
+
+`NewWorkspaceTechnologyPickerTests.cs` (7 tests) — the record shapes directly, plus structural
+source-scans (both `NewWorkspaceDialog` and `WorkspaceViewModel` are un-constructable-headlessly
+types, the same standing constraint noted throughout this file) proving the combobox wiring, the
+default-id selection, the raw-JSON write, and that neither `NewWorkspaceTechChoice` nor
+`StarterTechnologies` appear anywhere in the new code.
+
+## Gate
+
+Firewall 4/4, Core 512/512, Ui 3627/3627 (was 3600 before this brief — 27 new tests:
+`TermGComponentTests.cs` +5, `LayoutToSchematicGeneratorTests.cs` +2, `ShippedTechnologiesTests.cs`
+13, `NewWorkspaceTechnologyPickerTests.cs` 7), Engine 460/461 (1 pre-existing skip) — all green.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior phase's
+own note) — please confirm on your end: pasting/typing-over-to a TermG next to an existing Term or
+TermG assigns a fresh port number, never a duplicate; a layout-first microstrip pushed to a
+schematic on a real PCB/MMIC workspace shows its width in that technology's own unit (mil/µm) at
+the correct physical magnitude; the New Workspace dialog shows a single combobox with four
+distinguishable shipped-technology entries plus "None" (defaulting to the RO4350B 20mil PCB
+entry), with the None hint appearing only when None is selected; and that a workspace created with
+a real technology choice gets a `tech/<id>.ctech` file that opens correctly in the Technology
+Editor and can be edited without affecting any other workspace.
+
+Layout Editor "Zoom to Fit" ignored every placed instance, including PCells (2026-07-29) —
+COMPLETE. Owner report: "Layout Editor 'Zoom to Fit' does not account for pCell extents." Root
+cause, plain omission: `LayoutCanvas.ZoomToFitInternal` unioned `LayoutGeometry.BboxOf` over
+`Model.Shapes` only — it never looked at `Model.Instances` at all. A placed PCell is an ORDINARY
+`LayoutInstance` pointing at a generated cell folder (see this file's own architecture note above),
+so a layout consisting solely of PCell instances (or one whose PCells extend past its raw shapes)
+zoomed to an empty or undersized extent — not a PCell-specific bug, but PCell-heavy layouts are
+where it was most visible since a schematic-generated layout is often ALL instances.
+
+**Fix**: `ZoomToFitInternal` now also unions `CellHierarchy.InstanceBbox(inst, InstanceBaseDir)`
+over every `model.Instances` entry — the exact same resolved, array-expanded, recursive bbox the
+marquee/spatial-index and Select-All paths already use for an instance (`LayoutEditorViewModel.
+ComputeMarqueeSelection`'s own `InstanceBboxFor` local function), reused rather than a second bbox
+notion. This one fix covers every entry point that calls `ZoomToFitInternal`/`ZoomToFit` — the
+toolbar button, the `F` key, and push-in/pop-out navigation's `ApplyFrameViewport` (which restores
+a saved viewport OR calls `ZoomToFit` when none was saved) — since they all funnel through the one
+method.
+
+Regression coverage (`LayoutZoomToFitInstancesTests.cs`, 3 tests): a direct test of
+`CellHierarchy.InstanceBbox` against a REAL generated PCell instance (MLIN) proving it returns the
+generated cell's actual extent, not empty/placeholder-sized, plus a translate-with-position check;
+and a structural source-scan (mirroring `PCellDoubleClickDispatchTests.cs`'s own established
+pattern for this exact "can't construct a `Control` headlessly" situation) proving
+`ZoomToFitInternal`'s body actually unions `model.Instances` via `CellHierarchy.InstanceBbox`, not
+just `model.Shapes`. Full solution green (Firewall 4/4, Core 512/512, Ui 3600/3600, Engine 460/461
+— 1 pre-existing skip).
+
+**Not interactively verified** (no visual driver in this environment) — please confirm on your
+end: Zoom to Fit / the `F` key on a layout whose content is entirely (or mostly) placed PCell
+instances now frames all of them, not just any raw drawn shapes.
+
+L5 follow-ups, round FOUR: the double-click dialog was never opened, three rounds running
+(2026-07-29) — COMPLETE. Owner report, verbatim: "the Parameter Editor still does not display the
+modal Component Parameter dialog box when I double click on a pCell. This is the 4th time I've
+asked you to fix it... The Schematic Editor already does this, I just want it to work in the
+Layout Editor too." **The prior three rounds (brief-L5-followups.md §5, round two, round three §1)
+all read R-L5h-2's "the SAME editor, not a new dialog" as "route to the docked Properties panel
+only" — never once opening a popup window.** `LayoutEditorView.OnInstanceDoubleTapped` correctly
+selected the PCell instance (so the docked panel updated) but that is a DIFFERENT thing from what
+the Schematic Editor's own double-click does (`SchematicView.axaml.cs :: OnComponentDoubleTapped`
+opens a popup `ParameterEditorDialog`, non-modally, every time) — a purely docked-panel
+selection has no popup at all, so every report of "nothing modal appears" was correct and none of
+the three prior rounds actually addressed it.
+
+**Fix:** `OnInstanceDoubleTapped` now ALSO opens `LayoutPCellParameterDialog` (new,
+`src/Ui/Views/Dialogs/`) — a `Window`, shown non-modally (`Window.Show`, not `ShowDialog`, matching
+the schematic dialog's own default) — after selecting the instance. The dialog hosts a NEW
+extracted control, `PCellParameterListView` (`src/Ui/Views/Properties/`), pulled verbatim out of
+`LayoutShapePropertiesView.axaml`'s inline PCell-parameter block so the docked panel and the popup
+share the exact same editing surface (MKlopf entry-mode toggles included) — never a second
+parameter-editing implementation, the same "one view, two hosts" shape the schematic side already
+established for `ParameterEditorView`/`ParameterEditorDialog`. The dialog's own VM is a fresh
+`LayoutShapePropertiesViewModel` bound via `SetContext(doc.ActiveViewModel)` (the same call the
+docked panel makes) — it tracks the layout's live selection, so it stays in sync with the docked
+panel rather than being a second, independently-diverging source of truth; `SetContext(null)` on
+`dialog.Closed` unsubscribes it. Undo/Redo key bindings in the dialog delegate to
+`EditorVm.UndoCommand`/`RedoCommand` (the Layout Editor's own stack — a PCell parameter edit is
+undoable there regardless of whether it was made from the docked panel or this popup).
+
+**Also fixed in the same pass, owner-reported alongside**: the PCell parameter name column was a
+fixed 56px, clipping longer MKlopf names ("GammaMax", "SmoothSteps", "SignalLayer",
+"GroundReference"). `PCellParameterListView`'s name column is now `Width="Auto"` with a
+`SharedSizeGroup` (`Grid.IsSharedSizeScope="True"` on the control's own root) — mirrors
+`ParameterEditorView.axaml`'s own `ParamName` column exactly, so every row's name sizes to the
+LONGEST name across all rows and is never cut off, with every row's value box still lined up.
+Fixes both hosts (docked panel + popup) at once, since both now share this one control.
+
+**Not interactively verified** (no visual driver in this environment) — please confirm on your
+end: double-clicking an MKlopf (or any PCell) instance in the Layout Editor now opens a popup
+"PCell Parameters" window (not just updating the docked Properties panel), its parameter names are
+no longer clipped, editing a value there updates the instance and is undoable, and the docked panel
+stays in sync with whatever the popup shows.
+
+L5 follow-ups, round three: exact code locations, not behaviour descriptions
+(brief-L5-followups-3.md, 2026-07-29) — COMPLETE, four items. **Read the brief's own preamble
+first if touching any of these four areas again** — three of these had been "fixed" twice before
+and were still broken, because each prior round patched a symptom downstream of the actual
+dispatch/state instead of the dispatch itself. This entry names the exact lines, per the brief's
+own explicit instruction, so a future report goes straight there instead of re-deriving it.
+
+## Item 1 (R-L5h-1/2) — double-click dispatch lives in `LayoutEditorView.OnInstanceDoubleTapped`; the canvas only reports
+
+**`LayoutCanvas.OnDoubleTapped` never decides anything — it hit-tests and raises
+`InstanceDoubleTapped`.** The decision of what a double-click on an instance actually DOES lives
+entirely in `LayoutEditorView.OnInstanceDoubleTapped` (`src/Ui/Views/Layout/LayoutEditorView.axaml.cs`).
+**Both prior rounds (brief-L5-followups.md §3, brief-L5-followups-2.md §3) added their guard
+INSIDE `DoPushInto`** (`LayoutHierarchyResolver.CanPushInto` correctly refusing a PCell, and
+`GeneratedCellStore.IsUnderGeneratedCellsFolder` correctly refusing to open a generated cell's own
+`.clay` directly) — both guards were and remain genuinely correct, but `OnInstanceDoubleTapped`
+kept calling `DoPushInto` UNCONDITIONALLY regardless, so the user kept seeing push-in's own polite
+refusal message ("Can't push into cell: …") instead of anything opening. **Fixed by changing the
+dispatch itself**: `OnInstanceDoubleTapped` now calls the new `LayoutHierarchyResolver.
+IsPCellInstance` FIRST — a standalone predicate, independent of `CanPushInto`'s own refusal-reason
+string, deliberately so a resolvable-but-broken-for-some-OTHER-reason instance still falls through
+to push-in and shows ITS OWN correct reason. A PCell instance is selected instead (via the new
+`LayoutEditorViewModel.SelectInstance(int)`) — the SAME Properties Inspector context
+brief-L5-followups.md §5 already built (PCellParamRows, the entry-mode toggles) — and
+`DoPushInto` is never reached; `doc.NotifyCanvasInteracted()` re-asserts Properties/undo/save-scope
+routing (the existing R-fix-3 seam). **The toolbar Push-In button was already correctly disabled
+for a PCell** (`UpdateHierarchyButtonStates` already calls the same `CanPushInto`) — that part of
+the report was never broken; it now ALSO shows the refusal reason on hover (was a static "Push Into
+Cell (Ctrl+])" tooltip regardless of state).
+
+**Rule for the next "double-click does the wrong thing" report**: go straight to
+`LayoutEditorView.OnInstanceDoubleTapped`. Do not add a guard inside `DoPushInto` — that method is
+reached ONLY by the non-PCell fallthrough and by the toolbar/keyboard entry points
+(`OnToolbarPushIn`, `OnViewKeyDownTunnel`'s Ctrl/⌘+]), which is exactly where its own guard
+belongs; a guard added there again would repeat this same three-round mistake for whatever the
+next double-click misbehavior turns out to be.
+
+## Item 2 (R-L5h-3/4) — the ratsnest was real, persisted geometry; connectivity guides are overlays, never artwork (second occurrence)
+
+**Confirmed exactly as reported**: `SchematicToLayoutGenerator.Run`'s §9 step 4 pass emitted real
+`PathShape` objects on a reserved layer `(0, 900)` into the target `LayoutView.Shapes` — selectable,
+movable, deletable, swept into booleans/flatten/the clipboard/the spatial index, and reachable by
+any GDSII/DXF/Gerber export that happened to map layer `(0,900)`. **This is the SAME class of error
+already fixed once for pins** (brief-L5-followups-2.md §6, R-L5g-13/14: "render pins as a
+screen-space overlay, not layer geometry") — a connectivity guide is metadata about the design, not
+artwork, and treating it as artwork is exactly what silently makes it exportable, editable, and
+fabricatable. **Fix: removed entirely, per the brief's own explicit "remove, report, stop" —
+no overlay ratsnest was built in this pass.** `SchematicToLayoutGenerator` no longer computes or
+emits anything on `RatsnestLayer` (the constant is KEPT, `internal`, solely as the shared identity
+the cleanup sweep below uses — its own doc comment says so directly). Two now-dead pieces of
+bookkeeping (`byInstanceName`, `placements`, and the `GetPortNamesInOrder` helper they fed) were
+removed alongside it rather than left as unused code.
+
+**Cleanup of already-polluted designs**: `SchematicToLayoutGenerator.RemoveRatsnestShapes(LayoutView)`
+(pure, framework-free) strips any `(0,900)` shapes and returns the count removed. Wired into
+`WorkspaceViewModel.GetOrCreateLayoutSession` — the ONE funnel every layout load goes through,
+open-as-tab and push-in alike (confirmed the single choke point, not assumed) — immediately after
+`LayoutPersistence.LoadFromFile`, so an already-polluted `.clay` is cleaned the FIRST time it is
+opened after this fix, not only if the owner happens to re-run the generator on it. A non-zero
+count marks the session dirty (so the cleanup actually persists on the next save) and posts a
+`Messages.Warning` naming the count and file.
+
+## Item 3 (R-L5h-5/6/7) — the miter cut-length formula was already correct; the geometry construction was not
+
+**Neither of the brief's own two leading hypotheses was actually present in the code.** Checked
+directly: `MicrostripDiscontinuities.MiterCutLength` (`src/Core`, untouched by this fix) already
+interprets `M` correctly as the fraction REMOVED — at `W/h=1`, `M≈68.85%` (≈69%, matching R-L5h-5's
+own worked expectation exactly, NOT the inverted 31%-kept reading) — and already returns a
+PER-EDGE LEG length, not a diagonal, so there was no missing √2 to add either (nothing in the
+codebase's own math ever divides by √2 in the first place: `leg = X/√2` is what `MiterCutLength`
+already computes and returns directly).
+
+**The real cause — confirmed at brief-L5-followups-2.md §5, left unfixed there, fixed here —**
+was that the two arms (`PCellGeometryHelpers.BuildArmRect`, stopping/starting exactly at the
+nominal pivot) only overlapped in a quarter of the true W×W corner square, so
+`BuildMiterCutTriangle`'s own "sharp outer corner" (the intersection of the two arms' outer edge
+LINES) never actually landed on the union's real boundary — the cut polygon overlapped nothing, and
+`LayoutBooleans.Difference` correctly found nothing to subtract. **Fixed in `MBendPCell.cs`, two
+parts:** (1) each arm now extends HALF a width past/before the pivot along its own centerline, so
+the two arms' widths form the real overlap square the corner math always assumed; (2) a SECOND,
+independently-found bug then surfaced once (1) was in place — the cut point for arm2 used `-d2`
+(walk backward from the corner), which — now that arm2's own origin sits behind the nominal pivot —
+walks straight off arm2's real edge into empty space. Pin2 always sits FURTHER along `+d2` from the
+corner, so the correct cut point is `outer + d2·leg`, not `outer - d2·leg`. Both bugs were found by
+direct numeric reconstruction of the actual polygon vertices (not by eye), and both are now covered
+by regression tests asserting real vertex positions, not merely "the outline changed."
+
+**`Miter` was NOT failing to resolve as an enum** — re-confirmed directly (unchanged from round 2):
+`ThreeMiterModes_ProduceThreeDistinctGeneratedCells_ResolvedValueReachesTheGenerator` proves the
+resolved value reaches the generator distinctly per mode via content-addressing.
+
+**R-L5h-7's decision: the miter cut is restricted to an EXACT 90° bend** (`MBendPCell.
+IsRightAngleBend`, `Math.Abs(Math.Cos(angleRad)) ≤ 1e-9`, independent of turn sign so it covers both
+Angle=90 and Angle=-90/270) — Douville & James's own fit, and the corner-square construction itself,
+are both right-angle-specific; silently extrapolating either to an oblique bend is exactly the
+"wrong numbers look plausible" trap the brief warns against. A non-90° bend with a non-None Miter
+selected keeps its unmitered geometry and reports why via the new `PCellResult.Diagnostics`
+channel (the same R-klp-10-established "a pure generator has no interactive control to grey out, so
+this is its disabled-with-a-reason") — never silently applied, never silently dropped.
+
+**Calculator-oracle table (R-L5h-6)** — both URLs the brief names by name
+(everythingrf.com/rf-calculators/microstrip-mitred-bend-calculator and
+calctown.com/calculators/microstrip-optimal-mitre-bend) returned **HTTP 403 Forbidden** to every
+fetch attempted this session — reported directly rather than silently substituted. Two OTHER
+independent, non-GPL calculators were reachable instead and BOTH publish the identical worked
+example (rfwireless-world.com/calculators/Microstrip-Mitred-Bend-Calculator.html and
+calculatorultra.com/en/tool/microstrip-mitred-bend-calculator.html — the latter also states its own
+D/X/A formulas verbatim):
+
+| W | h | W/h | D | M (%) | X | leg = X/√2 | Source |
+|---|---|---|---|---|---|---|---|
+| 19.685 mil | 25 mil | 0.7874 | 27.8388 | 74.45% | 20.7266 | 14.6560 | fetched worked example (both reachable calculators, identical) |
+| 100 | 100 | 1.0000 | 141.4214 | 68.85% | 97.3695 | 68.8506 | R-L5h-5's own "~69% at W/h=1" worked expectation |
+| 25 | 100 | 0.2500 | 35.3553 | 98.38% | 34.7829 | 24.5952 | Douville-James's own lower validity bound |
+| 2.9 mm | 1.6 mm | 1.8125 | 4.1012 mm | 57.63% | 2.3634 mm | 1.6712 mm | MBend's own default W on the PCB starter technology's own H |
+
+D and X (the two quantities this codebase's own code actually computes) matched the fetched
+calculator's worked example EXACTLY. **A genuine, reportable discrepancy found in the brief's OWN
+§3.1 table, not in this codebase**: the brief defines `A = D − X` ("the remaining diagonal"); the
+fetched calculator states its own formula as `A = (X − D/2)·√2`, which is NOT algebraically the
+same (worked example: `D−X = 7.112` mil, but the calculator's own stated `A = 9.626` mil — the
+numbers disagree). This does not affect this codebase's own correctness in any way: neither
+`MBendPCell` nor `MicrostripDiscontinuities` ever compute or use "A" for anything — only the
+per-edge leg length is ever consumed — so it is recorded here purely because R-L5h-6 asked for the
+comparison to be made and reported, not because it changed anything that needed fixing.
+
+## Item 4 (R-L5h-8/9) — the entry-mode toggles WERE resolving the technology correctly; the Properties panel just never found out when it changed
+
+**The technology-resolution possibility, checked first as the brief asked: technology resolution
+itself was NEVER the bug.** `LayoutShapePropertiesViewModel.TryResolveMklopfSubstrate` already
+calls the exact same `SubstrateResolver.ResolveElectrical` the PCell generator itself uses, against
+`LayoutEditorViewModel.Technology` — the SAME live-resolved technology the whole layout editor
+already uses for layer colors, rendering, everything (confirmed against
+`workspace-and-project-tree.md` §5A.2/R32/R33 directly: `WorkspaceViewModel.ResolveTechFor` walks
+the document's OWN ancestor `.cws`, resolves live, never snapshots — exactly the mechanism this
+panel was already reading from).
+
+**The actual bug: `LayoutShapePropertiesViewModel.OnVmPropertyChanged`'s `Technology` branch never
+re-evaluated `MklopfEntryModeAvailable`.** It re-raised `AvailableLayers` (for the layer-color combo)
+and stopped there — never called `RefreshFromVm()`, the same method instance-selection itself
+already calls to compute `MklopfEntryModeAvailable`/`IsMklopfTarget`. So a document whose Technology
+was still unresolved AT THE MOMENT an MKlopf instance was first selected (§5A.2/R33's own async
+orphan-technology prompt is the textbook trigger — a `.clay` with no ancestor `.cws` resolves
+`Tech=null` first and only resolves the real technology later, once the user answers the prompt —
+but ANY later live `.ctech` change or retarget hits the identical gap) computed
+`MklopfEntryModeAvailable = false` once and then NEVER RE-EVALUATED IT, even after Technology
+genuinely became valid — exactly "pressed it and nothing happened," because by the time the real
+technology arrived, nothing was listening for it anymore on this panel's own derived state. Fixed
+by also calling `RefreshFromVm()` on a `Technology` change — not a new code path, the same one
+`SetContext`/selection already exercises correctly.
+
+**R-L5h-9**: both toggle buttons' tooltips are no longer a static string — `MklopfEntryModeDisabledReason`
+(non-null only when `IsMklopfTarget && !MklopfEntryModeAvailable`) is shown instead of the normal
+"Switch between…" hint whenever the button genuinely cannot act, so a disabled toggle now says why
+on hover instead of silently doing nothing when clicked.
+
+## Gate — whole brief
+
+Firewall 4/4, Core 512/512, Ui 3597/3597 (was 3574 before this brief — 23 new tests:
+`PCellDoubleClickDispatchTests.cs` 7, `RatsnestGeometryRemovalTests.cs` 5,
+`MBendMiterGeometryTests.cs` 8 + 4 more in the rewritten `MBendMiterResolutionTests.cs`,
+3 more in `MklopfLayoutEntryModeTests.cs`), Engine 460/461 (1 pre-existing skip) — all green.
+Two confirmed-not-regressions (both pass cleanly in isolation, matching this file's own
+standing note on `CellLayoutResolver`'s known full-suite-parallelism timing race):
+`CellLayoutResolverTests.Resolve_CachesByMtime_ReturnsSameInstanceUntilFileChanges` and
+`CellLayoutResolverLiveTests.SetLive_MakesResolveReturnTheLiveView_NotDiskContent`.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout
+Editor phase) — please confirm on your end: double-clicking a PCell instance now opens/focuses the
+Properties Inspector on it with no error message and never pushes in; a re-run of "Update Layout
+from Schematic" (or simply reopening an older layout) shows no more thin guide lines between
+components; a placed MBend with Miter=Optimal on a right-angle bend now shows a real, deep corner
+chamfer (not a small nick, not a square corner); and the layout Properties Inspector's MKlopf
+Z1/Z2⇄W1/W2 / L⇄F3db toggle buttons are enabled (not greyed out) once a workspace technology is
+resolved, including for a layout that was foreign/orphaned at the moment it was first opened.
+
+L5 follow-ups, round two: MKlopf entry modes, smoothing blip, generated-cell lifecycle, MBend
+miter, pin rendering (brief-L5-followups-2.md, 2026-07-29) — COMPLETE, six numbered items.
+
+**Item 1 (R-L5g-1) — MKlopf's Z1/Z2⇄W1/W2 and L⇄F3db entry-mode toggles now exist on the LAYOUT
+side, not just the schematic.** Two new toggle commands on `LayoutShapePropertiesViewModel`
+(`ToggleMklopfImpedanceEntryCommand`/`ToggleMklopfLengthEntryCommand`), gated by
+`MklopfEntryModeAvailable` (disabled with a stated reason when no technology resolves — the layout
+side has no ambient workspace-technology fallback the way the schematic side does, so "no
+technology" is a real, common state here, not an edge case). **Resolves substrate via
+`SubstrateResolver.ResolveElectrical` — deliberately NOT `MicrostripSubstrateInjection.
+ResolveWorkspaceTechnology`** (the schematic side's ancestor-`.cws` walk) — the layout VM already
+holds a resolved `Technology` directly (`LayoutEditorViewModel.Technology`), so resolving the SAME
+way the PCell generator itself does is both simpler and the brief's own explicit instruction.
+W1/W2/F3db are pseudo-parameter names that never exist in the generated cell's own storage
+(`OrderedParamNames` substitutes them in for display only); committing one converts BACK to
+canonical Z1/Z2/L before calling `EditInstancePCellParameters` (R-L5-2's copy-on-write — commit
+always forks a new generated cell when the canonical values genuinely change). **"Last-edited field
+is authoritative"**: committing W1 re-derives W2 from the CURRENT canonical Z2 (never a stale
+cached W2), so a single-field edit never silently overwrites its sibling.
+
+**A real bug found and fixed while building this**: the reset-on-new-selection logic
+(`RefreshInstanceContext`) originally compared `_pcellParamGeneratedCellDir != inst.CellRef` to
+decide "did the user select a genuinely different instance" — but committing a W1/W2/F3db edit
+FORKS the same instance onto a new generated cell (a different `CellRef`) at the SAME selection
+index, which that comparison couldn't distinguish from an actual new selection, so committing a
+width edit would immediately, silently flip the panel back to Z1/Z2 mode out from under the user
+mid-edit. Fixed by tracking `_pcellEntryModeSelectionIndex` (the selection INDEX, not the resolved
+cell path) instead — reset only fires on a genuine selection change, never on a self-triggered fork.
+
+**Also found and fixed in passing**: `TryParsePCellParamValue`'s generic (non-"mm") branch never
+applied `Units.Scale(unit)` at all — harmless for every PRE-EXISTING PCell param unit (Ω, deg, all
+scale=1) but silently wrong for F3db's "GHz" (scale=1e9), which this item's own new F3db row is the
+first PCell parameter to ever exercise. Fixed alongside the toggle work, not deferred.
+
+## Item 2 (R-L5g-2/3/4) — MKlopf end steps confirmed correct; the "blip" root-caused, not fixed; R-klp-10 wired
+
+**§2.1 (end steps): verified correct, genuinely NOT a bug — this IS what the design is supposed to
+look like.** `KlopfensteinTaper.ImpedanceAt`'s own doc comment already states "t=0 → Z1, t=1 → Z2,
+exactly... the model NEVER smooths these" (R-klp-4's deliberate design), and sampling the profile at
+t slightly greater than 0 for the R-L5g-4 worked example shows a real, large first step (Z jumps
+from exactly 50.000Ω at the first sample to 52.729Ω at the second) — a genuine discontinuity by
+design, matching the reference implementation this codebase's own Klopfenstein math was originally
+oracle-verified against (github.com/ZiadHatab/klopf-taper).
+
+**§2.2 (the smoothing blip): root-caused precisely by direct numeric reconstruction, deliberately
+NOT fixed.** For the R-L5g-4 worked example, the blended WIDTH SCALAR near port 1 is itself
+monotonically decreasing across all 6 blend stations — the blend math itself is not the bug. The
+RENDERED OUTLINE EDGE is genuinely non-monotonic there (dips then rises — a real "bump and back"),
+because the width blend is computed purely as a function of the width scalar and never accounts for
+how the underlying offset centerline's own Y-position and tangent are SIMULTANEOUSLY evolving over
+that same short span. A correct fix needs to blend the OUTLINE EDGE's own position, not just the
+width value in isolation — real PCell-geometry redesign work needing visual verification this
+headless environment cannot provide. Reported, not guessed at, per this codebase's own established
+"investigate carefully, don't speculatively patch unverifiable geometry" precedent (mirrors the
+MBend miter investigation below, which hit the same wall from a different angle).
+
+**R-klp-10 (the curvature check): confirmed ABSENT before this fix, despite an existing completion
+note elsewhere in this file claiming it was already wired — it was not.**
+`MicrostripOffsetCenterline.MinRadiusOfCurvature` was fully implemented and unit-tested but never
+actually CALLED from `MKlopfPCell.Generate`. Now wired: a 400-sample scan finds the position of
+maximum curvature, computes the local trace width there, and emits a one-time warning when the
+resulting minimum radius of curvature is under 3× that local width (the same "self-intersecting
+outline" risk threshold the design doc already named). For the R-L5g-4 worked example itself
+(Z1=50, Z2=100, Γmax=0.05, L=200mm, Offset=100mm): R_min ≈ 81.12mm at the point of max curvature
+(near x≈168mm, closer to port 2) vs. 3×W_local ≈ 2.63mm there — R_min is far larger, so no warning
+fires for this specific example even with the check correctly wired; the prior absence of a warning
+for these numbers was never itself evidence of a threshold bug, only of the check's total absence,
+which is what this fix closes. A more aggressive case (short L relative to Offset, R_min≈2.85mm vs.
+3×W_local≈7.67mm) proves the check genuinely fires when the geometry warrants it.
+`MicrostripValidityReporter`'s diagnostics now also surface through `PCellResult.Diagnostics` →
+every UI call site that invokes `GetOrCreate`/`RegeneratePCell` (a gap found while doing this: PCell
+generator diagnostics had NO surfacing mechanism anywhere in the layout pipeline before this pass).
+
+## Item 3 (R-L5g-5) — the second double-click entry point: opening a `.clay` UNDER `.generated-cells/` directly
+
+`LayoutHierarchyResolver.CanPushInto`'s `PCellOrigin != null` check (the round-1 fix) was already
+completely correct — confirmed by re-testing it directly, not assumed. The round-1 fix simply never
+had a SECOND door to guard: a generated cell's `.clay` could still be opened directly as an ordinary
+layout document (bypassing push-in entirely, so `CanPushInto` never even runs) via whatever path
+resolves a `CellRef`/file path straight into `OpenOrActivateLayout`. Fixed by refusing that open
+outright: `GeneratedCellStore.IsUnderGeneratedCellsFolder` (a segment-based check) is now consulted
+in `WorkspaceViewModel.OpenOrActivateLayout`, posting a `Messages.Warning` and refusing to open any
+path under `.generated-cells/` — a generated cell is a pure cache (see Item 4), never something to
+open and hand-edit directly, so refusing is the correct behavior, not merely a stopgap.
+
+## Item 4 (R-L5g-6/7/8/9/10) — generated cells are now a pure, deletable, rebuildable cache; NEVER shown in the tree
+
+**The fact every future generated-cell question turns on:** a generated cell's on-disk `.clay` folder
+under `.generated-cells/` is no longer authoritative for anything — it is a pure, deletable,
+rebuildable-from-the-layout CACHE. The layout itself now carries everything needed to rebuild it:
+`LayoutView.PCellSnapshots` (new) is a per-view regeneration record, keyed by the generated cell's
+own FOLDER NAME (content-addressed, so naturally shared across every instance referencing that same
+cell), covering every PCell instance regardless of ORIGIN — schematic-linked, palette-dropped, or
+layout-authored copy-on-write — the prior mechanism (`SchematicPCellSnapshots`) only ever covered
+the schematic-linked case. `GeneratedCellsLifecycle.DeleteGeneratedCellsFolder`/`RegenerateAll` (new,
+framework-free) delete the whole `.generated-cells/` folder and rebuild every recorded snapshot from
+scratch, respectively — wired into `SwitchToWorkspace` (regenerate on open, before restoring open
+documents), `CloseWorkspace` (delete on close, before resetting to the blank shell), and
+`OnCleanExit` (delete on quit). `GeneratedCellStore.RecordSnapshot` is called at all three placement
+sites (schematic→layout generation, palette drag-drop, layout-authored `EditInstancePCellParameters`)
+immediately after `GetOrCreate`.
+
+**Per the user's own explicit extra instruction during this brief — supersedes R-L5-3's original
+"one collapsed group" tree decision entirely: the generated-cells folder is now NEVER shown in the
+Project Tree, in any form.** `WorkspaceScanner.Scan` no longer builds a `NodeKind.GeneratedCellsGroup`
+node at all (the enum value itself was removed, along with its one icon-mapping switch arm) —
+forty generated cells now show as zero tree entries, not one collapsed group. `.gitignore` gained an
+unanchored `.generated-cells/` pattern so the folder is never committed regardless of workspace
+location.
+
+## Item 5 (R-L5g-11/12) — Miter resolves correctly as an enum; the √2 was NOT missing; a deeper, unrelated bug was found instead
+
+**Was `Miter` failing to resolve as an enum? No — confirmed directly, not assumed.** The resolved
+Miter parameter value genuinely reaches the generator and produces three DIFFERENT content-addressed
+generated cells for values 0/1/2 (`ThreeMiterModes_ProduceThreeDistinctGeneratedCells_...`) — enum
+resolution was never the bug.
+
+**Was the √2 missing from the Douville-James cut-length formula? Investigated at length; NOT
+changed.** Three disagreeing candidates existed: the current, already-tested formula (pinned by
+`MicrostripBendLCTests.cs`'s own `MiterCutLength_TimesSqrt2_EqualsTheDiagonalReferencedCut_RBnd1` —
+a deliberately-designed prior test proving the CURRENT formula already encodes the diagonal
+relationship correctly), the brief's own "√2 might be missing" hypothesis, and an independent
+from-scratch geometric re-derivation attempted during this pass. With the primary source (Douville
+& James's paper) paywalled and every available secondary source ambiguous or fragmentary, changing a
+real RF fabrication geometry formula on anything less than a confident, sourced answer was judged too
+risky — the change was reverted, and R-bnd-1's own existing test stands as the answer: the current
+formula is not missing anything.
+
+**What WAS found, while investigating the √2 question, is a real, different, deeper bug: the miter
+cut is currently a complete geometric NO-OP for a 90° bend.** Direct numeric probing of
+`BuildMiterCutTriangle`'s output shows its computed "outer corner" lies entirely OUTSIDE the actual
+unioned arm rectangles — so None/Fifty/Optimal produce byte-identical geometry despite the resolved
+Miter value genuinely differing (confirmed via the content-addressing test above). This is a
+geometry-redesign bug, not a formula-constant bug, and fixing it needs the same visual verification
+this headless environment cannot provide — deliberately NOT attempted, and instead pinned as a
+known, deliberately-red-if-ever-silently-"fixed" regression test
+(`MiterCut_IsCurrentlyANoOp_ForRightAngleBends_KnownBug`) so a future geometry fix is forced to
+update this test rather than silently leaving the no-op in place unnoticed.
+
+## Item 6 (R-L5g-13/14/15) — PCell pins render as a screen-space overlay; never geometry, never exported
+
+Pins are now visible: a constant-pixel-size filled dot at each pin's world position plus a short
+outward-direction tick (R3's `OutwardDirectionDeg`, so the marker can say which way a pin FACES, not
+merely that one exists there — a bare dot cannot). New `ColorRole.LayoutPCellPin` /
+`LayoutRenderTheme.PCellPin` — a color deliberately distinct from every layer color, so a pin marker
+never reads as copper. Drawn by `LayoutRenderer.DrawPCellPinOverlay` (in `LayoutRenderer.
+Instances.cs`, right after a resolved top-level instance's own compiled geometry, for every one of
+its array placements) — gated by `LayoutRenderOptions.ShowPCellPins`.
+
+**Pins are resolved LIVE, by re-invoking the SAME registered `PCellGenerator` the instance's own
+geometry came from (pcell-contract.md R5: generators are pure functions of their inputs), cached by
+the resolved sub-cell `LayoutView` reference (`ConditionalWeakTable`, mirroring `_cellCompileCache`'s
+own self-invalidating lifecycle exactly) — NOT recovered from the `IsPort` `LabelShape`s
+`GeneratedCellStore.GetOrCreate` already writes into the persisted cell.** Those label shapes only
+ever carried name/position/layer (never `WidthDbu`/`OutwardDirectionDeg`), and are the existing,
+unrelated "port label" text-marker mechanism (see the L5 brief's own §4/§5 completion note above) —
+extending `LabelShape` itself with pin-specific fields would have polluted a type used broadly for
+ordinary text labels too. Calling the generator fresh needed no new persisted state at all.
+
+**Never layer geometry, never exported — true by CONSTRUCTION, not by a special-case exclusion
+rule anywhere.** `LayoutRenderOptions.ShowPCellPins` defaults to `false` (bare `default(bool)`), so
+every existing export/one-shot render call site (`LayoutClipboard`'s PDF/SVG/bitmap renderers, none
+of which ever set this new field) draws no pins with zero code changes needed there — exactly like
+`Overlay = null`/`ShowGrid = false` already suppress every other interactive-only overlay for free.
+More fundamentally: the GDSII/DXF/Gerber writers (`GdsiiExport`/`DxfExport`/`GerberExport`) never go
+through `LayoutRenderer` at all — they walk `LayoutView.Shapes`/`Instances` directly — and pins are
+never added to `LayoutView.Shapes` anywhere by this feature, so there is structurally no code path
+by which a pin marker could ever reach any of those three writers, regardless of any render-option
+flag. `LayoutEditorViewModel.ShowPCellPins` (session-only VM property, default `true`, never
+persisted, never on the undo stack — the same "view-preference edit, not a geometry mutation" rule
+`DisplayUnit`/`SnapDbu` already follow) is the interactive canvas's own opt-in, wired to a new
+toolbar `ToggleButton` (`PinOutline` icon) in the Layout Editor.
+
+## Gate — whole brief
+
+Firewall 4/4, Core 512/512, Ui 3574/3574 (was 3544 before this brief — 30 new tests:
+`MklopfLayoutEntryModeTests.cs` 10, `PCellPinOverlayTests.cs` 6, plus the pre-existing Items 2-5
+test files from this same brief carried over unchanged), Engine 460/461 (1 pre-existing skip) — all
+green.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout
+Editor phase) — please confirm on your end: the layout Properties Inspector shows "Use W1/W2"/
+"Use F3db" buttons for a selected MKlopf instance (disabled with a tooltip reason on a technology-
+less document), and typing a new width/frequency there forks the instance onto a new generated cell
+without resetting the toggle mid-edit; the Layout toolbar's new pin-icon toggle button shows/hides
+small colored dots-with-ticks at every PCell instance's pin positions, in a color distinct from any
+layer; and that exporting a design containing PCell instances to GDSII/DXF/Gerber produces no pin
+artifacts in the output (expected, since pins were never geometry to begin with — this is the one
+item in this brief that rests on construction rather than a runtime check).
+
+MTee "still upside down after drop" — the REAL root cause, post-L5-followups §2 (2026-07-29) —
+FIXED: owner report that the §2 branch-direction fix (below) didn't actually close the bug — the
+drag ghost showed the corrected geometry, but a COMMITTED (post-drop) instance still rendered
+upside-down. §2's generator fix was genuinely correct (`MTeeOrientationTests.cs` proves it at the
+generator level) — the real defect was one layer up: **`GeneratedCellStore`'s content-addressing
+hash (`GeneratorId, parameters, tech, layers`) had no notion of a generator's own algorithm
+version.** A workspace that had already placed an MTee BEFORE the §2 fix landed had a generated
+cell folder on disk under that exact hash key, carrying the OLD (pre-fix, upside-down) geometry —
+`GeneratedCellStore.GetOrCreate`'s "folder exists → reuse it, generate nothing" rule (by design,
+R-L5-1's whole point) meant that stale folder was returned FOREVER, even after the generator code
+was fixed. The drag ghost is built fresh in-memory on every drag (`_paletteDragGeometryCache` calls
+the generator directly) so it always showed the fix; the committed instance resolves through the
+never-regenerated on-disk cell, so it never did. Fixed by adding `PCellRegistry.GeneratorVersion`
+(a small `Dictionary<string,int>`, default 1) folded into `GeneratedCellStore.BuildCellName`'s hash
+— MTEE bumped to 2. Any future generator-algorithm fix (not a new-parameter addition) must bump its
+own entry here, or the identical stale-cache bug recurs for that generator. Old on-disk cell
+folders from before a bump become orphaned (harmless clutter — no cleanup mechanism exists,
+consistent with this store's standing "no garbage collection built" design). Regression test
+(`PCellGeneratorVersioningTests.cs`) plants a hand-built stale cell folder under the PRE-versioning
+hash name with deliberately-wrong (+Y) geometry and proves `GetOrCreate` at the current generator
+version resolves to a DIFFERENT, freshly-generated folder with the corrected geometry — this is the
+only test in the L5 area that actually exercises the disk-persistence layer of the bug; every prior
+MTee test (including `MTeeOrientationTests.cs`) called the generator directly and could never have
+caught this. Full solution green: Firewall 4/4, Core 512/512, Ui 3544/3544, Engine 460/461 (1
+pre-existing skip).
+
+**Not interactively verified** (no visual driver in this environment) — please confirm on your end:
+delete any existing `.generated-cells/MTEE_*` folders from a workspace that had an MTee placed
+before this fix (or just place a NEW MTee in a fresh area), and confirm the committed instance now
+renders right-side-up, matching the drag ghost.
+
+L5 follow-ups: parameter resolution, MTee orientation, PCell inspector, double-click, Select All
+(brief-L5-followups.md, 2026-07-29) — COMPLETE, six owner reports.
+
+**§1 — the generator evaluated STORED expressions, and the real defect was two silent-throw traps in
+that path, found via failing tests, not by reading the code alone:**
+1. The editor stores unit GLYPHS ("Ω", "µm"); `Units.Scale` is ASCII-only ("Ohm", "um").
+   `NetExtractor.EmitInstance` already normalizes via `UnitNormalizer.ToEngineUnit` before handing
+   overrides to the elaborator — this generator didn't, so any Ω-unit parameter (MKlopf's Z1/Z2)
+   failed immediately, even at a freshly-placed component's own unedited defaults.
+2. **The one that actually explains the "next untouched parameter fails after switching entry mode"
+   symptom:** `Evaluator.Eval`'s `ApplyUnit` treats ONLY a null unit as "no unit" — an EMPTY STRING
+   (a dimensionless parameter's stored `Unit`, e.g. `GammaMax`, `Miter`) throws `"Unknown unit ''"`.
+   `NetExtractor.EmitInstance` already guards this exact trap (`unit.Length > 0 ? unit : null`); this
+   generator didn't. Both fixed in `SchematicToLayoutGenerator.TryResolveSiValue`, which now also
+   surfaces the real exception message (`error` out-param) instead of a uniform "could not be
+   resolved" — the same shape of defect as the `FormatFreq` bug elsewhere in this codebase: a SECOND
+   resolution path silently diverging from the one that actually works, rather than converging on it.
+   **A third, distinct issue** in the same area: `MKlopfPCell.Generate` only ever reads its OWN
+   canonical `Z1/Z2/GammaMax/L/Offset/SmoothSteps` — it has no notion of the W1/W2 or F3db alternate
+   entry routes at all. `ResolveMklopfCanonicalParams` converts whichever alternate route is active
+   into the canonical keys (the SAME `MicrostripKlopfEntryConversion` conversion + substrate fallback
+   `ComponentModelFactory.CreateMicrostripKlopfModel` and `ParameterEditorViewModel`'s own entry-mode
+   toggle both already use) before the generator ever sees the parameters — skipping the inactive
+   route alone would have left the ACTIVE alternate route silently ignored, reverting to defaults.
+
+**§6 — was entirely explained by §1, confirmed rather than assumed:** a PCell that failed to resolve
+was `continue`d in the walk loop — nothing was EVER placed, on any run, so "deleting it stops it
+coming back" was never actually about delete; `DeleteInstancesCommand` itself is a plain
+`List.RemoveAt` with no separate bug (verified directly).
+
+**§2 — the MTee branch direction is DEFINED BY THE SYMBOL, not a coordinate sign, stated that way
+because a sign is exactly what drifts back:** the symbol's own port 3 sits at schematic-canvas
+(0, +200) — physically "down," since the schematic canvas is Y-DOWN. Layout is Y-UP, so the SAME
+physical direction is -Y there, not +Y. The original "branch along +Y" wording in
+`brief-L5a-pcell-contract-and-microstrip.md` (twice) was a literal reading of "+Y" that crossed from
+the symbol's Y-down world into layout's Y-up one without flipping the sign — corrected in both places,
+and `MTeePCell.Generate` now emits -Y (270°) to match.
+
+**§3 — PCells never push in, because their geometry is generated (pcell-contract.md R9):**
+`LayoutHierarchyResolver.CanPushInto` is the ONE gate both the toolbar button
+(`UpdateHierarchyButtonStates`) and double-click (`DoPushInto`) already routed through — adding one
+PCellOrigin check there fixed both entry points at once, with the stated reason ("A parametric cell's
+geometry is generated; edit its parameters instead.") surfacing through `DoPushInto`'s existing
+error-reporting path. No separate view-layer double-click branch was needed.
+
+**§4/§5 — the Properties Inspector's PCell support:** `IsSelectedInstancePCell` hides the Cell
+reference field and Re-target… button (an implementation detail of content-addressing, not something
+to see or repoint) and drives a NEW parameter list, `PCellParamRows`, in the SAME bounded region the
+L1j vertex list already established (never inside the fields' own `ScrollViewer`; `LazyIndexedList`
+reused verbatim, not reinvented). Length parameters ("mm") display/parse through the LAYOUT's own
+display unit via `LayoutUnits.Format`/`FromDbu` (not the schematic's fixed "mm"); everything else
+(Ω/deg/dimensionless) through its own natural unit. Editing a row calls the EXISTING
+`EditInstancePCellParameters` (R-L5-2's copy-on-write) — no new fork logic, just a new UI surface
+for a mechanism that already existed.
+
+**Also fixed (owner-reported mid-session, not in the original six): Select All (Ctrl/Cmd+A) in the
+Layout editor never selected instances at all** — `SelectAllCommand` called `SetSelection` (shapes
+only); `SetSelection`'s own doc comment already listed "SelectAll" as a caller that sets the WHOLE
+new selection, which it never did for instances. Fixed via the existing `ReplaceMixedSelection`
+primitive (already built for L3a's mixed shape+instance selection) — every shape AND every instance,
+ordinary or PCell, is now included; `DeselectAllCommand` was already correct.
+
+---
+
+Phase L5: schematic↔layout + palette PCell placement (brief-L5-schematic-to-layout.md, 2026-07-29) —
+COMPLETE: both directions ("Update Layout from Schematic," "Update Schematic from Layout"), palette→
+layout drag-drop, and the generated-cell machinery that underlies all three.
+
+**Post-ship fix (2026-07-29, owner-reported):** both Design-menu commands stayed disabled regardless of
+which document was active — `IsSchematicDocumentActive`/`IsLayoutDocumentActive` (the `CanExecute`
+predicates) were correct, but `UpdateLayoutFromSchematicCommand`/`UpdateSchematicFromLayoutCommand` were
+never added to this codebase's two central "refresh command enablement on active-document change" fan-outs
+(`OnDocumentDockPropertyChanged` for the main shell, `RaiseFileMenuEnablementChanged` for a torn-off
+window's focus tracking) — the same list `SaveLooseSchematicCommand`/`SaveLooseLayoutCommand` are already
+in. Without a call into that fan-out, WPF/Avalonia's `RelayCommand` never re-evaluates `CanExecute` on
+its own, so the command stayed stuck at whatever it was on construction (disabled). Fixed by adding both
+commands to both sites — this is the standing gotcha for ANY future `[RelayCommand(CanExecute = ...)]`
+gated on active-document-type: it is not enough for the predicate to be correct, it must also be added to
+both fan-outs, or it silently never updates.
+
+**The fact every future PCell question turns on:** `PCellOrigin` lives on `LayoutView`
+(`src/Ui/Layout/LayoutModel.cs`), not on `LayoutInstance`. A placed PCell is therefore an ORDINARY
+`LayoutInstance` pointing at a cell folder whose `.clay` happens to carry a `PCellOrigin` — nothing
+about instancing, hierarchy, hit-testing, or the clipboard needed to change, and didn't
+(`PCellInstanceClipboardTests.cs` proves cut/copy/paste works unmodified, per §1's own "verify rather
+than build"). The direct consequence: **parameters live on the CELL, not the instance** — two placements
+with different W cannot be two instances of one cell, they are necessarily two cells.
+
+**R-L5-1/R-L5-2 — content-addressing is what makes both rules free.** `GeneratedCellStore.GetOrCreate`
+(`src/Ui/Layout/PCells/GeneratedCellStore.cs`) keys a generated cell's folder name on a SHA-256 of
+`(GeneratorId, sorted parameter fingerprint, technology identity, layer-selection overrides)`, under a
+reserved `.generated-cells/` workspace-root folder. Two placements with identical parameters resolve to
+the literal same cell folder (R-L5-1) automatically; editing an instance's parameters
+(`LayoutEditorViewModel.EditInstancePCellParameters`, in `.PCells.cs`) is nothing more than re-resolving
+`GetOrCreate` with the new values and repointing that ONE instance's `CellRef` — a sibling instance,
+whose `CellRef` is untouched, is unaffected by construction (R-L5-2's copy-on-write, with no explicit
+"fork" logic anywhere).
+
+**R-L5-3's decision, recorded because "put them under a reserved subfolder, or mark them so the tree
+groups them" was explicitly open:** a reserved subfolder (`.generated-cells/`), rendered as ONE synthetic
+`NodeKind.GeneratedCellsGroup` tree node — mirroring `LibrariesGroup`/`KnownFilesGroup`'s existing "don't
+clutter the tree with N peers" precedent exactly (`WorkspaceScanner.Scan`). Forty generated cells show as
+one collapsed group entry, not forty peers of the user's own cells (`GeneratedCellsTreeGroupingTests.cs`).
+
+**Schematic→layout (`SchematicToLayoutGenerator.cs`) and its inverse (`LayoutToSchematicGenerator.cs`)**
+are framework-free, side-effect-free-on-their-INPUT classes that return an `IUiCommand?` (null when
+nothing changed, R-L5-14) for the CALLER to execute through the target document's own undo stack — R-L5-12/
+22's "one undoable action" comes from this shape, not from special-casing. `WorkspaceViewModel.
+SchematicToLayout.cs` wires both into the `Design` menu (new top-level menu, between View and Simulate,
+both `NativeMenu` and in-window `Menu`) and file-targeting (create-if-absent named after the source,
+open+focus unprompted, leave a differently-named existing primary alone and report it). Idempotency keys
+on `LayoutInstance.SchematicId` = the schematic component's `InstanceName` (its `EditableComponent.Id`
+GUID is never persisted, per house convention, so it cannot serve as a stable cross-run key — a rename
+is treated as remove-old+add-new, reported, not silently merged). Overwrite classification (R-L5-9/10/11)
+needed one small new piece of state, `LayoutView.SchematicPCellSnapshots` — a per-view side table keyed by
+`SchematicId`, deliberately NOT a `LayoutInstance` field (the guardrail), because "what did the schematic
+generate last time" must stay independent of "what does the instance currently reference" once a direct
+layout-side edit has moved the latter.
+
+**Placement is deliberately crude (a fixed 8-column, 10 mm grid) and there is no auto-routing**, exactly
+as specified — a light-touch ratsnest (thin `Path` guide lines on a reserved out-of-band layer,
+`LayerKey(0, 900)`, carrying `Net`) is drawn from each placed PCell's `IsPort` pin labels for whatever
+§9 step 4 asks for, but is not gate-critical and was kept simple on purpose.
+
+**Palette→layout drag-drop** (`LayoutCanvas.cs`'s third `circuitrf-palette:` handler pair, mirroring the
+existing cell-drag and image-file pairs) reuses `PaletteDragPayload` verbatim (R-L5-6) and gates
+droppability on `PCellRegistry` registration (R-L5-8: a `Term`/`Var` gets `DragDropEffects.None` before
+release). The ghost is the generator's REAL output at default parameters, generated once per drag and
+cached (`LayoutEditorViewModel.PaletteDrag.cs`'s own `PCellGeometryCache`, purely in-memory — nothing is
+written to disk until an actual drop), rendered via a new `LayoutOverlay.PendingPCellPlacement` +
+`LayoutRenderer.DrawPendingPCellPlacement`. **A palette-dropped instance has no `SchematicId`** (default
+null) — it was never in a schematic, so it is invisible to schematic→layout's "no longer in the
+schematic" cleanup by construction, not by a special case (`PaletteToLayoutDragDropTests.cs`
+`PaletteDroppedInstance_SurvivesSchematicToLayoutRerun`). Both the palette-drop path and the
+schematic→layout path fall through the same `GetOrCreate` + `TryPlaceNewInstance`, so they provably
+produce the identical instance/cell for the same component at default parameters (R-L5-6, gate 12).
+
+**Scope narrowed on purpose, named rather than silently dropped:**
+- The reverse command (`LayoutToSchematicGenerator`) only creates/updates schematic components for
+  PCell-backed layout instances. A layout-first instance resolving to a hand-drawn (non-PCell)
+  cell is left alone — there is no symbol to fabricate for it safely, and R-L5-19's own text scopes
+  the whole arc to "place or update component instances," not general deriving.
+- `ComponentTypeRegistry.DefaultParameters`' Angle-dimensioned parameters (`deg`) are the one place a
+  PCell generator's own convention (plain degrees — see `MBendPCell.Generate`'s `angleDeg`) diverges
+  from the engine's radian convention; `SchematicToLayoutGenerator.TryResolveSiValue`/`ToDisplayValue`
+  are the ONE place that divergence is bridged, so nothing else needs to know about it.
+- Ground/Pin/Var/Meas (and Open/Short-disabled components) are excluded from the "no layout view —
+  reported and skipped" set, mirroring `NetExtractor`'s own physical-instance filter — reporting "VAR1
+  has no layout view" on every run would be noise, not information.
+- Gates that exercise `WorkspaceViewModel`-level behavior specifically (file creation/focus R-L5-15/16,
+  primacy R-L5-17/21, the unsaved-schematic/layout refusal R-L5-18, "nothing automatic" R-L5-23, and the
+  Design menu itself R-L5-24/25/26) are verified by code review and a repo-wide grep for stray call
+  sites, not by an automated test — `WorkspaceViewModel` cannot be constructed headlessly in this test
+  suite (confirmed: no existing test anywhere does), a pre-existing constraint, not one this phase
+  introduced. Every other gate (1-14, 19, 20, 22) has a passing automated test.
+- **R-L5-26's shortcut pair is a proposal, not a settled choice**, per the brief's own instruction:
+  Ctrl/Cmd+U ("Update Layout from Schematic") and Ctrl/Cmd+Shift+U ("Update Schematic from Layout") —
+  audited against every existing binding (none collide) and chosen to mirror this app's own established
+  Ctrl+X/Ctrl+Shift+X direction-pair convention (Undo/Redo, Save/Save As), U for "Update."
+
 Housekeeping: tear-off theming, palette entries, TermG, MKlopf console, repo merge, test fixtures
 (brief-housekeeping-tearoff-palette-repo.md, 2026-07-29) — COMPLETE: seven owner items, two needing
 investigation before code (§1, §5) and one a repository operation with a prerequisite check (§6).

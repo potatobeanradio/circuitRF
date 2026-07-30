@@ -19,7 +19,7 @@
 
 circuitRF is a lightweight, cross-platform Electronic Design Automation (EDA) circuit simulator for RF design. It studies the frequency response and nonlinear behavior of RF circuits — from simple topologies (10–20 components) to hierarchical multiport designs (10,000+ components) — using DC, S-parameter, and harmonic balance analyses. It targets RF practitioners and their managers, academic researchers, and capable hobbyists who today either can't justify a $25k/seat industrial tool or find those tools too heavy for quick investigation.
 
-circuitRF's distinguishing promises are: (1) it is an **RF simulator, not a SPICE simulator** — the analyses and workflow are built around the RF/microwave problem; (2) it makes **loadpull and sourcepull simulation as easy as possible**; (3) it is **lightweight, low-cost, and human-readable** in its file formats; and (4) it is **easy** — measured as a low number of clicks/inputs to a useful result — while still exposing the full configuration advanced users expect.
+circuitRF's distinguishing promises are: (1) it is an **RF simulator, not a SPICE simulator** — the analyses and workflow are built around the RF/microwave problem; (2) it makes **loadpull and sourcepull simulation as easy as possible**; (3) it is **lightweight, low-cost, and human-readable** in its file formats; (4) it is **easy** — measured as a low number of clicks/inputs to a useful result — while still exposing the full configuration advanced users expect; and (5) it closes the loop from **schematic to physical layout to electromagnetic simulation** in one tool, for both PCB and MMIC work, without a separate layout package or EM licence.
 
 ## 2. Non-goals (explicitly out of scope for v1)
 
@@ -27,7 +27,8 @@ circuitRF v1 is deliberately bounded. The following are **not** in v1:
 
 - **Not a SPICE simulator.** Transient analysis is deferred; v1 ships DC, S-parameters, and harmonic balance only.
 - **Full Verilog-A is deferred to v2.** v1 ships built-in nonlinear models plus the Symbolically-Defined Device (§6). The **ASM-HEMT** GaN model rides on the v2 Verilog-A/OSDI backend (§6.1) — not in v1.
-- **Layout view is a placeholder.** The cell carries the *concept* of a Layout view, not implemented in v1. No 2D/3D layout, no EM.
+- **Layout is 2D only, and EM is 2.5D.** The layout view is fully implemented in v1 (§8, §9) with a **2.5D method-of-moments** solver (§5). There is **no 3D layout and no 3D full-wave EM** — no arbitrary 3D structures, no volumetric meshing.
+- **No layout auto-router.** Schematic→layout places components; the user routes. Obstacle-aware auto-routing applies to schematic wiring only.
 - **A third-party cell database is not the storage layer.** v1 uses circuitRF's own human-readable native format. An optional third-party *cell import/export bridge* may come later; full support is out of scope.
 - **No co-simulation, no system/behavioral-level modeling (e.g., X-parameter generation), no optimization/yield engine** in v1.
 
@@ -85,6 +86,7 @@ These circuits define "done" for the v1 engine; every proposed feature is gated 
   - **Continuation** — power/source stepping required for convergence at drive.
 - **Parametric sweeps** — a generic sweep wraps *any* analysis over one or more parameters (Pin_available, a DC voltage, or any user variable / cell parameter per §7), producing complex, multi-dimensional results.
 - **Loadpull / sourcepull** — a first-class experiment: sweep source/load Γ (fundamental, and **harmonic loadpull** where harmonic terminations are varied), report FOMs as Smith-chart contours. Headline differentiator; dedicated UX attention.
+- **Electromagnetic analysis (2.5D method of moments)** — analyse **layout** geometry against its technology **stackup** and return S-parameters that are consumable anywhere a Touchstone block is, closing the schematic → layout → EM loop inside one tool. Staged: quasi-static per-unit-length for uniform cross-sections, then full-wave over a single dielectric with a ground plane, then the general layered stack with **vias and z-directed current**. Closed-form microstrip (Hammerstad-Jensen) is the validation oracle for the first stage; ports attach to layout **pins**. Design detail in [`design/layout-view.md`](design/layout-view.md) §10.
 
 ## 6. Components (functional requirements)
 
@@ -130,7 +132,7 @@ User content is organized as **cells**: a collection of electrically connected c
 
 1. **Symbol** — the glyph rendered when the cell is instanced; defines port x/y positions.
 2. **Schematic** — the electrical representation: positions of sub-cell instances and their interconnections.
-3. **Layout** — physical representation (2D/3D). **Placeholder in v1**; carried in the model, not implemented.
+3. **Layout** — the physical (2D) representation: geometry on a technology-defined layer stack, hierarchy with instances and arrays, and **parametric cells** whose artwork is generated from the cell's parameters rather than drawn. Implemented in v1; 3D is out of scope (§2). A layout resolves a **technology** (`.ctech`) supplying its layer table and substrate stackup, which is also what the EM solver (§5) and the substrate-aware microstrip components (§6) read.
 
 Cells live in **Libraries**; circuitRF can reference many libraries simultaneously. Hierarchy is first-class: push into a sub-cell's schematic, edit, pop back. Sub-cell instances may receive parameter overrides from the parent (§7).
 
@@ -141,8 +143,10 @@ Cells live in **Libraries**; circuitRF can reference many libraries simultaneous
 - **Hierarchy navigation** — push into / pop out of sub-cell schematics.
 - **Clipboard** — copy/paste all or selectable portions to/from other schematics via the **system clipboard**.
 - **Symbol editor** — edit a custom cell's symbol.
+- **Layout editor** — draw and edit physical geometry on the technology's layer stack: drawing tools with curves and holes, boolean operations, scale, a **technology/stackup editor**, hierarchy with instances and arrays, push-in/pop-out, flatten and group-into-cell, and **GDSII / DXF / Gerber+Excellon** import and export.
+- **Schematic ↔ layout generation** — an explicit command in each direction: place or update layout instances from the schematic, or update the schematic from layout edits. Never automatic; each run reports what it changed and is a single undo.
 - **Undo/redo** — across all editors.
-- **Data Display** — plots or tables via **splotRF**; **measured-vs-simulated overlay**.
+- **Data Display** — native `DataCube`-driven plots and tables (Smith, polar, rectangular, table); **measured-vs-simulated overlay**.
 - **Variable / parameter / sweep setup** — define variables and cell parameters, set instance overrides, and choose sweep axes (§7).
 - **Advanced settings** — all solver/analysis settings present and quickly findable, without cluttering the "easy" path.
 

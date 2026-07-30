@@ -219,6 +219,14 @@ public sealed class LayoutCanvas : Control
         AddHandler(DragDrop.DragOverEvent,  OnCellDragOver);
         AddHandler(DragDrop.DropEvent,      OnCellDrop);
         AddHandler(DragDrop.DragLeaveEvent, OnCellDragLeave);
+
+        // Palette drop target — drag a PCell-eligible component straight from the Library Palette
+        // onto a layout (docs/sonnet-briefs/brief-L5-schematic-to-layout.md §3). A THIRD handler pair,
+        // reusing SchematicCanvas's own PaletteDragPayload verbatim (R-L5-6) rather than inventing a
+        // new payload kind.
+        AddHandler(DragDrop.DragOverEvent,  OnPaletteDragOver);
+        AddHandler(DragDrop.DropEvent,      OnPaletteDrop);
+        AddHandler(DragDrop.DragLeaveEvent, OnPaletteDragLeave);
     }
 
     // Fits exactly once per bound ViewModel, as soon as Bounds becomes valid — for a layout that
@@ -287,7 +295,7 @@ public sealed class LayoutCanvas : Control
         var opts = new LayoutRenderOptions
         {
             Theme = theme, ShowGrid = true, Overlay = _viewModel?.Overlay, PathCache = _pathCache,
-            BaseDir = _viewModel?.InstanceBaseDir,
+            BaseDir = _viewModel?.InstanceBaseDir, ShowPCellPins = _viewModel?.ShowPCellPins ?? true,
         };
 
         context.Custom(new LayoutDrawOperation(
@@ -314,8 +322,19 @@ public sealed class LayoutCanvas : Control
 
         var bb = Bbox.Empty;
         if (_viewModel?.Model is { } model)
+        {
             foreach (var shape in model.Shapes)
                 bb = bb.Union(LayoutGeometry.BboxOf(shape));
+            // Owner report (2026-07-29): Zoom to Fit ignored every placed instance — including a
+            // PCell instance, which is an ordinary LayoutInstance pointing at a generated cell folder
+            // (see this file's own architecture note on PCells) — so a layout consisting solely of
+            // PCells (or one whose PCells extend past its raw shapes) zoomed to an empty/undersized
+            // extent. CellHierarchy.InstanceBbox is the SAME resolved, array-expanded, recursive bbox
+            // the marquee/spatial-index and Select-All paths already use for an instance — reused here
+            // rather than a second bbox notion.
+            foreach (var inst in model.Instances)
+                bb = bb.Union(CellHierarchy.InstanceBbox(inst, _viewModel.InstanceBaseDir));
+        }
 
         var vp = bb.IsEmpty
             ? LayoutViewport.Default(Bounds.Width, Bounds.Height, _viewModel?.Model.SnapDbu ?? 0, _viewModel?.Model.DbuPerMicron ?? LayoutUnits.DefaultDbuPerMicron)
@@ -513,6 +532,62 @@ public sealed class LayoutCanvas : Control
     private void OnCellDragLeave(object? sender, DragEventArgs e)
     {
         _viewModel?.CancelDragInstancePlacement();
+        InvalidateVisual();
+    }
+
+    // ── Palette DnD drop target (§3) — mirrors OnCellDragOver/OnCellDrop/OnCellDragLeave exactly,
+    // substituting PaletteDragPayload + the PCell ghost VM methods for the cell-resolution ones. ────
+
+    private static PaletteDragPayload? TryParsePaletteDragPayload(DragEventArgs e)
+    {
+        foreach (var item in e.DataTransfer.Items)
+            if (item.TryGetRaw(DataFormat.Text) is string text && PaletteDragPayload.TryParse(text, out var payload))
+                return payload;
+        return null;
+    }
+
+    private void OnPaletteDragOver(object? sender, DragEventArgs e)
+    {
+        if (_viewModel is not { } vm) { e.DragEffects = DragDropEffects.None; return; }
+
+        var payload = TryParsePaletteDragPayload(e);
+        if (payload is null) { e.DragEffects = DragDropEffects.None; return; }
+
+        // R-L5-8: only a component with a registered PCell generator is droppable — the cursor says
+        // no before release for anything else (a Term, a Var, ...).
+        if (!vm.CanDropPaletteComponent(payload.Kind, payload.PortCount))
+        {
+            e.DragEffects = DragDropEffects.None;
+            vm.CancelPaletteDragGhost();
+            return;
+        }
+
+        e.DragEffects = DragDropEffects.Copy;
+        e.Handled     = true;
+
+        var (sx, sy) = SnappedDropPoint(e, vm);
+        vm.UpdatePaletteDragGhost(payload.Kind, payload.PortCount, sx, sy);
+        InvalidateVisual();
+    }
+
+    private void OnPaletteDrop(object? sender, DragEventArgs e)
+    {
+        _viewModel?.CancelPaletteDragGhost();
+
+        if (_viewModel is not { } vm) return;
+        var payload = TryParsePaletteDragPayload(e);
+        if (payload is null) return;
+        if (!vm.CanDropPaletteComponent(payload.Kind, payload.PortCount)) return;
+
+        var (sx, sy) = SnappedDropPoint(e, vm);
+        vm.CommitPaletteDrop(payload.Kind, payload.PortCount, sx, sy);
+        e.Handled = true;
+        InvalidateVisual();
+    }
+
+    private void OnPaletteDragLeave(object? sender, DragEventArgs e)
+    {
+        _viewModel?.CancelPaletteDragGhost();
         InvalidateVisual();
     }
 

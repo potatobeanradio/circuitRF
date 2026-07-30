@@ -117,6 +117,15 @@
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
 
+            <NativeMenuItem Header="Design">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Update Layout from Schematic"   Command="{Binding UpdateLayoutFromSchematicCommand}" Gesture="Meta+U"/>
+                        <NativeMenuItem Header="Update Schematic from Layout"   Command="{Binding UpdateSchematicFromLayoutCommand}" Gesture="Meta+Shift+U"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
             <NativeMenuItem Header="Simulate">
                 <NativeMenuItem.Menu>
                     <NativeMenu>
@@ -165,6 +174,10 @@
         <KeyBinding Gesture="Meta+T"        Command="{Binding NewTabCommand}"/>
         <KeyBinding Gesture="Ctrl+R"        Command="{Binding RunAnalysisCommand}"/>
         <KeyBinding Gesture="Meta+R"        Command="{Binding RunAnalysisCommand}"/>
+        <KeyBinding Gesture="Ctrl+U"        Command="{Binding UpdateLayoutFromSchematicCommand}"/>
+        <KeyBinding Gesture="Meta+U"        Command="{Binding UpdateLayoutFromSchematicCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+U"  Command="{Binding UpdateSchematicFromLayoutCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+U"  Command="{Binding UpdateSchematicFromLayoutCommand}"/>
         <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding ShowSettingsCommand}" CommandParameter="{Binding $parent[Window]}"/>
         <KeyBinding Gesture="Ctrl+Q"        Command="{Binding QuitApplicationCommand}"/>
         <KeyBinding Gesture="Escape"        Command="{Binding DisarmPlacementCommand}"/>
@@ -392,6 +405,21 @@
                 <MenuItem Header="Open Cell in _New Tab"
                           Command="{Binding HierarchyOpenInNewTabCommand}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="OpenInNew" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+            </MenuItem>
+
+            <MenuItem Header="_Design" Padding="8,4">
+                <MenuItem Header="Update _Layout from Schematic"
+                          Command="{Binding UpdateLayoutFromSchematicCommand}"
+                          InputGesture="Ctrl+U"
+                          ToolTip.Tip="Requires an active schematic document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="LayersPlus" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Update _Schematic from Layout"
+                          Command="{Binding UpdateSchematicFromLayoutCommand}"
+                          InputGesture="Ctrl+Shift+U"
+                          ToolTip.Tip="Requires an active layout document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="FilePlus" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 

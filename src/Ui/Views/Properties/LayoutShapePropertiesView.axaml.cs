@@ -109,4 +109,7 @@ public partial class LayoutShapePropertiesView : UserControl
             row.Revert(isY: tag == "Y");
         }
     }
+
+    // PCell parameter list rows moved to PCellParameterListView.axaml.cs (brief-L5-followups.md §5,
+    // extracted so LayoutPCellParameterDialog can host the same surface).
 }

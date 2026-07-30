@@ -1,6 +1,7 @@
 # circuitRF — Development Plan & AI Workflow Strategy
 
-**Status:** Phases 0–7 substantially complete; v1 (alpha) in polish · **Date:** 2026-06-24
+**Status:** Phases 0–7 complete; the **layout editor (Phase 9)** is substantially complete and
+**electromagnetic simulation (Phase 10)** is next · **Date:** 2026-07-29
 *Companion to `docs/PRD.md`. The PRD defines scope and acceptance; this plan defines the roadmap, the AI workflow, and the engineering strategy. Where the two overlap, the PRD wins.*
 
 > **Update note (2026-06-24):** circuitRF is now a working application, not a plan. Phases 0–7 are
@@ -83,15 +84,19 @@ One expression engine serves global variables, **cell parameters** (hierarchical
 |---|---|---|---|
 | **0. Discovery & design** ✅ *(complete)* | Decide before building | PRD ✅; repo + skeleton ✅; six `CLAUDE.md` files ✅; all five design notes ✅ (`data-model`, `expressions`, `linear-engine`, `measurements`, `harmonic-balance`) | PRD approved ✅; all design notes exist & approved ✅; ready for Phase 1 |
 | **1. Core model + files + CLI + expression engine** | The spine | Three-layer model; native schematic/symbol/library format; netlist + JSON reader; **expression engine + variables + cell parameters + cycle detection**; elaboration/flattening with top-down parameter resolution; CLI that dumps the elaborated netlist | A hierarchical, parameterized circuit round-trips file → model → elaboration → printed netlist; cycles are detected and reported |
-| **2. Linear engine: MNA, DC(linear), S-parameters** | First trustworthy numbers | Complex sparse MNA (CSparse.NET); per-frequency S-parameter extraction + renormalization; SNP block w/ interpolation; Touchstone I/O via `RfCore` (extract RfCore from splotRF this phase) | **Hero 1** matches the 4-port reference to `< 1e-6` from the CLI |
+| **2. Linear engine: MNA, DC(linear), S-parameters** | First trustworthy numbers | Complex sparse MNA (CSparse.NET); per-frequency S-parameter extraction + renormalization; SNP block w/ interpolation; Touchstone I/O via `RfCore` | **Hero 1** matches the 4-port reference to `< 1e-6` from the CLI |
 | **3. Nonlinear DC + device models + SDD/AD** | Nonlinear foundation | Newton DC w/ gmin/source stepping; diode → FET → BJT stamps; SDD with automatic differentiation (uses the §3.7 engine) | Hero-PA DC operating point converges & matches reference; an SDD nonlinearity solves correctly |
 | **4. Harmonic balance** | The crown jewel | Single-tone HB (conversion-matrix Jacobian, power-step continuation); multi-device partition; two-tone (diamond truncation, mixing order ≥ 5, separable index map) | **Hero 2** power sweep (Pout/gain ±0.01 dB, eff/PAE ±0.1 pp); **Hero 4** 2-stage partition; **Hero 5** two-tone IM2–IM5 |
 | **5. Sweep + DataSet + loadpull + export** | Differentiator | Generic parametric sweep; the `DataSet`/`DataCube` result model; loadpull/sourcepull experiment (incl. harmonic loadpull, Γ-grid or Z-grid); `.mat`/`.npy` export (`.npy` = whole DataSet as one packed structured array) | **Hero 3** fundamental loadpull contours from the CLI; exports load in MATLAB/Octave/NumPy |
 | **6. GUI: schematic + symbol editors** | How people drive it | Avalonia 12 virtualized canvas + spatial index; place/move/wire + obstacle-aware auto-routing; hierarchy push/pop; system-clipboard copy/paste; symbol editor; library browser; variable/parameter/sweep setup; undo/redo | A user builds, parameterizes, edits, and runs the hero PAs in the GUI |
-| **7. Data Display (splotRF integration)** | Results & measured-vs-sim | Shared plotter reads the `DataSet`; plot + table views; measured-vs-simulated overlay; loadpull contour rendering | Simulation results and a lab Touchstone overlay on one Smith chart |
-| **8. Hardening & optional extensions** | Polish + future doors | Packaging (Win/macOS/Linux, mirroring splotRF); docs; regression suite in CI; *optional:* Verilog-A/OSDI backend (→ **ASM-HEMT**), third-party cell bridge, layout-view groundwork | Installers on 3 OSes; regression suite green; deferred items have clean plug-in points |
+| **7. Data Display** | Results & measured-vs-sim | `DataCube`-native plotter; plot + table views; measured-vs-simulated overlay; loadpull contour rendering | Simulation results and a lab Touchstone overlay on one Smith chart |
+| **8. Hardening & optional extensions** | Polish + future doors | Packaging (Win/macOS/Linux); docs; regression suite in CI; *optional:* Verilog-A/OSDI backend (→ **ASM-HEMT**), third-party cell bridge | Installers on 3 OSes; regression suite green; deferred items have clean plug-in points |
+| **9. Layout editor** ✅ *(substantially complete)* | Physical design, in the same tool | Integer-DBU geometry model + `.clay`/`.ctech` formats (L0); drawing, selection, booleans, scale, labels, bitmaps (L1); spatial index, LOD, path caching (L2); hierarchy — instances, arrays, navigation, flatten, group-into-cell (L3); **GDSII / DXF / Gerber+Excellon** interchange (L4); the **PCell** contract + substrate-aware **microstrip family** (L5a); **schematic↔layout generation** (L5) | A PCB and an MMIC design draw, edit and export; exported GDSII/DXF/Gerber open correctly in independent third-party viewers; schematic→layout and layout→schematic are idempotent and report what they change |
+| **10. Electromagnetic simulation (2.5D MoM)** ▶ *(next)* | Close the schematic → layout → EM loop | Substrate stackup + mesher (L6); **quasi-static per-unit-length** kernel for uniform cross-sections (L7); **full-wave, single dielectric + ground plane** (L8); **general layered stack, N dielectrics, vias and z-directed current** (L9). Ports attach to layout pins; results return as S-parameters consumable anywhere a Touchstone block is | L7 agrees with closed-form microstrip (Hammerstad-Jensen) within **±2%** on Z₀ and εeff over the published validity range; L8/L9 agree with reference/measured data for a coupled-line and a via-bearing structure |
 
-Phases 0–5 are the "engine half" (disproportionate *thinking*); 6–8 the "product half" (disproportionate *typing*) — which maps onto the model split below.
+Phases 0–5 are the "engine half" (disproportionate *thinking*); 6–8 the "product half" (disproportionate
+*typing*) — which maps onto the model split below. Phases 9–10 repeat that shape at smaller scale: the layout
+editor is mostly product work, the MoM kernel is mostly engine work.
 
 ## 5. AI workflow: Opus vs Sonnet, Chat vs Code
 
@@ -148,9 +153,9 @@ Update each at the end of the phase that touches its subsystem.
 
 ## 9. Status & immediate next steps
 
-**Done (Phases 0–7, substantially):** the spine (three-layer model, expression engine + cell parameters +
+**Done (Phases 0–7):** the spine (three-layer model, expression engine + cell parameters +
 cycle detection, `.cnl`/JSON I/O, elaboration); the linear engine (sparse complex MNA, S-parameters,
-renormalization, SNP interpolation, Touchstone I/O via the extracted `RfCore` sibling); nonlinear DC +
+renormalization, SNP interpolation, Touchstone I/O via `RfCore`); nonlinear DC +
 diode/FET/BJT + the SDD with forward-mode AD; single- and two-tone harmonic balance with power-step
 continuation; the generic parametric sweep, the `DataSet`/`DataCube` result model, loadpull/sourcepull
 (incl. the pursuit engine and the post-processor), and `.mat`/`.npy`/Touchstone/`.spl`/`.lpcwave` export;
@@ -160,9 +165,25 @@ markers, the RBF loadpull surface + contour extractor/renderer). **End-to-end lo
 (simulated and measured) and **interactive markers that read/drag on the contour surface** are both done.
 The firewall check (no Avalonia below `src/Ui`) runs in CI.
 
+**Done (Phase 9 — layout, substantially):** the integer-DBU geometry model and the `.clay` / `.ctech`
+formats; the layout editor (drawing tools, curves and holes, selection and handles, boolean operations via
+Clipper2, scale, labels with text-to-polygon, bitmaps, technology and stackup editing); performance work
+(R-tree spatial index, LOD, path caching — measured, not guessed); hierarchy (instances, arrays,
+push-in/pop-out navigation, flatten one-level/all-levels, group-into-cell); **GDSII, DXF and
+Gerber+Excellon** interchange, with DXF import first-class; the **PCell** contract
+(`docs/design/pcell-contract.md`) and the substrate-aware **microstrip family** — MLIN, MBEND, MTEE, MCROSS,
+MTAPER and the **Klopfenstein taper** with a novel off-axis `Offset` parameter — specified in
+`docs/design/microstrip-models.md` against primary literature; and **schematic↔layout generation** in both
+directions.
+
+**Next (Phase 10 — electromagnetic simulation):** the 2.5D method-of-moments arc (L6–L9) described in
+`docs/design/layout-view.md` §10. Staged so each stage has a validation oracle: the quasi-static kernel is
+checked against the same closed-form microstrip implementation the MLIN component uses, which is why that
+implementation is deliberately **shared** rather than duplicated.
+
 **Remaining for the v1 (alpha) release:**
-1. **Hardening (Phase 8)** — installers for Windows/macOS/Linux (mirroring splotRF's recipes), broader
-   docs, and keeping the `testdata/` regression suite green in CI on all three OSes.
+1. **Hardening (Phase 8)** — installers for Windows/macOS/Linux, broader docs, and keeping the `testdata/`
+   regression suite green in CI on all three OSes.
 2. Resolve the remaining PRD §17 items as inputs arrive (FET model → power-sweep range; reference IM data
    → Hero-5 tolerances; a benchmark machine → NFR numbers).
 

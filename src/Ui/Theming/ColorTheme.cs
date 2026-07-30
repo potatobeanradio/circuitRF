@@ -76,6 +76,7 @@ public sealed class ColorTheme
             [ColorRole.LayoutRulerTick]             = new(120, 120, 120),
             [ColorRole.LayoutCursorIndicator]       = new(206,  74,  36),
             [ColorRole.LayoutSelection]              = new( 30, 110, 220),
+            [ColorRole.LayoutPCellPin]               = new(  0, 150, 110),
         },
         new Dictionary<string, Rgba>
         {
@@ -100,5 +101,6 @@ public sealed class ColorTheme
             [ColorRole.LayoutRulerTick]             = new(150, 150, 155),
             [ColorRole.LayoutCursorIndicator]       = new(240, 120,  70),
             [ColorRole.LayoutSelection]              = new( 90, 165, 255),
+            [ColorRole.LayoutPCellPin]               = new( 60, 210, 170),
         });
 }

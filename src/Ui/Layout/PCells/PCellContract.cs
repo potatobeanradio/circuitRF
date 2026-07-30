@@ -28,8 +28,14 @@ public sealed record PCellPin(
 
 /// <summary>R3: shapes and pins, nothing else — a PCell describes one cell's contents in
 /// cell-local coordinates (§6 of the design doc: no placement transform, that's the instance's
-/// job).</summary>
-public sealed record PCellResult(IReadOnlyList<LayoutShape> Shapes, IReadOnlyList<PCellPin> Pins);
+/// job). <paramref name="Diagnostics"/> (additive, brief-L5-followups-2.md §2.2 finding) carries
+/// any human-readable warning text a generator wants surfaced (e.g. R-klp-10's curvature warning) —
+/// a PURE generator (R5) has no message sink of its own to post to directly, so this is the ONE
+/// channel; every caller that invokes a <see cref="PCellGenerator"/> is responsible for surfacing a
+/// non-empty <see cref="Diagnostics"/> through its own <c>IMessageSink</c>. Null/empty = nothing to
+/// report — the common case for every other generator, which needed no change.</summary>
+public sealed record PCellResult(
+    IReadOnlyList<LayoutShape> Shapes, IReadOnlyList<PCellPin> Pins, IReadOnlyList<string>? Diagnostics = null);
 
 /// <summary>
 /// R9: layer selection (Signal Layer + Ground Reference) is per-instance overridable and is not a

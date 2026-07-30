@@ -22,6 +22,7 @@ using RfCore.Data;
 using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
@@ -581,18 +582,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Directory.CreateDirectory(workspaceDir);
 
-            // Technology choice (L0c): PCB/MMIC create tech/<starter>.ctech + a .cws default ref;
-            // None creates neither — a perfectly valid workspace that resolves to the fallback palette.
+            // Technology choice (R-misc-8/11/12): the chosen SHIPPED technology's own bytes are
+            // written verbatim into tech/<id>.ctech + a .cws default ref — a real, independently-
+            // editable file, never a reference back to the embedded copy (R-misc-8's "a workspace
+            // must stay self-contained"). None writes neither — a perfectly valid workspace that
+            // resolves to the fallback palette (pcell-contract.md §5's own supported no-technology
+            // state).
             var cws = new CwsFile();
-            if (result.Technology != NewWorkspaceTechChoice.None)
+            if (result.TechnologyId is { Length: > 0 } techId)
             {
+                var entry = ShippedTechnologies.All.First(e => e.Id == techId);
                 var techDir = Path.Combine(workspaceDir, "tech");
                 Directory.CreateDirectory(techDir);
-                var (starterTech, fileName) = result.Technology == NewWorkspaceTechChoice.Mmic
-                    ? (StarterTechnologies.MmicGaAs(), "mmic-gaas.ctech")
-                    : (StarterTechnologies.Pcb2Layer(), "pcb-2layer.ctech");
-                var techPath = Path.Combine(techDir, fileName);
-                TechPersistence.SaveToFile(techPath, starterTech);
+                var techPath = Path.Combine(techDir, entry.Id + ".ctech");
+                File.WriteAllText(techPath, ShippedTechnologies.LoadRawJson(entry));
                 cws.DefaultTechRef = Path.GetRelativePath(workspaceDir, techPath);
             }
             WorkspacePersistence.SaveToFileAtomic(cwsPath, cws);
@@ -876,6 +879,47 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _cwsSaveTimer.Start();
     }
 
+    // ── Generated-cell lifecycle (brief-L5-followups-2.md §4, R-L5g-6/7/8) ─────────────────────────
+    // R-L5g-6 establishes the property this whole section rests on: every LayoutView.PCellSnapshots
+    // entry carries everything GeneratedCellStore.GetOrCreate needs to rebuild ONE generated cell
+    // folder byte-identically, so the folder itself is a pure, deletable, rebuildable-from-the-layout
+    // cache — never authoritative. That is what makes the delete-on-close/delete-again-on-open policy
+    // below safe rather than data-destroying (§4.1's own warning: it would NOT have been safe before
+    // R-L5g-6, since a palette-dropped or layout-authored PCell's only parameter record used to live
+    // solely inside the generated cell's own .clay).
+
+    /// <summary>R-L5g-7: delete the whole <c>.generated-cells</c> folder for the workspace at
+    /// <paramref name="cwsPath"/> — leaves a clean workspace on disk (close) and guarantees a clean
+    /// start even after a crash (open, called again before <see cref="RegenerateAllGeneratedCells"/>).
+    /// Best-effort: a locked/unremovable folder is reported, never left half-deleted in a way that
+    /// blocks the close/open itself. Thin wrapper over the framework-free
+    /// <see cref="GeneratedCellsLifecycle"/> (directly unit-tested there) — see that class's own doc
+    /// comment for the full policy story.</summary>
+    private void DeleteGeneratedCellsFolder(string cwsPath)
+    {
+        try { GeneratedCellsLifecycle.DeleteGeneratedCellsFolder(Path.GetDirectoryName(cwsPath)!); }
+        catch (Exception ex) { Messages.Warning($"Could not clear the generated-cell cache: {ex.Message}"); }
+    }
+
+    /// <summary>R-L5g-8: thin wrapper over <see cref="GeneratedCellsLifecycle.RegenerateAll"/>, supplying
+    /// a small memoized <c>.ctech</c> loader as the technology resolver.</summary>
+    private void RegenerateAllGeneratedCells(string cwsPath)
+    {
+        var techCache = new Dictionary<string, Technology?>(StringComparer.OrdinalIgnoreCase);
+        Technology? ResolveTech(string? techIdentity)
+        {
+            if (string.IsNullOrEmpty(techIdentity)) return null;
+            if (techCache.TryGetValue(techIdentity, out var cached)) return cached;
+            Technology? tech = null;
+            try { if (File.Exists(techIdentity)) tech = TechPersistence.LoadFromFile(techIdentity); }
+            catch { /* best-effort — a missing/renamed .ctech regenerates on the fallback palette */ }
+            techCache[techIdentity] = tech;
+            return tech;
+        }
+
+        GeneratedCellsLifecycle.RegenerateAll(Path.GetDirectoryName(cwsPath)!, ResolveTech);
+    }
+
     /// <summary>
     /// Replaces the current session with the workspace at <paramref name="cwsPath"/>.
     /// Caller must have already prompted for and handled any dirty documents.
@@ -923,6 +967,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             catch { }
         }
         ApplyTreeViewState(cws.TreeViewState);
+
+        // R-L5g-7/8: clean start even after a crash, then warm the cache back up before any layout
+        // actually opens below — see this file's "Generated-cell lifecycle" section for the full story.
+        DeleteGeneratedCellsFolder(cwsPath);
+        RegenerateAllGeneratedCells(cwsPath);
+
         RestoreOpenDocuments(cws, workspaceDir);
 
         PushRecent(cwsPath);
@@ -1127,6 +1177,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (HasAnyDirtyWork(includeFloated: false) && !await PromptSaveBeforeClose(window, "closing the workspace", includeFloated: false))
             return;
 
+        // R-L5g-7: leaves a clean workspace on disk — CurrentWorkspacePath is still valid here, before
+        // ResetToBlankShell clears it.
+        DeleteGeneratedCellsFolder(CurrentWorkspacePath);
         ResetToBlankShell();
     }
     private bool CanCloseWorkspace() => CurrentWorkspacePath is not null;
@@ -2187,6 +2240,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         if (ActivateIfOpen(absolutePath)) return;
 
+        // R-L5g-9/10: a generated cell is a regeneration cache, never independently-openable content —
+        // this closes the "second entry point" R-L5g-5's own investigation named: opening a generated
+        // cell's .clay directly (file picker, a stale .cws OpenDocuments entry from before this fix)
+        // used to bypass push-in's PCellOrigin gate entirely, since it isn't push-in at all. There is
+        // nothing in it a user can usefully edit anyway (LayoutEditorViewModel.IsPCellReadOnly already
+        // refuses every mutation) — refuse opening it as a document at all, with a reason, per R13a.
+        if (GeneratedCellStore.IsUnderGeneratedCellsFolder(absolutePath))
+        {
+            Messages.Warning(
+                "This is a generated PCell cell (internal cache), not user content — " +
+                "edit its parameters through the placed instance's own Properties Inspector instead.");
+            return;
+        }
+
         try
         {
             // L3b: funnel through the session registry so a cell simultaneously open as its own tab
@@ -3138,6 +3205,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// creating and registering it from disk if not already present — the SAME funnel both "open as
     /// tab" and "push in" go through, so a cell simultaneously open as its own tab and pushed into
     /// elsewhere shares one session (R-L3b-1's in-session-edit path depends on this).
+    ///
+    /// brief-L5-followups-3.md §2 (R-L5h-4): also the ONE place a fresh load strips any already-
+    /// persisted ratsnest shapes (<see cref="SchematicToLayoutGenerator.RatsnestLayer"/>) an older
+    /// <c>.clay</c> still carries from before R-L5h-3 stopped emitting them as geometry — reached by
+    /// every layout load (open-as-tab, push-in, and any other caller of this method) rather than only
+    /// ones re-run through the schematic→layout generator, so already-polluted designs are cleaned
+    /// the first time they are opened, not only if the owner happens to regenerate them.
     /// </summary>
     internal LayoutEditorViewModel GetOrCreateLayoutSession(string absClayPath)
     {
@@ -3145,7 +3219,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (_layoutRegistry.TryGet(key, out var existing))
             return existing!;
         var model = LayoutPersistence.LoadFromFile(key);
-        return RegisterLayoutSession(key, BuildLayoutSessionVm(model, key));
+
+        int removedRatsnest = SchematicToLayoutGenerator.RemoveRatsnestShapes(model);
+
+        var vm = RegisterLayoutSession(key, BuildLayoutSessionVm(model, key));
+        if (removedRatsnest > 0)
+        {
+            vm.IsDirty = true;
+            Messages.Warning(
+                $"Removed {removedRatsnest} obsolete ratsnest guide line(s) from '{Path.GetFileName(key)}' " +
+                "— connectivity guides are no longer generated as layout geometry.");
+        }
+        return vm;
     }
 
     /// <summary>
@@ -4833,6 +4918,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();
         SaveAllDocumentsCommand.NotifyCanExecuteChanged();
 
+        // Design menu (L5): each is enabled only when its own document type is the active dockable —
+        // same rule, same fan-out, as the Save-As commands just above.
+        UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
+        UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
+
         // A dockable may have just been floated into a Dock-generated HostWindow.
         // Defer one frame (Background) so the HostWindow is fully shown before we scan.
         Avalonia.Threading.Dispatcher.UIThread.Post(
@@ -5000,6 +5090,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SaveLooseSymbolCommand.NotifyCanExecuteChanged();
         SaveAllDocumentsCommand.NotifyCanExecuteChanged();
         CloseWorkspaceOrWindowCommand.NotifyCanExecuteChanged();
+        UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
+        UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CloseWorkspaceOrWindowHeader));
     }
 
@@ -5800,7 +5892,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _cwsSaveTimer?.Stop();
         // Flush pending .cws config write synchronously before the process exits.
         if (CurrentWorkspacePath is not null)
+        {
             WriteWorkspaceFile(CurrentWorkspacePath, silent: true);
+            // R-L5g-7: quitting is a close too — leave a clean workspace on disk.
+            DeleteGeneratedCellsFolder(CurrentWorkspacePath);
+        }
         _recovery.ClearSession();
     }
 

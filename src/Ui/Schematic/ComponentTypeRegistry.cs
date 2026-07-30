@@ -299,6 +299,24 @@ public static class ComponentTypeRegistry
     public static string InstancePrefix(SymbolKind kind) => Get(kind).InstancePrefix;
 
     /// <summary>
+    /// True when this component type owns a "Num" parameter that must be unique across the WHOLE
+    /// design — the s-parameter port-numbering pool (Term, TermG, P1Tone all share ONE numbering
+    /// space today; Pin has its own separate pool, <c>NextFreePinNum</c> in
+    /// <c>SchematicViewModel.cs</c>, and is deliberately not part of this set).
+    ///
+    /// This is the SINGLE place that answers "does a newly-introduced component of this kind need a
+    /// fresh Num." Every entry point that can introduce a component into a design (placement,
+    /// inline type-change, clipboard paste) must check it — docs/sonnet-briefs/
+    /// brief-misc-termg-units-technologies.md §1 found three independently hand-maintained
+    /// <c>SymbolKind</c> lists doing this same check, already diverged from each other (TermG was
+    /// added to two of the three and missed from the third within the same week). Extend THIS set
+    /// when a future port-bearing component needs the same behaviour — never reintroduce a
+    /// per-call-site list.
+    /// </summary>
+    public static bool OwnsUniquePortNum(SymbolKind kind) =>
+        kind is SymbolKind.Term or SymbolKind.TermG or SymbolKind.P1Tone;
+
+    /// <summary>
     /// Engine type-reference string for a given SymbolKind — what goes in the .cnl Reference field
     /// and into <see cref="Instance.Reference"/>. Differs from <see cref="DisplayName(SymbolKind)"/>
     /// for ZPort ("Z" vs "Z_Port"), ToneSource ("VTone" vs "V_1Tone").

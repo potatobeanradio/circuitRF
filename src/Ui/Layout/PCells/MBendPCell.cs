@@ -10,6 +10,41 @@ namespace CircuitRF.Ui.Layout.PCells;
 /// +X. R-pc-18: mitered and unmitered are DISTINCT discontinuities — this file's own geometry
 /// difference between the two (a real corner cut vs. none) is what backs that on the electrical
 /// side (<c>MicrostripBendModel</c> in <c>src/Core/Devices/</c>) actually using different models.
+///
+/// <b>brief-L5-followups-3.md §3 (R-L5h-5/6/7) — the root cause, found by direct numeric
+/// reconstruction, was neither hypothesis the brief itself led with.</b> The Douville-James FORMULA
+/// (<see cref="MicrostripDiscontinuities.MiterCutLength"/>, <c>src/Core</c>, untouched by this fix)
+/// already interprets <c>M</c> correctly as the fraction REMOVED (≈69% per leg at W/h=1, matching
+/// R-L5h-5's own worked expectation) and already returns a PER-EDGE LEG length (not a diagonal —
+/// R-L5h-5's "missing √2" hypothesis does not apply, because nothing here ever divides by √2: the
+/// leg IS the quantity <see cref="BuildMiterCutTriangle"/> needs). The actual defect
+/// (brief-L5-followups-2.md's own investigation already found this, but declined to fix it, citing
+/// "needs visual verification") was that the two arms — each built independently by
+/// <see cref="PCellGeometryHelpers.BuildArmRect"/>, stopping/starting exactly AT the nominal pivot
+/// point — only overlap in a halfW×halfW QUARTER of the true W×W corner square, producing a
+/// "stair-stepped" union boundary with no single sharp outer corner at all.
+/// <see cref="BuildMiterCutTriangle"/>'s own corner computation (the intersection of the two arms'
+/// OUTER EDGE LINES, extended) therefore lands on a point that is not actually ON the union's real
+/// boundary, so the miter-cut polygon never overlaps anything and <c>LayoutBooleans.Difference</c>
+/// correctly finds nothing to subtract — a complete geometric no-op, for EVERY miter magnitude, not
+/// a magnitude error. <b>Fixed here</b> by extending each arm HALF a width past/before the pivot
+/// along its own centerline (<c>arm1LenDbu</c>/<c>arm2Origin*</c> below) so the two arms' widths
+/// form the full W×W overlap square the corner-intersection math already assumed — verified
+/// numerically (not by eye) against the same worked example: at W/h=1 the three miter modes now
+/// produce three genuinely distinct outlines, and the removed length matches the calculator oracle
+/// (see <c>MBendMiterGeometryTests.cs</c> for the full comparison table).
+///
+/// <b>R-L5h-7's decision: the miter cut is restricted to an exact 90° bend, reported (never
+/// silently extrapolated) otherwise.</b> Douville &amp; James's own fitted curve is a right-angle
+/// formula (its citation states nothing about oblique bends), and the corner-square construction
+/// above is itself a right-angle-specific geometric argument — extending it to an arbitrary
+/// <c>Angle</c> would mean silently guessing a cut shape/length neither the formula nor the artwork
+/// convention actually covers, which is exactly the "wrong numbers look plausible" trap R-L5h-7
+/// warns against. <see cref="IsRightAngleBend"/> gates both <c>Fifty</c> and <c>Optimal</c> (the
+/// SAME triangular-cut construction, so the SAME restriction applies to both); a non-90° bend with a
+/// non-None Miter selected keeps its un-mitered (square-corner) geometry and reports why via
+/// <see cref="PCellResult.Diagnostics"/> — the generator-level analogue of R13a's "disabled with a
+/// stated reason," since a pure PCell generator has no interactive control to grey out directly.
 /// </summary>
 public static class MBendPCell
 {
@@ -31,14 +66,27 @@ public static class MBendPCell
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
         long w = PCellUnits.MetresToDbu(wMeters, dbuPerMicron);
         long stubLen = (long)Math.Round(PCellGeometryHelpers.StubLengthFactor * w, MidpointRounding.AwayFromZero);
+        long halfW = w / 2;
 
         var signalLayer = SubstrateResolver.ResolveSignalLayerKey(technology, layerSelection, out _);
 
         long cornerX = stubLen, cornerY = 0;
-        var arm1 = PCellGeometryHelpers.BuildArmRect(0, 0, 0.0, stubLen, w, signalLayer);
-        var arm2 = PCellGeometryHelpers.BuildArmRect(cornerX, cornerY, angleDeg, stubLen, w, signalLayer);
-
         double angleRad = angleDeg * Math.PI / 180.0;
+        double d2X = Math.Cos(angleRad), d2Y = Math.Sin(angleRad);
+
+        // Each arm extends HALF a width past/before the pivot corner along its OWN centerline, so
+        // the two arms' widths form a full W×W overlap square there instead of a halfW×halfW
+        // quarter — see this file's own class doc comment for why that quarter-overlap is what made
+        // the miter cut a no-op. Arm1's far end and arm2's origin both move; PIN positions do not
+        // (pin1 is always the origin; pin2 is still exactly stubLen from the corner along d2).
+        long arm1LenDbu = stubLen + halfW;
+        long arm2OriginX = (long)Math.Round(cornerX - d2X * halfW, MidpointRounding.AwayFromZero);
+        long arm2OriginY = (long)Math.Round(cornerY - d2Y * halfW, MidpointRounding.AwayFromZero);
+        long arm2LenDbu = stubLen + halfW;
+
+        var arm1 = PCellGeometryHelpers.BuildArmRect(0, 0, 0.0, arm1LenDbu, w, signalLayer);
+        var arm2 = PCellGeometryHelpers.BuildArmRect(arm2OriginX, arm2OriginY, angleDeg, arm2LenDbu, w, signalLayer);
+
         double pin2X = cornerX + stubLen * Math.Cos(angleRad);
         double pin2Y = cornerY + stubLen * Math.Sin(angleRad);
         long pin2XDbu = (long)Math.Round(pin2X, MidpointRounding.AwayFromZero);
@@ -46,13 +94,25 @@ public static class MBendPCell
 
         LayoutShape merged = PCellGeometryHelpers.UnionArms([arm1, arm2], signalLayer, technology);
 
-        if (miter != MicrostripBendMiter.None && Math.Abs(Math.Sin(angleRad)) > 1e-9)
+        List<string>? diagnostics = null;
+        bool straightThrough = Math.Abs(Math.Sin(angleRad)) <= 1e-9;
+        if (miter != MicrostripBendMiter.None && !straightThrough)
         {
-            var miterCut = BuildMiterCutTriangle(cornerX, cornerY, angleDeg, w, wMeters, miter, technology, layerSelection, signalLayer, dbuPerMicron);
-            if (miterCut is not null)
+            if (IsRightAngleBend(angleRad))
             {
-                var diff = LayoutBooleans.Difference([merged, miterCut], technology);
-                if (diff.Shapes.Count > 0) merged = diff.Shapes[0];
+                var miterCut = BuildMiterCutTriangle(cornerX, cornerY, angleDeg, w, wMeters, miter, technology, layerSelection, signalLayer, dbuPerMicron);
+                if (miterCut is not null)
+                {
+                    var diff = LayoutBooleans.Difference([merged, miterCut], technology);
+                    if (diff.Shapes.Count > 0) merged = diff.Shapes[0];
+                }
+            }
+            else
+            {
+                // R-L5h-7: Douville & James (Optimal) and the triangular corner-square construction
+                // (Fifty, same geometry) are both right-angle-specific — never silently extrapolated
+                // to an oblique bend. Reported once; the bend still generates, un-mitered.
+                diagnostics = [$"MBend: Miter cut is only defined for a 90° bend (Angle={angleDeg:0.###}°, not a right angle) — generated without a corner cut."];
             }
         }
 
@@ -62,8 +122,13 @@ public static class MBendPCell
             new PCellPin("2", pin2XDbu, pin2YDbu, signalLayer, w, angleDeg),
         };
 
-        return new PCellResult([merged], pins);
+        return new PCellResult([merged], pins, diagnostics);
     }
+
+    /// <summary>R-L5h-7: true only for an EXACT right-angle bend — arm2's direction purely
+    /// perpendicular to arm1's fixed +X direction (R-pc-3), independent of turn sign (covers both
+    /// Angle=90 and Angle=-90/270).</summary>
+    private static bool IsRightAngleBend(double angleRad) => Math.Abs(Math.Cos(angleRad)) <= 1e-9;
 
     /// <summary>
     /// The miter cut length, applied symmetrically along each arm's outer edge from the sharp
@@ -73,7 +138,9 @@ public static class MBendPCell
     /// L-C-L electrical model itself no longer consumes this length directly, see
     /// <c>MicrostripBendModel</c>'s own doc comment); <c>Fifty</c> uses a FIXED 50% chamfer
     /// (per-edge leg = 0.5·W, i.e. M/100=0.5 in the same diagonal-cut convention) — the artwork
-    /// analogue of the Fifty electrical coefficients (brief-mtaper-mklopf.md §1A.3).
+    /// analogue of the Fifty electrical coefficients (brief-mtaper-mklopf.md §1A.3). Only ever
+    /// called for a confirmed right-angle bend (<see cref="IsRightAngleBend"/>, checked by the
+    /// caller) — see this file's own class doc comment for why that restriction exists.
     /// </summary>
     private static LayoutShape? BuildMiterCutTriangle(
         long cornerX, long cornerY, double angleDeg, long wDbu, double wMeters, MicrostripBendMiter miter,
@@ -96,6 +163,8 @@ public static class MBendPCell
 
         // arm1's outer edge is always horizontal (d1 = (1,0) by R-pc-3) — solve the intersection
         // with arm2's outer edge line (a2 + s*d2) directly rather than a general 2-line solver.
+        // With the caller's arms now forming a full W×W overlap square (this file's class doc
+        // comment), this intersection point is the union's own real sharp outer corner.
         if (Math.Abs(d2Y) < 1e-12) return null; // degenerate (arm2 also horizontal)
         double s = (a1Y - a2Y) / d2Y;
         double outerX = a2X + s * d2X, outerY = a1Y; // = a2Y + s*d2Y by construction
@@ -118,10 +187,20 @@ public static class MBendPCell
         long mDbu = PCellUnits.MetresToDbu(mMeters, dbuPerMicron);
         if (mDbu <= 0) return null;
 
+        // The two cut points walk back from the sharp outer corner ALONG EACH ARM'S OWN OUTER EDGE,
+        // toward THAT ARM'S OWN PIN — never symmetrically in "-d" for both. Pin1 sits at the origin,
+        // i.e. in the -d1 direction from the corner (cornerX = stubLen·d1), so cut1 = outer - d1·m is
+        // correct as one leg. Pin2 sits FURTHER along +d2 from the corner (pin2 = corner + stubLen·d2,
+        // unchanged by the arm-extension fix above), so walking toward pin2 from the corner is the
+        // +d2 direction — cut2 = outer + d2·m, not outer - d2·m. Using -d2 here (as an earlier version
+        // of this method did) walks OFF arm2's own outer edge entirely, into the region behind arm2's
+        // now-extended origin (the exact bug the class doc comment's arm-extension fix exposed: with
+        // arm2's origin shifted a half-width BEHIND the nominal corner, "-d2 from the corner" is no
+        // longer inside arm2 at all, and the cut silently missed the real geometry a second time).
         long cut1X = (long)Math.Round(outerX - d1X * mDbu, MidpointRounding.AwayFromZero);
         long cut1Y = (long)Math.Round(outerY - d1Y * mDbu, MidpointRounding.AwayFromZero);
-        long cut2X = (long)Math.Round(outerX - d2X * mDbu, MidpointRounding.AwayFromZero);
-        long cut2Y = (long)Math.Round(outerY - d2Y * mDbu, MidpointRounding.AwayFromZero);
+        long cut2X = (long)Math.Round(outerX + d2X * mDbu, MidpointRounding.AwayFromZero);
+        long cut2Y = (long)Math.Round(outerY + d2Y * mDbu, MidpointRounding.AwayFromZero);
         long outerXDbu = (long)Math.Round(outerX, MidpointRounding.AwayFromZero);
         long outerYDbu = (long)Math.Round(outerY, MidpointRounding.AwayFromZero);
 

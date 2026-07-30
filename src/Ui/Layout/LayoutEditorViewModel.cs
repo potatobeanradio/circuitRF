@@ -99,6 +99,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     [ObservableProperty] private LayoutUnit _displayUnit;
     [ObservableProperty] private long _snapDbu;
 
+    /// <summary>brief-L5-followups-2.md §6 (R-L5g-15): view toggle for the PCell pin overlay —
+    /// default ON. Session-local UI preference, not model state: never persisted in <c>.clay</c>,
+    /// never on any undo stack (the same "view-preference edit, not a geometry mutation" rule
+    /// <see cref="DisplayUnit"/>/<see cref="SnapDbu"/> already follow), never touches <see cref="IsDirty"/>.</summary>
+    [ObservableProperty] private bool _showPCellPins = true;
+
     // ── Technology (L0c) ───────────────────────────────────────────────────────
 
     /// <summary>The resolved technology, or null when unresolved (missing/corrupt/no default) —
@@ -238,9 +244,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             if (name is not null && Enum.TryParse<Tool>(name, out var t)) ActiveTool = t;
         });
 
+        // Bug (owner-reported, post-L5): this used to call SetSelection(shapes only), so instances —
+        // including PCells — were silently excluded from Select All despite SetSelection's own doc
+        // comment listing "SelectAll" as a REPLACE caller that sets the WHOLE new selection. Select
+        // All must select everything: every shape (bitmaps included — BitmapShape is a LayoutShape,
+        // already covered) AND every instance (ordinary AND PCell — an instance is an instance, R-L5-1's
+        // whole point being that a PCell instance is not a special case anywhere else either).
         SelectAllCommand = new RelayCommand(() =>
         {
-            SetSelection(Enumerable.Range(0, Model.Shapes.Count));
+            ReplaceMixedSelection(Enumerable.Range(0, Model.Shapes.Count), Enumerable.Range(0, Model.Instances.Count));
             _cycleCache = null;
         });
         DeselectAllCommand = new RelayCommand(() =>
@@ -2100,6 +2112,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // two independent state machines (see LayoutEditorViewModel.Instances.cs's own header) that
             // are never simultaneously active in normal use — one overlay slot serves both.
             PendingInstancePlacement = _instancePlacementPending ?? _dragInstancePlacementPending,
+            PendingPCellPlacement = _paletteDragGhostView is { } ghostView && _paletteDragPoint is { } pt
+                ? (ghostView, pt.X, pt.Y) : null,
             ShowScaleHandles = ShowScaleHandles,
         };
     }

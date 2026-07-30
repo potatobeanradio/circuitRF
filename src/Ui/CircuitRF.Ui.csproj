@@ -42,6 +42,17 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
+  <!-- Shipped default technologies (docs/sonnet-briefs/brief-misc-termg-units-technologies.md §3,
+       R-misc-6) — real .ctech files, embedded as plain-text .NET resources (NOT AvaloniaResource:
+       ShippedTechnologies.cs is framework-free and must be readable via Assembly.
+       GetManifestResourceStream in headless tests, which have no live Avalonia platform for
+       AssetLoader to run against — see SkiaFonts.cs's own note on exactly that constraint). Read at
+       runtime through the SAME TechPersistence reader user files use (R-misc-7) — never
+       hand-transcribed into C#. -->
+  <ItemGroup>
+    <EmbeddedResource Include="resources\technologies\*.ctech" />
+  </ItemGroup>
+
   <!-- Strip .pdb files from publish output -->
   <Target Name="RemovePdbsFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
     <ItemGroup>
