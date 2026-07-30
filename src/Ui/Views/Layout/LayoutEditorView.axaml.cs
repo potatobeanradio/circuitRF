@@ -398,6 +398,23 @@ public partial class LayoutEditorView : UserControl
 
     private LayoutEditorViewModel? Vm => (DataContext as LayoutDocument)?.ActiveViewModel;
 
+    // brief-snap-distance-and-geometry-snap.md §1 — the snap-distance ComboBox is editable (typed
+    // entry, R-snp-3) AND offers a technology-relative ladder (R-snp-2); a ladder pick commits
+    // immediately (SelectionChanged), typed text commits on LostFocus/Enter like every other toolbar
+    // dimension field.
+    private void OnSnapDistanceCommit(object? sender, RoutedEventArgs e)
+    {
+        if (sender is ComboBox cb) Vm?.CommitSnapDistanceText(cb.Text ?? "");
+    }
+    private void OnSnapDistanceKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.Enter or Key.Return && sender is ComboBox cb) { Vm?.CommitSnapDistanceText(cb.Text ?? ""); LayoutCanvasCtrl.Focus(); }
+    }
+    private void OnSnapDistanceSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { SelectedItem: string text }) Vm?.CommitSnapLadderSelection(text);
+    }
+
     private void OnCornerRadiusCommit(object? sender, RoutedEventArgs e)
     {
         if (sender is TextBox tb) Vm?.CommitCornerRadiusText(tb.Text ?? "");

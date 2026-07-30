@@ -404,6 +404,9 @@ public static partial class LayoutRenderer
 
                 if (opts.Overlay?.Marquee is { } marquee)
                     DrawMarquee(canvas, marquee, theme, ps);
+
+                if (opts.Overlay?.SnapMarker is { } snapMarker)
+                    DrawSnapMarker(canvas, snapMarker, layerMap, ps, scaleUm, theme);
             }
             finally
             {

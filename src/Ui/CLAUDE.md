@@ -1,5 +1,467 @@
 # UI (Avalonia) — local conventions
 
+URGENT fix: crash selecting a snap-distance value — re-entrant `ObservableCollection` mutation
+(brief-snap-ladder-crash.md, 2026-07-29) — COMPLETE. Supersedes the previous brief's own R-cmb-1
+mechanism below (kept for history) — that entry's "insert the current value into the ladder" fix was
+itself the bug this one fixes.
+
+## The crash, and why it's a defect in the prior brief's own instructions, not a misreading
+
+`ArgumentOutOfRangeException`, on every single ladder selection, from this exact loop: clicking a
+ladder entry fires Avalonia's `SelectionChanged` → `OnSnapDistanceSelectionChanged` →
+`CommitSnapLadderSelection` → `CommitSnapDistanceText` → `set_SnapDbu` → `OnSnapDbuChanged` →
+(previously) `RebuildSnapLadderOptions()` — which calls `SnapLadderOptions.Clear()`/`.Add(...)`,
+**mutating the very `ObservableCollection<string>` Avalonia's own `SelectionModel` is still reading**
+as part of committing that same selection. The collection's `CollectionChanged` event re-enters
+Avalonia's selection machinery mid-notification, which then indexes into a list that no longer matches
+what it started with.
+
+**The load-bearing rule, worth restating in general terms because this exact pattern will recur
+anywhere a selection handler writes back to a property that feeds its own items source: an items
+collection must not be a function of the selection made from it.** `SnapLadderOptions` must never be
+rebuilt in response to `SnapDbu` changing — the previous brief's R-cmb-1 asked for "never blank" and
+the (reasonable-sounding, but wrong) implementation wired the fix to `OnSnapDbuChanged`, not realizing
+that selecting a ladder ENTRY is itself a `SnapDbu` change, closing the loop.
+
+## The fix — the ladder is now a pure function of Technology + DisplayUnit, nothing else
+
+`RebuildSnapLadderOptions` (`LayoutEditorViewModel.Snap.cs`) is called ONLY from `OnTechnologyChanged`
+(covers a later retarget too), `OnDisplayUnitChanged`, and once directly from the constructor (the
+"new workspace, new layout" binding-order seeding the previous brief's own note already covers) —
+**never** from `OnSnapDbuChanged`, and never from any selection path. The "always contains the current
+value, inserted in sorted position" mechanism is GONE entirely — R-cmb-1 named the wrong mechanism; the
+actual requirement was "never blank," not "the list must contain the current value." **"Never blank" is
+satisfied instead through `SnapDistanceText` alone** — the combobox is `IsEditable="True"` and bound
+via `Text` (never `SelectedItem`), so it can display ANY value, on-ladder or not, completely
+independent of what `SnapLadderOptions` happens to contain; `OnSnapDbuChanged` still calls
+`RefreshSnapDistanceDisplay()` (unchanged) to keep that text current — only the collection mutation
+was ever the problem.
+
+## Gate
+
+6 new/rewritten tests in `LayoutSnapControlTests.cs`: selecting every ladder entry in turn in one
+session (the direct repro — previously would have thrown on the very first selection); an off-ladder
+`SnapDbu` (0.5 mil) selecting a ladder entry then re-entering the original off-ladder value, asserting
+`SnapDistanceText` is never empty at any point (not list membership); a typed off-ladder value
+followed by a ladder selection; **the actual regression guard** — setting `SnapDbu` directly and
+asserting `SnapLadderOptions`'s own `CollectionChanged` event never fires at all, whether or not the
+new value happens to already be a rung (this is what stops a future "helpful" rewire back onto
+`OnSnapDbuChanged` from silently reintroducing the crash); and updated technology-change/display-unit-
+change tests asserting the ladder still repopulates correctly with the document's own value still
+shown via `SnapDistanceText` (no longer via list containment, since the list no longer promises that).
+Firewall 4/4, Core 512/512, Ui 3698/3698 (was 3696), Engine 460/461 (1 pre-existing skip) — all green.
+Two full-suite runs each showed one different, unrelated flake (`CellLayoutResolverLiveTests`, then
+`OnGridInvariantTests` on the next run) — both pass cleanly in isolation, matching this file's own
+long-standing note on full-suite-parallelism contention; neither touches anything this brief changed.
+
+**Not interactively verified** (no visual driver in this environment) — please confirm on your end
+that clicking through every entry in the snap-distance combobox no longer crashes the app, and that an
+off-ladder value (typed, or from an opened `.clay`) still displays correctly and survives a ladder
+selection and a technology/display-unit change without ever going blank.
+
+Snap combobox blanking, grid/geometry snap consistency, glyph size
+(brief-snap-combobox-and-consistency.md, 2026-07-29) — COMPLETE, three items.
+
+## 1 — the snap-distance ladder is built in `LayoutEditorViewModel.Snap.cs`, not `LayoutSnapping.cs`
+
+Recorded directly, per the brief's own explicit ask ("report the file, so the next reader knows"):
+`RebuildSnapLadderOptions` (`src/Ui/Layout/LayoutEditorViewModel.Snap.cs`) is the ONE place
+`SnapLadderOptions` is built. `LayoutSnapping.cs` holds only the L1b snap-value/snap-point math and
+has no notion of the toolbar control at all.
+
+**The rule that makes blank structurally impossible (R-cmb-1): the ladder always contains the
+document's CURRENT `SnapDbu`**, inserted in sorted position (a `SortedSet<long>` of the five standard
+rungs plus `SnapDbu` itself) and formatted through `LayoutUnits.Format` like every other entry — never
+rounded onto the nearest rung, which would silently change the document's own snap distance just to
+fix a display bug. An Avalonia `ComboBox` (even one bound via `Text`, as this one is, not
+`SelectedItem` — editable-mode `ComboBox`es sync their displayed text against `ItemsSource`
+internally regardless) renders blank whenever the bound value has no literal match in the list; making
+that match unconditional is what closes every reported path AND every path nobody had reported yet,
+rather than patching the two known cases one at a time.
+
+**Two of the three rebuild triggers (R-cmb-2/3) already existed** — `OnTechnologyChanged` (covers a
+later retarget too, since retargeting reassigns `Technology` through the same observable property) and
+`OnDisplayUnitChanged` both already called `RebuildSnapLadderOptions`. The missing trigger:
+`OnSnapDbuChanged` itself never called it, so once `SnapDbu` changed to an off-ladder value (a typed
+entry, F9, or loading a `.clay` with one already), the ladder kept showing the STALE rung set forever.
+Added.
+
+**The "new workspace, new layout" report was, exactly as suspected, a binding-order problem — not a
+value problem.** `WorkspaceViewModel.NewLayout` seeds `model.SnapDbu`/`DisplayUnit` on the `LayoutView`
+BEFORE constructing the VM; the VM constructor then seeds its OWN backing fields
+(`_snapDbu`/`_displayUnit`) directly from `model`, deliberately BYPASSING the `SnapDbu`/`DisplayUnit`
+property setters (so construction never dirties a freshly-opened document) — which means neither
+`OnSnapDbuChanged` nor `OnDisplayUnitChanged` ever fires for that initial value, and until this fix,
+NOTHING else populated `SnapLadderOptions`/`SnapDistanceText` until the workspace's own
+`ApplyTechResolution` call happened to run afterward and (for the ladder only — `SnapDistanceText` had
+no seed path at all, from any trigger) fire `OnTechnologyChanged`. Fixed by seeding both
+`_snapDistanceText` and `SnapLadderOptions` directly in the constructor, right alongside where
+`_pathWidthText`/`_cornerRadiusText`/`_labelHeightText` already seed themselves the same way — the
+combobox is now populated and showing a real value from the very first frame, regardless of whether or
+when a technology ever resolves.
+
+## 2 — grid snap was silently defeated for the REST of a grab-role drag, by the prior brief's own fix
+
+**R-cmb-4/5: geometry snap must override grid snap only when it genuinely has a real feature to offer,
+never merely because the mode is enabled.** `RecomputeMoveDelta`'s absolute-position branch was gated
+on `_snapDragActive && !suspend && _currentSnapCandidate is {} target` — correct reasoning, until
+brief-geometry-snap-followups.md's own addendum (the "always visible" marker fix, same session) changed
+what `_currentSnapCandidate` MEANS: `UpdateSnapMarker` now falls back to a SYNTHETIC echo of the
+originally-grabbed feature (tracking the raw, unsnapped cursor) whenever nothing real is nearby, so that
+a grab-role drag never disappears. That candidate is never null anymore for the whole gesture, so
+`RecomputeMoveDelta`'s check was satisfied unconditionally too — the absolute-position branch ran for
+the ENTIRE rest of the drag, landing the shape on the raw, unsnapped cursor position regardless of
+whether a real feature was ever in range. Two closely-related but genuinely different pieces of state
+had been collapsed into one field.
+
+**Fix: a new `_snapCandidateIsRealTarget` flag**, true ONLY when `UpdateSnapMarker`'s own query
+(`LayoutSnapQuery.FindCandidates`) actually returned a hit — false for the synthetic marker-persistence
+echo. `RecomputeMoveDelta` now additionally requires it before taking the absolute-position branch;
+`RebuildOverlay`'s rendering path is untouched (it reads `_currentSnapCandidate` alone, and either kind
+of value is correct to DRAW — the marker SHOULD keep showing the grabbed feature's kind even with
+nothing real nearby, that part of the prior fix was correct and stays). **The two quantities stay
+deliberately different (R-cmb-5), and this fix does not change that**: geometry snap places an
+ABSOLUTE POSITION (the grab point lands exactly on the target feature); grid snap on a move snaps the
+DELTA, not the position (R-L1c-3), so a shape keeps its own off-grid internal vertex spacing when
+nothing overrides it. Do not "unify" these by making a move snap its position — that is exactly the
+regression R-L1c-3 already exists to prevent. Edge drags were never affected (they already compute a
+scalar perpendicular offset — itself a delta — so R-cmb-4/5 needed no change there; confirmed by the
+pre-existing edge-drag tests passing untouched).
+
+## 3 — glyph size, a further 10%
+
+`SnapMarkerSizeDevicePixels`/`SnapMarkerStrokeDevicePixels` (`LayoutRenderer.Snap.cs`) went from
+7.7/1.65 (the prior brief's own +10%) to 8.47/1.815 — both scaled together, the only place either
+constant is defined; every glyph shape takes `half` as a parameter derived from it, so there was
+nothing duplicated per glyph type to consolidate.
+
+## Gate
+
+14 new tests: 4 in `LayoutSnapControlTests.cs` (an off-ladder `SnapDbu` included in sorted position and
+matched by the current display text; a `NewLayout`-shaped construction sequence showing a populated,
+matched combobox immediately on open AND after `ApplyTechResolution`; a retarget preserving and still
+showing the document's own value against a brand-new rung set; a display-unit change relabeling every
+rung without blanking), 2 in `LayoutSnapGestureTests.cs` (a single grab-role gesture transitioning
+grid-snap → feature-lock → grid-snap, the actual R-cmb-4 regression; an off-grid polygon body-drag with
+geometry snap ON but nothing anywhere to attract to, proving R-cmb-5's delta-not-position split holds),
+1 in `LayoutSnapRenderingTests.cs` (the new 8.47/1.815 constants plus a uniqueness check confirming
+neither is duplicated). One pre-existing test (`SnapLadder_RendersInCurrentDisplayUnit_NotAFixedList`)
+needed its fixture corrected — it left `SnapDbu` at an unrelated default that R-cmb-1's own fix now
+correctly (and visibly) includes as an extra rung; the fix is to seed `SnapDbu` consistently with the
+technology under test, matching how `NewLayout` actually seeds it, not to weaken the assertion. One
+now-superseded test pinning the PRIOR 7.7/1.65 glyph-size constants was replaced rather than kept
+duplicated. Firewall 4/4, Core 512/512, Ui 3696/3696 (was 3690), Engine 460/461 (1 pre-existing skip)
+— all green.
+
+**Not interactively verified** (no visual driver in this environment) — please confirm on your end:
+opening a `.clay` with a sub-1-mil snap value, and creating a new workspace then a new layout, both
+show a real, non-blank value in the snap-distance combobox from the first frame; retargeting the
+technology and switching the display unit both keep it populated and correctly labelled; dragging a
+shape (grabbed from a feature) across open space with geometry snap on now visibly snaps to the grid
+again instead of free-floating on the raw cursor, engaging exactly on a real feature when one is
+nearby; and the marker glyph reads noticeably larger again.
+
+Geometry snap marker polish: bigger + contrast-tinted glyph, and "always visible" during a
+grab-role drag (owner follow-up, 2026-07-29) — COMPLETE, two owner requests after the geometry-snap
+follow-up brief above shipped.
+
+## 1 — glyph size + contrast tint
+
+`LayoutRenderer.Snap.cs`'s `SnapMarkerSizeDevicePixels`/`SnapMarkerStrokeDevicePixels` went from
+7.0/1.5 to 7.7/1.65 (both scaled together — a bigger outline with the same thin stroke would look
+thin and small regardless of the box size, so the ~10% only reads as "bigger" if both grow together).
+`DrawSnapMarker` now tints the resolved layer color for contrast against the canvas background before
+drawing: `TintForContrast` computes the background's own Rec. 601 perceptual luminance and blends the
+marker color 30% toward black when the background reads light, toward white when it reads dark — read
+from `theme.Background` directly (now threaded into `DrawSnapMarker`), not from which of the two
+built-in `LayoutRenderTheme.Light`/`Dark` presets happens to be active, so a custom/overridden
+background still tints the right direction. Alpha is left untouched.
+
+## 2 — the marker stays visible for the WHOLE grab-role drag
+
+Before this change, `UpdateSnapMarker` set `_currentSnapCandidate = null` the instant the cursor moved
+away from every real feature — so grabbing a shape by (say) its centroid and dragging it across open
+space made the marker vanish immediately, even though the user was still mid-drag from that exact
+feature. Owner's own worked example: *"if user drags a rect from its centroid, then the circle glyph
+remains visible until the rect (and mouse) moves over a different feature."*
+
+Fixed by capturing the grabbed feature's own `Kind`/`Layer` once, at grab time
+(`_snapDragOwnerKind`/`_snapDragOwnerLayer`, set in `TryBeginSnapMarkerDrag` alongside the pre-existing
+`_snapDragOwnerIsInstance`/`_snapDragOwnerIndex`). `UpdateSnapMarker`'s final assignment now falls back
+to a SYNTHETIC candidate of that same kind/layer — positioned at the raw cursor, tracking it exactly
+like the real grab point already does — whenever the query finds nothing AND a grab-role drag
+(`_snapDragActive`) is in progress; only a genuinely-found real candidate (a different, nearby feature)
+overrides it, which is what makes the glyph switch kind mid-drag rather than merely disappearing.
+Deliberately gated on `_snapDragActive` specifically (true ONLY for a marker-initiated grab, per the
+brief above) — a plain body-drag (never grabbed a specific feature to begin with) still shows nothing
+when nowhere near a feature, since there is no "originally grabbed feature" to echo. Alt-suppression and
+geometry-snap-disabled both still null the candidate outright, upstream of this fallback, unchanged.
+
+## Gate
+
+4 new tests: 2 in `LayoutSnapGestureTests.cs` (marker stays visible dragging far from any feature,
+showing the Centroid it was grabbed from; marker switches to CornerEndpoint near a different shape's
+corner, then reverts to Centroid on moving away again — never to null in between) and 2 in
+`LayoutSnapRenderingTests.cs` (tints lighter on `LayoutRenderTheme.Dark`, opposite direction from the
+pre-existing light-theme test; the size constants read 7.7/1.65 via a source-scan, the same fallback
+this codebase already uses for an on-screen dimension too fragile to pixel-measure reliably — stroke
+thickness alone extends the painted region past the geometric half-size). The pre-existing
+`SnapMarker_PaintsAtCandidatePosition_InItsSourceLayerColor` / `SnapMarker_ScreenSpaceSize_IsConstantAcrossZoom`
+tests were updated (not weakened) to expect the TINTED color, since the raw untinted layer color is no
+longer what's actually rendered. Five existing `LayoutSnapFollowupsTests.cs` body-drag tests needed
+their press points redesigned around a real, pre-existing gap in their own premises found while making
+this change: a "plain body click" test must clear not only a shape's discrete corner/midpoint/centroid
+features but also its four bounding EDGE lines (the lowest-priority "Nearest point on edge" candidate
+fires from anywhere within tolerance of an edge, not just its discrete points) — `SnapDragActiveForTests`
+(new, test-only) now lets a test assert directly whether a press was consumed as a marker-click or fell
+through to an ordinary body click, rather than inferring it indirectly from geometry. Firewall 4/4, Core
+512/512, Ui 3690/3690 (was 3686), Engine 460/461 (1 pre-existing skip) — all green.
+
+**Not interactively verified** (no visual driver in this environment) — please confirm on your end: the
+snap marker glyph reads visibly larger and higher-contrast against both a light and a dark canvas
+background, and that grabbing a shape by a specific feature (e.g. its centroid) and dragging it across
+open space keeps that feature's own glyph showing throughout, switching only when the drag genuinely
+nears a different feature.
+
+Geometry snap follow-ups: handle drags, self-exclusion, and the missing hover marker
+(brief-geometry-snap-followups.md, 2026-07-29) — COMPLETE, three owner reports, all three traced to
+`LayoutEditorViewModel.Snap.cs :: UpdateSnapMarker` exactly as the brief's own diagnosis said.
+
+## 1 — `UpdateSnapMarker`'s blanket handle-drag early-out disabled snap for EVERY handle drag
+
+The original line 160 (`if (_handleDragKind != HandleDragKind.None || _scaleDragKind != ScaleDragKind.None)
+{ _currentSnapCandidate = null; return; }`) nulled the candidate for **any** handle drag whatsoever —
+Vertex, RectCorner, EdgeMidpoint, and RectEdge included, not just the two kinds that genuinely have no
+sensible "snap to a candidate" meaning. Narrowed to exactly `Bulge`/`CubicControl`/`Radius`/`CornerRadius`
+(plus the pre-existing Scale check, unchanged) — per R-snpf-2, **the vertex/edge/bulge/scale cases are
+deliberately different, not an oversight to unify**:
+- **Vertex** (and `RectCorner`, a Rect/RoundedRect corner drag — functionally the same position-shaped
+  gesture) — the candidate wins outright; `ResolveHandlePositionWithSnap` returns the candidate's exact
+  `(X,Y)` in place of `LayoutSnapping.SnapPoint`.
+- **Edge** (`EdgeMidpoint`/`RectEdge`) — an edge drag moves a whole LINE along one axis, not a point, so
+  the candidate is **projected onto that axis** rather than landed on directly:
+  `ComputeEdgePerpendicularOffset`/`ComputeRectEdgePerpendicularOffset` compute
+  `candidateProjection − edgeOwnProjection` (general vertex-list case: dot product against the edge's
+  unit perpendicular; Rect/RoundedRect case: the edge's own fixed axis — Y for edges 0/2, X for 1/3 —
+  against the shape's PRE-drag coordinate on that axis, via a new `RectEdgeCoordinate` helper) instead
+  of the ordinary `totalDx·nx + totalDy·ny` raw-drag projection. The edge stays straight; only its
+  position along its own perpendicular changes.
+- **Bulge/CubicControl/Radius/CornerRadius** — a curvature control or a scalar length, not a position a
+  candidate could sensibly relocate to. `UpdateSnapMarker` never even queries while one of these is
+  active (the narrowed early-out), so `_currentSnapCandidate` is always null and their own
+  `BuildHandleDragPreview` branches are byte-for-byte unchanged from before this brief.
+- **Scale** — unchanged for the same "no single grab point" reason R-snpf-2 states explicitly; still
+  excluded by the pre-existing `_scaleDragKind != ScaleDragKind.None` check.
+
+In every case, geometry snap overrides grid snap only when `_currentSnapCandidate` is non-null and Alt
+is not suspending it (R-snpf-3) — otherwise falls straight through to the exact grid-snap call each
+branch already had.
+
+## 2 — exclusion was gated on `_snapDragActive`; a plain body-drag excluded nothing, and only ONE index
+## could ever be named
+
+`_snapDragActive` is set **only** inside `TryBeginSnapMarkerDrag` (a marker-initiated grab) — a plain
+move-drag started by clicking a shape's BODY never touched it, so `int? exclude = _snapDragActive &&
+!_snapDragOwnerIsInstance ? _snapDragOwnerIndex : null;` excluded **nothing** for the single most common
+drag gesture in the editor, and even when it did apply, `int?` could never name more than one shape —
+dragging a 3-shape (or instance) selection left the other two, or any selected instance, fully able to
+attract themselves. Both defects are fixed by **computing exclusions from what is actually selected and
+moving, not from how the drag began**: `ComputeSnapExclusions()` (new) returns the handle-drag's own
+single `_handleDragShapeIndex` during a handle drag, or **every** currently-selected shape AND instance
+index (`_selectedIndices`/`_selectedInstanceIndices`, as `HashSet<int>`) during a Move drag — covering a
+marker-initiated grab and an ordinary body-drag identically, since both end up with the dragged
+shape/instance in that same selection state. `_snapDragActive` itself is untouched and still gates only
+the SEPARATE target-attraction concern in `RecomputeMoveDelta` — exclusion and target-attraction are two
+different questions and were conflated only by accident, not by design.
+
+`LayoutSnapQuery.FindCandidates`'s `excludeShapeIndex: int?` parameter is now
+`excludeShapeIndices: IReadOnlySet<int>?` **plus** a new `excludeInstanceIndices: IReadOnlySet<int>?` —
+widened in place (R-snpf-5's own instruction: "do not add a second exclusion mechanism"), never a second
+parallel exclusion path. R-snpf-6's "stale position" symptom needed no separate fix once exclusion was
+correct: `FindCandidates` reads `Model` directly (the live drag preview lives only in `Overlay.
+DragOverrides`), so the ONLY way a dragged shape's own now-stale Model geometry could ever surface as a
+candidate was through the exclusion gap just closed — with every dragged shape/instance excluded by
+construction, the query never reads anything the renderer doesn't also treat as static, non-moving
+geometry.
+
+## 3 — the missing hover marker: **queried, but not drawn**
+
+`UpdateSnapMarker` already ran unconditionally from the top of `HandleSelectMove`, which
+`LayoutCanvas.OnPointerMoved` already called on every pointer move regardless of button state — so the
+QUERY was never the gap (confirmed directly: `SnapQueryRunCount` was already incrementing on a plain
+hover move before this brief). The actual defect was one branch below it: `HandleSelectMove`'s `!leftDown`
+guard only called `RebuildOverlay()` **inside** the `if (_selectDragKind != SelectDragKind.None)` block —
+i.e., only when a drag had just ended. A plain hover move, with `_selectDragKind` already `None`, hit the
+same guard, recomputed `_currentSnapCandidate` correctly, and then returned WITHOUT ever calling
+`RebuildOverlay()` — so the freshly-computed candidate was silently discarded every single tick and
+`Overlay.SnapMarker` (what the renderer actually reads) never updated on hover at all. Fixed by hoisting
+`RebuildOverlay()` out of the conditional so it runs on every `!leftDown` tick unconditionally — the
+click-through headline behaviour (R-snp-8) was therefore unreachable outside an active drag before this
+fix, exactly as the owner reported: nothing ever appeared while merely moving the mouse.
+
+Verified over all three geometry kinds the report named, per R-snpf-9: a primitive's own corner, a
+top-level instance's corner (through one `LayoutInstanceTransform`), and a corner reached through TWO
+nested instance levels (Sub2 inside Sub1 inside the top view) — the latter specifically exercises
+`LayoutSnapQuery.RecurseInstance`'s own nested-instance recursion branch, not just its single-instance
+path, confirming R-snp-13's cell-space cursor-transform machinery was never the gap either.
+
+## Gate
+
+13 new tests in `LayoutSnapFollowupsTests.cs` (hover marker over a primitive/instance/nested-cell corner
+with both the query-ran and marker-drawn assertions; vertex-drag-onto-a-corner and the no-candidate grid-
+fallback pair; edge-drag-projects-onto-its-own-axis; bulge and scale each proven to never even query,
+despite a candidate sitting exactly where the drag moves the cursor; a plain BODY-initiated drag (not
+marker-initiated) excluding its own shape; a 3-shape selection excluding all three; a selected instance
+excluding itself; a stale-pre-drag-position re-visit never re-attracting; and a cost-bounds check that
+hover still runs the query at most once per qualifying move). Plus 3 new tests in the existing
+`LayoutSnapQueryTests.cs` for the widened set-based exclusion signature (multi-shape, instance).
+Firewall 4/4, Core 512/512 (1 confirmed-not-a-regression flake — `MklopfPerformanceAndMessagesTests.
+Gate4_CurvatureScan_RunsOnce_ForGeometryThatNeverWarns`, passes cleanly in isolation, a known
+`MicrostripKlopfModel` process-wide-cache full-suite-parallelism race unrelated to this brief), Ui
+3686/3686 (was 3671 before this brief — 15 new: 13 in the new file + 2 more in `LayoutSnapQueryTests.cs`;
+1 confirmed-not-a-regression flake in the same full run — `PerfBenchmarkTests.
+BuildRenderModel_10k_Under50ms`, a wall-clock schematic-rendering timing test unrelated to layout/snap,
+passes cleanly in isolation), Engine 460/461 (1 pre-existing skip) — all green.
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout Editor
+phase) — please confirm on your end: dragging a rect's vertex or edge now snaps to nearby geometry
+(landing exactly on a corner for a vertex drag, or on its projection for an edge drag), a bulge or scale
+drag behaves exactly as before, dragging a shape by its body no longer attracts to its own corners while
+other geometry still attracts correctly, dragging a multi-shape or instance selection excludes every
+member of it, and — the headline fix — simply hovering the mouse near a corner/midpoint/pin/instance now
+shows the snap marker immediately, with no drag or click required.
+
+Layout Editor: per-document snap distance + geometry snap
+(brief-snap-distance-and-geometry-snap.md, 2026-07-29) — COMPLETE, both halves of the brief.
+
+## §1 — per-document snap-distance control (never touches the technology)
+
+A technology-relative ladder (×1/×5/×10/×25/×50 of the resolved `Technology.DefaultSnapDbu`, falling
+back to a µm-scale ladder with no technology), rendered through `LayoutUnits.Format` in the document's
+own `DisplayUnit` — never a fixed "1·5·10" list, the same one-WHAT lesson the label-height defect
+already taught this codebase once. Typed entry (`SnapDistanceText`) parses through
+`LayoutUnits.TryParse` exactly like every other dimension field; F9 toggles `SnapDbu` to 0 and restores
+the last non-zero value (`_lastNonzeroSnapDbu`) — AutoCAD's own grid-snap-toggle convention, reusing
+`LayoutSnapping`'s pre-existing "`SnapDbu <= 0` means none" contract rather than inventing a second
+off-state. Selecting a ladder entry commits immediately, mirroring the Layer/Unit combos' own
+immediate-commit convention. **`Technology.DefaultSnapDbu` is read only, never written** — this
+control edits the document's own `SnapDbu`, exactly the same "seed once, then it's the document's own
+state" rule `DisplayUnit` already follows.
+
+## §2 — geometry snap: screen-space markers, click-through selection, grab/target drag
+
+### R-snp-12 — intrinsic features are cached per-cell; intersections are relational and CANNOT be indexed
+
+Corner/endpoint, midpoint, centroid, and PCell-pin features are each a property of *one* shape, so they
+live in `LayoutSnapFeatureIndex` — a per-cell, cell-LOCAL-coordinate feature index, grid-bucketed for a
+near-cursor query, cached by `LayoutView` reference via a `ConditionalWeakTable` (`LayoutSnapFeatures.
+cs`) — the exact same cache shape and invalidation contract `LayoutRenderer.Instances.cs`'s own
+`_cellCompileCache` already established for compiled instance geometry, reused rather than reinvented.
+An **intersection is a property of a *pair*** — possibly spanning cells, instances, and layers — and
+structurally cannot live in a per-shape or per-cell index: which pairs matter depends entirely on what
+happens to be near the cursor on a given frame, and a global intersection index would be both enormous
+(O(shapes²)) and would need invalidating on every single edit anywhere in the design. `LayoutSnapQuery.
+AddIntersectionCandidates` computes intersections live, every query, over the SAME bounded near-shape
+set (`nearShapeIndices`, drawn from the L2b spatial index query) that also feeds nearest-on-edge — never
+indexed, which is exactly why leaving intersections off by default (R-snp-6) costs nothing when unused:
+`counters.IntersectionPairsTested` stays at 0 whenever `includeIntersections` is false.
+
+### R-snp-13 — transform the cursor into each instance's local frame, never push geometry into world space
+
+`LayoutSnapQuery.RecurseInstance` inverse-transforms the CURSOR (`LayoutInstanceTransform.
+InverseTransformPoint`, one matrix per placement) into a resolved sub-cell's own local coordinate frame
+and queries that cell's own cached `LayoutSnapFeatureIndex` directly — a hit is then forward-transformed
+back into the caller's frame before being added to the result. This is deliberately the opposite of
+"resolve the instance's geometry into world space and query that": a cell's own feature index never
+needs to know about, or be rebuilt for, any instance that happens to reference it. **Measured, not
+assumed**: a 50×50 array (2,500 placements) of a one-shape sub-cell was queried near its first, middle,
+and last placement in the same test — every query resolves through the exact same
+`LayoutSnapFeatureIndex` instance (`Assert.Same` before vs. after all three queries), confirmed
+correct-and-shared by construction: `RecurseInstance` resolves the sub-cell's `CellLayoutResolver`
+result ONCE, outside its own row/column loop, so `LayoutSnapFeatureIndex.Get`'s per-reference cache hits
+on every one of the 2,500 inverse-transform-and-query passes rather than rebuilding once per placement.
+
+### R-snp-5 — priority order, and why Nearest has to be strictly last
+
+Priority, highest first: **Pin > Corner/Endpoint > Intersection > Midpoint > Centroid > Nearest**
+(`SnapFeatureKind`'s own declared enum order, sorted directly — do not reorder the enum without also
+re-checking `LayoutSnapQuery.FindCandidates`'s sort). Nearest-point-on-edge is available *everywhere*
+along *every* edge — with no explicit order below it, the cursor would almost always be nearer some
+edge's Nearest candidate than any discrete corner/midpoint/pin, so the more informative discrete markers
+would rarely win. The rule behind the order is stated once and holds throughout: the more *intentional*
+a feature is, the higher it ranks — a pin or corner is something the designer deliberately put there; a
+point on an edge is just wherever the cursor happens to be.
+
+### R-snp-10 — L1d's editing handles win within their own radius; geometry snap wins everywhere else, no modifier needed
+
+`UpdateSnapMarker` nulls the candidate outright whenever an L1d handle drag (`_handleDragKind`) or an
+L1h scale drag (`_scaleDragKind`) is in progress — checked FIRST, before anything else in the method.
+**No modifier is needed to arbitrate this, because the two barely overlap by construction**: L1d's
+vertex/edge/bulge/control-point handles exist ONLY on a currently-selected shape, while snap markers are
+wanted on UNSELECTED geometry — the same non-collision AutoCAD relies on between grips (selected-only)
+and object-snap markers (picking a point). During an active Move drag, geometry snap governs the
+destination the grabbed point is attracted to, which is the useful half of the interaction regardless of
+which role initiated the drag.
+
+### R-snp-8 — the click is consumed by the marker, not by hit-testing (the feature's central UX claim)
+
+`TryBeginSnapMarkerDrag` is checked ahead of ordinary click/hit-test dispatch in `OnPointerPressed`: when
+a snap marker is showing, the press selects and begins dragging that marker's OWNING shape or instance
+even when the raw click point lands outside that shape's own hit-test tolerance entirely — missing the
+geometry by a couple of pixels must never drop the gesture once a marker is visibly attracting it.
+Coincident features cycle on repeated near-identical presses by reusing the exact same `ClickCycleCache
+<T>` primitive shape-selection overlap-cycling already uses (R-snp-9) — generalized to a type parameter
+specifically so this didn't need a second cycling mechanism. Grab (anchor tracks the cursor from the
+exact feature point, ignoring the raw click's own offset from it) and Target (during a drag, other
+features attract the grab point, overriding ordinary grid-snap for that tick) are two distinct roles,
+both reachable from the same click-through gesture.
+
+## Performance (R-snp-13/14/16), measured at the largest test design
+
+At **500,000 shapes** (`SyntheticLayoutGenerator`, Manhattan profile, 200 layers), a single query near a
+genuinely dense 1%-of-extent cluster examines **273 features** — a `FeaturesExamined` count bounded by
+what the per-cell grid bucket near the cursor actually holds, never by the design's total shape count
+(0.05% of 500,000, comfortably inside the `< shapeCount/10` gate) — and measures **~0.0076 ms per call**
+(disposable Stopwatch probe, per R-L2a-3's own "counters are the gate, wall-clock is only ever a
+recorded number" convention; not a permanent test). R-snp-16's sub-device-pixel skip
+(`LayoutEditorViewModel.SnapQueryRunCount`, a new test/diagnostic-only counter mirroring
+`MarqueeRecomputeCount`'s established pattern) is confirmed to hold the query count flat across a move
+smaller than one device pixel, and to genuinely re-run it on a move that crosses that threshold.
+
+## A real production bug found while fixing this brief's own tests, not merely exercised by them
+
+`LayoutSnapQuery.FindCandidates`'s `nearShapeIndices` population (feeding both nearest-on-edge and
+intersection candidates) checked only `excludeShapeIndex` before this fix — never the shape's own
+resolved layer visibility, unlike the intrinsic-feature loop immediately above it in the same method,
+which already gated on `ResolveLayer(tech, f.Layer).Visible`. A shape sitting on a HIDDEN layer could
+therefore still contribute a Nearest or Intersection snap candidate, violating §2.5's explicit "hidden
+layers contribute nothing" rule. Fixed by adding the identical visibility check to that loop —
+`HiddenLayer_ContributesNoCandidates` (already an existing test) is what caught it once the test's own
+authored-string mismatch (a separate, test-only bug — the µ glyph vs. an ASCII "um" spelling) was fixed
+first and the real assertion could actually run.
+
+## Gate
+
+Firewall 4/4, Core 512/512, Ui 3671/3671 (was 3627 before this brief — 44 new tests across
+`LayoutSnapControlTests.cs`, `LayoutSnapFeaturesTests.cs`, `LayoutSnapGestureTests.cs`,
+`LayoutSnapQueryTests.cs`, `LayoutSnapRenderingTests.cs`, and `LayoutPerf/LayoutSnapPerfTests.cs`),
+Engine 460/461 (1 pre-existing skip) — all green. One confirmed-not-a-regression flake seen during this
+session's own full-suite runs, matching this file's own standing note on `CellLayoutResolver`'s known
+full-suite-parallelism timing race: `CellLayoutResolverLiveTests.SetLive_MakesResolveReturnTheLiveView_
+NotDiskContent` (passes cleanly in isolation, and passed cleanly on every OTHER full-suite run this
+session — not reproduced on the final gate run recorded above).
+
+**Not interactively verified** (no visual driver in this environment, matching every prior Layout
+Editor phase) — please confirm on your end: F9 toggles geometry snap markers on/off with a visible
+state indicator, and the snap-distance combo's ladder entries read in the document's own display unit
+and technology; hovering near a corner/midpoint/centroid/pin shows a fixed-pixel-size, layer-colored
+marker at any zoom, and clicking through it (even when the raw click misses the shape) selects and
+begins dragging that shape from the exact feature point; during a drag, other features visibly attract
+the grabbed point (the "target" role), and toggling geometry-snap or include-intersections mid-drag
+changes the attraction immediately without needing to jiggle the mouse; a selected shape's own L1d
+handles still win within their own radius with no modifier needed; and Alt suppresses (never enables)
+snapping for a single click/drag.
+
 TermG port numbering, layout→schematic units, and shipping default technologies
 (brief-misc-termg-units-technologies.md, 2026-07-29) — COMPLETE, four items.
 

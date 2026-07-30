@@ -131,6 +131,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(ViaToolAvailability));
         OnPropertyChanged(nameof(ViaToolTipText));
         RebuildAvailableLayers();
+        RebuildSnapLadderOptions();
     }
 
     /// <summary>Applies a resolution from <see cref="TechnologyResolver"/> — called by the workspace
@@ -204,6 +205,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(SnapText));
         OnPropertyChanged(nameof(ExtentText));
         RefreshTypedFieldDisplays();
+        RefreshSnapDistanceDisplay();
+        RebuildSnapLadderOptions();
     }
 
     partial void OnSnapDbuChanged(long value)
@@ -212,6 +215,16 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _prefsDirty = true;
         RefreshDirty();
         OnPropertyChanged(nameof(SnapText));
+        RefreshSnapDistanceDisplay();
+        // docs/sonnet-briefs/brief-snap-ladder-crash.md R-crash-1: deliberately NEVER
+        // RebuildSnapLadderOptions() here. Selecting a ladder entry sets SnapDbu (via
+        // CommitSnapLadderSelection -> CommitSnapDistanceText), which means THIS method runs from
+        // inside Avalonia's own SelectionChanged notification — mutating the ObservableCollection the
+        // active SelectionModel is still reading crashes with ArgumentOutOfRangeException, reliably,
+        // on every single selection. "Never blank" is satisfied by RefreshSnapDistanceDisplay() alone
+        // (the combobox is editable and bound via Text, which can show any value regardless of ladder
+        // membership) — the ladder itself is a pure function of Technology/DisplayUnit and must stay
+        // one; see SnapLadderOptions's own doc comment for the general rule this is an instance of.
     }
 
     // ── Construction ───────────────────────────────────────────────────────────
@@ -253,12 +266,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         SelectAllCommand = new RelayCommand(() =>
         {
             ReplaceMixedSelection(Enumerable.Range(0, Model.Shapes.Count), Enumerable.Range(0, Model.Instances.Count));
-            _cycleCache = null;
+            _cycleCache.Clear();
         });
         DeselectAllCommand = new RelayCommand(() =>
         {
             SetSelection([]);
-            _cycleCache = null;
+            _cycleCache.Clear();
         });
 
         InitBooleanCommands();   // L1e — src/Ui/Layout/LayoutEditorViewModel.Booleans.cs
@@ -268,6 +281,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         _pathWidthText     = LayoutUnits.Format(_pathWidthDbu, DisplayUnit, Model.DbuPerMicron);
         _cornerRadiusText  = LayoutUnits.Format(_cornerRadiusDbu, DisplayUnit, Model.DbuPerMicron);
         _labelHeightText   = LayoutUnits.Format(_labelHeightDbu, DisplayUnit, Model.DbuPerMicron);
+
+        // brief-snap-combobox-and-consistency.md R-cmb-1/2: _snapDbu/_displayUnit were just seeded onto
+        // their backing fields directly, above — which bypasses OnSnapDbuChanged/OnDisplayUnitChanged
+        // entirely, so neither SnapDistanceText nor SnapLadderOptions would otherwise be populated
+        // until something LATER changes one of those properties (typically the workspace's own
+        // ApplyTechResolution call, right after construction — but a document with no technology, or
+        // one opened before that call runs, would show a genuinely blank combobox in the meantime).
+        // Seeding both explicitly here closes that gap regardless of when/whether a technology ever
+        // resolves.
+        _snapDistanceText = SnapText;
+        RebuildSnapLadderOptions();
 
         RebuildAvailableLayers();
 
@@ -288,8 +312,16 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // also have shifted or been removed by the mutation, so drop any that are now stale.
             // The picked-vertex index (L1d) is unconditionally cleared too — a ReplaceShapeCommand
             // can change the shape's vertex count/order at the very index that's still selected.
-            _cycleCache = null;
+            _cycleCache.Clear();
             _pickedVertexIndex = null;
+
+            // brief-snap-distance-and-geometry-snap.md R-snp-12's second invalidation hook: the
+            // ACTIVELY EDITED top-level document's own shape edits never route through
+            // WorkspaceViewModel.OnCellLayoutLiveViewChanged (that seam only fires for a cell reached
+            // through an instance) — this Model.Changed subscription is the seam for THIS document's
+            // own intrinsic feature cache. Always invalidates (rather than checking info.Kind) since a
+            // vertex/handle edit keeps the shape COUNT unchanged but moves its features.
+            LayoutSnapFeatureIndex.Invalidate(Model);
             bool shapesChanged = _selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0;
             bool instancesChanged = _selectedInstanceIndices.RemoveAll(i => i < 0 || i >= Model.Instances.Count) > 0;
             if (shapesChanged || instancesChanged)
@@ -534,12 +566,14 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private string LayerDisplayName(LayerKey key) => ResolveLayerDef(key).Name;
 
     // ── Overlap cycling cache (R-L1c-2) ────────────────────────────────────────
-    // (ClickX, ClickY) is the world point (rounded to DBU) of the press that built this cache;
-    // Stack is the ordered hit list from that press; Index is which stack entry is CURRENTLY
-    // selected. Invalidated by: pointer movement beyond the tolerance threshold (HandleSelectMove),
-    // any model mutation (the Model.Changed subscription in the constructor), and any selection
-    // change originating elsewhere (SelectAll/DeselectAll/marquee/delete below).
-    private (long ClickX, long ClickY, IReadOnlyList<int> Stack, int Index)? _cycleCache;
+    // ClickCycleCache<int>.ClickX/ClickY is the world point (rounded to DBU) of the press that built
+    // this cache; Stack is the ordered hit list from that press; Index is which stack entry is
+    // CURRENTLY selected. Invalidated by: pointer movement beyond the tolerance threshold
+    // (HandleSelectMove), any model mutation (the Model.Changed subscription in the constructor), and
+    // any selection change originating elsewhere (SelectAll/DeselectAll/marquee/delete below). The
+    // generic ClickCycleCache<T> (docs/sonnet-briefs/brief-snap-distance-and-geometry-snap.md R-snp-9)
+    // is the SAME cycling algorithm geometry-snap candidate cycling reuses — do not fork a second one.
+    private readonly ClickCycleCache<int> _cycleCache = new();
 
     // ── Select-tool gesture state ─────────────────────────────────────────────
 
@@ -597,7 +631,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// a selected vertex"). Cleared on any selection change, model mutation, or Escape.</summary>
     private int? _pickedVertexIndex;
 
-    private void HandleSelectPress(double wx, double wy, KeyModifiers mods, long tolDbu)
+    private void HandleSelectPress(double wx, double wy, KeyModifiers mods, long tolDbu, long snapTolDbu = 0)
     {
         bool shift = (mods & KeyModifiers.Shift) != 0;
         bool ctrl  = (mods & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
@@ -626,28 +660,27 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         _pickedVertexIndex = null;
 
-        long thresh = Math.Max(tolDbu, 1);
-        bool cacheUsable = _cycleCache is { } c0 && c0.Stack.Count > 0
-            && (alt || (Math.Abs(c0.ClickX - px) <= thresh && Math.Abs(c0.ClickY - py) <= thresh));
+        // brief-snap-distance-and-geometry-snap.md R-snp-8/R-snp-10: geometry snap sits between L1d's
+        // handle check (above — handles still win within their own radius on a selected shape) and
+        // the ordinary hit-test/cycling fallback below. A marker showing at the click point consumes
+        // the click for its OWNING shape/instance even when the click itself misses that shape's own
+        // hit-test — this is the feature's headline behaviour.
+        if (TryBeginSnapMarkerDrag(px, py, shift, ctrl, alt, snapTolDbu))
+            return;
 
-        IReadOnlyList<int> stack;
-        int stackIndex;
-
-        if (cacheUsable)
+        if (_cycleCache.Matches(px, py, tolDbu, alt))
         {
-            var c = _cycleCache!.Value;
-            stack = c.Stack;
-            stackIndex = (c.Index + 1) % stack.Count;
-        }
-        else
-        {
-            stack = LayoutHitTest.HitStack(Model, Technology, px, py, tolDbu);
-            stackIndex = 0;
+            int advanced = _cycleCache.Advance(px, py);
+            ApplyClickSelection(advanced, shift, ctrl);
+            UpdateSelectionStatusFromCycle();
+            if (!shift && !ctrl) BeginMoveDrag(px, py);
+            return;
         }
 
+        var stack = LayoutHitTest.HitStack(Model, Technology, px, py, tolDbu);
         if (stack.Count == 0)
         {
-            _cycleCache = null;
+            _cycleCache.Clear();
 
             // L3a (R-L3a-5): no shape under the click — try an instance before falling back to a
             // marquee. Instances get their own (simpler, no cycling) click-select: a fresh press
@@ -666,8 +699,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
-        _cycleCache = (px, py, stack, stackIndex);
-        int hitIndex = stack[stackIndex];
+        int hitIndex = _cycleCache.Rebuild(px, py, stack);
         ApplyClickSelection(hitIndex, shift, ctrl);
         UpdateSelectionStatusFromCycle();
 
@@ -779,6 +811,18 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// is intentionally NOT grid-snapped; radius and corner-radius ARE snapped, being lengths on the
     /// same grid as everything else).</item>
     /// </list>
+    /// brief-geometry-snap-followups.md R-snpf-1/2/3 layers geometry snap ON TOP of the grid-snap rules
+    /// above, for exactly the two position-shaped cases: Vertex/RectCorner (R-snpf-2's "Vertex" row —
+    /// the vertex lands ON the candidate) and EdgeMidpoint/RectEdge (R-snpf-2's "Edge" row — the
+    /// candidate is PROJECTED onto the edge's own perpendicular axis, since an edge drag moves a whole
+    /// line, not a point). <see cref="_currentSnapCandidate"/> is already resolved for THIS tick by
+    /// <c>UpdateSnapMarker</c>, called ahead of this method in <c>HandleSelectMove</c> — a candidate in
+    /// range overrides grid snap (R-snpf-3); Alt-suspend already nulls the candidate upstream, so
+    /// <paramref name="suspendSnap"/> is checked here too only as an explicit, self-documenting guard.
+    /// Bulge/CubicControl/Radius/CornerRadius/Scale are deliberately UNCHANGED — R-snpf-2 explicitly
+    /// scopes them out (a curvature or length control has no "position" a candidate could relocate to,
+    /// and a Scale drag has no single grab point) — <c>UpdateSnapMarker</c> never even queries for
+    /// those, so <see cref="_currentSnapCandidate"/> is always null while one is in progress.
     /// </summary>
     private LayoutShape? BuildHandleDragPreview(long px, long py, bool suspendSnap)
     {
@@ -789,7 +833,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             case HandleDragKind.Vertex:
             {
-                var (sx, sy) = LayoutSnapping.SnapPoint(px, py, Model.SnapDbu, suspendSnap);
+                var (sx, sy) = ResolveHandlePositionWithSnap(px, py, suspendSnap);
                 return LayoutShapeEditing.SetVertex(original, _handleDragIndex, sx, sy);
             }
 
@@ -801,7 +845,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
             case HandleDragKind.RectEdge:
             {
-                long delta = ComputeRectEdgePerpendicularOffset(_handleDragIndex, px, py, suspendSnap);
+                long delta = ComputeRectEdgePerpendicularOffset(original, _handleDragIndex, px, py, suspendSnap);
                 return original switch
                 {
                     RectShape r         => LayoutShapeEditing.TranslateRectEdge(r, _handleDragIndex, delta),
@@ -840,7 +884,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
             case HandleDragKind.RectCorner:
             {
-                var (sx, sy) = LayoutSnapping.SnapPoint(px, py, Model.SnapDbu, suspendSnap);
+                var (sx, sy) = ResolveHandlePositionWithSnap(px, py, suspendSnap);
                 return original switch
                 {
                     RectShape r        => LayoutShapeEditing.ResizeRectCorner(r, _handleDragIndex, sx, sy),
@@ -852,6 +896,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             default:
                 return null;
         }
+    }
+
+    /// <summary>R-snpf-2/3 for the two POSITION-shaped handle kinds (Vertex, RectCorner): a geometry-
+    /// snap candidate already resolved for this tick (<see cref="_currentSnapCandidate"/>) wins outright
+    /// over grid snap; otherwise falls back to the ordinary grid-snapped point.</summary>
+    private (long X, long Y) ResolveHandlePositionWithSnap(long px, long py, bool suspendSnap)
+    {
+        if (!suspendSnap && _currentSnapCandidate is { } candidate) return (candidate.X, candidate.Y);
+        return LayoutSnapping.SnapPoint(px, py, Model.SnapDbu, suspendSnap);
     }
 
     private (long Dx, long Dy) ComputeEdgePerpendicularOffset(LayoutShape original, int edgeIndex, long px, long py, bool suspendSnap)
@@ -868,9 +921,22 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (len < 1e-9) return (0, 0);
         double nx = -ey / len, ny = ex / len; // unit perpendicular to the edge
 
-        double totalDx = px - _handleDragAnchorX, totalDy = py - _handleDragAnchorY;
-        double offset = totalDx * nx + totalDy * ny; // scalar projection onto the perpendicular
-        long snapped = LayoutSnapping.SnapValue(offset, Model.SnapDbu, suspendSnap);
+        long snapped;
+        if (!suspendSnap && _currentSnapCandidate is { } candidate)
+        {
+            // R-snpf-2/3: a candidate is projected onto THIS edge's own perpendicular axis (the edge
+            // is a whole line, so only the candidate's position ALONG that axis matters) — the edge
+            // then lands exactly where that projection is, overriding grid snap outright.
+            double edgeProj = x0 * nx + y0 * ny;
+            double candidateProj = candidate.X * nx + candidate.Y * ny;
+            snapped = (long)Math.Round(candidateProj - edgeProj);
+        }
+        else
+        {
+            double totalDx = px - _handleDragAnchorX, totalDy = py - _handleDragAnchorY;
+            double offset = totalDx * nx + totalDy * ny; // scalar projection onto the perpendicular
+            snapped = LayoutSnapping.SnapValue(offset, Model.SnapDbu, suspendSnap);
+        }
 
         return ((long)Math.Round(snapped * nx), (long)Math.Round(snapped * ny));
     }
@@ -879,13 +945,32 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// simplified for a Rect/RoundedRect's always-axis-aligned edges: edges 0/2 (bottom/top) are
     /// horizontal, so their perpendicular is vertical (project the drag's Y delta); edges 1/3
     /// (right/left) are vertical, so their perpendicular is horizontal (project the drag's X delta).
-    /// No vector math needed — the axis is fixed by which edge it is.</summary>
-    private long ComputeRectEdgePerpendicularOffset(int edgeIndex, long px, long py, bool suspendSnap)
+    /// No vector math needed — the axis is fixed by which edge it is. R-snpf-2/3: a candidate is
+    /// projected onto that same fixed axis (Y for 0/2, X for 1/3) against the edge's OWN pre-drag
+    /// coordinate on that axis (<paramref name="original"/>, read via <see cref="RectEdgeCoordinate"/>)
+    /// — overriding grid snap outright — exactly mirroring the general vertex-list case above.</summary>
+    private long ComputeRectEdgePerpendicularOffset(LayoutShape original, int edgeIndex, long px, long py, bool suspendSnap)
     {
+        if (!suspendSnap && _currentSnapCandidate is { } candidate && RectEdgeCoordinate(original, edgeIndex) is { } originalCoord)
+        {
+            long targetCoord = edgeIndex is 0 or 2 ? candidate.Y : candidate.X;
+            return targetCoord - originalCoord;
+        }
+
         double totalDx = px - _handleDragAnchorX, totalDy = py - _handleDragAnchorY;
         double raw = edgeIndex is 0 or 2 ? totalDy : totalDx;
         return LayoutSnapping.SnapValue(raw, Model.SnapDbu, suspendSnap);
     }
+
+    /// <summary>The pre-drag coordinate of one Rect/RoundedRect edge, in the SAME 0=bottom(Y1)/
+    /// 1=right(X2)/2=top(Y2)/3=left(X1) convention <see cref="LayoutShapeEditing.TranslateRectEdge"/>
+    /// already uses — null for any other shape kind (a RectEdge drag never targets one).</summary>
+    private static long? RectEdgeCoordinate(LayoutShape shape, int edgeIndex) => (shape, edgeIndex) switch
+    {
+        (RectShape r, 0) => r.Y1, (RectShape r, 1) => r.X2, (RectShape r, 2) => r.Y2, (RectShape r, 3) => r.X1,
+        (RoundedRectShape rr, 0) => rr.Y1, (RoundedRectShape rr, 1) => rr.X2, (RoundedRectShape rr, 2) => rr.Y2, (RoundedRectShape rr, 3) => rr.X1,
+        _ => null,
+    };
 
     private double ComputeBulgeFromDrag(LayoutShape original, int edgeIndex, long px, long py)
     {
@@ -1039,15 +1124,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     private void UpdateSelectionStatusFromCycle()
     {
-        if (_selectedIndices.Count == 1 && _cycleCache is { } cache && cache.Stack.Count > 1)
+        if (_selectedIndices.Count == 1 && _cycleCache.HasStack && _cycleCache.Stack.Count > 1)
         {
             int idx = _selectedIndices[0];
             int pos = -1;
-            for (int i = 0; i < cache.Stack.Count; i++) if (cache.Stack[i] == idx) { pos = i; break; }
+            for (int i = 0; i < _cycleCache.Stack.Count; i++) if (_cycleCache.Stack[i] == idx) { pos = i; break; }
             if (pos >= 0 && idx >= 0 && idx < Model.Shapes.Count)
             {
                 var shape = Model.Shapes[idx];
-                SelectionStatusText = $"{ShapeTypeName(shape)} · {LayerDisplayName(shape.Layer)} · {pos + 1} of {cache.Stack.Count}";
+                SelectionStatusText = $"{ShapeTypeName(shape)} · {LayerDisplayName(shape.Layer)} · {pos + 1} of {_cycleCache.Stack.Count}";
                 return;
             }
         }
@@ -1205,16 +1290,30 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         SelectionStatusText = ComputeSelectionStatus();
     }
 
-    private void HandleSelectMove(double wx, double wy, bool leftDown, KeyModifiers mods, long tolDbu, long pixelDbu = 0)
+    private void HandleSelectMove(double wx, double wy, bool leftDown, KeyModifiers mods, long tolDbu, long pixelDbu = 0, long snapTolDbu = 0)
     {
         long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
 
-        if (_cycleCache is { } cache)
+        if (_cycleCache.HasStack)
         {
             long thresh = Math.Max(tolDbu, 1);
-            if (Math.Abs(cache.ClickX - px) > thresh || Math.Abs(cache.ClickY - py) > thresh)
-                _cycleCache = null;
+            if (Math.Abs(_cycleCache.ClickX - px) > thresh || Math.Abs(_cycleCache.ClickY - py) > thresh)
+                _cycleCache.Clear();
         }
+
+        if (_snapCycleCache.HasStack)
+        {
+            long snapThresh = Math.Max(snapTolDbu, 1);
+            if (Math.Abs(_snapCycleCache.ClickX - px) > snapThresh || Math.Abs(_snapCycleCache.ClickY - py) > snapThresh)
+                _snapCycleCache.Clear();
+        }
+
+        // brief-snap-distance-and-geometry-snap.md: recomputes the marker/target candidate for THIS
+        // tick — during an idle hover this is the click-through marker (R-snp-8); during an active
+        // Move drag with a snap grab in progress, it's the live TARGET the grab point is currently
+        // attracted to (§2.3's "target" role), searched near the raw cursor so the grab point tracks
+        // it exactly once found.
+        UpdateSnapMarker(px, py, mods, snapTolDbu, pixelDbu);
 
         if (_scaleDragKind != ScaleDragKind.None)
         {
@@ -1240,8 +1339,17 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 CancelMarqueeIfActive();
                 _selectDragKind = SelectDragKind.None;
                 _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
-                RebuildOverlay();
+                _snapDragActive = false;
             }
+            // brief-geometry-snap-followups.md R-snpf-7/8: this is the plain-hover path (no button
+            // down, no drag). UpdateSnapMarker above already ran the query and refreshed
+            // _currentSnapCandidate for THIS cursor position — but RebuildOverlay() is what pushes it
+            // into Overlay.SnapMarker for the renderer to actually draw. The ORIGINAL code only called
+            // it inside the "a drag just ended" branch above, so a plain hover-only move recomputed the
+            // candidate and then silently discarded it — the query ran (SnapQueryRunCount incremented)
+            // but nothing was ever drawn. Call unconditionally so hover shows a marker exactly like
+            // every other per-tick recompute in this method already does.
+            RebuildOverlay();
             return;
         }
 
@@ -1250,10 +1358,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             case SelectDragKind.Move:
             {
                 bool suspend = (mods & KeyModifiers.Alt) != 0;
-                long dx = LayoutSnapping.SnapValue(px - _moveAnchorX, Model.SnapDbu, suspend);
-                long dy = LayoutSnapping.SnapValue(py - _moveAnchorY, Model.SnapDbu, suspend);
-                if (dx != _moveLiveDx || dy != _moveLiveDy) _moveHasMoved = true;
-                _moveLiveDx = dx; _moveLiveDy = dy;
+                RecomputeMoveDelta(px, py, suspend);
                 RebuildOverlay();
                 break;
             }
@@ -1314,6 +1419,41 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         RebuildOverlay();
     }
 
+    /// <summary>brief-snap-distance-and-geometry-snap.md §2.7/R-snp-7: the Move-drag delta computation,
+    /// factored out of <c>HandleSelectMove</c>'s own switch case so <c>RecomputeSnapStateImmediate</c>
+    /// (Snap.cs) can re-run it when a toggle flips mid-drag — a toggle must update the COMMITTED live
+    /// delta, not just the rendered marker, or "recomputes immediately" would only be true visually.
+    /// Target role (§2.3) lands the grab point exactly on the currently-attracted feature, overriding
+    /// grid snap for this tick; otherwise falls back to ordinary grid-snapped delta.
+    /// <para/>
+    /// brief-snap-combobox-and-consistency.md R-cmb-4/5: gated on <see cref="_snapCandidateIsRealTarget"/>,
+    /// NOT merely on <c>_currentSnapCandidate is not null</c> — the owner-follow-up "marker stays
+    /// visible throughout a grab-role drag" fix made <see cref="_currentSnapCandidate"/> hold a
+    /// SYNTHETIC echo of the originally-grabbed feature (tracking the raw, unsnapped cursor) whenever
+    /// nothing real is nearby, so a candidate is non-null for the ENTIRE grab-role drag regardless of
+    /// whether anything is actually in range. Using that alone here made the absolute-position branch
+    /// win for the whole gesture, permanently defeating grid snap — geometry snap must override grid
+    /// snap only when it genuinely has a real feature to offer, never merely because the mode is
+    /// enabled. <see cref="_snapCandidateIsRealTarget"/> is true ONLY for a real
+    /// <see cref="LayoutSnapQuery.FindCandidates"/> hit, never for the synthetic marker-persistence
+    /// fallback, so the two concerns (what to DRAW vs. what to SNAP the position to) stay independent.</summary>
+    private void RecomputeMoveDelta(long px, long py, bool suspend)
+    {
+        long dx, dy;
+        if (_snapDragActive && !suspend && _snapCandidateIsRealTarget && _currentSnapCandidate is { } target)
+        {
+            dx = target.X - _moveAnchorX;
+            dy = target.Y - _moveAnchorY;
+        }
+        else
+        {
+            dx = LayoutSnapping.SnapValue(px - _moveAnchorX, Model.SnapDbu, suspend);
+            dy = LayoutSnapping.SnapValue(py - _moveAnchorY, Model.SnapDbu, suspend);
+        }
+        if (dx != _moveLiveDx || dy != _moveLiveDy) _moveHasMoved = true;
+        _moveLiveDx = dx; _moveLiveDy = dy;
+    }
+
     /// <summary>brief-L3a-followups.md §2/R-fix-2: moves whichever of shapes/instances are currently
     /// selected, TOGETHER, as one undo entry — a <see cref="CompositeCommand"/> of
     /// <see cref="Commands.Layout.MoveShapesCommand"/> and <see cref="Commands.Layout.MoveInstancesCommand"/>
@@ -1335,6 +1475,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             if (combined is not null) Execute(combined);
         }
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
+        _snapDragActive = false;
     }
 
     /// <summary>R-L1i-1, extended by R-fix-3: commit is just "settle on whatever the shared compute
@@ -1347,7 +1488,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         ComputeMarqueeSelection(releaseX, releaseY);
         ReplaceMixedSelection(_marqueePreview, _marqueeInstancePreview);
-        _cycleCache = null;
+        _cycleCache.Clear();
         _marqueePreview.Clear();
         _marqueeInstancePreview.Clear();
         _marqueeLastComputedCorner = null;
@@ -1390,7 +1531,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
         Execute(combined!);
         SetSelection([]);
-        _cycleCache = null;
+        _cycleCache.Clear();
     }
 
     /// <summary>§3 "Delete on a selected vertex" — blocked below 3 vertices for a closed shape, below
@@ -1614,14 +1755,18 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     /// <see cref="Tool.Select"/>; every drawing tool ignores it. <paramref name="zoomPxPerDbu"/> (R-lbl-2,
     /// docs/sonnet-briefs/brief-layout-label-fix-and-text-flatten.md) is the CURRENT device-pixels-
     /// per-DBU zoom, used only by the Label tool to note in the typing status hint when the label is
-    /// smaller than the current zoom can show — 0 (the default) skips that note.</summary>
-    public void OnPointerPressed(double wx, double wy, KeyModifiers mods, int clickCount = 1, long hitTolDbu = 0, double zoomPxPerDbu = 0)
+    /// smaller than the current zoom can show — 0 (the default) skips that note. <paramref
+    /// name="snapTolDbu"/> (docs/sonnet-briefs/brief-snap-distance-and-geometry-snap.md R-snp-15) is
+    /// geometry snap's own screen-pixel tolerance, already converted to DBU by the caller from the
+    /// CURRENT zoom — a deliberately separate constant from <paramref name="hitTolDbu"/>, never
+    /// cached, never derived from <c>SnapDbu</c>. 0 (the default) means "no geometry-snap query."</summary>
+    public void OnPointerPressed(double wx, double wy, KeyModifiers mods, int clickCount = 1, long hitTolDbu = 0, double zoomPxPerDbu = 0, long snapTolDbu = 0)
     {
         // L1f: a paste placement in progress takes priority over every other gesture — a click
         // commits it, regardless of the currently active drawing tool.
         if (_pastePlacementShapes is not null) { CommitPastePlacement(); return; }
 
-        if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0)); return; }
+        if (ActiveTool == Tool.Select) { HandleSelectPress(wx, wy, mods, Math.Max(hitTolDbu, 0), Math.Max(snapTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance) { CommitInstancePlacement(); return; }
 
@@ -1672,8 +1817,11 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     /// <summary><paramref name="pixelDbu"/>: the world-space size of one device pixel at the CURRENT
     /// zoom, in DBU (0 — the default — always recomputes; used only by the Select tool's marquee drag
-    /// to skip the O(shapes) recompute for sub-pixel pointer moves, per L1i's perf note).</summary>
-    public void OnPointerMoved(double wx, double wy, bool leftDown, KeyModifiers mods, long hitTolDbu = 0, long pixelDbu = 0)
+    /// to skip the O(shapes) recompute for sub-pixel pointer moves, per L1i's perf note). <paramref
+    /// name="snapTolDbu"/> is geometry snap's own screen-pixel tolerance, converted to DBU by the
+    /// caller from the CURRENT zoom (R-snp-15) — 0 (the default) disables the geometry-snap marker/
+    /// target query for this call.</summary>
+    public void OnPointerMoved(double wx, double wy, bool leftDown, KeyModifiers mods, long hitTolDbu = 0, long pixelDbu = 0, long snapTolDbu = 0)
     {
         if (_pastePlacementShapes is not null)
         {
@@ -1682,7 +1830,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
-        if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0)); return; }
+        if (ActiveTool == Tool.Select) { HandleSelectMove(wx, wy, leftDown, mods, Math.Max(hitTolDbu, 0), Math.Max(pixelDbu, 0), Math.Max(snapTolDbu, 0)); return; }
 
         if (ActiveTool == Tool.Instance)
         {
@@ -1748,6 +1896,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             return;
         }
 
+        // brief-snap-distance-and-geometry-snap.md — R-snp-1: F9 toggles this document's own snap
+        // distance on/off (AutoCAD's grid-snap toggle). R-snp-6: F3 and 's' both toggle geometry snap
+        // (confirmed free — no existing single-letter tool shortcut in this editor). None of these are
+        // gated on ActiveTool — they are view toggles, not tool state.
+        if (key == Key.F9) { ToggleSnapDbuEnabled(); return; }
+        if (key == Key.F3 || key == Key.S) { GeometrySnapEnabled = !GeometrySnapEnabled; return; }
+
         // Mirrors SymbolEditorViewModel.OnKeyDown's Escape contract exactly: any in-progress
         // operation (a non-Select tool being active counts as one) cancels and switches to Select;
         // only when genuinely idle ON the Select tool does Escape clear the selection instead.
@@ -1769,7 +1924,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                              || _handleDragKind != HandleDragKind.None
                              || _scaleDragKind != ScaleDragKind.None;
             if (hasActiveOp) { CancelDrawOp(); ActiveTool = Tool.Select; }
-            else { SetSelection([]); _cycleCache = null; }
+            else { SetSelection([]); _cycleCache.Clear(); }
             return;
         }
 
@@ -1822,6 +1977,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         CancelMarqueeIfActive(); // gate 7: leaves _selectedIndices untouched, clears the preview
         _selectDragKind  = SelectDragKind.None;
         _moveLiveDx = 0; _moveLiveDy = 0; _moveHasMoved = false;
+        _snapDragActive = false;
         ResetHandleDragState();
         ResetScaleDragState();
         CancelInstancePlacement();
@@ -2115,6 +2271,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             PendingPCellPlacement = _paletteDragGhostView is { } ghostView && _paletteDragPoint is { } pt
                 ? (ghostView, pt.X, pt.Y) : null,
             ShowScaleHandles = ShowScaleHandles,
+            SnapMarker = _currentSnapCandidate,
         };
     }
 

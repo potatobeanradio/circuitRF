@@ -184,6 +184,19 @@
                             <mi:MaterialIcon Kind="PinOutline" Width="16" Height="16"/>
                         </ToggleButton>
 
+                        <!-- Geometry snap toggles (docs/sonnet-briefs/brief-snap-distance-and-geometry-
+                             snap.md R-snp-6/7) — exactly two, per the brief's own guardrail against a
+                             per-feature-type settings thicket. F3/'s' also toggle the first; Alt
+                             suppresses (never enables) both while held. -->
+                        <ToggleButton IsChecked="{Binding ActiveViewModel.GeometrySnapEnabled}"
+                                      ToolTip.Tip="Geometry snap  (F3 / S)" Padding="6,3">
+                            <mi:MaterialIcon Kind="Magnet" Width="16" Height="16"/>
+                        </ToggleButton>
+                        <ToggleButton IsChecked="{Binding ActiveViewModel.IncludeIntersectionsEnabled}"
+                                      ToolTip.Tip="Snap to intersections" Padding="6,3">
+                            <mi:MaterialIcon Kind="VectorIntersection" Width="16" Height="16"/>
+                        </ToggleButton>
+
                         <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                                 Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
@@ -411,7 +424,18 @@
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Snap:"/>
-                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.SnapText}"/>
+                    <!-- R-snp-1/2/3: editable ladder + typed entry, bound to SnapDbu (never SnapText).
+                         IsEditable lets the user either pick a technology-relative preset or type any
+                         unit-suffixed value ("2.5mil"); commits on LostFocus/Enter, mirroring the
+                         staged-text idiom every other dimension field in this toolbar already uses. -->
+                    <ComboBox ItemsSource="{Binding ActiveViewModel.SnapLadderOptions}"
+                              IsEditable="True"
+                              Text="{Binding ActiveViewModel.SnapDistanceText, Mode=TwoWay}"
+                              FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"
+                              MinWidth="90"
+                              LostFocus="OnSnapDistanceCommit" KeyDown="OnSnapDistanceKeyDown"
+                              SelectionChanged="OnSnapDistanceSelectionChanged"
+                              ToolTip.Tip="Snap distance — F9 toggles on/off"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">

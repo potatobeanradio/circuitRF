@@ -114,6 +114,15 @@ public sealed class LayoutCanvas : Control
     /// rectangle move at all"). Used only to gate the marquee-preview recompute.</summary>
     private long OnePixelDbu() => _zoom > 0 ? Math.Max(1, (long)Math.Round(1.0 / _zoom)) : 1;
 
+    /// <summary>Geometry snap's own screen-pixel tolerance (docs/sonnet-briefs/
+    /// brief-snap-distance-and-geometry-snap.md R-snp-15) — a DELIBERATELY separate constant from
+    /// <see cref="SelectHitTolerancePixels"/>, converted to DBU HERE from the CURRENT zoom on every
+    /// call, same discipline as <see cref="HitTolDbu"/>. Slightly larger than the plain hit-test
+    /// tolerance so a marker is discoverable a little before the cursor is exactly on the feature.</summary>
+    private const double SnapHitTolerancePixels = 8.0;
+
+    private long SnapTolDbu() => _zoom > 0 ? (long)Math.Round(SnapHitTolerancePixels / _zoom) : 0;
+
     /// <summary>R-bmp-4: the current viewport's world-space width in DBU — a newly-placed bitmap's
     /// long edge is sized as ~25% of this, computed fresh per placement (never cached, DBU are
     /// nanometres so a stale width would be meaningless after any zoom/pan).</summary>
@@ -401,7 +410,7 @@ public sealed class LayoutCanvas : Control
             if ((e.KeyModifiers & KeyModifiers.Control) != 0)
             {
                 ContextMenuTarget = null; // L1-fix: no pending target -> the Opening handler cancels
-                _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu());
+                _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), 0, SnapTolDbu());
                 InvalidateVisual();
                 e.Handled = true;
                 return;
@@ -421,7 +430,7 @@ public sealed class LayoutCanvas : Control
         if (props.IsLeftButtonPressed && _viewModel is not null)
         {
             var (wx, wy) = ScreenToWorld(pos.X, pos.Y);
-            _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), _zoom);
+            _viewModel.OnPointerPressed(wx, wy, e.KeyModifiers, e.ClickCount, HitTolDbu(), _zoom, SnapTolDbu());
             InvalidateVisual();
         }
     }
@@ -986,7 +995,7 @@ public sealed class LayoutCanvas : Control
         CursorWorldChanged?.Invoke(this, (wx, wy));
 
         bool leftDown = e.GetCurrentPoint(this).Properties.IsLeftButtonPressed;
-        _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu());
+        _viewModel?.OnPointerMoved(wx, wy, leftDown, e.KeyModifiers, HitTolDbu(), OnePixelDbu(), SnapTolDbu());
         InvalidateVisual();
     }
 

@@ -3265,7 +3265,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void OnCellLayoutLiveViewChanged(string clayPath)
     {
         if (_layoutRegistry.TryGet(clayPath, out var liveVm) && liveVm is not null)
+        {
             LayoutRenderer.InvalidateCompiledGeometry(liveVm.Model);
+            // brief-snap-distance-and-geometry-snap.md R-snp-12's own seam — a pushed-in sub-cell's
+            // intrinsic feature index (cached, cell-local, keyed the same way) must invalidate on the
+            // identical live-refresh trigger the compiled-geometry cache already does.
+            LayoutSnapFeatureIndex.Invalidate(liveVm.Model);
+        }
 
         foreach (var doc in _openDocsByPath.Values.OfType<LayoutDocument>().Concat(_scratchLayouts))
             foreach (var (session, _) in doc.NavFrames)

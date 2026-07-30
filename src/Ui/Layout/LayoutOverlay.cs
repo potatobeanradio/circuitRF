@@ -78,4 +78,12 @@ public sealed record class LayoutOverlay
     /// Distinct from <see cref="PendingInstancePlacement"/> — there is no on-disk cell to resolve yet
     /// (R-L5-7: generated once, cached, never written to disk until the drop actually commits).</summary>
     public (LayoutView GhostView, long X, long Y)? PendingPCellPlacement { get; init; }
+
+    /// <summary>Geometry snap's top-priority candidate at the current cursor position (docs/sonnet-
+    /// briefs/brief-snap-distance-and-geometry-snap.md §2.5) — null whenever no candidate is within
+    /// tolerance, geometry snap is off, or the Alt modifier is suppressing it. Rendered as a fixed
+    /// screen-space glyph colored by <see cref="SnapCandidate.Layer"/> (R-snp-4); only ever the single
+    /// highest-priority candidate is shown, never the whole coincident stack (R-snp-9's cycling is a
+    /// click-time concern, not a rendering one).</summary>
+    public SnapCandidate? SnapMarker { get; init; }
 }

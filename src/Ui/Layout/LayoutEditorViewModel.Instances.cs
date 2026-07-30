@@ -76,7 +76,7 @@ public sealed partial class LayoutEditorViewModel
         _selectedInstanceIndices.Clear();
         _selectedInstanceIndices.AddRange(distinct);
 
-        if (clearOtherKind && _selectedIndices.Count > 0) { _selectedIndices.Clear(); _pickedVertexIndex = null; _cycleCache = null; }
+        if (clearOtherKind && _selectedIndices.Count > 0) { _selectedIndices.Clear(); _pickedVertexIndex = null; _cycleCache.Clear(); }
 
         SelectionStatusText = ComputeSelectionStatus();
         RebuildOverlay();
