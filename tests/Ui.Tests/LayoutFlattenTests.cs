@@ -22,14 +22,14 @@ public sealed class LayoutFlattenTests : IDisposable
     {
         _workspaceDir = Path.Combine(Path.GetTempPath(), "crfFlattenTest_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_workspaceDir);
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         LayoutTextOutline.TestOverrideTypeface = SKTypeface.Default;
     }
 
     public void Dispose()
     {
         LayoutTextOutline.TestOverrideTypeface = null;
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         if (Directory.Exists(_workspaceDir))
             Directory.Delete(_workspaceDir, recursive: true);
     }

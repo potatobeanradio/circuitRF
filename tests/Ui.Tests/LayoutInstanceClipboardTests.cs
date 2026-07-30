@@ -23,12 +23,12 @@ public sealed class LayoutInstanceClipboardTests : IDisposable
         // here so MakeVmAt/MakeVmAtNested documents resolve their workspace root to _workspaceDir,
         // exactly as a real open workspace's own .cws would provide.
         File.WriteAllText(Path.Combine(_workspaceDir, ".cws"), "{}");
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
     }
 
     public void Dispose()
     {
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         if (Directory.Exists(_workspaceDir))
             Directory.Delete(_workspaceDir, recursive: true);
     }
@@ -186,7 +186,7 @@ public sealed class LayoutInstanceClipboardTests : IDisposable
         }
         finally
         {
-            CellLayoutResolver.InvalidateAll();
+            CellLayoutResolver.InvalidateUnder(_workspaceDir);
             if (Directory.Exists(mirroredWorkspaceDir)) Directory.Delete(mirroredWorkspaceDir, recursive: true);
         }
     }

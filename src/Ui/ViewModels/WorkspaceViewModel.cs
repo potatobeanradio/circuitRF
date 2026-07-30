@@ -147,6 +147,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // deliberately to File-menu commands only; tree/Properties/Analyses routing is untouched.
     private IDockable? _focusedWindowDocument;
 
+    // True while a floating TOOL window (Properties, Analyses, Project Tree, Palette, Messages) has
+    // focus. Deliberately SEPARATE from _focusedWindowDocument rather than clearing it: R-dock-13 —
+    // a tool panel is not a document context, so "the active document" must keep meaning the last
+    // active DOCUMENT (Save stays enabled and targets it). What this flag governs is only the
+    // Close item, which reads "Close Workspace" for a tool window because a tool panel belongs to the
+    // workspace, not to a document of its own.
+    private bool _focusedWindowIsToolOnly;
+
     // Windows already wired for focus tracking (parallel to, but independent of, _wiredHostWindows).
     private readonly HashSet<Window> _focusTrackedWindows = [];
 
@@ -291,6 +299,22 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // and cleans up _scratchDocs/_openDocsByPath.
         _factory.CloseDockableConfirm = ConfirmCloseDockable;
         _factory.DockableClosed += (_, args) => { if (args.Dockable is not null) OnDockableClosed(args.Dockable); };
+
+        // A newly floated window needs its per-window wiring — focus tracking, undo key bindings, and
+        // the macOS menu attach. The only other trigger is OnDocumentDockPropertyChanged, which a TOOL
+        // tear-off never fires (it does not touch the DocumentDock), so a torn-off tool window used to
+        // get no Activated handler at all and therefore no macOS menu bar while it was key. Deferred
+        // one frame so the host window is fully shown before the scan looks for it.
+        _factory.WindowAdded += (_, _) =>
+        {
+            // A tear-off is immediately followed by a window DRAG, which runs Dock's
+            // WindowActivationHelper.ActivateAllWindows -> Window.SortWindowsByZOrder over
+            // factory.HostWindows. One closed window still in that collection throws
+            // ArgumentException there and takes the app down, so sweep before the drag can start.
+            _factory.PurgeClosedHostWindows();
+            Dispatcher.UIThread.Post(TryWireHostWindowsUndo,     DispatcherPriority.Background);
+            Dispatcher.UIThread.Post(TryWireWindowFocusTracking, DispatcherPriority.Background);
+        };
 
         // Autosave: periodic dirty-scratch serialization to the per-session recovery dir.
         _recovery = new RecoveryManager();
@@ -605,6 +629,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             SetActiveUndoTarget(null);
             _lastActiveSchematicDoc = null;
+            // A torn-off document belonging to the OLD workspace closes with it; a foreign one
+            // survives. Must run while CurrentWorkspacePath still names the workspace being left.
+            CloseFloatedDocumentsOwnedByWorkspace(CurrentWorkspacePath);
             _openDocsByPath.Clear();
             _scratchDocs.Clear();
             _scratchSymbols.Clear();
@@ -635,6 +662,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             PushRecent(cwsPath);
             Messages.Clear();
             Messages.Success($"New workspace '{result.Name}' created.");
+
+            // R-dock-9: hiding the dockers is a view preference, so it survives a workspace switch.
+            ReapplyCollapsedStateIfNeeded();
         }
         catch (Exception ex)
         {
@@ -718,7 +748,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             catch { ws = new CwsFile(); }
 
             ws.ColorSchemeName = ThemeService.Active.Name is "Default" ? null : ThemeService.Active.Name;
-            // DockLayout: Dock.Serializer not referenced in v1; field stays null until Dock.Serializer is added.
+
+            // Dock arrangement — OUR schema, never the docking library's serialized graph (R-dock-3).
+            // R-dock-9: while the dockers are collapsed this writes the UNDERLYING arrangement, so a
+            // workspace saved collapsed reopens EXPANDED with its real panel layout intact.
+            // Never fatal: a capture problem must not stop the .cws being written.
+            try
+            {
+                if (DockLayoutToPersist() is { } dockLayout)
+                    ws.DockLayout = Docking.DockLayoutSerialization.Write(dockLayout);
+            }
+            catch (Exception ex)
+            {
+                Messages.Warning($"Window layout was not saved: {ex.Message}");
+            }
 
             if (_factory.ProjectTreeTool?.FilterState is { } fs)
             {
@@ -933,6 +976,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
+        // A torn-off document belonging to the OLD workspace closes with it; a foreign one survives.
+        // Must run while CurrentWorkspacePath still names the workspace being left — hence before the
+        // reassignment below. Without it the OS window outlives its workspace and reopening that
+        // workspace shows the same file in two windows.
+        CloseFloatedDocumentsOwnedByWorkspace(CurrentWorkspacePath);
         _openDocsByPath.Clear();
         _scratchDocs.Clear();
         _scratchSymbols.Clear();
@@ -973,11 +1021,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         DeleteGeneratedCellsFolder(cwsPath);
         RegenerateAllGeneratedCells(cwsPath);
 
-        RestoreOpenDocuments(cws, workspaceDir);
+        // The dock arrangement is PARSED here but applied after the documents are open, so the
+        // rebuilt shell re-hosts the populated DocumentDock rather than an empty one. Its document
+        // order feeds RestoreOpenDocuments — R-dock-2: the layout supplies ARRANGEMENT, while
+        // cws.OpenDocuments stays authoritative for MEMBERSHIP.
+        var dockLayoutRead = ReadDockLayout(cws);
+
+        RestoreOpenDocuments(cws, workspaceDir, dockLayoutRead.Layout);
 
         PushRecent(cwsPath);
         Messages.Clear();
         Messages.Info("Opened", cwsPath);
+
+        ApplyRestoredDockLayout(dockLayoutRead);
 
         // R-res-11 — migrate any results/<key>/run.npy directories left from the earlier layout to
         // the flat results/<key>.npy one, reporting what moved. Cheap no-op on an already-flat workspace.
@@ -989,14 +1045,27 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Removes the welcome stub first (so the restored tabs are the only content).
     /// No-op when <see cref="CwsFile.OpenDocuments"/> is null or empty.
     /// </summary>
-    private void RestoreOpenDocuments(CwsFile cws, string workspaceDir)
+    private void RestoreOpenDocuments(CwsFile cws, string workspaceDir, Docking.CwsDockLayout? dockLayout = null)
     {
         if (cws.OpenDocuments is not { Count: > 0 } docs) return;
 
         _factory.RemoveWelcomeStub();
 
-        foreach (var entry in docs.OrderBy(d => d.TabOrder))
+        // R-dock-2 — the layout records ARRANGEMENT, the open list records MEMBERSHIP, and when the
+        // two disagree the open list wins. Opening in the reconciled order is what actually produces
+        // the saved tab order (note that OpenDocuments[].TabOrder is written from a dictionary walk,
+        // not from the real tab strip, so it is a membership record with an order-shaped field —
+        // the layout block is the first thing in .cws that records true tab order).
+        var byKey  = docs.ToDictionary(d => d.Path, d => d, StringComparer.OrdinalIgnoreCase);
+        var opened = docs.OrderBy(d => d.TabOrder).Select(d => d.Path).ToList();
+        var order  = dockLayout is null
+            ? opened
+            : Docking.DockLayoutSerialization.ReconcileDocumentOrder(dockLayout.DocumentOrder, opened);
+
+        foreach (var key in order)
         {
+            if (!byKey.TryGetValue(key, out var entry)) continue;
+
             var absPath = Path.IsPathRooted(entry.Path)
                 ? entry.Path
                 : Path.GetFullPath(Path.Combine(workspaceDir, entry.Path));
@@ -1024,8 +1093,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             }
         }
 
-        // Restore the previously active tab.
-        if (cws.ActiveDocumentPath is { } activePath)
+        // Restore the previously active tab. The layout's own record wins when it names a document
+        // that really is open; otherwise .cws's ActiveDocumentPath (R-dock-2 again — arrangement
+        // from the layout, membership from the open list).
+        var activePath = dockLayout?.ActiveDocument is { } fromLayout && byKey.ContainsKey(fromLayout)
+            ? fromLayout
+            : cws.ActiveDocumentPath;
+
+        if (activePath is not null)
         {
             var absActive = Path.IsPathRooted(activePath)
                 ? activePath
@@ -1202,21 +1277,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     [RelayCommand(CanExecute = nameof(CanCloseWorkspaceOrWindow))]
     private async Task CloseWorkspaceOrWindow()
     {
-        if (_focusedWindowDocument is { } doc)
+        if (ClosesASingleDocumentWindow)
         {
-            _factory.CloseDockable(doc);
+            _factory.CloseDockable(_focusedWindowDocument!);
             return;
         }
         await CloseWorkspace();
     }
 
-    private bool CanCloseWorkspaceOrWindow() => _focusedWindowDocument is not null || CanCloseWorkspace();
+    private bool CanCloseWorkspaceOrWindow() => ClosesASingleDocumentWindow || CanCloseWorkspace();
 
-    /// <summary>The File menu's trailing item label — "Close Window" while a torn-off document window
-    /// has focus, "Close Workspace" otherwise. Refreshed alongside every other R-menu-4 enablement
-    /// signal in <see cref="RaiseFileMenuEnablementChanged"/>.</summary>
+    /// <summary>
+    /// True only when this command means "close the one torn-off DOCUMENT in front of me".
+    ///
+    /// <para>A floating TOOL window is excluded on the owner's own call: a tool panel is associated
+    /// with the workspace, not with a document, so its File menu reads <b>Close Workspace</b>. Note
+    /// this deliberately does NOT clear <see cref="_focusedWindowDocument"/> — R-dock-13 keeps "the
+    /// active document" meaning the last active DOCUMENT, so Save and Save-As stay enabled and act on
+    /// it while a tool panel has focus.</para>
+    /// </summary>
+    private bool ClosesASingleDocumentWindow =>
+        !_focusedWindowIsToolOnly && _focusedWindowDocument is not null;
+
+    /// <summary>The File menu's trailing item label — "Close Window" while a torn-off DOCUMENT window
+    /// has focus, "Close Workspace" otherwise (including while a floating tool panel has focus).
+    /// Refreshed alongside every other R-menu-4 enablement signal in
+    /// <see cref="RaiseFileMenuEnablementChanged"/>.</summary>
     public string CloseWorkspaceOrWindowHeader
-        => _focusedWindowDocument is not null ? "Close Window" : "Close Workspace";
+        => ClosesASingleDocumentWindow ? "Close Window" : "Close Workspace";
 
     /// <summary>
     /// Reverts to the no-workspace state (blank Dock layout, no open documents).
@@ -1251,11 +1339,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
 
-        // Split every tracked MATERIALIZED document by docked-vs-floated; only the docked ones close.
+        // Split every tracked MATERIALIZED document by docked-vs-floated; the docked ones close, and
+        // so do the floated ones that BELONG to this workspace (see
+        // CloseFloatedDocumentsOwnedByWorkspace — a foreign torn-off document still survives).
         var stillOpen = new List<IDockable>();
         foreach (var dockable in _openDocsByPath.Values.ToList())
         {
-            if (IsDockableDocked(dockable))
+            if (IsDockableDocked(dockable) || FloatedDocumentClosesWithWorkspace(dockable))
             {
                 _factory.ForceCloseDockable(dockable);
                 // Mirrors RemoveCellAsync/RenameCellAsync's own established pattern: retire the shared
@@ -1328,6 +1418,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         Messages.Clear();
         Messages.Info("Workspace closed.");
+
+        // R-dock-9: the collapsed toggle is a view preference and survives closing a workspace.
+        ReapplyCollapsedStateIfNeeded();
     }
 
     /// <summary>Empty the Recent Workspaces list and save.</summary>
@@ -1548,11 +1641,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         SubscribeToFilterState();
         SubscribeToTreeSelection();
+
+        // Resetting the layout to the default means showing the panels — leaving the collapsed
+        // toggle armed here would produce a "reset" that still hides everything.
+        DockersCollapsed   = false;
+        _preCollapseLayout = null;
+
         Messages.Info("Layout reset to default.");
     }
 
     [RelayCommand] private void ZoomToFit()        { Messages.Info("Zoom to Fit: not yet implemented (6c)."); }
-    [RelayCommand] private void HideShowDockers()  { Messages.Info("Hide/Show Dockers: use Dock title-bar controls to float/minimize regions."); }
+    // HideShowDockers lives in WorkspaceViewModel.Docking.cs — it is a real full-canvas toggle now.
     [RelayCommand] private void FitWindowsToFrame() { Messages.Info("Fit Windows to Frame: not yet implemented."); }
 
     [RelayCommand]
@@ -5085,7 +5184,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 window.Activated += (_, _) =>
                 {
-                    _focusedWindowDocument = null;
+                    _focusedWindowDocument   = null;
+                    _focusedWindowIsToolOnly = false;
                     RaiseFileMenuEnablementChanged();
                 };
                 // The shell is typically already the active window at app-startup wiring time; this
@@ -5093,7 +5193,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // too, even though in practice a torn-off window is what actually races the scan.
                 if (window.IsActive)
                 {
-                    _focusedWindowDocument = null;
+                    _focusedWindowDocument   = null;
+                    _focusedWindowIsToolOnly = false;
                     RaiseFileMenuEnablementChanged();
                 }
                 continue;
@@ -5106,22 +5207,49 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 var doc = FindAnyDocumentInWindow(window);
                 _focusTrackedWindowDocs[window] = doc;
+
+                // EVERY floated window needs the macOS menu attached, not only one hosting a document.
+                // On macOS the menu bar's contents follow the key window, and a window with no menu of
+                // its own shows only the bare app menu — the owner-reported symptom for a floating
+                // TOOL panel. Attaching the SAME NativeMenu instance (never a second, hand-built copy)
+                // is what already fixes this for torn-off document windows; the only bug was the
+                // `doc is not null` gate around it.
+                if (shellWindow is not null)
+                    AttachSharedNativeMenuIfMacOS(shellWindow, window);
+
                 if (doc is not null)
                 {
-                    _focusedWindowDocument = doc;
+                    _focusedWindowDocument   = doc;
+                    _focusedWindowIsToolOnly = false;
                     RaiseFileMenuEnablementChanged();
-                    if (shellWindow is not null)
-                        AttachSharedNativeMenuIfMacOS(shellWindow, window);
+                }
+                else if (WindowFloatsATool(window))
+                {
+                    // R-dock-13: a tool panel is NOT a document context, so _focusedWindowDocument is
+                    // left alone and Save keeps targeting the last active document. Only the Close
+                    // item changes: a tool panel belongs to the workspace, so it reads
+                    // "Close Workspace".
+                    _focusedWindowIsToolOnly = true;
+                    RaiseFileMenuEnablementChanged();
                 }
             }
             window.Activated += (_, _) => ApplyFocusedDocument();
             window.Closed += (_, _) =>
             {
                 _focusTrackedWindows.Remove(window);
-                if (_focusTrackedWindowDocs.Remove(window, out var closedDoc) &&
-                    closedDoc is not null && ReferenceEquals(_focusedWindowDocument, closedDoc))
+                var hadDoc = _focusTrackedWindowDocs.Remove(window, out var closedDoc);
+
+                if (hadDoc && closedDoc is not null && ReferenceEquals(_focusedWindowDocument, closedDoc))
                 {
-                    _focusedWindowDocument = null;
+                    _focusedWindowDocument   = null;
+                    _focusedWindowIsToolOnly = false;
+                    RaiseFileMenuEnablementChanged();
+                }
+                else if (_focusedWindowIsToolOnly)
+                {
+                    // A tool float closing (or being torn down by a layout rebuild) must not leave the
+                    // Close item stuck on the workspace variant for whatever gets focus next.
+                    _focusedWindowIsToolOnly = false;
                     RaiseFileMenuEnablementChanged();
                 }
             };
@@ -5164,6 +5292,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <summary>Finds the first non-<see cref="ITool"/> dockable reachable from a window's
     /// DataContext — mirrors <see cref="FindUndoDocInWindow"/>'s tree-walk shape exactly, generalized
     /// from "the floated document that supports undo" to "the floated document, of any kind."</summary>
+    /// <summary>
+    /// True when a floated window's own layout contains a tool panel — i.e. it is a torn-off
+    /// Properties/Analyses/Project Tree/Palette/Messages window rather than a document one. Uses the
+    /// SAME predicate the factory uses to decide owner mode and teardown, so "is this a tool window"
+    /// has one answer across the app.
+    /// </summary>
+    internal static bool WindowFloatsATool(Window window) =>
+        window.DataContext is IDockable d && Dock.CircuitRfDockFactory.ContainsTool(d);
+
     internal static IDockable? FindAnyDocumentInWindow(Window window)
     {
         if (window.DataContext is IDock dock) return FindAnyDocumentInDock(dock);
@@ -5765,17 +5902,25 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <summary>
     /// True when any open document has unsaved content. brief-foreign-documents.md R-fgn-2/R-fgn-5:
-    /// <paramref name="includeFloated"/> is false for a WORKSPACE SWITCH/CLOSE check — a torn-off
-    /// document survives the switch untouched, so its dirty state has nothing to warn about there
-    /// ("a dirty torn-off document does not prompt on switch; it stays open and dirty"); it stays true
-    /// (the default) for the QUIT prompt and every other caller, since quitting the app really would
-    /// discard a dirty foreign document's unsaved work if nobody was asked. An orphaned dirty session
-    /// (no open document references it at all — nothing survives to keep it alive) always counts,
-    /// regardless of <paramref name="includeFloated"/>.
+    /// <paramref name="includeFloated"/> is false for a WORKSPACE SWITCH/CLOSE check, and now means
+    /// "skip only the torn-off documents that will SURVIVE that switch" — i.e. the foreign ones.
+    ///
+    /// <para>A torn-off document whose file lives inside the workspace being left is closed by the
+    /// switch (see <see cref="CloseFloatedDocumentsOwnedByWorkspace"/>), so it must be counted here:
+    /// anything the switch will CLOSE has to be something the switch first OFFERS TO SAVE, or unsaved
+    /// work vanishes silently. A FOREIGN torn-off document survives untouched and so still has nothing
+    /// to warn about at a switch.</para>
+    ///
+    /// <para>It stays true (the default) for the QUIT prompt and every other caller, since quitting the
+    /// app really would discard a dirty foreign document's unsaved work if nobody was asked. An
+    /// orphaned dirty session (no open document references it at all — nothing survives to keep it
+    /// alive) always counts, regardless of <paramref name="includeFloated"/>.</para>
     /// </summary>
     public bool HasAnyDirtyWork(bool includeFloated = true)
     {
-        bool Keep(IDockable d) => includeFloated || IsDockableDocked(d);
+        // A floated document that the workspace switch is about to CLOSE counts as if it were docked —
+        // see the note above. Only a foreign float (which survives) is skipped.
+        bool Keep(IDockable d) => includeFloated || IsDockableDocked(d) || FloatedDocumentClosesWithWorkspace(d);
 
         return _scratchDocs.Any(d => d.IsDirty && Keep(d))
             || _openDocsByPath.Values.OfType<SchematicDocument>().Any(d => d.IsDirty && Keep(d))
@@ -5794,12 +5939,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Shows Save / Don't Save / Cancel for dirty work before a close/quit/open action.
     /// Returns true when it's safe to proceed (saved or discarded), false when cancelled.
     /// <paramref name="includeFloated"/> mirrors <see cref="HasAnyDirtyWork"/> exactly — pass false
-    /// from a workspace switch/close caller so a surviving torn-off document is neither counted nor
-    /// swept into "Save All" here (R-fgn-2); leave it true (the default) for quit.
+    /// from a workspace switch/close caller so a SURVIVING (foreign) torn-off document is neither
+    /// counted nor swept into "Save All" here (R-fgn-2), while one that the switch will actually close
+    /// is; leave it true (the default) for quit.
     /// </summary>
     public async Task<bool> PromptSaveBeforeClose(Window owner, string context = "closing", bool includeFloated = true)
     {
-        bool Keep(IDockable d) => includeFloated || IsDockableDocked(d);
+        // A floated document that the workspace switch is about to CLOSE counts as if it were docked —
+        // see the note above. Only a foreign float (which survives) is skipped.
+        bool Keep(IDockable d) => includeFloated || IsDockableDocked(d) || FloatedDocumentClosesWithWorkspace(d);
 
         var dirtyScratch = _scratchDocs.Where(d => d.IsDirty && Keep(d)).ToList();
         var dirtyMat     = _openDocsByPath.Values

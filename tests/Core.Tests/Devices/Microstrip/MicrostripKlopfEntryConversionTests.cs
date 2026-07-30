@@ -11,6 +11,7 @@ namespace CircuitRF.Core.Tests.Devices.Microstrip;
 /// re-deriving it (the missing affordance itself was the owner's follow-up report after the
 /// taper-family brief shipped).
 /// </summary>
+[Collection(MicrostripKlopfCacheCollection.Name)]
 public class MicrostripKlopfEntryConversionTests
 {
     private const double HMeters = 1.6e-3;

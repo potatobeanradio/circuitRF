@@ -18,6 +18,7 @@ namespace CircuitRF.Core.Tests.Devices.Microstrip;
 /// and its two public counters are test/diagnostic-only instrumentation added specifically so these
 /// gates can assert counts rather than timing, per the brief's own §5 gate 3/8 instruction.
 /// </summary>
+[Collection(MicrostripKlopfCacheCollection.Name)]
 public class MklopfPerformanceAndMessagesTests
 {
     private const double HMeters = 1.6e-3;

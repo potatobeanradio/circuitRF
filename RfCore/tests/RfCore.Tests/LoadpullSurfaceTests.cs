@@ -119,7 +119,7 @@ public class LoadpullSurfaceTests
     // Regression: a Rect (Z-plane) contour must resample over the FULL measured data extent so
     // iso-lines render wherever data exists — not only within RecommendedBox's MXP/MXE zoom (which
     // for a constant-metric contour can sit in a different load region, leaving the user's view empty).
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MeasuredBox_EnclosesRecommendedBox_AndResampleCoversExtent()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -142,7 +142,7 @@ public class LoadpullSurfaceTests
     // Regression: MXP/MXE recommended terminations are COMPRESSION-based (P-3dB), independent of the
     // contour's own metric/constraint — so "Efficiency at Constant Pout" reuses the same MXP/MXE (and
     // RecommendedBox zoom) as the power contour, instead of a constant-Pout MXE in a wrong load region.
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void RecommendedMxx_IsCompressionBased_IndependentOfFitConstraint()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -170,7 +170,7 @@ public class LoadpullSurfaceTests
 
     // ── 7.4b-1: Compression preprocessing ────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Compression_GridPointCount_Is145()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -179,7 +179,7 @@ public class LoadpullSurfaceTests
         Assert.Equal(145, sfc.GridPointCount(0));
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Compression_MedianIsPositive()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -190,7 +190,7 @@ public class LoadpullSurfaceTests
         Assert.True(med < 30,         $"MedianCompression should be physically < 30 dB, got {med}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Compression_RecommendedSettingIsKnownValue()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -202,7 +202,7 @@ public class LoadpullSurfaceTests
         Assert.Contains(rec, allowed);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Compression_CurveStartsAtZeroAndIncreases_ForOnePoint()
     {
         // Spot-check: use the reduce call as a proxy — if compression
@@ -226,7 +226,7 @@ public class LoadpullSurfaceTests
 
     // ── 7.4b-2: Scatter reduction + RBF fit + cache ───────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Reduce_PoutAt3dBCompression_ReturnsMostlyFiniteCoords()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -245,7 +245,7 @@ public class LoadpullSurfaceTests
                 $"Γ coord outside unit disk: {g.Magnitude:F4}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Fit_BuildsRbfWithNodeCountNearGridCount()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -259,7 +259,7 @@ public class LoadpullSurfaceTests
         Assert.True(fit.Rbf.NodeCount <= 145, $"Expected ≤145 nodes, got {fit.Rbf.NodeCount}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Fit_SecondCallReturnsCachedInstance()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -273,7 +273,7 @@ public class LoadpullSurfaceTests
         Assert.Same(fit1, fit2);  // exact same reference from cache
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Fit_DifferentSmoothProducesNewFit()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -288,7 +288,7 @@ public class LoadpullSurfaceTests
         Assert.NotSame(fit1, fit2);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Fit_DifferentConstraintValueProducesNewFit()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -304,7 +304,7 @@ public class LoadpullSurfaceTests
 
     // ── 7.4h-1a: epsilon cache ───────────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Fit_DifferentEpsilonProducesDistinctCacheEntry()
     {
         var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -321,7 +321,7 @@ public class LoadpullSurfaceTests
         Assert.Null(fitAuto!.Epsilon);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Fit_SameEpsilonReturnsCachedInstance()
     {
         var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -336,7 +336,7 @@ public class LoadpullSurfaceTests
 
     // ── 7.4b-3: Resample + MXP/MXE + view-box ───────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MaxPower_MeasuredGammaInsideUnitDisk()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -349,7 +349,7 @@ public class LoadpullSurfaceTests
             $"|Γ_mxp| = {mxp.Measured.Magnitude:F4} should be ≤ 1");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MaxPower_InterpolatedNearMeasured()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -363,7 +363,7 @@ public class LoadpullSurfaceTests
         Assert.True(dist < 0.5, $"MXP interpolated far from measured: Δ={dist:F4}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void RecommendedBox_IsFiniteAndContainsMXP()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -392,7 +392,7 @@ public class LoadpullSurfaceTests
         }
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Resample_50x50GridMaxNearMxpValue()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -414,7 +414,7 @@ public class LoadpullSurfaceTests
             $"Grid max should be positive finite Pout (W), got {gridMax}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Resample_GammaDisk_OutOfDiskCellsAreNaN()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -436,7 +436,7 @@ public class LoadpullSurfaceTests
         Assert.True(nNaN    > 0, "Expected some NaN cells outside Γ-disk");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Resample_ValuesPhysicallyPlausible()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -454,7 +454,7 @@ public class LoadpullSurfaceTests
 
     // ── Multi-freq correctness ─────────────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MultiFreq_SplFile_ThreeFrequencies()
     {
         var ds  = SplReader.ReadSpl(SplFile("GaN_FET_1p6_mm_3_Freq.spl"));
@@ -463,7 +463,7 @@ public class LoadpullSurfaceTests
         Assert.Equal(3, sfc.Frequencies.Count);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MultiFreq_GridPointCountCorrectPerFreq()
     {
         var ds  = SplReader.ReadSpl(SplFile("GaN_FET_1p6_mm_3_Freq.spl"));
@@ -476,7 +476,7 @@ public class LoadpullSurfaceTests
         }
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MultiFreq_CompressionSanity()
     {
         var ds  = SplReader.ReadSpl(SplFile("GaN_FET_1p6_mm_3_Freq.spl"));
@@ -490,7 +490,7 @@ public class LoadpullSurfaceTests
         }
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MultiFreq_FitBuildsSeparateCachePerFreq()
     {
         var ds  = SplReader.ReadSpl(SplFile("GaN_FET_1p6_mm_3_Freq.spl"));
@@ -507,7 +507,7 @@ public class LoadpullSurfaceTests
 
     // ── .lpcwave source (origin-blind) ────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveSource_ConstructsSuccessfully()
     {
         var ds  = LpcwaveReader.ReadLpcwave(LpwFile("4x150_new_wavecal_24012020.lpcwave"));
@@ -517,7 +517,7 @@ public class LoadpullSurfaceTests
         Assert.True(sfc.GridPointCount(0) > 0);
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveSource_CompressionPreprocessing_Valid()
     {
         var ds  = LpcwaveReader.ReadLpcwave(LpwFile("4x150_new_wavecal_24012020.lpcwave"));
@@ -528,7 +528,7 @@ public class LoadpullSurfaceTests
         Assert.True(med < 30,  $"lpcwave MedianCompression should be < 30 dB, got {med}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveSource_ReduceReturnsCoords()
     {
         var ds  = LpcwaveReader.ReadLpcwave(LpwFile("4x150_new_wavecal_24012020.lpcwave"));
@@ -542,7 +542,7 @@ public class LoadpullSurfaceTests
             "Expected ≥1 scatter coord from lpcwave at recommended compression");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MaxEfficiency_DifferentKernels_ProduceDifferentInterpolatedPeak()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -564,7 +564,7 @@ public class LoadpullSurfaceTests
 
     // ── 7.5a: summary-table accessors ────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MetricAtCoord_Interp_EqualsSurfaceEval()
     {
         var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -584,7 +584,7 @@ public class LoadpullSurfaceTests
         Assert.Equal(fromFit, fromAccessor);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MetricAtCoord_Nearest_ReturnsNodeValue()
     {
         var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -605,7 +605,7 @@ public class LoadpullSurfaceTests
         Assert.True(isNodeValue, $"MetricAtCoord nearest={result} is not any measured node value");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MetricAtCoord_AbsentMetric_ReturnsNaN()
     {
         var ds         = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -618,7 +618,7 @@ public class LoadpullSurfaceTests
         Assert.True(double.IsNaN(result), $"Expected NaN for absent metric, got {result}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void OperatingPoint_AbsentCube_ReturnsNull()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -627,7 +627,7 @@ public class LoadpullSurfaceTests
         Assert.Null(sfc.OperatingPoint(0, "NopeCube"));
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void OperatingPoint_PresentCube_ReturnsFiniteOrAbsent()
     {
         // BiasVLoad is mapped from VDD; present in some .spl files, absent in others.
@@ -641,7 +641,7 @@ public class LoadpullSurfaceTests
         // else: cube absent in this fixture — presence-tolerant, no assertion needed
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void SourceZ_PresentAfterImport_ReturnsFiniteValue()
     {
         // After 7.5g, gamma_src1 is captured from the fixture → ZSource cube added → SourceZ is finite.

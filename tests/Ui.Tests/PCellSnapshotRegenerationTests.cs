@@ -24,12 +24,12 @@ public sealed class PCellSnapshotRegenerationTests : IDisposable
         _root = Path.Combine(Path.GetTempPath(), "crf-pcell-snapshot-test-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_root);
         File.WriteAllText(Path.Combine(_root, ".cws"), "{}");
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_root);
     }
 
     public void Dispose()
     {
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_root);
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
     }
 
@@ -101,7 +101,7 @@ public sealed class PCellSnapshotRegenerationTests : IDisposable
 
         // ── "Open": reload each layout FROM DISK (no live override survives a real close) and
         //    regenerate — gate 6/7's second half ────────────────────────────────────────────────────
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_root);
         GeneratedCellsLifecycle.RegenerateAll(_root, _ => null);
 
         Assert.True(Directory.Exists(genRoot));

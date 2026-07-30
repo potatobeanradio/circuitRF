@@ -9,6 +9,7 @@ namespace CircuitRF.Core.Tests.Devices.Microstrip;
 
 /// <summary>Gates for brief-mtaper-mklopf.md §2-3 — MKlopf's electrical model, entry-route
 /// resolution, and the Offset=0/continuity checks (§3.4).</summary>
+[Collection(MicrostripKlopfCacheCollection.Name)]
 public class MicrostripKlopfModelTests
 {
     private static ElaboratedComponent MakeEc(ComponentModel model, string type, int[] nodes)

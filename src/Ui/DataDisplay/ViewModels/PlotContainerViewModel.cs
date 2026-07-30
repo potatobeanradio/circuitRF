@@ -495,14 +495,17 @@ public partial class PlotContainerViewModel : ViewModelBase
                 bool hasCustomY2 = plot.CustomY2LabelOn;
 
                 // Show filename prefix when settings force it, or when multiple SNPs are loaded.
-                // Count LOADED sources, not SNP-backed ones: a simulated run has no SNP by design,
-                // so the old test saw "0 sources" for any number of simulation results.
+                // "Show the source prefix" is a LIBRARY-level convention: more than one source
+                // loaded (or the setting forcing it). It must reach ComputeMinimalLabels — the
+                // AutoLabel it produces takes priority over the legacy ShowFilePrefix fallback
+                // below, so passing only AlwaysDisplayDataSourcePrefix silently dropped the
+                // "multiple sources loaded" half: a plot holding ONE trace saw a constant source
+                // and dropped the prefix even with several sources loaded.
                 bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
-                    (Library?.Entries.Count(e => !e.IsBroken) ?? 0) > 1);
+                    Library?.HasMultipleSources ?? false);
 
                 // Compute minimal labels over all traces in the plot.
-                bool alwaysSource = AppSettingsViewModel.Instance.AlwaysDisplayDataSourcePrefix;
-                var  allLabels    = TraceLabeler.ComputeMinimalLabels(plot.Traces, alwaysSource,
+                var allLabels = TraceLabeler.ComputeMinimalLabels(plot.Traces, showFilePrefix,
                     aliasFor: t => Library?.AliasFor(t.EffectiveSourcePath));
                 var  labelMap     = new Dictionary<Trace, string>();
                 for (int i = 0; i < plot.Traces.Count; i++)

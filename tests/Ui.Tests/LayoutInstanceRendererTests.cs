@@ -22,7 +22,7 @@ public sealed class LayoutInstanceRendererTests : IDisposable
     {
         _workspaceDir = Path.Combine(Path.GetTempPath(), "crfInstRenderTest_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_workspaceDir);
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         // The broken-instance placeholder draws a text label via LayoutTextOutline.ResolveTypeface,
         // which cannot load SkiaFonts.PlexRegular without a live Avalonia app host — see that type's
         // own TestOverrideTypeface seam (already established by the L1-era label tests).
@@ -32,7 +32,7 @@ public sealed class LayoutInstanceRendererTests : IDisposable
     public void Dispose()
     {
         LayoutTextOutline.TestOverrideTypeface = null;
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         if (Directory.Exists(_workspaceDir))
             Directory.Delete(_workspaceDir, recursive: true);
     }

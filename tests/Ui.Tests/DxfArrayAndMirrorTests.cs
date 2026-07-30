@@ -23,14 +23,16 @@ public sealed class DxfArrayAndMirrorTests : IDisposable
     {
         _originalDir = Directory.CreateTempSubdirectory("dxf-array-mirror-orig-").FullName;
         _importedDir = Directory.CreateTempSubdirectory("dxf-array-mirror-import-").FullName;
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_originalDir);
+        CellLayoutResolver.InvalidateUnder(_importedDir);
         LayoutTextOutline.TestOverrideTypeface = SKTypeface.Default;
     }
 
     public void Dispose()
     {
         LayoutTextOutline.TestOverrideTypeface = null;
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_originalDir);
+        CellLayoutResolver.InvalidateUnder(_importedDir);
         Directory.Delete(_originalDir, recursive: true);
         Directory.Delete(_importedDir, recursive: true);
     }

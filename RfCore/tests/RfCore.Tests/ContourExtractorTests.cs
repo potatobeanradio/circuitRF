@@ -140,7 +140,7 @@ public class ContourExtractorTests
 
     // ── 7.4d-1c: real loadpull grid ───────────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void RealGrid_SaneLevelsAndCounts()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -158,7 +158,7 @@ public class ContourExtractorTests
             $"LevelsBetween(5) should return 5 levels, got {levels.Levels.Length}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void RealGrid_OpenContoursAtDiskBoundary()
     {
         // Resample over full ±1 box so contours hit the NaN-disk boundary
@@ -178,7 +178,7 @@ public class ContourExtractorTests
             $"Expected ≥1 open polyline from levels-between-10 where contours hit the Γ-disk NaN boundary (got {polylines.Count} total, all closed)");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void RealGrid_AllPointsWithinBounds()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));

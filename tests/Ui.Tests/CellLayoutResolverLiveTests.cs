@@ -19,12 +19,12 @@ public sealed class CellLayoutResolverLiveTests : IDisposable
     {
         _workspaceDir = Path.Combine(Path.GetTempPath(), "crfCellLayoutLiveTest_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_workspaceDir);
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
     }
 
     public void Dispose()
     {
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         if (Directory.Exists(_workspaceDir))
             Directory.Delete(_workspaceDir, recursive: true);
     }
@@ -93,7 +93,16 @@ public sealed class CellLayoutResolverLiveTests : IDisposable
         Assert.Equal(2, firedPaths.Count);
         Assert.All(firedPaths, p => Assert.Equal(Path.GetFullPath(clayPath), p, ignoreCase: true));
 
-        void OnChanged(string path) => firedPaths.Add(path);
+        // LiveViewChanged is a PROCESS-WIDE static event, so this handler also hears every other
+        // concurrently-running test class's notifications. Counting only our OWN cell's path is what
+        // makes "fired exactly twice" a statement about THIS test rather than about whatever else
+        // happened to run at the same time — the assertion is unchanged, only its input is now
+        // actually ours.
+        void OnChanged(string path)
+        {
+            if (string.Equals(path, Path.GetFullPath(clayPath), StringComparison.OrdinalIgnoreCase))
+                firedPaths.Add(path);
+        }
     }
 
     [Fact]
@@ -117,7 +126,14 @@ public sealed class CellLayoutResolverLiveTests : IDisposable
         finally { CellLayoutResolver.LiveViewChanged -= OnChanged; }
         Assert.Equal(0, fireCount);
 
-        void OnChanged(string path) => fireCount++;
+        // Same reason as the handler above: LiveViewChanged is process-wide, so an unfiltered counter
+        // here would be asserting that NO OTHER test class fired an event during this window —
+        // which is not what this test is about, and is not true under parallel execution.
+        void OnChanged(string path)
+        {
+            if (string.Equals(path, Path.GetFullPath(clayPath), StringComparison.OrdinalIgnoreCase))
+                fireCount++;
+        }
     }
 
     [Fact]
@@ -150,7 +166,7 @@ public sealed class CellLayoutResolverLiveTests : IDisposable
         CellLayoutResolver.SetLive(pathA, MakeView());
         CellLayoutResolver.SetLive(pathB, MakeView());
 
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
 
         Assert.False(CellLayoutResolver.HasLiveOverride(pathA));
         Assert.False(CellLayoutResolver.HasLiveOverride(pathB));

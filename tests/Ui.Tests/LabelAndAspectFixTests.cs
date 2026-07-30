@@ -9,6 +9,8 @@
 //  3. S/Y/Z port axes read positionally — "S(1,2)", not "S(i=1,j=2)".
 // ================================================================
 
+using System;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using CircuitRF.Ui.DataDisplay;
@@ -167,5 +169,117 @@ public sealed class LabelAndAspectFixTests
     {
         var t = new Trace(S2("/x/amp.s2p"), MatrixType.S, 0, 1, DependentVarFormat.Db) { SourcePath = "/x/amp.s2p" };
         Assert.Equal("dB(S(1,2))", TraceLabeler.ComputeMinimalLabels([t])[0]);
+    }
+}
+
+// ================================================================
+//  Round 2: the reported case was a SINGLE-trace plot with several sources LOADED.
+//
+//  "Show the source prefix" is a LIBRARY-level convention (EffectiveShowFilePrefix: more than one
+//  source loaded, or the setting forcing it). ComputeMinimalLabels only ever received the SETTING
+//  half — and because the AutoLabel it produces takes priority over the legacy ShowFilePrefix
+//  fallback, the "multiple sources loaded" half became unreachable the moment AutoLabel shipped.
+//  A plot holding one trace therefore saw a constant source and dropped the prefix, so a lone
+//  stability-circle trace rendered as bare "Stability Circles".
+// ================================================================
+
+public sealed class SourcePrefixWithMultipleSourcesLoadedTests
+{
+    private static SNP S2(string path)
+    {
+        var m = new Mat<Complex>(2, 2);
+        m[0, 0] = new Complex(0.60, -0.30); m[0, 1] = new Complex(0.05,  0.02);
+        m[1, 0] = new Complex(3.20,  1.10); m[1, 1] = new Complex(0.45, -0.25);
+        return new SNP([1e9], [m], MatrixType.S, MatrixFormat.RI, new Complex(50, 0)) { FilePath = path };
+    }
+
+    [Fact]
+    public void LoneTrace_SeveralSourcesLoaded_KeepsItsSourcePrefix()
+    {
+        var t = new Trace(S2("/x/ampA.s2p"), MatrixType.S, 0, 0, DependentVarFormat.Complex)
+        {
+            SourcePath = "/x/ampA.s2p", Derived = DerivedParameters.SourceStabilityCircle,
+        };
+
+        // alwaysShowSource == true is what "more than one source is loaded" resolves to.
+        var with    = TraceLabeler.ComputeMinimalLabels([t], alwaysShowSource: true);
+        var without = TraceLabeler.ComputeMinimalLabels([t], alwaysShowSource: false);
+
+        Assert.StartsWith("ampA·", with[0]);
+        Assert.DoesNotContain("·", without[0]);   // one source loaded ⇒ still minimal
+    }
+
+    /// <summary>
+    /// The one that actually catches the wiring: a Smith plot holding a SINGLE stability-circle
+    /// trace, with TWO sources loaded in the library. Drives the real UpdateLabelStrips path and
+    /// reads the AutoLabel the axis-label control renders. Passing the parameter to
+    /// ComputeMinimalLabels directly (above) would pass either way — the bug was the caller.
+    /// </summary>
+    [Fact]
+    public async System.Threading.Tasks.Task LoneStabilityTrace_TwoSourcesLoaded_StripShowsThePrefix()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "crf-prefix-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string a = Path.Combine(dir, "ampA.s2p"), b = Path.Combine(dir, "ampB.s2p");
+            foreach (var f in new[] { a, b })
+                File.WriteAllText(f, "# GHz S MA R 50" + Environment.NewLine +
+                                     "1.0 0.5 -10 2.0 90 0.05 20 0.4 -30" + Environment.NewLine +
+                                     "2.0 0.5 -20 1.8 80 0.05 10 0.4 -40" + Environment.NewLine);
+
+            var lib = new DataSourceLibraryViewModel();
+            await lib.LoadFileAsync(a);
+            await lib.LoadFileAsync(b);
+            await lib.SelectDataSourceAsync(a);
+            Assert.True(lib.HasMultipleSources);
+
+            var vm = new DataDisplayViewModel(lib);
+            var container = vm.AddPlot(PlotType.Smith, FreqUnit.GHz);
+
+            // ONE trace on the plot — the source is constant across it, so only the library-level
+            // convention can put a prefix on it.
+            container.PlotVM.Plot.Traces.Clear();
+            container.PlotVM.Plot.Traces.Add(
+                new Trace(lib.Entries[0].Snp!, MatrixType.S, 0, 0, DependentVarFormat.Complex)
+                {
+                    SourcePath = a, Derived = DerivedParameters.SourceStabilityCircle,
+                });
+
+            container.UpdateLabelStrips();
+
+            var strip = Assert.Single(container.LeftLabelStrips);
+            Assert.NotNull(strip.AutoLabel);
+            Assert.StartsWith("ampA·", strip.AutoLabel!);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
+    public void HasMultipleSources_CountsLoadedSources_NotSnpBackedOnes()
+    {
+        var lib = new DataSourceLibraryViewModel();
+        Assert.False(lib.HasMultipleSources);
+
+        // Broken entries are placeholders for a missing file, not a second usable source.
+        lib.AddBrokenEntry("/x/gone-a.s2p");
+        lib.AddBrokenEntry("/x/gone-b.s2p");
+        Assert.False(lib.HasMultipleSources);
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]   // one source, setting off  → minimal
+    [InlineData(true,  false, true )]   // several loaded           → prefix
+    [InlineData(false, true,  true )]   // setting forces it        → prefix
+    public void EffectiveShowFilePrefix_IsTheOneRule(bool multiple, bool forced, bool expected)
+    {
+        var settings = AppSettingsViewModel.Instance;
+        bool saved = settings.AlwaysDisplayDataSourcePrefix;
+        try
+        {
+            settings.AlwaysDisplayDataSourcePrefix = forced;
+            Assert.Equal(expected, settings.EffectiveShowFilePrefix(multiple));
+        }
+        finally { settings.AlwaysDisplayDataSourcePrefix = saved; }
     }
 }

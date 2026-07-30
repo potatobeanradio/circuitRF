@@ -293,8 +293,15 @@ public class FileMenuRestructureTests
     [Fact]
     public void CloseWorkspaceOrWindowHeader_NeitherBranchHasEllipsis()
     {
+        // R-menu-1: this item acts directly (the unsaved-changes prompt is a consequence of dirty
+        // state, not an input the command needs), so neither branch takes an ellipsis.
+        //
+        // The CONDITION moved from `_focusedWindowDocument is not null` to `ClosesASingleDocumentWindow`
+        // when a focused floating TOOL window was made to read "Close Workspace" (a tool panel belongs
+        // to the workspace, not to a document) — see DockWindowBehaviourTests. The two LABELS, which
+        // are what this test is actually about, are unchanged.
         var src = ReadRepoFile(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.cs"));
-        Assert.Contains("_focusedWindowDocument is not null ? \"Close Window\" : \"Close Workspace\";", src);
+        Assert.Contains("=> ClosesASingleDocumentWindow ? \"Close Window\" : \"Close Workspace\";", src);
     }
 
     private static MenuNode? FindNodeByHeader(IReadOnlyList<MenuNode> nodes, string header)

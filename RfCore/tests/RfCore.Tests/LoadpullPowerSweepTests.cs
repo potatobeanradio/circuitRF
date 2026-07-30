@@ -54,7 +54,7 @@ public class LoadpullPowerSweepTests
 
     // ── 7.4c-1: BuildStackAtCompression ───────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Stack_PoutAtComp3dB_SliceCountOverHalf()
     {
         // The Pout stack at 3 dB compression on the 145-point grid should produce
@@ -73,7 +73,7 @@ public class LoadpullPowerSweepTests
         Assert.Equal(LoadpullSurface.NumInterpSweep, ps!.X.Length);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Stack_NodeCountNearGridCount()
     {
         // Each Rbf2D slice in the stack should have NodeCount close to nGrid=145
@@ -97,7 +97,7 @@ public class LoadpullPowerSweepTests
         }
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Stack_BackoffLadderSpans16dB()
     {
         // The back-off ladder should span ~16 dBm (OBO = InterpStackOBO).
@@ -121,7 +121,7 @@ public class LoadpullPowerSweepTests
         Assert.True(span < 20.0, $"PavlDbm span ({span:F2} dBm) should be < 20 dBm");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Stack_CachingReturnsSameResult()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -140,7 +140,7 @@ public class LoadpullPowerSweepTests
 
     // ── 7.4c-2: GetPowerSweep synthesis + measured-point tracking ────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void PowerSweep_Returns160Points()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -157,7 +157,7 @@ public class LoadpullPowerSweepTests
         Assert.Equal("PAE",     ps.MetricY);
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void PowerSweep_PavlDbm_IsMonotonicallyIncreasing()
     {
         // The X axis (PavlDbm) should be strictly increasing over the non-NaN region.
@@ -184,7 +184,7 @@ public class LoadpullPowerSweepTests
         Assert.True(nFinite > 50, $"Expected >50 finite X points, got {nFinite}");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void PowerSweep_PoutIncreasesWith_PavlDbm()
     {
         // Over the non-NaN mid-range, Pout(W) should increase as Pin(dBm) increases
@@ -213,7 +213,7 @@ public class LoadpullPowerSweepTests
         }
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void PowerSweep_AtGridPoint_TracksMeasuredDriveUp()
     {
         // Synthesize at a measured grid point's Γ.
@@ -258,7 +258,7 @@ public class LoadpullPowerSweepTests
         Assert.True(validPout.Max() < 1000.0, $"Peak Pout {validPout.Max():F1} W is unrealistically high");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void PowerSweep_BracketedByNeighbors()
     {
         // Synthesize at a Γ halfway between two adjacent measured grid points.
@@ -294,7 +294,7 @@ public class LoadpullPowerSweepTests
             $"Mid-point peak Pout {peakMid:F4} W not bracketed by [{lo:F4}, {hi:F4}] W");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void PowerSweep_NullReturnedForInvalidMetric()
     {
         var ds  = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -310,7 +310,7 @@ public class LoadpullPowerSweepTests
 
     // ── 7.4c-3: Origin-blind (.lpcwave) + multi-freq coverage ────────────────
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveSource_PowerSweep_Returns160Points()
     {
         var ds  = LpcwaveReader.ReadLpcwave(LpwFile("4x150_new_wavecal_24012020.lpcwave"));
@@ -336,7 +336,7 @@ public class LoadpullPowerSweepTests
         // else: file may not have enough points for the stack; that's acceptable (returns null)
     }
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void LpcwaveSource_PowerSweep_FiniteCurve()
     {
         var ds  = LpcwaveReader.ReadLpcwave(LpwFile("4x150_new_wavecal_24012020.lpcwave"));
@@ -361,7 +361,7 @@ public class LoadpullPowerSweepTests
         Assert.True(anySuccess, "At least one query point should produce a finite lpcwave power sweep");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MultiFreq_PowerSweep_Freq1Returns160Points()
     {
         // Test on freq index 1 of the 3-frequency .spl file
@@ -381,7 +381,7 @@ public class LoadpullPowerSweepTests
         Assert.True(ps.Y.Any(double.IsFinite), "Expected finite Y values at freq[1]");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void MultiFreq_DifferentFreqs_DifferentSweeps()
     {
         // The same query Γ at different frequencies should give different drive-ups

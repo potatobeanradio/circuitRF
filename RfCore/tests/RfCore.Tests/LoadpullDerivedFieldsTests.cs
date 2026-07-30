@@ -78,7 +78,7 @@ public class LoadpullDerivedFieldsTests
 
     // ── 7.5g-2: SPL derived cubes present ─────────────────────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Spl_Ideal_DerivedCubesPresent()
     {
         // The standard fixture has Gamma_in_mag + Gamma_in_phase → Zin_real/Zin_imag
@@ -104,7 +104,7 @@ public class LoadpullDerivedFieldsTests
 
     // ── 7.5g-3: SPL ZSource cube present and rank-1 freq ─────────────────────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Spl_Ideal_ZSourceCubePresentAndRankOne()
     {
         var ds = SplReader.ReadSpl(SplFile("Ideal_GaN_FET_1p6_mm_1p8_GHz.spl"));
@@ -119,7 +119,7 @@ public class LoadpullDerivedFieldsTests
 
     // ── 7.5g-4: SPL ZSource value is finite and consistent with source Γ ──────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Spl_Ideal_ZSourceValueFiniteAndPlausible()
     {
         // Fixture gamma_src1_real/imag = 0.284672 + 0.467153j
@@ -140,7 +140,7 @@ public class LoadpullDerivedFieldsTests
 
     // ── 7.5g-5: ConvertedFile.spl (lpcwave-style columns) derives cubes ───────
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void Spl_ConvertedFile_DerivedCubesOrGracefulAbsence()
     {
         // ConvertedFile.spl uses lpcwave-style column names (|GinWaves@F0|, |GS@F0|, etc.)
@@ -161,7 +161,7 @@ public class LoadpullDerivedFieldsTests
 
     // ── 7.5g-6: .lpcwave fixture has Zin, AMPM, and ZSource ─────────────────
 
-    [Fact]
+    [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
     public void Lpcwave_DerivedCubesPresent()
     {
         // 4x150_new_wavecal_24012020.lpcwave has |GinWaves@F0|/PhiinWaves@F0[deg],

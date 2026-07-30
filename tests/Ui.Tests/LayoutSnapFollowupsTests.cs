@@ -23,12 +23,12 @@ public sealed class LayoutSnapFollowupsTests : IDisposable
     {
         _workspaceDir = Path.Combine(Path.GetTempPath(), "crfSnapFollowups_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_workspaceDir);
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
     }
 
     public void Dispose()
     {
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         if (Directory.Exists(_workspaceDir))
             Directory.Delete(_workspaceDir, recursive: true);
     }

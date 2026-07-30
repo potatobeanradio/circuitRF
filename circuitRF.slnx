@@ -25,4 +25,7 @@
   <Folder Name="/tests/Ui.Tests/">
     <Project Path="tests/Ui.Tests/CircuitRF.Ui.Tests.csproj" />
   </Folder>
+  <Folder Name="/tests/RfCore.Tests/">
+    <Project Path="RfCore/tests/RfCore.Tests/RfCore.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -625,6 +625,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             // delegate here (not the library reference itself) so PlotDrawOperation stays a snapshot
             // of what THIS frame needs, matching every other captured field on it.
             Func<Trace, string?>? aliasFor = _library is { } lib ? t => lib.AliasFor(t.EffectiveSourcePath) : null;
+            // Snapshot the library-level prefix decision, like every other draw-op field.
+            bool alwaysShowSource = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
+                _library?.HasMultipleSources ?? false);
 
             context.Custom(new PlotDrawOperation(
                 new Rect(Bounds.Size),
@@ -636,7 +639,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 selColor,
                 zoom,
                 readout,
-                aliasFor));
+                aliasFor,
+                alwaysShowSource));
         }
 
         // ============================================================
@@ -655,6 +659,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             private readonly float             _zoomLevel;
             private readonly VswrReadout?      _vswrReadout;
             private readonly Func<Trace, string?>? _aliasFor;
+            private readonly bool _alwaysShowSource;
 
             public PlotDrawOperation(
                 Rect             bounds,
@@ -666,7 +671,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 SKColor          selectionColor  = default,
                 float            zoomLevel       = 1f,
                 VswrReadout?     vswrReadout     = null,
-                Func<Trace, string?>? aliasFor   = null)
+                Func<Trace, string?>? aliasFor   = null,
+                bool alwaysShowSource = false)
             {
                 _bounds          = bounds;
                 _plot            = plot;
@@ -678,6 +684,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 _zoomLevel       = zoomLevel;
                 _vswrReadout     = vswrReadout;
                 _aliasFor        = aliasFor;
+                _alwaysShowSource = alwaysShowSource;
             }
 
             public bool Equals(ICustomDrawOperation? other) => false;
@@ -712,7 +719,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 canvas.ClipRect(canvas.LocalClipBounds);
                 PlotRenderer.Draw(canvas, canvasSize, _plot, _detail, _theme, _showFilePrefix,
                     selectedMarkers: _selectedMarkers, selectionColor: _selectionColor,
-                    zoomLevel: _zoomLevel, vswrReadout: _vswrReadout, aliasFor: _aliasFor);
+                    zoomLevel: _zoomLevel, vswrReadout: _vswrReadout, aliasFor: _aliasFor,
+                    alwaysShowSource: _alwaysShowSource);
                 canvas.Restore();
             }
 

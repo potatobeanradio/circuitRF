@@ -105,7 +105,22 @@
                 <NativeMenuItem.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="Reset Layout"     Command="{Binding ResetLayoutCommand}"/>
-                        <NativeMenuItem Header="Hide/Show Dockers" Command="{Binding HideShowDockersCommand}"/>
+                        <!-- Header is relabelled at runtime from DockersMenuHeader by
+                             WorkspaceWindow.axaml.cs — a NativeMenuItem is an AvaloniaObject with no
+                             DataContext, so it cannot bind. -->
+                        <NativeMenuItem Header="Hide Dockers" Command="{Binding HideShowDockersCommand}" Gesture="Meta+Shift+H"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Panels">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Project Tree" Command="{Binding ShowToolPanelCommand}" CommandParameter="ProjectTree"/>
+                                    <NativeMenuItem Header="Library"      Command="{Binding ShowToolPanelCommand}" CommandParameter="Palette"/>
+                                    <NativeMenuItem Header="Properties"   Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties"/>
+                                    <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
+                                    <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Zoom to Fit"      Command="{Binding ZoomToFitCommand}"   Gesture="Meta+D0"/>
                         <NativeMenuItem Header="New Tab"          Command="{Binding NewTabCommand}"      Gesture="Meta+T"/>
@@ -170,6 +185,11 @@
         <!-- Cut/Copy/Paste/SelectAll are intentionally NOT window-level key bindings.
              Routing them here would intercept before the focused TextBox (inline edit) or
              canvas can handle them. Each control handles its own clipboard keys natively. -->
+        <!-- Hide/Show Dockers (brief-dock-layout-persistence.md §4A). Ctrl/Meta+Shift+H was audited
+             against every existing gesture in this file and every editor's own key handler before
+             being taken: H is completely unused app-wide. -->
+        <KeyBinding Gesture="Ctrl+Shift+H"  Command="{Binding HideShowDockersCommand}"/>
+        <KeyBinding Gesture="Meta+Shift+H"  Command="{Binding HideShowDockersCommand}"/>
         <KeyBinding Gesture="Ctrl+T"        Command="{Binding NewTabCommand}"/>
         <KeyBinding Gesture="Meta+T"        Command="{Binding NewTabCommand}"/>
         <KeyBinding Gesture="Ctrl+R"        Command="{Binding RunAnalysisCommand}"/>
@@ -376,9 +396,35 @@
                           Command="{Binding ResetLayoutCommand}">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ViewDashboardOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="_Hide/Show Dockers"
-                          Command="{Binding HideShowDockersCommand}">
+                <MenuItem Header="{Binding DockersMenuHeader}"
+                          Command="{Binding HideShowDockersCommand}"
+                          InputGesture="Ctrl+Shift+H">
                     <MenuItem.Icon><mi:MaterialIcon Kind="PageLayoutSidebarLeft" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <!-- Reopen a closed tool panel. Without these, closing one strands it until
+                     Reset Layout, which also discards every other panel placement. -->
+                <MenuItem Header="_Panels">
+                    <MenuItem Header="Project _Tree"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="ProjectTree">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Library"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Palette">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="P_roperties"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulleted" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Analyses"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="PlayCircleOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Messages"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="MessageTextOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Zoom to _Fit"
@@ -530,7 +576,7 @@
 
                 <!-- Hide/Show Dockers -->
                 <Button Command="{Binding HideShowDockersCommand}"
-                        ToolTip.Tip="Hide/Show Dockers"
+                        ToolTip.Tip="{Binding DockersMenuHeader}"
                         Background="Transparent" BorderThickness="0" Padding="4,2">
                     <mi:MaterialIcon Kind="PageLayoutSidebarLeft" Width="18" Height="18"/>
                 </Button>

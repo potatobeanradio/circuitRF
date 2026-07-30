@@ -24,12 +24,12 @@ public sealed class LayoutFlattenAllLevelsTests : IDisposable
     {
         _workspaceDir = Path.Combine(Path.GetTempPath(), "crfFlattenAllTest_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_workspaceDir);
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
     }
 
     public void Dispose()
     {
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         if (Directory.Exists(_workspaceDir))
             Directory.Delete(_workspaceDir, recursive: true);
     }
@@ -144,7 +144,7 @@ public sealed class LayoutFlattenAllLevelsTests : IDisposable
         var aView = MakeView();
         aView.Instances.Add(new LayoutInstance { CellRef = "../../B", X = 0, Y = 0, Mag = 1.0 });
         LayoutPersistence.SaveToFile(Path.Combine(CellFolder.SubFolderPath(aDir, ViewType.Layout), "main.clay"), aView);
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
 
         var top = new LayoutInstance { CellRef = "A", X = 0, Y = 0, Mag = 1.0 };
 

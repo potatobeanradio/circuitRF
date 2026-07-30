@@ -18,17 +18,24 @@ public sealed class CellLayoutResolverTests : IDisposable
     {
         _workspaceDir = Path.Combine(Path.GetTempPath(), "crfLayoutResolverTest_" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_workspaceDir);
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
     }
 
     public void Dispose()
     {
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         if (Directory.Exists(_workspaceDir))
             Directory.Delete(_workspaceDir, recursive: true);
     }
 
     private string CreateCell(string name) => CellFolder.CreateCellFolder(_workspaceDir, name);
+
+    /// <summary>Creates a cell with a resolvable primary layout under an arbitrary root.</summary>
+    private static void CreateCell(string root, string name)
+    {
+        var cellDir = CellFolder.CreateCellFolder(root, name);
+        WriteMinimalClay(cellDir, name + ".clay");
+    }
 
     private static void WriteMinimalClay(string cellDir, string fileName, Action<LayoutView>? populate = null)
     {
@@ -156,8 +163,63 @@ public sealed class CellLayoutResolverTests : IDisposable
     [Fact]
     public void InvalidateAll_BumpsGeneration()
     {
+        // The one deliberate global InvalidateAll left in the suite — this test's SUBJECT is that API,
+        // so it must call it. Safe now that no other class does: the only assertions a global
+        // invalidate could disturb are cache-identity ones, and those all live in this same class
+        // (xUnit runs a class's methods serially), while every Generation assertion elsewhere is a
+        // relative `>` that extra bumps only make more true.
         long before = CellLayoutResolver.Generation;
         CellLayoutResolver.InvalidateAll();
+        Assert.True(CellLayoutResolver.Generation > before);
+    }
+
+    // ── InvalidateUnder — the scoped alternative test isolation uses ──────────
+
+    [Fact]
+    public void InvalidateUnder_DropsItsOwnTree_AndLeavesOtherRootsAlone()
+    {
+        // The property the whole flake fix rests on: one directory tree's isolation must not evict
+        // another's cached resolutions.
+        var otherRoot = Path.Combine(Path.GetTempPath(), "crfResolverOther_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(otherRoot);
+        try
+        {
+            CreateCell(_workspaceDir, "Mine");
+            CreateCell(otherRoot, "Theirs");
+
+            var mine   = CellLayoutResolver.Resolve("Mine",   _workspaceDir);
+            var theirs = CellLayoutResolver.Resolve("Theirs", otherRoot);
+            Assert.Equal(CellLayoutState.Resolved, mine.State);
+            Assert.Equal(CellLayoutState.Resolved, theirs.State);
+
+            CellLayoutResolver.InvalidateUnder(_workspaceDir);
+
+            Assert.NotSame(mine.View,   CellLayoutResolver.Resolve("Mine",   _workspaceDir).View);
+            Assert.Same   (theirs.View, CellLayoutResolver.Resolve("Theirs", otherRoot).View);
+        }
+        finally
+        {
+            CellLayoutResolver.InvalidateUnder(otherRoot);
+            Directory.Delete(otherRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void InvalidateUnder_BumpsGenerationOnlyWhenItActuallyDroppedSomething()
+    {
+        // Deliberately unlike Invalidate/InvalidateAll, which bump unconditionally. A scoped
+        // invalidate is called by ~33 test classes purely for self-isolation; bumping the global
+        // generation for a tree that had nothing cached would put the perturbation right back that
+        // this method exists to remove.
+        long before = CellLayoutResolver.Generation;
+        CellLayoutResolver.InvalidateUnder(Path.Combine(Path.GetTempPath(), "crfNothingCachedHere_" + Guid.NewGuid().ToString("N")[..8]));
+        Assert.Equal(before, CellLayoutResolver.Generation);
+
+        CreateCell(_workspaceDir, "Bumped");
+        CellLayoutResolver.Resolve("Bumped", _workspaceDir);
+
+        before = CellLayoutResolver.Generation;
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         Assert.True(CellLayoutResolver.Generation > before);
     }
 }

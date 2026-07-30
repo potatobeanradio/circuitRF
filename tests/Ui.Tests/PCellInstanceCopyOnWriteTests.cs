@@ -20,12 +20,12 @@ public sealed class PCellInstanceCopyOnWriteTests : IDisposable
         _workspaceDir = Path.Combine(Path.GetTempPath(), "crf-pcell-cow-test-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_workspaceDir);
         File.WriteAllText(Path.Combine(_workspaceDir, ".cws"), "{}");
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
     }
 
     public void Dispose()
     {
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_workspaceDir);
         if (Directory.Exists(_workspaceDir))
             Directory.Delete(_workspaceDir, recursive: true);
     }

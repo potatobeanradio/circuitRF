@@ -21,7 +21,8 @@ public sealed class LayoutGdsiiTransformTests : IDisposable
     {
         _originalDir = Directory.CreateTempSubdirectory("gdsii-xform-orig-").FullName;
         _importedDir = Directory.CreateTempSubdirectory("gdsii-xform-import-").FullName;
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_originalDir);
+        CellLayoutResolver.InvalidateUnder(_importedDir);
         // A broken/unresolved instance placeholder draws text via SkiaFonts.PlexRegular, which cannot
         // load without a live Avalonia app host — same seam the L3a renderer tests already established.
         LayoutTextOutline.TestOverrideTypeface = SKTypeface.Default;
@@ -30,7 +31,8 @@ public sealed class LayoutGdsiiTransformTests : IDisposable
     public void Dispose()
     {
         LayoutTextOutline.TestOverrideTypeface = null;
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_originalDir);
+        CellLayoutResolver.InvalidateUnder(_importedDir);
         Directory.Delete(_originalDir, recursive: true);
         Directory.Delete(_importedDir, recursive: true);
     }

@@ -1,7 +1,9 @@
 using System;
 using System.IO;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
@@ -30,6 +32,10 @@ public partial class WorkspaceWindow : Window
     // The "Save All" NativeMenuItem — header is updated to "Save" when a document is active.
     private NativeMenuItem? _saveNativeItem;
 
+    // The "Hide Dockers"/"Show Dockers" NativeMenuItem — a NativeMenuItem is an AvaloniaObject with
+    // no DataContext, so its header cannot bind and is relabelled here instead.
+    private NativeMenuItem? _dockersNativeItem;
+
     public WorkspaceWindow()
     {
         InitializeComponent();
@@ -39,6 +45,9 @@ public partial class WorkspaceWindow : Window
         // Dock's teardown); document tear-offs still close normally.
         MainDockControl.HostWindowFactory = () => new CircuitRF.Ui.ViewModels.Dock.CrfHostWindow();
         AddHandler(InputElement.KeyDownEvent, OnWindowKeyDownTunnel, RoutingStrategies.Tunnel);
+        // R-dock-14: bring the floating tool panels forward with the workspace. `Window` exposes no
+        // OnActivated to override, so this is the event.
+        Activated += (_, _) => RaiseFloatingToolWindows();
     }
 
     // While a placement is armed, R / Shift+R rotate the ghost regardless of which control has focus
@@ -73,12 +82,14 @@ public partial class WorkspaceWindow : Window
         {
             _vm.RecentWorkspacesChanged -= RebuildNativeRecentMenu;
             _vm.SaveScopeChanged        -= UpdateNativeSaveHeader;
+            _vm.DockersCollapsedChanged -= UpdateNativeDockersHeader;
         }
         _vm = DataContext as WorkspaceViewModel;
         if (_vm is not null)
         {
             _vm.RecentWorkspacesChanged += RebuildNativeRecentMenu;
             _vm.SaveScopeChanged        += UpdateNativeSaveHeader;
+            _vm.DockersCollapsedChanged += UpdateNativeDockersHeader;
             RebuildNativeRecentMenu();
         }
     }
@@ -90,6 +101,93 @@ public partial class WorkspaceWindow : Window
         // AppKit has now built the native menu from the XAML — safe to find and populate.
         RebuildNativeRecentMenu();
         UpdateNativeSaveHeader();
+        UpdateNativeDockersHeader();
+
+        // R-dock-12 baseline: the menu the OS shows when no window is key. It is NOT what makes a
+        // floating window show the menu — observed directly, with this in place the owner still saw an
+        // empty menu bar while a floating tool window was key. Avalonia does not fall back to the
+        // application-scope menu for a key window that has none of its own; what works is attaching the
+        // SAME NativeMenu instance to each floated window (WorkspaceViewModel.
+        // AttachSharedNativeMenuIfMacOS, run for every float). One instance on several windows is not
+        // the "duplicate menu" R-dock-12 warns against — nothing is copied, so nothing can drift.
+        AttachNativeMenuAtApplicationScope();
+    }
+
+    /// <summary>
+    /// R-dock-12. Deliberately NOT guarded by <c>OperatingSystem.IsMacOS()</c>: the attachment is a
+    /// plain attached-property set that is inert on Windows/Linux (which have no native menu bar), and
+    /// keeping it unconditional means the wiring is exercised — and testable — on every platform
+    /// rather than existing only in a macOS-shaped branch nobody else ever runs.
+    /// </summary>
+    internal static void AttachNativeMenuAtApplicationScope(Window shell, Application? app)
+    {
+        var menu = NativeMenu.GetMenu(shell);
+        if (menu is null || app is null) return;
+        if (ReferenceEquals(NativeMenu.GetMenu(app), menu)) return;
+        NativeMenu.SetMenu(app, menu);
+    }
+
+    private void AttachNativeMenuAtApplicationScope() =>
+        AttachNativeMenuAtApplicationScope(this, Application.Current);
+
+    // Re-entrancy guard for RaiseFloatingToolWindows: our own Activate() call re-raises Activated.
+    private bool _raisingFloatingTools;
+
+    /// <summary>
+    /// R-dock-14: floating TOOL windows come to the front with the workspace window; torn-off
+    /// DOCUMENT windows do not. R-dock-15: raising must not steal focus — the workspace stays active.
+    ///
+    /// <para><b>Why this is an Activated hook after all.</b> The brief preferred the owner
+    /// relationship precisely to avoid one, and that was the right thing to try first — but it does
+    /// not deliver the behaviour here, confirmed twice. <c>DockWindowOwnerMode.RootWindow</c> resolves
+    /// to a NULL owner because our shell's root dock has no <c>IDockWindow</c> (it is hosted by a
+    /// <c>DockControl</c>); <c>Default</c>, whose last-resort branch resolves the shell through
+    /// <c>Factory.DockControls</c>, evidently did not resolve either — the owner reported floating
+    /// panels still sitting behind other applications, and that branch also sets
+    /// <c>copyOwnerChrome</c>, which would have retitled the panels with the workspace window's own
+    /// title (it did not). The owner modes are kept — <c>None</c> on documents is what positively
+    /// stops THEM being owned — but the raise is done explicitly.</para>
+    ///
+    /// <para>Activate-all-then-reactivate-the-initiator is Dock's own idiom for this
+    /// (<c>WindowActivationHelper.ActivateAllWindows</c>, which it runs on every window drag); that
+    /// helper is <c>internal</c>, so this is the same shape over just our tool windows.</para>
+    /// </summary>
+    private void RaiseFloatingToolWindows()
+    {
+        if (_raisingFloatingTools) return;
+        if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop) return;
+
+        var tools = desktop.Windows
+            .OfType<CircuitRF.Ui.ViewModels.Dock.CrfHostWindow>()
+            .Where(w => w.PlatformImpl is not null && w.FloatsAnyTool())
+            .ToList();
+
+        if (tools.Count == 0) return;
+
+        _raisingFloatingTools = true;
+        try
+        {
+            foreach (var tool in tools)
+                tool.Activate();
+
+            // Focus comes straight back to the workspace (R-dock-15). Without this the raise would
+            // hand the keyboard to whichever panel happened to be raised last.
+            Activate();
+        }
+        catch (Exception ex)
+        {
+            _vm?.Messages.Warning($"Could not raise the floating panels: {ex.Message}");
+        }
+        finally
+        {
+            // Released one dispatcher pass later, NOT synchronously: the Activated events our own
+            // Activate() calls produce arrive asynchronously from the platform, at a higher priority
+            // than Background — so they land while the guard is still set and cannot start a raise
+            // loop. Releasing here in the ordinary way would let exactly that happen.
+            Avalonia.Threading.Dispatcher.UIThread.Post(
+                () => _raisingFloatingTools = false,
+                Avalonia.Threading.DispatcherPriority.Background);
+        }
     }
 
     protected override void OnClosed(EventArgs e)
@@ -167,6 +265,42 @@ public partial class WorkspaceWindow : Window
         EnsureSaveNativeItem();
         if (_saveNativeItem is null || _vm is null) return;
         _saveNativeItem.Header = _vm.SaveMenuHeader;
+    }
+
+    // ---- NativeMenu "Hide/Show Dockers" header (macOS native menu bar) ------
+
+    private void EnsureDockersNativeItem()
+    {
+        if (_dockersNativeItem is not null || _vm is null) return;
+        _dockersNativeItem = FindNativeItemByCommand(_vm.HideShowDockersCommand, "View");
+    }
+
+    private void UpdateNativeDockersHeader()
+    {
+        EnsureDockersNativeItem();
+        if (_dockersNativeItem is null || _vm is null) return;
+        _dockersNativeItem.Header = _vm.DockersMenuHeader;
+    }
+
+    /// <summary>
+    /// Locates a NativeMenuItem by COMMAND IDENTITY inside a named top-level menu. Matching by header
+    /// text is what broke the Save lookup once already (this file's own note above) — a header that
+    /// changes at runtime, as this one does by design, cannot also be the search key.
+    /// </summary>
+    private NativeMenuItem? FindNativeItemByCommand(System.Windows.Input.ICommand command, string topLevelHeader)
+    {
+        if (NativeMenu.GetMenu(this) is not { } rootMenu) return null;
+
+        foreach (var top in rootMenu.Items)
+        {
+            if (top is not NativeMenuItem topItem || topItem.Header != topLevelHeader) continue;
+            if (topItem.Menu is null) return null;
+            foreach (var sub in topItem.Menu.Items)
+                if (sub is NativeMenuItem ni && ReferenceEquals(ni.Command, command))
+                    return ni;
+            return null;
+        }
+        return null;
     }
 
     // ---- NativeMenu "Open Recent" (macOS native menu bar) -------------------

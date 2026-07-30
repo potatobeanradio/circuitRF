@@ -376,9 +376,14 @@ public sealed class DataDisplayMultiFileUiTests : IDisposable
         container.Inspector.AddTraceCommand.Execute(null);   // trace 2 → cloned from 1, still A
         Assert.Equal(2, container.LeftLabelStrips.Count);
 
-        // Only one source in use so far — alias must be dropped (R-dd-1's own structural guarantee).
-        Assert.DoesNotContain("baseline", container.LeftLabelStrips[0].AutoLabel);
-        Assert.DoesNotContain("baseline", container.LeftLabelStrips[1].AutoLabel);
+        // Two sources are LOADED, so the source prefix is shown even though only one is in use on
+        // this plot — that is EffectiveShowFilePrefix's long-standing library-level convention
+        // (owner-confirmed 2026-07-30: a lone trace on a multi-source display must still say which
+        // source it came from). R-dd-1's own guarantee is narrower and still holds exactly: with a
+        // SINGLE dataset loaded the alias is constant and gets dropped — see
+        // ComputeMinimalLabels_SingleDataset_LabelsByteIdentical_WithAndWithoutAliasResolver.
+        Assert.Contains("baseline", container.LeftLabelStrips[0].AutoLabel);
+        Assert.Contains("baseline", container.LeftLabelStrips[1].AutoLabel);
 
         // Switch trace 2's Source to B via the picker's own Source selector (R-dd-2) — no other
         // action taken (no manual redraw, no plot-type toggle).

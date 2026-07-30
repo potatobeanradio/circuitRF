@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace CircuitRF.Ui.Schematic;
@@ -7,7 +8,7 @@ namespace CircuitRF.Ui.Schematic;
 // A workspace is the collection of files that make up a project:
 //   - member_files: relative paths to .csch / .cdd / .csym / .cnl etc.
 //   - library_refs: paths to library manifests (.clib)
-//   - dock_layout:  saved panel/tab arrangement (Dock library format)
+//   - dock_layout:  saved panel/tab/floating-window arrangement (OUR schema — see CwsDockLayout)
 //
 // Rules (mirror .csch):
 //   - format_version: reject on mismatch
@@ -68,11 +69,22 @@ public sealed class CwsFile
     public List<string> KnownFiles { get; set; } = [];
 
     /// <summary>
-    /// Dock layout serialized as a JSON string (Dock library format).
-    /// Null when no layout has been captured yet.
+    /// Saved dock arrangement — panels, tabbed groups, floating windows, document tab order.
+    ///
+    /// <para>This is <b>our</b> schema (<c>CircuitRF.Ui.Docking.CwsDockLayout</c>), never the docking
+    /// library's serialized object graph (brief-dock-layout-persistence.md R-dock-3): <c>.cws</c> is a
+    /// human-readable, long-lived file, and a third-party library's graph is neither — it is opaque to
+    /// a reader, and a library upgrade can invalidate every saved workspace in the field.</para>
+    ///
+    /// <para>Typed as a raw <see cref="JsonNode"/> on purpose (R-dock-5): a structurally malformed
+    /// block must not take the rest of the <c>.cws</c> — the tree state and the open-document list —
+    /// down with it. <c>DockLayoutSerialization.TryRead</c> parses it separately behind its own
+    /// try/catch, so a layout problem can never prevent a workspace from opening. It also means a
+    /// block written by a newer build round-trips verbatim instead of being rewritten to a lossy
+    /// subset. Null when no layout has been captured yet.</para>
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? DockLayout { get; set; }
+    public JsonNode? DockLayout { get; set; }
 
     /// <summary>
     /// Name of the color scheme (.ccolor) to activate when this workspace is opened.

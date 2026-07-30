@@ -33,12 +33,22 @@ from brief-benchmark-gate-split.md and brief-test-suite-fast-loop.md: `Category=
 and `Category=Slow` is gone as a category (its former members are either untagged, having been
 measured under the threshold, or folded into `Benchmark`).
 
-- **Repo root, no flags: 3786 tests in ~24 s.** Per-project (`dotnet test tests/Ui.Tests`) is
+- **Repo root, no flags: 5,169 tests in ~30 s.** Per-project (`dotnet test tests/Ui.Tests`) is
   likewise fast on its own (~11-12 s). This is what "build+test green" means in every brief from here
   on, unless that brief's own text says otherwise.
-- **`Category=Benchmark`** is now the *only* opt-in tag, applied mechanically wherever a test's
-  measured wall-clock exceeds ~5 s — not by hand-picked judgement. Currently 19 tests repo-wide (16 in
-  `Ui.Tests`, 3 in `Engine.Tests`): the 500,000-shape `LayoutPerf` TIMED sweeps
+- **`RfCore.Tests` IS in `circuitrf.slnx` and IS covered by a plain `dotnet test`** (2026-07-30; it was
+  not, until then — an older note in `src/Ui/CLAUDE.md` says otherwise and is marked superseded). 281
+  routine tests, ~4 s. Its proprietary loadpull fixtures are git-ignored, so on a fresh clone 56 of them
+  report **Skipped with a reason** via `FixtureFact`/`FixtureTheory` rather than failing — do not
+  "repair" those skips by committing lab data.
+- **`Category=Benchmark`** is the *only* opt-in tag. Applied mechanically wherever a test's measured
+  wall-clock exceeds ~5 s — and, since 2026-07-30, also to a test that is *fast but wall-clock-sensitive*
+  and therefore cannot survive the parallel-start burst of a full-solution run (`RfCore.Tests`'
+  `Rbf2DPerfTests`, 4 methods: millisecond-fast, but a ~0.3 ms operation reads ~10 ms per sample under
+  full-suite load, so even a best-of-20 gate flaked). **Do not untag those on the grounds that they run
+  quickly** — they are tagged for the purpose the mechanism serves, not the letter of the ~5 s rule.
+  Currently 23 tests repo-wide (16 in `Ui.Tests`, 3 in `Engine.Tests`, 4 in `RfCore.Tests`): the
+  500,000-shape `LayoutPerf` TIMED sweeps
   (`LayoutPerformanceBaselineTests.Baseline_500k`/`Baseline_50k` + `R8bCrossoverExperiment`,
   `LayoutLodMergeCacheBenchmarkTests.{LodOnly,Final}_FullExtent_500k` +
   `PathCache_500k_MemoryStaysUnderCap_TimeAndMemoryReported`,

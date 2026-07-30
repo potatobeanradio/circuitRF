@@ -33,12 +33,12 @@ public sealed class LayoutZoomToFitInstancesTests : IDisposable
     {
         _root = Path.Combine(Path.GetTempPath(), "crf-zoomfit-pcell-test-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(_root);
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_root);
     }
 
     public void Dispose()
     {
-        CellLayoutResolver.InvalidateAll();
+        CellLayoutResolver.InvalidateUnder(_root);
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
     }
 

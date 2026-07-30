@@ -485,7 +485,8 @@ namespace CircuitRF.Ui.DataDisplay
             Plot                 plot,
             TransformSet         tf,
             RenderTheme          theme,
-            Func<Trace, string?>? aliasFor = null)
+            Func<Trace, string?>? aliasFor = null,
+            bool? alwaysShowSource = null)
         {
             float lw = LineWidth(canvasSize);
             var (font, paint) = MakeTextObjects(plot.Axes.FontSizeLabel * 1.4, lw, theme);
@@ -567,7 +568,12 @@ namespace CircuitRF.Ui.DataDisplay
                 // the same alias resolver too — this Rect Y-axis margin label used to fall back to
                 // the raw file-stem heuristic regardless of any alias the user set, since no
                 // resolver was ever threaded down to this renderer).
-                bool alwaysSource = AppSettingsViewModel.Instance.AlwaysDisplayDataSourcePrefix;
+                // Supplied by the caller, which is the layer that can see the LIBRARY (this
+                // renderer cannot). Falls back to the setting alone only when no caller supplied
+                // it — reading just the setting here is what dropped the "multiple sources
+                // loaded" half of the convention for the Rect Y-axis labels.
+                bool alwaysSource = alwaysShowSource
+                                    ?? AppSettingsViewModel.Instance.AlwaysDisplayDataSourcePrefix;
                 var  allLabels    = TraceLabeler.ComputeMinimalLabels(plot.Traces, alwaysSource, aliasFor);
                 var  labelLookup  = new Dictionary<Trace, string>();
                 for (int i = 0; i < plot.Traces.Count; i++)

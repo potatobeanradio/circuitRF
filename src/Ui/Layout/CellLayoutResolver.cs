@@ -230,6 +230,62 @@ public static class CellLayoutResolver
         foreach (var p in affected) LiveViewChanged?.Invoke(p);
     }
 
+    /// <summary>
+    /// Drops every cached resolution and live override whose <c>.clay</c> lives anywhere under
+    /// <paramref name="rootDir"/>, leaving everything outside it untouched.
+    ///
+    /// <para>This exists so a caller that owns one directory tree can isolate itself without the
+    /// global blast radius of <see cref="InvalidateAll"/>. That distinction is not cosmetic: this
+    /// resolver's cache, live-override table, <see cref="Generation"/> counter and
+    /// <see cref="LiveViewChanged"/> event are all PROCESS-WIDE, so an <c>InvalidateAll</c> reaches
+    /// into every other consumer's state — which is exactly how ~36 test classes, each already
+    /// isolated by its own unique temp directory, were intermittently breaking the two classes that
+    /// assert cache identity and generation/event counts.</para>
+    /// </summary>
+    public static void InvalidateUnder(string rootDir)
+    {
+        if (string.IsNullOrWhiteSpace(rootDir)) return;
+
+        var root = Path.GetFullPath(rootDir);
+        var affected = new List<string>();
+
+        lock (_lock)
+        {
+            var toRemove = _cache.Keys.Where(k => IsUnder(k.CellAbsDir, root)).ToList();
+            foreach (var k in toRemove)
+            {
+                affected.Add(Path.Combine(CellFolder.SubFolderPath(k.CellAbsDir, ViewType.Layout), k.PrimaryName));
+                _cache.Remove(k);
+            }
+
+            var liveToRemove = _live.Keys.Where(p => IsUnder(p, root)).ToList();
+            foreach (var p in liveToRemove)
+            {
+                _live.Remove(p);
+                if (!affected.Contains(p, StringComparer.OrdinalIgnoreCase)) affected.Add(p);
+            }
+
+            // Only a real change bumps the generation — an invalidate that removed nothing must not
+            // make every open document re-resolve, and must not perturb a concurrent generation
+            // assertion elsewhere.
+            if (affected.Count > 0) Generation++;
+        }
+
+        foreach (var p in affected) LiveViewChanged?.Invoke(p);
+    }
+
+    private static bool IsUnder(string path, string root)
+    {
+        string full;
+        try { full = Path.GetFullPath(path); }
+        catch { return false; }
+
+        if (string.Equals(full, root, StringComparison.OrdinalIgnoreCase)) return true;
+
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        return full.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static void InvalidateAll()
     {
         List<string> affected;

@@ -532,6 +532,14 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
 
     /// <summary>Looks up the alias of the entry whose FilePath matches <paramref name="absPath"/>,
     /// or null when there is no such entry (e.g. a trace bound to a not-yet-loaded source).</summary>
+    /// <summary>
+    /// True when more than one source is loaded — the input to
+    /// <see cref="AppSettingsViewModel.EffectiveShowFilePrefix"/>'s "show the source prefix"
+    /// convention. One definition, because two call sites previously counted this differently
+    /// (one of them counting only SNP-backed entries, i.e. zero for any number of simulations).
+    /// </summary>
+    public bool HasMultipleSources => Entries.Count(e => !e.IsBroken) > 1;
+
     public string? AliasFor(string? absPath)
     {
         if (absPath is null) return null;

@@ -287,7 +287,7 @@ public sealed class LoadpullWriterTests
         throw new DirectoryNotFoundException($"testdata/{sub} not found");
     }
 
-    [Fact]
+    [FixtureFact("testdata/spl_test_data", "ask the repo owner for these lab-measured .spl files — not committed to the repository")]
     public void RealSpl_WrittenAsLpcwave_RoundTripsKeyFoms()
     {
         string spl = Path.Combine(TestDataDir("spl_test_data"), "Ideal_GaN_FET_1p6_mm_1p8_GHz.spl");
