@@ -560,17 +560,8 @@ namespace CircuitRF.Ui.DataDisplay
                     canvas.Restore();
                 }
 
-                using var tickFont = new SKFont(SkiaFonts.PlexRegular, (float)(plot.Axes.FontSizeTicks * lw));
-
-                float leftTickW = Math.Max(
-                    tickFont.MeasureText(plot.Axes.Window.Top   .ToString($"G{plot.Axes.NumDigitsLeftY}")),
-                    tickFont.MeasureText(plot.Axes.Window.Bottom.ToString($"G{plot.Axes.NumDigitsLeftY}")));
-                float leftAnchor = vpLeft - lw * 4f - leftTickW - DescriptionStripPad * lw;
-
-                float rightTickW = Math.Max(
-                    tickFont.MeasureText(plot.Axes.WindowSecondary.Top   .ToString($"G{plot.Axes.NumDigitsRightY}")),
-                    tickFont.MeasureText(plot.Axes.WindowSecondary.Bottom.ToString($"G{plot.Axes.NumDigitsRightY}")));
-                float rightAnchor = vpRight + lw * 4f + rightTickW + DescriptionStripPad * lw;
+                var (leftAnchor, rightAnchor) =
+                    ComputeYLabelAnchors(plot.Axes, vpLeft, vpRight, lw);
 
                 // Compute per-plot minimal labels (same policy as the label-strip controls, and now
                 // the same alias resolver too — this Rect Y-axis margin label used to fall back to
@@ -774,16 +765,8 @@ namespace CircuitRF.Ui.DataDisplay
             float yFontSz = (float)(plot.Axes.FontSizeTicks * 0.9f * lw);
             float ySw     = yFontSz * 1.5f;
 
-            using var tickFontH = new SKFont(SkiaFonts.PlexRegular, (float)(plot.Axes.FontSizeTicks * lw));
-            float leftTickWH = Math.Max(
-                tickFontH.MeasureText(plot.Axes.Window.Top   .ToString($"G{plot.Axes.NumDigitsLeftY}")),
-                tickFontH.MeasureText(plot.Axes.Window.Bottom.ToString($"G{plot.Axes.NumDigitsLeftY}")));
-            float leftAnchorH = vpLeft - lw * 4f - leftTickWH - DescriptionStripPad * lw;
-
-            float rightTickWH = Math.Max(
-                tickFontH.MeasureText(plot.Axes.WindowSecondary.Top   .ToString($"G{plot.Axes.NumDigitsRightY}")),
-                tickFontH.MeasureText(plot.Axes.WindowSecondary.Bottom.ToString($"G{plot.Axes.NumDigitsRightY}")));
-            float rightAnchorH = vpRight + lw * 4f + rightTickWH + DescriptionStripPad * lw;
+            var (leftAnchorH, rightAnchorH) =
+                ComputeYLabelAnchors(plot.Axes, vpLeft, vpRight, lw);
 
             if (!string.IsNullOrEmpty(plot.YLabel))
                 rects.YLabel = new SKRect(leftAnchorH - ySw, vpTop, leftAnchorH, vpBottom);
@@ -839,6 +822,80 @@ namespace CircuitRF.Ui.DataDisplay
             var font  = new SKFont(SkiaFonts.PlexRegular, (float)(fontSizeFactor * lw));
             var paint = new SKPaint { Color = theme.TextColor, IsAntialias = true };
             return (font, paint);
+        }
+
+        /// <summary>
+        /// Width of the widest tick number ACTUALLY DRAWN on one Y axis — measured by walking the
+        /// same tick set, applying the same format string, and applying the same near-zero
+        /// normalisation that <see cref="DrawRectGrid"/>'s own tick-label loop uses, so the two can
+        /// never disagree about how wide the number column is.
+        ///
+        /// **Measuring only the window endpoints (Top/Bottom) is NOT equivalent and was the bug**:
+        /// tick labels are drawn at every major gridline, and an intermediate tick can format wider
+        /// than both endpoints — e.g. an axis spanning -10…10 draws "-10" and "10" at its ends but
+        /// also "-7.5" in between, which is wider than either. The anchor derived from it then sat
+        /// too close to the axis and the rotated per-trace Y label overlapped the tick numbers.
+        /// This affects BOTH axes symmetrically (left labels are right-aligned ending at the left
+        /// anchor; right labels start at the right anchor), so both are computed the same way here.
+        ///
+        /// Falls back to the endpoint measurement only when the tick set yields nothing finite
+        /// (degenerate axis), so the label can never end up flush against the axis.
+        /// </summary>
+        internal static float MaxYTickLabelWidth(SKFont font, Axes axes, bool secondary)
+        {
+            // MajorY is identical for minorTicks true/false (minor ticks populate separate lists),
+            // so the cheaper call is safe and matches what the draw path lays out.
+            var ticks  = axes.Ticks(minorTicks: false);
+            int digits = secondary ? axes.NumDigitsRightY : axes.NumDigitsLeftY;
+
+            float max = 0f;
+            foreach (var (primary, secondaryValue) in ticks.MajorY)
+            {
+                // The draw loop skips the whole iteration on a non-finite PRIMARY (the padding NaNs
+                // Axes.Ticks appends to equalise list lengths), then guards the secondary label on
+                // its own finiteness — mirror both, or a padded NaN row would be measured as a
+                // label that is never actually drawn.
+                if (!double.IsFinite(primary)) continue;
+                double raw = secondary ? secondaryValue : primary;
+                if (!double.IsFinite(raw)) continue;
+
+                double v = Math.Abs(raw) < 1e-12 ? 0 : raw;
+                max = Math.Max(max, font.MeasureText(v.ToString($"G{digits}")));
+            }
+            if (max > 0f) return max;
+
+            var win = secondary ? axes.WindowSecondary : axes.Window;
+            return Math.Max(font.MeasureText(win.Top   .ToString($"G{digits}")),
+                            font.MeasureText(win.Bottom.ToString($"G{digits}")));
+        }
+
+        /// <summary>
+        /// X anchors for the rotated per-trace Y-label columns: just outside the widest actual tick
+        /// number on each side, plus <see cref="DescriptionStripPad"/>. Shared by the draw path and
+        /// the hit-rect path — these were two hand-maintained copies of the same expression, which
+        /// is exactly how a label and its own clickable region drift apart.
+        /// </summary>
+        /// <remarks>
+        /// The <paramref name="tickFont"/> overload is the real implementation; the convenience
+        /// overload below just supplies the tick font the renderer draws with. Taking the font as a
+        /// parameter is also what makes this headlessly testable — <c>SkiaFonts.PlexRegular</c>
+        /// cannot load without a live Avalonia platform (see src/Ui/CLAUDE.md), so a test passes
+        /// <c>SKTypeface.Default</c> instead and still exercises the real geometry.
+        /// </remarks>
+        internal static (float Left, float Right) ComputeYLabelAnchors(
+            SKFont tickFont, Axes axes, float vpLeft, float vpRight, float lw)
+        {
+            float leftTickW  = MaxYTickLabelWidth(tickFont, axes, secondary: false);
+            float rightTickW = MaxYTickLabelWidth(tickFont, axes, secondary: true);
+            return (vpLeft  - lw * 4f - leftTickW  - DescriptionStripPad * lw,
+                    vpRight + lw * 4f + rightTickW + DescriptionStripPad * lw);
+        }
+
+        private static (float Left, float Right) ComputeYLabelAnchors(
+            Axes axes, float vpLeft, float vpRight, float lw)
+        {
+            using var tickFont = new SKFont(SkiaFonts.PlexRegular, (float)(axes.FontSizeTicks * lw));
+            return ComputeYLabelAnchors(tickFont, axes, vpLeft, vpRight, lw);
         }
     }
 }

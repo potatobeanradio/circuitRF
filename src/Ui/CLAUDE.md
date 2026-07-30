@@ -1,5 +1,75 @@
 # UI (Avalonia) — local conventions
 
+Rect Y-axis label columns overlapped the tick numbers — the anchor measured only the window
+endpoints (2026-07-30) — COMPLETE. Owner report: on a Rect plot, traces on the RIGHT y-axis
+sometimes had their rotated per-trace Y labels rendered on top of the right axis's tick numbers.
+
+**Root cause.** `AxesRenderer.DrawTitleAndAxisLabels` reserved room for the tick-number column by
+measuring **only `Window.Top` and `Window.Bottom`**:
+```csharp
+float rightTickW = Math.Max(
+    tickFont.MeasureText(plot.Axes.WindowSecondary.Top   .ToString($"G{NumDigitsRightY}")),
+    tickFont.MeasureText(plot.Axes.WindowSecondary.Bottom.ToString($"G{NumDigitsRightY}")));
+```
+But `DrawRectGrid` draws a tick number at **every** major gridline (its `ticks.MajorY` loop), and an
+intermediate tick routinely formats WIDER than both endpoints. The anchor derived from it therefore
+sat too close to the axis and the rotated label overran the numbers. Font/size were never the
+problem — the measuring font (`FontSizeTicks * lw`, Plex) already matches the drawing font exactly;
+the bug was purely **which values** got measured.
+
+**Why the RIGHT axis is the frequent offender, though both are affected.** `Axes.SecondaryShareGrid`
+defaults **true**, which derives each secondary tick by mapping the primary tick's fraction onto the
+secondary window (`WindowSecondary.Top + frac * Height`) — so secondary tick values are arbitrary
+interpolations, not round numbers. Measured concretely: a primary window of -100…100 (ticks
+-80,-40,0,40,80) against a secondary window of 0…7 draws `0.7 / 2.1 / 3.5 / 4.9 / 6.3` — every one
+16.68 px wide — while the endpoints `"0"` and `"7"` measure 6.67 px. **A 10 px overrun on every
+label.** The left axis has the identical defect and is reachable whenever the tick step is a half
+step (a 12.5 step over -100…100 draws `-87.5` at 27.35 px against a `-100` endpoint at 24.02 px — a
+3.3 px overrun); it is just rarer, because primary ticks are usually round. Fixed on both sides —
+the owner asked directly whether the left axis was affected too, and it is.
+
+**Fix.** New `AxesRenderer.MaxYTickLabelWidth(SKFont, Axes, bool secondary)` walks the same
+`axes.Ticks(false).MajorY` set and applies the same `G{NumDigits}` format and the same
+`Math.Abs(v) < 1e-12 ? 0 : v` near-zero normalisation the draw loop uses, so the two cannot disagree
+about the column width. It mirrors the draw path's two finiteness guards exactly — the outer loop
+`continue`s on a non-finite PRIMARY (the padding NaNs `Axes.Ticks` appends to equalise list lengths)
+and the secondary label is separately guarded — or a padded NaN row would be measured as a label
+that is never drawn. Falls back to the endpoint measurement only when the tick set yields nothing
+finite (degenerate axis), so a label can never end up flush against the axis line. `MajorY` is
+identical for `minorTicks` true/false (minor ticks populate separate lists), so the cheaper
+`Ticks(false)` call is safe.
+
+**Also de-duplicated, because this is exactly how a label and its own hit region drift apart:** the
+anchor expression existed as two hand-maintained copies — one in the draw path, one in the
+approximate hit-rect path (`LabelHitRects`) used for click targeting. Both now call one
+`ComputeYLabelAnchors`. It has a font-taking overload as the real implementation plus a thin
+convenience overload that supplies the Plex tick font — the font parameter is a genuine seam, not
+test-only API: `SkiaFonts.PlexRegular` cannot load headlessly (this file's own standing note), so
+tests drive the real geometry with `SKTypeface.Default`.
+
+**Gate** — `RectYAxisLabelSpacingTests.cs`, 6 tests: the right-axis shared-grid case and the
+left-axis half-step case each assert the measured width equals the widest ACTUALLY-DRAWN label and
+is strictly greater than the old endpoints-only measurement; a 3-case `[Theory]` asserts the real
+geometric invariant (each label column clears the tick numbers' far edge, computed from
+DrawRectGrid's own `±lw*4` placement); and a degenerate zero-height window still reserves non-zero
+width. **Verified to actually catch the regression, not merely exercise it**: reverting
+`MaxYTickLabelWidth` to endpoints-only turns the two direct tests red immediately. The invariant
+`[Theory]` initially passed against the reverted code — it derived its expected tick extent by
+calling the very function under test, making the comparison self-consistent and **vacuous**, the same
+trap this file already records for L3a's gate-5 pixel-identity test (two identically-broken
+placeholders compare equal). Fixed by giving it an INDEPENDENT oracle that re-derives the widest
+drawn label from the tick set directly; it then correctly fails 2 of its 3 cases against the reverted
+code (the third, a -10…10 secondary window whose endpoints genuinely ARE widest, has no overlap and
+correctly still passes). Firewall 4/4, Core 512/512, Ui 3754/3754, Engine 460/461 (1 pre-existing
+skip) — all green.
+
+**Not pixel-verified** (Skia text rendering has no headlessly assertable output, matching every other
+Skia-only claim in this file) — correctness rests on the measured-width tests above plus the
+invariant test encoding DrawRectGrid's own placement arithmetic. Please confirm on your end that a
+Rect plot with traces on the right axis (especially one whose right axis auto-scales to a range like
+0…7, where shared-grid interpolation yields one-decimal tick numbers) now shows its Y labels clear of
+the tick numbers, and that the left axis is unaffected/still correct.
+
 Multi-file Data Display: UI entry points, alias labelling, path portability
 (brief-data-display-multifile-ui.md, 2026-07-30) — COMPLETE. Section 3 of the results-storage
 brief below landed the *model* (a `.cdd` referencing several `.npy` files with aliases); this
