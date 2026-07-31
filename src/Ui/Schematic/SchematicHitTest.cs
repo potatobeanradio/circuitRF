@@ -262,10 +262,10 @@ public static class SchematicHitTest
             // SnP and the Tuner family grow their glyph downward (Tuner: a bias branch when
             // ShowBias=true), so the label band must clear the real glyph extent — matching the
             // renderer's DrawLabels. Passing null left the clickable zone too high over those tuners.
-            double? glyphHalfH = comp.Symbol is SymbolKind.Snp
-                or SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
-                ? comp.ComputeGlyphBb().MaxY - comp.Y
-                : null;
+            // Always the REAL glyph extent, not a per-kind list: the renderer now clears the glyph
+            // for every symbol, so anything narrower here would put the clickable zone somewhere the
+            // text is not — which is exactly the drift this shared geometry exists to prevent.
+            double? glyphHalfH = comp.ComputeGlyphBb().MaxY - comp.Y;
             var (baseX, _, bandTop, bandBot) =
                 SchematicComponent.LabelRowGeometry(comp.X, comp.Y, row, oDx, oDy, comp.Symbol, comp.PortCount, glyphHalfH);
 

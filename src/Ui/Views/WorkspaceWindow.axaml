@@ -68,6 +68,7 @@
                                     <NativeMenuItem Header="Data…" Command="{Binding ImportDataCommand}"         CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="GDSII…" Command="{Binding ImportGdsiiLibraryCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="DXF…"   Command="{Binding ImportDxfLibraryCommand}"   CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="PDK…"   Command="{Binding ImportPdkCommand}"          CommandParameter="{Binding $parent[Window]}"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -333,6 +334,9 @@
                               CommandParameter="{Binding $parent[Window]}"/>
                     <MenuItem Header="_DXF…"
                               Command="{Binding ImportDxfLibraryCommand}"
+                              CommandParameter="{Binding $parent[Window]}"/>
+                    <MenuItem Header="_PDK…"
+                              Command="{Binding ImportPdkCommand}"
                               CommandParameter="{Binding $parent[Window]}"/>
                 </MenuItem>
                 <MenuItem Header="_Export">

@@ -288,7 +288,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireSegments    = selSegs,
             WirePreview             = _wirePoints.Count > 0 ? _wirePoints.ToList() : null,
             Ghost                   = ActiveTool == Tool.Place
-                ? new PlacementGhost(0, 0, _placementSymbol, _placementRot, _placementMirrorX, _placementPortCount)
+                ? BuildPlacementGhost(0, 0)
                 : null,
             RubberBand              = _isRubberBanding ? Overlay.RubberBand : null,
             LabelDragOffsets        = ActiveTool == Tool.MoveLabels && _moveLabelPhase == MoveLabelPhase.Moving
@@ -2650,8 +2650,58 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// <summary>Last-used placement rotation — read by the drop target to honour the user's rotation.</summary>
     public SymbolRotation CurrentPlacementRotation => _placementRot;
 
+    /// <summary>
+    /// The ghost for the currently-armed placement. An armed KIT part resolves its own cell symbol
+    /// so the ghost shows what will actually land — its SymbolKind is only a placeholder, and a
+    /// ghost built from that alone draws a generic box while the click places the real symbol.
+    /// </summary>
+    private PlacementGhost BuildPlacementGhost(double x, double y)
+    {
+        IReadOnlyList<SymbolPrimitive>? prims = null;
+        IReadOnlyList<SymbolPin>?       pins  = null;
+
+        if (_placementService?.Pending?.Pdk?.CellDir is { Length: > 0 } cellDir)
+        {
+            try
+            {
+                string trimmed = cellDir.TrimEnd('/', '\\');
+                string? parent = Path.GetDirectoryName(trimmed);
+                if (!string.IsNullOrEmpty(parent))
+                {
+                    var res = CellSymbolResolver.Resolve(Path.GetFileName(trimmed), parent);
+                    if (res.State == CellSymbolState.Resolved)
+                    {
+                        prims = res.Symbol!.Primitives;
+                        pins  = res.Symbol.Pins;
+                    }
+                }
+            }
+            catch { /* unresolvable — fall back to the placeholder glyph */ }
+        }
+
+        return new PlacementGhost(x, y, _placementSymbol, _placementRot, _placementMirrorX,
+                                  _placementPortCount, prims, pins);
+    }
+
     private void HandlePlacePress(double wx, double wy)
-        => CommitPlacement(_placementSymbol, _placementPortCount, _placementRot, wx, wy, _placementMirrorX);
+    {
+        // A part armed from an imported kit is placed as a cell reference — its symbol was installed
+        // as a real cell at import time, so this reuses the ordinary cell-placement path rather than
+        // introducing a second component species with its own render/pin/hit-test rules.
+        if (_placementService?.Pending?.Pdk is { } pdk)
+        {
+            if (pdk.CellDir is null)
+            {
+                _messageSink?.Warning(
+                    $"\"{pdk.PartId}\" has no symbol circuitRF could read, so it cannot be placed yet.");
+                return;
+            }
+            _ = CommitCellPlacementAsync(pdk.CellDir, wx, wy, _placementRot);
+            return;
+        }
+
+        CommitPlacement(_placementSymbol, _placementPortCount, _placementRot, wx, wy, _placementMirrorX);
+    }
 
     /// <summary>
     /// Places a component instance at the snapped world position with the given parameters.
@@ -2844,7 +2894,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         double sy = EditModel.SnapToGrid(wy);
         Overlay = Overlay with
         {
-            Ghost = new PlacementGhost(sx, sy, _placementSymbol, _placementRot, _placementMirrorX, _placementPortCount),
+            Ghost = BuildPlacementGhost(sx, sy),
         };
     }
 

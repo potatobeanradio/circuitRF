@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using CircuitRF.Core.Pdk;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
 using Avalonia.Input;
@@ -24,6 +25,7 @@ using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Messages;
+using CircuitRF.Core.Devices.External;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Theming;
@@ -280,6 +282,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _recentWorkspaces.AddRange(prefs.RecentWorkspaces ?? []);
         _recentlyPlaced   = ParseMruPlaced(prefs.RecentlyPlaced);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        RestoreInstalledPdks();
         RebuildRecentMenuItems();
 
         // Wire tree-item actions before any workspace is loaded so actions are available
@@ -325,6 +328,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             CheckForRecovery, Avalonia.Threading.DispatcherPriority.Background);
 
         ResetTechCache();
+
+        LoadExternalDeviceProviders();
 
         // L3b — CellLayoutResolver is a static, process-lifetime class (unlike the per-workspace
         // _techCache), so this subscribes exactly once, ever; never re-subscribed per workspace reset.
@@ -649,6 +654,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Layout = newLayout;
             _factory.PaletteTool?.SetPlacementService(PlacementService);
             _factory.PaletteTool?.SetMru(_recentlyPlaced);
+            RestoreInstalledPdks();
 
             // CreateDefaultLayout replaced all tool instances and the DocumentDock — re-wire them.
             _factory.ProjectTreeTool?.SetActions(this);
@@ -1033,6 +1039,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Layout = newLayout;
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        RestoreInstalledPdks();
 
         // CreateDefaultLayout replaced all tool instances and the DocumentDock — re-wire them.
         _factory.ProjectTreeTool?.SetActions(this);
@@ -1447,6 +1454,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Layout = newLayout;
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        RestoreInstalledPdks();
 
         _factory.ProjectTreeTool?.SetActions(this);
         SubscribeToFilterState();
@@ -1512,6 +1520,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             _recentlyPlaced.RemoveAt(_recentlyPlaced.Count - 1);
 
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        RestoreInstalledPdks();
 
         var list = _recentlyPlaced.Count > 0 ? _recentlyPlaced.Select(k => k.ToString()).ToList() : null;
         AppPreferencesIo.Update(p => p.RecentlyPlaced = list);
@@ -1679,6 +1688,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Layout = newLayout;
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        RestoreInstalledPdks();
         SubscribeToFilterState();
         SubscribeToTreeSelection();
 
@@ -2445,6 +2455,196 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     // ---- Technology (.ctech) editor (L0d) --------------------------------------
+
+    // ── Import PDK ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// File → Import → PDK…  Lets the user point at a process design kit — a folder or a .zip —
+    /// and reports what circuitRF made of it.
+    ///
+    /// <para>The dialog is shown for EVERY outcome, not only failures. Kits arrive in many formats
+    /// and circuitRF reads a few of them, so "understood some of this" is the normal result and the
+    /// user needs to see which parts came through, what was recognised but unreadable, and what was
+    /// not recognised at all. A silent success would hide the artwork a kit ships but circuitRF
+    /// cannot yet draw.</para>
+    /// </summary>
+    [RelayCommand]
+    private async Task ImportPdk(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null) return;
+
+        var choice = await PdkImportPromptDialog.PickAsync(window);
+        if (choice is null) return;
+
+        string? path = null;
+        if (choice == PdkImportPromptDialog.Choice.Folder)
+        {
+            var folders = await window.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "Import PDK — choose the kit folder",
+                AllowMultiple = false,
+            });
+            if (folders.Count == 0) return;
+            path = folders[0].Path.LocalPath;
+        }
+        else
+        {
+            var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Import PDK — choose the kit archive",
+                AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType("Kit archive") { Patterns = ["*.zip"] }],
+            });
+            if (files.Count == 0) return;
+            path = files[0].Path.LocalPath;
+        }
+
+        if (string.IsNullOrEmpty(path)) return;
+
+        PdkImportReport report;
+        try
+        {
+            report = await Task.Run(() => PdkImporter.Import(path));
+        }
+        catch (Exception ex)
+        {
+            Messages.Post(MessageLevel.Error, $"Import PDK failed: {ex.Message}");
+            return;
+        }
+
+        ImportedPdks.Add(report);
+        InstallPdkIntoPalette(report);
+
+        var level = report.Status switch
+        {
+            PdkImportStatus.Imported          => MessageLevel.Info,
+            PdkImportStatus.PartiallyImported => MessageLevel.Warning,
+            _                                 => MessageLevel.Error,
+        };
+        Messages.Post(level,
+            $"Import PDK — {report.KitName}: {report.Parts.Count} part(s), " +
+            $"{report.Supported.Count()} file(s) read, {report.KnownGaps.Count()} recognised but unsupported, " +
+            $"{report.Unrecognized.Count()} unrecognised.");
+
+        await PdkImportReportDialog.ShowAsync(window, report);
+    }
+
+    /// <summary>Kits imported this session, newest last. The component palette reads this.</summary>
+    public ObservableCollection<PdkImportReport> ImportedPdks { get; } = [];
+
+    /// <summary>Palette entries contributed by every kit imported this session, in import order.</summary>
+    private readonly List<PaletteItem> _pdkPaletteItems = [];
+
+    /// <summary>
+    /// Registers external device providers found in the plug-in folders, once at startup.
+    ///
+    /// <para>A kit part simulates through a provider; without one it places and netlists but cannot
+    /// be evaluated. Providers are plug-ins because they are bound to whoever supplies the device
+    /// model — circuitRF ships the seam, not the model.</para>
+    ///
+    /// <para>Silent when nothing is installed: an empty plug-in folder is the normal case, and a
+    /// startup message about it every launch would be noise. Failures ARE reported — a provider
+    /// that quietly fails to load resurfaces much later as an incomprehensible
+    /// "provider not available" mid-simulation.</para>
+    /// </summary>
+    /// <summary>
+    /// Repopulates the Library palette from kits already installed in the newly-opened workspace.
+    /// Replaces whatever the previous workspace contributed — kit parts belong to the workspace
+    /// their cells live in, not to the session.
+    /// </summary>
+    private void RestoreInstalledPdks()
+    {
+        _pdkPaletteItems.Clear();
+
+        string? wsRoot = CurrentWorkspacePath is null
+            ? null
+            : Path.GetDirectoryName(CurrentWorkspacePath);
+
+        try
+        {
+            _pdkPaletteItems.AddRange(PdkPartInstaller.LoadInstalled(wsRoot));
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Imported kits could not be restored into the palette: {ex.Message}");
+        }
+
+        _factory.PaletteTool?.SetPdkParts(_pdkPaletteItems);
+    }
+
+    private void LoadExternalDeviceProviders()
+    {
+        ExternalProviderLoader.LoadReport report;
+        try
+        {
+            report = ExternalProviderLoader.LoadDefaults();
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Device providers could not be loaded: {ex.Message}");
+            return;
+        }
+
+        if (report.LoadedAnything)
+            Messages.Info($"Device provider(s) registered: {string.Join(", ", report.Registered)}.");
+
+        foreach (var d in report.Diagnostics)
+            Messages.Warning($"Device provider — {d}");
+    }
+
+    /// <summary>
+    /// Installs a just-imported kit's parts into the Library Palette: its symbols become cells the
+    /// workspace can place, and its own browser icons become the palette tiles.
+    ///
+    /// <para>Re-importing a kit REPLACES its previous entries rather than adding a second copy —
+    /// keyed on kit name, which is what a user re-importing after fixing something expects.</para>
+    /// </summary>
+    private void InstallPdkIntoPalette(PdkImportReport report)
+    {
+        string? wsRoot = CurrentWorkspacePath is null
+            ? null
+            : Path.GetDirectoryName(CurrentWorkspacePath);
+
+        PdkPartInstaller.InstallOutcome outcome;
+        try
+        {
+            outcome = PdkPartInstaller.Install(report, wsRoot);
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Import PDK — the palette could not be updated: {ex.Message}");
+            return;
+        }
+
+        _pdkPaletteItems.RemoveAll(i => string.Equals(i.Pdk?.KitName, report.KitName, StringComparison.Ordinal));
+        _pdkPaletteItems.AddRange(outcome.Items);
+        _factory.PaletteTool?.SetPdkParts(_pdkPaletteItems);
+
+        foreach (var d in outcome.Diagnostics)
+            Messages.Warning($"Import PDK — {d}");
+
+        if (outcome.Items.Count > 0)
+        {
+            string omitted = outcome.OmittedNotPlaceable > 0
+                ? $" {outcome.OmittedNotPlaceable} further part(s) have no symbol and are internal to the " +
+                  "kit; they are listed in the import report but kept out of the palette."
+                : "";
+            Messages.Info($"Import PDK — \"{report.KitName}\" added {outcome.Items.Count} part(s) to the " +
+                          $"Library palette ({outcome.IconsFound} icon(s), {outcome.SymbolsInstalled} symbol(s) " +
+                          $"installed).{omitted}");
+        }
+        else if (outcome.OmittedNotPlaceable > 0 && wsRoot is not null)
+        {
+            Messages.Warning($"Import PDK — \"{report.KitName}\" declares {outcome.OmittedNotPlaceable} part(s), " +
+                             "but none has a symbol circuitRF can read, so none is placeable yet. " +
+                             "The import report lists what was found.");
+        }
+
+        if (outcome.Items.Count > 0 && wsRoot is null)
+            Messages.Warning("Import PDK — no workspace is open, so this kit's symbols were not installed. " +
+                             "Open or create a workspace and import again to place its parts.");
+    }
 
     /// <summary>
     /// File-menu "New Technology…" entry point. Delegates to the same core logic as the

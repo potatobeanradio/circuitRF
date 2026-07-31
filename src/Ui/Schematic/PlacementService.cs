@@ -23,6 +23,26 @@ public sealed partial class PlacementService : ObservableObject
             : new PendingPlacement(kind, portCount);
     }
 
+    /// <summary>
+    /// Arm a palette entry. A built-in entry behaves exactly as <see cref="Toggle(SymbolKind,int)"/>;
+    /// an entry from an imported kit is identified by its kit+part id, since every kit part shares
+    /// one <see cref="SymbolKind"/> and comparing kinds would treat them all as the same entry.
+    /// </summary>
+    public void Toggle(PaletteItem item)
+    {
+        if (item.Pdk is not { } pdk)
+        {
+            Toggle(item.Kind, item.PortCount);
+            return;
+        }
+
+        bool alreadyArmed = Pending?.Pdk is { } cur &&
+                            string.Equals(cur.KitName, pdk.KitName, StringComparison.Ordinal) &&
+                            string.Equals(cur.PartId,  pdk.PartId,  StringComparison.Ordinal);
+
+        Pending = alreadyArmed ? null : new PendingPlacement(item.Kind, item.PortCount, SymbolRotation.R0, pdk);
+    }
+
     /// <summary>Clear the armed state.</summary>
     public void Disarm() => Pending = null;
 

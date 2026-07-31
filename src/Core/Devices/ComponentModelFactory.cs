@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text.RegularExpressions;
+using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
 using RfCore;
@@ -31,7 +32,8 @@ public static class ComponentModelFactory
         new(StringComparer.OrdinalIgnoreCase)
         {
             "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "PnTone",
-            "NonlinearC", "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF",
+            "NonlinearC", "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            "ExtDevice",
         };
 
     /// <summary>
@@ -74,6 +76,10 @@ public static class ComponentModelFactory
             return CreateMicrostripTaperModel(parameters);
         if (typeName.Equals("MKLOPF", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripKlopfModel(parameters);
+        if (typeName.Equals("ExtDevice", StringComparison.OrdinalIgnoreCase))
+            return CreateExternalDeviceModel(parameters);
+        if (typeName.Equals("Chain", StringComparison.OrdinalIgnoreCase))
+            return CreateChainModel(parameters);
         return TryCreate(typeName);
     }
 
@@ -89,6 +95,60 @@ public static class ComponentModelFactory
     /// <summary>Register additional parameterless primitive types.</summary>
     public static void Register(string typeName, Func<ComponentModel> factory)
         => _registry[typeName] = factory;
+
+    /// <summary>
+    /// ExtDevice: a device supplied by a registered external provider.
+    ///
+    /// Two reserved parameter names — Provider (which registered provider) and Type (which device
+    /// type it exposes) — select the device. EVERY other parameter is forwarded to the provider
+    /// verbatim, matched by the names the provider's own descriptor declared. circuitRF never
+    /// interprets them, which is what lets one generic component serve any provider.
+    /// </summary>
+    private static ExternalDeviceModel CreateExternalDeviceModel(
+        IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (!parameters.TryGetValue("Provider", out var pv) || pv.Kind != ValueKind.String)
+            throw new ExternalDeviceException(
+                "ExtDevice: the 'Provider' parameter is missing — it names the registered device " +
+                "provider to load this device from.");
+        if (!parameters.TryGetValue("Type", out var tv) || tv.Kind != ValueKind.String)
+            throw new ExternalDeviceException(
+                "ExtDevice: the 'Type' parameter is missing — it names the device type to create.");
+
+        string providerName = pv.AsString();
+        string typeId       = tv.AsString();
+        var    provider     = ExternalDeviceRegistry.Require(providerName);
+
+        var descriptor = provider.Describe()
+            .FirstOrDefault(d => string.Equals(d.TypeId, typeId, StringComparison.Ordinal))
+            ?? throw new ExternalDeviceException(
+                $"ExtDevice: provider '{providerName}' does not expose a device type '{typeId}'. " +
+                $"Available: {string.Join(", ", provider.Describe().Select(d => d.TypeId))}.");
+
+        // Forward everything except the two selectors, stringified. A provider declares its own
+        // parameter kinds; transporting as text keeps this layer free of any per-provider typing.
+        var forwarded = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (key, val) in parameters)
+        {
+            if (key.Equals("Provider", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("Type",     StringComparison.OrdinalIgnoreCase)) continue;
+            forwarded[key] = val.Kind == ValueKind.String
+                ? val.AsString()
+                : val.AsReal().ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        string label = parameters.TryGetValue("__instanceLabel", out var lv) && lv.Kind == ValueKind.String
+                       ? lv.AsString() : typeId;
+
+        var instance = provider.Create(typeId, forwarded);
+        if (instance.Descriptor.NodeCount != descriptor.NodeCount)
+            throw new ExternalDeviceException(
+                $"ExtDevice: provider '{providerName}' described type '{typeId}' with " +
+                $"{descriptor.NodeCount} nodes but created an instance with " +
+                $"{instance.Descriptor.NodeCount}.");
+
+        return new ExternalDeviceModel(instance, providerName, label);
+    }
 
     private static SnpModel CreateSnpModel(IReadOnlyDictionary<string, Value> parameters)
     {
@@ -158,6 +218,28 @@ public static class ComponentModelFactory
         }
 
         return new ZPortModel(portCount, zExprs, numericParams, name);
+    }
+
+    // ── Chain (ABCD two-port) ────────────────────────────────────────────────
+
+    private static ChainModel CreateChainModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        string name = parameters.TryGetValue("ChainName", out var nm) && nm.Kind == ValueKind.String
+            ? nm.AsString() : "Chain";
+
+        Expr? Pick(string key) =>
+            parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.String
+                ? Parser.Parse(v.AsString()) : null;
+
+        var numericParams = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var kv in parameters)
+        {
+            if (kv.Key is "ChainName" or "A" or "B" or "C" or "D") continue;
+            if (kv.Value.Kind is ValueKind.Real or ValueKind.Complex)
+                numericParams[kv.Key] = kv.Value;
+        }
+
+        return new ChainModel(Pick("A"), Pick("B"), Pick("C"), Pick("D"), numericParams, name);
     }
 
     // ── ToneSource (V_1Tone / V_nTone) ───────────────────────────────────────

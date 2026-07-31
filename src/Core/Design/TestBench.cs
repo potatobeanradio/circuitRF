@@ -18,6 +18,12 @@ public sealed class TestBench(string name)
     /// <summary>Top-level contents: cell instances and bare primitives (incl. Port/Term).</summary>
     public List<Instance>     Instances       { get; } = [];
     public List<Variable>     GlobalVariables { get; } = [];
+
+    /// <summary>
+    /// User-defined expression functions declared at netlist top level (`name(a, b) = expr`).
+    /// The expression engine has supported these since v1; this is where a .cnl declares them.
+    /// </summary>
+    public List<CircuitRF.Core.Expressions.UserFunction> Functions { get; } = [];
     public List<Analysis>     Analyses        { get; } = [];
     public List<Measurement>  Measurements    { get; } = [];
 

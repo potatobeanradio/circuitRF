@@ -1,0 +1,78 @@
+namespace CircuitRF.Core.Devices.External;
+
+/// <summary>
+/// What kind of quantity a node carries. The solver treats every node identically — this exists
+/// only for UI labelling, unit display, and default-connection policy. A thermal node is an
+/// ordinary node whose voltage happens to be a temperature and whose current happens to be a power;
+/// the MNA matrix is unit-agnostic and needs no new node type.
+/// </summary>
+public enum NodeQuantityKind
+{
+    Electrical,
+    Thermal,
+}
+
+/// <summary>How a parameter value should be entered and transported.</summary>
+public enum ExternalParamKind
+{
+    Double,
+    Int,
+    String,
+    /// <summary>A path to a file the provider reads. The editor offers a file picker.</summary>
+    FilePath,
+}
+
+/// <summary>
+/// One parameter a device type declares. Names are opaque to circuitRF — they are rendered in the
+/// parameter editor and passed back verbatim, never interpreted.
+/// </summary>
+public sealed record ExternalParamDescriptor(
+    string            Name,
+    ExternalParamKind Kind,
+    string?           DefaultText = null,
+    string            Units       = "");
+
+/// <summary>
+/// One node of a device type. <paramref name="External"/> nodes bind to nets the user names in the
+/// netlist; internal nodes are allocated by the elaborator and are invisible in the design layer.
+///
+/// <para><b>SlavedTo</b> is the index of another node whose voltage this node follows, or null for
+/// an ordinary free node. A provider reports this for a node that is not an independent unknown —
+/// one whose row in the device's own Jacobian is identically zero, so solving for it would make the
+/// system singular. circuitRF does not guess: a provider that reports a node as degenerate without
+/// naming what it follows is a hard error at elaboration, because the alternative is a silently
+/// wrong operating point.</para>
+/// </summary>
+public sealed record ExternalNodeDescriptor(
+    int              Index,
+    bool             External,
+    NodeQuantityKind QuantityKind = NodeQuantityKind.Electrical,
+    string           Label        = "",
+    int?             SlavedTo     = null);
+
+/// <summary>
+/// Everything circuitRF knows about an externally-provided device type. All of it is learned at
+/// runtime from the provider — circuitRF hardcodes no parameter name, no pin count, and no node
+/// role. <paramref name="TypeId"/> and <paramref name="DisplayName"/> are opaque strings: rendered,
+/// never interpreted.
+/// </summary>
+public sealed record ExternalDeviceDescriptor(
+    string                                   TypeId,
+    string                                   DisplayName,
+    int                                      ExternalPinCount,
+    int                                      InternalNodeCount,
+    IReadOnlyList<ExternalParamDescriptor>   Parameters,
+    IReadOnlyList<ExternalNodeDescriptor>    Nodes,
+    bool                                     SupportsNonlinear = true,
+    bool                                     SupportsLinear    = false)
+{
+    /// <summary>Total node count the device occupies in the global matrix.</summary>
+    public int NodeCount => ExternalPinCount + InternalNodeCount;
+
+    /// <summary>
+    /// Nodes that are not free unknowns, paired with the node each one follows. Empty for a device
+    /// whose nodes are all independent.
+    /// </summary>
+    public IEnumerable<(int Node, int SlavedTo)> SlavedNodes
+        => Nodes.Where(n => n.SlavedTo is not null).Select(n => (n.Index, n.SlavedTo!.Value));
+}

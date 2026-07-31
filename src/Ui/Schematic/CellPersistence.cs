@@ -73,6 +73,38 @@ public sealed class CcellFile
     public bool IsTestBench { get; set; }
 
     /// <summary>
+    /// Names the registered external device provider that supplies this cell's behaviour, when the
+    /// cell is a LEAF backed by a provider rather than a hierarchy of its own.
+    ///
+    /// <para>Such a cell has a symbol but deliberately no schematic: extraction emits it as a single
+    /// external-device instance instead of descending into it. Null — the overwhelmingly common
+    /// case — means an ordinary hierarchical cell, and both fields are omitted from the file, so
+    /// every existing <c>.ccell</c> is byte-identical.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExternalProvider { get; set; }
+
+    /// <summary>Device type within <see cref="ExternalProvider"/>. Meaningless without it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExternalType { get; set; }
+
+    /// <summary>
+    /// Absolute path to the kit's own palette icon for this part, when it shipped one. Recorded so
+    /// reopening a workspace can restore the tile without re-importing the kit.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExternalIconPath { get; set; }
+
+    /// <summary>
+    /// Parameters emitted with every instance but never offered for editing — the kit's own
+    /// infrastructure, such as where its model data lives. They are not design quantities: changing
+    /// one per-instance would point that instance at data the kit does not have. Emitted verbatim so
+    /// the provider still receives them.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? ExternalFixedParameters { get; set; }
+
+    /// <summary>
     /// Number of electrical ports this cell exposes to instantiating parents.
     /// Default 0 so existing alpha .ccell files (which omit this field) load cleanly.
     /// The primary symbol's ExternalPortCount is fed from this value, not the other way around.

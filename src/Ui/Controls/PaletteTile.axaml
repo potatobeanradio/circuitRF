@@ -26,7 +26,7 @@
     <ToolTip.Tip>
         <StackPanel Spacing="2">
             <TextBlock Text="{Binding Item.DisplayName}" FontWeight="SemiBold"/>
-            <TextBlock Text="{Binding Item.Category}"/>
+            <TextBlock Text="{Binding CategoryLabel}"/>
         </StackPanel>
     </ToolTip.Tip>
 
@@ -47,7 +47,13 @@
                 CornerRadius="3"
                 Cursor="Hand"
                 Classes.armed="{Binding #TileRoot.IsArmed}">
-            <ctrl:PaletteGlyphControl Kind="{Binding Item.Kind}" PortCount="{Binding Item.PortCount}" Width="44" Height="44"/>
+            <!-- IconPath is null for every built-in entry, so those render exactly as before;
+                 a kit part renders the icon its own kit shipped. -->
+            <ctrl:PaletteGlyphControl Kind="{Binding Item.Kind}"
+                                      PortCount="{Binding Item.PortCount}"
+                                      IconPath="{Binding Item.Pdk.IconPath}"
+                                      SymbolCellDir="{Binding Item.Pdk.CellDir}"
+                                      Width="44" Height="44"/>
         </Border>
 
         <!-- Type label underneath — DisplayName, truncated if long -->

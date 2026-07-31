@@ -1,0 +1,181 @@
+using System.Globalization;
+using CircuitRF.Core.Devices.External;
+
+namespace CircuitRF.Engine.Tests.External;
+
+/// <summary>
+/// The synthetic external-device provider: a textbook square-law FET with parasitic access
+/// resistances and self-heating, used as the test oracle for the whole external-device path.
+///
+/// <para>This is the test strategy for external devices, not a toy. A real provider's model has no
+/// closed form, so a test written against one can only check that nothing crashed. This fixture has
+/// <b>known exact answers</b> — an analytic Jacobian and a DC operating point obtainable from a
+/// scalar solve that never touches circuitRF's matrix — so it can assert the operating point, the
+/// internal node voltages, and the Jacobian entry by entry. It also mirrors the real topology it
+/// stands in for: access resistances that create genuine internal nodes, and a thermal node that is
+/// a solved unknown rather than a fixed input.</para>
+///
+/// <para>Node layout (external pins first, then internal, matching descriptor order):</para>
+/// <code>
+///   0 gate      ──Rg──┐
+///   1 drain     ──────┼── channel ──┐
+///   2 source    ──Rs──┼─────────────┤
+///   3 thermal         │             │        4 gateInternal
+///                     └─ 4 ─────────┘        5 sourceInternal
+/// </code>
+///
+/// <para>Behaviour: <c>Id = β·(Vgs_int − Vth(T))²·(1 + λ·Vds_int)</c> in saturation, zero below
+/// threshold. Dissipated power <c>P = Id·Vds_int</c> is delivered to the thermal node, which has its
+/// own internal <c>Rth</c> to a fixed reference — so the thermal node is never floating and the
+/// self-heating loop closes through the solver: power out, temperature back, threshold shifts.</para>
+/// </summary>
+public sealed class SquareLawFetProvider : IExternalDeviceProvider
+{
+    public const string TypeName = "SquareLawFet";
+
+    public string Name { get; }
+
+    public SquareLawFetProvider(string name = "synthetic") => Name = name;
+
+    // Node indices — the single place the layout is written down.
+    public const int Gate = 0, Drain = 1, Source = 2, Thermal = 3, GateInt = 4, SourceInt = 5;
+    public const int NodeCount = 6;
+
+    public static readonly ExternalDeviceDescriptor TypeDescriptor = new(
+        TypeId:            TypeName,
+        DisplayName:       "Square-law FET (synthetic)",
+        ExternalPinCount:  4,
+        InternalNodeCount: 2,
+        Parameters:
+        [
+            new ExternalParamDescriptor("Beta",   ExternalParamKind.Double, "0.05", "A/V^2"),
+            new ExternalParamDescriptor("Vth0",   ExternalParamKind.Double, "1.0",  "V"),
+            new ExternalParamDescriptor("Lambda", ExternalParamKind.Double, "0.02", "1/V"),
+            new ExternalParamDescriptor("Rg",     ExternalParamKind.Double, "10.0", "Ohm"),
+            new ExternalParamDescriptor("Rs",     ExternalParamKind.Double, "1.0",  "Ohm"),
+            new ExternalParamDescriptor("Rth",    ExternalParamKind.Double, "5.0",  "degC/W"),
+            new ExternalParamDescriptor("Ktv",    ExternalParamKind.Double, "0.0",  "V/degC"),
+        ],
+        Nodes:
+        [
+            new ExternalNodeDescriptor(Gate,      External: true,  NodeQuantityKind.Electrical, "gate"),
+            new ExternalNodeDescriptor(Drain,     External: true,  NodeQuantityKind.Electrical, "drain"),
+            new ExternalNodeDescriptor(Source,    External: true,  NodeQuantityKind.Electrical, "source"),
+            new ExternalNodeDescriptor(Thermal,   External: true,  NodeQuantityKind.Thermal,    "thermal"),
+            new ExternalNodeDescriptor(GateInt,   External: false, NodeQuantityKind.Electrical, "gateInt"),
+            new ExternalNodeDescriptor(SourceInt, External: false, NodeQuantityKind.Electrical, "sourceInt"),
+        ]);
+
+    public IReadOnlyList<ExternalDeviceDescriptor> Describe() => [TypeDescriptor];
+
+    public IExternalDeviceInstance Create(string typeId, IReadOnlyDictionary<string, string> parameters)
+    {
+        if (!string.Equals(typeId, TypeName, StringComparison.Ordinal))
+            throw new ExternalDeviceException($"Provider '{Name}' does not expose a type '{typeId}'.");
+        return new Instance(parameters);
+    }
+
+    /// <summary>Parameters as this provider resolves them — public so tests can build the oracle.</summary>
+    public sealed record Params(double Beta, double Vth0, double Lambda,
+                                double Rg, double Rs, double Rth, double Ktv);
+
+    public static Params ReadParams(IReadOnlyDictionary<string, string> p)
+    {
+        double Get(string key, double fallback) =>
+            p.TryGetValue(key, out var s) &&
+            double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)
+                ? d : fallback;
+
+        var v = new Params(
+            Beta:   Get("Beta",   0.05),
+            Vth0:   Get("Vth0",   1.0),
+            Lambda: Get("Lambda", 0.02),
+            Rg:     Get("Rg",     10.0),
+            Rs:     Get("Rs",     1.0),
+            Rth:    Get("Rth",    5.0),
+            Ktv:    Get("Ktv",    0.0));
+
+        if (v.Rg <= 0 || v.Rs <= 0 || v.Rth <= 0)
+            throw new ExternalDeviceException(
+                $"{TypeName}: Rg, Rs and Rth must all be positive (got Rg={v.Rg}, Rs={v.Rs}, Rth={v.Rth}).");
+        return v;
+    }
+
+    /// <summary>Drain current and its three partial derivatives, shared by the model and the oracle.</summary>
+    public static (double Id, double Gm, double Gds, double GT) Channel(
+        Params p, double vgsInt, double vdsInt, double temp)
+    {
+        double vth = p.Vth0 + p.Ktv * temp;
+        double ov  = vgsInt - vth;
+        if (ov <= 0.0) return (0.0, 0.0, 0.0, 0.0);        // subthreshold: hard cutoff, C0 at ov=0
+
+        double lam = 1.0 + p.Lambda * vdsInt;
+        double id  = p.Beta * ov * ov * lam;
+        double gm  = 2.0 * p.Beta * ov * lam;              // ∂Id/∂Vgs_int
+        double gds = p.Beta * ov * ov * p.Lambda;          // ∂Id/∂Vds_int
+        double gT  = -gm * p.Ktv;                          // ∂Id/∂T, through Vth(T)
+        return (id, gm, gds, gT);
+    }
+
+    private sealed class Instance(IReadOnlyDictionary<string, string> parameters) : IExternalDeviceInstance
+    {
+        private readonly Params _p = ReadParams(parameters);
+
+        public ExternalDeviceDescriptor Descriptor => TypeDescriptor;
+
+        public ExternalDeviceEvaluation Evaluate(IReadOnlyList<double> v)
+        {
+            if (v.Count != NodeCount)
+                throw new ExternalDeviceException(
+                    $"{TypeName}: expected {NodeCount} node voltages, got {v.Count}.");
+
+            double vg = v[Gate], vd = v[Drain], vs = v[Source];
+            double t  = v[Thermal], vgi = v[GateInt], vsi = v[SourceInt];
+
+            double vgsInt = vgi - vsi;
+            double vdsInt = vd  - vsi;
+            var (id, gm, gds, gT) = Channel(_p, vgsInt, vdsInt, t);
+
+            double gG = 1.0 / _p.Rg, gS = 1.0 / _p.Rs, gTh = 1.0 / _p.Rth;
+            double power = id * vdsInt;
+
+            // Passive convention throughout: I[k] is the current flowing INTO the device at node k.
+            var i = new double[NodeCount];
+            i[Gate]      =  (vg - vgi) * gG;
+            i[Drain]     =  id;
+            i[Source]    =  (vs - vsi) * gS;
+            i[Thermal]   = -power + t * gTh;     // device delivers P out; internal Rth pins the node
+            i[GateInt]   =  (vgi - vg) * gG;     // gate is DC-open beyond the access resistor
+            i[SourceInt] = -id + (vsi - vs) * gS;
+
+            // Analytic Jacobian. Vgs_int = v[GateInt] − v[SourceInt]; Vds_int = v[Drain] − v[SourceInt].
+            var g = new double[NodeCount, NodeCount];
+            g[Gate, Gate]       =  gG;   g[Gate, GateInt]     = -gG;
+            g[GateInt, GateInt] =  gG;   g[GateInt, Gate]     = -gG;
+
+            g[Source, Source]       =  gS;   g[Source, SourceInt] = -gS;
+            g[SourceInt, SourceInt] =  gS;   g[SourceInt, Source] = -gS;
+
+            g[Drain, Drain]     =  gds;
+            g[Drain, Thermal]   =  gT;
+            g[Drain, GateInt]   =  gm;
+            g[Drain, SourceInt] = -gm - gds;
+
+            g[SourceInt, Drain]     -=  gds;
+            g[SourceInt, Thermal]   -=  gT;
+            g[SourceInt, GateInt]   -=  gm;
+            g[SourceInt, SourceInt] -= -gm - gds;
+
+            // Thermal row: I = −Id·Vds_int + T/Rth, so every channel derivative appears twice —
+            // once through Id and once through Vds_int itself.
+            g[Thermal, Drain]     = -(gds * vdsInt + id);
+            g[Thermal, Thermal]   = -(gT * vdsInt) + gTh;
+            g[Thermal, GateInt]   = -(gm * vdsInt);
+            g[Thermal, SourceInt] = -((-gm - gds) * vdsInt - id);
+
+            return new ExternalDeviceEvaluation(i, new double[NodeCount], g, new double[NodeCount, NodeCount]);
+        }
+
+        public void Dispose() { }
+    }
+}

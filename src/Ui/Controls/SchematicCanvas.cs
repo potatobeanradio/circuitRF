@@ -684,12 +684,42 @@ public sealed class SchematicCanvas : Control
             var pos  = e.GetPosition(this);
             double sx = _editContext.EditModel.SnapToGrid(ScreenToWorldX(pos.X));
             double sy = _editContext.EditModel.SnapToGrid(ScreenToWorldY(pos.Y));
+            // A kit part's SymbolKind is only a placeholder, so a ghost built from it alone draws a
+            // generic box while the DROP places the kit's real symbol — the drag showing one thing
+            // and the result another. Resolve the cell's own symbol so both agree.
+            var (ghostPrims, ghostPins) = ResolveGhostSymbol(p.CellDir);
+
             _editContext.Overlay = _editContext.Overlay with
             {
-                Ghost = new PlacementGhost(sx, sy, p.Kind, _editContext.CurrentPlacementRotation, false, p.PortCount),
+                Ghost = new PlacementGhost(sx, sy, p.Kind, _editContext.CurrentPlacementRotation, false,
+                                           p.PortCount, ghostPrims, ghostPins),
             };
             InvalidateVisual();
         }
+    }
+
+    /// <summary>
+    /// Primitives and pins of the cell's primary symbol, or (null, null) for a built-in entry or an
+    /// unresolvable cell — in which case the caller falls back to the SymbolKind glyph, exactly as
+    /// before. Resolution is cached by <see cref="CellSymbolResolver"/>, so calling this per
+    /// drag-over tick is cheap.
+    /// </summary>
+    private static (IReadOnlyList<SymbolPrimitive>?, IReadOnlyList<SymbolPin>?) ResolveGhostSymbol(string? cellDir)
+    {
+        if (string.IsNullOrEmpty(cellDir)) return (null, null);
+
+        try
+        {
+            string trimmed = cellDir.TrimEnd('/', '\\');
+            string? parent = System.IO.Path.GetDirectoryName(trimmed);
+            if (string.IsNullOrEmpty(parent)) return (null, null);
+
+            var res = CellSymbolResolver.Resolve(System.IO.Path.GetFileName(trimmed), parent);
+            return res.State == CellSymbolState.Resolved
+                ? (res.Symbol!.Primitives, res.Symbol.Pins)
+                : (null, null);
+        }
+        catch { return (null, null); }
     }
 
     private void OnPaletteDragLeave(object? sender, DragEventArgs e)
@@ -720,7 +750,13 @@ public sealed class SchematicCanvas : Control
         double wy    = ScreenToWorldY(pos.Y);
         var rotation = _editContext.CurrentPlacementRotation;
 
-        _editContext.CommitPlacement(payload.Kind, payload.PortCount, rotation, wx, wy);
+        // A kit part places as the cell its symbol was installed into — the SAME path the
+        // click-to-arm gesture takes, so dragging and clicking a tile can never disagree.
+        if (payload.CellDir is { Length: > 0 } cellDir)
+            _ = _editContext.CommitCellPlacementAsync(cellDir, wx, wy, rotation);
+        else
+            _editContext.CommitPlacement(payload.Kind, payload.PortCount, rotation, wx, wy);
+
         e.Handled = true;
         InvalidateVisual();
     }

@@ -353,7 +353,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _isRefreshing = true;
 
         IsEmptyState      = false;
-        TypeDisplayName   = ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount);
+        TypeDisplayName   = TypeDisplayNameFor(comp);
         StagedInstanceName = comp.InstanceName;
         ShowTypeLabel     = comp.ShowTypeLabel;
         ShowInstanceName  = comp.ShowInstanceName;
@@ -719,7 +719,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     {
         if (_target is null) return;
         _isRefreshing = true;
-        TypeDisplayName    = ComponentTypeRegistry.DisplayName(_target.Symbol, _target.PortCount);
+        TypeDisplayName    = TypeDisplayNameFor(_target);
         StagedInstanceName = _target.InstanceName;
         ShowTypeLabel      = _target.ShowTypeLabel;
         ShowInstanceName   = _target.ShowInstanceName;
@@ -917,4 +917,14 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             if (aList[i].Name != b[i].Name) return false;
         return true;
     }
+
+    /// <summary>
+    /// The type shown for a component. A cell-reference component's type is the CELL it references —
+    /// its placeholder <see cref="SymbolKind.Generic"/> renders as "X", which says nothing about what
+    /// was actually placed. Derived from CellRef so it can never drift from what the canvas draws.
+    /// </summary>
+    private static string TypeDisplayNameFor(EditableComponent comp)
+        => comp.CellRef is { Length: > 0 } cr
+            ? System.IO.Path.GetFileName(cr.TrimEnd('/', '\\'))
+            : ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount);
 }

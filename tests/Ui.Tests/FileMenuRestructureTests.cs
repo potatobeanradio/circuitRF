@@ -217,15 +217,25 @@ public class FileMenuRestructureTests
     private static int IndexOfHeaderContaining(IReadOnlyList<MenuNode> nodes, string substring)
         => nodes.ToList().FindIndex(n => n.Header.Replace("_", "").Contains(substring, StringComparison.Ordinal));
 
-    // ── Gate 6a — Import submenu contents unchanged: exactly 3 items, no Gerber ───────────────────
+    // ── Gate 6a — Import submenu contents: Data/GDSII/DXF/PDK, never Gerber ──────────────────────
+    //
+    // The count is pinned to the exact expected item SET rather than a bare number, so adding a
+    // format has to name it here. Gerber stays absent on purpose — it is export-only (L4c).
 
     [Fact]
-    public void ImportSubmenu_ExactlyThreeItems_NoGerber()
+    public void ImportSubmenu_ContainsExpectedFormats_NoGerber()
     {
+        string[] expected = ["Data", "GDSII", "DXF", "PDK"];
+
         foreach (var children in new[] { InWindowFileChildren(), NativeFileChildren() })
         {
             var import = children.First(n => n.Header is "_Import" or "Import");
-            Assert.Equal(3, import.Children.Count);
+
+            var actual = import.Children
+                .Select(c => c.Header.Replace("_", "").Replace("…", "").Trim())
+                .ToArray();
+
+            Assert.Equal(expected, actual);
             Assert.DoesNotContain(import.Children, c => c.Header.Contains("Gerber", StringComparison.OrdinalIgnoreCase));
         }
     }

@@ -175,6 +175,11 @@ public sealed class CnlReader
             return true;
         }
 
+        // User-defined expression function: "name(a, b, ...) = expr". Checked before the plain
+        // assignment case, whose LHS test requires a bare identifier and so never matches this.
+        if (TryParseFunctionDeclaration(line))
+            return true;
+
         // Assignment: "name = expr [unit]"  (no colon in line, has "=", not param=val style)
         if (IsVariableAssignment(line))
         {
@@ -316,6 +321,40 @@ public sealed class CnlReader
             _currentCell!.Parameters.Add(new ParameterDeclaration(name, expr, unit));
             i++;
         }
+    }
+
+    /// <summary>
+    /// `name(a, b, ...) = expr` — a user-defined expression function. The expression engine has
+    /// supported these since v1 (Evaluator.RegisterFunction); this is the netlist syntax for
+    /// declaring one. Distinguished from an ordinary assignment by a parenthesised parameter list
+    /// immediately after the name and before the '='.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex RxFunctionDecl =
+        new(@"^([A-Za-z_]\w*)\s*\(([^)]*)\)\s*=\s*(.+)$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private bool TryParseFunctionDeclaration(string line)
+    {
+        var m = RxFunctionDecl.Match(line);
+        if (!m.Success) return false;
+
+        var parameters = m.Groups[2].Value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(a => a.Trim())
+            .ToArray();
+        if (parameters.Length == 0 || parameters.Any(a => !IsIdentifier(a)))
+            return false;                    // `f() = ...` or `g(2*x) = ...` is not a declaration
+
+        if (_currentCell is not null)
+            throw new CnlReadException(_lineNumber, line,
+                "user-defined expression functions are only valid at top level, not inside a define block.");
+
+        _testBench!.Functions.Add(new CircuitRF.Core.Expressions.UserFunction(
+            m.Groups[1].Value, parameters, m.Groups[3].Value.Trim()));
+        return true;
+
+        static bool IsIdentifier(string t)
+            => t.Length > 0 && (char.IsLetter(t[0]) || t[0] == '_') && t.All(c => char.IsLetterOrDigit(c) || c == '_');
     }
 
     private void ParseVariableAssignment(string line)

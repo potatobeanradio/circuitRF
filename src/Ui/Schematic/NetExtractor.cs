@@ -207,6 +207,12 @@ public static class NetExtractor
 
             if (comp.CellRef is not null)
             {
+                // A cell backed by an external device provider is a LEAF: emit one ExtDevice
+                // instance rather than descending into a schematic it deliberately does not have.
+                var ext = TryEmitExternalDeviceInstance(comp, model, uf, QK, netNames, detachedKeys,
+                                                        cellRefResolutions, conflicts);
+                if (ext is not null) { instances.Add(ext); continue; }
+
                 var ci = EmitCellInstance(comp, model, uf, QK, netNames, detachedKeys,
                                           cells, lib, inProgress, conflicts, cellRefResolutions);
                 if (ci is not null) instances.Add(ci);
@@ -264,6 +270,92 @@ public static class NetExtractor
     }
 
     // ── Cell instance emission ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Emits a provider-backed cell as ONE <c>ExtDevice</c> instance, or returns null when the cell
+    /// is an ordinary hierarchical one (the overwhelmingly common case) so the caller falls through
+    /// to <see cref="EmitCellInstance"/>.
+    ///
+    /// <para>Nets bind in pin order, exactly like every other component: <c>NetBindings[k]</c> is
+    /// the net at pin k. The engine's own external-device mapping treats each node as its own
+    /// ground-referenced port, so an UNCONNECTED pin — a thermal terminal left open, which is
+    /// ordinary and correct — simply gets its own auto-named net and is never an error here.</para>
+    /// </summary>
+    private static Instance? TryEmitExternalDeviceInstance(
+        EditableComponent comp,
+        SchematicEditModel model,
+        UnionFind uf,
+        Func<double, double, (long, long)> QK,
+        Dictionary<(long, long), string> netNames,
+        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions,
+        List<string> conflicts)
+    {
+        if (model.SchematicDirectory is null || comp.CellRef is null) return null;
+
+        CcellFile ccell;
+        try
+        {
+            string cellDir   = Path.GetFullPath(Path.Combine(model.SchematicDirectory, comp.CellRef));
+            string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+            if (!File.Exists(ccellPath)) return null;
+            ccell = CellPersistence.LoadFromFile(ccellPath);
+        }
+        catch
+        {
+            return null;   // unreadable .ccell — let the ordinary cell path report it
+        }
+
+        if (string.IsNullOrWhiteSpace(ccell.ExternalProvider)) return null;
+
+        if (string.IsNullOrWhiteSpace(ccell.ExternalType))
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}' (cell '{comp.CellRef}') names a device " +
+                          $"provider but no device type; skipped.");
+            return null;
+        }
+
+        var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
+                          .OrderBy(d => d.PortIndex)
+                          .ToList();
+
+        if (pinDefs.Count == 0)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}' (cell '{comp.CellRef}') exposes no pins; skipped.");
+            return null;
+        }
+
+        var nets = new List<string>(pinDefs.Count);
+        foreach (var def in pinDefs)
+        {
+            var (px, py) = model.PortWorldOf(comp, def);
+            nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+        }
+
+        // Provider/Type are reserved names the ExtDevice model reads itself; every OTHER parameter
+        // is forwarded verbatim for the provider to match against its own declared descriptor.
+        var overrides = new List<ParameterAssignment>
+        {
+            new("Provider", ccell.ExternalProvider!, null),
+            new("Type",     ccell.ExternalType!,     null),
+        };
+
+        // The kit's own infrastructure parameters, emitted verbatim and never editable.
+        if (ccell.ExternalFixedParameters is { } fixedParams)
+            foreach (var (k, v) in fixedParams)
+                if (k is not ("Provider" or "Type"))
+                    overrides.Add(new ParameterAssignment(k, v, null));
+
+        foreach (var p in comp.Parameters)
+        {
+            if (p.Name is "Provider" or "Type") continue;          // never let a stray override shadow these
+            if (string.IsNullOrWhiteSpace(p.Expression)) continue; // unset — the provider's own default stands
+            var unit = UnitNormalizer.ToEngineUnit(p.Unit);
+            overrides.Add(new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null));
+        }
+
+        return new Instance(comp.InstanceName, "ExtDevice", nets, overrides);
+    }
 
     private static Instance? EmitCellInstance(
         EditableComponent comp,

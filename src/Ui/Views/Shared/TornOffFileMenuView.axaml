@@ -140,6 +140,9 @@
                 <MenuItem Header="_DXF…"
                           Command="{Binding ImportDxfLibraryCommand}"
                           CommandParameter="{Binding $parent[Window]}"/>
+                <MenuItem Header="_PDK…"
+                          Command="{Binding ImportPdkCommand}"
+                          CommandParameter="{Binding $parent[Window]}"/>
             </MenuItem>
             <MenuItem Header="_Export">
                 <MenuItem.Icon><mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/></MenuItem.Icon>

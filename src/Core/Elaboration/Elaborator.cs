@@ -1,5 +1,6 @@
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
+using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Elaboration;
 using System.Text.RegularExpressions;
@@ -36,6 +37,11 @@ public sealed class Elaborator
 
     public ElaboratedNetlist Elaborate(TestBench tb)
     {
+        // User-defined expression functions must exist before any expression is resolved —
+        // a cell parameter may call one in its default, which is evaluated during flattening.
+        foreach (var fn in tb.Functions)
+            _evaluator.RegisterFunction(fn);
+
         var netlist     = new ElaboratedNetlist();
         var globalScope = BuildGlobalScope(tb);
 
@@ -237,6 +243,14 @@ public sealed class Elaborator
                     resolvedNodes = [..resolvedNodes, nDrv];
                 }
 
+                // ExtDevice: the provider reports currents per NODE, so every node becomes its own
+                // ground-referenced port — [n, 0] per node — and the internal nodes are minted here
+                // exactly like any other internal net. They therefore get ordinary rows in the
+                // global matrix, which is required: eliminating them locally would be simpler and
+                // is wrong for HB, where an internal node voltage carries its own harmonic content.
+                if (model is ExternalDeviceModel extDev)
+                    resolvedNodes = BuildExternalDeviceNodes(extDev, resolvedNodes, childPath, netlist);
+
                 // Layer-2 + Layer-3 linter: a Term/Port inside an instantiated sub-cell is a
                 // design error — it will be treated as inert and never become an S-param port.
                 if ((model is PortModel or TermModel) && instancePathPrefix.Length > 0)
@@ -290,10 +304,132 @@ public sealed class Elaborator
             return ResolvePnToneParameters(inst, parentScope);
         if (inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))
             return ResolveSnpParameters(inst, parentScope);
+        if (inst.Reference.Equals("ExtDevice", StringComparison.OrdinalIgnoreCase))
+            return ResolveExtDeviceParameters(inst, parentScope);
+        if (inst.Reference.Equals("Chain", StringComparison.OrdinalIgnoreCase))
+            return ResolveChainParameters(inst, parentScope);
 
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
             result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+        return result;
+    }
+
+    // ── Chain parameter resolution ────────────────────────────────────────────
+
+    /// <summary>
+    /// A/B/C/D are frequency-dependent expressions evaluated per stamped frequency, exactly like
+    /// Z_Port's Z[i,j] — so they are stored raw and their referenced scope variables injected,
+    /// rather than evaluated once here.
+    /// </summary>
+    private IReadOnlyDictionary<string, Value> ResolveChainParameters(
+        Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        result["ChainName"] = new Value(inst.InstanceName);
+
+        if (inst.NetBindings.Count != 4)
+            throw new InvalidOperationException(
+                $"Chain '{inst.InstanceName}': expected 4 nets (port1 +,− then port2 +,−); " +
+                $"got {inst.NetBindings.Count}.");
+
+        foreach (var ov in inst.Overrides)
+        {
+            if (ov.Name is "A" or "B" or "C" or "D")
+            {
+                result[ov.Name] = new Value(ov.Expression);
+                InjectZPortScopeVars(ov.Expression, parentScope, result);
+            }
+            else
+            {
+                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                catch { /* not an expression this layer owns */ }
+            }
+        }
+        return result;
+    }
+
+    // ── ExtDevice node allocation ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Lays out an external device's node array as ground-referenced port pairs and mints its
+    /// internal nodes. A node the descriptor reports as slaved is given its master's node index
+    /// rather than a fresh one — the engine's four-way port stamp then folds the chain rule on its
+    /// own (see <see cref="ExternalDeviceModel"/>).
+    /// </summary>
+    private static int[] BuildExternalDeviceNodes(
+        ExternalDeviceModel model, int[] declaredNets, string childPath, ElaboratedNetlist netlist)
+    {
+        var d = model.Descriptor;
+        if (declaredNets.Length != d.ExternalPinCount)
+            throw new ExternalDeviceException(
+                $"ExtDevice '{childPath}' (type '{d.TypeId}') declares {d.ExternalPinCount} " +
+                $"external pins but {declaredNets.Length} nets were given.");
+
+        var nodeIndex = new int[d.NodeCount];
+        for (int k = 0; k < d.ExternalPinCount; k++) nodeIndex[k] = declaredNets[k];
+
+        // Internal nodes first, so a slaved node can point at one of them regardless of order.
+        for (int k = d.ExternalPinCount; k < d.NodeCount; k++)
+            nodeIndex[k] = netlist.Nodes.GetOrAssign($"__extdev_{childPath}_n{k}");
+
+        foreach (var node in d.Nodes)
+        {
+            if (node.SlavedTo is not int master) continue;
+            if (master < 0 || master >= d.NodeCount || master == node.Index)
+                throw new ExternalDeviceException(
+                    $"ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is slaved to " +
+                    $"node {master}, which is not a valid other node of this device.");
+            if (d.Nodes.First(n => n.Index == master).SlavedTo is not null)
+                throw new ExternalDeviceException(
+                    $"ExtDevice '{childPath}' (type '{d.TypeId}'): node {node.Index} is slaved to " +
+                    $"node {master}, which is itself slaved — chains are not supported.");
+            nodeIndex[node.Index] = nodeIndex[master];
+        }
+
+        // Ground-referenced pairs: [n0, 0, n1, 0, ...].
+        var pairs = new int[d.NodeCount * 2];
+        for (int k = 0; k < d.NodeCount; k++) { pairs[2 * k] = nodeIndex[k]; pairs[2 * k + 1] = 0; }
+        return pairs;
+    }
+
+    // ── ExtDevice parameter resolution ────────────────────────────────────────
+
+    /// <summary>
+    /// An external device's parameters belong to its provider, not to circuitRF, so most of them
+    /// must NOT be expression-evaluated: Provider and Type are names, and a provider is free to
+    /// declare file paths or enum-valued parameters (a leading '/' alone crashes the expression
+    /// parser at position 0 — the same trap SnP's File= hit).
+    ///
+    /// Rule applied here: a parameter whose text parses as a plain number is stored as a number so
+    /// unit suffixes and simple arithmetic still work for genuinely numeric values; everything else
+    /// is stored verbatim. The provider declares the real kinds and does its own conversion.
+    /// </summary>
+    private IReadOnlyDictionary<string, Value> ResolveExtDeviceParameters(
+        Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        result["__instanceLabel"] = new Value(inst.InstanceName);
+
+        foreach (var ov in inst.Overrides)
+        {
+            if (ov.Name.Equals("Provider", StringComparison.OrdinalIgnoreCase) ||
+                ov.Name.Equals("Type",     StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(ov.Expression.Trim().Trim('"'));
+                continue;
+            }
+
+            try
+            {
+                result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+            }
+            catch
+            {
+                // Not an expression — a path, an enum name, or anything else the provider owns.
+                result[ov.Name] = new Value(ov.Expression.Trim().Trim('"'));
+            }
+        }
         return result;
     }
 

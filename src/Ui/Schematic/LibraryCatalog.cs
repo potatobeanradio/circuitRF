@@ -22,7 +22,33 @@ public sealed record PaletteItem(
     /// Additional categories this item belongs to. ByCategory uses set-containment over
     /// {Category} ∪ ExtraCategories. AllItems lists each item once, by primary Category.
     /// </summary>
-    IReadOnlyList<ComponentCategory>? ExtraCategories = null);
+    IReadOnlyList<ComponentCategory>? ExtraCategories = null,
+    /// <summary>
+    /// Non-null when this entry came from an imported kit rather than the built-in library.
+    /// Built-in entries leave it null and are completely unaffected by it.
+    /// </summary>
+    PdkPartRef? Pdk = null);
+
+/// <summary>
+/// Identifies one part contributed by an imported kit, and points at whatever artwork that kit
+/// shipped for it.
+///
+/// <para>The two artwork paths are deliberately separate because they are used for different
+/// things: <see cref="IconPath"/> is the kit's own small raster browser icon, which is exactly what
+/// a palette tile wants, while <see cref="CellDir"/> points at a cell whose symbol was built from
+/// the kit's vector symbol description — the right thing to draw on a schematic, where it has to
+/// scale, carry pins, and follow the colour theme. Using each for what it was drawn for beats
+/// stretching one to cover both.</para>
+/// </summary>
+/// <param name="KitName">Display name of the kit this part came from; also its palette category.</param>
+/// <param name="PartId">Identifier, unique within the kit.</param>
+/// <param name="IconPath">Absolute path to the kit's palette icon, when it shipped one.</param>
+/// <param name="CellDir">Absolute path to the installed cell folder, when a symbol was readable.</param>
+public sealed record PdkPartRef(
+    string  KitName,
+    string  PartId,
+    string? IconPath = null,
+    string? CellDir  = null);
 
 /// <summary>
 /// Projects <see cref="ComponentTypeRegistry"/> into an ordered, filterable list of

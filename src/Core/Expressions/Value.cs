@@ -210,6 +210,19 @@ public readonly struct Value
     {
         if (a.Kind == ValueKind.Bool || b.Kind == ValueKind.Bool)
             throw new ExpressionException("Cannot compare Bool values with ==");
+
+        // String equality is well defined and is the one operation a String value supports.
+        // It stays deliberately narrow: == and != only, both sides String, ordinal comparison, no
+        // coercion in either direction. Everything else about String remains storage-only, so a
+        // string in an arithmetic context is still an error.
+        if (a.Kind == ValueKind.String || b.Kind == ValueKind.String)
+        {
+            if (a.Kind != b.Kind)
+                throw new ExpressionException(
+                    $"Cannot compare a String with a {(a.Kind == ValueKind.String ? b.Kind : a.Kind)} using ==");
+            return new Value(string.Equals(a.AsString(), b.AsString(), StringComparison.Ordinal));
+        }
+
         _ = CommonArithmeticKind(a, b); // validates kinds
         return a.Kind == ValueKind.Real && b.Kind == ValueKind.Real
             ? new Value(a._real == b._real)

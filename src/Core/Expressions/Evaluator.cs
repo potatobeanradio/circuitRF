@@ -221,6 +221,14 @@ public sealed class Evaluator
             "log10" => EvalLog10(cl, scope),        // cube-aware
             "sqrt"  => UnaryMath(cl, scope, SafeSqrt, Complex.Sqrt),
             "pow"   => BinaryMath(cl, scope, Math.Pow,  Complex.Pow),
+            // Rounding family. Applied componentwise for Complex, which is the conventional
+            // extension and keeps them total rather than throwing on a complex argument.
+            "floor" => UnaryMath(cl, scope, Math.Floor,    z => new Complex(Math.Floor(z.Real), Math.Floor(z.Imaginary))),
+            "ceil"  => UnaryMath(cl, scope, Math.Ceiling,  z => new Complex(Math.Ceiling(z.Real), Math.Ceiling(z.Imaginary))),
+            "round" => UnaryMath(cl, scope, x => Math.Round(x, MidpointRounding.AwayFromZero),
+                                 z => new Complex(Math.Round(z.Real, MidpointRounding.AwayFromZero),
+                                                  Math.Round(z.Imaginary, MidpointRounding.AwayFromZero))),
+            "int"   => UnaryMath(cl, scope, Math.Truncate, z => new Complex(Math.Truncate(z.Real), Math.Truncate(z.Imaginary))),
             "abs"       => EvalAbs(cl, scope),
             "min"       => BinaryRealMath(cl, scope, Math.Min),
             "max"       => BinaryRealMath(cl, scope, Math.Max),

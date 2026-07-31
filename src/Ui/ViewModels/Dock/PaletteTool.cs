@@ -26,6 +26,13 @@ public sealed partial class PaletteTileVm : ObservableObject
 
     public ICommand ArmCommand { get; }
 
+    /// <summary>
+    /// Second tooltip line. For a kit part this is the KIT it came from — the useful fact, and the
+    /// one the user is actually asking when they hover. Its <see cref="ComponentCategory"/> is the
+    /// catch-all bucket every kit part shares and says nothing.
+    /// </summary>
+    public string CategoryLabel => Item.Pdk?.KitName ?? Item.Category.ToString();
+
     internal PaletteTileVm(PaletteItem item, Action<PaletteItem> arm)
     {
         Item       = item;
@@ -52,12 +59,19 @@ public sealed class PaletteCategoryEntry
         Real        = real;
     }
 
+    /// <summary>Kit name this entry filters to; null for every non-kit entry.</summary>
+    internal string? KitName { get; private init; }
+
     internal static PaletteCategoryEntry ForAll()          => new("All",           PaletteCategoryKind.All);
     internal static PaletteCategoryEntry ForCommon()       => new("Common",        PaletteCategoryKind.Common);
     internal static PaletteCategoryEntry ForRecentlyUsed() => new("Recently Used", PaletteCategoryKind.RecentlyUsed);
 
     internal static PaletteCategoryEntry ForReal(ComponentCategory cat) =>
         new(RealDisplayName(cat), PaletteCategoryKind.Real, cat);
+
+    /// <summary>One imported kit, listed under its own name.</summary>
+    internal static PaletteCategoryEntry ForKit(string kitName) =>
+        new(kitName, PaletteCategoryKind.Kit) { KitName = kitName };
 
     private static string RealDisplayName(ComponentCategory c) => c switch
     {
@@ -67,7 +81,7 @@ public sealed class PaletteCategoryEntry
     };
 }
 
-internal enum PaletteCategoryKind { All, Common, RecentlyUsed, Real }
+internal enum PaletteCategoryKind { All, Common, RecentlyUsed, Real, Kit }
 
 // ── PaletteTool ───────────────────────────────────────────────────────────────
 
@@ -101,12 +115,29 @@ public sealed partial class PaletteTool : Tool
     {
         var p = _svc?.Pending;
         foreach (var vm in _currentItems)
-            vm.IsArmed = p?.Kind == vm.Item.Kind && p?.PortCount == vm.Item.PortCount;
+            vm.IsArmed = ArmedFor(p, vm.Item);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="p"/> is this exact entry. A kit part is identified by its kit+part
+    /// id, never by SymbolKind — every kit part shares one kind, so comparing kinds would light up
+    /// every kit tile at once.
+    /// </summary>
+    private static bool ArmedFor(PendingPlacement? p, PaletteItem item)
+    {
+        if (p is null) return false;
+
+        if (item.Pdk is { } want)
+            return p.Pdk is { } have &&
+                   string.Equals(have.KitName, want.KitName, StringComparison.Ordinal) &&
+                   string.Equals(have.PartId,  want.PartId,  StringComparison.Ordinal);
+
+        return p.Pdk is null && p.Kind == item.Kind && p.PortCount == item.PortCount;
     }
 
     // ── Arm command ───────────────────────────────────────────────────────────
 
-    private void ArmItem(PaletteItem item) => _svc?.Toggle(item.Kind, item.PortCount);
+    private void ArmItem(PaletteItem item) => _svc?.Toggle(item);
 
     // ── MRU — in-memory empty list for step 3; persistence wired in step 4 ───
 
@@ -121,10 +152,14 @@ public sealed partial class PaletteTool : Tool
 
     // ── Category list (virtual + real, stable order) ─────────────────────────
 
-    /// <summary>Ordered category entries for the header ComboBox.</summary>
-    public IReadOnlyList<PaletteCategoryEntry> Categories { get; } = BuildCategories();
+    /// <summary>
+    /// Ordered category entries for the header ComboBox: the virtual entries, then the built-in
+    /// categories, then one entry per imported kit. Rebuilt when the imported-kit set changes.
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyList<PaletteCategoryEntry> _categories = BuildCategories([]);
 
-    private static IReadOnlyList<PaletteCategoryEntry> BuildCategories()
+    private static IReadOnlyList<PaletteCategoryEntry> BuildCategories(IReadOnlyList<PaletteItem> pdkItems)
     {
         var list = new List<PaletteCategoryEntry>
         {
@@ -145,7 +180,53 @@ public sealed partial class PaletteTool : Tool
             if (LibraryCatalog.ByCategory(cat).Count > 0)
                 list.Add(PaletteCategoryEntry.ForReal(cat));
         }
+
+        foreach (var kit in pdkItems
+                     .Select(i => i.Pdk?.KitName)
+                     .OfType<string>()
+                     .Distinct(StringComparer.Ordinal)
+                     .OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+        {
+            list.Add(PaletteCategoryEntry.ForKit(kit));
+        }
+
         return list.AsReadOnly();
+    }
+
+    // ── Imported kits ─────────────────────────────────────────────────────────
+
+    private IReadOnlyList<PaletteItem> _pdkItems = [];
+
+    /// <summary>
+    /// Replace the set of parts contributed by imported kits. Each kit gains its own category, and
+    /// its parts also appear under All and in search results alongside the built-ins.
+    ///
+    /// <para>The current category selection survives when it still exists after the rebuild — so
+    /// re-importing a kit while browsing it does not throw the user back to All.</para>
+    /// </summary>
+    public void SetPdkParts(IReadOnlyList<PaletteItem> items)
+    {
+        _pdkItems = items ?? [];
+
+        string? keepKit  = SelectedCategory?.KitName;
+        var     keepKind = SelectedCategory?.Kind;
+        var     keepReal = SelectedCategory?.Real;
+
+        Categories = BuildCategories(_pdkItems);
+
+        var restored = Categories.FirstOrDefault(c =>
+            c.Kind == keepKind &&
+            c.Real == keepReal &&
+            string.Equals(c.KitName, keepKit, StringComparison.Ordinal));
+
+        // Assigning SelectedCategory rebuilds the tiles via its partial callback; when the selection
+        // is unchanged that callback does not fire, so rebuild explicitly in that case.
+        if (restored is not null && !ReferenceEquals(restored, SelectedCategory))
+            SelectedCategory = restored;
+        else if (restored is null)
+            SelectedCategory = Categories[0];
+        else
+            RebuildDisplayedItems();
     }
 
     // ── Filter state ──────────────────────────────────────────────────────────
@@ -178,10 +259,7 @@ public sealed partial class PaletteTool : Tool
         var raw = ComputeRawItems();
         var p   = _svc?.Pending;
         _currentItems = raw
-            .Select(item => new PaletteTileVm(item, ArmItem)
-            {
-                IsArmed = p?.Kind == item.Kind && p?.PortCount == item.PortCount,
-            })
+            .Select(item => new PaletteTileVm(item, ArmItem) { IsArmed = ArmedFor(p, item) })
             .ToList();
         OnPropertyChanged(nameof(DisplayedItems));
         OnPropertyChanged(nameof(HasNoItems));
@@ -189,9 +267,18 @@ public sealed partial class PaletteTool : Tool
 
     private IReadOnlyList<PaletteItem> ComputeRawItems()
     {
-        if (SelectedCategory is null) return LibraryCatalog.AllItems;
+        if (SelectedCategory is null) return WithPdk(LibraryCatalog.AllItems);
 
         var q = SearchQuery?.Trim() ?? "";
+
+        // A kit category shows that kit's parts only — never the built-ins.
+        if (SelectedCategory.Kind == PaletteCategoryKind.Kit)
+        {
+            var mine = _pdkItems
+                .Where(i => string.Equals(i.Pdk?.KitName, SelectedCategory.KitName, StringComparison.Ordinal))
+                .ToList();
+            return string.IsNullOrWhiteSpace(q) ? mine : FilterBySearch(mine, q);
+        }
 
         if (SelectedCategory.Kind == PaletteCategoryKind.Real)
             return LibraryCatalog.Search(q, SelectedCategory.Real);
@@ -200,13 +287,28 @@ public sealed partial class PaletteTool : Tool
         {
             return SelectedCategory.Kind switch
             {
+                // Common and Recently Used stay built-in-only; both are curated over the built-in
+                // library, and neither has a defined meaning for a kit part yet.
                 PaletteCategoryKind.Common       => LibraryCatalog.Common,
                 PaletteCategoryKind.RecentlyUsed => LibraryCatalog.RecentlyUsed(_mruList),
-                _                                => LibraryCatalog.AllItems,
+                _                                => WithPdk(LibraryCatalog.AllItems),
             };
         }
 
-        return LibraryCatalog.Search(q);
+        return [.. LibraryCatalog.Search(q), .. FilterBySearch(_pdkItems, q)];
+    }
+
+    private IReadOnlyList<PaletteItem> WithPdk(IReadOnlyList<PaletteItem> builtIns) =>
+        _pdkItems.Count == 0 ? builtIns : [.. builtIns, .. _pdkItems];
+
+    /// <summary>Same case-insensitive substring rule <see cref="LibraryCatalog.Search"/> applies.</summary>
+    private static IReadOnlyList<PaletteItem> FilterBySearch(IReadOnlyList<PaletteItem> items, string query)
+    {
+        var q = query.Trim().ToUpperInvariant();
+        return items.Where(i =>
+            i.DisplayName.ToUpperInvariant().Contains(q) ||
+            i.SearchTerms.Any(t => t.ToUpperInvariant().Contains(q)) ||
+            (i.Pdk?.KitName.ToUpperInvariant().Contains(q) ?? false)).ToList();
     }
 
     // ── Partial callbacks — recompute derived properties on state change ───────

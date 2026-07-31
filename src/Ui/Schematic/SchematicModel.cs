@@ -145,7 +145,12 @@ public sealed class SchematicComponent
             double halfH = glyphHalfH ?? 100.0;   // box half-height when the real extent isn't supplied
             return Math.Max(LabelBaseY, halfH + LabelWorldStep);
         }
-        return LabelBaseY;
+
+        // Any symbol whose real glyph runs deeper than the default offset must have its labels
+        // pushed clear of it, or they render INSIDE the body. That is not a special case for one
+        // kind — a cell reference resolved to a large kit symbol hits it hardest — so the clearance
+        // rule applies whenever the caller knows the true glyph extent.
+        return glyphHalfH is { } gh ? Math.Max(LabelBaseY, gh + LabelWorldStep) : LabelBaseY;
     }
 
     /// <summary>

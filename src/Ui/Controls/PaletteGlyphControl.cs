@@ -30,6 +30,37 @@ public sealed class PaletteGlyphControl : Control
     public static readonly StyledProperty<bool> MonochromeProperty =
         AvaloniaProperty.Register<PaletteGlyphControl, bool>(nameof(Monochrome));
 
+    public static readonly StyledProperty<string?> IconPathProperty =
+        AvaloniaProperty.Register<PaletteGlyphControl, string?>(nameof(IconPath));
+
+    public static readonly StyledProperty<string?> SymbolCellDirProperty =
+        AvaloniaProperty.Register<PaletteGlyphControl, string?>(nameof(SymbolCellDir));
+
+    /// <summary>
+    /// Optional cell folder whose primary symbol is drawn when no <see cref="IconPath"/> resolves.
+    /// This is what keeps a kit part's tile showing the KIT's own symbol rather than the generic
+    /// placeholder glyph its <see cref="SymbolKind"/> would otherwise render.
+    /// </summary>
+    public string? SymbolCellDir
+    {
+        get => GetValue(SymbolCellDirProperty);
+        set => SetValue(SymbolCellDirProperty, value);
+    }
+
+    /// <summary>
+    /// Optional raster icon to draw INSTEAD of the built-in glyph — the browser icon an imported
+    /// kit ships for one of its parts. A kit's own icon is drawn for a kit's own part because that
+    /// is what it was drawn for; there is no built-in glyph that would say anything truer.
+    ///
+    /// <para>Falls back to the <see cref="Kind"/> glyph when the path is empty or the file cannot be
+    /// decoded, so a kit with a broken or missing icon still shows a usable tile.</para>
+    /// </summary>
+    public string? IconPath
+    {
+        get => GetValue(IconPathProperty);
+        set => SetValue(IconPathProperty, value);
+    }
+
     public SymbolKind Kind
     {
         get => GetValue(KindProperty);
@@ -61,6 +92,8 @@ public sealed class PaletteGlyphControl : Control
         AffectsRender<PaletteGlyphControl>(KindProperty);
         AffectsRender<PaletteGlyphControl>(PortCountProperty);
         AffectsRender<PaletteGlyphControl>(MonochromeProperty);
+        AffectsRender<PaletteGlyphControl>(IconPathProperty);
+        AffectsRender<PaletteGlyphControl>(SymbolCellDirProperty);
     }
 
     private ColorTheme _activeTheme = ColorTheme.BuiltIn;
@@ -89,7 +122,28 @@ public sealed class PaletteGlyphControl : Control
         var variant   = ActualThemeVariant == ThemeVariant.Dark ? ColorVariant.Dark : ColorVariant.Light;
         var theme     = SchematicRenderTheme.FromTheme(_activeTheme, variant);
         var effective = Monochrome ? theme.WithMonochrome(variant == ColorVariant.Light) : theme;
-        context.Custom(new GlyphDrawOperation(new Rect(Bounds.Size), Kind, PortCount, effective));
+        context.Custom(new GlyphDrawOperation(new Rect(Bounds.Size), Kind, PortCount, effective,
+                                              IconPath, ResolveCellPrimitives()));
+    }
+
+    /// <summary>
+    /// Primitives of the cell's primary symbol, or null. Resolution is cached by
+    /// <see cref="CellSymbolResolver"/>, so this is cheap enough to call per render.
+    /// </summary>
+    private IReadOnlyList<SymbolPrimitive>? ResolveCellPrimitives()
+    {
+        string? dir = SymbolCellDir;
+        if (string.IsNullOrEmpty(dir)) return null;
+
+        try
+        {
+            var parent = System.IO.Path.GetDirectoryName(dir.TrimEnd('/', '\\'));
+            if (string.IsNullOrEmpty(parent)) return null;
+
+            var res = CellSymbolResolver.Resolve(System.IO.Path.GetFileName(dir.TrimEnd('/', '\\')), parent);
+            return res.State == CellSymbolState.Resolved ? res.Symbol!.Primitives : null;
+        }
+        catch { return null; }
     }
 
     // ── ICustomDrawOperation ─────────────────────────────────────────────────
@@ -100,15 +154,21 @@ public sealed class PaletteGlyphControl : Control
         private readonly SymbolKind           _kind;
         private readonly int                  _portCount;
         private readonly SchematicRenderTheme _theme;
+        private readonly string?              _iconPath;
+        private readonly IReadOnlyList<SymbolPrimitive>? _cellPrims;
 
         private const double Padding = 0.12; // 12% inset on each side
 
-        internal GlyphDrawOperation(Rect bounds, SymbolKind kind, int portCount, SchematicRenderTheme theme)
+        internal GlyphDrawOperation(Rect bounds, SymbolKind kind, int portCount,
+                                    SchematicRenderTheme theme, string? iconPath,
+                                    IReadOnlyList<SymbolPrimitive>? cellPrims)
         {
+            _cellPrims = cellPrims;
             _bounds    = bounds;
             _kind      = kind;
             _portCount = portCount;
             _theme     = theme;
+            _iconPath  = iconPath;
         }
 
         public bool Equals(ICustomDrawOperation? other) => false;
@@ -132,14 +192,20 @@ public sealed class PaletteGlyphControl : Control
             // This control is a glyph-only overlay: draw the symbol on top of the existing composited content.
             if (_bounds.Width < 2 || _bounds.Height < 2) return;
 
+            if (TryDrawIcon(canvas)) return;
+
             // Variadic types (ZPort/Sdd/Snp) need the ENTRY POINT's own preset port count, not the
             // always-2 default — otherwise Z1P/Z3P/SDD1/SDD3 tiles show the generic 2-port glyph
             // regardless of what the tile actually places (owner report, 2026-07-29).
             bool isVariadic = _kind is SymbolKind.ZPort or SymbolKind.Sdd or SymbolKind.Snp;
             int  n          = _portCount > 0 ? _portCount : 2;
-            var prims = isVariadic
-                ? BuiltInSymbols.Primitives(_kind, n).Primitives
-                : BuiltInSymbols.Primitives(_kind).Primitives;
+
+            // A resolved cell symbol wins over the SymbolKind glyph: for a kit part the kind is only
+            // a placeholder, and drawing it would show a bare rectangle where the kit's own symbol
+            // belongs.
+            var prims = _cellPrims
+                     ?? (isVariadic ? BuiltInSymbols.Primitives(_kind, n).Primitives
+                                    : BuiltInSymbols.Primitives(_kind).Primitives);
             if (prims.Count == 0) return;
 
             var (bbMinX, bbMinY, bbMaxX, bbMaxY) = SymbolGeometry.ComputeBb(prims);
@@ -149,7 +215,7 @@ public sealed class PaletteGlyphControl : Control
             // tips (drawn below) must be folded in here or the leads would run past the auto-fit
             // framing. Snp's own leads ARE baked into its primitive list already (BuildSnpSymbol), so
             // no expansion is needed there.
-            bool drawsLeadsSeparately = _kind is SymbolKind.ZPort or SymbolKind.Sdd;
+            bool drawsLeadsSeparately = _cellPrims is null && _kind is SymbolKind.ZPort or SymbolKind.Sdd;
             var ports = drawsLeadsSeparately ? SymbolPortDefs.For(_kind, n) : [];
             foreach (var (_, lx, ly) in ports)
             {
@@ -204,6 +270,35 @@ public sealed class PaletteGlyphControl : Control
                     canvas.DrawLine(ax, ay, bx, by, leadPaint);
                 }
             }
+        }
+
+        /// <summary>
+        /// Draws the kit-supplied icon scaled to fit, preserving its aspect ratio, and reports
+        /// whether it did. Returns false for no path or an undecodable file so the caller falls
+        /// through to the built-in glyph — a kit whose icon is missing still gets a usable tile
+        /// rather than an empty square.
+        /// </summary>
+        private bool TryDrawIcon(SKCanvas canvas)
+        {
+            if (string.IsNullOrEmpty(_iconPath)) return false;
+
+            // Qualified: Avalonia.Media also defines a BitmapCache.
+            var bmp = Renderers.BitmapCache.Load(_iconPath);
+            if (bmp is null || bmp.Width <= 0 || bmp.Height <= 0) return false;
+
+            float availW = (float)(_bounds.Width  * (1.0 - 2.0 * Padding));
+            float availH = (float)(_bounds.Height * (1.0 - 2.0 * Padding));
+            if (availW <= 0f || availH <= 0f) return false;
+
+            float scale = Math.Min(availW / bmp.Width, availH / bmp.Height);
+            float w = bmp.Width * scale;
+            float h = bmp.Height * scale;
+            float x = (float)(_bounds.Width  - w) * 0.5f;
+            float y = (float)(_bounds.Height - h) * 0.5f;
+
+            using var paint = new SKPaint { IsAntialias = true };
+            canvas.DrawBitmap(bmp, SKRect.Create(x, y, w, h), paint);
+            return true;
         }
 
         public void Dispose() { }
