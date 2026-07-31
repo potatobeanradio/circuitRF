@@ -629,6 +629,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             SetActiveUndoTarget(null);
             _lastActiveSchematicDoc = null;
+            // Same as the switch path: the workspace being left keeps its own session record.
+            PersistOutgoingWorkspaceSession();
             // A torn-off document belonging to the OLD workspace closes with it; a foreign one
             // survives. Must run while CurrentWorkspacePath still names the workspace being left.
             CloseFloatedDocumentsOwnedByWorkspace(CurrentWorkspacePath);
@@ -922,6 +924,38 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _cwsSaveTimer.Start();
     }
 
+    /// <summary>
+    /// Flushes the OUTGOING workspace's session to its own <c>.cws</c> — which open documents there
+    /// were, and how the docks were arranged — immediately before that workspace is torn down.
+    ///
+    /// <para><b>Owner report this fixes:</b> a <c>.ctech</c> tab was not restored after opening
+    /// another workspace and coming back. The cause was general, not technology-specific:
+    /// <see cref="WriteWorkspaceFile"/> is the ONE place both the open-document list and the dock
+    /// layout are captured, and every one of its callers was an explicit save (Save Workspace, Save
+    /// All, a per-document save), the tree-filter debounce, or clean exit. <b>No path that LEAVES a
+    /// workspace called it</b>, so the session was only ever recorded by accident — whenever some
+    /// unrelated action happened to trigger a save while those tabs were open.</para>
+    ///
+    /// <para>That accident is why the report named <c>.ctech</c>: a schematic is typically edited and
+    /// saved, and <c>SaveAllDocuments</c> writes <c>.cws</c> as a side effect, incidentally recording
+    /// the session. A technology opened, read, and left clean triggers none of those, so nothing ever
+    /// recorded it as open. Every document type was affected; <c>.ctech</c> is simply the one whose
+    /// normal usage never hits the accidental save.</para>
+    ///
+    /// <para><b>Call this BEFORE the teardown begins</b> — specifically before
+    /// <see cref="CloseFloatedDocumentsOwnedByWorkspace"/> (which removes torn-off documents from
+    /// <c>_openDocsByPath</c>, so a later write would drop them from the record) and before
+    /// <c>CurrentWorkspacePath</c> is reassigned. Silent: leaving a workspace is not a save the user
+    /// asked for, so it must not announce itself. Guarded on the file still existing, so a workspace
+    /// deleted out from under us fails quietly rather than posting an error on the way out.</para>
+    /// </summary>
+    private void PersistOutgoingWorkspaceSession()
+    {
+        if (CurrentWorkspacePath is not { } leaving) return;
+        if (!File.Exists(leaving)) return;
+        WriteWorkspaceFile(leaving, silent: true);
+    }
+
     // ── Generated-cell lifecycle (brief-L5-followups-2.md §4, R-L5g-6/7/8) ─────────────────────────
     // R-L5g-6 establishes the property this whole section rests on: every LayoutView.PCellSnapshots
     // entry carries everything GeneratedCellStore.GetOrCreate needs to rebuild ONE generated cell
@@ -976,6 +1010,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
+        // Record the outgoing workspace's session (open tabs + dock arrangement) BEFORE anything is
+        // torn down — nothing else on this path ever wrote it, so those tabs were simply forgotten.
+        PersistOutgoingWorkspaceSession();
         // A torn-off document belonging to the OLD workspace closes with it; a foreign one survives.
         // Must run while CurrentWorkspacePath still names the workspace being left — hence before the
         // reassignment below. Without it the OS window outlives its workspace and reopening that
@@ -1336,6 +1373,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void ResetToBlankShell()
     {
+        // Closing a workspace records its session too, so reopening it restores the same tabs.
+        PersistOutgoingWorkspaceSession();
+
         SetActiveUndoTarget(null);
         _lastActiveSchematicDoc = null;
 
@@ -2493,6 +2533,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <c>FormatVersion</c>) surfaces the error and does NOT open a blank document — silently
     /// offering an empty editor over a file that couldn't be parsed invites saving over it.
     /// </summary>
+    /// <summary>
+    /// Opens (or focuses) a <c>.ctech</c> as an ordinary editor document. Public so a surface that
+    /// is not the project tree can offer it — the Layout Editor's own Technology ▾ ▸ Edit, which
+    /// reaches this through the desktop-windows scan since its DataContext is a LayoutDocument.
+    /// </summary>
+    public void OpenTechnologyDocument(string absolutePath) => OpenOrActivateTech(absolutePath);
+
     private void OpenOrActivateTech(string absolutePath)
     {
         if (ActivateIfOpen(absolutePath)) return;
@@ -2760,27 +2807,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void WireDataDisplayLibraryEvents(DataDisplayDocumentViewModel docVm)
     {
         var lib = docVm.Window.DataSourceLibrary;
-        lib.UnusualZ0Detected      += OnUnusualZ0Detected;
         lib.ResultsRootProvider     = GetResultsRoot;
         lib.KnownTouchstoneProvider = GetKnownTouchstoneFiles;
         lib.KnownLoadpullProvider   = GetKnownLoadpullFiles;
-    }
-
-    private void OnUnusualZ0Detected(string path, Z0Kind kind, IReadOnlyList<Complex> z0)
-    {
-        var kindLabel = kind == Z0Kind.NonUniform ? "non-uniform" : "complex";
-        var sb = new System.Text.StringBuilder();
-        for (int i = 0; i < z0.Count; i++)
-        {
-            if (i > 0) sb.Append(", ");
-            var z1   = z0[i];
-            string zFmt = Math.Abs(z1.Imaginary) < 1e-12
-                ? $"{z1.Real:G4}Ω"
-                : $"{z1.Real:G4}{(z1.Imaginary >= 0 ? "+" : "")}{z1.Imaginary:G4}jΩ";
-            sb.Append($"port{i + 1}={zFmt}");
-        }
-        var fileName = Path.GetFileName(path);
-        Messages.Warning($"Warning: \"{fileName}\" uses a {kindLabel} reference impedance — S-parameter results depend on it. Per-port Z0: {sb}");
     }
 
     // ---- Symbol Editor commands ---------------------------------------------

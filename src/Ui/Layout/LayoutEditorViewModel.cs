@@ -119,9 +119,21 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     public string LayerCountText => Technology is null ? "fallback colors" : $"{Technology.Layers.Count} layers";
 
-    /// <summary>Combined metadata-bar readout, e.g. "PCB 2-Layer · 8 layers" or
-    /// "No technology · fallback colors".</summary>
-    public string TechSummaryText => $"{TechNameText} · {LayerCountText}";
+    /// <summary>
+    /// Metadata-bar readout: just the technology's own name, e.g. "PCB 2-Layer RO4350B (20mil, 1oz)".
+    ///
+    /// <para><b>The layer COUNT was deliberately removed</b> (owner, 2026-07-30). It read
+    /// "PCB 2-Layer … · 8 layers", which is self-contradictory to anyone in the industry: "2-layer"
+    /// is the board's physical METAL count (top and bottom copper), while 8 is the number of drawing
+    /// layers in the .ctech — a different thing wearing the same word. The count is not load-bearing
+    /// information at a glance, and Edit shows it precisely. <see cref="LayerCountText"/> is kept for
+    /// any caller that genuinely wants the count.</para>
+    ///
+    /// <para>The no-technology case still says what it falls back to, because THAT is worth knowing:
+    /// geometry is drawn with generated placeholder colours, not the process's own.</para>
+    /// </summary>
+    public string TechSummaryText =>
+        Technology is null ? $"{TechNameText} · {LayerCountText}" : TechNameText;
 
     partial void OnTechnologyChanged(Technology? value)
     {
@@ -163,6 +175,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     // ── Metadata bar (read-only, derived) ─────────────────────────────────────
 
+    /// <summary>Database resolution, e.g. "1 DBU = 1 nm". NOT shown in the metadata bar any more
+    /// (owner, 2026-07-30) — it is fixed per document and set at creation, so it earned no permanent
+    /// pixels. Kept for any surface that genuinely needs to state the resolution.</summary>
     public string ResolutionText => $"1 DBU = {LayoutUnits.Format(1, LayoutUnit.Nm, Model.DbuPerMicron)} nm";
 
     public string SnapText => $"{LayoutUnits.Format(SnapDbu, DisplayUnit, Model.DbuPerMicron)} {UnitSuffix(DisplayUnit)}";
@@ -1932,6 +1947,21 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         {
             bool ctrlOrMeta = (mods & (KeyModifiers.Control | KeyModifiers.Meta)) != 0;
             if (ctrlOrMeta && key == Key.A) { SelectAllCommand.Execute(null); return; }
+
+            // R / Shift+R rotate the selection, same keys and same sense as the Schematic Editor.
+            // Guarded on ctrlOrMeta being false so Ctrl/Cmd+R (Run) is never stolen.
+            if (!ctrlOrMeta && key == Key.R)
+            {
+                RotateSelection(clockwise: mods.HasFlag(KeyModifiers.Shift));
+                return;
+            }
+
+            // M / Shift+M mirror horizontally / vertically — again the Schematic Editor's own keys.
+            if (!ctrlOrMeta && key == Key.M)
+            {
+                MirrorSelection(horizontal: !mods.HasFlag(KeyModifiers.Shift));
+                return;
+            }
             if (key == Key.Delete || key == Key.Back)
             {
                 // §3 "Delete on a selected vertex" takes priority over whole-selection delete when a

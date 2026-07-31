@@ -36,21 +36,6 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// </summary>
     public event EventHandler? LibraryChanged;
 
-    /// <summary>Fired once per source path when a source with non-uniform or complex Z0 is loaded.
-    /// Workspace subscribes and posts a one-time warning to the Messages pane.</summary>
-    public event Action<string, Z0Kind, IReadOnlyList<Complex>>? UnusualZ0Detected;
-
-    // Tracks which paths have already triggered the unusual-Z0 warning (per library instance).
-    private readonly HashSet<string> _warnedPaths = new(StringComparer.OrdinalIgnoreCase);
-
-    private void MaybeFireUnusualZ0Warning(DataSourceEntryViewModel entry)
-    {
-        if (!entry.HasUnusualZ0) return;
-        if (entry.FilePath is not string path) return;
-        if (!_warnedPaths.Add(path)) return;
-        UnusualZ0Detected?.Invoke(path, entry.Z0Kind!.Value, entry.Z0PerPort);
-    }
-
     // ---- Single-source selection (brief: single-datasource Data Display) -
 
     /// <summary>Returns the workspace results directory, e.g. "…/results". Null outside a workspace.</summary>
@@ -272,7 +257,6 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         var newEntry = new DataSourceEntryViewModel(snp, this);
         Entries.Add(newEntry);
         UpdateDisplayNames();
-        MaybeFireUnusualZ0Warning(newEntry);
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -338,7 +322,6 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         var newEntry2 = new DataSourceEntryViewModel(snp, this);
         Entries.Add(newEntry2);
         UpdateDisplayNames();
-        MaybeFireUnusualZ0Warning(newEntry2);
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -397,7 +380,6 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
 
             entry.RefreshNpy(data, newPath);
             UpdateDisplayNames();
-            MaybeFireUnusualZ0Warning(entry);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
         else if (entry.Kind == SourceKind.Spl)
@@ -428,7 +410,6 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
 
             entry.RefreshTouchstone(newData, newPath);
             UpdateDisplayNames();
-            MaybeFireUnusualZ0Warning(entry);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -550,7 +531,6 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// <summary>Remove an entry from the library (does not delete the file).</summary>
     public void Remove(DataSourceEntryViewModel entry)
     {
-        if (entry.FilePath is string fp) _warnedPaths.Remove(fp);
         Entries.Remove(entry);
         UpdateDisplayNames();
         LibraryChanged?.Invoke(this, EventArgs.Empty);
@@ -643,7 +623,6 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         var npyEntry = new DataSourceEntryViewModel(path, data, snp, this);
         Entries.Add(npyEntry);
         UpdateDisplayNames();
-        MaybeFireUnusualZ0Warning(npyEntry);
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 

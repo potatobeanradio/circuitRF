@@ -1131,4 +1131,175 @@ public sealed class DockLayoutPersistenceTests
         Assert.True(File.Exists(full), $"expected repo file not found: {relativePath}");
         return File.ReadAllText(full);
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  A hand-built floating window must set BOTH directions of the Layout/Window link.
+    //
+    //  Owner-reported: a restored floating tool panel sometimes could not be re-docked at all —
+    //  dragging its title bar moved the OS window but no other window offered a drop target — while
+    //  a panel torn off by dragging its TAB always could (Reset Layout "fixed" it because that
+    //  re-docks the panel, so undocking afterwards goes through Dock's own tear-off path).
+    //
+    //  Root cause: Dock's FactoryBase.CreateWindowFrom ends with BOTH
+    //      dockWindow.Layout = rootDock;
+    //      rootDock.Window   = dockWindow;
+    //  Our hand-built floats set only the first. FactoryBase reads the missing one — e.g.
+    //  IsCurrentGlobalTrackingRootStale does `if (currentRootDock.Window != null) return true;` —
+    //  so a floated root with a null Window is indistinguishable from the MAIN root.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void RestoredFloatingToolWindow_LayoutAndWindow_PointAtEachOther()
+    {
+        var (f, _) = NewShell();
+
+        var state = DockLayoutDefaults.Default();
+        state.FloatingWindows.Add(new CwsFloatingWindow
+        {
+            X = 100, Y = 100, Width = 400, Height = 300,
+            Panels = [DockPanelIds.Messages], Active = DockPanelIds.Messages,
+        });
+
+        var root = Apply(f, state);
+
+        var window = Assert.Single(root.Windows!);
+        Assert.NotNull(window.Layout);
+
+        // The forward link was never in doubt; the BACK-reference is the one that was missing.
+        Assert.Same(window, window.Layout!.Window);
+    }
+
+    [Fact]
+    public void EveryFloatingWindowWeBuild_HasTheBackReference()
+    {
+        var (f, _) = NewShell();
+
+        var state = DockLayoutDefaults.Default();
+        state.FloatingWindows.Add(new CwsFloatingWindow
+        {
+            X = 10, Y = 10, Width = 300, Height = 200, Panels = [DockPanelIds.Messages],
+        });
+        state.FloatingWindows.Add(new CwsFloatingWindow
+        {
+            X = 500, Y = 300, Width = 300, Height = 200, Panels = [DockPanelIds.Analyses],
+        });
+
+        var root = Apply(f, state);
+
+        Assert.Equal(2, root.Windows!.Count);
+        foreach (var w in root.Windows!)
+        {
+            Assert.NotNull(w.Layout);
+            Assert.Same(w, w.Layout!.Window);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  A panel's Side must come from WHERE IT SITS, not from IToolDock.Alignment.
+    //
+    //  Owner-reported: tear off Properties, dock it BELOW the Project Tree (still the left column),
+    //  save, close, reopen -> Properties comes back under the DOCUMENTS pane. Alignment records the
+    //  edge a dockable was dropped against relative to its neighbour, so dropping onto the bottom
+    //  edge of the Project Tree dock reads as "Bottom" even though the dock is in the left column.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Left column holding two stacked tool docks, beside the document column.</summary>
+    private static RootDock LeftColumnWithStackedTools(CircuitRfDockFactory f, Alignment lowerAlignment)
+    {
+        var upper = new ToolDock
+        {
+            Alignment = Alignment.Left,
+            VisibleDockables = f.CreateList<IDockable>(new ProjectTreeTool()),
+        };
+        // The dock the user created by dropping Properties on the BOTTOM edge of the tree dock.
+        var lower = new ToolDock
+        {
+            Alignment = lowerAlignment,
+            VisibleDockables = f.CreateList<IDockable>(new PropertiesTool()),
+        };
+
+        var leftColumn = new ProportionalDock
+        {
+            Id = "LeftColumn", Orientation = Orientation.Vertical,
+            VisibleDockables = f.CreateList<IDockable>(upper, new ProportionalDockSplitter(), lower),
+        };
+
+        var documentDock = new DocumentDock { Id = "Documents" };
+        var documentColumn = new ProportionalDock
+        {
+            Id = "DocumentColumn", Orientation = Orientation.Vertical,
+            VisibleDockables = f.CreateList<IDockable>(documentDock),
+        };
+
+        var outer = new ProportionalDock
+        {
+            Id = "OuterLayout", Orientation = Orientation.Horizontal,
+            VisibleDockables = f.CreateList<IDockable>(leftColumn, new ProportionalDockSplitter(), documentColumn),
+        };
+
+        return new RootDock { VisibleDockables = f.CreateList<IDockable>(outer) };
+    }
+
+    [Fact]
+    public void PropertiesStackedBelowProjectTree_IsCapturedAsLeft_NotBottom()
+    {
+        var f = new CircuitRfDockFactory();
+
+        // Alignment.Bottom is exactly what a drop on the tree dock's bottom edge produces, and is
+        // what the old Alignment-based capture mistook for "under the documents pane".
+        var root = LeftColumnWithStackedTools(f, Alignment.Bottom);
+
+        var layout = DockLayoutCapture.Capture(root, []);
+
+        var properties = Assert.Single(layout.Panels.Where(p => p.Id == DockPanelIds.Properties));
+        Assert.Equal(DockSide.Left, properties.Side);
+
+        var tree = Assert.Single(layout.Panels.Where(p => p.Id == DockPanelIds.ProjectTree));
+        Assert.Equal(DockSide.Left, tree.Side);
+
+        // Two separate docks in one column must stay two groups, or they would restore tabbed.
+        Assert.NotEqual(tree.Group, properties.Group);
+    }
+
+    [Fact]
+    public void SideComesFromPosition_EvenWhenAlignmentIsUnset()
+    {
+        var f = new CircuitRfDockFactory();
+        var root = LeftColumnWithStackedTools(f, Alignment.Unset);
+
+        var layout = DockLayoutCapture.Capture(root, []);
+
+        Assert.Equal(DockSide.Left,
+            Assert.Single(layout.Panels.Where(p => p.Id == DockPanelIds.Properties)).Side);
+    }
+
+    [Fact]
+    public void APanelBelowTheDocuments_IsStillCapturedAsBottom()
+    {
+        var f = new CircuitRfDockFactory();
+
+        var documentDock = new DocumentDock { Id = "Documents" };
+        var messages = new ToolDock
+        {
+            Alignment = Alignment.Bottom,
+            VisibleDockables = f.CreateList<IDockable>(new MessagesTool()),
+        };
+        var documentColumn = new ProportionalDock
+        {
+            Id = "DocumentColumn", Orientation = Orientation.Vertical,
+            VisibleDockables = f.CreateList<IDockable>(documentDock, new ProportionalDockSplitter(), messages),
+        };
+        var outer = new ProportionalDock
+        {
+            Id = "OuterLayout", Orientation = Orientation.Horizontal,
+            VisibleDockables = f.CreateList<IDockable>(documentColumn),
+        };
+        var root = new RootDock { VisibleDockables = f.CreateList<IDockable>(outer) };
+
+        var layout = DockLayoutCapture.Capture(root, []);
+
+        // The genuine Bottom case must keep working — this is the half a naive fix breaks.
+        Assert.Equal(DockSide.Bottom,
+            Assert.Single(layout.Panels.Where(p => p.Id == DockPanelIds.Messages)).Side);
+    }
 }

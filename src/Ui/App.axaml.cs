@@ -37,6 +37,21 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Dragging ANY floating dock window must not restack the others.
+        //
+        // Dock's HostWindow.TryBeginWindowDrag calls WindowActivationHelper.ActivateAllWindows the
+        // moment a window drag begins, gated only on this flag (confirmed by decompiling
+        // Dock.Avalonia 12.0.0.2, not assumed). That helper activates EVERY entry in
+        // factory.HostWindows plus every DockControl's visual root — so grabbing a floating TOOL
+        // panel also raised every torn-off DOCUMENT window, pulling documents that were deliberately
+        // sitting behind the workspace out in front of it. Reported directly by the owner.
+        //
+        // Turning it off restores "dragging a window moves that window"; nothing else is affected.
+        // R-dock-14 (floating TOOL panels rise with the workspace) is a SEPARATE, deliberate
+        // mechanism — WorkspaceWindow.RaiseFloatingToolWindows on the shell's Activated — and is
+        // untouched by this flag, which governs only Dock's own drag-begin restack.
+        Dock.Settings.DockSettings.BringWindowsToFrontOnDrag = false;
+
         // Register built-in .ccolor assets via AssetLoader so ThemeResolver can find them.
         ThemeResolver.SetBuiltInProvider(name =>
         {

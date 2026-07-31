@@ -3,7 +3,16 @@
 //
 //  1. Entry_ClassifiesUnusualZ0   — DataSourceEntryViewModel classifies Z0 from DataSet
 //  2. Badge_OnlyOnScatteringTrace — ShowZ0Badge only on S-kind traces from unusual-Z0 sources
-//  3. Warning_FiresOncePerSource  — UnusualZ0Detected fires exactly once per source path
+//
+//  Gate 3 (Warning_FiresOncePerSource) was REMOVED on 2026-07-30 along with its subject. The
+//  one-time "uses a non-uniform reference impedance" Messages warning is gone at the owner's
+//  request: simulating with different port impedances is routine, and warning about it framed a
+//  normal design choice as a problem. The UnusualZ0Detected event had no other consumer, so it and
+//  its per-path guard set went with it rather than being left as dead plumbing.
+//
+//  What REMAINS is the Z0 data itself — DataSourceEntryViewModel.Z0Kind/HasUnusualZ0/Z0PerPort —
+//  which is load-bearing, not advisory: it drives the per-port S->Z/Y compute (7.2f) and the trace
+//  card's "Multiple Port Normalization" state (7.2f-2). Gates 1 and 2 below still cover it.
 // ================================================================
 
 using System;
@@ -132,59 +141,6 @@ public sealed class Z0IndicatorTests
         finally
         {
             if (System.IO.File.Exists(tmpPath)) System.IO.File.Delete(tmpPath);
-        }
-    }
-
-    // ---- Test 3 -------------------------------------------------------------
-
-    [Fact]
-    public async System.Threading.Tasks.Task Warning_FiresOncePerSource()
-    {
-        var tmpA = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), $"crf_z0warn_a_{Guid.NewGuid():N}.npy");
-        var tmpB = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), $"crf_z0warn_b_{Guid.NewGuid():N}.npy");
-        try
-        {
-            // Source A: non-uniform Z0.
-            var dsA = MakeNonUniformZ0DataSet();
-            RfCore.Export.DataSetExporter.Export(dsA, tmpA, RfCore.Export.ExportFormat.Npy);
-
-            // Source B: complex Z0.
-            var dsB = MakeComplexZ0DataSet();
-            RfCore.Export.DataSetExporter.Export(dsB, tmpB, RfCore.Export.ExportFormat.Npy);
-
-            var lib = new DataSourceLibraryViewModel();
-            int warnCount = 0;
-            lib.UnusualZ0Detected += (_, _, _) => warnCount++;
-
-            // Load source A once — event fires once.
-            await lib.LoadFileAsync(tmpA);
-            await lib.SelectDataSourceAsync(tmpA);
-            Assert.Equal(1, warnCount);
-
-            // Reload source A (simulate auto-refresh) — event must NOT fire again.
-            await lib.ReloadAsync(lib.Entries.Single(e =>
-                string.Equals(e.FilePath, tmpA, StringComparison.OrdinalIgnoreCase)));
-            Assert.Equal(1, warnCount);
-
-            // Remove A and re-add — cleared path so must fire again.
-            var entryA = lib.Entries.Single(e =>
-                string.Equals(e.FilePath, tmpA, StringComparison.OrdinalIgnoreCase));
-            lib.Remove(entryA);
-            await lib.LoadFileAsync(tmpA);
-            await lib.SelectDataSourceAsync(tmpA);
-            Assert.Equal(2, warnCount);
-
-            // Load source B — distinct path, fires once more.
-            await lib.LoadFileAsync(tmpB);
-            await lib.SelectDataSourceAsync(tmpB);
-            Assert.Equal(3, warnCount);
-        }
-        finally
-        {
-            if (System.IO.File.Exists(tmpA)) System.IO.File.Delete(tmpA);
-            if (System.IO.File.Exists(tmpB)) System.IO.File.Delete(tmpB);
         }
     }
 }

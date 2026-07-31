@@ -153,6 +153,15 @@
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
 
+            <!-- Window: populated in code-behind (RebuildNativeWindowMenu) from the SAME
+                 EnumerateWindowEntries() the in-window menu uses, so the two surfaces cannot
+                 disagree about contents or order. -->
+            <NativeMenuItem Header="Window">
+                <NativeMenuItem.Menu>
+                    <NativeMenu/>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
             <NativeMenuItem Header="Help">
                 <NativeMenuItem.Menu>
                     <NativeMenu>
@@ -490,6 +499,14 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="Stop" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
+
+            <!-- Window: every open circuitRF window, selectable to bring it to the front. Contents
+                 are rebuilt on SubmenuOpened (window lifetime and dirty state both change constantly;
+                 the menu is only ever read at the moment it opens). -->
+            <MenuItem Header="_Window"
+                      Padding="8,4"
+                      ItemsSource="{Binding WindowMenuItems}"
+                      SubmenuOpened="OnWindowMenuOpened"/>
 
             <MenuItem Header="_Help" Padding="8,4">
                 <MenuItem Header="circuitRF _Documentation"

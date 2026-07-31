@@ -16,8 +16,21 @@
 
     <Grid RowDefinitions="Auto,*">
 
-        <!-- Header strip: Clear button only (tab title already labels the panel) -->
+        <!-- Header strip. Copy All is deliberately pinned LEFT and Clear RIGHT, at opposite ends of
+             the strip: they are a benign action and a destructive one, and putting them side by side
+             invites clearing the log when you meant to copy it (owner's explicit request). -->
         <Grid Grid.Row="0" Margin="4,1,4,1">
+            <Button x:Name="CopyAllButton"
+                    HorizontalAlignment="Left"
+                    Click="OnCopyAllMessagesClick"
+                    ToolTip.Tip="Copy all messages to the clipboard"
+                    Padding="4,1"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    FontSize="11">
+                <mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14"/>
+            </Button>
+
             <Button HorizontalAlignment="Right"
                     Command="{Binding ClearMessagesCommand}"
                     ToolTip.Tip="Clear messages"
@@ -58,7 +71,22 @@
                         <SelectableTextBlock Grid.Column="1"
                                              FontSize="12"
                                              TextWrapping="Wrap"
-                                             VerticalAlignment="Top">
+                                             VerticalAlignment="Top"
+                                             ContextFlyout="{x:Null}">
+                            <!-- Our own menu REPLACES the stock SelectableTextBlock one, whose Copy
+                                 disables itself whenever the selection runs past Inlines.Text.Length
+                                 (see MessageTextSelection for the decompiled root cause). Declared
+                                 once per row in XAML and owned by the framework — never constructed
+                                 per right-click, which is the menu-stacking bug this codebase has
+                                 already fixed twice (LayoutCanvas, PlotControl). Copy is always
+                                 enabled: with no selection it falls back to the whole message, so
+                                 there is no state in which the user cannot copy. -->
+                            <SelectableTextBlock.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy" Click="OnCopyMessageClick"/>
+                                    <MenuItem Header="Copy All Messages" Click="OnCopyAllMessagesClick"/>
+                                </ContextMenu>
+                            </SelectableTextBlock.ContextMenu>
                             <Run Text="{Binding TimeText}"
                                  Foreground="{DynamicResource SystemBaseMediumColor}"/>
                             <Run Text="{Binding TextInline}"

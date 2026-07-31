@@ -169,6 +169,22 @@
                         <Button Click="OnInsertBitmap" ToolTip.Tip="Insert Bitmap…" Padding="6,3">
                             <mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/>
                         </Button>
+
+                        <!-- Rotate. Same icons, order and shortcuts as the Schematic Editor's own
+                             pair, so the gesture transfers between editors. A multi-selection turns
+                             as ONE rigid body here (see LayoutEditorViewModel.Rotate.cs). -->
+                        <Button Click="OnRotateCcw" ToolTip.Tip="Rotate 90° CCW  (R)" Padding="6,3">
+                            <mi:MaterialIcon Kind="RotateLeft" Width="16" Height="16"/>
+                        </Button>
+                        <Button Click="OnRotateCw" ToolTip.Tip="Rotate 90° CW  (Shift+R)" Padding="6,3">
+                            <mi:MaterialIcon Kind="RotateRight" Width="16" Height="16"/>
+                        </Button>
+                        <Button Click="OnMirrorH" ToolTip.Tip="Mirror Horizontal  (M)" Padding="6,3">
+                            <mi:MaterialIcon Kind="FlipHorizontal" Width="16" Height="16"/>
+                        </Button>
+                        <Button Click="OnMirrorV" ToolTip.Tip="Mirror Vertical  (Shift+M)" Padding="6,3">
+                            <mi:MaterialIcon Kind="FlipVertical" Width="16" Height="16"/>
+                        </Button>
                         <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Instance}"
                                 Click="OnInstanceTool" ToolTip.Tip="Instance… (place a cell reference)" Padding="6,3">
                             <mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/>
@@ -394,26 +410,72 @@
                         <Setter Property="FontSize" Value="11"/>
                         <Setter Property="VerticalAlignment" Value="Center"/>
                     </Style>
+
+<!-- Unit and Snap: same font, same HEIGHT, left-aligned; Snap wider.
+
+                         Two Avalonia facts drive every setter here, and ignoring them is what made
+                         an earlier attempt look worse than the original:
+
+                         1. An EDITABLE ComboBox (Snap) is templated around an inner TextBox with its
+                            OWN padding, min-height and font; a NON-EDITABLE one (Unit) is templated
+                            around a plain ContentPresenter. So identical Padding/FontSize on the two
+                            ComboBoxes still yields DIFFERENT heights, and the inner TextBox does not
+                            necessarily take the outer FontSize. Height is therefore pinned explicitly
+                            on both, and the font is pushed into the inner TextBox by name.
+                         2. The template reserves space for the drop-down chevron. Squeezing Width
+                            clips the content presenter on BOTH sides — so width is expressed as
+                            MinWidth (a floor, never a cap) and the padding is left at the value the
+                            template expects, rather than shrunk. -->
+                    <Style Selector="ComboBox.metaCombo">
+                        <Setter Property="FontSize" Value="11"/>
+                        <Setter Property="Height" Value="22"/>
+                        <Setter Property="MinHeight" Value="0"/>
+                        <Setter Property="Padding" Value="6,2"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                    </Style>
+
+                    <!-- Reaches the editable variant's inner TextBox, which would otherwise keep the
+                         theme's own font size and make "same font size" quietly untrue. -->
+                    <Style Selector="ComboBox.metaCombo /template/ TextBox">
+                        <Setter Property="FontSize" Value="11"/>
+                        <Setter Property="MinHeight" Value="0"/>
+                        <Setter Property="VerticalContentAlignment" Value="Center"/>
+                    </Style>
                 </StackPanel.Styles>
 
-                <TextBlock Classes="label" Text="{Binding ActiveViewModel.ResolutionText}"/>
+                <!-- The "1 DBU = 1 nm" readout was removed from this bar (owner, 2026-07-30):
+                     the database resolution is fixed per document and set at creation, so it is not
+                     something to monitor at a glance. LayoutEditorViewModel.ResolutionText is kept
+                     for anywhere that genuinely needs to state it. -->
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Technology:"/>
+                    <!-- Two actions behind the ▾, rather than the click going straight to Change:
+                         Edit opens the .ctech as an ordinary document (the layer table, stackup and
+                         DRC rules are all there); Change… re-targets this layout at a different
+                         technology. Declared once in XAML and owned by the framework — never built
+                         per click, which is the menu-stacking bug fixed twice already here. -->
                     <Button Padding="2,0" MinHeight="0" Background="Transparent" BorderThickness="0"
-                            Click="OnChangeTechnologyClick" ToolTip.Tip="Change Technology…">
+                            ToolTip.Tip="Technology">
                         <StackPanel Orientation="Horizontal" Spacing="2">
                             <TextBlock Classes="value" Text="{Binding ActiveViewModel.TechSummaryText}"/>
                             <TextBlock Classes="value" Text="▾"/>
                         </StackPanel>
+                        <Button.Flyout>
+                            <MenuFlyout Placement="Bottom">
+                                <MenuItem Header="Edit" Click="OnEditTechnologyClick"/>
+                                <MenuItem Header="Change Technology…" Click="OnChangeTechnologyClick"/>
+                            </MenuFlyout>
+                        </Button.Flyout>
                     </Button>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Unit:"/>
-                    <ComboBox ItemsSource="{x:Static lay:LayoutEditorViewModel.AllUnits}"
-                              SelectedItem="{Binding ActiveViewModel.DisplayUnit, Mode=TwoWay}"
-                              FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center">
+                    <ComboBox Classes="metaCombo" MinWidth="64"
+                              ItemsSource="{x:Static lay:LayoutEditorViewModel.AllUnits}"
+                              SelectedItem="{Binding ActiveViewModel.DisplayUnit, Mode=TwoWay}">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding Converter={StaticResource ToLower}}"/>
@@ -428,11 +490,10 @@
                          IsEditable lets the user either pick a technology-relative preset or type any
                          unit-suffixed value ("2.5mil"); commits on LostFocus/Enter, mirroring the
                          staged-text idiom every other dimension field in this toolbar already uses. -->
-                    <ComboBox ItemsSource="{Binding ActiveViewModel.SnapLadderOptions}"
+                    <ComboBox Classes="metaCombo" MinWidth="90"
+                              ItemsSource="{Binding ActiveViewModel.SnapLadderOptions}"
                               IsEditable="True"
                               Text="{Binding ActiveViewModel.SnapDistanceText, Mode=TwoWay}"
-                              FontSize="11" Padding="6,2" MinHeight="0" VerticalContentAlignment="Center"
-                              MinWidth="90"
                               LostFocus="OnSnapDistanceCommit" KeyDown="OnSnapDistanceKeyDown"
                               SelectionChanged="OnSnapDistanceSelectionChanged"
                               ToolTip.Tip="Snap distance — F9 toggles on/off"/>

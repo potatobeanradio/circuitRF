@@ -243,8 +243,17 @@ public partial class WorkspaceViewModel
     {
         placer ??= FloatingWindowPlacer.For(state, CurrentScreens());
 
+        // R-dock-2: the open list decides membership, so the builder is told which of the region's
+        // documents are actually open. A pane whose documents are all gone is never built, rather
+        // than restoring as a blank half-window the user cannot dismiss.
+        var wsDirForRegion = CurrentWorkspacePath is { } cwsForRegion
+            ? Path.GetDirectoryName(cwsForRegion)
+            : null;
+
         var newLayout = _factory.CreateLayoutFromState(
-            state, w => placer.Place(w.X, w.Y, w.Width, w.Height));
+            state,
+            w => placer.Place(w.X, w.Y, w.Width, w.Height),
+            wsDirForRegion is null ? null : key => ResolveOpenDocument(key, wsDirForRegion) is not null);
         // InitLayout also executes IRootDock.ShowWindows (confirmed by decompiling
         // FactoryBase.InitLayout), so the floating windows this arrangement re-created are presented
         // here — calling ShowWindows again afterwards would present each of them twice.
@@ -258,6 +267,54 @@ public partial class WorkspaceViewModel
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         SubscribeToFilterState();
         SubscribeToTreeSelection();
+
+        RestoreSplitDocumentPanes(wsDirForRegion);
+    }
+
+    /// <summary>
+    /// Moves each restored document into the pane the saved layout put it in.
+    ///
+    /// <para>Every reopened document starts in the primary dock, because that is the one
+    /// <c>BuildLayout</c> preserved with all its tabs. The builder created the other panes but left
+    /// them empty on purpose — it has no way to resolve a document key to a document, and no business
+    /// doing so. This is the same restore-then-move shape <see cref="RestoreFloatingDocumentWindows"/>
+    /// already uses for torn-off windows, and it reuses <c>IFactory.MoveDockable</c> for the same
+    /// reason: it is the path a user's own drag takes.</para>
+    ///
+    /// <para>Never throws. A pane that cannot be populated leaves its documents as ordinary tabs in
+    /// the primary strip — a usable outcome, per R-dock-5.</para>
+    /// </summary>
+    private void RestoreSplitDocumentPanes(string? workspaceDir)
+    {
+        var panes = _factory.RestoredDocumentPanes;
+        if (panes.Count < 2 || workspaceDir is null) return;
+        if (_factory.DocumentDock is not { } primary) return;
+
+        // Pane 0 IS the primary dock — its documents are already there and must not be moved.
+        for (int i = 1; i < panes.Count; i++)
+        {
+            var pane = panes[i];
+            try
+            {
+                IDockable? active = null;
+                foreach (var key in pane.Documents)
+                {
+                    if (ResolveOpenDocument(key, workspaceDir) is not { } doc) continue;
+                    if (!ReferenceEquals(doc.Owner, primary)) continue;
+
+                    _factory.MoveDockable(primary, pane.Dock, doc, null);
+                    if (pane.Active is { } a && string.Equals(a, key, StringComparison.OrdinalIgnoreCase))
+                        active = doc;
+                }
+
+                active ??= pane.Dock.VisibleDockables?.FirstOrDefault();
+                if (active is not null) _factory.SetActiveDockable(active);
+            }
+            catch (Exception ex)
+            {
+                Messages.Warning($"A split document pane could not be restored; its documents stay in the main tab strip. ({ex.Message})");
+            }
+        }
     }
 
     /// <summary>

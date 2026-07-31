@@ -36,18 +36,35 @@
                 BorderThickness="0,0,0,1"
                 Padding="8,6">
             <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                    <mi:MaterialIcon Kind="LayersOutline" Width="16" Height="16"
+                <!-- The identity block owns the ONLY star column, so it is the one that shrinks as the
+                     window narrows. A horizontal StackPanel would keep its full desired width and paint
+                     straight over the next column (the reported overlap), so this is a Grid whose middle
+                     cell is itself starred: the technology NAME trims with an ellipsis while the fixed
+                     "· Technology" suffix stays legible. ClipToBounds is the backstop for widths so
+                     narrow that even the suffix no longer fits. -->
+                <Grid Grid.Column="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6"
+                      VerticalAlignment="Center" ClipToBounds="True" MinWidth="0">
+                    <mi:MaterialIcon Grid.Column="0" Kind="LayersOutline" Width="16" Height="16"
                                      Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
-                    <TextBlock Text="{Binding ViewModel.Working.Name}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
-                    <TextBlock Text="· Technology" Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="12" VerticalAlignment="Center"/>
-                </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding ViewModel.Working.Name}"
+                               FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding ViewModel.Working.Name}"/>
+                    <TextBlock Grid.Column="2" Text="· Technology"
+                               Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="12"
+                               VerticalAlignment="Center"/>
+                </Grid>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="12,0">
-                    <TextBlock Text="Default display unit for new layouts:" FontSize="11" VerticalAlignment="Center"
+                    <!-- Deliberately NOT "Display unit:" — R-tec-4: the label must not read as a live
+                         per-layout setting. "for new layouts" is the load-bearing part of the wording and
+                         stays; only the redundant "Default display" prefix was dropped. The full
+                         explanation lives in the tooltip, now on the combo as well as the label. -->
+                    <TextBlock Text="Unit for new layouts:" FontSize="11" VerticalAlignment="Center"
                                Foreground="{DynamicResource SystemBaseMediumColor}"
                                ToolTip.Tip="Seeds a newly-created layout's own display-unit choice. Never changes any open or already-saved layout — each layout keeps its own unit once created."/>
                     <ComboBox Classes="cell" ItemsSource="{Binding ViewModel.DisplayUnitOptions}"
-                              SelectedItem="{Binding ViewModel.DefaultDisplayUnit}">
+                              SelectedItem="{Binding ViewModel.DefaultDisplayUnit}"
+                              ToolTip.Tip="Seeds a newly-created layout's own display-unit choice. Never changes any open or already-saved layout — each layout keeps its own unit once created.">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding Converter={StaticResource ToLower}}"/>
@@ -88,6 +105,27 @@
         <!-- ── Sections ─────────────────────────────────────────────────────── -->
         <TabControl>
 
+            <!-- TabControl's DEFAULT ItemsPanel is a WrapPanel (Avalonia.Controls.TabControl:
+                 DefaultPanel = new FuncTemplate<Panel>(() => new WrapPanel())) — that is why the four
+                 headers spilled onto a second row as the window narrowed. A horizontal StackPanel keeps
+                 them on one row unconditionally. The scoped TabItem style then pins the size explicitly
+                 rather than inheriting the theme's Pivot-scale header metrics, so one row actually FITS
+                 at a narrow width instead of merely being promised. -->
+            <TabControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+            </TabControl.ItemsPanel>
+
+            <TabControl.Styles>
+                <Style Selector="TabItem">
+                    <Setter Property="FontSize" Value="13"/>
+                    <Setter Property="Padding" Value="10,4"/>
+                    <Setter Property="MinHeight" Value="0"/>
+                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                </Style>
+            </TabControl.Styles>
+
             <!-- Layer table ────────────────────────────────────────────────── -->
             <TabItem Header="Layers">
                 <DockPanel>
@@ -103,8 +141,8 @@
                         <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"                                  MinWidth="110"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LLayer"      MinWidth="44"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="LDatatype"   MinWidth="52"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LLayer"      MinWidth="34"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="LDatatype"   MinWidth="34"/>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="LColor"       MinWidth="60"/>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="LFill"        MinWidth="44"/>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="LZ"           MinWidth="70"/>
@@ -132,8 +170,8 @@
                                             <Grid ColumnSpacing="4">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"                                  MinWidth="110"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LLayer"      MinWidth="44"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LDatatype"   MinWidth="52"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LLayer"      MinWidth="34"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="LDatatype"   MinWidth="34"/>
                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="LColor"       MinWidth="60"/>
                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="LFill"        MinWidth="44"/>
                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="LZ"           MinWidth="70"/>
@@ -147,10 +185,17 @@
                                                          HorizontalAlignment="Stretch"
                                                          Text="{Binding StagedName}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-                                                <TextBox Grid.Column="1" Classes="cell" Width="44" Tag="LayerNumber"
+                                                <!-- Layer and Datatype are small integers — 34 px holds three
+                                                     digits with room to spare and a rare four-digit value
+                                                     without clipping. Centred, because the column stays as
+                                                     wide as its own header text ("Datatype" is the widest
+                                                     thing in that column, not the field). The SAME 34 is
+                                                     used for the GDSII layer/datatype pair on the
+                                                     Interchange tab — same quantity, same size. -->
+                                                <TextBox Grid.Column="1" Classes="cell" Width="34" HorizontalAlignment="Center" Tag="LayerNumber"
                                                          Text="{Binding StagedLayerNumber}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-                                                <TextBox Grid.Column="2" Classes="cell" Width="52" Tag="Datatype"
+                                                <TextBox Grid.Column="2" Classes="cell" Width="34" HorizontalAlignment="Center" Tag="Datatype"
                                                          Text="{Binding StagedDatatype}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 <Button Grid.Column="3" Width="60" Padding="2"
@@ -395,8 +440,8 @@
                         <Grid Grid.Row="0" Margin="4,4,4,2" ColumnSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"    SharedSizeGroup="IName"    MinWidth="110"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGLayer"   MinWidth="70"/>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGDatatype" MinWidth="70"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGLayer"   MinWidth="34"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="IGDatatype" MinWidth="34"/>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="IDxf"      MinWidth="110"/>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberSuffix" MinWidth="90"/>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberFn" MinWidth="110"/>
@@ -417,18 +462,18 @@
                                             <Grid ColumnSpacing="4">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"    SharedSizeGroup="IName"    MinWidth="110"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGLayer"   MinWidth="70"/>
-                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGDatatype" MinWidth="70"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGLayer"   MinWidth="34"/>
+                                                    <ColumnDefinition Width="Auto" SharedSizeGroup="IGDatatype" MinWidth="34"/>
                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="IDxf"      MinWidth="110"/>
                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberSuffix" MinWidth="90"/>
                                                     <ColumnDefinition Width="Auto" SharedSizeGroup="IGerberFn" MinWidth="110"/>
                                                 </Grid.ColumnDefinitions>
 
                                                 <TextBlock Grid.Column="0" Text="{Binding StagedName}" VerticalAlignment="Center" FontSize="11"/>
-                                                <TextBox Grid.Column="1" Classes="cell" Width="70" Tag="GdsiiLayer"
+                                                <TextBox Grid.Column="1" Classes="cell" Width="34" HorizontalAlignment="Center" Tag="GdsiiLayer"
                                                          Text="{Binding StagedGdsiiLayer}" PlaceholderText="{Binding StagedLayerNumber}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
-                                                <TextBox Grid.Column="2" Classes="cell" Width="70" Tag="GdsiiDatatype"
+                                                <TextBox Grid.Column="2" Classes="cell" Width="34" HorizontalAlignment="Center" Tag="GdsiiDatatype"
                                                          Text="{Binding StagedGdsiiDatatype}" PlaceholderText="{Binding StagedDatatype}"
                                                          LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"/>
                                                 <TextBox Grid.Column="3" Classes="cell" Width="110" Tag="DxfLayerName"

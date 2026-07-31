@@ -25,6 +25,47 @@ public static class DockLayoutSerialization
         PropertyNameCaseInsensitive = true,
     };
 
+    /// <summary>
+    /// Drops anything a document region cannot mean: a leaf with no documents, a split with fewer
+    /// than two surviving children (which is just its child, or nothing), an unrecognised
+    /// orientation, and a proportion outside (0,1). Bounded in depth so a hand-authored cycle-shaped
+    /// file cannot spin here.
+    /// </summary>
+    private static CwsDocumentRegion? SanitizeRegion(CwsDocumentRegion? node, int depth = 0)
+    {
+        if (node is null || depth > 16) return null;
+
+        node.Children  ??= [];
+        node.Documents ??= [];
+
+        // NaN is Dock's "no explicit proportion", and NaN fails EVERY comparison — it would slip
+        // through a plain range check and then make System.Text.Json throw on write.
+        if (!double.IsFinite(node.Proportion) || node.Proportion is <= 0.0 or >= 1.0) node.Proportion = 0.0;
+
+        if (node.Children.Count == 0)
+        {
+            node.Documents = node.Documents.Where(d => !string.IsNullOrWhiteSpace(d)).ToList();
+            if (node.Documents.Count == 0) return null;
+            node.Orientation = null;
+            if (node.Active is not null && !node.Documents.Contains(node.Active)) node.Active = null;
+            return node;
+        }
+
+        var kept = node.Children
+            .Select(c => SanitizeRegion(c, depth + 1))
+            .OfType<CwsDocumentRegion>()
+            .ToList();
+
+        if (kept.Count == 0) return null;
+        if (kept.Count == 1) return kept[0];
+
+        node.Children   = kept;
+        node.Documents  = [];
+        node.Active     = null;
+        node.Orientation = node.Orientation == "Vertical" ? "Vertical" : "Horizontal";
+        return node;
+    }
+
     /// <summary>Outcome of reading a layout block. <see cref="Layout"/> null = use the default layout.</summary>
     /// <param name="Layout">The parsed layout, or null when absent/unusable.</param>
     /// <param name="Report">A user-facing reason when the block was present but unusable; null when
@@ -73,6 +114,10 @@ public static class DockLayoutSerialization
         layout.FloatingWindows         ??= [];
         layout.FloatingDocumentWindows ??= [];
         layout.DocumentOrder           ??= [];
+
+        // R-dock-5 again: a structurally odd region must degrade to "no split" (the flat
+        // DocumentOrder still applies), never throw and never produce empty panes.
+        layout.DocumentRegion = SanitizeRegion(layout.DocumentRegion);
 
         // Drop entries that cannot mean anything — an unknown panel id (an older build's panel that
         // no longer exists, R-dock-5's own example) and an unknown side.

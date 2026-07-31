@@ -83,7 +83,12 @@ public static class DockLayoutDefaults
             FloatingDocumentWindows = layout.FloatingDocumentWindows,
             DocumentOrder           = layout.DocumentOrder,
             ActiveDocument          = layout.ActiveDocument,
+            DocumentRegion          = layout.DocumentRegion,
         };
+        // NOTE: this is a hand-maintained field-by-field copy — a field added to CwsDockLayout and
+        // not added here is silently discarded on every restore, with no error anywhere. That has
+        // already happened once (DocumentRegion, 2026-07-30). EveryLayoutField_SurvivesWithMissingPanelsFilled
+        // walks the type by reflection so the next omission fails a test instead of a bug report.
 
         foreach (var d in Default().Panels)
             if (!known.Contains(d.Id))

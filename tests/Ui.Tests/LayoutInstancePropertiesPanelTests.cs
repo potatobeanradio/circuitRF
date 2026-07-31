@@ -309,4 +309,71 @@ public sealed class LayoutInstancePropertiesPanelTests
         Assert.False(props.IsInstanceContext);
         Assert.Equal("Select a shape or instance to inspect.", props.EmptyMessage);
     }
+
+    // ── Header identifies WHAT is selected (owner request, 2026-07-30) ───────
+    //
+    //  It used to read a bare "Instance" for every instance — nothing a user could act on. Plain
+    //  shapes have always named their own type here; instances now do too, plus the schematic
+    //  instance name when the instance came from a schematic.
+
+    [Fact]
+    public void InstanceHeader_NamesTheCell_NotJustTheWordInstance()
+    {
+        var model = FreshModel();
+        var inst = new LayoutInstance { CellRef = "../../OutputMatch", X = 1000, Y = 2000 };
+        model.Instances.Add(inst);
+        var (vm, props) = Setup(model);
+
+        ClickInstance(vm, inst);
+
+        Assert.Equal("OutputMatch", props.SelectionSummaryText);
+        Assert.NotEqual("Instance", props.SelectionSummaryText);
+    }
+
+    [Fact]
+    public void InstanceHeader_AppendsTheSchematicInstanceName_WhenThereIsOne()
+    {
+        var model = FreshModel();
+        var inst = new LayoutInstance
+        {
+            CellRef = "../../OutputMatch", X = 1000, Y = 2000,
+            // SchematicId is the schematic component's InstanceName (R-L5's idempotency key).
+            SchematicId = "X3",
+        };
+        model.Instances.Add(inst);
+        var (vm, props) = Setup(model);
+
+        ClickInstance(vm, inst);
+
+        Assert.Contains("OutputMatch", props.SelectionSummaryText);
+        Assert.Contains("X3", props.SelectionSummaryText);
+    }
+
+    [Fact]
+    public void InstanceHeader_OmitsTheSchematicName_ForALayoutAuthoredInstance()
+    {
+        var model = FreshModel();
+        // Palette-dropped / layout-authored instances have no SchematicId by construction.
+        var inst = new LayoutInstance { CellRef = "../../Pad", X = 0, Y = 0 };
+        model.Instances.Add(inst);
+        var (vm, props) = Setup(model);
+
+        ClickInstance(vm, inst);
+
+        Assert.Equal("Pad", props.SelectionSummaryText);
+        Assert.DoesNotContain("·", props.SelectionSummaryText);
+    }
+
+    [Fact]
+    public void InstanceHeader_NeverBlank_EvenWithNoCellRef()
+    {
+        var model = FreshModel();
+        var inst = new LayoutInstance { CellRef = "", X = 0, Y = 0 };
+        model.Instances.Add(inst);
+        var (vm, props) = Setup(model);
+
+        ClickInstance(vm, inst);
+
+        Assert.False(string.IsNullOrWhiteSpace(props.SelectionSummaryText));
+    }
 }

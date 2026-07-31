@@ -44,6 +44,27 @@ public class CircuitRfDockFactory : Factory
     private IDocumentDock? _documentDock;
     public IDocumentDock? DocumentDock => _documentDock;
 
+    /// <summary>
+    /// One pane of a restored SPLIT document area: the dock that was built for it, and the documents
+    /// the saved layout says belong in it.
+    /// </summary>
+    /// <param name="Dock">The document dock built for this pane.</param>
+    /// <param name="Documents">Workspace-relative keys, in tab order.</param>
+    /// <param name="Active">Key of the pane's visible tab, or null.</param>
+    public readonly record struct RestoredDocumentPane(
+        IDocumentDock Dock, IReadOnlyList<string> Documents, string? Active);
+
+    /// <summary>
+    /// Panes produced by the last <see cref="CreateLayoutFromState"/> when the saved layout described
+    /// a SPLIT document area — empty otherwise (the ordinary single-tab-strip case).
+    ///
+    /// <para>The builder only creates the docks; it does not move documents into them, because a
+    /// document belongs to the workspace (file identity, dirty tracking, undo routing) and the factory
+    /// has no business resolving one. The workspace does the moving, exactly as it already does for
+    /// restored torn-off windows.</para>
+    /// </summary>
+    public IReadOnlyList<RestoredDocumentPane> RestoredDocumentPanes { get; private set; } = [];
+
     // Expose the ToolDock hosting the Project Tree so launch-pane focus can be applied after layout init.
     private IToolDock? _projectTreeDock;
     public IToolDock? ProjectTreeDock => _projectTreeDock;
@@ -102,8 +123,9 @@ public class CircuitRfDockFactory : Factory
     /// </param>
     public IRootDock CreateLayoutFromState(
         CwsDockLayout state,
-        Func<CwsFloatingWindow, ScreenRect>? floatingGeometry = null) =>
-        BuildLayout(state, freshTools: false, preserveDocumentDock: true, floatingGeometry);
+        Func<CwsFloatingWindow, ScreenRect>? floatingGeometry = null,
+        Func<string, bool>? documentIsOpen = null) =>
+        BuildLayout(state, freshTools: false, preserveDocumentDock: true, floatingGeometry, documentIsOpen);
 
     /// <summary>
     /// The single layout builder. Every arrangement in the app — default, restored, collapsed —
@@ -113,7 +135,8 @@ public class CircuitRfDockFactory : Factory
         CwsDockLayout state,
         bool freshTools,
         bool preserveDocumentDock,
-        Func<CwsFloatingWindow, ScreenRect>? floatingGeometry = null)
+        Func<CwsFloatingWindow, ScreenRect>? floatingGeometry = null,
+        Func<string, bool>? documentIsOpen = null)
     {
         // Every tool float is about to be rebuilt from the schema (docked, re-floated, or closed), so
         // the previous root's tool windows must go — otherwise the OS windows outlive the model that
@@ -225,10 +248,17 @@ public class CircuitRfDockFactory : Factory
             return s is { Proportion: > 0.0 and < 1.0 } ? s.Proportion : fallback;
         }
 
+        // ── Document area: one tab strip, or the saved split ─────────────────
+        // Only a genuinely split saved area produces anything but `documentDock` here, so the
+        // ordinary layout takes byte-for-byte the same path it always has.
+        var panes = new List<RestoredDocumentPane>();
+        var documentArea = BuildDocumentArea(state.DocumentRegion, documentDock, documentIsOpen, panes);
+        RestoredDocumentPanes = panes;
+
         // ── Document column: [top docks…] / documents / [bottom docks…] ───────
         var columnChildren = new List<IDockable>();
         foreach (var d in topDocks) { columnChildren.Add(d); columnChildren.Add(new ProportionalDockSplitter()); }
-        columnChildren.Add(documentDock);
+        columnChildren.Add(documentArea);
         foreach (var d in bottomDocks) { columnChildren.Add(new ProportionalDockSplitter()); columnChildren.Add(d); }
 
         var documentColumn = new ProportionalDock
@@ -315,6 +345,10 @@ public class CircuitRfDockFactory : Factory
             window.Width  = geom.Width;
             window.Height = geom.Height;
             window.Layout = winRoot;
+            // The BACK-reference, and it is load-bearing — see FloatTool for the full reasoning.
+            // Dock's own CreateWindowFrom sets both directions; a hand-built float that sets only
+            // window.Layout is silently undockable.
+            winRoot.Window = window;
             // R-dock-14: this window hosts tools by construction (the loop skips windows with none),
             // so it takes the owned mode — the same one CreateWindowFrom assigns to a drag tear-off,
             // resolved through the same helper so the two paths cannot drift. Ownership governs
@@ -538,6 +572,26 @@ public class CircuitRfDockFactory : Factory
         window.Width     = geometry.Width;
         window.Height    = geometry.Height;
         window.Layout    = winRoot;
+
+        // THE BACK-REFERENCE — a floated root must point back at its own window.
+        //
+        // Owner-reported bug this fixes: a floating tool panel sometimes could not be re-docked at
+        // all — dragging its title bar moved the OS window but no other window offered a drop
+        // target — while a panel torn off by dragging its TAB always could. Reset Layout "fixed" it
+        // because that re-docks the panel, and undocking it afterwards goes through Dock's own
+        // tear-off path instead of ours.
+        //
+        // Dock's FactoryBase.CreateWindowFrom (the tear-off path) ends with BOTH directions:
+        //     dockWindow.Layout = rootDock;
+        //     rootDock.Window   = dockWindow;
+        // Our hand-built floats set only the first. FactoryBase then reads the missing one — e.g.
+        // IsCurrentGlobalTrackingRootStale does `if (currentRootDock.Window != null) return true;`
+        // — so a floated root with a null Window is indistinguishable from the MAIN root, and the
+        // docking machinery treats the window as though it were the shell.
+        //
+        // Rule: any window built by hand rather than by CreateWindowFrom must set both directions.
+        winRoot.Window = window;
+
         window.OwnerMode = OwnerModeFor(toolDock);   // same decision as every other float
 
         // The real AddWindow here (not AddWindowWithoutHost): this window is being opened NOW, so
@@ -577,6 +631,121 @@ public class CircuitRfDockFactory : Factory
         root.Windows.Add(window);
         OnWindowAdded(window);
         InitDockWindow(window, root, hostWindow: null);
+    }
+
+    /// <summary>
+    /// Builds the docked document area from a saved region, or returns <paramref name="primary"/>
+    /// unchanged when there is no split to rebuild.
+    ///
+    /// <para><b>The primary dock is always the FIRST surviving pane.</b> On a restore it is the
+    /// preserved <c>_documentDock</c> — the one already holding every reopened tab — so the documents
+    /// that belong in other panes are MOVED out of it afterwards by the workspace. Building empty
+    /// docks and moving everything in would be the other way round, and would lose the tabs of any
+    /// document the saved region forgot to mention.</para>
+    ///
+    /// <para><b>Panes whose documents are not open are dropped, not built empty.</b>
+    /// <paramref name="documentIsOpen"/> is the open list (R-dock-2: membership is its call, never the
+    /// layout's). Building a pane for documents that no longer exist would leave a permanently blank
+    /// half of the window that the user cannot get rid of except by resetting the layout.</para>
+    /// </summary>
+    private IDockable BuildDocumentArea(
+        CwsDocumentRegion? region,
+        IDocumentDock primary,
+        Func<string, bool>? documentIsOpen,
+        List<RestoredDocumentPane> panes)
+    {
+        if (region is null) return primary;
+
+        var built = BuildRegionNode(region, documentIsOpen, panes, depth: 0);
+        if (built is null || panes.Count < 2)
+        {
+            // Nothing survived, or it collapsed to one pane — that IS the ordinary single strip.
+            panes.Clear();
+            return primary;
+        }
+
+        // Hand the first pane's identity to the preserved dock, then re-point every recorded pane so
+        // pane 0 names the dock that actually holds the reopened tabs.
+        var placeholder = panes[0].Dock;
+        ReplaceInTree(built, placeholder, primary);
+        panes[0] = panes[0] with { Dock = primary };
+        _documentDock = primary;
+
+        return built;
+    }
+
+    private IDockable? BuildRegionNode(
+        CwsDocumentRegion node,
+        Func<string, bool>? documentIsOpen,
+        List<RestoredDocumentPane> panes,
+        int depth)
+    {
+        if (depth > 16) return null;
+
+        if (node.IsLeaf)
+        {
+            var keys = node.Documents.Where(k => documentIsOpen?.Invoke(k) ?? true).ToList();
+            if (keys.Count == 0) return null;
+
+            var dock = new DocumentDock
+            {
+                Id    = $"Documents{panes.Count + 1}",
+                Title = "Documents",
+
+                // COLLAPSABLE, unlike the primary dock. The primary is IsCollapsable = false because
+                // the main document area must never vanish — but an extra pane that keeps existing
+                // after its last document is closed leaves a dead "No documents open" region the user
+                // cannot dismiss (owner-reported). Dock's own CollapseDock returns immediately on
+                // !IsCollapsable, so this flag is the entire difference between a pane that gives its
+                // space back and one that is stuck there until Reset Layout.
+                IsCollapsable = true,
+
+                Proportion       = node.Proportion is > 0.0 and < 1.0 ? node.Proportion : double.NaN,
+                VisibleDockables = CreateList<IDockable>(),
+            };
+
+            var active = node.Active is { } a && keys.Contains(a) ? a : keys[0];
+            panes.Add(new RestoredDocumentPane(dock, keys, active));
+            return dock;
+        }
+
+        var children = new List<IDockable>();
+        foreach (var child in node.Children)
+        {
+            if (BuildRegionNode(child, documentIsOpen, panes, depth + 1) is not { } built) continue;
+            if (children.Count > 0) children.Add(new ProportionalDockSplitter());
+            children.Add(built);
+        }
+
+        if (children.Count == 0) return null;
+        if (children.Count == 1) return children[0];
+
+        return new ProportionalDock
+        {
+            Id               = "DocumentSplit",
+            Title            = "DocumentSplit",
+            Orientation      = node.Orientation == "Vertical" ? Orientation.Vertical : Orientation.Horizontal,
+            Proportion       = node.Proportion is > 0.0 and < 1.0 ? node.Proportion : double.NaN,
+            ActiveDockable   = children[0],
+            VisibleDockables = CreateList(children.ToArray()),
+        };
+    }
+
+    /// <summary>Swaps one dockable for another in a freshly built tree, preserving position.</summary>
+    private static void ReplaceInTree(IDockable node, IDockable find, IDockable replace)
+    {
+        if (node is not IDock dock || dock.VisibleDockables is not { } children) return;
+
+        for (int i = 0; i < children.Count; i++)
+        {
+            if (ReferenceEquals(children[i], find))
+            {
+                if (replace is IDockable r) { r.Proportion = find.Proportion; children[i] = r; }
+                if (ReferenceEquals(dock.ActiveDockable, find)) dock.ActiveDockable = replace;
+                return;
+            }
+            if (children[i] is { } c) ReplaceInTree(c, find, replace);
+        }
     }
 
     private IProportionalDock BuildColumn(string id, List<IDock> docks, double proportion)

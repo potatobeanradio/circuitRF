@@ -245,6 +245,32 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- Floating TOOL window title bar: remove the chrome menu (Float / Dock / Dock as Tabbed
+             Document). Owner-reported: on a floating tool window those items do nothing, and "Dock"
+             is permanently disabled — a menu that cannot act violates R13a (act, or say why), so it
+             is removed rather than left as decoration.
+
+             SCOPED TO :floating ON PURPOSE. ToolChromeControl also provides the chrome for DOCKED
+             tool panels, where Float does real work; a blanket removal would delete a working
+             affordance to fix a broken one. ToolChromeControl sets IsFloating (and hence the
+             :floating pseudo-class) when it finds itself hosted in a HostWindow, so this matches
+             exactly the case the owner reported.
+
+             MenuButtonTheme is the control's own public hook for theming that button (there is no
+             DockSettings flag for it — checked). Replacing it with a theme that is simply not
+             visible removes the button, and with it the flyout, without overriding the whole chrome
+             template the way DocumentControl/ToolControl above have to. -->
+        <Style Selector="dockCtrl|ToolChromeControl:floating">
+            <Setter Property="MenuButtonTheme">
+                <ControlTheme TargetType="Button">
+                    <Setter Property="IsVisible" Value="False"/>
+                    <Setter Property="Width" Value="0"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="Padding" Value="0"/>
+                </ControlTheme>
+            </Setter>
+        </Style>
+
         <Style Selector="dockCtrl|DocumentDockControl">
             <Setter Property="Background" Value="{DynamicResource SystemChromeLowColor}"/>
         </Style>

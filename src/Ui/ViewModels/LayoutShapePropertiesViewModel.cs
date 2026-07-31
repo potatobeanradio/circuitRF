@@ -842,8 +842,9 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (IsSingleInstanceSelected)
         {
             var inst = _vm.EffectiveInstanceAt(indices[0]);
-            SelectionSummaryText = "Instance";
-            IsSelectedInstancePCell = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir) is
+            var resolution = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+            SelectionSummaryText = InstanceSummary(inst, resolution);
+            IsSelectedInstancePCell = resolution is
                 { State: CellLayoutState.Resolved, View.PCellOrigin: not null };
             ShowPCellParameterList = IsSelectedInstancePCell;
             // A genuinely NEW selection resets the entry-mode toggle back to canonical Z1/Z2/L — the
@@ -1629,6 +1630,47 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         return distinct.Count == 1 && distinct[0] is { } v && _vm is not null
             ? LayoutUnits.Format(v, _vm.DisplayUnit, _vm.Model.DbuPerMicron)
             : "";
+    }
+
+    /// <summary>
+    /// Header line for a single selected instance: WHAT it is, plus the schematic instance it came
+    /// from when there is one — e.g. <c>"MLIN · ML1"</c>, <c>"OutputMatch · X3"</c>, or a
+    /// bare <c>"OutputMatch"</c> for a layout-authored instance with no schematic counterpart.
+    ///
+    /// <para>Replaces a bare <c>"Instance"</c>, which said nothing a user could act on — every
+    /// instance looked identical in the inspector regardless of what it actually was. Plain shapes
+    /// have always named their own type here (<see cref="ShapeTypeName"/>); instances now do too.</para>
+    ///
+    /// <para><b>A PCell is named by its GENERATOR, not its cell folder.</b> A generated cell's folder
+    /// name is a content-addressed hash (<c>MLIN_a1b2c3…</c>, see <c>GeneratedCellStore</c>) — an
+    /// implementation detail of parameter de-duplication, and meaningless to read. The generator id
+    /// is the thing the user recognises, and it is shown BARE: a "(PCell)" tag was tried and removed
+    /// at the owner's request — "MLIN" already tells an RF engineer what it is, so the tag was noise.</para>
+    /// </summary>
+    private static string InstanceSummary(LayoutInstance inst, CellLayoutResolution resolution)
+    {
+        string what =
+            resolution is { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }
+                ? origin.GeneratorId
+                : CellNameOf(inst.CellRef);
+
+        // SchematicId is the schematic component's InstanceName (R-L5's idempotency key), so it is
+        // exactly the name shown on the schematic — present only for a schematic-generated instance.
+        return string.IsNullOrWhiteSpace(inst.SchematicId) ? what : $"{what} · {inst.SchematicId}";
+    }
+
+    /// <summary>
+    /// The cell's own name from a <c>CellRef</c> — its last path segment, since a CellRef is a
+    /// relative path to the cell FOLDER (e.g. <c>../../OutputMatch</c>). Falls back to a plain
+    /// "Instance" for an empty/unset ref, so the header never renders blank.
+    /// </summary>
+    private static string CellNameOf(string? cellRef)
+    {
+        if (string.IsNullOrWhiteSpace(cellRef)) return "Instance";
+        var trimmed = cellRef.Replace('\\', '/').TrimEnd('/');
+        var slash = trimmed.LastIndexOf('/');
+        var name = slash >= 0 ? trimmed[(slash + 1)..] : trimmed;
+        return string.IsNullOrWhiteSpace(name) ? "Instance" : name;
     }
 
     private static string ShapeTypeName(LayoutShape shape) => shape switch

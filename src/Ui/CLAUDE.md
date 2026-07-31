@@ -1,5 +1,86 @@
 # UI (Avalonia) — local conventions
 
+A SPLIT document area now survives close/reopen — and the outgoing workspace's session is
+recorded at all (2026-07-30) — COMPLETE. Two owner reports, one visible symptom, two independent causes.
+
+**Cause 1 — the outgoing session was never written.** `WriteWorkspaceFile` is the ONE place both the
+open-document list and the dock layout are captured, and every caller was an explicit save, the
+tree-filter debounce, or clean exit. **No path that LEAVES a workspace called it**, so a workspace's
+session was only recorded by accident — whenever something unrelated triggered a save while those tabs
+were open. That accident is why the report named `.ctech`: a schematic gets edited and ⌘S'd, and
+`SaveAllDocuments` writes `.cws` as a side effect; a technology opened, read and left clean triggers
+none of that. New `PersistOutgoingWorkspaceSession()` is called from `SwitchToWorkspace`,
+`NewWorkspace` and `ResetToBlankShell` — **before** `CloseFloatedDocumentsOwnedByWorkspace` (which
+removes torn-off docs from `_openDocsByPath`) and before `CurrentWorkspacePath` is reassigned. Silent,
+and guarded on the `.cws` still existing.
+
+**Cause 2 — a split document area was unrepresentable.** `CwsDockLayout` described docked documents as
+a flat `DocumentOrder` + `ActiveDocument`, which can only ever describe ONE tab strip, and
+`BuildLayout` created exactly one `DocumentDock` in a fixed slot. Dragging a document to the edge of
+the document area splits it into two `IDocumentDock`s — so it restored as a tab because a tab was the
+only thing the schema could say.
+
+**New `CwsDocumentRegion`** — a recursive pane tree (`Orientation`/`Proportion`/`Children` or
+`Documents`+`Active`), **written ONLY when the area is genuinely split**, so an unsplit workspace's
+block is byte-identical to before and the new path cannot regress the ordinary layout. **No `Version`
+bump — purely additive**: an older build ignores the unknown property and falls back to
+`DocumentOrder` (the split flattens to tabs = the old behaviour). Bumping would make an older build
+discard the WHOLE layout, which is strictly worse.
+
+- **Capture WALKS DOWN FROM THE ROOT AND PRUNES — never up, looking for a boundary.** Two attempts
+  ascended from a document dock and stopped at the first tool dock; both shipped broken. A real `.cws`
+  settled it: dropping a document against the OUTER edge splits the whole document column, so the
+  region legitimately CONTAINS a tool dock —
+  `Outer[ LeftColumn | Split( DocumentColumn[ Documents, Messages ] | pane ) ]`. The ascent stopped at
+  `DocumentColumn`, saw one pane, and wrote null. `BuildRegion` already returns null for any branch
+  holding no documents (a tool column prunes itself — a `Tool` has no document key) and collapses a
+  single-child split, so starting at the root finds the panes wherever they are, with no boundary to
+  guess and no special case. Tool placement is not lost: `Panels[]` describes it independently.
+  *Consequence:* a tool dock that sat inside the split returns to its own recorded side, spanning the
+  document area rather than one pane of it.
+- **A PANE IS IDENTIFIED BY WHAT IT HOLDS, NEVER BY ITS TYPE — this shipped broken once for exactly
+  this reason.** Dragging a DOCUMENT to an edge does NOT create a second `IDocumentDock`: decompiling
+  `FactoryBase.CreateSplitLayout` shows the non-`IDock` branch wraps the dragged dockable in a plain
+  `CreateProportionalDock()` and adds the document straight into it. The first attempt required
+  `IDocumentDock`, therefore found only the original strip, collapsed the split to one pane and
+  recorded nothing — while a full suite of capture and rebuild tests passed, because both were written
+  against a hand-built tree of the shape I ASSUMED. **Fixture rule for anything touching Dock's tree:
+  drive the library's own operation (`SplitToDock`, with the source `RemoveDockable` the drag manager
+  does first), never a hand-assembled approximation of its result.**
+- **Non-finite numbers are stripped at capture (`FiniteProportion`) — this fixed a PRE-EXISTING
+  latent bug.** `CreateSplitLayout` assigns `dock.Proportion = double.NaN` outright, NaN fails every
+  range comparison silently, and System.Text.Json refuses to write it — so any split threw inside
+  `WriteWorkspaceFile`'s layout try/catch and lost the WHOLE block behind a generic "window layout was
+  not saved" warning pointing nowhere near the cause. Applied to tool-dock proportions, side
+  proportions and floating-window geometry, not just the region.
+- **Rebuild** (`CircuitRfDockFactory.BuildDocumentArea`): **pane 0 is always the preserved
+  `_documentDock`** — the one already holding every reopened tab. Building empty docks and moving
+  everything in would strand the tabs of any document the saved region did not mention. A pane whose
+  documents are all closed is **not built** (R-dock-2: membership is the open list's call), so a stale
+  region never leaves a blank half-window.
+- **A secondary pane is `IsCollapsable = true`; the PRIMARY is `false` — the two differ on purpose.**
+  The primary must never vanish (it is the main document area). A secondary pane built non-collapsable
+  survives its own last document being closed and leaves a dead "No documents open" region the user
+  cannot dismiss (owner-reported) — Dock's `CollapseDock` returns immediately on `!IsCollapsable`, so
+  that one flag is the whole difference. Do not "make them consistent".
+- **Populate** (`WorkspaceViewModel.RestoreSplitDocumentPanes`): restore-then-move via
+  `IFactory.MoveDockable`, the same shape `RestoreFloatingDocumentWindows` already uses. Never throws —
+  a pane that cannot be populated leaves its documents as ordinary tabs (R-dock-5).
+
+**A real bug this work hit, now permanently guarded:** `DockLayoutDefaults.WithMissingPanelsFilled`
+builds a new `CwsDockLayout` by **hand-copying each field**, so a field added to the schema and
+forgotten there is silently discarded on every restore with no error anywhere. `DocumentRegion` was
+lost exactly that way — captured and serialized correctly, then dropped on the way into the builder.
+`EveryLayoutField_SurvivesWithMissingPanelsFilled` now walks the type by reflection so the next
+omission fails a test instead of becoming a bug report. **Do not add a field to `CwsDockLayout` without
+adding it to that copy.**
+
+Gate: `SplitDocumentAreaLayoutTests` (17), `WorkspaceSessionPersistedOnLeaveTests` (7) — both verified
+to fail against the pre-fix code. Firewall 4/4, Core 512/512, RfCore 281/281, Ui 4016/4016, Engine
+460/461 (1 pre-existing skip). **Not interactively verified** (no visual driver here) — please confirm
+that splitting the document area, saving, closing and reopening brings the split back.
+
+
 The "sometimes fails" tests are fixed — three real shared-state hazards, not test luck (2026-07-30) —
 COMPLETE. Owner report: a handful of tests failed intermittently in full-suite runs, passing in isolation,
 which this file's own history had been recording as "known full-suite parallelism contention" for months
@@ -11484,7 +11565,10 @@ in `ClearWorkspace`). Do NOT update `Title` per workspace — the dock-tab label
 
 ### `.cws` is a dotfile — derive the workspace name from the FOLDER, not the file stem
 A circuitRF workspace is a **named folder containing a `.cws` file**: `…/<name>/.cws`.
-`Path.GetFileNameWithoutExtension(".cws")` in .NET returns `".cws"` (dotfiles have no extension), NOT the
+`Path.GetFileNameWithoutExtension(".cws")` in .NET returns the **EMPTY string** — .NET treats a dotfile as
+ALL extension (`Path.GetExtension(".cws") == ".cws"`, `GetFileName(".cws") == ".cws"`). Measured directly
+on 2026-07-30; this line previously claimed it returns `".cws"` "(dotfiles have no extension)", which is
+backwards. The consequence is unchanged and is what matters: it is NOT the
 workspace name. Always derive the workspace name from the **folder name**:
 
 ```csharp

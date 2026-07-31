@@ -47,7 +47,13 @@ public partial class WorkspaceWindow : Window
         AddHandler(InputElement.KeyDownEvent, OnWindowKeyDownTunnel, RoutingStrategies.Tunnel);
         // R-dock-14: bring the floating tool panels forward with the workspace. `Window` exposes no
         // OnActivated to override, so this is the event.
-        Activated += (_, _) => RaiseFloatingToolWindows();
+        Activated += (_, _) =>
+        {
+            RaiseFloatingToolWindows();
+            // Cheap (a handful of windows) and idempotent; RaiseFloatingToolWindows re-entering
+            // Activated simply rebuilds again, which is harmless.
+            _vm?.RebuildWindowMenuItems();
+        };
     }
 
     // While a placement is armed, R / Shift+R rotate the ghost regardless of which control has focus
@@ -81,6 +87,7 @@ public partial class WorkspaceWindow : Window
         if (_vm is not null)
         {
             _vm.RecentWorkspacesChanged -= RebuildNativeRecentMenu;
+            _vm.WindowMenuChanged       -= RebuildNativeWindowMenu;
             _vm.SaveScopeChanged        -= UpdateNativeSaveHeader;
             _vm.DockersCollapsedChanged -= UpdateNativeDockersHeader;
         }
@@ -88,6 +95,9 @@ public partial class WorkspaceWindow : Window
         if (_vm is not null)
         {
             _vm.RecentWorkspacesChanged += RebuildNativeRecentMenu;
+            // Declared for exactly this and previously left unsubscribed, which is why the macOS
+            // Window menu never updated after the one build in OnOpened.
+            _vm.WindowMenuChanged       += RebuildNativeWindowMenu;
             _vm.SaveScopeChanged        += UpdateNativeSaveHeader;
             _vm.DockersCollapsedChanged += UpdateNativeDockersHeader;
             RebuildNativeRecentMenu();
@@ -102,6 +112,15 @@ public partial class WorkspaceWindow : Window
         RebuildNativeRecentMenu();
         UpdateNativeSaveHeader();
         UpdateNativeDockersHeader();
+
+        // Locate the native Window item and hook NeedsUpdate now that AppKit has built the menu.
+        EnsureWindowNativeItem();
+
+        // Seed the Window menu now. SubmenuOpened alone is not enough: an empty ItemsSource makes
+        // the parent a leaf with no submenu, so that event would never fire and the menu would stay
+        // permanently empty (owner-reported). Refreshed again on Activated and on SubmenuOpened.
+        _vm?.RebuildWindowMenuItems();
+        RebuildNativeWindowMenu();
 
         // R-dock-12 baseline: the menu the OS shows when no window is key. It is NOT what makes a
         // floating window show the menu — observed directly, with this in place the owner still saw an
@@ -326,6 +345,87 @@ public partial class WorkspaceWindow : Window
                 }
             }
             break;
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the in-window Window menu just before it opens.
+    ///
+    /// <para>On-open rather than tracked: entries depend on window lifetime (tear-off, re-dock,
+    /// close — all driven by Dock) and on per-keystroke dirty state. Subscribing to all of that would
+    /// be substantial bookkeeping to keep correct something only ever read at open time.</para>
+    /// </summary>
+    private void OnWindowMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        _vm?.RebuildWindowMenuItems();
+        RebuildNativeWindowMenu();
+    }
+
+    /// <summary>
+    /// Mirrors the Window menu into the macOS menu bar from the SAME
+    /// <c>EnumerateWindowEntries()</c> the in-window menu uses — one ordering rule, two surfaces.
+    /// <c>NativeMenuItem</c> is an <c>AvaloniaObject</c> with no DataContext, so entries are built
+    /// in code and their actions attached directly, exactly as "Open Recent" already does.
+    /// </summary>
+    private void RebuildNativeWindowMenu()
+    {
+        if (_vm is null) return;
+        EnsureWindowNativeItem();
+        if (_windowNativeItem?.Menu is not { } target) return;
+
+        target.Items.Clear();
+        foreach (var entry in _vm.EnumerateWindowEntries())
+        {
+            if (entry.SeparatorBefore)
+                target.Items.Add(new NativeMenuItemSeparator());
+
+            var item = new NativeMenuItem(entry.Header);
+            var window = entry.Target;
+            item.Click += (_, _) =>
+            {
+                if (window.PlatformImpl is null) return;
+                if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+                window.Activate();
+            };
+            target.Items.Add(item);
+        }
+    }
+
+    // XAML-declared "Window" native menu item, located once by header walk.
+    private NativeMenuItem? _windowNativeItem;
+
+    /// <summary>
+    /// Locates the XAML-declared "Window" native item and hooks its just-in-time refresh.
+    ///
+    /// <para><b>Why NeedsUpdate matters, and why the first attempt was broken on macOS:</b> the
+    /// in-window <c>Menu</c> is hidden on macOS (<c>IsVisible="{OnPlatform True, macOS=False}"</c>),
+    /// so its <c>SubmenuOpened</c> — which is what drove the rebuild — never fires there at all. The
+    /// native menu was therefore built exactly once, in <c>OnOpened</c>, before any workspace or
+    /// floating window existed, and then never again: the owner saw a single stale "circuitRF" entry.
+    /// <c>NativeMenu.NeedsUpdate</c> is Avalonia's documented hook for "add, remove or modify menu
+    /// items before a menu is shown" — the macOS counterpart of SubmenuOpened.</para>
+    ///
+    /// <para><c>NativeMenuItem</c> is an <c>AvaloniaObject</c>, not a <c>Control</c>, so <c>x:Name</c>
+    /// generates no field; the item is found by walking the native menu tree, exactly as
+    /// <see cref="EnsureOpenRecentNativeItem"/> does for "Open Recent".</para>
+    /// </summary>
+    private void EnsureWindowNativeItem()
+    {
+        if (_windowNativeItem is not null) return;
+
+        var rootMenu = NativeMenu.GetMenu(this);
+        if (rootMenu is null) return;
+
+        foreach (var top in rootMenu.Items)
+        {
+            if (top is NativeMenuItem ni && ni.Header == "Window" && ni.Menu is not null)
+            {
+                _windowNativeItem = ni;
+                // Rebuild the model right before the OS shows the menu. Refreshes the VM collection
+                // too, so both surfaces come from the one enumeration.
+                ni.Menu.NeedsUpdate += (_, _) => _vm?.RebuildWindowMenuItems();
+                break;
+            }
         }
     }
 

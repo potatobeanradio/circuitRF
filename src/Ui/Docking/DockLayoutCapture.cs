@@ -47,7 +47,7 @@ public static class DockLayoutCapture
         var groupsBySide = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var toolDock in EnumerateToolDocks(root))
         {
-            var side = SideOf(toolDock);
+            var side = SideOf(toolDock, root);
             int group = groupsBySide.TryGetValue(side, out var g) ? g : 0;
             groupsBySide[side] = group + 1;
 
@@ -62,7 +62,7 @@ public static class DockLayoutCapture
                     Id         = tool.Id,
                     Open       = true,
                     Side       = side,
-                    Proportion = toolDock.Proportion,
+                    Proportion = FiniteProportion(toolDock.Proportion),
                     Group      = group,
                     Order      = order++,
                     Active     = ReferenceEquals(toolDock.ActiveDockable, dockable),
@@ -73,9 +73,9 @@ public static class DockLayoutCapture
         // ── Side column sizes ─────────────────────────────────────────────────
         // The left/right column's own width lives on the ProportionalDock that CONTAINS the tool
         // docks, not on any of them — recorded once per side.
-        foreach (var (side, proportion) in EnumerateSideProportions(root))
+        foreach (var (side, proportion) in EnumerateSideProportions(root, root))
             if (!layout.Sides.Any(s => s.Side == side))
-                layout.Sides.Add(new CwsDockSide { Side = side, Proportion = proportion });
+                layout.Sides.Add(new CwsDockSide { Side = side, Proportion = FiniteProportion(proportion) });
 
         // ── Floating windows ──────────────────────────────────────────────────
         foreach (var window in root.Windows ?? Enumerable.Empty<IDockWindow>())
@@ -97,6 +97,9 @@ public static class DockLayoutCapture
 
             var geom = windowGeometry?.Invoke(window)
                        ?? new ScreenRect(window.X, window.Y, window.Width, window.Height);
+            geom = new ScreenRect(
+                FiniteProportion(geom.X), FiniteProportion(geom.Y),
+                FiniteProportion(geom.Width), FiniteProportion(geom.Height));
 
             if (panels.Count > 0)
             {
@@ -167,10 +170,120 @@ public static class DockLayoutCapture
                 var key = documentKey(activeDoc);
                 if (!string.IsNullOrEmpty(key)) layout.ActiveDocument = key;
             }
+
+            // …and, when the document area has actually been SPLIT into several panes, its pane
+            // structure as well. Written only in that case, so an unsplit workspace's block is
+            // byte-identical to before this existed.
+            layout.DocumentRegion = CaptureDocumentRegion(root, documentKey);
         }
 
         return layout;
     }
+
+    /// <summary>
+    /// The docked document area's pane structure, or null when it is a single tab strip.
+    ///
+    /// <para><b>Walks DOWN from the root and prunes, rather than walking UP to find a boundary.</b>
+    /// Two earlier attempts tried to locate a "document region root" by ascending from a document dock
+    /// and stopping at the first tool dock. That is wrong, and a real <c>.cws</c> proved it: dropping a
+    /// document against the outer edge splits the whole DOCUMENT COLUMN, so the resulting region
+    /// legitimately CONTAINS the Messages tool dock —
+    /// <c>Outer[ LeftColumn | Split( DocumentColumn[ Documents, Messages ] | pane ) ]</c>. The ascent
+    /// stopped at DocumentColumn, saw one pane, and recorded nothing.</para>
+    ///
+    /// <para><see cref="BuildRegion"/> already yields null for any branch holding no documents (a tool
+    /// column prunes itself, since a Tool has no document key) and collapses a split with one surviving
+    /// child. So starting at the root and letting it prune finds the panes wherever they are, with no
+    /// boundary to guess at and no special case for tool docks in the middle. Tool placement is not
+    /// lost — it is described independently by <see cref="CwsDockLayout.Panels"/>.</para>
+    ///
+    /// <para><b>Consequence worth knowing:</b> a tool dock that sat INSIDE the split (Messages, above)
+    /// is not part of the rebuilt region; it returns to its own recorded side, spanning the document
+    /// area rather than one pane of it. The panes come back side by side, which is the thing being
+    /// restored.</para>
+    /// </summary>
+    public static CwsDocumentRegion? CaptureDocumentRegion(IDockable root, Func<IDockable, string?> documentKey)
+    {
+        var region = BuildRegion(root, documentKey);
+
+        // A single pane is exactly what DocumentOrder already describes. Emitting it anyway would add
+        // a second, redundant description of the same thing — two records that can disagree.
+        return region is null || region.IsLeaf ? null : region;
+    }
+
+    /// <summary>
+    /// One node of the region tree.
+    ///
+    /// <para><b>A pane is identified by what it HOLDS, not by its type — this is the whole subtlety.</b>
+    /// Dragging a DOCUMENT to an edge does not produce a second <c>IDocumentDock</c>: decompiling
+    /// <c>FactoryBase.CreateSplitLayout</c> shows the non-<c>IDock</c> branch wraps the dragged
+    /// dockable in a plain <c>CreateProportionalDock()</c> and adds the document straight into it. So
+    /// the new pane is an ordinary <c>ProportionalDock</c> holding a document. Requiring
+    /// <c>IDocumentDock</c> here finds only the ORIGINAL strip, collapses the split to one pane, and
+    /// silently records nothing — which is exactly how this shipped broken the first time.</para>
+    /// </summary>
+    private static CwsDocumentRegion? BuildRegion(IDockable node, Func<IDockable, string?> documentKey)
+    {
+        if (node is not IDock dock || dock.VisibleDockables is null) return null;
+
+        // Does this dock directly hold documents? Then it is a pane, whatever its concrete type.
+        var documents = new List<string>();
+        foreach (var child in dock.VisibleDockables)
+        {
+            if (child is null) continue;
+            var key = documentKey(child);
+            if (!string.IsNullOrEmpty(key)) documents.Add(key!);
+        }
+
+        if (documents.Count > 0)
+        {
+            var leaf = new CwsDocumentRegion
+            {
+                Proportion = FiniteProportion(dock.Proportion),
+                Documents  = documents,
+            };
+            if (dock.ActiveDockable is { } active && documentKey(active) is { Length: > 0 } activeKey)
+                leaf.Active = activeKey;
+            return leaf;
+        }
+
+        // An IDocumentDock holding nothing this workspace can key (all scratch/foreign) is not a pane
+        // worth recording — there would be nothing to put back into it.
+        if (node is IDocumentDock) return null;
+
+        var children = new List<CwsDocumentRegion>();
+        foreach (var child in dock.VisibleDockables)
+        {
+            // Splitters carry no state of their own — the proportions live on the panes.
+            if (child is null || child is IProportionalDockSplitter) continue;
+            if (BuildRegion(child, documentKey) is { } sub) children.Add(sub);
+        }
+
+        if (children.Count == 0) return null;
+        // A split with one surviving child is that child — nesting adds a level that means nothing.
+        if (children.Count == 1) return children[0];
+
+        return new CwsDocumentRegion
+        {
+            Orientation = (node as IProportionalDock)?.Orientation == Orientation.Vertical ? "Vertical" : "Horizontal",
+            Proportion  = FiniteProportion(dock.Proportion),
+            Children    = children,
+        };
+    }
+
+    /// <summary>
+    /// Replaces a non-finite number with 0 ("let the library decide") on its way into the block.
+    ///
+    /// <para><b>This guards a pre-existing hazard, not just the region.</b> Dock uses
+    /// <c>double.NaN</c> for "no explicit proportion" and assigns it outright during a split
+    /// (<c>CreateSplitLayout</c>: <c>dock.Proportion = double.NaN</c>). NaN fails EVERY range
+    /// comparison silently, so it sails through a bounds check — and then System.Text.Json refuses to
+    /// write it, which throws inside <c>WriteWorkspaceFile</c>'s layout try/catch and loses the WHOLE
+    /// block behind a generic "window layout was not saved" warning that points nowhere near here.
+    /// Applied to every number that reaches the block, tool-dock proportions and floating-window
+    /// geometry included.</para>
+    /// </summary>
+    private static double FiniteProportion(double p) => double.IsFinite(p) ? p : 0.0;
 
     /// <summary>Depth-first walk of every <see cref="IToolDock"/> under <paramref name="dockable"/>.</summary>
     public static IEnumerable<IToolDock> EnumerateToolDocks(IDockable dockable)
@@ -212,7 +325,75 @@ public static class DockLayoutCapture
         return null;
     }
 
-    private static string SideOf(IToolDock toolDock) => toolDock.Alignment switch
+    /// <summary>
+    /// A tool dock's side, derived from WHERE IT SITS IN THE TREE — the direct inverse of
+    /// <c>CircuitRfDockFactory.BuildLayout</c>, which assembles
+    /// <c>Outer(Horizontal): [LeftColumn] | DocumentColumn(Vertical: top… documents …bottom) |
+    /// [RightColumn]</c>.
+    ///
+    /// <para><b>The bug this replaces (owner-reported 2026-07-30).</b> This used to read
+    /// <see cref="IToolDock.Alignment"/>. That property records the edge a dockable was dropped
+    /// against RELATIVE TO ITS NEIGHBOUR — not which outer column it ended up in. Docking Properties
+    /// onto the BOTTOM edge of the Project Tree dock (still in the LEFT column) therefore captured
+    /// <c>Side = Bottom</c>, and the restore faithfully put it where Bottom means: under the
+    /// documents pane. Reset Layout appeared to "fix" it only because the freshly built docks carry
+    /// the Alignment we set ourselves.</para>
+    ///
+    /// <para>Position is authoritative because it is what the user actually sees, and it stays
+    /// correct however Dock chooses to set Alignment during a drag.</para>
+    /// </summary>
+    private static string SideOf(IToolDock toolDock, IDockable root)
+    {
+        var documentDock = FindDocumentDock(root);
+        if (documentDock is null) return SideFromAlignment(toolDock);
+
+        var parents = BuildParentMap(root);
+
+        // Ancestor chain of the document dock, nearest-first.
+        var docChain = ChainToRoot(documentDock, parents);
+
+        // 1. Same vertical container as the documents => Top or Bottom, by index.
+        //    (BuildLayout puts top docks before the document dock and bottom docks after it.)
+        foreach (var container in docChain)
+        {
+            if (container is not IProportionalDock { Orientation: Orientation.Vertical } column) continue;
+            if (column.VisibleDockables is not { } children) continue;
+
+            var toolBranch = BranchChildOf(toolDock, column, parents);
+            var docBranch  = BranchChildOf(documentDock, column, parents);
+            if (toolBranch is null || docBranch is null) continue;
+
+            var toolIdx = children.IndexOf(toolBranch);
+            var docIdx  = children.IndexOf(docBranch);
+            if (toolIdx < 0 || docIdx < 0) continue;
+
+            return toolIdx < docIdx ? DockSide.Top : DockSide.Bottom;
+        }
+
+        // 2. Otherwise it lives in an outer column => Left or Right, by index against the
+        //    document column in the shared horizontal container.
+        foreach (var container in docChain)
+        {
+            if (container is not IProportionalDock { Orientation: Orientation.Horizontal } outer) continue;
+            if (outer.VisibleDockables is not { } children) continue;
+
+            var toolBranch = BranchChildOf(toolDock, outer, parents);
+            var docBranch  = BranchChildOf(documentDock, outer, parents);
+            if (toolBranch is null || docBranch is null) continue;
+
+            var toolIdx = children.IndexOf(toolBranch);
+            var docIdx  = children.IndexOf(docBranch);
+            if (toolIdx < 0 || docIdx < 0) continue;
+
+            return toolIdx < docIdx ? DockSide.Left : DockSide.Right;
+        }
+
+        // Nothing structural resolved (a tree shape we did not build) — fall back rather than guess.
+        return SideFromAlignment(toolDock);
+    }
+
+    /// <summary>Last-resort inference for a tree we did not assemble. See <see cref="SideOf"/>.</summary>
+    private static string SideFromAlignment(IToolDock toolDock) => toolDock.Alignment switch
     {
         Alignment.Left   => DockSide.Left,
         Alignment.Right  => DockSide.Right,
@@ -221,11 +402,61 @@ public static class DockLayoutCapture
         _                => DockSide.Left,
     };
 
+    /// <summary>child → parent for every dockable under <paramref name="root"/>.</summary>
+    private static Dictionary<IDockable, IDock> BuildParentMap(IDockable root)
+    {
+        var map = new Dictionary<IDockable, IDock>(ReferenceEqualityComparer.Instance as IEqualityComparer<IDockable>
+                                                   ?? EqualityComparer<IDockable>.Default);
+        void Walk(IDockable d)
+        {
+            if (d is not IDock dock || dock.VisibleDockables is null) return;
+            foreach (var child in dock.VisibleDockables)
+            {
+                if (child is null) continue;
+                map[child] = dock;
+                Walk(child);
+            }
+        }
+        Walk(root);
+        return map;
+    }
+
+    /// <summary>Ancestors of <paramref name="d"/>, nearest first.</summary>
+    private static List<IDock> ChainToRoot(IDockable d, Dictionary<IDockable, IDock> parents)
+    {
+        var chain = new List<IDock>();
+        var current = d;
+        var guard = 0;
+        while (parents.TryGetValue(current, out var parent) && guard++ < 64)
+        {
+            chain.Add(parent);
+            current = parent;
+        }
+        return chain;
+    }
+
+    /// <summary>
+    /// The ancestor of <paramref name="d"/> that is a DIRECT child of <paramref name="container"/>
+    /// — i.e. which branch of the container <paramref name="d"/> lives in. Null if unrelated.
+    /// </summary>
+    private static IDockable? BranchChildOf(IDockable d, IDock container, Dictionary<IDockable, IDock> parents)
+    {
+        var current = d;
+        var guard = 0;
+        while (guard++ < 64)
+        {
+            if (!parents.TryGetValue(current, out var parent)) return null;
+            if (ReferenceEquals(parent, container)) return current;
+            current = parent;
+        }
+        return null;
+    }
+
     /// <summary>
     /// Yields (side, proportion) for every ProportionalDock that directly hosts tool docks of a
     /// single side — that container's own proportion IS the column width for that side.
     /// </summary>
-    private static IEnumerable<(string Side, double Proportion)> EnumerateSideProportions(IDockable dockable)
+    private static IEnumerable<(string Side, double Proportion)> EnumerateSideProportions(IDockable dockable, IDockable root)
     {
         if (dockable is not IDock dock || dock.VisibleDockables is null) yield break;
 
@@ -233,7 +464,7 @@ public static class DockLayoutCapture
         {
             var sides = pd.VisibleDockables!
                 .OfType<IToolDock>()
-                .Select(SideOf)
+                .Select(td => SideOf(td, root))
                 .Distinct()
                 .ToList();
 
@@ -244,7 +475,7 @@ public static class DockLayoutCapture
         foreach (var child in dock.VisibleDockables)
         {
             if (child is null) continue;
-            foreach (var found in EnumerateSideProportions(child)) yield return found;
+            foreach (var found in EnumerateSideProportions(child, root)) yield return found;
         }
     }
 }

@@ -359,6 +359,22 @@ public partial class LayoutEditorView : UserControl
     private void OnZoomOut(object? sender, RoutedEventArgs e)   => LayoutCanvasCtrl.ZoomOut();
     private void OnZoom1To1(object? sender, RoutedEventArgs e)  => LayoutCanvasCtrl.Zoom1To1();
 
+    // ── Rotate (mirrors the Schematic Editor's own pair) ──────────────────────────────────────
+    // Routed to ActiveViewModel, not the base session VM, so rotating while pushed into a sub-cell
+    // edits the frame the user is actually looking at.
+
+    private void OnRotateCcw(object? sender, RoutedEventArgs e)
+        => (DataContext as LayoutDocument)?.ActiveViewModel?.RotateSelection(clockwise: false);
+
+    private void OnRotateCw(object? sender, RoutedEventArgs e)
+        => (DataContext as LayoutDocument)?.ActiveViewModel?.RotateSelection(clockwise: true);
+
+    private void OnMirrorH(object? sender, RoutedEventArgs e)
+        => (DataContext as LayoutDocument)?.ActiveViewModel?.MirrorSelection(horizontal: true);
+
+    private void OnMirrorV(object? sender, RoutedEventArgs e)
+        => (DataContext as LayoutDocument)?.ActiveViewModel?.MirrorSelection(horizontal: false);
+
     // ── Insert Bitmap (R-bmp-5, docs/sonnet-briefs/brief-layout-bitmaps-and-insert-button.md) ──────
     // UI firewall: the StorageProvider file picker lives here in code-behind; the VM only ever sees
     // the resulting path. Placement (viewport-centred sizing) is LayoutCanvas.InsertBitmapAtViewportCenter.
@@ -886,6 +902,34 @@ public partial class LayoutEditorView : UserControl
     // Mirrors TornOffFileMenuView.RefreshForCurrentWindow's own WorkspaceViewModel resolution — this
     // view's DataContext is the LayoutDocument, not the WorkspaceViewModel, so the command has to be
     // reached via the same desktop.Windows scan rather than a XAML binding.
+    /// <summary>
+    /// Technology ▾ ▸ Edit — opens the resolved <c>.ctech</c> as a document. Same
+    /// WorkspaceViewModel resolution as OnOpenSourceWorkspaceClick below: this view's DataContext is
+    /// the LayoutDocument, so the workspace is reached by a desktop-windows scan, not a binding.
+    /// </summary>
+    private void OnEditTechnologyClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LayoutDocument doc || doc.ActiveViewModel is not { } vm) return;
+
+        // Nothing to open when the layout resolved no technology — say so rather than doing nothing,
+        // and point at the action that WOULD help (R13a: act, or explain).
+        if (vm.ResolvedTechPath is not { Length: > 0 } techPath)
+        {
+            vm.ReportWarning("This layout has no technology to edit — use \u201cChange Technology\u2026\u201d to pick one.");
+            return;
+        }
+
+        if (Avalonia.Application.Current?.ApplicationLifetime
+                is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+            return;
+
+        desktop.Windows
+            .OfType<WorkspaceWindow>()
+            .Select(w => w.DataContext as ViewModels.WorkspaceViewModel)
+            .FirstOrDefault(v => v is not null)
+            ?.OpenTechnologyDocument(techPath);
+    }
+
     private void OnOpenSourceWorkspaceClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not LayoutDocument doc) return;

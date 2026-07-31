@@ -182,7 +182,15 @@ public sealed class DockWindowBehaviourTests
     {
         var src = ReadRepoFile("src/Ui/Views/WorkspaceWindow.axaml.cs");
 
-        Assert.Contains("Activated += (_, _) => RaiseFloatingToolWindows();", src);
+        // The raise must be driven from the shell's Activated hook. Asserted by BEHAVIOUR rather than
+        // by the exact lambda text: that handler became a block lambda on 2026-07-30 when the Window
+        // menu started refreshing there too, and pinning the one-liner made this test fail for a
+        // change that did not affect what it guards.
+        var activatedIdx = src.IndexOf("Activated +=", StringComparison.Ordinal);
+        Assert.True(activatedIdx > 0, "the shell must subscribe to Activated");
+
+        var handlerRegion = src[activatedIdx..Math.Min(src.Length, activatedIdx + 600)];
+        Assert.Contains("RaiseFloatingToolWindows();", handlerRegion);
 
         var i    = src.IndexOf("private void RaiseFloatingToolWindows()");
         Assert.True(i > 0, "RaiseFloatingToolWindows not found");

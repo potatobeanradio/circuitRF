@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using CircuitRF.Core.Devices.Microstrip;
 using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Ui.Layout;
@@ -104,6 +107,16 @@ public static class MicrostripSubstrateInjection
     private const string DefaultParameterUnit = "mm";
 
     /// <summary>
+    /// <b>SUPERSEDED (2026-07-30) — do NOT wire this into placement again.</b> Converting the fixed
+    /// 2.9 mm baseline is exactly what produced the owner-reported <c>W = 114.1732 mil</c>: an ugly
+    /// starting point, and the wrong width for anything that is not 1.6 mm FR-4.
+    /// <see cref="ApplyTechnologyDefaults"/> replaced it at the placement call site and is what new
+    /// code should use — it synthesises the width for 50 Ω on the technology's own substrate and
+    /// rounds in that technology's own unit. This overload is retained only because its unit-mapping
+    /// behaviour is still covered by tests; it has no production caller.
+    ///
+    /// <para>Original note follows.</para>
+    ///
     /// Owner-reported usability fix: a freshly-placed MLIN/MBend/MTee/MCross's W/L/W1-W4 defaulted
     /// to millimetres regardless of the placing workspace's own convention (mil on a PCB board, µm
     /// on an MMIC die) — jarring on a technology whose own <c>DefaultDisplayUnit</c> says
@@ -167,6 +180,126 @@ public static class MicrostripSubstrateInjection
         LayoutUnit.Mil => "mil",
         _              => DefaultParameterUnit,
     };
+
+    // ── Placement-time "nice" defaults ────────────────────────────────────────
+
+    /// <summary>
+    /// Rounding step for a freshly-placed microstrip default, in that unit's own terms. A default is
+    /// a STARTING POINT the user edits, so a round number is worth more than the last decimal of a
+    /// synthesised width — 42 mil, not 42.0138 mil.
+    /// </summary>
+    private static double RoundStepFor(string unit) => unit switch
+    {
+        "mil" => 1.0,        // owner: "for mil units, be sure to round to the nearest mil"
+        "µm"  => 1.0,        // MMIC linewidths are quoted in whole microns
+        "nm"  => 10.0,
+        "mm"  => 0.1,        // 2.9 mm, not 2.8734 mm
+        "cm"  => 0.01,
+        "m"   => 0.0001,
+        _     => 0.01,
+    };
+
+    private static double RoundToStep(double value, double step)
+        => step <= 0 ? value : System.Math.Round(value / step, System.MidpointRounding.AwayFromZero) * step;
+
+    /// <summary>
+    /// Default LENGTH for a freshly-placed microstrip component, in the technology's own unit — a
+    /// round number rather than whatever a fixed millimetre baseline converts to. Null means "no
+    /// opinion", and the caller keeps the converted registry default.
+    ///
+    /// <para>MKlopf gets a longer line on purpose: a Klopfenstein taper needs real electrical length
+    /// to do its job, so a length that suits an MLIN would place a visibly useless taper.</para>
+    /// </summary>
+    private static double? NiceLengthFor(string unit, SymbolKind kind)
+    {
+        bool klopf = kind == SymbolKind.Mklopf;
+        return unit switch
+        {
+            "mil" => klopf ? 800.0 : 400.0,     // owner's own suggestions
+            "mm"  => klopf ? 20.0  : 10.0,      // ~the same physical size, rounded for mm
+            "µm"  => klopf ? 1000.0 : 500.0,    // MMIC scale — 400 mil on a die would be absurd
+            _     => null,
+        };
+    }
+
+    /// <summary>True for the width-carrying parameter names: W, W1…W4.</summary>
+    private static bool IsWidthParam(string name)
+        => name.Length >= 1 && name[0] == 'W'
+           && (name.Length == 1 || (name.Length == 2 && char.IsDigit(name[1])));
+
+    /// <summary>
+    /// Rewrites a freshly-placed microstrip component's Length defaults to values that suit the
+    /// placing technology: widths SYNTHESISED for 50 Ω on that technology's own substrate, lengths
+    /// set to a round number, everything rounded to a sensible step in the technology's own unit.
+    ///
+    /// <para>Supersedes the unit-only rewrite this class used to do. That preserved the physical
+    /// magnitude of a fixed 2.9 mm baseline, which on a PCB technology surfaced as <c>114.1732
+    /// mil</c> — arithmetically right, and a poor thing to hand a user as a starting point. It was
+    /// also wrong for the board: 2.9 mm is 50 Ω on 1.6 mm FR-4, not on 20 mil RO4350B, where 50 Ω is
+    /// ~42 mil.</para>
+    ///
+    /// <para>Degrades in two steps, never throws: if the substrate cannot be resolved (no ground
+    /// reference, say) the widths fall back to the converted registry default; if no technology
+    /// resolves at all the millimetre defaults stand untouched. Both still get unit rounding, so the
+    /// long-decimal number cannot come back.</para>
+    /// </summary>
+    public static void ApplyTechnologyDefaults(
+        IEnumerable<EditableParameter> parameters, string? schematicDirectory, SymbolKind kind)
+        => ApplyTechnologyDefaultsCore(parameters, ResolveWorkspaceTechnology(schematicDirectory), kind);
+
+    /// <summary>Overload taking an already-resolved technology (avoids re-walking the ancestor
+    /// <c>.cws</c> chain when the caller already has one).</summary>
+    public static void ApplyTechnologyDefaults(
+        IEnumerable<EditableParameter> parameters, Technology? technology, SymbolKind kind)
+        => ApplyTechnologyDefaultsCore(parameters, technology, kind);
+
+    private static void ApplyTechnologyDefaultsCore(
+        IEnumerable<EditableParameter> parameters, Technology? technology, SymbolKind kind)
+    {
+        if (technology is null) return;   // registry mm defaults stand — nothing to resolve against
+        string targetUnit = SchematicLengthUnit(technology.DefaultDisplayUnit);
+        double step = RoundStepFor(targetUnit);
+
+        // 50 Ω for every width; 100 Ω for a taper's narrow end, so MTaper still tapers (and matches
+        // MKlopf's own 50→100 default rather than inventing a second convention).
+        double? w50Mm = null, w100Mm = null;
+        var (substrate, _, _) = SubstrateResolver.ResolveElectrical(technology, new PCellLayerSelection(null, null));
+        if (substrate is not null)
+        {
+            var quiet = new MicrostripValidityReporter("(placement default width synthesis)");
+            w50Mm  = HammerstadJensen.SynthesizeWidth(50.0,  substrate.HeightMeters,
+                        substrate.ThicknessMeters, substrate.RelativePermittivity, quiet) * 1000.0;
+            w100Mm = HammerstadJensen.SynthesizeWidth(100.0, substrate.HeightMeters,
+                        substrate.ThicknessMeters, substrate.RelativePermittivity, quiet) * 1000.0;
+        }
+
+        foreach (var p in parameters)
+        {
+            if (p.Unit != DefaultParameterUnit) continue;
+            if (!double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double mmValue))
+                continue;
+
+            double value;
+            if (IsWidthParam(p.Name) && w50Mm is not null)
+            {
+                // MTaper's W2 is the narrow end; every other width is the 50 Ω line.
+                bool narrowEnd = kind == SymbolKind.Mtaper && p.Name == "W2";
+                value = ConvertMmTo(targetUnit, narrowEnd ? w100Mm!.Value : w50Mm.Value);
+            }
+            else if (p.Name == "L" && NiceLengthFor(targetUnit, kind) is { } nice)
+            {
+                value = nice;
+            }
+            else
+            {
+                // Offset (0), or a width with no resolvable substrate: keep the physical magnitude.
+                value = ConvertMmTo(targetUnit, mmValue);
+            }
+
+            p.Expression = FormatLength(RoundToStep(value, step));
+            p.Unit = targetUnit;
+        }
+    }
 
     private static double ConvertMmTo(string unit, double mm) => unit switch
     {

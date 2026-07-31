@@ -112,6 +112,44 @@ public sealed class CwsFloatingDocumentWindow
 }
 
 /// <summary>
+/// One node of the DOCKED document area, when the user has split it into several panes.
+///
+/// <para><b>Why this exists:</b> <see cref="CwsDockLayout.DocumentOrder"/> records docked documents
+/// as one flat list, which can only ever describe a single tab strip. Dragging a document to the edge
+/// of the document area splits it into two side-by-side <c>IDocumentDock</c>s — an arrangement the
+/// flat list cannot express at all, so it restored as an ordinary tab. Owner-reported (2026-07-30).</para>
+///
+/// <para>A node is either a SPLIT (<see cref="Children"/> non-empty, <see cref="Orientation"/> set)
+/// or a LEAF pane (<see cref="Documents"/> holding workspace-relative keys in tab order). The tree
+/// mirrors the docking library's own proportional nesting, so a split-then-split-again arrangement
+/// round-trips without a special case.</para>
+///
+/// <para>R-dock-2 still governs: this is ARRANGEMENT. <c>.cws</c>'s own <c>OpenDocuments</c> decides
+/// WHAT is open — a key named here that is not open is dropped, and a pane left with nothing is
+/// dropped with it rather than restoring as an empty pane.</para>
+/// </summary>
+public sealed class CwsDocumentRegion
+{
+    /// <summary>"Horizontal" or "Vertical" for a split; null for a leaf pane.</summary>
+    public string? Orientation { get; set; }
+
+    /// <summary>This node's share of its parent's axis (0..1). 0 means "let the library decide".</summary>
+    public double Proportion { get; set; }
+
+    /// <summary>Child nodes, outermost-first. Empty for a leaf.</summary>
+    public List<CwsDocumentRegion> Children { get; set; } = [];
+
+    /// <summary>Leaf only: workspace-relative document keys, in tab order.</summary>
+    public List<string> Documents { get; set; } = [];
+
+    /// <summary>Leaf only: key of the visible tab. Null/unknown falls back to the first document.</summary>
+    public string? Active { get; set; }
+
+    /// <summary>True when this node is a pane rather than a split.</summary>
+    public bool IsLeaf => Children.Count == 0;
+}
+
+/// <summary>
 /// A screen's working area in LOGICAL (DPI-independent) units — recorded alongside the
 /// layout per R-dock-8 so restore can tell "the same setup as last time" from "a different
 /// setup", and so a bug report about a lost window is diagnosable at all.
@@ -159,6 +197,21 @@ public sealed class CwsDockLayout
 
     /// <summary>Workspace-relative path of the visible document tab, or null.</summary>
     public string? ActiveDocument { get; set; }
+
+    /// <summary>
+    /// The docked document area's own pane structure — written ONLY when it is actually SPLIT.
+    ///
+    /// <para>Null (the overwhelmingly common case) means one tab strip, and
+    /// <see cref="DocumentOrder"/>/<see cref="ActiveDocument"/> describe it exactly as they always
+    /// have. Confining the new structure to the split case keeps every unsplit workspace's block
+    /// byte-identical to before, so the new code path cannot regress the ordinary layout.</para>
+    ///
+    /// <para><b>No <see cref="Version"/> bump:</b> the field is purely additive. An older build
+    /// ignores an unknown JSON property and falls back to <see cref="DocumentOrder"/> — the split
+    /// flattens back to tabs, which is exactly the old behaviour, not a misread. Bumping the version
+    /// would instead make an older build discard the WHOLE layout, which is strictly worse.</para>
+    /// </summary>
+    public CwsDocumentRegion? DocumentRegion { get; set; }
 }
 
 /// <summary>
