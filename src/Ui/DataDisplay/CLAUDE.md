@@ -3,6 +3,23 @@
 Standing instructions for `src/Ui/DataDisplay`. Read with the root `CLAUDE.md`, `src/Ui/CLAUDE.md`,
 and `docs/design/data-display.md`.
 
+## Canvas background is DataDisplay's own, not the shared dock grey (2026-08-01)
+
+The Data Display canvas (`PlotCanvasView.axaml`'s `PlotCanvas` ItemsControl) used
+`SystemChromeLowColor` — the same brush every dock region uses (~#F2F2F2 light). Nothing
+regressed it; it had been that value unchanged since Phase 7.1c-3a. But the canvas sits
+directly behind **pure-white** plot backgrounds (`RenderTheme.Light.BackgroundColor =
+SKColors.White`), and #F2F2F2 reads as grey against that, not as the intended off-white.
+
+It now uses `CrfDataDisplayCanvasBrush`, declared in `PlotCanvasView.axaml`'s own
+`UserControl.Resources` via `ThemeDictionaries` — **Light #FCFCFC** (owner-set: #FAFAFA was
+tried first and still read grey; one step short of pure white so a plot edge is still
+discernible against the canvas), **Dark #171717** (the current
+SystemChromeLowColor dark value, so this is a light-mode-only change). Both variants are
+literal colors rather than a `DynamicResource` into the theme, so the canvas cannot drift
+back to the shared dock grey when a dock/theme resource changes. Scoped to the canvas only —
+the toolbar/tab-strip chrome around it still follows the dock convention on purpose.
+
 ## Expression-baked transform — combo must not double-apply (2026-06-25)
 
 A multi-cube `TraceExpression` (e.g. `10*log10(Pout_W*1000)`) is evaluated **in full** by `TraceExpression`
