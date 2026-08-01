@@ -34,6 +34,13 @@ public sealed class ChainModel : ComponentModel
     public override ModelKind Kind      => ModelKind.Linear;
 
     private readonly Expr?  _a, _b, _c, _d;
+    /// <summary>
+    /// Netlist-declared expression functions, or null. Needed because this model builds its
+    /// evaluator at stamp time — long after elaboration — and one constructed empty cannot resolve
+    /// a call to a function the netlist declared.
+    /// </summary>
+    private readonly IReadOnlyList<UserFunction>? _functions;
+
     private readonly IReadOnlyDictionary<string, Value> _scopeVars;
     private readonly string _name;
 
@@ -41,10 +48,12 @@ public sealed class ChainModel : ComponentModel
     public int[] PortBranchIndices { get; } = [-1, -1];
 
     public ChainModel(Expr? a, Expr? b, Expr? c, Expr? d,
-        IReadOnlyDictionary<string, Value> scopeVars, string name)
+        IReadOnlyDictionary<string, Value> scopeVars, string name,
+        IReadOnlyList<UserFunction>? functions = null)
     {
         _a = a; _b = b; _c = c; _d = d;
         _scopeVars = scopeVars;
+        _functions = functions;
         _name      = name;
     }
 
@@ -86,6 +95,7 @@ public sealed class ChainModel : ComponentModel
             scope.Bind(kv.Key, kv.Value.ToString()!);
 
         var ev = new Evaluator();
+        foreach (var fn in _functions ?? []) ev.RegisterFunction(fn);
         foreach (var kv in _scopeVars)
             ev.InjectResolved($"Chain:{_name}", kv.Key, kv.Value);
         scope.Bind("freq", freqHz.ToString("R", System.Globalization.CultureInfo.InvariantCulture));

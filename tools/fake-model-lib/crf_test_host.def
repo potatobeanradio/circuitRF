@@ -1,0 +1,26 @@
+; crf_test_host.def -- the host module fake_model.dll imports its callbacks FROM.
+;
+; This file exists only to generate an IMPORT LIBRARY. Nothing is ever built under this name here:
+; the point of the fixture is that the model asks for a module by name and something else has to
+; supply it. On Windows that something else is circuitRF's own crf-model-host.dll, staged under
+; this name by the worker's launcher stub after reading it out of fake_model.dll's import table.
+;
+; The name is deliberately distinctive and deliberately OURS — it is the fixture's own business,
+; exactly as a vendor's host module name is the vendor's. Nothing in circuitRF knows it.
+
+LIBRARY crf_test_host.dll
+EXPORTS
+    add_lin_n
+    add_lin_y
+    add_nl_gc
+    add_nl_iq
+    add_tr_capacitor
+    add_tr_gc
+    add_tr_iq
+    add_tr_lossy_inductor
+    add_tr_mutual_inductor
+    add_tr_resistor
+    get_delay_v
+    load_elements
+    send_error_to_scn
+    send_info_to_scn

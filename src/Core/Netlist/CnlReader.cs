@@ -1400,7 +1400,14 @@ public sealed class CnlReader
     private void ParseInstanceLine(string line)
     {
         // "Type:InstName net1 net2 ... [param=val [unit]] ..."
-        var tokens = TokeniseLine(line);
+        //
+        // A TRAILING ';' COMMENT IS NOT CIRCUIT DATA. It was never stripped here — only
+        // SplitExprUnit did it, for variable assignments — so every word of a comment on an
+        // instance line was added to the net list. `C:C1 a b C=1m ; near-short at 2 GHz` gave a
+        // capacitor with eight nets, six of them named after English words, and it went unnoticed
+        // because a two-terminal model reads the first two and ignores the rest. Stripped from the
+        // whole line, quote-aware, so a ';' inside a file path is left alone.
+        var tokens = TokeniseLine(StripInlineComment(line));
         if (tokens.Count == 0) return;
 
         var typeAndName = tokens[0];
@@ -1495,6 +1502,20 @@ public sealed class CnlReader
                     unit  = gu;
                 }
                 overrides.Add(new ParameterAssignment(pname, pexpr, unit));
+            }
+            else if (overrides.Count > 0)
+            {
+                // A BARE WORD ONCE PARAMETERS HAVE STARTED IS NOT A NET — nets come first on the
+                // line and are finished by the first assignment. So this is a unit the table does
+                // not carry, and the old behaviour of quietly adding it to the net list was silent
+                // corruption of the circuit, not of the parse: `R=1 TOhm` became a resistor wired to
+                // a node named "TOhm", every such resistor in the kit joined that same phantom node,
+                // it had no constraint of its own, and the matrix went singular. Nothing anywhere
+                // mentioned a unit. Reported by name, because the fix is one table entry and the
+                // message is what makes that obvious.
+                throw new CnlReadException(_lineNumber, line,
+                    $"'{tok}' follows a parameter, so it can only be a unit — and it is not one " +
+                    $"circuitRF knows. Nets must come before the first 'name=value' on the line.");
             }
             else
             {
@@ -1631,8 +1652,12 @@ public sealed class CnlReader
     /// <summary>
     /// Splits a value with a glued unit suffix ("1uF") into ("1","uF") — but only when the suffix
     /// is a known unit. Bare numbers, scientific literals, and identifiers return false (unchanged).
+    ///
+    /// <para><c>internal</c> so <see cref="KitNetlistReader"/> can share it: a kit writes glued units
+    /// too, and a second splitter would be a second set of guards to keep in step — the guards here
+    /// (numeric head, recognised unit) are the whole reason this is safe.</para>
     /// </summary>
-    private static bool TrySplitGluedUnit(string s, out string value, out string unit)
+    internal static bool TrySplitGluedUnit(string s, out string value, out string unit)
     {
         value = s; unit = "";
         var m = GluedNumericUnit.Match(s);

@@ -133,6 +133,19 @@ Source map: `src/Core` (layers 1–2 + the expression engine), `src/Engine` (lay
 alongside the rest — see §Stack for why it is no longer at the repo root, and why that changed
 nothing architecturally.
 
+`tools/` holds programs that are not part of the application. **A program in there that exists to be
+tested against deliberately references no other project in this repo** — an independent
+implementation of a contract, not a mirror of ours, since a second copy of our own code agreeing with
+itself proves nothing:
+- `tools/DeviceWorkerExample` — a reference **device worker**, the kind of separate process circuitRF
+  runs to evaluate an externally-supplied device model. See its own `README.md` for the protocol and
+  for how a kit declares its worker.
+- `tools/senior-worker` — the worker circuitRF actually ships, for compiled vendor model libraries.
+  One C source file, three products (a Linux executable; on Windows a DLL holding the callbacks plus
+  a launcher stub, because a Windows model imports its host callbacks from a *named module*).
+- `tools/fake-model-lib` — a test-only library mimicking that model ABI, so the worker can be driven
+  end to end on a machine with no vendor kit on it. Not built by `dotnet build`.
+
 **UI firewall:** `RfCore`, `src/Core`, `src/Engine`, `src/Cli` must reference **no UI framework**
 (no Avalonia) — all UI-framework code lives in `src/Ui`, so circuitRF can be re-skinned by replacing
 `src/Ui` only. This is an **enforced** invariant (a CI assembly-reference check fails the build if the

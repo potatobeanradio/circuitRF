@@ -125,4 +125,58 @@
          already in place. -->
     <PackageReference Include="Clipper2" Version="1.5.4" />
   </ItemGroup>
+
+  <!--
+    macOS only: keep the Linux VM host (tools/macos-vmhost) in step with the build.
+
+    It is what lets Linux-only device models run on macOS, and it is OPTIONAL — circuitRF builds and
+    runs fine without it. So this can only ever warn: ContinueOnError, and the script itself exits 0
+    on every failure it can encounter (no Swift toolchain, no network, a bad checksum). A missing VM
+    host must never be the reason someone cannot build the application.
+
+    The Swift binary is rebuilt whenever its sources change (seconds, no network). The Linux image is
+    rebuilt only when its downloads are already cached, because building it from scratch pulls
+    ~330 MB and that is not something to do silently during a build; the script prints the one
+    command to run otherwise. Force it with -p:CrfBuildVmImage=true.
+  -->
+  <Target Name="EnsureMacVmHost"
+          AfterTargets="Build"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) and '$(CrfSkipVmHost)' != 'true'">
+    <Exec Command="&quot;$(MSBuildProjectDirectory)/../../tools/macos-vmhost/ensure-built.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot; $(_CrfVmImageFlag)"
+          ContinueOnError="WarnAndContinue"
+          StandardOutputImportance="high" />
+  </Target>
+
+  <!--
+    EVERY platform: keep the device worker (tools/senior-worker) in step with the build.
+
+    Unlike the VM host above this is NOT macOS-only. A contributor on Windows or Linux gets it from
+    a plain `dotnet run` too, so "it works on my machine" does not depend on who built it. The
+    binary lands beside the assemblies, which is where DeviceWorkerManifest.ToolsDirectory looks —
+    and on macOS is the directory the VM host shares into the guest.
+
+    OPTIONAL, therefore warn-only: ContinueOnError, and the scripts themselves exit 0 on every
+    failure they can meet (no cross-compiler, no network for a first image pull, a compile error).
+    A design using no compiled device models never notices it is missing, so a missing worker must
+    never be the reason somebody cannot build the application.
+
+    Skip with -p:CrfSkipDeviceWorker=true.
+  -->
+  <Target Name="EnsureDeviceWorker"
+          AfterTargets="Build"
+          Condition="'$(CrfSkipDeviceWorker)' != 'true'">
+    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))"
+          Command="&quot;$(MSBuildProjectDirectory)/../../tools/senior-worker/ensure-built.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot;"
+          ContinueOnError="WarnAndContinue"
+          StandardOutputImportance="high" />
+    <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+          Command="&quot;$(MSBuildProjectDirectory)\..\..\tools\senior-worker\ensure-built.cmd&quot; --dest &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot;"
+          ContinueOnError="WarnAndContinue"
+          StandardOutputImportance="high" />
+  </Target>
+
+  <PropertyGroup>
+    <_CrfVmImageFlag Condition="'$(CrfBuildVmImage)' == 'true'">--with-image</_CrfVmImageFlag>
+  </PropertyGroup>
+
 </Project>

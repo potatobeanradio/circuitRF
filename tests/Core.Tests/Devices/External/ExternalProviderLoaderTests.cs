@@ -12,6 +12,7 @@ namespace CircuitRF.Core.Tests.Devices.External;
 /// to whoever supplies the device model. These tests cover the loader's contract: what it finds,
 /// what it refuses, and that one bad plug-in can never stop the application from starting.
 /// </summary>
+[Collection(ExternalProviderRegistryCollection.Name)]
 public sealed class ExternalProviderLoaderTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "crf-prov-" + Guid.NewGuid().ToString("N")[..8]);

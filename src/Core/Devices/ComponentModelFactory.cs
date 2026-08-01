@@ -40,20 +40,28 @@ public static class ComponentModelFactory
     /// Returns a new ComponentModel, using resolved parameters when needed.
     /// Returns null only if the type name is not a known primitive (i.e. it is a sub-cell).
     /// </summary>
+    /// <param name="functions">
+    /// User-defined expression functions declared by the netlist being elaborated. Models that
+    /// evaluate an expression at STAMP time (per frequency) need these: they build their own
+    /// <c>Evaluator</c> long after elaboration, and one constructed empty cannot resolve a call to
+    /// a function the netlist declared. Passing them here keeps the table tied to the netlist that
+    /// declared it, so two designs open at once cannot see each other's functions.
+    /// </param>
     public static ComponentModel? TryCreate(string typeName,
-        IReadOnlyDictionary<string, Value> parameters)
+        IReadOnlyDictionary<string, Value> parameters,
+        IReadOnlyList<UserFunction>? functions = null)
     {
         if (typeName.Equals("SnP",    StringComparison.OrdinalIgnoreCase))
             return CreateSnpModel(parameters);
         if (typeName.Equals("Mutual", StringComparison.OrdinalIgnoreCase))
             return CreateMutualModel(parameters);
         if (typeName.Equals("SDD",    StringComparison.OrdinalIgnoreCase))
-            return CreateSddModel(parameters);
+            return CreateSddModel(parameters, functions);
         if (typeName.Equals("Z_Port", StringComparison.OrdinalIgnoreCase))
-            return CreateZPortModel(parameters);
+            return CreateZPortModel(parameters, functions);
         if (typeName.Equals("V_1Tone", StringComparison.OrdinalIgnoreCase) ||
             typeName.Equals("V_nTone", StringComparison.OrdinalIgnoreCase))
-            return CreateToneSourceModel(typeName, parameters);
+            return CreateToneSourceModel(typeName, parameters, functions);
         if (typeName.Equals("Tuner", StringComparison.OrdinalIgnoreCase))
             return CreateTunerModel(parameters);
         if (typeName.Equals("P1Tone", StringComparison.OrdinalIgnoreCase))
@@ -79,7 +87,7 @@ public static class ComponentModelFactory
         if (typeName.Equals("ExtDevice", StringComparison.OrdinalIgnoreCase))
             return CreateExternalDeviceModel(parameters);
         if (typeName.Equals("Chain", StringComparison.OrdinalIgnoreCase))
-            return CreateChainModel(parameters);
+            return CreateChainModel(parameters, functions);
         return TryCreate(typeName);
     }
 
@@ -127,9 +135,16 @@ public static class ComponentModelFactory
 
         // Forward everything except the two selectors, stringified. A provider declares its own
         // parameter kinds; transporting as text keeps this layer free of any per-provider typing.
+        //
+        // Parameters prefixed "__" are circuitRF's own plumbing (e.g. __instanceLabel, read just
+        // below) and are NOT part of "everything else". Forwarding them asks a provider to accept a
+        // name it never declared — which a permissive provider ignores, and a strict one rejects,
+        // failing every device it serves. The strict behaviour is the correct one: it is what turns
+        // a user's misspelled parameter into an error instead of a silently defaulted device.
         var forwarded = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (key, val) in parameters)
         {
+            if (key.StartsWith("__", StringComparison.Ordinal)) continue;
             if (key.Equals("Provider", StringComparison.OrdinalIgnoreCase) ||
                 key.Equals("Type",     StringComparison.OrdinalIgnoreCase)) continue;
             forwarded[key] = val.Kind == ValueKind.String
@@ -188,7 +203,7 @@ public static class ComponentModelFactory
 
     private static readonly Regex RxZEntry = new(@"^Z\[(\d+),(\d+)\]$", RegexOptions.Compiled);
 
-    private static ZPortModel CreateZPortModel(IReadOnlyDictionary<string, Value> parameters)
+    private static ZPortModel CreateZPortModel(IReadOnlyDictionary<string, Value> parameters, IReadOnlyList<UserFunction>? functions = null)
     {
         string name = parameters.TryGetValue("ZPortName", out var nm) && nm.Kind == ValueKind.String
             ? nm.AsString() : "Z_Port";
@@ -217,12 +232,12 @@ public static class ComponentModelFactory
             }
         }
 
-        return new ZPortModel(portCount, zExprs, numericParams, name);
+        return new ZPortModel(portCount, zExprs, numericParams, name, functions);
     }
 
     // ── Chain (ABCD two-port) ────────────────────────────────────────────────
 
-    private static ChainModel CreateChainModel(IReadOnlyDictionary<string, Value> parameters)
+    private static ChainModel CreateChainModel(IReadOnlyDictionary<string, Value> parameters, IReadOnlyList<UserFunction>? functions = null)
     {
         string name = parameters.TryGetValue("ChainName", out var nm) && nm.Kind == ValueKind.String
             ? nm.AsString() : "Chain";
@@ -239,13 +254,14 @@ public static class ComponentModelFactory
                 numericParams[kv.Key] = kv.Value;
         }
 
-        return new ChainModel(Pick("A"), Pick("B"), Pick("C"), Pick("D"), numericParams, name);
+        return new ChainModel(Pick("A"), Pick("B"), Pick("C"), Pick("D"), numericParams, name, functions);
     }
 
     // ── ToneSource (V_1Tone / V_nTone) ───────────────────────────────────────
 
     private static ToneSourceModel CreateToneSourceModel(
-        string typeName, IReadOnlyDictionary<string, Value> parameters)
+        string typeName, IReadOnlyDictionary<string, Value> parameters,
+        IReadOnlyList<UserFunction>? functions = null)
     {
         bool isV1 = typeName.Equals("V_1Tone", StringComparison.OrdinalIgnoreCase);
 
@@ -724,7 +740,8 @@ public static class ComponentModelFactory
     // Noise entries (In, Nc) — silently skip.
     private static readonly Regex RxNoise = new(@"^(In|Nc)\[", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    private static SddModel CreateSddModel(IReadOnlyDictionary<string, Value> parameters)
+    private static SddModel CreateSddModel(IReadOnlyDictionary<string, Value> parameters,
+        IReadOnlyList<UserFunction>? functions = null)
     {
         // Parameters dict for SDD (populated by Elaborator.ResolveSddParameters):
         //   "I[p,w]" → Value.String(expressionText)  — equation entries

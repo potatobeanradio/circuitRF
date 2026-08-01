@@ -1,6 +1,8 @@
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Core.Devices.External;
+using CircuitRF.Core.Netlist;
 
 namespace CircuitRF.Ui.Schematic;
 
@@ -40,15 +42,22 @@ public static class NetExtractor
         SchematicEditModel model, string testBenchName = "tb", ICellResolver? cells = null)
     {
         var lib        = new Library("netlist");
+        var imports    = new NetlistImports();
         var conflicts  = new List<string>();
         var inProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var labeled    = new HashSet<string>(StringComparer.Ordinal);
 
-        var (instances, cellPorts, topVars, topMeas) = ExtractModel(model, cells, lib, inProgress, conflicts, labeled);
+        var (instances, cellPorts, topVars, topMeas) = ExtractModel(model, cells, lib, imports, inProgress, conflicts, labeled);
 
         var tb = new TestBench(testBenchName);
         tb.Instances.AddRange(instances);
         tb.GlobalVariables.AddRange(topVars);
+
+        // A kit netlist brings its own supporting declarations with it. They are merged rather than
+        // scoped because the cells that were copied out of it reference them by bare name, and a
+        // user declaration of the same name is left standing: the design the user wrote wins over
+        // one a kit happened to ship.
+        imports.MergeInto(tb, conflicts);
         tb.Measurements.AddRange(topMeas);
         foreach (var name in labeled)
             tb.LabeledNets.Add(name);
@@ -68,6 +77,7 @@ public static class NetExtractor
         SchematicEditModel model,
         ICellResolver?      cells,
         Library             lib,
+        NetlistImports      imports,
         HashSet<string>     inProgress,
         List<string>        conflicts,
         HashSet<string>?    labeledNetsOut = null)
@@ -207,6 +217,18 @@ public static class NetExtractor
 
             if (comp.CellRef is not null)
             {
+                // A part whose definition is a CIRCUIT comes first: a package is a subcircuit, not a
+                // device model, whatever else the kit says about it.
+                var nb = TryEmitNetlistBackedCellInstance(comp, model, uf, QK, netNames, detachedKeys,
+                                                          cellRefResolutions, lib, imports, conflicts,
+                                                          out bool isCircuitBacked);
+                if (nb is not null) { instances.Add(nb); continue; }
+
+                // A part the kit declares as a circuit is never emitted as a device instead. Falling
+                // back would answer with something the user did not place — the failure has already
+                // been reported, and skipping is the honest outcome.
+                if (isCircuitBacked) continue;
+
                 // A cell backed by an external device provider is a LEAF: emit one ExtDevice
                 // instance rather than descending into a schematic it deliberately does not have.
                 var ext = TryEmitExternalDeviceInstance(comp, model, uf, QK, netNames, detachedKeys,
@@ -214,7 +236,7 @@ public static class NetExtractor
                 if (ext is not null) { instances.Add(ext); continue; }
 
                 var ci = EmitCellInstance(comp, model, uf, QK, netNames, detachedKeys,
-                                          cells, lib, inProgress, conflicts, cellRefResolutions);
+                                          cells, lib, imports, inProgress, conflicts, cellRefResolutions);
                 if (ci is not null) instances.Add(ci);
                 continue;
             }
@@ -315,6 +337,12 @@ public static class NetExtractor
             return null;
         }
 
+        if (RefuseUnimplementedChoice(comp, ccell) is { } refusal)
+        {
+            conflicts.Add(refusal);
+            return null;
+        }
+
         var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
                           .OrderBy(d => d.PortIndex)
                           .ToList();
@@ -334,9 +362,16 @@ public static class NetExtractor
 
         // Provider/Type are reserved names the ExtDevice model reads itself; every OTHER parameter
         // is forwarded verbatim for the provider to match against its own declared descriptor.
+        // A model library chosen on THIS instance travels in the provider name, because that is what
+        // the registry keys on: two instances naming different libraries must get two providers, or
+        // the second would silently be evaluated by the first's models.
+        string? library = comp.Parameters
+            .FirstOrDefault(p => p.Name.Equals(PdkPartInstaller.ModelLibraryParameter, StringComparison.Ordinal))
+            ?.Expression.Trim();
+
         var overrides = new List<ParameterAssignment>
         {
-            new("Provider", ccell.ExternalProvider!, null),
+            new("Provider", DeviceWorkerProviderResolver.ComposeOverride(ccell.ExternalProvider!, library), null),
             new("Type",     ccell.ExternalType!,     null),
         };
 
@@ -344,17 +379,382 @@ public static class NetExtractor
         if (ccell.ExternalFixedParameters is { } fixedParams)
             foreach (var (k, v) in fixedParams)
                 if (k is not ("Provider" or "Type"))
-                    overrides.Add(new ParameterAssignment(k, v, null));
+                    overrides.Add(new ParameterAssignment(k, AsLiteralExpression(v), null));
+
+        // A model-selection parameter picks WHICH implementation is built; it is not a value the
+        // implementation itself takes, and a provider handed one would rightly reject it as unknown.
+        var variantNames = VariantParameterNames(ccell);
 
         foreach (var p in comp.Parameters)
         {
             if (p.Name is "Provider" or "Type") continue;          // never let a stray override shadow these
+            if (p.Name == PdkPartInstaller.ModelLibraryParameter) continue;  // rides in the provider name
+            if (variantNames.Contains(p.Name)) continue;           // selects an implementation, not a value
             if (string.IsNullOrWhiteSpace(p.Expression)) continue; // unset — the provider's own default stands
             var unit = UnitNormalizer.ToEngineUnit(p.Unit);
             overrides.Add(new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null));
         }
 
         return new Instance(comp.InstanceName, "ExtDevice", nets, overrides);
+    }
+
+    // ── Netlist-backed cells ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Cells copied out of kit netlists during one extraction, plus the declarations they depend on.
+    ///
+    /// <para>A netlist is read once however many instances reference it. Beyond cost, that keeps a
+    /// single definition of every cell in the run — reading the same file twice would put two Cell
+    /// objects with one name into the library and leave which one wins to list order.</para>
+    /// </summary>
+    private sealed class NetlistImports
+    {
+        private readonly Dictionary<string, (Library Library, TestBench TestBench)> _byPath =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<UserFunction> _functions = [];
+        private readonly List<Variable>     _variables = [];
+        private readonly HashSet<string>    _merged    = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Reads a netlist, or returns null with a reason. Never throws.</summary>
+        public (Library Library, TestBench TestBench)? Load(string path, out string? problem)
+        {
+            problem = null;
+            if (_byPath.TryGetValue(path, out var hit)) return hit;
+
+            try
+            {
+                if (!File.Exists(path)) { problem = $"'{path}' does not exist"; return null; }
+
+                var read = path.EndsWith(".cnl", StringComparison.OrdinalIgnoreCase)
+                    ? CnlReader.ReadFile(path)
+                    : ReadKitNetlists(path);
+
+                _byPath[path] = read;
+                CollectDeclarations(path, read.TestBench);
+                return read;
+            }
+            catch (Exception ex)
+            {
+                problem = ex.Message;
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Reads a kit's own netlist — and every netlist beside it. A kit splits one library across
+        /// several files: the file defining a part instantiates cells declared in another, and its
+        /// process constants live in a third. Reading only the named file gives a definition whose
+        /// own contents do not resolve.
+        /// </summary>
+        private static (Library Library, TestBench TestBench) ReadKitNetlists(string path)
+        {
+            var library = new Library("kit");
+            var bench   = new TestBench("kit");
+
+            string? directory = Path.GetDirectoryName(path);
+            var files = new List<string> { path };
+            if (directory is not null)
+            {
+                foreach (var sibling in Directory.EnumerateFiles(directory).OrderBy(f => f, StringComparer.Ordinal))
+                    if (!sibling.Equals(path, StringComparison.OrdinalIgnoreCase) && LooksLikeNetlist(sibling))
+                        files.Add(sibling);
+            }
+
+            foreach (var file in files)
+            {
+                KitNetlistResult read;
+                try { read = KitNetlistReader.ReadFile(file); }
+                catch { continue; }   // a sibling that will not read must not stop the named one
+
+                // The named file wins on a name collision: it is the one the part was pointed at.
+                foreach (var cell in read.Library.Cells)
+                    if (library.Find(cell.Name) is null) library.Cells.Add(cell);
+
+                foreach (var v in read.Variables)
+                    if (!bench.GlobalVariables.Any(e => e.Name.Equals(v.Name, StringComparison.Ordinal)))
+                        bench.GlobalVariables.Add(v);
+
+                foreach (var f in read.Functions)
+                    if (!bench.Functions.Any(e => e.Name.Equals(f.Name, StringComparison.Ordinal)))
+                        bench.Functions.Add(f);
+            }
+
+            return (library, bench);
+        }
+
+        private static bool LooksLikeNetlist(string path)
+        {
+            string ext = Path.GetExtension(path);
+            return ext.Equals(".net", StringComparison.OrdinalIgnoreCase)
+                || ext.Equals(".inc", StringComparison.OrdinalIgnoreCase)
+                || ext.Equals(".ckt", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void CollectDeclarations(string path, TestBench source)
+        {
+            if (!_merged.Add(path)) return;
+            _functions.AddRange(source.Functions);
+            _variables.AddRange(source.GlobalVariables);
+        }
+
+        /// <summary>
+        /// Adds the imported declarations to the testbench. A name the design already uses is kept —
+        /// the user's own declaration wins over one a kit happened to ship — and the collision is
+        /// reported rather than resolved silently, because the two may well mean different things.
+        /// </summary>
+        public void MergeInto(TestBench tb, List<string> conflicts)
+        {
+            foreach (var f in _functions)
+            {
+                if (tb.Functions.Any(e => e.Name.Equals(f.Name, StringComparison.Ordinal))) continue;
+                tb.Functions.Add(f);
+            }
+
+            foreach (var v in _variables)
+            {
+                if (tb.GlobalVariables.Any(e => e.Name.Equals(v.Name, StringComparison.Ordinal)))
+                {
+                    conflicts.Add($"Variable '{v.Name}' is declared both in this design and in an " +
+                                  $"imported kit netlist; the design's own definition is used.");
+                    continue;
+                }
+                tb.GlobalVariables.Add(v);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rewrites every kit-native device type inside a kit's own cells into an ordinary
+    /// <c>ExtDevice</c> carrying that kit's provider name.
+    ///
+    /// <para><b>Which references are rewritten, and why that classification is the whole trick.</b> A
+    /// kit's cell instantiates three kinds of thing: circuitRF primitives (<c>R</c>, <c>SnP</c>,
+    /// <c>Chain</c>), other cells the same kit defines, and its own compiled device models. The first
+    /// two are recognisable — so whatever is left is the third, and the kit already told us which
+    /// provider evaluates it. Nothing here knows any type name.</para>
+    ///
+    /// <para>A genuine mistake in the kit (a misspelled type, a definition in a file that failed to
+    /// read) also lands here, and that is the better outcome: the provider is the authority on what
+    /// it serves, so it refuses by name — which says more than "cell not found" ever could.</para>
+    ///
+    /// <para>Idempotent, because the netlist read is cached and the same <see cref="Cell"/> objects
+    /// are shared by every instance of the part.</para>
+    /// </summary>
+    private static void BindNativeDeviceTypes(Library kitLibrary, string provider, EditableComponent comp)
+    {
+        // The per-instance model-library override travels in the provider NAME, because that is what
+        // the registry keys on — the same rule the leaf provider-backed path follows.
+        string? modelLibrary = comp.Parameters
+            .FirstOrDefault(p => p.Name.Equals(PdkPartInstaller.ModelLibraryParameter, StringComparison.Ordinal))
+            ?.Expression.Trim();
+        string providerRef = DeviceWorkerProviderResolver.ComposeOverride(provider, modelLibrary);
+
+        foreach (var cell in kitLibrary.Cells)
+        {
+            for (int i = 0; i < cell.Instances.Count; i++)
+            {
+                var inst = cell.Instances[i];
+
+                if (inst.Reference.Equals(ExtDeviceReference, StringComparison.OrdinalIgnoreCase)) continue;
+                if (CircuitRF.Core.Devices.ComponentModelFactory.IsPrimitive(inst.Reference)) continue;
+                if (kitLibrary.Find(inst.Reference) is not null)        continue;
+
+                var overrides = new List<ParameterAssignment>(inst.Overrides.Count + 2)
+                {
+                    new("Provider", providerRef,     null),
+                    new("Type",     inst.Reference,  null),
+                };
+                // Every other parameter is the kit's own and is forwarded verbatim, for the provider
+                // to match against the names its descriptor declares.
+                overrides.AddRange(inst.Overrides.Where(o => o.Name is not ("Provider" or "Type")));
+
+                cell.Instances[i] = new Instance(
+                    inst.InstanceName, ExtDeviceReference, inst.NetBindings, overrides)
+                {
+                    RefNetBinding = inst.RefNetBinding,
+                };
+            }
+        }
+    }
+
+    /// <summary>Emitted reference for a device an external provider evaluates.</summary>
+    private const string ExtDeviceReference = "ExtDevice";
+
+    /// <summary>
+    /// Emits a cell instance whose definition comes from a netlist the kit supplies, rather than
+    /// from a schematic. Returns null when this component is not one — every other kind of cell
+    /// falls through to the paths below untouched.
+    ///
+    /// <para>The point of the whole path: a packaged part is a subcircuit, so once its definition is
+    /// in the library everything downstream — elaboration, nets, sweeps, results — treats it exactly
+    /// like a cell the user drew.</para>
+    /// </summary>
+    private static Instance? TryEmitNetlistBackedCellInstance(
+        EditableComponent comp,
+        SchematicEditModel model,
+        UnionFind uf,
+        Func<double, double, (long, long)> QK,
+        Dictionary<(long, long), string> netNames,
+        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions,
+        Library lib,
+        NetlistImports imports,
+        List<string> conflicts,
+        out bool isCircuitBacked)
+    {
+        isCircuitBacked = false;
+        if (model.SchematicDirectory is null || comp.CellRef is null) return null;
+
+        CcellFile ccell;
+        try
+        {
+            string cellDir   = Path.GetFullPath(Path.Combine(model.SchematicDirectory, comp.CellRef));
+            string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+            if (!File.Exists(ccellPath)) return null;
+            ccell = CellPersistence.LoadFromFile(ccellPath);
+        }
+        catch
+        {
+            return null;   // unreadable .ccell — let the ordinary cell path report it
+        }
+
+        if (string.IsNullOrWhiteSpace(ccell.ExternalNetlistPath) ||
+            string.IsNullOrWhiteSpace(ccell.ExternalNetlistCell)) return null;
+
+        // From here on this component is ours whatever happens: every exit reports, and none of them
+        // hands the component back to be built as something else.
+        isCircuitBacked = true;
+
+        if (RefuseUnimplementedChoice(comp, ccell) is { } refusal)
+        {
+            conflicts.Add(refusal);
+            return null;
+        }
+
+        var read = imports.Load(ccell.ExternalNetlistPath!, out string? problem);
+        if (read is null)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': the netlist defining this part could " +
+                          $"not be read ({problem}). The kit may have moved.");
+            return null;
+        }
+
+        string wanted = SubstituteParameters(ccell.ExternalNetlistCell!, comp, ccell);
+        var definition = read.Value.Library.Find(wanted);
+        if (definition is null)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': '{wanted}' is not defined in the kit's " +
+                          $"netlist, so this part cannot be built.");
+            return null;
+        }
+
+        // A kit netlist names its own compiled device types natively — `KITLIB_DEVICE_v1:FET1 …` —
+        // and those are neither circuitRF primitives nor cells the kit defines. They are what the
+        // kit's worker evaluates: a packaged part is built from the netlist, and the devices INSIDE
+        // it still resolve to the provider. Bind them before the cells are copied, so what lands in
+        // the library is already expressed in terms every downstream layer understands.
+        if (!string.IsNullOrWhiteSpace(ccell.ExternalProvider))
+            BindNativeDeviceTypes(read.Value.Library, ccell.ExternalProvider!, comp);
+
+        // Copy the whole file's cells, not just the one named: the definition instantiates others
+        // beside it, and walking the dependency graph would re-derive what reading the file already
+        // told us. Names already present win — a design's own cell is never replaced by a kit's.
+        foreach (var cell in read.Value.Library.Cells)
+            if (lib.Find(cell.Name) is null) lib.Cells.Add(cell);
+
+        var pinDefs = GetEffectivePortDefs(model, comp, cellRefResolutions)
+                          .OrderBy(d => d.PortIndex)
+                          .ToList();
+
+        // The symbol and the subcircuit come from the same kit, so their terminal counts agreeing is
+        // the whole basis for binding pin k to port k. Disagreement means one of them is not the
+        // part it claims to be, and guessing an alignment would wire the design wrong in silence.
+        if (definition.Ports.Count != pinDefs.Count)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': the symbol exposes {pinDefs.Count} " +
+                          $"pin(s) but '{wanted}' defines {definition.Ports.Count}; skipped.");
+            return null;
+        }
+
+        var nets = new List<string>(pinDefs.Count);
+        foreach (var def in pinDefs)
+        {
+            var (px, py) = model.PortWorldOf(comp, def);
+            nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+        }
+
+        var overrides = new List<ParameterAssignment>();
+
+        // The kit's own infrastructure parameters, then the user's — a design value beats a default.
+        if (ccell.ExternalFixedParameters is { } fixedParams)
+            foreach (var (k, v) in fixedParams)
+                overrides.Add(new ParameterAssignment(k, AsLiteralExpression(v), null));
+
+        var variantNames = VariantParameterNames(ccell);
+        foreach (var p in comp.Parameters)
+        {
+            if (variantNames.Contains(p.Name)) continue;           // picked the definition, not a value
+            if (string.IsNullOrWhiteSpace(p.Expression)) continue; // unset — the cell's own default stands
+            var unit = UnitNormalizer.ToEngineUnit(p.Unit);
+            overrides.RemoveAll(o => o.Name == p.Name);
+            overrides.Add(new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null));
+        }
+
+        // Only what the definition actually declares: a subcircuit handed a parameter it never
+        // named is an error in the elaborator, and the kit's own interface is the authority on which
+        // of a part's parameters reach the circuit and which only pick which circuit it is.
+        var declared = new HashSet<string>(definition.Parameters.Select(x => x.Name), StringComparer.Ordinal);
+        overrides.RemoveAll(o => !declared.Contains(o.Name));
+
+        return new Instance(comp.InstanceName, definition.Name, nets, overrides);
+    }
+
+    /// <summary>Replaces every <c>{Name}</c> with that parameter's value on this instance, falling
+    /// back to the cell's declared default. An unknown name is left as written, so it shows up in
+    /// the "not defined in the kit's netlist" message rather than vanishing into a wrong lookup.</summary>
+    private static string SubstituteParameters(string pattern, EditableComponent comp, CcellFile ccell)
+        => System.Text.RegularExpressions.Regex.Replace(pattern, @"\{(\w+)\}", m =>
+        {
+            string name = m.Groups[1].Value;
+
+            var onInstance = comp.Parameters.FirstOrDefault(p => p.Name.Equals(name, StringComparison.Ordinal));
+            if (onInstance is not null && !string.IsNullOrWhiteSpace(onInstance.Expression))
+                return onInstance.Expression.Trim();
+
+            var declared = ccell.Parameters.FirstOrDefault(p => p.Name.Equals(name, StringComparison.Ordinal));
+            return declared is not null && declared.DefaultExpression.Length > 0
+                ? declared.DefaultExpression.Trim()
+                : m.Value;
+        });
+
+    /// <summary>Parameters whose value picks WHICH definition is built rather than supplying a value
+    /// to one. Never forwarded: the thing they select has already been selected by the time an
+    /// instance is emitted.</summary>
+    private static HashSet<string> VariantParameterNames(CcellFile ccell)
+        => new(ccell.Parameters.Where(c => c.Choices is { Count: > 0 }).Select(c => c.Name),
+               StringComparer.Ordinal);
+
+    /// <summary>
+    /// The refusal message for an instance set to a choice circuitRF has no implementation for, or
+    /// null. Substituting a supported choice is not an option — the answer would be for a different
+    /// model than the one asked for.
+    /// </summary>
+    private static string? RefuseUnimplementedChoice(EditableComponent comp, CcellFile ccell)
+    {
+        foreach (var declared in ccell.Parameters)
+        {
+            if (declared.UnsupportedChoices is not { Count: > 0 } bad) continue;
+
+            string chosen = (comp.Parameters
+                                 .FirstOrDefault(p => p.Name.Equals(declared.Name, StringComparison.Ordinal))
+                                 ?.Expression ?? declared.DefaultExpression).Trim();
+
+            if (bad.Contains(chosen, StringComparer.Ordinal))
+                return $"Instance '{comp.InstanceName}': {declared.Name} = {chosen} is not " +
+                       $"implemented in circuitRF. Choose another value for {declared.Name} " +
+                       $"(available: {string.Join(", ", declared.Choices ?? [])}).";
+        }
+        return null;
     }
 
     private static Instance? EmitCellInstance(
@@ -366,6 +766,7 @@ public static class NetExtractor
         Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys,
         ICellResolver? cells,
         Library lib,
+        NetlistImports imports,
         HashSet<string> inProgress,
         List<string> conflicts,
         Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
@@ -394,7 +795,7 @@ public static class NetExtractor
         if (lib.Find(cellName) is null)
         {
             inProgress.Add(cellName);
-            var (subInstances, subPorts, subVars, subMeas) = ExtractModel(res.Schematic, cells, lib, inProgress, conflicts);
+            var (subInstances, subPorts, subVars, subMeas) = ExtractModel(res.Schematic, cells, lib, imports, inProgress, conflicts);
             if (subMeas.Count > 0)
                 conflicts.Add($"Cell '{cellName}': MEAS components are ignored inside a cell; measurements attach to the top testbench only.");
             var cell = new Cell(cellName);
@@ -1164,5 +1565,32 @@ public static class NetExtractor
             var rb = Find(b);
             if (ra != rb) _parent[rb] = ra;
         }
+    }
+
+    /// <summary>
+    /// Turns a kit's fixed-parameter value into something the expression engine will accept.
+    ///
+    /// <para><b>These values are literal TEXT, not expressions.</b> A kit writes
+    /// <c>DataPath="Kit_..._Data"</c> in its own netlist; the reader strips the quotes because the
+    /// text is what a worker wants. Emitted verbatim into a <see cref="ParameterAssignment"/> it is
+    /// then EVALUATED, and a bare word is a variable name — so a perfectly ordinary folder name
+    /// fails elaboration with "Unresolved name '...' in scope 'global'". Quoting restores the
+    /// author's meaning.</para>
+    ///
+    /// <para>A value that already parses as a number is left alone: it is a numeric literal and
+    /// quoting it would make it a string. So is one that is already quoted, or that contains a quote
+    /// (nothing here can escape one safely, and reporting a wrong value beats inventing a syntax).</para>
+    /// </summary>
+    internal static string AsLiteralExpression(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+
+        string trimmed = value.Trim();
+        if (trimmed.Length >= 2 && trimmed[0] == '"' && trimmed[^1] == '"') return value;
+        if (trimmed.Contains('"')) return value;
+        if (double.TryParse(trimmed, System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out _)) return value;
+
+        return $"\"{trimmed}\"";
     }
 }

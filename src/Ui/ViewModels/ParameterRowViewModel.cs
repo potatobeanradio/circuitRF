@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands.Schematic;
@@ -71,12 +72,21 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// <see cref="LayerChoiceOptions"/>'s own doc comment). A user who needs a value the picker
     /// doesn't offer (a custom or since-renamed layer name) sets it via the schematic canvas's own
     /// inline label text-edit instead — the same escape hatch every other parameter already has.</summary>
-    public bool ShowExpressionTextBox => !IsEnumParam && !IsLayerChoiceParam;
+    public bool ShowExpressionTextBox => !IsEnumParam && !IsLayerChoiceParam && !IsChoiceParam;
 
     /// <summary>Gates the ordinary Unit combo (column 2) — hidden for a layer-choice parameter (its
     /// <see cref="UnitDimension"/> is always None, a single "None" entry would be clutter, exactly
-    /// the same reasoning MBend's Miter enum combo already applies) in favor of the layer picker.</summary>
-    public bool ShowUnitCombo => !IsEnumParam && !IsLayerChoiceParam;
+    /// the same reasoning MBend's Miter enum combo already applies) in favor of the layer picker.
+    ///
+    /// <para><b>Also hidden for a file-valued parameter, and that one is load-bearing: the Browse…
+    /// button lives in the SAME grid column.</b> Both visible means the combo is drawn on top of the
+    /// button and the file cannot be picked at all — reported from the running app, because two
+    /// controls sharing a cell look fine in the markup. A path has no unit either, so there was
+    /// never anything for the combo to offer here.</para>
+    ///
+    /// <para>Anything else added to column 2 must be excluded here too.</para>
+    /// </summary>
+    public bool ShowUnitCombo => !IsEnumParam && !IsLayerChoiceParam && !IsChoiceParam && !IsFilePathParam;
 
     private const string DefaultLayerChoiceLabel = "(Default)";
 
@@ -181,6 +191,138 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     }
     public bool HasLayerChoiceMissingWarning => LayerChoiceMissingWarning.Length > 0;
 
+    // ── cell-declared choice parameters ───────────────────────────────────────
+
+    /// <summary>
+    /// The closed set of values this parameter accepts, declared by the cell it belongs to, or empty
+    /// for an ordinary free-text parameter. Read once, from the cell's own <c>.ccell</c>, because a
+    /// cell's published interface does not change while a schematic is open — unlike a technology,
+    /// which is why <see cref="LayerChoiceOptions"/> re-resolves on every refresh and this does not.
+    ///
+    /// <para>Always includes the currently staged value even when the cell no longer offers it, for
+    /// the same reason the layer picker does: a ComboBox whose <c>SelectedItem</c> is absent from its
+    /// <c>ItemsSource</c> renders blank, which reads as "the value was lost".</para>
+    /// </summary>
+    public IReadOnlyList<string> ChoiceOptions { get; private set; } = [];
+
+    /// <summary>Values the cell declares but circuitRF cannot build. Offered by the picker anyway —
+    /// picking one produces a named refusal at Run, which is more useful than the value quietly not
+    /// being there.</summary>
+    private IReadOnlyList<string> _unsupportedChoices = [];
+
+    public bool IsChoiceParam => ChoiceOptions.Count > 0;
+
+    /// <summary>
+    /// True when the cell declares this parameter as naming a FILE — a model library, a data table.
+    /// The row then offers a Browse… picker beside the text box: a path is exactly the kind of value
+    /// nobody should be asked to type, and a mistyped one fails much later with a worse message.
+    /// </summary>
+    public bool IsFilePathParam { get; private set; }
+
+    /// <summary>The kit's own one-line description of this parameter, or empty. Shown as the field's
+    /// tooltip: it is the sentence the kit's documentation uses, so a user can search for it.</summary>
+    public string Description { get; private set; } = "";
+
+    /// <summary>What the name field explains on hover: a problem with the name when there is one,
+    /// otherwise the kit's own description of the parameter.</summary>
+    public string NameTooltip => NameError.Length > 0 ? NameError : Description;
+
+    /// <summary>Set by the editor when it builds rows; opens the host's own file picker. Null in
+    /// contexts with no UI, where the row is simply a text box.
+    ///
+    /// <para>The setter raises <see cref="ShowBrowseButton"/> because the view supplies this picker
+    /// only once its DataContext is set — after rows are built. A plain auto-property leaves the
+    /// button's binding evaluated at null forever, which is exactly how it shipped invisible.</para>
+    /// </summary>
+    public Func<Task<string?>>? PickFileAsync
+    {
+        get;
+        set
+        {
+            if (ReferenceEquals(field, value)) return;
+            field = value;
+            OnPropertyChanged(nameof(ShowBrowseButton));
+        }
+    }
+
+    public bool ShowBrowseButton => IsFilePathParam && PickFileAsync is not null;
+
+    /// <summary>Picks a file and commits it. A cancelled pick changes nothing.</summary>
+    public async Task BrowseForFileAsync()
+    {
+        if (PickFileAsync is null) return;
+        string? picked = await PickFileAsync();
+        if (string.IsNullOrWhiteSpace(picked) || picked == StagedExpression) return;
+        StagedExpression = picked;
+        CommitExpression();
+    }
+
+    /// <summary>Picker binding. Selecting an entry stages AND commits immediately, matching the enum
+    /// and layer-choice combos — a picker with a separate confirm step is a trap nobody expects.</summary>
+    public string SelectedChoice
+    {
+        get
+        {
+            string current = StagedExpression.Trim();
+            return current.Length > 0 ? current : ChoiceOptions.Count > 0 ? ChoiceOptions[0] : "";
+        }
+        set
+        {
+            if (_isRefreshing) return;
+            if (value == StagedExpression) return;
+            StagedExpression = value;
+            CommitExpression();
+        }
+    }
+
+    /// <summary>Non-empty when the selected value is one circuitRF has no implementation for. Shown
+    /// beside the picker so the refusal is visible at the moment of choosing, not only at Run.</summary>
+    public string ChoiceUnsupportedWarning =>
+        IsChoiceParam && _unsupportedChoices.Contains(StagedExpression.Trim(), StringComparer.Ordinal)
+            ? $"\"{StagedExpression.Trim()}\" is not implemented in circuitRF — this component will not simulate."
+            : "";
+
+    public bool HasChoiceUnsupportedWarning => ChoiceUnsupportedWarning.Length > 0;
+
+    /// <summary>
+    /// Loads this parameter's declared choices from the owning cell, if it is a cell reference that
+    /// declares any. Silent on every failure: a missing or unreadable <c>.ccell</c> leaves an
+    /// ordinary text-box parameter, which is exactly what a cell without choices should look like.
+    /// </summary>
+    private void LoadCellDeclaredChoices()
+    {
+        if (_ownerComp?.CellRef is not { Length: > 0 } cellRef) return;
+        if (_schematicVm.EditModel.SchematicDirectory is not { Length: > 0 } dir) return;
+
+        try
+        {
+            string ccellPath = Path.Combine(Path.GetFullPath(Path.Combine(dir, cellRef)),
+                                            CellFolder.CcellFileName);
+            if (!File.Exists(ccellPath)) return;
+
+            var declared = CellPersistence.LoadFromFile(ccellPath).Parameters
+                               .FirstOrDefault(p => p.Name.Equals(_param.Name, StringComparison.Ordinal));
+            if (declared is null) return;
+
+            IsFilePathParam = declared.IsFilePath == true;
+            Description     = declared.Description ?? "";
+
+            if (declared.Choices is not { Count: > 0 } choices) return;
+
+            var display = new List<string>(choices);
+            string current = _param.Expression.Trim();
+            if (current.Length > 0 && !display.Contains(current, StringComparer.Ordinal))
+                display.Add(current);
+
+            ChoiceOptions       = display;
+            _unsupportedChoices = declared.UnsupportedChoices ?? [];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            // Leave it an ordinary parameter.
+        }
+    }
+
     [ObservableProperty] private string _stagedName       = "";
     [ObservableProperty] private string _stagedExpression = "";
     [ObservableProperty] private string _stagedUnit       = "";
@@ -262,6 +404,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         _showOnSchematic  = param.ShowOnSchematic;
         _selectedEnumIndex = ParseEnumIndex(param.Expression);
         if (IsLayerChoiceParam) RecomputeLayerChoiceOptions();
+        LoadCellDeclaredChoices();
         _isRefreshing = false;
 
         RecomputePreview();
@@ -416,6 +559,15 @@ public sealed partial class ParameterRowViewModel : ObservableObject
             OnPropertyChanged(nameof(SelectedLayerChoice));
             OnPropertyChanged(nameof(LayerChoiceMissingWarning));
             OnPropertyChanged(nameof(HasLayerChoiceMissingWarning));
+        }
+        if (IsChoiceParam)
+        {
+            // The option list itself is NOT re-read here: it comes from the cell's published
+            // interface, which cannot change while this schematic is open. Only the selection and
+            // its warning follow the model.
+            OnPropertyChanged(nameof(SelectedChoice));
+            OnPropertyChanged(nameof(ChoiceUnsupportedWarning));
+            OnPropertyChanged(nameof(HasChoiceUnsupportedWarning));
         }
         _isRefreshing = false;
         RecomputePreview();   // also recompute in case the expression text was unchanged but a

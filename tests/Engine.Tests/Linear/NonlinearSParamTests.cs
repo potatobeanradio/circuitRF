@@ -166,4 +166,41 @@ public class NonlinearSParamTests
         Assert.True(Math.Abs(s11.Real + 1.0) < 1e-6 && Math.Abs(s11.Imaginary) < 1e-6,
             $"S11={s11} (expected −1 due to Vdc short at RF)");
     }
+
+    // ── T5: the failure says WHERE, not just how big ──────────────────────────
+
+    [Fact]
+    public void T5_DcNonConvergence_NamesTheUnknownsThatWouldNotSettle()
+    {
+        // "residual 35.6" is a number with no address. It says neither which part of the circuit
+        // will not settle nor how far off it is, so on a real design the only way forward is to
+        // bisect the schematic. In practice one row is far worse than the rest.
+        //
+        // Unlike T4 this keeps the solver on its normal path (no DcBiasStepping=Never), so a
+        // non-converged RESULT comes back rather than an exception — which is the path a user's run
+        // actually takes, and the only one that carries a residual vector to report from.
+        // Two quadratic SDDs in series from the supply, so the node BETWEEN them is held by
+        // nothing linear and is the row that will not settle — the shape a real failure takes.
+        const string cnl = """
+            Port:P1  n1 0  Num=1  Z=50 Ohm
+            Vdc:Vs   n1 0  Vdc=1.0
+            SDD:D1   n1 n2  I[1]=_v1^2/75
+            SDD:D2   n2 0   I[1]=_v1^2/75
+            """;
+
+        var settings = new AnalysisSettings { NonlinearMaxIter = 1, DcBiasRampSteps = 1 };
+
+        var (nl, _) = Run(cnl, [1e9], settings);
+
+        string warning = Assert.Single(nl.Warnings,
+            w => w.Contains("did not converge", StringComparison.OrdinalIgnoreCase));
+
+        // Names the offending unknown and how far off it is. Here that is the supply's branch
+        // row — genuinely the worst, since the node rows have already settled — and a node entry
+        // is rendered by the name the user gave it through the same path (netlist.Nodes.NameOf),
+        // which is what makes the report readable on a real design.
+        Assert.Contains("Worst-unsettled", warning);
+        Assert.Contains("residual", warning);
+        Assert.Contains("Vdc:Vs branch", warning);   // named by the component that owns the row
+    }
 }

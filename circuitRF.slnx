@@ -15,6 +15,10 @@
   <Folder Name="/src/Engine/">
     <Project Path="src/Engine/CircuitRF.Engine.csproj" />
   </Folder>
+  <Folder Name="/tools/" />
+  <Folder Name="/tools/DeviceWorkerExample/">
+    <Project Path="tools/DeviceWorkerExample/DeviceWorkerExample.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Core.Tests/">
     <Project Path="tests/Core.Tests/CircuitRF.Core.Tests.csproj" />

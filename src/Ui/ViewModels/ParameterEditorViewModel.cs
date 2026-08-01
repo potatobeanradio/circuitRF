@@ -148,6 +148,26 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// <summary>Callback set by the view so the VM can open a native file picker.</summary>
     public Func<Task<string?>>? PickSnpFileAsync { get; set; }
 
+    /// <summary>Callback set by the view so a file-valued parameter can offer a Browse… picker.
+    /// Falls back to the Touchstone picker's own seam when the host supplies only that one.
+    ///
+    /// <para>The setter pushes the picker onto rows that already exist. The view can only supply it
+    /// once its DataContext is set, which is after <see cref="BuildRows"/> has run — assigning a
+    /// plain field here leaves every already-built row holding null and no Browse… button.</para>
+    /// </summary>
+    public Func<Task<string?>>? PickModelFileAsync
+    {
+        get;
+        set
+        {
+            if (ReferenceEquals(field, value)) return;
+            field = value;
+            foreach (var row in Rows)
+                if (row.IsFilePathParam)
+                    row.PickFileAsync = value;
+        }
+    }
+
     /// <summary>Callback set by the view to reveal a file in the OS file manager.</summary>
     public Func<string, Task>? RevealFileAsync { get; set; }
 
@@ -360,14 +380,30 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
         // Build rows — NumPorts, NumFreqs, blank-name params, and SnP-specific params omitted.
         // SnP components use a custom panel instead of generic rows.
+        //
+        // (See AdoptCellDeclaredParameters below for why a cell-ref component is topped up first.)
         Rows.Clear();
         if (_schematicVm is not null && comp.Symbol != SymbolKind.Snp)
         {
+            AdoptCellDeclaredParameters(comp);
+
+            var built = new List<ParameterRowViewModel>();
             foreach (var param in comp.Parameters)
             {
                 if (param.Name is "NumPorts" or "NumFreqs" or "CvData" || string.IsNullOrEmpty(param.Name)) continue;
-                Rows.Add(new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp));
+                var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
+                if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;
+                built.Add(row);
             }
+
+            // WHICH FILE the part is modelled from comes first, then WHICH FORMULATION of it, then the
+            // values. That is the order the questions actually arrive in — the later answers only mean
+            // anything once the earlier ones are settled — and it puts the two a user of an imported kit
+            // reaches for at the top instead of buried among a dozen numbers. Stable within each group,
+            // so the kit's own ordering survives.
+            foreach (var row in built.Where(r => r.IsFilePathParam)) Rows.Add(row);
+            foreach (var row in built.Where(r => !r.IsFilePathParam && r.IsChoiceParam)) Rows.Add(row);
+            foreach (var row in built.Where(r => !r.IsFilePathParam && !r.IsChoiceParam)) Rows.Add(row);
         }
 
         _isRefreshing = false;
@@ -379,6 +415,57 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         UpdateCanRemoveTopGroup();
         if (comp.Symbol == SymbolKind.Snp) RefreshSnpProperties();
     }
+
+    /// <summary>
+    /// Gives a placed cell reference any parameter its cell declares but the instance does not yet
+    /// carry, seeded at the cell's own default.
+    ///
+    /// <para><b>Why an instance can be missing one at all.</b> An instance's parameter list is
+    /// seeded from the cell's published interface at placement — so a cell that GAINS a parameter
+    /// afterwards leaves every instance placed before then without it. For an imported kit that is
+    /// the ordinary case, not an edge one: the declarations a kit needs are picked up from the
+    /// workspace's own kit folder at every open, precisely so a user can add them without
+    /// re-importing, and parts placed before that must not be left behind.</para>
+    ///
+    /// <para><b>No undo entry, and never a value change.</b> This adds only what is absent, at the
+    /// cell's declared default — the same value extraction would have used for a missing parameter
+    /// anyway. Opening a dialog is not an edit, so it must not land on the undo stack; and an
+    /// existing value is never touched, because it may well have been set deliberately.</para>
+    /// </summary>
+    private void AdoptCellDeclaredParameters(EditableComponent comp)
+    {
+        if (comp.CellRef is not { Length: > 0 } cellRef) return;
+        if (_schematicVm?.EditModel.SchematicDirectory is not { Length: > 0 } dir) return;
+
+        try
+        {
+            string ccellPath = Path.Combine(Path.GetFullPath(Path.Combine(dir, cellRef)),
+                                            CellFolder.CcellFileName);
+            if (!File.Exists(ccellPath)) return;
+
+            var declared = CellPersistence.LoadFromFile(ccellPath).Parameters;
+            for (int i = 0; i < declared.Count; i++)
+            {
+                var d = declared[i];
+                if (string.IsNullOrWhiteSpace(d.Name)) continue;
+                if (comp.Parameters.Any(p => p.Name.Equals(d.Name, StringComparison.Ordinal))) continue;
+
+                comp.Parameters.Insert(Math.Min(i, comp.Parameters.Count), new EditableParameter
+                {
+                    Name            = d.Name,
+                    Expression      = d.DefaultExpression,
+                    Unit            = d.Unit,
+                    Dimension       = d.Dimension,
+                    ShowOnSchematic = d.ShowOnSchematic,
+                });
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            // An unreadable .ccell leaves the instance exactly as it was.
+        }
+    }
+
 
     private void NotifyMklopfState()
     {

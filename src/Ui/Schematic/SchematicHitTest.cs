@@ -66,7 +66,7 @@ public static class SchematicHitTest
             foreach (int i in candComps.OrderByDescending(x => x))
             {
                 if (i >= editModel.Components.Count) continue;
-                var textHit = TestComponentLabels(editModel.Components[i], worldX, worldY);
+                var textHit = TestComponentLabels(editModel.Components[i], editModel, worldX, worldY);
                 if (textHit.Kind != HitKind.None) return textHit;
             }
         }
@@ -171,7 +171,7 @@ public static class SchematicHitTest
             foreach (int i in candComps.OrderByDescending(x => x))
             {
                 if (i >= editModel.Components.Count) continue;
-                var th = TestComponentLabels(editModel.Components[i], worldX, worldY);
+                var th = TestComponentLabels(editModel.Components[i], editModel, worldX, worldY);
                 if (th.Kind != HitKind.None) results.Add(th);
             }
 
@@ -233,7 +233,8 @@ public static class SchematicHitTest
         return results;
     }
 
-    private static HitResult TestComponentLabels(EditableComponent comp, double wx, double wy)
+    private static HitResult TestComponentLabels(
+        EditableComponent comp, SchematicEditModel editModel, double wx, double wy)
     {
         // Test each visible label row using canonical geometry from SchematicComponent.LabelRowGeometry
         // so the clickable zone always tracks the rendered text (Bug A fix — single source of truth).
@@ -265,7 +266,12 @@ public static class SchematicHitTest
             // Always the REAL glyph extent, not a per-kind list: the renderer now clears the glyph
             // for every symbol, so anything narrower here would put the clickable zone somewhere the
             // text is not — which is exactly the drift this shared geometry exists to prevent.
-            double? glyphHalfH = comp.ComputeGlyphBb().MaxY - comp.Y;
+            // A cell-reference component (an imported kit part, or any placed cell) draws the
+            // RESOLVED cell symbol, not the built-in glyph its placeholder SymbolKind names — so
+            // the band must come from the same effective extent GetCompGlyphBb gives the renderer.
+            // Using comp.ComputeGlyphBb() here put the clickable zone at the built-in glyph's
+            // height, which is why a kit part's Type/Name labels could not be clicked at all.
+            double? glyphHalfH = GetCompGlyphBb(comp, editModel).MaxY - comp.Y;
             var (baseX, _, bandTop, bandBot) =
                 SchematicComponent.LabelRowGeometry(comp.X, comp.Y, row, oDx, oDy, comp.Symbol, comp.PortCount, glyphHalfH);
 
@@ -273,7 +279,7 @@ public static class SchematicHitTest
 
             string labelText = row switch
             {
-                0 => ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount),
+                0 => comp.TypeLabelText(),
                 1 => comp.Symbol == SymbolKind.Ground ? "" : comp.InstanceName,
                 _ => ParamLabelText(shownParams[row - 2].Param),
             };
@@ -586,15 +592,5 @@ public static class SchematicHitTest
 
     private static (double MinX, double MinY, double MaxX, double MaxY) GetCompGlyphBb(
         EditableComponent comp, SchematicEditModel editModel)
-    {
-        if (comp.CellRef is not null)
-        {
-            var prims = editModel.EffectivePrimitivesOf(comp);
-            if (prims is not null)
-                return comp.ComputeGlyphBb(prims);
-            // NotFound / PrimaryMissing — placeholder bounds (matches renderer)
-            return (comp.X - 160, comp.Y - 60, comp.X + 160, comp.Y + 60);
-        }
-        return comp.ComputeGlyphBb();
-    }
+        => editModel.EffectiveGlyphBbOf(comp);
 }

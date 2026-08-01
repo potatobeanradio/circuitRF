@@ -1,0 +1,8 @@
+{
+  "provider": "ExampleKit",
+
+  "workers": [
+    { "platform": "win", "command": "DeviceWorkerExample.exe" },
+    { "platform": "any", "command": "DeviceWorkerExample" }
+  ]
+}

@@ -44,6 +44,11 @@ public static class Units
         { "kOhm", 1e3  },
         { "MOhm", 1e6  },
         { "GOhm", 1e9  },
+        // A kit ties every unused package pin to ground through 1 TOhm, so the absence of this
+        // one entry silently turned "TOhm" into a NET — one phantom node shared by fourteen
+        // resistors, which then had no constraint of its own and made the whole matrix singular.
+        { "TOhm", 1e12 },
+        { "mOhm", 1e-3 },   // the other end of the same series, absent for the same reason
         // Length
         { "mm",  1e-3  },
         { "um",  1e-6  },
@@ -95,6 +100,7 @@ public static class Units
         { "mF", "F" }, { "uF", "F" }, { "nF", "F" }, { "pF", "F" }, { "fF", "F" },
         // Resistance (prefixed variants only; Ohm/ohm are already base)
         { "kOhm", "Ohm" }, { "MOhm", "Ohm" }, { "GOhm", "Ohm" },
+        { "TOhm", "Ohm" }, { "mOhm", "Ohm" },
         // Voltage
         { "kV", "V" }, { "mV", "V" }, { "uV", "V" }, { "nV", "V" },
         // Current

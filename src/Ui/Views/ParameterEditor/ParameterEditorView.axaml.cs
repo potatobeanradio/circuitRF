@@ -25,6 +25,7 @@ public partial class ParameterEditorView : UserControl
         if (DataContext is ParameterEditorViewModel vm)
         {
             vm.PickSnpFileAsync       = PickSnpFileAsync;
+            vm.PickModelFileAsync     = PickModelFileAsync;
             vm.RevealFileAsync        = RevealFileAsync;
             vm.OpenCvEditorDialogAsync = OpenCvEditorDialogAsync;
         }
@@ -62,6 +63,35 @@ public partial class ParameterEditorView : UserControl
                                 "*.s9p","*.s10p","*.s11p","*.s12p","*.snp",
                                 "*.S1P","*.S2P","*.S3P","*.S4P","*.S5P","*.S6P","*.S7P","*.S8P",
                                 "*.S9P","*.S10P","*.S11P","*.S12P","*.SNP"],
+                },
+                FilePickerFileTypes.All,
+            ],
+        });
+
+        return files.Count == 1 ? files[0].TryGetLocalPath() : null;
+    }
+
+    /// <summary>
+    /// Picks a model library for a file-valued parameter (today: a kit part's ModelLibrary override).
+    ///
+    /// <para>The filter names all three platforms' shared-library extensions rather than only this
+    /// machine's. A worker's library is a property of the KIT, not of the host running the editor —
+    /// a design authored on a Mac may name the Linux build the worker will actually load.</para>
+    /// </summary>
+    private async Task<string?> PickModelFileAsync()
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return null;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title         = "Choose Model Library",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Model library (*.so, *.dll, *.dylib)")
+                {
+                    Patterns = ["*.so", "*.dll", "*.dylib", "*.SO", "*.DLL", "*.DYLIB"],
                 },
                 FilePickerFileTypes.All,
             ],
@@ -180,5 +210,11 @@ public partial class ParameterEditorView : UserControl
         // Walk up to the hosting Window and close it (dialog host only; ignored when embedded).
         if (TopLevel.GetTopLevel(this) is Window win)
             win.Close();
+    }
+
+    private async void OnParamBrowseClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { DataContext: ViewModels.ParameterRowViewModel row })
+            await row.BrowseForFileAsync();
     }
 }

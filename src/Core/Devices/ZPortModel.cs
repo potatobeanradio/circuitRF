@@ -32,9 +32,18 @@ public sealed class ZPortModel : ComponentModel
     /// </summary>
     public int[] PortBranchIndices { get; private set; }
 
+    /// <summary>
+    /// Netlist-declared expression functions, or null. Needed because this model builds its
+    /// evaluator at stamp time — long after elaboration — and one constructed empty cannot resolve
+    /// a call to a function the netlist declared.
+    /// </summary>
+    private readonly IReadOnlyList<UserFunction>? _functions;
+
     public ZPortModel(int portCount, Expr?[,] zExprs,
-        IReadOnlyDictionary<string, Value> scopeVars, string name)
+        IReadOnlyDictionary<string, Value> scopeVars, string name,
+        IReadOnlyList<UserFunction>? functions = null)
     {
+        _functions        = functions;
         _portCount        = portCount;
         _zExprs           = zExprs;
         _scopeVars        = scopeVars;
@@ -89,6 +98,7 @@ public sealed class ZPortModel : ComponentModel
             scope.Bind(kv.Key, kv.Value.ToString()!);
 
         var ev = new Evaluator();
+        foreach (var fn in _functions ?? []) ev.RegisterFunction(fn);
         // Pre-inject resolved globals to avoid re-parsing their expressions.
         foreach (var kv in _scopeVars)
             ev.InjectResolved($"ZPort:{_name}", kv.Key, kv.Value);

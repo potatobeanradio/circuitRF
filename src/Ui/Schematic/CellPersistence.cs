@@ -27,13 +27,49 @@ public sealed class CcellParameter
     public UnitDimension Dimension         { get; set; } = UnitDimension.None;
     public bool          ShowOnSchematic   { get; set; } = true;
 
+    /// <summary>
+    /// A closed set of values this parameter accepts, or null for an ordinary free-text one. Present
+    /// when the parameter selects WHICH model the cell is built from rather than supplying a value
+    /// to one — the Parameter Editor then offers a picker instead of a text box.
+    ///
+    /// <para>Null (not an empty list) is the ordinary case, so every existing <c>.ccell</c> stays
+    /// byte-identical.</para>
+    /// </summary>
+    public List<string>? Choices { get; set; }
+
+    /// <summary>
+    /// Choices the cell declares but circuitRF cannot build. Deliberately still offered by the
+    /// picker: a user who picks one is told it is not implemented at Run, which is information —
+    /// leaving it out of the list would only look like the kit was missing something.
+    /// </summary>
+    public List<string>? UnsupportedChoices { get; set; }
+
+    /// <summary>
+    /// True when this parameter names a FILE — a model library, a data table. The Parameter Editor
+    /// then offers a Browse… picker rather than expecting a path to be typed, and lists it first,
+    /// because which file a part is modelled from is the thing a user settles before anything else
+    /// about it. Null (not false) for an ordinary parameter, so every existing <c>.ccell</c> stays
+    /// byte-identical.
+    /// </summary>
+    public bool? IsFilePath { get; set; }
+
+    /// <summary>
+    /// The kit's own one-line description of this parameter, shown as the field's tooltip. Worth
+    /// carrying: it is the sentence the kit's documentation uses, so a user can search for it.
+    /// </summary>
+    public string? Description { get; set; }
+
     public CcellParameter Clone() => new()
     {
-        Name              = Name,
-        DefaultExpression = DefaultExpression,
-        Unit              = Unit,
-        Dimension         = Dimension,
-        ShowOnSchematic   = ShowOnSchematic,
+        Name               = Name,
+        DefaultExpression  = DefaultExpression,
+        Unit               = Unit,
+        Dimension          = Dimension,
+        ShowOnSchematic    = ShowOnSchematic,
+        Choices            = Choices is null ? null : [.. Choices],
+        UnsupportedChoices = UnsupportedChoices is null ? null : [.. UnsupportedChoices],
+        IsFilePath         = IsFilePath,
+        Description        = Description,
     };
 }
 
@@ -103,6 +139,25 @@ public sealed class CcellFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, string>? ExternalFixedParameters { get; set; }
+
+    /// <summary>
+    /// A netlist holding this cell's definition, when the cell is a CIRCUIT rather than a single
+    /// device — a package, a matching network, an assembly. Absolute, because the file stays with the
+    /// kit it came from while the cell is installed into the workspace.
+    ///
+    /// <para>Takes precedence over <see cref="ExternalProvider"/>: a part with a circuit definition
+    /// is not a leaf, whatever else the kit says about it.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExternalNetlistPath { get; set; }
+
+    /// <summary>
+    /// Which subcircuit in <see cref="ExternalNetlistPath"/> defines this cell. May name a parameter
+    /// in braces — <c>Part_{ModelAs}</c> — which is replaced by the instance's own value, so one
+    /// placed part can resolve to one of several formulations.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExternalNetlistCell { get; set; }
 
     /// <summary>
     /// Number of electrical ports this cell exposes to instantiating parents.

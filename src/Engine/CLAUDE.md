@@ -541,3 +541,24 @@ Second, more robust search method added to `PursuitEngine` alongside the existin
 - **Hero 3B IQ results**: MXP=77.6 Ω (brute-force VSWR=1.031 < 1.20), query ratio IQ/SA=1.86× ≤ 2×.
 
 **Total tests: 257 pass, 0 fail (158 Core + 99 Engine).**
+## DC non-convergence must say WHERE, not only how big (2026-07-31)
+
+`DcResult.ResidualPerUnknown` carries the residual for every unknown at the point the solve stopped,
+and `SParameterEngine`'s non-convergence warning now appends the worst three by name:
+`Worst-unsettled: X1.thermal = 2.28e+08 (residual 4.55); …`.
+
+**Why.** The message could previously only say `residual 35.6` — a number with no address. It names
+neither the part of the circuit that will not settle nor how far off it is, so on a real design
+(hundreds of unknowns, a vendor kit inside a package subcircuit) the only way forward is to bisect
+the schematic. In practice one row is enormously worse than the rest. Found while chasing a real
+kit's operating point, where the offender was a thermal node at 10^8 because nothing bounded it.
+
+- **One residual build, not two.** `BuildResidualAndJacobian` evaluates every nonlinear device, so
+  asking for the norm and the vector separately doubles the cost of finishing a solve. Caught by
+  `Hero1BTests`' wall-clock budget under full-suite load — it passed in isolation, which is the usual
+  shape here (see the memory note on verifying timing under load).
+- **Past the node count an unknown is a branch current** and has no node name to give; it is reported
+  as `branch unknown #k` rather than mislabelled.
+- Node names come from `netlist.Nodes.NameOf`, so a node reads as the user's own net name.
+
+Gate: `NonlinearSParamTests.T5`.

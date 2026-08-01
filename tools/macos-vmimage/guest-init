@@ -1,0 +1,193 @@
+#!/bin/sh
+# Guest init for the circuitRF VM host.
+#
+# The kernel runs this as PID 1. Its whole job is to make the guest able to run ONE program and get
+# that program's bytes onto the right channels, then get out of the way. Everything it needs was put
+# on the kernel command line by crf-vmhost:
+#
+#   crf.argv=<base64 of the argv, NUL-separated>
+#   crf.mount=<tag>        (repeatable — a host directory shared in at /mnt/<tag>)
+#   crf.rosetta=1          (offer x86-64 translation)
+#
+# CHANNELS — must match crf-vmhost's stdio contract exactly
+#   /dev/hvc0   this script's own diagnostics and the program's stderr -> host stderr
+#   /dev/hvc1   the program's stdin/stdout, RAW bytes -> host stdin/stdout
+#
+# /dev/hvc1 carries a binary framed protocol, so it is put in raw mode before the program sees it.
+# Left as a normal terminal, the line discipline rewrites bytes (newline translation) and steals
+# others (interrupt characters) — which corrupts frames intermittently rather than obviously.
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export PATH
+
+# EVERY external command goes through busybox explicitly. A stock boot initramfs contains busybox
+# and almost nothing else — no /bin/cat, no /bin/find — and a missing one does NOT stop the script:
+# the command substitution just yields an empty string and the failure surfaces much later as
+# something unrelated. Do not "tidy" $BB away.
+BB=/bin/busybox
+
+# Where the image keeps its x86-64 glibc runtime, when it has one.
+X86_SYSROOT=/x86
+
+log() { echo "crf-init: $*" > /dev/hvc0; }
+die() { log "FATAL: $*"; $BB poweroff -f; exit 1; }
+
+$BB mkdir -p /proc /sys /dev /mnt
+$BB mount -t proc     proc     /proc  || die "cannot mount /proc"
+$BB mount -t sysfs    sysfs    /sys   || die "cannot mount /sys"
+$BB mount -t devtmpfs devtmpfs /dev   2>/dev/null
+
+cmdline=$($BB cat /proc/cmdline)
+
+value_of() {
+    # Reads one key=value from the kernel command line. Space-separated and never quoted, which is
+    # why argv is base64 on the way in.
+    for word in $cmdline; do
+        case "$word" in "$1"=*) echo "${word#*=}"; return 0 ;; esac
+    done
+    return 1
+}
+
+# ── Filesystem modules ────────────────────────────────────────────────────────
+# virtiofs is a module in every stock kernel we ship, and it depends on fuse. Load order matters:
+# virtiofs fails to insert if fuse is not already in.
+for module in fuse virtiofs; do
+    path=$($BB find /lib/modules -name "$module.ko*" 2>/dev/null | $BB head -n 1)
+    [ -n "$path" ] && $BB insmod "$path" 2>/dev/null
+done
+
+# ── Shares ────────────────────────────────────────────────────────────────────
+for word in $cmdline; do
+    case "$word" in
+        crf.mount=*)
+            tag="${word#*=}"
+            $BB mkdir -p "/mnt/$tag"
+            $BB mount -t virtiofs "$tag" "/mnt/$tag" \
+                || log "warning: could not mount share '$tag'"
+            ;;
+        crf.mountat=*)
+            # A share mounted where it lives on the host, so a path handed to the program by some
+            # route other than this command line still opens. A device model is told which data
+            # files to read through its own parameters, which arrive long after boot — there is no
+            # command line left in which to rewrite them, so the path is made true instead.
+            #
+            # tag,<base64 of the mount point>. Base64 because the kernel command line is
+            # space-separated and unquoted, and a macOS path may contain a space; it also cannot
+            # contain a comma, so the split is unambiguous.
+            rest="${word#*=}"
+            tag="${rest%%,*}"
+            at=$(echo "${rest#*,}" | $BB base64 -d)
+
+            case "$at" in
+                /*) ;;
+                *)  log "warning: share '$tag' asked for a mount point that is not absolute; skipped"
+                    continue ;;
+            esac
+
+            $BB mkdir -p "$at"
+            if $BB mount -t virtiofs "$tag" "$at"; then
+                # Reported on SUCCESS, not only on failure. A mount that silently did not happen and
+                # one that happened perfectly look identical from outside, and the difference decides
+                # whether a file the guest cannot open is a mount problem or a path problem.
+                log "mounted '$tag' at $at"
+            else
+                log "warning: could not mount share '$tag' at $at"
+            fi
+            ;;
+    esac
+done
+
+# ── Rosetta ───────────────────────────────────────────────────────────────────
+# Rosetta is invoked DIRECTLY as an interpreter rather than registered through binfmt_misc.
+# binfmt_misc is a module that stock kernels do not put in the boot initramfs, so relying on it
+# would mean shipping a custom kernel build; invoking the translator by hand needs nothing extra and
+# is exactly what a binfmt registration would have done anyway.
+rosetta=""
+if [ -n "$(value_of crf.rosetta)" ]; then
+    $BB mkdir -p /mnt/rosetta
+    if $BB mount -t virtiofs rosetta /mnt/rosetta 2>/dev/null; then
+        [ -x /mnt/rosetta/rosetta ] && rosetta=/mnt/rosetta/rosetta
+        [ -z "$rosetta" ] && log "warning: rosetta share mounted but no translator inside it"
+    else
+        log "warning: could not mount the rosetta share"
+    fi
+fi
+
+# ── x86-64 runtime ────────────────────────────────────────────────────────────
+# Rosetta translates instructions; it does not supply libraries. A dynamically linked x86-64 program
+# needs an x86-64 glibc, and this guest's own userland is musl on arm64.
+#
+# The runtime is put where such a binary ALREADY looks — /lib64/ld-linux-x86-64.so.2 is baked into
+# its ELF header as the interpreter — rather than detecting dynamic-vs-static and rewriting the
+# command with an explicit loader. Detection was tried first and is a trap: busybox grep has no -a,
+# so the test silently reported every binary static and Rosetta then failed with "failed to open elf
+# at /lib64/ld-linux-x86-64.so.2". Making the path real needs no detection and works for static and
+# dynamic binaries alike.
+if [ -d "$X86_SYSROOT/usr/lib64" ]; then
+    $BB mkdir -p /lib64
+    for lib in "$X86_SYSROOT"/usr/lib64/*; do
+        [ -e "$lib" ] && $BB ln -sf "$lib" "/lib64/$($BB basename "$lib")"
+    done
+    LD_LIBRARY_PATH="$X86_SYSROOT/usr/lib/x86_64-linux-gnu:$X86_SYSROOT/usr/lib64"
+    export LD_LIBRARY_PATH
+fi
+
+# ── The program ───────────────────────────────────────────────────────────────
+encoded=$(value_of crf.argv) \
+    || die "no crf.argv on the kernel command line; it read: $cmdline"
+
+# NUL cannot survive a shell variable, so the argv is rebuilt into the positional parameters by
+# turning each NUL into a newline and letting the shell split on that alone.
+decoded=$(echo "$encoded" | $BB base64 -d | $BB tr '\0' '\n')
+OLDIFS=$IFS
+IFS='
+'
+set -- $decoded
+IFS=$OLDIFS
+
+[ $# -gt 0 ] || die "crf.argv decoded to nothing"
+[ -e "$1" ]  || die "the program to run does not exist in the guest: $1"
+
+# An x86-64 binary needs the translator in front of it; a native one must not have it. The ELF
+# header says which, at a fixed offset — a far more reliable test than the file name.
+#   e_machine (2 bytes at 0x12):  3e 00 = x86-64,  b7 00 = aarch64
+machine=$($BB od -An -tx1 -j18 -N1 "$1" 2>/dev/null | $BB tr -d ' \n')
+if [ "$machine" = "3e" ] && [ "$($BB uname -m)" != "x86_64" ]; then
+    [ -n "$rosetta" ] || die "$1 is an x86-64 program and Rosetta is not available in this guest"
+
+    set -- "$rosetta" "$@"
+fi
+
+# stdin/stdout on the raw data channel; stderr on the console beside our own logging.
+# -F names the device and MUST come first for busybox stty; with it trailing, the whole invocation
+# is rejected and the port silently stays a cooked terminal — which mangles the protocol rather than
+# failing, so the redirect form is kept as a fallback and a failure is reported rather than ignored.
+# Every flag is named individually rather than relying on the "raw" shorthand: busybox's raw leaves
+# ECHOCTL set, which echoes every control byte back as two printable characters (^@ for NUL) and
+# corrupts a binary stream in a way that looks like data rather than a terminal setting. Measured.
+stty_flags="-icanon -echo -echoe -echok -echoctl -echonl -opost -onlcr -ocrnl -icrnl -inlcr -igncr -ixon -ixoff -isig -iexten -parenb -brkint -istrip -inpck"
+# THE FD MUST BE HELD OPEN ACROSS BOTH STEPS. A tty resets its termios to the driver default on
+# LAST close, so "stty ... < /dev/hvc1" followed by the program opening /dev/hvc1 again lands the
+# program on a cooked terminal with the settings silently undone. Holding fd 3 open the whole time
+# keeps the port from ever reaching zero opens. Measured: without this the flags apply and are then
+# discarded, and NUL comes back as "^@".
+exec 3<>/dev/hvc1 || die "cannot open the data channel /dev/hvc1"
+$BB stty $stty_flags <&3 2>/dev/null \
+    || log "warning: could not put /dev/hvc1 in raw mode; binary data may be corrupted"
+
+log "running: $*"
+
+# Tell the host the data channel is open. Until it sees this, the host holds the caller's bytes:
+# a virtio console discards anything written before the guest opens its end, so input sent at boot
+# would otherwise vanish and the caller would wait forever for a reply. Keep this marker byte-exact
+# and keep it LAST — anything after it may race with the first request arriving.
+$BB printf '\001CRF-GUEST-READY\001\n' > /dev/hvc0
+
+"$@" <&3 >&3 2> /dev/hvc0
+status=$?
+log "exited with status $status"
+
+# Nothing else runs in this guest, so the VM is finished the moment the program is. Powering off is
+# what tells the host the run is over.
+$BB sync
+$BB poweroff -f

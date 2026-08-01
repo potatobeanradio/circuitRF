@@ -40,6 +40,17 @@ public static class CnlWriter
             }
         }
 
+        // User-defined expression functions: name(a, b, ...) = expr
+        // These MUST be written. A kit netlist brings its own functions along with the cells that
+        // call them, and a cell copied out of it references them by bare name — so dropping them
+        // here leaves a file whose own definitions do not resolve, and the failure surfaces much
+        // later as "Unknown function '<name>'" from the elaborator, pointing at nothing.
+        foreach (var f in tb.Functions)
+            sb.AppendLine($"{f.Name}({string.Join(", ", f.Parameters)}) = {f.Body}");
+
+        if (tb.Functions.Count > 0 && (tb.GlobalVariables.Count > 0 || HasContent(tb)))
+            sb.AppendLine();
+
         // Global variables: name = expr [unit]
         foreach (var v in tb.GlobalVariables)
             sb.AppendLine(FormatVariable(v));

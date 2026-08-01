@@ -63,6 +63,18 @@ public sealed class ExternalDeviceModel : ComponentModel
                      .Select(n => string.IsNullOrWhiteSpace(n.Label) ? n.Index.ToString() : n.Label)
                      .ToArray();
 
+    /// <summary>
+    /// Contributes nothing. A nonlinear device has no bias-independent linear part, and this one
+    /// adds no branch unknowns — its whole contribution is the small-signal admittance block that
+    /// <see cref="ComponentModel.StampLinearized"/> builds from the operating point.
+    ///
+    /// <para>An empty override rather than an inherited throw, because the S-parameter engine makes
+    /// a preliminary pass over <b>every</b> component to count branch unknowns and label them. That
+    /// pass reaches nonlinear devices too, so refusing here fails the analysis before it starts.
+    /// <see cref="SddModel"/> is empty for the same reason.</para>
+    /// </summary>
+    public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega) { }
+
     public override NonlinearResult Evaluate(in PortVoltages v)
     {
         int n = Descriptor.NodeCount;
@@ -73,9 +85,14 @@ public sealed class ExternalDeviceModel : ComponentModel
         {
             r = _instance.Evaluate(_scratch);
         }
-        catch (ExternalDeviceException)
+        catch (ExternalDeviceException ex)
         {
-            throw;
+            // The worker can only name the TYPE, and that is not enough as soon as a design holds
+            // several devices of one type — this kit's package holds five, wired differently, two of
+            // them with gate and drain shorted and a thermal node joined to nothing else. Which
+            // instance failed is the first thing anyone asks, and this is the only layer that knows.
+            throw new ExternalDeviceException(
+                $"External device '{InstanceLabel}': {ex.Message}", ex);
         }
         catch (Exception ex)
         {

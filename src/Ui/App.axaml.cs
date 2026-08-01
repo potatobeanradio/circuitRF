@@ -11,6 +11,7 @@ using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using CircuitRF.Core.Devices.External;
 using CircuitRF.Ui.Theming;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views;
@@ -81,6 +82,26 @@ public partial class App : Application
             Avalonia.Threading.Dispatcher.UIThread.Post(UpdateCrfWarningBrush);
         ActualThemeVariantChanged += (_, _) =>
             Avalonia.Threading.Dispatcher.UIThread.Post(UpdateCrfWarningBrush);
+
+        // END EVERY WORKER WHEN THIS PROCESS DOES.
+        //
+        // A worker is a child process, and a child does not die with its parent on any platform this
+        // runs on. Nothing was ending them at exit — ResetResolved was wired only to a workspace
+        // switch — so quitting circuitRF left one running per kit the design had used.
+        //
+        // That is not the stray-process nuisance it sounds like. On macOS a kit's worker runs inside
+        // a VM, macOS allows only a small number of those at once, and a leaked one goes on holding a
+        // slot indefinitely: it sits waiting for a request that can no longer arrive, because closing
+        // the pipe tells the guest nothing — a virtio console has no end-of-stream to deliver. The
+        // NEXT run then cannot start its VM, and is killed by the system before it can say why. So
+        // the report a user gets for this is a broken pipe with no worker output at all, describing
+        // neither the leak nor the run that caused it. Measured, from a leak found still running 23
+        // minutes after the app that started it had gone.
+        //
+        // Hooked on ProcessExit rather than added to Quit() because Quit is not the only way out —
+        // three paths reach Environment.Exit directly, and a fourth added later would silently not
+        // be covered.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => ExternalDeviceRegistry.ResetResolved();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

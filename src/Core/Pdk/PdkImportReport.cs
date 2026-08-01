@@ -59,6 +59,18 @@ public sealed record PdkPartParameter(string Name, string DefaultExpression = ""
 public sealed class PdkImportReport
 {
     public required string  RootPath      { get; init; }
+
+    /// <summary>
+    /// A second folder the kit's own files live in, or null. Set when the imported folder declares a
+    /// <c>baseDirectory</c>: what was imported is then a small folder that ADDS to a kit — a
+    /// manifest, a translated netlist — while the kit's own symbols, icons and models stay where
+    /// they are.
+    ///
+    /// <para><b>Why that shape exists at all.</b> A supplier's kit is routinely read-only, and
+    /// several are far too large to copy. Adding a file to one is not always possible and is never
+    /// cheap, so the additions live in their own folder and name the kit they belong to.</para>
+    /// </summary>
+    public string? KitRoot { get; init; }
     public required string  KitName       { get; init; }
     public PdkImportStatus  Status        { get; set; } = PdkImportStatus.NotRecognized;
 

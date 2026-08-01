@@ -2888,6 +2888,103 @@ public sealed partial class SchematicViewModel : ObservableObject
         Selection.SelectOne(comp.Id);
     }
 
+    /// <summary>
+    /// The cell folder of that name anywhere under the workspace root, or null.
+    ///
+    /// <para>A folder holding a <c>.ccell</c> IS a cell — the filesystem is the membership list
+    /// (workspace-and-project-tree.md), so this needs no manifest and finds an imported kit's
+    /// parts under <c>pdk/&lt;kit&gt;/</c> for free. Case-insensitive, and a tie is refused: two
+    /// cells of one name means the name does not identify one, and guessing would swap in the
+    /// wrong part.</para>
+    /// </summary>
+    internal string? FindCellDirByName(string cellName)
+    {
+        string? root = WorkspaceRoot;
+        if (root is null || cellName.Length == 0 || !Directory.Exists(root)) return null;
+
+        string? found = null;
+        try
+        {
+            // Every directory, compared case-INSENSITIVELY — a search pattern would match
+            // case-sensitively on Linux and case-insensitively elsewhere, so the same typed name
+            // would resolve on one machine and not another.
+            foreach (string dir in Directory.EnumerateDirectories(root, "*",
+                                                                  SearchOption.AllDirectories))
+            {
+                if (!string.Equals(Path.GetFileName(dir), cellName,
+                                   StringComparison.OrdinalIgnoreCase)) continue;
+                if (!File.Exists(Path.Combine(dir, CellFolder.CcellFileName))) continue;
+                if (found is not null) return null;   // ambiguous — refuse rather than guess
+                found = dir;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// Inline type-change to a cell reference: an imported kit part, or any cell in the workspace.
+    /// Returns false when the name is not a cell, so the caller can report an unknown type.
+    ///
+    /// <para>Deliberately synchronous and prompt-free, unlike <see cref="CommitCellPlacementAsync"/>:
+    /// a type change is an edit on an existing instance, so offering to auto-generate a missing
+    /// symbol mid-keystroke would be a second question the user never asked. A cell whose symbol
+    /// does not resolve still swaps in and draws the same placeholder a placed one would.</para>
+    /// </summary>
+    private bool TryChangeToCellType(EditableComponent comp, string cellName)
+    {
+        if (EditModel.SchematicDirectory is null) return false;
+
+        string? cellAbsDir = FindCellDirByName(cellName);
+        if (cellAbsDir is null) return false;
+
+        string cellRef = Path.GetRelativePath(EditModel.SchematicDirectory, cellAbsDir);
+        if (CellSymbolResolver.Resolve(cellRef, EditModel.SchematicDirectory).State
+            == CellSymbolState.NotFound)
+        {
+            _messageSink?.Warning($"Cell not found: \"{cellName}\".");
+            return true;   // handled — a named-but-unreachable cell is not "unknown type"
+        }
+
+        var remaining = EditModel.Components.Where(c => c.Id != comp.Id);
+        var newComp = new EditableComponent
+        {
+            InstanceName     = SchematicEditModel.NextAvailableName(remaining, "X"),
+            Symbol           = SymbolKind.Generic,   // placeholder; rendering uses CellRef
+            CellRef          = cellRef,
+            X = comp.X, Y = comp.Y,
+            Rotation         = comp.Rotation,
+            MirrorX          = comp.MirrorX,
+            ShowTypeLabel    = true,
+            ShowInstanceName = true,
+        };
+
+        // Seed from the cell's own published interface (.ccell), exactly as placement does.
+        string ccellPath = Path.Combine(cellAbsDir, CellFolder.CcellFileName);
+        if (File.Exists(ccellPath))
+        {
+            try
+            {
+                foreach (var cp in CellPersistence.LoadFromFile(ccellPath).Parameters)
+                    newComp.Parameters.Add(new EditableParameter
+                    {
+                        Name            = cp.Name,
+                        Expression      = cp.DefaultExpression,
+                        Unit            = cp.Unit,
+                        Dimension       = cp.Dimension,
+                        ShowOnSchematic = cp.ShowOnSchematic,
+                    });
+            }
+            catch { /* corrupt .ccell — swap in without parameters, same as placement */ }
+        }
+
+        Execute(new ChangeComponentTypeCommand(EditModel, comp, newComp));
+        return true;
+    }
+
     private void HandlePlaceMove(double wx, double wy)
     {
         double sx = EditModel.SnapToGrid(wx);
@@ -3181,8 +3278,10 @@ public sealed partial class SchematicViewModel : ObservableObject
         {
             case SchematicHitTest.HitKind.ComponentType:
                 InlineEditIncludesName = false; InlineEditSelStart = 0; InlineEditSelLength = -1;
+                // Seed with the text that is actually on screen — the cell name for a cell
+                // reference (an imported kit part), the registry code otherwise.
                 SetInlineEdit(InlineEditKind.ComponentType, hit.Id,
-                    ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount), screenX, screenY);
+                    comp.TypeLabelText(), screenX, screenY);
                 break;
             case SchematicHitTest.HitKind.ComponentName:
                 InlineEditIncludesName = false; InlineEditSelStart = 0; InlineEditSelLength = -1;
@@ -3301,12 +3400,26 @@ public sealed partial class SchematicViewModel : ObservableObject
             {
                 var comp = EditModel.FindComponent(targetId ?? "");
                 if (comp is null) break;
+
+                // Typing the label back unchanged is not an edit. Without this a cell-reference
+                // component (an imported kit part) fell straight through to TryParseCode, which
+                // cannot parse a cell name, and answered a no-op with a bogus warning.
+                if (newVal == comp.TypeLabelText()) break;
+
                 if (!ComponentTypeRegistry.TryParseCode(newVal, out var newKind, out int parsedPortCount))
                 {
-                    _messageSink?.Warning($"Unknown component type: '{newVal}' — use R, L, C, V, GND, FET, Z2P, SDD3, …");
+                    // Not a built-in code — try a cell of that name. This is what makes swapping
+                    // one kit part for another (or a built-in for a kit part) the same gesture as
+                    // any other type change, rather than a delete-and-re-place.
+                    if (TryChangeToCellType(comp, newVal)) break;
+                    _messageSink?.Warning($"Unknown component type: '{newVal}' — use R, L, C, V, GND, FET, Z2P, SDD3, … or the name of a cell in this workspace.");
                     break;
                 }
-                if (newKind != comp.Symbol || (parsedPortCount > 0 && parsedPortCount != comp.PortCount))
+                // A cell reference always replaces: its placeholder Symbol is Generic, so comparing
+                // kinds alone would silently refuse "kit part → built-in".
+                if (comp.CellRef is not null
+                    || newKind != comp.Symbol
+                    || (parsedPortCount > 0 && parsedPortCount != comp.PortCount))
                 {
                     // Build the replacement component: same position/rotation/mirror, new Id/name/params.
                     // Exclude the old component from naming so its slot is treated as free.

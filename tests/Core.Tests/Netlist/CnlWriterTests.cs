@@ -353,6 +353,57 @@ public class CnlWriterTests
         Assert.Throws<CnlReadException>(() => new CnlReader().Read(badCnl));
     }
 
+    // ── User-defined expression functions ────────────────────────────────────
+
+    /// <summary>
+    /// A function declaration must survive the write. This is not symmetry for its own sake: the
+    /// run path writes netlist.cnl and re-reads it, and a kit's cells call the kit's functions by
+    /// bare name — so a writer that silently drops them turns a perfectly good extraction into
+    /// "Unknown function '…'" from the elaborator, naming a file that never contained it.
+    /// </summary>
+    [Fact]
+    public void UserFunctions_RoundTrip()
+    {
+        var tb = new TestBench("test");
+        tb.GlobalVariables.Add(new Variable("CapPerArea", "1.2e-15"));
+        tb.Functions.Add(new CircuitRF.Core.Expressions.UserFunction(
+            "PadCap", ["w", "l"], "w * l * CapPerArea"));
+        tb.Functions.Add(new CircuitRF.Core.Expressions.UserFunction(
+            "Half", ["x"], "x / 2"));
+
+        var tb2 = RoundTrip(tb);
+
+        Assert.Equal(2, tb2.Functions.Count);
+
+        var pad = Assert.Single(tb2.Functions, f => f.Name == "PadCap");
+        Assert.Equal(new[] { "w", "l" }, pad.Parameters);
+        Assert.Equal("w * l * CapPerArea", pad.Body);
+
+        var half = Assert.Single(tb2.Functions, f => f.Name == "Half");
+        Assert.Equal(new[] { "x" }, half.Parameters);
+        Assert.Equal("x / 2", half.Body);
+
+        // The globals a function's body references must still be there too.
+        AssertVariable(tb2, "CapPerArea", "1.2e-15", null);
+    }
+
+    /// <summary>
+    /// A single-argument declaration must not be mistaken for an ordinary assignment on the way
+    /// back in — the reader distinguishes them only by the parenthesised parameter list.
+    /// </summary>
+    [Fact]
+    public void AFunctionAndAVariable_StayDistinct_AcrossTheRoundTrip()
+    {
+        var tb = new TestBench("test");
+        tb.GlobalVariables.Add(new Variable("Scale", "3"));
+        tb.Functions.Add(new CircuitRF.Core.Expressions.UserFunction("Scale2", ["x"], "x * Scale"));
+
+        var tb2 = RoundTrip(tb);
+
+        Assert.Equal("Scale2", Assert.Single(tb2.Functions).Name);
+        Assert.Equal("Scale", Assert.Single(tb2.GlobalVariables).Name);
+    }
+
     // ── Assertion helpers ────────────────────────────────────────────────────
 
     private static void AssertVariable(TestBench tb, string name, string expr, string? unit)

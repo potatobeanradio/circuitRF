@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
+using CircuitRF.Core.Devices.External;
 
 namespace CircuitRF.Core.Pdk;
 
@@ -28,9 +29,26 @@ public static class PdkImporter
         try
         {
             if (Directory.Exists(path))
-                return ImportEntries(path, Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar,
-                                                                          Path.AltDirectorySeparatorChar)),
-                                     EnumerateFolder(path));
+            {
+                // What was imported may be a small folder that ADDS to a kit rather than being one:
+                // it names the kit it belongs to, and both are read as one. See PdkImportReport.KitRoot.
+                var additions = DeclaredKitRoot(path);
+                var entries = additions is null
+                    ? EnumerateFolder(path)
+                    : EnumerateFolder(path).Concat(EnumerateFolder(additions.Value.Root));
+
+                // An additions folder may be called anything — it is not the kit. The kit's own name
+                // comes from what the manifest declares, or from the kit's folder; getting it wrong
+                // would leave every step working except the one that asks for the provider by name.
+                string name = additions is null
+                    ? Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                    : additions.Value.Provider is { Length: > 0 } declared
+                        ? declared
+                        : Path.GetFileName(additions.Value.Root.TrimEnd(Path.DirectorySeparatorChar,
+                                                                       Path.AltDirectorySeparatorChar));
+
+                return ImportEntries(path, name, entries, additions?.Root);
+            }
 
             if (File.Exists(path) && Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase))
                 using (var zip = ZipFile.OpenRead(path))
@@ -84,12 +102,50 @@ public static class PdkImporter
 
     // ── the import itself ─────────────────────────────────────────────────────
 
-    private static PdkImportReport ImportEntries(string root, string kitName, IEnumerable<Entry> entries)
+    /// <summary>
+    /// The kit an "additions" folder names, or null. Read straight from the manifest's own
+    /// <c>baseDirectory</c> — the same field that already means "the kit's own folder" everywhere
+    /// else — so nothing new has to be declared to get this.
+    /// </summary>
+    private static (string Root, string? Provider)? DeclaredKitRoot(string path)
     {
-        var report = new PdkImportReport { RootPath = root, KitName = string.IsNullOrEmpty(kitName) ? "Kit" : kitName };
+        try
+        {
+            string manifestPath = Path.Combine(path, DeviceWorkerManifest.FileName);
+            if (!File.Exists(manifestPath)) return null;
+
+            var manifest = DeviceWorkerManifest.TryRead(manifestPath, out _);
+            string? baseDir = manifest?.BaseDirectory;
+            if (string.IsNullOrEmpty(baseDir) || !Directory.Exists(baseDir)) return null;
+
+            // A manifest pointing at its own folder adds nothing and must not be enumerated twice.
+            return Path.GetFullPath(baseDir).TrimEnd(Path.DirectorySeparatorChar)
+                       .Equals(Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar),
+                               StringComparison.OrdinalIgnoreCase)
+                ? null
+                : (baseDir, manifest!.ProviderName);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static PdkImportReport ImportEntries(
+        string root, string kitName, IEnumerable<Entry> entries, string? kitRoot = null)
+    {
+        var report = new PdkImportReport
+        {
+            RootPath = root,
+            KitRoot  = kitRoot,
+            KitName  = string.IsNullOrEmpty(kitName) ? "Kit" : kitName,
+        };
         var recognizers = PdkFormatRegistry.All;
 
-        var files = entries.ToList();
+        var files = new List<Entry>();
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var e in entries)
+            if (seenPaths.Add(e.RelativePath)) files.Add(e);   // additions folder listed first, so it wins
         if (files.Count == 0)
         {
             report.Status = PdkImportStatus.Failed;
@@ -145,7 +201,7 @@ public static class PdkImporter
         // What they carry that matters here is the terminal count and the parameter interface.
         var subcircuits = new List<SubcircuitDef>();
         foreach (var net in report.Assets.Where(a => a.Kind == PdkAssetKind.Netlist))
-            foreach (var sub in SubcircuitsIn(report.RootPath, net.RelativePath))
+            foreach (var sub in SubcircuitsIn(report.RootPath, report.KitRoot, net.RelativePath))
                 subcircuits.Add(sub);
 
         // ── The parts: cells the kit drew ────────────────────────────────────
@@ -270,7 +326,7 @@ public static class PdkImporter
 
     /// <summary>
     /// Undo the `%X` case-escaping some tools use for cell directory names on case-insensitive
-    /// filesystems, so `%F%S%L_%M%O%D%E%L` reads back as `FSL_MODEL`. Harmless on names that use no
+    /// filesystems, so `%K%I%T_%M%O%D%E%L` reads back as `KIT_MODEL`. Harmless on names that use no
     /// escaping.
     /// </summary>
     internal static string Unescape(string s) => s.Replace("%", "");
@@ -296,9 +352,15 @@ public static class PdkImporter
     private static readonly Regex RxParamAssign = new(
         @"([A-Za-z_]\w*)\s*=\s*(""[^""]*""|\S+)", RegexOptions.Compiled);
 
-    private static IEnumerable<SubcircuitDef> SubcircuitsIn(string root, string relativePath)
+    private static IEnumerable<SubcircuitDef> SubcircuitsIn(string root, string? kitRoot, string relativePath)
     {
-        string full = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        string rel  = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        string full = Path.Combine(root, rel);
+
+        // An imported "additions" folder is read together with the kit it names, so a netlist's own
+        // relative path belongs to one root or the other.
+        if (!File.Exists(full) && kitRoot is { Length: > 0 })
+            full = Path.Combine(kitRoot, rel);
         string text;
         try
         {
@@ -565,7 +627,7 @@ public static class PdkImporter
     /// <para>So the rule is token containment: every word in the drawing's name (minus a trailing
     /// <c>_SYM</c>-style token) must also appear in the part's name. That catches both shapes, while
     /// still refusing two unrelated names that merely share a family word — <c>TECH_INCLUDE_SYM</c>
-    /// does not match <c>TECH_FET_ROOT</c>, because <c>include</c> is absent from it.</para>
+    /// does not match <c>TECH_FET_TYPEB</c>, because <c>include</c> is absent from it.</para>
     /// </summary>
     private static PdkAsset? FindArtworkFor(string partName,
                                             List<(string Key, PdkAsset Asset)> artwork,

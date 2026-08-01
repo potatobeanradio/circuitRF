@@ -1149,6 +1149,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var absActive = Path.IsPathRooted(activePath)
                 ? activePath
                 : Path.GetFullPath(Path.Combine(workspaceDir, activePath));
+            // Tab selection ONLY — deliberately NOT ActivateOpenDocument. Restoring which tab was
+            // last active is not a user asking for a window: floating windows are restored
+            // separately by RestoreFloatingDocumentWindows, and raising-and-focusing here would
+            // fight that pass and leave focus wherever the race landed. Every other activate path
+            // is a direct gesture and does bring its window forward.
             if (_openDocsByPath.TryGetValue(absActive, out var activeDoc))
                 _factory.SetActiveDockable(activeDoc);
         }
@@ -2514,18 +2519,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         ImportedPdks.Add(report);
-        InstallPdkIntoPalette(report);
+        var outcome = InstallPdkIntoPalette(report);
 
-        var level = report.Status switch
-        {
-            PdkImportStatus.Imported          => MessageLevel.Info,
-            PdkImportStatus.PartiallyImported => MessageLevel.Warning,
-            _                                 => MessageLevel.Error,
-        };
+        // A count of what was and was not recognised is a TALLY, not a verdict — a vendor kit
+        // routinely carries far more than circuitRF reads, so a warning here fires on a completely
+        // successful import and trains the user to ignore the level. Only a genuinely failed
+        // import (nothing usable, or an unreadable path) escalates.
+        var level = report.Status is PdkImportStatus.NotRecognized or PdkImportStatus.Failed
+            ? MessageLevel.Error
+            : MessageLevel.Info;
         Messages.Post(level,
             $"Import PDK — {report.KitName}: {report.Parts.Count} part(s), " +
             $"{report.Supported.Count()} file(s) read, {report.KnownGaps.Count()} recognised but unsupported, " +
             $"{report.Unrecognized.Count()} unrecognised.");
+
+        ReportPdkPlaceability(report, outcome);
 
         await PdkImportReportDialog.ShowAsync(window, report);
     }
@@ -2571,6 +2579,39 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         _factory.PaletteTool?.SetPdkParts(_pdkPaletteItems);
+
+        RegisterKitProviderResolver(wsRoot);
+    }
+
+    /// <summary>
+    /// Points device-provider resolution at this workspace's own installed kits, so a kit part can
+    /// be simulated with nothing configured: import, place, Run.
+    ///
+    /// <para>Registering a RESOLVER rather than providers means no worker process starts here. One
+    /// starts the first time a design actually asks for that kit's devices — a workspace may hold
+    /// many kits, and any one design typically uses none of them.</para>
+    ///
+    /// <para>Called from <see cref="RestoreInstalledPdks"/>, which already runs at every point the
+    /// palette is re-wired to a workspace. That is the same set of moments the kit folder changes,
+    /// so the two cannot drift apart.</para>
+    /// </summary>
+    private void RegisterKitProviderResolver(string? workspaceRootDir)
+    {
+        // Ends any worker started for the workspace being left behind. Providers registered by the
+        // application itself (plug-in assemblies) are deliberately not touched.
+        ExternalDeviceRegistry.ResetResolved();
+
+        if (string.IsNullOrWhiteSpace(workspaceRootDir)) return;
+
+        try
+        {
+            string kitsDir = Path.Combine(workspaceRootDir, PdkPartInstaller.InstallFolderName);
+            ExternalDeviceRegistry.AddResolver(new DeviceWorkerProviderResolver([kitsDir]));
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Imported kits could not be made available for simulation: {ex.Message}");
+        }
     }
 
     private void LoadExternalDeviceProviders()
@@ -2600,7 +2641,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <para>Re-importing a kit REPLACES its previous entries rather than adding a second copy —
     /// keyed on kit name, which is what a user re-importing after fixing something expects.</para>
     /// </summary>
-    private void InstallPdkIntoPalette(PdkImportReport report)
+    private PdkPartInstaller.InstallOutcome? InstallPdkIntoPalette(PdkImportReport report)
     {
         string? wsRoot = CurrentWorkspacePath is null
             ? null
@@ -2614,36 +2655,61 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         catch (Exception ex)
         {
             Messages.Warning($"Import PDK — the palette could not be updated: {ex.Message}");
-            return;
+            return null;
         }
 
         _pdkPaletteItems.RemoveAll(i => string.Equals(i.Pdk?.KitName, report.KitName, StringComparison.Ordinal));
         _pdkPaletteItems.AddRange(outcome.Items);
         _factory.PaletteTool?.SetPdkParts(_pdkPaletteItems);
 
+        // What the import worked out is neutral status, not a warning. Reporting a successful
+        // discovery at Warning trains the user to ignore the level, which costs them the one line
+        // that IS a warning.
+        foreach (var n in outcome.Notes ?? [])
+            Messages.Info($"Import PDK — {n}");
+
         foreach (var d in outcome.Diagnostics)
             Messages.Warning($"Import PDK — {d}");
-
-        if (outcome.Items.Count > 0)
-        {
-            string omitted = outcome.OmittedNotPlaceable > 0
-                ? $" {outcome.OmittedNotPlaceable} further part(s) have no symbol and are internal to the " +
-                  "kit; they are listed in the import report but kept out of the palette."
-                : "";
-            Messages.Info($"Import PDK — \"{report.KitName}\" added {outcome.Items.Count} part(s) to the " +
-                          $"Library palette ({outcome.IconsFound} icon(s), {outcome.SymbolsInstalled} symbol(s) " +
-                          $"installed).{omitted}");
-        }
-        else if (outcome.OmittedNotPlaceable > 0 && wsRoot is not null)
-        {
-            Messages.Warning($"Import PDK — \"{report.KitName}\" declares {outcome.OmittedNotPlaceable} part(s), " +
-                             "but none has a symbol circuitRF can read, so none is placeable yet. " +
-                             "The import report lists what was found.");
-        }
 
         if (outcome.Items.Count > 0 && wsRoot is null)
             Messages.Warning("Import PDK — no workspace is open, so this kit's symbols were not installed. " +
                              "Open or create a workspace and import again to place its parts.");
+
+        return outcome;
+    }
+
+    /// <summary>
+    /// The LAST line of an import, and the one that answers the only question that matters: can
+    /// anything be placed now?
+    ///
+    /// <para>Success when at least one part reached the palette, warning when none did — a kit that
+    /// read cleanly but yields nothing placeable is exactly the case a tally of file counts hides.
+    /// It carries its own reason, so "no parts" never has to be worked out from the lines above.</para>
+    /// </summary>
+    private void ReportPdkPlaceability(PdkImportReport report, PdkPartInstaller.InstallOutcome? outcome)
+    {
+        int placeable = outcome?.Items.Count ?? 0;
+
+        if (placeable > 0)
+        {
+            string omitted = outcome!.OmittedNotPlaceable > 0
+                ? $" {outcome.OmittedNotPlaceable} further part(s) have no symbol and are internal to the " +
+                  "kit; they are listed in the import report but kept out of the palette."
+                : "";
+            Messages.Success($"Import PDK — \"{report.KitName}\": {placeable} part(s) available to place " +
+                             $"from the Library palette ({outcome.IconsFound} icon(s), " +
+                             $"{outcome.SymbolsInstalled} symbol(s) installed).{omitted}");
+            return;
+        }
+
+        string reason =
+            outcome is null                       ? "the palette could not be updated"
+            : CurrentWorkspacePath is null        ? "no workspace is open"
+            : outcome.OmittedNotPlaceable > 0     ? "no part has a symbol circuitRF can read"
+            : report.Parts.Count == 0             ? "the kit declares no parts"
+            :                                       "no part could be installed";
+        Messages.Warning($"Import PDK — \"{report.KitName}\": no parts are available to place — {reason}. " +
+                         "The import report lists what was found.");
     }
 
     /// <summary>
@@ -2916,7 +2982,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         if (_openDocsByPath.TryGetValue(absPath, out var existing))
         {
-            _factory.SetActiveDockable(existing);
+            ActivateOpenDocument(existing);
             return;
         }
 
@@ -3247,8 +3313,68 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private bool ActivateIfOpen(string absolutePath)
     {
         if (!_openDocsByPath.TryGetValue(absolutePath, out var existing)) return false;
-        _factory.SetActiveDockable(existing);
+        ActivateOpenDocument(existing);
         return true;
+    }
+
+    /// <summary>
+    /// Show an already-open document because the USER asked for it — select its tab, bring its
+    /// window forward, and give the editor the keyboard.
+    ///
+    /// <para>The one place that answers "open a document that is already open". It exists because
+    /// there were four hand-rolled copies of the tab-selection half and only one of them ever grew
+    /// the window half, so the same double-click worked for a schematic and did nothing visible for
+    /// a torn-off Data Display. A second copy is how that comes back.</para>
+    /// </summary>
+    private void ActivateOpenDocument(IDockable dockable)
+    {
+        _factory.SetActiveDockable(dockable);
+        BringDockableWindowToFront(dockable);
+    }
+
+    /// <summary>
+    /// Brings the OS window showing <paramref name="dockable"/> to the front and gives it focus.
+    ///
+    /// <para><b>Why <see cref="IFactory.SetActiveDockable"/> is not enough.</b> It selects the TAB
+    /// within the dockable's own dock and nothing more. When that dock is a torn-off window, the
+    /// window stays exactly where it was — behind the shell, or on another desktop — so
+    /// double-clicking the file in the project tree looked like it did nothing at all. Reported for
+    /// a `.cdd`, but nothing here is document-type-specific: every kind reached this same path.</para>
+    ///
+    /// <para><b>Stealing focus is correct here, unlike R-dock-14/15.</b> That rule keeps a PASSIVE
+    /// raise (floating panels following the shell on activation) from taking the keyboard. This is a
+    /// direct user request to open a document, so the window it is in is exactly where focus belongs
+    /// — the opposite case, not an exception to the rule.</para>
+    ///
+    /// <para>The shell is activated too, not just floats: the project tree is itself a tool that can
+    /// be torn off, so "open a docked document from a floating tree" is an ordinary gesture and
+    /// needs the shell brought forward the same way.</para>
+    /// </summary>
+    private void BringDockableWindowToFront(IDockable dockable)
+    {
+        try
+        {
+            // A FLOATING root carries its own IDockWindow; the shell's root does not — it is hosted
+            // by a DockControl inside WorkspaceWindow — so a docked document falls through to the
+            // shell branch. Host is null for a window built but never presented (headless tests),
+            // which is why it is pattern-matched rather than assumed.
+            Window? target = _factory.FindRoot(dockable) is IRootDock { Window.Host: Window host }
+                ? host
+                : ResolveOwner(null);
+
+            if (target?.PlatformImpl is null) return;   // already closed — nothing to raise
+            target.Activate();
+
+            // The tab is selected and the window is up; the editor inside it still has to take the
+            // keyboard, or the user lands on a focused window whose canvas ignores their first
+            // keystroke. Deferred: the view may only bind on the next layout pass, and
+            // ConsumeActivationFocus covers exactly that ordering.
+            (dockable as IActivatableDocument)?.RequestActivationFocus();
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Could not bring the document's window to the front: {ex.Message}");
+        }
     }
 
     // ── Make Primary ─────────────────────────────────────────────────────────
@@ -5148,7 +5274,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         if (_openDocsByPath.TryGetValue(cddPath, out var existingDoc))
         {
-            _factory.SetActiveDockable(existingDoc);
+            ActivateOpenDocument(existingDoc);
             return;
         }
 

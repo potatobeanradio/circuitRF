@@ -12,6 +12,7 @@ namespace CircuitRF.Ui.Tests;
 // Synthetic kits throughout — a temp folder holding a hand-written symbol description and a
 // stand-in icon file. Nothing here names or reads any kit.
 
+[Collection(PdkToolsDirectoryCollection.Name)]
 public sealed class PdkPartInstallerTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-pdk-" + Guid.NewGuid().ToString("N")[..8]);

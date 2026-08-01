@@ -699,14 +699,14 @@ public partial class SchematicView : UserControl
                 }
             }
 
-            // Match the renderer's DrawLabels (glyphHalfH = GlyphBbMaxY - Y) for every symbol whose
-            // LabelBaseYFor consumes it: SnP and the Tuner family. The Tuner family's glyph grows
-            // downward when ShowBias=true (a bias branch below the box), so passing null here left the
-            // inline editor (and the label hit zone) sitting too high over those tuners.
-            double? anchorGlyphHalfH = editComp.Symbol is SymbolKind.Snp
-                or SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
-                ? editComp.ComputeGlyphBb().MaxY - editComp.Y
-                : null;
+            // Match the renderer's DrawLabels (glyphHalfH = GlyphBbMaxY - Y). Always the REAL
+            // drawn extent, via the one shared definition — never a per-SymbolKind list. The list
+            // that used to be here named SnP and the Tuner family and so silently excluded every
+            // cell-reference component (an imported kit part), leaving its inline editor over the
+            // built-in placeholder's height instead of the resolved cell symbol's.
+            double? anchorGlyphHalfH = Vm is null
+                ? null
+                : Vm.EditModel.EffectiveGlyphBbOf(editComp).MaxY - editComp.Y;
             _labelAnchor = new ComponentLabelAnchor(
                 editComp.X, editComp.Y, row, oDx, oDy,
                 editComp.Symbol, editComp.PortCount, prefixWorldUnits, anchorGlyphHalfH);

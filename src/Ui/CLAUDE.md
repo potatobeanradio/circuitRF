@@ -1,5 +1,134 @@
 # UI (Avalonia) — local conventions
 
+A kit part can be pointed at a different model library per instance (2026-07-31) — COMPLETE.
+`PdkPartInstaller` inserts a blank, file-valued `ModelLibrary` parameter first on every kit part;
+`NetExtractor` folds it into the provider name (`kit|path`) because that is what
+`ExternalDeviceRegistry` keys on — two instances naming different libraries must become two providers
+or the second is silently evaluated by the first's models. Mechanism and the argument-substitution rule
+are in `src/Core/CLAUDE.md`. **Known gap:** the override reaches leaf provider-backed parts only. A
+netlist-backed packaged part emits its `ExtDevice` instances from inside the cell, so the override lands
+on the package and does not flow down to the devices that actually need it.
+
+**The Browse… button shipped invisible, and the cause is an ordering rule worth stating generally: a
+row built before its callback arrives keeps the null.** `ParameterEditorViewModel.PickModelFileAsync`
+was declared and read by `BuildRows`, but nothing ever assigned it — the view set `RevealFileAsync`
+beside it and missed this one — so `ShowBrowseButton` (`IsFilePathParam && PickFileAsync is not null`)
+was false for every row forever. Two things were wrong and both had to be fixed:
+- **The wiring** — `ParameterEditorView.OnDataContextChanged` now assigns it, alongside its own
+  `PickModelFileAsync` picker (filtered to `.so`/`.dll`/`.dylib`; **all three, not just this machine's**
+  — a worker's library is a property of the KIT, so a design authored on a Mac may legitimately name the
+  Linux build the worker will load).
+- **The ordering** — the view can only supply the callback once its DataContext is set, which is
+  *after* `BuildRows` ran. So `PickModelFileAsync`'s setter pushes onto existing rows, and
+  `ParameterRowViewModel.PickFileAsync`'s setter raises `ShowBrowseButton`. Assigning either as a plain
+  auto-property re-breaks it silently.
+
+**Why the existing tests did not catch it:** every one set `row.PickFileAsync` by hand, an ordering
+production never takes. `ThePickerSuppliedAfterRowsAreBuilt_StillReachesTheRow` drives the real order
+and was **confirmed to fail against the pre-fix code**;
+`TheParameterEditorView_ActuallyAssignsTheModelFilePicker` pins the wiring by source scan, since a
+`UserControl` cannot be constructed headlessly. **Standing rule: when a VM property exists only so a
+view can inject a capability, test it through the VM, not by assigning the row's field directly.**
+
+The formulation choice now carries the KIT'S OWN name and description (2026-07-31) — COMPLETE.
+`KitSymbolDefinitionReader` (`src/Core/Pdk/`) recovers `create_parm` declarations — name, one-line
+description, `PARM_STRING` — from a compiled symbol definition, and the installer uses that name for
+the choice it discovered instead of circuitRF's own `Variant`. Result on the kit: the dialog reads
+**`ModelAs` = TYPEA** with the tooltip *"Model as TYPEA or TYPEB"*, the kit's own words, so a user can
+search their documentation for them.
+
+**It reads a FORMAT** — `create_parm` and `PARM_*` are the definition language's API names, and a
+part's definition is matched by the part it NAMES, not by a filename convention. **The string-valued
+parameter is the choice** (a formulation is picked by name; every other parameter is a number); more
+than one, and nothing is claimed. **Best-effort by design:** only identifiers and text survive
+compilation, so this recovers names and descriptions and nothing else — everything deciding what a
+part DOES still comes from the netlist, where it can be read properly.
+
+**The cell-name pattern names the same parameter the cell declares** — they are substituted for each
+other, so a mismatch resolves to a subcircuit that is not there. Caught by probe, not inspection.
+
+A vendor kit imported AS-IS now yields a working part (brief-kit-netlist-reader.md Stage B,
+2026-07-31) — COMPLETE. `PdkPartInstaller.DiscoverFromKitNetlists` reads the kit's own netlists at
+import and derives, per part, which formulations it offers, which circuitRF can build, and where the
+circuit is — so nothing is declared and nothing is copied. A manifest may still name any of it and
+wins where it does. Verified against a kit into a fresh workspace: `Variant▾=TYPEA` in the
+dialog, extraction emits `…_SPmodel_MET` with 26 nets, 9 cells, 38 globals, 4 functions, no conflicts.
+**The hand-placed declaration files have been removed from the test workspace** and it still works.
+
+**A kit-level variant is now scoped to the parts it belongs to** (`DeviceWorkerVariant.Parts`, empty
+= all) — found by inspecting a real workspace, where a formulation choice belonging to a packaged part
+had also been written onto a pin-less include cell. Gate: `AVariantScopedToOnePart_DoesNotAppearOnTheOthers`.
+
+The Component Parameters dialog asks WHICH FILE first, then WHICH FORMULATION, then the values
+(2026-07-31) — COMPLETE. Rows are ordered in three stable groups: file-valued
+(`CcellParameter.IsFilePath`, declared by a kit as `fileParameters`) → choice-valued (`Choices`) →
+the rest. A file-valued row gets a Browse… picker (`ParameterRowViewModel.PickFileAsync`; the picker
+itself stays in code-behind per the UI firewall). Rules in `src/Ui/Schematic/CLAUDE.md`.
+
+**A real error-message defect found on the way**, by removing a race rather than tagging around it:
+`DeviceWorkerProcessTests.AWorkerThatStoppedAnswering` flaked twice under full-suite load because it
+raced the OS reaping the child process. Waiting for the exit made it deterministic — and made the
+OTHER failure route (a broken pipe on the write, not EOF on the read) the one taken, which read
+**"The device worker (path) the connection failed (Broken pipe)."** `DeviceWorkerChannel.Failed`
+joined its subject and detail with a space, but every detail is a clause with its own subject and a
+worker's in-band error text is free-form; it is a colon now. Five consecutive runs of that file and
+two full-suite runs green.
+
+Importing an "additions" folder: the PDK importer copies what a kit needs into the workspace itself
+(2026-07-31) — COMPLETE. A vendor kit is usually read-only and often too large to duplicate, so a
+manifest and a translated netlist live in their own small folder that names the kit via
+`baseDirectory`. `PdkImporter` reads both folders (`PdkImportReport.KitRoot`), takes the kit's NAME
+from the manifest's `provider` rather than from the imported folder, and `PdkPartInstaller` copies
+every part-defining netlist into `<workspace>/pdk/<kit>/` — before the parts, so each cell records the
+workspace's own copy. **Nothing is copied by hand and the workspace is self-contained**: a test
+deletes the imported folder and the part still builds. Worker and model libraries stay with the kit.
+`baseDirectory` is written relative to the additions folder so the tree can move, and the import
+reports what settings it read in both directions — importing the kit itself rather than the folder
+that adds to it otherwise surfaces three steps later as a missing parameter.
+Rules in `src/Ui/Schematic/CLAUDE.md`.
+
+A kit's declarations are read from the WORKSPACE's own `pdk/<kit>/` folder (2026-07-31) — COMPLETE.
+A vendor kit is usually read-only and duplicating one to add a file to it is not a workflow, so a
+manifest and a translated netlist are dropped into the folder circuitRF already made for that kit.
+`PdkPartInstaller.LoadInstalled` reconciles each installed `.ccell` against it at every workspace
+open — not only at import, or picking up a dropped file would mean re-importing the kit.
+`DeviceWorkerManifest.ResolveFile` checks the manifest's own folder before the kit's, so a `.cnl`
+beside it is found. A part placed BEFORE the declarations arrived is topped up at the cell's own
+default by `ParameterEditorViewModel.AdoptCellDeclaredParameters` (no undo entry, never overwrites an
+existing value) — which is also why "the parameter does not appear in the dialog" cannot recur.
+Rules in `src/Ui/Schematic/CLAUDE.md`.
+
+A packaged kit part is now built as a CIRCUIT, from a netlist the kit ships (2026-07-31) — COMPLETE.
+A worker evaluates one device; a package is several plus the passives connecting them. A kit can now
+point a part at a `.cnl` (`parts` in its manifest → `CcellFile.ExternalNetlistPath`/`…Cell`), and
+`NetExtractor.TryEmitNetlistBackedCellInstance` emits an ordinary cell instance so everything
+downstream treats it like a cell the user drew. **Circuit beats device, and a failure on that path is
+terminal** — never quietly re-emitted as an `ExtDevice`. Rules in `src/Ui/Schematic/CLAUDE.md`.
+Verified against the real 26-pin package part with a disposable probe, driving the whole
+no-duplication workflow: import the read-only vendor kit untouched, place the part (0 parameters),
+drop the manifest + `.cnl` into `<workspace>/pdk/<kit>/`, reopen — the already-placed instance shows
+`ModelAs = TYPEA` with a [TYPEA, TYPEB] picker and extracts as one 26-net cell instance carrying 7
+supporting cells, 38 globals and 4 user functions, zero conflicts. The unimplemented choice is
+refused by name.
+
+A kit part that ships more than one formulation now picks between them in the Parameter Editor
+(2026-07-31) — COMPLETE. `CcellParameter.Choices`/`UnsupportedChoices` (both `WhenWritingNull`, so
+every existing `.ccell` stays byte-identical) turn a declared parameter into a picker;
+`DeviceWorkerManifest.Variants` is where the kit states the parameter's name, its choices, its
+default, and which choices circuitRF cannot build. **The default is the point** — a placed part
+arrives on the choice that works, so the first Run produces results instead of an error. Full
+reasoning and the four load-bearing rules are in `src/Ui/Schematic/CLAUDE.md`; gate is
+`tests/Ui.Tests/PdkPartVariantTests.cs` (40, covering this, the circuit-backed path, the
+workspace-folder pickup, the additions-folder import, the dialog ordering and variant scoping above).
+Full suite 5,594 pass.
+
+Imported kits become simulable with no setup (2026-07-31) — COMPLETE. The target is *import kit → place part → configure analysis → Run*, with nothing to configure in between. Two wiring points, both small; the mechanism is in `src/Core/Devices/External/` (see `src/Core/CLAUDE.md`).
+
+- **`PdkPartInstaller.CopyProviderManifest`** — if the source kit holds a `device-provider.json`, importing carries it into `<workspace>/pdk/<kit>/`, rewritten to declare `provider` = **the kit name** and `baseDirectory` = the kit's own root. The kit name is not cosmetic: each installed `.ccell` records `ExternalProvider = kitName` and `NetExtractor` emits that as `Provider=`, so a copy answering to the manifest's own name leaves everything working except Run. A test caught exactly that. The worker and model files are **not** copied — they stay in the kit, which is what `baseDirectory` exists to reach.
+- **`WorkspaceViewModel.RegisterKitProviderResolver`** — called from `RestoreInstalledPdks`, which already runs at every point the palette is re-wired to a workspace. That is the same set of moments the kit folder changes, so the two cannot drift apart (the alternative was six call sites to keep in step). It calls `ExternalDeviceRegistry.ResetResolved()` first, ending any worker started for the workspace being left, then registers a `DeviceWorkerProviderResolver` over `<workspace>/pdk/`. **A resolver, not a provider — so opening a workspace starts no processes.**
+
+Gate: 8 tests in `tests/Ui.Tests/PdkProviderHandoffTests.cs` covering the hand-off, path resolution surviving the copy, workspace-local override, per-platform entries surviving, and both silent and reported failure paths. Full suite 5,529 pass.
+
 A SPLIT document area now survives close/reopen — and the outgoing workspace's session is
 recorded at all (2026-07-30) — COMPLETE. Two owner reports, one visible symptom, two independent causes.
 

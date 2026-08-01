@@ -94,7 +94,7 @@
                                          Padding="2,3"
                                          VerticalAlignment="Center"
                                          Margin="0,0,4,0"
-                                         ToolTip.Tip="{Binding NameError}"
+                                         ToolTip.Tip="{Binding NameTooltip}"
                                          LostFocus="OnParamNameLostFocus"
                                          KeyDown="OnParamNameKeyDown"/>
                                 <TextBox Grid.Column="1"
@@ -129,6 +129,31 @@
                                           HorizontalAlignment="Stretch"
                                           VerticalAlignment="Center"
                                           ToolTip.Tip="{Binding LayerChoiceMissingWarning}"/>
+                                <!-- Cell-declared choice parameter (e.g. an imported kit part that
+                                     ships more than one formulation of the same device): the cell's
+                                     own closed value set, as a picker. A choice circuitRF cannot
+                                     build is still listed — the tooltip and the Run message both say
+                                     so, which is more useful than the value being absent. -->
+                                <ComboBox Grid.Column="1"
+                                          ItemsSource="{Binding ChoiceOptions}"
+                                          SelectedItem="{Binding SelectedChoice}"
+                                          IsVisible="{Binding IsChoiceParam}"
+                                          FontSize="11"
+                                          Padding="4,3"
+                                          HorizontalAlignment="Stretch"
+                                          VerticalAlignment="Center"
+                                          ToolTip.Tip="{Binding ChoiceUnsupportedWarning}"/>
+                                <!-- A file-valued parameter (a model library, a data table): a path
+                                     is exactly the kind of value nobody should be asked to type, and
+                                     a mistyped one fails much later with a worse message. -->
+                                <Button Grid.Column="2"
+                                        Content="Browse…"
+                                        IsVisible="{Binding ShowBrowseButton}"
+                                        FontSize="11"
+                                        Padding="6,2"
+                                        Margin="3,0,0,0"
+                                        VerticalAlignment="Center"
+                                        Click="OnParamBrowseClick"/>
                                 <ComboBox Grid.Column="2"
                                           ItemsSource="{Binding UnitOptions}"
                                           SelectedItem="{Binding StagedUnit}"

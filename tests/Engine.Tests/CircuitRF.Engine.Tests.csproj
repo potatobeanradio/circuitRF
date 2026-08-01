@@ -26,4 +26,20 @@
     <ProjectReference Include="../../src/Core/CircuitRF.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    The reference device worker, run as a real child process so an analysis can be solved end to end
+    through one. Nothing here links against it - it is only ever started.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../../tools/DeviceWorkerExample/DeviceWorkerExample.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>DeviceWorkerExampleDir</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)../../tools/DeviceWorkerExample/bin/$(Configuration)/net10.0</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

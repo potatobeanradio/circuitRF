@@ -24,4 +24,24 @@
     <ProjectReference Include="..\..\src\Core\CircuitRF.Core.csproj" />
   </ItemGroup>
 
+  <!--
+    The reference device worker is built alongside these tests and launched as a real child process,
+    so the process transport is exercised the way it actually runs. ReferenceOutputAssembly is false
+    because nothing here links against it - it is only ever started.
+
+    Its location is recorded as assembly metadata rather than derived from the test's own output
+    folder, which would be a relative-path guess that breaks the first time a layout changes.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\DeviceWorkerExample\DeviceWorkerExample.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>DeviceWorkerExampleDir</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)..\..\tools\DeviceWorkerExample\bin\$(Configuration)\net10.0</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

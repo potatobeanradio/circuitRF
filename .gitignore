@@ -20,3 +20,13 @@ TestResults/
 # "/.generated-cells") because a workspace root can live at any depth under this repo (e.g. inside
 # circuitRF_demo/ if it's ever unzipped and used locally), not only at the repo root.
 .generated-cells/
+
+# macOS VM host — build outputs and the image build cache (kernel/initramfs are built, never committed)
+tools/macos-vmhost/build/
+tools/macos-vmhost/.build/
+tools/macos-vmimage/build/
+tools/macos-vmimage/.work/
+
+# Device worker and its test fixture — build outputs (native, rebuilt by their own build.sh)
+tools/senior-worker/build/
+tools/fake-model-lib/build/

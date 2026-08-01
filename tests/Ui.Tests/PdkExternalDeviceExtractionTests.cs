@@ -13,6 +13,7 @@ namespace CircuitRF.Ui.Tests;
 /// extraction must emit one ExtDevice instance rather than trying to descend into it. These tests
 /// drive the real installer and the real extractor end to end over a synthetic kit.
 /// </summary>
+[Collection(PdkToolsDirectoryCollection.Name)]
 public sealed class PdkExternalDeviceExtractionTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-ext-" + Guid.NewGuid().ToString("N")[..8]);
@@ -146,7 +147,7 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
 
         var ccell = CellPersistence.LoadFromFile(Path.Combine(cellDir, CellFolder.CcellFileName));
 
-        Assert.Equal(["Ldrawn", "Nfingers"], ccell.Parameters.Select(p => p.Name));
+        Assert.Equal(["ModelLibrary", "Ldrawn", "Nfingers"], ccell.Parameters.Select(p => p.Name));
         // Blank defaults on purpose — the provider owns them; inventing values here would
         // silently override whatever the kit itself specifies.
         Assert.All(ccell.Parameters, p => Assert.Equal("", p.DefaultExpression));
@@ -258,13 +259,17 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
             new PdkPartParameter("DataPath", "Kit_Data", IsText: true));
 
         var ccell = CellPersistence.LoadFromFile(Path.Combine(cellDir, CellFolder.CcellFileName));
-        Assert.Equal(["Rth"], ccell.Parameters.Select(p => p.Name));
+        Assert.Equal(["ModelLibrary", "Rth"], ccell.Parameters.Select(p => p.Name));
         Assert.Equal("Kit_Data", ccell.ExternalFixedParameters!["DataPath"]);
 
         var model = ModelWithPart(cellDir, out _);
         var inst  = Extracted(model);
 
-        Assert.Equal("Kit_Data", inst.Overrides.Single(o => o.Name == "DataPath").Expression);
+        // Emitted as a string LITERAL, not as the bare text. A ParameterAssignment is evaluated, so a
+        // bare word is a variable name — emitting it verbatim failed elaboration on a kit with
+        // "Unresolved name 'Kit_..._Data' in scope 'global'". The value STORED in the .ccell is still
+        // the plain text (asserted above); only what reaches the expression engine is quoted.
+        Assert.Equal("\"Kit_Data\"", inst.Overrides.Single(o => o.Name == "DataPath").Expression);
     }
 
     [Fact]

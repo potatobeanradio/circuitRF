@@ -5,6 +5,7 @@ using CSparse.Ordering;
 using CSparse.Storage;
 using CircuitRF.Core;
 using CircuitRF.Core.Devices;
+using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Engine;
@@ -79,15 +80,40 @@ public sealed class NonlinearDcEngine
         /// </summary>
         public IReadOnlyDictionary<string, double> ProbeCurrents { get; }
 
+        /// <summary>
+        /// The residual PER UNKNOWN at the point the solve stopped — the KCL error each row still
+        /// carries. Index 0 is circuit node 1, matching <see cref="NodeVoltages"/>; entries past the
+        /// node count are branch unknowns.
+        ///
+        /// <para><b>Why the norm alone was not enough.</b> A failure could only say "residual 35.6",
+        /// which is a number with no address: it names neither the part of the circuit that will not
+        /// settle nor how far off it is. In a design with hundreds of unknowns that leaves bisecting
+        /// the schematic as the only way forward. One row is almost always enormously worse than the
+        /// rest, and saying which it is turns the whole search into a sentence.</para>
+        /// </summary>
+        public double[] ResidualPerUnknown { get; }
+
+        /// <summary>
+        /// Which component owns each branch-current unknown, keyed by its row in
+        /// <see cref="ResidualPerUnknown"/>. A branch has no node name to fall back on, so without
+        /// this a report can only give its index — an address in the matrix rather than in the
+        /// circuit.
+        /// </summary>
+        public IReadOnlyDictionary<int, string> BranchOwners { get; }
+
         internal DcResult(double[] v, bool converged, int iters, double residual,
-            ConvergenceTrace trace, IReadOnlyDictionary<string, double> probeCurrents)
+            ConvergenceTrace trace, IReadOnlyDictionary<string, double> probeCurrents,
+            double[]? residualPerUnknown = null,
+            IReadOnlyDictionary<int, string>? branchOwners = null)
         {
-            NodeVoltages  = v;
-            Converged     = converged;
-            Iterations    = iters;
-            FinalResidual = residual;
-            Trace         = trace;
-            ProbeCurrents = probeCurrents;
+            NodeVoltages       = v;
+            Converged          = converged;
+            Iterations         = iters;
+            FinalResidual      = residual;
+            Trace              = trace;
+            ProbeCurrents      = probeCurrents;
+            ResidualPerUnknown = residualPerUnknown ?? [];
+            BranchOwners       = branchOwners ?? new Dictionary<int, string>();
         }
     }
 
@@ -102,8 +128,20 @@ public sealed class NonlinearDcEngine
     private readonly AnalysisSettings  _settings;
     private readonly int   _nodeCount;     // non-ground voltage unknowns
     private readonly int   _systemSize;    // nodeCount + branch unknowns
+    private readonly Dictionary<int, string> _branchOwners = [];  // matrix row → owning component
     private readonly double[,] _gAug;      // linear conductance / branch matrix (constant)
     private readonly double[]  _bSource;   // RHS source vector (scaled by sourceFrac)
+
+    /// <summary>
+    /// Matrix rows carrying a TEMPERATURE rather than a voltage, and the device that says so.
+    ///
+    /// <para>An electrothermal device presents its junction temperature as an ordinary node — the
+    /// model drives a current numerically equal to its dissipated power into it, and reads the
+    /// resulting node value back as degrees C. Everything about it is a node to the solver, which
+    /// is exactly why it needs naming: a step that would be unremarkable for a voltage takes a
+    /// temperature below absolute zero, which no model can evaluate.</para>
+    /// </summary>
+    private readonly Dictionary<int, string> _thermalNodes = [];
 
     private NonlinearDcEngine(ElaboratedNetlist nl, AnalysisSettings settings)
     {
@@ -120,8 +158,18 @@ public sealed class NonlinearDcEngine
             if (ec.Model.Kind != ModelKind.Linear) continue;
             // Term/Port branches are driven ports for S-parameter analysis only; inert in DC.
             if (ec.Model is PortModel or TermModel) continue;
+
+            // WHICH COMPONENT OWNS WHICH BRANCH ROW. A branch unknown has no node name to fall back
+            // on, so without this a failure can only call it "branch unknown #60" — which is an
+            // address in a matrix, not in the circuit the user drew. Recorded by watching the branch
+            // count across each stamp, because allocation is the model's own business and nothing
+            // else knows how many it took.
+            int before = mna.Size;
             try { ec.Model.Stamp(mna, ec, omega: 0.0); }
             catch (NotImplementedException) { }
+            for (int b = before; b < mna.Size; b++)
+                _branchOwners[b] = $"{ec.ComponentType}:{ec.InstancePath}";
+
             nl.DrainModelWarnings(ec.Model);
         }
 
@@ -139,6 +187,81 @@ public sealed class NonlinearDcEngine
         // Resolve control-current branch indices for any SDD with C[n] references.
         // Branch indices are now assigned (the stamp loop above ran all linear devices).
         ResolveControlCurrentBranches();
+
+        CollectThermalNodes();
+        ReportImplausibleThermalResistances();
+    }
+
+    /// <summary>
+    /// Which matrix rows are temperatures, from the devices that own them.
+    ///
+    /// <para>Only an external device can say this: the kind is MEASURED by the worker when it probes
+    /// the model (a pin with no conductive coupling to any other node carries heat, not current) and
+    /// arrives on the descriptor. Nothing about the netlist reveals it — a thermal node is spelled
+    /// exactly like any other.</para>
+    /// </summary>
+    private void CollectThermalNodes()
+    {
+        foreach (var ec in _nl.Components)
+        {
+            if (ec.Model is not ExternalDeviceModel ed) continue;
+
+            foreach (var node in ed.Descriptor.Nodes)
+            {
+                if (node.QuantityKind != NodeQuantityKind.Thermal) continue;
+
+                // Same port→node mapping the residual uses: port p spans Nodes[2p] and Nodes[2p+1].
+                int p  = node.Index;
+                int np = ec.Nodes.Length > 2 * p ? ec.Nodes[2 * p] : 0;
+                if (np <= 0 || np - 1 >= _nodeCount) continue;   // grounded, or not an unknown
+
+                _thermalNodes.TryAdd(np - 1, $"{ec.ComponentType}:{ec.InstancePath}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Above this, a thermal resistance is not a thermal resistance. Real junction-to-ambient values
+    /// run from well under 1 to a few hundred °C/W; a few thousand is already beyond anything
+    /// physical. Four orders of magnitude of headroom above that is deliberate — this exists to
+    /// catch a node left on a keep-alive leak resistor, which is typically 10^7 or more, not to
+    /// second-guess an unusual but real design.
+    /// </summary>
+    public const double ImplausibleThermalResistance = 1e4;   // °C/W
+
+    /// <summary>
+    /// Reports a thermal node whose path to its reference is too high to be a thermal path.
+    ///
+    /// <para><b>Why this is worth a warning and not a failure.</b> On such a node the model's own
+    /// dissipated-power current source sets the temperature to P × R — with R at keep-alive scale
+    /// that is tens of thousands of degrees, which the model clamps and evaluates without complaint.
+    /// The run therefore SUCCEEDS and returns an operating point computed at a temperature nothing
+    /// intended. That is precisely the case a user cannot see and the solver cannot object to.</para>
+    ///
+    /// <para>The diagonal is the sum of every conductance incident on the node, so 1/diagonal is a
+    /// LOWER bound on its resistance to anywhere. Testing that bound is what makes this free of
+    /// false positives: a node reported here is at least this badly connected, whatever else it
+    /// touches.</para>
+    /// </summary>
+    private void ReportImplausibleThermalResistances()
+    {
+        foreach (var (row, owner) in _thermalNodes.OrderBy(e => e.Key))
+        {
+            double g = _gAug[row, row];
+            double r = g > 0 ? 1.0 / g : double.PositiveInfinity;
+            if (r <= ImplausibleThermalResistance) continue;
+
+            string node = row + 1 < _nl.Nodes.Count ? _nl.Nodes.NameOf(row + 1) : $"node {row + 1}";
+
+            _nl.AddWarningOnce(
+                $"thermal-resistance:{owner}:{row}",
+                $"{owner}: the thermal node '{node}' reaches its reference only through " +
+                $"{(double.IsPositiveInfinity(r) ? "no path at all" : $"{r:G3} °C/W")}, which is not a " +
+                $"thermal resistance — real values are a few hundred °C/W at most. The device's own " +
+                $"dissipated power sets this node's temperature, so the model will run at whatever " +
+                $"that resistance implies. Connect it to the thermal network the rest of the design " +
+                $"uses.");
+        }
     }
 
     /// <summary>
@@ -291,7 +414,9 @@ public sealed class NonlinearDcEngine
         trace.Add(new StepRecord(1.0, iters, ok, stepTrace));
 
         double[] nodeV  = xNew[.._nodeCount];
-        double finalRes = ResidualNorm(xNew, 1.0);
+        // A point the models refuse has no residual to report — asking for one throws the refusal
+        // back out of the engine, which turns "did not converge" into an unhandled exception.
+        double finalRes = SafeResidualVector(xNew, 1.0) is { } fv ? L2(fv) : double.PositiveInfinity;
         bool converged  = ok && finalRes < _settings.NonlinearAbsTol;
 
         if (!converged && throwOnFailure)
@@ -336,15 +461,25 @@ public sealed class NonlinearDcEngine
 
             if (!stepped)
             {
-                double[] nv = x[.._nodeCount];
-                return new DcResult(nv, false, totalIters, ResidualNorm(x, 1.0), trace, ExtractProbeCurrents(x));
+                double[] nv    = x[.._nodeCount];
+                double[] fFail = SafeResidualVector(x, 1.0) ?? [];
+                return new DcResult(nv, false, totalIters,
+                                    fFail.Length > 0 ? L2(fFail) : double.PositiveInfinity, trace,
+                                    ExtractProbeCurrents(x), fFail, _branchOwners);
             }
         }
 
-        double[] nodeV  = x[.._nodeCount];
-        double finalRes = ResidualNorm(x, 1.0);
+        double[] nodeV = x[.._nodeCount];
+
+        // ONE build, both answers. The norm is just the length of this vector, and
+        // BuildResidualAndJacobian evaluates every nonlinear device — asking for the norm and the
+        // vector separately doubles the cost of finishing a solve, which a timing budget notices.
+        double[] fFinal  = SafeResidualVector(x, 1.0) ?? [];
+        double   finalRes = fFinal.Length > 0 ? L2(fFinal) : double.PositiveInfinity;
+
         CaptureControlBias(x);   // seed SDD.ControlBias for a downstream S-param linearization
-        return new DcResult(nodeV, finalRes < _settings.NonlinearAbsTol, totalIters, finalRes, trace, ExtractProbeCurrents(x));
+        return new DcResult(nodeV, finalRes < _settings.NonlinearAbsTol, totalIters, finalRes, trace,
+                            ExtractProbeCurrents(x), fFinal, _branchOwners);
     }
 
     private (bool OK, int Iters, double[] X, List<IterationRecord> Trace)
@@ -357,9 +492,39 @@ public sealed class NonlinearDcEngine
         double   relTol   = _settings.NonlinearRelTol;
         double   f0Norm   = 0.0;  // residual norm at iter 0 (for relative tolerance)
 
+        double[]? xAccepted = null;   // last point the models evaluated
+        double[]? lastStep  = null;   // the full Newton step taken from it
+        double    lambda    = 1.0;    // fraction of that step currently being tried
+
         for (int iter = 0; iter < _settings.NonlinearMaxIter; iter++)
         {
-            var (f, j) = BuildResidualAndJacobian(x, frac);
+            double[] f; List<(int, int, double)> j;
+
+            // A REFUSED POINT IS NOT A FAILED SOLVE. A compiled model states the bias range it is
+            // valid over by refusing outside it, and a full Newton step is perfectly capable of
+            // stepping outside on the way to a solution that is well inside. Backing off along the
+            // same direction and trying again is the ordinary answer; treating the first refusal as
+            // the end of the solve throws away a converging run.
+            while (!TryBuildResidualAndJacobian(x, frac, out f, out j))
+            {
+                // Nothing to back off from: the point we were handed is itself refused. That is a
+                // starting point outside the model's range, not a step that overshot.
+                if (xAccepted is null || lastStep is null)
+                {
+                    iterTrace.Add(new IterationRecord(iter, double.NaN, double.NaN));
+                    return (false, iter + 1, x, iterTrace);
+                }
+
+                lambda *= 0.5;
+                if (lambda < MinRefusalLambda)
+                {
+                    iterTrace.Add(new IterationRecord(iter, double.NaN, lambda));
+                    return (false, iter + 1, xAccepted, iterTrace);
+                }
+
+                x = Advance(xAccepted, lastStep, lambda);
+            }
+
             double fNorm = L2(f);
 
             if (iter == 0) f0Norm = fNorm;
@@ -389,13 +554,90 @@ public sealed class NonlinearDcEngine
             double dxNorm = L2(dx);
             iterTrace.Add(new IterationRecord(iter, fNorm, dxNorm, 1.0));
 
-            for (int i = 0; i < _systemSize; i++) x[i] += dx[i];  // λ=1, full Newton step
+            // This point evaluated, so it is what a refusal after the next step backs off toward.
+            xAccepted = x;
+            lastStep  = dx;
+            lambda    = 1.0;
+
+            x = Advance(xAccepted, dx, lambda);   // λ=1, full Newton step
 
             if (dxNorm < DefaultVTol)
                 return (true, iter + 1, x, iterTrace);
         }
-        iterTrace.Add(new IterationRecord(_settings.NonlinearMaxIter, ResidualNorm(x, frac), 0));
+        iterTrace.Add(new IterationRecord(
+            _settings.NonlinearMaxIter,
+            SafeResidualVector(x, frac) is { } fLast ? L2(fLast) : double.NaN, 0));
         return (false, _settings.NonlinearMaxIter, x, iterTrace);
+    }
+
+    /// <summary>
+    /// Smallest fraction of a Newton step worth retrying after a model refuses the result. Below
+    /// this the direction itself is not usable, and halving further only spends worker round trips
+    /// to arrive at the same answer.
+    /// </summary>
+    private const double MinRefusalLambda = 1.0 / 1024.0;
+
+    /// <summary>
+    /// Absolute zero, in the units a thermal node carries. The model's own convention is one unit
+    /// per degree C referenced to its sink, so this is where the temperature stops being a
+    /// temperature. Held a hair above it because a model evaluated exactly at −273.15 has zero
+    /// absolute temperature to divide by.
+    /// </summary>
+    private const double AbsoluteZeroFloor = -273.0;
+
+    /// <summary>
+    /// One Newton step, scaled by <paramref name="lambda"/>, with thermal nodes kept physical.
+    ///
+    /// <para><b>The clamp is not a convergence trick.</b> A negative absolute temperature is not a
+    /// bad guess, it is not a quantity — no model can evaluate one, and a step that produces one has
+    /// left the domain rather than overshot within it. Stopping it at the floor keeps the iterate
+    /// somewhere a model can answer, which is what lets the refusal backoff above work on the steps
+    /// that genuinely have overshot instead of being spent on this.</para>
+    ///
+    /// <para>Applies to thermal rows only. A voltage has no such floor, and clamping one would be
+    /// exactly the sort of quiet interference that makes a wrong answer look converged.</para>
+    /// </summary>
+    private double[] Advance(double[] from, double[] step, double lambda)
+    {
+        var next = new double[_systemSize];
+        for (int i = 0; i < _systemSize; i++) next[i] = from[i] + lambda * step[i];
+
+        foreach (int row in _thermalNodes.Keys)
+            if (next[row] < AbsoluteZeroFloor) next[row] = AbsoluteZeroFloor;
+
+        return next;
+    }
+
+    /// <summary>
+    /// Builds the residual and Jacobian, reporting a model's refusal as false rather than as an
+    /// exception — at this point it is an ordinary, expected outcome of trying a bias, and the
+    /// caller's business is to try a smaller step, not to abandon the solve.
+    /// </summary>
+    /// <summary>
+    /// The residual at <paramref name="x"/>, or null when a model refuses that point. Used wherever
+    /// a residual is wanted for REPORTING rather than for stepping — a refusal there is not an error
+    /// to raise, it is the reason the number cannot be given.
+    /// </summary>
+    private double[]? SafeResidualVector(double[] x, double sourceFrac)
+    {
+        try   { return ResidualVector(x, sourceFrac); }
+        catch (ExternalDeviceException) { return null; }
+    }
+
+    private bool TryBuildResidualAndJacobian(
+        double[] x, double sourceFrac,
+        out double[] f, out List<(int R, int C, double V)> j)
+    {
+        try
+        {
+            (f, j) = BuildResidualAndJacobian(x, sourceFrac);
+            return true;
+        }
+        catch (ExternalDeviceException)
+        {
+            f = []; j = [];
+            return false;
+        }
     }
 
     private (double[] F, List<(int R, int C, double V)> J)
@@ -542,6 +784,13 @@ public sealed class NonlinearDcEngine
     {
         var (f, _) = BuildResidualAndJacobian(x, frac);
         return L2(f);
+    }
+
+    /// <summary>The residual vector itself, for reporting WHICH unknowns did not settle.</summary>
+    private double[] ResidualVector(double[] x, double frac)
+    {
+        var (f, _) = BuildResidualAndJacobian(x, frac);
+        return f;
     }
 
     private static CompressedColumnStorage<double> AssembleCsc(

@@ -1,0 +1,32 @@
+; crf-model-host.def -- the export list for the Windows host shim.
+;
+; WHY A .def AND NOT __declspec(dllexport):
+; the fifteenth ABI entry is DeviceInstaller's constructor, whose MSVC-mangled name
+; (??0DeviceInstaller@@QEAA@QEBDP6AHXZH@Z) is not a valid C identifier -- so the Linux trick of
+; simply defining a function under the mangled name does not carry over. An alias in a .def file
+; is the mechanism that does. Once a .def is supplied the linker exports exactly what it lists,
+; so every other export has to be listed here too; that is deliberate, because it makes the ABI
+; surface one readable list rather than a scatter of attributes.
+;
+; This file is GENERIC. It names no vendor, no library and no device family -- only circuitRF's own
+; worker ABI. The module this shim is eventually STAGED under is derived at run time from the
+; model's own import table (see derive_host_module in senior_worker.c); nothing about that name
+; appears here or anywhere else in this repository.
+
+EXPORTS
+    add_lin_n
+    add_lin_y
+    add_nl_gc
+    add_nl_iq
+    add_tr_capacitor
+    add_tr_gc
+    add_tr_iq
+    add_tr_lossy_inductor
+    add_tr_mutual_inductor
+    add_tr_resistor
+    get_delay_v
+    load_elements
+    send_error_to_scn
+    send_info_to_scn
+    ??0DeviceInstaller@@QEAA@QEBDP6AHXZH@Z = crf_device_installer_ctor
+    crf_worker_main

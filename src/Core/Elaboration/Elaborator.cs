@@ -26,6 +26,19 @@ public sealed class Elaborator
     private readonly Evaluator  _evaluator = new();
 
     /// <summary>
+    /// Lets a frequency-dependent value cross a cell boundary as an EXPRESSION rather than being
+    /// forced to a number there. One instance per elaboration, because it caches which names are
+    /// frequency-dependent and that answer is only meaningful within one library.
+    /// </summary>
+    private readonly FreqDeferral _freq = new();
+
+    /// <summary>
+    /// The netlist's user-defined expression functions, kept for models that evaluate at stamp time.
+    /// Held per-Elaborator rather than globally so two designs open at once cannot see each other's.
+    /// </summary>
+    private IReadOnlyList<UserFunction> _functions = [];
+
+    /// <summary>
     /// Workspace root for resolving relative file-path parameters (e.g. SnP File).
     /// Null → relative paths are left as-authored (legacy CWD resolution) for CLI / no-workspace runs.
     /// Only a path string crosses into Core here — no UI dependency.
@@ -39,7 +52,10 @@ public sealed class Elaborator
     {
         // User-defined expression functions must exist before any expression is resolved —
         // a cell parameter may call one in its default, which is evaluated during flattening.
-        foreach (var fn in tb.Functions)
+        // Kept as well as registered: a model that evaluates an expression at STAMP time builds
+        // its own Evaluator per frequency, long after this one is gone, and needs the same table.
+        _functions = tb.Functions.ToArray();
+        foreach (var fn in _functions)
             _evaluator.RegisterFunction(fn);
 
         var netlist     = new ElaboratedNetlist();
@@ -114,6 +130,27 @@ public sealed class Elaborator
         // Complex.ToString() round-trip problems).
         foreach (var ov in overrides)
         {
+            // A frequency-dependent argument cannot be evaluated here — `freq` is bound at stamp
+            // time, by the model that is defined as a function of it. Bind the inlined EXPRESSION
+            // instead, so the value keeps travelling down until it reaches such a model. The child's
+            // own variables then become frequency-dependent through it, without knowing anything
+            // about where the dependence came from.
+            if (_freq.IsFreqDependent(ov.Expression, parentScope))
+            {
+                // Inlining already applied the unit of every binding it absorbed, so re-applying a
+                // site unit here would apply it twice — the same var-unit-wins rule Eval() follows,
+                // enforced through Eval's own predicate rather than a second copy of it.
+                string? siteUnit = Evaluator.ReferencesUnitBearingVariable(ov.Expression, parentScope)
+                    ? null
+                    : ov.Unit;
+
+                cellScope.Bind(
+                    ov.Name,
+                    _freq.InlineForCellBoundary(ov.Expression, parentScope, _evaluator),
+                    siteUnit);
+                continue;
+            }
+
             var resolved = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
             cellScope.Bind(ov.Name, "__resolved__");
             _evaluator.InjectResolved(scopeName, ov.Name, resolved);
@@ -201,7 +238,7 @@ public sealed class Elaborator
                 // Primitive — resolve nodes and parameters first; model creation may need params (e.g. SnP).
                 var resolvedNodes  = inst.NetBindings.Select(n => netlist.Nodes.GetOrAssign(ResolveNet(n))).ToArray();
                 var resolvedParams = ResolveParameters(inst, currentScope);
-                var model          = ComponentModelFactory.TryCreate(inst.Reference, resolvedParams)
+                var model          = ComponentModelFactory.TryCreate(inst.Reference, resolvedParams, _functions)
                                      ?? throw new InvalidOperationException(
                                          $"Failed to create model for primitive '{inst.Reference}' at '{childPath}'");
 
@@ -311,7 +348,19 @@ public sealed class Elaborator
 
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
+        {
+            // Frequency dependence has to TERMINATE at a model that binds `freq`. Anything else is
+            // asking for a single number that does not exist, and saying so here — naming the
+            // device, the parameter and the models that can take one — beats the bare
+            // "Unresolved name 'freq'" the evaluator would otherwise report from inside the value.
+            if (_freq.IsFreqDependent(ov.Expression, parentScope))
+                throw new FrequencyDependentValueException(
+                    $"'{inst.Reference}:{inst.InstanceName}' parameter '{ov.Name}' is frequency-dependent, " +
+                    $"but a '{inst.Reference}' takes a single value that cannot vary with frequency. " +
+                    "Only Chain (A/B/C/D), Z_Port (Z[i,j]) and SDD (H[w]) are evaluated per frequency.");
+
             result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+        }
         return result;
     }
 
@@ -337,8 +386,12 @@ public sealed class Elaborator
         {
             if (ov.Name is "A" or "B" or "C" or "D")
             {
-                result[ov.Name] = new Value(ov.Expression);
-                InjectZPortScopeVars(ov.Expression, parentScope, result);
+                // Inlining leaves one self-contained expression in `freq` — which is exactly the
+                // form this model already accepts — and returns the text untouched when nothing is
+                // frequency-dependent, so an ordinary Chain takes the path it always did.
+                string expr = _freq.InlineForDevice(ov.Expression, parentScope, _evaluator);
+                result[ov.Name] = new Value(expr);
+                InjectZPortScopeVars(expr, parentScope, result);
             }
             else
             {
@@ -370,8 +423,19 @@ public sealed class Elaborator
         for (int k = 0; k < d.ExternalPinCount; k++) nodeIndex[k] = declaredNets[k];
 
         // Internal nodes first, so a slaved node can point at one of them regardless of order.
+        //
+        // A SLAVED NODE IS NEVER MINTED. It takes its master's index below, so minting one first
+        // leaves an unknown in the system that nothing then references — an all-zero row AND column,
+        // which is the definition of a singular matrix. DC hides it (gmin holds the orphan at 0 and
+        // nothing reads it), so it surfaces only in the S-parameter assembly, as a singularity
+        // report naming nodes the user cannot find in their schematic because they do not exist in
+        // it. Masters are never themselves slaved — chains are rejected below — so every master is
+        // minted by this loop or is an external pin.
         for (int k = d.ExternalPinCount; k < d.NodeCount; k++)
+        {
+            if (d.Nodes.FirstOrDefault(n => n.Index == k)?.SlavedTo is not null) continue;
             nodeIndex[k] = netlist.Nodes.GetOrAssign($"__extdev_{childPath}_n{k}");
+        }
 
         foreach (var node in d.Nodes)
         {
@@ -471,9 +535,13 @@ public sealed class Elaborator
         {
             if (RxZPortEntry.IsMatch(ov.Name))
             {
-                // Store Z[i,j] expression as string; inject referenced scope vars.
-                result[ov.Name] = new Value(ov.Expression);
-                InjectZPortScopeVars(ov.Expression, parentScope, result);
+                // Store Z[i,j] expression as string; inject referenced scope vars. Inlining first
+                // lets a frequency-dependent value that arrived through a cell parameter reach this
+                // model as one self-contained expression (see FreqDeferral); a Z[i,j] that is not
+                // frequency-dependent through a cell boundary comes back unchanged.
+                string zexpr = _freq.InlineForDevice(ov.Expression, parentScope, _evaluator);
+                result[ov.Name] = new Value(zexpr);
+                InjectZPortScopeVars(zexpr, parentScope, result);
             }
             else
             {

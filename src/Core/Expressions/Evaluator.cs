@@ -102,6 +102,17 @@ public sealed class Evaluator
         return ApplyUnit(raw, unit);
     }
 
+    /// <summary>
+    /// The var-unit-wins test, for a caller that must apply the same rule without going through
+    /// <see cref="Eval(string, Scope, string?)"/> — notably <see cref="FreqDeferral"/>, which binds
+    /// an expression rather than evaluating it and would otherwise apply a unit twice.
+    /// </summary>
+    public static bool ReferencesUnitBearingVariable(string expression, Scope scope)
+    {
+        try { return ReferencesUnitBearingVar(Parser.Parse(expression), scope); }
+        catch { return false; }
+    }
+
     private static bool ReferencesUnitBearingVar(Expr ast, Scope scope)
     {
         foreach (var name in AstWalker.CollectRefs(ast))
@@ -241,6 +252,10 @@ public sealed class Evaluator
             "phase"     => EvalPhase(cl, scope),
             "phase_rad" => EvalPhaseRad(cl, scope),
             "polar"     => EvalPolar(cl, scope),
+            // Rectangular counterpart of polar(). The natural way to write a frequency-dependent
+            // immittance (`complex(G, w*C)`), and the form FreqDeferral renders a resolved Complex
+            // back into — so a deferred expression can be re-parsed by the model that evaluates it.
+            "complex"   => EvalComplex(cl, scope),
             "dB"        => EvalDB20(cl, scope),     // 20·log10|z|
             "dB20"      => EvalDB20(cl, scope),     // alias: 20·log10|z|
             "dB10"      => EvalDB10(cl, scope),     // 10·log10|z|
@@ -643,6 +658,21 @@ public sealed class Evaluator
         if (r.Kind != ValueKind.Real)   throw new TypeErrorException("polar() magnitude must be Real");
         if (deg.Kind != ValueKind.Real) throw new TypeErrorException("polar() phase must be Real");
         return new Value(Complex.FromPolarCoordinates(r.AsReal(), deg.AsReal() * Math.PI / 180.0));
+    }
+
+    /// <summary>
+    /// <c>complex(re, im)</c> — the rectangular counterpart of <see cref="EvalPolar"/>. Both parts
+    /// must be Real: a complex "real part" is not a rounding error to absorb, it means the
+    /// expression that produced it is wrong.
+    /// </summary>
+    private Value EvalComplex(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 2) throw new ArityException("complex", 2, cl.Args.Length);
+        var re = EvalExpr(cl.Args[0], scope);
+        var im = EvalExpr(cl.Args[1], scope);
+        if (re.Kind != ValueKind.Real) throw new TypeErrorException("complex() real part must be Real");
+        if (im.Kind != ValueKind.Real) throw new TypeErrorException("complex() imaginary part must be Real");
+        return new Value(new Complex(re.AsReal(), im.AsReal()));
     }
 
     private Value EvalSign(CallExpr cl, Scope scope)

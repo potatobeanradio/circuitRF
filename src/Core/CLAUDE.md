@@ -1,5 +1,548 @@
 # Core — local conventions
 
+Compiled device models on Windows (brief-windows-device-worker.md, 2026-07-31) — COMPLETE, with the
+one gate that needs a Windows machine still open. The worker now builds and runs for Windows, and a
+synthesised manifest names `win-x64` again.
+
+**The Windows and Linux builds need the SAME 15 functions** — not a similar set, the same set, in
+two manglings (`_ZN15DeviceInstallerC1EPKcPFivEi` vs `??0DeviceInstaller@@QEAA@QEBDP6AHXZH@Z` for
+the fifteenth). There was no new ABI to work out and no vendor header to obtain.
+
+**The one real problem was that a Windows model IMPORTS its host callbacks from a NAMED MODULE.** A
+Linux model leaves them undefined and the loader resolves them against whatever loaded it (that is
+what `-rdynamic` is for); an executable's exports are never consulted for a DLL's import-by-name, so
+a module under that name has to exist at load time. Hence two products from one source file:
+`crf-model-host.dll` holds the callbacks, the protocol and `crf_worker_main`; `senior_worker.exe` is
+a launcher that derives the name, stages the DLL under it, loads it and calls in. **The logic is in
+the DLL because the callbacks are not pure** — they write worker state, and splitting them from that
+state would need a registration handshake and a forwarding thunk per callback.
+
+- **The module name is read out of the model, never remembered** (`PeImports.ModuleSupplying`, and
+  `derive_host_module` in the worker). The import descriptor is selected by matching **our own ABI
+  symbols**; matching a remembered module name would put kit knowledge back in one string at a time
+  and would silently serve nothing for a kit naming its host module differently. This is the third
+  instance of the principle already load-bearing here — the ELF symbol-table scan instead of a
+  compiled-in name list, the runtime alias map instead of a compiled-in table.
+- **Two implementations of that walk exist, deliberately.** The C one runs inside the launcher,
+  which has to do it before any managed code exists in its process; the C# one lets the RULE be
+  exercised on every platform and lets the importer say whether a kit's Windows build is drivable.
+  Keep them in step.
+- **The staged shim is loaded EXPLICITLY, before the model** — Windows resolves an import by first
+  checking whether a module with that base name is already loaded, so no `SetDllDirectory`, no
+  `AddDllDirectory`, no `PATH` edit. The search-path approaches work by accident of ordering.
+- **The staged copy is per-user, never the repo/install/kit** (`%LOCALAPPDATA%\circuitRF\hostshim\`).
+  The file bearing the vendor's module name is created on the user's machine, from their own kit.
+
+**`DeviceLibraryDiscovery.Find` gained a `LibraryFormat` filter, and it fixed a latent bug.** The
+`preferPathContaining` hints only ever RANKED; they never filtered. So a kit shipping a single
+library answered both a "find the Linux build" and a "find the Windows build" search with the same
+file — harmless only while the `win-x64` entry was suppressed, and a launch failure the moment it was
+written back. The filter is decided by the file's own **magic bytes**, not its extension: a vendor
+names its folders for the toolchain and its files for whatever it likes, and the magic is the one
+property that cannot be a naming convention.
+
+**`DeviceLibraryDiscovery.ServedTypes` needed no change** — its plain byte scan is format-agnostic by
+design, and that design is now paid off rather than merely claimed. Nor did `DeviceWorkerManifest`,
+`MatchScore` or the process transport: a launch entry is `Command` + `Arguments` through an ordinary
+`Process.Start`, and `win-x64` was already computed.
+
+**Gate — the managed half.** `PeImportsTests` (15, everywhere — descriptor selected by our ABI
+symbols, ordinal imports skipped, PE32 as well as PE32+, and a truncated/garbage image refused rather
+than read past its end, all against PEs built in the test). `PdkWindowsWorkerManifestTests` (7 — the
+`win-x64` entry is written again, names the Windows build, and carries a bare `.exe` command that
+resolves in the tools folder wherever it runs; a Linux-only kit still gets no Windows entry).
+**Verified beyond our own code:** the C# parser resolves `KERNEL32.dll` / `SHELL32.dll` out of a real
+mingw-built binary's import table, and derives `crf_test_host.dll` from `tools/fake-model-lib`'s real
+DLL.
+
+**Gate — the native half, `tools/senior-worker/verify-windows.sh`.** None of this can be a C# test:
+staging a file under a name read out of a model's import table, an import binding to an
+already-loaded module, and stdio mode are properties of a RUNNING process. The script loads a real PE
+under Wine and checks them. An unprivileged user with a **read-only** install stages the shim,
+resolves the model's import against it, walks the PE exports to find the family, and completes a
+`describe` → `create` → `eval` exchange with bit-exact currents; a second model naming a different
+host module stages alongside the first; a newer shipped shim refreshes the staged copy. The Linux
+worker drives the same fixture end to end too (adding `probe`).
+
+**R-win-7 is proven load-bearing, not assumed.** The script builds a control with the two `_setmode`
+calls neutralised and nothing else changed: the identical payload comes back corrupted and the stream
+desyncs, while `describe` passes identically in both runs — which is exactly why the bug is easy to
+ship and why a `describe`-only test cannot catch it.
+
+**STILL OPEN — and it is the one that matters: no production library has been loaded on Windows.**
+Wine is a reimplementation and the fixture is ours, so a PASS exercises the mechanism without
+standing in for the kit. Unsettled until a Windows machine with a kit runs it: whether the 15
+symbols are *sufficient* (they are demonstrably necessary); a CRT mismatch against a genuinely
+UCRT-built library; whether the kit's own `an extra export` export wants anything at load time; and
+the vectored exception handler under a real access violation. See `tools/senior-worker/README.md`.
+
+**Bisected with the CLI, 2026-07-31 — the solver and the topology are NOT the problem.** A vendor
+kit's package would not settle (`residual 35.6`, 279k iterations). Two substitutions in the generated
+`netlist.cnl`, both run headless with `dotnet run --project src/Cli -- dc`:
+
+- **compiled FET → 1 GOhm open**: converges, and to the right answer (n26 = 28 V, n24 = 3 V).
+- **compiled FET → a square-law SDD** in the same socket, all five instances: **converges in 5
+  iterations**, residual 2e-7, Ids 36 mA.
+
+So elaboration, the 15-port package network, the supplies, the thermal wiring and the nonlinear DC
+engine are all sound at this topology; what remains is the compiled model itself or how its ten nodes
+(4 external + 6 internal, one thermal) are mapped. **Substituting into the generated netlist is the
+cheap bisection for any kit-backed non-convergence** — it separates "our circuit handling" from "that
+model" in one run, and needs no VM.
+
+A bare word after a parameter is a UNIT, never a net (2026-07-31) — COMPLETE, and it was building a
+different circuit in silence. `Units._scales` had `Ohm/kOhm/MOhm/GOhm` but **no `TOhm`**, and a real
+kit ties every unused package pin to ground through `R=1 TOhm`. The unrecognised token fell through
+to `nets.Add(tok)`: fourteen resistors all wired to one node named **`TOhm`**, that node constrained
+by nothing, the MNA matrix singular with an all-zero row — and no message anywhere mentioning a unit.
+Same failure class as brief-unit-token-phantom-nodes, one table entry further along.
+
+- **`TOhm` and `mOhm` added** — the series had a hole at each end.
+- **The parser no longer guesses.** Nets come first and are finished by the first `name=value`, so a
+  bare word after that can only be a unit; one that is not recognised is now reported by name.
+  Reported rather than absorbed, because the old behaviour produced a *working parse of a different
+  circuit*, and the error is what makes a one-entry fix obvious.
+- **Instance lines never stripped their trailing `;` comment** — only `SplitExprUnit` did, for
+  variable assignments. So every word of a comment joined the net list:
+  `C:C1 a b C=1m ; near-short at 2 GHz` gave a capacitor with eight nets, six named after English
+  words. Invisible because a two-terminal model reads the first two and ignores the rest; found only
+  because the stricter rule above threw on the `;`. Now stripped quote-aware, so a `;` in a file path
+  survives.
+
+Gate: 11 tests in `tests/Core.Tests/Netlist/BareTokenAfterParameterTests.cs`.
+
+A kit's data files reach the guest by being mounted WHERE THEY LIVE (2026-07-31) — COMPLETE.
+**The bug the whole macOS path had been walking towards.** A compiled model is told which data files
+to read through its OWN parameters: this kit's FET declares exactly four (`File`, `TAMB`, `RTH`,
+`CTH` — confirmed by the worker's own `pars=4` against the kit's
+`KITLIB_DEVICE_v1:FET1 … File=File TAMB=TAMB RTH=RTH CTH=CTH`), so its entire parameterisation is a
+data file plus three thermal numbers. Those parameters arrive from the netlist long after the VM has
+started, so **unlike the model library there is no command line left in which to rewrite them**. The
+model then refused every operating point — cleanly, `analyze_nl` returning 0 with no SIGSEGV — and the
+only symptom was a non-finite result far downstream.
+
+**So the path is made true rather than translated.** `crf-vmhost` gained `--share-at TAG=PATH[:ro]`,
+which mounts a share at the same absolute path it has on the host; `guest-init` honours it via
+`crf.mountat=<tag>,<base64 of the mount point>` (base64 for the same reason argv is — the kernel
+command line is space-separated and unquoted, and a macOS path may contain a space; it cannot contain
+a comma, so the split is unambiguous). Nothing anywhere rewrites a data path.
+
+- **The tree offered is exactly the one `KitDataFileResolver` can anchor a file within** —
+  `OutermostSearchRoot`, the same constant, deliberately not a second notion of "near the kit". Two
+  would drift, and the failure when they do is a path that resolves perfectly at import and cannot be
+  opened at run time, which is this bug one level along.
+- **Anchored on the kit's NETLIST folder, not the import root.** They are not interchangeable: for a
+  kit imported whole the import root is the delivery folder, and for one healed from an installed
+  workspace it is the netlist folder itself.
+- **A library override under a `--share-at` tree is left exactly as written** — the host path is
+  already valid in the guest, and rewriting it to `/mnt/<tag>/…` would name a place nothing was
+  mounted.
+- **`generatedFormat` on our own manifests, bumped to 2.** "Stale" used to mean only that a named
+  program had gone, so a manifest whose every path still resolved was never reconsidered — and one
+  that runs is exactly the one nothing else would ever replace. An older format is now redone at the
+  next workspace open instead of staying runnable and wrong.
+
+Gate: 5 tests in `tests/Ui.Tests/PdkKitDataShareTests.cs` — including one that reads a data file
+through `KitNetlistReader` and asserts the shared tree contains what it resolved, which is the
+assertion that actually ties the two halves together — plus 1 in `VmHostLibraryOverrideTests`. **The
+guest half is unverified by any automated test**: the Swift and the initramfs build and their
+non-VM paths run, but nothing here can start a VM.
+
+A failed evaluation point must not assert a cause the worker never reported (2026-07-31) — COMPLETE.
+`senior_worker.c` sets `status[k] = 0` for **three different things** — the model's `analyze_nl`
+returned 0 (it refused the point), a SIGSEGV was caught inside it, or a current came back non-finite
+— and the wire cannot tell them apart. The message named only the last and went on to suggest the
+bias was out of range, which reads as a diagnosis and sent a real investigation the wrong way. It now
+says all three and names the two usual causes: a bias outside the model's valid range, **and a file
+the model needs and could not open**.
+
+- **The worker's own log is now attached here too.** A failed point arrives as a perfectly normal
+  reply, so it never passes through `DeviceWorkerChannel.Failed` — the only place that used to attach
+  worker output. Yet the log is the one thing that separates the three cases: the worker writes
+  `eval: SIGSEGV caught` when the model crashed, and a model that cannot read a data file usually
+  says so there.
+- **`ExternalDeviceModel` no longer rethrows an `ExternalDeviceException` unchanged**; it adds the
+  instance label. A worker can only name the TYPE, which is useless the moment a design holds several
+  devices of one type — this kit's package holds five of `KITLIB_DEVICE_v1`, wired differently, two
+  with gate and drain shorted and a thermal node joined to nothing else. Which instance failed is the
+  first thing anyone asks.
+
+Gate: 2 tests in `DeviceWorkerProviderTests` (the message names all three possibilities; the existing
+failed-point test kept).
+
+A worker must never outlive circuitRF (2026-07-31) — COMPLETE. **Found from a leaked VM still
+running 23 minutes after the application that started it had quit**, and it was not presenting as a
+leak: the NEXT run failed with `the connection failed (Broken pipe)` and no worker output at all,
+naming neither the leak nor the run that caused it.
+
+**Why a leaked worker is a real fault on macOS and not untidiness.** macOS allows only a few VMs at
+once. A leaked one holds its slot indefinitely, because closing the pipe tells the GUEST nothing — a
+virtio console has no end-of-stream to deliver, so the guest blocks on a read forever and the VM never
+powers down. The next run then cannot start its VM and is **killed by the system before it can print
+anything**, which is why the report contains no diagnostic.
+
+**Windows and Linux need nothing, and that is checked rather than assumed.** There the worker is an
+ordinary child on a real pipe: when circuitRF goes away by any means, the OS closes the write end,
+`read_exact` sees `r <= 0` (`senior_worker.c`), the command loop breaks and the worker exits. The
+virtio console is the *only* reason macOS needs any of the following.
+
+- **`ExternalDeviceRegistry.ResetResolved()` now runs on `AppDomain.CurrentDomain.ProcessExit`**
+  (`App.axaml.cs`). It was wired only to a workspace switch, so quitting left one worker per kit the
+  design had used. Hooked on ProcessExit rather than added to `Quit()` because Quit is not the only
+  way out — three paths reach `Environment.Exit` directly, and a fourth added later would silently
+  not be covered.
+- **That is not sufficient on its own, and cannot be.** No code of the caller's runs on a crash or a
+  `kill -9`. So `crf-vmhost` also ends ITSELF when the caller goes, on two independent triggers: the
+  parent process exiting (a `DispatchSource` process watch — this is the one that makes the leak
+  impossible rather than merely unlikely), and its own stdin reaching end of stream (the caller's
+  deliberate shutdown signal, and the only one available while the application is still running).
+  Exiting is enough to take the VM with it: the machine's state belongs to that process.
+- **The parent can die between reading its id and the watch being armed**, leaving the source
+  registered against a process that is already gone so it never fires. Re-reading `getppid()`
+  afterwards closes that window — a reparented process reads 1.
+- **A startup reaper for orphaned VMs was considered and NOT added.** With the watch in place a leak
+  can no longer be created, so a reaper would only ever collect strays from a build that predates it
+  — a migration aid, permanently on, that kills processes by heuristic. The one existing stray was
+  cleared by hand instead.
+
+Gate: 3 tests in `tests/Core.Tests/Devices/External/ResolvedWorkerTeardownTests.cs`, over a real
+worker process — teardown reaches the worker through both `ResetResolved` and `Clear`, and a provider
+the HOST registered is left alone (the same bug in the opposite direction). Identifying the worker by
+diffing the process table was tried and is wrong: other test classes start the same reference worker
+concurrently, so the diff is whoever happened to launch at that moment — it flaked in a full-solution
+run and passed alone. The transport the resolver built is kept instead. **The Swift half is
+unverified by any automated test** — it compiles, signs and its non-VM paths run, but nothing here can
+start a VM.
+
+**A fast-dying worker's own words were being lost, and the first attempt to settle this reached the
+wrong answer (2026-07-31).** Error output arrives on a background reader, so a worker that dies during
+start-up can be reported before a single line is delivered — leaving `(Broken pipe)` and nothing else,
+in exactly the case where the worker's message is the only description of what happened.
+`ProcessDeviceWorkerTransport.RecentErrorOutput` now waits for the reader to finish first.
+`WaitForExit()` with NO timeout is the only overload that waits for the redirected readers to reach
+end of stream; the timed one returns as soon as the process is gone and leaves output in flight. It is
+run off-thread under a 2 s bound, and only ever on a process that has already exited.
+
+**It only reproduces under load, and that is the part worth remembering.** 12 isolated runs passed and
+were taken as proof the race did not exist — the wrong experiment, and the wrong conclusion drawn from
+it. Measured properly afterwards: **5 failures in 12 full-solution runs without the fix, 0 in 12 with
+it**, and 0 in 40 runs of the test on its own either way. If
+`AWorkerThatDiesImmediately_StillReportsWhatItSaidOnTheWayOut` fails, it is not flaky — and it must
+not be "stabilised" by waiting for the process to be reaped, because that wait IS the grace period the
+test exists to remove.
+
+A per-instance model-library override (2026-07-31) — COMPLETE. `ModelLibrary` is circuitRF's own
+file-valued parameter on every kit part, blank by default: set it and just that instance is evaluated
+with a different library, which is what makes two revisions comparable side by side in one schematic.
+
+**It travels in the PROVIDER NAME** (`kit|path`, `DeviceWorkerProviderResolver.ComposeOverride`)
+because that is what `ExternalDeviceRegistry` keys on — two instances naming different libraries must
+get two providers, or the second is silently evaluated by the first's models.
+
+**The argument replaced is the one that NAMES a shared library** (`.so`/`.dll`/`.dylib`) — a checkable
+property of the value, not its position. A worker's arguments are the kit's to arrange, so replacing
+"the last one" would be reading a habit; appending would hand the worker two libraries and let it
+choose. Nothing to replace, or more than one candidate, is reported.
+
+Gate: 7 tests in `tests/Core.Tests/Devices/External/ModelLibraryOverrideTests.cs`.
+
+**A chosen library is put through the VM's SHARE mechanism on macOS, never handed over as written
+(2026-07-31)** — the first real-kit bring-up failure, and it looked nothing like an override bug. The
+kit's own library reaches the worker as `/mnt/kit/…` because the worker runs inside `crf-vmhost`; the
+substitution wrote the chosen path in verbatim, so a path on the **Mac** replaced a working **guest**
+path. The VM then started perfectly and failed inside the guest with `dlopen … No such file or
+directory`, naming a file that plainly exists — the reported path is on the host, and the host's
+filesystem is not the guest's.
+
+`VmHostArguments` is now the ONE place that knows the contract's two halves — a directory is offered
+as `--share TAG=PATH` and the guest sees it at `/mnt/TAG` — because anything writing one half without
+the other produces exactly this failure. `PdkPartInstaller` builds the osx entry through it too, so
+the importer and the override cannot drift apart.
+
+- **An existing share is reused whenever it already covers the file**, which is the common case and
+  not a nicety: another revision of a library normally sits beside the kit's own. It also keeps the
+  guest command short, and the kernel command line carrying it is a fixed-size buffer that
+  `crf-vmhost` refuses to overflow.
+- **Only the argv run INSIDE the guest can name the library to replace.** The VM host's own options
+  describe the machine, not the work, and a share value can carry a `.so`-shaped directory name.
+- **A new share is inserted BEFORE the `--`**, so the option stays an option; past it, the share
+  would be lost and the worker would get a flag it never asked for.
+
+Gate: 12 tests in `tests/Core.Tests/Devices/External/VmHostLibraryOverrideTests.cs`. **Verified to
+fail without the fix** (4 red) and **verified against a kit**: the workspace's own manifest
+plus the host path the schematic actually carries now resolve to `/mnt/kit/RfPowerDesignKit.so`,
+reusing the kit's share and adding none.
+
+**Platforms, verified against a kit rather than assumed.** It ships Linux x86-64 ELF and
+Windows only — no macOS build at all. So Windows and Linux x86-64 load the library natively; macOS
+cannot load a Linux ELF under any circumstances, because that is a binary-format and OS-ABI mismatch,
+not an instruction-set one. Rosetta 2 translates x86-64 *macOS* binaries and does not apply. What does
+apply is **Rosetta for Linux** — Apple's Virtualization framework offering Rosetta *inside* an arm64
+Linux VM so it can run x86-64 Linux binaries. The VM is not optional; Rosetta only makes it fast. That
+is exactly what the working macOS entry does today (`orb -m <vm> …`), and it needs no special code:
+per `MatchScore`, it is just another platform's command.
+
+**Re-verified exhaustively (2026-07-31), because "can macOS run this out of the box" keeps recurring:**
+the kit carries **34 build directories, every one Linux or Windows** — zero `darwin`, zero `.dylib`,
+nothing macOS-shaped anywhere in the tree. There is no vendor build to fall back to, and the reason is
+structural: the kit targets a simulator that itself ships Linux/Windows only.
+
+**So on macOS the VM is not a workaround, it is the only mechanism — the open question is only WHO
+SUPPLIES IT.** macOS has no Linux ABI personality (no `linuxulator`, no WSL1-style pico process), so
+there is nothing to load a Linux ELF into. The three real options, stated once so they are not
+re-derived:
+1. **The user installs a Linux VM** (OrbStack/Lima/Docker) — today's `orb -m <vm> …` entry. Works,
+   costs the user an install.
+2. **circuitRF ships its own VM** — a bundled Linux kernel + minimal rootfs driven through Apple's
+   `Virtualization.framework` (built into macOS) with `VZLinuxRosettaDirectoryShare` for x86-64. Out of
+   the box *from the user's side*, since the component ships with us rather than being installed by
+   them. Needs a small native helper (the framework is Objective-C, not reachable from .NET), the
+   `com.apple.security.virtualization` entitlement, and a GPL-source offer for the kernel. **It needs
+   no circuitRF engine change at all** — `MatchScore` already resolves `"platform": "osx"` (score 2,
+   verified), so it is a manifest `command` swap.
+3. **A macOS-native model** — either the vendor ships one (they do not) or the MINT effort produces
+   one. This is the only path with no VM anywhere; it is paused by owner decision.
+
+**Option 2 is built and proven (2026-07-31).** `tools/macos-vmhost` (a Swift VM host driving
+`Virtualization.framework`) plus `tools/macos-vmimage` (a reproducible, Mac-buildable Linux image).
+Verified with the production library: the worker starts under Rosetta, `dlopen`s the x86-64 Linux
+library and reports its device families ready. See `tools/macos-vmhost/README.md` for the five
+non-obvious things that had to be right, each found by measurement.
+
+**A kit may now name a shipped helper by BARE NAME** — `"command": "crf-vmhost"` — and
+`DeviceWorkerManifest.ResolveCommand` finds it in `ToolsDirectory` (circuitRF's own install,
+`AppContext.BaseDirectory`). Deliberately narrow: the COMMAND only, never arguments (those name the
+kit's files and have no business resolving inside circuitRF's install), and only a bare name
+(anything with a separator is a path the kit meant literally). The kit's own folders are searched
+first, so a kit shipping its own build of a tool keeps it. Gate:
+`tests/Core.Tests/Devices/External/ShippedToolResolutionTests.cs`.
+
+**Do not go looking for a fourth.** Emulating a Linux x86-64 `.so` in-process on macOS means an ELF
+loader plus a syscall translator plus an x86-64 emulator — which is precisely what option 2's VM
+already is, bought rather than built.
+
+Reading a kit's own netlist — Stages A and B (brief-kit-netlist-reader.md, 2026-07-31) — COMPLETE.
+**A vendor kit imported as-is into a fresh workspace now yields a working part, with no file placed
+anywhere afterwards by anyone.** `KitVariantDiscovery` finds a part's formulations from the names
+alone (a shared stem, a differing trailing token) and picks the default by BUILDABILITY.
+
+**Buildability is "was it read completely", NOT "are its types familiar" — getting that backwards
+inverts the answer, measured.** An unfamiliar type is very often a device a provider
+supplies, which is the normal case for the formulation a kit expects you to use; the formulation that
+cannot be built is typically the one written in a form the reader could not take. Testing for
+unfamiliar types marked the working formulation broken and the broken one working. It is recursive:
+a cell reads cleanly while the cell it instantiates does not.
+
+**A part with no buildable formulation offers no choice at all** — a picker that cannot produce an
+answer is worse than no picker. **A tie between two families identifies nothing**, because guessing
+would attach a formulation choice to the wrong part.
+
+A frequency-dependent value may now CROSS A CELL BOUNDARY (2026-07-31) — COMPLETE. `freq` is bound
+at stamp time by the three models defined as functions of it (`Z_Port`'s `Z[i,j]`, `Chain`'s A/B/C/D,
+the SDD's `H[w]`), while the elaborator resolves parameters once with no frequency bound. A kit's
+frequency-dependent transmission line computes its RLGC — skin effect, dielectric loss — in ordinary
+cell variables and passes them DOWN to one of those models, so the value has to survive the trip as
+an expression. `src/Core/Expressions/FreqDeferral.cs` is that mechanism.
+
+**This is a deliberate, bounded amendment to the scope/binding rule, taken with owner approval** (the
+"Ask before" item below). The invariant it does NOT weaken: the numeric layer still receives a
+self-contained expression in `freq` and nothing else — the same form `Z_Port`/`Chain` have always
+accepted — never an unbound name.
+
+- **Deferral is opt-in by dependence, not by position.** Only a transitively frequency-dependent
+  value is carried as an expression; everything else still folds to a number exactly as before.
+  Deferring indiscriminately would put a growing expression tree in the HB inner loop, which
+  evaluates every device once per harmonic sample per Newton iteration.
+- **Two rules, and conflating them is the mistake that got made and caught.** At a CELL BOUNDARY
+  (`InlineForCellBoundary`) every non-`freq` name is folded to a literal, because the expression is
+  about to be bound into the child's scope where the parent's names are not visible. At a DEVICE
+  (`InlineForDevice`) only names that are THEMSELVES frequency-dependent are inlined — a `Z[i,j]`
+  mentions `freq` **by definition**, so the cell-boundary rule fires on every existing ZPort and
+  folds its scope variables into literals, which is numerically harmless and still breaks the
+  inject-by-name contract `InjectZPortScopeVars` provides. Caught by `ZPortDiagTest`, not by review.
+- **Recursion always folds, whatever the caller asked.** Inside a binding, names resolve in the
+  binding's OWN scope, which need not be the one the result is evaluated in; leaving one as a
+  reference could silently pick up a different binding of the same name.
+- **Inlining is AST-level.** Splicing expression text gets precedence wrong the first time a
+  substituted body is more than a single term. `Render` is fully parenthesised for the same reason —
+  the gate test asserts the re-parsed VALUE, never the text.
+- **A unit is applied exactly once.** Inlining absorbs each binding's own unit, so the site unit is
+  skipped when the original expression referenced a unit-bearing var — through `Evaluator`'s own
+  `ReferencesUnitBearingVariable` rather than a second copy of the var-unit-wins rule.
+- **Frequency dependence MUST terminate at a model that binds `freq`.** Reaching anything else raises
+  `FrequencyDependentValueException` naming the device, the parameter, and the three models that can
+  take one — a resistor takes a single number, and saying so beats a bare "Unresolved name 'freq'"
+  reported from somewhere inside the value.
+- **`complex(re, im)` is now a builtin**, the rectangular counterpart of the existing `polar()`. It is
+  the natural way to write a frequency-dependent immittance and is the form `FreqDeferral` renders a
+  resolved Complex back into, so a deferred expression can be re-parsed by the model that evaluates it.
+
+Gate: `tests/Core.Tests/Expressions/FreqDeferralTests.cs` (22) and
+`tests/Engine.Tests/Linear/FreqDependentCellParameterTests.cs` (10) — every engine-level result checked
+against the analytic response of the network the chain matrix describes (series L between two ports),
+across two- and three-deep hierarchies, plus the flat-response guard, the units guard, the termination
+error, and the inject-by-name regression. **Verified to fail without the fix** (`Unresolved name 'freq'`)
+and **verified against the production kit**: its own 2 mm × 30 µm m1 line elaborates and sweeps —
+|S21| 0.978 → 0.507 and ∠ −12.5° → −194.6° over 1–20 GHz, with the 1 GHz phase agreeing with a hand
+calculation from the kit's own RLGC formulas (β·l = 11.95° before loss).
+
+A kit's declarations must SURVIVE THE ROUND TRIP, not merely be extracted (2026-07-31) — three
+bugs found in one sitting, all with the same shape: extraction was correct and the loss happened
+between `CnlWriter` and `CnlReader`. **The run path is `RunAnalysis → WriteNetlist → netlist.cnl →
+SchematicRunService.RunNetlist → CnlReader`, so anything the writer cannot say is gone by the time
+the elaborator sees it** — and the error then names a position in a generated file that no longer
+contains the thing that was wrong. When a kit-backed run fails, check the round trip before the
+extractor; two of these three looked exactly like extractor bugs and were not.
+
+- **`CnlWriter` never emitted `tb.Functions`.** `CnlReader` has always PARSED the `name(a, b) = expr`
+  form, so only the writing half was missing — a kit's cells call its functions by bare name, and the
+  file arrived with every call site and no declaration (`Unknown function 'KIT_TECH_CALC_PAD_CAP'`).
+  Globals were unaffected, so a missing global is NOT the same bug. Gate: `CnlWriterTests`
+  `UserFunctions_RoundTrip` + `AFunctionAndAVariable_StayDistinct_AcrossTheRoundTrip` (the reader
+  tells them apart only by the parenthesised parameter list).
+- **`**` is the kit's exponentiation operator; circuitRF's is `^`.** `KitNetlistReader` translated
+  `if…then…else…endif` and `strcat` but not this, so `(Gy*(TL_FREQ*1.0e-9)**GLE_val)` reached the
+  parser verbatim. Both operators are right-associative and bind tighter than the arithmetic ones, so
+  `RewritePowerOperator` is a spelling change — **quote-aware**, because the same values carry file
+  paths where a `**` is data, not an operator.
+- **A kit writes a unit glued as readily as spaced** — a kit has `CLINE=1 pF  LLINE=1pH` on ONE
+  line. The reader handled only the spaced form, so `1pH` reached the expression engine. Fixed by
+  **sharing `CnlReader.TrySplitGluedUnit`** (now `internal`) rather than writing a second splitter:
+  its guards — numeric head, recognised unit — are the entire reason splitting is safe, and a second
+  copy is a second set of guards to keep in step.
+
+**`RewriteExpression` is the ONE place a kit's expression text is translated.** All three call sites
+route through it; add a dialect rewrite there, never at a call site.
+
+**A kit's data files are ANCHORED where the netlist is read (2026-07-31)** — `KitDataFileResolver`,
+reached from `KitNetlistReader.ReadFile`. A kit writes `File=strcat(DataPath,"X.s15p")` with
+`DataPath="SomeKit_Data\"`: a path relative to the simulator's own data search path, which its
+installation puts there. circuitRF has no such search path, so left relative the value survives into
+the generated `.cnl` and is finally resolved against **that** file's folder — the workspace — and the
+run fails naming a file in a directory the kit has nothing to do with, while the file sits untouched
+in the kit. This is the same shape as the three round-trip bugs above: the extraction was right and
+the loss happened downstream of it.
+
+- **The netlist's own folder is NOT the anchor.** A kit keeps netlists in `circuit/models/` and
+  data in `circuit/data/`, so this is a bounded look AROUND the netlist — two ancestors, one level of
+  children each — not a resolve against one root.
+- **The bound is load-bearing and is not to be relaxed when something is not found.** Each ancestor's
+  children are listed, so one level too far starts listing a home or temp directory, and a value that
+  happens to match a file in there resolves to something the kit never named.
+- **Nothing is rewritten unless a real file is found**, which is what makes this safe to try on every
+  value instead of on a list of parameter names. A kit names its files with whatever keyword it likes
+  — `.s15p` for the network, `.mdl`/`.mds` for the compiled models — so a name list would silently
+  cover some and not others.
+- **Reading from TEXT anchors nothing.** There is no file to be relative to, and resolving against the
+  process's working directory would make the result depend on where circuitRF was started.
+
+Gate: 10 tests in `tests/Core.Tests/Netlist/KitDataFileAnchoringTests.cs`, synthetic. **Verified
+against the kit:** all 12 of its `File=` values — one `.s15p` and eleven `.mdl`/`.mds` — now
+resolve into `circuit/data/`, where they are.
+
+**FOLLOW-ON, NOT FIXED: those absolute paths are HOST paths, and on macOS the worker reads them
+inside the VM.** An anchored `.mdl`/`.mds` is correct for a native Linux or Windows worker and is
+strictly better than the relative form, which resolved nowhere at all. But the guest only has the
+shares `crf-vmhost` was given — the worker's folder and the model library's — so a kit data file
+reaches it by no path at all. It needs the same treatment the model-library override just got (see
+`VmHostArguments`), except that these paths arrive as DEVICE PARAMETERS rather than command
+arguments, so the share cannot be added at launch from the argument list alone.
+
+**Standing check when adding anything to `TestBench` or `Cell`: can `CnlWriter` say it?** A field the
+writer cannot express is silently absent from every run, and the symptom appears far from the cause.
+
+**OPEN, NOT FIXED — an empty parameter value is lost AND eats its neighbours.** A kit writes
+`InterpDom=` with no value; `CnlWriter` emits it verbatim; `CnlReader.MergeSpacedAssignments` sees a
+token ending in `=` and glues the NEXT token on as its value. Measured's 15-port SnP:
+`File Type InterpMode InterpDom ExtrapMode Temp CheckPassivity NumPorts` read back as five, with
+`InterpDom = ExtrapMode="constant"` and **`ExtrapMode`, `Temp` and `CheckPassivity` gone** — so the
+extrapolation mode silently reverts to its default. This is a wrong answer, not a crash. Left open
+deliberately: every candidate fix (writer omits an empty value / writer emits `""` / reader refuses to
+glue a token that carries its own `=`) changes the `.cnl` contract, which this file's own "Ask before"
+rule covers.
+
+Reading a kit's own netlist — Stage A (brief-kit-netlist-reader.md, 2026-07-31) — COMPLETE.
+`src/Core/Netlist/KitNetlistReader.cs` reads the dialect a kit ships into the same
+`Library`/`Cell`/`Instance` model `CnlReader` produces, so a kit's part is treated exactly like a cell
+the user drew. **Why it exists:** a vendor kit is read-only and self-contained, and importing one must
+produce a working part with no file placed anywhere afterwards — the three facts a part needs (that it
+offers a choice of formulation, which one is buildable, what circuit it is) are all in this file, and
+every alternative is a declaration someone has to write and put somewhere.
+
+**It reads a FORMAT, not a kit** — nothing in it names a supplier, library, part or model family — and
+it is deliberately not a general-purpose importer: everything it does not understand is reported by
+line and skipped, never guessed at.
+
+Rules worth keeping:
+- **A bare word after a value is that value's UNIT** (`R=1 TOhm`); a word containing `=` starts the
+  next parameter. This is the one that silently corrupts: `R=1 TOhm` read as `R=1` is a resistor a
+  thousand billion times too small and everything downstream still runs.
+- **A backslash in a quoted value is a directory separator, not an escape** — a kit spells a folder
+  `Path="Data\"`. Normalised to `/`, so joining it to a filename gives a path rather than a run-on word.
+- **`if(c) then (a) else (b) endif` → `if(c, a, b)`**, purely syntactic; a malformed one is left exactly
+  as written, because an expression that fails with the kit's own text beats one that evaluates to
+  something nobody wrote. Same rule for `strcat` over an unresolvable piece.
+- **A mismatched `define`/`end` is an error, not a note** — every later cell would be attributed to the
+  wrong define.
+- **`Options:` is the one `Type:Name` line that is not a device**, skipped and reported rather than
+  special-cased into silence.
+
+Gate: 19 tests in `tests/Core.Tests/Netlist/KitNetlistReaderTests.cs`, all over synthetic fixtures —
+the reader is a format reader, and the repo does not commit proprietary kit data. **Verified against
+the production kit by disposable probe:** its two netlists read as 2 + 7 cells with 4 notes total
+(two `Options:` lines and two genuinely unhandled constructs), the 26-port package defines both read,
+`strcat` resolved to real paths, and units survived. Full suite 5,623 pass.
+
+**A kit's netlists are ONE library split across files** — the file defining a part instantiates cells
+declared in another and its process constants live in a third — so `NetExtractor.NetlistImports` reads
+every netlist beside the named one, the named file winning on a name collision. Reading only the named
+file gives a definition whose own contents do not resolve (measured: 2 cells and no constants, against
+9 cells, 38 constants and 4 functions once siblings are read).
+
+Out-of-process device-worker provider (M5 transport, 2026-07-31) — COMPLETE: the first concrete `IExternalDeviceProvider` in the repo. `src/Core/Devices/External/`: `DeviceWorkerProtocol` (frame codec), `DeviceWorkerTransport` (`IDeviceWorkerTransport`, a process transport and a stream transport), `DeviceWorkerChannel` (request/reply), `DeviceWorkerProvider`, `DeviceWorkerInstance`. **Still nothing about any particular provider in circuitRF** — a worker executable path is runtime configuration, and every device type, parameter name, pin count and node role is learned from the worker's replies. Gate: 46 tests in `tests/Core.Tests/Devices/External/`, 0W/0E, full suite 5,490 pass.
+
+**Why a process and not a library — the reason is structural, not a preference.** A compiled device model calls back into the process that loaded it for services that process must export as C symbols, which a managed host cannot do; and one process can hold exactly one build of one library, so several builds means several processes. Both constraints dissolve once the model lives in its own process, and circuitRF then loads nothing and links against nothing. This also means **the macOS path needs no separate design**: a worker built for another OS runs in a VM and is driven over the same two streams, so `IDeviceWorkerTransport` is the only thing that varies.
+
+Wire format: `[ uint32 jsonLen ][ uint32 binLen ][ JSON ][ raw little-endian doubles ]`. JSON control plane so a frame stays readable in a hex dump; bulk numerics as raw doubles so a large batch costs no parsing. Commands `describe | create | probe | eval | destroy | shutdown`. `eval` sends `count × nodes` doubles and returns `status[count]` then, per point, `I[n], Q[n], G[n×n], C[n×n]`, all row-major.
+
+- **Batching is the point, not an optimisation.** Measured against a real worker: ~100 µs per evaluation one at a time, ~4.2 µs at batch 2000 — **~24×**. HB evaluates every device once per sample per Newton iteration, so the per-call version makes the transport, not the model, the simulator. `EvaluateBatch` is one round trip.
+- **No sign flip, and this is checked rather than inherited.** A worker reports current positive INTO the device, already matching this repo's convention (see the M3 note below). Confirmed against behaviour: at a drain bias the drain node's current is positive while the device sinks it, and the thermal node's current is negative with magnitude equal to the dissipated power — power leaving the device. A second, defensive flip would invert every operating point *and still converge*.
+- **Partial pipe reads must be looped.** A short read is normal on a pipe; treating one as end-of-stream yields frames that decode as garbage only under load. Tested with a stream that returns one byte per read.
+- **An implausible frame length is a desync, not a large result.** Believing a corrupt length means allocating gigabytes instead of reporting the stream is out of step.
+- **stderr is drained on a thread.** Nobody reading it fills the pipe and the worker blocks forever inside a write — presenting as a hang midway through a long solve with no error anywhere. The drained output is attached to the exception, since it is usually the only description of what went wrong.
+- **One request at a time, locked.** Two threads writing frames into one pipe interleave them and the worker reads a header out of the middle of somebody else's JSON. Correctness, not convenience.
+- **An unknown parameter name is rejected at `Create`.** The worker matches by keyword and ignores what it does not recognise, so a typo would otherwise present as a device quietly running on a default. The error names the parameter and lists the real ones. A *blank* value is omitted instead, so the model keeps its own default.
+- **A point the worker could not evaluate raises.** `IExternalDeviceInstance` has no channel for per-point status; returning the non-finite numbers would put a NaN in the matrix and surface far away as unexplained non-convergence. When a damping channel exists, this becomes a status return.
+- **Node roles are measured, not declared.** `create` is followed by `probe`, which reports per node whether it is a free unknown and whether an external pin is thermal — the discriminator being Jacobian *symmetry*, not magnitude. A worker too old to probe is not an error; the declared descriptor stands.
+
+Test seam: `FakeDeviceWorker` speaks the real wire format over in-memory streams, so the provider is exercised end to end with no model present. Its device is deliberately **asymmetric** (`G[0,1] = 3`, `G[1,0] = 0`) — a symmetric one lets a transposed Jacobian, or a charge block read as a current block, pass every check.
+
+**Zero-setup provider resolution (2026-07-31).** The user's path is *import kit → place part → configure analysis → Run*, with no provider to configure. `ExternalDeviceRegistry` therefore takes `IExternalProviderResolver`s alongside registered providers: when a netlist names a provider nobody registered, the resolvers are asked, and whatever one produces is cached under that name.
+
+- **Resolvers, not providers, are registered at workspace open — so nothing starts.** A workspace may hold many kits and a given design typically uses none of them. A worker process starts the first time a design actually asks for that kit's devices.
+- **`DeviceWorkerProviderResolver` looks for a `device-provider.json` manifest** in each kit folder (a root and one level down). The manifest is the single fact circuitRF cannot derive — which program evaluates this kit's devices — and it is **data beside the kit**, not knowledge compiled in. Per-platform entries pick by `MatchScore`: exact runtime identifier > operating system > catch-all, so a kit gives one general entry and overrides it for one platform. **This is where the "runs in a VM on macOS" case lands with no special code** — it is just another platform's command.
+- **Relative paths resolve against the manifest's folder, then its declared `baseDirectory`.** Importing copies the manifest into the workspace while the worker and model files stay in the installed kit, so the copy records where the kit was. Manifest-folder-first means dropping real files beside the copy overrides the kit — the only escape hatch that needs no configuration.
+- **The copy is always named for the kit.** Each installed cell records `Provider = <kit name>`, so that is what a netlist asks for. A copy keeping the manifest's own name leaves every step working and only Run failing — caught by a test, not by inspection.
+- **`ResetResolved()` on workspace switch** ends providers the registry started (their workers point at the old workspace's kits) and leaves host-registered ones alone.
+- **`Require`'s message names the folders searched** and the manifest filename. "Provider unavailable" with nowhere to look is a dead end.
+- A kit with no manifest imports **silently** — its parts still place, draw and export. Only simulating them needs one, so a message here would be noise on nearly every import.
+
+**Reference worker + real-process coverage (2026-07-31).** `tools/DeviceWorkerExample` is a complete worker serving one synthetic square-law FET, and it **references nothing — not even `CircuitRF.Core`**. That is the point: a real worker is a native program that cannot use our frame codec, so this one implements the framing itself. `DeviceWorkerProcessTests` (17 tests) then compares two independent implementations rather than one agreeing with itself.
+
+Until this landed, `ProcessDeviceWorkerTransport` had **zero** coverage — every test spoke the protocol over `MemoryStream`, which cannot produce the failures that actually occur: short reads, writes buffered until a flush, a deadlock when nobody drains stderr, an abrupt EOF when the child exits. The tests that matter most: a 2000-point batch (~72k doubles, far past any pipe buffer, so it only passes if partial reads are looped on *both* sides), 200 sequential round trips (a framing error leaving one stray byte is invisible on the first call and corrupts every one after), and Kirchhoff's law holding on the decoded currents. Whole file runs in ~0.5 s.
+
+Two failure paths are deliberately distinguished, because they have different causes and different fixes: a worker that **died on its own** surfaces as `ExternalDeviceException` naming the worker (driven by really shutting one down and then reading), while using a device after the **application ended its provider** is `ObjectDisposedException` — a mistake in the calling code, not a transport failure.
+
+The worker's path reaches the tests as build-recorded assembly metadata (`DeviceWorkerExampleDir`), not a relative guess from the test's output folder, which would break the first time a layout changed. The shipped `device-provider.json` is itself asserted valid — it is the template a kit author copies, and no product code reads it.
+
+**End to end: a netlist that merely names a kit now solves (2026-07-31).** `tests/Engine.Tests/External/WorkerBackedAnalysisTests.cs`, 8 tests. No provider is registered — a kit folder with a manifest is stood up the way an import leaves one, and `ComponentModelFactory.Require` resolves it mid-elaboration. Covers: closed-form operating point through a worker process; the device genuinely **off** below threshold (a device that conducts nothing converges beautifully, so the on case alone proves nothing); **source degeneration**, where the operating point depends on itself and so actually tests the Jacobian that crossed the pipe; netlist parameters reaching the model; two devices sharing one worker; a sweep reusing the resolved provider rather than relaunching per bias point; and both "kit not installed" and "type not served" messages.
+
+**A real integration bug, found by exactly that test.** `CreateExternalDeviceModel` forwarded **every** non-selector parameter to the provider — including circuitRF's own `__instanceLabel`, which it reads two lines further down. A permissive provider ignores an undeclared name, so this survived unnoticed against the in-process `SquareLawFetProvider`; a strict one rejects it and fails **every** device it serves. The strict behaviour is the correct one (it is what turns a misspelled parameter into an error rather than a silently defaulted device), so the fix is in the factory: **`__`-prefixed parameters are circuitRF plumbing and are not part of "everything else is forwarded".**
+
+*Not a bug, worth knowing before asserting:* an "off" device does not read exactly zero current. The DC engine adds `gmin = 1e-12 S` to every voltage node for continuity, so 5 V leaks exactly 5 pA regardless of the device. Asserting zero asserts against the solver's own regularisation.
+
+*Open, unreproduced:* one Core.Tests failure occurred on the single run immediately after this project was first built, and was not captured by name. Six subsequent full runs — including one forcing a rebuild — and three isolated runs of the process tests are all clean. Recorded rather than dismissed; if it returns, capture the test name before assuming it is first-build noise.
+
 `Chain` — ABCD two-port primitive (M4, 2026-07-30) — COMPLETE: `src/Core/Devices/ChainModel.cs`, a two-port given by its chain matrix, entries as expressions in `freq` exactly like `Z_Port`'s `Z[i,j]`. Four nets as ± pairs (`[p1+, p1−, p2+, p2−]`); Group 2, two branch unknowns. Convention `V1 = A·V2 − B·I2`, `I1 = C·V2 − D·I2` with both currents INTO the device, matching every other model here. Omitted entries default to the identity two-port, so a partially-specified block degrades to a wire rather than a silent zero matrix.
 
 **Why it exists when `Z_Port` already does — the reason is specific, not stylistic.** A chain matrix describes two-ports that have **no impedance matrix at all**. The case that matters: a pure series element has `C = 0`, so `Z11 = A/C` is infinite. Frequency-domain line models routinely degenerate to exactly that at DC (`A = D = 1`, `C = 0`, `B` = the series resistance), so a model that is perfectly well-behaved in ABCD form cannot be expressed as a Z-block at ω = 0. Stamping the chain relations directly stays non-singular there: with `C = 0, D = 1` the second constraint reduces to `I1 = −I2` and the first to `V1 − V2 = B·I1` — a series impedance. Gate: 8 tests in `tests/Engine.Tests/Linear/ChainModelTests.cs`, each against the analytic result for the network the matrix describes (series-Z at DC across three decades of value, identity, defaults, shunt-Y, ideal transformer, and a series-L whose |S21| is checked against `2·Z0/(2·Z0 + jωL)` at three frequencies).

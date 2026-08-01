@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A reference device worker. Deliberately references NOTHING - not even CircuitRF.Core.
+
+    A real worker is a native program that loads a compiled device model; it cannot use circuitRF's
+    own frame codec, so neither does this. That makes it an independent implementation of the
+    protocol rather than a mirror of ours, which is the only way it can serve as either a template
+    for writing one or a check that both ends agree.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>DeviceWorkerExample</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

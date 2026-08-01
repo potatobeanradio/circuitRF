@@ -379,6 +379,21 @@ public sealed class EditableComponent
         }
     }
 
+    /// <summary>
+    /// The type-label text exactly as it renders — the cell folder name for a cell reference
+    /// (derived from CellRef, never a second persisted field that could drift), the registry
+    /// display name otherwise.
+    ///
+    /// <para>One definition, shared by <see cref="ToRenderComponent"/>, the label hit-test, and the
+    /// inline editor's seed value. They MUST agree: the hit-test sizes the clickable zone from the
+    /// text's own length, so a second copy here puts the zone somewhere the text is not — which is
+    /// exactly how a kit part's Type label became unclickable.</para>
+    /// </summary>
+    public string TypeLabelText() =>
+        CellRef is not null
+            ? Path.GetFileName(CellRef.TrimEnd('/', '\\'))
+            : ComponentTypeRegistry.DisplayName(Symbol, PortCount);
+
     /// <summary>Convert to the immutable render type, with port connection state.</summary>
     /// <param name="isPointConnected">World-coordinate connectivity predicate.</param>
     /// <param name="cellRefResolution">
@@ -476,11 +491,7 @@ public sealed class EditableComponent
         // single source of truth, never a separate persisted field that could drift).
         // For built-ins the type label comes from the component registry.
         // Param format: "<Name> = <Expression> <Unit>" (spaces around =; unit omitted when empty).
-        string typeLabel = ShowTypeLabel
-            ? (CellRef is not null
-                ? Path.GetFileName(CellRef.TrimEnd('/', '\\'))
-                : ComponentTypeRegistry.DisplayName(Symbol, PortCount))
-            : "";
+        string typeLabel = ShowTypeLabel ? TypeLabelText() : "";
         var labels = new List<string>
         {
             typeLabel,
@@ -992,6 +1003,29 @@ public sealed class SchematicEditModel
             res = CellSymbolResolver.Resolve(comp.CellRef, SchematicDirectory);
 
         return res is { State: CellSymbolState.Resolved, Symbol: { } sym } ? sym.Primitives : null;
+    }
+
+    /// <summary>
+    /// The glyph bounding box as DRAWN: the resolved cell symbol's for a cell reference (falling
+    /// back to the same placeholder bounds the renderer uses when it does not resolve), and the
+    /// instance-varying built-in glyph's otherwise.
+    ///
+    /// <para>The one definition of "how tall is this component's glyph", shared by the label
+    /// hit-test and the inline editor's anchor. Both size a clickable/positioned zone from it, so a
+    /// second copy — especially a per-SymbolKind list, which is what both of them used to carry —
+    /// puts the zone somewhere the text is not. That is precisely why a cell-reference component's
+    /// Type and Name labels could not be clicked or edited at all.</para>
+    /// </summary>
+    internal (double MinX, double MinY, double MaxX, double MaxY) EffectiveGlyphBbOf(
+        EditableComponent comp,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions = null)
+    {
+        if (comp.CellRef is null) return comp.ComputeGlyphBb();
+
+        var prims = EffectivePrimitivesOf(comp, cellRefResolutions);
+        return prims is not null
+            ? comp.ComputeGlyphBb(prims)
+            : (comp.X - 160, comp.Y - 60, comp.X + 160, comp.Y + 60);
     }
 
     // ── Connectivity helpers (shared by BuildRenderModel and the live dot preview) ──
