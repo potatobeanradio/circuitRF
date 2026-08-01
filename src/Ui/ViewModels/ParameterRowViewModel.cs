@@ -292,15 +292,17 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     private void LoadCellDeclaredChoices()
     {
         if (_ownerComp?.CellRef is not { Length: > 0 } cellRef) return;
-        if (_schematicVm.EditModel.SchematicDirectory is not { Length: > 0 } dir) return;
+
+        // One accessor for both reference forms — a kit part resolves from memory and needs no
+        // schematic directory, a cell folder resolves from disk and does.
+        string dir = _schematicVm.EditModel.SchematicDirectory ?? "";
+        if (dir.Length == 0 && !PdkKitRegistry.IsKitRef(cellRef)) return;
 
         try
         {
-            string ccellPath = Path.Combine(Path.GetFullPath(Path.Combine(dir, cellRef)),
-                                            CellFolder.CcellFileName);
-            if (!File.Exists(ccellPath)) return;
+            if (CellSymbolResolver.ResolveCcell(cellRef, dir) is not { } cell) return;
 
-            var declared = CellPersistence.LoadFromFile(ccellPath).Parameters
+            var declared = cell.Parameters
                                .FirstOrDefault(p => p.Name.Equals(_param.Name, StringComparison.Ordinal));
             if (declared is null) return;
 

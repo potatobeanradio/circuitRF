@@ -198,11 +198,18 @@ public static class ExternalDeviceRegistry
                 string.Join(", ", ProviderNames.OrderBy(n => n, StringComparer.Ordinal)) + "." +
                 (searched.Length > 0 ? $" Also searched: {string.Join("; ", searched)}." : ""));
 
+        // The usual cause is named, and named as the USUAL cause rather than as a diagnosis: this
+        // layer knows only that nothing answered to the name. Saying "the library was not found" as
+        // fact would be over-claiming — but leaving it out sends the user looking for a missing
+        // provider registration when what is actually missing is a file on disk.
         throw new ExternalDeviceException(
             searched.Length > 0
                 ? $"External device provider '{name}' is not available. Searched: " +
-                  $"{string.Join("; ", searched)}. A kit supplies this by including a " +
-                  $"'{DeviceWorkerManifest.FileName}' file describing how to evaluate its devices."
+                  $"{string.Join("; ", searched)}. This is usually a compiled model, and the library " +
+                  $"that implements it was not found — it often ships as a separate package beside " +
+                  $"the kit rather than inside it. Add that package in File ▸ Manage PDKs (it needs " +
+                  $"no parts of its own), or supply a '{DeviceWorkerManifest.FileName}' file " +
+                  $"describing how to evaluate this kit's devices."
                 : $"External device provider '{name}' is not available: no providers are registered.");
     }
 }

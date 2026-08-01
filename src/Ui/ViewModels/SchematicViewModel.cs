@@ -2783,6 +2783,25 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// </summary>
     public async Task CommitCellPlacementAsync(string cellAbsDir, double wx, double wy, SymbolRotation rotation)
     {
+        string cellRef;
+
+        // An imported kit's part is referenced VIRTUALLY, so none of the path handling below
+        // applies to it: there is no directory to make a relative path from — which is why it needs
+        // no saved schematic — and no symbol to offer to generate, because a kit supplies its own.
+        if (PdkKitRegistry.IsKitRef(cellAbsDir))
+        {
+            if (PdkKitRegistry.Find(cellAbsDir) is null)
+            {
+                _messageSink?.Warning(
+                    PdkKitRegistry.TryParse(cellAbsDir, out string kit, out string part)
+                        ? $"'{part}' cannot be placed: the kit \"{kit}\" is not loaded in this workspace."
+                        : "That kit part cannot be placed: its kit is not loaded in this workspace.");
+                return;
+            }
+            cellRef = cellAbsDir;
+        }
+        else
+        {
         // Require a saved schematic: the CellRef is computed as a relative path from the
         // schematic's directory, so we need SchematicDirectory to exist.
         if (EditModel.SchematicDirectory is null)
@@ -2791,7 +2810,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             return;
         }
 
-        string cellRef = Path.GetRelativePath(EditModel.SchematicDirectory, cellAbsDir);
+        cellRef = Path.GetRelativePath(EditModel.SchematicDirectory, cellAbsDir);
 
         // Resolve the primary symbol to determine the render path.
         // Three-state: Resolved → proceed; NotFound → abort; PrimaryMissing → proceed with
@@ -2821,8 +2840,8 @@ public sealed partial class SchematicViewModel : ObservableObject
                 {
                     try
                     {
-                        var ccell = CellPersistence.LoadFromFile(ccellEarly);
-                        if (ccell.NumPorts > 0) numPorts = ccell.NumPorts;
+                        var declaring = CellPersistence.LoadFromFile(ccellEarly);
+                        if (declaring.NumPorts > 0) numPorts = declaring.NumPorts;
                     }
                     catch { /* corrupt .ccell — use default */ }
                 }
@@ -2846,6 +2865,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
             // else: NoView but no callback — proceed silently (e.g. headless / test contexts).
         }
+        }
 
         double sx = EditModel.SnapToGrid(wx);
         double sy = EditModel.SnapToGrid(wy);
@@ -2861,28 +2881,19 @@ public sealed partial class SchematicViewModel : ObservableObject
             ShowInstanceName = true,
         };
 
-        // Seed parameters from the cell's .ccell declaration (its published interface).
-        string ccellPath = Path.Combine(cellAbsDir, CellFolder.CcellFileName);
-        if (File.Exists(ccellPath))
-        {
-            try
-            {
-                var ccell = CellPersistence.LoadFromFile(ccellPath);
-                foreach (var cp in ccell.Parameters)
-                    comp.Parameters.Add(new EditableParameter
-                    {
-                        Name            = cp.Name,
-                        Expression      = cp.DefaultExpression,
-                        Unit            = cp.Unit,
-                        Dimension       = cp.Dimension,
-                        ShowOnSchematic = cp.ShowOnSchematic,
-                    });
-            }
-            catch
-            {
-                // Corrupt .ccell: skip parameter seeding and proceed without parameters.
-            }
-        }
+        // Seed parameters from the cell's published interface — resolved through the one accessor,
+        // so a kit part (held in memory) and a cell folder (on disk) seed identically. A corrupt or
+        // absent one yields null and the instance is placed without parameters, as before.
+        if (CellSymbolResolver.ResolveCcell(cellRef, EditModel.SchematicDirectory ?? "") is { } ccell)
+            foreach (var cp in ccell.Parameters)
+                comp.Parameters.Add(new EditableParameter
+                {
+                    Name            = cp.Name,
+                    Expression      = cp.DefaultExpression,
+                    Unit            = cp.Unit,
+                    Dimension       = cp.Dimension,
+                    ShowOnSchematic = cp.ShowOnSchematic,
+                });
 
         Execute(new PlaceComponentCommand(EditModel, comp));
         Selection.SelectOne(comp.Id);
@@ -2936,13 +2947,22 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// </summary>
     private bool TryChangeToCellType(EditableComponent comp, string cellName)
     {
-        if (EditModel.SchematicDirectory is null) return false;
+        // A loaded kit's part is asked for FIRST: it exists only in memory, so no directory walk
+        // could ever find it, and a kit part is the case this path is most often used for.
+        string? cellAbsDir = null;
+        string? cellRef    = PdkKitRegistry.FindRefByPartId(cellName);
 
-        string? cellAbsDir = FindCellDirByName(cellName);
-        if (cellAbsDir is null) return false;
+        if (cellRef is null)
+        {
+            if (EditModel.SchematicDirectory is null) return false;
 
-        string cellRef = Path.GetRelativePath(EditModel.SchematicDirectory, cellAbsDir);
-        if (CellSymbolResolver.Resolve(cellRef, EditModel.SchematicDirectory).State
+            cellAbsDir = FindCellDirByName(cellName);
+            if (cellAbsDir is null) return false;
+
+            cellRef = Path.GetRelativePath(EditModel.SchematicDirectory, cellAbsDir);
+        }
+
+        if (CellSymbolResolver.Resolve(cellRef, EditModel.SchematicDirectory ?? "").State
             == CellSymbolState.NotFound)
         {
             _messageSink?.Warning($"Cell not found: \"{cellName}\".");
@@ -2962,13 +2982,13 @@ public sealed partial class SchematicViewModel : ObservableObject
             ShowInstanceName = true,
         };
 
-        // Seed from the cell's own published interface (.ccell), exactly as placement does.
-        string ccellPath = Path.Combine(cellAbsDir, CellFolder.CcellFileName);
-        if (File.Exists(ccellPath))
+        // Seed from the cell's own published interface, exactly as placement does — through the one
+        // resolver, so a kit part in memory and a cell on disk are seeded the same way.
         {
             try
             {
-                foreach (var cp in CellPersistence.LoadFromFile(ccellPath).Parameters)
+                var declaring = CellSymbolResolver.ResolveCcell(cellRef, EditModel.SchematicDirectory ?? "");
+                foreach (var cp in declaring?.Parameters ?? [])
                     newComp.Parameters.Add(new EditableParameter
                     {
                         Name            = cp.Name,

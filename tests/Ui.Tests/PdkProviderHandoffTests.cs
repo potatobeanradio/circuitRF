@@ -9,11 +9,15 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// The hand-off that makes a kit part simulable with nothing configured: importing a kit carries its
-/// device-provider manifest into the workspace, where provider resolution will later find it.
+/// The hand-off that makes a kit part simulable with nothing configured: importing a kit settles how
+/// its devices are evaluated, and provider resolution answers from that.
 ///
 /// <para>Without this the user imports a kit, places a part, presses Run, and is told the provider
-/// is unavailable — with the fix being to hand-copy a file they have no reason to know about.</para>
+/// is unavailable — with the fix being to hand-write a file they have no reason to know about.</para>
+///
+/// <para>Nothing is written into the workspace: the settled settings are held in memory and recorded
+/// in <c>.cws</c> by the caller. What is asserted here is what they RESOLVE TO, which is the property
+/// that actually decides whether Run works.</para>
 /// </summary>
 [Collection(PdkToolsDirectoryCollection.Name)]
 public sealed class PdkProviderHandoffTests : IDisposable
@@ -23,7 +27,6 @@ public sealed class PdkProviderHandoffTests : IDisposable
 
     private string KitDir       => Path.Combine(_root, "kit");
     private string WorkspaceDir => Path.Combine(_root, "ws");
-    private string InstalledKit => Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName, "SampleKit");
 
     public PdkProviderHandoffTests()
     {
@@ -41,15 +44,12 @@ public sealed class PdkProviderHandoffTests : IDisposable
 
     private PdkPartInstaller.InstallOutcome Install()
         => PdkPartInstaller.Install(
-               new PdkImportReport { RootPath = KitDir, KitName = "SampleKit" }, WorkspaceDir);
+               new PdkImportReport { RootPath = KitDir, KitName = "SampleKit" });
 
-    private DeviceWorkerManifest ReadInstalledManifest()
-    {
-        string path = Path.Combine(InstalledKit, DeviceWorkerManifest.FileName);
-        var manifest = DeviceWorkerManifest.TryRead(path, out string? problem);
-        Assert.Null(problem);
-        return Assert.IsType<DeviceWorkerManifest>(manifest);
-    }
+    /// <summary>The settled settings as a manifest — what provider resolution is handed.</summary>
+    private DeviceWorkerManifest SettledManifest(PdkPartInstaller.InstallOutcome outcome)
+        => Assert.IsType<DeviceWorkerManifest>(
+               PdkPartInstaller.ManifestFrom(outcome.Settings, KitDir, outcome.KitName));
 
     // ── the hand-off ──────────────────────────────────────────────────────────
 
@@ -60,14 +60,16 @@ public sealed class PdkProviderHandoffTests : IDisposable
         { "workers": [ { "platform": "any", "command": "worker", "arguments": ["models/lib.bin"] } ] }
         """);
 
-        Install();
+        var outcome = Install();
 
-        Assert.True(File.Exists(Path.Combine(InstalledKit, DeviceWorkerManifest.FileName)));
-        Assert.Equal("SampleKit", ReadInstalledManifest().ProviderName);
+        Assert.NotNull(outcome.Settings);
+        Assert.Equal("SampleKit", SettledManifest(outcome).ProviderName);
+        Assert.False(Directory.Exists(Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName)),
+            "the import wrote into the workspace — a kit's files stay the kit's");
     }
 
     [Fact]
-    public void TheCopyAnswersToTheKitName_WhateverTheOriginalCalledItself()
+    public void TheSettledSettingsAnswerToTheKitName_WhateverTheOriginalCalledItself()
     {
         // Each installed cell records Provider = the kit name, so that is what a netlist asks for.
         // A copy keeping some other name leaves every step working and only Run failing.
@@ -75,16 +77,14 @@ public sealed class PdkProviderHandoffTests : IDisposable
         { "provider": "something-else", "workers": [ { "platform": "any", "command": "worker" } ] }
         """);
 
-        Install();
-
-        Assert.Equal("SampleKit", ReadInstalledManifest().ProviderName);
+        Assert.Equal("SampleKit", SettledManifest(Install()).ProviderName);
     }
 
     [Fact]
-    public void TheCopyStillReachesTheWorkerAndModelFiles_WhichNeverLeftTheKit()
+    public void TheSettledSettingsStillReachTheWorkerAndModelFiles_WhichNeverLeftTheKit()
     {
-        // This is the whole reason the copy records where the kit was. Relative paths in the
-        // original are relative to the KIT, and the copy does not live there.
+        // Relative paths in a kit's own settings are relative to the KIT, and the settings no longer
+        // sit in a folder of their own — so the kit is what they must resolve against.
         Directory.CreateDirectory(Path.Combine(KitDir, "models"));
         File.WriteAllText(Path.Combine(KitDir, "worker"), "");
         File.WriteAllText(Path.Combine(KitDir, "models", "lib.bin"), "");
@@ -93,9 +93,7 @@ public sealed class PdkProviderHandoffTests : IDisposable
         { "workers": [ { "platform": "any", "command": "worker", "arguments": ["models/lib.bin"] } ] }
         """);
 
-        Install();
-
-        var manifest = ReadInstalledManifest();
+        var manifest = SettledManifest(Install());
         var (command, arguments) = manifest.Resolve(manifest.Launches[0]);
 
         Assert.Equal(Path.Combine(KitDir, "worker"), command);
@@ -103,23 +101,26 @@ public sealed class PdkProviderHandoffTests : IDisposable
     }
 
     [Fact]
-    public void FilesPlacedBesideTheCopy_WinOverTheOnesInTheKit()
+    public void SettingsTheWorkspaceRecorded_WinOverTheKitsOwn()
     {
-        // So a user can override a kit's worker for one workspace by dropping a file in, which is
-        // the only escape hatch they have that needs no configuration.
+        // The workspace's own record is the escape hatch: a kit's choice can be overridden for one
+        // workspace without editing the kit, which is very often read-only.
         File.WriteAllText(Path.Combine(KitDir, "worker"), "");
+        File.WriteAllText(Path.Combine(KitDir, "mine"), "");
         WriteKitManifest("""{ "workers": [ { "platform": "any", "command": "worker" } ] }""");
 
-        Install();
-        File.WriteAllText(Path.Combine(InstalledKit, "worker"), "");
+        var recorded = System.Text.Json.Nodes.JsonNode.Parse(
+            """{ "provider": "SampleKit", "workers": [ { "platform": "any", "command": "mine" } ] }""");
 
-        var manifest = ReadInstalledManifest();
+        var outcome = PdkPartInstaller.Install(
+            new PdkImportReport { RootPath = KitDir, KitName = "SampleKit" }, recorded);
 
-        Assert.Equal(Path.Combine(InstalledKit, "worker"), manifest.Resolve(manifest.Launches[0]).Command);
+        var manifest = SettledManifest(outcome);
+        Assert.Equal(Path.Combine(KitDir, "mine"), manifest.Resolve(manifest.Launches[0]).Command);
     }
 
     [Fact]
-    public void EveryPlatformTheKitCoversSurvivesTheCopy()
+    public void EveryPlatformTheKitCovers_SurvivesIntoTheSettledSettings()
     {
         // A workspace opened on another machine must still find that machine's worker.
         WriteKitManifest("""
@@ -128,9 +129,7 @@ public sealed class PdkProviderHandoffTests : IDisposable
                        { "platform": "osx-arm64", "command": "w-vm" } ] }
         """);
 
-        Install();
-
-        var platforms = ReadInstalledManifest().Launches.Select(l => l.Platform).ToArray();
+        var platforms = SettledManifest(Install()).Launches.Select(l => l.Platform).ToArray();
 
         Assert.Equal(["linux-x64", "win-x64", "osx-arm64"], platforms);
     }
@@ -144,7 +143,7 @@ public sealed class PdkProviderHandoffTests : IDisposable
         // so saying anything here would be noise on nearly every import.
         var outcome = Install();
 
-        Assert.False(File.Exists(Path.Combine(InstalledKit, DeviceWorkerManifest.FileName)));
+        Assert.Null(outcome.Settings);
         Assert.DoesNotContain(outcome.Diagnostics, d => d.Contains("simulat", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -169,12 +168,13 @@ public sealed class PdkProviderHandoffTests : IDisposable
         File.WriteAllText(Path.Combine(KitDir, "worker"), "");
         WriteKitManifest("""{ "workers": [ { "platform": "any", "command": "worker" } ] }""");
 
-        Install();
+        var outcome = Install();
 
-        string kitsRoot = Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName);
         string? started = null;
 
-        var resolver = new DeviceWorkerProviderResolver([kitsRoot],
+        // The shape the workspace registers: manifests already in hand, no folder to search.
+        var resolver = new DeviceWorkerProviderResolver(
+            [(outcome.KitName, SettledManifest(outcome))],
             (name, command, args) =>
             {
                 started = command;

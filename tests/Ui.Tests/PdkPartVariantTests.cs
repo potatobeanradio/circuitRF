@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices.External;
@@ -39,12 +40,14 @@ public sealed class PdkPartVariantTests : IDisposable
 
     public PdkPartVariantTests()
     {
+        PdkKitRegistry.Clear();
         Directory.CreateDirectory(KitDir);
         Directory.CreateDirectory(SchematicDir);
     }
 
     public void Dispose()
     {
+        PdkKitRegistry.Clear();
         try { Directory.Delete(_scratch, recursive: true); } catch { /* best effort */ }
     }
 
@@ -89,26 +92,45 @@ public sealed class PdkPartVariantTests : IDisposable
                                         "symbol description (.dsn)"),
             Parameters: declared.Length > 0 ? declared : null));
 
-        return PdkPartInstaller.Install(report, WorkspaceDir).Items[0].Pdk!.CellDir!;
+        var outcome = PdkPartInstaller.Install(report);
+        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        _lastSettings = outcome.Settings;
+        return outcome.Items[0].Pdk!.CellDir!;
     }
 
-    private CcellFile Installed(string cellDir)
-        => CellPersistence.LoadFromFile(Path.Combine(cellDir, CellFolder.CcellFileName));
+    private JsonNode? _lastSettings;
 
-    private (SchematicEditModel Model, EditableComponent Comp) Placed(string cellDir)
+    /// <summary>The settings the installer settled on for the kit this manifest describes.</summary>
+    private JsonNode? LastSettings(string manifestJson)
+    {
+        InstallPart(manifestJson);
+        return _lastSettings;
+    }
+
+    /// <summary>
+    /// The part's published interface. Held in memory rather than read from a <c>.ccell</c> on disk —
+    /// a kit part is not the user's cell and no longer has a folder of its own.
+    /// </summary>
+    private static CcellFile Installed(string cellRef)
+        => PdkKitRegistry.Find(cellRef)?.Ccell
+           ?? throw new Xunit.Sdk.XunitException($"no kit part is loaded for '{cellRef}'");
+
+    private (SchematicEditModel Model, EditableComponent Comp) Placed(string cellRef)
     {
         var model = new SchematicEditModel { SchematicDirectory = SchematicDir };
         var comp = new EditableComponent
         {
             InstanceName = "X1",
             Symbol       = SymbolKind.Generic,
-            CellRef      = Path.GetRelativePath(SchematicDir, cellDir),
+            // Virtual, not a relative path: the part exists in memory only, so there is nothing for
+            // a relative path to be relative to.
+            CellRef      = cellRef,
             X = 0, Y = 0,
         };
 
         // Placement seeds the instance from the cell's published interface — mirrored here, because
         // the real seeding lives on SchematicViewModel, which needs an Avalonia host to construct.
-        foreach (var cp in Installed(cellDir).Parameters)
+        foreach (var cp in Installed(cellRef).Parameters)
             comp.Parameters.Add(new EditableParameter
             {
                 Name = cp.Name, Expression = cp.DefaultExpression, Unit = cp.Unit,
@@ -172,15 +194,14 @@ public sealed class PdkPartVariantTests : IDisposable
     }
 
     [Fact]
-    public void TheDeclarationSurvivesTheCopyIntoTheWorkspace()
+    public void TheDeclarationSurvivesIntoTheSettledSettings()
     {
-        InstallPart(ManifestWithVariant);
+        // The settings are what the workspace records and replays, so a declaration that did not
+        // reach them would be re-derived — or lost — on every open.
+        var settings = LastSettings(ManifestWithVariant);
+        var manifest = PdkPartInstaller.ManifestFrom(settings, KitDir, "SampleKit");
 
-        string copied = Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName, "SampleKit",
-                                     DeviceWorkerManifest.FileName);
-        var manifest = DeviceWorkerManifest.TryRead(copied, out string? problem);
-
-        Assert.Null(problem);
+        Assert.NotNull(manifest);
         var v = Assert.Single(manifest!.Variants);
         Assert.Equal("ModelAs", v.Parameter);
         Assert.Equal("Compact", v.Default);
@@ -508,86 +529,57 @@ public sealed class PdkPartVariantTests : IDisposable
         Assert.Contains(tb.GlobalVariables, v => v.Name == "KitScale");
     }
 
-    // ── Declarations added to the workspace, not to the kit ───────────────────
+    // ── Supplementing a read-only kit ─────────────────────────────────────────
     //
-    // A kit is very often read-only, and duplicating one to add a file to it is not a workflow. So
-    // everything a kit does not itself carry can be dropped into the folder circuitRF made for it
-    // inside the workspace, and is picked up from there.
-
-    private string InstalledKitDir => Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName, "SampleKit");
+    // A kit is very often read-only, and duplicating one to add a file to it is not a workflow. The
+    // surviving route is the ADDITIONS FOLDER (below): a small folder of one's own that names the
+    // kit. The former second route — dropping a file into the folder the workspace made for the kit
+    // — is gone with that folder; a kit's parts now live in memory and the workspace holds only a
+    // reference to the kit.
 
     /// <summary>Installs a part from a kit that declares nothing at all — the read-only vendor case.</summary>
     private string InstallBareKit()
         => InstallPart("""{ "workers": [ { "platform": "any", "command": "worker" } ] }""");
 
-    private void DropIntoWorkspaceKitFolder(string relativePath, string contents)
-    {
-        string abs = Path.Combine(InstalledKitDir, relativePath);
-        Directory.CreateDirectory(Path.GetDirectoryName(abs)!);
-        File.WriteAllText(abs, contents);
-    }
-
     [Fact]
-    public void ADeclarationDroppedIntoTheWorkspace_IsPickedUp_WithoutReImportingTheKit()
+    public void ADeclarationTheKitGainsLater_IsPickedUpOnTheNextLoad()
     {
-        // The headline for a read-only kit: no duplication, no re-import, no path to point at.
-        string cellDir = InstallBareKit();
-        Assert.Empty(Installed(cellDir).Parameters);
+        // A workspace open re-reads the kit, so a declaration that arrives after the first import is
+        // picked up without the user pointing at anything.
+        string cellRef = InstallBareKit();
+        Assert.Empty(Installed(cellRef).Parameters);
 
-        DropIntoWorkspaceKitFolder(DeviceWorkerManifest.FileName, ManifestWithVariant);
-        PdkPartInstaller.LoadInstalled(WorkspaceDir);          // what opening the workspace does
+        Assert.Equal(cellRef, InstallPart(ManifestWithVariant));
 
-        var p = Assert.Single(Installed(cellDir).Parameters);
-        Assert.Equal("ModelAs", p.Name);
+        var p = Assert.Single(Installed(cellRef).Parameters, x => x.Name == "ModelAs");
         Assert.Equal("Compact", p.DefaultExpression);
     }
 
     [Fact]
-    public void ANetlistDroppedBesideThatDeclaration_IsFoundThere_NotInTheKit()
+    public void LoadingTwice_YieldsTheSamePart()
     {
-        string cellDir = InstallBareKit();
+        // Re-reading is what an open does, so it has to be repeatable — a kit that translated
+        // differently the second time would be a workspace that opens differently each morning.
+        string cellRef = InstallPart(ManifestWithVariant);
+        string after   = CellPersistence.Serialize(Installed(cellRef));
 
-        DropIntoWorkspaceKitFolder("circuit/pkg.cnl", PackageNetlist);
-        DropIntoWorkspaceKitFolder(DeviceWorkerManifest.FileName, NetlistManifest("Pkg_{ModelAs}"));
-        PdkPartInstaller.LoadInstalled(WorkspaceDir);
+        InstallPart(ManifestWithVariant);
 
-        var ccell = Installed(cellDir);
-        Assert.Equal(Path.Combine(InstalledKitDir, "circuit", "pkg.cnl"), ccell.ExternalNetlistPath);
-
-        var (model, _) = Placed(cellDir);
-        var inst = Assert.Single(NetExtractor.Extract(model, "tb").TestBench.Instances);
-        Assert.Equal("Pkg_Compact", inst.Reference);
+        Assert.Equal(after, CellPersistence.Serialize(Installed(cellRef)));
     }
 
     [Fact]
-    public void ReconcilingTwice_ChangesNothingTheSecondTime()
+    public void AValueTheUserAlreadyChose_SurvivesTheKitBeingLoadedAgain()
     {
-        string cellDir = InstallBareKit();
-        DropIntoWorkspaceKitFolder(DeviceWorkerManifest.FileName, ManifestWithVariant);
+        // The instance carries the user's own choice; re-reading the kit rebuilds the part's
+        // interface and must not reach into a design and undo an edit.
+        string cellRef = InstallPart(ManifestWithVariant);
+        var (_, comp) = Placed(cellRef);
 
-        PdkPartInstaller.LoadInstalled(WorkspaceDir);
-        string after = File.ReadAllText(Path.Combine(cellDir, CellFolder.CcellFileName));
-        PdkPartInstaller.LoadInstalled(WorkspaceDir);
+        comp.Parameters.Single(x => x.Name == "ModelAs").Expression = "Behavioural";
+        InstallPart(ManifestWithVariant);
 
-        Assert.Equal(after, File.ReadAllText(Path.Combine(cellDir, CellFolder.CcellFileName)));
-    }
-
-    [Fact]
-    public void AValueTheUserAlreadyChose_SurvivesReconciliation()
-    {
-        // Only the closed set of choices and where the definition lives are refreshed. A default may
-        // have been changed deliberately, and reconciliation is not an occasion to undo that.
-        string cellDir = InstallPart(ManifestWithVariant);
-        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-
-        var edited = Installed(cellDir);
-        edited.Parameters[0].DefaultExpression = "Behavioural";
-        CellPersistence.SaveToFile(ccellPath, edited);
-
-        DropIntoWorkspaceKitFolder(DeviceWorkerManifest.FileName, ManifestWithVariant);
-        PdkPartInstaller.LoadInstalled(WorkspaceDir);
-
-        Assert.Equal("Behavioural", Installed(cellDir).Parameters[0].DefaultExpression);
+        Assert.Equal("Behavioural", comp.Parameters.Single(x => x.Name == "ModelAs").Expression);
     }
 
     [Fact]
@@ -595,13 +587,12 @@ public sealed class PdkPartVariantTests : IDisposable
     {
         // An instance is seeded from the cell's interface at placement, so a cell that gains a
         // parameter afterwards would otherwise leave every earlier instance without it — which for
-        // a kit picked up from the workspace is the ordinary case, not an edge one.
-        string cellDir = InstallBareKit();
-        var (model, comp) = Placed(cellDir);
+        // a kit whose declarations arrive later is the ordinary case, not an edge one.
+        string cellRef = InstallBareKit();
+        var (model, comp) = Placed(cellRef);
         Assert.Empty(comp.Parameters);
 
-        DropIntoWorkspaceKitFolder(DeviceWorkerManifest.FileName, ManifestWithVariant);
-        PdkPartInstaller.LoadInstalled(WorkspaceDir);
+        InstallPart(ManifestWithVariant);
 
         var editor = new ParameterEditorViewModel();
         editor.SetTargetDirect(new SchematicViewModel(model), comp, showClose: false);
@@ -613,8 +604,9 @@ public sealed class PdkPartVariantTests : IDisposable
     // ── Importing an "additions" folder ───────────────────────────────────────
     //
     // A supplier's kit is routinely read-only and often far too large to copy, so what circuitRF
-    // needs lives in its own small folder that NAMES the kit. The user imports that one folder;
-    // the importer reads both and copies what it needs into the workspace itself.
+    // needs lives in its own small folder that NAMES the kit. The user imports that one folder and
+    // the importer reads both. Nothing is copied: the kit becomes an explicit, repairable
+    // dependency of the workspace rather than a set of files silently duplicated into it.
 
     private string AdditionsDir => Path.Combine(_root, "additions");
 
@@ -644,8 +636,9 @@ public sealed class PdkPartVariantTests : IDisposable
             }
             """);
 
-        var report = PdkImporter.Import(AdditionsDir);
-        return PdkPartInstaller.Install(report, WorkspaceDir).Items[0].Pdk!.CellDir!;
+        var outcome = PdkPartInstaller.Install(PdkImporter.Import(AdditionsDir));
+        PdkKitRegistry.SetKit("SampleKit", outcome.Parts ?? []);
+        return outcome.Items[0].Pdk!.CellDir!;
     }
 
     [Fact]
@@ -665,26 +658,23 @@ public sealed class PdkPartVariantTests : IDisposable
     }
 
     [Fact]
-    public void TheImporterCopiesTheCircuitDefinitionIntoTheWorkspace_AndPointsTheCellAtTheCopy()
+    public void ThePartPointsAtTheCircuitDefinitionWhereItLives_NothingIsCopied()
     {
-        // Nothing is copied by hand, and the workspace ends up holding what it needs to build.
-        string cellDir = ImportAdditionsFolder();
+        // The definition is the kit author's file and stays theirs. Pointing at it rather than at a
+        // duplicate is what makes the kit one dependency to repair instead of a copy that silently
+        // stops matching the original.
+        string cellRef = ImportAdditionsFolder();
 
-        string expected = Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName, "SampleKit",
-                                       "circuitrf", "pkg.cnl");
-        Assert.Equal(expected, Installed(cellDir).ExternalNetlistPath);
-        Assert.True(File.Exists(expected));
+        string expected = Path.Combine(AdditionsDir, "circuitrf", "pkg.cnl");
+        Assert.Equal(expected, Installed(cellRef).ExternalNetlistPath);
+        Assert.False(Directory.Exists(Path.Combine(WorkspaceDir, "pdk")),
+            "the import wrote into the workspace — the whole point is that it writes nothing");
     }
 
     [Fact]
-    public void ThePartStillBuilds_AfterTheImportedFolderIsGone()
+    public void ThePartBuilds_FromTheDefinitionWhereItLives()
     {
-        // The workspace is the record of what was imported, so it must not depend on the folder the
-        // user happened to import from still being there.
-        string cellDir = ImportAdditionsFolder();
-        Directory.Delete(AdditionsDir, recursive: true);
-
-        var (model, _) = Placed(cellDir);
+        var (model, _) = Placed(ImportAdditionsFolder());
         var result = NetExtractor.Extract(model, "tb");
 
         Assert.Empty(result.Conflicts);
@@ -700,7 +690,6 @@ public sealed class PdkPartVariantTests : IDisposable
         var ccell = Installed(ImportAdditionsFolder());
 
         Assert.Equal("SampleKit", ccell.ExternalProvider);
-        Assert.True(Directory.Exists(Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName, "SampleKit")));
     }
 
     [Fact]
@@ -721,7 +710,7 @@ public sealed class PdkPartVariantTests : IDisposable
             }
             """);
 
-        var outcome = PdkPartInstaller.Install(PdkImporter.Import(AdditionsDir), WorkspaceDir);
+        var outcome = PdkPartInstaller.Install(PdkImporter.Import(AdditionsDir));
 
         Assert.Single(outcome.Items);
         Assert.Contains(outcome.Diagnostics, d => d.Contains("gone.cnl"));
@@ -743,7 +732,7 @@ public sealed class PdkPartVariantTests : IDisposable
         // Importing the wrong folder otherwise shows up three steps later as a parameter that is not
         // there, which is a bad way to learn it.
         ImportAdditionsFolder();
-        var outcome = PdkPartInstaller.Install(PdkImporter.Import(AdditionsDir), WorkspaceDir);
+        var outcome = PdkPartInstaller.Install(PdkImporter.Import(AdditionsDir));
 
         Assert.Contains(outcome.Notes ?? [],
             d => d.Contains("model-selection parameter") && d.Contains("defined by a circuit"));
@@ -763,7 +752,7 @@ public sealed class PdkPartVariantTests : IDisposable
                                         PdkAssetKind.SymbolArtwork, PdkAssetSupport.Supported,
                                         "symbol description (.dsn)")));
 
-        var outcome = PdkPartInstaller.Install(report, WorkspaceDir);
+        var outcome = PdkPartInstaller.Install(report);
 
         Assert.Contains(outcome.Notes ?? [], d => d.Contains("names no program to evaluate its devices"));
     }
@@ -951,7 +940,9 @@ public sealed class PdkPartVariantTests : IDisposable
         report.Parts.Add(new PdkPart("REAL_PART",   "Real",   SymbolArtwork: art));
         report.Parts.Add(new PdkPart("HELPER_CELL", "Helper", SymbolArtwork: art));
 
-        var items = PdkPartInstaller.Install(report, WorkspaceDir).Items;
+        var outcome = PdkPartInstaller.Install(report);
+        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        var items = outcome.Items;
 
         Assert.Contains(Installed(items[0].Pdk!.CellDir!).Parameters, p => p.Name == "ModelAs");
         Assert.DoesNotContain(Installed(items[1].Pdk!.CellDir!).Parameters, p => p.Name == "ModelAs");
@@ -978,7 +969,7 @@ public sealed class PdkPartVariantTests : IDisposable
     /// types the kit's netlists name, and records it — the difference between "import the kit" and
     /// "import the kit, then go and configure it".
     /// </summary>
-    private string InstallBareKitWithCompiledDevice(bool withLibrary = true)
+    private JsonNode? InstallBareKitWithCompiledDevice(bool withLibrary = true)
     {
         string netAbs = Path.Combine(KitDir, "circuit", "pkg.cnl");
         Directory.CreateDirectory(Path.GetDirectoryName(netAbs)!);
@@ -1034,21 +1025,23 @@ public sealed class PdkPartVariantTests : IDisposable
         report.Assets.Add(new PdkAsset("circuit/pkg.cnl", PdkAssetKind.Netlist,
                                        PdkAssetSupport.Supported, "netlist"));
 
-        PdkPartInstaller.Install(report, WorkspaceDir);
-        return Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName, "SampleKit");
+        var outcome = PdkPartInstaller.Install(report);
+        PdkKitRegistry.SetKit("SampleKit", outcome.Parts ?? []);
+        return outcome.Settings;
     }
 
+    /// <summary>The settled settings as a manifest, resolved against the kit — what the resolver sees.</summary>
+    private DeviceWorkerManifest? ManifestOf(JsonNode? settings)
+        => PdkPartInstaller.ManifestFrom(settings, KitDir, "SampleKit");
+
     [Fact]
-    public void AKitShippingNoManifest_GetsOneWritten_NamingTheLibraryThatServesItsDevices()
+    public void AKitShippingNoSettings_GetsThemDerived_NamingTheLibraryThatServesItsDevices()
     {
-        string kitInstall = InstallBareKitWithCompiledDevice();
+        var settings = InstallBareKitWithCompiledDevice();
+        Assert.NotNull(settings);
 
-        string path = Path.Combine(kitInstall, DeviceWorkerManifest.FileName);
-        Assert.True(File.Exists(path), "no manifest was written for a kit that ships none");
-
-        var manifest = DeviceWorkerManifest.TryRead(path, out string? problem);
+        var manifest = ManifestOf(settings);
         Assert.NotNull(manifest);
-        Assert.Null(problem);
         Assert.Equal("SampleKit", manifest!.ProviderName);
 
         // Every entry names circuitRF's own worker and the discovered library.
@@ -1058,12 +1051,10 @@ public sealed class PdkPartVariantTests : IDisposable
     }
 
     [Fact]
-    public void TheWrittenManifest_IsWhatTheResolverThenUses()
+    public void TheDerivedSettings_AreWhatTheResolverThenUses()
     {
-        // Writing a file nothing reads back would be worse than writing none.
-        string kitInstall = InstallBareKitWithCompiledDevice();
-        var manifest = DeviceWorkerManifest.TryRead(
-            Path.Combine(kitInstall, DeviceWorkerManifest.FileName), out _);
+        // Settling on something nothing reads back would be worse than settling on nothing.
+        var manifest = ManifestOf(InstallBareKitWithCompiledDevice());
 
         var launch = manifest!.Launches.FirstOrDefault(
             l => l.Platform.Contains("linux", StringComparison.OrdinalIgnoreCase));
@@ -1075,51 +1066,31 @@ public sealed class PdkPartVariantTests : IDisposable
     }
 
     [Fact]
-    public void AKitWhoseLibraryIsNowhere_WritesNoManifest_AndSaysWhy()
+    public void AKitWhoseLibraryIsNowhere_SettlesOnNothing_AndSaysWhy()
     {
         // Guessing a path would fail much later, from inside a worker launch, naming nothing useful.
-        string kitInstall = InstallBareKitWithCompiledDevice(withLibrary: false);
-
-        Assert.False(File.Exists(Path.Combine(kitInstall, DeviceWorkerManifest.FileName)));
+        Assert.Null(InstallBareKitWithCompiledDevice(withLibrary: false));
     }
 
     /// <summary>
-    /// A kit installed BEFORE circuitRF could work its library out — or one whose library has since
-    /// moved — heals itself at the next workspace open. Without this, an existing workspace stays
-    /// unsimulable until the kit is imported again, and re-importing is the step this exists to
-    /// remove. Same rule the declarations already follow: reconcile at every open, not at install.
+    /// Recorded settings are replayed rather than re-derived. That is what keeps a workspace open
+    /// fast and repeatable — library discovery byte-scans candidate builds and is the one part of an
+    /// open with a cost worth caring about.
     /// </summary>
     [Fact]
-    public void AnAlreadyInstalledKitWithNoManifest_GetsOneAtTheNextOpen()
+    public void RecordedSettings_AreReplayed_NotRederived()
     {
-        string kitInstall = InstallBareKitWithCompiledDevice();
-
-        string manifest = Path.Combine(kitInstall, DeviceWorkerManifest.FileName);
-        File.Delete(manifest);                       // as an older import would have left it
-        Assert.False(File.Exists(manifest));
-
-        var items = PdkPartInstaller.LoadInstalled(WorkspaceDir);
-
-        Assert.NotEmpty(items);
-        Assert.True(File.Exists(manifest), "opening the workspace did not recover the missing manifest");
-        Assert.Equal("SampleKit", DeviceWorkerManifest.TryRead(manifest, out _)!.ProviderName);
-    }
-
-    [Fact]
-    public void AKitThatAlreadyHasAManifest_IsLeftExactlyAsItIs()
-    {
-        // Healing must never overwrite what a kit — or the user — already put there.
-        string kitInstall = InstallBareKitWithCompiledDevice();
-        string manifest   = Path.Combine(kitInstall, DeviceWorkerManifest.FileName);
-
-        string mine = """
+        var recorded = JsonNode.Parse("""
             { "provider": "SampleKit",
-              "workers": [ { "platform": "any", "command": "my-own-worker" } ] }
-            """;
-        File.WriteAllText(manifest, mine);
+              "workers": [ { "platform": "any", "command": "recorded-worker", "arguments": [] } ] }
+            """);
 
-        PdkPartInstaller.LoadInstalled(WorkspaceDir);
+        var report = new PdkImportReport { RootPath = KitDir, KitName = "SampleKit" };
+        report.Parts.Add(new PdkPart("PART_A", "Part A"));
 
-        Assert.Equal(mine, File.ReadAllText(manifest));
+        var settings = PdkPartInstaller.Install(report, recorded).Settings;
+
+        Assert.Equal("recorded-worker",
+                     settings!["workers"]!.AsArray()[0]!["command"]!.GetValue<string>());
     }
 }

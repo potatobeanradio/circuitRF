@@ -41,7 +41,6 @@ public sealed class PdkKitDataShareTests : IDisposable
     private string NetlistDir   => Path.Combine(KitDir, "circuit", "models");
     private string DataDir      => Path.Combine(KitDir, "circuit", "data", "PartData");
     private string WorkspaceDir => Path.Combine(Root, "ws");
-    private string ManifestPath => Path.Combine(WorkspaceDir, "pdk", "SampleKit", DeviceWorkerManifest.FileName);
 
     private const string DeviceType = "CRF_TEST_V1";
 
@@ -93,8 +92,9 @@ public sealed class PdkKitDataShareTests : IDisposable
                                 PdkAssetSupport.Supported, "kit netlist"));
         report.Parts.Add(new PdkPart("PART_A", "Part A"));
 
-        PdkPartInstaller.Install(report, WorkspaceDir);
-        return JsonNode.Parse(File.ReadAllText(ManifestPath))!;
+        var outcome = PdkPartInstaller.Install(report);
+        Assert.NotNull(outcome.Settings);
+        return outcome.Settings!;
     }
 
     private static string[] Arguments(JsonNode manifest)
@@ -160,13 +160,11 @@ public sealed class PdkKitDataShareTests : IDisposable
     }
 
     [Fact]
-    public void AManifestFromAnOlderBuild_IsRedoneRatherThanLeftRunnableAndWrong()
+    public void SettingsFromAnOlderBuild_AreRedone_NotReplayedRunnableAndWrong()
     {
-        // It names programs that all still exist, so nothing else would ever replace it — and it is
-        // missing the data share, which is exactly the state that fails at run time only.
-        Import();
-
-        var stale = JsonNode.Parse(File.ReadAllText(ManifestPath))!;
+        // They name programs that all still exist, so nothing else would ever replace them — and they
+        // are missing the data share, which is exactly the state that fails at run time only.
+        var stale = Import();
         stale["generatedFormat"] = 1;
         stale["workers"] = new JsonArray(new JsonObject
         {
@@ -174,16 +172,15 @@ public sealed class PdkKitDataShareTests : IDisposable
             ["command"]   = VmHostArguments.Command,
             ["arguments"] = new JsonArray("--share", "crfw=/x:ro", "--", "/mnt/crfw/w", "/mnt/kit/models.so"),
         });
-        File.WriteAllText(ManifestPath, stale.ToJsonString());
 
-        PdkPartInstaller.LoadInstalled(WorkspaceDir);
+        var report = new PdkImportReport { RootPath = KitDir, KitName = "SampleKit" };
+        report.Add(new PdkAsset(Path.Combine("circuit", "models", "kit.net"), PdkAssetKind.Netlist,
+                                PdkAssetSupport.Supported, "kit netlist"));
+        report.Parts.Add(new PdkPart("PART_A", "Part A"));
 
-        // Asserted: the old one is REJECTED rather than kept. Deliberately not asserted: that a
-        // replacement appears — re-synthesis needs an installed cell still pointing back into the
-        // kit, which this fixture does not build, and it is the pre-existing heal path rather than
-        // anything changed here. Rejection is the new behaviour, and the whole of it: before, a
-        // manifest whose every path still resolved was never reconsidered.
-        Assert.False(File.Exists(ManifestPath),
-            "an old-format manifest was left in place — it runs, so nothing else would replace it");
+        var settings = PdkPartInstaller.Install(report, stale).Settings;
+        Assert.NotNull(settings);
+
+        Assert.Contains(VmHostArguments.ShareAtFlag, Arguments(settings!));
     }
 }

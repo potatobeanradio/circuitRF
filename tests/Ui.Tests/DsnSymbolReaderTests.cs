@@ -275,15 +275,23 @@ public sealed class DsnSymbolReaderTests
         Assert.Contains(r.Diagnostics, d => d.Contains("same point", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// A NOTE, not a diagnostic. A drawing with no pins is very often exactly what it looks like — a
+    /// title block or an annotation a kit draws alongside its real parts — and the reader cannot tell
+    /// one from the other. Reporting it as a fault makes an ordinary kit fail validation, and a
+    /// validation that cries wolf is one nobody reads.
+    /// </summary>
     [Fact]
-    public void SymbolWithNoPins_StillImportsItsArtwork_AndSaysItCannotBeWired()
+    public void SymbolWithNoPins_StillImportsItsArtwork_AndNotesThatItCannotBeWired()
     {
         var r = Read(Wrap("50    7    0 0 400 400 1    0    0    0    0    0    0    0    0"));
 
         Assert.True(r.Success);
         Assert.Single(r.Symbol!.Primitives);
         Assert.Empty(r.Pins);
-        Assert.Contains(r.Diagnostics, d => d.Contains("cannot be wired", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Contains(r.Notes, n => n.Contains("cannot be wired", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(r.Diagnostics, d => d.Contains("cannot be wired", StringComparison.OrdinalIgnoreCase));
     }
 
     // ── View selection ────────────────────────────────────────────────────────

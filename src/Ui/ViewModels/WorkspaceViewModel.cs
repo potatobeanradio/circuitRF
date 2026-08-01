@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using CircuitRF.Core.Pdk;
@@ -243,6 +244,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         CloseWorkspaceOrWindowCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
+        ManagePdksCommand.NotifyCanExecuteChanged();
 
         if (_factory.ProjectTreeTool is { } tree)
         {
@@ -1400,14 +1402,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (IsDockableDocked(dockable) || FloatedDocumentClosesWithWorkspace(dockable))
             {
                 _factory.ForceCloseDockable(dockable);
-                // Mirrors RemoveCellAsync/RenameCellAsync's own established pattern: retire the shared
-                // session (if any) for a schematic/layout ONLY when it is no longer referenced by any
-                // open document — never a blanket registry Clear(), which would also tear down a
-                // surviving floated document's own push-in/undo session.
+                // DISCARD, not retire — and the difference is the bug this fixes. Retiring refuses to
+                // drop a DIRTY session, which is right in general and wrong here: by this point the
+                // user has been prompted and answered Don't Save, so the unsaved state is deliberately
+                // gone. Keeping the dirty flag made the NEXT workspace open prompt to save a document
+                // belonging to the workspace just closed.
+                //
+                // Still scoped per path rather than a blanket registry Clear(), which would also tear
+                // down a surviving floated document's own push-in/undo session.
                 if (dockable is SchematicDocument closedSd && closedSd.FilePath is { } schPath)
-                    RetireSessionIfUnreferenced(schPath);
+                    DiscardSessionIfUnreferenced(schPath);
                 else if (dockable is LayoutDocument closedLd && closedLd.FilePath is { } layPath)
-                    RetireLayoutSessionIfUnreferenced(layPath);
+                    DiscardLayoutSessionIfUnreferenced(layPath);
             }
             else
             {
@@ -1446,10 +1452,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _scratchLayouts.Clear();      _scratchLayouts.AddRange(stillOpenScratchLayouts);
         _scratchDataDisplays.Clear(); _scratchDataDisplays.AddRange(stillOpenScratchDataDisplays);
 
-        // Session registries: NOT a blanket Clear() any more (see the per-dockable retire calls above)
-        // — a surviving floated schematic/layout's own push-in session must stay registered. Any
-        // session genuinely no longer referenced by anything (closed docked tab, or a popped-out frame
-        // that was never re-opened) was already retired above / by its own existing pop-out path.
+        // Session registries: NOT a blanket Clear() — a surviving floated schematic/layout's own
+        // push-in session must stay registered.
+        //
+        // Run AFTER the survivor lists are rebuilt above, because "is anything still referring to this
+        // session" is only answerable once _openDocsByPath holds exactly the survivors. Before that it
+        // still lists documents we just force-closed, and every discard would be refused.
+        //
+        // This sweep is what catches a dirty session with NO document of its own — a sub-cell that was
+        // pushed into, edited and popped out of. The loop above only walks open documents, so such a
+        // session was never reached: it stayed dirty and made the next workspace open prompt to save a
+        // document belonging to the workspace just closed.
+        DiscardUnreferencedDirtySessions();
+
         ResetTechCache();
 
         CurrentWorkspacePath = null;   // fires OnCurrentWorkspacePathChanged → tree.ClearWorkspace()
@@ -2473,6 +2488,98 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// not recognised at all. A silent success would hide the artwork a kit ships but circuitRF
     /// cannot yet draw.</para>
     /// </summary>
+    /// <summary>
+    /// The management surface for this workspace's PDK references — add, remove, reveal, validate.
+    ///
+    /// <para>Required rather than optional: a kit's parts are held in memory now and no longer appear
+    /// in the Project Tree, so without this a workspace's dependency on a kit would be invisible until
+    /// something failed to resolve, with nowhere to go and repair it.</para>
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(HasWorkspaceOpen))]
+    private async Task ManagePdks(Window? owner)
+    {
+        var window = ResolveOwner(owner);
+        if (window is null || CurrentWorkspacePath is null) return;
+
+        string wsRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var cws  = TryLoadCws(CurrentWorkspacePath);
+        var refs = cws.PdkRefs ?? [];
+
+        await ManagePdksDialog.ShowAsync(window, new ManagePdksDialog.Context(
+            WorkspaceRootDir: wsRoot,
+            Refs:             refs,
+            PlacedPartRefs:   PlacedKitPartRefs(),
+            Save:             () =>
+            {
+                // Written straight through rather than at the next save: a reference the user just
+                // repaired must survive closing the workspace without saving a document.
+                try
+                {
+                    var latest = TryLoadCws(CurrentWorkspacePath!);
+                    latest.PdkRefs = refs;
+                    WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath!, latest);
+                }
+                catch (Exception ex)
+                {
+                    Messages.Warning($"Manage PDKs — the change could not be recorded: {ex.Message}");
+                }
+            },
+            Reveal:           RevealPathInFileManager,
+            Loaded:           ReloadAllReferencedKits,
+            Report:           (level, text) => Messages.Post(level, text)));
+    }
+
+    private bool HasWorkspaceOpen() => CurrentWorkspacePath is not null;
+
+    /// <summary>
+    /// The model-library packages this workspace references. A part kit finds its models by sitting
+    /// beside them; once it is referenced from elsewhere that adjacency is gone, and this is the
+    /// workspace saying where they went.
+    /// </summary>
+    private IReadOnlyList<string> WorkspaceLibraryRoots()
+    {
+        if (CurrentWorkspacePath is null) return [];
+
+        return PdkReferenceManager.LibraryRootsIn(
+            Path.GetDirectoryName(CurrentWorkspacePath)!,
+            TryLoadCws(CurrentWorkspacePath).PdkRefs ?? []);
+    }
+
+    /// <summary>
+    /// Re-reads EVERY referenced kit after the Manage PDKs dialog changed the reference set, and
+    /// re-wires the palette, the provider resolver and open schematics from the result.
+    ///
+    /// <para><b>Every kit, not just the one that changed — and that is the whole point.</b> Adding a
+    /// model-library package changes what OTHER kits can resolve: a part kit imported before the
+    /// package was referenced settled on "no library found", and nothing would revisit that. The
+    /// symptom is a kit that looks fine in this dialog and fails at Run with "no kit settled on a way
+    /// to evaluate its devices", staying that way until the workspace is reopened.</para>
+    ///
+    /// <para>Removing a package has the same reach in the other direction, so both go through here.</para>
+    /// </summary>
+    private void ReloadAllReferencedKits() => RestoreInstalledPdks();
+
+    /// <summary>
+    /// Every kit-part reference placed in a schematic that is currently OPEN.
+    ///
+    /// <para>Deliberately the open documents rather than every <c>.csch</c> on disk: this drives a
+    /// warning before a removal, and scanning a whole workspace to produce one would make the dialog
+    /// wait on file I/O for a count. It therefore under-reports a design that is not open, which is
+    /// why removal is stated as reversible rather than as safe because nothing uses the kit.</para>
+    /// </summary>
+    private IReadOnlyList<string> PlacedKitPartRefs()
+    {
+        var models = _openDocsByPath.Values.OfType<SchematicDocument>()
+            .Concat(_scratchDocs)
+            .Select(d => d.ViewModel.EditModel);
+
+        return [.. models.SelectMany(m => m.Components)
+                         .Select(c => c.CellRef)
+                         .Where(PdkKitRegistry.IsKitRef)
+                         .Select(r => r!)
+                         .Distinct(StringComparer.Ordinal)];
+    }
+
     [RelayCommand]
     private async Task ImportPdk(Window? owner)
     {
@@ -2529,8 +2636,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? MessageLevel.Error
             : MessageLevel.Info;
         Messages.Post(level,
-            $"Import PDK — {report.KitName}: {report.Parts.Count} part(s), " +
-            $"{report.Supported.Count()} file(s) read, {report.KnownGaps.Count()} recognised but unsupported, " +
+            $"Import PDK — {report.KitName}: " +
+            $"{PdkPartInstaller.Plural(report.Parts.Count, "part", "parts")}, " +
+            $"{PdkPartInstaller.Plural(report.Supported.Count(), "file", "files")} read, " +
+            $"{report.KnownGaps.Count()} recognised but unsupported, " +
             $"{report.Unrecognized.Count()} unrecognised.");
 
         ReportPdkPlaceability(report, outcome);
@@ -2564,23 +2673,151 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void RestoreInstalledPdks()
     {
         _pdkPaletteItems.Clear();
+        PdkKitRegistry.Clear();     // kit references belong to the workspace that named them
+        _kitManifests.Clear();
 
         string? wsRoot = CurrentWorkspacePath is null
             ? null
             : Path.GetDirectoryName(CurrentWorkspacePath);
 
-        try
+        var broken = new List<string>();
+
+        if (wsRoot is not null)
         {
-            _pdkPaletteItems.AddRange(PdkPartInstaller.LoadInstalled(wsRoot));
+            // Start a fresh log for THIS open, so it describes this load rather than accumulating
+            // every one before it.
+            PdkLoadLog.Begin(wsRoot);
+
+            var refs = TryLoadCws(CurrentWorkspacePath!).PdkRefs ?? [];
+
+            // Library packages are resolved FIRST: a part kit's devices are matched against them, so
+            // loading a kit before knowing where the models are would settle "no library found" and
+            // record it.
+            var libraryRoots = PdkReferenceManager.LibraryRootsIn(wsRoot, refs);
+
+            foreach (var r in refs.Where(x => x.IsLibraryOnly))
+                if (!Directory.Exists(WorkspaceRefs.Resolve(r.Path, wsRoot)))
+                {
+                    PdkLoadLog.Record(wsRoot, r.Provider, "the model-library folder does not exist.");
+                    broken.Add(r.Provider);
+                }
+
+            foreach (var r in refs.Where(x => !x.IsLibraryOnly))
+            {
+                try
+                {
+                    if (LoadReferencedKit(r, wsRoot, libraryRoots) is not { } loaded) { broken.Add(r.Provider); continue; }
+                    _pdkPaletteItems.AddRange(loaded);
+                }
+                catch (Exception ex)
+                {
+                    // A kit that cannot be read never stops a workspace from opening; the design is
+                    // the user's data and a missing dependency degrades rather than denies.
+                    PdkLoadLog.Record(wsRoot, r.Provider, ex.Message);
+                    broken.Add(r.Provider);
+                }
+            }
         }
-        catch (Exception ex)
-        {
-            Messages.Warning($"Imported kits could not be restored into the palette: {ex.Message}");
-        }
+
+        // ONE summary per open, never one per part: a kit with forty parts must not produce forty
+        // warnings. Silent when everything resolved — an open that reports its own success trains
+        // the user to ignore the level.
+        if (broken.Count > 0)
+            Messages.Warning(
+                $"{broken.Count} referenced PDK(s) could not be loaded ({string.Join(", ", broken)}). " +
+                $"Parts placed from them show as unresolved until the reference is repaired in " +
+                $"File ▸ Manage PDKs.",
+                PdkLoadLog.PathFor(wsRoot!));
 
         _factory.PaletteTool?.SetPdkParts(_pdkPaletteItems);
 
         RegisterKitProviderResolver(wsRoot);
+    }
+
+    /// <summary>Settled settings per loaded kit, for the provider resolver.</summary>
+    private readonly List<(string Kit, DeviceWorkerManifest Manifest)> _kitManifests = [];
+
+    /// <summary>
+    /// Records a kit in <c>.cws</c>: where it is, and what circuitRF settled about it. Never its
+    /// translated content — that is the vendor's, and is rebuilt on every open.
+    ///
+    /// <para>Written immediately rather than at the next save, so a workspace that is closed without
+    /// saving still remembers a kit that was just imported — the import is not an edit to a document
+    /// the user might reasonably discard.</para>
+    /// </summary>
+    private void RecordPdkReference(string workspaceRootDir, string kitName, string kitPath, JsonNode? settings)
+    {
+        try
+        {
+            var cws  = TryLoadCws(CurrentWorkspacePath!);
+            var refs = cws.PdkRefs ?? [];
+            refs.RemoveAll(r => string.Equals(r.Provider, kitName, StringComparison.OrdinalIgnoreCase));
+            refs.Add(new CwsPdkRef
+            {
+                Path               = WorkspaceRefs.ToStoredRef(kitPath, workspaceRootDir),
+                Provider           = kitName,
+                TranslationVersion = DsnSymbolReader.TranslationVersion,
+                Settings           = settings,
+            });
+            cws.PdkRefs = refs;
+            WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath!, cws);
+        }
+        catch (Exception ex)
+        {
+            Messages.Warning($"Import PDK — the kit was loaded but could not be recorded in this " +
+                             $"workspace, so it will not be there next time: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Re-reads one referenced kit into memory. Returns its palette entries, or null when the kit
+    /// itself cannot be reached.
+    ///
+    /// <para>The recorded settings are handed back in, so the library discovery and variant choices
+    /// are READ rather than re-derived — which is what keeps an open both fast and repeatable.</para>
+    /// </summary>
+    private IReadOnlyList<PaletteItem>? LoadReferencedKit(
+        CwsPdkRef r, string workspaceRootDir, IReadOnlyList<string> libraryRoots)
+    {
+        string kitPath = WorkspaceRefs.Resolve(r.Path, workspaceRootDir);
+        if (!Directory.Exists(kitPath))
+        {
+            PdkLoadLog.Record(workspaceRootDir, r.Provider, $"the kit folder '{kitPath}' does not exist.");
+            return null;
+        }
+
+        // A reader change moves pins, and wires attached to them silently disconnect. Refused and
+        // reported rather than applied — the upgrade is the user's to ask for.
+        if (r.TranslationVersion != 0 && r.TranslationVersion != DsnSymbolReader.TranslationVersion)
+        {
+            Messages.Warning(
+                $"'{r.Provider}' was translated by an older reader (version {r.TranslationVersion}; " +
+                $"this build uses {DsnSymbolReader.TranslationVersion}). It was NOT re-translated: " +
+                $"pin positions could move and disconnect wires. Re-import it from File ▸ Manage PDKs " +
+                $"when you are ready.");
+            return null;
+        }
+
+        var report  = PdkImporter.Import(kitPath);
+        var outcome = PdkPartInstaller.Install(report, r.Settings, libraryRoots);
+
+        PdkKitRegistry.SetKit(r.Provider, outcome.Parts ?? []);
+
+        // From what the install SETTLED, never from what was recorded. They differ exactly when the
+        // recorded settings were absent (or stale) and had to be derived — which is the case that
+        // matters, because building the manifest from the null then leaves the resolver with nothing
+        // and every kit part fails at Run with "no kit settled on a way to evaluate its devices".
+        if (PdkPartInstaller.ManifestFrom(outcome.Settings, kitPath, r.Provider) is { } m)
+            _kitManifests.Add((r.Provider, m));
+
+        // Derived settings are recorded so the NEXT open replays them instead of working them out
+        // again. Measured: ~0.5 ms replayed against ~200 ms derived, because discovery byte-scans
+        // candidate builds across a multi-MB package. Only written when it actually changed, so an
+        // ordinary open touches nothing.
+        if (outcome.Settings is not null && r.Settings is null)
+            RecordPdkReference(workspaceRootDir, r.Provider, kitPath, outcome.Settings);
+
+        return outcome.Items;
     }
 
     /// <summary>
@@ -2605,8 +2842,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         try
         {
-            string kitsDir = Path.Combine(workspaceRootDir, PdkPartInstaller.InstallFolderName);
-            ExternalDeviceRegistry.AddResolver(new DeviceWorkerProviderResolver([kitsDir]));
+            // From the settings the workspace recorded, not by searching folders — there is no
+            // folder to search any more. A resolver rather than a registered provider, so opening a
+            // workspace starts no worker processes and a kit the design never uses is never launched.
+            ExternalDeviceRegistry.AddResolver(new DeviceWorkerProviderResolver(_kitManifests));
         }
         catch (Exception ex)
         {
@@ -2650,7 +2889,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         PdkPartInstaller.InstallOutcome outcome;
         try
         {
-            outcome = PdkPartInstaller.Install(report, wsRoot);
+            outcome = PdkPartInstaller.Install(report, libraryRoots: WorkspaceLibraryRoots());
         }
         catch (Exception ex)
         {
@@ -2658,9 +2897,26 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return null;
         }
 
-        _pdkPaletteItems.RemoveAll(i => string.Equals(i.Pdk?.KitName, report.KitName, StringComparison.Ordinal));
+        // Held in memory and referenced by the workspace — nothing is written into it. Re-importing
+        // a kit REPLACES what was held for it rather than adding a second copy.
+        //
+        // Registered under the name the INSTALLER settled on, never the report's own: every part
+        // reference was built from that one, and a report carrying no name falls back to a default.
+        // Using the report's here would leave every reference pointing at a kit nobody registered.
+        string kit = outcome.KitName;
+
+        PdkKitRegistry.SetKit(kit, outcome.Parts ?? []);
+        _kitManifests.RemoveAll(k => string.Equals(k.Kit, kit, StringComparison.OrdinalIgnoreCase));
+        if (PdkPartInstaller.ManifestFrom(outcome.Settings, report.RootPath, kit) is { } m)
+            _kitManifests.Add((kit, m));
+
+        if (wsRoot is not null)
+            RecordPdkReference(wsRoot, kit, report.RootPath, outcome.Settings);
+
+        _pdkPaletteItems.RemoveAll(i => string.Equals(i.Pdk?.KitName, kit, StringComparison.Ordinal));
         _pdkPaletteItems.AddRange(outcome.Items);
         _factory.PaletteTool?.SetPdkParts(_pdkPaletteItems);
+        RegisterKitProviderResolver(wsRoot);
 
         // What the import worked out is neutral status, not a warning. Reporting a successful
         // discovery at Warning trains the user to ignore the level, which costs them the one line
@@ -2697,7 +2953,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                   "kit; they are listed in the import report but kept out of the palette."
                 : "";
             Messages.Success($"Import PDK — \"{report.KitName}\": {placeable} part(s) available to place " +
-                             $"from the Library palette ({outcome.IconsFound} icon(s), " +
+                             $"from the Library palette " +
+                             $"({PdkPartInstaller.Plural(outcome.IconsFound, "icon", "icons")}, " +
                              $"{outcome.SymbolsInstalled} symbol(s) installed).{omitted}");
             return;
         }
@@ -3637,6 +3894,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _registry.RetireIfUnreferenced(key, IsSessionReferenced);
     }
 
+    /// <summary>
+    /// Drops a session AND its unsaved state. Only for leaving a workspace, where the user has already
+    /// been prompted and declined to save — see <see cref="SchematicSessionRegistry.DiscardIfUnreferenced"/>.
+    /// </summary>
+    private void DiscardSessionIfUnreferenced(string absCschPath)
+        => _registry.DiscardIfUnreferenced(Path.GetFullPath(absCschPath), IsSessionReferenced);
+
     private bool IsSessionReferenced(string normalizedKey)
         => _openDocsByPath.Values
                .OfType<SchematicDocument>()
@@ -3711,6 +3975,31 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         var key = Path.GetFullPath(absClayPath);
         _layoutRegistry.RetireIfUnreferenced(key, IsLayoutSessionReferenced);
+        if (!_layoutRegistry.TryGet(key, out _))
+            CellLayoutResolver.ClearLive(key);
+    }
+
+    /// <summary>
+    /// Drops every dirty session nothing open still refers to, discarding its unsaved state.
+    ///
+    /// <para>Only ever called while LEAVING a workspace, after the user has been prompted and declined
+    /// to save. A session belonging to a document that survives the switch — a torn-off foreign
+    /// document, say — is referenced and is left alone.</para>
+    /// </summary>
+    private void DiscardUnreferencedDirtySessions()
+    {
+        foreach (string path in _registry.GetOrphanedDirtyPaths(IsSessionReferenced).ToList())
+            DiscardSessionIfUnreferenced(path);
+
+        foreach (string path in _layoutRegistry.GetOrphanedDirtyPaths(IsLayoutSessionReferenced).ToList())
+            DiscardLayoutSessionIfUnreferenced(path);
+    }
+
+    /// <summary>Layout counterpart of <see cref="DiscardSessionIfUnreferenced"/>.</summary>
+    private void DiscardLayoutSessionIfUnreferenced(string absClayPath)
+    {
+        var key = Path.GetFullPath(absClayPath);
+        _layoutRegistry.DiscardIfUnreferenced(key, IsLayoutSessionReferenced);
         if (!_layoutRegistry.TryGet(key, out _))
             CellLayoutResolver.ClearLive(key);
     }
@@ -4365,9 +4654,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // ── Reveal in file manager ────────────────────────────────────────────────
 
     /// <inheritdoc/>
-    public void Reveal(ProjectTreeNodeViewModel node)
+    public void Reveal(ProjectTreeNodeViewModel node) => RevealPathInFileManager(node.AbsolutePath);
+
+    /// <summary>
+    /// Shows a path in the platform's own file manager. Extracted so every surface that offers
+    /// "Reveal" goes through one implementation — the platform detection and the per-platform
+    /// argument forms are exactly the sort of thing a second copy gets subtly wrong.
+    /// </summary>
+    private void RevealPathInFileManager(string path)
     {
-        var path = node.AbsolutePath;
         try
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))

@@ -39,7 +39,6 @@ public sealed class PdkWindowsWorkerManifestTests : IDisposable
 
     private string KitDir       => Path.Combine(_root, "kit");
     private string WorkspaceDir => Path.Combine(_root, "ws");
-    private string ManifestPath => Path.Combine(WorkspaceDir, "pdk", "SampleKit", DeviceWorkerManifest.FileName);
 
     private const string DeviceType = "CRF_TEST_V1";
 
@@ -106,8 +105,9 @@ public sealed class PdkWindowsWorkerManifestTests : IDisposable
                                 PdkAssetSupport.Supported, "kit netlist"));
         report.Parts.Add(new PdkPart("PART_A", "Part A"));
 
-        var outcome = PdkPartInstaller.Install(report, WorkspaceDir);
-        return (JsonNode.Parse(File.ReadAllText(ManifestPath))!, outcome);
+        var outcome = PdkPartInstaller.Install(report);
+        Assert.NotNull(outcome.Settings);
+        return (outcome.Settings!, outcome);
     }
 
     private static string[] Platforms(JsonNode manifest)

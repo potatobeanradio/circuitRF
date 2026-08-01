@@ -183,9 +183,30 @@ public sealed class DeviceWorkerManifest
             return null;
         }
 
+        return TryParse(text, Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".", path, out problem);
+    }
+
+    /// <summary>
+    /// Reads a manifest from text rather than from a file, for a workspace that records its kits'
+    /// settled decisions itself instead of writing a file beside each kit (see
+    /// <c>docs/design/pdk-import.md</c>). Same parser, same rules — a second one would drift.
+    /// </summary>
+    /// <param name="json">The manifest object.</param>
+    /// <param name="directory">
+    /// What relative paths inside it resolve against — the kit's own folder. There is no file to
+    /// take this from, so the caller supplies it.
+    /// </param>
+    /// <param name="origin">Named in any problem reported, so a message points somewhere real.</param>
+    public static DeviceWorkerManifest? TryParse(
+        string json, string directory, string origin, out string? problem)
+    {
+        problem = null;
+
         JsonDocument doc;
-        try { doc = JsonDocument.Parse(text, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }); }
-        catch (JsonException ex) { problem = $"'{path}' is not valid JSON: {ex.Message}"; return null; }
+        try { doc = JsonDocument.Parse(json, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }); }
+        catch (JsonException ex) { problem = $"'{origin}' is not valid JSON: {ex.Message}"; return null; }
+
+        string path = origin;
 
         using (doc)
         {
@@ -196,7 +217,6 @@ public sealed class DeviceWorkerManifest
                 return null;
             }
 
-            string directory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".";
 
             string provider = root.TryGetProperty("provider", out var p) && p.ValueKind == JsonValueKind.String
                 ? p.GetString() ?? ""

@@ -63,6 +63,14 @@ public sealed class DsnSymbolReadResult
     /// <summary>Everything the reader could not use, and why. Never silently dropped.</summary>
     public IReadOnlyList<string> Diagnostics { get; init; } = [];
 
+    /// <summary>
+    /// Things worth saying that are not faults. Kept apart from <see cref="Diagnostics"/> because a
+    /// wall of warnings undermines the one line that is a real warning — and because a kit routinely
+    /// ships perfectly good drawings that are not wireable parts (title blocks, annotations), which
+    /// a reader has no way to tell apart from a part and no business calling broken.
+    /// </summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
+
     public bool Success => Symbol is not null;
 }
 
@@ -78,6 +86,20 @@ public static class DsnSymbolReader
 {
     /// <summary>Connection grid. Every pin tip must be an exact multiple of this.</summary>
     private const double PinGrid = 100.0;
+
+    /// <summary>
+    /// Which translation a workspace's recorded kits were produced by.
+    ///
+    /// <para><b>Bump this whenever a change here could move a PIN.</b> Pins snap to
+    /// <see cref="PinGrid"/>, so a scale change, a snap change, or anything touching pin placement
+    /// moves them — and wires attached to them silently disconnect. A workspace records the version
+    /// its kits were translated under; a mismatch is reported and REFUSED rather than re-translated,
+    /// so the user asks for the upgrade instead of discovering it as broken connections.</para>
+    ///
+    /// <para>A change that cannot move a pin — a rendering-only fix to text or an arc — does not
+    /// need a bump, and bumping for one costs every user a re-import for nothing.</para>
+    /// </summary>
+    public const int TranslationVersion = 1;
 
     /// <summary>
     /// Target band for the symbol's larger dimension, in local units. A power-of-ten scale is
@@ -160,8 +182,13 @@ public static class DsnSymbolReader
             symbolPins.Add(new SymbolPin(px, py, rp.Number, rp.Name));
         }
 
+        // A NOTE, not a problem. A drawing with no pins is very often exactly what it looks like — a
+        // title block or an annotation the kit draws alongside its real parts — and the reader cannot
+        // tell one from the other. It still installs and still renders; it just cannot be wired, which
+        // is worth saying once and not worth calling a fault.
+        var notes = new List<string>();
         if (symbolPins.Count == 0)
-            diags.Add("No pins were declared, so this symbol cannot be wired.");
+            notes.Add("No pins were declared, so this symbol cannot be wired.");
 
         return new DsnSymbolReadResult
         {
@@ -170,6 +197,7 @@ public static class DsnSymbolReader
             Pins        = pins,
             Scale       = scale,
             Diagnostics = diags,
+            Notes       = notes,
         };
     }
 

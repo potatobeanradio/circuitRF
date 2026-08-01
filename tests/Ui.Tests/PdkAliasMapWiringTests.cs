@@ -36,7 +36,6 @@ public sealed class PdkAliasMapWiringTests : IDisposable
     private string KitDir       => Path.Combine(Root, "kit");
     private string NetlistDir   => Path.Combine(KitDir, "circuit", "models");
     private string WorkspaceDir => Path.Combine(Root, "ws");
-    private string ManifestPath => Path.Combine(WorkspaceDir, "pdk", "SampleKit", DeviceWorkerManifest.FileName);
 
     private const string DeviceType = "CRF_ALIAS_V1";
 
@@ -77,9 +76,16 @@ public sealed class PdkAliasMapWiringTests : IDisposable
         return abs;
     }
 
+    /// <summary>
+    /// The worker in a folder of its OWN under the kit, not the kit's root — so "the kit's folder"
+    /// and "the worker's folder" are two different places and the search order between them can be
+    /// tested at all.
+    /// </summary>
     private string WriteWorkerBesideKit()
     {
-        string abs = Path.Combine(KitDir, DeviceLibraryDiscovery.Profiles[0].Worker);
+        string dir = Path.Combine(KitDir, "bin");
+        Directory.CreateDirectory(dir);
+        string abs = Path.Combine(dir, DeviceLibraryDiscovery.Profiles[0].Worker);
         var elf = new byte[64];
         elf[0] = 0x7F; elf[1] = (byte)'E'; elf[2] = (byte)'L'; elf[3] = (byte)'F';
         File.WriteAllBytes(abs, elf);
@@ -88,21 +94,20 @@ public sealed class PdkAliasMapWiringTests : IDisposable
 
     private string WriteAliasMapBesideWorker()
     {
-        string abs = Path.Combine(KitDir, DeviceLibraryDiscovery.AliasMapFileName);
+        string dir = Path.Combine(KitDir, "bin");
+        Directory.CreateDirectory(dir);
+        string abs = Path.Combine(dir, DeviceLibraryDiscovery.AliasMapFileName);
         File.WriteAllText(abs, $$"""{ "{{DeviceType}}": { "6": 5 } }""");
         return abs;
     }
 
     /// <summary>
-    /// The map dropped into the kit's own workspace folder, beside its <c>device-provider.json</c> —
-    /// where a library-specific alias belongs, since circuitRF cannot derive it and it serves exactly
-    /// one kit.
+    /// The map dropped beside the kit itself — where a library-specific alias belongs, since circuitRF
+    /// cannot derive it and it describes exactly one kit's models.
     /// </summary>
-    private string WriteAliasMapInKitWorkspaceFolder()
+    private string WriteAliasMapBesideKit()
     {
-        string dir = Path.Combine(WorkspaceDir, "pdk", "SampleKit");
-        Directory.CreateDirectory(dir);
-        string abs = Path.Combine(dir, DeviceLibraryDiscovery.AliasMapFileName);
+        string abs = Path.Combine(KitDir, DeviceLibraryDiscovery.AliasMapFileName);
         File.WriteAllText(abs, $$"""{ "{{DeviceType}}": { "7": 4 } }""");
         return abs;
     }
@@ -116,19 +121,24 @@ public sealed class PdkAliasMapWiringTests : IDisposable
         return File.ReadAllText(Path.Combine(dir!, relativePath));
     }
 
-    private JsonNode Import()
+    private static PdkImportReport Report(string kitDir)
+    {
+        var report = new PdkImportReport { RootPath = kitDir, KitName = "SampleKit" };
+        report.Add(new PdkAsset(Path.Combine("circuit", "models", "kit.net"), PdkAssetKind.Netlist,
+                                PdkAssetSupport.Supported, "kit netlist"));
+        report.Parts.Add(new PdkPart("PART_A", "Part A"));
+        return report;
+    }
+
+    private JsonNode Import(JsonNode? recorded = null)
     {
         WriteWorkerBesideKit();
         WriteLinuxLibrary();
         WriteWindowsLibrary();
 
-        var report = new PdkImportReport { RootPath = KitDir, KitName = "SampleKit" };
-        report.Add(new PdkAsset(Path.Combine("circuit", "models", "kit.net"), PdkAssetKind.Netlist,
-                                PdkAssetSupport.Supported, "kit netlist"));
-        report.Parts.Add(new PdkPart("PART_A", "Part A"));
-
-        PdkPartInstaller.Install(report, WorkspaceDir);
-        return JsonNode.Parse(File.ReadAllText(ManifestPath))!;
+        var outcome = PdkPartInstaller.Install(Report(KitDir), recorded);
+        Assert.NotNull(outcome.Settings);
+        return outcome.Settings!;
     }
 
     private static string[] Arguments(JsonNode manifest, string platform)
@@ -140,24 +150,24 @@ public sealed class PdkAliasMapWiringTests : IDisposable
 
     /// <summary>
     /// Which node a degenerate node follows is definition data about one library's models, so it lives
-    /// beside that kit's other declarations rather than in circuitRF's tree. This is the path that
-    /// makes dropping it there work at all.
+    /// beside that kit rather than in circuitRF's tree. This is the path that makes dropping it there
+    /// work at all.
     /// </summary>
     [Fact]
-    public void AnAliasMapInTheKitsOwnWorkspaceFolder_IsNamedByEveryPlatformEntry()
+    public void AnAliasMapBesideTheKit_IsNamedByEveryPlatformEntry()
     {
-        string aliasMap = WriteAliasMapInKitWorkspaceFolder();
+        string aliasMap = WriteAliasMapBesideKit();
         var manifest = Import();
 
         Assert.Equal(aliasMap, Arguments(manifest, "linux-x64")[1]);
         Assert.Equal(aliasMap, Arguments(manifest, "win-x64")[1]);
 
-        // The map is not under the worker's folder here, so the guest reaches it through a share of
-        // its own — naming it under crfw would point at a place nothing was mounted.
+        // The guest reaches it through a share. Here that is the kit's DATA tree, which is mounted at
+        // its own absolute path — so the map's host path is already true inside the guest and must be
+        // left exactly as it is. Rewriting it to /mnt/<tag>/… would name a place nothing was mounted.
         var args = Arguments(manifest, "osx");
-        Assert.Contains(args, a => a.EndsWith("/" + DeviceLibraryDiscovery.AliasMapFileName, StringComparison.Ordinal)
-                                && a.StartsWith("/mnt/", StringComparison.Ordinal));
-        Assert.Contains(args, a => a.Contains("=" + Path.GetDirectoryName(aliasMap), StringComparison.Ordinal));
+        Assert.Equal(aliasMap, args[^1]);
+        Assert.Contains(args, a => a.StartsWith("kitdata=" + KitDir, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -169,7 +179,7 @@ public sealed class PdkAliasMapWiringTests : IDisposable
     public void TheKitsOwnFolderBeatsAMapSittingBesideTheWorker()
     {
         string besideWorker = WriteAliasMapBesideWorker();
-        string inKitFolder  = WriteAliasMapInKitWorkspaceFolder();
+        string inKitFolder  = WriteAliasMapBesideKit();
 
         var manifest = Import();
 
@@ -289,21 +299,37 @@ public sealed class PdkAliasMapWiringTests : IDisposable
     }
 
     [Fact]
-    public void AManifestWrittenBeforeTheAliasMapExisted_IsRedoneRatherThanLeftRunnableAndWrong()
+    public void SettingsRecordedBeforeTheAliasMapExisted_AreRedone_NotReplayedRunnableAndWrong()
     {
-        // It names programs that all still exist, so nothing else would ever replace it — and it is
-        // missing the one argument that decides whether the bias ramp converges at all.
-        WriteAliasMapBesideWorker();
-        Import();
+        // They name programs that all still exist, so nothing else would ever replace them — and they
+        // are missing the one argument that decides whether the bias ramp converges at all.
+        string aliasMap = WriteAliasMapBesideWorker();
 
-        var stale = JsonNode.Parse(File.ReadAllText(ManifestPath))!;
+        var stale = Import();
         stale["generatedFormat"] = 2;
-        File.WriteAllText(ManifestPath, stale.ToJsonString());
+        foreach (var w in stale["workers"]!.AsArray())
+            w!["arguments"] = new JsonArray(w["arguments"]!.AsArray()[0]!.GetValue<string>());
 
-        PdkPartInstaller.LoadInstalled(WorkspaceDir);
+        var settings = Import(stale);
 
-        Assert.False(File.Exists(ManifestPath),
-            "a manifest from before the alias map was wired was left in place — it runs, so nothing " +
-            "else would replace it, and the model would keep solving equations it never stated");
+        Assert.Equal(aliasMap, Arguments(settings, "linux-x64")[1]);
+    }
+
+    [Fact]
+    public void SettingsAKitShipped_AreNeverRedone_EvenWhenTheyLookOld()
+    {
+        // Only circuitRF's own derivation is reconsidered. A kit's file — or one a user edited — is
+        // theirs, and quietly replacing it would lose their work.
+        WriteAliasMapBesideWorker();
+
+        var theirs = JsonNode.Parse("""
+            { "provider": "SampleKit",
+              "workers": [ { "platform": "linux-x64", "command": "their-worker", "arguments": [] } ] }
+            """)!;
+
+        var settings = Import(theirs);
+
+        Assert.Equal("their-worker",
+                     settings["workers"]!.AsArray()[0]!["command"]!.GetValue<string>());
     }
 }

@@ -22,7 +22,14 @@ five real-kit files measured in hand resolve to scale 1.
 — those are min-corner in some files and centre in others, distinguished only by an undocumented
 flag. The box is unambiguous everywhere.
 
-**`PdkPartInstaller` installs kit parts as ordinary cells** (`<workspace>/pdk/<kit>/<part>/`), and
+**Kit parts are held IN MEMORY, not installed as cell folders (2026-08-01).** `PdkPartInstaller.Install`
+returns them; `PdkKitRegistry` holds them under `pdk://<kit>/<part>`; the workspace records only a reference
+to the kit in `.cws`. The paragraph below explains why a kit part is an ordinary cell REFERENCE and that
+reasoning is unchanged and still load-bearing — only the reference form moved from a relative path to a
+virtual one, which is what lets everything downstream stay untouched. See `src/Ui/CLAUDE.md` for the full
+note; read `<workspace>/pdk/<kit>/<part>/` below as history.
+
+**`PdkPartInstaller` used to install kit parts as ordinary cells** (`<workspace>/pdk/<kit>/<part>/`), and
 this is the whole reason kit parts need no new component species: a cell reference is *already* the
 component whose artwork lives in an external file and resolves at render time, so placement,
 rendering, pin geometry, hit-testing and the symbol editor all work on kit parts unchanged. Do not

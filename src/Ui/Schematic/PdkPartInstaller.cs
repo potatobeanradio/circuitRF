@@ -26,7 +26,11 @@ namespace CircuitRF.Ui.Schematic;
 /// </summary>
 public static class PdkPartInstaller
 {
-    /// <summary>Folder inside the workspace that holds cells generated from imported kits.</summary>
+    /// <summary>
+    /// The folder an import used to write translated kit cells into, and must no longer create. Kept
+    /// as a named constant because it is what the gate asserts the ABSENCE of — a kit's symbols are
+    /// the vendor's, and putting them in the workspace is what made a shared workspace carry them.
+    /// </summary>
     public const string InstallFolderName = "pdk";
 
     /// <param name="Items">Entries for the Library Palette — PLACEABLE parts only.</param>
@@ -41,13 +45,32 @@ public static class PdkPartInstaller
     /// user importing a kit should not be told that everything going right is a warning: a wall of
     /// them undermines the one line that is a real warning.
     /// </param>
+    /// <param name="Parts">
+    /// The kit's parts, translated and held in memory. The caller registers them; nothing is
+    /// written. One per entry in <paramref name="Items"/>, in the same order.
+    /// </param>
+    /// <param name="Settings">
+    /// What circuitRF settled about how to simulate this kit — the object a
+    /// <c>device-provider.json</c> holds. Recorded by the workspace, so an open reads it back rather
+    /// than re-deriving it: re-deriving is both the slow part and the part that could quietly answer
+    /// differently when the machine changed. Null for a kit with nothing compiled to serve.
+    /// </param>
+    /// <param name="KitName">
+    /// The name the kit was loaded under — the one every part reference is built from, so the caller
+    /// registers under exactly this and never under its own idea of the kit's name. They differ when
+    /// the report carries none, which is the case that would otherwise leave every reference pointing
+    /// at a kit that was never registered.
+    /// </param>
     public sealed record InstallOutcome(
         IReadOnlyList<PaletteItem> Items,
         int SymbolsInstalled,
         int IconsFound,
         IReadOnlyList<string> Diagnostics,
         int OmittedNotPlaceable = 0,
-        IReadOnlyList<string>? Notes = null);
+        IReadOnlyList<string>? Notes = null,
+        IReadOnlyList<PdkKitPart>? Parts = null,
+        JsonNode? Settings = null,
+        string KitName = "");
 
     /// <summary>
     /// Install every part the report lists. Returns one palette entry per part — including parts
@@ -55,13 +78,23 @@ public static class PdkPartInstaller
     /// see what the kit contains rather than silently losing it.
     /// </summary>
     /// <param name="report">The importer's own findings. Never modified.</param>
-    /// <param name="workspaceRootDir">
-    /// Workspace to install generated cells into. When null — no workspace is open — nothing is
-    /// written and the parts are still listed, icons and all, just not placeable yet.
+    /// <param name="recordedSettings">
+    /// Settings the workspace already recorded for this kit, if it has any. Supplied on a workspace
+    /// OPEN so the library discovery and variant choices are read back rather than re-derived —
+    /// which is what makes an open both fast and repeatable. Null on a fresh import, where they are
+    /// derived and returned for the workspace to record.
     /// </param>
-    public static InstallOutcome Install(PdkImportReport report, string? workspaceRootDir)
+    /// <param name="libraryRoots">
+    /// Folders the workspace has been told hold model libraries. A delivery is several part kits
+    /// beside one shared library package; once a kit is referenced from somewhere else that adjacency
+    /// is gone, and being told is the only thing that recovers it.
+    /// </param>
+    public static InstallOutcome Install(
+        PdkImportReport report, JsonNode? recordedSettings = null,
+        IReadOnlyList<string>? libraryRoots = null)
     {
         var items  = new List<PaletteItem>();
+        var parts  = new List<PdkKitPart>();
         var diags  = new List<string>();
         var notes  = new List<string>();
         int syms    = 0;
@@ -77,36 +110,31 @@ public static class PdkPartInstaller
 
         string kit = string.IsNullOrWhiteSpace(report.KitName) ? "Kit" : report.KitName;
 
-        string? kitInstallDir = null;
-        if (haveRoot && workspaceRootDir is not null)
-            kitInstallDir = Path.Combine(workspaceRootDir, InstallFolderName, SanitizeFolderName(kit));
-
-        // Read BEFORE any part is installed: a variant becomes part of each cell's own declared
-        // parameter interface, so it has to be in hand while the cells are being written.
+        // Read BEFORE any part is built: a variant becomes part of each cell's own declared
+        // parameter interface, so it has to be in hand while the parts are being built.
         // Read the kit's OWN netlists first: the formulations a part offers, which of them circuitRF
         // can build, and the circuit each one is, are all in there — so a kit that declares nothing
         // still yields a working part. A manifest can still name things, and wins where it does.
         var discovered = haveRoot ? DiscoverFromKitNetlists(report, diags) : new KitDiscovery();
 
-        var kitManifest = haveRoot ? TryReadManifestIn(report.RootPath) : null;
+        // Settled settings, in priority order. The workspace's own recorded ones win outright on an
+        // open — that is the whole point of recording them — then whatever the kit itself ships,
+        // and finally what can be derived. A kit shipping no description of how to simulate its
+        // devices is the ORDINARY case: a vendor kit is written for its own simulator and knows
+        // nothing about circuitRF, so deriving is the difference between "import the kit" and
+        // "import the kit, then go and configure it".
+        JsonNode? settings = KeepIfStillCurrent(recordedSettings)
+                          ?? (haveRoot ? TryReadKitSettings(report.RootPath, diags) : null)
+                          ?? (haveRoot ? SynthesiseProviderSettings(report, kit, discovered, diags, notes,
+                                                                     libraryRoots: libraryRoots) : null);
+
+        // Whatever the settings call themselves, they answer to the KIT's name. Each part records
+        // Provider = the kit name and a netlist asks for that, so settings answering to anything else
+        // leave every step working and only Run failing.
+        if (settings is JsonObject obj) obj["provider"] = kit;
+
+        var kitManifest = haveRoot ? ManifestFrom(settings, report.RootPath, kit) : null;
         var fileParams  = kitManifest?.FileParameters ?? [];
-
-        // Copied BEFORE the parts, so each cell can record its circuit definition at the workspace's
-        // own copy. The workspace is then self-contained: the folder that was imported can be moved
-        // or deleted and the parts still build.
-        if (kitInstallDir is not null)
-        {
-            CopyProviderManifest(report, kitInstallDir, kit, diags);
-
-            // A kit that ships no description of how to simulate its devices is the ORDINARY case —
-            // a vendor kit is written for its own simulator and knows nothing about circuitRF. So
-            // derive one rather than requiring somebody to hand-write it, which is the difference
-            // between "import the kit" and "import the kit, then go and configure it".
-            if (TryReadManifestIn(kitInstallDir) is null)
-                SynthesiseProviderManifest(report, kitInstallDir, kit, discovered, diags, notes);
-
-            kitManifest = TryReadManifestIn(kitInstallDir) ?? kitManifest;
-        }
 
         // Said AFTER the manifest is settled, because one may have just been derived — reporting the
         // question before answering it would tell the user something that stopped being true two
@@ -123,25 +151,25 @@ public static class PdkPartInstaller
                 if (File.Exists(abs)) { iconPath = abs; icons++; }
             }
 
-            string? cellDir = null;
-            if (kitInstallDir is not null && part.SymbolArtwork is { } art)
+            PdkKitPart? built = null;
+            if (haveRoot && part.SymbolArtwork is { } art)
             {
                 // A manifest naming this part wins; otherwise what the kit's own netlist showed.
                 var declared  = (kitManifest?.Variants ?? []).Where(v => v.AppliesTo(part.Id)).ToList();
                 var variants  = declared.Count > 0 ? declared : discovered.VariantsFor(part.Id);
-                var netlist   = NetlistPartFor(part.Id, kitManifest) ?? discovered.NetlistFor(part.Id);
+                var netlist   = NetlistPartFor(part.Id, kitManifest, diags) ?? discovered.NetlistFor(part.Id);
 
-                cellDir = TryInstallSymbol(kitInstallDir, kit, part,
-                                           Resolve(report, art.RelativePath), diags, iconPath,
-                                           variants, fileParams, netlist);
-                if (cellDir is not null) syms++;
+                built = TryBuildPart(kit, part, Resolve(report, art.RelativePath), diags, notes, iconPath,
+                                     variants, fileParams, netlist);
+                if (built is not null) syms++;
             }
 
             // Only placeable parts reach the palette. A part with no readable symbol is a kit's
             // internal building block, not something to browse for and click — and a tile that
             // cannot place anything is worse than no tile. The report still lists every part.
-            if (cellDir is null) { omitted++; continue; }
+            if (built is null) { omitted++; continue; }
 
+            parts.Add(built);
             items.Add(new PaletteItem(
                 Kind:            SymbolKind.Generic,
                 PortCount:       0,
@@ -150,10 +178,76 @@ public static class PdkPartInstaller
                 SearchTerms:     BuildSearchTerms(part, kit),
                 IsCommon:        false,
                 ExtraCategories: null,
-                Pdk:             new PdkPartRef(kit, part.Id, iconPath, cellDir)));
+                // The reference a placed instance carries. Virtual, not a path: the part exists in
+                // memory only, so there is nothing for a relative path to be relative to.
+                Pdk:             new PdkPartRef(kit, part.Id, iconPath,
+                                                PdkKitRegistry.RefFor(kit, part.Id))));
         }
 
-        return new InstallOutcome(items, syms, icons, diags, omitted, notes);
+        return new InstallOutcome(items, syms, icons, diags, omitted, notes, parts, settings, kit);
+    }
+
+    /// <summary>
+    /// Recorded settings, unless circuitRF derived them itself under an older rule.
+    ///
+    /// <para><b>Only our own derivation is reconsidered.</b> Settings that came from the kit, or that
+    /// a user edited, are theirs — replacing those silently would lose their work, even when they are
+    /// broken. What is redone is what an older build of this code worked out, whether or not it still
+    /// runs: a set of settings can be entirely runnable and still be missing something added since,
+    /// and one that runs is exactly the one nothing else would ever replace.</para>
+    /// </summary>
+    private static JsonNode? KeepIfStillCurrent(JsonNode? recorded)
+    {
+        // Settings are an object. Anything else is not something to replay — and because JsonNode
+        // converts implicitly from string, a caller passing the wrong argument entirely would
+        // otherwise compile and be treated as a kit's settings.
+        if (recorded is not JsonObject) return null;
+
+        try
+        {
+            if (recorded["generatedBy"]?.GetValue<string>() != GeneratedMarker) return recorded;
+            return (recorded["generatedFormat"]?.GetValue<int>() ?? 1) < GeneratedFormat ? null : recorded;
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidOperationException or JsonException)
+        {
+            // Not shaped the way our own generator writes them, so not ours to redo.
+            return recorded;
+        }
+    }
+
+    /// <summary>
+    /// The kit's own settings file, as a node, or null when it ships none.
+    ///
+    /// <para>Shipping none is the ORDINARY case and says nothing. Shipping one that cannot be read is
+    /// a different thing entirely — everything else about the kit still works, so the import must not
+    /// be lost over it, but staying silent would leave the user with a kit that imports cleanly and
+    /// cannot be simulated, and no line anywhere saying why.</para>
+    /// </summary>
+    private static JsonNode? TryReadKitSettings(string kitRoot, List<string> diags)
+    {
+        string p = Path.Combine(kitRoot, DeviceWorkerManifest.FileName);
+        if (!File.Exists(p)) return null;
+
+        try { return JsonNode.Parse(File.ReadAllText(p)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            diags.Add($"This kit says how to simulate its devices, but that description could not be " +
+                      $"read ({ex.Message}). Everything else about the kit imported; simulating its " +
+                      $"devices needs '{DeviceWorkerManifest.FileName}' to be valid.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A manifest over settings held in memory. Relative paths inside them resolve against the KIT,
+    /// because that is where the worker and the model files actually are — the settings themselves
+    /// no longer sit in a folder of their own.
+    /// </summary>
+    internal static DeviceWorkerManifest? ManifestFrom(JsonNode? settings, string kitRoot, string kitName)
+    {
+        if (settings is null) return null;
+        return DeviceWorkerManifest.TryParse(
+            settings.ToJsonString(), kitRoot, $"the recorded settings for '{kitName}'", out _);
     }
 
     /// <summary>
@@ -188,12 +282,13 @@ public static class PdkPartInstaller
     /// is circuitRF's own record of what it worked out. It is ordinary JSON: everything chosen here
     /// is visible and one line to correct, which is what makes an automatic choice safe to make.</para>
     /// </summary>
-    private static void SynthesiseProviderManifest(
-        PdkImportReport report, string kitInstallDir, string kitName,
-        KitDiscovery discovery, List<string> diags, List<string> notes, int ancestorLevels = 2)
+    private static JsonNode? SynthesiseProviderSettings(
+        PdkImportReport report, string kitName,
+        KitDiscovery discovery, List<string> diags, List<string> notes, int ancestorLevels = 2,
+        IReadOnlyList<string>? libraryRoots = null)
     {
         var types = discovery.NativeDeviceTypes;
-        if (types.Count == 0) return;   // nothing compiled to serve — a purely schematic kit
+        if (types.Count == 0) return null;   // nothing compiled to serve — a purely schematic kit
 
         // One search PER TARGET, not one for the host. A vendor ships a build per platform side by
         // side, and the manifest describes all of them at once — so the Windows entry has to name the
@@ -206,10 +301,10 @@ public static class PdkPartInstaller
         // would then fail at launch, which is precisely what naming a platform must never do.
         var linux   = DeviceLibraryDiscovery.Find(
             types, report.RootPath, ["linux_x86_64", "linux_x86", ".so"], ancestorLevels, notes.Add,
-            DeviceLibraryDiscovery.LibraryFormat.Elf);
+            DeviceLibraryDiscovery.LibraryFormat.Elf, libraryRoots);
         var windows = DeviceLibraryDiscovery.Find(
             types, report.RootPath, ["win32_64", "win64", "win32", ".dll"], ancestorLevels, null,
-            DeviceLibraryDiscovery.LibraryFormat.Pe);
+            DeviceLibraryDiscovery.LibraryFormat.Pe, libraryRoots);
 
         var match = linux ?? windows;
         if (match is null)
@@ -217,9 +312,9 @@ public static class PdkPartInstaller
             diags.Add($"This kit's devices ({string.Join(", ", types.Take(3))}" +
                       $"{(types.Count > 3 ? ", …" : "")}) are compiled models, and the library that " +
                       $"implements them was not found near '{report.RootPath}'. It usually ships as " +
-                      $"a separate package beside the kit — import the folder containing both, or " +
-                      $"name the library in {DeviceWorkerManifest.FileName} in this kit's workspace folder.");
-            return;
+                      $"a separate package beside the kit. Add that package in File ▸ Manage PDKs — " +
+                      $"it needs no parts of its own — or import the folder holding both.");
+            return null;
         }
 
         var profile = DeviceLibraryDiscovery.Profiles[0];
@@ -227,13 +322,15 @@ public static class PdkPartInstaller
         // Where the worker actually is. circuitRF's tools directory is where it belongs, but a worker
         // sitting beside the kit is found too — otherwise a user holding one is blocked until a
         // release ships it.
-        string? worker = DeviceLibraryDiscovery.FindWorker(profile, report.RootPath, ancestorLevels);
+        string? worker = DeviceLibraryDiscovery.FindWorker(profile, report.RootPath, ancestorLevels)
+                      ?? libraryRoots?.Select(r => DeviceLibraryDiscovery.FindWorker(profile, r, 0))
+                                      .FirstOrDefault(w => w is not null);
         if (worker is null)
         {
             diags.Add($"The program that evaluates this kit's devices ('{profile.Worker}') was not " +
                       $"found in circuitRF's tools folder or near the kit. The kit's parts still " +
                       $"build; simulating its devices needs that program.");
-            return;
+            return null;
         }
 
         string workerDir  = Path.GetDirectoryName(worker)!;
@@ -247,7 +344,9 @@ public static class PdkPartInstaller
         // The alias map, when circuitRF ships one. It names internal nodes a compiled model never
         // drives; minting an unknown for one solves an equation the model did not state, and the
         // symptom is a bias ramp that stalls rather than anything that reports itself.
-        string? aliasMap = FindAliasMap(kitInstallDir, workerDir);
+        // Searched at the KIT itself first now, rather than a folder the workspace made for it —
+        // which is where a kit-specific alias belongs anyway, beside the kit it describes.
+        string? aliasMap = FindAliasMap(report.RootPath, workerDir);
 
         if (linux is not null)
             workers.Add(Launch("linux-x64", worker,
@@ -313,7 +412,7 @@ public static class PdkPartInstaller
             workers.Add(Launch("osx", VmHostCommand, [.. vmArgs]));
         }
 
-        if (workers.Count == 0) return;
+        if (workers.Count == 0) return null;
 
         // A Windows model imports its host callbacks from a NAMED MODULE, and the worker stages a
         // compatible shim under that name at run time — reading the name out of the model's own
@@ -337,20 +436,11 @@ public static class PdkPartInstaller
             ["workers"]       = workers,
         };
 
-        try
-        {
-            Directory.CreateDirectory(kitInstallDir);
-            File.WriteAllText(Path.Combine(kitInstallDir, DeviceWorkerManifest.FileName),
-                              manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        notes.Add($"Devices in this kit will be evaluated using " +
+                  $"'{Path.GetFileName(match.Path)}' ({string.Join(", ", match.Types)}), found at " +
+                  $"{Path.GetDirectoryName(match.Path)}.");
 
-            notes.Add($"Devices in this kit will be evaluated using " +
-                      $"'{Path.GetFileName(match.Path)}' ({string.Join(", ", match.Types)}), found at " +
-                      $"{Path.GetDirectoryName(match.Path)}.");
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            diags.Add($"Could not record how to simulate this kit's devices: {ex.Message}");
-        }
+        return manifest;
 
         static JsonNode Launch(string platform, string command, string[] arguments) => new JsonObject
         {
@@ -497,337 +587,15 @@ public static class PdkPartInstaller
     /// </summary>
     private const int GeneratedFormat = 4;
 
-    /// <summary>
-    /// True when circuitRF wrote this manifest AND nothing it names can be run any more. Only our own
-    /// derivation is redone; a kit's file, or one a user edited, is left exactly as it is even when it
-    /// is broken — that is theirs to fix, and silently replacing it would lose their work.
-    /// </summary>
-    private static bool IsOwnStaleManifest(string kitDir, DeviceWorkerManifest manifest)
-    {
-        try
-        {
-            string path = Path.Combine(kitDir, DeviceWorkerManifest.FileName);
-            var node = JsonNode.Parse(File.ReadAllText(path));
-            if (node?["generatedBy"]?.GetValue<string>() != GeneratedMarker) return false;
-
-            // Written by an older build of this code, so redo it whether or not what it names still
-            // exists. A manifest can be entirely runnable and still be missing something added
-            // since — and one that runs is exactly the one nothing else would ever replace.
-            int format = node["generatedFormat"]?.GetValue<int>() ?? 1;
-            if (format < GeneratedFormat) return true;
-        }
-        catch { return false; }
-
-        // Runnable if ANY entry's program is still there. A per-platform check would call a manifest
-        // stale on a machine it was never meant to run on.
-        foreach (var launch in manifest.Launches)
-        {
-            var (command, _) = manifest.Resolve(launch);
-
-            // Still a bare name after resolution means it was found neither beside the kit nor in
-            // circuitRF's tools folder — so naming it would fail at launch, not run.
-            if (!Path.IsPathRooted(command)) continue;
-            if (File.Exists(command)) return false;
-        }
-
-        return manifest.Launches.Count > 0;
-    }
-
-    /// <summary>
-    /// Derives a missing manifest for a kit that is ALREADY installed, from what its cells recorded.
-    ///
-    /// <para>An installed cell keeps an absolute path back into the kit it came from — the netlist
-    /// that defines it, or its icon — so the kit can be found again without the import report that
-    /// created it. That is what makes healing at open-time possible rather than requiring a re-import,
-    /// and it also recovers a kit whose library moved after it was installed.</para>
-    ///
-    /// <para>Returns true when a manifest was written.</para>
-    /// </summary>
-    private static bool TrySynthesiseForInstalledKit(string kitDir, IEnumerable<string> cellDirs)
-    {
-        string? kitRoot   = null;
-        string? netlist   = null;
-        string  kitName   = Path.GetFileName(kitDir);
-
-        foreach (var cellDir in cellDirs)
-        {
-            CcellFile ccell;
-            try
-            {
-                string p = Path.Combine(cellDir, CellFolder.CcellFileName);
-                if (!File.Exists(p)) continue;
-                ccell = CellPersistence.LoadFromFile(p);
-            }
-            catch { continue; }
-
-            if (!string.IsNullOrWhiteSpace(ccell.ExternalProvider)) kitName = ccell.ExternalProvider!;
-
-            // The netlist is what names the device types, so it is the one worth finding.
-            if (netlist is null && ccell.ExternalNetlistPath is { Length: > 0 } n && File.Exists(n))
-                netlist = n;
-
-            kitRoot ??= NearestExistingDirectory(ccell.ExternalNetlistPath)
-                     ?? NearestExistingDirectory(ccell.ExternalIconPath);
-        }
-
-        if (netlist is null || kitRoot is null) return false;
-
-        // A KIT'S NETLISTS ARE ONE LIBRARY SPLIT ACROSS FILES — the file defining a part instantiates
-        // cells declared beside it. Reading only the named one leaves those siblings looking like
-        // compiled models, which is both wrong and the opposite of the answer wanted: the real
-        // device type would not appear at all.
-        var library = new Library("kit");
-        foreach (string file in NetlistFilesBeside(netlist))
-        {
-            try
-            {
-                foreach (var cell in KitNetlistReader.ReadFile(file).Library.Cells)
-                    if (library.Find(cell.Name) is null) library.Cells.Add(cell);
-            }
-            catch { /* a sibling that will not read must not stop the named one */ }
-        }
-        if (library.Cells.Count == 0) return false;
-
-        var types = DeviceLibraryDiscovery.NativeDeviceTypes(library);
-        if (types.Count == 0) return false;
-
-        var report = new PdkImportReport { RootPath = kitRoot, KitName = kitName };
-        var diags  = new List<string>();
-        var found  = new KitDiscovery { NativeDeviceTypes = types };
-
-        // A deeper walk than the import path needs. What an installed cell points at is a file well
-        // INSIDE the kit — a netlist, an icon — whereas the importer was handed the kit's own root,
-        // so the same delivery sits several more levels up from here. It costs nothing when the
-        // library is found sooner: the search widens only after a level finds nothing.
-        SynthesiseProviderManifest(report, kitDir, kitName, found, diags, notes: [], ancestorLevels: 6);
-        return File.Exists(Path.Combine(kitDir, DeviceWorkerManifest.FileName));
-    }
-
-    /// <summary>The named netlist and every netlist beside it — a kit splits one library across files.</summary>
-    private static IReadOnlyList<string> NetlistFilesBeside(string named)
-    {
-        var files = new List<string> { named };
-        try
-        {
-            string? dir = Path.GetDirectoryName(named);
-            if (dir is not null)
-                foreach (var sibling in Directory.EnumerateFiles(dir).OrderBy(f => f, StringComparer.Ordinal))
-                    if (!sibling.Equals(named, StringComparison.OrdinalIgnoreCase) &&
-                        Path.GetExtension(sibling) is ".net" or ".inc" or ".ckt")
-                        files.Add(sibling);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-
-        return files;
-    }
-
-    /// <summary>
-    /// The kit folder an absolute path recorded at install time points into — walking up until
-    /// something still exists, because a kit may have been moved or partly removed since.
-    /// </summary>
-    private static string? NearestExistingDirectory(string? recordedPath)
-    {
-        if (string.IsNullOrWhiteSpace(recordedPath)) return null;
-
-        try
-        {
-            var dir = new DirectoryInfo(Path.GetDirectoryName(Path.GetFullPath(recordedPath)) ?? "");
-            for (int i = 0; dir is not null && i < 8; i++)
-            {
-                if (dir.Exists) return dir.FullName;
-                dir = dir.Parent;
-            }
-        }
-        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { }
-
-        return null;
-    }
-
-    private static void CopyProviderManifest(
-        PdkImportReport report, string kitInstallDir, string kitName, List<string> diags)
-    {
-        string kitRootPath = report.RootPath;
-        string source      = Path.Combine(kitRootPath, DeviceWorkerManifest.FileName);
-
-        try
-        {
-            if (!File.Exists(source)) return;
-
-            var manifest = DeviceWorkerManifest.TryRead(source, out string? problem);
-            if (manifest is null)
-            {
-                diags.Add($"This kit describes how to simulate its devices, but that description " +
-                          $"could not be used: {problem}");
-                return;
-            }
-
-            Directory.CreateDirectory(kitInstallDir);
-
-            var copy = new JsonObject
-            {
-                ["provider"]      = kitName,
-                ["baseDirectory"] = string.IsNullOrEmpty(manifest.BaseDirectory)
-                                        ? Path.GetFullPath(kitRootPath)
-                                        : manifest.BaseDirectory,
-                ["workers"]       = new JsonArray(manifest.Launches.Select(l => (JsonNode)new JsonObject
-                {
-                    ["platform"]  = l.Platform,
-                    ["command"]   = l.Command,
-                    ["arguments"] = new JsonArray(l.Arguments.Select(a => (JsonNode)JsonValue.Create(a)!).ToArray()),
-                }).ToArray()),
-            };
-
-            // Netlists defining a part come WITH the manifest, so the workspace holds everything
-            // needed to build that part. They are small, circuitRF-side and part of the record of
-            // what was imported — unlike the worker and the model libraries, which are the kit's own,
-            // large, and stay where the kit is: baseDirectory is what keeps reaching those.
-            var partEntries = new List<JsonNode>();
-            foreach (var part in manifest.Parts)
-            {
-                string resolved = manifest.ResolveFile(part.NetlistFile);
-                string relative = part.NetlistFile.Replace('\\', '/');
-
-                if (Path.IsPathRooted(resolved) && File.Exists(resolved))
-                {
-                    try
-                    {
-                        string dst = Path.Combine(kitInstallDir,
-                                                  relative.Replace('/', Path.DirectorySeparatorChar));
-                        Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
-                        File.Copy(resolved, dst, overwrite: true);
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                    {
-                        diags.Add($"'{part.Id}': its circuit definition could not be copied into the " +
-                                  $"workspace ({ex.Message}); it will be read from the kit instead.");
-                    }
-                }
-                else
-                {
-                    diags.Add($"'{part.Id}': the kit names a circuit definition ('{part.NetlistFile}') " +
-                              $"that is not there, so this part cannot be simulated.");
-                }
-
-                partEntries.Add(new JsonObject
-                {
-                    ["id"]      = part.Id,
-                    ["netlist"] = relative,
-                    ["cell"]    = part.CellName,
-                });
-            }
-
-            if (partEntries.Count > 0)
-                copy["parts"] = new JsonArray([.. partEntries]);
-
-            if (manifest.Variants.Count > 0)
-                copy["variants"] = new JsonArray(manifest.Variants.Select(v => (JsonNode)new JsonObject
-                {
-                    ["parameter"]   = v.Parameter,
-                    ["choices"]     = new JsonArray(v.Choices.Select(c => (JsonNode)JsonValue.Create(c)!).ToArray()),
-                    ["default"]     = v.Default,
-                    ["unsupported"] = new JsonArray(v.Unsupported.Select(u => (JsonNode)JsonValue.Create(u)!).ToArray()),
-                    ["parts"]       = new JsonArray(v.Parts.Select(x => (JsonNode)JsonValue.Create(x)!).ToArray()),
-                }).ToArray());
-
-            File.WriteAllText(
-                Path.Combine(kitInstallDir, DeviceWorkerManifest.FileName),
-                copy.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            diags.Add($"This kit's simulation settings could not be saved into the workspace: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Rebuilds palette entries from the kits already installed in a workspace.
-    ///
-    /// <para>Called when a workspace opens. Without it a kit vanishes from the palette on reopen
-    /// even though its cells are still on disk and its placed components still resolve — the parts
-    /// were only ever held in session memory. The installed cells ARE the record; nothing needs to
-    /// be re-imported.</para>
-    /// </summary>
-    public static IReadOnlyList<PaletteItem> LoadInstalled(string? workspaceRootDir)
-    {
-        var items = new List<PaletteItem>();
-        if (string.IsNullOrEmpty(workspaceRootDir)) return items;
-
-        string root = Path.Combine(workspaceRootDir, InstallFolderName);
-        if (!Directory.Exists(root)) return items;
-
-        IEnumerable<string> kitDirs;
-        try { kitDirs = Directory.EnumerateDirectories(root); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return items; }
-
-        foreach (var kitDir in kitDirs.OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
-        {
-            // The kit's declarations are read from the WORKSPACE's own copy, not from wherever the
-            // kit was imported from. That is what lets a user add what a kit does not itself carry —
-            // a manifest, a translated netlist — by dropping files into a folder circuitRF made,
-            // without touching a kit that is very often read-only.
-            var manifest = TryReadManifestIn(kitDir);
-
-            IEnumerable<string> cellDirs;
-            try { cellDirs = Directory.EnumerateDirectories(kitDir); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
-
-            // AT EVERY OPEN, not only at import. A kit installed before circuitRF could work this out
-            // — or one whose library has since moved — would otherwise stay unsimulable until it was
-            // imported again, and re-importing is the step this exists to remove. Same reason the
-            // declarations above are reconciled here rather than trusted from install time.
-            // Redo one WE wrote whose worker is no longer where it was — a kit moved, a tool
-            // installed since, an earlier answer that is simply now wrong. A manifest a kit or a
-            // user supplied is never touched: only our own working-out is ours to redo.
-            if (manifest is not null && IsOwnStaleManifest(kitDir, manifest))
-            {
-                try { File.Delete(Path.Combine(kitDir, DeviceWorkerManifest.FileName)); manifest = null; }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-            }
-
-            if (manifest is null && TrySynthesiseForInstalledKit(kitDir, cellDirs))
-                manifest = TryReadManifestIn(kitDir);
-
-            foreach (var cellDir in cellDirs.OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
-            {
-                CcellFile ccell;
-                try
-                {
-                    string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-                    if (!File.Exists(ccellPath)) continue;
-                    ccell = CellPersistence.LoadFromFile(ccellPath);
-                }
-                catch { continue; }   // a cell we cannot read simply does not reappear
-
-                if (string.IsNullOrWhiteSpace(ccell.ExternalProvider)) continue;
-
-                ReconcileWithKitManifest(cellDir, ccell, manifest);
-
-                string kit    = ccell.ExternalProvider!;
-                string partId = ccell.ExternalType ?? Path.GetFileName(cellDir);
-
-                items.Add(new PaletteItem(
-                    Kind:            SymbolKind.Generic,
-                    PortCount:       0,
-                    DisplayName:     partId,
-                    Category:        ComponentCategory.Other,
-                    SearchTerms:     [partId, kit],
-                    IsCommon:        false,
-                    ExtraCategories: null,
-                    Pdk:             new PdkPartRef(kit, partId, ccell.ExternalIconPath, cellDir)));
-            }
-        }
-
-        return items;
-    }
-
     // ── Symbol installation ───────────────────────────────────────────────────
 
     /// <summary>
     /// Reads one symbol description and writes it out as a cell. Returns the cell folder, or null
     /// when the file could not be read — in which case the reason is recorded, never swallowed.
     /// </summary>
-    private static string? TryInstallSymbol(string kitInstallDir, string kitName, PdkPart part,
-                                            string symbolAbsPath, List<string> diags, string? iconPath,
+    private static PdkKitPart? TryBuildPart(string kitName, PdkPart part,
+                                            string symbolAbsPath, List<string> diags, List<string> notes,
+                                            string? iconPath,
                                             IReadOnlyList<DeviceWorkerVariant> variants,
                                             IReadOnlyList<string> fileParameters,
                                             (string AbsoluteNetlistPath, string CellName)? netlistPart)
@@ -859,28 +627,15 @@ public static class PdkPartInstaller
         foreach (var d in read.Diagnostics)
             diags.Add($"'{part.DisplayName}': {d}");
 
-        try
+        foreach (var n in read.Notes)
+            notes.Add($"'{part.DisplayName}': {n}");
+
         {
-            Directory.CreateDirectory(kitInstallDir);
-
-            string cellName = SanitizeFolderName(part.Id);
-            string cellDir  = Path.Combine(kitInstallDir, cellName);
-
-            if (!Directory.Exists(cellDir))
-                cellDir = CellFolder.CreateCellFolder(kitInstallDir, cellName);
-
-            string symDir = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
-            Directory.CreateDirectory(symDir);
-
-            string fileName = cellName + CellFolder.ViewExtension(ViewType.Symbol);
-            SymbolPersistence.SaveToFile(Path.Combine(symDir, fileName), read.Symbol);
-
-            // Name the symbol as the cell's primary, and record the pin count, so placement resolves
-            // it the same way it resolves any hand-authored cell.
-            string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-            var ccell = File.Exists(ccellPath) ? CellPersistence.LoadFromFile(ccellPath) : new CcellFile();
-            ccell.PrimarySymbol = fileName;
-            ccell.NumPorts      = read.Symbol.Pins.Count;
+            // Exactly the .ccell that used to be written beside the symbol — the same published
+            // interface, built in memory instead. Nothing about a placed instance changes: it is
+            // resolved through the same accessor a cell folder is.
+            var ccell = new CcellFile();
+            ccell.NumPorts = read.Symbol.Pins.Count;
 
             // A kit part is a LEAF backed by a provider, not a hierarchy: it has a symbol and no
             // schematic on purpose, so extraction must emit one external-device instance rather
@@ -906,14 +661,7 @@ public static class PdkPartInstaller
             ccell.Parameters              = BuildDeclaredParameters(part, variants, fileParameters);
             ccell.ExternalFixedParameters = BuildFixedParameters(part);
 
-            CellPersistence.SaveToFile(ccellPath, ccell);
-
-            return cellDir;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            diags.Add($"'{part.DisplayName}': its symbol could not be written — {ex.Message}");
-            return null;
+            return new PdkKitPart(part.Id, read.Symbol, ccell, iconPath);
         }
     }
 
@@ -983,105 +731,22 @@ public static class PdkPartInstaller
     }
 
     /// <summary>
-    /// The model-selection choices a kit declares, or empty. Read from the same manifest that says
-    /// how to start the worker, because that is already the one file a kit uses to state what
-    /// circuitRF cannot work out for itself.
+    /// "1 thing" / "2 things". Shared across every PDK message: "1 part(s)" is a template showing
+    /// through, and a user reading it has to decode a count that could simply have been written.
     /// </summary>
+    internal static string Plural(int n, string singular, string plural) =>
+        $"{n} {(n == 1 ? singular : plural)}";
+
     /// <summary>
-    /// Brings an installed cell up to date with the kit declarations sitting beside it, writing the
-    /// <c>.ccell</c> back only when something genuinely changed.
+    /// What a kit's settings were found to declare, in the user's terms.
     ///
-    /// <para><b>Why this runs at every workspace open rather than only at import.</b> The point of
-    /// the workspace's own kit folder is that a user can put there what the kit itself does not
-    /// carry — a manifest naming a model-selection parameter, a translated netlist defining a
-    /// packaged part. Reading those only at import would mean re-importing a 17 MB kit to pick up a
-    /// file dropped beside it, and re-importing is exactly the step this is meant to avoid.</para>
-    ///
-    /// <para>It also self-heals a moved kit: the netlist path is absolute, and it is re-resolved here
-    /// against the workspace copy first and the kit second.</para>
-    ///
-    /// <para><b>A user's own edit to a declared value is kept.</b> Only the closed set of choices and
-    /// where the definition lives are refreshed — a parameter the cell already declares keeps its
-    /// current default, because that default may have been deliberately changed.</para>
+    /// <para><b>The platform entries are reported as platforms, and by whether one is THIS machine.</b>
+    /// A count on its own ("3 ways to evaluate its devices") reads as three alternative methods, when
+    /// it is really one method described for three operating systems — and it buries the only thing
+    /// the user actually needs, which is whether their own machine is among them. A kit built for
+    /// other platforms is a completely ordinary thing to be holding and a completely useless one to
+    /// press Run on, so it says so here rather than at Run.</para>
     /// </summary>
-    private static void ReconcileWithKitManifest(string cellDir, CcellFile ccell, DeviceWorkerManifest? manifest)
-    {
-        if (manifest is null) return;
-
-        bool changed = false;
-
-        string thisPart = ccell.ExternalType ?? Path.GetFileName(cellDir);
-
-        foreach (var v in manifest.Variants)
-        {
-            if (!v.AppliesTo(thisPart)) continue;
-
-            var declared = ccell.Parameters.FirstOrDefault(p => p.Name.Equals(v.Parameter, StringComparison.Ordinal));
-            if (declared is null)
-            {
-                ccell.Parameters.Insert(0, new CcellParameter
-                {
-                    Name               = v.Parameter,
-                    DefaultExpression  = v.Default,
-                    Unit               = "",
-                    ShowOnSchematic    = false,
-                    Choices            = [.. v.Choices],
-                    UnsupportedChoices = v.Unsupported.Count > 0 ? [.. v.Unsupported] : null,
-                });
-                changed = true;
-                continue;
-            }
-
-            var unsupported = v.Unsupported.Count > 0 ? v.Unsupported.ToList() : null;
-            if (declared.Choices is null || !declared.Choices.SequenceEqual(v.Choices, StringComparer.Ordinal))
-            {
-                declared.Choices = [.. v.Choices];
-                changed = true;
-            }
-            if (!SameList(declared.UnsupportedChoices, unsupported))
-            {
-                declared.UnsupportedChoices = unsupported;
-                changed = true;
-            }
-        }
-
-        foreach (var name in manifest.FileParameters)
-        {
-            var declared = ccell.Parameters.FirstOrDefault(p => p.Name.Equals(name, StringComparison.Ordinal));
-            if (declared is null || declared.IsFilePath == true) continue;
-            declared.IsFilePath = true;
-            changed = true;
-        }
-
-        foreach (var name in manifest.FileParameters)
-        {
-            var declared = ccell.Parameters.FirstOrDefault(p => p.Name.Equals(name, StringComparison.Ordinal));
-            if (declared is null || declared.IsFilePath == true) continue;
-            declared.IsFilePath = true;
-            changed = true;
-        }
-
-        var netlist = NetlistPartFor(thisPart, manifest);
-        if (netlist is { } n)
-        {
-            if (ccell.ExternalNetlistPath != n.AbsoluteNetlistPath) { ccell.ExternalNetlistPath = n.AbsoluteNetlistPath; changed = true; }
-            if (ccell.ExternalNetlistCell != n.CellName)            { ccell.ExternalNetlistCell = n.CellName;            changed = true; }
-        }
-
-        if (!changed) return;
-
-        try { CellPersistence.SaveToFile(Path.Combine(cellDir, CellFolder.CcellFileName), ccell); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // The cell still works for this session from the in-memory reconciliation above; only
-            // the record of it is missing, and the next open will try again.
-        }
-    }
-
-    private static bool SameList(List<string>? a, List<string>? b)
-        => (a is null && b is null) || (a is not null && b is not null && a.SequenceEqual(b, StringComparer.Ordinal));
-
-    /// <summary>What a kit's manifest was found to declare, in the user's terms.</summary>
     private static string DescribeSimulationSettings(DeviceWorkerManifest? manifest)
     {
         if (manifest is null)
@@ -1091,14 +756,30 @@ public static class PdkPartInstaller
                    "kit itself is left exactly as it was shipped.";
 
         var found = new List<string>();
-        if (manifest.Launches.Count > 0) found.Add($"{manifest.Launches.Count} way(s) to evaluate its devices");
-        if (manifest.Variants.Count > 0) found.Add($"{manifest.Variants.Count} model-selection parameter(s)");
-        if (manifest.Parts.Count    > 0) found.Add($"{manifest.Parts.Count} part(s) defined by a circuit");
-        if (manifest.FileParameters.Count > 0) found.Add($"{manifest.FileParameters.Count} file parameter(s)");
+
+        if (manifest.Launches.Count > 0)
+        {
+            var platforms = manifest.Launches
+                .Select(l => string.IsNullOrWhiteSpace(l.Platform) ? "any platform" : l.Platform)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            found.Add(manifest.LaunchForThisMachine() is not null
+                ? $"can be simulated on this machine ({string.Join(", ", platforms)})"
+                : $"can be simulated on {string.Join(", ", platforms)} — NOT on this machine " +
+                  $"({DeviceWorkerManifest.CurrentRuntimeIdentifier()})");
+        }
+
+        if (manifest.Variants.Count > 0)
+            found.Add(Plural(manifest.Variants.Count, "model-selection parameter", "model-selection parameters"));
+        if (manifest.Parts.Count > 0)
+            found.Add(Plural(manifest.Parts.Count, "part defined by a circuit", "parts defined by a circuit"));
+        if (manifest.FileParameters.Count > 0)
+            found.Add(Plural(manifest.FileParameters.Count, "file parameter", "file parameters"));
 
         return found.Count == 0
             ? "This kit's simulation settings declare nothing usable."
-            : "Read this kit's simulation settings: " + string.Join(", ", found) + ".";
+            : "Read this kit's simulation settings: " + string.Join("; ", found) + ".";
     }
 
     /// <summary>The name circuitRF gives a formulation choice it found itself. A kit's own spelling
@@ -1260,22 +941,29 @@ public static class PdkPartInstaller
     /// <summary>
     /// The circuit definition declared for this part, with its netlist made absolute against the
     /// kit. Null when the kit declares none — the ordinary single-device part — and also when it
-    /// names a file that is not there, because a definition that cannot be read is worse than none:
-    /// the part still installs and still places, and the missing file is reported at Run against the
-    /// instance that needs it rather than against a kit the user has finished importing.
+    /// names a file that is not there: the part still installs and still places, so the import is
+    /// not lost over it.
+    ///
+    /// <para>A named-but-absent file IS reported, though. The kit meant this part to be a circuit,
+    /// and it silently becoming something else would surface much later as a device the provider does
+    /// not serve — naming the type, not the file that was missing.</para>
     /// </summary>
     private static (string AbsoluteNetlistPath, string CellName)? NetlistPartFor(
-        string partId, DeviceWorkerManifest? manifest)
+        string partId, DeviceWorkerManifest? manifest, List<string> diags)
     {
         var match = manifest?.Parts.FirstOrDefault(d => d.Id.Equals(partId, StringComparison.OrdinalIgnoreCase));
         if (match is null) return null;
 
-        try
-        {
-            string abs = manifest!.ResolveFile(match.NetlistFile);
-            return Path.IsPathRooted(abs) && File.Exists(abs) ? (abs, match.CellName) : null;
-        }
-        catch (ArgumentException) { return null; }
+        string abs;
+        try { abs = manifest!.ResolveFile(match.NetlistFile); }
+        catch (ArgumentException) { abs = match.NetlistFile; }
+
+        if (Path.IsPathRooted(abs) && File.Exists(abs)) return (abs, match.CellName);
+
+        diags.Add($"'{partId}' is declared as a circuit defined in '{match.NetlistFile}', which is " +
+                  $"not there. The part still places; it will not simulate as the circuit the kit " +
+                  $"describes until that file can be found.");
+        return null;
     }
 
     /// <summary>
@@ -1317,25 +1005,5 @@ public static class PdkPartInstaller
         if (!string.IsNullOrWhiteSpace(part.DisplayName)) terms.Add(part.DisplayName);
         if (!string.IsNullOrWhiteSpace(part.Category))    terms.Add(part.Category);
         return terms.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-    }
-
-    /// <summary>
-    /// Makes a kit or part name safe to use as a folder name on every platform. Path separators are
-    /// stripped on ALL platforms regardless of what the local runtime reports as invalid, so a name
-    /// that is harmless here cannot become a path traversal somewhere else.
-    /// </summary>
-    internal static string SanitizeFolderName(string name)
-    {
-        var sb = new System.Text.StringBuilder(name.Length);
-        var invalid = Path.GetInvalidFileNameChars();
-
-        foreach (char c in name)
-        {
-            bool bad = c is '/' or '\\' or ':' || Array.IndexOf(invalid, c) >= 0 || char.IsControl(c);
-            sb.Append(bad ? '_' : c);
-        }
-
-        string s = sb.ToString().Trim().Trim('.');
-        return s.Length == 0 ? "part" : s;
     }
 }

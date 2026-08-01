@@ -112,7 +112,7 @@ public class FileMenuRestructureTests
         "_New", "New _Workspace…", "---",
         "Open _Workspace…", "Open _Recent", "_Open", "---",
         "{Binding SaveMenuHeader}", "Save Schematic _As…", "Save S_ymbol As…", "Save _Layout As…", "Save Workspace _As…", "---",
-        "_Import", "_Export", "---",
+        "_Import", "_Export", "_Manage PDKs…", "---",
         "{Binding CloseWorkspaceOrWindowHeader}", "---",
         "_Settings…", "---",
         "_Quit circuitRF",
@@ -123,7 +123,7 @@ public class FileMenuRestructureTests
         "New", "New Workspace…", "---",
         "Open Workspace…", "Open Recent", "Open", "---",
         "Save", "Save Schematic As…", "Save Symbol As…", "Save Layout As…", "Save Workspace As…", "---",
-        "Import", "Export", "---",
+        "Import", "Export", "Manage PDKs…", "---",
         "{Binding CloseWorkspaceOrWindowHeader}",
     ];
 
@@ -376,6 +376,27 @@ public class FileMenuRestructureTests
         Assert.Contains("Gesture=\"Meta+O\"", src);
         Assert.Contains("Gesture=\"Meta+S\"", src);
         Assert.Contains("Gesture=\"Meta+Shift+S\"", src);
+    }
+
+    /// <summary>
+    /// Manage PDKs is Ctrl/⌘+P, on every surface. The in-window menu shows the gesture but does not
+    /// fire it — a window-level <c>KeyBinding</c> does — so an item carrying only the display string
+    /// looks bound and is not. Both halves are pinned.
+    ///
+    /// <para>P was free: the schematic canvas's bare <c>P</c> (place Pin) sits behind a modifier guard,
+    /// so a modified P never reaches it. It IS conventionally Print elsewhere, and is taken here only
+    /// because circuitRF has no Print command to collide with.</para>
+    /// </summary>
+    [Fact]
+    public void ManagePdks_IsBoundToCtrlP_OnEverySurface()
+    {
+        var src  = ReadRepoFile(Path.Combine("src", "Ui", "Views", "WorkspaceWindow.axaml"));
+        var torn = ReadRepoFile(Path.Combine("src", "Ui", "Views", "Shared", "TornOffFileMenuView.axaml"));
+
+        Assert.Contains("InputGesture=\"Ctrl+P\"", src);    // shown in the in-window menu
+        Assert.Contains("Gesture=\"Ctrl+P\"", src);         // ...and actually bound
+        Assert.Contains("Gesture=\"Meta+P\"", src);         // macOS: native menu item + key binding
+        Assert.Contains("InputGesture=\"Ctrl+P\"", torn);
     }
 
     // ── §1's own separator ambiguity — resolved as TWO groups (Save, then Import/Export), per the

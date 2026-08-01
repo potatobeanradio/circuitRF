@@ -35,6 +35,7 @@ public sealed class PdkInlineLabelEditTests : IDisposable
 
     public void Dispose()
     {
+        PdkKitRegistry.Clear();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
@@ -54,32 +55,44 @@ public sealed class PdkInlineLabelEditTests : IDisposable
         21
         """;
 
-    private string InstallPart(string partId = "PART_A")
+    /// <summary>
+    /// Imports a one-kit PDK holding the named parts and returns the first part's reference. Every
+    /// part goes in ONE import: registering a kit REPLACES what was held for it, so two imports
+    /// would leave only the second part loaded.
+    /// </summary>
+    private string InstallPart(params string[] partIds)
     {
-        string symRel = Path.Combine("symbols", partId + ".dsn");
-        string symAbs = Path.Combine(KitDir, symRel);
-        Directory.CreateDirectory(Path.GetDirectoryName(symAbs)!);
-        File.WriteAllText(symAbs, SymbolFile);
+        if (partIds.Length == 0) partIds = ["PART_A"];
 
         var report = new PdkImportReport { RootPath = KitDir, KitName = "SampleKit" };
-        report.Parts.Add(new PdkPart(
-            partId, partId,
-            SymbolArtwork: new PdkAsset(symRel.Replace(Path.DirectorySeparatorChar, '/'),
-                                        PdkAssetKind.SymbolArtwork, PdkAssetSupport.Supported,
-                                        "symbol description (.dsn)")));
+        foreach (string partId in partIds)
+        {
+            string symRel = Path.Combine("symbols", partId + ".dsn");
+            string symAbs = Path.Combine(KitDir, symRel);
+            Directory.CreateDirectory(Path.GetDirectoryName(symAbs)!);
+            File.WriteAllText(symAbs, SymbolFile);
 
-        var outcome = PdkPartInstaller.Install(report, WorkspaceDir);
+            report.Parts.Add(new PdkPart(
+                partId, partId,
+                SymbolArtwork: new PdkAsset(symRel.Replace(Path.DirectorySeparatorChar, '/'),
+                                            PdkAssetKind.SymbolArtwork, PdkAssetSupport.Supported,
+                                            "symbol description (.dsn)")));
+        }
+
+        var outcome = PdkPartInstaller.Install(report);
+        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
         return outcome.Items[0].Pdk!.CellDir!;
     }
 
-    private (SchematicEditModel Model, EditableComponent Comp) ModelWithPart(string cellDir)
+    private (SchematicEditModel Model, EditableComponent Comp) ModelWithPart(string cellRef)
     {
         var model = new SchematicEditModel { SchematicDirectory = SchematicDir };
         var comp = new EditableComponent
         {
             InstanceName     = "X1",
             Symbol           = SymbolKind.Generic,
-            CellRef          = Path.GetRelativePath(SchematicDir, cellDir),
+            // Virtual, not a relative path: the part is held in memory.
+            CellRef          = cellRef,
             X = 0, Y = 0,
             ShowTypeLabel    = true,
             ShowInstanceName = true,
@@ -177,9 +190,7 @@ public sealed class PdkInlineLabelEditTests : IDisposable
     [Fact]
     public void RetypingAKitPartAsAnotherKitPart_SwapsTheCellReference()
     {
-        InstallPart("PART_A");
-        string bDir = InstallPart("PART_B");
-        var (model, comp) = ModelWithPart(Path.Combine(Path.GetDirectoryName(bDir)!, "PART_A"));
+        var (model, comp) = ModelWithPart(InstallPart("PART_A", "PART_B"));
         var vm = new SchematicViewModel(model) { WorkspaceRootProvider = () => WorkspaceDir };
 
         vm.BeginInlineEditForHit(

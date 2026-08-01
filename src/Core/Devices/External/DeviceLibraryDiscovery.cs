@@ -146,18 +146,31 @@ public static class DeviceLibraryDiscovery
     /// Windows build, and the entry naming it would fail at launch. Decided by the file's own magic
     /// bytes rather than its extension, since the extension is a convention and the magic is not.
     /// </param>
+    /// <param name="extraRoots">
+    /// Folders to search after the ancestor walk finds nothing — where the application has been TOLD
+    /// a model library lives.
+    ///
+    /// <para><b>Why the walk alone is not enough.</b> A delivery is several part kits beside one
+    /// shared library package, and the walk finds it because they are adjacent. Move one kit — into a
+    /// workspace, say — and that adjacency is gone, with nothing on disk left to recover it from.
+    /// Widening the walk is not the fix: the further out it goes, the less that territory has to do
+    /// with this kit, and it would eventually match by accident. Being told is the fix.</para>
+    ///
+    /// <para>Searched LAST, so a library sitting with the kit still wins.</para>
+    /// </param>
     public static DeviceLibraryMatch? Find(
         IEnumerable<string>  types,
         string               searchRoot,
         IReadOnlyList<string>? preferPathContaining = null,
         int                  ancestorLevels = 2,
         Action<string>?      report = null,
-        LibraryFormat        format = LibraryFormat.Any)
+        LibraryFormat        format = LibraryFormat.Any,
+        IEnumerable<string>? extraRoots = null)
     {
         ArgumentNullException.ThrowIfNull(types);
 
         var wanted = types.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        if (wanted.Count == 0 || string.IsNullOrWhiteSpace(searchRoot)) return null;
+        if (wanted.Count == 0) return null;
 
         // WIDEN ONLY WHEN THE NARROWER SEARCH FOUND NOTHING. Looking in every level at once means a
         // library sitting next to the kit competes with anything else that happens to be further out
@@ -166,7 +179,7 @@ public static class DeviceLibraryDiscovery
         var best = new List<(DeviceLibraryMatch Match, int Rank)>();
         int examined = 0;
 
-        foreach (string root in SearchRoots(searchRoot, ancestorLevels))
+        foreach (string root in AllRoots(searchRoot, ancestorLevels, extraRoots))
         {
             foreach (string file in Candidates(root))
             {
@@ -391,6 +404,72 @@ public static class DeviceLibraryDiscovery
     /// was imported rather than inside it — but the walk is bounded, because searching ever upward
     /// from a folder on someone's disk ends somewhere it has no business being.
     /// </summary>
+    /// <summary>
+    /// The ancestor walk, then whatever the caller was told about — deduped, in that order. Told-about
+    /// roots come LAST so a library sitting with the kit still wins over one merely declared somewhere.
+    /// </summary>
+    private static IReadOnlyList<string> AllRoots(
+        string searchRoot, int levels, IEnumerable<string>? extraRoots)
+    {
+        var seen  = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var roots = new List<string>();
+
+        foreach (string r in SearchRoots(searchRoot, levels))
+            if (seen.Add(r)) roots.Add(r);
+
+        foreach (string r in extraRoots ?? [])
+        {
+            string full;
+            try { full = Path.GetFullPath(r); }
+            catch (Exception ex) when (ex is ArgumentException or IOException) { continue; }
+
+            if (Directory.Exists(full) && seen.Add(full)) roots.Add(full);
+        }
+
+        return roots;
+    }
+
+    /// <summary>
+    /// True when this folder holds a library our worker could drive — ANY device family, not a
+    /// particular one. This is how a package that supplies no parts is recognised as still worth
+    /// referencing: it is the models, and nothing else about it says so.
+    /// </summary>
+    public static bool HoldsAnyDeviceLibrary(string root, int ancestorLevels = 0)
+    {
+        if (string.IsNullOrWhiteSpace(root)) return false;
+
+        int examined = 0;
+        foreach (string dir in SearchRoots(root, ancestorLevels))
+            foreach (string file in Candidates(dir))
+            {
+                if (++examined > MaxCandidates) return false;
+                if (ExportsAnyDeviceEntryPoint(file)) return true;
+            }
+
+        return false;
+    }
+
+    /// <summary>Whether the file exports an entry point of the shape our worker calls, for any family.</summary>
+    private static bool ExportsAnyDeviceEntryPoint(string file)
+    {
+        byte[] bytes;
+        try
+        {
+            var info = new FileInfo(file);
+            if (!info.Exists || info.Length == 0 || info.Length > MaxLibraryBytes) return false;
+            bytes = File.ReadAllBytes(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
+
+        // The PREFIX alone: the family name is the vendor's and is exactly what we must not need to
+        // know in advance. An exported name sits verbatim in every executable format, so one scan
+        // covers the Linux, Windows and macOS builds a vendor ships side by side.
+        foreach (var profile in Profiles)
+            if (Contains(bytes, profile.ExportPrefix)) return true;
+
+        return false;
+    }
+
     private static IReadOnlyList<string> SearchRoots(string searchRoot, int levels)
     {
         var roots = new List<string>();

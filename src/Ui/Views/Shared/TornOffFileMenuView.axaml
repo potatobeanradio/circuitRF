@@ -159,6 +159,13 @@
                           Command="{Binding ExportGerberCommand}"
                           ToolTip.Tip="Requires an active layout document."/>
             </MenuItem>
+            <MenuItem Header="_Manage PDKs…"
+                      Command="{Binding ManagePdksCommand}"
+                      CommandParameter="{Binding $parent[Window]}"
+                      InputGesture="Ctrl+P"
+                      ToolTip.Tip="Requires an open workspace.">
+                <MenuItem.Icon><mi:MaterialIcon Kind="PackageVariant" Width="16" Height="16"/></MenuItem.Icon>
+            </MenuItem>
             <Separator/>
             <MenuItem Header="{Binding CloseWorkspaceOrWindowHeader}"
                       Command="{Binding CloseWorkspaceOrWindowCommand}">

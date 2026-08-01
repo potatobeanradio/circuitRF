@@ -62,6 +62,16 @@ public static class CellSymbolResolver
     /// </summary>
     public static CellSymbolResolution Resolve(string cellRef, string baseDir)
     {
+        // 0. A kit part lives in memory, not on disk — checked FIRST, and never falling through to
+        //    the path branch. Falling through would resolve "pdk://…" against baseDir, producing a
+        //    NotFound that names a directory nobody ever expected to exist; the reference is not a
+        //    path and must not be reported as a bad one. An unloaded kit is NotFound on purpose:
+        //    that is the reported, repairable state, and it draws the same placeholder.
+        if (PdkKitRegistry.IsKitRef(cellRef))
+            return PdkKitRegistry.Find(cellRef) is { } part
+                ? new CellSymbolResolution { State = CellSymbolState.Resolved, Symbol = part.Symbol }
+                : CellSymbolResolution.NotFoundResult;
+
         // 1. Resolve path.
         string cellAbsDir;
         try
@@ -126,6 +136,39 @@ public static class CellSymbolResolver
         catch
         {
             return CellSymbolResolution.PrimaryMissingResult;
+        }
+    }
+
+    // ── The cell's published interface ────────────────────────────────────────
+
+    /// <summary>
+    /// The <c>.ccell</c> a cell reference names — from memory for a kit part, from disk for a cell
+    /// folder — or null when it cannot be read.
+    ///
+    /// <para><b>Why this lives beside symbol resolution rather than at each caller.</b> A cell
+    /// reference has two halves: its artwork and its published interface. Symbol resolution was
+    /// already funnelled here; the interface was read directly wherever it was wanted, which is why
+    /// making kit parts virtual touches so many call sites. Both halves resolve through this file
+    /// now, so a reference form added later is taught to one place, not to a dozen.</para>
+    ///
+    /// <para>Deliberately NOT cached: a <c>.ccell</c> is small, read at placement and at dialog-open
+    /// rather than per frame, and a stale parameter interface is a silently wrong instance. The
+    /// symbol cache above exists because symbols are re-read on every render; this is not.</para>
+    /// </summary>
+    public static CcellFile? ResolveCcell(string cellRef, string baseDir)
+    {
+        if (PdkKitRegistry.IsKitRef(cellRef))
+            return PdkKitRegistry.Find(cellRef)?.Ccell;
+
+        try
+        {
+            string cellAbsDir = Path.GetFullPath(Path.Combine(baseDir, cellRef));
+            string ccellPath  = Path.Combine(cellAbsDir, CellFolder.CcellFileName);
+            return File.Exists(ccellPath) ? CellPersistence.LoadFromFile(ccellPath) : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 

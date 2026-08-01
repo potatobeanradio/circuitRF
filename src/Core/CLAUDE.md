@@ -1,5 +1,23 @@
 # Core — local conventions
 
+The provider-unavailable message names the usual cause (2026-08-01) — COMPLETE. `ExternalDeviceRegistry.Require`
+now says the model is **usually a compiled one whose implementing library was not found**, that such a
+library often ships as a separate package beside the kit, and what to do about it (reference the package
+in File ▸ Manage PDKs, or supply a `device-provider.json`). Everything the message already said is kept.
+
+**Named as the USUAL cause, not as a diagnosis.** This layer knows only that nothing answered to the name;
+asserting the library is missing would be over-claiming. Leaving it out, though, sends the user looking
+for a missing provider REGISTRATION when what is actually missing is a file on disk — which is the wrong
+half of the system entirely.
+
+**`DeviceWorkerProviderResolver.Describe`'s empty case now says what it MEANS.** It read "no kit folders",
+which is literally true and tells a user nothing; it now reads "no kit in this workspace settled on a way
+to evaluate its devices" — the reason there are none being the interesting part. The
+nothing-was-ever-registered case is still worded separately, because it is a different situation with a
+different fix.
+
+Gate: `ProviderUnavailableMessageTests` (4).
+
 Compiled device models on Windows (brief-windows-device-worker.md, 2026-07-31) — COMPLETE, with the
 one gate that needs a Windows machine still open. The worker now builds and runs for Windows, and a
 synthesised manifest names `win-x64` again.

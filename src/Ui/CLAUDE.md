@@ -1,5 +1,226 @@
 # UI (Avalonia) — local conventions
 
+PDK settings were computed correctly and then not handed on (2026-08-01) — FIXED. Owner report: a kit
+that had worked stopped running, with "no kit in this workspace settled on a way to evaluate its devices".
+
+**Root cause, and it is one wrong identifier.** `LoadReferencedKit` built the provider manifest from
+`r.Settings` — the RECORDED settings — rather than `outcome.Settings`, what the install actually settled
+on. The two differ in exactly the case that matters: a reference with nothing recorded derives its
+settings on the spot, and the manifest was then built from the recorded **null**. The resolver registered
+nothing, and every kit part failed at Run. Diagnosed against the real workspace with a disposable probe —
+the derivation itself was working the whole time and reported the library it had found.
+
+**Two further defects found in the same place:**
+- **Adding a model-library package did not re-derive the kits already loaded.** A part kit imported before
+  the package was referenced had settled on "no library found", and nothing revisited it — so the dialog
+  showed everything healthy while Run still failed, until the workspace was reopened. Any change to the
+  reference set now re-reads EVERY reference (`ReloadAllReferencedKits` → `RestoreInstalledPdks`), because
+  adding or removing a package changes what other kits can resolve.
+- **Derived settings were never recorded**, so every open re-derived them — ~200 ms against ~0.5 ms
+  replayed, which is the whole point of recording them (R-pdk-10). Now written back when a reference had
+  none, and only then, so an ordinary open still touches nothing.
+
+**Standing rule: after an install, read `outcome.Settings` — never the settings that went in.** They are
+the same only when nothing had to be worked out, which is the case that was never going to fail.
+
+Gate: `AKitThatHadToDeriveItsSettings_StillRegistersAManifest` — **verified to fail against the pre-fix
+line**, and its negative (`WithNoLibraryAnywhere_NothingIsRegistered_RatherThanAnEmptyManifest`), since a
+manifest naming nothing would start a worker that cannot load a model. Every earlier PDK test checked what
+`Install` RETURNS; none checked that it reached the resolver, which is why a one-identifier slip got past
+150 of them.
+
+Declining to save on workspace close now DISCARDS the unsaved state (2026-08-01) — COMPLETE. Owner
+report: close a workspace holding a dirty document, answer Don't Save, then open another workspace — and
+you are prompted to save that document again, for a workspace that no longer exists.
+
+**Root cause, and it is a rule that is right everywhere except this one place.** Both session registries
+refuse to retire a DIRTY session (`RetireIfUnreferenced` returns early on `_dirtyPaths.Contains`), which
+is correct for every ordinary path — closing one tab, popping out of a frame — where nobody has been
+asked anything and silently dropping unsaved work would be the worse bug. `ResetToBlankShell` used that
+same call, so by the time the user had answered Don't Save the answer was thrown away: the dirty flag
+survived, `HasOrphanedDirtySession` stayed true, and the next `OpenWorkspace` guard prompted again.
+
+- **`DiscardIfUnreferenced` (both registries) drops the session AND its dirty flag.** Named for what it
+  does, because it may only be called where the user has already declined — do not reach for it anywhere
+  else. Still guarded on being unreferenced: a torn-off document survives a workspace switch by design
+  (R-fgn-2) and its session is not ours to discard.
+- **A blanket `Clear()` is still wrong** and was not reintroduced — it would tear down that surviving
+  floated document's own push-in/undo session, which is why the per-path form exists at all.
+- **Two holes, not one.** The per-document loop only walks OPEN documents, so a dirty session with no
+  document of its own — a sub-cell pushed into, edited, and popped out of — was never reached.
+  `DiscardUnreferencedDirtySessions` sweeps those, and it runs **after** the survivor lists are rebuilt:
+  before that point `_openDocsByPath` still lists documents just force-closed, so every discard would be
+  refused. Getting that order wrong makes the fix silently do nothing.
+
+Gate: `DirtySessionDiscardOnCloseTests` (6) — the retire rule still holds, discard drops both, a
+referenced session survives, the reported sequence leaves nothing to prompt about, the
+no-document-of-its-own case, and a source scan pinning that `ResetToBlankShell` calls the discarding form
+(reverting either call restores the bug and nothing else would fail). Firewall 4, Core 849, RfCore 281,
+Ui 4,253, Engine 509 (+1 pre-existing skip) — 5,896 pass.
+
+An imported PDK writes NOTHING into the workspace (brief-pdk-in-memory-import.md, 2026-08-01) — COMPLETE.
+A kit's parts are translated into memory and the workspace records only a reference to the kit plus the
+decisions circuitRF made about it. `<workspace>/pdk/<kit>/` is gone.
+
+**What this fixes, and what it deliberately does not.** The translated `.csym` was the library's own drawing,
+sitting in a folder a user would share. It is out. **A shared workspace still carries the part name, the kit
+name and the instance parameter values** — those are copied into the `.csch` at placement, which is how
+instance overrides work for every component, not a PDK quirk. Do not read that as an oversight and do not
+add scope to chase it. Sharing was also **already broken** before this: `.ccell` and `device-provider.json`
+were full of absolute paths, so a colleague got a symbol that rendered and everything else dangling,
+failing quietly until they pressed Run. This makes the kit an explicit, repairable dependency instead.
+
+**`PdkKitRegistry` holds the parts; `pdk://<kit>/<part>` is the reference.** Virtual, not a relative path —
+there is nothing on disk for a path to be relative to. `CellSymbolResolver.Resolve` checks it FIRST and
+never falls through, and `ResolveCcell` is the one funnel for a part's published interface (memory for a
+kit ref, disk otherwise) so placement seeding, the parameter editor and the extractor cannot diverge.
+**The registry is process-wide static**: a test class touching it needs `PdkToolsDirectoryCollection`, which
+now covers both it and `DeviceWorkerManifest.ToolsDirectory`.
+
+**`SetKit` REPLACES a kit rather than merging.** A re-import or a repaired reference must produce the kit as
+it is NOW, not the union of every version seen this session. Register under `InstallOutcome.KitName`, never
+the report's own — they differ when a report carries no name, and using the wrong one leaves every part
+reference pointing at a kit nobody registered.
+
+**`.cws` records the decisions, never the content** (`CwsPdkRef`: path, provider, translation version,
+settled settings; `WhenWritingNull`, no `FormatVersion` bump). Written immediately on import rather than at
+the next save — an import is not an edit to a document a user might reasonably discard. The path is
+relative inside the workspace and absolute outside; outside is reported in the dialog, because no encoding
+makes an outside reference portable.
+
+**Recorded settings are REPLAYED, not re-derived, and that is the whole performance bet.** Measured on a
+synthetic 20-symbol kit: **0.5 ms replayed against 199.8 ms derived** — and the derived figure is itself
+over the 100 ms budget. Library discovery byte-scans candidate builds across a multi-MB package; recording
+the answer is what takes it off the open path. `PdkInMemoryLoadBudgetTests` pins both, the second as a
+comparison rather than a second absolute number.
+
+**Settings circuitRF derived ITSELF are reconsidered when the rule changes; a kit's own are never touched.**
+`KeepIfStillCurrent` drops a recorded set whose `generatedFormat` predates the current one — a set can be
+entirely runnable and still be missing something added since, and one that runs is exactly the one nothing
+else would ever replace. A kit's file, or one a user edited, is theirs even when it is broken.
+
+**A translation-version mismatch is REFUSED and reported, never applied silently.** `DsnSymbolReader` snaps
+pins to P=100; a reader change moves them and wires attached to them disconnect. The on-disk translation
+used to freeze that by accident; the version pin replaces it deliberately.
+
+**`File ▸ Manage PDKs…`** (after Export, all three menu surfaces) is required rather than optional: kit
+parts no longer appear in the Project Tree, so without it a workspace's dependency on a kit is invisible
+until something fails to resolve. Add / Remove / Reveal / Validate. Every decision lives in
+`PdkReferenceManager` (framework-free, 17 tests); the dialog is presentation plus the two things that
+genuinely need a window — a folder picker and the platform's file manager.
+**Add is also Repair** — a reference is keyed on the kit's NAME, so re-adding a moved kit reconnects every
+placed part with no schematic touched. **Remove is warned and reversible** — nothing is deleted from any
+schematic. Reveal goes through the extracted `WorkspaceViewModel.RevealPathInFileManager`, not a second copy.
+
+**`File ▸ Import ▸ PDK` STAYS, and the two entry points are not duplicates.** Import is the primary
+action: it accepts a `.zip` archive as well as a folder, and it shows the full import report (parts read,
+recognised-but-unsupported, unrecognised, placeable count). Manage PDKs' **Add…** is folder-only and
+silent — it is there to repair a reference you are already looking at, not to import a kit for the first
+time. Both go through `PdkPartInstaller.Install` and both end at `.cws` + registry + palette + resolver.
+
+**The bug that convergence exposed, worth remembering:** Add originally discarded the install outcome and
+tried to rebuild the palette from the registry, which cannot work — a palette entry carries the part's icon
+and search terms and the registry holds neither. A kit added there loaded, recorded and resolved on the
+canvas, while the palette stayed empty until the workspace was reopened. `AddOrRepair` now returns the
+outcome and `WorkspaceViewModel.AdoptLoadedKits` is the one place a loaded kit is wired in.
+
+**Manage PDKs is Ctrl/⌘+P, and the dialog reports to Messages, not only to itself.** Both halves of the
+accelerator matter: the in-window menu's `InputGesture` only DISPLAYS it, a window-level `KeyBinding` fires
+it, and an item carrying just the display string looks bound and is not. `P` was free — the schematic
+canvas's bare `P` (place Pin) sits behind a modifier guard — but it is conventionally *Print* elsewhere and
+is taken only because circuitRF has no Print to collide with.
+
+**Every action in the dialog posts to Messages as well as showing its result inline**, because the dialog
+is dismissed and the record of what was added, removed or validated has to outlive it — the same reason
+File ▸ Import ▸ PDK reports. Removal that leaves parts unresolved posts at Warning; a clean validate posts
+at Success.
+
+**`Validate` returns what it CHECKED, not just what was wrong** (`ValidationResult`: parts offered, placed
+parts checked, problems, notes). A bare "no problems found" cannot be told apart from a check that did
+nothing, which is the one thing a validation must not be ambiguous about — so the summary reads
+"N part(s) offered, M placed part(s) checked". A kit that could not be read reports `PartsOffered = -1`
+rather than 0: "offers nothing" and "could not be read" are different answers.
+
+**Severity is classified AT THE SOURCE, never by matching message text downstream.** `DsnSymbolReadResult`
+carries `Notes` alongside `Diagnostics`, and "No pins were declared, so this symbol cannot be wired" is a
+NOTE: a pin-less drawing is very often a title block or an annotation a kit draws beside its real parts, and
+the reader cannot tell one from the other. Reporting it as a fault made an ordinary kit fail validation, and
+a validation that cries wolf is one nobody reads. Do not re-classify by pattern-matching the string — the
+wording would change and the severity would silently follow it.
+
+**The platform entries are reported as PLATFORMS, and by whether one is this machine.** The old note read
+"3 way(s) to evaluate its devices", which is a count of `manifest.Launches` — one method described for three
+operating systems, not three methods — and it buried the only thing the user needs. It now names them and
+says plainly when none is this machine, at import rather than at Run.
+
+**`PdkPartInstaller.Plural` is the one pluraliser for every PDK message.** "1 part(s)" is a template showing
+through; a user should not have to decode a count that could simply have been written.
+
+**Nothing states the sharing consequence except PER REFERENCE.** The dialog's header used to say
+"sharing the workspace does not carry the kit" over every row — false for a kit sitting INSIDE the
+workspace tree, which travels with it (stored relative, files inside). Both outcomes are now stated on the
+selected row, the positive one included: "will this survive being shared" is the question the dialog exists
+to answer, and silence is not an answer.
+
+**A workspace can reference a MODEL-LIBRARY PACKAGE — a folder with no parts (2026-08-01).** This closes a
+real hole. A vendor delivery is several part kits beside ONE package holding the compiled models, and
+`DeviceLibraryDiscovery` finds that package by **adjacency** (the imported folder, then two ancestors).
+Reference a kit from anywhere else — put it in the workspace, say — and the adjacency is gone with nothing
+on disk left to recover it from: the kit settles on "no program to evaluate its devices" and the package
+itself was refused for having no placeable parts. There was no way to say where the models were.
+
+- `CwsPdkRef.IsLibraryOnly` (`WhenWritingDefault`, absent reads as false) marks such a reference.
+- `AddOrRepair` accepts a part-less folder **only** when `DeviceLibraryDiscovery.HoldsAnyDeviceLibrary`
+  recognises one — the entry-point PREFIX alone, since the family name is the vendor's and is exactly what
+  must not be known in advance. A folder with neither is still refused, or a mistyped path would look like
+  it worked.
+- `Find` gained `extraRoots`, searched **after** the ancestor walk, so a library sitting with the kit still
+  wins over one merely declared. **Widening the walk was rejected**: the further out it goes the less that
+  territory has to do with the kit, and it would eventually match by accident. Being told is the fix.
+- **Library packages are resolved FIRST on open.** Loading a part kit before knowing where the models are
+  settles "no library found" and records it.
+- A library package reads **Ok with 0 parts**, not Drifted — it holds none by definition, and flagging that
+  would leave every such reference permanently red. `Validate` checks it still holds a library rather than
+  running the part machinery over it.
+
+**Three states, not two** (`PdkReferenceManager.RefState`): Ok / Missing / Drifted. A kit that is present
+but no longer offers a part the design placed is a DIFFERENT problem from one that is missing, and
+reporting them the same way sends the user looking in the wrong place. `Describe` loads nothing — asking
+what a workspace depends on must not change what is loaded.
+
+**A workspace open is SILENT on success**, one summary per open otherwise, with details in
+`<workspace>/pdk-load.log` (`PdkLoadLog`, diagnostic only, never project state, never able to stop an open).
+
+**Narrowed deliberately, and stated rather than left implied:** dropping a `device-provider.json` or a
+`.cnl` into `<workspace>/pdk/<kit>/` to supplement a read-only kit is gone with that folder. The surviving
+route is the **additions folder** — a small folder of one's own that names the kit via `baseDirectory` —
+which is the documented first-class mechanism and is unchanged. A kit's netlist is now referenced where it
+lives rather than copied in, so the kit is one dependency to repair rather than a copy that silently stops
+matching the original.
+
+**No migration.** Alpha: a workspace built by the on-disk code needs its kit re-imported. Nothing reads or
+deletes an existing `pdk/` folder.
+
+**Two real regressions were caught by the test migration and fixed rather than absorbed:** a kit's own
+`provider` name is stamped back to the kit name (each part records `Provider = <kit>` and a netlist asks for
+that, so settings answering to anything else leave every step working and only Run failing), and a kit
+shipping settings that cannot be parsed is reported again instead of falling through to silence. A third —
+a part declared as a circuit whose netlist is not there — is now reported at import rather than surfacing
+much later as a device the provider does not serve.
+
+**Gate:** 150 PDK tests + 22 `PdkReferenceManagerTests` + 2 budget. Firewall 4, Core 853, RfCore 281,
+Ui 4,251, Engine 509 (+1 pre-existing skip) — 5,898 pass.
+
+**The brief's own "scan for vendor names" gate is NOT met, and must not be met that way.** A scan needs a
+list of the names to look for, and writing that list into the repo puts a page of vendor and EDA-tool
+names in it — which is the thing the rule forbids. A gate that violates the rule it enforces is not a
+gate. (Written once and deleted: it even needed a self-exclusion so it would not fail on its own list,
+which was the tell.) **R-pdk-1 is an authoring rule, held by review and by the fixture convention
+(`SampleKit`, `PART_A`, `KITLIB_DEVICE_v1`, `TYPEA`/`TYPEB`), not by a test.** Do not re-add one. **Not interactively verified**
+(no visual driver here) — please confirm: importing a kit creates no `pdk/` folder and its parts still place
+and render; reopening the workspace brings them back with no import report; File ▸ Manage PDKs lists the
+kit, and moving the kit folder then repairing it there makes placed parts resolve again.
+
 A kit part can be pointed at a different model library per instance (2026-07-31) — COMPLETE.
 `PdkPartInstaller` inserts a blank, file-valued `ModelLibrary` parameter first on every kit part;
 `NetExtractor` folds it into the provider name (`kit|path`) because that is what

@@ -91,6 +91,25 @@ internal sealed class SchematicSessionRegistry
         _sessions.Remove(normalizedPath);
     }
 
+    /// <summary>
+    /// Drops a session and its unsaved state, when nothing open still refers to it.
+    ///
+    /// <para><b>Unlike <see cref="RetireIfUnreferenced"/> this DISCARDS unsaved work, so it may only
+    /// be called where the user has already been asked and declined to save.</b> That is leaving a
+    /// workspace: the prompt has happened, the answer was Don't Save, and the documents are being
+    /// closed. Keeping the dirty flag past that point makes the NEXT workspace open prompt to save a
+    /// document belonging to a workspace that is gone.</para>
+    ///
+    /// <para>Still guarded on being unreferenced, because a torn-off document from this workspace can
+    /// legitimately survive the switch — its session is still live and is not ours to discard.</para>
+    /// </summary>
+    public void DiscardIfUnreferenced(string normalizedPath, Func<string, bool> isReferenced)
+    {
+        if (isReferenced(normalizedPath)) return;
+        _sessions.Remove(normalizedPath);
+        _dirtyPaths.Remove(normalizedPath);
+    }
+
     /// <summary>Removes all sessions and dirty flags (called on workspace switch / reset).</summary>
     public void Clear()
     {

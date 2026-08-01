@@ -294,6 +294,26 @@ public static class NetExtractor
     // ── Cell instance emission ───────────────────────────────────────────────
 
     /// <summary>
+    /// The published interface of the cell an instance references — from memory for an imported
+    /// kit's part, from disk for a cell folder. Null when there is none to read, which sends the
+    /// caller on to the ordinary hierarchical path to report it.
+    ///
+    /// <para><b>A kit part needs no schematic directory.</b> Its reference is virtual rather than
+    /// relative to anything, so the guard the disk path needs would wrongly refuse one on a
+    /// schematic that has never been saved — which is exactly the case the virtual form exists to
+    /// allow.</para>
+    /// </summary>
+    private static CcellFile? CcellOf(SchematicEditModel model, EditableComponent comp)
+    {
+        if (comp.CellRef is null) return null;
+        if (PdkKitRegistry.IsKitRef(comp.CellRef)) return PdkKitRegistry.Find(comp.CellRef)?.Ccell;
+
+        return model.SchematicDirectory is null
+            ? null
+            : CellSymbolResolver.ResolveCcell(comp.CellRef, model.SchematicDirectory);
+    }
+
+    /// <summary>
     /// Emits a provider-backed cell as ONE <c>ExtDevice</c> instance, or returns null when the cell
     /// is an ordinary hierarchical one (the overwhelmingly common case) so the caller falls through
     /// to <see cref="EmitCellInstance"/>.
@@ -313,20 +333,7 @@ public static class NetExtractor
         Dictionary<string, CellSymbolResolution>? cellRefResolutions,
         List<string> conflicts)
     {
-        if (model.SchematicDirectory is null || comp.CellRef is null) return null;
-
-        CcellFile ccell;
-        try
-        {
-            string cellDir   = Path.GetFullPath(Path.Combine(model.SchematicDirectory, comp.CellRef));
-            string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-            if (!File.Exists(ccellPath)) return null;
-            ccell = CellPersistence.LoadFromFile(ccellPath);
-        }
-        catch
-        {
-            return null;   // unreadable .ccell — let the ordinary cell path report it
-        }
+        if (CcellOf(model, comp) is not { } ccell) return null;
 
         if (string.IsNullOrWhiteSpace(ccell.ExternalProvider)) return null;
 
@@ -603,20 +610,7 @@ public static class NetExtractor
         out bool isCircuitBacked)
     {
         isCircuitBacked = false;
-        if (model.SchematicDirectory is null || comp.CellRef is null) return null;
-
-        CcellFile ccell;
-        try
-        {
-            string cellDir   = Path.GetFullPath(Path.Combine(model.SchematicDirectory, comp.CellRef));
-            string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-            if (!File.Exists(ccellPath)) return null;
-            ccell = CellPersistence.LoadFromFile(ccellPath);
-        }
-        catch
-        {
-            return null;   // unreadable .ccell — let the ordinary cell path report it
-        }
+        if (CcellOf(model, comp) is not { } ccell) return null;
 
         if (string.IsNullOrWhiteSpace(ccell.ExternalNetlistPath) ||
             string.IsNullOrWhiteSpace(ccell.ExternalNetlistCell)) return null;

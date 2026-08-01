@@ -124,6 +124,76 @@ public sealed class CwsFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? DefaultTechRef { get; set; }
+
+    /// <summary>
+    /// PDKs this workspace references. An import writes nothing into the workspace — a kit's
+    /// translated symbols and parameter interfaces are the vendor's content and are rebuilt in
+    /// memory on open (docs/design/pdk-import.md). Null or empty means no kits.
+    ///
+    /// <para>No FormatVersion bump: an absent field on an older .cws loads as null.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CwsPdkRef>? PdkRefs { get; set; }
+}
+
+/// <summary>
+/// One referenced PDK: where it is, and what circuitRF settled about it.
+///
+/// <para><b>Decisions are recorded; translations are not.</b> An import both translates (symbols,
+/// parameter interfaces, icons) and decides (which of a dozen library builds, which variant is the
+/// default). The translations are the vendor's content and are rebuilt on open. The decisions are
+/// tiny, carry no geometry, and are the difference between a workspace that opens the same way twice
+/// and one that quietly re-decides — and re-deciding is also the only part with a cost worth caring
+/// about (library discovery byte-scans candidate builds).</para>
+/// </summary>
+public sealed class CwsPdkRef
+{
+    /// <summary>
+    /// The kit's folder — workspace-relative when inside the workspace, absolute otherwise, via
+    /// <see cref="WorkspaceRefs.ToStoredRef"/>. A kit is normally outside, so absolute is the common
+    /// case, which is why a broken one has to be repairable rather than merely reported.
+    /// </summary>
+    public string Path { get; set; } = "";
+
+    /// <summary>
+    /// The name a netlist asks for this kit by, and the name its parts' virtual references carry.
+    /// Not cosmetic: change it and every placed part stops resolving.
+    /// </summary>
+    public string Provider { get; set; } = "";
+
+    /// <summary>
+    /// Which reader translated this kit's symbols. Pins snap to the P=100 connection grid, so a
+    /// reader change moves pins — and wires attached to them silently disconnect. The frozen
+    /// on-disk symbol used to prevent that; with the translation rebuilt on every open this is what
+    /// replaces it. A mismatch is reported and refused, never applied silently.
+    /// </summary>
+    public int TranslationVersion { get; set; }
+
+    /// <summary>
+    /// What circuitRF worked out about how to simulate this kit — the same object a
+    /// <c>device-provider.json</c> holds, kept here instead of written beside the kit. Null for a
+    /// purely schematic kit with nothing compiled to serve.
+    ///
+    /// <para>A raw <see cref="JsonNode"/> for the same reason <see cref="CwsFile.DockLayout"/> is
+    /// one: a malformed block must not take the rest of the <c>.cws</c> with it, and a block written
+    /// by a newer build round-trips verbatim rather than through a lossy subset.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonNode? Settings { get; set; }
+
+    /// <summary>
+    /// True when this reference is a MODEL-LIBRARY PACKAGE rather than a part kit — a folder that
+    /// supplies no placeable parts but does hold the compiled libraries other kits' devices need.
+    ///
+    /// <para>It exists because a delivery is several part kits beside one shared library package, and
+    /// discovery finds that package by ADJACENCY. Reference a kit from anywhere else — a workspace,
+    /// say — and the adjacency is gone with nothing on disk left to recover it from. This is the
+    /// workspace saying where the models are.</para>
+    ///
+    /// <para>Absent in an existing <c>.cws</c> reads as false, which is the part-kit case.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsLibraryOnly { get; set; }
 }
 
 /// <summary>

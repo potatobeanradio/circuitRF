@@ -30,6 +30,7 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
 
     public void Dispose()
     {
+        PdkKitRegistry.Clear();
         try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
     }
 
@@ -66,18 +67,25 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
                 ? declaredParams.Select(n => new PdkPartParameter(n, "")).ToList()
                 : null));
 
-        var outcome = PdkPartInstaller.Install(report, WorkspaceDir);
+        var outcome = PdkPartInstaller.Install(report);
+        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
         return outcome.Items[0].Pdk!.CellDir!;
     }
 
-    private SchematicEditModel ModelWithPart(string cellDir, out EditableComponent comp)
+    /// <summary>The part's published interface, held in memory rather than in a <c>.ccell</c> on disk.</summary>
+    private static CcellFile Installed(string cellRef)
+        => PdkKitRegistry.Find(cellRef)?.Ccell
+           ?? throw new Xunit.Sdk.XunitException($"no kit part is loaded for '{cellRef}'");
+
+    private SchematicEditModel ModelWithPart(string cellRef, out EditableComponent comp)
     {
         var model = new SchematicEditModel { SchematicDirectory = SchematicDir };
         comp = new EditableComponent
         {
             InstanceName = "X1",
             Symbol       = SymbolKind.Generic,
-            CellRef      = Path.GetRelativePath(SchematicDir, cellDir),
+            // Virtual, not a relative path: the part is held in memory.
+            CellRef      = cellRef,
             X = 0, Y = 0,
         };
         model.Components.Add(comp);
@@ -145,7 +153,7 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
         // parameter surface is needed, the cell interface already drives it.
         string cellDir = InstallPart("Ldrawn", "Nfingers");
 
-        var ccell = CellPersistence.LoadFromFile(Path.Combine(cellDir, CellFolder.CcellFileName));
+        var ccell = Installed(cellDir);
 
         Assert.Equal(["ModelLibrary", "Ldrawn", "Nfingers"], ccell.Parameters.Select(p => p.Name));
         // Blank defaults on purpose — the provider owns them; inventing values here would
@@ -193,17 +201,15 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
     [Fact]
     public void ACellWithNoProviderMarker_StillTakesTheOrdinaryHierarchicalPath()
     {
-        string cellDir = InstallPart();
+        string cellRef = InstallPart();
 
         // Strip the marker: this is now an ordinary cell with a symbol but no schematic, which the
         // hierarchical path reports as such. The point is that it does NOT emit an ExtDevice.
-        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        var ccell = Installed(cellRef);
         ccell.ExternalProvider = null;
         ccell.ExternalType     = null;
-        CellPersistence.SaveToFile(ccellPath, ccell);
 
-        var model = ModelWithPart(cellDir, out _);
+        var model = ModelWithPart(cellRef, out _);
         var tb    = NetExtractor.Extract(model, "tb").TestBench;
 
         Assert.DoesNotContain(tb.Instances, i => i.Reference == "ExtDevice");
@@ -212,13 +218,10 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
     [Fact]
     public void AProviderWithNoDeviceType_IsReportedAndSkipped_NeverEmittedHalfFormed()
     {
-        string cellDir   = InstallPart();
-        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-        var ccell = CellPersistence.LoadFromFile(ccellPath);
-        ccell.ExternalType = null;
-        CellPersistence.SaveToFile(ccellPath, ccell);
+        string cellRef = InstallPart();
+        Installed(cellRef).ExternalType = null;
 
-        var model  = ModelWithPart(cellDir, out _);
+        var model  = ModelWithPart(cellRef, out _);
         var result = NetExtractor.Extract(model, "tb");
 
         Assert.Empty(result.TestBench.Instances);
@@ -258,7 +261,7 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
             new PdkPartParameter("Rth", "-1"),
             new PdkPartParameter("DataPath", "Kit_Data", IsText: true));
 
-        var ccell = CellPersistence.LoadFromFile(Path.Combine(cellDir, CellFolder.CcellFileName));
+        var ccell = Installed(cellDir);
         Assert.Equal(["ModelLibrary", "Rth"], ccell.Parameters.Select(p => p.Name));
         Assert.Equal("Kit_Data", ccell.ExternalFixedParameters!["DataPath"]);
 
@@ -277,7 +280,7 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
     {
         string cellDir = InstallPartWith(new PdkPartParameter("Rth", "-1"));
 
-        var ccell = CellPersistence.LoadFromFile(Path.Combine(cellDir, CellFolder.CcellFileName));
+        var ccell = Installed(cellDir);
 
         Assert.Null(ccell.ExternalFixedParameters);
     }
@@ -297,6 +300,8 @@ public sealed class PdkExternalDeviceExtractionTests : IDisposable
                                         "symbol description (.dsn)"),
             Parameters: pars));
 
-        return PdkPartInstaller.Install(report, WorkspaceDir).Items[0].Pdk!.CellDir!;
+        var outcome = PdkPartInstaller.Install(report);
+        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
+        return outcome.Items[0].Pdk!.CellDir!;
     }
 }

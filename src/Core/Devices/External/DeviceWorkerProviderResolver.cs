@@ -17,6 +17,9 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
     private readonly IReadOnlyList<string> _roots;
     private readonly Launcher              _launch;
 
+    /// <summary>Manifests already in hand, consulted before any folder is searched.</summary>
+    private readonly IReadOnlyList<(string Kit, DeviceWorkerManifest Manifest)> _known;
+
     /// <param name="searchRoots">
     /// Folders holding kits. Each is searched for a manifest directly inside it and one level down,
     /// which is how kits are laid out — one folder per kit.
@@ -31,12 +34,37 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
     {
         ArgumentNullException.ThrowIfNull(searchRoots);
         _roots  = searchRoots.Where(r => !string.IsNullOrWhiteSpace(r)).ToArray();
+        _known  = [];
         _launch = launcher ?? DeviceWorkerProvider.Launch;
     }
 
-    public string Describe => _roots.Count == 0
-        ? "no kit folders"
-        : string.Join(", ", _roots);
+    /// <summary>
+    /// Resolves from manifests already in hand rather than by searching folders — the shape a
+    /// workspace uses when it records its kits' settled settings itself instead of leaving a file
+    /// beside each kit (see <c>docs/design/pdk-import.md</c>).
+    ///
+    /// <para>Same class, and the same launch path, deliberately: choosing the entry for this machine,
+    /// resolving its command and arguments, and substituting a per-instance model library are all
+    /// decisions that must not differ by where the manifest came from.</para>
+    /// </summary>
+    public DeviceWorkerProviderResolver(
+        IEnumerable<(string Kit, DeviceWorkerManifest Manifest)> known, Launcher? launcher = null)
+    {
+        ArgumentNullException.ThrowIfNull(known);
+        _known  = [.. known];
+        _roots  = [];
+        _launch = launcher ?? DeviceWorkerProvider.Launch;
+    }
+
+    /// <summary>
+    /// What this resolver had to work with, for a failure message. The empty case is stated as what it
+    /// MEANS rather than as what it is: "no kit folders" is literally true and tells a user nothing,
+    /// while the reason there are none is nearly always the interesting part.
+    /// </summary>
+    public string Describe =>
+        _known.Count > 0 ? string.Join(", ", _known.Select(k => k.Kit))
+      : _roots.Count > 0 ? string.Join(", ", _roots)
+      :                    "no kit in this workspace settled on a way to evaluate its devices";
 
     /// <summary>
     /// Separates a kit's name from a model library an instance chose instead of the kit's own. Both
@@ -63,6 +91,11 @@ public sealed class DeviceWorkerProviderResolver : IExternalProviderResolver
 
         var (kitName, library) = SplitOverride(name);
         name = kitName;
+
+        foreach (var (kit, manifest) in _known)
+            if (string.Equals(kit, name, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(manifest.ProviderName, name, StringComparison.OrdinalIgnoreCase))
+                return Launch(name, manifest, _launch, library);
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

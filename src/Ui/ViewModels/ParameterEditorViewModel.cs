@@ -435,15 +435,18 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     private void AdoptCellDeclaredParameters(EditableComponent comp)
     {
         if (comp.CellRef is not { Length: > 0 } cellRef) return;
-        if (_schematicVm?.EditModel.SchematicDirectory is not { Length: > 0 } dir) return;
+        if (_schematicVm is null) return;
+
+        // One accessor for both reference forms — a kit part resolves from memory and needs no
+        // schematic directory, a cell folder resolves from disk and does.
+        string dir = _schematicVm.EditModel.SchematicDirectory ?? "";
+        if (dir.Length == 0 && !PdkKitRegistry.IsKitRef(cellRef)) return;
 
         try
         {
-            string ccellPath = Path.Combine(Path.GetFullPath(Path.Combine(dir, cellRef)),
-                                            CellFolder.CcellFileName);
-            if (!File.Exists(ccellPath)) return;
+            if (CellSymbolResolver.ResolveCcell(cellRef, dir) is not { } cell) return;
 
-            var declared = CellPersistence.LoadFromFile(ccellPath).Parameters;
+            var declared = cell.Parameters;
             for (int i = 0; i < declared.Count; i++)
             {
                 var d = declared[i];

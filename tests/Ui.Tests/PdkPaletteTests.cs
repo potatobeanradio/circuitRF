@@ -79,26 +79,23 @@ public sealed class PdkPartInstallerTests : IDisposable
         WriteSymbol("symbols/part.dsn");
 
         var outcome = PdkPartInstaller.Install(
-            ReportWith(new PdkPart("PART_A", "Part A", SymbolArtwork: SymbolAsset("symbols/part.dsn"))),
-            WorkspaceDir);
+            ReportWith(new PdkPart("PART_A", "Part A", SymbolArtwork: SymbolAsset("symbols/part.dsn"))));
 
         var item = Assert.Single(outcome.Items);
         Assert.Equal(1, outcome.SymbolsInstalled);
 
-        string cellDir = item.Pdk!.CellDir!;
-        Assert.True(Directory.Exists(cellDir));
+        string cellRef = item.Pdk!.CellDir!;
+        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
 
-        // Installed under the workspace's own kit folder, never beside the kit itself.
-        Assert.StartsWith(Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName), cellDir);
+        // Virtual, not a path: the part is held in memory and nothing is written into the workspace.
+        Assert.Equal(PdkKitRegistry.RefFor("SampleKit", "PART_A"), cellRef);
+        Assert.False(Directory.Exists(Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName)));
 
-        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-        var ccell = CellPersistence.LoadFromFile(ccellPath);
-        Assert.Equal("PART_A.csym", ccell.PrimarySymbol);
+        var ccell = PdkKitRegistry.Find(cellRef)!.Ccell;
         Assert.Equal(3, ccell.NumPorts);
 
-        // The written symbol must resolve exactly like any hand-authored cell's would.
-        var resolved = CellSymbolResolver.Resolve(
-            Path.GetRelativePath(WorkspaceDir, cellDir), WorkspaceDir);
+        // It must resolve through the SAME funnel a hand-authored cell's reference goes through.
+        var resolved = CellSymbolResolver.Resolve(cellRef, baseDir: WorkspaceDir);
         Assert.Equal(CellSymbolState.Resolved, resolved.State);
         Assert.Equal(3, resolved.Symbol!.Pins.Count);
         Assert.Equal(["gate", "drain", "source"], resolved.Symbol.Pins.Select(p => p.Name));
@@ -113,8 +110,7 @@ public sealed class PdkPartInstallerTests : IDisposable
         var outcome = PdkPartInstaller.Install(
             ReportWith(new PdkPart("PART_A", "Part A",
                                    IconRelativePath: "bitmaps/part.bmp",
-                                   SymbolArtwork:    SymbolAsset("symbols/part.dsn"))),
-            WorkspaceDir);
+                                   SymbolArtwork:    SymbolAsset("symbols/part.dsn"))));
 
         var item = Assert.Single(outcome.Items);
         Assert.Equal(1, outcome.IconsFound);
@@ -129,8 +125,7 @@ public sealed class PdkPartInstallerTests : IDisposable
         var outcome = PdkPartInstaller.Install(
             ReportWith(new PdkPart("PART_A", "Part A",
                                    IconRelativePath: "bitmaps/absent.bmp",
-                                   SymbolArtwork:    SymbolAsset("symbols/part.dsn"))),
-            WorkspaceDir);
+                                   SymbolArtwork:    SymbolAsset("symbols/part.dsn"))));
 
         var item = Assert.Single(outcome.Items);
         Assert.Null(item.Pdk!.IconPath);
@@ -144,7 +139,7 @@ public sealed class PdkPartInstallerTests : IDisposable
         // A kit's internal building blocks have no symbol; a tile that cannot place anything is
         // worse than no tile. They are counted, not hidden — the import report still lists them.
         var outcome = PdkPartInstaller.Install(
-            ReportWith(new PdkPart("PART_B", "Part B")), WorkspaceDir);
+            ReportWith(new PdkPart("PART_B", "Part B")));
 
         Assert.Empty(outcome.Items);
         Assert.Equal(1, outcome.OmittedNotPlaceable);
@@ -160,8 +155,7 @@ public sealed class PdkPartInstallerTests : IDisposable
             ReportWith(
                 new PdkPart("PART_A", "Part A", SymbolArtwork: SymbolAsset("symbols/part.dsn")),
                 new PdkPart("HELPER_1", "Helper 1"),
-                new PdkPart("HELPER_2", "Helper 2")),
-            WorkspaceDir);
+                new PdkPart("HELPER_2", "Helper 2")));
 
         Assert.Equal(["Part A"], outcome.Items.Select(i => i.DisplayName));
         Assert.Equal(2, outcome.OmittedNotPlaceable);
@@ -177,8 +171,7 @@ public sealed class PdkPartInstallerTests : IDisposable
         var outcome = PdkPartInstaller.Install(
             ReportWith(new PdkPart("PART_C", "Part C",
                 SymbolArtwork: new PdkAsset("cells/part/symbol/symbol.oa", PdkAssetKind.SymbolArtwork,
-                                            PdkAssetSupport.RecognizedNotSupported, "binary cell view (symbol)"))),
-            WorkspaceDir);
+                                            PdkAssetSupport.RecognizedNotSupported, "binary cell view (symbol)"))));
 
         Assert.Equal(0, outcome.SymbolsInstalled);
         Assert.Empty(outcome.Items);
@@ -193,31 +186,29 @@ public sealed class PdkPartInstallerTests : IDisposable
         File.WriteAllText(abs, "this is not a symbol description");
 
         var outcome = PdkPartInstaller.Install(
-            ReportWith(new PdkPart("PART_D", "Part D", SymbolArtwork: SymbolAsset("symbols/junk.dsn"))),
-            WorkspaceDir);
+            ReportWith(new PdkPart("PART_D", "Part D", SymbolArtwork: SymbolAsset("symbols/junk.dsn"))));
 
         Assert.Equal(0, outcome.SymbolsInstalled);
         Assert.Contains(outcome.Diagnostics, d => d.Contains("Part D", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void NoWorkspaceOpen_InstallsNothing_AndContributesNothingPlaceable()
+    public void ImportingWritesNothingIntoTheWorkspace()
     {
+        // The headline. A kit's symbols are the vendor's; translating them into the workspace is what
+        // made a shared workspace carry them, and it is the whole reason a kit is now a reference.
         WriteSymbol("symbols/part.dsn");
         WriteIcon("bitmaps/part.bmp");
 
         var outcome = PdkPartInstaller.Install(
             ReportWith(new PdkPart("PART_A", "Part A",
                                    IconRelativePath: "bitmaps/part.bmp",
-                                   SymbolArtwork:    SymbolAsset("symbols/part.dsn"))),
-            workspaceRootDir: null);
+                                   SymbolArtwork:    SymbolAsset("symbols/part.dsn"))));
 
-        // Nothing can be installed without a workspace, so nothing is placeable and the palette
-        // gets nothing. The caller warns; it does not pretend the parts are usable.
-        Assert.Empty(outcome.Items);
-        Assert.Equal(1, outcome.OmittedNotPlaceable);
-        Assert.Equal(0, outcome.SymbolsInstalled);
+        Assert.Single(outcome.Items);
+        Assert.Equal(1, outcome.SymbolsInstalled);
         Assert.False(Directory.Exists(Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName)));
+        Assert.Empty(Directory.GetFileSystemEntries(WorkspaceDir));
     }
 
     [Fact]
@@ -230,53 +221,52 @@ public sealed class PdkPartInstallerTests : IDisposable
         };
         report.Parts.Add(new PdkPart("PART_A", "Part A"));
 
-        var outcome = PdkPartInstaller.Install(report, WorkspaceDir);
+        var outcome = PdkPartInstaller.Install(report);
 
         Assert.Empty(outcome.Items);
         Assert.Contains(outcome.Diagnostics, d => d.Contains("archive", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public void ReinstallingTheSameKit_ReusesItsCellFolder_RatherThanCreatingASecond()
+    public void ReimportingTheSameKit_YieldsTheSameReference_AndReplacesWhatWasHeld()
     {
         WriteSymbol("symbols/part.dsn");
         var report = ReportWith(new PdkPart("PART_A", "Part A", SymbolArtwork: SymbolAsset("symbols/part.dsn")));
 
-        var first  = PdkPartInstaller.Install(report, WorkspaceDir);
-        var second = PdkPartInstaller.Install(report, WorkspaceDir);
+        var first  = PdkPartInstaller.Install(report);
+        var second = PdkPartInstaller.Install(report);
 
+        // A stable reference is what lets a placed instance survive a re-import.
         Assert.Equal(first.Items[0].Pdk!.CellDir, second.Items[0].Pdk!.CellDir);
 
-        string kitDir = Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName, "SampleKit");
-        Assert.Single(Directory.GetDirectories(kitDir));
+        PdkKitRegistry.SetKit(first.KitName,  first.Parts  ?? []);
+        PdkKitRegistry.SetKit(second.KitName, second.Parts ?? []);
+        Assert.Single(PdkKitRegistry.PartsOf("SampleKit"));
     }
 
     // ── Name safety ───────────────────────────────────────────────────────────
 
-    [Theory]
-    [InlineData("a/b", "a_b")]
-    [InlineData("a\\b", "a_b")]
-    [InlineData("../escape", "_escape")]      // leading dots stripped too — no ".." and no dotfile
-    [InlineData("..", "part")]
-    [InlineData("", "part")]
-    public void PartAndKitNames_AreMadeSafeAsFolderNames_OnEveryPlatform(string raw, string expected)
-    {
-        Assert.Equal(expected, PdkPartInstaller.SanitizeFolderName(raw));
-    }
-
     [Fact]
-    public void APartNameContainingASeparator_CannotEscapeTheInstallFolder()
+    public void APartNameContainingSeparators_IsAReferenceAndNeverAPath()
     {
+        // A part id is the kit's to choose and may contain anything. It used to become a folder name,
+        // where a "../.." was a traversal to guard against; it is now one segment of a reference that
+        // is only ever a dictionary key, and it must round-trip through the registry unchanged.
         WriteSymbol("symbols/part.dsn");
 
         var outcome = PdkPartInstaller.Install(
-            ReportWith(new PdkPart("../../evil", "Evil", SymbolArtwork: SymbolAsset("symbols/part.dsn"))),
-            WorkspaceDir);
+            ReportWith(new PdkPart("../../odd", "Odd", SymbolArtwork: SymbolAsset("symbols/part.dsn"))));
 
-        string cellDir = Path.GetFullPath(outcome.Items[0].Pdk!.CellDir!);
-        string kitRoot = Path.GetFullPath(Path.Combine(WorkspaceDir, PdkPartInstaller.InstallFolderName));
+        string cellRef = outcome.Items[0].Pdk!.CellDir!;
+        PdkKitRegistry.SetKit(outcome.KitName, outcome.Parts ?? []);
 
-        Assert.StartsWith(kitRoot, cellDir, StringComparison.Ordinal);
+        Assert.True(PdkKitRegistry.TryParse(cellRef, out string kit, out string part));
+        Assert.Equal("SampleKit", kit);
+        Assert.Equal("../../odd", part);
+        Assert.NotNull(PdkKitRegistry.Find(cellRef));
+
+        // Nothing on disk was touched, so there is nothing for a traversal to reach.
+        Assert.Empty(Directory.GetFileSystemEntries(WorkspaceDir));
     }
 }
 
