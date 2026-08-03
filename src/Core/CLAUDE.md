@@ -1,5 +1,263 @@
 # Core — local conventions
 
+Built-in large-signal FET family (2026-08-02) — COMPLETE, palette included.
+`src/Core/Devices/Fet/`: `CurticeQuadraticFetModel`, `CurticeCubicFetModel`, `StatzFetModel`,
+`MaterkaFetModel`, `AngelovFetModel`, over a shared `FetModelBase`. Types `FET_Curtice`,
+`FET_CurticeCubic`, `FET_Statz`, `FET_Materka`, `FET_Angelov`.
+
+**Each model is its own type with its own parameter set, deliberately — they are not variants.**
+Several use the same spelling for different quantities: `Beta` is a transconductance parameter in the
+quadratic law and a gate-voltage-shift-with-drain-bias in the cubic one. One shared parameter block
+would silently mis-feed whichever model the user did not have in mind, and the result would simulate.
+
+- **Three nets, two ports.** The user draws `gate drain source`; the model is (gate,source) and
+  (drain,source), so `v[0]` is Vgs and `v[1]` is Vds — the coordinates every published FET equation
+  is written in. `Elaborator` expands the three declared nets into the four the port pairs need,
+  the same mechanism `Tuner`/`P1Tone`/`Diode` use.
+- **Derivatives are ANALYTIC, not finite-differenced.** A finite-difference Jacobian inside a Newton
+  loop costs an extra evaluation per entry and is least accurate exactly where the device is most
+  nonlinear. The gate test compares every model's `gm` and `gds` against a central difference over a
+  25-point bias grid, and names the model in the failure message — a bare tolerance failure would not
+  say which law is wrong.
+- **Below pinch-off the current AND both derivatives are exactly zero.** A fudge conductance would
+  put current where there is none; the DC engine's own gmin already keeps the node solvable.
+- **`Cgd` bridges gate and drain, so in (Vgs,Vds) coordinates it appears on BOTH ports and in the
+  off-diagonals of `Dc`.** Dropping those cross terms is the classic plausible-but-wrong Jacobian;
+  there is a test that checks all four entries and the charge consistent with them.
+- **The Statz knee is continuous in value and slope by construction** at `Vds = 3/Alpha` — the
+  cubic's derivative is zero there — so no smoothing is applied and none is needed.
+
+- **Gate charge is SELECTABLE, because the published laws differ on it** — `CapModel` picks:
+  `0` none, `1` constant `Cgs`/`Cgd` (default), `2` bias-dependent junction charge
+  (`Cgs`, `Cgd`, `Vbi`, `Mj`, `Fc`), the standard depletion form applied to Vgs and Vgd separately
+  and continued by its tangent above `Fc·Vbi`. Hardcoding one scheme would have been wrong for
+  whichever models use the other.
+- **The SOURCE IS AN INDEPENDENT TERMINAL.** Writing the law in (Vgs, Vds) is a coordinate choice,
+  not a common-source restriction: the source is an ordinary net the user wires anywhere. A gate
+  test lifts the whole device off ground and shows only the differences matter, and an elaboration
+  test builds a source-degenerated stage — the configuration a common-source-only device could not
+  represent at all.
+- **Temperature dependence is modelled, in the published forms**, which are NOT all the same shape:
+  `Beta` and `Alpha` scale as `1.01^(tc·ΔT)` (their coefficients are *percent* per degree), `Gamma`
+  as `1 + tc·ΔT` (a plain fraction), and `Vto` shifts additively as `Vto + Vtotc·ΔT` (volts per
+  degree). Confusing the first two costs ~4 % at ΔT = 100, which is well inside the range these
+  exist for, so there is a test that asserts the exponential form *specifically* — and first asserts
+  the two candidate forms actually differ at the tested point, so the check cannot pass vacuously.
+  Shared with them: `Vbi` falls with temperature, `Cgs`/`Cgd` follow it, and the gate saturation
+  current rises via `Xti`/`Eg`.
+- **A model accepts only the coefficients whose parameters it HAS.** `CurticeCubic` takes `Gammatc`
+  and no `Betatc`, because its `Beta` is not a transconductance parameter; `Materka` and `Angelov`
+  take no `Betatc` at all. Mapping `Betatc` onto whatever each law happens to use as its current
+  scale would be fitting, not implementing.
+- **`Temp` and `Tnom` are DEGREES CELSIUS everywhere**, including `Diode` — whose model constructor
+  still takes kelvin, with the conversion at the factory boundary where it belongs. Two components
+  in one palette must never read the same parameter name in different units. Both default to the
+  same value, so a device with no stated temperature is evaluated exactly at its extraction point
+  and every relation collapses to the identity; a gate test asserts that collapse is EXACT, with
+  large coefficients supplied deliberately, because that is what catches a °C/K mix-up.
+
+**NOT modelled:** the Statz/TOM-family charge formulation. It is a different scheme, not a parameter
+change — it works on a *smoothed effective voltage* (`Veff = ½{Vgs + Vgd + √((Vgd−Vgs)² + Vδ1²)}`,
+then a second smoothing against `Vto`) rather than on Vgs and Vgd separately, so it needs its own
+implementation and its own derivatives. Also absent: transit-time delay, breakdown, self-heating.
+
+Gate: 23 tests in `tests/Core.Tests/Devices/FetModelTests.cs`, 8 in
+`tests/Core.Tests/Elaboration/DeviceNodeExpansionTests.cs`, 15 in
+`tests/Ui.Tests/DevicePaletteWiringTests.cs`.
+
+**Palette exposure — see `src/Ui/CLAUDE.md` for the wiring.** All six are placeable, editable in the
+Component Parameter dialog, and under a new `Devices` palette category.
+
+Junction diode primitive (2026-08-02) — COMPLETE. `src/Core/Devices/DiodeModel.cs`, type `Diode`.
+
+Standard exponential I-V with depletion and diffusion charge, optional reverse breakdown, and
+optional series resistance. Parameters are the conventional ones — `Is`, `N`, `Rs`, `Cj0`, `Vj`,
+`M`, `Fc`, `Bv`, `Ibv`, `Tt`, `Temp` — all optional, each defaulting to its usual value.
+
+- **The equations are the standard ones**: exponential I-V, depletion charge
+  `Cj0·Vj/(1−M)·(1−(1−V/Vj)^(1−M))`, diffusion charge `Tt·I`, optional reverse breakdown.
+- **Both runaway regions are continued by their TANGENT, not clamped** — the exponential above
+  `40·N·Vt`, the depletion charge above `Fc·Vj`. Value *and* slope stay continuous, which is what
+  keeps Newton convergent; a clamp keeps the value finite and puts a kink in the Jacobian, which
+  stalls the solve in a way that looks like a bad circuit. Two gate tests straddle each changeover
+  and assert continuity of both.
+- **`Gmin` defaults to ZERO, unlike SPICE.** The DC engine already adds `gmin = 1e-12 S` to every
+  voltage node, so a device supplying its own doubles it exactly where it matters. Caught by a test
+  that expected the closed-form current and got the leak term as well.
+- **`Bv = 0` means "breakdown not modelled", never "breaks down at 0 V".** The wrong reading makes
+  every reverse-biased diode conduct hugely and is silent; there is a test for it.
+- **Series resistance is INSIDE the model, on a real internal node** — a separate resistor beside
+  every diode is not required and would not scale to a part built from many of them. With `Rs > 0`
+  the device is a two-port over three nets, `anode — internal — cathode`; `Elaborator` mints the
+  internal node exactly as it does for `Tuner`/`P1Tone`/`ExtDevice`.
+- **That internal node is a genuine unknown, NOT collapsed locally.** Solving `(V−Vj)/Rs = I(Vj)`
+  inside `Evaluate` is exact at DC and **wrong in HB**, where the internal node carries its own
+  harmonic content — at RF the junction capacitance shunts `Rs`, and a quasi-static collapse cannot
+  represent that. Same reasoning as the `ExtDevice` internal nodes. `Rs = 0` stays a one-port, so a
+  diode without series resistance costs no extra unknown.
+
+**The oracles are the closed-form equations and finite differences, not stored numbers from another
+simulator** — a golden file from elsewhere would only prove two implementations agree. `dQ/dV` is
+checked against the returned capacitance by central difference, which is the real consistency check
+between the charge and its derivative.
+
+Gate: 23 tests in `tests/Core.Tests/Devices/DiodeModelTests.cs`. The series-resistance tests
+solve the two-port pair by bisection and assert the internal-node KCL directly — both ports
+carrying the same current at balance, and Ohm's law closing the loop across the resistor.
+Core.Tests 920 pass.
+
+A kit's symbols may live in a LIBRARY, not one file per part (2026-08-01) — COMPLETE for reading and
+binding. `src/Core/Pdk/KitSymbolLibraryReader.cs`, bound to parts in `PdkImporter.DiscoverParts`.
+
+**Why this shape matters.** Every symbol reader beside this one takes one drawing per file. A library
+inverts it: many parts share a handful of templates and each part names the one it wants. Measured on
+a kit — **7 templates serving 109 parts, in about four kilobytes**. So reading one small file is
+what makes a whole kit placeable, and those same seven templates are what the palette should show.
+
+- **Read best-effort and deliberately partial**, the same bargain `KitSymbolDefinitionReader` strikes:
+  only the records whose layout is unambiguous — the symbol names and the terminals with their
+  positions. The drawn body is not read, so a part gets correct, correctly-named pins and a body
+  circuitRF draws itself. Pins decide whether a part can be WIRED; the rest is appearance.
+- **A symbol library is its own asset kind, not symbol artwork.** It is not one part's drawing:
+  matching it to a part by file name finds nothing, and counting it as unreadable artwork would warn
+  about a file that reads perfectly.
+- **The symbol outranks a name-matched subcircuit on terminal count.** The kit DREW it, and a part
+  naming one is stating how many pins it has.
+- **Keyed by extension, not content** — the payload is binary and `PeekText` returns nothing for
+  anything containing a NUL, by design.
+
+**Two bugs found by running it against a real library rather than by inspection**, both silent:
+
+1. **Record delimiters were being read as part of the pin name.** Records are bracket-framed, so a
+   name sits hard against its own record's terminator and the next one's opener; taking every
+   printable byte read a pin called `1` as `1][`. No crash, nothing obviously wrong in a dump — every
+   pin on every symbol renamed.
+2. **A kit's catalog and its own symbol library can spell the same symbol differently.** One
+   references `A_B` for a symbol it declares as `A B`. Matching only exactly cost **18 of 109 parts**
+   their pins, silently, since a pinless part still imports and still appears. Now matched
+   separator-insensitively through the same `Normalize` already used for artwork.
+
+**Result on that kit: 109 of 109 parts carry pins** — 2-pin ×16, 3-pin ×69, 4-pin ×24, matching the
+families exactly, and matching the pin counts derived independently from the network data's own port
+labels.
+
+**`PdkPart.Pins` carries the template outward**, and the Ui half is now done too —
+`src/Ui/Schematic/KitTemplateSymbol.cs` builds a placeable symbol from it, tried only after a
+per-part drawing so a part that has its own keeps it. **End to end on that kit: 109 parts → 109
+palette entries → 109 symbols installed, 0 omitted.** Before it, every one of them was dropped from
+the palette as unplaceable.
+
+- **The pins are the kit's; the body is circuitRF's own.** The library states terminals, not artwork.
+  Drawing a body we cannot read would be inventing the kit's drawing; drawing none would leave pins
+  floating with nothing to click.
+- **Placement SHARES the drawing reader's scale, snap and axis flip** rather than reimplementing
+  them (`DsnSymbolReader.PinGrid`/`SnapToPinGrid`/`ChooseScale`, widened to `internal`). Pins must
+  land on exact multiples of the connection grid or a wire will not attach, and two rules for that
+  would drift at the first change. It also means library-backed and drawing-backed parts put their
+  pins in the same places.
+- **A two-terminal part still gets a body.** Its pins are colinear, so one dimension of their
+  bounding box is zero; without a floor the body collapses to a line nobody can see or click.
+- **`MakeKitPart` is shared by both symbol sources**, because everything it does decides what a
+  PLACED instance is — port count, provider binding, parameter interface — and two copies would
+  drift the moment one changed.
+- **`DsnSymbolReader.TranslationVersion` was deliberately NOT bumped.** Its rule is to bump whenever
+  a change could MOVE a pin, because a workspace records the version its kits were translated under
+  and moved pins silently disconnect wires. Nothing here moves a pin on the drawing path — the two
+  helpers were only widened to `internal` — and the template path is new, so no workspace has one
+  recorded. **It does now govern this path too**: a future change to `KitTemplateSymbol`'s scale,
+  snap, body or ordering moves pins on library-backed parts and needs the bump.
+
+Gate: `tests/Core.Tests/Pdk/KitSymbolLibraryReaderTests.cs` (10) and 5 binding tests in
+`ComponentCatalogDiscoveryTests` — all synthetic, including a regression for each bug above.
+
+A kit may DECLARE its parts in a catalog (2026-08-01) — COMPLETE.
+`ComponentCatalogRecognizer` + a catalog pass in `PdkImporter.DiscoverParts`.
+
+**The gap this closes, measured before and after.** `DiscoverParts` knew two shapes: a
+`<cell>/<view>/<file>` database tree, or the subcircuits a netlist declares. A third exists — a kit
+that lists its parts in an XML catalog (name, model, symbol, description; one entry per part) and
+supplies their behaviour from a **compiled model library** rather than any netlist. Such a kit has
+nothing to walk and nothing to parse, so it imported as a pile of recognised files with an **empty
+palette**. Measured of that shape: **0 parts → 109**, grouped by catalog file.
+
+- **Recognised STRUCTURALLY, never by a schema URI or namespace.** A namespace names the tool that
+  wrote the file; keying off one would put supplier knowledge in circuitRF and would fail on the next
+  kit with the same shape. A test proves a namespace-prefixed catalog reads.
+- **The discriminator is an element that NAMES a part**, not the number of times the word appears.
+  Counting mentions was tried first and wrongly rejected a catalog offering a single part — the rule
+  was wrong, not the fixture. A document that merely *talks about* components is still not a catalog.
+- **The identity taken is the MODEL name, falling back to the declared name.** Real catalogs disagree
+  between the two: an entry named for a package variant can point at a shared model. Taking the
+  display name would name a part nothing can resolve at run time.
+- **Parsed by regex, not an XML parser** — deliberately. These files carry a default namespace, so
+  element lookups would have to be qualified against a URI this code must not know. Matching the
+  local name reads both spellings.
+- **The catalog file name is the part's category.** A kit of this shape splits its catalog by family,
+  one file each; it is the only grouping offered and it is a real one.
+- **The catalog wins over the other two shapes** when present — it is the kit *saying* what it
+  offers, rather than circuitRF inferring it from which files happen to be lying around.
+
+**A zero-part import now ALWAYS says why**, and this is the half that matters most. Recognising files
+and reporting nothing leaves the user with an empty palette and no reason for it, which satisfies
+neither of the two distinct messages the three `PdkAssetSupport` states exist to keep apart. The
+reason names which shape was found — a catalog that declared nothing readable, netlists whose
+subcircuits the kit never draws, drawings not arranged as a cell database, or no declaration at all —
+because those need different fixes.
+
+**A compiled model library (`.dll`/`.so`/`.dylib`) is now recognised as model data.** circuitRF never
+loads one into its own process; a device provider runs it out of process. Recognising it is what
+turns "the parts do not simulate" into a message at IMPORT time — the existing provider warning now
+fires — instead of a failure at Run.
+
+Gate: `tests/Core.Tests/Pdk/ComponentCatalogDiscoveryTests.cs` (12, synthetic fixtures — the repo
+commits no kit data). Core.Tests 883 pass, Firewall 4 pass.
+
+An extracted network says where its externally-connectable ports stop — sometimes (2026-08-01) —
+COMPLETE for the reading half. `src/Core/Pdk/TouchstonePortLabels.cs`.
+
+**The problem this solves.** A kit part can be delivered as nothing but a Touchstone file, and that
+file routinely declares **more ports than the part has pins**: it was extracted from a physical
+structure with an opening left at every place a lumped component attaches. Stamping all of them as
+pins builds a different circuit — and it still simulates, which is what makes it dangerous.
+
+**Solvers commonly write `! Port[k] = <name>` alongside the data**, naming each port after the
+geometry it sits on. That is a property of the FORMAT and of how such tools emit it; nothing here
+knows anything about any supplier, and nothing may. RfCore already preserves comments
+(`SNP.Comments`), so no file-reader change was needed.
+
+- **The split is decided only by the file's own structure**: ports are external until the first port
+  belonging to a **multi-terminal object**, since an object carrying several terminals is a place
+  components attach, not a pin. A label's *group* is itself with a terminal suffix removed — both
+  `name:1` (modal) and `name_T3` (terminal) are stripped, so a single-terminal port is its own group
+  and is therefore distinguishable from a shared one.
+- **When structure does not decide, the answer is `Ambiguous` — never a plausible-looking number.**
+  Two real shapes hit this: every port naming a different object (a structure whose attachment
+  points are one port each, far side grounded), and a multi-terminal object starting at port 1. Both
+  are reported with a reason. A wrong split is silent, so "I cannot tell" is the only safe answer and
+  the caller supplies the split as run-time data — the same rule as everything else in this area.
+- **Labels are NOT necessarily near the top of the file.** One real file declares them at line 226,
+  after a long variables block. Read them off the parsed network, never off a capped read of the text
+  — a probe written the other way reported "no labels" for a file that has fourteen.
+
+**Gate — and the oracle is exact, needing no reference simulator.** S-parameters are *defined* with
+every other port terminated in the reference impedance, so terminating the attachment ports in Z0 and
+measuring the external ones must reproduce the corresponding sub-block of the file's own matrix,
+entry for entry. That is a real check on **port order**, the **reference-node rule** and the
+**Z-expansion** — the three things most likely to be quietly wrong.
+`tests/Core.Tests/Pdk/TouchstonePortLabelsTests.cs` (17) and
+`tests/Engine.Tests/Linear/ExtractedNetworkExternalPortsTests.cs` (2, synthesised fixtures — the repo
+commits no kit data). The second of those two is the guard that gives the gate teeth: leaving the
+attachment ports **open** must change the answer, or a stamp that ignored them entirely would pass.
+
+**Verified against kit data by disposable probe** (deleted after running), across four families
+and port counts 6 to 27: the external sub-block reproduces to **1.7e-13 … 2.7e-11**, i.e. machine
+precision. Two files correctly reported `Ambiguous` rather than guessing.
+
+**NOT done here, and deliberately:** nothing yet turns such a file into a placeable part. That needs
+the split as run-time data for the ambiguous cases, plus the lumped devices that attach at the
+remaining ports — see the standing rule that a kit's own facts are data beside the kit, never
+knowledge compiled in.
+
 The provider-unavailable message names the usual cause (2026-08-01) — COMPLETE. `ExternalDeviceRegistry.Require`
 now says the model is **usually a compiled one whose implementing library was not found**, that such a
 library often ships as a separate package beside the kit, and what to do about it (reference the package

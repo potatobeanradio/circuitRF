@@ -174,16 +174,14 @@ public static class HbNewton2D
 
                 for (int p = 0; p < portCount; p++)
                 {
-                    int iPlus = portPlusIdx[p];
-                    if (iPlus < 0) continue;
-                    iTime[iPlus][t1, t2] += res.I[p];
-                    qTime[iPlus][t1, t2] += res.Q[p];
+                    PortAdd(iTime, portPlusIdx[p], portMinusIdx[p], t1, t2, res.I[p]);
+                    PortAdd(qTime, portPlusIdx[p], portMinusIdx[p], t1, t2, res.Q[p]);
                     for (int q = 0; q < portCount; q++)
                     {
-                        int jPlus = portPlusIdx[q];
-                        if (jPlus < 0) continue;
-                        dgTime[iPlus * N + jPlus][t1, t2] += res.Dg[p, q];
-                        dcTime[iPlus * N + jPlus][t1, t2] += res.Dc[p, q];
+                        PortAdd4(dgTime, N, portPlusIdx[p], portMinusIdx[p],
+                                 portPlusIdx[q], portMinusIdx[q], t1, t2, res.Dg[p, q]);
+                        PortAdd4(dcTime, N, portPlusIdx[p], portMinusIdx[p],
+                                 portPlusIdx[q], portMinusIdx[q], t1, t2, res.Dc[p, q]);
                     }
                 }
             }
@@ -592,4 +590,25 @@ public static class HbNewton2D
     // DC Im DOF: Im of the (0,0) mixing index (mixIdx 0).
     private static bool IsDcImDof(int j, int M)
         => (j & 1) == 1 && (j >> 1) % M == 0;
+
+    // ── Port → interface-node accumulation (KCL) ─────────────────────────────
+    // The two-tone twin of HbNewton.PortAdd/PortAdd4 — same rule, lattice-shaped buffers.
+    // See HbNewton for why both signs are required and which circuits hide the omission.
+
+    private static void PortAdd(double[][,] buf, int iPlus, int iMinus, int t1, int t2, double val)
+    {
+        if (val == 0.0) return;
+        if (iPlus  >= 0) buf[iPlus] [t1, t2] += val;
+        if (iMinus >= 0) buf[iMinus][t1, t2] -= val;
+    }
+
+    private static void PortAdd4(double[][,] buf, int N, int iPlus, int iMinus,
+                                 int jPlus, int jMinus, int t1, int t2, double val)
+    {
+        if (val == 0.0) return;
+        if (iPlus  >= 0 && jPlus  >= 0) buf[iPlus  * N + jPlus] [t1, t2] += val;
+        if (iPlus  >= 0 && jMinus >= 0) buf[iPlus  * N + jMinus][t1, t2] -= val;
+        if (iMinus >= 0 && jPlus  >= 0) buf[iMinus * N + jPlus] [t1, t2] -= val;
+        if (iMinus >= 0 && jMinus >= 0) buf[iMinus * N + jMinus][t1, t2] += val;
+    }
 }

@@ -280,6 +280,25 @@ public sealed class Elaborator
                     resolvedNodes = [..resolvedNodes, nDrv];
                 }
 
+                // Diode with series resistance: three nets, [anode, internal, internal, cathode],
+                // so the model's two ports are the resistor and the junction. The internal node is
+                // minted here and gets an ordinary matrix row for the same reason ExtDevice's do —
+                // collapsing it locally is exact at DC and wrong in HB, where it carries its own
+                // harmonic content.
+                if (model is DiodeModel { HasSeriesResistance: true } && resolvedNodes.Length == 2)
+                {
+                    int nInt = netlist.Nodes.GetOrAssign($"__diode_{childPath}_int");
+                    resolvedNodes = [resolvedNodes[0], nInt, nInt, resolvedNodes[1]];
+                }
+
+                // FET family: the user draws three terminals (gate, drain, source) but the model
+                // is TWO ports — (gate,source) and (drain,source) — so the source net appears in
+                // both pairs. Expanding here keeps the schematic honest (three pins) and the model
+                // in the coordinates every published FET equation is written in (Vgs, Vds).
+                if (model is Devices.Fet.FetModelBase && resolvedNodes.Length == 3)
+                    resolvedNodes = [resolvedNodes[0], resolvedNodes[2],   // gate, source
+                                     resolvedNodes[1], resolvedNodes[2]];  // drain, source
+
                 // ExtDevice: the provider reports currents per NODE, so every node becomes its own
                 // ground-referenced port — [n, 0] per node — and the internal nodes are minted here
                 // exactly like any other internal net. They therefore get ordinary rows in the

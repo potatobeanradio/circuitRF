@@ -167,6 +167,23 @@ public sealed class DeviceWorkerManifest
     /// kit must not stop a workspace from opening — it must stop only the devices that need it, and
     /// say why when they are run.
     /// </summary>
+    /// <summary>
+    /// True when a workerless manifest still says something worth reading — parts, variants, file
+    /// parameters, or the kit it adds to. An EMPTY manifest is still an error: a file naming
+    /// neither a worker nor anything else is a mistake, and reporting it is more useful than
+    /// silently importing a kit that declares nothing.
+    /// </summary>
+    private static bool HasNonWorkerContent(JsonElement root)
+    {
+        foreach (var name in new[] { "parts", "variants", "fileParameters", "baseDirectory" })
+            if (root.TryGetProperty(name, out var v) &&
+                v.ValueKind is JsonValueKind.Array or JsonValueKind.String &&
+                (v.ValueKind != JsonValueKind.Array || v.GetArrayLength() > 0) &&
+                (v.ValueKind != JsonValueKind.String || !string.IsNullOrWhiteSpace(v.GetString())))
+                return true;
+        return false;
+    }
+
     public static DeviceWorkerManifest? TryRead(string path, out string? problem)
     {
         problem = null;
@@ -239,9 +256,26 @@ public sealed class DeviceWorkerManifest
                 launches.Add(single);   // a manifest with one worker need not wrap it in an array
             }
 
-            if (launches.Count == 0)
+            // A manifest with NO worker is valid, and this is not a relaxation — it is the
+            // difference between the two kinds of part circuitRF already distinguishes:
+            //
+            //   netlist-backed   a circuit of ordinary primitives (ExternalNetlistPath/Cell).
+            //                    Nothing runs out of process, so there is no worker to name.
+            //   provider-backed  one ExtDevice evaluated by a worker (ExternalProvider/Type).
+            //
+            // **Whether a kit needs a worker is therefore a property of its PARTS, not a thing the
+            // manifest has to declare** — a kit whose parts are all circuits needs none, and
+            // demanding one made such a kit unimportable. Rejecting here also reported the wrong
+            // thing: the manifest was refused whole, `baseDirectory` was never read, and the kit
+            // surfaced as "no placeable parts" with the cause several steps upstream.
+            //
+            // The requirement has not gone away, it has moved to where it can be stated precisely:
+            // a provider-backed part that finds no worker is refused BY NAME at the point it needs
+            // one (ExternalDeviceRegistry / the provider resolver), which names the part rather
+            // than condemning the kit.
+            if (launches.Count == 0 && !HasNonWorkerContent(root))
             {
-                problem = $"'{path}' names no worker to run.";
+                problem = $"'{path}' names no worker to run, and declares nothing else either.";
                 return null;
             }
 

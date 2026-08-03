@@ -1,5 +1,63 @@
 # UI (Avalonia) — local conventions
 
+Built-in devices in the palette (2026-08-02) — COMPLETE. The junction diode and the five
+large-signal FET laws (`FET_Curtice`, `FET_CurticeCubic`, `FET_Statz`, `FET_Materka`,
+`FET_Angelov`) are now placeable, wired at the six usual touch points: `SymbolKind`,
+`SymbolPortDefs`, `BuiltInSymbols` (glyph + dispatch), the `ComponentTypeRegistry` entry,
+`EngineReference`, and `DefaultParameters`. New `ComponentCategory.Devices`, which also needs the
+hardcoded list in `PaletteTool` — `LibraryCatalog` derives itself from the registry, but that
+category ComboBox does not, so a new category is TWO edits, not one.
+
+- **Five palette tiles, five engine components — not one tile with a model dropdown.** The laws
+  have genuinely different parameter sets and reuse spellings for different quantities, so a single
+  type would offer the union and silently accept the wrong ones. `EngineReference` is distinct per
+  tile and a test asserts all five differ.
+- **They SHARE one glyph and one 3-pin geometry** (gate left, drain top, source bottom). The
+  topology really is identical and only the drain-current equation differs, which the type label
+  under the symbol already names; five near-identical glyphs would imply a distinction the schematic
+  cannot show. Same reasoning as `PnTone` reusing `P1Tone`'s glyph.
+- **Pin ORDER is the contract**, not the pin names: `[g, d, s]` for a FET and `[a, c]` for the
+  diode, because `Elaborator` reads position when it expands three nets into the model's four node
+  slots. `DeviceNodeExpansionTests` pins that down.
+- **The diode's `Rs` is a model parameter, not a placed resistor.** Non-zero moves the junction onto
+  an internal node the elaborator mints; the user still sees one device. Forcing a separate resistor
+  beside every diode would not survive a part built from several of them.
+
+**SDD1 and SDD2 also list under Devices** (owner request) — a filter keyword on the existing
+port-count entry points, following R-hk-4's own precedent (Z1P alone gets a Terminals keyword). An SDD
+carrying device equations is how a user hand-builds a 1- or 2-port nonlinear device, so it belongs
+beside the built-in diode and FETs. SDD3 and the plain SDD tile are untouched, and the registry entry
+itself is NOT modified — putting the keyword there instead would change the cross-technology PASTE
+default too, which is a different question. `Devices` also needed a `CategorySortKey` rank; without one
+it falls into the catch-all alongside `Other`.
+
+**`DevicePaletteWiringTests.P4` is the load-bearing one, and the failure mode it exists for is
+invisible without it.** A parameter name in `DefaultParameters` that the factory does not read
+compiles, saves, loads, shows in the parameter dialog, accepts an edit — and does nothing. The two
+lists are plain strings on opposite sides of a dictionary lookup, so nothing else can catch it. The
+test perturbs EVERY registry parameter one at a time and requires the device's behaviour to move,
+against a wide probe (both currents, both Jacobians, charge, at five biases). It also asserts the
+registry's name set EQUALS the test's own activation table, so adding a parameter on one side alone
+fails loudly.
+
+Writing it caught its own blind spot rather than a wiring bug: `Fc` looked unwired on all five FETs
+because no probe bias reached `Fc·Vbi`, so the depletion charge never left its normal branch. **An
+inert probe and an unwired parameter are indistinguishable from the assertion's point of view** —
+which is the general hazard with any "did it change?" test, and the reason the probe biases are
+chosen to activate each branch rather than just to look reasonable.
+
+`tests/Ui.Tests/SystemTrashTests.cs` was DELETED outright (2026-08-02, owner request) — both tests, and
+with them the file. Each drove a live Finder Apple event: minutes of wall clock apiece, and the
+existing-file one failed intermittently with "AppleEvent timed out (-1712)" whenever no desktop session
+was attached. Their pass/fail reported on the machine, not on the code. Together they were most of
+Ui.Tests' runtime (~4 min → ~2 min on the first removal, ~2 min → seconds on the second).
+
+**`SystemTrash` is therefore deliberately untested, and that is the intended state — do not "restore
+coverage" by re-adding a live-Finder test.** It is a thin per-platform shell-out (`SHFileOperation` /
+`osascript` / `gio trash`) whose whole behaviour is the OS call; there is nothing to unit-test that
+does not mean driving the real Trash. If it ever needs a gate, the mechanism is an injectable
+launcher seam, not another live invocation.
+
 PDK settings were computed correctly and then not handed on (2026-08-01) — FIXED. Owner report: a kit
 that had worked stopped running, with "no kit in this workspace settled on a way to evaluate its devices".
 

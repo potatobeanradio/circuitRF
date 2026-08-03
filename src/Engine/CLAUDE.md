@@ -562,3 +562,34 @@ kit's operating point, where the offender was a thermal node at 10^8 because not
 - Node names come from `netlist.Nodes.NameOf`, so a node reads as the user's own net name.
 
 Gate: `NonlinearSParamTests.T5`.
+
+## A floating nonlinear port was solved wrong by HB, and right by DC (2026-08-02)
+
+`HbNewton.EvaluateNonlinear` and `HbNewton2D.EvaluateNonlinear2D` accumulated each device port's
+current at the port's **+** net only. A port spans two nets; the current that enters at + leaves at
+−, so injecting it at one end and never removing it at the other violates KCL at the − net. The
+Jacobian had the matching gap — `dg[p,q]` stamped at `(iPlus, jPlus)` instead of the four corners
+`(+,−,−,+)`.
+
+**Why nothing caught it.** Every nonlinear circuit in the suite references its device ports to
+ground (`SDD:M1 n_gate 0 n_drain 0`), so `portMinusIdx` is −1 and the two formulations coincide. It
+took a diode floating across two live nets — the ring quad of a passive mixer, a bridge, any
+series-connected device — to separate them. `NonlinearDcEngine.BuildResidualAndJacobian` had
+**always** done both signs and the 4-way `StampDg`, so the two engines in this repo disagreed with
+each other about the same circuit.
+
+The failure mode is the expensive one: it converges cleanly to a wrong answer. On a real mixer it
+gave a 4e-10 residual and 128 dB of conversion loss — no mixing at all.
+
+- Fixed via shared `PortAdd`/`PortAdd4` helpers in both assemblers, plus `SensAddPort` for the SDD
+  control-sensitivity path, which had the same one-sided accumulation.
+- Gate: `tests/Engine.Tests/HarmonicBalance/FloatingPortHbTests.cs`. The oracle is the closed-form
+  series solution `Vs = I·(R1+R2) + N·Vt·ln(I/Is + 1)`, **not another circuitRF path**, so it cannot
+  be satisfied by two wrong implementations agreeing. Before: `V(na)=0.6039, V(nb)=0`. After and
+  closed-form: `1.293148 / 0.706852`. T5 checks the analytic Jacobian against the FD oracle,
+  because a current-only fix leaves the derivative wrong — visible as slow convergence, not a wrong
+  answer.
+- Every hero HB golden is byte-identical (all grounded-port circuits). Suite: 6,036 pass, 0 fail.
+- **Practical note for diode rings:** a passive ring with `Cj0 = 0` is stiff, and Newton diverges at
+  full step above moderate drive. `Lambda = 0.5` converges where `Lambda = 1` gives ‖F‖ ~1e11.
+  `DriveStepping` does not help — there is no DC bias to ramp; the drive *is* the bias.

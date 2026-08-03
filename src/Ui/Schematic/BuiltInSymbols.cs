@@ -53,6 +53,8 @@ public static class BuiltInSymbols
     private static readonly Symbol _mtaper        = BuildMtaper();
     private static readonly Symbol _mklopf        = BuildMklopf();
     private static readonly Symbol _termG         = BuildTermG();
+    private static readonly Symbol _diode         = BuildDiode();
+    private static readonly Symbol _fet           = BuildFet();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
     private static readonly Dictionary<int, Symbol> _sddCache   = new();
@@ -122,6 +124,16 @@ public static class BuiltInSymbols
             case SymbolKind.SourceTuner: return _sourceTuner;
             case SymbolKind.LoadTuner:   return _loadTuner;
             case SymbolKind.TermG:       return _termG;
+            case SymbolKind.Diode:       return _diode;
+            // All five FET laws share ONE glyph: the topology really is identical and only the
+            // drain-current equation differs, which the type label below the symbol already names.
+            // Drawing five near-identical triangles-and-bars would imply a difference the schematic
+            // cannot show. Same reasoning as PnTone reusing P1Tone's glyph.
+            case SymbolKind.FetCurtice:
+            case SymbolKind.FetCurticeCubic:
+            case SymbolKind.FetStatz:
+            case SymbolKind.FetMaterka:
+            case SymbolKind.FetAngelov:  return _fet;
             default:                    return _generic;
         }
     }
@@ -252,6 +264,34 @@ public static class BuiltInSymbols
     // ── NonlinearC — capacitor glyph + three diagonal "nonlinear" slashes ──────
     // Identical plates/leads to the linear capacitor; three parallel diagonal strokes
     // are the standard nonlinear-element annotation. Pins: (0,-200)/(0,+200).
+
+    // ── Diode — filled triangle + cathode bar, vertical like the lumped elements ──
+    // Pins: (0,-200) anode top / (0,+200) cathode bottom. Current flows top→bottom, which is the
+    // direction the triangle points, so the glyph reads the same way the model's sign convention does.
+
+    private static Symbol BuildDiode() => Sym([
+        L(   0, -200,   0,  -55),                  // anode lead
+        Poly(true, -60, -55,  60, -55,   0,  45),  // body triangle, apex at the bar
+        L( -60,   45,  60,   45),                  // cathode bar
+        L(   0,   45,   0,  200),                  // cathode lead
+    ], SymbolKind.Diode);
+
+    // ── FET — Schottky/insulated gate bar, channel bar, drain and source arms ──
+    // Pins: gate (−200,0) LEFT, drain (0,−200) TOP, source (0,+200) BOTTOM. The arrow on the gate
+    // lead marks the n-channel polarity and points INTO the channel, the usual convention.
+    //
+    // Shared by all five built-in FET laws — see the dispatch above for why.
+
+    private static Symbol BuildFet() => Sym([
+        L(-200,    0, -135,    0),                    // gate lead (up to the arrow base)
+        Poly(true, -135, -32, -135,  32,  -80,   0),  // n-channel arrow, tip on the gate bar
+        L( -80, -110,  -80,  110),                    // gate bar
+        L( -30, -110,  -30,  110),                    // channel bar
+        L( -30,  -80,    0,  -80),                    // drain arm off the channel
+        L(   0,  -80,    0, -200),                    // drain lead
+        L( -30,   80,    0,   80),                    // source arm off the channel
+        L(   0,   80,    0,  200),                    // source lead
+    ], SymbolKind.FetCurtice);
 
     private static Symbol BuildNonlinearC() => Sym([
         L(   0, -200,   0,  -12),            // top lead

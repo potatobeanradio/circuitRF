@@ -32,7 +32,9 @@ public static class ComponentModelFactory
         new(StringComparer.OrdinalIgnoreCase)
         {
             "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "Tuner", "P1Tone", "PnTone",
-            "NonlinearC", "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            "NonlinearC", "Diode",
+            "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
+            "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             "ExtDevice",
         };
 
@@ -70,6 +72,10 @@ public static class ComponentModelFactory
             return CreatePnToneModel(parameters);
         if (typeName.Equals("NonlinearC", StringComparison.OrdinalIgnoreCase))
             return CreateNonlinearCModel(parameters);
+        if (typeName.Equals("Diode", StringComparison.OrdinalIgnoreCase))
+            return CreateDiodeModel(parameters);
+        if (typeName.StartsWith("FET_", StringComparison.OrdinalIgnoreCase))
+            return CreateFetModel(typeName, parameters);
         if (typeName.Equals("TLIN", StringComparison.OrdinalIgnoreCase))
             return CreateTLineModel(parameters);
         if (typeName.Equals("MLIN", StringComparison.OrdinalIgnoreCase))
@@ -527,6 +533,122 @@ public static class ComponentModelFactory
         }
 
         return new PnToneModel(instanceName, tones.ToArray(), harmonicZ, zDefault);
+    }
+
+    // ── FET family ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The built-in large-signal FET models. Each is a SEPARATE type with its OWN parameter set —
+    /// they are not variants of one another, and several use the same spelling for different
+    /// quantities (the quadratic law's `Beta` is a transconductance parameter; the cubic law's is a
+    /// gate-voltage shift with drain bias). Sharing one parameter block across them would silently
+    /// mis-feed whichever model the user did not have in mind.
+    ///
+    /// Every parameter is optional and takes a conventional default, so a freshly placed FET is a
+    /// working device the user can then edit.
+    /// </summary>
+    private static ComponentModel? CreateFetModel(
+        string typeName, IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        // Shared across the family: gate charge, gate conduction, and temperature.
+        //   CapModel 0 = none, 1 = constant Cgs/Cgd (default), 2 = bias-dependent junction charge.
+        // The published laws differ on this, so it is a parameter rather than a hardcoded choice.
+        //
+        // Temp and Tnom are both in DEGREES CELSIUS and both default to the same value, so a model
+        // that states no temperature is evaluated exactly at its extraction point and every
+        // temperature relation collapses to the identity — no silent shift from a unit mismatch.
+        double cgs = P("Cgs", 0.0), cgd = P("Cgd", 0.0);
+        double isg = P("Is", 0.0), ng = P("N", 1.0);
+        int    cap = (int)P("CapModel", 1.0);
+        double vbi = P("Vbi", 1.0), mg = P("Mj", 0.5), fc = P("Fc", 0.5);
+        double tC  = P("Temp", Fet.FetModelBase.NominalTemperatureC);
+        double tnC = P("Tnom", Fet.FetModelBase.NominalTemperatureC);
+        double xti = P("Xti", 0.0), eg = P("Eg", 1.16);
+
+        // Every call is by NAME. These constructors carry a dozen-plus optional parameters and only
+        // the coefficients each model actually owns, so their signatures differ and will keep
+        // differing; positional binding would compile silently after a reorder and feed Cgd where
+        // Alpha belongs.
+        return typeName.ToUpperInvariant() switch
+        {
+            "FET_CURTICE" => new Fet.CurticeQuadraticFetModel(
+                vto: P("Vto", -2.0), beta: P("Beta", 0.02),
+                lambda: P("Lambda", 0.0), alpha: P("Alpha", 2.0),
+                cgs: cgs, cgd: cgd, gateSaturationCurrent: isg, gateEmissionCoefficient: ng,
+                capModel: cap, vbi: vbi, mGrading: mg, fc: fc,
+                tempC: tC, tnomC: tnC, xti: xti, eg: eg,
+                betatc: P("Betatc", 0.0), alphatc: P("Alphatc", 0.0), vtotc: P("Vtotc", 0.0)),
+
+            "FET_CURTICECUBIC" => new Fet.CurticeCubicFetModel(
+                a0: P("A0", 0.1), a1: P("A1", 0.05), a2: P("A2", 0.0), a3: P("A3", 0.0),
+                gamma: P("Gamma", 2.0), beta: P("Beta", 0.0), vds0: P("Vds0", 5.0),
+                cgs: cgs, cgd: cgd, gateSaturationCurrent: isg, gateEmissionCoefficient: ng,
+                capModel: cap, vbi: vbi, mGrading: mg, fc: fc,
+                tempC: tC, tnomC: tnC, xti: xti, eg: eg,
+                gammatc: P("Gammatc", 0.0)),
+
+            "FET_STATZ" => new Fet.StatzFetModel(
+                vto: P("Vto", -2.0), beta: P("Beta", 0.02), b: P("B", 0.3),
+                alpha: P("Alpha", 2.0), lambda: P("Lambda", 0.0),
+                cgs: cgs, cgd: cgd, gateSaturationCurrent: isg, gateEmissionCoefficient: ng,
+                capModel: cap, vbi: vbi, mGrading: mg, fc: fc,
+                tempC: tC, tnomC: tnC, xti: xti, eg: eg,
+                betatc: P("Betatc", 0.0), alphatc: P("Alphatc", 0.0), vtotc: P("Vtotc", 0.0)),
+
+            "FET_MATERKA" => new Fet.MaterkaFetModel(
+                idss: P("Idss", 0.1), vp0: P("Vp0", -2.0),
+                gamma: P("Gamma", 0.0), alpha: P("Alpha", 2.0),
+                cgs: cgs, cgd: cgd, gateSaturationCurrent: isg, gateEmissionCoefficient: ng,
+                capModel: cap, vbi: vbi, mGrading: mg, fc: fc,
+                tempC: tC, tnomC: tnC, xti: xti, eg: eg,
+                alphatc: P("Alphatc", 0.0), gammatc: P("Gammatc", 0.0), vtotc: P("Vtotc", 0.0)),
+
+            "FET_ANGELOV" => new Fet.AngelovFetModel(
+                ipk: P("Ipk", 0.1), vpk: P("Vpk", -1.0),
+                p1: P("P1", 1.0), p2: P("P2", 0.0), p3: P("P3", 0.0),
+                alpha: P("Alpha", 2.0), lambda: P("Lambda", 0.0),
+                cgs: cgs, cgd: cgd, gateSaturationCurrent: isg, gateEmissionCoefficient: ng,
+                capModel: cap, vbi: vbi, mGrading: mg, fc: fc,
+                tempC: tC, tnomC: tnC, xti: xti, eg: eg,
+                alphatc: P("Alphatc", 0.0), vtotc: P("Vtotc", 0.0)),
+
+            _ => null,
+        };
+    }
+
+    // ── Diode ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Junction diode. Every parameter is optional and carries the conventional default, because a
+    /// supplier kit states only the ones that matter for its device and expects the rest to take
+    /// their usual values — omitting Cj0 must give a diode with no junction capacitance, not an error.
+    /// </summary>
+    private static DiodeModel CreateDiodeModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+
+        return new DiodeModel(
+            saturationCurrent:   P("Is",   1e-14),
+            emissionCoefficient: P("N",    1.0),
+            zeroBiasCapacitance: P("Cj0",  0.0),
+            junctionPotential:   P("Vj",   1.0),
+            gradingCoefficient:  P("M",    0.5),
+            forwardBiasCapCoeff: P("Fc",   0.5),
+            breakdownVoltage:    P("Bv",   0.0),
+            breakdownCurrent:    P("Ibv",  1e-3),
+            transitTime:         P("Tt",   0.0),
+            minimumConductance:  P("Gmin", 0.0),   // the DC engine supplies gmin per node
+            // `Temp` is in DEGREES CELSIUS here, matching the FET family and every published
+            // parameter table. The model itself takes kelvin because that is what kT/q wants;
+            // the conversion belongs at this boundary, not in the user's parameter value. Two
+            // components in the same palette must never read the same parameter name in
+            // different units.
+            temperatureK:        P("Temp", Fet.FetModelBase.NominalTemperatureC) + 273.15,
+            seriesResistance:    P("Rs",   0.0));
     }
 
     // ── NonlinearC ────────────────────────────────────────────────────────────

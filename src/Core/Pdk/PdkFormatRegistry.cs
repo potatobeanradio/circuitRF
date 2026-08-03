@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace CircuitRF.Core.Pdk;
 
 /// <summary>
@@ -55,6 +57,7 @@ public static class PdkFormatRegistry
     [
         new ExtensionRecognizer(),
         new CellDatabaseRecognizer(),
+        new ComponentCatalogRecognizer(),
         new LayerTechnologyRecognizer(),
     ];
 }
@@ -89,6 +92,14 @@ internal sealed class ExtensionRecognizer : IPdkFormatRecognizer
                 new(path, PdkAssetKind.LayoutArtwork, PdkAssetSupport.RecognizedNotSupported,
                     "OASIS stream", "Layout geometry in a standard interchange format."),
 
+            // A binary symbol LIBRARY — several named symbols in one file, referenced by name.
+            // Keyed by extension because the payload is binary and the peek returns nothing for it.
+            ".syf" =>
+                new(path, PdkAssetKind.SymbolLibrary, PdkAssetSupport.Supported,
+                    "symbol library (binary)",
+                    "Holds several named symbols that parts reference by name. circuitRF reads each " +
+                    "symbol's terminals and their positions."),
+
             ".dsn" =>
                 new(path, PdkAssetKind.SymbolArtwork, PdkAssetSupport.Supported,
                     "symbol description (.dsn)",
@@ -100,6 +111,15 @@ internal sealed class ExtensionRecognizer : IPdkFormatRecognizer
                     "device model data",
                     "Read by a device provider, not by circuitRF. Register a provider that " +
                     "declares this kit's device types to use it."),
+
+            // A compiled model library. circuitRF never loads one into its own process — a device
+            // provider runs it out of process — but recognising it is what turns "the parts do not
+            // simulate" into a message at IMPORT time rather than a failure at Run.
+            ".dll" or ".so" or ".dylib" =>
+                new(path, PdkAssetKind.ModelData, PdkAssetSupport.RecognizedNotSupported,
+                    "compiled model library",
+                    "The parts' behaviour is compiled into this library. It is evaluated by a " +
+                    "device provider in a separate process, never loaded by circuitRF itself."),
 
             ".pdf" or ".txt" or ".md" or ".html" or ".htm" =>
                 new(path, PdkAssetKind.Documentation, PdkAssetSupport.Supported, "documentation"),
@@ -141,6 +161,46 @@ internal sealed class CellDatabaseRecognizer : IPdkFormatRecognizer
             _        => new(path, PdkAssetKind.Other, PdkAssetSupport.RecognizedNotSupported,
                             $"binary cell view ({view})", detail),
         };
+    }
+}
+
+/// <summary>
+/// An XML catalog declaring the parts a kit offers: repeated <c>&lt;COMPONENT&gt;</c> entries, each
+/// naming a part and pointing at its symbol and icon.
+///
+/// <para>Why this is worth recognising: a kit need not have a netlist OR a cell-database tree. One
+/// can declare its parts here and supply their behaviour from a compiled model library instead —
+/// and such a kit is otherwise invisible to part discovery, which produces an empty palette with no
+/// explanation of why.</para>
+///
+/// <para>Recognised STRUCTURALLY, by the repeated component element, never by a schema URI or a
+/// namespace. A namespace names the tool that wrote the file, and keying off one would put supplier
+/// knowledge into circuitRF and would fail on the next kit that used the same shape.</para>
+/// </summary>
+internal sealed class ComponentCatalogRecognizer : IPdkFormatRecognizer
+{
+    public int Priority => 15;
+
+    /// <summary>
+    /// A component element that actually NAMES something. Requiring the name attribute — rather
+    /// than counting bare mentions of the element — is what separates a catalog from a document
+    /// that merely talks about one, and it does so without ruling out a kit that offers a single
+    /// part. Counting mentions was tried first and rejected exactly one such catalog.
+    /// </summary>
+    internal static readonly Regex RxComponent = new(
+        @"<\s*(?:\w+:)?COMPONENT\b[^>]*\bName\s*=\s*""[^""]",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public PdkAsset? Recognize(string path, Func<string> peek)
+    {
+        if (!path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) return null;
+
+        string head = peek();
+        if (head.Length == 0 || !RxComponent.IsMatch(head)) return null;
+
+        return new(path, PdkAssetKind.ComponentCatalog, PdkAssetSupport.Supported,
+                   "component catalog (XML)",
+                   "The kit's own list of the parts it offers. Read to populate the palette.");
     }
 }
 

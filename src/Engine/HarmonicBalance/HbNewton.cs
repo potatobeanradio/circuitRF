@@ -299,16 +299,14 @@ public static class HbNewton
 
                 for (int p = 0; p < portCount; p++)
                 {
-                    int iPlus = portPlusIdx[p];
-                    if (iPlus < 0) continue;
-                    iTime[iPlus, t] += res.I[p];
-                    qTime[iPlus, t] += res.Q[p];
+                    PortAdd(iTime, portPlusIdx[p], portMinusIdx[p], t, res.I[p]);
+                    PortAdd(qTime, portPlusIdx[p], portMinusIdx[p], t, res.Q[p]);
                     for (int q = 0; q < portCount; q++)
                     {
-                        int jPlus = portPlusIdx[q];
-                        if (jPlus < 0) continue;
-                        dgTime[iPlus, jPlus, t] += res.Dg[p, q];
-                        dcTime[iPlus, jPlus, t] += res.Dc[p, q];
+                        PortAdd4(dgTime, portPlusIdx[p], portMinusIdx[p],
+                                 portPlusIdx[q], portMinusIdx[q], t, res.Dg[p, q]);
+                        PortAdd4(dcTime, portPlusIdx[p], portMinusIdx[p],
+                                 portPlusIdx[q], portMinusIdx[q], t, res.Dc[p, q]);
                     }
                 }
 
@@ -322,15 +320,10 @@ public static class HbNewton
                     var buf = bucketBuffers[key];
                     for (int p = 0; p < portCount; p++)
                     {
-                        int iPlus = portPlusIdx[p];
-                        if (iPlus < 0) continue;
-                        buf.wTime[iPlus, t] += term.Value[p];
+                        PortAdd(buf.wTime, portPlusIdx[p], portMinusIdx[p], t, term.Value[p]);
                         for (int q = 0; q < portCount; q++)
-                        {
-                            int jPlus = portPlusIdx[q];
-                            if (jPlus < 0) continue;
-                            buf.dwTime[iPlus, jPlus, t] += term.Jac[p, q];
-                        }
+                            PortAdd4(buf.dwTime, portPlusIdx[p], portMinusIdx[p],
+                                     portPlusIdx[q], portMinusIdx[q], t, term.Jac[p, q]);
                     }
                 }
 
@@ -340,15 +333,15 @@ public static class HbNewton
                     int m = res.DControl?.GetLength(1) ?? 0;
                     for (int p = 0; p < portCount; p++)
                     {
-                        int iPlus = portPlusIdx[p];
-                        if (iPlus < 0) continue;
                         for (int ci = 0; ci < m; ci++)
                         {
                             int g = gLookup![(nlIdx, ci)];
                             if (res.DControl is not null)
-                                SensAdd(sens!, 0, N, gCount, gridN, iPlus, g, t, res.DControl[p, ci]);
+                                SensAddPort(sens!, 0, N, gCount, gridN,
+                                            portPlusIdx[p], portMinusIdx[p], g, t, res.DControl[p, ci]);
                             if (res.DControlCharge is not null)
-                                SensAdd(sens!, 1, N, gCount, gridN, iPlus, g, t, res.DControlCharge[p, ci]);
+                                SensAddPort(sens!, 1, N, gCount, gridN,
+                                            portPlusIdx[p], portMinusIdx[p], g, t, res.DControlCharge[p, ci]);
                         }
                     }
                     foreach (var term in res.Terms)
@@ -356,12 +349,11 @@ public static class HbNewton
                         if (term.JacCtrl is null) continue;
                         for (int p = 0; p < portCount; p++)
                         {
-                            int iPlus = portPlusIdx[p];
-                            if (iPlus < 0) continue;
                             for (int ci = 0; ci < term.JacCtrl.GetLength(1); ci++)
                             {
                                 int g = gLookup![(nlIdx, ci)];
-                                SensAdd(sens!, term.W, N, gCount, gridN, iPlus, g, t, term.JacCtrl[p, ci]);
+                                SensAddPort(sens!, term.W, N, gCount, gridN,
+                                            portPlusIdx[p], portMinusIdx[p], g, t, term.JacCtrl[p, ci]);
                             }
                         }
                     }
@@ -431,6 +423,44 @@ public static class HbNewton
         if (!sens.TryGetValue(w, out var buf))
             sens[w] = buf = new double[N, gCount, gridN];
         buf[node, g, t] += val;
+    }
+
+    // ── Port → interface-node accumulation (KCL) ─────────────────────────────
+    //
+    // A device port spans TWO nets, and its current leaves at the − net exactly as it enters at
+    // the + net. Accumulating only at + is KCL-correct ONLY when the − net is ground (or otherwise
+    // outside the interface), which is where every built-in hero circuit happens to sit: an SDD
+    // written `SDD:M1 n_gate 0 n_drain 0` has both port references grounded. A FLOATING port — a
+    // ring-quad diode across two live nets — is the case that exposes it, and the standalone DC
+    // engine (NonlinearDcEngine.BuildResidualAndJacobian) has always done both signs. These
+    // helpers make HB agree with it.
+    //
+    // The port voltage is V(+) − V(−), so a port-pair derivative dg[p,q] stamps at four corners
+    // with signs (+,−,−,+) — the same 4-way stamp NonlinearDcEngine.StampDg does.
+
+    private static void PortAdd(double[,] buf, int iPlus, int iMinus, int t, double val)
+    {
+        if (val == 0.0) return;
+        if (iPlus  >= 0) buf[iPlus,  t] += val;
+        if (iMinus >= 0) buf[iMinus, t] -= val;
+    }
+
+    private static void PortAdd4(double[,,] buf, int iPlus, int iMinus, int jPlus, int jMinus,
+                                 int t, double val)
+    {
+        if (val == 0.0) return;
+        if (iPlus  >= 0 && jPlus  >= 0) buf[iPlus,  jPlus,  t] += val;
+        if (iPlus  >= 0 && jMinus >= 0) buf[iPlus,  jMinus, t] -= val;
+        if (iMinus >= 0 && jPlus  >= 0) buf[iMinus, jPlus,  t] -= val;
+        if (iMinus >= 0 && jMinus >= 0) buf[iMinus, jMinus, t] += val;
+    }
+
+    private static void SensAddPort(Dictionary<int, double[,,]> sens, int w,
+        int N, int gCount, int gridN, int iPlus, int iMinus, int g, int t, double val)
+    {
+        if (val == 0.0) return;
+        if (iPlus  >= 0) SensAdd(sens, w, N, gCount, gridN, iPlus,  g, t, +val);
+        if (iMinus >= 0) SensAdd(sens, w, N, gCount, gridN, iMinus, g, t, -val);
     }
 
     /// <summary>Flat list of (SDD component idx, local control idx, resolved branch idx, model).</summary>

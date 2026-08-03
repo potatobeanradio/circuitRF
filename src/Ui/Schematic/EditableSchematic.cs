@@ -86,6 +86,19 @@ public static class SymbolPortDefs
             // is the W1/Z1 end, per R-pc-3/R-klp's own "pin 1 origin, +X" convention).
             case SymbolKind.Mtaper:  return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.Mklopf:  return [("1", -200f, 0f), ("2", 200f, 0f)];
+            // Diode: vertical 2-terminal like the lumped elements, anode top / cathode bottom.
+            // Pin ORDER is the contract DiodeModel reads: [0] = anode, [1] = cathode.
+            case SymbolKind.Diode:   return [("a", 0f, -200f), ("c", 0f, 200f)];
+            // FET family: gate LEFT, drain TOP, source BOTTOM. Pin ORDER is the contract the
+            // elaborator reads when it splits the three nets into the model's two ports —
+            // [0] = gate, [1] = drain, [2] = source. Source is a full pin: wire it wherever you
+            // like, ground included but not assumed.
+            case SymbolKind.FetCurtice:
+            case SymbolKind.FetCurticeCubic:
+            case SymbolKind.FetStatz:
+            case SymbolKind.FetMaterka:
+            case SymbolKind.FetAngelov:
+                return [("g", -200f, 0f), ("d", 0f, -200f), ("s", 0f, 200f)];
             // Tuner: 1-port termination, single DUT-facing pin on the LEFT. The reference net is
             // hard-coded to ground "0" at extraction (NOT a pin) — exposing it as a pin is DEFERRED
             // (loadpull.md §1; can add a 2nd pin later if users need a non-ground reference).

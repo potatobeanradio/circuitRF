@@ -5,12 +5,24 @@ public enum PdkAssetKind
 {
     /// <summary>A hierarchical netlist describing cells and their connectivity.</summary>
     Netlist,
+    /// <summary>
+    /// A catalog declaring the parts a kit offers — one entry per part, naming it and pointing at
+    /// its symbol and icon. The behaviour lives elsewhere (a netlist, or a compiled model library);
+    /// this is the kit's own statement of what it contains.
+    /// </summary>
+    ComponentCatalog,
     /// <summary>Model data a device provider reads (measured tables, fitted coefficients, …).</summary>
     ModelData,
     /// <summary>Frequency-domain network data (Touchstone and friends).</summary>
     NetworkData,
     /// <summary>Schematic symbol artwork — the drawn appearance of a part.</summary>
     SymbolArtwork,
+    /// <summary>
+    /// A library of named symbols, several to a file, which parts reference by name. Distinct from
+    /// <see cref="SymbolArtwork"/> because it is not one part's drawing: a handful of templates can
+    /// serve a whole kit, and matching one to a part by file name would find nothing.
+    /// </summary>
+    SymbolLibrary,
     /// <summary>Physical layout artwork — drawn geometry on process layers.</summary>
     LayoutArtwork,
     /// <summary>A small raster image intended as a palette/browser icon.</summary>

@@ -178,20 +178,30 @@ public static class LibraryCatalog
                 SymbolKind.ZPort, n, ComponentTypeRegistry.DisplayName(SymbolKind.ZPort, n),
                 zInfo.Category, zInfo.SearchTerms ?? [], zInfo.IsCommon, zExtra);
 
+            // Owner request 2026-08-02, following R-hk-4's precedent exactly: SDD1 and SDD2 — and
+            // only those two — also list under Devices. An SDD carrying device equations is how a
+            // user hand-builds a 1- or 2-port nonlinear device, so it belongs beside the built-in
+            // diode and FETs. SDD3 and the plain SDD tile are unchanged, and this adds a FILTER
+            // keyword only: same kind, same glyph, same engine component, still one AllItems row.
+            var sddExtra = n <= 2
+                ? (sddInfo.ExtraCategories ?? []).Concat([ComponentCategory.Devices]).Distinct().ToArray()
+                : sddInfo.ExtraCategories;
+
             yield return new PaletteItem(
                 SymbolKind.Sdd, n, ComponentTypeRegistry.DisplayName(SymbolKind.Sdd, n),
-                sddInfo.Category, sddInfo.SearchTerms ?? [], sddInfo.IsCommon, sddInfo.ExtraCategories);
+                sddInfo.Category, sddInfo.SearchTerms ?? [], sddInfo.IsCommon, sddExtra);
         }
     }
 
     private static int CategorySortKey(ComponentCategory c) => c switch
     {
         ComponentCategory.Lumped           => 0,
-        ComponentCategory.Sources          => 1,
-        ComponentCategory.Terminals        => 2,
-        ComponentCategory.TransmissionLine => 3,
-        ComponentCategory.Microstrip       => 4,
-        ComponentCategory.DataFiles        => 5,
-        _                                  => 6,
+        ComponentCategory.Devices          => 1,
+        ComponentCategory.Sources          => 2,
+        ComponentCategory.Terminals        => 3,
+        ComponentCategory.TransmissionLine => 4,
+        ComponentCategory.Microstrip       => 5,
+        ComponentCategory.DataFiles        => 6,
+        _                                  => 7,
     };
 }

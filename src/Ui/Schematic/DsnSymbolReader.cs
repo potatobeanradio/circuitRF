@@ -85,7 +85,7 @@ public sealed class DsnSymbolReadResult
 public static class DsnSymbolReader
 {
     /// <summary>Connection grid. Every pin tip must be an exact multiple of this.</summary>
-    private const double PinGrid = 100.0;
+    internal const double PinGrid = 100.0;
 
     /// <summary>
     /// Which translation a workspace's recorded kits were produced by.
@@ -256,7 +256,7 @@ public static class DsnSymbolReader
         return scale;
     }
 
-    private static double SnapToPinGrid(double v) => Math.Round(v / PinGrid, MidpointRounding.AwayFromZero) * PinGrid;
+    internal static double SnapToPinGrid(double v) => Math.Round(v / PinGrid, MidpointRounding.AwayFromZero) * PinGrid;
 
     // ── Conversion ────────────────────────────────────────────────────────────
 

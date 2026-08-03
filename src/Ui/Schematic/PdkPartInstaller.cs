@@ -152,15 +152,23 @@ public static class PdkPartInstaller
             }
 
             PdkKitPart? built = null;
-            if (haveRoot && part.SymbolArtwork is { } art)
+            if (haveRoot && (part.SymbolArtwork is not null || part.Pins is { Count: > 0 }))
             {
                 // A manifest naming this part wins; otherwise what the kit's own netlist showed.
                 var declared  = (kitManifest?.Variants ?? []).Where(v => v.AppliesTo(part.Id)).ToList();
                 var variants  = declared.Count > 0 ? declared : discovered.VariantsFor(part.Id);
                 var netlist   = NetlistPartFor(part.Id, kitManifest, diags) ?? discovered.NetlistFor(part.Id);
 
-                built = TryBuildPart(kit, part, Resolve(report, art.RelativePath), diags, notes, iconPath,
-                                     variants, fileParams, netlist);
+                if (part.SymbolArtwork is { } art)
+                    built = TryBuildPart(kit, part, Resolve(report, art.RelativePath), diags, notes,
+                                         iconPath, variants, fileParams, netlist);
+
+                // A kit whose symbols live in a LIBRARY has no per-part drawing to point at: several
+                // parts share one template, which the importer already resolved and attached. Tried
+                // second so a part that has its own drawing keeps it.
+                if (built is null && KitTemplateSymbol.Build(part.Pins) is { } fromTemplate)
+                    built = MakeKitPart(kit, part, fromTemplate, iconPath, variants, fileParams, netlist);
+
                 if (built is not null) syms++;
             }
 
@@ -630,12 +638,26 @@ public static class PdkPartInstaller
         foreach (var n in read.Notes)
             notes.Add($"'{part.DisplayName}': {n}");
 
+        return MakeKitPart(kitName, part, read.Symbol, iconPath, variants, fileParameters, netlistPart);
+    }
+
+    /// <summary>
+    /// Publishes one part around a symbol, whoever produced it. Shared by both symbol sources on
+    /// purpose: everything below decides what a PLACED instance is — its port count, its provider
+    /// binding, its parameter interface — and two copies of that would drift the moment one changed.
+    /// </summary>
+    private static PdkKitPart MakeKitPart(string kitName, PdkPart part, Symbol symbol,
+                                          string? iconPath,
+                                          IReadOnlyList<DeviceWorkerVariant> variants,
+                                          IReadOnlyList<string> fileParameters,
+                                          (string AbsoluteNetlistPath, string CellName)? netlistPart)
+    {
         {
             // Exactly the .ccell that used to be written beside the symbol — the same published
             // interface, built in memory instead. Nothing about a placed instance changes: it is
             // resolved through the same accessor a cell folder is.
             var ccell = new CcellFile();
-            ccell.NumPorts = read.Symbol.Pins.Count;
+            ccell.NumPorts = symbol.Pins.Count;
 
             // A kit part is a LEAF backed by a provider, not a hierarchy: it has a symbol and no
             // schematic on purpose, so extraction must emit one external-device instance rather
@@ -661,7 +683,7 @@ public static class PdkPartInstaller
             ccell.Parameters              = BuildDeclaredParameters(part, variants, fileParameters);
             ccell.ExternalFixedParameters = BuildFixedParameters(part);
 
-            return new PdkKitPart(part.Id, read.Symbol, ccell, iconPath);
+            return new PdkKitPart(part.Id, symbol, ccell, iconPath);
         }
     }
 

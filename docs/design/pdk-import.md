@@ -328,3 +328,35 @@ optimisation.
 - **Offline opens.** After this change, opening a design without its kits mounted means every kit part is a
   placeholder. Honest, and repairable through §8 — but it makes kit availability a hard dependency of
   opening a design, and whether that wants any further affordance is unsettled.
+
+- ~~**A kit that declares its parts in a CATALOG yields no parts, and says nothing about it.**~~
+  **CLOSED (2026-08-01)** — `ComponentCatalogRecognizer` plus a catalog pass in `DiscoverParts`.
+  Measured on the same kit: **0 parts → 109**, grouped by catalog file, and a compiled model library
+  is now recognised so the import warns that the parts are placeable but will not simulate until a
+  device provider is available. A zero-part import now always reports why. The original text is kept
+  below because the *reasoning* about findings is the part worth not losing.
+
+  <details><summary>the original entry</summary>
+
+- **A kit that declares its parts in a CATALOG yields no parts, and says nothing about it.**
+  `DiscoverParts` (§1) finds parts two ways: a `<cell>/<view>/<file>` database tree, or the subcircuits a
+  netlist declares. A third shape exists and is not handled — a kit whose parts are listed in a **catalog
+  file** (part name, symbol reference, icon, description, one entry per part), with the behaviour supplied
+  by a compiled model library rather than by any netlist. There is no netlist to read and no cell directory
+  to walk, so the importer recognises the data files and finds **zero parts**.
+
+  *Measured of that shape:* 107 assets — 86 Touchstone files correctly recognised and
+  `Supported` — and **0 parts, 0 findings**. The kit's own name was derived as a bare version number,
+  because the version directory is the deepest common folder.
+
+  **The missing findings are the worse half.** This area's design says the three `PdkAssetSupport` states
+  exist precisely so "I do not know what this is" and "I know exactly what this is and cannot read it yet"
+  are different messages, and `PdkFinding.SuggestedAction` exists so an import that cannot produce a part
+  says what would make it work. An import that yields nothing and reports nothing satisfies neither: the
+  user references a kit, sees an empty palette, and is told no reason. Whatever else changes here, a
+  zero-part import should be a finding.
+
+  Reaching the intended experience — reference a kit, place a part from the palette, run an analysis,
+  without the user knowing or caring what format the kit came in — needs part discovery to learn this
+  shape, a symbol for each part, and the model library reached through the existing device-worker seam.
+  Only the first of those is a gap in *this* document's area.

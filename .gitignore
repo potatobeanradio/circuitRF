@@ -30,3 +30,5 @@ tools/macos-vmimage/.work/
 # Device worker and its test fixture — build outputs (native, rebuilt by their own build.sh)
 tools/senior-worker/build/
 tools/fake-model-lib/build/
+tools/netlist-worker/build/
+tools/netlist-worker/.wineprefix/

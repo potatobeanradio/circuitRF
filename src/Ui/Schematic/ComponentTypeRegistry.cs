@@ -14,6 +14,8 @@ namespace CircuitRF.Ui.Schematic;
 public enum ComponentCategory
 {
     Lumped,
+    /// <summary>Semiconductor devices — the built-in nonlinear diode and FET family.</summary>
+    Devices,
     TransmissionLine,
     Microstrip,
     Sources,
@@ -211,6 +213,35 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Lumped,
             SearchTerms: ["NLC", "NonlinearC", "nonlinear capacitor", "nonlinear", "varactor", "varicap", "CV", "C(V)"],
             IsCommon: false),
+        // ── Semiconductor devices ────────────────────────────────────────────
+        [SymbolKind.Diode]         = new("Diode", "D",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["Diode", "D", "junction", "rectifier", "varactor", "schottky", "pn", "nonlinear"],
+            IsCommon: true),
+        // Five distinct types, not five settings of one — see SymbolKind for why. Each tile places
+        // a different engine component with its own parameter set; "FET" and "MESFET" are search
+        // terms on every one of them so a user who does not know which law they want still finds
+        // the family.
+        [SymbolKind.FetCurtice]    = new("Curtice", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["Curtice", "FET", "MESFET", "GaAs", "quadratic", "transistor", "nonlinear", "device"],
+            IsCommon: true),
+        [SymbolKind.FetCurticeCubic] = new("CurticeCubic", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["CurticeCubic", "Curtice", "cubic", "Ettenberg", "FET", "MESFET", "transistor", "nonlinear", "device", "intermod"],
+            IsCommon: false),
+        [SymbolKind.FetStatz]      = new("Statz", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["Statz", "FET", "MESFET", "transistor", "nonlinear", "device"],
+            IsCommon: false),
+        [SymbolKind.FetMaterka]    = new("Materka", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["Materka", "Kacprzak", "FET", "MESFET", "transistor", "nonlinear", "device"],
+            IsCommon: false),
+        [SymbolKind.FetAngelov]    = new("Angelov", "Q",
+            Category: ComponentCategory.Devices,
+            SearchTerms: ["Angelov", "Chalmers", "HEMT", "FET", "MESFET", "pHEMT", "transistor", "nonlinear", "device"],
+            IsCommon: false),
         [SymbolKind.Mutual]        = new("M",   "M",
             Category: ComponentCategory.Lumped,
             SearchTerms: ["Mutual", "mutual", "M", "coupling", "inductance", "transformer"],
@@ -353,8 +384,41 @@ public static class ComponentTypeRegistry
         SymbolKind.MCross        => "MCROSS",
         SymbolKind.Mtaper        => "MTAPER",
         SymbolKind.Mklopf        => "MKLOPF",
+        SymbolKind.Diode         => "Diode",
+        // One engine component per law — deliberately NOT one "FET" with a mode parameter.
+        SymbolKind.FetCurtice      => "FET_Curtice",
+        SymbolKind.FetCurticeCubic => "FET_CurticeCubic",
+        SymbolKind.FetStatz        => "FET_Statz",
+        SymbolKind.FetMaterka      => "FET_Materka",
+        SymbolKind.FetAngelov      => "FET_Angelov",
         _                        => Get(kind).DisplayName,
     };
+
+    /// <summary>
+    /// The gate-charge, gate-conduction and temperature parameters every built-in FET law shares.
+    /// Factored out because they are genuinely the same parameters read by the same base class —
+    /// unlike the drain-current parameters, which are per-law and must NOT be shared.
+    ///
+    /// All hidden by default: they are secondary to the law's own parameters, and a FET showing
+    /// eleven labels is unreadable.
+    /// </summary>
+    private static DefaultParam[] FetSharedDefaults() =>
+    [
+        new("Cgs",      "0",     "pF", false, UnitDimension.Capacitance),
+        new("Cgd",      "0",     "pF", false, UnitDimension.Capacitance),
+        // 0 = no gate charge, 1 = constant Cgs/Cgd, 2 = bias-dependent junction charge.
+        new("CapModel", "1",     "",   false, UnitDimension.None),
+        new("Vbi",      "1",     "V",  false, UnitDimension.Voltage),
+        new("Mj",       "0.5",   "",   false, UnitDimension.None),
+        new("Fc",       "0.5",   "",   false, UnitDimension.None),
+        // Gate conduction is OFF at Is = 0 — a forward-conducting gate is opt-in.
+        new("Is",       "0",     "A",  false, UnitDimension.Current),
+        new("N",        "1",     "",   false, UnitDimension.None),
+        new("Xti",      "0",     "",   false, UnitDimension.None),
+        new("Eg",       "1.16",  "V",  false, UnitDimension.Voltage),
+        new("Temp",     "26.85", "",   false, UnitDimension.None),
+        new("Tnom",     "26.85", "",   false, UnitDimension.None),
+    ];
 
     /// <summary>
     /// Default parameter template for a freshly-placed component of the given type and port count.
@@ -466,6 +530,105 @@ public static class ComponentTypeRegistry
                     new("ExtrapMode","NearestEdge",   "",  false, UnitDimension.None),
                 ];
             }
+
+            // ── Semiconductor devices ────────────────────────────────────────
+            // Every name below is a factory key — ComponentModelFactory.CreateDiodeModel /
+            // CreateFetModel read exactly these strings. A typo here is a parameter that silently
+            // takes its default instead of the user's value, so the two lists are checked against
+            // each other by test, not by eye.
+            //
+            // ShowOnSchematic is reserved for the handful of parameters that DEFINE the device.
+            // The rest are real and editable in the parameter dialog; showing all fifteen would
+            // bury the schematic under label text.
+            //
+            // Temp and Tnom are in DEGREES CELSIUS and unitless here — there is no temperature
+            // UnitDimension, and adding a "C" unit token would collide with capacitance in the
+            // .cnl parameter tokenizer. Both default to the same value, so a device the user never
+            // sets a temperature on is evaluated exactly at its extraction point.
+
+            case SymbolKind.Diode:
+                return [
+                    new("Is",   "1e-14", "A",  true,  UnitDimension.Current),
+                    new("N",    "1",     "",   true,  UnitDimension.None),
+                    // Rs is a MODEL parameter, not a separate placed resistor. Non-zero moves the
+                    // junction onto an internal node the elaborator mints (DiodeModel §Rs).
+                    new("Rs",   "0",     "Ω",  true,  UnitDimension.Resistance),
+                    new("Cj0",  "0",     "pF", true,  UnitDimension.Capacitance),
+                    new("Vj",   "1",     "V",  false, UnitDimension.Voltage),
+                    new("M",    "0.5",   "",   false, UnitDimension.None),
+                    new("Fc",   "0.5",   "",   false, UnitDimension.None),
+                    // Bv = 0 means breakdown is NOT MODELLED — never "breaks down at 0 V".
+                    new("Bv",   "0",     "V",  false, UnitDimension.Voltage),
+                    new("Ibv",  "1e-3",  "A",  false, UnitDimension.Current),
+                    new("Tt",   "0",     "",   false, UnitDimension.None),
+                    new("Temp", "26.85", "",   false, UnitDimension.None),
+                ];
+
+            case SymbolKind.FetCurtice:
+                return [
+                    new("Vto",    "-2",   "V", true,  UnitDimension.Voltage),
+                    new("Beta",   "0.02", "",  true,  UnitDimension.None),
+                    new("Alpha",  "2",    "",  true,  UnitDimension.None),
+                    new("Lambda", "0",    "",  true,  UnitDimension.None),
+                    .. FetSharedDefaults(),
+                    new("Betatc",  "0", "", false, UnitDimension.None),
+                    new("Alphatc", "0", "", false, UnitDimension.None),
+                    new("Vtotc",   "0", "", false, UnitDimension.None),
+                ];
+
+            case SymbolKind.FetCurticeCubic:
+                return [
+                    new("A0",    "0.1",  "", true,  UnitDimension.None),
+                    new("A1",    "0.05", "", true,  UnitDimension.None),
+                    new("A2",    "0",    "", true,  UnitDimension.None),
+                    new("A3",    "0",    "", true,  UnitDimension.None),
+                    new("Gamma", "2",    "", true,  UnitDimension.None),
+                    // NOT the quadratic law's Beta: here it is the gate-voltage shift with drain
+                    // bias, in 1/V, which is why this is a separate component type.
+                    new("Beta",  "0",    "",  false, UnitDimension.None),
+                    new("Vds0",  "5",    "V", false, UnitDimension.Voltage),
+                    .. FetSharedDefaults(),
+                    new("Gammatc", "0", "", false, UnitDimension.None),
+                ];
+
+            case SymbolKind.FetStatz:
+                return [
+                    new("Vto",    "-2",   "V", true,  UnitDimension.Voltage),
+                    new("Beta",   "0.02", "",  true,  UnitDimension.None),
+                    new("B",      "0.3",  "",  true,  UnitDimension.None),
+                    new("Alpha",  "2",    "",  true,  UnitDimension.None),
+                    new("Lambda", "0",    "",  false, UnitDimension.None),
+                    .. FetSharedDefaults(),
+                    new("Betatc",  "0", "", false, UnitDimension.None),
+                    new("Alphatc", "0", "", false, UnitDimension.None),
+                    new("Vtotc",   "0", "", false, UnitDimension.None),
+                ];
+
+            case SymbolKind.FetMaterka:
+                return [
+                    new("Idss",  "0.1", "A", true,  UnitDimension.Current),
+                    new("Vp0",   "-2",  "V", true,  UnitDimension.Voltage),
+                    new("Gamma", "0",   "",  true,  UnitDimension.None),
+                    new("Alpha", "2",   "",  true,  UnitDimension.None),
+                    .. FetSharedDefaults(),
+                    new("Alphatc", "0", "", false, UnitDimension.None),
+                    new("Gammatc", "0", "", false, UnitDimension.None),
+                    new("Vtotc",   "0", "", false, UnitDimension.None),
+                ];
+
+            case SymbolKind.FetAngelov:
+                return [
+                    new("Ipk",    "0.1", "A", true,  UnitDimension.Current),
+                    new("Vpk",    "-1",  "V", true,  UnitDimension.Voltage),
+                    new("P1",     "1",   "",  true,  UnitDimension.None),
+                    new("P2",     "0",   "",  false, UnitDimension.None),
+                    new("P3",     "0",   "",  false, UnitDimension.None),
+                    new("Alpha",  "2",   "",  true,  UnitDimension.None),
+                    new("Lambda", "0",   "",  false, UnitDimension.None),
+                    .. FetSharedDefaults(),
+                    new("Alphatc", "0", "", false, UnitDimension.None),
+                    new("Vtotc",   "0", "", false, UnitDimension.None),
+                ];
 
             case SymbolKind.NonlinearC:
                 return [new("C0", "1", "pF", true, UnitDimension.Capacitance)];

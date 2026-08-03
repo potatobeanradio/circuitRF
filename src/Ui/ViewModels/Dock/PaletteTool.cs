@@ -170,6 +170,7 @@ public sealed partial class PaletteTool : Tool
         foreach (var cat in new[]
         {
             ComponentCategory.Lumped,
+            ComponentCategory.Devices,
             ComponentCategory.Sources,
             ComponentCategory.Terminals,
             ComponentCategory.TransmissionLine,

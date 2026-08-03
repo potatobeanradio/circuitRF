@@ -259,14 +259,18 @@ Guidance, not a restriction: for models that must stay smooth for tough converge
 | Passive primitives | `ResistorModel`, `InductorModel`, `CapacitorModel`, `MutualInductanceModel` | `Mutual` references its two inductor instances by resolved instance path |
 | Frequency-domain N-ports | `TouchstoneModel`, `ImpedanceBlockModel`, `TransmissionLineModel`, `FrequencyDomainUserModel` | `TouchstoneModel` wraps an **RfCore `Network`** (§6); the impedance block evaluates `Z[i,j]` expressions per frequency |
 | Sources & probes | `DcVoltageSource`, `AcVoltageSource`, `AcCurrentSource`, `RfPowerSource`, `PortModel`, `TermModel`, `CurrentProbe` | |
-| Nonlinear | `SymbolicDeviceModel` (SDD), `FetModel`, `BjtModel`, `DiodeModel` | SDD = expression engine + AD/FD; the hero PA FET is an SDD |
+| Nonlinear | `SymbolicDeviceModel` (SDD) ✔, `NonlinearC` ✔, `DiodeModel` ✔, `FetModel` ✘, `BjtModel` ✘ | ✔ = implemented, ✘ = planned only. SDD = expression engine + AD/FD; **the hero PA FET is an SDD**, not a native FET model |
 
-**`FetModel` port count is configurable — 2, 3, or 4:**
+**`FetModel` is NOT IMPLEMENTED.** The shape below is the design intent; today a FET is written as
+an SDD. Anything relying on a native FET — closed-form derivatives, a fixed parameter set, a thermal
+node — is unavailable until it is built, and which FET formulation to build is an open choice.
+
+**`FetModel` port count would be configurable — 2, 3, or 4:**
 - **2-port** — gate/drain, source internally grounded (a common designer convenience).
 - **3-port** — gate/drain/source (the standard intrinsic device).
 - **4-port** — adds a **thermal node** for an electro-thermal model (self-heating).
 
-The thermal node is the same mechanism the v2 Verilog-A/OSDI path needs for ASM-HEMT (PRD §6.1), so a native electro-thermal `FetModel` and ASM-HEMT readiness share one concept. Any of these is *also* expressible as an N-port SDD; the native `FetModel` exists for convenience and closed-form derivatives.
+The thermal node is the same mechanism the v2 Verilog-A/OSDI path needs for ASM-HEMT (PRD §6.1), so a native electro-thermal `FetModel` and ASM-HEMT readiness share one concept. Any of these is *also* expressible as an N-port SDD, which is how it is done today; a native `FetModel` would add convenience and closed-form derivatives.
 
 The sparse MNA system (`MnaSystem`), how each category stamps into it, DC handling, and node ordering are specified in `linear-engine.md`. How `Evaluate` feeds the conversion-matrix Jacobian is in `harmonic-balance.md`.
 

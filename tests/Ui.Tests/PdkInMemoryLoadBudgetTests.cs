@@ -160,28 +160,57 @@ public sealed class PdkInMemoryLoadBudgetTests : IDisposable
     }
 
     /// <summary>
-    /// Replaying the recorded settings is what keeps an open off the expensive path. Asserted as a
-    /// COMPARISON rather than a second absolute number: what matters is that the recorded branch is
-    /// not doing the derivation work, and an absolute figure for the derived branch would be a
-    /// measurement of this machine's filesystem more than of anything decided here.
+    /// Replaying the recorded settings is what keeps an open off the expensive path, and this is the
+    /// test that would catch it regressing.
+    ///
+    /// <para><b>Asserted as BEHAVIOUR, not as a ratio of two timings — and the previous version's
+    /// failure is why.</b> It compared a replayed load against a derived one and demanded a 10×
+    /// separation, calibrated against a comment recording 199.8 ms for the derived branch. But the
+    /// expense that figure describes — scanning candidate model libraries byte by byte across a
+    /// multi-MB package — is a cost THIS FIXTURE NEVER CREATES: its library is a little over thirty
+    /// bytes. Measured here, derived came in at ~4 ms against ~0.5 ms replayed: a real 8.6×
+    /// separation, and a failure, because the threshold was calibrated against work the fixture does
+    /// not do. A faster disk shrinks the ratio further. The mechanism was never broken; the gate
+    /// was measuring the machine.</para>
+    ///
+    /// <para>Taking the library away instead settles it outright: if a replayed load still installs
+    /// everything when there is nothing left on disk to discover, it provably did not re-derive.
+    /// No clock is involved, so nothing here drifts with hardware.</para>
     /// </summary>
     [Fact]
-    public void ReplayingRecordedSettings_IsNotSlowerThanDerivingThem()
+    public void ReplayingRecordedSettings_DoesNotRederiveThem()
     {
         var report = BuildKit();
         var recorded = JsonNode.Parse(
             """{ "provider": "SampleKit", "workers": [ { "platform": "any", "command": "worker" } ] }""");
 
-        double replayed = MedianLoadMs(report, recorded);
-        double derived  = MedianLoadMs(report, null);
+        // With the library present, deriving finds something. This is the baseline the control below
+        // is compared against — without it, the removal might prove nothing.
+        var derivedWithLibrary = PdkPartInstaller.Install(report, null);
+        Assert.Equal(SymbolCount, derivedWithLibrary.SymbolsInstalled);
+        string settledWith = derivedWithLibrary.Settings?.ToJsonString() ?? "";
 
-        _out.WriteLine($"replayed {replayed:F1} ms · derived {derived:F1} ms");
+        // Take away everything discovery could find.
+        Directory.Delete(Path.Combine(KitDir, "linux_x86_64"), recursive: true);
+        File.Delete(Path.Combine(KitDir, DeviceLibraryDiscovery.Profiles[0].Worker));
 
-        // An order of magnitude, not a hair's breadth. Measured here at 0.5 ms replayed against
-        // 199.8 ms derived — and the derived figure is itself OVER the 100 ms budget, which is
-        // precisely why the decisions are recorded rather than worked out again every open.
-        Assert.True(replayed * 10 < derived,
-            $"replaying recorded settings ({replayed:F1} ms) was not decisively cheaper than deriving " +
-            $"them ({derived:F1} ms) — something on the open path is re-deriving what was recorded.");
+        // THE CONTROL, and it has to come first: deriving must now produce a DIFFERENT answer.
+        // If it did not, the replay below would pass whether or not it re-derived, and the test
+        // would be asserting nothing at all.
+        var derivedWithout = PdkPartInstaller.Install(report, null);
+        string settledWithout = derivedWithout.Settings?.ToJsonString() ?? "";
+        Assert.True(settledWith != settledWithout,
+            "removing the model library did not change what deriving produces, so this test cannot " +
+            "tell a replayed load from a derived one. Fix the fixture before trusting the assertion.");
+
+        // THE ASSERTION: replaying is unaffected by the library being gone, because it never looked.
+        var replayed = PdkPartInstaller.Install(report, recorded!.DeepClone());
+
+        Assert.Equal(SymbolCount, replayed.SymbolsInstalled);
+        Assert.Equal(recorded.ToJsonString(), replayed.Settings?.ToJsonString());
+
+        _out.WriteLine($"derived with library    : {settledWith}");
+        _out.WriteLine($"derived without library : {settledWithout}");
+        _out.WriteLine($"replayed (library gone) : {replayed.Settings?.ToJsonString()}");
     }
 }

@@ -32,7 +32,8 @@ public sealed record PdkPart(
     PdkAsset?                         SymbolArtwork = null,
     PdkAsset?                         LayoutArtwork = null,
     IReadOnlyList<PdkPartParameter>?  Parameters = null,
-    int                               PinCount = 0);
+    int                               PinCount = 0,
+    IReadOnlyList<KitSymbolPin>?      Pins = null);
 
 /// <summary>
 /// One parameter a part declares, and the kit's own default for it.

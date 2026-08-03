@@ -35,6 +35,12 @@ hero circuits, and non-goals. This file is standing project memory — keep it c
 - Build:   `dotnet build`
 - Test:    `dotnet test`
 - Run CLI: `dotnet run --project src/Cli -- <args>`
+  Verbs: `sparam`, `dc`, **`hb`**, `elab`. `hb` runs the netlist's harmonic-balance analysis —
+  single- or multi-tone — and runs the whole sweep when a `parametric_sweep` wraps it (naming the
+  inner HB is promoted to its wrapper, since running the inner alone silently drops the sweep axis).
+  It evaluates the TestBench's `measure` lines exactly as the GUI does, so a `.cnl` that works
+  headless works when opened. `--set var=expr` overrides a global before elaboration;
+  `-o out.{mat,npy,txt}` exports.
 
 ### `dotnet test` is fast by default (brief-test-default-fast.md, 2026-07-28)
 
@@ -185,9 +191,15 @@ contribution — the model *contributes* stamps; the engine *owns* the matrix) a
 (nonlinear: returns `i`, `q`, `dg`, `dc`). Register it in the component-model factory. Add a
 golden-reference test. See `docs/design/data-model.md` §5.
 **The base type must already accommodate the v2 ASM-HEMT/Verilog-A path:** a thermal/self-heating
-node (the native `FetModel` supports 2/3/4 ports, the 4th thermal), collapsible internal nodes,
-terminal current, and charge-based capacitances (`q(v)` with `dq/dv`). Design for these now even
-though v1 ships only built-ins + SDD.
+node (a native `FetModel` is *planned* at 2/3/4 ports, the 4th thermal — see
+`docs/design/data-model.md` §5; **it does not exist yet**), collapsible internal nodes, terminal
+current, and charge-based capacitances (`q(v)` with `dq/dv`). Design for these now even though v1
+ships only built-ins + SDD.
+
+**Nonlinear devices that exist today: `SDD`, `NonlinearC`, `Diode`.** Anything else described as a
+native model in the design notes — `FetModel`, `BjtModel` — is a plan, not code. A FET in a
+schematic today is an SDD carrying FET equations, which is a different thing from a native model
+with closed-form derivatives and its own parameter set.
 
 ## Validation expectations
 Numerical changes require a `testdata/` regression test within the tolerance in the PRD.

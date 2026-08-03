@@ -204,6 +204,54 @@ public static class PdkImporter
             foreach (var sub in SubcircuitsIn(report.RootPath, report.KitRoot, net.RelativePath))
                 subcircuits.Add(sub);
 
+        // ── The parts a CATALOG declares ─────────────────────────────────────
+        //
+        // Read first, and it wins, because it is the kit SAYING what it offers rather than circuitRF
+        // inferring it from what files happen to be lying around. A kit with a catalog may have no
+        // netlist and no cell tree at all — its parts' behaviour coming from a compiled model
+        // library — and without this such a kit yields an empty palette.
+        // Symbol libraries are read once, up front. A handful of templates can serve a whole kit —
+        // measured at 7 for 109 parts — so the same template is handed to every part that names it,
+        // and the palette shows exactly what the schematic will.
+        var templates = new Dictionary<string, KitSymbolTemplate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var lib in report.Assets.Where(a => a.Kind == PdkAssetKind.SymbolLibrary))
+            foreach (var t in ReadSymbolLibrary(report.RootPath, report.KitRoot, lib.RelativePath))
+            {
+                templates.TryAdd(t.Name, t);      // first wins; a later duplicate is not a better one
+                // Also under a separator-insensitive key. A kit's CATALOG and its own symbol LIBRARY
+                // can spell the same symbol differently — one kit references `A_B` for a symbol
+                // it declares as `A B`, which silently cost every part of that family its pins. This
+                // is the same insensitivity `Normalize` already applies to matching artwork.
+                templates.TryAdd(Normalize(t.Name), t);
+            }
+
+        foreach (var cat in report.Assets.Where(a => a.Kind == PdkAssetKind.ComponentCatalog))
+            foreach (var entry in CatalogEntriesIn(report.RootPath, report.KitRoot, cat.RelativePath))
+            {
+                if (!seen.Add(entry.Id)) continue;
+
+                // A symbol reference is "<name>@<library>". Only the name is looked up: the library
+                // part is a path relative to wherever the kit put its catalog, and the templates are
+                // already indexed by the name a part actually asks for.
+                var sub  = BestSubcircuitFor(entry.Id, subcircuits);
+                string want = entry.Symbol.Split('@')[0].Trim();
+                if (!templates.TryGetValue(want, out var tpl))
+                    templates.TryGetValue(Normalize(want), out tpl);
+
+                report.Parts.Add(new PdkPart(
+                    Id: entry.Id, DisplayName: entry.Id, Category: entry.Category,
+                    IconRelativePath: FindArtworkFor(entry.Id, artwork, PdkAssetKind.PaletteIcon)?.RelativePath,
+                    SymbolArtwork:    FindArtworkFor(entry.Id, artwork, PdkAssetKind.SymbolArtwork),
+                    LayoutArtwork:    FindArtworkFor(entry.Id, artwork, PdkAssetKind.LayoutArtwork),
+                    Parameters:       sub?.Parameters,
+                    // The symbol is the better authority on terminals than a name-matched subcircuit:
+                    // the kit DREW it, and a part that names one is telling us how many pins it has.
+                    PinCount:         tpl?.Pins.Count ?? sub?.PinCount ?? 0,
+                    Pins:             tpl?.Pins));
+            }
+
+        if (report.Parts.Count > 0) return;
+
         // ── The parts: cells the kit drew ────────────────────────────────────
         //
         // A component is a CELL — the thing a kit gives an icon and a symbol to, and the thing a
@@ -342,6 +390,77 @@ public static class PdkImporter
 
     /// <summary>One subcircuit a netlist declares: its name, terminals and declared parameters.</summary>
     private sealed record SubcircuitDef(string Name, int PinCount, IReadOnlyList<PdkPartParameter> Parameters);
+
+    /// <summary>One part a catalog declares.</summary>
+    /// <param name="Symbol">The symbol it references, as "&lt;name&gt;@&lt;library&gt;", or empty.</param>
+    private sealed record CatalogEntry(string Id, string Category, string Symbol);
+
+    /// <summary>Reads a symbol library the kit ships, resolving it against either root.</summary>
+    private static IReadOnlyList<KitSymbolTemplate> ReadSymbolLibrary(
+        string root, string? kitRoot, string relativePath)
+    {
+        string rel  = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        string full = Path.Combine(root, rel);
+        if (!File.Exists(full) && kitRoot is { Length: > 0 })
+            full = Path.Combine(kitRoot, rel);
+        return KitSymbolLibraryReader.TryReadFile(full);
+    }
+
+    /// <summary>
+    /// Reads the parts an XML component catalog declares.
+    ///
+    /// <para>Parsed with a regex rather than an XML parser on purpose. These files carry a default
+    /// namespace naming the tool that wrote them, so element lookups would have to be
+    /// namespace-qualified against a URI circuitRF must not know — and a kit written by a different
+    /// tool with the same shape would then silently yield nothing. Matching the element by local
+    /// name reads both.</para>
+    ///
+    /// <para>The identity taken is the one the kit will be ASKED for: the model name where the entry
+    /// gives one, falling back to the display name. Real catalogs disagree between the two — a
+    /// catalog entry named for a package variant can point at a shared model — and taking the
+    /// display name would name a part nothing can resolve.</para>
+    /// </summary>
+    private static IEnumerable<CatalogEntry> CatalogEntriesIn(string root, string? kitRoot, string relativePath)
+    {
+        string rel  = relativePath.Replace('/', Path.DirectorySeparatorChar);
+        string full = Path.Combine(root, rel);
+        if (!File.Exists(full) && kitRoot is { Length: > 0 })
+            full = Path.Combine(kitRoot, rel);
+
+        string text;
+        try
+        {
+            if (!File.Exists(full) || new FileInfo(full).Length > PeekLimitBytes * 8) yield break;
+            text = File.ReadAllText(full);
+        }
+        catch { yield break; }
+
+        // The catalog's file name is the only grouping a kit of this shape offers, and it is a real
+        // one: kits split their catalog by part family, one file each.
+        string category = Path.GetFileNameWithoutExtension(rel);
+
+        foreach (Match m in RxCatalogEntry.Matches(text))
+        {
+            string declared = m.Groups["name"].Value.Trim();
+            string model    = RxCatalogModel.Match(m.Value) is { Success: true } mm
+                            ? mm.Groups["v"].Value.Trim() : "";
+            string symbol = RxCatalogSymbol.Match(m.Value) is { Success: true } sm
+                          ? sm.Groups["v"].Value.Trim() : "";
+            string id = model.Length > 0 ? model : declared;
+            if (id.Length > 0) yield return new CatalogEntry(id, category, symbol);
+        }
+    }
+
+    /// <summary>One catalog entry: the element, its name, and everything up to its close.</summary>
+    private static readonly Regex RxCatalogEntry = new(
+        @"<\s*(?:\w+:)?COMPONENT\b[^>]*?\bName\s*=\s*""(?<name>[^""]*)""[^>]*>(?<body>.*?)<\s*/\s*(?:\w+:)?COMPONENT\s*>",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
+    private static readonly Regex RxCatalogModel = new(
+        @"<\s*(?:\w+:)?MODEL\s*>(?<v>[^<]*)<", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex RxCatalogSymbol = new(
+        @"<\s*(?:\w+:)?SYMBOL\s*>(?<v>[^<]*)<", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // define NAME ( t1 t2 … )   — the terminal list may run across several lines.
     private static readonly Regex RxDefine = new(
@@ -709,6 +828,33 @@ public static class PdkImporter
                 "The formats found are listed above. If one of them is a format circuitRF should " +
                 "read, that is a feature request; if the kit needs a device provider, register one " +
                 "and import again.");
+
+        // A kit that yields NO PARTS must say so, always. Recognising a pile of files and reporting
+        // nothing leaves the user with an empty palette and no reason for it — and this is the one
+        // outcome where the reason is the entire message. The three support states exist precisely
+        // so "I do not know what this is" and "I know exactly what this is and cannot read it yet"
+        // are different answers; a silent empty import gives neither.
+        else if (report.Parts.Count == 0)
+        {
+            int catalogs = report.Assets.Count(a => a.Kind == PdkAssetKind.ComponentCatalog);
+            int netlists = report.Assets.Count(a => a.Kind == PdkAssetKind.Netlist);
+            int drawings = report.Assets.Count(a => a.Kind is PdkAssetKind.SymbolArtwork
+                                                            or PdkAssetKind.LayoutArtwork);
+
+            string why =
+                catalogs > 0 ? "its catalog declared none that could be read"
+              : netlists > 0 ? "its netlists declare no subcircuit that the kit also draws"
+              : drawings > 0 ? "its drawings are not arranged as a cell database, so no part name " +
+                               "could be read from them"
+              :                "it declares its parts in none of the ways circuitRF reads — no " +
+                               "component catalog, no netlist, and no cell database";
+
+            report.Warn(
+                $"No placeable parts were found in this kit: {why}.",
+                "Its files are listed above and any usable data is still recorded. If this kit " +
+                "states its parts in a form circuitRF does not read yet, that is a feature " +
+                "request — say which file lists them.");
+        }
 
         if (report.Parts.Count > 0 && !report.Assets.Any(a => a.Kind == PdkAssetKind.ModelData &&
                                                              a.Support == PdkAssetSupport.Supported))

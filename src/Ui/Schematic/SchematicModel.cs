@@ -68,6 +68,37 @@ public enum SymbolKind
     /// 2-port, Z1/Z2 (or W1/W2), GammaMax, L (or F3db), Offset, SmoothSteps parameters.</summary>
     Mklopf,
 
+    /// <summary>Junction diode (engine "Diode"). Two pins, anode top / cathode bottom. `Rs` is a
+    /// model parameter, not a separate placed resistor — when non-zero the elaborator mints the
+    /// internal node itself, so the schematic shows one device either way.</summary>
+    Diode,
+
+    // ── Built-in large-signal FET family ──────────────────────────────────────
+    // Five SEPARATE kinds, one per published drain-current law, because they are NOT variants of
+    // one another: each has its own parameter set, and several reuse a spelling for a different
+    // quantity (the quadratic law's `Beta` is a transconductance parameter; the cubic law's is a
+    // gate-voltage shift with drain bias). One kind with a "model" selector would present the union
+    // of all five parameter sets and silently accept the wrong ones.
+    //
+    // All five SHARE one glyph and one 3-pin geometry (gate left, drain top, source bottom) — the
+    // topology genuinely is the same, and the type label below the symbol names the law. The SOURCE
+    // IS AN ORDINARY PIN: these are not hard-wired common-source.
+
+    /// <summary>Curtice quadratic FET (engine "FET_Curtice"). Vto/Beta/Alpha/Lambda.</summary>
+    FetCurtice,
+
+    /// <summary>Curtice–Ettenberg cubic FET (engine "FET_CurticeCubic"). A0–A3/Gamma/Beta/Vds0.</summary>
+    FetCurticeCubic,
+
+    /// <summary>Statz FET (engine "FET_Statz"). Vto/Beta/B/Alpha/Lambda.</summary>
+    FetStatz,
+
+    /// <summary>Materka–Kacprzak FET (engine "FET_Materka"). Idss/Vp0/Gamma/Alpha.</summary>
+    FetMaterka,
+
+    /// <summary>Angelov (Chalmers) FET (engine "FET_Angelov"). Ipk/Vpk/P1–P3/Alpha/Lambda.</summary>
+    FetAngelov,
+
     /// <summary>Term with port 2 permanently grounded, presenting as a 1-port
     /// (brief-housekeeping-tearoff-palette-repo.md §4). A packaging convenience, not a parallel
     /// model: reuses <see cref="Term"/>'s own engine reference ("Port") and glyph exactly, with
